@@ -150,8 +150,3 @@ the rollback strategy above survives contact with that number.
 Whether the tile collision sweep is fast enough at 2048 live projectiles per
 arena, or whether projectiles need a coarse grid index. Measure before building
 one.
-
-Whether 100 Hz is necessary. It matches the settings vocabulary and makes
-weapon delays exact, but 50 Hz halves the server cost. The answer probably
-depends on whether bullet-versus-ship collision at high speed produces
-tunnelling at 50 Hz, which the swept test should prevent.

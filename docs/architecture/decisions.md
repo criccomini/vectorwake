@@ -134,7 +134,7 @@ budget at 100 Hz.
 
 ## 7. Our own protocol, not Continuum's
 
-**Status:** proposed
+**Status:** accepted
 
 Speaking Continuum's protocol would let existing clients connect immediately,
 which is a serious answer to the cold-start problem for a multiplayer game.
@@ -144,17 +144,21 @@ slots, 40 headings, and a security model built on executable checksums. And it
 is incompatible with decision 1, since the protocol's death packet is
 client-authoritative by design.
 
-**Cost:** No existing players on day one.
+Closed as accepted alongside decision 12: everything since this record was
+written (server authority, the rating system, the no-clone identity) leans on
+owning the protocol, and the gateway cannot coexist with decision 1.
 
-**Reconsider if:** a compatibility gateway proves cheap. A server that speaks
-both, with Continuum clients running under the old trust rules in clearly marked
-arenas, is worth a prototype before we close this.
+**Cost:** No existing players on day one. The AI players in decision 14 are the
+mitigation.
+
+**Reconsider if:** never for the main protocol. A read-only spectator bridge for
+Continuum clients could be revisited as a curiosity, nothing more.
 
 ---
 
 ## 8. Simulation runs at 100 Hz
 
-**Status:** proposed
+**Status:** accepted
 
 Subspace's tick is a centisecond, and every published zone setting expresses
 delays, costs, and recharge rates in those units. Matching it makes the settings
@@ -162,9 +166,10 @@ importer exact and makes weapon timing behave as authors expect.
 
 **Cost:** Twice the server work of 50 Hz, and a rollback buffer twice as deep.
 
-**Reconsider if:** profiling says the tick is the bottleneck. Halving to 50 Hz
-means reinterpreting every imported setting, so decide before the importer
-ships.
+**Reconsider if:** profiling says the tick is the bottleneck, and only before
+the settings importer ships. After that, halving the tick means reinterpreting
+every imported setting and rebalancing every playtest result, and the answer is
+to optimize the step instead.
 
 ---
 
@@ -367,3 +372,61 @@ have.
 **Reconsider if:** duel matches turn out to need sub-second creation at a rate
 that arena loading cannot sustain, in which case a pool of warm duel arenas
 replaces creation on demand.
+
+---
+
+## 17. Nose aim only
+
+**Status:** accepted
+
+Guns fire where the ship points. Turning is aiming, on every input device.
+
+This is how the original played and it is a large part of the feel we committed
+to preserving. It also dissolves the input-fairness problem in
+[platforms.md](platforms.md) by construction: mouse, stick, and touch all steer
+the same nose, so no input class owns an aim advantage.
+
+It simplifies the wire and hardens it at once. The input command carries buttons
+only, no aim heading, so there is nothing for an aimbot to inject aim into
+except rotation inputs, which the simulation clamps to the ship's own
+`MaximumRotation`. Perfect play is bounded by the ship, not by the mouse.
+
+**Cost:** A higher skill floor than twin-stick players expect. The practice
+duels in [design/duel-mode.md](../design/duel-mode.md) are the mitigation, and
+they need to be good.
+
+**Reconsider if:** playtests show new players bouncing off the controls
+entirely. Optional mouse aim later is a protocol extension rather than a
+redesign, but ship balance would fork the moment it exists, so late is
+expensive and reluctance is correct.
+
+---
+
+## 18. Source-available, noncommercial license
+
+**Status:** proposed, requires counsel before anything goes public
+
+The intent: anyone can read the code, contribute to it, and run a zone. Nobody
+but the project can sell it or profit from it. That is not OSI open source; it
+is source-available with a noncommercial grant, and saying so plainly costs
+less than being accused of pretending otherwise.
+
+Candidates, in current order of preference:
+
+1. **PolyForm Noncommercial 1.0.0.** Purpose-built for exactly this grant.
+   Simple, no conversion machinery.
+2. **BUSL-1.1** with an Additional Use Grant for noncommercial zone hosting and
+   a change date converting to Apache-2.0. More moving parts, and a standing
+   promise of eventual open source that a community raised on GPL'd ASSS would
+   value.
+
+Either way, contributions require a CLA granting the project commercial rights.
+Without one, the first outside contribution would bind the project under its own
+noncommercial terms and forfeit the Steam release.
+
+**Cost:** Some contributors only touch OSI licenses and will pass. The
+"noncommercial" boundary has fuzzy edges (donation-funded zones, tournaments
+with prizes) that the final text has to address explicitly.
+
+**Reconsider if:** counsel advises differently, or if the contributor pool the
+license costs us turns out to matter more than the exclusivity it buys.

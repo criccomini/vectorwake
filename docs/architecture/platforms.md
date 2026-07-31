@@ -76,13 +76,13 @@ changes address mid-match, so sessions are identified by a token rather than by
 an address, and the server accepts a rebind from a client that proves it holds
 the session.
 
-**Controllers force an aiming decision.** Mouse aim and stick aim are not
-equivalent, and a game where one input class reliably beats another splits the
-population. The options are aim assist tuned per input class, or segregated
-arenas, or a control scheme where the ship's heading is the aim and the
-disadvantage disappears. The original had the third, since your guns fire where
-your nose points. Keeping that is the cheapest answer and probably the right
-one.
+**Controllers forced an aiming decision, and it is made.** Mouse aim and stick
+aim are not equivalent, and a game where one input class reliably beats another
+splits the population. The original avoided the problem entirely: guns fire
+where your nose points, so turning is aiming and every input device steers the
+same nose. We keep that, per [decision 17](decisions.md). No aim assist, no
+segregated arenas, no per-class tuning, because there is no aim channel for any
+of them to act on.
 
 ## Fairness across screens
 

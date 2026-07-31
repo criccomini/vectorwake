@@ -49,9 +49,13 @@ input_command {
   u32 tick            // the tick this input applies to
   u16 seq             // monotonic, for ack and dedup
   u16 buttons         // thrust, reverse, left, right, fire, bomb, specials
-  u16 heading         // 1/65536 turn, for mouse aim if enabled
 }
 ```
+
+There is no aim field. Aiming is the nose, per
+[decision 17](decisions.md), so rotation buttons are the whole steering
+surface, and an aimbot has nothing to write to that the ship's own rotation
+rate does not clamp.
 
 Commands are cumulative and cheap, so each datagram repeats the last several.
 Losing a datagram then costs nothing as long as the next arrives within the
