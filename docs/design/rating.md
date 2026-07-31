@@ -98,6 +98,18 @@ more than the bot moves against the human.
 tournaments before they ever meet a human, which produces a sane ladder from the
 start. Human play refines it.
 
+**One ladder, not two.** A player has one rating per mode class, and kills
+against humans and against AI feed the same number. A separate vs-human rating
+would sit empty during exactly the months when placement matters most, and a
+mixed room, which is the normal early room, would leave the matchmaker unsure
+which number to read. The pinned anchor is what makes bot and human ratings
+commensurable enough to share a scale.
+
+The profile still shows vs-human and vs-AI records separately as statistics,
+because the event log records which kind of opponent every event involved. If
+the combined ladder ever proves gameable, that same log lets us recompute split
+ratings from history rather than resetting anyone.
+
 ## Farming
 
 If beating AI raises your rating, people will farm AI. Four things make it not
