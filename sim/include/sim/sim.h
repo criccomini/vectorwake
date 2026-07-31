@@ -9,6 +9,7 @@
  *   position  Q8 pixels: 1/256 px (int32_t); 16 px per tile, 1024x1024 tiles
  *   velocity  Q16 pixels per tick: 1/65536 px/tick (int32_t)
  *   heading   uint16_t, 1/65536 of a turn; 0 = up (-y), increasing clockwise
+ *   energy    Q10: 1/1024 energy units (int32_t)
  */
 #ifndef SIM_H
 #define SIM_H
@@ -16,84 +17,149 @@
 #include <stdint.h>
 
 #define SIM_MAX_SHIPS 64
+#define SIM_MAX_WEAPONS 1024
+#define SIM_MAX_EVENTS 256
+#define SIM_MAX_CLASSES 8
 #define SIM_MAP_TILES 1024
 #define SIM_TILE_PX 16
 
-/* Q8 position of the map edge. */
 #define SIM_MAP_MAX_Q8 (SIM_MAP_TILES * SIM_TILE_PX * 256)
 
-/* Input buttons. */
-#define SIM_BTN_LEFT 0x0001u    /* rotate counter-clockwise */
-#define SIM_BTN_RIGHT 0x0002u   /* rotate clockwise */
-#define SIM_BTN_THRUST 0x0004u  /* accelerate along heading */
-#define SIM_BTN_REVERSE 0x0008u /* accelerate against heading */
+/* Input buttons. Aiming is the nose (decision 17): there is no aim field. */
+#define SIM_BTN_LEFT 0x0001u
+#define SIM_BTN_RIGHT 0x0002u
+#define SIM_BTN_THRUST 0x0004u
+#define SIM_BTN_REVERSE 0x0008u
+#define SIM_BTN_FIRE 0x0010u  /* guns */
+#define SIM_BTN_BOMB 0x0020u  /* bombs */
 
-/* The tile grid. One byte per tile; nonzero is solid. The host owns the
- * allocation (1 MiB); the core only reads it. */
 typedef struct {
     uint8_t solid[SIM_MAP_TILES * SIM_MAP_TILES];
 } sim_map;
 
-/* Per-ship-class tuning, already converted to core units. Use the
- * sim_vie_* helpers to convert Subspace-vocabulary settings. */
+typedef enum {
+    SIM_W_NONE = 0,
+    SIM_W_BULLET,
+    SIM_W_BOMB
+} sim_weapon_type;
+
+/* Per-class tuning in core units. sim_class_from_units fills this from
+ * settings-file units. */
 typedef struct {
-    int32_t max_speed; /* Q16 px/tick */
-    int32_t thrust;    /* Q16 px/tick^2 */
-    int32_t rot;       /* heading units per tick */
-    int32_t radius;    /* Q8 px, ship center to edge */
+    int32_t max_speed;  /* Q16 px/tick */
+    int32_t thrust;     /* Q16 px/tick^2 */
+    int32_t rot;        /* heading units per tick */
+    int32_t radius;     /* Q8 px */
+    int32_t max_energy; /* Q10 */
+    int32_t recharge;   /* Q10 energy per tick */
+
+    int32_t bullet_speed;  /* Q16 px/tick */
+    int32_t bullet_energy; /* Q10 cost per shot */
+    uint16_t bullet_delay; /* ticks between shots */
+    uint16_t bullet_life;  /* ticks before expiry */
+    int32_t bullet_damage; /* Q10 */
+
+    int32_t bomb_speed;
+    int32_t bomb_energy;
+    uint16_t bomb_delay;
+    uint16_t bomb_life;
+    int32_t bomb_damage;
+    int32_t bomb_radius;  /* Q8 px, blast radius */
+    int32_t bomb_thrust;  /* Q16 px/tick recoil */
 } sim_ship_class;
 
 typedef struct {
-    sim_ship_class ship;  /* one class for now; eight later */
-    int32_t bounce;       /* wall bounce factor, 16 = no speed loss */
-    const sim_map *map;   /* world geometry; not part of rolled-back state */
+    sim_ship_class classes[SIM_MAX_CLASSES];
+    uint8_t class_count;
+    int32_t bounce;        /* wall bounce factor, 16 = no speed loss */
+    uint16_t respawn_delay; /* ticks dead before respawn */
+    const sim_map *map;    /* geometry; not part of rolled-back state */
 } sim_settings;
 
 typedef struct {
     uint8_t active;
-    int32_t x, y;   /* Q8 px */
-    int32_t vx, vy; /* Q16 px/tick */
+    uint8_t alive;
+    uint8_t cls;   /* index into settings.classes */
+    uint8_t team;
+    int32_t x, y;
+    int32_t vx, vy;
     uint16_t heading;
+    int32_t energy;        /* Q10 */
+    uint16_t fire_cooldown; /* ticks until the next shot may be fired */
+    uint16_t respawn_at;    /* ticks remaining while dead */
+    int32_t spawn_x, spawn_y;
+    uint16_t kills, deaths;
 } sim_ship;
+
+typedef struct {
+    uint8_t type;  /* sim_weapon_type */
+    uint8_t owner; /* ship index */
+    uint8_t team;
+    int32_t x, y;
+    int32_t vx, vy;
+    uint16_t life; /* ticks remaining */
+} sim_weapon;
+
+typedef enum {
+    SIM_EV_FIRE = 1,
+    SIM_EV_BOUNCE,   /* a: ship, b: unused */
+    SIM_EV_HIT,      /* a: victim, b: attacker, v: damage Q10 */
+    SIM_EV_DEATH,    /* a: victim, b: killer (255 = none) */
+    SIM_EV_SPAWN,    /* a: ship */
+    SIM_EV_EXPIRE    /* a: weapon type */
+} sim_event_type;
+
+typedef struct {
+    uint8_t type;
+    uint8_t a, b;
+    int32_t v;
+} sim_event;
 
 /* Flat, pointer-free, memcpy-able. Copying this struct is a rollback. */
 typedef struct {
     uint32_t tick;
     uint32_t rng;
     uint8_t ship_count;
+    uint16_t weapon_count;
     sim_ship ships[SIM_MAX_SHIPS];
+    sim_weapon weapons[SIM_MAX_WEAPONS];
 } sim_state;
 
 typedef struct {
-    uint8_t ship;     /* ship index */
-    uint16_t buttons; /* SIM_BTN_* bitfield */
+    uint8_t ship;
+    uint16_t buttons;
 } sim_input;
 
+/* Events produced by one step. Truncated at SIM_MAX_EVENTS; overflow is
+ * counted so a caller can tell the difference between quiet and clipped. */
 typedef struct {
-    uint32_t bounces; /* wall hits this tick */
+    uint16_t count;
+    uint16_t dropped;
+    sim_event e[SIM_MAX_EVENTS];
 } sim_events;
 
-/* Zero the state and seed the PRNG. */
 void sim_init(sim_state *s, uint32_t seed);
 
-/* Add a ship at a pixel position. Returns the ship index, or -1 if full. */
-int sim_spawn(sim_state *s, int32_t x_px, int32_t y_px, uint16_t heading);
+/* Add a ship. Returns its index, or -1 if full. */
+int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
+              int32_t y_px, uint16_t heading, const sim_settings *cfg);
 
-/* Advance one tick: prev -> next. next and prev may not alias. inputs holds
- * at most one entry per ship; ships without an entry coast. */
 void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
               uint16_t input_count, const sim_settings *cfg, sim_events *ev);
 
-/* FNV-1a 64 over the serialized state. Identical across platforms; the
- * determinism harness compares nothing else. */
 uint64_t sim_hash(const sim_state *s);
 
-/* Convert Subspace-vocabulary settings to core units.
- *   speed    px/s/10        -> Q16 px/tick
- *   thrust   accel of t*10 px/s^2 -> Q16 px/tick^2
- *   rotation r/400 turns/s  -> heading units per tick */
-int32_t sim_vie_speed(int32_t v);
-int32_t sim_vie_thrust(int32_t t);
-int32_t sim_vie_rotation(int32_t r);
+/* Settings-file units to core units. The settings file uses integer scales
+ * with implied denominators; these are the only place that mapping lives. */
+int32_t sim_units_speed(int32_t v);    /* px/s/10 -> Q16 px/tick */
+int32_t sim_units_thrust(int32_t t);   /* -> Q16 px/tick^2 */
+int32_t sim_units_rotation(int32_t r); /* r/400 turns/s -> units/tick */
+int32_t sim_units_energy(int32_t e);   /* energy units -> Q10 */
+int32_t sim_units_recharge(int32_t r); /* r/10 energy per second -> Q10/tick */
+
+/* Fill a class from settings-file units. */
+void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
+                          int32_t rotation, int32_t energy, int32_t recharge,
+                          int32_t radius_px);
 
 #endif

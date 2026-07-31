@@ -2,22 +2,25 @@
  *
  *   replay <trace-file> [--every N]
  *
- * Trace format, one command per line: "<count> <buttons>", meaning hold this
- * button bitfield for count ticks. '#' starts a comment. Buttons: 1 left,
- * 2 right, 4 thrust, 8 reverse.
+ * Trace format, one command per line:
+ *   ship <n> <class> <team> <tile_x> <tile_y> <heading>   add a ship
+ *   <ticks> <buttons0> [buttons1 ...]                     hold inputs
+ * '#' starts a comment. Buttons: 1 left, 2 right, 4 thrust, 8 reverse,
+ * 16 fire, 32 bomb.
  *
- * Output: one "tick <n> hash <hex>" line every N ticks (default 500) and a
- * final line. Two platforms that print different bytes have diverged, and
- * that is the whole test.
+ * Output: "tick <n> hash <hex>" every N ticks (default 500) plus a final
+ * line carrying the whole-run totals. Two platforms that print different
+ * bytes have diverged, and that is the entire test.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "sim/sim.h"
+#include "sim/baseline.h"
 
-/* The M0 test map: a solid border plus a square block near the center so
- * traces exercise both open flight and wall bounces. */
+/* The test map: a solid border plus a square block near the center, so
+ * traces exercise open flight, wall bounces, and bombs against geometry. */
 static void build_map(sim_map *m) {
     memset(m->solid, 0, sizeof m->solid);
     for (int i = 0; i < SIM_MAP_TILES; i++) {
@@ -48,37 +51,63 @@ int main(int argc, char **argv) {
     }
 
     sim_map *map = malloc(sizeof *map);
-    if (!map) return 2;
+    sim_state *a = malloc(sizeof *a), *b = malloc(sizeof *b);
+    if (!map || !a || !b) return 2;
     build_map(map);
 
-    /* Placeholder tuning in Subspace vocabulary; the svs importer replaces
-     * these numbers with the real Standard VIE Settings in M3. */
-    sim_settings cfg = {0};
-    cfg.ship.max_speed = sim_vie_speed(4375);
-    cfg.ship.thrust = sim_vie_thrust(25);
-    cfg.ship.rot = sim_vie_rotation(380);
-    cfg.ship.radius = 14 * 256;
-    cfg.bounce = 16;
-    cfg.map = map;
+    sim_settings cfg;
+    memset(&cfg, 0, sizeof cfg);
+    sim_settings_baseline(&cfg, map);
 
-    sim_state *a = malloc(sizeof *a), *b = malloc(sizeof *b);
-    if (!a || !b) return 2;
     sim_init(a, 0x5eedu);
-    sim_spawn(a, 400 * SIM_TILE_PX, 400 * SIM_TILE_PX, 0);
 
-    char line[128];
+    char line[256];
     long tick = 0;
-    unsigned long long total_bounces = 0;
+    unsigned long long fires = 0, hits = 0, deaths = 0, bounces = 0;
     while (fgets(line, sizeof line, f)) {
-        long count;
-        unsigned buttons;
-        if (line[0] == '#' || sscanf(line, "%ld %u", &count, &buttons) != 2)
+        if (line[0] == '#') continue;
+        if (strncmp(line, "ship", 4) == 0) {
+            int n, cls, team, tx, ty, hd;
+            if (sscanf(line, "ship %d %d %d %d %d %d", &n, &cls, &team, &tx, &ty,
+                       &hd) == 6) {
+                (void)n;
+                sim_spawn(a, (uint8_t)cls, (uint8_t)team, tx * SIM_TILE_PX,
+                          ty * SIM_TILE_PX, (uint16_t)hd, &cfg);
+            }
             continue;
+        }
+        long count;
+        unsigned btn[SIM_MAX_SHIPS] = {0};
+        int consumed = 0;
+        if (sscanf(line, "%ld%n", &count, &consumed) != 1) continue;
+        int nb = 0;
+        char *p = line + consumed;
+        while (nb < SIM_MAX_SHIPS) {
+            int used = 0;
+            unsigned v;
+            if (sscanf(p, "%u%n", &v, &used) != 1) break;
+            btn[nb++] = v;
+            p += used;
+        }
         for (long k = 0; k < count; k++) {
-            sim_input in = {0, (uint16_t)buttons};
+            sim_input in[SIM_MAX_SHIPS];
+            uint16_t n_in = 0;
+            for (int i = 0; i < a->ship_count && i < nb; i++) {
+                in[n_in].ship = (uint8_t)i;
+                in[n_in].buttons = (uint16_t)btn[i];
+                n_in++;
+            }
             sim_events ev;
-            sim_step(b, a, &in, 1, &cfg, &ev);
-            total_bounces += ev.bounces;
+            sim_step(b, a, in, n_in, &cfg, &ev);
+            for (uint16_t e = 0; e < ev.count; e++) {
+                switch (ev.e[e].type) {
+                    case SIM_EV_FIRE: fires++; break;
+                    case SIM_EV_HIT: hits++; break;
+                    case SIM_EV_DEATH: deaths++; break;
+                    case SIM_EV_BOUNCE: bounces++; break;
+                    default: break;
+                }
+            }
             sim_state *t = a;
             a = b;
             b = t;
@@ -89,8 +118,8 @@ int main(int argc, char **argv) {
         }
     }
     fclose(f);
-    printf("final tick %ld hash %016llx bounces %llu\n", tick,
-           (unsigned long long)sim_hash(a), total_bounces);
+    printf("final tick %ld hash %016llx fires %llu hits %llu deaths %llu bounces %llu\n",
+           tick, (unsigned long long)sim_hash(a), fires, hits, deaths, bounces);
     free(a);
     free(b);
     free(map);
