@@ -17,6 +17,12 @@ Conventions:
 - `.claude/hooks/session-start.sh` installs OptMem and exports `MEMORY_DIR`, so
   the `memo` commands below operate on this repo's store.
 
+## Engineering rules
+
+- Do not preserve backward compatibility.
+- Choose the simplest implementation that fully meets the current requirements.
+- Prefer established, well-maintained libraries over custom implementations.
+
 ## Memory
 
 Your memory is OptMem:
