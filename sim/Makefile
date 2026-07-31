@@ -20,10 +20,13 @@ $(B)/replay: tools/replay.c $(B)/sim.o
 $(B)/test_sim: tests/test_sim.c $(B)/sim.o
 	$(CC) $(CFLAGS) $^ -o $@
 
-# Regenerate the committed sine table (requires libm at authoring time only).
-src/sintab.h: tools/gen_sintab.c
-	$(CC) $(CFLAGS) -o $(B)/gen_sintab tools/gen_sintab.c -lm
-	$(B)/gen_sintab > $@
+# Regenerate the committed sine table. Deliberately not a file rule: a fresh
+# checkout gives every file the same timestamp, so a rule would let make decide
+# to rebuild the table on a machine that has no libm, or before build/ exists.
+# The table is committed; run this only when changing the generator.
+sintab: | $(B)
+	$(CC) -O2 -std=c99 -o $(B)/gen_sintab tools/gen_sintab.c -lm
+	$(B)/gen_sintab > src/sintab.h
 
 test: $(B)/test_sim
 	$(B)/test_sim
@@ -55,4 +58,4 @@ check-wasm: wasm
 clean:
 	rm -rf $(B)
 
-.PHONY: all test golden check wasm check-wasm clean
+.PHONY: all test golden check wasm check-wasm sintab clean
