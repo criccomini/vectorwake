@@ -1,0 +1,1 @@
+vectorwake (criccomini, push to main): Subspace-inspired space MMO. Docs in docs/, deterministic C sim core in sim/, playable wasm client in client-web/. Own art and ships; server-authoritative; AI bots via inputs only.                                                                    
