@@ -1,6 +1,13 @@
 CC ?= cc
-CFLAGS ?= -O2
-CFLAGS += -std=c99 -Wall -Wextra -Werror -Iinclude
+# OPT and CFLAGS are yours to override; the flags the build cannot work
+# without live in BASE. A command-line `CFLAGS=...` replaces the variable
+# entirely, `+=` in a makefile included, which is how a CI job asking for
+# -O0 once lost -Iinclude and -std=c99 along with it.
+OPT ?= -O2
+CFLAGS ?=
+LDFLAGS ?=
+BASE := -std=c99 -Wall -Wextra -Werror -Iinclude
+ALL_CFLAGS = $(BASE) $(OPT) $(CFLAGS)
 B := build
 
 all: $(B)/libsim.a $(B)/replay $(B)/test_sim
@@ -9,19 +16,19 @@ $(B):
 	mkdir -p $(B)
 
 $(B)/sim.o: src/sim.c src/sintab.h include/sim/sim.h | $(B)
-	$(CC) $(CFLAGS) -c src/sim.c -o $@
+	$(CC) $(ALL_CFLAGS) -c src/sim.c -o $@
 
 $(B)/baseline.o: src/baseline.c include/sim/baseline.h include/sim/sim.h | $(B)
-	$(CC) $(CFLAGS) -c src/baseline.c -o $@
+	$(CC) $(ALL_CFLAGS) -c src/baseline.c -o $@
 
 $(B)/libsim.a: $(B)/sim.o $(B)/baseline.o
 	$(AR) rcs $@ $^
 
 $(B)/replay: tools/replay.c $(B)/sim.o $(B)/baseline.o
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
 $(B)/test_sim: tests/test_sim.c $(B)/sim.o $(B)/baseline.o
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
 # Regenerate the committed sine table. Deliberately not a file rule: a fresh
 # checkout gives every file the same timestamp, so a rule would let make decide

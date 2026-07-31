@@ -21,7 +21,7 @@ jobs:
       - name: golden check again at -O0 with clang
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q clang
-          rm -rf sim/build && make -C sim CC=clang CFLAGS=-O0 check
+          rm -rf sim/build && make -C sim CC=clang OPT=-O0 check
 
   arm64:
     runs-on: ubuntu-latest
@@ -31,7 +31,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q gcc-aarch64-linux-gnu qemu-user-static
-          make -C sim CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -static" all
+          make -C sim CC=aarch64-linux-gnu-gcc LDFLAGS=-static all
           qemu-aarch64-static sim/build/test_sim
           qemu-aarch64-static sim/build/replay sim/tests/trace_basic.txt > out.txt
           cmp sim/tests/golden.txt out.txt
