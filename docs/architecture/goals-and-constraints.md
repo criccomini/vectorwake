@@ -3,9 +3,13 @@
 ## What we are building
 
 A top-down space MMO with Subspace Continuum's feel: frictionless inertial
-flight, energy serving as health and ammunition at once, eight-ish ship classes
+flight, energy serving as health and ammunition at once, eight ship classes
 whose statistics live in configuration, teams called freqs, and arenas that can
 host genuinely different games without an engine fork.
+
+Inspired by, not a remake. The simulation model is inherited; the ships, art,
+sound, maps, and fiction are ours. [design/identity.md](../design/identity.md)
+draws the line and [design/ships.md](../design/ships.md) names the roster.
 
 The target experience is a 40-player arena where the game stays readable and
 fair on a connection that occasionally drops packets, and where a zone author
@@ -34,7 +38,14 @@ a zone's rule, the extension surface is wrong.
 
 **The web is a first-class target.** A game with no installed base needs to be
 one link away. Anything that cannot run in a browser tab cannot be on the
-critical path.
+critical path. Desktop through Steam follows, then mobile, then consoles if
+they earn their certification cost. [platforms.md](platforms.md) has the
+ordering and what each target extracts from us.
+
+**No borrowed assets.** Not one sprite, sound, map, or name from Subspace or
+Continuum, including as a placeholder in a prototype. This is not a constraint
+we expect to feel, since our art direction is nothing like theirs, but it is
+absolute.
 
 ## What we will trade away
 

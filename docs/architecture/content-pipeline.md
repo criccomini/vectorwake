@@ -45,9 +45,10 @@ the client. And the schema is data rather than a C struct with reserved padding,
 so adding a setting does not break every client.
 
 An importer reads an existing `arena.conf` plus its `svs/` includes and produces
-our format. Whether it can round-trip a real Trench Wars configuration is a
-concrete test of whether we understood the original, and it is on the roadmap
-for that reason as much as for compatibility.
+our format. It is a test instrument, not a distribution path: importing a real
+settings file and flying the result tells us whether we understood the physics.
+The output stays on the developer's machine. Shipped zones use our own ships and
+our own numbers, per [design/identity.md](../design/identity.md).
 
 Settings reload without restarting the arena. Zone operators tune constantly.
 
@@ -63,7 +64,10 @@ flag drops, or an automatic warp on entry. They give a map author mechanical
 control without a module.
 
 A converter reads `.lvl`, including the extended format with its embedded region
-data, and writes ours. Going the other way is not planned.
+data, and writes ours. It exists so we can test our collision and region code
+against maps whose behavior is known. Like the settings importer, its output is
+not content we ship: an existing zone's map belongs to that zone. Going the
+other way is not planned.
 
 Editing happens in Tiled, which Defold already integrates with, plus a small
 plugin for region attributes. Building our own map editor is a trap; the
@@ -135,8 +139,8 @@ Whether TOML is right, or whether staying closer to INI would lower the barrier
 for the people most likely to author zones.
 
 How far the `.lvl` and `arena.conf` importers should go. Reading a real zone's
-configuration is a strong correctness test, but promising compatibility is a
-commitment we may not want.
+configuration is a strong correctness test, and it stops being one somewhere
+short of full fidelity.
 
 Whether tilesets should stay 16-pixel or whether the renderer should support
 higher-resolution art on the same 16-pixel collision grid. The second is more

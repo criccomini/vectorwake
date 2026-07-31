@@ -1,8 +1,15 @@
 # vectorwake
 
-A Subspace Continuum inspired top-down space MMO. The project is in its research
-phase; `docs/research/` holds what we have learned about the original game, its
-server implementations, and the projects that have tried to rebuild it.
+A top-down space MMO inspired by Subspace Continuum. Inherited: the simulation
+model. Ours: the ships, art, sound, maps, and fiction. No asset or name from the
+original enters this repository.
+
+The project is in its design phase, with no engine code yet.
+
+- `docs/research/` is what we learned about the original game and its servers.
+- `docs/architecture/` is how vectorwake is built: Defold client, shared
+  deterministic C simulation core, authoritative Rust zone server.
+- `docs/design/` is what the game is: identity, art direction, ships.
 
 Conventions:
 

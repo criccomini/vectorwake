@@ -47,13 +47,16 @@ feels acceptable here or the design changes.
 
 ## M3: an arena worth playing
 
-Eight ships defined by configuration, the full weapon set, prizes, energy and
-recharge, specials, and the settings importer reading a real `arena.conf`. Freqs
-and spectator mode. Chat.
+The eight classes from [design/ships.md](../design/ships.md) defined entirely by
+configuration, the full weapon set, prizes, energy and recharge, specials. Freqs
+and spectator mode. Chat. Real art for the ships and the first pass at the audio
+direction, since programmer geometry stops being adequate once eight classes
+have to be told apart at speed.
 
-Done when a 16-player playtest runs for an hour without a desync, and when a
-Trench Wars settings file imports and produces ships that behave like the ones
-it describes.
+Done when a 16-player playtest runs for an hour without a desync, when every
+class is identifiable by silhouette at radar scale, and when the settings
+importer can read a real `arena.conf` and produce ships that behave the way that
+file describes.
 
 ## M4: a game, not a sandbox
 
@@ -73,15 +76,30 @@ metrics listed in [server.md](server.md). Bot API and one reference bot.
 Done when somebody who is not us runs a zone from a release artifact and a
 written guide, and hosts a game we did not design.
 
+## M6: platforms and the meta-layer
+
+Steam release through `extension-steam`, with Steam identity feeding the account
+system. A touch control prototype that decides whether mobile is a playing
+client or a spectating one. Nakama adopted for identity, friends, parties,
+leaderboards, and the zone directory, per
+[decision 11](decisions.md).
+
+Done when a player's name, friends, and rank follow them across zones, and when
+the Steam build and the web build share an account.
+
+Consoles come after this, if at all, and only once
+[platforms.md](platforms.md)'s moderation question has an answer.
+
 ## Ongoing from M2
 
-The determinism harness runs on every commit. Bandwidth per player and tick
-duration per arena are recorded on every playtest and tracked over time, because
-both degrade quietly and both are architectural.
+The determinism harness runs on every commit, across every ABI we ship to.
+Bandwidth per player and tick duration per arena are recorded on every playtest
+and tracked over time, because both degrade quietly and both are architectural.
 
 ## Deliberately deferred
 
-Mobile clients, though the Android target stays in reach through Defold.
+Console builds, which need manufacturer approval, certification work, and a
+policy for community-hosted content.
 
 Lag compensation by rewinding the server, which we only add if M2 says shooting
 feels wrong.

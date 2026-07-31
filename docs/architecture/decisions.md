@@ -182,3 +182,103 @@ expected.
 
 **Reconsider if:** measurement says the window stutters, in which case a custom
 render script drawing tiles from an atlas replaces it.
+
+---
+
+## 10. Ship browser, desktop, mobile, and eventually consoles
+
+**Status:** accepted
+
+Defold reaches all of them: HTML5, Windows, macOS, Linux, Android, iOS,
+Nintendo Switch, PlayStation 4 and 5, with Xbox announced. Console builds are
+free but gated on being an approved developer with the manufacturer, who then
+authorizes a private plugin and a build server token.
+
+Priority is browser first, desktop through Steam second, mobile third, consoles
+last. [platforms.md](platforms.md) has the reasoning and the per-platform
+constraints.
+
+**Cost:** The browser has no UDP, so we serve two transports forever. Consoles
+impose certification and content moderation obligations that shape the server
+browser. Mobile needs a control scheme nobody has solved well for this kind of
+flight.
+
+**Reconsider if:** the touch prototype fails badly enough that mobile becomes a
+spectator client, which changes nothing architecturally but changes the roadmap.
+
+---
+
+## 11. Nakama for the meta-layer, never for the arena tick
+
+**Status:** proposed, adopt around M5
+
+Nakama is an Apache-2.0, self-hostable game backend on Postgres with
+authentication across device, email, and social providers including Steam,
+friends and groups, chat, leaderboards, tournaments, a matchmaker, storage,
+parties, and notifications. It has an official Defold client written in Lua 5.1
+that uses HTTP and WebSocket, so it works everywhere Defold does. That is a
+large amount of infrastructure we would otherwise write badly.
+
+It is the wrong place for an arena. Nakama's authoritative match loop runs
+between 1 and 60 Hz, and we simulate at 100. Match handlers are written in Go,
+TypeScript, or Lua, none of which is our C core; a Go handler could reach it
+through cgo, but it would still inherit the tick ceiling and the transport.
+Realtime delivery is WebSocket-centric with guidance of roughly one message per
+tick per presence and a 1500-byte message ceiling, which does not fit our
+snapshot, delta, and priority model. And it would cost native clients their UDP.
+
+So: our zone server keeps the arenas, and Nakama gets identity, friends,
+parties, chat outside the arena, leaderboards, tournaments, and the zone
+directory, if and when we want those.
+
+**Cost:** A second backend to run, a Postgres dependency, and two authentication
+paths to keep consistent.
+
+**Why not now:** at M0 through M4 we need none of it, and an unused dependency
+is a tax. The architecture already treats identity as an opaque token the
+session layer validates, so adopting Nakama later is an adapter rather than a
+rewrite. That property is worth protecting deliberately.
+
+**Reconsider if:** we catch ourselves hand-writing friends, parties, or
+leaderboards before M5, in which case adopt early. Or if the game turns out to
+need none of them, in which case skip it.
+
+---
+
+## 12. Inspired by, not a clone
+
+**Status:** accepted
+
+We inherit the simulation model, the tick and unit vocabulary, the zone, arena,
+and freq structure, and the lag response policy. We invent every ship, sound,
+sprite, map, tileset, and name.
+
+No asset from Subspace or Continuum enters the repository, including as a
+placeholder. The `.lvl` and `arena.conf` importers exist to validate our physics
+against a known reference and their output is not distributed.
+[design/identity.md](../design/identity.md) states the rules.
+
+**Cost:** No borrowed art to prototype with, and no ready-made zone content on
+day one. Every map we ship, we make.
+
+**Reconsider if:** never. This one is not a tradeoff.
+
+---
+
+## 13. The camera shows a fixed area of the world
+
+**Status:** accepted
+
+Subspace let a bigger monitor show you more of the map, and arenas fought it
+with `MaxXres` and `MaxYres` settings that capped a player's resolution. That is
+a workaround for drawing map pixels one to one with screen pixels.
+
+Our camera shows a fixed extent in tiles and scales it to whatever the display
+is, bounded on extreme aspect ratios. A phone and an ultrawide see the same
+amount of game.
+
+**Cost:** Art must be legible across a wide range of scales, and text in the
+world needs care.
+
+**Reconsider if:** competitive play finds an aspect ratio exploit the diagonal
+bound does not cover.

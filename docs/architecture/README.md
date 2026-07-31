@@ -3,7 +3,8 @@
 These documents describe how vectorwake is built and why. They assume you have
 read [docs/research](../research/README.md), particularly
 [implications.md](../research/implications.md), which is where most of these
-decisions come from.
+decisions come from. For what the game is rather than how it is built, see
+[docs/design](../design/README.md).
 
 Nothing here is built yet. Treat every document as a proposal with a named
 tradeoff, not as a description of running code. Where a decision is still open
@@ -13,6 +14,7 @@ it says so.
 |---|---|
 | [goals-and-constraints.md](goals-and-constraints.md) | What we are trying to build, what we refuse to trade away, what we are willing to lose |
 | [system-overview.md](system-overview.md) | The pieces and how they fit: sim core, client, zone server, bots, directory |
+| [platforms.md](platforms.md) | Browser, Steam, mobile, consoles: what each one costs us and in what order |
 | [simulation-core.md](simulation-core.md) | The deterministic C core: fixed point, tick model, state layout, API |
 | [client-defold.md](client-defold.md) | What Defold does for us, what it does not, project layout, map rendering, prediction |
 | [server.md](server.md) | Zone and arena model, authority, extension modules, persistence, operations |
@@ -66,11 +68,12 @@ where we deliberately break with the original.
 Defold is a good fit for the client and a poor fit for almost everything else,
 and the architecture reflects that split.
 
-What it gives us: a small fast 2D renderer, a real cross-platform story that
-includes the web without a rewrite, native extensions compiled by a hosted build
-server for every target including WebAssembly, hot reload, and a bundle size
-measured in single-digit megabytes. For a game whose visual budget is sprites on
-a tile grid, that is most of what a client needs.
+What it gives us: a small fast 2D renderer, native extensions compiled by a
+hosted build server for every target including WebAssembly, hot reload, and a
+bundle size measured in single-digit megabytes. It also reaches every platform
+we want, from a browser tab to Nintendo Switch, without a rewrite. For a game
+whose visual budget is geometry on a tile grid, that is most of what a client
+needs. See [platforms.md](platforms.md).
 
 What it does not give us: a server. Defold can build a headless variant and
 people do run game servers with it, but a zone server wants long uptime,
