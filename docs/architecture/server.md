@@ -38,8 +38,10 @@ server/
     arena/            arena.rs, scheduler.rs, settings.rs, map.rs
     sim/              FFI bindings to sim/
     lag/              measurement and actions
+    ai/               controllers, perception, navigation, population director
+    rating/           damage ledgers, rated events, Elo
     modules/          wasm host, adviser dispatch
-    persist/          sqlite, scores, bans
+    persist/          sqlite, scores, bans, rated event log
   tests/
 ```
 
@@ -50,10 +52,11 @@ player list, and its module instances. A worker pool ticks them: one thread owns
 an arena for the duration of a tick, and an arena is never ticked concurrently
 with itself.
 
-A tick is: drain the input queue for this arena, call `sim_step`, hand the
-resulting events to modules and to the snapshot builder, and enqueue any
-persistence writes. At 100 Hz that is a 10 ms budget, and a 40-player arena
-should use a small fraction of it.
+A tick is: drain the input queue for this arena, let AI controllers add their
+inputs, call `sim_step`, hand the resulting events to modules, to the rating
+layer, and to the snapshot builder, then enqueue any persistence writes. At
+100 Hz that is a 10 ms budget, and a 40-player arena should use a small fraction
+of it, with under 1 ms of it going to AI per [ai-runtime.md](ai-runtime.md).
 
 Arenas load lazily by name and unload after a grace period with nobody in them.
 Naming follows the ASSS convention we liked: `pub1`, `pub2`, and `pub3` all take

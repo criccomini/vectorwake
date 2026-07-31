@@ -282,3 +282,61 @@ world needs care.
 
 **Reconsider if:** competitive play finds an aspect ratio exploit the diagonal
 bound does not cover.
+
+---
+
+## 14. AI opponents are in-process bots that emit inputs and nothing else
+
+**Status:** accepted
+
+An empty arena is how a new multiplayer game dies. Bots fill arenas until humans
+arrive and then leave, per [design/ai-players.md](../design/ai-players.md).
+
+They run inside the zone server, in the arena tick, and their only output is an
+`InputCommand` identical to the one a network client sends. Their perception
+comes from the same visibility filter that builds human snapshots. There is no
+second channel into the simulation, so a bot cannot cheat by construction, and
+difficulty is imperfection added rather than permission granted.
+
+Bots are labeled as AI everywhere they appear. A rating system that quietly mixes
+bots into a player's record is one nobody will trust.
+
+**Cost:** In-process AI is a server feature with a real CPU budget, and the
+behavior layer is a system we have to build and tune. Bots that emit only inputs
+are harder to write than bots allowed to set their own position.
+
+**Reconsider if:** never for the input-only rule. The placement is softer: if
+zone-authored AI becomes the dominant case, external protocol bots may matter
+more than built-in ones.
+
+---
+
+## 15. Rating is damage-weighted pairwise Elo, stored as an event log
+
+**Status:** proposed
+
+Kills in this game have several contributors and a finisher who may have done the
+least. Each death becomes a set of pairwise contests between the victim and each
+contributor, weighted by damage share, with damage decaying at the ship's
+recharge rate so that healed damage stops counting. The math is in
+[design/rating.md](../design/rating.md).
+
+Bots are rated by the same math, which is what lets a player be ranked in an
+arena with no humans in it, with one reference personality pinned to a fixed
+rating so the bot population cannot drift as a closed system.
+
+Every rated event is stored with its weights and the ratings before and after.
+Ratings are a projection of that log rather than the source of truth.
+
+**On model choice:** Elo first because it is explainable. The intended successor
+is the Weng-Lin model as implemented by OpenSkill, which is patent-free and
+commercially usable. TrueSkill is deliberately excluded: Microsoft licenses it
+only for Xbox Live titles and non-commercial projects. Glicko-2 is a free
+fallback if rating periods fit better than per-event updates.
+
+**Cost:** Damage ledgers per victim, an event log that grows forever, and a
+model that will need retuning once real data exists.
+
+**Reconsider if:** the pairwise decomposition produces ratings that disagree with
+what good players can see with their own eyes. The event log is what makes that
+recoverable.

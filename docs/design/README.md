@@ -7,6 +7,8 @@ engineering, see [docs/architecture](../architecture/README.md).
 |---|---|
 | [identity.md](identity.md) | What we inherit from Subspace and what we invent, art direction, audio direction, and the rules that keep this inspired-by rather than a clone |
 | [ships.md](ships.md) | The eight classes, their roles, standard settings, and the design rules behind them |
+| [ai-players.md](ai-players.md) | AI opponents that fill empty arenas and yield to humans: styles, skill, personas, and the population director |
+| [rating.md](rating.md) | Skill rating across humans and AI, and how credit for a kill is split among everyone who caused it |
 
 ## The one-line version
 

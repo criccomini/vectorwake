@@ -58,11 +58,31 @@ class is identifiable by silhouette at radar scale, and when the settings
 importer can read a real `arena.conf` and produce ships that behave the way that
 file describes.
 
+## M3.5: something to fight when nobody is online
+
+AI opponents that emit inputs through the same path as human clients: perception
+from the snapshot visibility filter, utility-based behavior, inertia-aware
+flying, and the archetypes and skill parameters in
+[design/ai-players.md](../design/ai-players.md). The population director that
+fills an arena and yields to arriving humans.
+
+Done when a solo player joining an empty arena gets a fight worth having, when
+bots leave without anybody noticing the seam, and when forty bots cost under a
+millisecond per tick.
+
+Placed here because every milestone after this one is easier to test with bots
+than without, and because the first external playtest will have more empty
+arenas than full ones.
+
 ## M4: a game, not a sandbox
 
 Flag and ball modes as sandboxed zone modules, with the adviser hooks the
 modules need. Scoring, kill rewards, bounty, and persistence to SQLite. Lag
 measurement and the four-threshold response.
+
+Damage ledgers and the rated event log start here, since rating is computed from
+events this milestone already produces. Ratings themselves stay hidden until
+there is enough data to trust them.
 
 Done when a warzone-style flag game and a powerball game both run as modules,
 with no game-mode logic in the sim core or the server.
@@ -83,6 +103,10 @@ system. A touch control prototype that decides whether mobile is a playing
 client or a spectating one. Nakama adopted for identity, friends, parties,
 leaderboards, and the zone directory, per
 [decision 11](decisions.md).
+
+Ratings become visible here, computed from the event log M4 has been filling and
+anchored by bot personalities calibrated in offline tournaments, per
+[design/rating.md](../design/rating.md).
 
 Done when a player's name, friends, and rank follow them across zones, and when
 the Steam build and the web build share an account.

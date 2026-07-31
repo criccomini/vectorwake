@@ -20,10 +20,16 @@ modules that observe and adjust the rules.
 logic, and anything a zone author wants to add. They receive events and may
 answer questions the server asks, in the shape of ASSS's adviser pattern.
 
-**Bots.** Programs that connect over the same protocol as players, with
+**AI players** (`server/ai/`). Bots that fill an arena when humans are scarce and
+leave as humans arrive. They run in the arena's tick and emit the same input
+commands a network client does, so they cannot cheat. See
+[ai-runtime.md](ai-runtime.md) and [design/ai-players.md](../design/ai-players.md).
+
+**External bots.** Programs that connect over the same protocol as players, with
 elevated rights granted by capability. Reading Subspace taught us that most
 zone identity lives in bots, so they are a supported interface rather than a
-side effect.
+side effect. Distinct from AI players: these are tooling and league logic, not
+opponents.
 
 **Directory.** A small service listing live zones for the client's server
 browser. Optional, and a zone runs fine without it.
@@ -118,4 +124,5 @@ position for nearby players sent more often than for distant ones. See
 | Lag actions | Server, between transport and arena |
 | Client-authoritative death | Deleted. The arena decides |
 | `.lvl` maps | Imported to our map format, rendered through Defold tilemaps |
-| Bots | Protocol clients with capability grants |
+| Bots | Two kinds: in-process AI opponents, and protocol clients with capability grants |
+| Nothing equivalent | Skill rating, computed from arena events outside the simulation |

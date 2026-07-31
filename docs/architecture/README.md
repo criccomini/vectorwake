@@ -19,6 +19,7 @@ it says so.
 | [client-defold.md](client-defold.md) | What Defold does for us, what it does not, project layout, map rendering, prediction |
 | [server.md](server.md) | Zone and arena model, authority, extension modules, persistence, operations |
 | [networking.md](networking.md) | Transports, packet model, snapshots and inputs, lag response, anti-cheat |
+| [ai-runtime.md](ai-runtime.md) | Where bots run, how they perceive and fly, and why they cannot cheat |
 | [content-pipeline.md](content-pipeline.md) | Settings, maps, assets, and how a zone author works |
 | [decisions.md](decisions.md) | Numbered decision records with status and the argument for each |
 | [roadmap.md](roadmap.md) | Milestones, in the order that retires the most risk |

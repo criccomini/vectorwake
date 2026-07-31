@@ -1,1 +1,2 @@
 vectorwake (criccomini): Subspace-inspired top-down space MMO, research phase, work goes straight to main; docs/research/ written from the ASSS 1.6.1 guide, asss source and nullspace; pushing to the GitHub repo is blocked by a 403, reads work.                                            
+vectorwake: Defold client, deterministic C99 sim core, authoritative Rust zone server, sandboxed zone modules; inspired-by not clone, clean vector, 8 ships, browser-first; AI bots emit inputs only; damage-weighted Elo anchored by rated bots.                                              
