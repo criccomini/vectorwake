@@ -4,12 +4,17 @@ A top-down space MMO inspired by Subspace Continuum. Inherited: the simulation
 model. Ours: the ships, art, sound, maps, and fiction. No asset or name from the
 original enters this repository.
 
-The project is in its design phase, with no engine code yet.
+Code is underway, starting with the simulation core.
 
 - `docs/research/` is what we learned about the original game and its servers.
 - `docs/architecture/` is how vectorwake is built: Defold client, shared
   deterministic C simulation core, authoritative Rust zone server.
 - `docs/design/` is what the game is: identity, art direction, ships.
+- `sim/` is the simulation core: C99, fixed point, no dependencies, no floats.
+  `make -C sim check` must pass before any push that touches it. Its state
+  hashes are compared across x86-64, arm64, and WASM in CI; if you change sim
+  behavior deliberately, regenerate the reference with `make -C sim golden`
+  and say so in the commit message.
 
 Conventions:
 

@@ -1,0 +1,50 @@
+name: sim determinism
+
+on:
+  push:
+    paths: ["sim/**", ".github/workflows/sim.yml"]
+  pull_request:
+    paths: ["sim/**", ".github/workflows/sim.yml"]
+
+# The point of this workflow is decision 2: the same simulation source must
+# produce identical state hashes on every ABI we ship to. Each job runs the
+# committed golden trace and compares byte-for-byte against the committed
+# golden output. One diverging byte fails the build.
+
+jobs:
+  x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: tests and golden check (gcc -O2)
+        run: make -C sim check
+      - name: golden check again at -O0 with clang
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q clang
+          rm -rf sim/build && make -C sim CC=clang CFLAGS=-O0 check
+
+  arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: cross-compile for aarch64 and run under qemu
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc-aarch64-linux-gnu qemu-user-static
+          make -C sim CC=aarch64-linux-gnu-gcc CFLAGS="-O2 -static" all
+          qemu-aarch64-static sim/build/test_sim
+          qemu-aarch64-static sim/build/replay sim/tests/trace_basic.txt > out.txt
+          cmp sim/tests/golden.txt out.txt
+          echo arm64 determinism check passed
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+      - name: build with emscripten and run under node
+        run: |
+          make -C sim wasm
+          node sim/build/replay.js sim/tests/trace_basic.txt > out.txt
+          cmp sim/tests/golden.txt out.txt
+          echo wasm determinism check passed
