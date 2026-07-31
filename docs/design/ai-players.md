@@ -121,6 +121,13 @@ Bots carry ratings, which is what makes the arena useful for ranking humans. See
 personality rather than to an instance, and one reference personality is pinned
 to a fixed rating so the bot population cannot drift as a closed system.
 
+## Duels
+
+Bots are also the opponent of last resort in the duel queue, and the opponent of
+first resort for a player who wants practice. A rated duel against a bot moves
+your rating exactly as a duel against a person does. [duel-mode.md](duel-mode.md)
+covers the format and the queue.
+
 ## What we are not doing
 
 No machine learning in the first version. Hand-authored utility behavior with

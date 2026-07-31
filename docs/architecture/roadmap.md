@@ -87,6 +87,22 @@ there is enough data to trust them.
 Done when a warzone-style flag game and a powerball game both run as modules,
 with no game-mode logic in the sim core or the server.
 
+## M4.5: duels
+
+One on one against a rating-matched bot or human, per
+[design/duel-mode.md](../design/duel-mode.md). Ephemeral arenas from a duel
+template, the ruleset as a zone module, an in-zone matchmaking queue with rating
+and latency bands, practice duels against any bot difficulty, and match replays
+from the input log.
+
+Done when a new player can go from launch to a fought duel in under a minute
+with nobody else online, and when a replay of that duel plays back frame-exact
+from a few kilobytes.
+
+Duels come before the meta-layer because they are the cheapest test of the module
+API, the cleanest rating signal we can collect, and the onboarding path for every
+player who arrives before the game has a population.
+
 ## M5: a zone somebody else can run
 
 Zone directory layout, settings reload without restart, map and overlay

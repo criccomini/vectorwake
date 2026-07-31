@@ -63,6 +63,11 @@ Naming follows the ASSS convention we liked: `pub1`, `pub2`, and `pub3` all take
 their configuration from the `pub` template, which makes running eight identical
 public arenas a matter of one directory.
 
+The same mechanism gives us ephemeral arenas for free. A duel match creates
+`duel#a1b2` from the `duel` template, loads the duel module, and unloads when the
+match ends, with a shorter grace period than a public arena. See
+[design/duel-mode.md](../design/duel-mode.md).
+
 ## Authority and validation
 
 Inputs are the only thing a client may assert. An input command carries a tick,

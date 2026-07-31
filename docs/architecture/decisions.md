@@ -340,3 +340,30 @@ model that will need retuning once real data exists.
 **Reconsider if:** the pairwise decomposition produces ratings that disagree with
 what good players can see with their own eyes. The event log is what makes that
 recoverable.
+
+---
+
+## 16. Duels are an ephemeral arena plus a zone module
+
+**Status:** accepted
+
+One on one against a rating-matched human or bot, per
+[design/duel-mode.md](../design/duel-mode.md). When a match forms, the server
+creates an arena from the duel template under a generated name, loads the duel
+module, and unloads the whole thing when the match ends.
+
+No special case in the server. Arenas already load lazily and unload when empty,
+and the duel ruleset is exactly the kind of thing zone modules exist for: round
+state, spawns, countdown, weapon lockout, win condition, forfeit timer.
+
+This makes duel mode a test of the module API. If the simplest game mode we have
+needs a hook the API cannot express, we would rather learn that here than in
+powerball.
+
+**Cost:** Ephemeral arenas need name generation, a lifecycle shorter than the
+usual grace period, and a matchmaking queue the zone server did not previously
+have.
+
+**Reconsider if:** duel matches turn out to need sub-second creation at a rate
+that arena loading cannot sustain, in which case a pool of warm duel arenas
+replaces creation on demand.
