@@ -40,12 +40,12 @@ static void step_n(sim_state *s, const sim_settings *cfg, uint16_t b0,
 /* Counts of each event type over n ticks. Energy is a poor probe for damage
  * because recharge erases the evidence within a second; events do not lie. */
 typedef struct {
-    int fires, hits, deaths, bounces, spawns;
+    int fires, hits, deaths, bounces, spawns, prizes;
 } ev_counts;
 
 static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
                                uint16_t b0, uint16_t b1, int n) {
-    ev_counts c = {0, 0, 0, 0, 0};
+    ev_counts c = {0, 0, 0, 0, 0, 0};
     sim_state tmp;
     sim_events ev;
     for (int i = 0; i < n; i++) {
@@ -58,6 +58,7 @@ static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
                 case SIM_EV_DEATH: c.deaths++; break;
                 case SIM_EV_BOUNCE: c.bounces++; break;
                 case SIM_EV_SPAWN: c.spawns++; break;
+                case SIM_EV_PRIZE: c.prizes++; break;
                 default: break;
             }
     }
@@ -100,8 +101,11 @@ int main(void) {
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         step_n(&s, &cfg, SIM_BTN_THRUST, 0, 400);
         int64_t v = -(int64_t)s.ships[0].vy;
-        CHECK(v <= cfg.classes[APEX].max_speed, "speed does not exceed max");
-        CHECK(v > cfg.classes[APEX].max_speed - 2048, "speed reaches near max");
+        int32_t cap = sim_eff_speed(&cfg.classes[APEX], &s.ships[0]);
+        CHECK(v <= cap, "speed does not exceed the effective cap");
+        CHECK(v > cap - 2048, "speed reaches near the effective cap");
+        CHECK(cap < cfg.classes[APEX].max_speed,
+              "a fresh ship flies below its upgraded ceiling");
     }
 
     /* Energy recharges to the cap and stops there. */
@@ -113,8 +117,8 @@ int main(void) {
         step_n(&s, &cfg, 0, 0, 10);
         CHECK(s.ships[0].energy > 0, "energy recharges");
         step_n(&s, &cfg, 0, 0, 2000);
-        CHECK(s.ships[0].energy == cfg.classes[APEX].max_energy,
-              "energy clamps at max");
+        CHECK(s.ships[0].energy == sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]),
+              "energy clamps at the effective maximum");
     }
 
     /* Firing costs energy, respects the cooldown, and creates a weapon. */
@@ -197,7 +201,7 @@ int main(void) {
         CHECK(s.ships[1].deaths == 1, "the victim's deaths increment");
         step_n(&s, &cfg, 0, 0, cfg.respawn_delay + 2);
         CHECK(s.ships[1].alive, "the dead respawn");
-        CHECK(s.ships[1].energy == cfg.classes[APEX].max_energy,
+        CHECK(s.ships[1].energy == sim_eff_max_energy(&cfg.classes[APEX], &s.ships[1]),
               "respawn restores full energy");
         CHECK(s.ships[1].x == s.ships[1].spawn_x, "respawn returns to spawn");
     }
@@ -214,6 +218,78 @@ int main(void) {
         ev_counts c = step_counting(&s, &cfg, SIM_BTN_BOMB, 0, 60);
         CHECK(c.fires == 1, "the bomb was fired");
         CHECK(c.hits > 0, "bomb splash damages a nearby enemy");
+    }
+
+    /* Prizes spawn, get collected, and raise the ship's effective stats. */
+    {
+        sim_state s;
+        sim_init(&s, 3);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        step_n(&s, &cfg, 0, 0, cfg.prize_delay + 2);
+        int live = 0;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
+        CHECK(live > 0, "a prize appears");
+
+        /* Teleport the ship onto one and confirm the pickup. */
+        int idx = -1;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++)
+            if (s.prizes[i].active) { idx = i; break; }
+        s.ships[0].up[SIM_UP_SPEED] = 0;
+        uint8_t want = SIM_UP_SPEED;
+        s.prizes[idx].type = want;
+        s.ships[0].x = s.prizes[idx].x;
+        s.ships[0].y = s.prizes[idx].y;
+        int32_t before = sim_eff_speed(&cfg.classes[APEX], &s.ships[0]);
+        ev_counts c = step_counting(&s, &cfg, 0, 0, 2);
+        CHECK(c.prizes > 0, "flying over a prize collects it");
+        CHECK(s.ships[0].up[want] == 1, "the upgrade is recorded");
+        CHECK(sim_eff_speed(&cfg.classes[APEX], &s.ships[0]) > before,
+              "the upgrade raises effective speed");
+
+        /* Dying strips everything. */
+        s.ships[0].up[SIM_UP_ENERGY] = 4;
+        /* Spawn the shooter above and facing down, or it fires away. */
+        sim_spawn(&s, APEX, 1, s.ships[0].x / 256, s.ships[0].y / 256 - 200,
+                  32768, &cfg);
+        s.ships[0].energy = 1;
+        step_counting(&s, &cfg, 0, SIM_BTN_FIRE, 400);
+        CHECK(s.ships[0].deaths > 0, "the target dies");
+        CHECK(s.ships[0].up[SIM_UP_SPEED] == 0 && s.ships[0].up[SIM_UP_ENERGY] == 0,
+              "death strips every upgrade");
+    }
+
+    /* Walls are inelastic: a bounce returns less speed than it took, and a
+     * ship resting against one settles rather than buzzing. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 2000, 0, &cfg);  /* faces the top wall */
+        step_n(&s, &cfg, SIM_BTN_THRUST, 0, 100);     /* build speed, coast in */
+
+        sim_state before, tmp;
+        sim_events ev;
+        int bounced = 0;
+        for (int i = 0; i < 4000 && !bounced; i++) {
+            before = s;
+            sim_step(&tmp, &s, NULL, 0, &cfg, &ev);
+            s = tmp;
+            for (uint16_t e = 0; e < ev.count; e++)
+                if (ev.e[e].type == SIM_EV_BOUNCE) bounced = 1;
+        }
+        CHECK(bounced, "the ship reaches the wall");
+        if (bounced) {
+            int64_t was = -(int64_t)before.ships[0].vy;  /* upward, so negative */
+            int64_t now = (int64_t)s.ships[0].vy;        /* downward after */
+            CHECK(now > 0, "the bounce reverses direction");
+            CHECK(now < was, "the bounce loses speed");
+            CHECK(now * 16 <= was * cfg.bounce + 16,
+                  "speed retained matches the restitution setting");
+        }
+
+        /* Left leaning on the wall under thrust, it must not jitter forever. */
+        step_n(&s, &cfg, SIM_BTN_THRUST, 0, 600);
+        ev_counts c = step_counting(&s, &cfg, SIM_BTN_THRUST, 0, 200);
+        CHECK(c.bounces < 20, "grinding on a wall does not spam impacts");
     }
 
     /* Determinism: identical runs give identical hashes and bytes. */

@@ -104,7 +104,15 @@ const WASM_B64 = "__WASM_BASE64__";
 
 const TILE = 16, MAPT = 1024;
 const BTN = { LEFT: 1, RIGHT: 2, THRUST: 4, REVERSE: 8, FIRE: 16, BOMB: 32 };
-const EV = { FIRE: 1, BOUNCE: 2, HIT: 3, DEATH: 4, SPAWN: 5, EXPIRE: 6 };
+const EV = { FIRE: 1, BOUNCE: 2, HIT: 3, DEATH: 4, SPAWN: 5, EXPIRE: 6, PRIZE: 7 };
+// Prize kinds, in the order the core defines them.
+const UPGRADES = [
+  { name: "energy",   short: "NRG", color: "#7fe3a0" },
+  { name: "recharge", short: "RCH", color: "#4fd6ff" },
+  { name: "speed",    short: "SPD", color: "#ffd166" },
+  { name: "thrust",   short: "THR", color: "#ff9a5c" },
+  { name: "rotation", short: "ROT", color: "#c79bff" },
+];
 
 const CLASSES = [
   { name: "Apex",    role: "interceptor", poly: [[0,-15],[7,10],[0,4],[-7,10]] },
@@ -129,6 +137,7 @@ let ME = 0;
 let pilots = [];        // metadata parallel to sim ship ids
 let feed = [];
 let hurt = 0;          // decays each frame; drives the damage flash
+let pickup = null;     // most recent upgrade, for the HUD flash
 let running = false;
 let selected = 0;
 let wantFullscreen = true;
@@ -226,6 +235,46 @@ function makeBot(skill, id) {
   };
 }
 
+// With no enemy in reach, a bot goes shopping. Same input path as always.
+function nearestPrize(b, within) {
+  const mx = W.vw_ship_x(b.id) / 256, my = W.vw_ship_y(b.id) / 256;
+  let bx = 0, by = 0, bd = within * within;
+  let found = false;
+  for (let i = 0, n = W.vw_prize_count(); i < n; i++) {
+    if (!W.vw_prize_active(i)) continue;
+    const dx = W.vw_prize_x(i) / 256 - mx, dy = W.vw_prize_y(i) / 256 - my;
+    const d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; bx = dx; by = dy; found = true; }
+  }
+  if (!found) return 0;
+  return steerTo(b, bx, by);
+}
+
+function steerTo(b, dx, dy) {
+  const want = Math.atan2(dx, -dy);
+  const head = (W.vw_ship_heading(b.id) / 65536) * Math.PI * 2;
+  let diff = want - head;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  let out = 0;
+  if (diff > 0.06) out |= BTN.RIGHT; else if (diff < -0.06) out |= BTN.LEFT;
+  if (Math.abs(diff) < 0.5) out |= BTN.THRUST;
+  return out;
+}
+
+function seekPrize(b) {
+  const mx = W.vw_ship_x(b.id) / 256, my = W.vw_ship_y(b.id) / 256;
+  let bx = 0, by = 0, bd = 1e18;
+  for (let i = 0, n = W.vw_prize_count(); i < n; i++) {
+    if (!W.vw_prize_active(i)) continue;
+    const dx = W.vw_prize_x(i) / 256 - mx, dy = W.vw_prize_y(i) / 256 - my;
+    const d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; bx = dx; by = dy; }
+  }
+  if (bd > 1e17) return 0;
+  return steerTo(b, bx, by);
+}
+
 function botThink(b) {
   // Pick the nearest live enemy.
   const n = W.vw_ship_count();
@@ -238,7 +287,13 @@ function botThink(b) {
     const d = dx * dx + dy * dy;
     if (d < bestD) { bestD = d; best = i; }
   }
-  if (best < 0) return 0;
+  if (best < 0) return seekPrize(b);
+
+  // A green within easy reach is worth the detour even mid-fight, which is
+  // how the original actually played.
+  const near = nearestPrize(b, 200);
+  if (near && W.vw_ship_energy(b.id) > W.vw_ship_max_energy(b.id) * 0.4)
+    return near;
 
   const dist = Math.sqrt(bestD);
   const tx = W.vw_ship_x(best) / 256, ty = W.vw_ship_y(best) / 256;
@@ -374,6 +429,10 @@ function stepOnce() {
 
   for (let e = 0, c = W.vw_event_count(); e < c; e++) {
     if (W.vw_event_type(e) === EV.HIT && W.vw_event_a(e) === ME) hurt = 1;
+    if (W.vw_event_type(e) === EV.PRIZE && W.vw_event_a(e) === ME) {
+      const u = UPGRADES[W.vw_event_b(e)];
+      if (u) pickup = { name: u.name, color: u.color, t: 1 };
+    }
     if (W.vw_event_type(e) !== EV.DEATH) continue;
     const victim = W.vw_event_a(e), killer = W.vw_event_b(e);
     const vn = pilots[victim] ? pilots[victim].name : "?";
@@ -427,6 +486,7 @@ function render() {
   cx.translate(-camx, -camy);
 
   drawTiles(camx, camy, w / scale, h / scale);
+  drawPrizes();
   drawWeapons();
   drawShips();
 
@@ -516,6 +576,27 @@ function drawShips() {
   }
 }
 
+function drawPrizes() {
+  const spin = (performance.now() / 600) % 6.2832;
+  for (let i = 0, n = W.vw_prize_count(); i < n; i++) {
+    if (!W.vw_prize_active(i)) continue;
+    const x = W.vw_prize_x(i) / 256, y = W.vw_prize_y(i) / 256;
+    const u = UPGRADES[W.vw_prize_type(i)] || UPGRADES[0];
+    cx.save();
+    cx.translate(x, y);
+    cx.rotate(spin);
+    cx.beginPath();
+    cx.moveTo(0, -6); cx.lineTo(6, 0); cx.lineTo(0, 6); cx.lineTo(-6, 0);
+    cx.closePath();
+    cx.fillStyle = u.color + "44";
+    cx.fill();
+    cx.strokeStyle = u.color;
+    cx.lineWidth = 1.4;
+    cx.stroke();
+    cx.restore();
+  }
+}
+
 function drawWeapons() {
   const n = W.vw_weapon_count();
   for (let i = 0; i < n; i++) {
@@ -551,12 +632,22 @@ function drawHud() {
 
   const e = W.vw_ship_energy(ME) / W.vw_ship_max_energy(ME);
   const sp = Math.hypot(W.vw_ship_vx(ME), W.vw_ship_vy(ME)) / 65536 * 100 / TILE;
+  const ups = UPGRADES.map((u, i) => {
+    const n = W.vw_ship_up(ME, i);
+    return `<span style="color:${n ? u.color : "#3a465c"}">${u.short}${n ? "&times;" + n : ""}</span>`;
+  }).join(" ");
+  const note = pickup && pickup.t > 0.02
+    ? `<div style="color:${pickup.color};opacity:${pickup.t.toFixed(2)}">+ ${pickup.name}</div>`
+    : "";
+  if (pickup) pickup.t *= 0.97;
+
   document.getElementById("hud").innerHTML =
     `<div class="row"><span>${CLASSES[W.vw_ship_cls(ME)].name}</span>` +
     `<span>${W.vw_ship_kills(ME)}k / ${W.vw_ship_deaths(ME)}d</span></div>` +
     `<div id="bar"><div id="barfill" style="width:${(e * 100).toFixed(1)}%"></div></div>` +
     `<div class="row" style="margin-top:6px;color:var(--dim)">` +
-    `<span>energy ${Math.round(e * 100)}%</span><span>${sp.toFixed(1)} tiles/s</span></div>`;
+    `<span>energy ${Math.round(e * 100)}%</span><span>${sp.toFixed(1)} tiles/s</span></div>` +
+    `<div style="margin-top:5px;letter-spacing:.06em">${ups}</div>${note}`;
 
   const n = W.vw_ship_count();
   const rows = [];

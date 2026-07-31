@@ -18,6 +18,7 @@
 
 #define SIM_MAX_SHIPS 64
 #define SIM_MAX_WEAPONS 1024
+#define SIM_MAX_PRIZES 64
 #define SIM_MAX_EVENTS 256
 #define SIM_MAX_CLASSES 8
 #define SIM_MAP_TILES 1024
@@ -43,15 +44,29 @@ typedef enum {
     SIM_W_BOMB
 } sim_weapon_type;
 
+/* Prizes, the original's "greens": fly over one and the ship improves until
+ * it dies. Every upgrade is a count, and the effective stat is the initial
+ * value plus that many increments, capped by the class maximum. */
+typedef enum {
+    SIM_UP_ENERGY = 0,
+    SIM_UP_RECHARGE,
+    SIM_UP_SPEED,
+    SIM_UP_THRUST,
+    SIM_UP_ROTATION,
+    SIM_UP_COUNT
+} sim_upgrade;
+
 /* Per-class tuning in core units. sim_class_from_units fills this from
  * settings-file units. */
 typedef struct {
-    int32_t max_speed;  /* Q16 px/tick */
-    int32_t thrust;     /* Q16 px/tick^2 */
-    int32_t rot;        /* heading units per tick */
-    int32_t radius;     /* Q8 px */
-    int32_t max_energy; /* Q10 */
-    int32_t recharge;   /* Q10 energy per tick */
+    /* Each stat has a floor a fresh ship starts at, a ceiling upgrades climb
+     * toward, and the step one prize adds. */
+    int32_t max_speed, init_speed, up_speed;       /* Q16 px/tick */
+    int32_t thrust, init_thrust, up_thrust;        /* Q16 px/tick^2 */
+    int32_t rot, init_rot, up_rot;                 /* heading units per tick */
+    int32_t max_energy, init_energy, up_energy;    /* Q10 */
+    int32_t recharge, init_recharge, up_recharge;  /* Q10 per tick */
+    int32_t radius;                                /* Q8 px */
 
     int32_t bullet_speed;  /* Q16 px/tick */
     int32_t bullet_energy; /* Q10 cost per shot */
@@ -71,8 +86,14 @@ typedef struct {
 typedef struct {
     sim_ship_class classes[SIM_MAX_CLASSES];
     uint8_t class_count;
-    int32_t bounce;        /* wall bounce factor, 16 = no speed loss */
+    int32_t bounce;   /* restitution on the axis that hit, out of 16 */
+    int32_t friction; /* retained speed along the wall, out of 16 */
     uint16_t respawn_delay; /* ticks dead before respawn */
+    uint16_t prize_delay;  /* ticks between prize spawns */
+    uint16_t prize_max;    /* prizes alive on the map at once */
+    uint16_t prize_life;   /* ticks a prize waits to be collected */
+    int32_t prize_radius;  /* Q8 px, pickup distance */
+    int32_t prize_lo, prize_hi; /* tile bounds prizes spawn within */
     const sim_map *map;    /* geometry; not part of rolled-back state */
 } sim_settings;
 
@@ -89,7 +110,15 @@ typedef struct {
     uint16_t respawn_at;    /* ticks remaining while dead */
     int32_t spawn_x, spawn_y;
     uint16_t kills, deaths;
+    uint8_t up[SIM_UP_COUNT];  /* upgrades held; cleared by death */
 } sim_ship;
+
+typedef struct {
+    uint8_t active;
+    uint8_t type;   /* sim_upgrade */
+    int32_t x, y;   /* Q8 px */
+    uint16_t life;  /* ticks remaining */
+} sim_prize;
 
 typedef struct {
     uint8_t type;  /* sim_weapon_type */
@@ -106,7 +135,8 @@ typedef enum {
     SIM_EV_HIT,      /* a: victim, b: attacker, v: damage Q10 */
     SIM_EV_DEATH,    /* a: victim, b: killer (255 = none) */
     SIM_EV_SPAWN,    /* a: ship */
-    SIM_EV_EXPIRE    /* a: weapon type */
+    SIM_EV_EXPIRE,   /* a: weapon type */
+    SIM_EV_PRIZE     /* a: ship, b: sim_upgrade collected */
 } sim_event_type;
 
 typedef struct {
@@ -121,8 +151,10 @@ typedef struct {
     uint32_t rng;
     uint8_t ship_count;
     uint16_t weapon_count;
+    uint16_t prize_timer;
     sim_ship ships[SIM_MAX_SHIPS];
     sim_weapon weapons[SIM_MAX_WEAPONS];
+    sim_prize prizes[SIM_MAX_PRIZES];
 } sim_state;
 
 typedef struct {
@@ -157,9 +189,17 @@ int32_t sim_units_rotation(int32_t r); /* r/400 turns/s -> units/tick */
 int32_t sim_units_energy(int32_t e);   /* energy units -> Q10 */
 int32_t sim_units_recharge(int32_t r); /* r/10 energy per second -> Q10/tick */
 
-/* Fill a class from settings-file units. */
+/* Fill a class from settings-file units. Initial values start at `init_pct`
+ * percent of maximum and eight prizes climb the rest of the way. */
 void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
                           int32_t rotation, int32_t energy, int32_t recharge,
                           int32_t radius_px);
+
+/* Effective stats after upgrades. The client HUD and the AI both ask. */
+int32_t sim_eff_speed(const sim_ship_class *c, const sim_ship *s);
+int32_t sim_eff_thrust(const sim_ship_class *c, const sim_ship *s);
+int32_t sim_eff_rot(const sim_ship_class *c, const sim_ship *s);
+int32_t sim_eff_max_energy(const sim_ship_class *c, const sim_ship *s);
+int32_t sim_eff_recharge(const sim_ship_class *c, const sim_ship *s);
 
 #endif

@@ -33,8 +33,18 @@ const char *const sim_class_names[SIM_MAX_CLASSES] = {
 
 void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->class_count = SIM_MAX_CLASSES;
-    cfg->bounce = 16;
+    /* Walls are inelastic: a hit returns about 60% of the speed that went
+     * into it and scrubs some of the speed along it. Clipping a wall should
+     * hurt, which is what makes tight flying a skill. */
+    cfg->bounce = 10;
+    cfg->friction = 14;
     cfg->respawn_delay = 300; /* 3 s */
+    cfg->prize_delay = 100;   /* a green every second until the map is full */
+    cfg->prize_max = 20;
+    cfg->prize_life = 3000;   /* 30 s */
+    cfg->prize_radius = 16 * 256; /* generous: chasing a green should not be fiddly */
+    cfg->prize_lo = 472;      /* inside the arena walls */
+    cfg->prize_hi = 552;
     cfg->map = map;
 
     for (int i = 0; i < SIM_MAX_CLASSES; i++) {

@@ -71,6 +71,17 @@ int32_t sim_units_recharge(int32_t r) {
     return (int32_t)(((int64_t)r * 1024) / 1000);
 }
 
+/* A fresh ship flies at this fraction of its ceiling; SIM_UP_STEPS prizes
+ * close the gap. Both numbers are deliberately visible here rather than
+ * buried in the baseline, because they set how much a green is worth. */
+#define SIM_INIT_PCT 70
+#define SIM_UP_STEPS 8
+
+static void tier(int32_t max, int32_t *init, int32_t *step) {
+    *init = (int32_t)(((int64_t)max * SIM_INIT_PCT) / 100);
+    *step = (max - *init) / SIM_UP_STEPS;
+}
+
 void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
                           int32_t rotation, int32_t energy, int32_t recharge,
                           int32_t radius_px) {
@@ -81,6 +92,11 @@ void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
     c->max_energy = sim_units_energy(energy);
     c->recharge = sim_units_recharge(recharge);
     c->radius = radius_px * 256;
+    tier(c->max_speed, &c->init_speed, &c->up_speed);
+    tier(c->thrust, &c->init_thrust, &c->up_thrust);
+    tier(c->rot, &c->init_rot, &c->up_rot);
+    tier(c->max_energy, &c->init_energy, &c->up_energy);
+    tier(c->recharge, &c->init_recharge, &c->up_recharge);
 
     /* Weapon defaults in the same units; zones override every one. */
     c->bullet_speed = sim_units_speed(2000);
@@ -96,6 +112,29 @@ void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
     c->bomb_damage = sim_units_energy(500);
     c->bomb_radius = 48 * 256;
     c->bomb_thrust = sim_units_speed(200);
+}
+
+/* ---- upgrades ---- */
+
+static int32_t eff(int32_t init, int32_t step, int32_t cap, uint8_t n) {
+    int64_t v = (int64_t)init + (int64_t)step * n;
+    return v > cap ? cap : (int32_t)v;
+}
+
+int32_t sim_eff_speed(const sim_ship_class *c, const sim_ship *s) {
+    return eff(c->init_speed, c->up_speed, c->max_speed, s->up[SIM_UP_SPEED]);
+}
+int32_t sim_eff_thrust(const sim_ship_class *c, const sim_ship *s) {
+    return eff(c->init_thrust, c->up_thrust, c->thrust, s->up[SIM_UP_THRUST]);
+}
+int32_t sim_eff_rot(const sim_ship_class *c, const sim_ship *s) {
+    return eff(c->init_rot, c->up_rot, c->rot, s->up[SIM_UP_ROTATION]);
+}
+int32_t sim_eff_max_energy(const sim_ship_class *c, const sim_ship *s) {
+    return eff(c->init_energy, c->up_energy, c->max_energy, s->up[SIM_UP_ENERGY]);
+}
+int32_t sim_eff_recharge(const sim_ship_class *c, const sim_ship *s) {
+    return eff(c->init_recharge, c->up_recharge, c->recharge, s->up[SIM_UP_RECHARGE]);
 }
 
 /* ---- state management ---- */
@@ -118,11 +157,18 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
     sh->x = sh->spawn_x = x_px * 256;
     sh->y = sh->spawn_y = y_px * 256;
     sh->heading = heading;
-    sh->energy = cfg->classes[sh->cls].max_energy;
+    sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
     return i;
 }
 
 /* ---- collision ---- */
+
+/* Below this speed a reflected component is treated as rest contact rather
+ * than a bounce, so a ship leaning on a wall settles instead of buzzing. */
+#define SIM_REST_EPS 4096          /* Q16: 1/16 px per tick */
+/* And below this, the hit is a scrape rather than an impact: no event, so a
+ * ship grinding along a wall does not fire a sound effect every tick. */
+#define SIM_IMPACT_MIN 32768       /* Q16: 1/2 px per tick */
 
 static int solid(const sim_map *m, int32_t tx, int32_t ty) {
     if (tx < 0 || ty < 0 || tx >= SIM_MAP_TILES || ty >= SIM_MAP_TILES) return 1;
@@ -173,8 +219,72 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         v->deaths++;
         v->respawn_at = cfg->respawn_delay;
         v->vx = v->vy = 0;
+        memset(v->up, 0, sizeof v->up);  /* dying costs you everything */
         if (attacker != 255 && attacker != victim) s->ships[attacker].kills++;
         emit(ev, SIM_EV_DEATH, victim, attacker, 0);
+    }
+}
+
+/* ---- prizes ---- */
+
+/* Spawn one prize at a random open tile inside the configured bounds. Every
+ * draw comes from the state's own PRNG, so prize placement is part of the
+ * deterministic stream and a client can predict it exactly. */
+static void spawn_prize(sim_state *s, const sim_settings *cfg) {
+    if (cfg->prize_hi <= cfg->prize_lo) return;
+    int slot = -1;
+    for (int i = 0; i < SIM_MAX_PRIZES; i++)
+        if (!s->prizes[i].active) { slot = i; break; }
+    if (slot < 0) return;
+
+    int32_t span = cfg->prize_hi - cfg->prize_lo;
+    for (int attempt = 0; attempt < 24; attempt++) {
+        s->rng = xorshift32(s->rng);
+        int32_t tx = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
+        s->rng = xorshift32(s->rng);
+        int32_t ty = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
+        if (solid(cfg->map, tx, ty)) continue;
+        s->rng = xorshift32(s->rng);
+        sim_prize *p = &s->prizes[slot];
+        p->active = 1;
+        p->type = (uint8_t)(s->rng % SIM_UP_COUNT);
+        p->x = (tx * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
+        p->y = (ty * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
+        p->life = cfg->prize_life;
+        return;
+    }
+}
+
+static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev) {
+    uint16_t live = 0;
+    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+        sim_prize *p = &s->prizes[i];
+        if (!p->active) continue;
+        if (p->life > 0 && --p->life == 0) { p->active = 0; continue; }
+        live++;
+
+        for (int k = 0; k < s->ship_count; k++) {
+            sim_ship *sh = &s->ships[k];
+            if (!sh->active || !sh->alive) continue;
+            int64_t dx = (int64_t)sh->x - p->x, dy = (int64_t)sh->y - p->y;
+            int64_t r = cfg->prize_radius + cfg->classes[sh->cls].radius;
+            if (dx * dx + dy * dy > r * r) continue;
+            if (sh->up[p->type] < 255) sh->up[p->type]++;
+            /* Collecting energy or recharge should feel immediate rather than
+             * arriving over the next few seconds. */
+            if (p->type == SIM_UP_ENERGY || p->type == SIM_UP_RECHARGE)
+                sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
+            emit(ev, SIM_EV_PRIZE, (uint8_t)k, p->type, 0);
+            p->active = 0;
+            live--;
+            break;
+        }
+    }
+
+    if (cfg->prize_delay == 0 || live >= cfg->prize_max) return;
+    if (++s->prize_timer >= cfg->prize_delay) {
+        s->prize_timer = 0;
+        spawn_prize(s, cfg);
     }
 }
 
@@ -206,7 +316,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 sh->x = sh->spawn_x;
                 sh->y = sh->spawn_y;
                 sh->vx = sh->vy = 0;
-                sh->energy = cls->max_energy;
+                sh->energy = sim_eff_max_energy(cls, sh);
                 sh->fire_cooldown = 0;
                 emit(ev, SIM_EV_SPAWN, (uint8_t)i, 0, 0);
             }
@@ -216,9 +326,13 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         uint16_t b = buttons[i];
         if (sh->fire_cooldown > 0) sh->fire_cooldown--;
 
+        const int32_t e_rot = sim_eff_rot(cls, sh);
+        const int32_t e_thrust = sim_eff_thrust(cls, sh);
+        const int32_t e_speed = sim_eff_speed(cls, sh);
+
         /* 1. Rotate. */
-        if (b & SIM_BTN_LEFT) sh->heading = (uint16_t)(sh->heading - cls->rot);
-        if (b & SIM_BTN_RIGHT) sh->heading = (uint16_t)(sh->heading + cls->rot);
+        if (b & SIM_BTN_LEFT) sh->heading = (uint16_t)(sh->heading - e_rot);
+        if (b & SIM_BTN_RIGHT) sh->heading = (uint16_t)(sh->heading + e_rot);
 
         int32_t dx, dy;
         heading_dir(sh->heading, &dx, &dy);
@@ -226,8 +340,8 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         /* 2. Thrust along the nose. */
         if (b & (SIM_BTN_THRUST | SIM_BTN_REVERSE)) {
             int32_t sign = (b & SIM_BTN_THRUST) ? 1 : -1;
-            sh->vx += (int32_t)(((int64_t)cls->thrust * dx * sign) >> 15);
-            sh->vy += (int32_t)(((int64_t)cls->thrust * dy * sign) >> 15);
+            sh->vx += (int32_t)(((int64_t)e_thrust * dx * sign) >> 15);
+            sh->vy += (int32_t)(((int64_t)e_thrust * dy * sign) >> 15);
         }
 
         /* 3. Fire. Guns take precedence over bombs when both are held, and
@@ -259,7 +373,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         /* 4. Clamp to top speed. No drag term anywhere. */
         {
             int64_t mag2 = (int64_t)sh->vx * sh->vx + (int64_t)sh->vy * sh->vy;
-            int64_t max = cls->max_speed;
+            int64_t max = e_speed;
             if (mag2 > max * max) {
                 int64_t mag = isqrt64(mag2);
                 sh->vx = (int32_t)((int64_t)sh->vx * max / mag);
@@ -281,8 +395,14 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     nx = (((sh->x - r) >> 12) << 12) + r;
                 else
                     nx = sh->x;
+                /* Reverse and damp the component that hit, and scrub some
+                 * speed along the wall too: hitting a wall should cost you. */
+                int32_t impact = sh->vx < 0 ? -sh->vx : sh->vx;
                 sh->vx = (int32_t)(-(int64_t)sh->vx * cfg->bounce / 16);
-                emit(ev, SIM_EV_BOUNCE, (uint8_t)i, 0, 0);
+                sh->vy = (int32_t)((int64_t)sh->vy * cfg->friction / 16);
+                if (sh->vx < SIM_REST_EPS && sh->vx > -SIM_REST_EPS) sh->vx = 0;
+                if (impact >= SIM_IMPACT_MIN)
+                    emit(ev, SIM_EV_BOUNCE, (uint8_t)i, 0, impact);
             }
             sh->x = nx;
 
@@ -294,16 +414,25 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     ny = (((sh->y - r) >> 12) << 12) + r;
                 else
                     ny = sh->y;
+                int32_t impact = sh->vy < 0 ? -sh->vy : sh->vy;
                 sh->vy = (int32_t)(-(int64_t)sh->vy * cfg->bounce / 16);
-                emit(ev, SIM_EV_BOUNCE, (uint8_t)i, 0, 0);
+                sh->vx = (int32_t)((int64_t)sh->vx * cfg->friction / 16);
+                if (sh->vy < SIM_REST_EPS && sh->vy > -SIM_REST_EPS) sh->vy = 0;
+                if (impact >= SIM_IMPACT_MIN)
+                    emit(ev, SIM_EV_BOUNCE, (uint8_t)i, 0, impact);
             }
             sh->y = ny;
         }
 
         /* 6. Recharge, after firing, so a shot costs a full tick of energy. */
-        sh->energy += cls->recharge;
-        if (sh->energy > cls->max_energy) sh->energy = cls->max_energy;
+        sh->energy += sim_eff_recharge(cls, sh);
+        {
+            int32_t cap = sim_eff_max_energy(cls, sh);
+            if (sh->energy > cap) sh->energy = cap;
+        }
     }
+
+    update_prizes(next, cfg, ev);
 
     /* --- weapons --- */
     for (uint16_t wi = 0; wi < next->weapon_count;) {
@@ -403,6 +532,16 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, (uint32_t)sh->energy);
         h = hash_u32(h, (uint32_t)(sh->fire_cooldown | (sh->respawn_at << 16)));
         h = hash_u32(h, (uint32_t)(sh->kills | (sh->deaths << 16)));
+        for (int u = 0; u < SIM_UP_COUNT; u++) h = hash_u32(h, sh->up[u]);
+    }
+    h = hash_u32(h, s->prize_timer);
+    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+        const sim_prize *p = &s->prizes[i];
+        if (!p->active) continue;
+        h = hash_u32(h, (uint32_t)(i | (p->type << 8) | (p->active << 16)));
+        h = hash_u32(h, (uint32_t)p->x);
+        h = hash_u32(h, (uint32_t)p->y);
+        h = hash_u32(h, p->life);
     }
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *w = &s->weapons[i];

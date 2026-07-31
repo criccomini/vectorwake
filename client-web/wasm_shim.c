@@ -104,7 +104,7 @@ EXPORT int vw_ship_cls(int i) { return g_cur->ships[i].cls; }
 EXPORT int vw_ship_kills(int i) { return g_cur->ships[i].kills; }
 EXPORT int vw_ship_deaths(int i) { return g_cur->ships[i].deaths; }
 EXPORT int vw_ship_max_energy(int i) {
-    return g_cfg.classes[g_cur->ships[i].cls].max_energy;
+    return sim_eff_max_energy(&g_cfg.classes[g_cur->ships[i].cls], &g_cur->ships[i]);
 }
 EXPORT int vw_ship_radius(int i) {
     return g_cfg.classes[g_cur->ships[i].cls].radius;
@@ -120,6 +120,17 @@ EXPORT int vw_weapon_vx(int i) { return g_cur->weapons[i].vx; }
 EXPORT int vw_weapon_vy(int i) { return g_cur->weapons[i].vy; }
 EXPORT int vw_weapon_type(int i) { return g_cur->weapons[i].type; }
 EXPORT int vw_weapon_team(int i) { return g_cur->weapons[i].team; }
+
+EXPORT int vw_prize_count(void) { return SIM_MAX_PRIZES; }
+EXPORT int vw_prize_active(int i) { return g_cur->prizes[i].active; }
+EXPORT int vw_prize_x(int i) { return g_cur->prizes[i].x; }
+EXPORT int vw_prize_y(int i) { return g_cur->prizes[i].y; }
+EXPORT int vw_prize_type(int i) { return g_cur->prizes[i].type; }
+EXPORT int vw_ship_up(int i, int u) { return g_cur->ships[i].up[u]; }
+EXPORT int vw_ship_speed_pct(int i) {
+    const sim_ship_class *c = &g_cfg.classes[g_cur->ships[i].cls];
+    return (int)((int64_t)sim_eff_speed(c, &g_cur->ships[i]) * 100 / c->max_speed);
+}
 
 EXPORT int vw_solid(int tx, int ty) {
     if (tx < 0 || ty < 0 || tx >= SIM_MAP_TILES || ty >= SIM_MAP_TILES) return 1;

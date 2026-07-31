@@ -1,0 +1,15 @@
+[package]
+name = "vectorwake-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+
+[build-dependencies]
+cc = "1"
+
+[profile.release]
+opt-level = 2
