@@ -77,14 +77,36 @@ run the same code and differ in how well they execute:
 A single skill dial from 0 to 1 drives all of them, with per-archetype jitter, so
 a 0.7 Duelist and a 0.7 Ambusher are about equally hard and feel nothing alike.
 
-## Personas
+## The roster: bots as long-lived individuals
 
-Bots have stable names drawn from our naming family, and they keep them. A player
-who keeps getting killed by the same Ambusher should learn its name and start
-watching for it. This costs nothing and it is most of the difference between an
-arena that feels populated and an arena that feels like a screensaver.
+Bots are not spawned from templates on demand. A zone carries a persistent
+roster of individuals, each with a name from our naming family, an archetype, a
+skill level, its own rating, a presence schedule, and a career. "Bot A" is
+somebody: it logs on around the same hours, flies the way it flew last week, and
+carries its record with it.
 
-Names are visibly marked as AI, so recognition never becomes deception.
+**One individual, one place.** An individual never appears in two arenas at
+once, and never twice in one arena. This is the rule that makes it an
+individual: its rating is the record of one career, not an average over clones.
+
+**Presence.** Each individual keeps loose hours, a few sessions a week, biased
+toward the zone's own peak times with some spread into the off hours. Arenas at
+different times of day have different regulars, and a player who keeps getting
+killed by the same Ambusher on Tuesday nights should learn its name and start
+watching for it. That recognition is most of the difference between an arena
+that feels populated and one that feels like a screensaver.
+
+**Careers.** Individuals enter the roster at low skill, improve slowly, plateau
+where their parameters settle, and eventually retire and are replaced by new
+names. Career movement happens between sessions, never inside one, which keeps
+the no-rubber-banding rule intact. Careers give every rating band inhabitants,
+so new players land among peers instead of at the empty bottom of a ladder, and
+they keep the roster from calcifying into a cast everyone has memorized.
+
+**Texture is not disguise.** Names are visibly marked as AI everywhere, the
+schedule exists for rhythm and ladder health rather than mimicry, and bots do
+not perform humanity: no fake excuses, no fake typing, no pretending to have a
+life the label contradicts. Recognition never becomes deception.
 
 ## The population director
 
@@ -98,6 +120,12 @@ director fills the gap with bots.
 first-time player is not fed to experts and a strong player is not handed
 practice dummies. For a lone newcomer, the target is bots slightly below their
 provisional rating, because early losses are how new players leave.
+
+**Draw from the roster.** The director picks from the individuals currently "on
+schedule," which is what makes the room's cast feel like the room's cast. When
+the online pool cannot cover the fill target or the rating band, it calls in
+off-schedule individuals anyway. Fill beats fiction; the schedule is texture,
+the target is the job.
 
 **Yield to humans.** When a human joins, a bot is marked for removal and leaves
 under the graceful rules above. Bots never outnumber humans on the opposing team
@@ -117,9 +145,11 @@ zero in a zone with real population is a per-zone setting.
 ## Rating
 
 Bots carry ratings, which is what makes the arena useful for ranking humans. See
-[rating.md](rating.md). Two properties matter here: a bot's rating belongs to its
-personality rather than to an instance, and one reference personality is pinned
-to a fixed rating so the bot population cannot drift as a closed system.
+[rating.md](rating.md). Three properties matter here: a bot's rating belongs to
+the individual and follows its career, a new individual's rating is seeded from
+its archetype's calibrated prior so it starts sane, and one reference
+personality is pinned to a fixed rating, with no career and no schedule, so the
+bot population cannot drift as a closed system.
 
 ## Duels
 

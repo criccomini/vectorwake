@@ -82,14 +82,23 @@ which bounds the damage from a bug in the attribution ledger.
 Bots are rated the same way and by the same math, which is what lets a player be
 ranked in an arena with no humans in it.
 
-**Ratings belong to personalities, not instances.** Every copy of "Ambusher,
-skill 0.6, Cipher" shares one rating, so it converges from thousands of samples
-instead of dozens.
+**Ratings belong to individuals.** Bots are long-lived roster individuals, per
+[ai-players.md](ai-players.md), and each owns its rating the way a player does.
+Convergence is hierarchical: a new individual's rating is seeded from the
+calibrated prior of its archetype-and-skill template, then refined by its own
+games. Since an individual exists in one place at a time, its rating is the
+record of one career rather than an average over clones.
+
+**Careers move slowly.** When an individual's parameters improve between
+sessions, its rating lags its true strength until play reconverges it, and
+during the lag humans lose slightly more to it than its rating promises.
+Improvement rates are therefore capped well below the convergence rate, so the
+lag stays inside noise.
 
 **One personality is pinned.** A reference bot has a fixed rating, by definition,
-and is never updated. Everything else, human and AI, floats relative to it. Bots
-would otherwise form a closed economy whose absolute scale drifts, which would
-quietly make everyone's rating meaningless.
+and is never updated. It has no career and no schedule. Everything else, human
+and AI, floats relative to it. Bots would otherwise form a closed economy whose
+absolute scale drifts, which would quietly make everyone's rating meaningless.
 
 **Bots update slowly.** Their K is small. A human should move against a bot far
 more than the bot moves against the human.

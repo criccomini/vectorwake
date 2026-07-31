@@ -102,7 +102,9 @@ come from AI is capped once you are above the bot ladder.
 
 Bot opponents in duels are chosen for their archetype as well as their rating, so
 a session of duels is a tour of playstyles rather than five matches against the
-same aggressive Apex.
+same aggressive Apex. Rated duels draw from the individuals currently on
+schedule, so your recurring rival is sometimes around and sometimes not, which
+is what makes it a rival. Practice duels may summon anyone.
 
 ## After the match
 

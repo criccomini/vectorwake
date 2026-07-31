@@ -127,9 +127,10 @@ the property that makes the whole architecture work.
 
 ## Zone-authored bots
 
-A zone declares its roster in configuration: archetype, skill, ship, persona
-name, and how many of each the director may spawn. That covers most needs
-without code.
+A zone declares its roster shape in configuration: the archetype mix, the skill
+distribution, and the roster size. The server generates the individuals from
+that shape and persists them, with their ratings, careers, and schedules, in the
+zone database alongside scores. That covers most needs without code.
 
 A zone that wants its own behavior ships a module implementing `Controller`,
 sandboxed under the same rules and fuel limits as any other zone module, per
