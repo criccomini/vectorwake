@@ -85,8 +85,7 @@
     <div id="ships"></div>
     <button id="go">launch</button>
     <div style="margin-top:14px;color:#6c7a90">
-      <label><input type="checkbox" id="fs" checked> fullscreen
-      <span style="opacity:.7">(lets Ctrl and Tab reach the game instead of the browser)</span></label>
+      <label><input type="checkbox" id="fs"> fullscreen</label>
     </div>
   </div>
 </div>
@@ -145,21 +144,14 @@ function b64bytes(b64) {
 
 function writeHelp() {
   document.getElementById("help").innerHTML =
-    `<kbd>A</kbd><kbd>D</kbd> turn &nbsp; <kbd>W</kbd> thrust &nbsp;` +
-    `<kbd>S</kbd> reverse &nbsp; <kbd>Ctrl</kbd> guns &nbsp; <kbd>Tab</kbd> bomb` +
-    `<span style="opacity:.55"> &nbsp; arrows also fly; ` +
-    `<kbd>Shift</kbd>/click and <kbd>Space</kbd>/right-click also fire</span>`;
+    `<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly &nbsp;` +
+    `<kbd>click</kbd> or <kbd>Space</kbd> guns &nbsp;` +
+    `<kbd>right-click</kbd> or <kbd>Q</kbd> bombs` +
+    `<span style="opacity:.55"> &nbsp; arrows fly too</span>`;
 }
 
-// Fullscreen plus Keyboard Lock is what makes Ctrl and Tab behave: locking
-// routes host shortcuts such as Ctrl+Tab to the page instead of the browser.
-// Both are best-effort, so the alternate bindings above always remain.
 async function goFullscreen() {
-  try {
-    await document.documentElement.requestFullscreen();
-    if (navigator.keyboard && navigator.keyboard.lock)
-      await navigator.keyboard.lock(["Tab", "Escape", "ControlLeft", "ControlRight"]);
-  } catch (e) { /* denied or unsupported: the game plays fine windowed */ }
+  try { await document.documentElement.requestFullscreen(); } catch (e) { /* fine windowed */ }
 }
 
 async function boot() {
@@ -286,68 +278,58 @@ function botThink(b) {
 
 // --- input -----------------------------------------------------------------
 
-const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+// Bindings are data so a settings screen can rewrite them later. Modern
+// defaults: the left hand flies, the right hand shoots, and nothing is bound
+// to a key the operating system or the browser has already claimed.
+const BINDINGS = {
+  left:    { keys: ["KeyA", "ArrowLeft"] },
+  right:   { keys: ["KeyD", "ArrowRight"] },
+  thrust:  { keys: ["KeyW", "ArrowUp"] },
+  reverse: { keys: ["KeyS", "ArrowDown"] },
+  guns:    { keys: ["Space"], mouse: [0] },
+  bombs:   { keys: ["KeyQ", "KeyE"], mouse: [2] },
+};
+const ACTION_BIT = {
+  left: BTN.LEFT, right: BTN.RIGHT, thrust: BTN.THRUST,
+  reverse: BTN.REVERSE, guns: BTN.FIRE, bombs: BTN.BOMB,
+};
 
 const keys = new Set();
-const pressedAt = new Map();   // code -> last keydown time, for the fix below
-const HELD = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space","Tab",
-              "KeyW","KeyA","KeyS","KeyD","ShiftLeft","ShiftRight"];
+const mouse = new Set();
 
-addEventListener("keydown", e => {
-  keys.add(e.code);
-  pressedAt.set(e.code, performance.now());
-  if (HELD.includes(e.code)) e.preventDefault();
-});
-
-addEventListener("keyup", e => {
-  keys.delete(e.code);
-  pressedAt.delete(e.code);
-
-  // macOS does not deliver keyup for most keys while Command is held, so a
-  // key released during a burst of fire would stay stuck down. When Command
-  // comes up, drop anything we have not seen repeat recently.
-  if (e.code === "MetaLeft" || e.code === "MetaRight") {
-    const now = performance.now();
-    for (const code of [...keys]) {
-      if (code.startsWith("Meta") || code.startsWith("Control") ||
-          code.startsWith("Shift") || code.startsWith("Alt")) continue;
-      if (now - (pressedAt.get(code) || 0) > 140) {
-        keys.delete(code);
-        pressedAt.delete(code);
-      }
-    }
-  }
-});
-
-addEventListener("blur", () => { keys.clear(); pressedAt.clear(); });
-
-function myButtons() {
-  let b = 0;
-  if (keys.has("ArrowLeft")  || keys.has("KeyA")) b |= BTN.LEFT;
-  if (keys.has("ArrowRight") || keys.has("KeyD")) b |= BTN.RIGHT;
-  if (keys.has("ArrowUp")    || keys.has("KeyW")) b |= BTN.THRUST;
-  if (keys.has("ArrowDown")  || keys.has("KeyS")) b |= BTN.REVERSE;
-  // Guns on Control and bombs on Tab, the pairing this genre has used since
-  // 1997. Two host shortcuts sit on top of them, which is what the fullscreen
-  // button below is for: Control plus arrow switches macOS Spaces, and
-  // Control plus Tab switches browser tabs. Shift, Command, and the mouse
-  // buttons stay bound as escape hatches.
-  if (keys.has("ControlLeft") || keys.has("ControlRight") ||
-      keys.has("ShiftLeft") || keys.has("ShiftRight") ||
-      keys.has("MetaLeft") || keys.has("MetaRight") ||
-      mouse.has(0)) b |= BTN.FIRE;
-  if (keys.has("Tab") || keys.has("Space") || mouse.has(2)) b |= BTN.BOMB;
-  return b;
+// Every bound key, plus Tab, is swallowed so the page never scrolls and focus
+// never leaves the canvas.
+function isBound(code) {
+  for (const b of Object.values(BINDINGS)) if (b.keys.includes(code)) return true;
+  return code === "Tab";
 }
 
-// Aiming is the nose, so the pointer is free for the trigger.
-const mouse = new Set();
+addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;  // let host shortcuts through
+  keys.add(e.code);
+  if (isBound(e.code)) e.preventDefault();
+});
+addEventListener("keyup", e => keys.delete(e.code));
+addEventListener("blur", () => { keys.clear(); mouse.clear(); });
+
+// Aiming is the nose (decision 17), which leaves both mouse buttons free.
 addEventListener("mousedown", e => {
-  if (running) { mouse.add(e.button); e.preventDefault(); }
+  if (!running) return;
+  mouse.add(e.button);
+  e.preventDefault();
 });
 addEventListener("mouseup", e => mouse.delete(e.button));
 addEventListener("contextmenu", e => { if (running) e.preventDefault(); });
-addEventListener("blur", () => mouse.clear());
+
+function myButtons() {
+  let b = 0;
+  for (const [action, bind] of Object.entries(BINDINGS)) {
+    const down = bind.keys.some(k => keys.has(k)) ||
+                 (bind.mouse || []).some(m => mouse.has(m));
+    if (down) b |= ACTION_BIT[action];
+  }
+  return b;
+}
 
 // --- loop ------------------------------------------------------------------
 //
