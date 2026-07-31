@@ -144,10 +144,10 @@ function b64bytes(b64) {
 
 function writeHelp() {
   document.getElementById("help").innerHTML =
-    `<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly &nbsp;` +
-    `<kbd>click</kbd> or <kbd>Space</kbd> guns &nbsp;` +
-    `<kbd>right-click</kbd> or <kbd>Q</kbd> bombs` +
-    `<span style="opacity:.55"> &nbsp; arrows fly too</span>`;
+    `<kbd>&larr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd> fly &nbsp;` +
+    `<kbd>Space</kbd> guns &nbsp; <kbd>Shift</kbd> bombs` +
+    `<span style="opacity:.55"> &nbsp; or <kbd>Z</kbd>/<kbd>X</kbd>, ` +
+    `or mouse buttons; <kbd>WASD</kbd> also flies</span>`;
 }
 
 async function goFullscreen() {
@@ -281,13 +281,18 @@ function botThink(b) {
 // Bindings are data so a settings screen can rewrite them later. Modern
 // defaults: the left hand flies, the right hand shoots, and nothing is bound
 // to a key the operating system or the browser has already claimed.
+// Right hand steers on the arrows, left hand works the triggers, which is
+// the hand position this genre has always used. The trigger keys are the
+// ones the original put under the left hand, moved off Ctrl and Tab because
+// macOS and the browser own those: guns under the thumb, bombs under the
+// pinky, with Z and X for anyone who would rather use fingers.
 const BINDINGS = {
-  left:    { keys: ["KeyA", "ArrowLeft"] },
-  right:   { keys: ["KeyD", "ArrowRight"] },
-  thrust:  { keys: ["KeyW", "ArrowUp"] },
-  reverse: { keys: ["KeyS", "ArrowDown"] },
-  guns:    { keys: ["Space"], mouse: [0] },
-  bombs:   { keys: ["KeyQ", "KeyE"], mouse: [2] },
+  left:    { keys: ["ArrowLeft", "KeyA"] },
+  right:   { keys: ["ArrowRight", "KeyD"] },
+  thrust:  { keys: ["ArrowUp", "KeyW"] },
+  reverse: { keys: ["ArrowDown", "KeyS"] },
+  guns:    { keys: ["Space", "KeyZ"], mouse: [0] },
+  bombs:   { keys: ["ShiftLeft", "ShiftRight", "KeyX"], mouse: [2] },
 };
 const ACTION_BIT = {
   left: BTN.LEFT, right: BTN.RIGHT, thrust: BTN.THRUST,
