@@ -73,10 +73,7 @@
   <div class="panel" id="radarbox"><canvas id="radar" width="336" height="336"></canvas></div>
   <div class="panel" id="feed"></div>
   <div class="panel" id="hud"></div>
-  <div id="help" class="panel">
-    <kbd>&larr;</kbd><kbd>&rarr;</kbd> turn &nbsp; <kbd>&uarr;</kbd> thrust &nbsp;
-    <kbd>&darr;</kbd> reverse &nbsp; <kbd>Ctrl</kbd> guns &nbsp; <kbd>Space</kbd> bomb
-  </div>
+  <div id="help" class="panel"></div>
   <div id="dead">DESTROYED</div>
 </div>
 
@@ -87,6 +84,10 @@
        Pick a hull and fight eight AI pilots.</p>
     <div id="ships"></div>
     <button id="go">launch</button>
+    <div style="margin-top:14px;color:#6c7a90">
+      <label><input type="checkbox" id="fs" checked> fullscreen
+      <span style="opacity:.7">(lets Ctrl and Tab reach the game instead of the browser)</span></label>
+    </div>
   </div>
 </div>
 
@@ -131,6 +132,7 @@ let feed = [];
 let hurt = 0;          // decays each frame; drives the damage flash
 let running = false;
 let selected = 0;
+let wantFullscreen = true;
 
 // --- boot ------------------------------------------------------------------
 
@@ -141,11 +143,31 @@ function b64bytes(b64) {
   return out;
 }
 
+function writeHelp() {
+  document.getElementById("help").innerHTML =
+    `<kbd>A</kbd><kbd>D</kbd> turn &nbsp; <kbd>W</kbd> thrust &nbsp;` +
+    `<kbd>S</kbd> reverse &nbsp; <kbd>Ctrl</kbd> guns &nbsp; <kbd>Tab</kbd> bomb` +
+    `<span style="opacity:.55"> &nbsp; arrows also fly; ` +
+    `<kbd>Shift</kbd>/click and <kbd>Space</kbd>/right-click also fire</span>`;
+}
+
+// Fullscreen plus Keyboard Lock is what makes Ctrl and Tab behave: locking
+// routes host shortcuts such as Ctrl+Tab to the page instead of the browser.
+// Both are best-effort, so the alternate bindings above always remain.
+async function goFullscreen() {
+  try {
+    await document.documentElement.requestFullscreen();
+    if (navigator.keyboard && navigator.keyboard.lock)
+      await navigator.keyboard.lock(["Tab", "Escape", "ControlLeft", "ControlRight"]);
+  } catch (e) { /* denied or unsupported: the game plays fine windowed */ }
+}
+
 async function boot() {
   const { instance } = await WebAssembly.instantiate(b64bytes(WASM_B64), {});
   W = instance.exports;
   mem8 = new Uint8Array(W.memory.buffer);
   buildShipPicker();
+  writeHelp();
 }
 
 function buildShipPicker() {
@@ -188,6 +210,7 @@ function startGame() {
   });
 
   document.getElementById("start").style.display = "none";
+  if (wantFullscreen) goFullscreen();
   running = true;
   requestAnimationFrame(frame);
 }
@@ -263,14 +286,40 @@ function botThink(b) {
 
 // --- input -----------------------------------------------------------------
 
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
 const keys = new Set();
+const pressedAt = new Map();   // code -> last keydown time, for the fix below
+const HELD = ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space","Tab",
+              "KeyW","KeyA","KeyS","KeyD","ShiftLeft","ShiftRight"];
+
 addEventListener("keydown", e => {
   keys.add(e.code);
-  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code))
-    e.preventDefault();
+  pressedAt.set(e.code, performance.now());
+  if (HELD.includes(e.code)) e.preventDefault();
 });
-addEventListener("keyup", e => keys.delete(e.code));
-addEventListener("blur", () => keys.clear());
+
+addEventListener("keyup", e => {
+  keys.delete(e.code);
+  pressedAt.delete(e.code);
+
+  // macOS does not deliver keyup for most keys while Command is held, so a
+  // key released during a burst of fire would stay stuck down. When Command
+  // comes up, drop anything we have not seen repeat recently.
+  if (e.code === "MetaLeft" || e.code === "MetaRight") {
+    const now = performance.now();
+    for (const code of [...keys]) {
+      if (code.startsWith("Meta") || code.startsWith("Control") ||
+          code.startsWith("Shift") || code.startsWith("Alt")) continue;
+      if (now - (pressedAt.get(code) || 0) > 140) {
+        keys.delete(code);
+        pressedAt.delete(code);
+      }
+    }
+  }
+});
+
+addEventListener("blur", () => { keys.clear(); pressedAt.clear(); });
 
 function myButtons() {
   let b = 0;
@@ -278,10 +327,27 @@ function myButtons() {
   if (keys.has("ArrowRight") || keys.has("KeyD")) b |= BTN.RIGHT;
   if (keys.has("ArrowUp")    || keys.has("KeyW")) b |= BTN.THRUST;
   if (keys.has("ArrowDown")  || keys.has("KeyS")) b |= BTN.REVERSE;
-  if (keys.has("ControlLeft") || keys.has("ControlRight")) b |= BTN.FIRE;
-  if (keys.has("Space")) b |= BTN.BOMB;
+  // Guns on Control and bombs on Tab, the pairing this genre has used since
+  // 1997. Two host shortcuts sit on top of them, which is what the fullscreen
+  // button below is for: Control plus arrow switches macOS Spaces, and
+  // Control plus Tab switches browser tabs. Shift, Command, and the mouse
+  // buttons stay bound as escape hatches.
+  if (keys.has("ControlLeft") || keys.has("ControlRight") ||
+      keys.has("ShiftLeft") || keys.has("ShiftRight") ||
+      keys.has("MetaLeft") || keys.has("MetaRight") ||
+      mouse.has(0)) b |= BTN.FIRE;
+  if (keys.has("Tab") || keys.has("Space") || mouse.has(2)) b |= BTN.BOMB;
   return b;
 }
+
+// Aiming is the nose, so the pointer is free for the trigger.
+const mouse = new Set();
+addEventListener("mousedown", e => {
+  if (running) { mouse.add(e.button); e.preventDefault(); }
+});
+addEventListener("mouseup", e => mouse.delete(e.button));
+addEventListener("contextmenu", e => { if (running) e.preventDefault(); });
+addEventListener("blur", () => mouse.clear());
 
 // --- loop ------------------------------------------------------------------
 //
@@ -555,7 +621,10 @@ function drawRadar(camx, camy) {
   }
 }
 
-document.getElementById("go").onclick = startGame;
+document.getElementById("go").onclick = () => {
+  wantFullscreen = document.getElementById("fs").checked;
+  startGame();
+};
 addEventListener("keydown", e => {
   if (!running && e.code === "Enter") startGame();
 });
