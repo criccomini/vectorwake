@@ -60,20 +60,49 @@ in `sim/`.
 | `main/` | Bootstrap collection and input bindings |
 | `websocket/` | Vendored `defold-websocket`, at this path deliberately |
 
-## Playing against a server
+## Playing with other people
 
-With no `server` set the client runs the whole game locally against bots, so
-a build with nothing behind it is still playable. Point it at a zone and the
-server owns the arena instead:
+The start screen's third button is JOIN. Type a name, type a zone address,
+and the server owns the arena instead of this client. Nothing has to be
+rebuilt to point at a different zone, which matters because the published
+page is a single file that anybody can open and there is no zone baked into
+it.
+
+Run one:
 
 ```sh
-./server/target/release/vectorwake-server 127.0.0.1:9040 zone
+./server/target/release/vectorwake-server 0.0.0.0:9040 zone
+```
+
+Then every player opens the client and puts `ws://<that host>:9040` in the
+ZONE field. They appear in each other's rosters, kill feeds, and radar,
+because online every name comes from the server's roster rather than from
+the local one.
+
+`LAUNCH` and `DUEL` stay offline against bots, so a page with no zone behind
+it is still a game.
+
+A build can also be pointed at a zone up front, which skips the start screen:
+
+```sh
 ./client/build/x86_64-linux/dmengine \
   --config=vectorwake.server=ws://127.0.0.1:9040 \
+  --config=vectorwake.name=alice \
   client/build/default/game.projectc
 ```
 
 `--config` overrides work for any key, which beats rebuilding to change one.
+
+A zone that cannot be reached hands the start screen back with the reason on
+it, and gives up after ten seconds if the socket opens but nothing arrives.
+On the web a connection to a dead port can hang without ever raising an
+error, so the timeout is the only thing that catches it.
+
+One deployment rule, and it is a browser rule rather than ours: a page served
+over `https` may only open `wss`. `ws://127.0.0.1` is the exception, because
+browsers treat loopback as trustworthy, which is why the default address
+works from a hosted page and `ws://<some other host>` will not. A zone that
+strangers are meant to reach needs TLS in front of it.
 
 Online, `net.lua` sends buttons, predicts this ship forward from the last
 snapshot, and accepts every correction. It decides no hit, no death, no

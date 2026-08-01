@@ -18,6 +18,7 @@ M.me = 0
 M.banner = ""
 M.zone = ""
 M.denied = nil
+M.lost = nil
 M.pilots = {}
 M.ratings = {}
 M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
@@ -117,20 +118,47 @@ local function on_message(s)
     end
 end
 
-function M.connect(url, class, name)
+-- A connection that never lands, or one that drops, has to be reportable:
+-- the player is looking at a start screen they just left, and "nothing
+-- happened" is the one thing the client must never say. `on_lost` is called
+-- once, with a reason fit to print.
+function M.connect(url, class, name, on_lost)
     M.denied = nil
-    conn = websocket.connect(url, {}, function(self, cid, data)
-        if data.event == websocket.EVENT_CONNECTED then
-            local msg = string.char(C2S_JOIN, class) .. name
-            websocket.send(conn, msg, {type = websocket.DATA_TYPE_BINARY})
-        elseif data.event == websocket.EVENT_MESSAGE then
-            on_message(data.message)
-        elseif data.event == websocket.EVENT_DISCONNECTED
-            or data.event == websocket.EVENT_ERROR then
-            M.connected = false
-            conn = nil
-        end
+    M.pilots = {}
+    M.ratings = {}
+    M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
+    M.lost = nil
+
+    local function lost(why)
+        if M.lost then return end
+        M.lost = why
+        M.connected = false
+        conn = nil
+        if on_lost then on_lost(why) end
+    end
+
+    local ok, err = pcall(function()
+        conn = websocket.connect(url, {}, function(self, cid, data)
+            if data.event == websocket.EVENT_CONNECTED then
+                local msg = string.char(C2S_JOIN, class) .. name
+                websocket.send(conn, msg, {type = websocket.DATA_TYPE_BINARY})
+            elseif data.event == websocket.EVENT_MESSAGE then
+                on_message(data.message)
+            elseif data.event == websocket.EVENT_DISCONNECTED then
+                lost(M.denied or "the zone closed the connection")
+            elseif data.event == websocket.EVENT_ERROR then
+                lost(M.denied or (data.message and tostring(data.message))
+                     or "could not reach that zone")
+            end
+        end)
     end)
+    -- A malformed address throws here rather than failing asynchronously,
+    -- and an unhandled error in init would take the whole client down.
+    if not ok then
+        lost("that address is not a zone URL")
+        return false
+    end
+    return true
 end
 
 function M.request_duel(class, name)

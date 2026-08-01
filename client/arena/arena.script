@@ -226,6 +226,7 @@ function init(self)
     -- build with nothing behind it playable.
     local dir = sys.get_config_string("vectorwake.directory", "")
     local url = sys.get_config_string("vectorwake.server", "")
+    menu.defaults(sys.get_config_string("vectorwake.name", ""), url)
     if url == "" and dir ~= "" then
         sim.init(0x5eed)
         rebuild_static()
@@ -241,7 +242,15 @@ function init(self)
         sim.init(0x5eed)
         rebuild_static()
         menu.open = false
-        net.connect(url, 0, sys.get_config_string("vectorwake.name", "pilot"))
+        -- Same fallback the menu's JOIN uses: a zone that cannot be reached
+        -- hands the player back the start screen and the reason, rather than
+        -- an arena that never fills.
+        net.connect(url, 0, sys.get_config_string("vectorwake.name", "pilot"),
+                    function(why)
+                        menu.note = why
+                        menu.open = true
+                        menu.mode = 3
+                    end)
         self.online = true
         return
     end
@@ -296,14 +305,22 @@ end
 -- Every report the simulation made this tick, turned into light, noise and
 -- feed lines. Drained per tick rather than per frame: a frame can advance the
 -- simulation eight times, and the event list is replaced by each one.
+-- Who a ship id belongs to. Offline that is the local roster; online it is
+-- the server's, because those are other people and only it knows their
+-- names. Everything that names a pilot goes through here, or the feed ends
+-- up reading "ship 5 killed ship 8" in a zone full of people.
+local function pilot_name(i)
+    local p = net.connected and net.pilots[i] or pilots[i]
+    return (p and p.name) or ("ship " .. i)
+end
+
 local function drain_events()
     world.events(me, sfx.play)
     for i = 0, sim.event_count() - 1 do
         local ty, a, b = sim.event_at(i)
         if ty == sim.EV_DEATH then
-            local vn = (pilots[a] and pilots[a].name) or ("ship " .. a)
-            local kn = (b ~= 255 and pilots[b] and pilots[b].name)
-                or ((b == 255) and "the arena") or ("ship " .. b)
+            local vn = pilot_name(a)
+            local kn = (b ~= 255) and pilot_name(b) or "the arena"
             -- Your own bomb counts as your kill in the ledger, which is
             -- correct and reads as nonsense in a feed line.
             local line = (a == b) and (vn .. " was caught in it")
@@ -369,6 +386,37 @@ local function start_chosen(what, cls)
     pickup = nil
     hurt = 0
     fx.reset()
+    if what == "join" then
+        -- The server owns state from here, but the core still needs its map
+        -- and settings: prediction runs collision locally between snapshots,
+        -- and a snapshot carries state, not rules.
+        duel = nil
+        sim.init(0x5eed)
+        map_lo, map_hi = 470, 554
+        rebuild_static()
+        -- Losing the zone puts the player back where they came from with the
+        -- reason in front of them, rather than into an empty arena that
+        -- looks like the game is broken.
+        local function lost(why)
+            menu.note = why
+            menu.open = true
+            menu.mode = 3
+        end
+        -- The start screen stays up, over its own backdrop, until the zone
+        -- answers. Joining tears the local arena down first, so without this
+        -- a player who mistyped an address watches an empty black map
+        -- forever -- which is exactly what it looked like.
+        --
+        -- Set before connecting, not after: a bad address can fail inside
+        -- websocket.connect, and reporting "connecting" over the top of the
+        -- reason leaves that message on screen with nothing left to clear it.
+        menu.note = "connecting to " .. menu.server
+        menu.open = true
+        if not net.connect(menu.server, cls, menu.name, lost) then
+            return "menu"
+        end
+        return "online"
+    end
     if what == "duel" then
         sim.init_duel(0x5eed)
         map_lo, map_hi = 496, 528
@@ -429,7 +477,11 @@ function update(self, dt)
         layers.glow:reset() layers.glow:flush()
         return
     end
-    if self.online and sim.ship_count() == 0 then return end
+    -- Online with nothing to draw yet. Bail out of the world, but not while
+    -- the start screen is up: that is exactly the window where a join is
+    -- still pending, and returning here skipped both the screen and the
+    -- timeout that gives up on it -- so a bad address drew nothing at all.
+    if self.online and sim.ship_count() == 0 and not menu.open then return end
 
     sfx.frame()
 
@@ -453,13 +505,39 @@ function update(self, dt)
             -- through the hit boxes below, because a pointer has a position
             -- and "wherever you happened to touch" is not a choice.
             go = tapped[hash("select")] or tapped[hash("guns")],
+            tab = tapped[hash("tab")],
         })
         if moved then sfx.ui(chose and "ui_go" or "ui_move") end
-        if chose then start_chosen(chose, menu.class) end
+        if chose then
+            self.online = start_chosen(chose, menu.class) == "online"
+        end
     end
     tapped = {}
 
     if self.online and net.connected then me = net.me end
+
+    -- A zone that accepts the socket but never sends a snapshot is as broken
+    -- as one that refuses it, and on the web a connection to a dead port can
+    -- hang without ever raising an error. Either way the player gets the
+    -- start screen back rather than a black arena.
+    if self.online and menu.open then
+        if net.connected and net.stats.snaps > 0 then
+            menu.open = false
+            menu.note = nil
+            self.joining = nil
+        else
+            self.joining = (self.joining or 0) + dt
+            if self.joining > 10 then
+                net.disconnect()
+                self.online = false
+                self.joining = nil
+                menu.note = "no answer from " .. menu.server
+                menu.mode = 3
+                start_chosen("play", menu.class)
+                menu.open = true
+            end
+        end
+    end
 
     local cx, cy = sim.ship_x(me), sim.ship_y(me)
     sfx.listener(cx, cy)
@@ -481,9 +559,18 @@ function update(self, dt)
     if self.report > 5 then
         self.report = 0
         if self.online then
-            print(string.format("tick %d  ships %d  online %s  err %.2fpx  peak %.1fpx  %s",
+            -- Name every pilot the server says is here. In a zone the
+            -- roster is the point: it is how you know somebody else showed
+            -- up, and it is the first thing to break when they do.
+            local who = {}
+            for i = 0, sim.ship_count() - 1 do
+                local p = net.pilots[i]
+                who[#who + 1] = (p and p.name or ("?" .. i))
+                    .. ((p and p.ai) and "*" or "")
+            end
+            print(string.format("tick %d  ships %d  online %s  err %.2fpx  roster %s",
                 sim.tick(), sim.ship_count(), tostring(net.connected),
-                net.stats.err, net.stats.err_max, net.banner))
+                net.stats.err, table.concat(who, " ")))
         else
             print(string.format("tick %d  ships %d  hash %d  at %.0f,%.0f  verts %d/%d",
                 sim.tick(), sim.ship_count(), sim.hash(), cx, cy,
@@ -533,7 +620,10 @@ function update(self, dt)
         ui.menu(menu, CLASS_NAMES)
     else
         ui.hud({
-            me = me, pilots = pilots, class_names = CLASS_NAMES,
+            me = me, class_names = CLASS_NAMES,
+            -- Online the roster is the server's, because those are other
+            -- people's names and only it knows them.
+            pilots = (self.online and net.connected) and net.pilots or pilots,
             feed = feed, hurt = hurt, pickup = pickup,
             cam_x = cx, cam_y = cy,
             banner = (self.online and net.banner)
@@ -601,7 +691,9 @@ function on_input(self, action_id, action)
                and py >= r.y and py <= r.y + r.h then
                 local chose, moved = menu.click(r.action, r.value)
                 if moved then sfx.ui(chose and "ui_go" or "ui_move") end
-                if chose then start_chosen(chose, menu.class) end
+                if chose then
+                    self.online = start_chosen(chose, menu.class) == "online"
+                end
                 return true
             end
         end
@@ -628,6 +720,19 @@ function on_input(self, action_id, action)
             return
         end
     end
+    -- Typing, which only the start screen wants. A field with focus eats the
+    -- keystroke so a zone address does not also fly the ship behind it.
+    if action_id == hash("text") then
+        if menu.open and action.text then menu.type(action.text) end
+        return
+    end
+    if action_id == hash("backspace") then
+        if menu.open and (action.pressed or action.repeated) then
+            menu.backspace()
+        end
+        return
+    end
+
     if action_id == nil then return end
     local name = action_id
     if action.pressed then held[name] = true; tapped[name] = true end

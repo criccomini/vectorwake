@@ -238,7 +238,12 @@ end
 
 local function status(me, class_names, netinfo, pickup, lift)
     local emax = math.max(1, sim.ship_max_energy(me))
+    -- Clamped, because energy is allowed to go far negative: a bomb overkills
+    -- by whatever it overkills by, and the ship carries that until it
+    -- respawns. The bar clamped and the number did not, so a fresh corpse
+    -- read "energy -221614%".
     local frac = sim.ship_energy(me) / emax
+    if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
     local vx, vy = sim.ship_vel(me)
     local speed = math.sqrt(vx * vx + vy * vy) * 100 / 16
 
@@ -433,8 +438,9 @@ function M.menu(o, names)
     local rows = math.ceil(8 / cols)
     local grid_w = BW * cols + GAP * (cols - 1)
     local grid_h = BH * rows + GAP * (rows - 1)
-    local block = 40 * S + 12 * S + 2 * 18 * S + 26 * S + grid_h + 26 * S
-                  + 42 * S + 26 * S + 18 * S
+    local FIELD_H = 30 * S
+    local block = 40 * S + 12 * S + 2 * 18 * S + 26 * S + grid_h + 20 * S
+                  + FIELD_H + 12 * S + 42 * S + 26 * S + 18 * S
     local y = math.max(12 * S, (H - block) / 2)
 
     txt("v e c t o r w a k e", cx, y + 20 * S, (M.compact and 25 or 34) * S,
@@ -468,10 +474,46 @@ function M.menu(o, names)
     end
     y = y + grid_h + 26 * S
 
-    -- Launch and duel, in the prototype's colours: the primary action is a
-    -- solid cyan block, the secondary an outline in the enemy's orange.
-    local LW, DW, BH2 = 150 * S, 120 * S, 42 * S
-    local bx = cx - (LW + 10 * S + DW) / 2
+    -- Name and server. Two fields side by side on a wide screen, stacked on
+    -- a narrow one, because an address is long and a phone is not.
+    local FW = math.min(grid_w, 460 * S)
+    local fx = cx - FW / 2
+    local stacked = M.compact or FW < 340 * S
+    local nw = stacked and FW or FW * 0.34
+    local sw = stacked and FW or FW - nw - 8 * S
+
+    local function field(x, fy, w, key, label, value)
+        local on = o.focus == key
+        rect(x, fy, w, FIELD_H, on and pal.rgb(0x0a1620) or pal.BTN_BG)
+        u:frame(x, ry(fy, FIELD_H), w, FIELD_H, S,
+                on and pal.FRIEND or pal.BAR_EDGE)
+        txt(label, x + 8 * S, fy + FIELD_H / 2, 11 * S, pal.DIM)
+        local shown = value
+        if value == "" then shown = on and "" or "-" end
+        -- A caret, so a focused empty field does not look broken.
+        if on then shown = shown .. "_" end
+        txt(shown, x + 8 * S + 46 * S, fy + FIELD_H / 2, FONT * S,
+            on and pal.INK or pal.a(pal.INK, 0.85))
+        hit(x, fy, w, FIELD_H, "field", key)
+    end
+
+    field(fx, y, nw, "name", "NAME", o.name)
+    if stacked then
+        y = y + FIELD_H + 6 * S
+        field(fx, y, sw, "server", "ZONE", o.server)
+    else
+        field(fx + nw + 8 * S, y, sw, "server", "ZONE", o.server)
+    end
+    y = y + FIELD_H + 12 * S
+
+    -- Launch, duel and join, in the prototype's colours: the primary action
+    -- is a solid cyan block, the others outlines.
+    local LW, DW, JW, BH2 = 132 * S, 104 * S, 118 * S, 42 * S
+    local total = LW + DW + JW + 20 * S
+    local three = total <= grid_w
+    if not three then LW, DW, JW = grid_w, (grid_w - 8 * S) / 2, (grid_w - 8 * S) / 2 end
+    local bx = three and (cx - total / 2) or (cx - grid_w / 2)
+
     local launch = o.mode == 1
     rect(bx, y, LW, BH2, launch and pal.FRIEND or pal.BTN_BG)
     if not launch then
@@ -481,17 +523,34 @@ function M.menu(o, names)
         launch and pal.rgb(0x04121a) or pal.FRIEND, "center")
     hit(bx, y, LW, BH2, "go", 1)
 
-    local dx = bx + LW + 10 * S
-    rect(dx, y, DW, BH2, o.mode == 2 and pal.rgb(0x1a1008) or pal.BTN_BG)
-    u:frame(dx, ry(y, BH2), DW, BH2, S,
+    local dx, jy = bx + LW + 10 * S, y
+    if not three then dx = bx jy = y + BH2 + 8 * S end
+    rect(dx, jy, DW, BH2, o.mode == 2 and pal.rgb(0x1a1008) or pal.BTN_BG)
+    u:frame(dx, ry(jy, BH2), DW, BH2, S,
             o.mode == 2 and pal.ENEMY or pal.rgb(0x3a2a1a))
-    txt("D U E L", dx + DW / 2, y + BH2 / 2, FONT * S, pal.ENEMY, "center")
-    hit(dx, y, DW, BH2, "go", 2)
-    y = y + BH2 + 26 * S
+    txt("D U E L", dx + DW / 2, jy + BH2 / 2, FONT * S, pal.ENEMY, "center")
+    hit(dx, jy, DW, BH2, "go", 2)
 
-    txt((M.touching or M.compact) and "tap a hull, then tap LAUNCH"
-            or "← → pick a hull    ↑ ↓ pick a mode    enter launches",
-        cx, y + 9 * S, FONT * S, pal.a(pal.DIM, 0.85), "center")
+    local jx = three and (dx + DW + 10 * S) or (dx + DW + 8 * S)
+    rect(jx, jy, JW, BH2, o.mode == 3 and pal.rgb(0x08160f) or pal.BTN_BG)
+    u:frame(jx, ry(jy, BH2), JW, BH2, S,
+            o.mode == 3 and pal.FRIEND or pal.rgb(0x1d3a2a))
+    txt("J O I N", jx + JW / 2, jy + BH2 / 2, FONT * S,
+        pal.a(pal.FRIEND, 0.92), "center")
+    hit(jx, jy, JW, BH2, "go", 3)
+    y = jy + BH2 + 26 * S
+
+    -- Whatever the connection last had to say outranks the key hints: a
+    -- player who just failed to reach a zone needs the reason, not a lesson
+    -- in arrow keys.
+    if o.note then
+        txt(o.note, cx, y + 9 * S, FONT * S, pal.ENEMY, "center")
+    else
+        txt((M.touching or M.compact)
+                and "tap a hull, then LAUNCH -- or type a zone and tap JOIN"
+                or "← → hull   ↑ ↓ mode   enter launches   JOIN plays with others",
+            cx, y + 9 * S, FONT * S, pal.a(pal.DIM, 0.85), "center")
+    end
 end
 
 return M
