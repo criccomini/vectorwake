@@ -154,7 +154,62 @@ generates, or whether projectiles need their own faster channel.
 
 Whether WebTransport is worth adopting when browser support settles, since it
 would give web clients unreliable datagrams and delete the whole TCP
-head-of-line problem.
+head-of-line problem. Measured, below, before deciding.
 
 How to handle a client whose predicted tick drifts because its clock is bad,
 without giving it an advantage by letting it choose its own lead.
+
+
+## What head-of-line blocking actually costs
+
+Measured rather than assumed, because the M2 gate was written as 150 ms and
+3% loss and only the latency half had ever been run.
+
+Snapshot inter-arrival at the client, 20 s per condition, 20 Hz snapshots so
+50 ms is perfect:
+
+| RTT | Loss | median | p95 | p99 | max | gaps > 150 ms |
+|---|---|---|---|---|---|---|
+| 40 ms | 0% | 50.0 | 50.9 | 61.1 | 70.2 | 0 |
+| 40 ms | 3% | 50.0 | 51.6 | 90.0 | 91.1 | 0 |
+| 40 ms | 10% | 50.0 | 89.8 | 91.0 | 91.9 | 0 |
+| 150 ms | 0% | 50.0 | 51.1 | 51.9 | 55.0 | 0 |
+| 150 ms | 3% | 49.9 | 142.5 | 207.6 | 307.3 | 14 |
+| 150 ms | 10% | 49.6 | 191.1 | 200.5 | 309.5 | 35 |
+
+The snapshot count is unchanged in every condition -- 392 to 398 of an
+expected 400. Nothing is lost, and that is the whole shape of the problem:
+the stream stalls and then delivers the backlog at once, so the median never
+moves and the damage is entirely in the tail.
+
+Near players are fine. At 40 ms even 10% loss never produces a gap a player
+could name, because a stall costs one RTT and one RTT is shorter than the
+interval between snapshots.
+
+Distant players on a lossy link are not. At 150 ms and 3% -- the gate's own
+numbers -- 14 gaps over 150 ms in 20 seconds is a hitch roughly every 1.4
+seconds, the worst of them 307 ms.
+
+What keeps that from being as bad as it reads: nothing interpolates, but
+`net.step` advances the whole simulation every tick, so ships with no fresh
+input coast on their last known velocity. Flight is frictionless and has no
+drag term, which makes coasting an unusually good predictor -- a remote ship
+is only wrong by however much it accelerated during the gap. The artifact is
+a correction when the late snapshot lands, not a freeze.
+
+So the tail is real and bounded, and the cheap mitigation is already in
+place. Before spending WebTransport on it, the thing to measure is how large
+those corrections actually are at 150 ms and 3%, since that is what a player
+sees. Transport work is only justified if they are large.
+
+### Method, and its limits
+
+This kernel has no netem and no module to load, so packets could not actually
+be dropped. A relay reproduced the consequence instead: each direction has a
+release clock, and a loss pushes that clock forward one RTT, which delays the
+chunk it hit and everything queued behind it. That is what a receiver holding
+a stream does.
+
+Recovery is modelled as fast retransmit, one RTT. Real RTO-based recovery is
+slower -- Linux will not go below 200 ms -- so these are the optimistic
+numbers, and a real network is somewhat worse than this table.
