@@ -80,9 +80,8 @@ the same magic numbers written out in the client's C++ and again in the
 server's Rust, which is one edit away from a client predicting collisions
 against a wall the server does not have.
 
-Loading maps from files is the next step and is not done. When it lands, the
-tile classes above are what the format carries -- not a tileset index, which
-is a rendering concern that has no business in a simulation.
+A map file carries the tile classes above -- not a tileset index, which is a
+rendering concern that has no business in a simulation.
 
 ## Map files
 
