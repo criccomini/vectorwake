@@ -273,6 +273,32 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
     }
 }
 
+/* A bomb that arrives somewhere goes off, and everything inside the blast
+ * radius takes damage falling off linearly to nothing at the edge.
+ *
+ * That includes the ship it struck, which is at very nearly zero distance and
+ * so takes very nearly the whole charge, and it includes the pilot who fired
+ * it, because a blast does not know whose it is. This used to be reachable
+ * only by hitting a wall: a bomb that connected with a ship damaged that one
+ * ship and nobody standing next to it, which makes an area weapon into a slow
+ * bullet whenever it is aimed well. */
+static void detonate(sim_state *s, const sim_settings *cfg,
+                     const sim_ship_class *ocls, const sim_weapon *w,
+                     sim_events *ev) {
+    int64_t rad = ocls->bomb_radius;
+    if (rad <= 0) return;
+    for (int i = 0; i < s->ship_count; i++) {
+        sim_ship *sh = &s->ships[i];
+        if (!sh->active || !sh->alive) continue;
+        int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
+        int64_t d2 = ddx * ddx + ddy * ddy;
+        if (d2 > rad * rad) continue;
+        int64_t d = isqrt64(d2);
+        int32_t dmg = (int32_t)((int64_t)ocls->bomb_damage * (rad - d) / rad);
+        if (dmg > 0) apply_damage(s, cfg, (uint8_t)i, w->owner, dmg, ev);
+    }
+}
+
 /* ---- flags ---- */
 
 int sim_add_flag(sim_state *s, int32_t x_px, int32_t y_px) {
@@ -635,6 +661,10 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         int removed = 0;
 
         if (w->life == 0) {
+            /* Out of range is not a detonation. A bomb has to arrive
+             * somewhere to go off, so one that simply runs out hurts nobody.
+             * At five seconds of flight that is a bomb which has crossed the
+             * whole arena without touching anything. */
             emit(ev, SIM_EV_EXPIRE, w->type, w->owner, pack_pos(w->x, w->y));
             kill_weapon(next, wi);
             continue;
@@ -645,22 +675,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
 
         /* Walls. Bullets die on contact; bombs detonate. */
         if (box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0)) {
-            if (w->type == SIM_W_BOMB) {
-                for (int i = 0; i < next->ship_count; i++) {
-                    sim_ship *sh = &next->ships[i];
-                    if (!sh->active || !sh->alive) continue;
-                    int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
-                    int64_t d2 = ddx * ddx + ddy * ddy;
-                    int64_t rad = ocls->bomb_radius;
-                    if (d2 <= rad * rad) {
-                        /* Linear falloff from center to edge. */
-                        int64_t d = isqrt64(d2);
-                        int32_t dmg =
-                            (int32_t)((int64_t)ocls->bomb_damage * (rad - d) / rad);
-                        if (dmg > 0) apply_damage(next, cfg, (uint8_t)i, w->owner, dmg, ev);
-                    }
-                }
-            }
+            if (w->type == SIM_W_BOMB) detonate(next, cfg, ocls, w, ev);
             emit(ev, SIM_EV_EXPIRE, w->type, w->owner, pack_pos(w->x, w->y));
             kill_weapon(next, wi);
             removed = 1;
@@ -677,9 +692,15 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 int64_t d2 = ddx * ddx + ddy * ddy;
                 int64_t r = vcls->radius;
                 if (d2 <= r * r) {
-                    int32_t dmg = (w->type == SIM_W_BOMB) ? ocls->bomb_damage
-                                                          : ocls->bullet_damage;
-                    apply_damage(next, cfg, (uint8_t)i, w->owner, dmg, ev);
+                    /* A bomb that connects still goes off: the ship it hit
+                     * takes the middle of the blast and everyone standing
+                     * next to them takes the rest of it. */
+                    if (w->type == SIM_W_BOMB) {
+                        detonate(next, cfg, ocls, w, ev);
+                    } else {
+                        apply_damage(next, cfg, (uint8_t)i, w->owner,
+                                     ocls->bullet_damage, ev);
+                    }
                     emit(ev, SIM_EV_EXPIRE, w->type, w->owner,
                          pack_pos(w->x, w->y));
                     kill_weapon(next, wi);

@@ -180,11 +180,19 @@ whole design:
 
 | Layer | Space | Blend | Holds |
 |---|---|---|---|
-| `bg` | world | alpha | starfield and wall interiors, built once per map |
+| `bg` | world | alpha | wall interiors, built once per map |
 | `bgglow` | world | additive | wall edges, built once per map |
-| `fill` | world | alpha | the dark inside of a hull, so it occludes |
+| `fill` | world | alpha | the starfield, and the dark inside of a hull |
 | `glow` | world | additive | outlines, bolts, blasts, sparks |
 | `ui` | screen | alpha | panels, bars, radar, buttons |
+
+The starfield is in the per-frame layer rather than the baked one because it
+moves: three depths of hashed cell grid, each drawn at `base + cam*(1 - k)`
+so it lands on screen at `base - cam*k`, which makes `k` literally the rate a
+layer travels against the camera. Nothing is stored between frames, the field
+extends as far as anyone can fly, and a star whose tile is solid is dropped --
+the wall interiors are in the layer underneath and would otherwise be shone
+through.
 
 Additive is what makes the glow layer read as light rather than paint:
 overlapping bolts brighten instead of stacking, and because addition does not
@@ -219,6 +227,15 @@ first gesture can easily land before the engine has opened its audio device.
 It also sets `navigator.audioSession.type = "playback"`, without which an
 iPhone with the ring switch off mutes Web Audio by policy no matter what the
 page does.
+
+One sound has a duration rather than an instant: thrust, which is a looping
+component switched on and off at the edges of the button. `sound.play` on a
+looping component does not restart it, it starts a second voice, so calling
+it every frame the key is held stacks sixty a second until the mixer runs
+out. `tools/mksounds.py` makes a wav that wraps: no envelope, sines snapped
+to a whole number of cycles in the buffer, and the noise filter run twice
+around the same buffer so the state it enters the loop with is the state it
+left with.
 
 The diagnosis is worth repeating because "no sound" looks identical whether
 the cause is the gate, a missing component, or a silent mixer. Wrap

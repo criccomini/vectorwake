@@ -320,7 +320,7 @@ loopcount: 0
 GAIN = {
     "gun": 0.30, "bomb": 0.55, "blast": 0.80, "death": 0.85, "hit": 0.40,
     "bounce": 0.30, "spawn": 0.45, "prize": 0.45, "flag": 0.55,
-    "thrust": 0.22, "ui_move": 0.35, "ui_go": 0.55,
+    "thrust": 0.13, "ui_move": 0.35, "ui_go": 0.55,
 }
 
 # The ones that play until they are stopped. `loopcount: 0` with looping on is

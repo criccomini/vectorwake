@@ -512,6 +512,46 @@ int main(void) {
         CHECK(c.hits > 0, "bomb splash damages a nearby enemy");
     }
 
+    /* A bomb that connects goes off too. The ship it hits is not the only one
+     * hurt -- otherwise a well aimed bomb is a slow bullet, and the area is
+     * the whole point of the weapon. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        /* Firing east into a target, with a second enemy a ship's length
+         * past it and well inside the 48px blast. */
+        sim_spawn(&s, ANVIL, 0, 8192, 8192, 16384, &cfg);
+        sim_spawn(&s, APEX, 1, 8192 + 150, 8192, 0, &cfg);
+        sim_spawn(&s, APEX, 1, 8192 + 175, 8192, 0, &cfg);
+        /* One tick on the trigger, then hands off: the Anvil reloads in 60
+         * and the flight is longer than that, so holding it fires twice and
+         * the count stops meaning anything. Far enough out, too, that the
+         * blast does not reach back to the ship that fired it. */
+        ev_counts c = step_counting(&s, &cfg, SIM_BTN_BOMB, 0, 1);
+        ev_counts d = step_counting(&s, &cfg, 0, 0, 120);
+        CHECK(c.fires == 1, "one bomb was fired");
+        CHECK(d.hits == 2, "the ship it hit and the one beside them both take it");
+    }
+
+    /* Out of range is not a detonation: a bomb has to arrive somewhere. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 8192, 16384, &cfg);
+        sim_settings brief = cfg;
+        brief.classes[ANVIL].bomb_life = 60;
+        step_n(&s, &brief, SIM_BTN_BOMB, 0, 50);
+        CHECK(s.weapon_count == 1, "the bomb is still in the air at 50 ticks");
+        /* Beside where it is about to die: inside the blast, too far off the
+         * line to be a collision. Read rather than predicted, so the test
+         * does not quietly stop covering anything when a speed changes. */
+        int32_t bx = s.weapons[0].x / 256, by = s.weapons[0].y / 256;
+        sim_spawn(&s, APEX, 1, bx + 8, by - 30, 0, &cfg);
+        ev_counts c = step_counting(&s, &brief, 0, 0, 20);
+        CHECK(s.weapon_count == 0, "and it has run out by then");
+        CHECK(c.hits == 0, "a bomb that runs out hurts nobody");
+    }
+
     /* Prizes spawn, get collected, and raise the ship's effective stats. */
     {
         sim_state s;

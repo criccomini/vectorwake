@@ -1,9 +1,10 @@
 -- Drawing the world.
 --
--- Ships, weapons, flags, prizes and terrain, in the two world layers: a dark
--- alpha fill that occludes the starfield, and an additive glow that carries
--- every bright edge. Nothing here reads input or advances anything; it asks
--- the simulation what is true and describes it in triangles.
+-- Ships, weapons, flags, prizes, stars and terrain, in the two world layers:
+-- a dark alpha fill that occludes what is behind it, and an additive glow
+-- that carries every bright edge. Nothing here reads input or advances
+-- anything; it asks the simulation what is true and describes it in
+-- triangles.
 --
 -- The look is the one docs/design/identity.md asks for: bright geometric
 -- silhouettes on a near-black field, thin outlines over a darker fill, bolts

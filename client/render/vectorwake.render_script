@@ -2,8 +2,8 @@
 --
 -- Five passes, and the order is the whole design:
 --
---   vwbg    world, alpha      starfield and wall interiors, built once
---   vwfill  world, alpha      the dark inside of a hull, so it occludes
+--   vwbg    world, alpha      wall interiors, built once per map
+--   vwfill  world, alpha      the starfield, and the dark inside of a hull
 --   vwglow  world, additive   every bright thing: outlines, bolts, blasts
 --   vwui    screen, alpha     panels, bars, radar
 --   gui     screen            text, and only text
