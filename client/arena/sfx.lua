@@ -71,6 +71,24 @@ function M.ui(name)
     M.fire(name, {gain = 1, pan = 0, speed = 1})
 end
 
+-- A sound with a duration rather than an instant: thrust is held, so it is a
+-- looping component switched on and off rather than an event replayed.
+--
+-- Edges only. `sound.play` on a looping component does not restart it, it
+-- starts a second voice, so calling it every frame thrust is held stacks
+-- sixty of them a second until the mixer runs out.
+local held = {}
+function M.loop(name, on)
+    on = on and true or false
+    if on == (held[name] or false) then return end
+    held[name] = on
+    if on then
+        M.fire(name, {gain = 1, pan = 0, speed = 1})
+    else
+        pcall(sound.stop, "#" .. name)
+    end
+end
+
 -- One place where a sound actually starts.
 --
 -- Guarded, because a sound component that failed to load must not take the

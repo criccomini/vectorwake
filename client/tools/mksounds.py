@@ -95,6 +95,43 @@ class Voice:
             self.buf[i] += y * gain * env(t, self.dur, curve=curve)
         return self
 
+    # --- looping ----------------------------------------------------------
+    #
+    # A held sound is played end to end forever, so the last sample has to lead
+    # into the first one. Two rules do it: no envelope, and everything periodic
+    # in the buffer's own length.
+
+    def loop_sine(self, f, gain, phase=0.0):
+        """A sine snapped to a whole number of cycles in the buffer.
+
+        Off by a fraction of a cycle and the wrap is a step, which is a click
+        at exactly the loop rate -- the most recognisable defect a looping
+        sound has.
+        """
+        cycles = max(1, round(f * self.dur))
+        for i in range(self.n):
+            self.buf[i] += math.sin(phase + 2 * math.pi * cycles * i / self.n) * gain
+        return self
+
+    def loop_noise(self, gain, cutoff, rng=None):
+        """Lowpassed noise that wraps.
+
+        The filter is run twice around the same buffer and only the second lap
+        is kept, so its state entering the loop is the state it left with. The
+        noise itself is circular by construction, so nothing has to be
+        crossfaded.
+        """
+        rng = rng or random.Random(1)
+        raw = [rng.uniform(-1.0, 1.0) for _ in range(self.n)]
+        a = 1.0 - math.exp(-2 * math.pi * max(20.0, cutoff) / RATE)
+        y = 0.0
+        for i in range(self.n):        # a lap to settle the filter's state
+            y += a * (raw[i] - y)
+        for i in range(self.n):        # and a lap that is kept
+            y += a * (raw[i] - y)
+            self.buf[i] += y * gain
+        return self
+
     def highpass(self, fc):
         a = math.exp(-2 * math.pi * fc / RATE)
         prev_x, prev_y = 0.0, 0.0
@@ -123,8 +160,12 @@ class Voice:
         self.buf = [v * k for v in self.buf]
         return self
 
-    def write(self, path):
-        self.fade_out().normalise()
+    def write(self, path, loop=False):
+        # A loop must not fade: the fade is a hole in the middle of the sound
+        # once the buffer is played end to end.
+        if not loop:
+            self.fade_out()
+        self.normalise()
         frames = bytearray()
         for v in self.buf:
             s = int(max(-1.0, min(1.0, v)) * 32767)
@@ -228,6 +269,22 @@ def flag():
     return v
 
 
+def thrust():
+    """A held drive. Loops for as long as the pilot holds the key.
+
+    Rocket, not engine: mostly filtered noise, with two low partials for a
+    body so it does not read as tape hiss. Half a second is long enough that
+    the ear cannot hear the repeat and short enough to be a small file.
+    """
+    v = Voice(0.5)
+    v.loop_noise(0.60, 520, rng=random.Random(101))    # the rumble
+    v.loop_noise(0.16, 2600, rng=random.Random(103))   # a little air over it
+    v.loop_sine(58, 0.26)
+    v.loop_sine(87, 0.13)
+    v.loop_sine(146, 0.06)
+    return v.drive(1.25)
+
+
 def ui_move():
     v = Voice(0.035)
     v.square(1200, 900, 0.4, duty=0.4)
@@ -245,11 +302,11 @@ def ui_go():
 KIT = {
     "gun": gun, "bomb": bomb, "blast": blast, "death": death, "hit": hit,
     "bounce": bounce, "spawn": spawn, "prize": prize, "flag": flag,
-    "ui_move": ui_move, "ui_go": ui_go,
+    "thrust": thrust, "ui_move": ui_move, "ui_go": ui_go,
 }
 
 SOUND_COMPONENT = """sound: "/sounds/%s.wav"
-looping: 0
+looping: %d
 group: "master"
 gain: %.2f
 pan: 0.0
@@ -258,21 +315,27 @@ loopcount: 0
 """
 
 # Per-sound trim, so the mix is balanced at the source and the game never has
-# to remember that bombs are loud.
+# to remember that bombs are loud. Thrust is held down for minutes at a time
+# and everything else has to be audible over it, so it sits well under them.
 GAIN = {
     "gun": 0.30, "bomb": 0.55, "blast": 0.80, "death": 0.85, "hit": 0.40,
     "bounce": 0.30, "spawn": 0.45, "prize": 0.45, "flag": 0.55,
-    "ui_move": 0.35, "ui_go": 0.55,
+    "thrust": 0.22, "ui_move": 0.35, "ui_go": 0.55,
 }
+
+# The ones that play until they are stopped. `loopcount: 0` with looping on is
+# Defold's "forever".
+LOOPING = {"thrust"}
 
 
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "client/sounds"
     os.makedirs(out, exist_ok=True)
     for name, make in sorted(KIT.items()):
-        make().write(os.path.join(out, name + ".wav"))
+        loop = name in LOOPING
+        make().write(os.path.join(out, name + ".wav"), loop=loop)
         with open(os.path.join(out, name + ".sound"), "w") as f:
-            f.write(SOUND_COMPONENT % (name, GAIN[name]))
+            f.write(SOUND_COMPONENT % (name, 1 if loop else 0, GAIN[name]))
 
 
 if __name__ == "__main__":

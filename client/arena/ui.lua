@@ -220,7 +220,10 @@ local function nameplates(o)
     local scale = W / (2 * o.half_w)
     local my_team = sim.ship_team(o.me)
     for i = 0, sim.ship_count() - 1 do
-        if sim.ship_alive(i) == 1 then
+        -- Not your own. You know which ship is yours -- it is the one in the
+        -- middle of the screen with the marker on it -- and a label saying so
+        -- is a word following the thing you are actually looking at.
+        if i ~= o.me and sim.ship_alive(i) == 1 then
             local sx = W / 2 + (sim.ship_x(i) - o.cam_x) * scale
             local sy = H / 2 + (sim.ship_y(i) - o.cam_y) * scale
             -- A name for a ship nobody can see is a name in the corner of
@@ -228,11 +231,9 @@ local function nameplates(o)
             if sx > -40 and sx < W + 40 and sy > -30 and sy < H + 30 then
                 local p = o.pilots[i]
                 local nm = (p and p.name) or ("ship " .. i)
-                local mine = i == o.me
-                local col = mine and pal.WHITE
-                    or ((sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY)
-                txt(nm, sx + 12 * S, sy + 13 * S, 11 * S,
-                    pal.a(col, mine and 0.85 or 0.7))
+                local col = (sim.ship_team(i) == my_team) and pal.FRIEND
+                    or pal.ENEMY
+                txt(nm, sx + 12 * S, sy + 13 * S, 11 * S, pal.a(col, 0.7))
             end
         end
     end
@@ -289,17 +290,32 @@ local function scores(me, pilots)
     return h
 end
 
+-- The notification feed: kills, greens, flags. Newest first.
+--
+-- Bare. No panel: this is the one thing on screen that is already a list of
+-- short lines, and a box around it is chrome around text that reads perfectly
+-- well without one. Right-aligned so the edge that lines up is the one
+-- against the screen, which is what the box used to provide.
+--
+-- Lines expire, and fade as they go. The arena owns the clock -- it is what
+-- ages them -- so the lifetime lives here, where both halves can see it.
+M.FEED_LIFE = 9
+local FEED_FADE = 1.6
+
 local function feed(lines, top)
     local shown = math.min(#lines, M.compact and 4 or 9)
     if shown == 0 then return end
-    local w = COL_W * S
-    local h = PANEL_Y * 2 * S + shown * LINE * S
-    local x = W - PAD * S - w
-    panel(x, top, w, h)
+    local right = W - PAD * S - PANEL_X * S
     local y = top + PANEL_Y * S
     for i = 1, shown do
-        txt(lines[i], x + PANEL_X * S, y + LINE * S / 2, FONT * S,
-            pal.a(pal.DIM, 1 - (i - 1) * 0.07))
+        local f = lines[i]
+        -- Older lines sit further back, and the last second and a half of a
+        -- line's life is spent leaving.
+        local a = 1 - (i - 1) * 0.07
+        local left = M.FEED_LIFE - f.t
+        if left < FEED_FADE then a = a * math.max(0, left / FEED_FADE) end
+        txt(f.text, right, y + LINE * S / 2, FONT * S,
+            pal.a(f.col or pal.DIM, a), "right")
         y = y + LINE * S
     end
 end

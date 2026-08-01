@@ -45,8 +45,13 @@ M.BTN_SEL   = rgb(0x0d1826)
 
 M.WALL      = rgb(0x0d1726)
 M.WALL_EDGE = rgb(0x22344f)
-M.STAR      = rgb(0x1b2740)
-M.STAR_FAR  = rgb(0x121b2e)
+-- Three depths of star. The old pair were #1b2740 and #121b2e on a #05070c
+-- field, which is a dark slate on a darker one: present in the buffer,
+-- invisible on the screen, and reported as a missing starfield. The near
+-- layer has to be a point of light or the parallax has nothing to show.
+M.STAR_NEAR = rgb(0x93a9c8)
+M.STAR      = rgb(0x4a6089)
+M.STAR_FAR  = rgb(0x2a3a58)
 
 M.THRUST    = rgb(0xffbe78)
 M.HURT      = rgb(0xff505a)

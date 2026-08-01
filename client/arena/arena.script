@@ -288,7 +288,9 @@ function init(self)
     layers = {
         bg = vec.layer("#bg", 20480),
         bgglow = vec.layer("#bgglow", 16384),
-        fill = vec.layer("#fill", 3072),
+        -- Room for the starfield, which is three hundred-odd quads a frame on
+        -- top of the hull interiors it used to hold alone.
+        fill = vec.layer("#fill", 12288),
         glow = vec.layer("#glow", 10240),
         ui = vec.layer("#ui", 6144),
     }
@@ -389,6 +391,15 @@ local function pilot_name(i)
     return (p and p.name) or ("ship " .. i)
 end
 
+-- One line in the notification feed. Kills are what it was built for and are
+-- still most of what it carries, but anything worth telling the player about
+-- in a sentence belongs here rather than in a second widget: it is already
+-- the place they look to find out what just happened.
+local function notify(text, col)
+    table.insert(feed, 1, {text = text, col = col, t = 0})
+    while #feed > 9 do table.remove(feed) end
+end
+
 local function drain_events()
     world.events(me, sfx.play)
     for i = 0, sim.event_count() - 1 do
@@ -398,17 +409,26 @@ local function drain_events()
             local kn = (b ~= 255) and pilot_name(b) or "the arena"
             -- Your own bomb counts as your kill in the ledger, which is
             -- correct and reads as nonsense in a feed line.
-            local line = (a == b) and (vn .. " was caught in it")
+            notify((a == b) and (vn .. " was caught in it")
                 or (b == 255) and (vn .. " flew into the wall")
-                or (kn .. " killed " .. vn)
-            table.insert(feed, 1, line)
+                or (kn .. " killed " .. vn))
             duel_death(a)
-            while #feed > 9 do table.remove(feed) end
         elseif ty == sim.EV_HIT and a == me then
             hurt = 1
         elseif ty == sim.EV_PRIZE and a == me then
             local u = pal.UPGRADES[b + 1]
-            if u then pickup = {name = u.name, col = u.col, t = 1} end
+            if u then
+                pickup = {name = u.name, col = u.col, t = 1}
+                -- In the upgrade's own colour, because the feed is now the
+                -- one place that says what a green actually was.
+                notify("+ " .. u.name, u.col)
+            end
+        elseif ty == sim.EV_FLAG_TAKE or ty == sim.EV_FLAG_DROP then
+            local col = (sim.ship_team(a) == sim.ship_team(me))
+                and pal.FRIEND or pal.ENEMY
+            notify(pilot_name(a) ..
+                (ty == sim.EV_FLAG_TAKE and " took a flag" or " dropped a flag"),
+                col)
         end
     end
 end
@@ -626,6 +646,14 @@ function update(self, dt)
         end
     end
 
+    -- Notifications expire. A feed that only ever scrolls leaves the last
+    -- nine deaths on screen through a lull, which reads as a fight that is
+    -- still happening somewhere.
+    for i = #feed, 1, -1 do
+        feed[i].t = feed[i].t + dt
+        if feed[i].t > ui.FEED_LIFE then table.remove(feed, i) end
+    end
+
     local cx, cy = sim.ship_x(me), sim.ship_y(me)
     sfx.listener(cx, cy)
     fx.listener(cx, cy)
@@ -683,6 +711,16 @@ function update(self, dt)
     local my_team = sim.ship_team(me)
     local mine_buttons = my_buttons()
 
+    -- Held thrust is the one sound with a duration rather than an instant, so
+    -- it is a loop the frame turns on and off rather than an event. Edges
+    -- only: playing a looping component again starts a second voice.
+    sfx.loop("thrust", sim.ship_alive(me) == 1 and not menu.open
+        and (has(mine_buttons, sim.BTN_THRUST)
+             or has(mine_buttons, sim.BTN_REVERSE)))
+
+    -- Stars first, and into the per-frame layer: they move against the
+    -- camera, so they cannot live in the mesh the walls are baked into.
+    world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
     world.flags(fill, glow, my_team, t)
     world.prizes(fill, glow, t)
     world.weapons(fill, glow, my_team, t)

@@ -65,13 +65,85 @@ for _, h in ipairs(M.HULLS) do
     h.tmp = {}
 end
 
+-- --- the starfield ---------------------------------------------------------
+--
+-- Depth, from parallax, without storing a single star.
+--
+-- Each layer is an infinite grid of cells with at most one star in each,
+-- placed by hashing the cell's own coordinates. Nothing is kept between
+-- frames and the field extends as far as anyone can fly, so a map twice the
+-- size costs exactly the same.
+--
+-- A layer at depth `k` puts a star whose base position is `b` at the world
+-- position `b + cam*(1 - k)`, which lands on screen at `b - cam*k`. So `k` is
+-- literally how fast the layer moves against the camera: 1 is the arena's own
+-- plane, 0 is painted on the glass. The visible cells are the ones whose base
+-- falls within a half-extent of `cam*k`, which is the only arithmetic here.
+--
+-- They were world-locked and built once before this, on the reasoning that a
+-- parallax layer would slide against the terrain and read as a bug. It reads
+-- as distance, which is the entire reason to have stars at all.
+
+local STARS = {
+    -- depth, cell size in world px, star size, colour, how many cells in
+    -- sixteen carry one. Farther is denser, smaller and dimmer, which is what
+    -- distance does.
+    {k = 0.18, cell =  54, size = 1.1, col = pal.STAR_FAR,  fill = 13},
+    {k = 0.36, cell =  92, size = 1.6, col = pal.STAR,      fill = 11},
+    {k = 0.60, cell = 168, size = 2.3, col = pal.STAR_NEAR, fill =  9},
+}
+
+-- Lehmer, and the multiplier matters: Lua has no integers here, and the
+-- 1103515245 everything else uses overflows a double's exact range on a
+-- 31-bit seed, throwing away the low bits. 48271 stays exact, which is what
+-- keeps a hashed grid from banding.
+local function lcg(s)
+    return (s * 48271) % 2147483647
+end
+
+function M.stars(fill, glow, cam_x, cam_y, hw, hh)
+    for li = 1, #STARS do
+        local L = STARS[li]
+        local c = L.cell
+        -- Where this layer sits in the world, and which of its cells are on
+        -- screen.
+        local ox, oy = cam_x * (1 - L.k), cam_y * (1 - L.k)
+        local bx, by = cam_x * L.k, cam_y * L.k
+        local i0, i1 = math.floor((bx - hw) / c), math.floor((bx + hw) / c)
+        local j0, j1 = math.floor((by - hh) / c), math.floor((by + hh) / c)
+        local size, col = L.size, L.col
+        for j = j0, j1 do
+            for i = i0, i1 do
+                local s = lcg((i * 1973 + j * 9277 + li * 26699) % 2147483646 + 1)
+                if s % 16 < L.fill then
+                    s = lcg(s)
+                    local px = (i + s / 2147483647) * c + ox
+                    s = lcg(s)
+                    local py = (j + s / 2147483647) * c + oy
+                    -- A star behind rock is a star shining through it: the
+                    -- wall interiors live in a layer under this one.
+                    if not sim.solid(math.floor(px / TILE), math.floor(py / TILE)) then
+                        s = lcg(s)
+                        local a = 0.45 + (s / 2147483647) * 0.55
+                        fill:rect(px, py, size, size, pal.a(col, a))
+                        -- One in a while is close enough to bloom. Additive,
+                        -- so it reads as light rather than a bigger dot.
+                        if L.k > 0.5 and s % 17 == 0 then
+                            glow:halo(px + size / 2, py + size / 2, 5, 8,
+                                      pal.a(col, 0.30))
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 -- --- static terrain --------------------------------------------------------
 --
--- Walls and stars never move, so they are built once per map into their own
--- buffers and never touched again. A per-frame rebuild of a thousand tiles was
--- the single largest thing the old renderer did, and it did it every frame.
-
-local STAR_SEED = 7717
+-- Walls never move, so they are built once per map into their own buffers and
+-- never touched again. A per-frame rebuild of a thousand tiles was the single
+-- largest thing the old renderer did, and it did it every frame.
 
 -- Terrain for the radar, sampled once. At the radar's scale a hundred and
 -- fifty tiles cross a hundred and sixty-eight pixels, so one dot every four
@@ -107,27 +179,6 @@ function M.build_static(bg, glow, lo, hi)
     M.radar_tiles = rt
     M.radar_safe = rs
     M.radar_doors = rd
-
-    -- Starfield. Two depths, the far one dimmer and denser, both in world
-    -- space: at this zoom a parallax layer would slide against the terrain
-    -- and read as a bug rather than as distance.
-    local seed = STAR_SEED
-    local function rnd()
-        seed = (seed * 1103515245 + 12345) % 2147483648
-        return seed / 2147483648
-    end
-    local x0, y0 = (lo - 3) * TILE, (lo - 3) * TILE
-    local span = (hi - lo + 6) * TILE
-    for i = 1, 900 do
-        local x, y = x0 + rnd() * span, y0 + rnd() * span
-        local far = i % 3 ~= 0
-        local s = far and 0.9 or 1.4
-        bg:rect(x, y, s, s, far and pal.STAR_FAR or pal.STAR)
-        -- A handful of them are near enough to bloom.
-        if i % 47 == 0 then
-            glow:halo(x, y, 7, 8, pal.a(pal.STAR, 0.5))
-        end
-    end
 
     -- Wall bodies, and a lit edge only on the faces that touch open space.
     -- Drawing every tile's border outlines the grid inside a solid block,
