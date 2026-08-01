@@ -144,6 +144,8 @@ pub struct sim_ship {
     pub heading: u16,
     pub energy: i32,
     pub fire_cooldown: u16,
+    /// Ticks of suppressed recharge: what a stall round leaves behind.
+    pub stall: u16,
     pub respawn_at: u16,
     pub spawn_x: i32,
     pub spawn_y: i32,
@@ -184,6 +186,10 @@ pub struct sim_weapon {
     pub spec: u8,
     pub owner: u8,
     pub team: u8,
+    /// Bounces remaining, and splinter generations behind it. Both are per
+    /// projectile rather than per spec, because both are spent as it flies.
+    pub left: u8,
+    pub depth: u8,
     pub x: i32,
     pub y: i32,
     pub vx: i32,

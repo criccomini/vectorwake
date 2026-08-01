@@ -7,6 +7,9 @@ engineering, see [docs/architecture](../architecture/README.md).
 |---|---|
 | [identity.md](identity.md) | What we inherit from Subspace and what we invent, art direction, audio direction, and the rules that keep this inspired-by rather than a clone |
 | [ships.md](ships.md) | The eight classes, their roles, standard settings, and the design rules behind them |
+| [weapons.md](weapons.md) | One model for everything that leaves a ship: fire patterns, projectile specs, and the recipes for every weapon in the original |
+| [maps.md](maps.md) | Tile classes, the arenas, and what a map carries so a zone does not have to |
+| [menu.md](menu.md) | Landing in the game, the menu tree, changing hull, and the loading hand-off |
 | [ai-players.md](ai-players.md) | AI opponents that fill empty arenas and yield to humans: styles, skill, the long-lived roster, and the population director |
 | [duel-mode.md](duel-mode.md) | One on one against a rating-matched human or bot: format, queue, rating, replays |
 | [rating.md](rating.md) | Skill rating across humans and AI, and how credit for a kill is split among everyone who caused it |

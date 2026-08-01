@@ -131,6 +131,9 @@ void sim_map_duel(sim_map *m);
 #define SIM_MAX_SPECS 32
 #define SIM_MAX_PATTERNS 32
 #define SIM_NO_PATTERN 255
+/* One generation of fragments. Sixteen become two hundred and fifty-six
+ * become four thousand, and the weapon table holds a thousand. */
+#define SIM_MAX_SPLINTER_DEPTH 1
 
 typedef enum {
     SIM_WALL_END = 0,   /* stop, and do whatever ending does */
@@ -230,7 +233,8 @@ typedef struct {
     int32_t vx, vy;
     uint16_t heading;
     int32_t energy;        /* Q10 */
-    uint16_t fire_cooldown; /* ticks until the next shot may be fired */
+    uint16_t fire_cooldown;
+    uint16_t stall;   /* ticks of suppressed recharge; what a stall round does */
     uint16_t respawn_at;    /* ticks remaining while dead */
     int32_t spawn_x, spawn_y;
     uint16_t kills, deaths;
@@ -260,6 +264,8 @@ typedef struct {
     uint8_t spec;  /* index into the settings' spec table */
     uint8_t owner; /* ship index */
     uint8_t team;
+    uint8_t left;  /* bounces remaining, when the spec bounces */
+    uint8_t depth; /* splinter generations behind it; a fork-bomb stop */
     int32_t x, y;
     int32_t vx, vy;
     uint16_t life; /* ticks remaining */

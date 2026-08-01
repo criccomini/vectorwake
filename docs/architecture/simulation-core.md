@@ -97,6 +97,18 @@ wall-hugging behavior, where you can hold thrust into a wall and slide along it.
 A general physics engine would give us friction, resting contacts, and rotation
 we do not want, and would cost determinism across platforms.
 
+## Weapons
+
+Step 4 is four phases in a fixed order: it runs out, it moves, something ends
+it, the ending happens. There is no branch in there for a bullet or a bomb.
+
+Everything that leaves a ship comes from two tables in the settings -- a fire
+pattern (what a trigger makes) and a spec (what one projectile is) -- and a
+hull's gun and bomb are pattern indices. A projectile carries two bytes of its
+own beyond position and velocity: bounces left, and splinter generations
+behind it. See [design/weapons.md](../design/weapons.md) for the model and
+decision 21 for why it is one.
+
 ## State layout
 
 `sim_state` is a flat struct of arrays sized to the arena's configured maximums,

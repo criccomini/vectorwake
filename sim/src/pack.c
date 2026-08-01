@@ -72,6 +72,8 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap) {
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *p = &s->weapons[i];
         w8(&w, p->spec);
+        w8(&w, p->left);
+        w8(&w, p->depth);
         w8(&w, p->owner);
         w8(&w, p->team);
         w32(&w, (uint32_t)p->x);
@@ -147,6 +149,8 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
     for (uint32_t i = 0; i < weapons; i++) {
         sim_weapon *p = &s->weapons[i];
         p->spec = (uint8_t)r8(&r);
+        p->left = (uint8_t)r8(&r);
+        p->depth = (uint8_t)r8(&r);
         p->owner = (uint8_t)r8(&r);
         p->team = (uint8_t)r8(&r);
         p->x = (int32_t)r32(&r);

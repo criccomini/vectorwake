@@ -485,10 +485,46 @@ serves keyboard, touch and -- later -- a console, without a second layout.
 
 **Cost:** the arrow keys drive the menu while it is open, so a ship coasts
 while its pilot reads. Opening the menu mid-fight is a risk rather than a
-timeout, and a player can die during it. Changing hull inside a zone is not
-possible yet: the class is sent once at join and the protocol has no message
-for changing it.
+timeout, and a player can die during it. Inside a zone the change goes through
+the server (`C2S_SHIP`) and is not predicted, so a hull arrives a frame late,
+and it is refused unless you are alive and at a full bar.
 
 **Reconsider if:** a level needs more than a list -- a map preview, a keybind
 grid -- at which point the single-column stack stops being enough and the
 answer is a second row kind, not a second layout.
+
+## 21. A weapon is two table rows, not a kind
+
+**Status:** accepted
+
+Everything that leaves a ship is one model. A *fire pattern* is what pulling a
+trigger makes -- how many projectiles, how far apart, at what cost, with what
+recoil. A *spec* is what one projectile is -- how it flies, what ends it, and
+what happens where it ends. A hull's gun and bomb are pattern indices, and
+that is all a hull knows about weapons.
+
+The original has bullets, bombs, bursts, repels, decoys, thors and mines as
+seven systems. They differ along eight axes -- spread, bounce, proximity,
+splinter, level, freezing, through-walls, repel -- and none of those is a kind
+of weapon. Building the space instead of seven points in it collapses the
+seven into rows, and gives away the combinations between them: a bomb that
+repels, a bullet that stalls a bar, a bouncing shrapnel shell. `docs/design/
+weapons.md` has the recipes.
+
+A spec's `splinter` names another pattern, and that recursion is what makes
+shrapnel free: a bomb whose ending is a burst. The update loop is four phases
+in order -- it runs out, it moves, something ends it, the ending happens -- so
+every difference between a bullet, a bomb, a mine and a fragment is a number
+read during those phases rather than a branch between them.
+
+**Cost:** two more bytes on every projectile in every snapshot (`left` bounces
+and splinter `depth`, both spent as it flies, both needed by a client that
+predicts). A recursion that has to be bounded by hand, because nothing in a
+table stops a fragment naming the pattern that made it -- one generation, and
+the cap lives on the projectile. And an indirection: reading what a hull fires
+now means two table hops instead of a field.
+
+**Reconsider if:** a weapon needs a genuinely new verb rather than a new
+number -- homing, charging, chaining -- at which point the question is whether
+it is a fifth phase or a different system, and the answer had better be the
+first one.

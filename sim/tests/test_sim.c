@@ -633,6 +633,211 @@ int main(void) {
         CHECK(c.hits == 0, "a bomb that runs out hurts nobody");
     }
 
+    /* --- the weapon model ---------------------------------------------
+     *
+     * The shipped zone uses two plain rows of the table, so these build
+     * their own: a spec and a pattern per test, pointed at a hull's gun.
+     * That is the whole claim of the model -- a new weapon is a table row
+     * and no new code -- and it is only true if it can be demonstrated
+     * without touching the core. */
+    {
+        /* Spread: one trigger, three projectiles, none of them parallel. */
+        sim_settings w = cfg;
+        sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
+        sim_fire_pattern fp = *gun_of(&w, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        fp.count = 3;
+        fp.spacing = 65536 / 18;          /* twenty degrees */
+        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 3, "one shot, three projectiles");
+        CHECK(s.weapons[0].vx < s.weapons[1].vx
+              && s.weapons[1].vx < s.weapons[2].vx,
+              "and they fan out in order");
+        CHECK(s.weapons[1].vx == 0, "with the middle one straight ahead");
+    }
+
+    {
+        /* Bounce, and only as many times as the spec allows. */
+        sim_settings w = cfg;
+        sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
+        sp.on_wall = SIM_WALL_BOUNCE;
+        sp.bounces = 1;
+        sim_fire_pattern fp = *gun_of(&w, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+
+        sim_state s;
+        sim_init(&s, 1);
+        /* Two tiles from the top wall, facing it. */
+        sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1, "fired");
+        int32_t up = s.weapons[0].vy;
+        CHECK(up < 0, "travelling up");
+        step_n(&s, &w, 0, 0, 30);
+        CHECK(s.weapon_count == 1, "the wall did not end it");
+        CHECK(s.weapons[0].vy > 0, "it came back down");
+        /* Send it back at the same wall rather than waiting for a second one:
+         * a round travels 2 px a tick and the far wall is half a map away, so
+         * the flight would run out of life long before it arrived. */
+        s.weapons[0].vy = -s.weapons[0].vy;
+        step_n(&s, &w, 0, 0, 40);
+        CHECK(s.weapon_count == 0, "and the wall did the second time, with no bounce left");
+    }
+
+    {
+        /* Straight through, for something that ignores walls. */
+        sim_settings w = cfg;
+        sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
+        sp.on_wall = SIM_WALL_PASS;
+        sim_fire_pattern fp = *gun_of(&w, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
+        step_n(&s, &w, 0, 0, 40);
+        CHECK(s.weapon_count == 1, "a wall is not an ending for everything");
+        CHECK(s.weapons[0].y < 0, "and it is on the other side of it");
+    }
+
+    {
+        /* A proximity fuse: it never touches the hull. */
+        sim_settings w = cfg;
+        sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
+        sp.trigger = 60 * 256;
+        sim_fire_pattern fp = *gun_of(&w, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 140, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
+        /* Where it was on the last tick it existed. Read rather than
+         * predicted: the claim is that it stopped short, and a computed
+         * answer would only be restating the arithmetic under test. */
+        int32_t last = s.weapons[0].y;
+        for (int t = 0; t < 60 && s.weapon_count; t++) {
+            last = s.weapons[0].y;
+            step_n(&s, &w, 0, 0, 1);
+        }
+        CHECK(s.weapon_count == 0, "it went off");
+        CHECK(s.ships[1].energy
+              < sim_eff_max_energy(&w.classes[APEX], &s.ships[1]),
+              "close enough counted");
+        CHECK(last - s.ships[1].y > w.classes[APEX].radius,
+              "without ever reaching the hull");
+    }
+
+    {
+        /* Shrapnel: an ending that fires another pattern, once. */
+        sim_settings w = cfg;
+        sim_weapon_spec frag;
+        memset(&frag, 0, sizeof frag);
+        frag.speed = sim_units_speed(1200);
+        frag.life = 40;
+        frag.expire_ends = 1;
+        frag.damage = sim_units_energy(50);
+        frag.splinter = SIM_NO_PATTERN;
+        sim_fire_pattern shell;
+        memset(&shell, 0, sizeof shell);
+        shell.spec = (uint8_t)sim_add_spec(&w, &frag);
+        shell.count = 8;
+        shell.spacing = 65536 / 8;
+        uint8_t shell_id = (uint8_t)sim_add_pattern(&w, &shell);
+        /* Point the fragments back at their own pattern, which is the honest
+         * shape of the danger: nothing in a table stops a weapon naming
+         * itself, so the depth on the projectile has to. */
+        w.specs[shell.spec].splinter = shell_id;
+
+        sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
+        sp.life = 20;
+        sp.expire_ends = 1;
+        sp.splinter = shell_id;
+        sim_fire_pattern fp = *gun_of(&w, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
+        step_n(&s, &w, 0, 0, 21);
+        CHECK(s.weapon_count == 8, "running out broke it into eight");
+        for (uint16_t i = 0; i < s.weapon_count; i++) {
+            CHECK(s.weapons[i].depth == 1, "each one a generation down");
+        }
+        /* And they do not go on doing it. Sixty-four here would be the first
+         * step of a fork bomb, and the table has room for a thousand. */
+        step_n(&s, &w, 0, 0, 45);
+        CHECK(s.weapon_count == 0, "fragments do not fragment");
+    }
+
+    {
+        /* A shove, with no damage at all: the whole of a repel. */
+        sim_settings w = cfg;
+        sim_weapon_spec sp;
+        memset(&sp, 0, sizeof sp);
+        sp.speed = 0;
+        sp.life = 1;
+        sp.on_wall = SIM_WALL_PASS;
+        sp.expire_ends = 1;
+        sp.blast = 300 * 256;
+        sp.push = sim_units_speed(3000);
+        sp.splinter = SIM_NO_PATTERN;
+        sim_fire_pattern fp;
+        memset(&fp, 0, sizeof fp);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        fp.count = 1;
+        fp.delay = 25;
+        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &w);
+        int32_t e1 = s.ships[1].energy;
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 3);
+        CHECK(s.ships[1].vy < 0, "the neighbour was shoved away");
+        CHECK(s.ships[1].energy >= e1, "and not hurt");
+    }
+
+    {
+        /* A stall round: the bar stops refilling rather than emptying. */
+        sim_settings w = cfg;
+        sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
+        sp.damage = 0;
+        sp.stall = 200;
+        sim_fire_pattern fp = *gun_of(&w, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 140, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 120);
+        CHECK(s.ships[1].stall > 0, "the victim is stalled");
+        /* Knocked down by hand, because the round itself takes nothing off:
+         * a full bar has nowhere to recharge to and would prove nothing. */
+        int32_t held = s.ships[1].energy / 2;
+        s.ships[1].energy = held;
+        step_n(&s, &w, 0, 0, 60);
+        CHECK(s.ships[1].energy == held, "and the bar does not move");
+        step_n(&s, &w, 0, 0, 300);
+        CHECK(s.ships[1].stall == 0, "it wears off");
+        CHECK(s.ships[1].energy > held, "and the bar fills again");
+    }
+
     /* Prizes spawn, get collected, and raise the ship's effective stats. */
     {
         sim_state s;

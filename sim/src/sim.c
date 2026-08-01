@@ -230,12 +230,15 @@ int sim_add_pattern(sim_settings *cfg, const sim_fire_pattern *pattern) {
 
 static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
                          uint8_t team, int32_t x, int32_t y, int32_t vx,
-                         int32_t vy, uint16_t life) {
+                         int32_t vy, uint16_t life, uint8_t left,
+                         uint8_t depth) {
     if (s->weapon_count >= SIM_MAX_WEAPONS) return; /* silently dropped */
     sim_weapon *w = &s->weapons[s->weapon_count++];
     w->spec = spec;
     w->owner = owner;
     w->team = team;
+    w->left = left;
+    w->depth = depth;
     w->x = x;
     w->y = y;
     w->vx = vx;
@@ -257,7 +260,7 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
 static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
                           uint8_t owner, uint8_t team, int32_t x, int32_t y,
                           int32_t vx0, int32_t vy0, uint16_t heading,
-                          sim_events *ev);
+                          uint8_t depth, sim_events *ev);
 
 /* Remove a weapon by swapping the last one into its slot. Order is
  * deterministic because it depends only on state, never on time. */
@@ -269,12 +272,18 @@ static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
                        sim_events *ev);
 
 static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
-                         uint8_t attacker, int32_t amount, sim_events *ev) {
+                         uint8_t attacker, int32_t amount, uint16_t stall,
+                         sim_events *ev) {
     sim_ship *v = &s->ships[victim];
     if (!v->active || !v->alive) return;
     /* Nothing reaches a ship in a safe zone. A splash that clips the edge of
      * one does not leak in either, which is the whole point of the tile. */
     if (sim_in_safe(cfg->map, v->x, v->y)) return;
+    /* A stall round suppresses the victim's recharge rather than taking more
+     * off the bar: in a game where energy is the health and the ammunition,
+     * stopping the refill is its own kind of damage, and the longer of two
+     * stalls wins rather than them adding up. */
+    if (stall > v->stall) v->stall = stall;
     v->energy -= amount;
     emit(ev, SIM_EV_HIT, victim, attacker, amount);
     if (v->energy <= 0) {
@@ -315,10 +324,15 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
             if (d2 > rad * rad) continue;
             int64_t d = isqrt64(d2);
             int32_t dmg = (int32_t)((int64_t)spec->damage * (rad - d) / rad);
-            if (dmg > 0) apply_damage(s, cfg, (uint8_t)i, w->owner, dmg, ev);
+            /* A round that only stalls does no damage at all, so `dmg > 0`
+             * cannot be the test for whether anything happened -- that is
+             * what made the first stall round land silently. */
+            if (dmg > 0 || spec->stall > 0)
+                apply_damage(s, cfg, (uint8_t)i, w->owner, dmg, spec->stall, ev);
         }
-    } else if (hit_ship >= 0 && spec->damage > 0) {
-        apply_damage(s, cfg, (uint8_t)hit_ship, w->owner, spec->damage, ev);
+    } else if (hit_ship >= 0 && (spec->damage > 0 || spec->stall > 0)) {
+        apply_damage(s, cfg, (uint8_t)hit_ship, w->owner, spec->damage,
+                     spec->stall, ev);
     }
 
     /* A shove, outward, falling off to nothing at the rim. Weapons are moved
@@ -359,15 +373,21 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
          * follows the parent's travel -- would need the heading kept on the
          * projectile, which is state, which is a snapshot byte. Not until
          * something wants it. */
-        spawn_pattern(s, cfg, spec->splinter, w->owner, w->team, w->x, w->y,
-                      0, 0, 0, ev);
+        /* One generation. A fragment that fragments is a fork bomb: sixteen
+         * become two hundred and fifty-six become four thousand, and the
+         * weapon table has room for a thousand. The depth carried on the
+         * projectile is the stop. */
+        if (w->depth < SIM_MAX_SPLINTER_DEPTH) {
+            spawn_pattern(s, cfg, spec->splinter, w->owner, w->team, w->x, w->y,
+                          0, 0, 0, (uint8_t)(w->depth + 1), ev);
+        }
     }
 }
 
 static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
                           uint8_t owner, uint8_t team, int32_t x, int32_t y,
                           int32_t vx0, int32_t vy0, uint16_t heading,
-                          sim_events *ev) {
+                          uint8_t depth, sim_events *ev) {
     if (pat >= cfg->pattern_count) return;
     const sim_fire_pattern *p = &cfg->patterns[pat];
     if (p->spec >= cfg->spec_count) return;
@@ -384,7 +404,8 @@ static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
         heading_dir(h, &dx, &dy);
         int32_t vx = vx0 + (int32_t)(((int64_t)spec->speed * dx) >> 15);
         int32_t vy = vy0 + (int32_t)(((int64_t)spec->speed * dy) >> 15);
-        spawn_weapon(s, p->spec, owner, team, x, y, vx, vy, spec->life);
+        spawn_weapon(s, p->spec, owner, team, x, y, vx, vy, spec->life,
+                     spec->bounces, depth);
     }
     emit(ev, SIM_EV_FIRE, owner, p->spec, 0);
 }
@@ -669,7 +690,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     int32_t mx = sh->x + (int32_t)(((int64_t)(cls->radius + 512) * dx) >> 15);
                     int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
                     spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
-                                  sh->vx, sh->vy, sh->heading, ev);
+                                  sh->vx, sh->vy, sh->heading, 0, ev);
                     sh->energy -= p->energy;
                     sh->fire_cooldown = p->delay;
                     sh->vx -= (int32_t)(((int64_t)p->recoil * dx) >> 15);
@@ -771,8 +792,14 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 emit(ev, SIM_EV_GOAL, (uint8_t)i, SIM_TILE_VARIANT(t), 0);
         }
 
-        /* 6. Recharge, after firing, so a shot costs a full tick of energy. */
-        sh->energy += sim_eff_recharge(cls, sh);
+        /* 6. Recharge, after firing, so a shot costs a full tick of energy --
+         * unless something stalled it, in which case the bar simply sits
+         * where it is until the stall runs out. */
+        if (sh->stall > 0) {
+            sh->stall--;
+        } else {
+            sh->energy += sim_eff_recharge(cls, sh);
+        }
         {
             int32_t cap = sim_eff_max_energy(cls, sh);
             if (sh->energy > cap) sh->energy = cap;
@@ -808,10 +835,35 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         w->x += w->vx / 256;
         w->y += w->vy / 256;
 
-        /* 2. Walls: stop here, bounce off, or ignore them entirely. */
+        /* 2. Walls: stop here, bounce off, or ignore them entirely.
+         *
+         * A bounce reflects the axis that hit, tested one axis at a time so
+         * a corner turns a projectile around rather than letting it through
+         * -- the same treatment a ship gets, and for the same reason. */
+        int32_t px = w->x - w->vx / 256, py = w->y - w->vy / 256;
         if (spec->on_wall != SIM_WALL_PASS
             && box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0)) {
-            ended = 1;
+            if (spec->on_wall == SIM_WALL_BOUNCE && w->left > 0) {
+                w->left--;
+                if (box_hits(cfg->map, cfg, next->tick, w->x, py, 0)) {
+                    w->vx = -w->vx;
+                    w->x = px;
+                }
+                if (box_hits(cfg->map, cfg, next->tick, px, w->y, 0)) {
+                    w->vy = -w->vy;
+                    w->y = py;
+                }
+                emit(ev, SIM_EV_BOUNCE, w->owner, w->spec,
+                     pack_pos(w->x, w->y));
+            } else {
+                /* End on the near side of the wall rather than a step inside
+                 * it. A blast centred in the tile spends half its reach on
+                 * the far side where nobody is, and shrapnel spawned in there
+                 * dies on its own first tick. */
+                w->x = px;
+                w->y = py;
+                ended = 1;
+            }
         }
 
         /* 3. Ships. A weapon never arrives at its owner or a teammate, and
@@ -879,6 +931,7 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, sh->heading);
         h = hash_u32(h, (uint32_t)sh->energy);
         h = hash_u32(h, (uint32_t)(sh->fire_cooldown | (sh->respawn_at << 16)));
+        h = hash_u32(h, sh->stall);
         h = hash_u32(h, (uint32_t)(sh->kills | (sh->deaths << 16)));
         for (int u = 0; u < SIM_UP_COUNT; u++) h = hash_u32(h, sh->up[u]);
     }
@@ -903,6 +956,7 @@ uint64_t sim_hash(const sim_state *s) {
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *w = &s->weapons[i];
         h = hash_u32(h, (uint32_t)(w->spec | (w->owner << 8) | (w->team << 16)));
+        h = hash_u32(h, (uint32_t)(w->left | (w->depth << 8)));
         h = hash_u32(h, (uint32_t)w->x);
         h = hash_u32(h, (uint32_t)w->y);
         h = hash_u32(h, (uint32_t)w->vx);
