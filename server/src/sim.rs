@@ -58,7 +58,7 @@ pub struct sim_map {
 /// ends. Mirrors `sim_weapon_spec`; the model is documented in
 /// sim/include/sim/sim.h and docs/design/weapons.md.
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 #[allow(dead_code)]
 pub struct sim_weapon_spec {
     pub speed: i32,
@@ -76,7 +76,7 @@ pub struct sim_weapon_spec {
 
 /// What pulling a trigger makes. Mirrors `sim_fire_pattern`.
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 #[allow(dead_code)]
 pub struct sim_fire_pattern {
     pub spec: u8,
@@ -168,6 +168,8 @@ pub struct sim_flag {
 
 pub const MAX_FLAGS: usize = 16;
 pub const TEAM_NONE: u8 = 255;
+/// A trigger with nothing on it. Matches `SIM_NO_PATTERN`.
+pub const NO_PATTERN: u8 = 255;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -273,6 +275,8 @@ extern "C" {
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
     pub fn sim_settings_pack(cfg: *const sim_settings, out: *mut u8, cap: c_int) -> c_int;
+    pub fn sim_add_spec(cfg: *mut sim_settings, spec: *const sim_weapon_spec) -> c_int;
+    pub fn sim_add_pattern(cfg: *mut sim_settings, p: *const sim_fire_pattern) -> c_int;
     pub fn sim_add_flag(s: *mut sim_state, x_px: i32, y_px: i32) -> c_int;
     pub fn sim_flags_held(s: *const sim_state, team: u8) -> c_int;
     pub fn sim_units_speed(v: i32) -> i32;
@@ -349,6 +353,27 @@ impl World {
             -2 => Err("the tiles do not match the hash in its header".into()),
             _ => Err("not a map file, or truncated".into()),
         }
+    }
+
+    /// A blank weapon, appended to both tables, and the pattern index that
+    /// reaches it. The skeleton is a projectile that does nothing for a
+    /// second and stops at walls, because a zeroed row would splinter into
+    /// pattern zero -- a real weapon, and never the one anybody meant.
+    pub fn add_weapon(&mut self) -> Option<u8> {
+        let spec = sim_weapon_spec { life: 100, splinter: NO_PATTERN, ..Default::default() };
+        let s = unsafe { sim_add_spec(&mut *self.cfg, &spec) };
+        if s < 0 { return None }
+        let pattern = sim_fire_pattern { spec: s as u8, count: 1, delay: 25, ..Default::default() };
+        let p = unsafe { sim_add_pattern(&mut *self.cfg, &pattern) };
+        if p < 0 { None } else { Some(p as u8) }
+    }
+
+    /// Back to the numbers the core ships with, keeping the map. Applying a
+    /// zone file starts here, so a reload means what the file says now
+    /// rather than what it has ever said: a deleted line used to stay in
+    /// force, and a weapon block appended a row every time it was read.
+    pub fn reset_settings(&mut self) {
+        unsafe { sim_settings_baseline(&mut *self.cfg, &*self.map) };
     }
 
     /// The tuning this arena is running, packed. A client predicts by

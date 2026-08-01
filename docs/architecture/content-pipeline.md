@@ -88,11 +88,31 @@ with positions, layers, animation references, and an id the server can toggle,
 authored alongside the map and delivered with it. Defold draws them as ordinary
 sprites in a dedicated layer.
 
+## What is built, and what it looks like
+
+The plan above is the destination. What exists is `zone/zone.toml`: one file,
+re-read while running, carrying the arena's scalars, per-hull tuning, and the
+weapon tables by name -- `[[arena.weapons]]`, documented in
+[design/weapons.md](../design/weapons.md). Applying it rebuilds from the
+baseline first, so the arena means the file as it stands rather than every
+version of it since boot.
+
+Weapons being *in* that file is the load-bearing part of zones-are-content.
+A weapon is two table rows, so a zone that wants bouncing bombs or a repel
+edits a file rather than waiting for a release, and the tables travel to every
+client in the room on save.
+
 ## Delivery
 
 A client joining an arena needs its settings, its map, its overlays, and its
 tileset. Downloading all of that on join is what Subspace did and it was slow
 even on small maps.
+
+Settings and maps are built and travel over the game socket, packed by the
+core (`sim_settings_pack`, `sim_map_pack`) -- about 1.2 KB and a few hundred
+bytes respectively, which is small enough that content-addressing them would
+be machinery for nothing. Overlays and tilesets are the part that will need
+the scheme below.
 
 Content is content-addressed and cached. The server sends hashes, the client
 requests only what it lacks, and everything is served over HTTP rather than

@@ -107,24 +107,81 @@ struct Arena {
 }
 
 impl Arena {
-    /// Apply the operator's tuning over the baseline. Anything the zone file
-    /// leaves out keeps the value the core ships with, which is what makes a
-    /// short config file legal.
-    fn apply_config(world: &mut sim::World, c: &config::ArenaConfig) {
+    /// Apply the operator's tuning over a fresh baseline, and report anything
+    /// the file asked for that could not be done.
+    ///
+    /// Rebuilding first is what makes a reload mean the file as it stands
+    /// rather than the file plus everything it has ever said: a deleted line
+    /// used to stay in force until a restart, and a weapon block would append
+    /// another row every time the file was saved.
+    fn apply_config(world: &mut sim::World, c: &config::ArenaConfig) -> Vec<String> {
+        let mut warn = Vec::new();
+        world.reset_settings();
         if c.bounce > 0 { world.cfg.bounce = c.bounce; }
         if c.friction > 0 { world.cfg.friction = c.friction; }
         if c.respawn_delay > 0 { world.cfg.respawn_delay = c.respawn_delay; }
         if c.prize_delay > 0 { world.cfg.prize_delay = c.prize_delay; }
         if c.prize_max > 0 { world.cfg.prize_max = c.prize_max; }
+
+        // Weapons are named here and numbered in the core. The baseline
+        // built one gun and one bomb per hull, so those get the names an
+        // operator would guess -- `apex-gun`, `anvil-bomb` -- and anything
+        // else in the file is a weapon that did not exist before.
+        let mut named: Vec<(String, u8)> = Vec::new();
+        for (i, hull) in ai::CLASS_NAMES.iter().enumerate() {
+            let hull: &str = hull;
+            let cls = world.cfg.classes[i];
+            named.push((format!("{}-gun", hull.to_lowercase()), cls.gun));
+            if cls.bomb != sim::NO_PATTERN {
+                named.push((format!("{}-bomb", hull.to_lowercase()), cls.bomb));
+            }
+        }
+        // Two passes, because a splinter may name a weapon written later in
+        // the file, or one that does not exist until this pass makes it.
+        for w in &c.weapons {
+            if w.name.is_empty() {
+                warn.push("a weapon with no name is a weapon nothing can point at".into());
+                continue;
+            }
+            if named.iter().any(|(n, _)| *n == w.name) { continue; }
+            match world.add_weapon() {
+                Some(p) => named.push((w.name.clone(), p)),
+                None => warn.push(format!("no room in the weapon table for \"{}\"", w.name)),
+            }
+        }
+        for w in &c.weapons {
+            let Some(&(_, pat)) = named.iter().find(|(n, _)| *n == w.name) else { continue };
+            Arena::apply_weapon(world, &named, pat, w, &mut warn);
+        }
+
         for s in &c.ships {
-            let Some(idx) = ai::class_index(&s.name) else { continue };
+            let Some(idx) = ai::class_index(&s.name) else {
+                warn.push(format!("no hull called \"{}\"", s.name));
+                continue;
+            };
+            for (field, want) in [("gun", &s.gun), ("bomb", &s.bomb)] {
+                let Some(want) = want else { continue };
+                // An empty name takes the trigger away, which is how a hull
+                // loses its bomb rack rather than being given a free one.
+                let pat = if want.is_empty() {
+                    Some(sim::NO_PATTERN)
+                } else {
+                    named.iter().find(|(n, _)| n == want).map(|&(_, p)| p)
+                };
+                match pat {
+                    Some(p) if field == "gun" => world.cfg.classes[idx].gun = p,
+                    Some(p) => world.cfg.classes[idx].bomb = p,
+                    None => warn.push(format!(
+                        "{} has no weapon called \"{want}\" to put on its {field}", s.name)),
+                }
+            }
             let cls = &mut world.cfg.classes[idx];
             unsafe {
-                if s.speed > 0 { cls.max_speed = sim::sim_units_speed(s.speed); }
-                if s.thrust > 0 { cls.thrust = sim::sim_units_thrust(s.thrust); }
-                if s.rotation > 0 { cls.rot = sim::sim_units_rotation(s.rotation); }
-                if s.energy > 0 { cls.max_energy = sim::sim_units_energy(s.energy); }
-                if s.recharge > 0 { cls.recharge = sim::sim_units_recharge(s.recharge); }
+                if let Some(v) = s.speed { cls.max_speed = sim::sim_units_speed(v); }
+                if let Some(v) = s.thrust { cls.thrust = sim::sim_units_thrust(v); }
+                if let Some(v) = s.rotation { cls.rot = sim::sim_units_rotation(v); }
+                if let Some(v) = s.energy { cls.max_energy = sim::sim_units_energy(v); }
+                if let Some(v) = s.recharge { cls.recharge = sim::sim_units_recharge(v); }
             }
             // Upgrades climb toward whatever ceiling the operator set.
             cls.init_speed = cls.max_speed * 70 / 100;
@@ -138,11 +195,63 @@ impl Arena {
             cls.init_recharge = cls.recharge * 70 / 100;
             cls.up_recharge = (cls.recharge - cls.init_recharge) / 8;
         }
+        warn
+    }
+
+    /// One weapon block, over whatever that weapon already was. The units are
+    /// the ones the rest of the file uses -- px, px/s/10, energy, ticks --
+    /// and degrees, because nobody thinks in sixty-five thousandths of a turn.
+    fn apply_weapon(world: &mut sim::World, named: &[(String, u8)], pat: u8,
+                    w: &config::WeaponConfig, warn: &mut Vec<String>) {
+        let spec_idx = world.cfg.patterns[pat as usize].spec as usize;
+        let sp = &mut world.cfg.specs[spec_idx];
+        unsafe {
+            if let Some(v) = w.speed { sp.speed = sim::sim_units_speed(v); }
+            if let Some(v) = w.push { sp.push = sim::sim_units_speed(v); }
+            if let Some(v) = w.damage { sp.damage = sim::sim_units_energy(v); }
+        }
+        if let Some(v) = w.life { sp.life = v; }
+        if let Some(v) = w.bounces { sp.bounces = v; }
+        if let Some(v) = w.trigger { sp.trigger = v * 256; }
+        if let Some(v) = w.blast { sp.blast = v * 256; }
+        if let Some(v) = w.stall { sp.stall = v; }
+        if let Some(v) = w.expire_ends { sp.expire_ends = v as u8; }
+        if let Some(rule) = &w.on_wall {
+            match rule.as_str() {
+                "end" => sp.on_wall = 0,
+                "bounce" => sp.on_wall = 1,
+                "pass" => sp.on_wall = 2,
+                other => warn.push(format!(
+                    "\"{other}\" is not a wall rule: end, bounce or pass")),
+            }
+        }
+        if let Some(name) = &w.splinter {
+            // Naming itself is legal and bounded: the core stops a fragment
+            // fragmenting by the generation it carries, not by the table.
+            match named.iter().find(|(n, _)| n == name) {
+                Some(&(_, p)) => world.cfg.specs[spec_idx].splinter = p,
+                None if name.is_empty() => world.cfg.specs[spec_idx].splinter = sim::NO_PATTERN,
+                None => warn.push(format!(
+                    "\"{}\" splinters into \"{name}\", which is not a weapon", w.name)),
+            }
+        }
+        let p = &mut world.cfg.patterns[pat as usize];
+        unsafe {
+            if let Some(v) = w.recoil { p.recoil = sim::sim_units_speed(v); }
+            if let Some(v) = w.energy { p.energy = sim::sim_units_energy(v); }
+        }
+        if let Some(v) = w.count { p.count = v; }
+        if let Some(v) = w.delay { p.delay = v; }
+        if let Some(v) = w.spread {
+            p.spacing = ((v as i64 * 65536 / 360) & 0xffff) as u16;
+        }
     }
 
     fn new_from(cfg: &config::ZoneConfig) -> Self {
         let mut a = Arena::new_on_map(&cfg.map);
-        Arena::apply_config(&mut a.world, &cfg.arena);
+        for w in Arena::apply_config(&mut a.world, &cfg.arena) {
+            println!("zone: {w}");
+        }
         a
     }
 
@@ -507,7 +616,9 @@ impl Zone {
         if let Some(msg) = self.cfg.poll() {
             println!("{msg}");
             for a in self.arenas.values_mut() {
-                Arena::apply_config(&mut a.world, &self.cfg.current.arena);
+                for w in Arena::apply_config(&mut a.world, &self.cfg.current.arena) {
+                    println!("zone: {w}");
+                }
                 a.broadcast_settings();
             }
         }
@@ -914,5 +1025,172 @@ async fn main() {
             }
             writer.abort();
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(toml_src: &str) -> config::ArenaConfig {
+        let z: config::ZoneConfig = toml::from_str(toml_src).expect("zone file parses");
+        z.arena
+    }
+
+    /// The tables a zone file produces, which is the only thing a client
+    /// ever sees of it.
+    fn tuned(toml_src: &str) -> (sim::World, Vec<String>) {
+        let mut w = sim::World::new(1);
+        let warn = Arena::apply_config(&mut w, &parse(toml_src));
+        (w, warn)
+    }
+
+    fn gun(w: &sim::World, cls: usize) -> (sim::sim_fire_pattern, sim::sim_weapon_spec) {
+        let p = w.cfg.patterns[w.cfg.classes[cls].gun as usize];
+        (p, w.cfg.specs[p.spec as usize])
+    }
+
+    #[test]
+    fn a_named_baseline_weapon_is_tuned_in_place() {
+        let (w, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "anvil-bomb"
+            on_wall = "bounce"
+            bounces = 3
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        let anvil = ai::class_index("Anvil").unwrap();
+        let p = w.cfg.patterns[w.cfg.classes[anvil].bomb as usize];
+        let sp = w.cfg.specs[p.spec as usize];
+        assert_eq!((sp.on_wall, sp.bounces), (1, 3), "the bomb bounces now");
+        assert!(sp.blast > 0, "and is otherwise still the bomb");
+        // Nobody else's weapon moved: each hull's rows are its own.
+        let (_, apex) = gun(&w, ai::class_index("Apex").unwrap());
+        assert_eq!(apex.on_wall, 0);
+    }
+
+    #[test]
+    fn an_unknown_name_is_a_new_weapon_a_hull_can_carry() {
+        let (w, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "burst"
+            speed = 1500
+            life = 60
+            damage = 40
+            count = 16
+            spread = 22
+            energy = 300
+
+            [[arena.ships]]
+            name = "Spire"
+            bomb = "burst"
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        let spire = ai::class_index("Spire").unwrap();
+        let p = w.cfg.patterns[w.cfg.classes[spire].bomb as usize];
+        let sp = w.cfg.specs[p.spec as usize];
+        assert_eq!(p.count, 16);
+        assert_eq!(sp.life, 60);
+        assert_eq!(sp.splinter, sim::NO_PATTERN, "a new weapon splinters into nothing");
+        // Degrees, because nobody thinks in sixty-five thousandths of a turn.
+        assert_eq!(p.spacing, (22 * 65536 / 360) as u16);
+        // The Spire has no bomb rack in the baseline, so this gave it one.
+        let fresh = sim::World::new(1);
+        assert_eq!(fresh.cfg.classes[spire].bomb, sim::NO_PATTERN);
+    }
+
+    #[test]
+    fn a_weapon_can_splinter_into_one_written_after_it() {
+        let (w, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "anvil-bomb"
+            splinter = "shrapnel"
+
+            [[arena.weapons]]
+            name = "shrapnel"
+            speed = 1200
+            life = 40
+            damage = 50
+            count = 8
+            spread = 45
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        let anvil = ai::class_index("Anvil").unwrap();
+        let bomb = w.cfg.patterns[w.cfg.classes[anvil].bomb as usize];
+        let into = w.cfg.specs[bomb.spec as usize].splinter;
+        assert_ne!(into, sim::NO_PATTERN, "the bomb splinters");
+        assert_eq!(w.cfg.patterns[into as usize].count, 8, "into eight fragments");
+    }
+
+    #[test]
+    fn an_empty_name_takes_the_rack_away() {
+        let (w, warn) = tuned(r#"
+            [[arena.ships]]
+            name = "Anvil"
+            bomb = ""
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(w.cfg.classes[ai::class_index("Anvil").unwrap()].bomb, sim::NO_PATTERN);
+    }
+
+    #[test]
+    fn what_the_file_cannot_have_is_reported_rather_than_guessed() {
+        let (_, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "odd"
+            on_wall = "sideways"
+            splinter = "nothing-called-this"
+
+            [[arena.ships]]
+            name = "Trapezoid"
+
+            [[arena.ships]]
+            name = "Apex"
+            gun = "also-not-a-weapon"
+        "#);
+        assert_eq!(warn.len(), 4, "{warn:?}");
+        assert!(warn.iter().any(|w| w.contains("sideways")));
+        assert!(warn.iter().any(|w| w.contains("nothing-called-this")));
+        assert!(warn.iter().any(|w| w.contains("Trapezoid")));
+        assert!(warn.iter().any(|w| w.contains("also-not-a-weapon")));
+    }
+
+    /// The reason apply_config rebuilds from the baseline. An operator saves
+    /// the file repeatedly; the arena has to end up where the file says, not
+    /// where every version of it since boot has said.
+    #[test]
+    fn applying_a_file_twice_is_applying_it_once() {
+        let src = r#"
+            [[arena.weapons]]
+            name = "shrapnel"
+            speed = 1200
+            count = 8
+
+            [[arena.weapons]]
+            name = "anvil-bomb"
+            splinter = "shrapnel"
+        "#;
+        let mut w = sim::World::new(1);
+        Arena::apply_config(&mut w, &parse(src));
+        let (specs, patterns) = (w.cfg.spec_count, w.cfg.pattern_count);
+        for _ in 0..5 {
+            Arena::apply_config(&mut w, &parse(src));
+        }
+        assert_eq!((w.cfg.spec_count, w.cfg.pattern_count), (specs, patterns),
+                   "a reload does not append a row every time");
+    }
+
+    /// And a line taken out of the file comes back out of the arena.
+    #[test]
+    fn removing_a_line_removes_its_effect() {
+        let mut w = sim::World::new(1);
+        Arena::apply_config(&mut w, &parse(r#"
+            [[arena.ships]]
+            name = "Apex"
+            speed = 6000
+        "#));
+        let tuned_speed = w.cfg.classes[0].max_speed;
+        Arena::apply_config(&mut w, &parse("[arena]\nmode = \"warzone\""));
+        assert!(w.cfg.classes[0].max_speed < tuned_speed, "back to the baseline");
     }
 }

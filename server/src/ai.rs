@@ -41,11 +41,14 @@ pub const ANCHOR_RATING: f64 = 1200.0;
 
 /// Map a class name from a zone file to its index, so an operator writes
 /// "Apex" rather than remembering that Apex is 0.
+/// The roster, in the core's class order. Zone files name hulls, and so do
+/// the weapons the baseline builds for them.
+pub const CLASS_NAMES: [&str; 8] = [
+    "Apex", "Wedge", "Chord", "Anvil", "Spire", "Cipher", "Facet", "Lattice",
+];
+
 pub fn class_index(name: &str) -> Option<usize> {
-    const NAMES: [&str; 8] = [
-        "Apex", "Wedge", "Chord", "Anvil", "Spire", "Cipher", "Facet", "Lattice",
-    ];
-    NAMES.iter().position(|n| n.eq_ignore_ascii_case(name))
+    CLASS_NAMES.iter().position(|n| n.eq_ignore_ascii_case(name))
 }
 
 pub fn name_for(ship: u8) -> String {

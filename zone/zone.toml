@@ -57,6 +57,60 @@ rotation = 240
 energy = 2600
 recharge = 1000
 
+# Weapons, by name.
+#
+# The core keeps two tables -- what a trigger makes, and what one projectile
+# of it is -- and everything that leaves a ship is a row in each. A block here
+# is one of each, under a name.
+#
+# The baseline builds a gun and a bomb for every hull, named for it:
+# apex-gun, apex-bomb, wedge-gun, ... A block whose name is one of those tunes
+# that weapon and leaves the rest of it alone. Any other name makes a new
+# weapon, which a hull can carry or another weapon can splinter into.
+#
+# Units are the file's: px, px/s/10, energy, ticks, and degrees.
+#
+#   speed life on_wall bounces      how it flies (end, bounce, pass)
+#   trigger expire_ends splinter    what counts as arriving somewhere
+#   damage blast push stall         what happens there
+#   count spread energy delay recoil    what one pull of the trigger makes
+#
+# Three examples, all off. Uncomment one and save; the zone re-reads it and
+# every client in the room gets the new table without reconnecting.
+#
+# Bombs that bounce three times:
+#   [[arena.weapons]]
+#   name = "anvil-bomb"
+#   on_wall = "bounce"
+#   bounces = 3
+#
+# A bomb that breaks into eight fragments where it goes off:
+#   [[arena.weapons]]
+#   name = "anvil-bomb"
+#   splinter = "shrapnel"
+#
+#   [[arena.weapons]]
+#   name = "shrapnel"
+#   speed = 1200
+#   life = 40
+#   damage = 50
+#   count = 8
+#   spread = 45
+#
+# A repel: no damage at all, a wide shove, and gone on the tick it appears.
+# Give it to a hull with `bomb = "repel"` under [[arena.ships]]; `bomb = ""`
+# takes a rack away again.
+#   [[arena.weapons]]
+#   name = "repel"
+#   speed = 0
+#   life = 1
+#   on_wall = "pass"
+#   expire_ends = true
+#   blast = 300
+#   push = 3000
+#   energy = 400
+#   delay = 300
+
 # Authority is a set of named powers rather than a rank, the way ASSS did it.
 [[staff]]
 name = "chris"

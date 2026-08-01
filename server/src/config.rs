@@ -45,19 +45,78 @@ pub struct ArenaConfig {
     pub respawn_delay: u16,
     pub prize_delay: u16,
     pub prize_max: u16,
-    /// Per class, in settings-file units. Empty entries keep the baseline.
+    /// Per class, in settings-file units. Anything left out keeps the
+    /// baseline.
     pub ships: Vec<ShipConfig>,
+    /// Weapons, by name. A name the baseline already built (`apex-gun`,
+    /// `anvil-bomb`) tunes that weapon; any other name creates one, which a
+    /// hull can then carry or another weapon can splinter into.
+    pub weapons: Vec<WeaponConfig>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct ShipConfig {
     pub name: String,
-    pub speed: i32,
-    pub thrust: i32,
-    pub rotation: i32,
-    pub energy: i32,
-    pub recharge: i32,
+    pub speed: Option<i32>,
+    pub thrust: Option<i32>,
+    pub rotation: Option<i32>,
+    pub energy: Option<i32>,
+    pub recharge: Option<i32>,
+    /// What the two triggers fire, by weapon name. A hull keeps its own
+    /// unless the file says otherwise; `bomb = ""` takes the rack out.
+    pub gun: Option<String>,
+    pub bomb: Option<String>,
+}
+
+/// One weapon: what a trigger makes, and what one projectile of it is. The
+/// core keeps those in two tables and a zone file does not, because every
+/// weapon anybody has wanted is one of each, and a name is easier to write
+/// than a pair of indices.
+///
+/// Every field is optional and means "leave it alone". Tuning `anvil-bomb`
+/// to bounce is two lines; the rest of the bomb stays the bomb.
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct WeaponConfig {
+    pub name: String,
+    // How it flies.
+    /// px/s/10, as ship speeds are.
+    pub speed: Option<i32>,
+    /// Ticks before it runs out.
+    pub life: Option<u16>,
+    /// "end", "bounce" or "pass".
+    pub on_wall: Option<String>,
+    /// Walls survived, when bouncing.
+    pub bounces: Option<u8>,
+    // What counts as arriving somewhere.
+    /// Px from a hull that sets it off. 0 is contact, which is a bullet.
+    pub trigger: Option<i32>,
+    /// Whether running out of life counts as arriving. A mine's whole life
+    /// is its timer; a bomb that crosses the arena untouched did not arrive.
+    pub expire_ends: Option<bool>,
+    /// A weapon fired where this one ended, by name.
+    pub splinter: Option<String>,
+    // What happens there.
+    /// Energy at the centre.
+    pub damage: Option<i32>,
+    /// Px of blast, falling off to nothing at the rim. 0 lands on one hull.
+    pub blast: Option<i32>,
+    /// Px/s/10 shoved outward at the centre. Damage is optional; this is
+    /// the whole of a repel.
+    pub push: Option<i32>,
+    /// Ticks of suppressed recharge on whoever it reaches.
+    pub stall: Option<u16>,
+    // What one pull of the trigger makes.
+    pub count: Option<u8>,
+    /// Degrees between them. A full turn divided by the count is a rosette.
+    pub spread: Option<i32>,
+    /// Energy the shot costs -- the shot's, not each projectile's.
+    pub energy: Option<i32>,
+    /// Ticks of cooldown.
+    pub delay: Option<u16>,
+    /// Px/s/10 backwards on the ship that fired.
+    pub recoil: Option<i32>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -109,13 +168,8 @@ impl Default for ArenaConfig {
             prize_delay: 100,
             prize_max: 20,
             ships: Vec::new(),
+            weapons: Vec::new(),
         }
-    }
-}
-
-impl Default for ShipConfig {
-    fn default() -> Self {
-        ShipConfig { name: String::new(), speed: 0, thrust: 0, rotation: 0, energy: 0, recharge: 0 }
     }
 }
 
@@ -222,7 +276,7 @@ skill = 0.4
         assert_eq!(c.name, "test zone");
         assert_eq!(c.arena.flags, 3);
         assert_eq!(c.arena.bounce, 12);
-        assert_eq!(c.arena.ships[0].speed, 5200);
+        assert_eq!(c.arena.ships[0].speed, Some(5200));
         assert_eq!(c.bots[0].name, "Kestrel");
     }
 

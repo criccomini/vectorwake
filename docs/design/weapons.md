@@ -140,6 +140,52 @@ silently.
 **Levels.** Not a field. A level is another spec with a bigger `damage`, and a
 prize that swaps which pattern the trigger points at.
 
+## Writing one
+
+A zone file names weapons; the core numbers them. The baseline builds a gun
+and a bomb for every hull and they get the names an operator would guess, so
+tuning one is two lines and does not touch the rest of it:
+
+```toml
+[[arena.weapons]]
+name = "anvil-bomb"
+on_wall = "bounce"
+bounces = 3
+```
+
+Any *other* name makes a weapon that did not exist, which a hull can carry or
+another weapon can splinter into. Order in the file does not matter -- names
+are all collected before any of them are resolved:
+
+```toml
+[[arena.weapons]]
+name = "anvil-bomb"
+splinter = "shrapnel"
+
+[[arena.weapons]]
+name = "shrapnel"
+speed = 1200
+life = 40
+damage = 50
+count = 8
+spread = 45          # a full turn over eight, so a rosette
+
+[[arena.ships]]
+name = "Spire"
+bomb = "repel"       # and bomb = "" takes a rack away
+```
+
+One block is a pattern *and* its spec, because every weapon anybody has wanted
+is one of each and a name is easier to write than a pair of indices. Sharing
+one projectile between two triggers is not expressible, and nothing has wanted
+it. Units are the rest of the file's -- px, px/s/10, energy, ticks -- plus
+degrees, because nobody thinks in sixty-five thousandths of a turn.
+
+Saving the file is enough. The zone re-reads it, rebuilds its tables from the
+baseline, applies the file over that, and sends the result to everyone in the
+room. Rebuilding first is what makes a deleted line actually go away, and what
+stops a weapon block appending another row every time the file is touched.
+
 ## What is deliberately out
 
 **Appearance.** The core carries no colours. The client keys a projectile's
