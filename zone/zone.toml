@@ -12,6 +12,13 @@
 name = "first light"
 description = "the reference zone: four flags, eight hulls, nine pilots"
 listen = "127.0.0.1:9010"
+
+# TLS. Set both and the zone serves wss instead of ws. A page delivered
+# over https may only open wss -- browsers refuse a plain ws socket from
+# a secure origin, with loopback the one exception -- so a zone that
+# strangers reach from a hosted client needs these.
+tls_cert = ""
+tls_key = ""
 max_players = 16
 
 # Names here cannot join. Root-level keys must sit above every [table]:

@@ -552,6 +552,40 @@ async fn run_directory() {
     }
 }
 
+/// Either kind of accepted connection, boxed so the connection handler is
+/// written once. tokio implements AsyncRead and AsyncWrite for Box<T>, and a
+/// trait object carries its supertraits, so this needs no glue of its own.
+trait Conn: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> Conn for T {}
+
+/// Build a TLS acceptor from PEM files, or None when the zone is plain ws.
+/// A zone that is configured for TLS and cannot load its certificate must
+/// not quietly fall back to cleartext: the operator asked for wss, and
+/// serving ws instead would look like it worked.
+fn tls_acceptor(cert: &str, key: &str) -> Option<tokio_rustls::TlsAcceptor> {
+    if cert.is_empty() && key.is_empty() {
+        return None;
+    }
+    if cert.is_empty() || key.is_empty() {
+        panic!("tls_cert and tls_key must be set together");
+    }
+    let certs: Vec<_> = rustls_pemfile::certs(&mut std::io::BufReader::new(
+        std::fs::File::open(cert).unwrap_or_else(|e| panic!("tls_cert {cert}: {e}")),
+    ))
+    .collect::<Result<_, _>>()
+    .expect("tls_cert is not a PEM certificate chain");
+    let k = rustls_pemfile::private_key(&mut std::io::BufReader::new(
+        std::fs::File::open(key).unwrap_or_else(|e| panic!("tls_key {key}: {e}")),
+    ))
+    .expect("tls_key is not readable")
+    .expect("tls_key holds no private key");
+    let cfg = tokio_rustls::rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, k)
+        .expect("certificate and key do not match");
+    Some(tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(cfg)))
+}
+
 #[tokio::main]
 async fn main() {
     if std::env::args().nth(1).as_deref() == Some("directory") {
@@ -580,11 +614,22 @@ async fn main() {
     // The command line wins over the zone file, so an operator can move a
     // zone to another port without editing its configuration.
     let addr = addr_arg.unwrap_or_else(|| watcher.current.listen.clone());
+    // Read before the watcher moves into the zone. Certificates are not
+    // hot-reloaded: a listener is bound once, and swapping its identity
+    // underneath live connections is not something an operator asked for.
+    let cfg_tls = (
+        watcher.current.tls_cert.clone(),
+        watcher.current.tls_key.clone(),
+    );
     let zone = Arc::new(Mutex::new(Zone::new(watcher, store, ladder)));
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind failed");
-    println!("vectorwake zone server listening on ws://{addr}");
+    let tls = tls_acceptor(&cfg_tls.0, &cfg_tls.1);
+    println!(
+        "vectorwake zone server listening on {}://{addr}",
+        if tls.is_some() { "wss" } else { "ws" }
+    );
 
     // The arena loop. One thread owns the simulation for the duration of a
     // tick; connections only ever enqueue inputs.
@@ -633,7 +678,17 @@ async fn main() {
 
     while let Ok((stream, _)) = listener.accept().await {
         let zone = zone.clone();
+        let tls = tls.clone();
         tokio::spawn(async move {
+            // The TLS handshake happens before the WebSocket one, and a
+            // client that fails it is simply a client that never arrives.
+            let stream: Box<dyn Conn> = match &tls {
+                Some(a) => match a.accept(stream).await {
+                    Ok(s) => Box::new(s),
+                    Err(_) => return,
+                },
+                None => Box::new(stream),
+            };
             let ws = match tokio_tungstenite::accept_async(stream).await {
                 Ok(w) => w,
                 Err(_) => return,

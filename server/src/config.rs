@@ -17,6 +17,12 @@ pub struct ZoneConfig {
     pub name: String,
     pub description: String,
     pub listen: String,
+    /// PEM certificate chain and private key. Set both and the zone serves
+    /// wss instead of ws, which a page delivered over https is required to
+    /// use: browsers refuse a plain ws socket from a secure origin, and
+    /// loopback is the only exception.
+    pub tls_cert: String,
+    pub tls_key: String,
     pub max_players: usize,
     pub arena: ArenaConfig,
     pub staff: Vec<Staff>,
@@ -77,6 +83,8 @@ impl Default for ZoneConfig {
             name: "vectorwake".into(),
             description: "an unconfigured zone".into(),
             listen: "127.0.0.1:9010".into(),
+            tls_cert: String::new(),
+            tls_key: String::new(),
             max_players: 16,
             arena: ArenaConfig::default(),
             staff: Vec::new(),

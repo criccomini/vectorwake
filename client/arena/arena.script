@@ -386,6 +386,15 @@ local function start_chosen(what, cls)
     pickup = nil
     hurt = 0
     fx.reset()
+    if what == "zones" then
+        -- The one address serves both buttons: JOIN treats it as a zone,
+        -- ZONES treats it as a directory and asks what is running. An
+        -- operator hands out a single address either way.
+        menu.note = nil
+        menu.open = false
+        browser.connect(menu.server)
+        return "browsing"
+    end
     if what == "join" then
         -- The server owns state from here, but the core still needs its map
         -- and settings: prediction runs collision locally between snapshots,
@@ -509,7 +518,9 @@ function update(self, dt)
         })
         if moved then sfx.ui(chose and "ui_go" or "ui_move") end
         if chose then
-            self.online = start_chosen(chose, menu.class) == "online"
+            local outcome = start_chosen(chose, menu.class)
+            self.online = outcome == "online"
+            self.browsing = outcome == "browsing"
         end
     end
     tapped = {}
@@ -662,8 +673,13 @@ function on_input(self, action_id, action)
             if address then
                 sfx.ui("ui_go")
                 browser.close()
-                net.connect(address, 0,
-                            sys.get_config_string("vectorwake.name", "pilot"))
+                net.connect(address, menu.class, menu.name, function(why)
+                    menu.note = why
+                    menu.open = true
+                    menu.mode = 4
+                end)
+                menu.note = "connecting to " .. address
+                menu.open = true
                 self.online = true
                 self.browsing = false
             end
@@ -692,7 +708,9 @@ function on_input(self, action_id, action)
                 local chose, moved = menu.click(r.action, r.value)
                 if moved then sfx.ui(chose and "ui_go" or "ui_move") end
                 if chose then
-                    self.online = start_chosen(chose, menu.class) == "online"
+                    local outcome = start_chosen(chose, menu.class)
+                    self.online = outcome == "online"
+                    self.browsing = outcome == "browsing"
                 end
                 return true
             end

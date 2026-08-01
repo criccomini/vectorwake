@@ -84,3 +84,45 @@ play.
 
 The ladder is not sorted by skill and should not be: these pilots fly
 different hulls, and a rating measures the individual, hull included.
+
+## Serving a zone strangers can reach
+
+A client delivered over `https` may only open a `wss` socket. Browsers refuse
+a plain `ws` connection from a secure origin, and loopback is the only
+exception — which is why `ws://127.0.0.1` works from the hosted page and
+`ws://<anything else>` silently will not.
+
+So a public zone needs TLS. Point the zone at a certificate and it serves
+`wss` itself:
+
+```toml
+tls_cert = "/etc/letsencrypt/live/zone.example/fullchain.pem"
+tls_key  = "/etc/letsencrypt/live/zone.example/privkey.pem"
+```
+
+```
+$ vectorwake-server 0.0.0.0:9443 /srv/zone
+vectorwake zone server listening on wss://0.0.0.0:9443
+```
+
+Setting one of the two without the other is refused at startup rather than
+quietly served as cleartext: an operator who asked for `wss` and got `ws`
+would have no way to tell from the outside.
+
+Certificates are read once, when the listener binds. They are not part of the
+live reload, because swapping a listener's identity underneath connections
+that are already open is not something anybody asked for — restart instead.
+
+If you would rather not manage renewal, terminate TLS in front with something
+that does ACME on its own and leave `tls_cert` empty:
+
+```
+zone.example {
+  reverse_proxy 127.0.0.1:9040
+}
+```
+
+The directory polls zones over the same protocol and can reach `wss` ones, but
+it validates against the public roots — a self-signed certificate will show
+the zone as not answering even while a browser told to ignore the error can
+play on it.

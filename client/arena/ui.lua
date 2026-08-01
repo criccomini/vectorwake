@@ -506,12 +506,16 @@ function M.menu(o, names)
     end
     y = y + FIELD_H + 12 * S
 
-    -- Launch, duel and join, in the prototype's colours: the primary action
-    -- is a solid cyan block, the others outlines.
-    local LW, DW, JW, BH2 = 132 * S, 104 * S, 118 * S, 42 * S
-    local total = LW + DW + JW + 20 * S
+    -- Launch, duel, join and browse, in the prototype's colours: the primary
+    -- action is a solid cyan block, the others outlines.
+    local LW, DW, JW, BH2 = 124 * S, 96 * S, 100 * S, 42 * S
+    local ZW = 106 * S
+    local total = LW + DW + JW + ZW + 30 * S
     local three = total <= grid_w
-    if not three then LW, DW, JW = grid_w, (grid_w - 8 * S) / 2, (grid_w - 8 * S) / 2 end
+    if not three then
+        LW, DW, JW = grid_w, (grid_w - 8 * S) / 2, (grid_w - 8 * S) / 2
+        ZW = grid_w
+    end
     local bx = three and (cx - total / 2) or (cx - grid_w / 2)
 
     local launch = o.mode == 1
@@ -538,7 +542,19 @@ function M.menu(o, names)
     txt("J O I N", jx + JW / 2, jy + BH2 / 2, FONT * S,
         pal.a(pal.FRIEND, 0.92), "center")
     hit(jx, jy, JW, BH2, "go", 3)
-    y = jy + BH2 + 26 * S
+
+    -- Browse: the same address, asked what is running rather than joined
+    -- outright. Without it the directory the server already speaks is
+    -- reachable only by launching the client with a flag.
+    local zx, zy = jx + JW + 10 * S, jy
+    if not three then zx = bx zy = jy + BH2 + 8 * S end
+    rect(zx, zy, ZW, BH2, o.mode == 4 and pal.rgb(0x0a1620) or pal.BTN_BG)
+    u:frame(zx, ry(zy, BH2), ZW, BH2, S,
+            o.mode == 4 and pal.FRIEND or pal.BAR_EDGE)
+    txt("Z O N E S", zx + ZW / 2, zy + BH2 / 2, FONT * S,
+        pal.a(pal.INK, 0.9), "center")
+    hit(zx, zy, ZW, BH2, "go", 4)
+    y = zy + BH2 + 26 * S
 
     -- Whatever the connection last had to say outranks the key hints: a
     -- player who just failed to reach a zone needs the reason, not a lesson

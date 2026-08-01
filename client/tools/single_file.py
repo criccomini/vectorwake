@@ -202,12 +202,25 @@ FRAME_CSS = """
 </style>
 """
 
+# Tab is the browser's own focus-traversal key, so pressing it on a page whose
+# only content is a canvas moves focus off the canvas and every keystroke
+# after it goes nowhere. The start screen uses tab to reach its fields, so the
+# page has to keep it.
+FRAME_HEAD = """
+<script>
+(function () {
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "Tab") { e.preventDefault(); }
+  }, true);
+})();
+</script>
+"""
+
 # Defold owns the canvas buffer, sized from game.project. Resizing it from
 # here fought that: the engine kept its own idea of the drawable, the render
 # script projected the interface into it, and the part past the visible edge
 # was simply cropped. CSS scales the finished frame to the window instead,
 # which cannot crop anything.
-FRAME_HEAD = ""
 
 
 # Defold's loader sizes the canvas by fitting game.project's 1280x800 into

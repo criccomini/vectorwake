@@ -13,8 +13,8 @@ local M = {}
 
 M.open = true
 M.class = 0
-M.mode = 1              -- 1 launch, 2 duel, 3 join
-M.MODES = 3
+M.mode = 1              -- 1 launch, 2 duel, 3 join, 4 browse
+M.MODES = 4
 
 -- Who you are and where you are going. A published page has no server behind
 -- it, so these are editable: whoever runs a zone hands out an address, and
@@ -54,6 +54,7 @@ local function chosen()
     M.focus = nil
     if M.mode == 2 then return "duel" end
     if M.mode == 3 then return "join" end
+    if M.mode == 4 then return "zones" end
     return "play"
 end
 
