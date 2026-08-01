@@ -363,13 +363,11 @@ local function drain_events()
         elseif ty == sim.EV_HIT and a == me then
             hurt = 1
         elseif ty == sim.EV_PRIZE and a == me then
-            local u = pal.UPGRADES[b + 1]
-            if u then
-                pickup = {name = u.name, col = u.col, t = 1}
-                -- In the upgrade's own colour, because the feed is now the
-                -- one place that says what a green actually was.
-                notify("+ " .. u.name, u.col)
-            end
+            local col, name = pal.prize(b)
+            pickup = {name = name, col = col, t = 1}
+            -- In the green's own colour, because the feed is now the one
+            -- place that says what it actually was.
+            notify("+ " .. name, col)
         elseif ty == sim.EV_FLAG_TAKE or ty == sim.EV_FLAG_DROP then
             local col = (sim.ship_team(a) == sim.ship_team(me))
                 and pal.FRIEND or pal.ENEMY
@@ -731,7 +729,7 @@ function update(self, dt)
     -- camera, so they cannot live in the mesh the walls are baked into.
     world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
     world.flags(fill, glow, my_team, t)
-    world.prizes(fill, glow, t)
+    world.prizes(fill, glow, t, me)
     world.weapons(fill, glow, my_team, t)
 
     for i = 0, sim.ship_count() - 1 do

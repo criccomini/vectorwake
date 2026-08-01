@@ -32,6 +32,9 @@ local PAD = 14
 local PANEL_X, PANEL_Y = 12, 10
 local FONT = 13
 local LINE = 18
+-- Two triggers, one line each in the status panel. Read once rather than
+-- from `sim` per frame: the panel's height needs it before it draws.
+local SIM_TRIGGERS = 2
 local COL_W = 248      -- the width of the three stacked side panels
 local RADAR = 168
 
@@ -348,8 +351,9 @@ local function status(me, class_names, netinfo, pickup, lift)
 
     local rows_h = LINE * S              -- name / score
     local bar_h = 6 * S
+    -- Two upgrade rows now: the five stats, and what each trigger carries.
     local h = PANEL_Y * 2 * S + rows_h + 7 * S + bar_h + 6 * S + rows_h
-              + 5 * S + rows_h
+              + 5 * S + rows_h + SIM_TRIGGERS * rows_h
     if pickup then h = h + rows_h end
     if netinfo then h = h + rows_h end
 
@@ -399,6 +403,29 @@ local function status(me, class_names, netinfo, pickup, lift)
             held > 0 and up.col or pal.a(pal.DIM, 0.45))
     end
     cy = cy + rows_h
+
+    -- And what the two triggers are carrying. A level is the same weapon
+    -- harder and an add-on changes its character, so they read differently:
+    -- "gun 2" is a rung, "MUL" is a thing bolted on. Both are per trigger,
+    -- which is the point of showing them as two lines rather than one list.
+    for t = 0, SIM_TRIGGERS - 1 do
+        local x = ix
+        local lvl = sim.ship_level(me, t)
+        local name = (t == sim.TRIG_GUN) and "gun" or "bomb"
+        txt(name .. (lvl > 0 and (" " .. (lvl + 1)) or ""),
+            x, cy + rows_h / 2, (FONT - 1) * S,
+            lvl > 0 and pal.LEVEL_COL or pal.a(pal.DIM, 0.55))
+        local at = x + 34 * S
+        for m, mod in ipairs(pal.MODS) do
+            local n = sim.ship_mod(me, t, m - 1)
+            if n > 0 then
+                txt(mod.short .. (n > 1 and ("×" .. n) or ""), at,
+                    cy + rows_h / 2, (FONT - 2) * S, pal.MOD_COL)
+                at = at + 30 * S
+            end
+        end
+        cy = cy + rows_h
+    end
 
     if pickup then
         txt("+ " .. pickup.name, ix, cy + rows_h / 2, FONT * S,

@@ -82,6 +82,15 @@ repels that push everything away. It scores less than anything else and decides
 more fights than its stats suggest, which is a role type the original proved
 players love once they find it.
 
+## The tech tree
+
+Each hull's row also says how far its weapons climb and which add-ons it may
+ever hold. Levels and add-ons are different things -- one is the same weapon
+harder, the other changes its character -- and the matrix is in
+[weapons.md](weapons.md#the-tech-tree). It is the half of the roster that only
+shows up once greens are flying: without it, luck with the prize table would
+turn every hull into the same hull by the end of a round.
+
 ## Design rules that hold across the roster
 
 No ship is good at everything, and every ship beats something. A player who

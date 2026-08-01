@@ -138,7 +138,7 @@ bar still has to count as a hit, which is what made the first attempt land
 silently.
 
 **Levels.** Not a field. A level is another spec with a bigger `damage`, and a
-prize that swaps which pattern the trigger points at.
+prize that swaps which pattern the trigger points at. See the tech tree below.
 
 ## Writing one
 
@@ -185,6 +185,117 @@ Saving the file is enough. The zone re-reads it, rebuilds its tables from the
 baseline, applies the file over that, and sends the result to everyone in the
 room. Rebuilding first is what makes a deleted line actually go away, and what
 stops a weapon block appending another row every time the file is touched.
+
+## The tech tree
+
+A weapon has a **level** and a set of **add-ons**, and they are different
+things.
+
+A level is *the same weapon, harder*: a rung on a ladder of patterns the hull
+carries, and climbing it swaps which one the trigger fires. An add-on changes
+the weapon's *character* -- it bounces now, it breaks up, it freezes a bar.
+
+The reason to keep them apart is arithmetic. As rungs, three levels against six
+on/off add-ons is a hundred and ninety-two patterns for one weapon, and the
+table holds sixty-four. So a level is a row and an add-on is a **transform over
+that row**, applied at the moment of firing. That is the only new mechanism the
+tree needed.
+
+### Everything is a count with a ceiling
+
+| kind | the count means | the ceiling is |
+|---|---|---|
+| stat | steps from the hull's floor toward its ceiling | eight |
+| level | which rung of the trigger's ladder | the ladder's length |
+| add-on | how much of that add-on | the hull's row |
+| charge *(not built)* | how many you are carrying | the hull's row |
+
+One shape, four meanings. A green is one byte naming a place in that space --
+five stats, then a level per trigger, then an add-on per trigger per kind --
+which is also the space a zone weights and the client colours from.
+
+### Add-ons are per trigger
+
+You hold "bounce on guns" and "shrapnel on bombs" as separate items, which is
+what makes bullets that freeze and bombs that do not a thing you can carry.
+Six add-ons, two bits each, two triggers: four bytes on the pilot.
+
+| add-on | what it changes |
+|---|---|
+| multi | `count`, and `spacing` if the pattern had none |
+| bounce | `on_wall`, `bounces` |
+| prox | `trigger` |
+| shrapnel | `splinter`, to the zone's fragment pattern for that rung |
+| freeze | `stall` |
+| repel | `push`, and a fuse if the weapon had no reach |
+
+`repel` is the one that shows the model paying off. It is the same `push` field
+whether it is bolted onto your bomb or fired on its own as a charge: an add-on
+and an item, one mechanic.
+
+### A shot is what it was when it left
+
+A projectile carries the add-ons of the trigger that fired it -- two bytes, on
+the weapon and in the snapshot. It cannot read them off its owner, because the
+owner may pick up a green, change hull or die while it is in the air. A bomb
+thrown while you had shrapnel still breaks up after you are dead, which is the
+right rule and also the only one a client can predict.
+
+Fragments carry nothing. A shell that broke into eight would otherwise have
+each of those break into eight again.
+
+### The matrix
+
+Each hull's row says how far it climbs and what it may hold. This is what keeps
+the roster a roster once greens are flying: no run of luck turns a Spire into a
+bomber.
+
+| | gun | bomb | gun add-ons | bomb add-ons |
+|---|---|---|---|---|
+| **Apex** interceptor | 2 | 1 | multi | |
+| **Wedge** bomber | 1 | 2 | | prox, shrapnel |
+| **Chord** skirmisher | 2 | — | multi ×2, freeze | |
+| **Anvil** heavy | 1 | 3 | | shrapnel ×2, prox |
+| **Spire** support | 1 | — | freeze ×2 | |
+| **Cipher** stealth | 3 | 1 | bounce | |
+| **Facet** brawler | 2 | 1 | multi ×2 | prox |
+| **Lattice** denial | 1 | 2 | | repel ×2, bounce ×2 |
+
+A rung is 40% more damage and costs the same to fire. A level is a straight
+upgrade, which is what makes it worth crossing the map for; what stops it
+running away with a match is that the pilot holding it is carrying a bounty
+everyone can see.
+
+### A green you cannot use stays on the map
+
+A Spire flying over a bomb-level green takes nothing, and the green is still
+there afterwards for somebody who can use it. The original ate those and told
+you nothing, which is a green that lies about what it was.
+
+The client draws them at a quarter alpha, so you can see before you cross the
+arena that one was never yours. That is a rendering decision built on a
+simulation question -- `sim_take_prize` against a copy of your ship -- rather
+than a second table that could disagree with the first.
+
+### Writing a tree
+
+Rungs above the first are named for their level, so a zone tunes them the same
+way it tunes anything else, and a hull's row is two inline tables:
+
+```toml
+[[arena.weapons]]
+name = "anvil-bomb-3"     # the Anvil's third rung
+blast = 96
+
+[arena.mod_step]          # what one rung of each add-on is worth
+freeze = 250              # ticks
+prox = 24                 # px of fuse
+
+[[arena.ships]]
+name = "Anvil"
+bomb_mods = { shrapnel = 3, prox = 1 }
+gun_mods = { multi = 1 }
+```
 
 ## What is deliberately out
 

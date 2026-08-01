@@ -10,24 +10,49 @@
 #include <string.h>
 #include "sim/baseline.h"
 
+/* A hull's whole tech tree, in one row.
+ *
+ * `gun_rungs` and `bomb_rungs` are the ladders: how many levels of that
+ * weapon this hull can climb, where one is a hull that never levels and zero
+ * is a hull without the rack at all. `gun_mods` and `bomb_mods` are which
+ * add-ons it may ever hold and how many rungs of each -- packed the same way
+ * the pilot's are, and the reason the roster stays a roster once greens are
+ * flying: shrapnel belongs to bombers and spread belongs to brawlers, and no
+ * amount of luck with the prize table changes that. */
 typedef struct {
     int32_t speed, thrust, rotation, energy, recharge, radius;
     int32_t bullet_damage, bullet_delay, bomb_damage, bomb_delay;
+    uint8_t gun_rungs, bomb_rungs;
+    uint16_t gun_mods, bomb_mods;
 } class_row;
+
+/* Two bits per add-on, so a row reads as a list rather than a number. */
+#define M1(a) ((uint16_t)(1u << ((a) * 2)))
+#define M2(a) ((uint16_t)(2u << ((a) * 2)))
+#define M3(a) ((uint16_t)(3u << ((a) * 2)))
 
 /* Energy per second is recharge/10, so 1500 refills a 1350-energy hull in
  * about nine seconds. Getting this wrong by a factor of ten makes ships that
  * can never shoot twice, which is what the first test run caught. */
 static const class_row rows[SIM_MAX_CLASSES] = {
-    /* speed thrust  rot  energy  rech  rad  bdmg bdly  bombdmg bombdly */
-    {4900, 30, 420, 1350, 1500, 14, 200, 25, 400, 150},  /* Apex    */
-    {4400, 22, 340, 1450, 1300, 14, 150, 30, 600, 80},   /* Wedge   */
-    {4300, 26, 400, 1500, 1800, 14, 120, 15, 0, 0},      /* Chord   */
-    {3200, 14, 240, 2600, 1000, 16, 150, 35, 900, 60},   /* Anvil   */
-    {4600, 28, 380, 1200, 2200, 14, 100, 30, 0, 0},      /* Spire   */
-    {4700, 24, 390, 1100, 1200, 12, 300, 40, 300, 200},  /* Cipher  */
-    {4200, 27, 410, 1600, 1400, 14, 180, 20, 300, 180},  /* Facet   */
-    {3800, 20, 330, 1900, 1250, 15, 150, 30, 500, 100},  /* Lattice */
+    /* speed thrust  rot  energy  rech  rad  bdmg bdly  bombdmg bombdly
+       gun  bomb  what the gun may hold        what the bomb may hold */
+    {4900, 30, 420, 1350, 1500, 14, 200, 25, 400, 150,
+     2, 1, M1(SIM_MOD_MULTI), 0},                        /* Apex    */
+    {4400, 22, 340, 1450, 1300, 14, 150, 30, 600, 80,
+     1, 2, 0, M1(SIM_MOD_PROX) | M1(SIM_MOD_SHRAPNEL)},  /* Wedge   */
+    {4300, 26, 400, 1500, 1800, 14, 120, 15, 0, 0,
+     2, 0, M2(SIM_MOD_MULTI) | M1(SIM_MOD_FREEZE), 0},   /* Chord   */
+    {3200, 14, 240, 2600, 1000, 16, 150, 35, 900, 60,
+     1, 3, 0, M2(SIM_MOD_SHRAPNEL) | M1(SIM_MOD_PROX)},  /* Anvil   */
+    {4600, 28, 380, 1200, 2200, 14, 100, 30, 0, 0,
+     1, 0, M2(SIM_MOD_FREEZE), 0},                       /* Spire   */
+    {4700, 24, 390, 1100, 1200, 12, 300, 40, 300, 200,
+     3, 1, M1(SIM_MOD_BOUNCE), 0},                       /* Cipher  */
+    {4200, 27, 410, 1600, 1400, 14, 180, 20, 300, 180,
+     2, 1, M2(SIM_MOD_MULTI), M1(SIM_MOD_PROX)},         /* Facet   */
+    {3800, 20, 330, 1900, 1250, 15, 150, 30, 500, 100,
+     1, 2, 0, M2(SIM_MOD_PUSH) | M2(SIM_MOD_BOUNCE)},    /* Lattice */
 };
 
 const char *const sim_class_names[SIM_MAX_CLASSES] = {
@@ -59,16 +84,59 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->wormhole_pull = sim_units_speed(90);
     cfg->wormhole_range = 220 * 256;
 
+    /* What one rung of each add-on is worth, in the units of the field it
+     * moves. These are the numbers that decide whether an add-on is a nice
+     * surprise or the thing everyone chases, so they live here in the open
+     * rather than inside the transform that applies them. */
+    cfg->mod_step[SIM_MOD_MULTI] = 2;              /* a pair of extra barrels */
+    cfg->mod_step[SIM_MOD_BOUNCE] = 1;             /* one more wall survived */
+    cfg->mod_step[SIM_MOD_PROX] = 24 * 256;        /* 24 px of fuse */
+    cfg->mod_step[SIM_MOD_SHRAPNEL] = 0;           /* a pattern, not a number */
+    cfg->mod_step[SIM_MOD_FREEZE] = 100;           /* a second of no recharge */
+    cfg->mod_step[SIM_MOD_PUSH] = sim_units_speed(1200);
+    cfg->mod_spread = 65536 / 24;                  /* fifteen degrees */
+
+    /* Shrapnel, one pattern per rung: four fragments, then eight, then
+     * sixteen. The fragments themselves are one spec -- a rung of shrapnel
+     * buys more of them rather than better ones, so the add-on reads as
+     * "more" the way every other add-on does. */
+    {
+        sim_weapon_spec frag;
+        memset(&frag, 0, sizeof frag);
+        frag.speed = sim_units_speed(1100);
+        frag.life = 45;
+        frag.on_wall = SIM_WALL_END;
+        frag.damage = sim_units_energy(60);
+        frag.splinter = SIM_NO_PATTERN;
+        uint8_t frag_spec = (uint8_t)sim_add_spec(cfg, &frag);
+        cfg->mod_splinter[0] = SIM_NO_PATTERN;   /* rung zero is no shrapnel */
+        for (int k = 1; k < SIM_MAX_RUNGS; k++) {
+            sim_fire_pattern shell;
+            memset(&shell, 0, sizeof shell);
+            shell.spec = frag_spec;
+            shell.count = (uint8_t)(4 << (k - 1));
+            shell.spacing = (uint16_t)(65536 / shell.count);
+            cfg->mod_splinter[k] = (uint8_t)sim_add_pattern(cfg, &shell);
+        }
+    }
+
     for (int i = 0; i < SIM_MAX_CLASSES; i++) {
         const class_row *r = &rows[i];
         sim_ship_class *c = &cfg->classes[i];
         sim_class_from_units(c, r->speed, r->thrust, r->rotation, r->energy,
                            r->recharge, r->radius);
-        /* Each hull's gun and bomb are a spec and a pattern of their own,
-         * built from the roster row. Two rows in the table per hull rather
-         * than twelve numbers on the hull: the difference between a bullet
-         * and a bomb is now entirely what those rows say, which is what lets
-         * a zone add a third weapon without the core learning a third name.
+        c->mod_max[SIM_TRIG_GUN] = r->gun_mods;
+        c->mod_max[SIM_TRIG_BOMB] = r->bomb_mods;
+
+        /* A ladder per trigger, built from the roster row. A rung is the same
+         * weapon harder -- 40% more damage each -- and nothing else: an
+         * add-on is what changes a weapon's character, and keeping the two
+         * apart is what stops the table needing a row per combination.
+         *
+         * The cost does not climb with the rung. A level is a straight
+         * upgrade, which is what makes it worth crossing the map for; what
+         * stops it running away with a match is that the pilot holding it is
+         * carrying a bounty everyone can see.
          *
          * Firing costs are a fraction of the ship's own energy, taken from
          * the original's numbers: it gave every ship 1700 maximum energy and
@@ -76,45 +144,46 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * damage instead -- which is what this did -- made a bullet cost 35%
          * of a full bar and a bomb 63%, so the bomb key did nothing at all
          * unless you had been left alone to recharge, and silently. */
-        sim_weapon_spec bolt;
-        memset(&bolt, 0, sizeof bolt);
-        bolt.speed = sim_units_speed(2000);
-        bolt.life = 200;
-        bolt.on_wall = SIM_WALL_END;
-        bolt.damage = sim_units_energy(r->bullet_damage);
-        bolt.splinter = SIM_NO_PATTERN;
+        for (int k = 0; k < r->gun_rungs && k < SIM_MAX_RUNGS; k++) {
+            sim_weapon_spec bolt;
+            memset(&bolt, 0, sizeof bolt);
+            bolt.speed = sim_units_speed(2000);
+            bolt.life = 200;
+            bolt.on_wall = SIM_WALL_END;
+            bolt.damage = sim_units_energy(r->bullet_damage * (5 + 2 * k) / 5);
+            bolt.splinter = SIM_NO_PATTERN;
 
-        sim_fire_pattern gun;
-        memset(&gun, 0, sizeof gun);
-        gun.spec = (uint8_t)sim_add_spec(cfg, &bolt);
-        gun.count = 1;
-        gun.energy = (int32_t)((int64_t)c->max_energy * 20 / 1700);
-        gun.delay = (uint16_t)r->bullet_delay;
-        c->gun = (uint8_t)sim_add_pattern(cfg, &gun);
-
-        /* A hull with no bomb rack has no bomb pattern at all, rather than an
-         * unaffordable one. The trigger is simply dead. */
-        if (r->bomb_damage == 0) {
-            c->bomb = SIM_NO_PATTERN;
-            continue;
+            sim_fire_pattern gun;
+            memset(&gun, 0, sizeof gun);
+            gun.spec = (uint8_t)sim_add_spec(cfg, &bolt);
+            gun.count = 1;
+            gun.energy = (int32_t)((int64_t)c->max_energy * 20 / 1700);
+            gun.delay = (uint16_t)r->bullet_delay;
+            c->trigger[SIM_TRIG_GUN][k] = (uint8_t)sim_add_pattern(cfg, &gun);
         }
-        sim_weapon_spec sh;
-        memset(&sh, 0, sizeof sh);
-        sh.speed = sim_units_speed(1500);
-        sh.life = 500;
-        sh.on_wall = SIM_WALL_END;
-        sh.damage = sim_units_energy(r->bomb_damage);
-        sh.blast = 48 * 256;
-        sh.splinter = SIM_NO_PATTERN;
 
-        sim_fire_pattern bomb;
-        memset(&bomb, 0, sizeof bomb);
-        bomb.spec = (uint8_t)sim_add_spec(cfg, &sh);
-        bomb.count = 1;
-        bomb.energy = (int32_t)((int64_t)c->max_energy * 300 / 1700);
-        bomb.delay = (uint16_t)r->bomb_delay;
-        bomb.recoil = sim_units_speed(200);
-        c->bomb = (uint8_t)sim_add_pattern(cfg, &bomb);
+        /* A hull with no bomb rack has an empty ladder rather than an
+         * unaffordable pattern. The trigger is simply dead, and a bomb level
+         * green passes it by. */
+        for (int k = 0; k < r->bomb_rungs && k < SIM_MAX_RUNGS; k++) {
+            sim_weapon_spec sh;
+            memset(&sh, 0, sizeof sh);
+            sh.speed = sim_units_speed(1500);
+            sh.life = 500;
+            sh.on_wall = SIM_WALL_END;
+            sh.damage = sim_units_energy(r->bomb_damage * (5 + 2 * k) / 5);
+            sh.blast = 48 * 256;
+            sh.splinter = SIM_NO_PATTERN;
+
+            sim_fire_pattern bomb;
+            memset(&bomb, 0, sizeof bomb);
+            bomb.spec = (uint8_t)sim_add_spec(cfg, &sh);
+            bomb.count = 1;
+            bomb.energy = (int32_t)((int64_t)c->max_energy * 300 / 1700);
+            bomb.delay = (uint16_t)r->bomb_delay;
+            bomb.recoil = sim_units_speed(200);
+            c->trigger[SIM_TRIG_BOMB][k] = (uint8_t)sim_add_pattern(cfg, &bomb);
+        }
     }
 }
 

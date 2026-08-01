@@ -66,6 +66,10 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap) {
         w16(&w, sh->kills);
         w16(&w, sh->deaths);
         for (int u = 0; u < SIM_UP_COUNT; u++) w8(&w, sh->up[u]);
+        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+            w8(&w, sh->level[t]);
+            w16(&w, sh->mods[t]);
+        }
     }
 
     w16(&w, s->weapon_count);
@@ -74,6 +78,7 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap) {
         w8(&w, p->spec);
         w8(&w, p->left);
         w8(&w, p->depth);
+        w16(&w, p->mods);
         w8(&w, p->owner);
         w8(&w, p->team);
         w32(&w, (uint32_t)p->x);
@@ -141,6 +146,10 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         sh->kills = (uint16_t)r16(&r);
         sh->deaths = (uint16_t)r16(&r);
         for (int u = 0; u < SIM_UP_COUNT; u++) sh->up[u] = (uint8_t)r8(&r);
+        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+            sh->level[t] = (uint8_t)r8(&r);
+            sh->mods[t] = (uint16_t)r16(&r);
+        }
     }
 
     uint32_t weapons = r16(&r);
@@ -151,6 +160,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         p->spec = (uint8_t)r8(&r);
         p->left = (uint8_t)r8(&r);
         p->depth = (uint8_t)r8(&r);
+        p->mods = (uint16_t)r16(&r);
         p->owner = (uint8_t)r8(&r);
         p->team = (uint8_t)r8(&r);
         p->x = (int32_t)r32(&r);
@@ -206,7 +216,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-#define CFG_VERSION 1
+#define CFG_VERSION 2
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -232,8 +242,10 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w32(&w, (uint32_t)c->init_recharge);
         w32(&w, (uint32_t)c->up_recharge);
         w32(&w, (uint32_t)c->radius);
-        w8(&w, c->gun);
-        w8(&w, c->bomb);
+        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+            for (int r = 0; r < SIM_MAX_RUNGS; r++) w8(&w, c->trigger[t][r]);
+            w16(&w, c->mod_max[t]);
+        }
     }
 
     w8(&w, cfg->spec_count);
@@ -263,6 +275,9 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w32(&w, (uint32_t)p->recoil);
     }
 
+    for (int m = 0; m < SIM_MOD_COUNT; m++) w32(&w, (uint32_t)cfg->mod_step[m]);
+    w16(&w, cfg->mod_spread);
+    for (int r = 0; r < SIM_MAX_RUNGS; r++) w8(&w, cfg->mod_splinter[r]);
     w32(&w, (uint32_t)cfg->bounce);
     w32(&w, (uint32_t)cfg->friction);
     w16(&w, cfg->respawn_delay);
@@ -313,8 +328,11 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         c->init_recharge = (int32_t)r32(&r);
         c->up_recharge = (int32_t)r32(&r);
         c->radius = (int32_t)r32(&r);
-        c->gun = (uint8_t)r8(&r);
-        c->bomb = (uint8_t)r8(&r);
+        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+            for (int k = 0; k < SIM_MAX_RUNGS; k++)
+                c->trigger[t][k] = (uint8_t)r8(&r);
+            c->mod_max[t] = (uint16_t)r16(&r);
+        }
     }
 
     uint32_t specs = r8(&r);
@@ -348,6 +366,10 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         p->recoil = (int32_t)r32(&r);
     }
 
+    for (int m = 0; m < SIM_MOD_COUNT; m++) cfg->mod_step[m] = (int32_t)r32(&r);
+    cfg->mod_spread = (uint16_t)r16(&r);
+    for (int k = 0; k < SIM_MAX_RUNGS; k++)
+        cfg->mod_splinter[k] = (uint8_t)r8(&r);
     cfg->bounce = (int32_t)r32(&r);
     cfg->friction = (int32_t)r32(&r);
     cfg->respawn_delay = (uint16_t)r16(&r);

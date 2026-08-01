@@ -78,7 +78,10 @@ recharge = 1000
 # Three examples, all off. Uncomment one and save; the zone re-reads it and
 # every client in the room gets the new table without reconnecting.
 #
-# Bombs that bounce three times:
+# A hull's ladder is named by rung: anvil-bomb is the first, anvil-bomb-2 and
+# anvil-bomb-3 the ones a bomb-level green climbs to.
+#
+# Bombs that bounce three times, at every level:
 #   [[arena.weapons]]
 #   name = "anvil-bomb"
 #   on_wall = "bounce"
@@ -110,6 +113,29 @@ recharge = 1000
 #   push = 3000
 #   energy = 400
 #   delay = 300
+
+# The tech tree.
+#
+# A green is a stat step, a weapon level, or an add-on. Levels climb the
+# ladders above; add-ons are transforms applied to whatever rung the trigger is
+# on -- multi, bounce, prox, shrapnel, freeze, repel -- and each hull's row
+# says which it may ever hold and how many rungs of each. That is what keeps
+# the roster a roster: shrapnel belongs to bombers however the greens fall.
+#
+# What one rung of each add-on is worth. Units are the field it moves:
+# barrels, walls, px of fuse, ticks of stall, px/s/10 of shove.
+#   [arena.mod_step]
+#   multi = 2
+#   bounce = 1
+#   prox = 24
+#   freeze = 100
+#   push = 1200
+#
+# And who may hold what, under a ship:
+#   [[arena.ships]]
+#   name = "Anvil"
+#   bomb_mods = { shrapnel = 3, prox = 1 }
+#   gun_mods = { multi = 1 }
 
 # Authority is a set of named powers rather than a rank, the way ASSS did it.
 [[staff]]

@@ -12,8 +12,8 @@ pub const MAX_SHIPS: usize = 64;
 pub const MAX_WEAPONS: usize = 1024;
 pub const MAX_EVENTS: usize = 256;
 pub const MAX_CLASSES: usize = 8;
-pub const MAX_SPECS: usize = 32;
-pub const MAX_PATTERNS: usize = 32;
+pub const MAX_SPECS: usize = 64;
+pub const MAX_PATTERNS: usize = 64;
 pub const MAP_TILES: usize = 1024;
 pub const TILE_PX: i32 = 16;
 
@@ -97,10 +97,14 @@ pub struct sim_ship_class {
     pub max_energy: i32, pub init_energy: i32, pub up_energy: i32,
     pub recharge: i32, pub init_recharge: i32, pub up_recharge: i32,
     pub radius: i32,
-    /// Indices into the settings' pattern table, or 255 for a hull with no
-    /// bomb rack. What a weapon *is* lives in the tables below, not here.
-    pub gun: u8,
-    pub bomb: u8,
+    /// A ladder of patterns per trigger, climbed by the pilot's level, with
+    /// 255 ending it. The ladder's length is the hull's ceiling for that
+    /// weapon; a hull with no bomb rack has 255 at rung zero.
+    pub trigger: [[u8; MAX_RUNGS]; TRIG_COUNT],
+    /// Which add-ons this hull may ever hold on each trigger, packed two bits
+    /// each exactly as the pilot's are. This is what keeps the roster a
+    /// roster once greens are flying.
+    pub mod_max: [u16; TRIG_COUNT],
 }
 
 #[repr(C)]
@@ -112,6 +116,12 @@ pub struct sim_settings {
     pub patterns: [sim_fire_pattern; MAX_PATTERNS],
     pub spec_count: u8,
     pub pattern_count: u8,
+    /// What one rung of each add-on is worth, in the units of the field it
+    /// moves.
+    pub mod_step: [i32; MOD_COUNT],
+    pub mod_spread: u16,
+    /// What each rung of shrapnel breaks into.
+    pub mod_splinter: [u8; MAX_RUNGS],
     pub bounce: i32,
     pub friction: i32,
     pub respawn_delay: u16,
@@ -152,6 +162,9 @@ pub struct sim_ship {
     pub kills: u16,
     pub deaths: u16,
     pub up: [u8; UP_COUNT],
+    /// The rung each trigger is on, and the add-ons held on each.
+    pub level: [u8; TRIG_COUNT],
+    pub mods: [u16; TRIG_COUNT],
 }
 
 #[repr(C)]
@@ -192,6 +205,9 @@ pub struct sim_weapon {
     /// projectile rather than per spec, because both are spent as it flies.
     pub left: u8,
     pub depth: u8,
+    /// The add-ons of the trigger that fired it: a shot is what it was when
+    /// it left, not what its owner is carrying now.
+    pub mods: u16,
     pub x: i32,
     pub y: i32,
     pub vx: i32,
@@ -287,8 +303,14 @@ extern "C" {
 }
 
 pub const PACK_MAX: usize = 64 * 1024;
-pub const SETTINGS_PACK_MAX: usize = 4096;
+pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
+pub const TRIG_COUNT: usize = 2;
+pub const MOD_COUNT: usize = 6;
+pub const MAX_RUNGS: usize = 4;
+pub const MOD_MAX: u8 = 3;
+pub const MOD_PROX: usize = 2;
+pub const MOD_PUSH: usize = 5;
 
 // Safe wrappers. The core has no globals and no allocation, so a state is a
 // plain value a thread can own for the duration of a tick.

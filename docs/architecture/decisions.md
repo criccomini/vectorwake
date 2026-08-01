@@ -536,3 +536,41 @@ half understands.
 number -- homing, charging, chaining -- at which point the question is whether
 it is a fifth phase or a different system, and the answer had better be the
 first one.
+
+## 22. A weapon has a level and a set of add-ons, and they are different things
+
+**Status:** accepted
+
+A *level* is the same weapon harder: a rung on a ladder of patterns the hull
+carries, swapped in when a prize climbs it. An *add-on* -- multifire, bounce,
+proximity, shrapnel, freeze, repel -- changes the weapon's character, and is a
+**transform applied to that rung at the moment of firing** rather than a row of
+its own.
+
+The split is forced by arithmetic. Three levels against six on/off add-ons is
+192 patterns for one weapon and the table holds 64, so precomputing every
+combination was never available. Composing at fire time costs one function and
+gives away every combination for free, including the ones the original never
+had: bombs that repel, bullets that stall a bar.
+
+That makes the whole tech tree one shape -- a count with a ceiling. A stat
+count interpolates a range, a level count indexes a ladder, an add-on count
+transforms a shot, and a future charge count is inventory. One flat prize
+space, one byte on a green, one table for a zone to weight.
+
+Add-ons are per trigger, so "bounce on guns, shrapnel on bombs" is a thing a
+pilot holds. Each hull's row says which it may ever have, which is what keeps
+the roster a roster once greens are flying: no run of luck turns a Spire into
+a bomber.
+
+**Cost:** two more bytes on every projectile in the snapshot, because a shot
+has to carry the add-ons it was fired with -- reading them off the owner would
+disarm a bomb already in the air when its owner died. Four more on the pilot.
+A prize space of nineteen rather than five, most of which any given hull
+cannot use, which needs the client to draw the ones that are not yours as
+scenery or the pickup reads as broken.
+
+**Reconsider if:** an add-on wants a magnitude that is not a number and not a
+pattern. Shrapnel already needs a per-rung pattern rather than a per-rung
+integer, and a second of those would mean the transform table has outgrown
+being a table.

@@ -73,13 +73,13 @@ static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
  * out, because a weapon is a thing a zone configures rather than a property
  * of a hull. */
 static const sim_fire_pattern *gun_of(const sim_settings *cfg, int cls) {
-    return &cfg->patterns[cfg->classes[cls].gun];
+    return &cfg->patterns[cfg->classes[cls].trigger[SIM_TRIG_GUN][0]];
 }
 static const sim_weapon_spec *gun_spec(const sim_settings *cfg, int cls) {
     return &cfg->specs[gun_of(cfg, cls)->spec];
 }
 static const sim_fire_pattern *bomb_of(const sim_settings *cfg, int cls) {
-    return &cfg->patterns[cfg->classes[cls].bomb];
+    return &cfg->patterns[cfg->classes[cls].trigger[SIM_TRIG_BOMB][0]];
 }
 
 int main(void) {
@@ -648,7 +648,7 @@ int main(void) {
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
         fp.count = 3;
         fp.spacing = 65536 / 18;          /* twenty degrees */
-        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
         sim_state s;
         sim_init(&s, 1);
@@ -669,7 +669,7 @@ int main(void) {
         sp.bounces = 1;
         sim_fire_pattern fp = *gun_of(&w, APEX);
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
-        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
         sim_state s;
         sim_init(&s, 1);
@@ -697,7 +697,7 @@ int main(void) {
         sp.on_wall = SIM_WALL_PASS;
         sim_fire_pattern fp = *gun_of(&w, APEX);
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
-        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
         sim_state s;
         sim_init(&s, 1);
@@ -715,7 +715,7 @@ int main(void) {
         sp.trigger = 60 * 256;
         sim_fire_pattern fp = *gun_of(&w, APEX);
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
-        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
         sim_state s;
         sim_init(&s, 1);
@@ -765,7 +765,7 @@ int main(void) {
         sp.splinter = shell_id;
         sim_fire_pattern fp = *gun_of(&w, APEX);
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
-        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
         sim_state s;
         sim_init(&s, 1);
@@ -799,7 +799,7 @@ int main(void) {
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
         fp.count = 1;
         fp.delay = 25;
-        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
         sim_state s;
         sim_init(&s, 1);
@@ -819,7 +819,7 @@ int main(void) {
         sp.stall = 200;
         sim_fire_pattern fp = *gun_of(&w, APEX);
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
-        w.classes[APEX].gun = (uint8_t)sim_add_pattern(&w, &fp);
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
         sim_state s;
         sim_init(&s, 1);
@@ -836,6 +836,161 @@ int main(void) {
         step_n(&s, &w, 0, 0, 300);
         CHECK(s.ships[1].stall == 0, "it wears off");
         CHECK(s.ships[1].energy > held, "and the bar fills again");
+    }
+
+    /* --- the tech tree -------------------------------------------------
+     *
+     * A level is the same weapon harder, a rung on the hull's ladder. An
+     * add-on is a transform over that rung, applied when the shot is made.
+     * Keeping them apart is the whole design: as rows, three levels against
+     * six add-ons would be a hundred and ninety-two patterns per weapon. */
+    {
+        /* Climbing a rung swaps which pattern the trigger fires, and the
+         * hull's ladder length is the ceiling. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        sim_ship *sh = &s.ships[0];
+        const sim_ship_class *c = &cfg.classes[APEX];
+
+        int32_t l1 = cfg.specs[gun_of(&cfg, APEX)->spec].damage;
+        CHECK(sim_take_prize(sh, c, SIM_PRIZE_LEVEL(SIM_TRIG_GUN)),
+              "a gun level is taken");
+        CHECK(sh->level[SIM_TRIG_GUN] == 1, "and climbs one rung");
+        int32_t l2 = cfg.specs[cfg.patterns[c->trigger[SIM_TRIG_GUN][1]].spec].damage;
+        CHECK(l2 > l1, "the rung above hits harder");
+        /* The Apex ladder is two rungs, so there is no third. */
+        CHECK(!sim_take_prize(sh, c, SIM_PRIZE_LEVEL(SIM_TRIG_GUN)),
+              "the top of the ladder refuses");
+        /* And a hull with no rack never starts one. */
+        CHECK(c->trigger[SIM_TRIG_BOMB][0] != SIM_NO_PATTERN, "an Apex has a bomb");
+        const sim_ship_class *spire = &cfg.classes[4];
+        CHECK(spire->trigger[SIM_TRIG_BOMB][0] == SIM_NO_PATTERN,
+              "a Spire has no rack");
+        sim_ship dummy;
+        memset(&dummy, 0, sizeof dummy);
+        CHECK(!sim_take_prize(&dummy, spire, SIM_PRIZE_LEVEL(SIM_TRIG_BOMB)),
+              "so a bomb level does nothing for it");
+    }
+
+    {
+        /* An add-on is capped by the roster, not by the pilot's luck. */
+        sim_ship sh;
+        memset(&sh, 0, sizeof sh);
+        const sim_ship_class *apex = &cfg.classes[APEX];
+        CHECK(sim_take_prize(&sh, apex, SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)),
+              "an Apex takes a multifire");
+        CHECK(!sim_take_prize(&sh, apex, SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)),
+              "and only the one rung its row allows");
+        CHECK(!sim_take_prize(&sh, apex, SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_SHRAPNEL)),
+              "shrapnel belongs to bombers");
+        CHECK(sim_mod_get(sh.mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
+              "and what it holds is what it took");
+    }
+
+    {
+        /* Multifire composes onto whatever rung the trigger is on, and the
+         * shot costs what one trigger pull costs -- an add-on you could not
+         * afford to use would be a punishment. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        int32_t bar = s.ships[0].energy;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1, "one barrel to start");
+        int32_t plain = bar - s.ships[0].energy;
+
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].mods[SIM_TRIG_GUN] =
+            sim_mod_set(0, SIM_MOD_MULTI, 1);
+        bar = s.ships[0].energy;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1 + cfg.mod_step[SIM_MOD_MULTI],
+              "a rung of multifire is a pair of extra barrels");
+        CHECK(bar - s.ships[0].energy == plain, "at the same price");
+        CHECK(s.weapons[0].vx != s.weapons[1].vx, "and they fan out");
+    }
+
+    {
+        /* A shot is what it was when it left. The add-ons ride on the
+         * projectile, so losing them -- by dying, in this case -- does not
+         * reach back and disarm what is already in the air. */
+        sim_settings w = cfg;
+        w.classes[APEX].mod_max[SIM_TRIG_GUN] =
+            sim_mod_set(0, SIM_MOD_BOUNCE, 1);
+        sim_state s;
+        sim_init(&s, 1);
+        /* Two tiles under the wall: a round travels 2 px a tick, so a
+         * distant wall would outlast the flight. */
+        sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
+        s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_BOUNCE, 1);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1, "fired");
+        CHECK(s.weapons[0].mods == s.ships[0].mods[SIM_TRIG_GUN],
+              "the shot carries what fired it");
+        CHECK(s.weapons[0].left > 0, "with a bounce on it");
+        /* Take everything off the pilot; the shot is already gone. */
+        s.ships[0].mods[SIM_TRIG_GUN] = 0;
+        step_n(&s, &w, 0, 0, 60);
+        CHECK(s.weapon_count == 1, "and the wall did not end it");
+        CHECK(s.weapons[0].vy > 0, "it came back down");
+    }
+
+    {
+        /* Shrapnel is the one add-on whose magnitude is another weapon, and
+         * fragments do not inherit it: a shell that broke into eight would
+         * otherwise have each of those break into eight again. */
+        sim_settings w = cfg;
+        const int WEDGE = 1;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, WEDGE, 0, 8192, 300, 0, &w);
+        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 1);
+        step_n(&s, &w, SIM_BTN_BOMB, 0, 1);
+        CHECK(s.weapon_count == 1, "one bomb away");
+        step_n(&s, &w, 0, 0, 200);
+        CHECK(s.weapon_count > 1, "the wall broke it up");
+        for (uint16_t i = 0; i < s.weapon_count; i++)
+            CHECK(s.weapons[i].mods == 0, "and the fragments carry nothing");
+    }
+
+    {
+        /* Dying costs the tree as well as the stats. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 32768, &cfg);
+        s.ships[0].level[SIM_TRIG_GUN] = 1;
+        s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        s.ships[0].up[SIM_UP_SPEED] = 3;
+        s.ships[0].energy = 1;
+        step_counting(&s, &cfg, 0, SIM_BTN_FIRE, 400);
+        CHECK(s.ships[0].deaths > 0, "the target dies");
+        CHECK(s.ships[0].level[SIM_TRIG_GUN] == 0, "and loses the rung");
+        CHECK(s.ships[0].mods[SIM_TRIG_GUN] == 0, "and the add-ons");
+        CHECK(s.ships[0].up[SIM_UP_SPEED] == 0, "and the stats, as before");
+    }
+
+    {
+        /* A green nobody in this hull can use stays on the map rather than
+         * being eaten. The original consumed those and said nothing, which is
+         * a green that lies about what it was. */
+        sim_state s;
+        sim_init(&s, 5);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        step_n(&s, &cfg, 0, 0, cfg.prize_delay + 2);
+        int idx = -1;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++)
+            if (s.prizes[i].active) { idx = i; break; }
+        CHECK(idx >= 0, "a prize appears");
+        /* Shrapnel on the gun: no hull in the roster holds that. */
+        s.prizes[idx].type = (uint8_t)SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_SHRAPNEL);
+        s.ships[0].x = s.prizes[idx].x;
+        s.ships[0].y = s.prizes[idx].y;
+        ev_counts c = step_counting(&s, &cfg, 0, 0, 2);
+        CHECK(c.prizes == 0, "flying over it collects nothing");
+        CHECK(s.prizes[idx].active, "and leaves it for somebody who can");
     }
 
     /* Prizes spawn, get collected, and raise the ship's effective stats. */
@@ -953,7 +1108,7 @@ int main(void) {
         fp.spec = (uint8_t)sim_add_spec(&zone, &sp);
         fp.count = 3;
         fp.spacing = 65536 / 24;
-        zone.classes[APEX].gun = (uint8_t)sim_add_pattern(&zone, &fp);
+        zone.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&zone, &fp);
 
         static uint8_t buf[SIM_SETTINGS_PACK_MAX];
         int n = sim_settings_pack(&zone, buf, sizeof buf);

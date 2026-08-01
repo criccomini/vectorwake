@@ -9,6 +9,7 @@
 //! taking an arena down to change a bounce factor is how you lose players.
 
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Deserialize, Clone, Debug)]
@@ -49,9 +50,14 @@ pub struct ArenaConfig {
     /// baseline.
     pub ships: Vec<ShipConfig>,
     /// Weapons, by name. A name the baseline already built (`apex-gun`,
-    /// `anvil-bomb`) tunes that weapon; any other name creates one, which a
-    /// hull can then carry or another weapon can splinter into.
+    /// `anvil-bomb`, `anvil-bomb-2` for the rung above it) tunes that weapon;
+    /// any other name creates one, which a hull can then carry or another
+    /// weapon can splinter into.
     pub weapons: Vec<WeaponConfig>,
+    /// What one rung of each add-on is worth, by add-on name. Units are the
+    /// field each moves: barrels, walls, px of fuse, ticks of stall, px/s/10
+    /// of shove. Anything left out keeps the baseline's.
+    pub mod_step: HashMap<String, i32>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -63,10 +69,18 @@ pub struct ShipConfig {
     pub rotation: Option<i32>,
     pub energy: Option<i32>,
     pub recharge: Option<i32>,
-    /// What the two triggers fire, by weapon name. A hull keeps its own
-    /// unless the file says otherwise; `bomb = ""` takes the rack out.
+    /// What the two triggers fire, by weapon name. Setting this replaces the
+    /// hull's whole ladder with that one weapon, so it stops levelling; a
+    /// hull keeps its own unless the file says otherwise, and `bomb = ""`
+    /// takes the rack out.
     pub gun: Option<String>,
     pub bomb: Option<String>,
+    /// Which add-ons this hull may hold on each trigger, and how many rungs
+    /// of each: `gun_mods = { multi = 2, freeze = 1 }`. This is the roster's
+    /// half of the tech tree -- shrapnel belongs to bombers, and no run of
+    /// luck with the greens should change that.
+    pub gun_mods: HashMap<String, u8>,
+    pub bomb_mods: HashMap<String, u8>,
 }
 
 /// One weapon: what a trigger makes, and what one projectile of it is. The
@@ -169,6 +183,7 @@ impl Default for ArenaConfig {
             prize_max: 20,
             ships: Vec::new(),
             weapons: Vec::new(),
+            mod_step: HashMap::new(),
         }
     }
 }

@@ -458,19 +458,24 @@ end
 
 -- --- prizes and flags ------------------------------------------------------
 
-function M.prizes(fill, glow, t)
+function M.prizes(fill, glow, t, me)
     local spin = t * 1.1
     local ca, sa = math.cos(spin), math.sin(spin)
     local pulse = 0.78 + 0.22 * math.sin(t * 3.4)
     for i = 0, sim.prize_count() - 1 do
         local active, x, y, kind, life = sim.prize_at(i)
         if active then
-            local u = pal.UPGRADES[kind + 1] or pal.UPGRADES[1]
-            local col = u.col
+            local col = pal.prize(kind)
             -- A prize about to time out blinks, so a player can tell the
             -- difference between one worth crossing the arena for and one
             -- that will be gone before they arrive.
             local fade = (life < 120) and (0.35 + 0.65 * math.abs(math.sin(t * 9))) or 1
+            -- And one this hull cannot use is drawn as scenery. A green that
+            -- refuses to be picked up reads as a broken pickup unless you can
+            -- see, before you cross the map for it, that it was never yours.
+            if me and sim.prize_useful(me, kind) == false then
+                fade = fade * 0.28
+            end
             local r = 6.5 * pulse
             local pts = {}
             for k = 0, 3 do
@@ -566,9 +571,9 @@ function M.events(me, sfx)
             end
         elseif ty == sim.EV_PRIZE then
             local x, y = sim.ship_x(a), sim.ship_y(a)
-            local u = pal.UPGRADES[b + 1] or pal.UPGRADES[1]
-            fx.wave(x, y, 4, 26, 0.35, 3, u.col)
-            fx.burst(x, y, 6, 60, 0.5, 1.4, u.col)
+            local col = pal.prize(b)
+            fx.wave(x, y, 4, 26, 0.35, 3, col)
+            fx.burst(x, y, 6, 60, 0.5, 1.4, col)
             sfx("prize", x, y)
         elseif ty == sim.EV_FLAG_TAKE then
             local x, y = sim.ship_x(a), sim.ship_y(a)

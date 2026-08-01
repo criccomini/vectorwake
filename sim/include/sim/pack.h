@@ -23,9 +23,9 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len);
  * stepping the core, so it has to be stepping the server's numbers rather
  * than the ones it happened to compile. */
 
-/* Every table full, plus a header. Under two kilobytes; sent once at join
+/* Every table full, plus a header. Around three kilobytes; sent once at join
  * and again whenever an operator reloads the zone file. */
-#define SIM_SETTINGS_PACK_MAX 4096
+#define SIM_SETTINGS_PACK_MAX 8192
 
 /* Write cfg into out. Returns bytes written, or -1 if cap was too small. */
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap);

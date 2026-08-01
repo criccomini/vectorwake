@@ -127,13 +127,35 @@ impl Arena {
         // built one gun and one bomb per hull, so those get the names an
         // operator would guess -- `apex-gun`, `anvil-bomb` -- and anything
         // else in the file is a weapon that did not exist before.
+        // A hull's trigger is a ladder now, so every rung gets a name: the
+        // first is `apex-gun` and the ones above it are `apex-gun-2` and up,
+        // which reads as the level it is.
         let mut named: Vec<(String, u8)> = Vec::new();
         for (i, hull) in ai::CLASS_NAMES.iter().enumerate() {
             let hull: &str = hull;
             let cls = world.cfg.classes[i];
-            named.push((format!("{}-gun", hull.to_lowercase()), cls.gun));
-            if cls.bomb != sim::NO_PATTERN {
-                named.push((format!("{}-bomb", hull.to_lowercase()), cls.bomb));
+            for (t, trig) in ["gun", "bomb"].iter().enumerate() {
+                for (rung, &pat) in cls.trigger[t].iter().enumerate() {
+                    if pat == sim::NO_PATTERN { break }
+                    let n = if rung == 0 {
+                        format!("{}-{trig}", hull.to_lowercase())
+                    } else {
+                        format!("{}-{trig}-{}", hull.to_lowercase(), rung + 1)
+                    };
+                    named.push((n, pat));
+                }
+            }
+        }
+        // What a rung of each add-on is worth, before any hull is told which
+        // ones it may hold.
+        for (name, v) in &c.mod_step {
+            match Arena::mod_index(name) {
+                Some(m) => world.cfg.mod_step[m] = match m {
+                    sim::MOD_PROX => v * 256,               // px
+                    sim::MOD_PUSH => unsafe { sim::sim_units_speed(*v) },
+                    _ => *v,
+                },
+                None => warn.push(format!("\"{name}\" is not an add-on")),
             }
         }
         // Two passes, because a splinter may name a weapon written later in
@@ -159,7 +181,9 @@ impl Arena {
                 warn.push(format!("no hull called \"{}\"", s.name));
                 continue;
             };
-            for (field, want) in [("gun", &s.gun), ("bomb", &s.bomb)] {
+            for (t, (field, want)) in [("gun", &s.gun), ("bomb", &s.bomb)]
+                .into_iter().enumerate()
+            {
                 let Some(want) = want else { continue };
                 // An empty name takes the trigger away, which is how a hull
                 // loses its bomb rack rather than being given a free one.
@@ -169,11 +193,29 @@ impl Arena {
                     named.iter().find(|(n, _)| n == want).map(|&(_, p)| p)
                 };
                 match pat {
-                    Some(p) if field == "gun" => world.cfg.classes[idx].gun = p,
-                    Some(p) => world.cfg.classes[idx].bomb = p,
+                    // Naming one weapon replaces the whole ladder with it, so
+                    // a hull given a repel does not level into a bomb.
+                    Some(p) => {
+                        world.cfg.classes[idx].trigger[t] =
+                            [p, sim::NO_PATTERN, sim::NO_PATTERN, sim::NO_PATTERN];
+                    }
                     None => warn.push(format!(
                         "{} has no weapon called \"{want}\" to put on its {field}", s.name)),
                 }
+            }
+            for (t, mods) in [&s.gun_mods, &s.bomb_mods].into_iter().enumerate() {
+                if mods.is_empty() { continue }
+                let mut packed = 0u16;
+                for (name, rungs) in mods {
+                    match Arena::mod_index(name) {
+                        Some(m) => {
+                            let n = (*rungs).min(sim::MOD_MAX) as u16;
+                            packed |= n << (m * 2);
+                        }
+                        None => warn.push(format!("\"{name}\" is not an add-on")),
+                    }
+                }
+                world.cfg.classes[idx].mod_max[t] = packed;
             }
             let cls = &mut world.cfg.classes[idx];
             unsafe {
@@ -196,6 +238,14 @@ impl Arena {
             cls.up_recharge = (cls.recharge - cls.init_recharge) / 8;
         }
         warn
+    }
+
+    /// Add-ons are named in a zone file and numbered in the core. The order
+    /// is `sim_mod`'s and the names are the ones the design doc uses.
+    fn mod_index(name: &str) -> Option<usize> {
+        const NAMES: [&str; sim::MOD_COUNT] =
+            ["multi", "bounce", "prox", "shrapnel", "freeze", "push"];
+        NAMES.iter().position(|n| n.eq_ignore_ascii_case(name))
     }
 
     /// One weapon block, over whatever that weapon already was. The units are
@@ -1046,7 +1096,7 @@ mod tests {
     }
 
     fn gun(w: &sim::World, cls: usize) -> (sim::sim_fire_pattern, sim::sim_weapon_spec) {
-        let p = w.cfg.patterns[w.cfg.classes[cls].gun as usize];
+        let p = w.cfg.patterns[w.cfg.classes[cls].trigger[0][0] as usize];
         (p, w.cfg.specs[p.spec as usize])
     }
 
@@ -1060,7 +1110,7 @@ mod tests {
         "#);
         assert!(warn.is_empty(), "{warn:?}");
         let anvil = ai::class_index("Anvil").unwrap();
-        let p = w.cfg.patterns[w.cfg.classes[anvil].bomb as usize];
+        let p = w.cfg.patterns[w.cfg.classes[anvil].trigger[1][0] as usize];
         let sp = w.cfg.specs[p.spec as usize];
         assert_eq!((sp.on_wall, sp.bounces), (1, 3), "the bomb bounces now");
         assert!(sp.blast > 0, "and is otherwise still the bomb");
@@ -1087,7 +1137,7 @@ mod tests {
         "#);
         assert!(warn.is_empty(), "{warn:?}");
         let spire = ai::class_index("Spire").unwrap();
-        let p = w.cfg.patterns[w.cfg.classes[spire].bomb as usize];
+        let p = w.cfg.patterns[w.cfg.classes[spire].trigger[1][0] as usize];
         let sp = w.cfg.specs[p.spec as usize];
         assert_eq!(p.count, 16);
         assert_eq!(sp.life, 60);
@@ -1096,7 +1146,7 @@ mod tests {
         assert_eq!(p.spacing, (22 * 65536 / 360) as u16);
         // The Spire has no bomb rack in the baseline, so this gave it one.
         let fresh = sim::World::new(1);
-        assert_eq!(fresh.cfg.classes[spire].bomb, sim::NO_PATTERN);
+        assert_eq!(fresh.cfg.classes[spire].trigger[1][0], sim::NO_PATTERN);
     }
 
     #[test]
@@ -1116,7 +1166,7 @@ mod tests {
         "#);
         assert!(warn.is_empty(), "{warn:?}");
         let anvil = ai::class_index("Anvil").unwrap();
-        let bomb = w.cfg.patterns[w.cfg.classes[anvil].bomb as usize];
+        let bomb = w.cfg.patterns[w.cfg.classes[anvil].trigger[1][0] as usize];
         let into = w.cfg.specs[bomb.spec as usize].splinter;
         assert_ne!(into, sim::NO_PATTERN, "the bomb splinters");
         assert_eq!(w.cfg.patterns[into as usize].count, 8, "into eight fragments");
@@ -1130,7 +1180,7 @@ mod tests {
             bomb = ""
         "#);
         assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(w.cfg.classes[ai::class_index("Anvil").unwrap()].bomb, sim::NO_PATTERN);
+        assert_eq!(w.cfg.classes[ai::class_index("Anvil").unwrap()].trigger[1][0], sim::NO_PATTERN);
     }
 
     #[test]
@@ -1153,6 +1203,72 @@ mod tests {
         assert!(warn.iter().any(|w| w.contains("nothing-called-this")));
         assert!(warn.iter().any(|w| w.contains("Trapezoid")));
         assert!(warn.iter().any(|w| w.contains("also-not-a-weapon")));
+    }
+
+    #[test]
+    fn a_rung_above_the_first_is_named_for_its_level() {
+        let (w, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "anvil-bomb-3"
+            blast = 96
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        let anvil = ai::class_index("Anvil").unwrap();
+        let rungs = w.cfg.classes[anvil].trigger[1];
+        let top = w.cfg.specs[w.cfg.patterns[rungs[2] as usize].spec as usize];
+        let base = w.cfg.specs[w.cfg.patterns[rungs[0] as usize].spec as usize];
+        assert_eq!(top.blast, 96 * 256, "the third rung got the wider blast");
+        assert_eq!(base.blast, 48 * 256, "and the first kept its own");
+        assert!(top.damage > base.damage, "a rung is still the same weapon harder");
+    }
+
+    #[test]
+    fn a_hull_holds_the_add_ons_its_row_allows() {
+        let (w, warn) = tuned(r#"
+            [arena.mod_step]
+            freeze = 250
+
+            [[arena.ships]]
+            name = "Spire"
+            gun_mods = { freeze = 3, multi = 1 }
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(w.cfg.mod_step[4], 250, "a rung of freeze is two and a half seconds");
+        let spire = ai::class_index("Spire").unwrap();
+        let m = w.cfg.classes[spire].mod_max[0];
+        assert_eq!((m >> 8) & 3, 3, "three rungs of freeze");
+        assert_eq!(m & 3, 1, "and one of multifire");
+        // Named add-ons are checked, not guessed at.
+        let (_, warn) = tuned(r#"
+            [[arena.ships]]
+            name = "Spire"
+            gun_mods = { sideways = 1 }
+        "#);
+        assert!(warn.iter().any(|w| w.contains("sideways")), "{warn:?}");
+    }
+
+    #[test]
+    fn naming_one_weapon_replaces_the_whole_ladder() {
+        let (w, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "repel"
+            speed = 0
+            life = 1
+            on_wall = "pass"
+            expire_ends = true
+            blast = 300
+            push = 3000
+
+            [[arena.ships]]
+            name = "Anvil"
+            bomb = "repel"
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        let anvil = ai::class_index("Anvil").unwrap();
+        let rungs = w.cfg.classes[anvil].trigger[1];
+        assert_ne!(rungs[0], sim::NO_PATTERN, "the repel is on the trigger");
+        assert_eq!(rungs[1], sim::NO_PATTERN,
+                   "and there is nothing to level into");
     }
 
     /// The reason apply_config rebuilds from the baseline. An operator saves

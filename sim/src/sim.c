@@ -107,13 +107,25 @@ void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
     tier(c->rot, &c->init_rot, &c->up_rot);
     tier(c->max_energy, &c->init_energy, &c->up_energy);
     tier(c->recharge, &c->init_recharge, &c->up_recharge);
-    /* No weapons until something gives it some. What a hull fires is a
-     * pattern in the settings, and the settings are what a zone tunes. */
-    c->gun = SIM_NO_PATTERN;
-    c->bomb = SIM_NO_PATTERN;
+    /* No weapons until something gives it some, and no add-ons it may hold.
+     * What a hull fires is a ladder of patterns in the settings, and the
+     * settings are what a zone tunes. */
+    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        for (int r = 0; r < SIM_MAX_RUNGS; r++) c->trigger[t][r] = SIM_NO_PATTERN;
+        c->mod_max[t] = 0;
+    }
 }
 
 /* ---- upgrades ---- */
+
+/* The rung a trigger is on, clamped to the ladder the hull actually has. A
+ * pilot keeps their level through a hull change, so the Anvil's third rung
+ * has to mean rung zero on a hull with one. */
+static uint8_t trigger_pattern(const sim_ship_class *c, int t, uint8_t level) {
+    for (int r = level < SIM_MAX_RUNGS ? level : SIM_MAX_RUNGS - 1; r >= 0; r--)
+        if (c->trigger[t][r] != SIM_NO_PATTERN) return c->trigger[t][r];
+    return SIM_NO_PATTERN;
+}
 
 static int32_t eff(int32_t init, int32_t step, int32_t cap, uint8_t n) {
     int64_t v = (int64_t)init + (int64_t)step * n;
@@ -231,7 +243,7 @@ int sim_add_pattern(sim_settings *cfg, const sim_fire_pattern *pattern) {
 static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
                          uint8_t team, int32_t x, int32_t y, int32_t vx,
                          int32_t vy, uint16_t life, uint8_t left,
-                         uint8_t depth) {
+                         uint8_t depth, uint16_t mods) {
     if (s->weapon_count >= SIM_MAX_WEAPONS) return; /* silently dropped */
     sim_weapon *w = &s->weapons[s->weapon_count++];
     w->spec = spec;
@@ -239,11 +251,68 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
     w->team = team;
     w->left = left;
     w->depth = depth;
+    w->mods = mods;
     w->x = x;
     w->y = y;
     w->vx = vx;
     w->vy = vy;
     w->life = life;
+}
+
+/* ---- add-ons ----
+ *
+ * A pilot's add-ons are a transform over the rung their trigger is on, applied
+ * where the shot is made rather than stored as a row. Three levels against six
+ * on/off add-ons is a hundred and ninety-two rows for one weapon; the table
+ * holds thirty-two. So this is the only place a weapon becomes what the pilot
+ * is actually carrying.
+ *
+ * Each rung is worth `mod_step`, which the zone sets in the units of the field
+ * it moves. `p` is NULL when a projectile already in flight is being resolved:
+ * how it was fired is settled, and only what it *is* still matters.
+ */
+static void compose(const sim_settings *cfg, uint16_t mods,
+                    sim_weapon_spec *sp, sim_fire_pattern *p) {
+    uint8_t n;
+    if (p && (n = sim_mod_get(mods, SIM_MOD_MULTI)) != 0) {
+        int32_t extra = n * cfg->mod_step[SIM_MOD_MULTI];
+        int32_t total = (int32_t)(p->count ? p->count : 1) + extra;
+        p->count = (uint8_t)(total > 255 ? 255 : total);
+        /* A pattern that already fans keeps its own angle; one that does not
+         * gets the zone's, or the extra barrels would all fire down the
+         * same line. */
+        if (p->spacing == 0) p->spacing = cfg->mod_spread;
+    }
+    if ((n = sim_mod_get(mods, SIM_MOD_BOUNCE)) != 0) {
+        sp->on_wall = SIM_WALL_BOUNCE;
+        sp->bounces = (uint8_t)(sp->bounces + n * cfg->mod_step[SIM_MOD_BOUNCE]);
+    }
+    if ((n = sim_mod_get(mods, SIM_MOD_PROX)) != 0)
+        sp->trigger += n * cfg->mod_step[SIM_MOD_PROX];
+    if ((n = sim_mod_get(mods, SIM_MOD_SHRAPNEL)) != 0)
+        sp->splinter = cfg->mod_splinter[n < SIM_MAX_RUNGS ? n : SIM_MAX_RUNGS - 1];
+    if ((n = sim_mod_get(mods, SIM_MOD_FREEZE)) != 0)
+        sp->stall = (uint16_t)(sp->stall + n * cfg->mod_step[SIM_MOD_FREEZE]);
+    if ((n = sim_mod_get(mods, SIM_MOD_PUSH)) != 0) {
+        sp->push += n * cfg->mod_step[SIM_MOD_PUSH];
+        /* A shove needs somewhere to reach from, and it reaches as far as the
+         * blast or the fuse. Welded onto a bullet that has neither, it would
+         * be a repel with no radius, so it brings a fuse with it. */
+        if (sp->blast == 0 && sp->trigger == 0)
+            sp->trigger = cfg->mod_step[SIM_MOD_PROX];
+    }
+}
+
+/* A trigger's pattern and projectile as the pilot holding these add-ons
+ * actually fires them. Zero when the trigger has nothing on it. */
+static int resolve(const sim_settings *cfg, uint8_t pat, uint16_t mods,
+                   sim_fire_pattern *p, sim_weapon_spec *sp) {
+    if (pat >= cfg->pattern_count) return 0;
+    *p = cfg->patterns[pat];
+    if (p->spec >= cfg->spec_count) return 0;
+    *sp = cfg->specs[p->spec];
+    compose(cfg, mods, sp, p);
+    return 1;
 }
 
 /* Put a pattern's projectiles into the world.
@@ -260,7 +329,7 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
 static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
                           uint8_t owner, uint8_t team, int32_t x, int32_t y,
                           int32_t vx0, int32_t vy0, uint16_t heading,
-                          uint8_t depth, sim_events *ev);
+                          uint8_t depth, uint16_t mods, sim_events *ev);
 
 /* Remove a weapon by swapping the last one into its slot. Order is
  * deterministic because it depends only on state, never on time. */
@@ -292,7 +361,11 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         v->deaths++;
         v->respawn_at = cfg->respawn_delay;
         v->vx = v->vy = 0;
-        memset(v->up, 0, sizeof v->up);  /* dying costs you everything */
+        /* Dying costs you everything: stats, rungs and add-ons alike. What
+         * you are carrying is what you have survived with. */
+        memset(v->up, 0, sizeof v->up);
+        memset(v->level, 0, sizeof v->level);
+        memset(v->mods, 0, sizeof v->mods);
         if (attacker != 255 && attacker != victim) s->ships[attacker].kills++;
         drop_flags(s, cfg, victim, ev);
         emit(ev, SIM_EV_DEATH, victim, attacker, 0);
@@ -379,7 +452,7 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
          * projectile is the stop. */
         if (w->depth < SIM_MAX_SPLINTER_DEPTH) {
             spawn_pattern(s, cfg, spec->splinter, w->owner, w->team, w->x, w->y,
-                          0, 0, 0, (uint8_t)(w->depth + 1), ev);
+                          0, 0, 0, (uint8_t)(w->depth + 1), 0, ev);
         }
     }
 }
@@ -387,11 +460,12 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
 static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
                           uint8_t owner, uint8_t team, int32_t x, int32_t y,
                           int32_t vx0, int32_t vy0, uint16_t heading,
-                          uint8_t depth, sim_events *ev) {
-    if (pat >= cfg->pattern_count) return;
-    const sim_fire_pattern *p = &cfg->patterns[pat];
-    if (p->spec >= cfg->spec_count) return;
-    const sim_weapon_spec *spec = &cfg->specs[p->spec];
+                          uint8_t depth, uint16_t mods, sim_events *ev) {
+    sim_fire_pattern fp;
+    sim_weapon_spec sp;
+    if (!resolve(cfg, pat, mods, &fp, &sp)) return;
+    const sim_fire_pattern *p = &fp;
+    const sim_weapon_spec *spec = &sp;
     int count = p->count ? p->count : 1;
     for (int n = 0; n < count; n++) {
         /* (2n - (count-1)) / 2 is the symmetric offset in units of spacing:
@@ -405,7 +479,7 @@ static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
         int32_t vx = vx0 + (int32_t)(((int64_t)spec->speed * dx) >> 15);
         int32_t vy = vy0 + (int32_t)(((int64_t)spec->speed * dy) >> 15);
         spawn_weapon(s, p->spec, owner, team, x, y, vx, vy, spec->life,
-                     spec->bounces, depth);
+                     spec->bounces, depth, mods);
     }
     emit(ev, SIM_EV_FIRE, owner, p->spec, 0);
 }
@@ -479,6 +553,8 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     drop_flags(s, cfg, i, 0);
     sh->cls = cls;
     memset(sh->up, 0, sizeof sh->up);
+    memset(sh->level, 0, sizeof sh->level);
+    memset(sh->mods, 0, sizeof sh->mods);
     sh->alive = 1;
     sh->respawn_at = 0;
     sh->x = sh->spawn_x;
@@ -530,6 +606,37 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
 /* Spawn one prize at a random open tile inside the configured bounds. Every
  * draw comes from the state's own PRNG, so prize placement is part of the
  * deterministic stream and a client can predict it exactly. */
+/* Hand a green to a pilot. Returns 0 when it would do nothing -- a stat
+ * already at the top, a rung the hull's ladder does not have, an add-on the
+ * roster says this hull never gets -- and the caller leaves it on the map for
+ * somebody who can use it. The original consumed those and told you nothing,
+ * which is a green that lies. */
+int sim_take_prize(sim_ship *sh, const sim_ship_class *c, uint8_t type) {
+    if (type < SIM_UP_COUNT) {
+        if (sh->up[type] >= SIM_UP_STEPS) return 0;
+        sh->up[type]++;
+        return 1;
+    }
+    type = (uint8_t)(type - SIM_UP_COUNT);
+    if (type < SIM_TRIG_COUNT) {
+        /* The ladder's length is the ceiling. A hull with one rung of bombs
+         * never climbs, and one with no rack never starts. */
+        int next = sh->level[type] + 1;
+        if (next >= SIM_MAX_RUNGS || c->trigger[type][next] == SIM_NO_PATTERN)
+            return 0;
+        sh->level[type] = (uint8_t)next;
+        return 1;
+    }
+    type = (uint8_t)(type - SIM_TRIG_COUNT);
+    {
+        int t = type / SIM_MOD_COUNT, m = type % SIM_MOD_COUNT;
+        uint8_t have = sim_mod_get(sh->mods[t], m);
+        if (have >= sim_mod_get(c->mod_max[t], m)) return 0;
+        sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have + 1));
+        return 1;
+    }
+}
+
 static void spawn_prize(sim_state *s, const sim_settings *cfg) {
     if (cfg->prize_hi <= cfg->prize_lo) return;
     int slot = -1;
@@ -549,7 +656,7 @@ static void spawn_prize(sim_state *s, const sim_settings *cfg) {
         s->rng = xorshift32(s->rng);
         sim_prize *p = &s->prizes[slot];
         p->active = 1;
-        p->type = (uint8_t)(s->rng % SIM_UP_COUNT);
+        p->type = (uint8_t)(s->rng % SIM_PRIZE_COUNT);
         p->x = (tx * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
         p->y = (ty * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
         p->life = cfg->prize_life;
@@ -571,7 +678,7 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
             int64_t dx = (int64_t)sh->x - p->x, dy = (int64_t)sh->y - p->y;
             int64_t r = cfg->prize_radius + cfg->classes[sh->cls].radius;
             if (dx * dx + dy * dy > r * r) continue;
-            if (sh->up[p->type] < 255) sh->up[p->type]++;
+            if (!sim_take_prize(sh, &cfg->classes[sh->cls], p->type)) continue;
             /* Collecting energy or recharge should feel immediate rather than
              * arriving over the next few seconds. */
             if (p->type == SIM_UP_ENERGY || p->type == SIM_UP_RECHARGE)
@@ -679,22 +786,27 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         }
         if (!in_safe && sh->fire_cooldown == 0
             && (b & (SIM_BTN_FIRE | SIM_BTN_BOMB))) {
-            uint8_t pat = ((b & SIM_BTN_FIRE) == 0) ? cls->bomb : cls->gun;
-            if (pat < cfg->pattern_count) {
-                const sim_fire_pattern *p = &cfg->patterns[pat];
+            int trig = ((b & SIM_BTN_FIRE) == 0) ? SIM_TRIG_BOMB : SIM_TRIG_GUN;
+            uint8_t pat = trigger_pattern(cls, trig, sh->level[trig]);
+            sim_fire_pattern fp;
+            sim_weapon_spec fs;
+            if (resolve(cfg, pat, sh->mods[trig], &fp, &fs)) {
                 /* The cost is the shot's, not each projectile's: a burst of
-                 * sixteen costs what pulling the trigger costs. */
-                if (sh->energy > p->energy) {
+                 * sixteen costs what pulling the trigger costs, and so does
+                 * multifire -- an add-on that made a shot cost per barrel
+                 * would be an upgrade you could not afford to use. */
+                if (sh->energy > fp.energy) {
                     /* Muzzle just outside the hull, so a shot never spawns
                      * inside its own ship. */
                     int32_t mx = sh->x + (int32_t)(((int64_t)(cls->radius + 512) * dx) >> 15);
                     int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
                     spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
-                                  sh->vx, sh->vy, sh->heading, 0, ev);
-                    sh->energy -= p->energy;
-                    sh->fire_cooldown = p->delay;
-                    sh->vx -= (int32_t)(((int64_t)p->recoil * dx) >> 15);
-                    sh->vy -= (int32_t)(((int64_t)p->recoil * dy) >> 15);
+                                  sh->vx, sh->vy, sh->heading, 0,
+                                  sh->mods[trig], ev);
+                    sh->energy -= fp.energy;
+                    sh->fire_cooldown = fp.delay;
+                    sh->vx -= (int32_t)(((int64_t)fp.recoil * dx) >> 15);
+                    sh->vy -= (int32_t)(((int64_t)fp.recoil * dy) >> 15);
                 }
             }
         }
@@ -817,7 +929,12 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
      */
     for (uint16_t wi = 0; wi < next->weapon_count;) {
         sim_weapon *w = &next->weapons[wi];
-        const sim_weapon_spec *spec = &cfg->specs[w->spec];
+        /* What this projectile is, as it was fired. The add-ons ride on the
+         * shot rather than on its owner: a bomb thrown while you had shrapnel
+         * still breaks up, whatever you are carrying by the time it lands. */
+        sim_weapon_spec resolved = cfg->specs[w->spec];
+        compose(cfg, w->mods, &resolved, NULL);
+        const sim_weapon_spec *spec = &resolved;
         int ended = 0, hit_ship = -1;
 
         /* 1. Out of life. Arriving somewhere is what sets a weapon off, and
@@ -934,6 +1051,8 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, sh->stall);
         h = hash_u32(h, (uint32_t)(sh->kills | (sh->deaths << 16)));
         for (int u = 0; u < SIM_UP_COUNT; u++) h = hash_u32(h, sh->up[u]);
+        for (int t = 0; t < SIM_TRIG_COUNT; t++)
+            h = hash_u32(h, (uint32_t)(sh->level[t] | (sh->mods[t] << 8)));
     }
     h = hash_u32(h, s->prize_timer);
     h = hash_u32(h, s->flag_count);
@@ -956,7 +1075,7 @@ uint64_t sim_hash(const sim_state *s) {
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *w = &s->weapons[i];
         h = hash_u32(h, (uint32_t)(w->spec | (w->owner << 8) | (w->team << 16)));
-        h = hash_u32(h, (uint32_t)(w->left | (w->depth << 8)));
+        h = hash_u32(h, (uint32_t)(w->left | (w->depth << 8) | (w->mods << 16)));
         h = hash_u32(h, (uint32_t)w->x);
         h = hash_u32(h, (uint32_t)w->y);
         h = hash_u32(h, (uint32_t)w->vx);

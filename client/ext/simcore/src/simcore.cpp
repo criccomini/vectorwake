@@ -175,6 +175,41 @@ int ShipUp(lua_State* L) {
     return 1;
 }
 
+// The rung a trigger is on, and how many of one add-on the pilot holds on
+// it. Both are per trigger, so bullets that freeze and bombs that do not is
+// a thing the panel has to be able to say.
+int ShipLevel(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    int t = (int)luaL_checkinteger(L, 2);
+    lua_pushnumber(L, (t >= 0 && t < SIM_TRIG_COUNT) ? g_cur->ships[i].level[t] : 0);
+    return 1;
+}
+
+int ShipMod(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    int t = (int)luaL_checkinteger(L, 2);
+    int m = (int)luaL_checkinteger(L, 3);
+    if (t < 0 || t >= SIM_TRIG_COUNT || m < 0 || m >= SIM_MOD_COUNT) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, sim_mod_get(g_cur->ships[i].mods[t], m));
+    return 1;
+}
+
+// Would this green do anything for this pilot? A hull that never gets
+// shrapnel flies over a shrapnel green and leaves it, so the drawing has to
+// be able to say which ones are yours -- otherwise the rule reads as the
+// pickup being broken.
+int PrizeUseful(lua_State* L) {
+    int ship = (int)luaL_checkinteger(L, 1);
+    int type = (int)luaL_checkinteger(L, 2);
+    sim_ship copy = g_cur->ships[ship];
+    const sim_ship_class* c = &g_cfg.classes[copy.cls];
+    lua_pushboolean(L, sim_take_prize(&copy, c, (uint8_t)type));
+    return 1;
+}
+
 int ShipRadius(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].radius / 256.0);
@@ -200,7 +235,17 @@ int SpecBlast(lua_State* L) {
 // before anything has been fired.
 int ShipBombRadius(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
-    uint8_t pat = g_cfg.classes[g_cur->ships[i].cls].bomb;
+    const sim_ship* sh = &g_cur->ships[i];
+    /* The rung this pilot is actually on: a levelled bomb is a wider one. */
+    const sim_ship_class* c = &g_cfg.classes[sh->cls];
+    uint8_t lvl = sh->level[SIM_TRIG_BOMB];
+    uint8_t pat = SIM_NO_PATTERN;
+    for (int r = lvl < SIM_MAX_RUNGS ? lvl : SIM_MAX_RUNGS - 1; r >= 0; r--) {
+        if (c->trigger[SIM_TRIG_BOMB][r] != SIM_NO_PATTERN) {
+            pat = c->trigger[SIM_TRIG_BOMB][r];
+            break;
+        }
+    }
     if (pat >= g_cfg.pattern_count) {
         lua_pushnumber(L, 0);
         return 1;
@@ -388,6 +433,9 @@ const luaL_reg kFunctions[] = {
     {"ship_deaths", ShipDeaths},
     {"ship_vel", ShipVel},
     {"ship_up", ShipUp},
+    {"ship_level", ShipLevel},
+    {"ship_mod", ShipMod},
+    {"prize_useful", PrizeUseful},
     {"ship_radius", ShipRadius},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},
@@ -446,6 +494,17 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_EV_FLAG_TAKE); lua_setfield(L, -2, "EV_FLAG_TAKE");
     lua_pushnumber(L, SIM_EV_FLAG_DROP); lua_setfield(L, -2, "EV_FLAG_DROP");
     lua_pushnumber(L, SIM_UP_COUNT);     lua_setfield(L, -2, "UP_COUNT");
+
+    // The tech tree's shape, so the panel never hard-codes a layout the core
+    // is free to change. The prize space is flat: stats, then a level per
+    // trigger, then an add-on per trigger per kind.
+    lua_pushnumber(L, SIM_TRIG_COUNT);   lua_setfield(L, -2, "TRIG_COUNT");
+    lua_pushnumber(L, SIM_TRIG_GUN);     lua_setfield(L, -2, "TRIG_GUN");
+    lua_pushnumber(L, SIM_TRIG_BOMB);    lua_setfield(L, -2, "TRIG_BOMB");
+    lua_pushnumber(L, SIM_MOD_COUNT);    lua_setfield(L, -2, "MOD_COUNT");
+    lua_pushnumber(L, SIM_PRIZE_COUNT);  lua_setfield(L, -2, "PRIZE_COUNT");
+    lua_pushnumber(L, SIM_PRIZE_LEVEL(0)); lua_setfield(L, -2, "PRIZE_LEVEL0");
+    lua_pushnumber(L, SIM_PRIZE_MOD(0, 0)); lua_setfield(L, -2, "PRIZE_MOD0");
 
     lua_pop(L, 1);
     assert(top == lua_gettop(L));

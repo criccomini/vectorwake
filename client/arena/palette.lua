@@ -56,7 +56,7 @@ M.STAR_FAR  = rgb(0x2a3a58)
 M.THRUST    = rgb(0xffbe78)
 M.HURT      = rgb(0xff505a)
 
--- Prize kinds, in the order the core defines them.
+-- The five stats, in the order the core defines them.
 M.UPGRADES = {
     {name = "energy",   short = "NRG", col = rgb(0x7fe3a0)},
     {name = "recharge", short = "RCH", col = rgb(0x4fd6ff)},
@@ -64,6 +64,36 @@ M.UPGRADES = {
     {name = "thrust",   short = "THR", col = rgb(0xff9a5c)},
     {name = "rotation", short = "ROT", col = rgb(0xc79bff)},
 }
+
+-- The six add-ons, in sim_mod order. One colour for all of them and one for
+-- a level: a green's colour says what *kind* of thing it is, and its shape
+-- says nothing, so the eye sorts the map into "stat", "level", "add-on"
+-- rather than into nineteen things it has to learn.
+M.MODS = {
+    {name = "multi",    short = "MUL"},
+    {name = "bounce",   short = "BNC"},
+    {name = "prox",     short = "PRX"},
+    {name = "shrapnel", short = "SHR"},
+    {name = "freeze",   short = "FRZ"},
+    {name = "repel",    short = "RPL"},
+}
+M.LEVEL_COL = rgb(0xff7ba8)
+M.MOD_COL   = rgb(0x9df0ff)
+
+-- What a green of this type is: its colour, and what the feed calls it.
+-- The prize space is flat and the core hands out an index into it.
+function M.prize(kind)
+    local u = M.UPGRADES[kind + 1]
+    if u then return u.col, u.name end
+    local t = kind - #M.UPGRADES
+    if t < 2 then
+        return M.LEVEL_COL, (t == 0 and "gun level" or "bomb level")
+    end
+    t = t - 2
+    local m = M.MODS[t % #M.MODS + 1]
+    local trig = (t < #M.MODS) and "gun " or "bomb "
+    return M.MOD_COL, trig .. (m and m.name or "?")
+end
 
 -- A copy at a different alpha. Draw code asks for these constantly and must
 -- never mutate the shared table to get one.

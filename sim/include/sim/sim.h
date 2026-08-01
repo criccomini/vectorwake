@@ -128,12 +128,56 @@ void sim_map_duel(sim_map *m);
  * class carries no picture. And nothing here is per-shot random: the angles
  * come out of the table, so a rosette is the same rosette on every machine.
  */
-#define SIM_MAX_SPECS 32
-#define SIM_MAX_PATTERNS 32
+/* Room for a ladder per trigger per hull, and a zone's own weapons on top.
+ * The roster alone is twenty-three rungs. */
+#define SIM_MAX_SPECS 64
+#define SIM_MAX_PATTERNS 64
 #define SIM_NO_PATTERN 255
 /* One generation of fragments. Sixteen become two hundred and fifty-six
  * become four thousand, and the weapon table holds a thousand. */
 #define SIM_MAX_SPLINTER_DEPTH 1
+
+/* The two triggers a hull has. Everything a pilot upgrades is per trigger,
+ * so bullets that freeze and bombs that do not is a thing you can hold. */
+#define SIM_TRIG_GUN 0
+#define SIM_TRIG_BOMB 1
+#define SIM_TRIG_COUNT 2
+
+/* ---- what a pilot does to a weapon ----
+ *
+ * A weapon has a *level* and a set of *add-ons*, and they are different
+ * things. A level is the same weapon, harder: a rung on a ladder of patterns
+ * the hull carries, and climbing it swaps which one the trigger fires. An
+ * add-on changes the weapon's character, and it cannot be a rung -- three
+ * levels against six on/off add-ons is a hundred and ninety-two rows for one
+ * weapon, and the table holds thirty-two. So an add-on is a *transform*
+ * applied to the rung, at the moment of firing.
+ *
+ * Each add-on is a count rather than a flag, two bits wide, so a pilot can
+ * hold three rungs of shrapnel the same way they hold three rungs of speed.
+ * Twelve bits of add-on fit one word, which is what a projectile carries.
+ */
+typedef enum {
+    SIM_MOD_MULTI = 0,   /* more projectiles per shot, fanned */
+    SIM_MOD_BOUNCE,      /* walls reflect it */
+    SIM_MOD_PROX,        /* a fuse, so it goes off near rather than on */
+    SIM_MOD_SHRAPNEL,    /* its ending fires the zone's fragment pattern */
+    SIM_MOD_FREEZE,      /* it stalls the recharge of whoever it reaches */
+    SIM_MOD_PUSH,        /* it shoves: a repel, welded onto something else */
+    SIM_MOD_COUNT
+} sim_mod;
+
+#define SIM_MOD_MAX 3    /* rungs per add-on; two bits each */
+#define SIM_MAX_RUNGS 4  /* levels a weapon ladder can hold */
+
+/* Add-on counts pack two bits each into one word, on the ship and on every
+ * projectile it fires. */
+static inline uint8_t sim_mod_get(uint16_t mods, int m) {
+    return (uint8_t)((mods >> (m * 2)) & 3u);
+}
+static inline uint16_t sim_mod_set(uint16_t mods, int m, uint8_t n) {
+    return (uint16_t)((mods & ~(3u << (m * 2))) | ((uint32_t)(n & 3u) << (m * 2)));
+}
 
 typedef enum {
     SIM_WALL_END = 0,   /* stop, and do whatever ending does */
@@ -179,6 +223,26 @@ typedef enum {
     SIM_UP_COUNT
 } sim_upgrade;
 
+/* ---- what a green can be ----
+ *
+ * One flat space, because the whole tech tree is one shape: a count with a
+ * ceiling. A stat count interpolates a range, a level count indexes a
+ * ladder, an add-on count transforms what a trigger fires. The zone weights
+ * this space to decide what its greens are; the client colours and names
+ * from it; a prize carries one byte of it.
+ *
+ *   0 .. 4     a stat            sim_upgrade
+ *   5 .. 6     a level           per trigger
+ *   7 .. 18    an add-on         per trigger, per sim_mod
+ */
+#define SIM_PRIZE_STAT(u)     (u)
+#define SIM_PRIZE_LEVEL(t)    (SIM_UP_COUNT + (t))
+#define SIM_PRIZE_MOD(t, m)   (SIM_UP_COUNT + SIM_TRIG_COUNT \
+                               + (t) * SIM_MOD_COUNT + (m))
+#define SIM_PRIZE_COUNT       (SIM_UP_COUNT + SIM_TRIG_COUNT \
+                               + SIM_TRIG_COUNT * SIM_MOD_COUNT)
+
+
 /* Per-class tuning in core units. sim_class_from_units fills this from
  * settings-file units. */
 typedef struct {
@@ -191,10 +255,16 @@ typedef struct {
     int32_t recharge, init_recharge, up_recharge;  /* Q10 per tick */
     int32_t radius;                                /* Q8 px */
 
-    /* What the two triggers fire, as indices into the settings' patterns.
-     * SIM_NO_PATTERN is a hull with no bomb rack at all. */
-    uint8_t gun;
-    uint8_t bomb;
+    /* What the two triggers fire: a ladder of patterns per trigger, climbed
+     * by the pilot's level. Rung zero is what a fresh hull carries, and
+     * SIM_NO_PATTERN ends the ladder -- so a hull with no bomb rack has
+     * SIM_NO_PATTERN at rung zero, and the length of a ladder is the hull's
+     * ceiling for that weapon without a second number to keep in step. */
+    uint8_t trigger[SIM_TRIG_COUNT][SIM_MAX_RUNGS];
+    /* Add-ons this hull may hold on each trigger, packed as counts the same
+     * way the pilot's are. Zero is a hull that never gets that add-on, which
+     * is how the roster stays a roster: shrapnel belongs to bombers. */
+    uint16_t mod_max[SIM_TRIG_COUNT];
 } sim_ship_class;
 
 typedef struct {
@@ -205,6 +275,15 @@ typedef struct {
     sim_fire_pattern patterns[SIM_MAX_PATTERNS];
     uint8_t spec_count;
     uint8_t pattern_count;
+    /* What one rung of each add-on is worth. Units are the field it changes:
+     * extra projectiles, walls, Q8 px of fuse, ticks of stall, Q16 push. */
+    int32_t mod_step[SIM_MOD_COUNT];
+    /* Spacing a multifire add-on fans to, when the pattern has none of its
+     * own. A pattern that already spreads keeps its own angle. */
+    uint16_t mod_spread;
+    /* What each rung of shrapnel breaks into. Shrapnel is the one add-on
+     * whose magnitude is another weapon rather than a number. */
+    uint8_t mod_splinter[SIM_MAX_RUNGS];
     int32_t bounce;   /* restitution on the axis that hit, out of 16 */
     int32_t friction; /* retained speed along the wall, out of 16 */
     uint16_t respawn_delay; /* ticks dead before respawn */
@@ -238,15 +317,27 @@ typedef struct {
     uint16_t respawn_at;    /* ticks remaining while dead */
     int32_t spawn_x, spawn_y;
     uint16_t kills, deaths;
-    uint8_t up[SIM_UP_COUNT];  /* upgrades held; cleared by death */
+    uint8_t up[SIM_UP_COUNT];  /* stat upgrades held; cleared by death */
+    /* The rung each trigger is on, and the add-ons held on each. Cleared by
+     * death with everything else: what you are carrying is what you have
+     * survived with. */
+    uint8_t level[SIM_TRIG_COUNT];
+    uint16_t mods[SIM_TRIG_COUNT];
 } sim_ship;
 
 typedef struct {
     uint8_t active;
-    uint8_t type;   /* sim_upgrade */
+    uint8_t type;   /* an index into the prize space; see SIM_PRIZE_* */
     int32_t x, y;   /* Q8 px */
     uint16_t life;  /* ticks remaining */
 } sim_prize;
+
+/* Hand a green to a pilot. Returns 0 when it would do nothing -- a stat
+ * already at the top, a rung the hull's ladder does not have, an add-on the
+ * roster says this hull never gets -- and the simulation then leaves it on
+ * the map for somebody who can use it. Public because the client asks the
+ * same question of a copy, to show you which greens are yours. */
+int sim_take_prize(sim_ship *sh, const sim_ship_class *c, uint8_t type);
 
 /* Flags. The core owns pickup, carry, and drop, exactly as the original's
  * flagcore did; which arrangement of flags wins a round is a game mode's
@@ -266,6 +357,10 @@ typedef struct {
     uint8_t team;
     uint8_t left;  /* bounces remaining, when the spec bounces */
     uint8_t depth; /* splinter generations behind it; a fork-bomb stop */
+    /* The add-ons of the trigger that fired it, so a shot is what it was
+     * when it left rather than what its owner is carrying now. A bomb thrown
+     * while you had shrapnel still breaks up after you are dead. */
+    uint16_t mods;
     int32_t x, y;
     int32_t vx, vy;
     uint16_t life; /* ticks remaining */
