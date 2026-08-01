@@ -22,6 +22,21 @@ Conventions:
 - `.claude/hooks/session-start.sh` installs OptMem and exports `MEMORY_DIR`, so
   the `memo` commands below operate on this repo's store.
 
+## Shipping
+
+The web build is how this game is actually looked at, so a change nobody can
+play is not finished. Every time you fix a bug or add a feature -- anything
+that changes what the client does -- rebuild the browser bundle and
+re-release it:
+
+```sh
+JAVA_HOME=/path/to/jdk25 ./client/build.sh wasm-web bundle
+python3 client/tools/single_file.py client/bundle/wasm-web/vectorwake <out>.html --fragment
+```
+
+Then publish that file to the same artifact URL, so the link already handed
+out keeps working. Do it in the same turn as the fix, not the next one.
+
 ## Engineering rules
 
 - Do not preserve backward compatibility.

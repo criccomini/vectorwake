@@ -11,6 +11,7 @@ local net = require("arena.net")
 local touch = require("arena.touch")
 local browser = require("arena.browser")
 local hud = require("arena.hud")
+local menu = require("arena.menu")
 
 local TICK_HZ = 100
 local DT = 1 / TICK_HZ
@@ -68,6 +69,10 @@ local ACTIONS = {
 }
 
 local held = {}
+-- A tap can go down and up inside one frame, so the frame loop never sees it
+-- in `held`. Presses are latched here and consumed by whatever reads them,
+-- which is how the menu gets a keystroke that flight does not need.
+local tapped = {}
 local me = 0
 local pilots = {}
 local accum = 0
@@ -91,6 +96,7 @@ local function bit_for(action)
 end
 
 local function my_buttons()
+    if menu.open then return 0 end
     -- Collected as a set of distinct bits and summed, rather than or-ed:
     -- HTML5 builds run Lua 5.1, which has no bitwise operators, and a bit
     -- contributed by both the keyboard and the stick must still count once.
@@ -196,6 +202,7 @@ function init(self)
     local url = sys.get_config_string("vectorwake.server", "")
     if url == "" and dir ~= "" then
         sim.init(0x5eed)
+        menu.open = false
         browser.connect(dir)
         self.browsing = true
         return
@@ -205,6 +212,7 @@ function init(self)
         -- and settings: prediction runs collision locally between snapshots,
         -- and a snapshot carries state, not rules.
         sim.init(0x5eed)
+        menu.open = false
         net.connect(url, 0, sys.get_config_string("vectorwake.name", "pilot"))
         self.online = true
         return
@@ -259,8 +267,8 @@ local function draw_hull(cls, x, y, heading, color)
     end
 end
 
-function start_offline()
-    me = sim.spawn(0, 0, 512, 522, 0)
+function start_offline(cls)
+    me = sim.spawn(cls or 0, 0, 512, 522, 0)
     pilots[me] = {name = "you"}
     for i, L in ipairs(LAYOUT) do
         local id = sim.spawn(L[1], L[2], L[3], L[4], (i * 8192) % 65536)
@@ -268,6 +276,24 @@ function start_offline()
     end
     for _, f in ipairs({{512, 492}, {532, 512}, {512, 532}, {492, 512}}) do
         sim.add_flag(f[1], f[2])
+    end
+end
+
+-- Restart the arena around a chosen hull. The menu draws over a live game,
+-- so committing to a ship means building the arena again rather than
+-- swapping a ship inside it.
+local function start_chosen(what, cls)
+    pilots = {}
+    hud.reset()
+    if what == "duel" then
+        sim.init_duel(0x5eed)
+        me = sim.spawn(cls, 0, 512, 522, 0)
+        pilots[me] = {name = "you"}
+        local id = sim.spawn((cls + 3) % 8, 1, 512, 502, 32768)
+        pilots[id] = {name = "Ridgeline", bot = make_bot(id, 0.62)}
+    else
+        sim.init(0x5eed)
+        start_offline(cls)
     end
 end
 
@@ -319,6 +345,16 @@ function update(self, dt)
                 sim.ship_x(me), sim.ship_y(me), table.concat(flags, ",")))
         end
     end
+
+    if menu.open then
+        local chose = menu.step({
+            left = tapped[hash("turn_left")], right = tapped[hash("turn_right")],
+            up = tapped[hash("thrust")], down = tapped[hash("reverse")],
+            go = tapped[hash("select")] or tapped[hash("guns")],
+        })
+        if chose then start_chosen(chose, menu.class) end
+    end
+    tapped = {}
 
     if self.online and net.connected then me = net.me end
 
@@ -390,11 +426,15 @@ function update(self, dt)
     if ww > 0 and wh > 0 then
         local names = {}
         for i, c in ipairs(CLASSES) do names[i] = c.name end
-        hud.draw({
-            me = me, pilots = pilots, class_names = names,
-            w = ww, h = wh, cam_x = cx, cam_y = cy,
-            half_w = self.hw, half_h = self.hh,
-        })
+        if menu.open then
+            menu.draw(ww, wh, names, HULLS, cx, cy, self.hw, self.hh)
+        else
+            hud.draw({
+                me = me, pilots = pilots, class_names = names,
+                w = ww, h = wh, cam_x = cx, cam_y = cy,
+                half_w = self.hw, half_h = self.hh,
+            })
+        end
     end
 
     -- Flags.
@@ -452,6 +492,6 @@ function on_input(self, action_id, action)
     end
     if action_id == nil then return end
     local name = action_id
-    if action.pressed then held[name] = true end
+    if action.pressed then held[name] = true; tapped[name] = true end
     if action.released then held[name] = nil end
 end
