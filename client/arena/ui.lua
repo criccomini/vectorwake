@@ -68,6 +68,15 @@ function M.line(s, x, y, px, col, pivot)
     txt(s, x, y, px, col, pivot)
 end
 
+-- A rectangle the pointer can land on, published in the same coordinates it
+-- was drawn in. Defined up here with the other primitives because everything
+-- that draws something clickable needs it, and it used to sit far enough down
+-- the file that the first function to call it from above found nil.
+local function hit(x, y, w, h, action, value)
+    M.hits[#M.hits + 1] = {x = x, y = y, w = w, h = h,
+                           action = action, value = value}
+end
+
 -- A keycap, the way the prototype's <kbd> reads: a boxed glyph in a line of
 -- ordinary text. Returns the width it consumed.
 local function kbd(x, y, label, h)
@@ -243,6 +252,12 @@ end
 
 local rows = {}
 
+-- Where the scoreboard starts: under the menu chip when there is one, since
+-- the chip owns the corner.
+local function top_y()
+    return PAD * S + 32 * S
+end
+
 local function scores(me, pilots)
     -- A phone has no room for a nine-row table beside the radar, and mid-fight
     -- it is the least useful thing on the screen. The feed still says who is
@@ -271,10 +286,10 @@ local function scores(me, pilots)
     if shown == 0 then return 0 end
     local w = COL_W * S
     local h = PANEL_Y * 2 * S + shown * LINE * S
-    panel(PAD * S, PAD * S, w, h)
+    panel(PAD * S, top_y(), w, h)
 
     local my_team = sim.ship_team(me)
-    local y = PAD * S + PANEL_Y * S
+    local y = top_y() + PANEL_Y * S
     for i = 1, shown do
         local r = rows[i]
         local mine = r.i == me
@@ -455,14 +470,19 @@ end
 
 -- --- the flight interface --------------------------------------------------
 
--- The way into the menu on a device with no escape key. Beside the
--- scoreboard rather than on top of it, and on a phone the scoreboard is not
--- drawn at all, so the corner is free.
+-- The way into the menu, in the corner, on every device and every layout.
+--
+-- It was drawn only for touch and only on a narrow screen, which meant it
+-- depended on two guesses -- that a touch had been seen, and that the screen
+-- counted as small -- to be findable at all. On an emulated phone both came
+-- out false and the menu had no way in but a key that phone does not have.
+-- A button that must always work cannot be behind a test.
 local function menu_button()
-    if not (M.touching or M.compact) then return end
     local w, h = 62 * S, 26 * S
-    local x = PAD * S + (M.compact and 0 or (COL_W + 8) * S)
-    local y = PAD * S
+    -- The corner, on every layout. It used to dodge sideways when the
+    -- scoreboard was drawn, which put it somewhere no thumb goes looking and
+    -- made it depend on a width test to be findable at all.
+    local x, y = PAD * S, PAD * S
     rect(x, y, w, h, pal.a(pal.BTN_BG, 0.92))
     u:frame(x, ry(y, h), w, h, S, pal.BAR_EDGE)
     txt("menu", x + w / 2, y + h / 2, FONT * S, pal.a(pal.INK, 0.92), "center")
@@ -507,10 +527,6 @@ end
 -- is why there is no attract mode: a player who does nothing still watches a
 -- fight rather than a title card.
 
-local function hit(x, y, w, h, action, value)
-    M.hits[#M.hits + 1] = {x = x, y = y, w = w, h = h,
-                           action = action, value = value}
-end
 
 -- A hull drawn small, inside its button. The silhouette is what picks a ship;
 -- the name only confirms it.
