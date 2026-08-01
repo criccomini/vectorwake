@@ -44,6 +44,9 @@ in `sim/`.
 | `ext/simcore/` | The native extension: a Lua binding over the C core, no rules |
 | `arena/arena.script` | The frame loop: input, stepping, drawing |
 | `arena/net.lua` | Connect, predict, reconcile. Decides nothing |
+| `arena/touch.lua` | Thumbstick and weapon pads; emits the same button bits |
+| `arena/browser.lua` | The server browser, over the directory protocol |
+| `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `render/` | Fixed world extent per decision 13; line geometry, no atlas |
 | `main/` | Bootstrap collection and input bindings |
 | `websocket/` | Vendored `defold-websocket`, at this path deliberately |
@@ -72,6 +75,23 @@ The online path still calls `sim.init` before connecting. A snapshot carries
 state, not rules, and prediction runs collision locally between snapshots —
 so the map and settings have to exist first. Skipping that was a segfault,
 not a subtle desync.
+
+## Finding a game
+
+With `directory` set, the client opens a server browser at startup: it asks
+the directory what is running and lets the player pick. Up and down move,
+enter joins, escape plays offline instead.
+
+```sh
+./server/target/release/vectorwake-server directory 127.0.0.1:9000 zone
+./client/build/x86_64-linux/dmengine \
+  --config=vectorwake.directory=ws://127.0.0.1:9000 \
+  client/build/default/game.projectc
+```
+
+A `server` address skips the browser and connects straight there. Neither
+set plays the local game, which is what keeps a build with nothing behind it
+playable.
 
 ## Two things worth knowing
 

@@ -11,6 +11,7 @@
 mod ai;
 mod calibrate;
 mod config;
+mod directory;
 mod modes;
 mod persist;
 mod rating;
@@ -31,6 +32,9 @@ const MAX_PLAYERS: usize = 16;
 const C2S_JOIN: u8 = 1;
 const C2S_INPUT: u8 = 2;
 const C2S_DUEL: u8 = 3;
+/// Asked by the directory, and by any client that wants to know what a zone
+/// is before committing to it. Answerable without joining.
+const C2S_STATUS: u8 = directory::STATUS_REQUEST;
 
 // Server to client
 const S2C_WELCOME: u8 = 1;
@@ -40,6 +44,7 @@ const S2C_KILL: u8 = 4;
 const S2C_BANNER: u8 = 5;
 const S2C_ZONE: u8 = 6;
 const S2C_DENIED: u8 = 7;
+const S2C_STATUS: u8 = directory::STATUS_REPLY;
 
 struct Player {
     ship: u8,
@@ -450,6 +455,20 @@ impl Zone {
         }
     }
 
+    /// What this zone tells a directory, and anybody else who asks.
+    fn status_json(&self) -> String {
+        let players: u32 = self.arenas.values().map(|a| a.players.len() as u32).sum();
+        let bots: u32 = self.arenas.values().map(|a| a.bots.len() as u32).sum();
+        serde_json::to_string(&directory::Status {
+            name: self.cfg.current.name.clone(),
+            description: self.cfg.current.description.clone(),
+            players,
+            bots,
+            arenas: self.arenas.len() as u32,
+        })
+        .unwrap_or_default()
+    }
+
     fn zone_msg(&self) -> Vec<u8> {
         let mut m = vec![S2C_ZONE];
         let text = format!("{}\n{}", self.cfg.current.name, self.cfg.current.description);
@@ -487,8 +506,58 @@ fn run_calibration() {
     }
 }
 
+/// Serve the zone directory.
+///
+///     vectorwake-server directory <listen> [dir]
+async fn run_directory() {
+    let addr = std::env::args().nth(2).unwrap_or_else(|| "0.0.0.0:9000".into());
+    let dir = std::env::args().nth(3).unwrap_or_else(|| ".".into());
+    let (d, err) = directory::Directory::load(&format!("{dir}/directory.toml"));
+    if let Some(e) = err {
+        println!("no usable directory.toml ({e}); serving an empty list");
+    }
+    println!("directory \"{}\": {} zones", d.name, d.entries.len());
+    let d = Arc::new(Mutex::new(d));
+
+    // Poll on a timer rather than on demand, so one slow zone cannot make a
+    // player's browse request hang.
+    {
+        let d = d.clone();
+        tokio::spawn(async move {
+            loop {
+                directory::refresh(&d).await;
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            }
+        });
+    }
+
+    let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind failed");
+    println!("vectorwake directory listening on ws://{addr}");
+    while let Ok((stream, _)) = listener.accept().await {
+        let d = d.clone();
+        tokio::spawn(async move {
+            let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else { return };
+            while let Some(Ok(msg)) = ws.next().await {
+                if let Message::Binary(b) = msg {
+                    if b.first() == Some(&C2S_STATUS) {
+                        let mut m = vec![S2C_STATUS];
+                        m.extend_from_slice(d.lock().await.as_json().as_bytes());
+                        if ws.send(Message::Binary(m)).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    if std::env::args().nth(1).as_deref() == Some("directory") {
+        run_directory().await;
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("calibrate") {
         run_calibration();
         return;
@@ -592,6 +661,14 @@ async fn main() {
                     continue;
                 }
                 match data[0] {
+                    C2S_STATUS => {
+                        // Answerable without joining, so a directory or a
+                        // browsing player can look before committing.
+                        let z = zone.lock().await;
+                        let mut m = vec![S2C_STATUS];
+                        m.extend_from_slice(z.status_json().as_bytes());
+                        let _ = tx.send(m);
+                    }
                     C2S_JOIN if seat.is_none() => {
                         let class = data.get(1).copied().unwrap_or(0);
                         let name = String::from_utf8_lossy(&data[2..]).to_string();

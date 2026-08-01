@@ -51,3 +51,36 @@ not needed yet.
 
 UDP for native clients is the same message format on a different socket and
 is not built.
+
+## The zone directory
+
+A player has to find a game before joining one. `directory.toml` lists zone
+addresses; the directory polls each on a timer and serves the answers.
+
+```sh
+vectorwake-server directory 127.0.0.1:9000 zone
+```
+
+It speaks the same WebSocket protocol the zones do, so a client already able
+to talk to a zone needs no second transport, and a zone needs no HTTP
+endpoint bolted on. A zone answers `C2S_STATUS` without requiring a join, so
+browsing costs nobody a seat.
+
+A directory is authoritative over nothing and holds no state worth losing. If
+it is down, a player who knows an address still connects straight to it, and
+a listed zone that stops answering is shown as down rather than hidden --
+that is information a player wants.
+
+## Calibrating the bot ladder
+
+```sh
+vectorwake-server calibrate 8 zone     # writes zone/ladder.json
+```
+
+Every roster pilot duels every other, repeatedly, in the real simulation with
+the real bots and the real rating math. Zones seed their bots from the
+result. Without it the bots simply start level and earn their places in live
+play.
+
+The ladder is not sorted by skill and should not be: these pilots fly
+different hulls, and a rating measures the individual, hull included.

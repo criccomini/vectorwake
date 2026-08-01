@@ -14,6 +14,8 @@ local VIEW_TILES = sys.get_config_int("vectorwake.view_tiles", 34)
 function init(self)
     self.sprite_pred = render.predicate({"tile"})
     self.gui_pred = render.predicate({"gui"})
+    -- The engine's debug font, which is the only text this client draws.
+    self.text_pred = render.predicate({"debug_text"})
     -- 1.13 moved the buffer constants onto the graphics module.
     self.clear = {
         [graphics.BUFFER_TYPE_COLOR0_BIT] = vmath.vector4(0.024, 0.035, 0.055, 1),
@@ -65,6 +67,7 @@ function update(self)
     render.set_view(vmath.matrix4())
     render.set_projection(vmath.matrix4_orthographic(0, w, 0, h, -1, 1))
     render.draw(self.gui_pred)
+    render.draw(self.text_pred)
 end
 
 function on_message(self, message_id, message)

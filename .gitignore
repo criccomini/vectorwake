@@ -10,3 +10,7 @@ client/ext/simcore/include/sim/
 client/build/
 client/.internal/
 client/bundle/
+# Runtime state: a zone rewrites this as people play, so tracking it means
+# every playtest dirties the tree. The calibrated ladder.json is tracked; the
+# live ratings are not.
+zone/ratings.json

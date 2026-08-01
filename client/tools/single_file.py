@@ -127,6 +127,36 @@ SHIM = """
     script.textContent = text(name);
     document.body.appendChild(script);
   };
+
+  // Keyboard. The engine listens on the canvas, and a canvas that never gets
+  // focus never sees a key. Served straight from a file that is automatic
+  // enough; embedded in a frame it is not, and the game looks broken while
+  // running perfectly. So: take focus as soon as there is a canvas, take it
+  // back on any pointer down, and stop the arrow keys and space from
+  // scrolling whatever page we happen to be sitting in.
+  var KEYS = {
+    ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1,
+    Space: 1, Tab: 1
+  };
+  function grabFocus() {
+    var c = document.getElementById("canvas");
+    if (c) {
+      c.setAttribute("tabindex", "0");
+      try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); }
+    }
+  }
+  window.addEventListener("load", grabFocus);
+  document.addEventListener("pointerdown", grabFocus, true);
+  document.addEventListener("keydown", function (e) {
+    if (KEYS[e.code]) e.preventDefault();
+  }, { passive: false, capture: true });
+  var tries = 0;
+  var poll = setInterval(function () {
+    grabFocus();
+    if (++tries > 40 || document.activeElement === document.getElementById("canvas")) {
+      clearInterval(poll);
+    }
+  }, 250);
 })();
 """
 

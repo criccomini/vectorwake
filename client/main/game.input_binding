@@ -58,3 +58,11 @@ touch_trigger {
   input: TOUCH_MULTI
   action: "touch"
 }
+key_trigger {
+  input: KEY_ENTER
+  action: "select"
+}
+key_trigger {
+  input: KEY_ESC
+  action: "cancel"
+}

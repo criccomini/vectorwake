@@ -9,6 +9,7 @@
 
 local net = require("arena.net")
 local touch = require("arena.touch")
+local browser = require("arena.browser")
 
 local TICK_HZ = 100
 local DT = 1 / TICK_HZ
@@ -38,6 +39,15 @@ local HULLS = {
     {{0, 10}, {10, 0}, {0, -10}, {-10, 0}},                     -- Lattice
 }
 
+-- The offline roster: hull, team, spawn tile, name. Shared by the cold start
+-- and by dropping out of the browser, which are the same game.
+local LAYOUT = {
+    {0, 1, 486, 486, "Kestrel"}, {3, 1, 538, 486, "Halcyon"},
+    {6, 1, 538, 538, "Vantage"}, {2, 1, 486, 538, "Ridgeline"},
+    {5, 0, 512, 478, "Sable"},   {7, 0, 478, 512, "Meridian"},
+    {1, 0, 546, 512, "Ozone"},   {4, 1, 512, 546, "Tessellate"},
+}
+
 local ACTIONS = {
     turn_left = nil, turn_right = nil, thrust = nil, reverse = nil,
     guns = nil, bombs = nil,
@@ -48,14 +58,22 @@ local me = 0
 local pilots = {}
 local accum = 0
 
+-- Defold hands on_input a hashed action_id, never the string it was written
+-- as in the input binding. Comparing it to a string literal silently yields
+-- false for every key ever pressed, which is exactly what it did.
+local ACTION_BITS = nil
 local function bit_for(action)
-    if action == "turn_left" then return sim.BTN_LEFT end
-    if action == "turn_right" then return sim.BTN_RIGHT end
-    if action == "thrust" then return sim.BTN_THRUST end
-    if action == "reverse" then return sim.BTN_REVERSE end
-    if action == "guns" then return sim.BTN_FIRE end
-    if action == "bombs" then return sim.BTN_BOMB end
-    return 0
+    if not ACTION_BITS then
+        ACTION_BITS = {
+            [hash("turn_left")] = sim.BTN_LEFT,
+            [hash("turn_right")] = sim.BTN_RIGHT,
+            [hash("thrust")] = sim.BTN_THRUST,
+            [hash("reverse")] = sim.BTN_REVERSE,
+            [hash("guns")] = sim.BTN_FIRE,
+            [hash("bombs")] = sim.BTN_BOMB,
+        }
+    end
+    return ACTION_BITS[action] or 0
 end
 
 local function my_buttons()
@@ -158,7 +176,17 @@ function init(self)
     -- A server address makes this a networked client; without one it plays
     -- the same game locally, which is what keeps a build with nothing behind
     -- it playable.
+    -- A directory means "let the player choose"; a pinned server means
+    -- "go here". Neither means play the local game, which is what keeps a
+    -- build with nothing behind it playable.
+    local dir = sys.get_config_string("vectorwake.directory", "")
     local url = sys.get_config_string("vectorwake.server", "")
+    if url == "" and dir ~= "" then
+        sim.init(0x5eed)
+        browser.connect(dir)
+        self.browsing = true
+        return
+    end
     if url ~= "" then
         -- The server owns state from here, but the core still needs its map
         -- and settings: prediction runs collision locally between snapshots,
@@ -173,13 +201,7 @@ function init(self)
     me = sim.spawn(0, 0, 512, 522, 0)
     pilots[me] = {name = "you"}
 
-    local layout = {
-        {0, 1, 486, 486, "Kestrel"}, {3, 1, 538, 486, "Halcyon"},
-        {6, 1, 538, 538, "Vantage"}, {2, 1, 486, 538, "Ridgeline"},
-        {5, 0, 512, 478, "Sable"},   {7, 0, 478, 512, "Meridian"},
-        {1, 0, 546, 512, "Ozone"},   {4, 1, 512, 546, "Tessellate"},
-    }
-    for i, L in ipairs(layout) do
+    for i, L in ipairs(LAYOUT) do
         local id = sim.spawn(L[1], L[2], L[3], L[4], (i * 8192) % 65536)
         pilots[id] = {name = L[5], bot = make_bot(id, 0.28 + (i % 5) * 0.16)}
     end
@@ -230,7 +252,32 @@ local function draw_hull(cls, x, y, heading, color)
     end
 end
 
+local function start_offline()
+    me = sim.spawn(0, 0, 512, 522, 0)
+    pilots[me] = {name = "you"}
+    for i, L in ipairs(LAYOUT) do
+        local id = sim.spawn(L[1], L[2], L[3], L[4], (i * 8192) % 65536)
+        pilots[id] = {name = L[5], bot = make_bot(id, 0.28 + (i % 5) * 0.16)}
+    end
+    for _, f in ipairs({{512, 492}, {532, 512}, {512, 532}, {492, 512}}) do
+        sim.add_flag(f[1], f[2])
+    end
+end
+
 function update(self, dt)
+    if browser.open then
+        local w, h = window.get_size()
+        browser.draw(w, h)
+        -- Same heartbeat idea as the arena: without it there is no way to see
+        -- what the browser thinks is selected in a headless run.
+        self.report = (self.report or 0) + dt
+        if self.report > 3 then
+            self.report = 0
+            print(string.format("browser rows %d sel %d %s",
+                #browser.rows, browser.selected, browser.note))
+        end
+        return
+    end
     if self.online and sim.ship_count() == 0 then return end
 
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
@@ -260,8 +307,9 @@ function update(self, dt)
                 sim.tick(), sim.ship_count(), tostring(net.connected),
                 net.stats.err, net.stats.err_max, net.banner))
         else
-            print(string.format("tick %d  ships %d  hash %d  flags %s",
-                sim.tick(), sim.ship_count(), sim.hash(), table.concat(flags, ",")))
+            print(string.format("tick %d  ships %d  hash %d  at %.0f,%.0f  flags %s",
+                sim.tick(), sim.ship_count(), sim.hash(),
+                sim.ship_x(me), sim.ship_y(me), table.concat(flags, ",")))
         end
     end
 
@@ -334,6 +382,26 @@ function update(self, dt)
 end
 
 function on_input(self, action_id, action)
+    if browser.open then
+        if not action.pressed then return end
+        if action_id == hash("thrust") then browser.move(-1)
+        elseif action_id == hash("reverse") then browser.move(1)
+        elseif action_id == hash("select") then
+            local address = browser.chosen()
+            if address then
+                browser.close()
+                net.connect(address, 0,
+                            sys.get_config_string("vectorwake.name", "pilot"))
+                self.online = true
+                self.browsing = false
+            end
+        elseif action_id == hash("cancel") then
+            browser.close()
+            self.browsing = false
+            start_offline()
+        end
+        return
+    end
     if action_id == hash("touch") then
         local w, h = window.get_size()
         touch.on_touch(action, w, h)

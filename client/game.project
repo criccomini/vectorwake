@@ -41,6 +41,7 @@ include_dirs = ext/simcore, websocket
 
 [vectorwake]
 view_tiles = 34
+directory =
 server =
 name = defoldpilot
 
