@@ -6,7 +6,10 @@
 -- direction in docs/design/identity.md asks for and what keeps the bundle
 -- small enough to be one link away.
 
-local VIEW_TILES = 34    -- world extent across the shorter screen axis
+-- World extent across the shorter screen axis. Read from game.project so the
+-- arena script can place touch controls against the same projection instead
+-- of keeping its own copy of this number.
+local VIEW_TILES = sys.get_config_int("vectorwake.view_tiles", 34)
 
 function init(self)
     self.sprite_pred = render.predicate({"tile"})

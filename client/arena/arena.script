@@ -8,6 +8,7 @@
 -- a defined order nor adequate speed on the platform that matters most.
 
 local net = require("arena.net")
+local touch = require("arena.touch")
 
 local TICK_HZ = 100
 local DT = 1 / TICK_HZ
@@ -58,10 +59,25 @@ local function bit_for(action)
 end
 
 local function my_buttons()
-    local b = 0
+    -- Collected as a set of distinct bits and summed, rather than or-ed:
+    -- HTML5 builds run Lua 5.1, which has no bitwise operators, and a bit
+    -- contributed by both the keyboard and the stick must still count once.
+    local bits = {}
+    local steering = touch.steering()
     for action, down in pairs(held) do
-        if down then b = b + bit_for(action) end
+        if down then
+            -- Two sources on the rudder would fight; the stick wins while it
+            -- is down, and the keys keep everything else.
+            local bit = bit_for(action)
+            local rudder = bit == sim.BTN_LEFT or bit == sim.BTN_RIGHT
+            if not (steering and rudder) then bits[bit] = true end
+        end
     end
+    for _, bit in ipairs(touch.bits(sim.ship_heading(me))) do
+        bits[bit] = true
+    end
+    local b = 0
+    for bit in pairs(bits) do b = b + bit end
     return b
 end
 
@@ -254,6 +270,16 @@ function update(self, dt)
     local cx, cy = sim.ship_x(me), sim.ship_y(me)
     msg.post("@render:", "camera", {position = vmath.vector3(cx, cy, 0)})
 
+    -- Touch controls, drawn in world space at a fixed offset from the camera.
+    -- The same view extent the render script uses, so they land where the
+    -- thumb actually is.
+    local ww, wh = window.get_size()
+    if ww > 0 and wh > 0 then
+        local px = sys.get_config_int("vectorwake.view_tiles", 34) * 16
+        local short = math.min(ww, wh)
+        touch.draw(cx, cy, px * 0.5 * (ww / short), px * 0.5 * (wh / short), ww, wh)
+    end
+
     -- Walls near the camera.
     local wall = vmath.vector4(0.16, 0.24, 0.38, 1)
     local t0x, t0y = math.floor(cx / 16) - 26, math.floor(cy / 16) - 26
@@ -308,6 +334,11 @@ function update(self, dt)
 end
 
 function on_input(self, action_id, action)
+    if action_id == hash("touch") then
+        local w, h = window.get_size()
+        touch.on_touch(action, w, h)
+        return
+    end
     if action_id == nil then return end
     local name = action_id
     if action.pressed then held[name] = true end
