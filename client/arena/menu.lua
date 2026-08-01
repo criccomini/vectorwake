@@ -21,23 +21,27 @@ local callsign = require("arena.callsign")
 local M = {}
 
 M.open = false
-M.class = 0             -- the hull you are flying
+M.class = 0             -- the hull you are flying, kept in step with the sim
+M.pending = nil         -- the one a row just asked for
 M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
 M.note = nil            -- set by the arena when a connection fails
 
--- Who you are and where you are going.
+-- Who you are, and where the games are.
 --
--- The name is generated, never typed. A player is flying immediately, a phone
--- never has to raise a keyboard for it, and a console will hand us the
--- platform's own name when we get there.
+-- Nothing here is typed. The name is generated -- a player is flying
+-- immediately, a phone never has to raise a keyboard, and a console will hand
+-- us the platform's own name when we get there. The directory is
+-- configuration rather than input: ZONES asks it what is running and the
+-- player picks from the list.
 --
--- The address is the one thing still typed, because an address cannot be
--- invented -- and it is the escape hatch rather than the path: ZONES asks a
--- directory what is running and the player picks from a list.
+-- There is deliberately no address field. A game whose front door is a text
+-- box asking for a websocket URL is a game with a text box in it, and the
+-- machinery under one -- an invisible DOM input over the canvas, focus
+-- handed back and forth, enter delivered to whichever of the two had the
+-- caret -- was the single largest source of bugs in this client.
 M.name = "pilot"
-M.server = "ws://127.0.0.1:9040"
-M.focus = nil           -- nil or "server"; only a text field takes the caret
+M.directory = "ws://127.0.0.1:9000"
 
 -- Settings. Kept here because this is what saves them, and read by whoever
 -- owns the thing they change.
@@ -48,13 +52,11 @@ M.can_cap = false       -- whether this engine can be asked to cap frames
 local VOLUMES = {{0, "off"}, {0.3, "quiet"}, {0.6, "half"}, {1.0, "full"}}
 local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 
-local LIMITS = {server = 64}
 local SAVE = sys.get_save_file("vectorwake", "pilot")
 
 function M.save_identity()
     pcall(sys.save, SAVE, {
-        name = M.name, server = M.server, class = M.class,
-        volume = M.volume, cap = M.cap,
+        name = M.name, class = M.class, volume = M.volume, cap = M.cap,
     })
 end
 
@@ -65,7 +67,6 @@ function M.load_identity()
     local ok, d = pcall(sys.load, SAVE)
     if ok and type(d) == "table" and type(d.name) == "string" and d.name ~= "" then
         M.name = d.name
-        if type(d.server) == "string" and d.server ~= "" then M.server = d.server end
         if type(d.class) == "number" then M.class = math.floor(d.class) % 8 end
         if type(d.volume) == "number" then M.volume = d.volume end
         if type(d.cap) == "number" then M.cap = d.cap end
@@ -94,26 +95,11 @@ function M.reroll()
     M.save_identity()
 end
 
-function M.defaults(name, server)
+-- Configuration, for a build that is pointed somewhere: a test naming its
+-- clients, or an operator running their own directory.
+function M.defaults(name, directory)
     if name and name ~= "" then M.name = name end
-    if server and server ~= "" then M.server = server end
-end
-
--- A printable character arrived while a field had focus.
-function M.type(s)
-    if not M.open or not M.focus then return false end
-    local cur = M[M.focus] or ""
-    if #cur >= LIMITS[M.focus] then return true end
-    -- Newlines and tabs are not addresses, and the engine does deliver them.
-    s = string.gsub(s, "[%c]", "")
-    M[M.focus] = cur .. s
-    return true
-end
-
-function M.backspace()
-    if not M.open or not M.focus then return false end
-    M[M.focus] = string.sub(M[M.focus] or "", 1, -2)
-    return true
+    if directory and directory ~= "" then M.directory = directory end
 end
 
 -- --- the tree ---------------------------------------------------------------
@@ -163,8 +149,6 @@ local NODES = {
          act = "practice"},
         {label = "duel", detail = "first to five, one on one", act = "duel"},
         {label = "zones", detail = "find a game to join", act = "zones"},
-        {label = "address", detail = function() return M.server end,
-         act = "address"},
     }},
 
     pilot = {title = "pilot", rows = {
@@ -218,8 +202,7 @@ function M.toggle()
         M.close()
     else
         M.open = true
-        M.focus = nil
-        M.note = nil
+            M.note = nil
     end
     return M.open
 end
@@ -230,7 +213,6 @@ function M.show(...)
     M.stack = {"root"}
     for _, id in ipairs({...}) do M.stack[#M.stack + 1] = id end
     M.open = true
-    M.focus = nil
 end
 
 -- Closing forgets where you were. A menu that reopens three levels down is a
@@ -239,8 +221,12 @@ end
 -- which had meant "duel" a moment earlier -- silently changed hull instead.
 function M.close()
     M.open = false
-    M.focus = nil
     M.stack = {"root"}
+    -- The row as well as the level. Resetting only the stack left the root
+    -- sitting on whatever was last chosen there, so escape-then-enter went
+    -- wherever you went last time rather than into the first row -- the same
+    -- class of surprise, one level up.
+    M.sel = {}
 end
 
 local function back()
@@ -266,7 +252,6 @@ function M.view()
             label = r.label, detail = d, index = i, hull = r.hull,
             pick = (r.go or r.act) ~= nil,
             mark = r.mark and r.mark() or false,
-            field = r.act == "address" and "server" or nil,
         }
     end
     return out
@@ -285,8 +270,11 @@ local function activate()
 
     -- The ones this file can settle itself.
     if r.act == "ship" then
-        M.class = r.value
-        M.save_identity()
+        -- A request, not a decision. The hull you are flying is whatever the
+        -- simulation says it is -- in a zone that is the server's answer, and
+        -- it can refuse -- so this reports what was asked for and lets the
+        -- arena find out. `M.class` follows the ship, never leads it.
+        M.pending = r.value
         return "ship"
     elseif r.act == "reroll" then
         M.reroll()
@@ -301,11 +289,6 @@ local function activate()
         M.apply_settings()
         M.save_identity()
         return nil
-    elseif r.act == "address" then
-        -- The caret goes to the field rather than anywhere going anywhere:
-        -- an address is typed and then joined, in that order.
-        M.focus = M.focus and nil or "server"
-        return nil
     end
     return r.act
 end
@@ -318,16 +301,6 @@ end
 -- can make a noise about it.
 function M.step(keys)
     if not M.open then return nil, false end
-
-    -- While an address is being typed, the keys belong to the field.
-    if M.focus then
-        if keys.go or keys.back then
-            M.focus = nil
-            M.save_identity()
-            return keys.go and "join" or nil, true
-        end
-        return nil, false
-    end
 
     if keys.back or keys.left then return nil, back() end
 

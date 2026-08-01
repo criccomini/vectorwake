@@ -71,10 +71,11 @@ in `sim/`.
 
 ## Playing with other people
 
-`PLAY -> ZONES` finds a game and `PLAY -> ADDRESS` types one. The server owns
-the arena instead of this client. Nothing has to be rebuilt to point at a
-different zone, which matters because the published page is a single file
-anybody can open and there is no zone baked into it.
+`PLAY -> ZONES` asks the official directory what is running and lets the
+player pick. The server owns the arena instead of this client, and there is no
+way to type an address: a build is pointed at a directory with
+`--config=vectorwake.directory=ws://...`, and a player only ever sees the list
+it returns.
 
 Nobody types a name. A call sign is generated on first run, kept in the
 browser's save file so ratings have a stable identity to accumulate against,
@@ -82,10 +83,11 @@ and redrawn by tapping it. That is the whole of naming on a phone, and on a
 console it is what we will replace with the platform's own name -- which is
 what those platforms expect and what certification generally requires.
 
-An address cannot be generated, so ZONES asks a directory what is running and
-the player picks from a list. `ADDRESS` is the escape hatch for a zone that is
-not listed, not the path most players take -- and it is the only text field
-left in the game.
+There is no text field left in this game at all. That is not tidiness: the
+invisible DOM input an address box needs over a canvas, and the focus traded
+between it and the engine, produced more defects than any other part of the
+client -- a keystroke went to whichever of the two held the caret, and after
+typing, the canvas never got the keyboard back.
 
 Run one:
 
@@ -93,10 +95,15 @@ Run one:
 ./server/target/release/vectorwake-server 0.0.0.0:9040 zone
 ```
 
-Then every player opens the client and puts `ws://<that host>:9040` into
-`PLAY -> ADDRESS`, or picks it from a directory through ZONES. They appear in each
-other's rosters, kill feeds, and radar, because online every name comes from
-the server's roster rather than from the local one.
+List it in a directory's `directory.toml`, point the client at that directory,
+and players pick it from `PLAY -> ZONES`. They appear in each other's rosters,
+kill feeds, and radar, because online every name comes from the server's roster
+rather than from the local one.
+
+In a zone a player can change hull from `SHIP` without leaving: the client
+sends `C2S_SHIP`, the server applies it through the core, and the next snapshot
+brings back a different ship. Only alive and only at a full bar -- a fresh hull
+is a fresh bar, and ungated that is an escape from a fight.
 
 `PRACTICE` and `DUEL` stay offline against bots, so a page with no zone behind
 it is still a game, and either of them is also how you leave a zone.
@@ -135,9 +142,10 @@ not a subtle desync.
 
 ## Finding a game
 
-With `directory` set, the client opens a server browser at startup: it asks
-the directory what is running and lets the player pick. Up and down move,
-enter joins, escape plays offline instead.
+`PLAY -> ZONES` opens the browser: it asks the directory what is running and
+lets the player pick. Up and down move, enter joins, escape plays offline
+instead. The address defaults to a loopback directory and is overridden per
+build.
 
 ```sh
 ./server/target/release/vectorwake-server directory 127.0.0.1:9000 zone
@@ -146,9 +154,9 @@ enter joins, escape plays offline instead.
   client/build/default/game.projectc
 ```
 
-A `server` address skips the browser and connects straight there. Neither
-set plays the local game, which is what keeps a build with nothing behind it
-playable.
+A `server` address connects straight there at startup, which is how a test
+pins a client to a zone. Without one the client plays the local game, which is
+what keeps a build with nothing behind it playable.
 
 ## Driving it from a test
 

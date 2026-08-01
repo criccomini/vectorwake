@@ -32,6 +32,7 @@ const MAX_PLAYERS: usize = 16;
 const C2S_JOIN: u8 = 1;
 const C2S_INPUT: u8 = 2;
 const C2S_DUEL: u8 = 3;
+const C2S_SHIP: u8 = 5;
 /// Asked by the directory, and by any client that wants to know what a zone
 /// is before committing to it. Answerable without joining.
 const C2S_STATUS: u8 = directory::STATUS_REQUEST;
@@ -839,6 +840,26 @@ async fn main() {
                         w.extend_from_slice(&0u32.to_le_bytes());
                         let _ = tx.send(w);
                         z.arenas[&aid].broadcast_roster();
+                    }
+                    C2S_SHIP => {
+                        // A hull change, in place. The core refuses it unless
+                        // the pilot is alive and at a full bar, which is what
+                        // stops it being an escape from a fight -- a fresh
+                        // ship is a fresh bar. Nothing is sent back: the next
+                        // snapshot carries the new class, and a refusal leaves
+                        // the old one, which is the same answer either way.
+                        if data.len() >= 2 {
+                            if let Some((aid, pid)) = seat {
+                                let cls = data[1];
+                                let mut z = zone.lock().await;
+                                if let Some(a) = z.arenas.get_mut(&aid) {
+                                    let ship = a.players.get(&pid).map(|p| p.ship);
+                                    if let Some(ship) = ship {
+                                        a.world.set_ship_class(ship, cls);
+                                    }
+                                }
+                            }
+                        }
                     }
                     C2S_INPUT => {
                         // buttons: u16, tick: u32. The tick is advisory: the

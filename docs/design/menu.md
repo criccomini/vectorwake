@@ -28,7 +28,7 @@ closes.
 ```
 menu
 ├ ship        eight hulls, silhouette and a line of what it is for
-├ play        practice · duel · zones · address
+├ play        practice · duel · zones (the official directory's list)
 ├ pilot       your call sign, and a reroll
 ├ settings    sound · frames · fullscreen
 └ about       what this is, the controls, the build
@@ -86,9 +86,27 @@ The cost is the same cost dying has. Swapping hull mid-fight to counter
 somebody should not be free, and losing your greens is what makes it a
 decision.
 
-**Not yet:** changing hull inside a zone. The class is sent once, at join, and
-there is no message for "I am a Wedge now". The menu says so rather than
-pretending.
+### In a zone, and only from a full bar
+
+The zone protocol carries a hull change (`C2S_SHIP`), the server applies it
+through the same core function, and the next snapshot brings back a different
+ship. Nothing is predicted: a hull that flickered back would be worse than one
+that arrives a frame late.
+
+You keep your team and your seat. You lose your upgrades, your position and
+anything you were carrying, exactly as dying takes them -- your kills and
+deaths stand, because those are the match's record rather than yours to spend.
+
+**Only at full energy, and only alive.** A fresh hull is a fresh bar, so
+ungated this is a way out of a fight you are losing: take a beating, switch,
+come back whole. Full energy means you are not in one, or you have flown clear
+long enough to recover -- the same thing. Dead is refused too, because the
+change sets `alive`, and allowing it would hand an early respawn to anybody
+who opened the menu on the way down.
+
+The rule lives in the core, so the client and the server enforce one copy of
+it. The client checks first only so a refusal comes with a reason rather than
+silence.
 
 ## Loading
 
@@ -121,8 +139,8 @@ player rather than to us. The row hides itself if the engine will not take
 
 **Sound.** Off, quiet, half, full, on the master group.
 
-Both are saved with the call sign and the address, and applied on load, so the
-menu never holds a value the engine does not have.
+Both are saved beside the call sign and applied on load, so the menu never
+holds a value the engine does not have.
 
 ## What is deliberately absent
 
@@ -133,3 +151,15 @@ playing.
 A **directory nudge** -- a line in the feed saying three pilots are in a live
 zone -- is written down here rather than built, because it needs a public
 directory to point at and the default address is a loopback one.
+
+An **address field**. There is no way to type a websocket URL into this game
+any more: `ZONES` asks the official directory what is running and you pick
+from the list. That deleted the last text input, and with it the invisible DOM
+input laid over the canvas, the focus handed back and forth between the two,
+and the keystroke that went to whichever of them held the caret -- which was
+the single largest source of bugs in this client. An operator who runs their
+own directory points a build at it with
+`--config=vectorwake.directory=ws://...`; a player never sees an address.
+
+The consequence, which is the point: if the directory is unreachable, there is
+no way into a zone. A single front door is a front door that has to be up.

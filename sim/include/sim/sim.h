@@ -281,8 +281,15 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
 
 /* Put a pilot in a different hull. A respawn, not a costume change: back to
  * your start at rest, a full bar of the new ship, upgrades gone, anything you
- * were carrying dropped -- and the arena and everyone in it untouched.
- * Returns 0, or -1 for an unknown ship or class. */
+ * were carrying dropped -- and the team, the arena, and everyone else in it
+ * untouched.
+ *
+ * Only from a full bar and only alive, because a fresh ship is a full bar:
+ * ungated, changing hull is a way out of a fight you are losing. Asking for
+ * the hull you are already in does nothing and succeeds.
+ *
+ * Returns 0, or -1 for an unknown ship or class, a dead pilot, or one who is
+ * not at full energy. */
 int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
                        uint8_t cls);
 

@@ -10,6 +10,7 @@
 local M = {}
 
 local C2S_JOIN, C2S_INPUT, C2S_DUEL = 1, 2, 3
+local C2S_SHIP = 5
 local S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER = 1, 2, 3
 local S2C_KILL, S2C_BANNER, S2C_ZONE, S2C_DENIED = 4, 5, 6, 7
 local S2C_MAP = 9
@@ -187,6 +188,17 @@ end
 
 -- One predicted tick. Returns true when the caller should not step locally,
 -- which is to say whenever the server owns this arena.
+-- Ask the zone for a different hull. There is no reply and nothing to
+-- predict: the server owns the roster, so the change arrives in the next
+-- snapshot or does not arrive at all. The core refuses it unless the pilot is
+-- alive and at a full bar, and it refuses the same way on both sides.
+function M.set_class(cls)
+    if not conn or not M.connected then return false end
+    websocket.send(conn, string.char(C2S_SHIP, cls),
+                   {type = websocket.DATA_TYPE_BINARY})
+    return true
+end
+
 function M.step(buttons)
     if not M.connected or not conn then return false end
     -- The welcome arrives before the first snapshot. Until one lands there is

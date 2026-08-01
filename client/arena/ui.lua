@@ -607,15 +607,6 @@ function M.menu(v)
             txt("▸", x + 12 * S, top + ROW_H * S / 2, FONT * S, pal.FRIEND)
         end
         if r.pick then hit(x + 8 * S, top, w - 16 * S, ROW_H * S, "row", i) end
-        if r.field then
-            -- A real input goes over this rectangle on the web, because a
-            -- canvas cannot hold a caret and a phone will not raise a
-            -- keyboard for one that cannot.
-            M.hits[#M.hits] = nil
-            hit(x + 8 * S, top, w - 16 * S, ROW_H * S, "row", i)
-            M.hits[#M.hits].field = r.field
-            M.hits[#M.hits].value = i
-        end
     end
 
     local by = y + h - 16 * S

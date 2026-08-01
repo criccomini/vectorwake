@@ -72,17 +72,5 @@ key_trigger {
 }
 key_trigger {
   input: KEY_BACKSPACE
-  action: "cancel"
-}
-text_trigger {
-  input: TEXT
-  action: "text"
-}
-key_trigger {
-  input: KEY_BACKSPACE
   action: "backspace"
-}
-key_trigger {
-  input: KEY_TAB
-  action: "tab"
 }

@@ -351,6 +351,20 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     if (i >= s->ship_count || cls >= cfg->class_count) return -1;
     sim_ship *sh = &s->ships[i];
     if (!sh->active) return -1;
+    /* The hull you are already in is not a change. Without this, picking the
+     * ship you are flying would cost you every upgrade you had collected for
+     * no reason at all. */
+    if (sh->cls == cls) return 0;
+    /* Only from a full bar, and only alive.
+     *
+     * A hull swap hands you a fresh ship, so without a gate it is a way to
+     * refill a bar mid-fight: take a beating, switch, come back whole. Full
+     * energy means you are not in one -- or you have already flown clear of
+     * it long enough to recover, which is the same thing. And a dead pilot is
+     * refused rather than being handed an early respawn: this sets `alive`,
+     * so allowing it while dead would skip the respawn delay entirely. */
+    if (!sh->alive) return -1;
+    if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
     drop_flags(s, cfg, i, 0);
     sh->cls = cls;
     memset(sh->up, 0, sizeof sh->up);

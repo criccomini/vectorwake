@@ -218,6 +218,8 @@ extern "C" {
         cfg: *const sim_settings,
         ev: *mut sim_events,
     );
+    pub fn sim_set_ship_class(s: *mut sim_state, cfg: *const sim_settings, i: u8,
+                              cls: u8) -> c_int;
     pub fn sim_hash(s: *const sim_state) -> u64;
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
     /// The arenas live in the core so this and the client cannot disagree
@@ -371,6 +373,13 @@ impl World {
                 &*self.cfg,
             )
         }
+    }
+
+    /// Put a pilot in a different hull, keeping their team and their seat.
+    /// The core refuses unless they are alive and at a full bar, so this is
+    /// the whole of the rule and both sides get it from the same place.
+    pub fn set_ship_class(&mut self, i: u8, cls: u8) -> bool {
+        unsafe { sim_set_ship_class(&mut *self.state, &*self.cfg, i, cls.min(7)) == 0 }
     }
 
     pub fn step(&mut self, inputs: &[sim_input]) {

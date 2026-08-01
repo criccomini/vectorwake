@@ -54,6 +54,9 @@ local hurt = 0
 local pickup = nil
 local layers = nil
 local map_lo, map_hi = 470, 554
+-- Forward declared: the field sync acts on the page's own enter, and it runs
+-- above the place that knows what an action means.
+local apply_menu
 
 -- HTML5 builds run Lua 5.1, which has no bitwise operators. Every bitfield in
 -- this client is a sum of distinct powers of two, so a digit test is exact.
@@ -231,56 +234,6 @@ end
 -- something that was never focused. arena/ui.lua already publishes where the
 -- fields are; this hands those rectangles to the page and reads back what was
 -- typed. Everywhere else, the engine's own key events are the whole story.
-local web_text = {on = false, sent = ""}
-
-local function esc(v)
-    return (string.gsub(tostring(v or ""), '[\\"%c]', ""))
-end
-
-local function web_fields_sync()
-    if not html5 then return end
-    if not menu.open then
-        if web_text.on then
-            html5.run("vwFieldsOff()")
-            web_text.on, web_text.sent = false, ""
-        end
-        return
-    end
-
-    local parts = {}
-    for _, r in ipairs(ui.hits) do
-        if r.field then
-            parts[#parts + 1] = string.format(
-                '{"k":"%s","x":%d,"y":%d,"w":%d,"h":%d,"v":"%s"}',
-                esc(r.field), math.floor(r.x), math.floor(r.y),
-                math.floor(r.w), math.floor(r.h), esc(menu[r.field]))
-        end
-    end
-    if #parts == 0 then return end
-    local payload = "[" .. table.concat(parts, ",") .. "]"
-    -- Only when something moved or changed: this crosses into JavaScript, and
-    -- doing it sixty times a second for an unchanged layout is waste.
-    if payload ~= web_text.sent then
-        html5.run("vwFields(" .. payload .. ")")
-        web_text.sent = payload
-    end
-    web_text.on = true
-
-    local raw = html5.run("vwFieldState()")
-    if not raw or raw == "" then return end
-    local ok, st = pcall(json.decode, raw)
-    if not ok or type(st) ~= "table" then return end
-    -- The page owns focus while it has it: the caret the player can see is
-    -- the browser's, so the menu follows rather than leads.
-    menu.focus = (st.focus ~= "" and st.focus) or nil
-    for _, key in ipairs({"name", "server"}) do
-        if type(st[key]) == "string" and st[key] ~= menu[key] then
-            menu[key] = st[key]
-            web_text.sent = ""
-        end
-    end
-end
-
 function init(self)
     msg.post(".", "acquire_input_focus")
     math.randomseed(1)
@@ -301,20 +254,12 @@ function init(self)
     -- A directory means "let the player choose"; a pinned server means
     -- "go here". Neither means play the local game, which is what keeps a
     -- build with nothing behind it playable.
-    local dir = sys.get_config_string("vectorwake.directory", "")
     local url = sys.get_config_string("vectorwake.server", "")
     -- A generated call sign, restored if this browser has one already. The
     -- configuration still wins, which is how a test names its clients.
     menu.load_identity()
-    menu.defaults(sys.get_config_string("vectorwake.name", ""), url)
-    if url == "" and dir ~= "" then
-        sim.init(0x5eed)
-        rebuild_static()
-        menu.open = false
-        browser.connect(dir)
-        self.browsing = true
-        return
-    end
+    menu.defaults(sys.get_config_string("vectorwake.name", ""),
+                  sys.get_config_string("vectorwake.directory", ""))
     if url ~= "" then
         -- The server owns state from here, but the core still needs its map
         -- and settings: prediction runs collision locally between snapshots,
@@ -322,15 +267,15 @@ function init(self)
         sim.init(0x5eed)
         rebuild_static()
         menu.open = false
-        -- Same fallback the menu's JOIN uses: a zone that cannot be reached
-        -- hands the player back the start screen and the reason, rather than
-        -- an arena that never fills.
+        -- A zone that cannot be reached opens the menu with the reason on
+        -- it rather than leaving an arena that never fills.
         net.connect(url, 0, sys.get_config_string("vectorwake.name", "pilot"),
                     function(why)
                         menu.note = why
                         menu.show("play")
                     end)
         self.online = true
+        self.joining = 0
         return
     end
 
@@ -490,39 +435,8 @@ local function start_chosen(what, cls)
         -- operator hands out a single address either way.
         menu.note = nil
         menu.open = false
-        browser.connect(menu.server)
+        browser.connect(menu.directory)
         return "browsing"
-    end
-    if what == "join" then
-        -- The server owns state from here, but the core still needs its map
-        -- and settings: prediction runs collision locally between snapshots,
-        -- and a snapshot carries state, not rules.
-        duel = nil
-        sim.init(0x5eed)
-        map_lo, map_hi = 470, 554
-        rebuild_static()
-        -- Losing the zone puts the player back where they came from with the
-        -- reason in front of them, rather than into an empty arena that
-        -- looks like the game is broken.
-        local function lost(why)
-            menu.note = why
-            menu.show("play")
-        end
-        -- The start screen stays up, over its own backdrop, until the zone
-        -- answers. Joining tears the local arena down first, so without this
-        -- a player who mistyped an address watches an empty black map
-        -- forever -- which is exactly what it looked like.
-        --
-        -- Set before connecting, not after: a bad address can fail inside
-        -- websocket.connect, and reporting "connecting" over the top of the
-        -- reason leaves that message on screen with nothing left to clear it.
-        menu.note = "connecting to " .. menu.server
-        menu.show("play")
-        menu.save_identity()
-        if not net.connect(menu.server, cls, menu.name, lost) then
-            return "menu"
-        end
-        return "online"
     end
     if what == "duel" then
         sim.init_duel(0x5eed)
@@ -551,17 +465,35 @@ end
 -- The menu names an action and decides nothing; this is the only place that
 -- knows what any of them mean, which is what keeps the tree a description of
 -- itself rather than a second copy of the game.
-local function apply_menu(self, act)
+function apply_menu(self, act)
     if act == "ship" then
-        -- A hull change is a respawn, not a rebuild. The arena, the score and
+        -- A hull change is a respawn, not a rebuild: the arena, the score and
         -- everybody else in it carry on, which is the whole reason the menu
-        -- can be opened mid-fight at all. In a zone the roster belongs to the
-        -- server and there is no message for this yet.
-        if self.online then
-            menu.note = "changing ship in a zone is not in yet"
+        -- can be opened mid-fight at all. You keep your team and your seat;
+        -- your upgrades and your place on the map are gone, the same as
+        -- dying, because a fresh hull is a fresh bar and it has to cost what
+        -- a fresh bar costs.
+        --
+        -- Alive and full, or nothing. That rule lives in the core so both
+        -- sides have exactly one copy of it; the check here is only so a
+        -- refusal comes with a reason instead of silence.
+        if sim.ship_alive(me) ~= 1 then
+            menu.note = "not while you are waiting to respawn"
             return
         end
-        sim.set_class(me, menu.class)
+        if sim.ship_energy(me) < sim.ship_max_energy(me) then
+            menu.note = "a hull change needs a full bar"
+            return
+        end
+        if self.online then
+            -- The server owns the roster, so this asks and the next snapshot
+            -- answers. Nothing is predicted: a hull that flickered back would
+            -- be worse than one that arrives a frame late.
+            net.set_class(menu.pending)
+        else
+            sim.set_class(me, menu.pending)
+        end
+        menu.save_identity()
         menu.close()
         return
     end
@@ -587,6 +519,7 @@ local function apply_menu(self, act)
                                  menu.class)
     self.online = outcome == "online"
     self.browsing = outcome == "browsing"
+    if self.online then self.joining = 0 end
     -- Joining deliberately leaves the menu up: the note under it is the only
     -- thing that will report a zone which never answers.
     if act == "practice" or act == "duel" then menu.close() end
@@ -679,18 +612,23 @@ function update(self, dt)
     -- as one that refuses it, and on the web a connection to a dead port can
     -- hang without ever raising an error. Either way the player gets the
     -- start screen back rather than a black arena.
-    if self.online and menu.open then
+    -- Only while a join is actually in flight. This used to read `menu.open`,
+    -- which meant that in a zone the menu closed itself on the frame after it
+    -- opened -- there was no way to reach anything in it, including the ship
+    -- list this exists to make reachable. `joining` is a number while a
+    -- connection is pending and nil the rest of the time.
+    if self.online and self.joining then
         if net.connected and net.stats.snaps > 0 then
             menu.close()
             menu.note = nil
             self.joining = nil
         else
-            self.joining = (self.joining or 0) + dt
+            self.joining = self.joining + dt
             if self.joining > 10 then
                 net.disconnect()
                 self.online = false
                 self.joining = nil
-                menu.note = "no answer from " .. menu.server
+                menu.note = "no answer from the zone"
                 start_chosen("play", menu.class)
                 menu.show("play")
             end
@@ -704,6 +642,11 @@ function update(self, dt)
         feed[i].t = feed[i].t + dt
         if feed[i].t > ui.FEED_LIFE then table.remove(feed, i) end
     end
+
+    -- What the menu calls your hull is whatever you are flying, asked every
+    -- frame rather than remembered: in a zone the server decides, and it can
+    -- refuse a change the menu has already drawn as chosen.
+    if sim.ship_count() > 0 then menu.class = sim.ship_class(me) end
 
     local cx, cy = sim.ship_x(me), sim.ship_y(me)
     sfx.listener(cx, cy)
@@ -823,8 +766,11 @@ function update(self, dt)
             half_w = self.hw, half_h = self.hh,
             banner = (self.online and net.banner)
                 or (duel and duel.banner) or flag_banner(my_team),
+            -- Short enough to share a row with the word "online": a hull
+            -- change teleports you to a spawn the client never predicted, so
+            -- the peak can reach three digits and the two texts collided.
             netinfo = self.online and string.format(
-                "err %.1fpx · peak %.0fpx", net.stats.err, net.stats.err_max)
+                "err %.1f / %.0f px", net.stats.err, net.stats.err_max)
                 or nil,
         })
     end
@@ -844,7 +790,6 @@ function update(self, dt)
         self.handed_over = true
         if html5 then pcall(html5.run, "window.vwReady && vwReady()") end
     end
-    web_fields_sync()
 end
 
 -- The render script reports the pixel space it projects the interface into.
@@ -874,6 +819,7 @@ function on_input(self, action_id, action)
                 end)
                 menu.note = "connecting to " .. address
                 self.online = true
+                self.joining = 0
                 self.browsing = false
             end
         elseif action_id == hash("cancel") then
@@ -940,18 +886,6 @@ function on_input(self, action_id, action)
         if hit(action.screen_x or action.x, action.screen_y or action.y) then
             return
         end
-    end
-    -- Typing, which only the start screen wants. A field with focus eats the
-    -- keystroke so a zone address does not also fly the ship behind it.
-    if action_id == hash("text") then
-        if menu.open and action.text then menu.type(action.text) end
-        return
-    end
-    if action_id == hash("backspace") then
-        if menu.open and (action.pressed or action.repeated) then
-            menu.backspace()
-        end
-        return
     end
 
     if action_id == nil then return end

@@ -518,8 +518,51 @@ int main(void) {
               sim_eff_max_energy(&cfg.classes[ANVIL], &s.ships[0]),
               "with a full bar of the new ship");
         CHECK(s.ships[1].y == foe_y, "and nobody else moved");
+        CHECK(s.ships[0].team == 0, "and you are still on your own team");
         CHECK(sim_set_ship_class(&s, &cfg, 9, APEX) == -1, "no such ship");
         CHECK(sim_set_ship_class(&s, &cfg, 0, 99) == -1, "no such class");
+    }
+
+    /* Only from a full bar. A fresh hull is a full bar, so without this the
+     * ship list is a way out of a fight you are losing. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].up[SIM_UP_SPEED] = 2;
+        s.ships[0].energy -= 1;
+        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL) == -1,
+              "a damaged pilot cannot swap hull");
+        CHECK(s.ships[0].cls == APEX, "and is left in the one they had");
+        CHECK(s.ships[0].up[SIM_UP_SPEED] == 2, "with what they had collected");
+        step_n(&s, &cfg, 0, 0, 40);      /* recharge to the top */
+        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL) == 0,
+              "and can once the bar is full again");
+    }
+
+    /* Nor while dead: this sets `alive`, so allowing it would hand out an
+     * early respawn to anybody who opened the menu on the way down. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].alive = 0;
+        s.ships[0].respawn_at = 200;
+        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL) == -1,
+              "a dead pilot cannot swap hull");
+        CHECK(s.ships[0].respawn_at == 200, "and still owes the full wait");
+    }
+
+    /* The hull you are already in is not a change, and must not cost you the
+     * upgrades that picking it would otherwise throw away. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].up[SIM_UP_ENERGY] = 4;
+        s.ships[0].energy = sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]);
+        CHECK(sim_set_ship_class(&s, &cfg, 0, APEX) == 0, "asking for it succeeds");
+        CHECK(s.ships[0].up[SIM_UP_ENERGY] == 4, "and costs nothing");
     }
 
     /* A bomb detonating on a wall damages a nearby enemy through splash. */
