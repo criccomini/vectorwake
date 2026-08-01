@@ -330,9 +330,7 @@ function update(self, dt)
     -- thumb actually is.
     local ww, wh = self.vw or 0, self.vh or 0
     if ww > 0 and wh > 0 then
-        local px = sys.get_config_int("vectorwake.view_tiles", 34) * 16
-        local short = math.min(ww, wh)
-        touch.draw(cx, cy, px * 0.5 * (ww / short), px * 0.5 * (wh / short), ww, wh)
+        touch.draw(cx, cy, self.hw, self.hh, ww, wh)
     end
 
     -- Deaths become feed lines. The simulation reports them; this only
@@ -390,14 +388,12 @@ function update(self, dt)
 
     -- Interface last, so it reads over the world rather than under it.
     if ww > 0 and wh > 0 then
-        local px = sys.get_config_int("vectorwake.view_tiles", 34) * 16
-        local short = math.min(ww, wh)
         local names = {}
         for i, c in ipairs(CLASSES) do names[i] = c.name end
         hud.draw({
             me = me, pilots = pilots, class_names = names,
             w = ww, h = wh, cam_x = cx, cam_y = cy,
-            half_w = px * 0.5 * (ww / short), half_h = px * 0.5 * (wh / short),
+            half_w = self.hw, half_h = self.hh,
         })
     end
 
@@ -424,6 +420,7 @@ end
 function on_message(self, message_id, message)
     if message_id == hash("viewport") then
         self.vw, self.vh = message.w, message.h
+        self.hw, self.hh = message.hw, message.hh
     end
 end
 

@@ -1,15 +1,16 @@
 -- Render pipeline.
 --
--- The camera shows a fixed extent of the world in tiles regardless of the
--- window, per decision 13: a phone and an ultrawide see the same amount of
--- game. Ships are drawn as line geometry, which is what the clean vector
--- direction in docs/design/identity.md asks for and what keeps the bundle
--- small enough to be one link away.
+-- The camera holds a fixed zoom. A bigger window shows more of the arena
+-- rather than the same arena drawn larger, which is what the original did
+-- and what stops a resize from stretching the world.
+--
+-- Ships are drawn as line geometry, which is what the clean vector direction
+-- in docs/design/identity.md asks for and what keeps the bundle small enough
+-- to be one link away.
 
--- World extent across the shorter screen axis. Read from game.project so the
--- arena script can place touch controls against the same projection instead
--- of keeping its own copy of this number.
-local VIEW_TILES = sys.get_config_int("vectorwake.view_tiles", 34)
+-- Screen pixels per world pixel. One means the hulls draw at the size they
+-- were authored in, which is the reason for that default.
+local ZOOM = sys.get_config_number("vectorwake.zoom", 1.0)
 
 function init(self)
     self.sprite_pred = render.predicate({"tile"})
@@ -33,12 +34,10 @@ function update(self)
     render.clear(self.clear)
     render.set_viewport(0, 0, w, h)
 
-    -- Fixed world extent: scale by the shorter axis so neither a tall nor a
-    -- wide window is an advantage.
-    local px = VIEW_TILES * 16
-    local short = math.min(w, h)
-    local half_w = px * 0.5 * (w / short)
-    local half_h = px * 0.5 * (h / short)
+    -- Fixed zoom: the half-extent follows the window, so a wider window sees
+    -- further rather than seeing the same thing wider.
+    local half_w = w * 0.5 / ZOOM
+    local half_h = h * 0.5 / ZOOM
     local cam = self.camera or vmath.vector3(512 * 16, 512 * 16, 0)
 
     -- The eye sits well off the plane and the clip range is wide. With the
@@ -78,7 +77,10 @@ function update(self)
     -- told the numbers rather than asking the window for them: on HTML5 the
     -- canvas drawable and the window size are not always the same, and a
     -- HUD laid out against the wrong one lands off the edge of the screen.
-    msg.post("main:/arena#arena", "viewport", {w = w, h = h})
+    -- The half-extents go with it, so the interface and the touch layer
+    -- never keep their own copy of the projection.
+    msg.post("main:/arena#arena", "viewport",
+             {w = w, h = h, hw = half_w, hh = half_h})
 end
 
 function on_message(self, message_id, message)

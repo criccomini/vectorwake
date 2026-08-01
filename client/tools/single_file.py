@@ -172,14 +172,22 @@ FRAME_CSS = """
     margin: 0; padding: 0; height: 100%; width: 100%;
     background: #05070d; overflow: hidden;
   }
-  .canvas-app-container, #canvas-container, .canvas-app-canvas-container {
-    margin: 0; padding: 0; width: 100vw; height: 100vh;
-    background: #05070d; display: block; border: 0;
-  }
+  /* Defold lays the body out as a flex row, and the canvas ends up an item
+     in it -- offset to the right by whatever sits before it, with that much
+     of its right edge hanging off the viewport. Nothing scaled it wrong; it
+     was simply pushed. Pinning it to the corner is the whole fix. */
+  .canvas-app-container, #canvas-container, .canvas-app-canvas-container,
   #canvas, .canvas-app-canvas {
-    display: block; width: 100vw; height: 100vh;
-    margin: 0; padding: 0; border: 0; outline: none; background: #05070d;
+    position: fixed !important;
+    left: 0 !important; top: 0 !important;
+    width: 100vw !important; height: 100vh !important;
+    margin: 0 !important; padding: 0 !important; border: 0 !important;
+    display: block !important; background: #05070d;
   }
+  /* The engine picks its own buffer and keeps 16:10. Letterbox rather than
+     stretch: a stretched world draws a circle as an ellipse, and aiming is
+     done by eye. */
+  #canvas, .canvas-app-canvas { object-fit: contain; outline: none; }
   /* Defold's own footer: a fullscreen button and a credit link. */
   .buttons-background, #canvas-app-buttons, .canvas-app-buttons {
     display: none !important;

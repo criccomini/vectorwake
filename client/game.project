@@ -40,7 +40,7 @@ use_accelerometer = 0
 include_dirs = ext/simcore, websocket
 
 [vectorwake]
-view_tiles = 34
+zoom = 1.0
 directory =
 server =
 name = defoldpilot

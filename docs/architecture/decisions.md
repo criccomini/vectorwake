@@ -270,23 +270,30 @@ day one. Every map we ship, we make.
 
 ---
 
-## 13. The camera shows a fixed area of the world
+## 13. The camera holds a fixed zoom
 
-**Status:** accepted
+**Status:** accepted, superseding a fixed extent in tiles
 
 Subspace let a bigger monitor show you more of the map, and arenas fought it
-with `MaxXres` and `MaxYres` settings that capped a player's resolution. That is
-a workaround for drawing map pixels one to one with screen pixels.
+with `MaxXres` and `MaxYres` settings that capped a player's resolution. That
+is a workaround for drawing map pixels one to one with screen pixels.
 
-Our camera shows a fixed extent in tiles and scales it to whatever the display
-is, bounded on extreme aspect ratios. A phone and an ultrawide see the same
-amount of game.
+We tried the other way first: a fixed extent in tiles, scaled to whatever the
+display was, so a phone and an ultrawide saw the same amount of game. It has
+a defect that competitive fairness does not pay for. The scale then depends
+on the window, so the same ship is a different size on every screen, the
+world stretches as the window changes shape, and hulls authored in pixels are
+never drawn at the size they were drawn for.
 
-**Cost:** Art must be legible across a wide range of scales, and text in the
-world needs care.
+The camera now holds a fixed zoom -- one world pixel to one screen pixel by
+default, `vectorwake.zoom` to change it. A bigger window sees further.
 
-**Reconsider if:** competitive play finds an aspect ratio exploit the diagonal
-bound does not cover.
+**Cost:** the original's problem, back again. A wide monitor sees more than a
+phone, and that is an advantage in a game about who saw whom first.
+
+**Reconsider if:** competitive play cares. The answer then is the original's:
+cap the visible extent per zone rather than rescale the world per player,
+which keeps a pixel a pixel and puts the limit where an operator can set it.
 
 ---
 
