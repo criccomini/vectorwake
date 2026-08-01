@@ -184,7 +184,17 @@ FRAME_CSS = """
     margin: 0 !important; padding: 0 !important; border: 0 !important;
     display: block !important; background: #05070d;
   }
-  #canvas, .canvas-app-canvas { outline: none; }
+  /* On a high-density screen the buffer is upscaled to fit the window, and
+     the browser's default filter is bilinear -- which is what made clean
+     one-pixel vector lines look soft. Nearest keeps an edge an edge.
+     Drawing at device resolution instead would be sharper still, but the
+     interface is drawn with the engine's debug font, whose glyphs are a
+     fixed pixel size and would then be half as large on screen. */
+  #canvas, .canvas-app-canvas {
+    outline: none;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
   /* Defold's own footer: a fullscreen button and a credit link. */
   .buttons-background, #canvas-app-buttons, .canvas-app-buttons {
     display: none !important;

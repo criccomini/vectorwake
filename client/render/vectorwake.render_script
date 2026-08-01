@@ -36,8 +36,18 @@ function update(self)
 
     -- Fixed zoom: the half-extent follows the window, so a wider window sees
     -- further rather than seeing the same thing wider.
-    local half_w = w * 0.5 / ZOOM
-    local half_h = h * 0.5 / ZOOM
+    --
+    -- The drawable is in device pixels and may be denser than the window it
+    -- fills; drawing at that density is what keeps the lines sharp instead
+    -- of upscaled and soft. Fold the density into the zoom so a ship stays
+    -- the same size on screen and only the sharpness changes.
+    local density = 1
+    local ok, cw = pcall(window.get_size)
+    if ok and cw and cw > 0 then density = w / cw end
+    if density < 1 then density = 1 end
+    local z = ZOOM * density
+    local half_w = w * 0.5 / z
+    local half_h = h * 0.5 / z
     local cam = self.camera or vmath.vector3(512 * 16, 512 * 16, 0)
 
     -- The eye sits well off the plane and the clip range is wide. With the
