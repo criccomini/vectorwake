@@ -119,7 +119,7 @@ end
 -- about six screens across: far enough to see a fight starting, close enough
 -- that a blip means something.
 
-local function radar(cx, cy, me, half_w, half_h)
+local function radar(cx, cy, me)
     local box = RADAR * S + 16 * S
     local x = W - PAD * S - box
     local y = PAD * S
@@ -133,25 +133,12 @@ local function radar(cx, cy, me, half_w, half_h)
     -- radar showing empty space nobody can fly to.
     local SPAN = 60 * 16
     local k = r / (2 * SPAN)
-    local mx, my = ix + r / 2, iy + r / 2
     local function put(wx, wy)
         local px = ix + (wx - cx + SPAN) * k
         local py = iy + (wy - cy + SPAN) * k
         if px < ix or py < iy or px > ix + r or py > iy + r then return nil end
         return px, py
     end
-
-    -- A graticule under everything: quarter lines and two range rings, so a
-    -- blip has somewhere to be rather than floating in a black square.
-    local grid = pal.a(pal.RADAR_GRID, 0.9)
-    for q = 1, 3 do
-        local t = ix + r * q / 4
-        u:seg(t, ry(iy, 0), t, ry(iy + r, 0), S, grid)
-        local v = iy + r * q / 4
-        u:seg(ix, ry(v, 0), ix + r, ry(v, 0), S, grid)
-    end
-    u:ring(mx, ry(my, 0), r * 0.25, S, 32, pal.a(pal.RADAR_GRID, 1.1))
-    u:ring(mx, ry(my, 0), r * 0.42, S, 40, pal.a(pal.RADAR_GRID, 1.1))
 
     -- The map, in three passes so the things worth steering by sit on top of
     -- the walls rather than under them.
@@ -169,14 +156,6 @@ local function radar(cx, cy, me, half_w, half_h)
     blips(world.radar_tiles, pal.RADAR_TILE)
     blips(world.radar_safe, pal.a(pal.RADAR_SAFE, 0.95))
     blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1.15)
-
-    -- What is actually on screen, so the radar says where you are looking as
-    -- well as where you are.
-    if half_w and half_w > 0 then
-        local vw, vh = half_w * k, half_h * k
-        u:frame(mx - vw, ry(my + vh, 0), vw * 2, vh * 2, S,
-                pal.a(pal.INK, 0.16))
-    end
 
     local my_team = sim.ship_team(me)
     for i = 0, sim.flag_count() - 1 do
@@ -224,26 +203,39 @@ local function radar(cx, cy, me, half_w, half_h)
               pal.WHITE)
     end
 
-    -- Corner brackets last, over the blips, which is what makes it read as an
-    -- instrument rather than a swatch.
-    local c, t = 14 * S, 1.6 * S
-    local edge = pal.a(pal.BAR_EDGE, 1.0)
-    -- Each corner mirrors: the arm runs inward from its own corner, which is
-    -- the whole point of a bracket and what the sign arithmetic here got
-    -- wrong -- every arm ran right and down regardless of which corner it
-    -- belonged to.
-    local corners = {
-        {ix, iy, 1, 1}, {ix + r, iy, -1, 1},
-        {ix, iy + r, 1, -1}, {ix + r, iy + r, -1, -1},
-    }
-    for _, o in ipairs(corners) do
-        local bx, by, sx, sy = o[1], o[2], o[3], o[4]
-        local hx = (sx > 0) and bx or (bx - c)
-        local vy = (sy > 0) and by or (by - c)
-        rect(hx, (sy > 0) and by or (by - t), c, t, edge)
-        rect((sx > 0) and bx or (bx - t), vy, t, c, edge)
+end
+
+-- Names, at each ship's lower right.
+--
+-- Screen space, because text is: the world is a mesh and glyphs come from a
+-- gui font. The projection is the render script's -- a fixed world extent
+-- across the shorter axis, centred on the camera -- so one number converts
+-- between them and the two cannot drift.
+local function nameplates(o)
+    if not o.half_w or o.half_w <= 0 then return end
+    -- The render script publishes its own half-extents for exactly this, so
+    -- that nothing keeps a second copy of the projection. Deriving one from
+    -- the view_tiles setting put every name adrift the moment the camera
+    -- stopped being driven by that setting -- which it already had.
+    local scale = W / (2 * o.half_w)
+    local my_team = sim.ship_team(o.me)
+    for i = 0, sim.ship_count() - 1 do
+        if sim.ship_alive(i) == 1 then
+            local sx = W / 2 + (sim.ship_x(i) - o.cam_x) * scale
+            local sy = H / 2 + (sim.ship_y(i) - o.cam_y) * scale
+            -- A name for a ship nobody can see is a name in the corner of
+            -- the screen attached to nothing.
+            if sx > -40 and sx < W + 40 and sy > -30 and sy < H + 30 then
+                local p = o.pilots[i]
+                local nm = (p and p.name) or ("ship " .. i)
+                local mine = i == o.me
+                local col = mine and pal.WHITE
+                    or ((sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY)
+                txt(nm, sx + 12 * S, sy + 13 * S, 11 * S,
+                    pal.a(col, mine and 0.85 or 0.7))
+            end
+        end
     end
-    u:frame(ix, ry(iy, r), r, r, S, pal.a(pal.BAR_EDGE, 0.45))
 end
 
 -- --- panels ----------------------------------------------------------------
@@ -455,7 +447,8 @@ function M.hud(o)
     local lift = M.touching and 150 * S or 0
 
     local top = scores(me, o.pilots)
-    radar(o.cam_x, o.cam_y, me, o.half_w, o.half_h)
+    nameplates(o)
+    radar(o.cam_x, o.cam_y, me)
     feed(o.feed, PAD * S + (RADAR + 16) * S + 12 * S)
     status(me, o.class_names, o.netinfo, o.pickup, lift)
     help(lift + (M.touching and 118 * S or 0))
