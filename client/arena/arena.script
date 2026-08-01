@@ -433,10 +433,10 @@ local function step_once()
 end
 
 function start_offline(cls)
-    me = sim.spawn(cls or 0, 0, 512, 522, 0)
+    me = spawn_at(cls or 0, 0, 0, 512, 522, 0)
     pilots[me] = {name = "you"}
     for i, L in ipairs(LAYOUT) do
-        local id = sim.spawn(L[1], L[2], L[3], L[4], (i * 8192) % 65536)
+        local id = spawn_at(L[1], L[2], i, L[3], L[4], (i * 8192) % 65536)
         pilots[id] = {name = L[5], bot = make_bot(id, 0.28 + (i % 5) * 0.16)}
     end
     for _, f in ipairs({{512, 492}, {532, 512}, {512, 532}, {492, 512}}) do
@@ -498,12 +498,12 @@ local function start_chosen(what, cls)
         sim.init_duel(0x5eed)
         map_lo, map_hi = 496, 528
         rebuild_static()
-        me = sim.spawn(cls, 0, 512, 522, 0)
+        me = spawn_at(cls, 0, 0, 512, 522, 0)
         pilots[me] = {name = "you"}
         -- An opponent whose hull is not yours, so a run of duels is a tour of
         -- matchups rather than a mirror every time.
         local foe = DUEL_FOES[cls % #DUEL_FOES + 1]
-        local id = sim.spawn((cls + 3) % 8, 1, 512, 502, 32768)
+        local id = spawn_at((cls + 3) % 8, 1, 0, 512, 502, 32768)
         pilots[id] = {name = foe, bot = make_bot(id, 0.62)}
         duel = {a = me, b = id, foe = foe, target = 5, score = {0, 0},
                 phase = "warmup", timer = 0, winner = nil, banner = ""}

@@ -93,7 +93,7 @@ void sim_map_index(sim_map *m) {
             uint8_t t = m->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx];
             int cls = SIM_TILE_CLASS(t);
             if (cls != SIM_TILE_WORMHOLE && cls != SIM_TILE_GOAL
-                && cls != SIM_TILE_TURF)
+                && cls != SIM_TILE_TURF && cls != SIM_TILE_SPAWN)
                 continue;
             if (m->feature_count >= SIM_MAX_FEATURES) return;
             sim_feature *f = &m->features[m->feature_count++];
@@ -103,6 +103,32 @@ void sim_map_index(sim_map *m) {
             f->variant = SIM_TILE_VARIANT(t);
         }
     }
+}
+
+int sim_map_spawn(const sim_map *m, uint8_t team, uint32_t nth,
+                  uint16_t *tx, uint16_t *ty) {
+    /* Two passes: this team's own spawns first, and if it has none, anybody's.
+     * A map that only marks neutral starts still works, and a team with no
+     * marked start is better off inside the walls than correct. */
+    for (int pass = 0; pass < 2; pass++) {
+        uint32_t n = 0;
+        for (uint16_t f = 0; f < m->feature_count; f++)
+            if (m->features[f].kind == SIM_TILE_SPAWN
+                && (pass == 1 || m->features[f].variant == team))
+                n++;
+        if (n == 0) continue;
+        uint32_t want = nth % n, seen = 0;
+        for (uint16_t f = 0; f < m->feature_count; f++) {
+            const sim_feature *ft = &m->features[f];
+            if (ft->kind != SIM_TILE_SPAWN) continue;
+            if (pass == 0 && ft->variant != team) continue;
+            if (seen++ != want) continue;
+            *tx = ft->tx;
+            *ty = ft->ty;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static void fill(sim_map *m, int x0, int y0, int x1, int y1, uint8_t t) {
@@ -157,6 +183,20 @@ void sim_map_arena(sim_map *m) {
 
     fill(m, 500, 500, 502, 502, SIM_TILE_UNDER);
     fill(m, 522, 522, 524, 524, SIM_TILE_UNDER);
+
+    /* Starts, four a side, in the corners the roster already used. Carried by
+     * the map so a zone can be pointed at a different one without knowing
+     * anything about its geometry -- which is what went wrong the first time
+     * a custom map was loaded: every ship began outside its walls and drifted
+     * off at twenty tiles a second. */
+    fill(m, 486, 486, 486, 486, SIM_TILE(SIM_TILE_SPAWN, 1));
+    fill(m, 538, 486, 538, 486, SIM_TILE(SIM_TILE_SPAWN, 1));
+    fill(m, 538, 538, 538, 538, SIM_TILE(SIM_TILE_SPAWN, 1));
+    fill(m, 486, 538, 486, 538, SIM_TILE(SIM_TILE_SPAWN, 1));
+    fill(m, 512, 478, 512, 478, SIM_TILE(SIM_TILE_SPAWN, 0));
+    fill(m, 478, 512, 478, 512, SIM_TILE(SIM_TILE_SPAWN, 0));
+    fill(m, 546, 512, 546, 512, SIM_TILE(SIM_TILE_SPAWN, 0));
+    fill(m, 512, 546, 512, 546, SIM_TILE(SIM_TILE_SPAWN, 0));
     sim_map_index(m);
 }
 
@@ -174,5 +214,7 @@ void sim_map_duel(sim_map *m) {
     fill(m, HI - 1, LO, HI, HI, SIM_TILE_SOLID);
     fill(m, 505, 505, 509, 509, SIM_TILE_SOLID);
     fill(m, 515, 515, 519, 519, SIM_TILE_SOLID);
+    fill(m, 512, 522, 512, 522, SIM_TILE(SIM_TILE_SPAWN, 0));
+    fill(m, 512, 502, 512, 502, SIM_TILE(SIM_TILE_SPAWN, 1));
     sim_map_index(m);
 }

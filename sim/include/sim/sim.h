@@ -65,6 +65,7 @@ typedef enum {
     SIM_TILE_OVER,       /* scenery drawn over the ships, never solid */
     SIM_TILE_UNDER,      /* scenery drawn under them */
     SIM_TILE_TURF,       /* a flag stand a mode can find */
+    SIM_TILE_SPAWN,      /* where a ship of the variant's team starts */
     SIM_TILE_COUNT
 } sim_tile;
 
@@ -95,6 +96,17 @@ void sim_map_index(sim_map *m);
  * predicts collisions against a wall the server does not have. */
 uint8_t sim_tile_at(const sim_map *m, int32_t tx, int32_t ty);
 int sim_in_safe(const sim_map *m, int32_t x, int32_t y);
+
+/* Where a ship of this team starts, as a tile. `nth` walks the map's spawn
+ * points in order and wraps, so a roster spreads across them instead of
+ * stacking on one. Returns 0 when the map names none, which is the signal to
+ * fall back to whatever the zone configured.
+ *
+ * A map that carries its own spawns is a map that can be dropped into a zone
+ * without the zone knowing anything about its geometry. Without this,
+ * pointing a zone at a new map put every ship outside its walls. */
+int sim_map_spawn(const sim_map *m, uint8_t team, uint32_t nth,
+                  uint16_t *tx, uint16_t *ty);
 
 void sim_map_arena(sim_map *m);
 void sim_map_duel(sim_map *m);

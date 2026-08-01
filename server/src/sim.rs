@@ -225,6 +225,8 @@ extern "C" {
     pub fn sim_in_safe(map: *const sim_map, x: i32, y: i32) -> i32;
     pub fn sim_map_pack(map: *const sim_map, out: *mut u8, cap: i32) -> i32;
     pub fn sim_map_unpack(map: *mut sim_map, inp: *const u8, len: i32) -> i32;
+    pub fn sim_map_spawn(map: *const sim_map, team: u8, nth: u32,
+                         tx: *mut u16, ty: *mut u16) -> i32;
     pub fn sim_map_arena(map: *mut sim_map);
     pub fn sim_map_duel(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
@@ -335,6 +337,26 @@ impl World {
             scratch: zeroed_box(),
             events: zeroed_box(),
         }
+    }
+
+    /// Where the map says a ship of this team starts, if it says anything.
+    /// `nth` walks the map's starts and wraps, so a roster spreads out.
+    pub fn map_spawn(&self, team: u8, nth: u32) -> Option<(i32, i32)> {
+        let (mut tx, mut ty) = (0u16, 0u16);
+        let ok = unsafe {
+            sim_map_spawn(&*self.map as *const sim_map, team, nth, &mut tx, &mut ty)
+        };
+        if ok != 0 { Some((tx as i32, ty as i32)) } else { None }
+    }
+
+    /// Spawn at the map's own start when it names one, and at the position
+    /// the caller had in mind when it does not. A map that carries its starts
+    /// can be dropped into any zone; one that does not leaves the zone's
+    /// configuration in charge, which is how every map worked before.
+    pub fn spawn_on_map(&mut self, cls: u8, team: u8, nth: u32,
+                        tile_x: i32, tile_y: i32, heading: u16) -> i32 {
+        let (x, y) = self.map_spawn(team, nth).unwrap_or((tile_x, tile_y));
+        self.spawn(cls, team, x, y, heading)
     }
 
     pub fn spawn(&mut self, cls: u8, team: u8, tile_x: i32, tile_y: i32, heading: u16) -> i32 {

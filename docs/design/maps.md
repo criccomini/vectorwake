@@ -145,14 +145,26 @@ one that runs the reference room and says so.
 Clients are sent the map before the welcome, since prediction runs collision
 locally and needs the room before it needs anyone in it.
 
-## Spawn points do not travel with the map, yet
+## Spawn points travel with the map
 
-A map carries terrain and nothing else. Where ships start is still zone
-configuration, so pointing a zone at a new map without moving its spawns puts
-everyone outside the walls -- which, tried on a corridor map, is exactly what
-happened: ships spawned in open space and drifted off at twenty tiles a
-second.
+A `SPAWN` tile marks where a ship starts, and its variant is the team. They
+go through the feature index like turf and goals, so finding one costs the
+number of features rather than the million tiles behind them.
 
-`TURF` tiles exist for flag stands and the feature index already finds them.
-Spawns should work the same way, and until they do a map and the zone that
-serves it have to agree by hand.
+`sim_map_spawn(map, team, nth)` walks a team's starts in order and wraps, so
+a roster spreads across them instead of stacking on one, and a roster longer
+than the map's starts still fits. A team with no start of its own falls back
+to anybody's, because a ship inside the walls on the wrong side beats a ship
+outside them. A map that names no starts at all reports none, and the zone's
+configured tiles stay in charge -- which is how every map worked before this,
+so nothing that already ran had to change.
+
+This is the part that makes a map portable. Before it, pointing a zone at a
+new map left the roster's tiles pointing into the old map's geometry: on a
+corridor map every ship began in open space outside the walls and drifted off
+at twenty tiles a second. Now a stock `zone.toml` and a foreign map put all
+eight ships inside the room, split by team.
+
+The same placement care applies. A start next to a wormhole is a start that
+pulls the whole roster into it before anyone has flown anywhere -- which the
+first corridor map did, because its spawns sat two tiles from one.

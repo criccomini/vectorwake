@@ -181,7 +181,11 @@ impl Arena {
         // arrive, per docs/design/ai-players.md.
         let roster = ai::roster();
         for (i, r) in roster.iter().enumerate() {
-            let ship = world.spawn(r.class, r.team, r.tile_x, r.tile_y, (i as u16) * 8192);
+            // The map's own start wins over the roster's tile: a zone
+            // pointed at a new map should not need its roster rewritten to
+            // match that map's walls.
+            let ship = world.spawn_on_map(r.class, r.team, i as u32,
+                                          r.tile_x, r.tile_y, (i as u16) * 8192);
             if ship >= 0 {
                 bots.push(ai::Bot::new(ship as u8, r.skill));
                 names.insert(ship as u8, (r.name.to_string(), true));
@@ -211,8 +215,8 @@ impl Arena {
     fn duel(player_name: String, class: u8, tx: mpsc::UnboundedSender<Vec<u8>>,
             bot_name: &str, bot_skill: f32, bot_class: u8) -> (Self, u64) {
         let mut world = sim::World::with_map(0xd0e1, modes::build_duel_map);
-        let a = world.spawn(class.min(7), 0, 505, 522, 0) as u8;
-        let b = world.spawn(bot_class.min(7), 1, 519, 502, 32768) as u8;
+        let a = world.spawn_on_map(class.min(7), 0, 0, 505, 522, 0) as u8;
+        let b = world.spawn_on_map(bot_class.min(7), 1, 0, 519, 502, 32768) as u8;
 
         let mut names = HashMap::new();
         names.insert(a, (player_name.clone(), false));
@@ -246,7 +250,10 @@ impl Arena {
             self.world.state.ships[bot.ship as usize].deaths = 0;
             bot.ship
         } else {
-            let s = self.world.spawn(class.min(7), 0, 512, 522, 0);
+            // A joining pilot takes the next start in the map's rotation, so
+            // arrivals spread across them instead of landing on each other.
+            let nth = self.world.state.ship_count as u32;
+            let s = self.world.spawn_on_map(class.min(7), 0, nth, 512, 522, 0);
             if s < 0 {
                 return None;
             }

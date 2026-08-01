@@ -384,6 +384,47 @@ int main(void) {
         free(wm);
     }
 
+    /* A map carries its own starts, so a zone can be pointed at one without
+     * knowing its geometry. Without this, every ship began outside the walls
+     * of the first custom map and drifted off. */
+    {
+        sim_map *am = malloc(sizeof *am);
+        sim_map_arena(am);
+        uint16_t tx = 0, ty = 0;
+        CHECK(sim_map_spawn(am, 0, 0, &tx, &ty), "the arena names a start");
+        CHECK(SIM_TILE_CLASS(sim_tile_at(am, tx, ty)) == SIM_TILE_SPAWN,
+              "and it points at a spawn tile");
+
+        /* Every start has to be somewhere a ship can actually be. */
+        for (uint8_t team = 0; team < 2; team++) {
+            for (uint32_t n = 0; n < 8; n++) {
+                CHECK(sim_map_spawn(am, team, n, &tx, &ty), "a start exists");
+                int cls = SIM_TILE_CLASS(sim_tile_at(am, tx, ty));
+                CHECK(cls != SIM_TILE_SOLID, "no start is inside a wall");
+            }
+        }
+
+        /* Walking them spreads a roster out rather than stacking it. */
+        uint16_t ax, ay, bx, by;
+        sim_map_spawn(am, 1, 0, &ax, &ay);
+        sim_map_spawn(am, 1, 1, &bx, &by);
+        CHECK(ax != bx || ay != by, "consecutive starts differ");
+
+        /* And they wrap, so a roster longer than the map's starts still fits. */
+        uint16_t wx, wy;
+        sim_map_spawn(am, 1, 4, &wx, &wy);
+        CHECK(wx == ax && wy == ay, "the fifth start wraps to the first");
+
+        /* A map with no starts says so rather than inventing one. */
+        sim_map *bare = malloc(sizeof *bare);
+        memset(bare->tile, SIM_TILE_EMPTY, sizeof bare->tile);
+        sim_map_index(bare);
+        CHECK(!sim_map_spawn(bare, 0, 0, &tx, &ty),
+              "a map with no starts reports none");
+        free(am);
+        free(bare);
+    }
+
     /* A map survives the trip and is caught when it does not. */
     {
         sim_map *src = malloc(sizeof *src);
