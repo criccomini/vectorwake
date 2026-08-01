@@ -208,6 +208,14 @@ end
 
 local start_offline
 
+-- A start the map names, if it names one. The roster's own tile is the
+-- fallback, exactly as on the server: a map that carries its starts can be
+-- dropped in without the roster knowing anything about its walls.
+local function spawn_at(cls, team, nth, tx, ty, heading)
+    local mx, my = sim.map_spawn(team, nth)
+    return sim.spawn(cls, team, mx or tx, my or ty, heading)
+end
+
 -- The terrain and the starfield never move, so they are built once per map
 -- rather than per frame. Rebuilding them was the single most expensive thing
 -- the old renderer did, and it did it sixty times a second.
