@@ -511,7 +511,18 @@ function M.events(me, sfx)
             local x, y = sim.ship_x(a), sim.ship_y(a)
             local col = (sim.ship_team(a) == sim.ship_team(me)) and pal.FRIEND or pal.ENEMY
             fx.burst(x, y, 5, 130, 0.26, 1.8, pal.hot(col, 0.6, 1))
-            if a == me then fx.jolt(0.30) end
+            -- The screen shakes by what it cost you, not by what hit you.
+            -- A blast falls off linearly from its centre, so the damage is
+            -- already a measure of how close you were standing to it: a bomb
+            -- in the face rattles the camera ten pixels, the edge of the same
+            -- blast barely a pixel, and a bullet sits between them where it
+            -- belongs. It was a flat jolt for everything before, which made
+            -- taking two thirds of a bar feel like being scratched.
+            if a == me then
+                local frac = v / math.max(1, sim.ship_max_energy(a))
+                if frac > 1 then frac = 1 end
+                fx.jolt(0.18 + frac * 1.25)
+            end
             sfx("hit", x, y)
         elseif ty == sim.EV_DEATH then
             local x, y = sim.ship_x(a), sim.ship_y(a)
