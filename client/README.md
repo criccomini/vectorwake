@@ -45,12 +45,13 @@ in `sim/`.
 | `arena/arena.script` | The frame loop: input, stepping, drawing |
 | `arena/net.lua` | Connect, predict, reconcile. Decides nothing |
 | `arena/touch.lua` | Thumbstick and weapon pads; emits the same button bits |
+| `arena/menu.lua` | The menu tree and the settings it saves |
 | `arena/browser.lua` | The server browser, over the directory protocol |
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `tools/mksounds.py` | Synthesises every sound effect from arithmetic |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
 | `arena/world.lua` | Ships, weapons, flags, prizes, terrain, in triangles |
-| `arena/ui.lua` | The HUD and start screen, laid out like the web prototype |
+| `arena/ui.lua` | The HUD and the menu, laid out like the web prototype |
 | `arena/fx.lua` | Blasts, sparks, shake. Triggered by events, decides nothing |
 | `arena/sfx.lua` | Sound, with distance, pan and a per-frame budget |
 | `render/vec.lua` | The geometry builder: segments, fans, discs, rings |
@@ -62,9 +63,9 @@ in `sim/`.
 
 ## Playing with other people
 
-The start screen's third button is JOIN, and the fourth is ZONES. The server
-owns the arena instead of this client. Nothing has to be rebuilt to point at
-a different zone, which matters because the published page is a single file
+`PLAY -> ZONES` finds a game and `PLAY -> ADDRESS` types one. The server owns
+the arena instead of this client. Nothing has to be rebuilt to point at a
+different zone, which matters because the published page is a single file
 anybody can open and there is no zone baked into it.
 
 Nobody types a name. A call sign is generated on first run, kept in the
@@ -74,8 +75,9 @@ console it is what we will replace with the platform's own name -- which is
 what those platforms expect and what certification generally requires.
 
 An address cannot be generated, so ZONES asks a directory what is running and
-the player picks from a list. Typing one into the ZONE field is the escape
-hatch for a zone that is not listed, not the path most players take.
+the player picks from a list. `ADDRESS` is the escape hatch for a zone that is
+not listed, not the path most players take -- and it is the only text field
+left in the game.
 
 Run one:
 
@@ -83,15 +85,15 @@ Run one:
 ./server/target/release/vectorwake-server 0.0.0.0:9040 zone
 ```
 
-Then every player opens the client and puts `ws://<that host>:9040` in the
-ZONE field, or picks it from a directory through ZONES. They appear in each
+Then every player opens the client and puts `ws://<that host>:9040` into
+`PLAY -> ADDRESS`, or picks it from a directory through ZONES. They appear in each
 other's rosters, kill feeds, and radar, because online every name comes from
 the server's roster rather than from the local one.
 
-`LAUNCH` and `DUEL` stay offline against bots, so a page with no zone behind
-it is still a game.
+`PRACTICE` and `DUEL` stay offline against bots, so a page with no zone behind
+it is still a game, and either of them is also how you leave a zone.
 
-A build can also be pointed at a zone up front, which skips the start screen:
+A build can also be pointed at a zone up front, which skips the local arena:
 
 ```sh
 ./client/build/x86_64-linux/dmengine \
@@ -102,7 +104,7 @@ A build can also be pointed at a zone up front, which skips the start screen:
 
 `--config` overrides work for any key, which beats rebuilding to change one.
 
-A zone that cannot be reached hands the start screen back with the reason on
+A zone that cannot be reached opens the menu at `PLAY` with the reason under
 it, and gives up after ten seconds if the socket opens but nothing arrives.
 On the web a connection to a dead port can hang without ever raising an
 error, so the timeout is the only thing that catches it.
@@ -197,8 +199,8 @@ through.
 ## What a frame costs, and where it went
 
 The client was spending about eight and a half milliseconds of Lua a frame in
-a browser -- half a core at sixty frames a second, on the start screen as much
-as in a fight, because the start screen draws a live arena behind itself.
+a browser -- half a core at sixty frames a second, and the same with a menu
+open as in a fight, because the arena never stops running behind it.
 Measured per phase with `socket.gettime` in a debug wasm build, in the
 browser rather than natively, which matters: desktop builds run LuaJIT and
 HTML5 runs plain Lua 5.1, so a native profile understates the web by five
@@ -254,14 +256,27 @@ through a gui component (`ui/vwui.gui_script`) that draws a pool of text nodes
 and nothing else. The division is absolute: if it has a shape, `arena/ui.lua`
 drew it; if it has words, the gui did.
 
+## There is no start screen
+
+The client boots into the practice arena with a default hull, a generated call
+sign and live controls; escape opens a menu tree over the top of it, and
+nothing pauses. `client/arena/menu.lua` is the tree and the settings,
+`ui.menu` draws whatever level `menu.view()` reports, and `apply_menu` in
+`arena/arena.script` is the only place that knows what an action means.
+
+Changing hull calls `sim_set_ship_class`, which is a respawn in place rather
+than an arena rebuild -- the design and its consequences are in
+docs/design/menu.md. The page also draws its own starfield and wordmark while
+the engine compiles, and the game tells it when to stop, from the first frame
+that has an arena on it.
+
 ## Sound in a browser is gated, and the engine's gate is narrow
 
 Every page starts muted: the audio context is created suspended and only a
 user gesture resumes it. The engine asks for that resume from exactly one
 place -- a mouse or touch event whose `target` is the canvas -- and never
-from the keyboard. The start screen says `enter launches`, so a pilot can
-reach the arena without a pointer ever touching the page, and then fly a
-whole match in silence.
+from the keyboard. A pilot now lands in the arena without a pointer ever
+touching the page, so without this they would fly a whole match in silence.
 
 Measured on the shipped build with autoplay gated on activation: a click
 reaches `running` and queues audio immediately; `enter`, space and the arrows

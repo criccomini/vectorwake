@@ -249,11 +249,11 @@ local function web_fields_sync()
 
     local parts = {}
     for _, r in ipairs(ui.hits) do
-        if r.action == "field" then
+        if r.field then
             parts[#parts + 1] = string.format(
                 '{"k":"%s","x":%d,"y":%d,"w":%d,"h":%d,"v":"%s"}',
-                esc(r.value), math.floor(r.x), math.floor(r.y),
-                math.floor(r.w), math.floor(r.h), esc(menu[r.value]))
+                esc(r.field), math.floor(r.x), math.floor(r.y),
+                math.floor(r.w), math.floor(r.h), esc(menu[r.field]))
         end
     end
     if #parts == 0 then return end
@@ -328,8 +328,7 @@ function init(self)
         net.connect(url, 0, sys.get_config_string("vectorwake.name", "pilot"),
                     function(why)
                         menu.note = why
-                        menu.open = true
-                        menu.mode = 3
+                        menu.show("play")
                     end)
         self.online = true
         return
@@ -475,9 +474,10 @@ function start_offline(cls)
     end
 end
 
--- Restart the arena around a chosen hull. The menu draws over a live game,
--- so committing to a ship means building the arena again rather than
--- swapping a ship inside it.
+-- Change what game is being played: the practice arena, a duel, a zone, or
+-- the browser. This is the one thing that does tear the world down and build
+-- another, which is why changing your *hull* deliberately does not go through
+-- here -- that is a respawn inside the arena you are already in.
 local function start_chosen(what, cls)
     pilots = {}
     feed = {}
@@ -506,8 +506,7 @@ local function start_chosen(what, cls)
         -- looks like the game is broken.
         local function lost(why)
             menu.note = why
-            menu.open = true
-            menu.mode = 3
+            menu.show("play")
         end
         -- The start screen stays up, over its own backdrop, until the zone
         -- answers. Joining tears the local arena down first, so without this
@@ -518,7 +517,7 @@ local function start_chosen(what, cls)
         -- websocket.connect, and reporting "connecting" over the top of the
         -- reason leaves that message on screen with nothing left to clear it.
         menu.note = "connecting to " .. menu.server
-        menu.open = true
+        menu.show("play")
         menu.save_identity()
         if not net.connect(menu.server, cls, menu.name, lost) then
             return "menu"
@@ -545,6 +544,52 @@ local function start_chosen(what, cls)
         rebuild_static()
         start_offline(cls)
     end
+end
+
+-- What the menu asked for.
+--
+-- The menu names an action and decides nothing; this is the only place that
+-- knows what any of them mean, which is what keeps the tree a description of
+-- itself rather than a second copy of the game.
+local function apply_menu(self, act)
+    if act == "ship" then
+        -- A hull change is a respawn, not a rebuild. The arena, the score and
+        -- everybody else in it carry on, which is the whole reason the menu
+        -- can be opened mid-fight at all. In a zone the roster belongs to the
+        -- server and there is no message for this yet.
+        if self.online then
+            menu.note = "changing ship in a zone is not in yet"
+            return
+        end
+        sim.set_class(me, menu.class)
+        menu.close()
+        return
+    end
+
+    if act == "fullscreen" then
+        if html5 then
+            pcall(html5.run, "(document.fullscreenElement" ..
+                  " ? document.exitFullscreen()" ..
+                  " : document.documentElement.requestFullscreen())")
+        end
+        return
+    end
+
+    -- Leaving a zone is the same act as entering the practice arena, and
+    -- until the menu existed there was no way to do it at all short of
+    -- reloading the page.
+    if (act == "practice" or act == "duel") and self.online then
+        net.disconnect()
+        self.online = false
+    end
+
+    local outcome = start_chosen(act == "practice" and "play" or act,
+                                 menu.class)
+    self.online = outcome == "online"
+    self.browsing = outcome == "browsing"
+    -- Joining deliberately leaves the menu up: the note under it is the only
+    -- thing that will report a zone which never answers.
+    if act == "practice" or act == "duel" then menu.close() end
 end
 
 -- The flag tally, in the words the web prototype uses. Reporting only: the
@@ -605,22 +650,26 @@ function update(self, dt)
     end
     if steps == MAX_CATCHUP then accum = 0 end
 
+    -- Escape opens the menu; inside it, escape goes back a level, and at the
+    -- root that is the same as closing. One key, no modes.
+    if tapped[hash("menu")] and not menu.open then
+        menu.toggle()
+        tapped[hash("menu")] = nil
+        sfx.ui("ui_go")
+    end
     if menu.open then
-        local chose, moved = menu.step({
+        local act, moved = menu.step({
             left = tapped[hash("turn_left")], right = tapped[hash("turn_right")],
             up = tapped[hash("thrust")], down = tapped[hash("reverse")],
-            -- Enter and the keyboard trigger only. A pointer press commits
-            -- through the hit boxes below, because a pointer has a position
-            -- and "wherever you happened to touch" is not a choice.
+            -- Enter and the trigger, which is the button a thumb already has.
+            -- A pointer press commits through the hit boxes instead, because
+            -- a pointer has a position and "wherever you touched" is a choice
+            -- the keyboard does not have to make.
             go = tapped[hash("select")] or tapped[hash("guns")],
-            tab = tapped[hash("tab")],
+            back = tapped[hash("menu")] or tapped[hash("cancel")],
         })
-        if moved then sfx.ui(chose and "ui_go" or "ui_move") end
-        if chose then
-            local outcome = start_chosen(chose, menu.class)
-            self.online = outcome == "online"
-            self.browsing = outcome == "browsing"
-        end
+        if moved then sfx.ui(act and "ui_go" or "ui_move") end
+        if act then apply_menu(self, act) end
     end
     tapped = {}
 
@@ -632,7 +681,7 @@ function update(self, dt)
     -- start screen back rather than a black arena.
     if self.online and menu.open then
         if net.connected and net.stats.snaps > 0 then
-            menu.open = false
+            menu.close()
             menu.note = nil
             self.joining = nil
         else
@@ -642,9 +691,8 @@ function update(self, dt)
                 self.online = false
                 self.joining = nil
                 menu.note = "no answer from " .. menu.server
-                menu.mode = 3
                 start_chosen("play", menu.class)
-                menu.open = true
+                menu.show("play")
             end
         end
     end
@@ -761,11 +809,12 @@ function update(self, dt)
 
     -- --- the interface ---------------------------------------------------
     ui.begin(layers.ui, ww, wh, density, touch.used)
-    if menu.open then
-        ui.menu(menu, CLASS_NAMES)
-    else
+    -- The interface stays up under the menu. Nothing is paused, so hiding the
+    -- scoreboard and the radar behind a panel would be a lie about what is
+    -- happening: you can be shot while reading this.
+    do
         ui.hud({
-            me = me, class_names = CLASS_NAMES,
+            me = me, class_names = CLASS_NAMES, menu_open = menu.open,
             -- Online the roster is the server's, because those are other
             -- people's names and only it knows them.
             pilots = (self.online and net.connected) and net.pilots or pilots,
@@ -779,12 +828,22 @@ function update(self, dt)
                 or nil,
         })
     end
+    if menu.open then ui.menu(menu.view()) end
     -- Not over the start screen: the stick and the pads belong to flight, and
     -- drawn under a menu they read as buttons that do nothing.
     if not menu.open then
         touch.draw(layers.ui, ww, wh, density)
     end
     ui.finish()
+
+    -- The page draws its own starfield and wordmark while four megabytes of
+    -- engine compile. This is the moment it can stop: not when the runtime
+    -- initialised, which is seconds earlier, but when there is an arena on
+    -- screen to hand over to.
+    if not self.handed_over then
+        self.handed_over = true
+        if html5 then pcall(html5.run, "window.vwReady && vwReady()") end
+    end
     web_fields_sync()
 end
 
@@ -811,11 +870,9 @@ function on_input(self, action_id, action)
                 browser.close()
                 net.connect(address, menu.class, menu.name, function(why)
                     menu.note = why
-                    menu.open = true
-                    menu.mode = 4
+                    menu.show("play")
                 end)
                 menu.note = "connecting to " .. address
-                menu.open = true
                 self.online = true
                 self.browsing = false
             end
@@ -836,18 +893,20 @@ function on_input(self, action_id, action)
     -- on any window that is not exactly 1280 by 800 every button was tested
     -- against the wrong place -- and on a phone, by a factor of three.
     local function hit(x, y)
-        if not menu.open then return false end
         local px, py = x, (self.vh or 0) - y
         for _, r in ipairs(ui.hits) do
             if px >= r.x and px <= r.x + r.w
                and py >= r.y and py <= r.y + r.h then
-                local chose, moved = menu.click(r.action, r.value)
-                if moved then sfx.ui(chose and "ui_go" or "ui_move") end
-                if chose then
-                    local outcome = start_chosen(chose, menu.class)
-                    self.online = outcome == "online"
-                    self.browsing = outcome == "browsing"
+                -- The one hit box that exists while the menu is shut.
+                if r.action == "open" then
+                    menu.toggle()
+                    sfx.ui("ui_go")
+                    return true
                 end
+                if not menu.open then return false end
+                local act, moved = menu.click(r.value)
+                if moved then sfx.ui(act and "ui_go" or "ui_move") end
+                if act then apply_menu(self, act) end
                 return true
             end
         end
@@ -859,7 +918,7 @@ function on_input(self, action_id, action)
         -- engine decided was primary: on a phone the finger that reaches the
         -- button is often the second one down.
         if action.touch then touch.note_used() end
-        if menu.open and action.touch then
+        if action.touch then
             for _, t in ipairs(action.touch) do
                 if t.pressed and hit(t.screen_x or t.x, t.screen_y or t.y) then
                     return

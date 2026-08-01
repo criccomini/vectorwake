@@ -337,6 +337,33 @@ static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
     }
 }
 
+/* Change a pilot's hull without changing the arena around them.
+ *
+ * A hull is not a costume: it is a different tank, a different gun and a
+ * different turn rate, so swapping one mid-flight has to cost what dying
+ * costs. You reappear at your start, at rest, with a full bar of the new
+ * ship's energy and none of the upgrades you had collected, and anything you
+ * were carrying goes back on the map. Everyone else keeps flying, which is
+ * the whole point: a menu that rebuilt the arena to change your ship would
+ * throw away the match to answer a question about yourself. */
+int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
+                       uint8_t cls) {
+    if (i >= s->ship_count || cls >= cfg->class_count) return -1;
+    sim_ship *sh = &s->ships[i];
+    if (!sh->active) return -1;
+    drop_flags(s, cfg, i, 0);
+    sh->cls = cls;
+    memset(sh->up, 0, sizeof sh->up);
+    sh->alive = 1;
+    sh->respawn_at = 0;
+    sh->x = sh->spawn_x;
+    sh->y = sh->spawn_y;
+    sh->vx = sh->vy = 0;
+    sh->fire_cooldown = 0;
+    sh->energy = sim_eff_max_energy(&cfg->classes[cls], sh);
+    return 0;
+}
+
 static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) {
     for (int i = 0; i < s->flag_count; i++) {
         sim_flag *f = &s->flags[i];

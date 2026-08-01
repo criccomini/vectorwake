@@ -78,6 +78,17 @@ int Spawn(lua_State* L) {
     return 1;
 }
 
+// Change a pilot's hull in place. The menu is open over a running arena, so
+// picking a ship must not rebuild the world -- it respawns one pilot in a
+// different hull and leaves everyone else flying.
+int SetClass(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    int cls = (int)luaL_checkinteger(L, 2);
+    lua_pushboolean(L, sim_set_ship_class(g_cur, &g_cfg, (uint8_t)i,
+                                          (uint8_t)cls) == 0);
+    return 1;
+}
+
 // One tick. Buttons arrive as a table indexed by ship id, which keeps the
 // Lua side free of any notion of how inputs reach the simulation.
 int Step(lua_State* L) {
@@ -327,6 +338,7 @@ const luaL_reg kFunctions[] = {
     {"init_duel", InitDuel},
     {"spawn", Spawn},
     {"map_spawn", MapSpawn},
+    {"set_class", SetClass},
     {"step", Step},
     {"replay", Replay},
     {"apply_snapshot", ApplySnapshot},

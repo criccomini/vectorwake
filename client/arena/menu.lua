@@ -1,42 +1,61 @@
--- The start screen's state, and nothing else.
+-- The menu, which is a tree you open while you are already flying.
 --
--- It draws over a game that is already running, which is why there is no
--- separate attract mode: the arena behind this is the real one, stepping the
--- real simulation, and choosing a hull drops you into it. A player who does
--- nothing still sees a fight rather than a title card.
+-- There is no start screen. A player arrives in the arena with a hull, a call
+-- sign and live controls, and everything that used to be a decision made
+-- before playing is a decision made during it. That is the whole design: the
+-- fastest way into a game is not to put anything in front of it.
 --
--- Selection only. It spawns nothing, steps nothing, and opens no socket; the
--- arena script does that when this reports a choice, and arena/ui.lua draws
--- it.
+-- One list on screen at a time, a breadcrumb above it, and a stack behind it.
+-- Down and up move, right or enter descends or acts, left or escape goes
+-- back, and escape at the root closes. Five inputs, which is what a d-pad
+-- has, what a phone can draw as four arrows and a button, and what a keyboard
+-- already sends -- so the same tree works on all three without a second
+-- layout. A two-pane menu reads better on a desktop and falls apart at 390
+-- points wide.
+--
+-- Selection only, still: this decides nothing and steps nothing. It reports
+-- an action and arena.script carries it out.
 
 local callsign = require("arena.callsign")
 
 local M = {}
 
-M.open = true
-M.class = 0
-M.mode = 1              -- 1 launch, 2 duel, 3 join, 4 browse
-M.MODES = 4
+M.open = false
+M.class = 0             -- the hull you are flying
+M.stack = {"root"}
+M.sel = {}              -- selected row, per node, so a level remembers
+M.note = nil            -- set by the arena when a connection fails
 
 -- Who you are and where you are going.
 --
 -- The name is generated, never typed. A player is flying immediately, a phone
 -- never has to raise a keyboard for it, and a console will hand us the
--- platform's own name when we get there. Tapping it draws another.
+-- platform's own name when we get there.
 --
--- The address is still typed, because an address cannot be invented -- but it
--- is the escape hatch rather than the path: ZONES asks a directory what is
--- running and the player picks from a list.
+-- The address is the one thing still typed, because an address cannot be
+-- invented -- and it is the escape hatch rather than the path: ZONES asks a
+-- directory what is running and the player picks from a list.
 M.name = "pilot"
 M.server = "ws://127.0.0.1:9040"
-M.focus = nil           -- nil or "server"; the name is not a text field
-M.note = nil            -- set by the arena script when a connection fails
+M.focus = nil           -- nil or "server"; only a text field takes the caret
+
+-- Settings. Kept here because this is what saves them, and read by whoever
+-- owns the thing they change.
+M.volume = 3            -- index into VOLUMES
+M.cap = 1               -- index into CAPS
+M.can_cap = false       -- whether this engine can be asked to cap frames
+
+local VOLUMES = {{0, "off"}, {0.3, "quiet"}, {0.6, "half"}, {1.0, "full"}}
+local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 
 local LIMITS = {server = 64}
 local SAVE = sys.get_save_file("vectorwake", "pilot")
 
 function M.save_identity()
-    pcall(sys.save, SAVE, {name = M.name, server = M.server})
+    pcall(sys.save, SAVE, {
+        name = M.name, server = M.server, class = M.class,
+        volume = M.volume, cap = M.cap,
+    })
 end
 
 -- A call sign has to outlive the tab. Ratings are keyed by who you are, and a
@@ -47,10 +66,27 @@ function M.load_identity()
     if ok and type(d) == "table" and type(d.name) == "string" and d.name ~= "" then
         M.name = d.name
         if type(d.server) == "string" and d.server ~= "" then M.server = d.server end
+        if type(d.class) == "number" then M.class = math.floor(d.class) % 8 end
+        if type(d.volume) == "number" then M.volume = d.volume end
+        if type(d.cap) == "number" then M.cap = d.cap end
     else
         M.name = callsign.generate()
         M.save_identity()
     end
+    M.apply_settings()
+end
+
+-- Sound and frame rate are the two settings that reach outside this file.
+-- Applied on load and on every change, so the menu never holds a value the
+-- engine does not have.
+function M.apply_settings()
+    pcall(sound.set_group_gain, hash("master"), VOLUMES[M.volume][1])
+    -- A browser drives the frame loop from requestAnimationFrame, so on a
+    -- 120 Hz laptop the game renders twice as often as on a 60 Hz one and
+    -- costs twice the battery for it. The simulation is 100 Hz either way,
+    -- so this is a picture setting, not a game one -- which is exactly why
+    -- it is the player's to make rather than ours.
+    M.can_cap = pcall(sys.set_update_frequency, CAPS[M.cap][1])
 end
 
 function M.reroll()
@@ -68,8 +104,7 @@ function M.type(s)
     if not M.open or not M.focus then return false end
     local cur = M[M.focus] or ""
     if #cur >= LIMITS[M.focus] then return true end
-    -- Newlines and tabs are not addresses or names, and the engine does
-    -- deliver them.
+    -- Newlines and tabs are not addresses, and the engine does deliver them.
     s = string.gsub(s, "[%c]", "")
     M[M.focus] = cur .. s
     return true
@@ -81,78 +116,242 @@ function M.backspace()
     return true
 end
 
-local function chosen()
-    M.open = false
-    M.focus = nil
-    if M.mode == 2 then return "duel" end
-    if M.mode == 3 then return "join" end
-    if M.mode == 4 then return "zones" end
-    return "play"
+-- --- the tree ---------------------------------------------------------------
+--
+-- A row is a label, an optional detail that may be a function of the moment,
+-- and one of: `go` to descend, or `act` for the arena to carry out. A row with
+-- neither is a line of text, which is what `about` is made of.
+
+local HULLS = {
+    {"Apex", "interceptor", "fastest, sharpest turn, lightest bar"},
+    {"Wedge", "bomber", "heavy bombs on a short reload"},
+    {"Chord", "skirmisher", "quick guns, no bomb rack"},
+    {"Anvil", "heavy", "the biggest bar and the biggest bomb"},
+    {"Spire", "support", "recharges faster than anything"},
+    {"Cipher", "stealth", "hardest hitting gun, thinnest hull"},
+    {"Facet", "brawler", "close in, and quick about it"},
+    {"Lattice", "denial", "holds ground it has taken"},
+}
+
+local function hull_rows()
+    local rows = {}
+    for i, h in ipairs(HULLS) do
+        rows[i] = {
+            label = h[1], detail = h[3], act = "ship", value = i - 1,
+            hull = i - 1, role = h[2],
+            mark = function() return M.class == i - 1 end,
+        }
+    end
+    return rows
 end
 
--- One keystroke per entry: the arena script latches presses, because a tap
--- can go down and up inside a single frame and never appear in the key state
--- that flight reads. Nothing here does its own edge detection.
+local NODES = {
+    root = {title = "vectorwake", rows = {
+        {label = "ship", detail = function() return HULLS[M.class + 1][1] end,
+         go = "ship"},
+        {label = "play", detail = function() return M.where or "practice" end,
+         go = "play"},
+        {label = "pilot", detail = function() return M.name end, go = "pilot"},
+        {label = "settings", go = "settings"},
+        {label = "about", go = "about"},
+    }},
+
+    ship = {title = "ship", rows = hull_rows()},
+
+    play = {title = "play", rows = {
+        {label = "practice", detail = "eight AI pilots and four flags",
+         act = "practice"},
+        {label = "duel", detail = "first to five, one on one", act = "duel"},
+        {label = "zones", detail = "find a game to join", act = "zones"},
+        {label = "address", detail = function() return M.server end,
+         act = "address"},
+    }},
+
+    pilot = {title = "pilot", rows = {
+        {label = "call sign", detail = function() return M.name end,
+         act = "reroll"},
+        {label = "", detail = "a name is drawn for you and kept between visits"},
+    }},
+
+    settings = {title = "settings", rows = {
+        {label = "sound", detail = function() return VOLUMES[M.volume][2] end,
+         act = "volume"},
+        {label = "frames", detail = function()
+            if not M.can_cap then return "as the display asks" end
+            return CAPS[M.cap][2]
+        end, act = "cap"},
+        {label = "fullscreen", detail = "fill the screen", act = "fullscreen"},
+    }},
+
+    about = {title = "about", rows = {
+        {label = "", detail = "a top-down space game about frictionless flight"},
+        {label = "", detail = "energy is your health and your ammunition at once"},
+        {label = "", detail = ""},
+        {label = "fly", detail = "arrow keys, or WASD"},
+        {label = "guns", detail = "space, or Z"},
+        {label = "bombs", detail = "shift, or X"},
+        {label = "menu", detail = "escape"},
+        {label = "", detail = ""},
+        {label = "", detail = function()
+            return "build " .. (sys.get_config("project.version") or "dev")
+        end},
+    }},
+}
+
+-- --- navigation -------------------------------------------------------------
+
+local function node()
+    return NODES[M.stack[#M.stack]]
+end
+
+local function row_index()
+    local id = M.stack[#M.stack]
+    local n = #node().rows
+    local i = M.sel[id] or 1
+    if i > n then i = n elseif i < 1 then i = 1 end
+    M.sel[id] = i
+    return i
+end
+
+function M.toggle()
+    if M.open then
+        M.close()
+    else
+        M.open = true
+        M.focus = nil
+        M.note = nil
+    end
+    return M.open
+end
+
+-- Open the menu at a particular level, which is what a failed connection
+-- wants: the reason belongs next to the thing that would fix it.
+function M.show(...)
+    M.stack = {"root"}
+    for _, id in ipairs({...}) do M.stack[#M.stack + 1] = id end
+    M.open = true
+    M.focus = nil
+end
+
+-- Closing forgets where you were. A menu that reopens three levels down is a
+-- menu that answers a different question than the one you asked it: the first
+-- version of this kept the stack, and pressing escape then down then enter --
+-- which had meant "duel" a moment earlier -- silently changed hull instead.
+function M.close()
+    M.open = false
+    M.focus = nil
+    M.stack = {"root"}
+end
+
+local function back()
+    if #M.stack > 1 then
+        table.remove(M.stack)
+        return true
+    end
+    M.close()
+    return true
+end
+
+-- What the drawing code needs, and nothing about how it is drawn. `detail` is
+-- resolved here so ui.lua never calls back into this file mid-frame.
+function M.view()
+    local nd = node()
+    local sel = row_index()
+    local out = {title = nd.title, depth = #M.stack, sel = sel,
+                 note = M.note, rows = {}}
+    for i, r in ipairs(nd.rows) do
+        local d = r.detail
+        if type(d) == "function" then d = d() end
+        out.rows[i] = {
+            label = r.label, detail = d, index = i, hull = r.hull,
+            pick = (r.go or r.act) ~= nil,
+            mark = r.mark and r.mark() or false,
+            field = r.act == "address" and "server" or nil,
+        }
+    end
+    return out
+end
+
+-- Activate the selected row. Returns an action for the arena, or nil.
+local function activate()
+    local nd = node()
+    local r = nd.rows[row_index()]
+    if not r then return nil end
+    if r.go then
+        M.stack[#M.stack + 1] = r.go
+        return nil
+    end
+    if not r.act then return nil end
+
+    -- The ones this file can settle itself.
+    if r.act == "ship" then
+        M.class = r.value
+        M.save_identity()
+        return "ship"
+    elseif r.act == "reroll" then
+        M.reroll()
+        return nil
+    elseif r.act == "volume" then
+        M.volume = M.volume % #VOLUMES + 1
+        M.apply_settings()
+        M.save_identity()
+        return nil
+    elseif r.act == "cap" then
+        M.cap = M.cap % #CAPS + 1
+        M.apply_settings()
+        M.save_identity()
+        return nil
+    elseif r.act == "address" then
+        -- The caret goes to the field rather than anywhere going anywhere:
+        -- an address is typed and then joined, in that order.
+        M.focus = M.focus and nil or "server"
+        return nil
+    end
+    return r.act
+end
+
+-- keys: {left, right, up, down, go, back} as booleans, already edge-detected
+-- by the arena script -- a tap can go down and up inside one frame and never
+-- appear in the key state that flight reads.
 --
--- keys: {left, right, up, down, go, tab} as booleans. Returns "play",
--- "duel", "join", or nil, plus whether anything moved, so the caller can
--- click for it.
+-- Returns an action name or nil, and whether anything moved, so the caller
+-- can make a noise about it.
 function M.step(keys)
     if not M.open then return nil, false end
-    local moved = false
 
-    -- Tab reaches the fields without a pointer. Without it a keyboard-only
-    -- player cannot type an address at all, which on a page whose whole
-    -- point is joining somebody else's zone is not a small omission.
-    if keys.tab then
-        M.focus = (M.focus == nil) and "server" or nil
-        return nil, true
-    end
-
-    -- While a field is being typed into, enter commits the field rather than
-    -- launching: a player finishing an address and pressing enter means "that
-    -- is the address", not "go now, with whatever is in there".
+    -- While an address is being typed, the keys belong to the field.
     if M.focus then
-        if keys.go then
+        if keys.go or keys.back then
             M.focus = nil
-            return nil, true
+            M.save_identity()
+            return keys.go and "join" or nil, true
         end
         return nil, false
     end
 
-    if keys.left then M.class = (M.class - 1) % 8 moved = true end
-    if keys.right then M.class = (M.class + 1) % 8 moved = true end
+    if keys.back or keys.left then return nil, back() end
+
+    local id = M.stack[#M.stack]
+    local n = #node().rows
     if keys.up then
-        M.mode = M.mode == 1 and M.MODES or M.mode - 1
-        moved = true
+        M.sel[id] = (row_index() - 2) % n + 1
+        return nil, true
     end
-    if keys.down then M.mode = M.mode % M.MODES + 1 moved = true end
-    if keys.go then return chosen(), true end
-    return nil, moved
+    if keys.down then
+        M.sel[id] = row_index() % n + 1
+        return nil, true
+    end
+    if keys.go or keys.right then return activate(), true end
+    return nil, false
 end
 
--- A pointer landed on something arena/ui.lua published as clickable.
-function M.click(action, value)
-    if action == "class" then
-        M.class = value
-        M.focus = nil
-        return nil, true
-    elseif action == "reroll" then
-        M.reroll()
-        M.focus = nil
-        return nil, true
-    elseif action == "field" then
-        M.focus = value
-        return nil, true
-    elseif action == "go" then
-        M.focus = nil
-        M.mode = value
-        return chosen(), true
-    end
-    -- A tap anywhere else drops the caret, so a field does not swallow the
-    -- keyboard forever on a device with no escape key.
-    M.focus = nil
-    return nil, false
+-- A pointer landed on a row the interface published.
+function M.click(index)
+    if not M.open then return nil, false end
+    local id = M.stack[#M.stack]
+    if index == -1 then return nil, back() end
+    M.sel[id] = index
+    return activate(), true
 end
 
 return M

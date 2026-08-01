@@ -54,6 +54,8 @@ SHIM = """
 (function () {
   var B64 = __ASSETS__;
   var CACHE = {};
+  var SERVED = 0, TOTAL = 0;
+  for (var _k in B64) TOTAL++;
 
   function bytes(name) {
     if (!CACHE[name]) {
@@ -112,6 +114,9 @@ SHIM = """
           if (self.onprogress) {
             self.onprogress(xhr, { loaded: raw.length, total: raw.length }, 0);
           }
+          // Half the bar is decoding what is embedded here; the rest is the
+          // engine compiling, which nothing can measure.
+          if (window.vwProgress) window.vwProgress(++SERVED / TOTAL * 0.55);
           if (self.onload) self.onload(xhr, {});
         }, 0);
       }
@@ -157,6 +162,107 @@ SHIM = """
       clearInterval(poll);
     }
   }, 250);
+
+  // Loading.
+  //
+  // Four megabytes of engine have to arrive and compile before the game can
+  // draw anything, and what a player saw meanwhile was a grey bar on black --
+  // a page that has not started yet. So the page starts without it: the same
+  // starfield, at the same three depths and the same colours, drawn in plain
+  // canvas 2D while the wasm compiles behind it. The wordmark sits in the
+  // middle and the engine's own progress drives one hairline under it.
+  //
+  // The game says when it is up, from arena.script, rather than the loader
+  // guessing: "the runtime initialised" is several seconds before "there is
+  // an arena on screen", and fading out at the wrong one of those is how a
+  // seamless hand-off becomes a black flash.
+  (function () {
+    var cv = document.createElement("canvas");
+    cv.id = "vw-preboot";
+    cv.style.cssText =
+      "position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:5;" +
+      "background:#05070d;transition:opacity .45s ease-out";
+    document.body.appendChild(cv);
+    var g = cv.getContext("2d");
+    var w = 0, h = 0, t0 = Date.now(), done = false, progress = 0;
+
+    // The same three depths world.lua uses, and the same colours, so the
+    // moment the engine takes over nothing about the sky changes.
+    var LAYERS = [
+      {k: 0.18, cell: 54, size: 1.1, col: "#2a3a58", fill: 13},
+      {k: 0.36, cell: 92, size: 1.6, col: "#4a6089", fill: 11},
+      {k: 0.60, cell: 168, size: 2.3, col: "#93a9c8", fill: 9}
+    ];
+    function lcg(s) { return (s * 48271) % 2147483647; }
+
+    function frame() {
+      if (cv.width !== innerWidth * 1 || cv.height !== innerHeight * 1) {
+        w = cv.width = innerWidth;
+        h = cv.height = innerHeight;
+      }
+      g.fillStyle = "#05070d";
+      g.fillRect(0, 0, w, h);
+      // Drifting, because a still starfield reads as a picture of a game and
+      // a moving one reads as the game.
+      var t = (Date.now() - t0) / 1000;
+      for (var li = 0; li < LAYERS.length; li++) {
+        var L = LAYERS[li], c = L.cell;
+        var ox = -t * 14 * L.k, oy = -t * 5 * L.k;
+        g.fillStyle = L.col;
+        var i0 = Math.floor(-ox / c) - 1, i1 = Math.floor((w - ox) / c) + 1;
+        var j0 = Math.floor(-oy / c) - 1, j1 = Math.floor((h - oy) / c) + 1;
+        for (var j = j0; j <= j1; j++) {
+          for (var i = i0; i <= i1; i++) {
+            var s = lcg(((i * 1973 + j * 9277 + li * 26699) % 2147483646 + 2147483646) % 2147483646 + 1);
+            if (s % 16 >= L.fill) continue;
+            s = lcg(s);
+            var px = (i + s / 2147483647) * c + ox;
+            s = lcg(s);
+            var py = (j + s / 2147483647) * c + oy;
+            g.globalAlpha = 0.45 + (s % 8) / 8 * 0.55;
+            g.fillRect(px, py, L.size, L.size);
+          }
+        }
+      }
+      g.globalAlpha = 1;
+
+      var cx = w / 2, cy = h / 2;
+      g.fillStyle = "#4fd6ff";
+      g.font = "300 " + Math.round(Math.min(w / 16, 40)) + "px ui-monospace," +
+               "SFMono-Regular,Menlo,Consolas,monospace";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText("v e c t o r w a k e", cx, cy - 10);
+
+      // One hairline, as wide as the wordmark, that only ever grows.
+      var bw = Math.min(w * 0.5, 380);
+      g.fillStyle = "#1d2838";
+      g.fillRect(cx - bw / 2, cy + 30, bw, 2);
+      g.fillStyle = "#4fd6ff";
+      g.fillRect(cx - bw / 2, cy + 30, bw * progress, 2);
+
+      if (!done) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    // Progress is what the loader knows; the last stretch is compilation,
+    // which nothing can measure, so it creeps rather than sitting still.
+    window.vwProgress = function (p) {
+      if (p > progress) progress = p;
+    };
+    setInterval(function () {
+      if (progress < 0.97) progress += (0.97 - progress) * 0.06;
+    }, 100);
+
+    // Called from the game's own first frame.
+    window.vwReady = function () {
+      if (done) return "";
+      done = true;
+      cv.style.opacity = "0";
+      setTimeout(function () { cv.remove(); }, 500);
+      return "";
+    };
+  })();
 
   // Sound. A browser starts every page muted: the audio context is created
   // suspended and only a user gesture may resume it. The engine takes that

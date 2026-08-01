@@ -498,6 +498,30 @@ int main(void) {
         CHECK(s.ships[1].x == s.ships[1].spawn_x, "respawn returns to spawn");
     }
 
+    /* Changing hull is a respawn, not a costume change, and it leaves the
+     * rest of the arena exactly where it was. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, APEX, 1, 8500, 8192, 0, &cfg);
+        step_n(&s, &cfg, SIM_BTN_THRUST, SIM_BTN_THRUST, 30);
+        s.ships[0].up[SIM_UP_SPEED] = 3;
+        int32_t foe_y = s.ships[1].y;
+        CHECK(s.ships[0].y != s.ships[0].spawn_y, "the pilot had flown off");
+        CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL) == 0, "the hull changed");
+        CHECK(s.ships[0].cls == ANVIL, "into the one asked for");
+        CHECK(s.ships[0].y == s.ships[0].spawn_y, "back at the start");
+        CHECK(s.ships[0].vx == 0 && s.ships[0].vy == 0, "and at rest");
+        CHECK(s.ships[0].up[SIM_UP_SPEED] == 0, "upgrades cost what dying costs");
+        CHECK(s.ships[0].energy ==
+              sim_eff_max_energy(&cfg.classes[ANVIL], &s.ships[0]),
+              "with a full bar of the new ship");
+        CHECK(s.ships[1].y == foe_y, "and nobody else moved");
+        CHECK(sim_set_ship_class(&s, &cfg, 9, APEX) == -1, "no such ship");
+        CHECK(sim_set_ship_class(&s, &cfg, 0, 99) == -1, "no such class");
+    }
+
     /* A bomb detonating on a wall damages a nearby enemy through splash. */
     {
         sim_state s;

@@ -412,7 +412,10 @@ local function help(lift)
     -- off centre as its own contents change looks like a bug.
     local parts = {
         {k = "←"}, {k = "↑"}, {k = "↓"}, {k = "→"}, {s = " fly    "},
-        {k = "space"}, {s = " guns    "}, {k = "shift"}, {s = " bombs"},
+        {k = "space"}, {s = " guns    "}, {k = "shift"}, {s = " bombs    "},
+        -- The one thing a new player has to be told, because nothing else on
+        -- screen implies it: there is a menu, and this is where it lives.
+        {k = "esc"}, {s = " menu"},
     }
     local total = 0
     for _, p in ipairs(parts) do
@@ -452,6 +455,20 @@ end
 
 -- --- the flight interface --------------------------------------------------
 
+-- The way into the menu on a device with no escape key. Beside the
+-- scoreboard rather than on top of it, and on a phone the scoreboard is not
+-- drawn at all, so the corner is free.
+local function menu_button()
+    if not (M.touching or M.compact) then return end
+    local w, h = 62 * S, 26 * S
+    local x = PAD * S + (M.compact and 0 or (COL_W + 8) * S)
+    local y = PAD * S
+    rect(x, y, w, h, pal.a(pal.BTN_BG, 0.92))
+    u:frame(x, ry(y, h), w, h, S, pal.BAR_EDGE)
+    txt("menu", x + w / 2, y + h / 2, FONT * S, pal.a(pal.INK, 0.92), "center")
+    hit(x, y, w, h, "open")
+end
+
 function M.hud(o)
     if sim.ship_count() == 0 then return end
     local me = o.me
@@ -467,9 +484,13 @@ function M.hud(o)
     radar(o.cam_x, o.cam_y, me)
     feed(o.feed, PAD * S + (RADAR + 16) * S + 12 * S)
     status(me, o.class_names, o.netinfo, o.pickup, lift)
+    menu_button()
     help(lift + (M.touching and 118 * S or 0))
     vignette(o.hurt or 0)
 
+    -- The two big centred lines are the only interface that sits where the
+    -- menu does. The panels can share the screen with it; these cannot.
+    if o.menu_open then return end
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
             pal.a(pal.INK, 0.92), "center")
@@ -485,10 +506,6 @@ end
 -- The arena behind this is the real one, stepping the real simulation, which
 -- is why there is no attract mode: a player who does nothing still watches a
 -- fight rather than a title card.
-
-local ROLES = {"interceptor", "bomber", "skirmisher", "heavy",
-               "support", "stealth", "brawler", "denial"}
-local MODES = {"launch", "duel"}
 
 local function hit(x, y, w, h, action, value)
     M.hits[#M.hits + 1] = {x = x, y = y, w = w, h = h,
@@ -508,165 +525,90 @@ local function thumb(cx, cy, cls, col, scale)
     u:outline(pts, 1.4 * S, col)
 end
 
-function M.menu(o, names)
-    local cx = W / 2
-    rect(0, 0, W, H, pal.rgb(0x030509, 0.93))
+-- The menu. One list, whatever level it is.
+--
+-- A title, a breadcrumb's worth of depth, rows, and a hint at the bottom. The
+-- same routine draws the hull list and the settings, which is the point of
+-- having a tree rather than a screen: adding a level costs a table in
+-- menu.lua and nothing here.
+--
+-- It draws over a live arena, so the backdrop is translucent rather than
+-- opaque -- you can see the fight you left, and that you are still in it.
+local ROW_H = 34
+local MENU_W = 460
 
-    local BW, BH, GAP = 148 * S, 66 * S, 8 * S
-    -- As many columns of hulls as the screen can hold. Four across is 616
-    -- points, which a phone in portrait does not have and used to run off
-    -- both edges with three of the eight hulls unreachable.
-    local cols = 4
-    while cols > 1 and BW * cols + GAP * (cols - 1) > W - 24 * S do
-        cols = cols / 2
+function M.menu(v)
+    local w = math.min(MENU_W * S, W - 24 * S)
+    local x = (W - w) / 2
+    local rows = #v.rows
+    local h = ROW_H * S * rows + 76 * S
+    local y = math.max(20 * S, (H - h) / 2)
+
+    -- Not a curtain: dimmed enough to read against, clear enough to see the
+    -- arena still running behind it. Opening the menu does not pause anything
+    -- and should not look as though it does.
+    rect(0, 0, W, H, pal.rgb(0x03050a, 0.62))
+    panel(x, y, w, h)
+
+    txt(v.title, x + 20 * S, y + 26 * S, (M.compact and 19 or 23) * S,
+        pal.FRIEND)
+    -- Always, not only below the root: a phone has no escape key, and a menu
+    -- with no visible way out is a trap.
+    txt(v.depth > 1 and "back" or "close", x + w - 20 * S, y + 26 * S, 11 * S,
+        pal.a(pal.DIM, 0.8), "right")
+    hit(x + w - 90 * S, y + 8 * S, 90 * S, 34 * S, "row", -1)
+
+    local ry0 = y + 48 * S
+    for i, r in ipairs(v.rows) do
+        local top = ry0 + (i - 1) * ROW_H * S
+        local on = i == v.sel
+        if on and r.pick then
+            rect(x + 8 * S, top, w - 16 * S, ROW_H * S,
+                 pal.a(pal.BTN_SEL, 0.95))
+            rect(x + 8 * S, top, 3 * S, ROW_H * S, pal.FRIEND)
+        end
+        local ink = r.pick and (on and pal.INK or pal.a(pal.INK, 0.72))
+            or pal.a(pal.DIM, 0.9)
+        local lx = x + 22 * S
+        if r.hull then
+            -- The silhouette is what picks a ship. Eight names mean nothing
+            -- to somebody who has not flown them; eight shapes are the game
+            -- telling you what it has.
+            thumb(x + 34 * S, top + ROW_H * S / 2, r.hull,
+                  on and pal.INK or pal.a(pal.INK, 0.55), 0.55 * S)
+            lx = x + 58 * S
+        end
+        if r.label ~= "" then
+            txt(r.label, lx, top + ROW_H * S / 2, FONT * S, ink)
+        end
+        if r.detail and r.detail ~= "" then
+            -- The value sits on the right of the row it belongs to, which is
+            -- how a settings list reads everywhere else in the world.
+            txt(r.detail, x + w - 22 * S, top + ROW_H * S / 2, FONT * S,
+                r.mark and pal.FRIEND or pal.a(pal.DIM, 0.95), "right")
+        end
+        if r.mark and not r.hull then
+            txt("▸", x + 12 * S, top + ROW_H * S / 2, FONT * S, pal.FRIEND)
+        end
+        if r.pick then hit(x + 8 * S, top, w - 16 * S, ROW_H * S, "row", i) end
+        if r.field then
+            -- A real input goes over this rectangle on the web, because a
+            -- canvas cannot hold a caret and a phone will not raise a
+            -- keyboard for one that cannot.
+            M.hits[#M.hits] = nil
+            hit(x + 8 * S, top, w - 16 * S, ROW_H * S, "row", i)
+            M.hits[#M.hits].field = r.field
+            M.hits[#M.hits].value = i
+        end
     end
-    local rows = math.ceil(8 / cols)
-    local grid_w = BW * cols + GAP * (cols - 1)
-    local grid_h = BH * rows + GAP * (rows - 1)
-    local FIELD_H = 30 * S
-    local block = 40 * S + 12 * S + 2 * 18 * S + 26 * S + grid_h + 20 * S
-                  + FIELD_H + 12 * S + 42 * S + 26 * S + 18 * S
-    local y = math.max(12 * S, (H - block) / 2)
 
-    txt("v e c t o r w a k e", cx, y + 20 * S, (M.compact and 25 or 34) * S,
-        pal.FRIEND, "center")
-    y = y + 40 * S + 12 * S
-    if M.compact then
-        txt("Energy is your health and your ammunition.",
-            cx, y + 9 * S, FONT * S, pal.DIM, "center")
+    local by = y + h - 16 * S
+    if v.note then
+        txt(v.note, x + w / 2, by, FONT * S, pal.ENEMY, "center")
     else
-        txt("Frictionless flight. Energy is your health and your ammunition.",
-            cx, y + 9 * S, FONT * S, pal.DIM, "center")
-    end
-    y = y + 18 * S
-    txt("Pick a hull and fight eight AI pilots.", cx, y + 9 * S, FONT * S,
-        pal.DIM, "center")
-    y = y + 18 * S + 26 * S
-
-    local gx = cx - grid_w / 2
-    for i = 0, 7 do
-        local bx = gx + (i % cols) * (BW + GAP)
-        local by = y + math.floor(i / cols) * (BH + GAP)
-        local sel = i == o.class
-        rect(bx, by, BW, BH, sel and pal.BTN_SEL or pal.BTN_BG)
-        u:frame(bx, ry(by, BH), BW, BH, S, sel and pal.FRIEND or pal.BAR_EDGE)
-        thumb(bx + 26 * S, by + BH / 2, i,
-              sel and pal.FRIEND or pal.a(pal.DIM, 0.8), 0.9 * S)
-        txt(names[i + 1] or "?", bx + 52 * S, by + 26 * S, FONT * S,
-            sel and pal.INK or pal.a(pal.INK, 0.8))
-        txt(ROLES[i + 1] or "", bx + 52 * S, by + 44 * S, 11 * S, pal.DIM)
-        hit(bx, by, BW, BH, "class", i)
-    end
-    y = y + grid_h + 26 * S
-
-    -- Name and server. Two fields side by side on a wide screen, stacked on
-    -- a narrow one, because an address is long and a phone is not.
-    local FW = math.min(grid_w, 460 * S)
-    local fx = cx - FW / 2
-    local stacked = M.compact or FW < 340 * S
-    local nw = stacked and FW or FW * 0.42
-    local sw = stacked and FW or FW - nw - 8 * S
-
-    local function field(x, fy, w, key, label, value)
-        local on = o.focus == key
-        rect(x, fy, w, FIELD_H, on and pal.rgb(0x0a1620) or pal.BTN_BG)
-        u:frame(x, ry(fy, FIELD_H), w, FIELD_H, S,
-                on and pal.FRIEND or pal.BAR_EDGE)
-        txt(label, x + 8 * S, fy + FIELD_H / 2, 11 * S, pal.DIM)
-        local shown = value
-        if value == "" then shown = on and "" or "-" end
-        -- A caret, so a focused empty field does not look broken.
-        if on then shown = shown .. "_" end
-        txt(shown, x + 8 * S + 46 * S, fy + FIELD_H / 2, FONT * S,
-            on and pal.INK or pal.a(pal.INK, 0.85))
-        hit(x, fy, w, FIELD_H, "field", key)
-    end
-
-    -- The call sign is not a text box. It is generated, and tapping it draws
-    -- another -- which is the whole of naming on a device with no keyboard.
-    local function callsign_box(x, fy, w)
-        rect(x, fy, w, FIELD_H, pal.BTN_BG)
-        u:frame(x, ry(fy, FIELD_H), w, FIELD_H, S, pal.BAR_EDGE)
-        txt("YOU", x + 8 * S, fy + FIELD_H / 2, 11 * S, pal.DIM)
-        txt(o.name, x + 8 * S + 34 * S, fy + FIELD_H / 2, FONT * S, pal.INK)
-        txt("reroll", x + w - 8 * S, fy + FIELD_H / 2, 11 * S,
-            pal.a(pal.FRIEND, 0.85), "right")
-        hit(x, fy, w, FIELD_H, "reroll", 0)
-    end
-
-    callsign_box(fx, y, nw)
-    if stacked then
-        y = y + FIELD_H + 6 * S
-        field(fx, y, sw, "server", "ZONE", o.server)
-    else
-        field(fx + nw + 8 * S, y, sw, "server", "ZONE", o.server)
-    end
-    y = y + FIELD_H + 12 * S
-
-    -- Launch, duel, join and browse, in the prototype's colours: the primary
-    -- action is a solid cyan block, the others outlines.
-    local LW, DW, JW, BH2 = 124 * S, 96 * S, 100 * S, 42 * S
-    local ZW = 106 * S
-    local total = LW + DW + JW + ZW + 30 * S
-    local three = total <= grid_w
-    if not three then
-        LW, DW, JW = grid_w, (grid_w - 8 * S) / 2, (grid_w - 8 * S) / 2
-        ZW = grid_w
-    end
-    local bx = three and (cx - total / 2) or (cx - grid_w / 2)
-
-    local launch = o.mode == 1
-    rect(bx, y, LW, BH2, launch and pal.FRIEND or pal.BTN_BG)
-    if not launch then
-        u:frame(bx, ry(y, BH2), LW, BH2, S, pal.a(pal.FRIEND, 0.7))
-    end
-    txt("L A U N C H", bx + LW / 2, y + BH2 / 2, FONT * S,
-        launch and pal.rgb(0x04121a) or pal.FRIEND, "center")
-    hit(bx, y, LW, BH2, "go", 1)
-
-    local dx, jy = bx + LW + 10 * S, y
-    if not three then dx = bx jy = y + BH2 + 8 * S end
-    rect(dx, jy, DW, BH2, o.mode == 2 and pal.rgb(0x1a1008) or pal.BTN_BG)
-    u:frame(dx, ry(jy, BH2), DW, BH2, S,
-            o.mode == 2 and pal.ENEMY or pal.rgb(0x3a2a1a))
-    txt("D U E L", dx + DW / 2, jy + BH2 / 2, FONT * S, pal.ENEMY, "center")
-    hit(dx, jy, DW, BH2, "go", 2)
-
-    local jx = three and (dx + DW + 10 * S) or (dx + DW + 8 * S)
-    rect(jx, jy, JW, BH2, o.mode == 3 and pal.rgb(0x08160f) or pal.BTN_BG)
-    u:frame(jx, ry(jy, BH2), JW, BH2, S,
-            o.mode == 3 and pal.FRIEND or pal.rgb(0x1d3a2a))
-    txt("J O I N", jx + JW / 2, jy + BH2 / 2, FONT * S,
-        pal.a(pal.FRIEND, 0.92), "center")
-    hit(jx, jy, JW, BH2, "go", 3)
-
-    -- Browse: the same address, asked what is running rather than joined
-    -- outright. Without it the directory the server already speaks is
-    -- reachable only by launching the client with a flag.
-    local zx, zy = jx + JW + 10 * S, jy
-    if not three then zx = bx zy = jy + BH2 + 8 * S end
-    rect(zx, zy, ZW, BH2, o.mode == 4 and pal.rgb(0x0a1620) or pal.BTN_BG)
-    u:frame(zx, ry(zy, BH2), ZW, BH2, S,
-            o.mode == 4 and pal.FRIEND or pal.BAR_EDGE)
-    txt("Z O N E S", zx + ZW / 2, zy + BH2 / 2, FONT * S,
-        pal.a(pal.INK, 0.9), "center")
-    hit(zx, zy, ZW, BH2, "go", 4)
-    y = zy + BH2 + 26 * S
-
-    -- Which build this is, so "reload the page" has a checkable answer.
-    txt("build " .. sys.get_config_string("project.version", "?"),
-        cx, y + 30 * S, 11 * S, pal.a(pal.DIM, 0.7), "center")
-
-    -- Whatever the connection last had to say outranks the key hints: a
-    -- player who just failed to reach a zone needs the reason, not a lesson
-    -- in arrow keys.
-    if o.note then
-        txt(o.note, cx, y + 9 * S, FONT * S, pal.ENEMY, "center")
-    else
-        txt((M.touching or M.compact)
-                and "tap a hull, then LAUNCH -- or tap ZONES to find a game"
-                or "← → hull   ↑ ↓ mode   enter launches   ZONES finds a game",
-            cx, y + 9 * S, FONT * S, pal.a(pal.DIM, 0.85), "center")
+        txt((M.touching or M.compact) and "tap a row    esc to close"
+                or "↑ ↓ move    enter choose    esc back",
+            x + w / 2, by, 11 * S, pal.a(pal.DIM, 0.8), "center")
     end
 end
 

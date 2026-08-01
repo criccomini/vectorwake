@@ -279,6 +279,13 @@ void sim_init(sim_state *s, uint32_t seed);
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg);
 
+/* Put a pilot in a different hull. A respawn, not a costume change: back to
+ * your start at rest, a full bar of the new ship, upgrades gone, anything you
+ * were carrying dropped -- and the arena and everyone in it untouched.
+ * Returns 0, or -1 for an unknown ship or class. */
+int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
+                       uint8_t cls);
+
 void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
               uint16_t input_count, const sim_settings *cfg, sim_events *ev);
 

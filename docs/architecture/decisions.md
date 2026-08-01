@@ -464,3 +464,31 @@ converted map loses its look until the client is given a way to vary it.
 **Reconsider if:** a mode needs per-tile behaviour the nine classes cannot
 express, in which case the variant nibble is the place to look before adding
 a tenth class.
+
+## 20. The game has no start screen; the menu is a tree you open while flying
+
+**Status:** accepted
+
+A player lands in the practice arena with a default hull, a generated call
+sign and live controls. Everything the start screen used to ask is a level in
+a menu opened with escape -- one list at a time, five inputs, a stack behind
+it -- and nothing pauses while it is open.
+
+The start screen already drew over a running arena, so this deleted a gate
+rather than building an entry path. What it required was making a hull change
+a respawn instead of an arena rebuild (`sim_set_ship_class`), because a menu
+that throws the match away to answer a question about yourself cannot be
+opened during one.
+
+Five inputs is what a d-pad has and what a phone can draw, so the same tree
+serves keyboard, touch and -- later -- a console, without a second layout.
+
+**Cost:** the arrow keys drive the menu while it is open, so a ship coasts
+while its pilot reads. Opening the menu mid-fight is a risk rather than a
+timeout, and a player can die during it. Changing hull inside a zone is not
+possible yet: the class is sent once at join and the protocol has no message
+for changing it.
+
+**Reconsider if:** a level needs more than a list -- a map preview, a keybind
+grid -- at which point the single-column stack stops being enough and the
+answer is a second row kind, not a second layout.
