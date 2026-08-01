@@ -215,8 +215,17 @@ pub struct World {
 
 impl World {
     pub fn new(seed: u32) -> Self {
+        Self::with_map(seed, build_arena)
+    }
+
+    pub fn with_map(seed: u32, build: fn(&mut sim_map)) -> Self {
+        let _ = build;
+        Self::build(seed, build)
+    }
+
+    fn build(seed: u32, build: fn(&mut sim_map)) -> Self {
         let mut map: Box<sim_map> = unsafe { Box::new(std::mem::zeroed()) };
-        build_arena(&mut map);
+        build(&mut map);
         let mut cfg: Box<sim_settings> = unsafe { Box::new(std::mem::zeroed()) };
         unsafe { sim_settings_baseline(&mut *cfg, &*map) };
         let mut state: Box<sim_state> = Box::new(sim_state::default());

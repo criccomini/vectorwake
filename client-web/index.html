@@ -84,6 +84,7 @@
        Pick a hull and fight eight AI pilots.</p>
     <div id="ships"></div>
     <button id="go">launch</button>
+    <button id="duel" style="margin-left:8px;background:#0a0f18;color:#ffa552;border:1px solid #3a2a1a;padding:11px 22px;font:inherit;letter-spacing:.16em;cursor:pointer;text-transform:uppercase">duel</button>
     <button id="online" style="margin-left:8px;background:#0a0f18;color:#4fd6ff;border:1px solid #22304a;padding:11px 22px;font:inherit;letter-spacing:.16em;cursor:pointer;text-transform:uppercase">connect</button>
     <div style="margin-top:10px">
       <input id="url" value="ws://127.0.0.1:9010" style="background:#0a0f18;border:1px solid #22304a;color:#dfe9f5;padding:6px 8px;font:inherit;width:230px">
@@ -402,8 +403,9 @@ function myButtons() {
 // forward from the last snapshot, and accepts every correction the server
 // sends. Nothing here decides a hit, a death, or a pickup.
 
-const C2S_JOIN = 1, C2S_INPUT = 2;
-const S2C_WELCOME = 1, S2C_SNAPSHOT = 2, S2C_ROSTER = 3, S2C_KILL = 4;
+const C2S_JOIN = 1, C2S_INPUT = 2, C2S_DUEL = 3;
+const S2C_WELCOME = 1, S2C_SNAPSHOT = 2, S2C_ROSTER = 3, S2C_KILL = 4,
+      S2C_BANNER = 5;
 const ratings = new Map();   // ship -> rating, from the server
 
 let net = null;          // WebSocket when online, null when playing solo
@@ -438,6 +440,8 @@ function connect(url, className, name) {
         onRoster(d);
       } else if (d[0] === S2C_KILL) {
         onKill(d);
+      } else if (d[0] === S2C_BANNER) {
+        banner = new TextDecoder().decode(d.subarray(1));
       }
     };
     ws.onerror = () => reject(new Error("connection failed"));
@@ -519,6 +523,23 @@ function sendInput(buttons, tick) {
 }
 
 let predictedTick = 0;
+let banner = "";        // the mode's line: warmup, countdown, duel score
+
+// Ask the server for a one on one against a rating-matched opponent. It
+// builds the room, so this client simply changes seats.
+function requestDuel() {
+  if (!net || net.readyState !== 1) return;
+  const nb = new TextEncoder().encode(
+    document.getElementById("pname").value || "pilot");
+  const m = new Uint8Array(2 + nb.length);
+  m[0] = C2S_DUEL; m[1] = selected;
+  m.set(nb, 2);
+  net.send(m);
+  ratings.clear();
+  pilots = [];
+  feed = [];
+  netStats = { snaps: 0, errPx: 0, errMax: 0, maxRewind: 0, bytes: 0 };
+}
 
 // --- loop ------------------------------------------------------------------
 //
@@ -646,6 +667,15 @@ function render() {
     cx.fillStyle = g;
     cx.fillRect(0, 0, w, h);
     hurt *= 0.88;
+  }
+
+  if (banner) {
+    cx.save();
+    cx.font = "600 26px ui-monospace, monospace";
+    cx.textAlign = "center";
+    cx.fillStyle = "rgba(223,233,245,.92)";
+    cx.fillText(banner, w / 2, 64);
+    cx.restore();
   }
 
   drawHud();
@@ -852,6 +882,15 @@ function drawRadar(camx, camy) {
 document.getElementById("go").onclick = () => {
   wantFullscreen = document.getElementById("fs").checked;
   startGame();
+};
+
+document.getElementById("duel").onclick = async () => {
+  if (!net) {
+    await document.getElementById("online").onclick();
+    setTimeout(requestDuel, 400);
+  } else {
+    requestDuel();
+  }
 };
 
 document.getElementById("online").onclick = async () => {

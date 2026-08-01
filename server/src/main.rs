@@ -9,6 +9,7 @@
 //! yet; see docs/architecture/networking.md.
 
 mod ai;
+mod modes;
 mod rating;
 mod sim;
 
@@ -26,12 +27,14 @@ const MAX_PLAYERS: usize = 16;
 // Client to server
 const C2S_JOIN: u8 = 1;
 const C2S_INPUT: u8 = 2;
+const C2S_DUEL: u8 = 3;
 
 // Server to client
 const S2C_WELCOME: u8 = 1;
 const S2C_SNAPSHOT: u8 = 2;
 const S2C_ROSTER: u8 = 3;
 const S2C_KILL: u8 = 4;
+const S2C_BANNER: u8 = 5;
 
 struct Player {
     ship: u8,
@@ -50,6 +53,9 @@ struct Arena {
     names: HashMap<u8, (String, bool)>, // ship -> (name, is_ai)
     next_id: u64,
     rating: rating::Rating,
+    mode: Box<dyn modes::Mode>,
+    banner: String,
+    finished: bool,
 }
 
 impl Arena {
@@ -76,7 +82,41 @@ impl Arena {
             names,
             next_id: 1,
             rating: rating::Rating::new(),
+            mode: Box::new(modes::FreeForAll),
+            banner: String::new(),
+            finished: false,
         }
+    }
+
+    /// A one on one arena: a small room, two seats, and the duel ruleset.
+    /// The opponent is a rating-matched bot when nobody else is queued,
+    /// which is what makes duels playable before there is a population.
+    fn duel(player_name: String, class: u8, tx: mpsc::UnboundedSender<Vec<u8>>,
+            bot_name: &str, bot_skill: f32, bot_class: u8) -> (Self, u64) {
+        let mut world = sim::World::with_map(0xd0e1, modes::build_duel_map);
+        let a = world.spawn(class.min(7), 0, 505, 522, 0) as u8;
+        let b = world.spawn(bot_class.min(7), 1, 519, 502, 32768) as u8;
+
+        let mut names = HashMap::new();
+        names.insert(a, (player_name.clone(), false));
+        names.insert(b, (bot_name.to_string(), true));
+
+        let mut arena = Arena {
+            world,
+            players: HashMap::new(),
+            bots: vec![ai::Bot::new(b, bot_skill)],
+            names,
+            next_id: 1,
+            rating: rating::Rating::new(),
+            mode: Box::new(modes::Duel::new(a, b, 5)),
+            banner: String::new(),
+            finished: false,
+        };
+        arena.players.insert(
+            1,
+            Player { ship: a, buttons: 0, last_input_tick: 0, name: player_name, tx },
+        );
+        (arena, 1)
     }
 
     fn join(&mut self, name: String, class: u8, tx: mpsc::UnboundedSender<Vec<u8>>) -> Option<u64> {
@@ -146,6 +186,23 @@ impl Arena {
         }
         self.world.step(&inputs);
         self.score_events();
+
+        let seats: Vec<(u8, bool)> = self
+            .names
+            .iter()
+            .map(|(s, (_, ai))| (*s, *ai))
+            .collect();
+        let mut ctx = modes::ModeCtx {
+            world: &mut self.world,
+            seats: &seats,
+            banner: std::mem::take(&mut self.banner),
+            finished: false,
+        };
+        self.mode.tick(&mut ctx);
+        self.banner = std::mem::take(&mut ctx.banner);
+        if ctx.finished {
+            self.finished = true;
+        }
     }
 
     /// Turn this tick's events into rating movement. The simulation does not
@@ -170,6 +227,20 @@ impl Arena {
                 }
                 sim::EV_DEATH => deaths.push((e.a, e.b)),
                 _ => {}
+            }
+        }
+        for (victim, killer) in deaths.iter().copied() {
+            let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, (_, a))| (*s, *a)).collect();
+            let mut ctx = modes::ModeCtx {
+                world: &mut self.world,
+                seats: &seats,
+                banner: std::mem::take(&mut self.banner),
+                finished: false,
+            };
+            self.mode.on_death(&mut ctx, victim, killer);
+            self.banner = std::mem::take(&mut ctx.banner);
+            if ctx.finished {
+                self.finished = true;
             }
         }
         for (victim, killer) in deaths {
@@ -200,6 +271,14 @@ impl Arena {
             .get(&ship)
             .map(|(n, _)| n.clone())
             .unwrap_or_else(|| format!("ship{ship}"))
+    }
+
+    fn broadcast_banner(&self) {
+        let mut m = vec![S2C_BANNER];
+        m.extend_from_slice(self.banner.as_bytes());
+        for p in self.players.values() {
+            let _ = p.tx.send(m.clone());
+        }
     }
 
     fn broadcast_snapshot(&self, buf: &mut [u8]) {
@@ -242,13 +321,29 @@ impl Arena {
     }
 }
 
+/// Every arena the zone is hosting. The public room is arena 0; duels get
+/// their own, created on request and torn down when the match ends, which
+/// is decision 16 in practice.
+struct Zone {
+    arenas: HashMap<u32, Arena>,
+    next_arena: u32,
+}
+
+impl Zone {
+    fn new() -> Self {
+        let mut arenas = HashMap::new();
+        arenas.insert(0, Arena::new());
+        Zone { arenas, next_arena: 1 }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let addr = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "127.0.0.1:9010".to_string());
 
-    let arena = Arc::new(Mutex::new(Arena::new()));
+    let zone = Arc::new(Mutex::new(Zone::new()));
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind failed");
@@ -257,7 +352,7 @@ async fn main() {
     // The arena loop. One thread owns the simulation for the duration of a
     // tick; connections only ever enqueue inputs.
     {
-        let arena = arena.clone();
+        let zone = zone.clone();
         tokio::spawn(async move {
             let mut ticker =
                 tokio::time::interval(std::time::Duration::from_micros(1_000_000 / TICK_HZ));
@@ -266,18 +361,24 @@ async fn main() {
             let mut n: u32 = 0;
             loop {
                 ticker.tick().await;
-                let mut a = arena.lock().await;
-                a.tick();
+                let mut z = zone.lock().await;
                 n += 1;
-                if n % SNAPSHOT_EVERY == 0 {
-                    a.broadcast_snapshot(&mut buf);
+                for a in z.arenas.values_mut() {
+                    a.tick();
+                    if n % SNAPSHOT_EVERY == 0 {
+                        a.broadcast_snapshot(&mut buf);
+                        a.broadcast_banner();
+                    }
                 }
+                // A finished duel takes its room with it. Arena 0 is the
+                // public room and never leaves.
+                z.arenas.retain(|id, a| *id == 0 || !(a.finished || a.players.is_empty()));
             }
         });
     }
 
     while let Ok((stream, _)) = listener.accept().await {
-        let arena = arena.clone();
+        let zone = zone.clone();
         tokio::spawn(async move {
             let ws = match tokio_tungstenite::accept_async(stream).await {
                 Ok(w) => w,
@@ -294,7 +395,8 @@ async fn main() {
                 }
             });
 
-            let mut id: Option<u64> = None;
+            // Which arena this connection is in, and its id there.
+            let mut seat: Option<(u32, u64)> = None;
             while let Some(Ok(msg)) = source.next().await {
                 let data = match msg {
                     Message::Binary(b) => b,
@@ -305,13 +407,14 @@ async fn main() {
                     continue;
                 }
                 match data[0] {
-                    C2S_JOIN if id.is_none() => {
+                    C2S_JOIN if seat.is_none() => {
                         let class = data.get(1).copied().unwrap_or(0);
                         let name = String::from_utf8_lossy(&data[2..]).to_string();
                         let name = if name.is_empty() { "pilot".into() } else { name };
-                        let mut a = arena.lock().await;
+                        let mut z = zone.lock().await;
+                        let a = z.arenas.get_mut(&0).unwrap();
                         if let Some(new_id) = a.join(name, class, tx.clone()) {
-                            id = Some(new_id);
+                            seat = Some((0, new_id));
                             let ship = a.players[&new_id].ship;
                             let mut w = vec![S2C_WELCOME, ship];
                             w.extend_from_slice(&a.world.state.tick.to_le_bytes());
@@ -319,18 +422,57 @@ async fn main() {
                             a.broadcast_roster();
                         }
                     }
+                    C2S_DUEL => {
+                        // Leave whatever room we are in and open a duel against
+                        // a rating-matched bot. Nobody waits in a queue that
+                        // has nobody else in it.
+                        let class = data.get(1).copied().unwrap_or(0);
+                        let name = String::from_utf8_lossy(&data[2..]).to_string();
+                        let name = if name.is_empty() { "pilot".into() } else { name };
+                        let mut z = zone.lock().await;
+                        if let Some((aid, pid)) = seat.take() {
+                            if let Some(a) = z.arenas.get_mut(&aid) {
+                                a.leave(pid);
+                                a.broadcast_roster();
+                            }
+                        }
+                        let my_rating = z.arenas[&0].rating.rating_of(&name);
+                        let roster = ai::roster();
+                        let pick = roster
+                            .iter()
+                            .min_by(|x, y| {
+                                let rx = (z.arenas[&0].rating.rating_of(x.name) - my_rating).abs();
+                                let ry = (z.arenas[&0].rating.rating_of(y.name) - my_rating).abs();
+                                rx.partial_cmp(&ry).unwrap()
+                            })
+                            .unwrap();
+                        let (arena, pid) = Arena::duel(
+                            name, class, tx.clone(), pick.name, pick.skill, pick.class,
+                        );
+                        let aid = z.next_arena;
+                        z.next_arena += 1;
+                        let ship = arena.players[&pid].ship;
+                        z.arenas.insert(aid, arena);
+                        seat = Some((aid, pid));
+                        let mut w = vec![S2C_WELCOME, ship];
+                        w.extend_from_slice(&0u32.to_le_bytes());
+                        let _ = tx.send(w);
+                        z.arenas[&aid].broadcast_roster();
+                    }
                     C2S_INPUT => {
                         // buttons: u16, tick: u32. The tick is advisory: the
                         // server applies inputs when it receives them and
                         // echoes the number back so the client can reconcile.
                         if data.len() >= 7 {
-                            if let Some(pid) = id {
+                            if let Some((aid, pid)) = seat {
                                 let buttons = u16::from_le_bytes([data[1], data[2]]);
                                 let t = u32::from_le_bytes([data[3], data[4], data[5], data[6]]);
-                                let mut a = arena.lock().await;
-                                if let Some(p) = a.players.get_mut(&pid) {
-                                    p.buttons = buttons;
-                                    p.last_input_tick = t;
+                                let mut z = zone.lock().await;
+                                if let Some(a) = z.arenas.get_mut(&aid) {
+                                    if let Some(p) = a.players.get_mut(&pid) {
+                                        p.buttons = buttons;
+                                        p.last_input_tick = t;
+                                    }
                                 }
                             }
                         }
@@ -339,10 +481,12 @@ async fn main() {
                 }
             }
 
-            if let Some(pid) = id {
-                let mut a = arena.lock().await;
-                a.leave(pid);
-                a.broadcast_roster();
+            if let Some((aid, pid)) = seat {
+                let mut z = zone.lock().await;
+                if let Some(a) = z.arenas.get_mut(&aid) {
+                    a.leave(pid);
+                    a.broadcast_roster();
+                }
             }
             writer.abort();
         });
