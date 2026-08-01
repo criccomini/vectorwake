@@ -34,6 +34,22 @@ local function i16(a, b)
     return v
 end
 
+-- Visible tiers, matching server/src/rating.rs. Coarse bands mean a pilot is
+-- not watching a number twitch after every death.
+local TIERS = {
+    {1700, "Wake"}, {1500, "Shockwave"}, {1350, "Contrail"},
+    {1200, "Vector"}, {1050, "Trace"}, {-1e9, "Drift"},
+}
+local PROVISIONAL_GAMES = 10
+
+function M.tier(rating, games)
+    if games < PROVISIONAL_GAMES then return "placing" end
+    for _, t in ipairs(TIERS) do
+        if rating >= t[1] then return t[2] end
+    end
+    return "Drift"
+end
+
 local function on_roster(s)
     local n = string.byte(s, 2)
     local o = 3
@@ -42,10 +58,14 @@ local function on_roster(s)
         local ship = string.byte(s, o)
         local is_ai = string.byte(s, o + 1) == 1
         local rating = i16(string.byte(s, o + 2), string.byte(s, o + 3))
-        local len = string.byte(s, o + 4)
-        local name = string.sub(s, o + 5, o + 4 + len)
-        o = o + 5 + len
-        M.pilots[ship] = {name = name, ai = is_ai}
+        local games = string.byte(s, o + 4)
+        local len = string.byte(s, o + 5)
+        local name = string.sub(s, o + 6, o + 5 + len)
+        o = o + 6 + len
+        M.pilots[ship] = {
+            name = name, ai = is_ai,
+            games = games, tier = M.tier(rating, games),
+        }
         M.ratings[ship] = rating
     end
 end

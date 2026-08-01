@@ -241,6 +241,23 @@ pub struct World {
     pub events: Box<sim_events>,
 }
 
+/// Allocate a zeroed `T` straight onto the heap.
+///
+/// `Box::new(std::mem::zeroed())` builds the value on the stack and then moves
+/// it, and `sim_map` alone is a megabyte: two of those in one call chain
+/// overflow a default thread stack. These are `repr(C)` plain data from the
+/// core, where all-zeroes is the same state `memset` would leave.
+fn zeroed_box<T>() -> Box<T> {
+    unsafe {
+        let layout = std::alloc::Layout::new::<T>();
+        let p = std::alloc::alloc_zeroed(layout) as *mut T;
+        if p.is_null() {
+            std::alloc::handle_alloc_error(layout);
+        }
+        Box::from_raw(p)
+    }
+}
+
 impl World {
     pub fn new(seed: u32) -> Self {
         Self::with_map(seed, build_arena)
@@ -252,18 +269,18 @@ impl World {
     }
 
     fn build(seed: u32, build: fn(&mut sim_map)) -> Self {
-        let mut map: Box<sim_map> = unsafe { Box::new(std::mem::zeroed()) };
+        let mut map: Box<sim_map> = zeroed_box();
         build(&mut map);
-        let mut cfg: Box<sim_settings> = unsafe { Box::new(std::mem::zeroed()) };
+        let mut cfg: Box<sim_settings> = zeroed_box();
         unsafe { sim_settings_baseline(&mut *cfg, &*map) };
-        let mut state: Box<sim_state> = Box::new(sim_state::default());
+        let mut state: Box<sim_state> = zeroed_box();
         unsafe { sim_init(&mut *state, seed) };
         World {
             map,
             cfg,
             state,
-            scratch: Box::new(sim_state::default()),
-            events: Box::new(sim_events::default()),
+            scratch: zeroed_box(),
+            events: zeroed_box(),
         }
     }
 

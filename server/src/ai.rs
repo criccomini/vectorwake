@@ -32,6 +32,13 @@ pub fn roster() -> Vec<RosterEntry> {
     ]
 }
 
+/// The pinned reference. Its rating is fixed by definition and never earned,
+/// and every other pilot in the zone floats against it. Without a fixed point
+/// the bots form a closed economy whose absolute scale drifts, which makes
+/// every rating quietly meaningless. See docs/design/rating.md.
+pub const ANCHOR: &str = "Ozone";
+pub const ANCHOR_RATING: f64 = 1200.0;
+
 /// Map a class name from a zone file to its index, so an operator writes
 /// "Apex" rather than remembering that Apex is 0.
 pub fn class_index(name: &str) -> Option<usize> {
@@ -56,6 +63,11 @@ pub struct Bot {
     timer: u32,
     want: u16,
     seed: u32,
+    /// Where the last plan wanted to shoot, and how far off the target was.
+    /// The trigger reads these every tick while the plan refreshes them at
+    /// the pilot's reaction cadence.
+    aim: (f32, f32),
+    dist: f32,
 }
 
 impl Bot {
@@ -68,7 +80,17 @@ impl Bot {
             timer: ship as u32 * 7, // stagger so they do not all think at once
             want: 0,
             seed: 0x9e3779b9 ^ ((ship as u32) << 16),
+            aim: (0.0, 0.0),
+            dist: 0.0,
         }
+    }
+
+    /// Vary this pilot's luck. Two bots with the same hull and skill would
+    /// otherwise fly an identical match every time, which makes a calibration
+    /// tournament replay one game rather than sample many.
+    pub fn reseed(&mut self, seed: u32) {
+        self.seed = 0x9e3779b9 ^ seed.wrapping_mul(2654435761).max(1);
+        self.timer = seed % 64;
     }
 
     fn rand(&mut self) -> f32 {
@@ -78,14 +100,52 @@ impl Bot {
         (self.seed % 10_000) as f32 / 10_000.0
     }
 
+    /// One tick of input.
+    ///
+    /// Where the pilot is going is re-planned at their reaction cadence; when
+    /// they pull the trigger is judged every tick. Gating both on reaction
+    /// time -- the obvious way to write this -- makes reaction time secretly
+    /// control rate of fire, and since firing costs the same pool as living,
+    /// the quickest pilot then shoots itself down to nothing. That is what
+    /// made a skill-0.95 bot lose 20-1 to a skill-0.15 one.
     pub fn think(&mut self, w: &World) -> u16 {
         self.timer += 1;
-        if self.timer % self.react != 0 {
-            return self.want;
+        if self.timer % self.react == 0 {
+            self.want = self.plan(w);
         }
+        self.want | self.trigger(w)
+    }
+
+    /// The reflex: fire when the shot is on and the reserve allows it.
+    fn trigger(&mut self, w: &World) -> u16 {
+        let me = &w.state.ships[self.ship as usize];
+        if me.active == 0 || me.alive == 0 || self.aim == (0.0, 0.0) {
+            return 0;
+        }
+        let max_e = w.eff_max_energy(self.ship as usize) as f32;
+        let e = me.energy as f32 / max_e;
+        // Energy is health and ammunition in one pool, so knowing when to
+        // stop shooting is the whole game. A pilot who fires whenever the
+        // shot is on sits permanently at their floor and dies to the first
+        // round that lands. Skill is the size of the reserve kept back.
+        let floor = 0.22 + self.skill * 0.20;
+        if e <= floor {
+            return 0;
+        }
+        if self.aim_diff(w, self.aim.0, self.aim.1).abs() >= 0.16 {
+            return 0;
+        }
+        let mut out = sim::BTN_FIRE;
+        if self.dist < 320.0 && self.skill > 0.5 && self.timer % 180 < self.react {
+            out |= sim::BTN_BOMB;
+        }
+        out
+    }
+
+    fn plan(&mut self, w: &World) -> u16 {
         let me = &w.state.ships[self.ship as usize];
         if me.active == 0 || me.alive == 0 {
-            self.want = 0;
+            self.aim = (0.0, 0.0);
             return 0;
         }
 
@@ -112,30 +172,31 @@ impl Bot {
         // A flag nobody owns, or one the other side holds, is worth crossing
         // the room for. Flags decide the round; kills only clear the way.
         if let Some((dx, dy)) = nearest_flag(w, mx, my, me.team, 420.0) {
-            let out = self.steer(w, dx, dy, false);
-            self.want = out;
-            return out;
+            self.aim = (0.0, 0.0); // hands off the trigger while running a flag
+            return self.steer(w, dx, dy, false);
         }
 
         // A green within easy reach is worth the detour when energy allows.
         let max_e = w.eff_max_energy(self.ship as usize) as f32;
         if me.energy as f32 > max_e * 0.4 {
             if let Some((dx, dy)) = nearest_prize(w, mx, my, 200.0) {
-                self.want = self.steer(w, dx, dy, false);
-                return self.want;
+                self.aim = (0.0, 0.0);
+                return self.steer(w, dx, dy, false);
             }
         }
 
         let Some((d2, dx, dy)) = best else {
-            self.want = 0;
+            self.aim = (0.0, 0.0);
             return 0;
         };
         let dist = d2.sqrt();
+        self.dist = dist;
 
         // Lead the target: bullets travel about 2 px per tick.
         let lead = (dist / 2.0).min(140.0);
         let ax = dx + best_v.0 * lead;
         let ay = dy + best_v.1 * lead;
+        self.aim = (ax, ay);
 
         let mut out = self.steer(w, ax, ay, true);
 
@@ -147,18 +208,22 @@ impl Bot {
             out |= sim::BTN_REVERSE;
         }
 
-        // Fire when roughly on target, with discipline scaled by skill.
+        // Energy is health and ammunition in one pool, so knowing when to
+        // stop shooting is the whole game. A pilot who fires whenever the
+        // shot is on sits permanently at their floor and dies to the first
+        // round that lands -- which is why accurate aim alone made bots
+        // strictly worse, and why the ladder ran backwards until this
+        // existed. Skill is the size of the reserve kept back, and the
+        // willingness to break off and rebuild it.
+        // Break off and rebuild rather than trade at the floor. The trigger
+        // itself lives in trigger(); this is only where the pilot goes.
         let e = me.energy as f32 / max_e;
-        let floor = 0.16 + self.skill * 0.28;
-        let aligned = self.aim_diff(w, ax, ay).abs() < 0.16;
-        if aligned && e > floor {
-            out |= sim::BTN_FIRE;
-            if dist < 320.0 && self.skill > 0.5 && self.timer % 180 < self.react {
-                out |= sim::BTN_BOMB;
+        if e < (0.22 + self.skill * 0.20) * 0.6 {
+            out &= !sim::BTN_THRUST;
+            if dist < ideal * 1.6 {
+                out |= sim::BTN_REVERSE;
             }
         }
-
-        self.want = out;
         out
     }
 

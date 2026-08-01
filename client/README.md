@@ -14,6 +14,19 @@ JAVA_HOME=/path/to/jdk25 ./client/build.sh wasm-web     # the browser
 Platform names are bob's. The browser target is `wasm-web`; `js-web` is
 rejected outright.
 
+The third argument picks the bob task. `headless` has no renderer at all —
+it is what verifies determinism and networking from a terminal, and it draws
+nothing in a browser. To get something playable:
+
+```sh
+./client/build.sh wasm-web debug bundle
+./client/tools/single_file.py client/bundle/wasm-web/vectorwake play.html
+```
+
+`single_file.py` folds the engine, the archive and the loader into one HTML
+with no network requests, so it runs from a static host, under a strict CSP,
+or straight off a disk.
+
 Needs `bob.jar` (set `BOB_JAR`, defaults to `/tmp/bob.jar`) and a JDK new
 enough to run it: 1.13.0 wants Java 25. Native extensions are compiled by
 Defold's build server, so the build needs network access.
@@ -72,7 +85,13 @@ here while `git clone` is not. It sits at `client/websocket` and not under
 `ext/` because its manifest hardcodes `upload/websocket/include/wslay`;
 moving it breaks the include path on the build server.
 
-Ships, walls, weapons, and flags are drawn as lines through `draw_debug3d`.
-That is not a placeholder. The clean vector direction in
-`docs/design/identity.md` asks for exactly this, and it costs no atlas, no
-material, and almost no bundle.
+Ships, walls, weapons, and flags are drawn as lines through `draw_debug3d`,
+which matches the clean vector direction in `docs/design/identity.md` and
+costs no atlas and no material.
+
+**It cannot ship as it stands.** Defold's `release` variant compiles the
+debug renderer out, so a release build draws an empty arena while `debug`
+and `headless` builds are correct. Verified both natively and in the
+browser. Before any release build, the line art has to become real geometry:
+a mesh component with a dynamic vertex buffer and a material of our own.
+Until then `build.sh wasm-web debug bundle` is the playable target.

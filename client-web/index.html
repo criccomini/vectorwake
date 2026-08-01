@@ -473,6 +473,17 @@ function connect(url, className, name) {
   });
 }
 
+// Visible tiers, matching server/src/rating.rs. Coarse bands mean a pilot is
+// not watching a number twitch after every death.
+const TIERS = [[1700, "Wake"], [1500, "Shockwave"], [1350, "Contrail"],
+               [1200, "Vector"], [1050, "Trace"], [-Infinity, "Drift"]];
+const PROVISIONAL_GAMES = 10;
+
+function tierOf(rating, games) {
+  if (games < PROVISIONAL_GAMES) return "placing";
+  return TIERS.find(t => rating >= t[0])[1];
+}
+
 function onRoster(d) {
   let o = 2;
   const n = d[1];
@@ -480,10 +491,14 @@ function onRoster(d) {
     const ship = d[o++], isAi = d[o++] === 1;
     const rating = (d[o] | (d[o + 1] << 8)) << 16 >> 16;  // i16
     o += 2;
+    const games = d[o++];
     const len = d[o++];
     const name = new TextDecoder().decode(d.subarray(o, o + len));
     o += len;
-    pilots[ship] = { name, ai: isAi ? { server: true } : null };
+    pilots[ship] = {
+      name, ai: isAi ? { server: true } : null,
+      games, tier: tierOf(rating, games),
+    };
     ratings.set(ship, rating);
   }
 }

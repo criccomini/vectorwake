@@ -9,6 +9,7 @@
 //! yet; see docs/architecture/networking.md.
 
 mod ai;
+mod calibrate;
 mod config;
 mod modes;
 mod persist;
@@ -48,6 +49,35 @@ struct Player {
     last_input_tick: u32,
     name: String,
     tx: mpsc::UnboundedSender<Vec<u8>>,
+}
+
+/// Feed one tick's damage into the ledger and hand back the deaths it
+/// contained. Shared by the live arena and the offline calibration
+/// tournament, so the two cannot disagree about what an event means.
+fn ingest_damage(
+    world: &sim::World,
+    rating: &mut rating::Rating,
+    name_of: &dyn Fn(u8) -> String,
+) -> Vec<(u8, u8)> {
+    let tick = world.state.tick;
+    let ev = &*world.events;
+    let mut deaths = Vec::new();
+    for i in 0..ev.count as usize {
+        let e = ev.e[i];
+        match e.etype {
+            sim::EV_HIT => {
+                let (victim, attacker) = (e.a as usize, e.b as usize);
+                if victim < sim::MAX_SHIPS && attacker < sim::MAX_SHIPS {
+                    let same =
+                        world.state.ships[victim].team == world.state.ships[attacker].team;
+                    rating.damage(tick, &name_of(e.a), &name_of(e.b), e.v, same);
+                }
+            }
+            sim::EV_DEATH => deaths.push((e.a, e.b)),
+            _ => {}
+        }
+    }
+    deaths
 }
 
 struct Arena {
@@ -257,26 +287,14 @@ impl Arena {
     /// know rating exists; this layer reads what it produced.
     fn score_events(&mut self) {
         let tick = self.world.state.tick;
-        let ev = &*self.world.events;
-        let mut deaths: Vec<(u8, u8)> = Vec::new();
-        for i in 0..ev.count as usize {
-            let e = ev.e[i];
-            match e.etype {
-                sim::EV_HIT => {
-                    let victim = e.a as usize;
-                    let attacker = e.b as usize;
-                    if victim < sim::MAX_SHIPS && attacker < sim::MAX_SHIPS {
-                        let same = self.world.state.ships[victim].team
-                            == self.world.state.ships[attacker].team;
-                        let vid = self.name_of(e.a);
-                        let aid = self.name_of(e.b);
-                        self.rating.damage(tick, &vid, &aid, e.v, same);
-                    }
-                }
-                sim::EV_DEATH => deaths.push((e.a, e.b)),
-                _ => {}
-            }
-        }
+        let names = self.names.clone();
+        let name_of = move |ship: u8| {
+            names
+                .get(&ship)
+                .map(|(n, _)| n.clone())
+                .unwrap_or_else(|| ai::name_for(ship))
+        };
+        let deaths = ingest_damage(&self.world, &mut self.rating, &name_of);
         for (victim, killer) in deaths.iter().copied() {
             let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, (_, a))| (*s, *a)).collect();
             let mut ctx = modes::ModeCtx {
@@ -353,6 +371,11 @@ impl Arena {
             m.push(*ship);
             m.push(if *is_ai { 1 } else { 0 });
             m.extend_from_slice(&(self.rating.rating_of(name).round() as i16).to_le_bytes());
+            // Rated deaths so far. The client derives the tier from the
+            // rating itself, but it cannot know from a number alone whether
+            // that number has been earned yet, and an unearned rating should
+            // not be shown as if it had been.
+            m.push(self.rating.games_of(name).min(255) as u8);
             let bytes = name.as_bytes();
             let len = bytes.len().min(24) as u8;
             m.push(len);
@@ -377,13 +400,42 @@ struct Zone {
     next_arena: u32,
     cfg: config::ConfigWatcher,
     store: persist::Store,
+    /// The calibrated bot ladder, from `vectorwake-server calibrate`. Empty
+    /// when the zone has never been calibrated, which only means the bots
+    /// start level and earn their places in live play instead.
+    ladder: HashMap<String, f64>,
+}
+
+/// Put an arena's ratings on the same footing as every other: the AI marked
+/// so it moves slowly against humans, each bot seeded from the calibrated
+/// prior, and the anchor pinned last so nothing can overwrite the fixed
+/// point the rest of the ladder is measured against.
+fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64>) {
+    for e in ai::roster() {
+        r.mark_bot(e.name);
+        if let Some(&v) = ladder.get(e.name) {
+            r.score.insert(e.name.to_string(), v);
+        }
+    }
+    r.set_anchor(ai::ANCHOR, ai::ANCHOR_RATING);
+}
+
+/// Read the ladder a calibration run wrote. A missing file is normal.
+fn load_ladder(dir: &str) -> HashMap<String, f64> {
+    std::fs::read_to_string(format!("{dir}/ladder.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
 }
 
 impl Zone {
-    fn new(cfg: config::ConfigWatcher, store: persist::Store) -> Self {
+    fn new(cfg: config::ConfigWatcher, store: persist::Store,
+           ladder: HashMap<String, f64>) -> Self {
         let mut arenas = HashMap::new();
-        arenas.insert(0, Arena::new_from(&cfg.current));
-        Zone { arenas, next_arena: 1, cfg, store }
+        let mut a = Arena::new_from(&cfg.current);
+        prime_ratings(&mut a.rating, &ladder);
+        arenas.insert(0, a);
+        Zone { arenas, next_arena: 1, cfg, store, ladder }
     }
 
     /// Re-read the zone file and push the new numbers into every live arena.
@@ -406,8 +458,41 @@ impl Zone {
     }
 }
 
+/// Run the offline tournament and write the ladder the zone seeds bots from.
+///
+///     vectorwake-server calibrate [rounds] [dir]
+fn run_calibration() {
+    let rounds: u32 = std::env::args()
+        .nth(2)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(6);
+    let dir = std::env::args().nth(3).unwrap_or_else(|| ".".into());
+    let path = format!("{dir}/ladder.json");
+
+    println!("calibrating: {rounds} rounds of round-robin duels");
+    let r = calibrate::run(rounds, true);
+
+    println!("\n{:<12} {:>7}  {:>6}  {}", "pilot", "rating", "games", "tier");
+    let mut ladder = std::collections::HashMap::new();
+    for (name, score, games, tier) in calibrate::table(&r) {
+        let pin = if name == ai::ANCHOR { " (anchor)" } else { "" };
+        println!("{name:<12} {score:>7.0}  {games:>6}  {tier}{pin}");
+        ladder.insert(name, score);
+    }
+
+    let doc = serde_json::to_string_pretty(&ladder).expect("serialize ladder");
+    match std::fs::write(&path, doc) {
+        Ok(()) => println!("\nwrote {path}"),
+        Err(e) => println!("\ncould not write {path}: {e}"),
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    if std::env::args().nth(1).as_deref() == Some("calibrate") {
+        run_calibration();
+        return;
+    }
     let addr_arg = std::env::args().nth(1);
 
     let dir = std::env::args().nth(2).unwrap_or_else(|| ".".into());
@@ -416,11 +501,17 @@ async fn main() {
         println!("no usable zone.toml ({e}); running on the built-in defaults");
     }
     let store = persist::Store::open(format!("{dir}/ratings.json"));
+    let ladder = load_ladder(&dir);
+    if ladder.is_empty() {
+        println!("no ladder.json; bots start level. Run `calibrate` to seed one");
+    } else {
+        println!("seeded {} bot ratings from ladder.json", ladder.len());
+    }
     println!("zone \"{}\": {}", watcher.current.name, watcher.current.description);
     // The command line wins over the zone file, so an operator can move a
     // zone to another port without editing its configuration.
     let addr = addr_arg.unwrap_or_else(|| watcher.current.listen.clone());
-    let zone = Arc::new(Mutex::new(Zone::new(watcher, store)));
+    let zone = Arc::new(Mutex::new(Zone::new(watcher, store, ladder)));
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind failed");
@@ -550,9 +641,16 @@ async fn main() {
                                 rx.partial_cmp(&ry).unwrap()
                             })
                             .unwrap();
-                        let (arena, pid) = Arena::duel(
-                            name, class, tx.clone(), pick.name, pick.skill, pick.class,
+                        let (mut arena, pid) = Arena::duel(
+                            name.clone(), class, tx.clone(), pick.name, pick.skill, pick.class,
                         );
+                        // A duel is rated on the same scale as the main room:
+                        // both pilots bring the rating they already have.
+                        let ladder = z.ladder.clone();
+                        prime_ratings(&mut arena.rating, &ladder);
+                        arena.rating.score.insert(name.clone(), my_rating);
+                        let games = z.arenas[&0].rating.games_of(&name);
+                        arena.rating.games.insert(name, games);
                         let aid = z.next_arena;
                         z.next_arena += 1;
                         let ship = arena.players[&pid].ship;

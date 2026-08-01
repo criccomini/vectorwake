@@ -36,12 +36,16 @@ function update(self)
     local half_h = px * 0.5 * (h / short)
     local cam = self.camera or vmath.vector3(512 * 16, 512 * 16, 0)
 
+    -- The eye sits well off the plane and the clip range is wide. With the
+    -- eye one unit out and a range of exactly (-1, 1), everything the game
+    -- draws lands on z_ndc = 1.0 -- precisely the far plane, where it is a
+    -- rounding error away from being clipped away entirely.
     render.set_view(vmath.matrix4_look_at(
-        vmath.vector3(cam.x, cam.y, 1),
+        vmath.vector3(cam.x, cam.y, 10),
         vmath.vector3(cam.x, cam.y, 0),
         vmath.vector3(0, 1, 0)))
     render.set_projection(vmath.matrix4_orthographic(
-        -half_w, half_w, -half_h, half_h, -1, 1))
+        -half_w, half_w, -half_h, half_h, -100, 100))
 
     render.enable_state(graphics.STATE_BLEND)
     render.set_blend_func(graphics.BLEND_FACTOR_SRC_ALPHA,

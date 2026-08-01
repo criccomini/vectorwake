@@ -9,3 +9,4 @@ client/ext/simcore/src/sintab.h
 client/ext/simcore/include/sim/
 client/build/
 client/.internal/
+client/bundle/
