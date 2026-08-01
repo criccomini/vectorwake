@@ -119,7 +119,7 @@ end
 -- about six screens across: far enough to see a fight starting, close enough
 -- that a blip means something.
 
-local function radar(cx, cy, me)
+local function radar(cx, cy, me, half_w, half_h)
     local box = RADAR * S + 16 * S
     local x = W - PAD * S - box
     local y = PAD * S
@@ -127,10 +127,13 @@ local function radar(cx, cy, me)
     local ix, iy = x + 8 * S, y + 8 * S
     local r = RADAR * S
     rect(ix, iy, r, r, pal.RADAR_BG)
-    u:frame(ix, ry(iy, r), r, r, S, pal.a(pal.BAR_EDGE, 0.8))
 
-    local SPAN = 150 * 16
+    -- Sixty tiles out, so the reference arena nearly fills the dial. At a
+    -- hundred and fifty it sat in the middle quarter with the rest of the
+    -- radar showing empty space nobody can fly to.
+    local SPAN = 60 * 16
     local k = r / (2 * SPAN)
+    local mx, my = ix + r / 2, iy + r / 2
     local function put(wx, wy)
         local px = ix + (wx - cx + SPAN) * k
         local py = iy + (wy - cy + SPAN) * k
@@ -138,11 +141,41 @@ local function radar(cx, cy, me)
         return px, py
     end
 
-    local tiles = world.radar_tiles
-    local dot = 2.2 * S
-    for i = 1, #tiles, 2 do
-        local px, py = put(tiles[i], tiles[i + 1])
-        if px then rect(px, py, dot, dot, pal.RADAR_TILE) end
+    -- A graticule under everything: quarter lines and two range rings, so a
+    -- blip has somewhere to be rather than floating in a black square.
+    local grid = pal.a(pal.RADAR_GRID, 0.9)
+    for q = 1, 3 do
+        local t = ix + r * q / 4
+        u:seg(t, ry(iy, 0), t, ry(iy + r, 0), S, grid)
+        local v = iy + r * q / 4
+        u:seg(ix, ry(v, 0), ix + r, ry(v, 0), S, grid)
+    end
+    u:ring(mx, ry(my, 0), r * 0.25, S, 32, pal.a(pal.RADAR_GRID, 1.1))
+    u:ring(mx, ry(my, 0), r * 0.42, S, 40, pal.a(pal.RADAR_GRID, 1.1))
+
+    -- The map, in three passes so the things worth steering by sit on top of
+    -- the walls rather than under them.
+    -- One blip covers exactly the ground its sample stands for -- two tiles,
+    -- the sampling stride -- so a wall reads as a wall. A fixed pixel size
+    -- left gaps between samples and turned every wall into a dashed line.
+    local dot = math.max(2 * 16 * k, 1.5 * S)
+    local function blips(list, col, grow)
+        local d = dot * (grow or 1)
+        for n = 1, #list, 2 do
+            local px, py = put(list[n], list[n + 1])
+            if px then rect(px - d / 2, py - d / 2, d, d, col) end
+        end
+    end
+    blips(world.radar_tiles, pal.RADAR_TILE)
+    blips(world.radar_safe, pal.a(pal.RADAR_SAFE, 0.95))
+    blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1.15)
+
+    -- What is actually on screen, so the radar says where you are looking as
+    -- well as where you are.
+    if half_w and half_w > 0 then
+        local vw, vh = half_w * k, half_h * k
+        u:frame(mx - vw, ry(my + vh, 0), vw * 2, vh * 2, S,
+                pal.a(pal.INK, 0.16))
     end
 
     local my_team = sim.ship_team(me)
@@ -152,22 +185,65 @@ local function radar(cx, cy, me)
         if px then
             local col = (team == 255) and pal.INK
                 or (team == my_team and pal.FRIEND or pal.ENEMY)
-            rect(px - 1.5 * S, py - 3 * S, 3 * S, 6 * S, pal.a(col, 0.9))
+            -- A pennant rather than a bar: a flag should look like one even
+            -- at four pixels.
+            u:seg(px, ry(py + 3 * S, 0), px, ry(py - 3.5 * S, 0), S,
+                  pal.a(col, 0.95))
+            u:tri(px, ry(py - 3.5 * S, 0), px + 4 * S, ry(py - 2 * S, 0),
+                  px, ry(py - 0.5 * S, 0), pal.a(col, 0.9))
         end
     end
 
     for i = 0, sim.ship_count() - 1 do
-        if sim.ship_alive(i) == 1 then
+        if sim.ship_alive(i) == 1 and i ~= me then
             local px, py = put(sim.ship_x(i), sim.ship_y(i))
             if px then
-                local mine = i == me
-                local col = mine and pal.WHITE
-                    or (sim.ship_team(i) == my_team and pal.FRIEND or pal.ENEMY)
-                local s = (mine and 5 or 4) * S
-                rect(px - s / 2, py - s / 2, s, s, col)
+                local friend = sim.ship_team(i) == my_team
+                local col = friend and pal.FRIEND or pal.ENEMY
+                -- A diamond over a soft halo: it reads at three pixels and
+                -- separates from the square terrain at a glance.
+                u:disc(px, ry(py, 0), 4.6 * S, 10, pal.a(col, 0.13))
+                local d = 2.6 * S
+                u:quad(px, ry(py - d, 0), px + d, ry(py, 0),
+                       px, ry(py + d, 0), px - d, ry(py, 0), col)
             end
         end
     end
+
+    -- You, last and as an arrow: on a radar the one thing worth knowing
+    -- besides where you are is which way you are pointing.
+    local px, py = put(sim.ship_x(me), sim.ship_y(me))
+    if px then
+        local a = (sim.ship_heading(me) / 65536) * math.pi * 2
+        local dx, dy = math.sin(a), -math.cos(a)
+        local nose, back, wide = 6.5 * S, 3.4 * S, 3.2 * S
+        u:disc(px, ry(py, 0), 7 * S, 12, pal.a(pal.WHITE, 0.14))
+        u:tri(px + dx * nose, ry(py + dy * nose, 0),
+              px - dx * back - dy * wide, ry(py - dy * back + dx * wide, 0),
+              px - dx * back + dy * wide, ry(py - dy * back - dx * wide, 0),
+              pal.WHITE)
+    end
+
+    -- Corner brackets last, over the blips, which is what makes it read as an
+    -- instrument rather than a swatch.
+    local c, t = 14 * S, 1.6 * S
+    local edge = pal.a(pal.BAR_EDGE, 1.0)
+    -- Each corner mirrors: the arm runs inward from its own corner, which is
+    -- the whole point of a bracket and what the sign arithmetic here got
+    -- wrong -- every arm ran right and down regardless of which corner it
+    -- belonged to.
+    local corners = {
+        {ix, iy, 1, 1}, {ix + r, iy, -1, 1},
+        {ix, iy + r, 1, -1}, {ix + r, iy + r, -1, -1},
+    }
+    for _, o in ipairs(corners) do
+        local bx, by, sx, sy = o[1], o[2], o[3], o[4]
+        local hx = (sx > 0) and bx or (bx - c)
+        local vy = (sy > 0) and by or (by - c)
+        rect(hx, (sy > 0) and by or (by - t), c, t, edge)
+        rect((sx > 0) and bx or (bx - t), vy, t, c, edge)
+    end
+    u:frame(ix, ry(iy, r), r, r, S, pal.a(pal.BAR_EDGE, 0.45))
 end
 
 -- --- panels ----------------------------------------------------------------
@@ -379,7 +455,7 @@ function M.hud(o)
     local lift = M.touching and 150 * S or 0
 
     local top = scores(me, o.pilots)
-    radar(o.cam_x, o.cam_y, me)
+    radar(o.cam_x, o.cam_y, me, o.half_w, o.half_h)
     feed(o.feed, PAD * S + (RADAR + 16) * S + 12 * S)
     status(me, o.class_names, o.netinfo, o.pickup, lift)
     help(lift + (M.touching and 118 * S or 0))

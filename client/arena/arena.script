@@ -25,6 +25,10 @@ local vec = require("render.vec")
 
 local TICK_HZ = 100
 local DT = 1 / TICK_HZ
+-- The world extent the render script shows across the shorter axis. Read
+-- from the same configuration key so the two cannot disagree about what is
+-- on screen.
+local VIEW_PX = sys.get_config_int("vectorwake.view_tiles", 34) * 16
 local MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
 
 local CLASS_NAMES = {"Apex", "Wedge", "Chord", "Anvil",
@@ -725,6 +729,10 @@ function update(self, dt)
             pilots = (self.online and net.connected) and net.pilots or pilots,
             feed = feed, hurt = hurt, pickup = pickup,
             cam_x = cx, cam_y = cy,
+            -- Half the world extent on screen, so the radar can outline what
+            -- the camera is currently showing.
+            half_w = VIEW_PX * 0.5 * (ww / math.min(ww, wh)),
+            half_h = VIEW_PX * 0.5 * (wh / math.min(ww, wh)),
             banner = (self.online and net.banner)
                 or (duel and duel.banner) or flag_banner(my_team),
             netinfo = self.online and string.format(

@@ -78,21 +78,35 @@ local STAR_SEED = 7717
 -- tiles is already denser than the display can show, and it turns a
 -- thousand-tile scan per frame into a list of seventy.
 M.radar_tiles = {}
+M.radar_safe = {}
+M.radar_doors = {}
 
 function M.build_static(bg, glow, lo, hi)
     bg:reset()
     glow:reset()
 
-    local rt = {}
-    for ty = lo - 2, hi + 2, 4 do
-        for tx = lo - 2, hi + 2, 4 do
-            if sim.solid(tx, ty) then
-                rt[#rt + 1] = tx * TILE
-                rt[#rt + 1] = ty * TILE
+    -- Every second tile, not every fourth. The arena's outer walls are two
+    -- tiles thick, so a four-tile stride aliased them away completely and the
+    -- map read as a scatter of unrelated dots.
+    --
+    -- Safe zones and doors get their own lists: they are the two things worth
+    -- steering by, and they were not on the radar at all.
+    local rt, rs, rd = {}, {}, {}
+    for ty = lo - 2, hi + 2, 2 do
+        for tx = lo - 2, hi + 2, 2 do
+            local cls = sim.tile(tx, ty)
+            local out = (cls == sim.T_SOLID and rt)
+                or (cls == sim.T_SAFE and rs)
+                or (cls == sim.T_DOOR and rd)
+            if out then
+                out[#out + 1] = tx * TILE
+                out[#out + 1] = ty * TILE
             end
         end
     end
     M.radar_tiles = rt
+    M.radar_safe = rs
+    M.radar_doors = rd
 
     -- Starfield. Two depths, the far one dimmer and denser, both in world
     -- space: at this zoom a parallax layer would slide against the terrain

@@ -32,8 +32,14 @@ M.PANEL     = rgb(0x05080e, 0.72)
 M.BORDER    = rgb(0x1d2838)
 M.BAR_BG    = rgb(0x121a26)
 M.BAR_EDGE  = rgb(0x22304a)
-M.RADAR_BG  = rgb(0x070b12)
-M.RADAR_TILE= rgb(0x16243a)
+M.RADAR_BG  = rgb(0x060a10)
+-- Terrain has to read as terrain at two pixels a tile. The old value was
+-- #16243a on #070b12, which is a dark slate on a darker one: technically
+-- present, invisible in practice.
+M.RADAR_TILE= rgb(0x3f5878)
+M.RADAR_GRID= rgb(0x141f30)
+M.RADAR_SAFE= rgb(0x1d5f63)
+M.RADAR_DOOR= rgb(0x7a4a2a)
 M.BTN_BG    = rgb(0x0a0f18)
 M.BTN_SEL   = rgb(0x0d1826)
 
