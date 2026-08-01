@@ -116,8 +116,10 @@ function M.draw(cam_x, cam_y, half_w, half_h, w, h)
     -- Screen pixels to world units, and screen origin to world.
     local sx = (2 * half_w) / w
     local sy = (2 * half_h) / h
+    -- Touch y counts up from the bottom of the window; the world now renders
+    -- +y downward, so the vertical term is negated.
     local function world(px, py)
-        return cam_x + (px - w * 0.5) * sx, cam_y + (py - h * 0.5) * sy
+        return cam_x + (px - w * 0.5) * sx, cam_y - (py - h * 0.5) * sy
     end
 
     local function ring(px, py, r, color, segments)

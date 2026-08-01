@@ -26,17 +26,30 @@ local CLASSES = {
     {name = "Lattice", color = vmath.vector4(0.35, 0.78, 0.78, 1)},
 }
 
--- Ship outlines in local pixels, nose up. Shape carries class and colour
--- carries team, so neither has to carry both.
+-- Ship outlines in local pixels, nose along +y. Shape carries class and
+-- colour carries team, so neither has to carry both, and every class has to
+-- be identifiable by silhouette alone at radar scale -- which means each one
+-- needs a front that is visibly not its back. See docs/design/ships.md.
 local HULLS = {
-    {{0, 14}, {8, -10}, {0, -5}, {-8, -10}},                    -- Apex
-    {{0, 12}, {11, -9}, {-11, -9}},                             -- Wedge
-    {{0, 9}, {13, 2}, {8, -9}, {-8, -9}, {-13, 2}},             -- Chord
-    {{0, 11}, {10, 5}, {10, -8}, {0, -12}, {-10, -8}, {-10, 5}},-- Anvil
-    {{0, 15}, {7, 0}, {0, -11}, {-7, 0}},                       -- Spire
-    {{0, 14}, {4, -3}, {0, -11}, {-4, -3}},                     -- Cipher
-    {{0, 10}, {9, 3}, {6, -9}, {-6, -9}, {-9, 3}},              -- Facet
-    {{0, 10}, {10, 0}, {0, -10}, {-10, 0}},                     -- Lattice
+    -- Apex: a narrow chevron. Fastest and sharpest turn in the game.
+    {{0, 16}, {7, -8}, {0, -3}, {-7, -8}},
+    -- Wedge: a flat triangle. Wide and shallow, so it reads as a platform.
+    {{0, 8}, {14, -7}, {-14, -7}},
+    -- Chord: a wide shallow arc, hollow at the back.
+    {{0, 11}, {10, 7}, {15, -2}, {8, -1}, {0, 3}, {-8, -1}, {-15, -2}, {-10, 7}},
+    -- Anvil: a blunt hexagon. The front is a flat face, not a point: nothing
+    -- about this ship should look sharp.
+    {{-6, 12}, {6, 12}, {11, 3}, {9, -9}, {-9, -9}, {-11, 3}},
+    -- Spire: a tall diamond carrying a mast, which is where the turrets go.
+    {{0, 18}, {2, 10}, {6, 0}, {0, -12}, {-6, 0}, {-2, 10}},
+    -- Cipher: a thin sliver, barely there.
+    {{0, 17}, {3, -2}, {0, -10}, {-3, -2}},
+    -- Facet: a compact pentagon with a real nose on it.
+    {{0, 12}, {9, 2}, {6, -9}, {-6, -9}, {-9, 2}},
+    -- Lattice: a cross. It owns terrain, and it should look like a marker
+    -- planted in it. The forward arm is longest so the shape still points.
+    {{-3, 14}, {3, 14}, {3, 4}, {12, 4}, {12, -2}, {3, -2}, {3, -11},
+     {-3, -11}, {-3, -2}, {-12, -2}, {-12, 4}, {-3, 4}},
 }
 
 -- The offline roster: hull, team, spawn tile, name. Shared by the cold start
@@ -169,13 +182,12 @@ local function bot_think(b)
     return out
 end
 
+local start_offline
+
 function init(self)
     msg.post(".", "acquire_input_focus")
     math.randomseed(1)
 
-    -- A server address makes this a networked client; without one it plays
-    -- the same game locally, which is what keeps a build with nothing behind
-    -- it playable.
     -- A directory means "let the player choose"; a pinned server means
     -- "go here". Neither means play the local game, which is what keeps a
     -- build with nothing behind it playable.
@@ -198,17 +210,7 @@ function init(self)
     end
 
     sim.init(0x5eed)
-    me = sim.spawn(0, 0, 512, 522, 0)
-    pilots[me] = {name = "you"}
-
-    for i, L in ipairs(LAYOUT) do
-        local id = sim.spawn(L[1], L[2], L[3], L[4], (i * 8192) % 65536)
-        pilots[id] = {name = L[5], bot = make_bot(id, 0.28 + (i % 5) * 0.16)}
-    end
-
-    for _, f in ipairs({{512, 492}, {532, 512}, {512, 532}, {492, 512}}) do
-        sim.add_flag(f[1], f[2])
-    end
+    start_offline()
 end
 
 function final(self)
@@ -239,11 +241,15 @@ local function draw_hull(cls, x, y, heading, color)
     local n = #pts
     for i = 1, n do
         local p, q = pts[i], pts[i % n + 1]
-        -- Nose up means the local +y axis points along the heading.
+        -- Heading a travels along (sin a, -cos a) in simulation
+        -- coordinates, so that is where the local +y axis has to point. The
+        -- previous sign here pointed the nose along (sin a, cos a): correct
+        -- at a quarter turn, reversed at none, and wrong by everything in
+        -- between, which is why the hulls looked out of true as they turned.
         local px = x + p[1] * ca + p[2] * sa
-        local py = y - p[1] * sa + p[2] * ca
+        local py = y + p[1] * sa - p[2] * ca
         local qx = x + q[1] * ca + q[2] * sa
-        local qy = y - q[1] * sa + q[2] * ca
+        local qy = y + q[1] * sa - q[2] * ca
         msg.post("@render:", "draw_line", {
             start_point = vmath.vector3(px, py, 0),
             end_point = vmath.vector3(qx, qy, 0),
@@ -252,7 +258,7 @@ local function draw_hull(cls, x, y, heading, color)
     end
 end
 
-local function start_offline()
+function start_offline()
     me = sim.spawn(0, 0, 512, 522, 0)
     pilots[me] = {name = "you"}
     for i, L in ipairs(LAYOUT) do
@@ -372,12 +378,14 @@ function update(self, dt)
         local col = (team == 255) and vmath.vector4(0.56, 0.63, 0.72, 1)
             or (team == my_team and vmath.vector4(0.5, 0.89, 0.63, 1)
                                  or vmath.vector4(1, 0.5, 0.5, 1))
+        -- The pole rises, so it runs toward smaller y now that the world
+        -- renders +y downward.
         msg.post("@render:", "draw_line", {
-            start_point = vmath.vector3(x, y - 6, 0),
-            end_point = vmath.vector3(x, y + 12, 0), color = col})
+            start_point = vmath.vector3(x, y + 6, 0),
+            end_point = vmath.vector3(x, y - 12, 0), color = col})
         msg.post("@render:", "draw_line", {
-            start_point = vmath.vector3(x, y + 12, 0),
-            end_point = vmath.vector3(x + 11, y + 7, 0), color = col})
+            start_point = vmath.vector3(x, y - 12, 0),
+            end_point = vmath.vector3(x + 11, y - 7, 0), color = col})
     end
 end
 

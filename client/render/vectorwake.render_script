@@ -49,8 +49,13 @@ function update(self)
         vmath.vector3(cam.x, cam.y, 10),
         vmath.vector3(cam.x, cam.y, 0),
         vmath.vector3(0, 1, 0)))
+    -- Top and bottom are swapped so the simulation's +y renders downward.
+    -- Tile coordinates then match the screen, and heading zero is north
+    -- rather than south. Without it the whole world is drawn as a vertical
+    -- mirror of itself, which nothing reveals until something asymmetric --
+    -- a ship with a nose -- has to agree with it.
     render.set_projection(vmath.matrix4_orthographic(
-        -half_w, half_w, -half_h, half_h, -100, 100))
+        -half_w, half_w, half_h, -half_h, -100, 100))
 
     render.enable_state(graphics.STATE_BLEND)
     render.set_blend_func(graphics.BLEND_FACTOR_SRC_ALPHA,
