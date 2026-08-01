@@ -69,6 +69,37 @@ EXPORT void vw_init(uint32_t seed) {
     sim_init(g_cur, seed);
 }
 
+/* A duel room: small, closed, two pillars. Playable with no server, which
+ * matters because the published page has no server to reach. */
+EXPORT void vw_init_duel(uint32_t seed) {
+    for (unsigned i = 0; i < sizeof g_map.solid; i++) g_map.solid[i] = 0;
+    const int LO = 496, HI = 528;
+    fill(LO, LO, HI, LO + 1);
+    fill(LO, HI - 1, HI, HI);
+    fill(LO, LO, LO + 1, HI);
+    fill(HI - 1, LO, HI, HI);
+    fill(505, 505, 509, 509);
+    fill(515, 515, 519, 519);
+    sim_settings_baseline(&g_cfg, &g_map);
+    sim_init(g_cur, seed);
+}
+
+/* Warmup disarms by holding the cooldown forward, the same trick the server
+ * mode uses, so both agree about what a disarmed ship is. */
+EXPORT void vw_freeze(int ship) {
+    g_cur->ships[ship].fire_cooldown = 60;
+}
+
+EXPORT int vw_add_flag(int tile_x, int tile_y) {
+    return sim_add_flag(g_cur, tile_x * SIM_TILE_PX, tile_y * SIM_TILE_PX);
+}
+EXPORT int vw_flag_count(void) { return g_cur->flag_count; }
+EXPORT int vw_flag_x(int i) { return g_cur->flags[i].x; }
+EXPORT int vw_flag_y(int i) { return g_cur->flags[i].y; }
+EXPORT int vw_flag_team(int i) { return g_cur->flags[i].team; }
+EXPORT int vw_flag_carried(int i) { return g_cur->flags[i].carried; }
+EXPORT int vw_flags_held(int team) { return sim_flags_held(g_cur, (uint8_t)team); }
+
 EXPORT int vw_spawn(int cls, int team, int tile_x, int tile_y, int heading) {
     return sim_spawn(g_cur, (uint8_t)cls, (uint8_t)team, tile_x * SIM_TILE_PX,
                      tile_y * SIM_TILE_PX, (uint16_t)heading, &g_cfg);

@@ -207,6 +207,9 @@ static void kill_weapon(sim_state *s, uint16_t i) {
     s->weapons[i] = s->weapons[--s->weapon_count];
 }
 
+static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
+                       sim_events *ev);
+
 static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
                          uint8_t attacker, int32_t amount, sim_events *ev) {
     sim_ship *v = &s->ships[victim];
@@ -221,7 +224,82 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         v->vx = v->vy = 0;
         memset(v->up, 0, sizeof v->up);  /* dying costs you everything */
         if (attacker != 255 && attacker != victim) s->ships[attacker].kills++;
+        drop_flags(s, cfg, victim, ev);
         emit(ev, SIM_EV_DEATH, victim, attacker, 0);
+    }
+}
+
+/* ---- flags ---- */
+
+int sim_add_flag(sim_state *s, int32_t x_px, int32_t y_px) {
+    if (s->flag_count >= SIM_MAX_FLAGS) return -1;
+    int i = s->flag_count++;
+    sim_flag *f = &s->flags[i];
+    f->active = 1;
+    f->carried = 0;
+    f->carrier = 0;
+    f->team = SIM_TEAM_NONE;
+    f->x = x_px * 256;
+    f->y = y_px * 256;
+    f->cooldown = 0;
+    return i;
+}
+
+int sim_flags_held(const sim_state *s, uint8_t team) {
+    int n = 0;
+    for (int i = 0; i < s->flag_count; i++)
+        if (s->flags[i].active && s->flags[i].team == team) n++;
+    return n;
+}
+
+/* Drop every flag a ship is carrying where it died, keeping the team that
+ * held it: a dropped flag stays yours until somebody takes it back. */
+static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
+                       sim_events *ev) {
+    for (int i = 0; i < s->flag_count; i++) {
+        sim_flag *f = &s->flags[i];
+        if (!f->active || !f->carried || f->carrier != ship) continue;
+        f->carried = 0;
+        f->x = s->ships[ship].x;
+        f->y = s->ships[ship].y;
+        f->cooldown = cfg->flag_drop_cooldown;
+        emit(ev, SIM_EV_FLAG_DROP, (uint8_t)i, f->team, 0);
+    }
+}
+
+static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) {
+    for (int i = 0; i < s->flag_count; i++) {
+        sim_flag *f = &s->flags[i];
+        if (!f->active) continue;
+
+        if (f->carried) {
+            const sim_ship *sh = &s->ships[f->carrier];
+            if (!sh->active || !sh->alive) {
+                /* The carrier stopped existing without dying properly. */
+                f->carried = 0;
+                f->cooldown = cfg->flag_drop_cooldown;
+                continue;
+            }
+            f->x = sh->x;
+            f->y = sh->y;
+            continue;
+        }
+
+        if (f->cooldown > 0) { f->cooldown--; continue; }
+
+        for (int k = 0; k < s->ship_count; k++) {
+            sim_ship *sh = &s->ships[k];
+            if (!sh->active || !sh->alive) continue;
+            if (f->team == sh->team) continue;  /* already ours */
+            int64_t dx = (int64_t)sh->x - f->x, dy = (int64_t)sh->y - f->y;
+            int64_t r = cfg->flag_radius + cfg->classes[sh->cls].radius;
+            if (dx * dx + dy * dy > r * r) continue;
+            f->carried = 1;
+            f->carrier = (uint8_t)k;
+            f->team = sh->team;
+            emit(ev, SIM_EV_FLAG_TAKE, (uint8_t)k, (uint8_t)i, 0);
+            break;
+        }
     }
 }
 
@@ -433,6 +511,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
     }
 
     update_prizes(next, cfg, ev);
+    update_flags(next, cfg, ev);
 
     /* --- weapons --- */
     for (uint16_t wi = 0; wi < next->weapon_count;) {
@@ -535,6 +614,15 @@ uint64_t sim_hash(const sim_state *s) {
         for (int u = 0; u < SIM_UP_COUNT; u++) h = hash_u32(h, sh->up[u]);
     }
     h = hash_u32(h, s->prize_timer);
+    h = hash_u32(h, s->flag_count);
+    for (int i = 0; i < s->flag_count; i++) {
+        const sim_flag *f = &s->flags[i];
+        h = hash_u32(h, (uint32_t)(f->active | (f->carried << 8) |
+                                   (f->carrier << 16) | (f->team << 24)));
+        h = hash_u32(h, (uint32_t)f->x);
+        h = hash_u32(h, (uint32_t)f->y);
+        h = hash_u32(h, f->cooldown);
+    }
     for (int i = 0; i < SIM_MAX_PRIZES; i++) {
         const sim_prize *p = &s->prizes[i];
         if (!p->active) continue;

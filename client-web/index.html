@@ -195,6 +195,8 @@ function buildShipPicker() {
 // --- world setup -----------------------------------------------------------
 
 function startGame() {
+  duel = null;
+  banner = "";
   W.vw_init(0x5eed ^ (selected * 2654435761) >>> 0);
   pilots = [];
 
@@ -525,6 +527,58 @@ function sendInput(buttons, tick) {
 let predictedTick = 0;
 let banner = "";        // the mode's line: warmup, countdown, duel score
 
+// An offline duel. The published page has no server to reach, so the same
+// ruleset runs locally against a bot: warmup, countdown, first to five.
+let duel = null;
+
+function startDuel() {
+  W.vw_init_duel(0xd0e1 ^ (selected * 7 + 1));
+  pilots = [];
+  feed = [];
+  ratings.clear();
+  ME = W.vw_spawn(selected, 0, 505, 522, 0);
+  // Pick an opponent whose hull differs from yours, so a session of duels
+  // is a tour of matchups rather than a mirror every time.
+  const i = (selected * 3 + 2) % BOT_NAMES.length;
+  const foeCls = (selected + 3) % 8;
+  const foeSkill = 0.34 + (i % 5) * 0.15;
+  const them = W.vw_spawn(foeCls, 1, 519, 502, 32768);
+  pilots[ME] = { name: "you", ai: null };
+  pilots[them] = { name: BOT_NAMES[i], ai: makeBot(foeSkill, them) };
+  duel = { a: ME, b: them, target: 5, score: [0, 0], phase: "warmup", timer: 0, winner: null };
+  banner = "";
+  running = true;
+  document.getElementById("start").style.display = "none";
+  requestAnimationFrame(frame);
+}
+
+function duelTick() {
+  if (!duel) return;
+  duel.timer++;
+  if (duel.phase === "warmup") {
+    W.vw_freeze(duel.a); W.vw_freeze(duel.b);
+    banner = "warmup " + (Math.ceil((400 - duel.timer) / 100) || 1);
+    if (duel.timer >= 400) { duel.phase = "countdown"; duel.timer = 0; }
+  } else if (duel.phase === "countdown") {
+    W.vw_freeze(duel.a); W.vw_freeze(duel.b);
+    banner = String(Math.ceil((300 - duel.timer) / 100) || 1);
+    if (duel.timer >= 300) { duel.phase = "live"; duel.timer = 0; }
+  } else if (duel.phase === "live") {
+    banner = `${duel.score[0]} - ${duel.score[1]}   first to ${duel.target}`;
+  } else {
+    banner = duel.winner === duel.a
+      ? `${duel.score[0]} - ${duel.score[1]}   you win`
+      : `${duel.score[0]} - ${duel.score[1]}   ${pilots[duel.b].name} wins`;
+  }
+}
+
+function duelDeath(victim) {
+  if (!duel || duel.phase !== "live") return;
+  if (victim === duel.a) duel.score[1]++; else if (victim === duel.b) duel.score[0]++;
+  if (duel.score[0] >= duel.target) { duel.winner = duel.a; duel.phase = "over"; }
+  else if (duel.score[1] >= duel.target) { duel.winner = duel.b; duel.phase = "over"; }
+}
+
 // Ask the server for a one on one against a rating-matched opponent. It
 // builds the room, so this client simply changes seats.
 function requestDuel() {
@@ -588,6 +642,7 @@ function stepOnce() {
     mem8[BTN_PTR + i] = W.vw_ship_alive(i) ? b.want : 0;
   }
   W.vw_step(BTN_PTR, n);
+  duelTick();
 
   drainEvents();
 }
@@ -600,6 +655,7 @@ function drainEvents() {
       if (u) pickup = { name: u.name, color: u.color, t: 1 };
     }
     if (W.vw_event_type(e) !== EV.DEATH) continue;
+    if (duel) duelDeath(W.vw_event_a(e));
     if (net) continue;   // online, the server reports kills with ratings
     const victim = W.vw_event_a(e), killer = W.vw_event_b(e);
     const vn = pilots[victim] ? pilots[victim].name : "?";
@@ -884,13 +940,10 @@ document.getElementById("go").onclick = () => {
   startGame();
 };
 
-document.getElementById("duel").onclick = async () => {
-  if (!net) {
-    await document.getElementById("online").onclick();
-    setTimeout(requestDuel, 400);
-  } else {
-    requestDuel();
-  }
+document.getElementById("duel").onclick = () => {
+  // Offline by default: the page must be playable with nothing behind it.
+  // A connected client duels through the server instead.
+  if (net) requestDuel(); else startDuel();
 };
 
 document.getElementById("online").onclick = async () => {

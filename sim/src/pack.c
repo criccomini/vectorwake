@@ -94,6 +94,17 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap) {
         w16(&w, p->life);
     }
 
+    w8(&w, s->flag_count);
+    for (int i = 0; i < s->flag_count; i++) {
+        const sim_flag *f = &s->flags[i];
+        w8(&w, (uint32_t)(f->active | (f->carried << 1)));
+        w8(&w, f->carrier);
+        w8(&w, f->team);
+        w32(&w, (uint32_t)f->x);
+        w32(&w, (uint32_t)f->y);
+        w16(&w, f->cooldown);
+    }
+
     return w.overflow ? -1 : (int)(w.p - out);
 }
 
@@ -156,6 +167,21 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         p->x = (int32_t)r32(&r);
         p->y = (int32_t)r32(&r);
         p->life = (uint16_t)r16(&r);
+    }
+
+    uint32_t flags = r8(&r);
+    if (flags > SIM_MAX_FLAGS) return -1;
+    s->flag_count = (uint8_t)flags;
+    for (uint32_t i = 0; i < flags; i++) {
+        sim_flag *f = &s->flags[i];
+        uint32_t bits = r8(&r);
+        f->active = (uint8_t)(bits & 1);
+        f->carried = (uint8_t)((bits >> 1) & 1);
+        f->carrier = (uint8_t)r8(&r);
+        f->team = (uint8_t)r8(&r);
+        f->x = (int32_t)r32(&r);
+        f->y = (int32_t)r32(&r);
+        f->cooldown = (uint16_t)r16(&r);
     }
 
     return r.underflow ? -1 : 0;

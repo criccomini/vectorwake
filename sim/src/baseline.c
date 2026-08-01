@@ -43,6 +43,8 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->prize_max = 20;
     cfg->prize_life = 3000;   /* 30 s */
     cfg->prize_radius = 16 * 256; /* generous: chasing a green should not be fiddly */
+    cfg->flag_radius = 18 * 256;
+    cfg->flag_drop_cooldown = 200; /* 2 s before a dropped flag can be retaken */
     cfg->prize_lo = 472;      /* inside the arena walls */
     cfg->prize_hi = 552;
     cfg->map = map;

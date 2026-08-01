@@ -19,6 +19,8 @@
 #define SIM_MAX_SHIPS 64
 #define SIM_MAX_WEAPONS 1024
 #define SIM_MAX_PRIZES 64
+#define SIM_MAX_FLAGS 16
+#define SIM_TEAM_NONE 255
 #define SIM_MAX_EVENTS 256
 #define SIM_MAX_CLASSES 8
 #define SIM_MAP_TILES 1024
@@ -94,6 +96,8 @@ typedef struct {
     uint16_t prize_life;   /* ticks a prize waits to be collected */
     int32_t prize_radius;  /* Q8 px, pickup distance */
     int32_t prize_lo, prize_hi; /* tile bounds prizes spawn within */
+    int32_t flag_radius;    /* Q8 px, pickup distance */
+    uint16_t flag_drop_cooldown; /* ticks a dropped flag is untouchable */
     const sim_map *map;    /* geometry; not part of rolled-back state */
 } sim_settings;
 
@@ -120,6 +124,18 @@ typedef struct {
     uint16_t life;  /* ticks remaining */
 } sim_prize;
 
+/* Flags. The core owns pickup, carry, and drop, exactly as the original's
+ * flagcore did; which arrangement of flags wins a round is a game mode's
+ * business and lives outside the simulation. */
+typedef struct {
+    uint8_t active;
+    uint8_t carried;      /* 1 while a ship is holding it */
+    uint8_t carrier;      /* ship index while carried */
+    uint8_t team;         /* owning team, or SIM_TEAM_NONE */
+    int32_t x, y;         /* Q8 px; tracks the carrier while carried */
+    uint16_t cooldown;    /* ticks before it may be picked up again */
+} sim_flag;
+
 typedef struct {
     uint8_t type;  /* sim_weapon_type */
     uint8_t owner; /* ship index */
@@ -136,7 +152,9 @@ typedef enum {
     SIM_EV_DEATH,    /* a: victim, b: killer (255 = none) */
     SIM_EV_SPAWN,    /* a: ship */
     SIM_EV_EXPIRE,   /* a: weapon type */
-    SIM_EV_PRIZE     /* a: ship, b: sim_upgrade collected */
+    SIM_EV_PRIZE,    /* a: ship, b: sim_upgrade collected */
+    SIM_EV_FLAG_TAKE,/* a: ship, b: flag index */
+    SIM_EV_FLAG_DROP /* a: flag index, b: team that keeps it */
 } sim_event_type;
 
 typedef struct {
@@ -155,6 +173,8 @@ typedef struct {
     sim_ship ships[SIM_MAX_SHIPS];
     sim_weapon weapons[SIM_MAX_WEAPONS];
     sim_prize prizes[SIM_MAX_PRIZES];
+    sim_flag flags[SIM_MAX_FLAGS];
+    uint8_t flag_count;
 } sim_state;
 
 typedef struct {
@@ -201,5 +221,11 @@ int32_t sim_eff_thrust(const sim_ship_class *c, const sim_ship *s);
 int32_t sim_eff_rot(const sim_ship_class *c, const sim_ship *s);
 int32_t sim_eff_max_energy(const sim_ship_class *c, const sim_ship *s);
 int32_t sim_eff_recharge(const sim_ship_class *c, const sim_ship *s);
+
+/* Place a flag. Returns its index, or -1 if the arena is full. */
+int sim_add_flag(sim_state *s, int32_t x_px, int32_t y_px);
+
+/* How many flags a team holds, counting carried and grounded alike. */
+int sim_flags_held(const sim_state *s, uint8_t team);
 
 #endif
