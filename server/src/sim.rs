@@ -30,9 +30,25 @@ pub const EV_SPAWN: u8 = 5;
 pub const EV_FLAG_TAKE: u8 = 7;
 pub const EV_FLAG_DROP: u8 = 8;
 
+pub const MAX_FEATURES: usize = 256;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct sim_feature {
+    pub tx: u16,
+    pub ty: u16,
+    pub kind: u8,
+    pub variant: u8,
+}
+
+/// Mirrors `sim_map`. A tile is its behaviour -- see the enum in sim.h -- and
+/// the feature list is what rules reach for so nothing walks a million tiles
+/// a tick.
 #[repr(C)]
 pub struct sim_map {
-    pub solid: [u8; MAP_TILES * MAP_TILES],
+    pub tile: [u8; MAP_TILES * MAP_TILES],
+    pub feature_count: u16,
+    pub features: [sim_feature; MAX_FEATURES],
 }
 
 #[repr(C)]
@@ -74,6 +90,11 @@ pub struct sim_settings {
     pub prize_hi: i32,
     pub flag_radius: i32,
     pub flag_drop_cooldown: u16,
+    pub door_period: u16,
+    pub door_open: u16,
+    pub safe_brake: i32,
+    pub wormhole_pull: i32,
+    pub wormhole_range: i32,
     pub map: *const sim_map,
 }
 
@@ -199,6 +220,11 @@ extern "C" {
     );
     pub fn sim_hash(s: *const sim_state) -> u64;
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
+    /// The arenas live in the core so this and the client cannot disagree
+    /// about the shape of the same room.
+    pub fn sim_in_safe(map: *const sim_map, x: i32, y: i32) -> i32;
+    pub fn sim_map_arena(map: *mut sim_map);
+    pub fn sim_map_duel(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
     pub fn sim_add_flag(s: *mut sim_state, x_px: i32, y_px: i32) -> c_int;
@@ -337,26 +363,10 @@ impl World {
 /// The same arena the single-player client builds, so a player sees the same
 /// room whether they are connected or not.
 pub fn build_arena(map: &mut sim_map) {
-    const LO: usize = 470;
-    const HI: usize = 554;
-    let mut fill = |x0: usize, y0: usize, x1: usize, y1: usize| {
-        for ty in y0..=y1 {
-            for tx in x0..=x1 {
-                map.solid[ty * MAP_TILES + tx] = 1;
-            }
-        }
-    };
-    fill(LO, LO, HI, LO + 1);
-    fill(LO, HI - 1, HI, HI);
-    fill(LO, LO, LO + 1, HI);
-    fill(HI - 1, LO, HI, HI);
-    fill(489, 489, 495, 495);
-    fill(529, 489, 535, 495);
-    fill(489, 529, 495, 535);
-    fill(529, 529, 535, 535);
-    fill(505, 480, 519, 483);
-    fill(505, 541, 519, 544);
-    fill(480, 505, 483, 519);
-    fill(541, 505, 544, 519);
+    unsafe { sim_map_arena(map as *mut sim_map) }
+}
+
+pub fn build_duel(map: &mut sim_map) {
+    unsafe { sim_map_duel(map as *mut sim_map) }
 }
 

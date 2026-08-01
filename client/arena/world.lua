@@ -143,8 +143,69 @@ function M.build_static(bg, glow, lo, hi)
         end
     end
 
+    -- Safe zones. Static, because they never move -- a hatched floor and a
+    -- lit border, so it reads as a place rather than as a coloured patch.
+    local safe_fill = pal.a(pal.FRIEND, 0.07)
+    local safe_edge = pal.a(pal.FRIEND, 0.55)
+    for ty = lo - 2, hi + 2 do
+        for tx = lo - 2, hi + 2 do
+            if sim.tile(tx, ty) == sim.T_SAFE then
+                local x, y = tx * TILE, ty * TILE
+                bg:rect(x, y, TILE, TILE, safe_fill)
+                -- Only the outside faces, or the interior turns to graph
+                -- paper the way the walls did.
+                if sim.tile(tx, ty - 1) ~= sim.T_SAFE then
+                    glow:seg(x, y, x + TILE, y, 1.2, safe_edge)
+                end
+                if sim.tile(tx, ty + 1) ~= sim.T_SAFE then
+                    glow:seg(x, y + TILE, x + TILE, y + TILE, 1.2, safe_edge)
+                end
+                if sim.tile(tx - 1, ty) ~= sim.T_SAFE then
+                    glow:seg(x, y, x, y + TILE, 1.2, safe_edge)
+                end
+                if sim.tile(tx + 1, ty) ~= sim.T_SAFE then
+                    glow:seg(x + TILE, y, x + TILE, y + TILE, 1.2, safe_edge)
+                end
+            end
+        end
+    end
+
     bg:flush()
     glow:flush()
+end
+
+-- Doors and the tiles that mark a place rather than block one. These cannot
+-- go in the static mesh: a door is a wall on a clock, and a wall nobody can
+-- see is the worst thing in the game.
+function M.draw_tiles(fill, glow, lo, hi)
+    for ty = lo - 2, hi + 2 do
+        for tx = lo - 2, hi + 2 do
+            local cls, variant = sim.tile(tx, ty)
+            if cls == sim.T_DOOR then
+                local x, y = tx * TILE, ty * TILE
+                if sim.door_open(variant) then
+                    -- Open: the frame stays, so a pilot can see where it will
+                    -- be when it shuts, and time the crossing.
+                    local ghost = pal.a(pal.WALL_EDGE, 0.30)
+                    glow:seg(x, y, x, y + TILE, 1.0, ghost)
+                    glow:seg(x + TILE, y, x + TILE, y + TILE, 1.0, ghost)
+                else
+                    fill:rect(x, y, TILE, TILE, pal.WALL)
+                    local lit = pal.a(pal.ENEMY, 0.75)
+                    glow:seg(x, y, x + TILE, y, 1.4, lit)
+                    glow:seg(x, y + TILE, x + TILE, y + TILE, 1.4, lit)
+                end
+            elseif cls == sim.T_WORMHOLE then
+                local cx, cy = tx * TILE + TILE / 2, ty * TILE + TILE / 2
+                -- Three rings falling off outward, which is what the pull
+                -- does: something to read the reach of before entering it.
+                for r = 1, 3 do
+                    glow:ring(cx, cy, r * 9, 1.0, 18,
+                              pal.a(pal.BOMB, 0.34 / r))
+                end
+            end
+        end
+    end
 end
 
 -- --- ships -----------------------------------------------------------------

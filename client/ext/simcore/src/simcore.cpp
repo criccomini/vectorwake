@@ -32,30 +32,12 @@ sim_state* g_nxt = &g_b;
 sim_events g_ev;
 uint8_t g_net[SIM_PACK_MAX];
 
-void Fill(int x0, int y0, int x1, int y1) {
-    for (int ty = y0; ty <= y1; ty++)
-        for (int tx = x0; tx <= x1; tx++)
-            g_map.solid[(unsigned)ty * SIM_MAP_TILES + tx] = 1;
-}
-
-// The public arena: a wall around the outside, four pillars, and baffles
-// that break line of sight through the middle.
+// The arenas are built by the core. They used to be these same magic numbers
+// written out here and again in the server's Rust, which is one edit away
+// from a client predicting collisions against a wall the server has not got.
 int Init(lua_State* L) {
     uint32_t seed = (uint32_t)luaL_checkinteger(L, 1);
-    memset(g_map.solid, 0, sizeof g_map.solid);
-    const int LO = 470, HI = 554;
-    Fill(LO, LO, HI, LO + 1);
-    Fill(LO, HI - 1, HI, HI);
-    Fill(LO, LO, LO + 1, HI);
-    Fill(HI - 1, LO, HI, HI);
-    Fill(489, 489, 495, 495);
-    Fill(529, 489, 535, 495);
-    Fill(489, 529, 495, 535);
-    Fill(529, 529, 535, 535);
-    Fill(505, 480, 519, 483);
-    Fill(505, 541, 519, 544);
-    Fill(480, 505, 483, 519);
-    Fill(541, 505, 544, 519);
+    sim_map_arena(&g_map);
     sim_settings_baseline(&g_cfg, &g_map);
     sim_init(g_cur, seed);
     return 0;
@@ -63,14 +45,7 @@ int Init(lua_State* L) {
 
 int InitDuel(lua_State* L) {
     uint32_t seed = (uint32_t)luaL_checkinteger(L, 1);
-    memset(g_map.solid, 0, sizeof g_map.solid);
-    const int LO = 496, HI = 528;
-    Fill(LO, LO, HI, LO + 1);
-    Fill(LO, HI - 1, HI, HI);
-    Fill(LO, LO, LO + 1, HI);
-    Fill(HI - 1, LO, HI, HI);
-    Fill(505, 505, 509, 509);
-    Fill(515, 515, 519, 519);
+    sim_map_duel(&g_map);
     sim_settings_baseline(&g_cfg, &g_map);
     sim_init(g_cur, seed);
     return 0;
@@ -248,13 +223,35 @@ int PrizeAt(lua_State* L) {
     return 5;
 }
 
+// Solid means "a wall that never moves", which is what the static terrain
+// mesh is built from. A door is not one of those: it is drawn every frame,
+// because a shut door nobody can see is a wall that does not exist.
 int Solid(lua_State* L) {
     int tx = (int)luaL_checkinteger(L, 1);
     int ty = (int)luaL_checkinteger(L, 2);
-    int solid = (tx < 0 || ty < 0 || tx >= SIM_MAP_TILES || ty >= SIM_MAP_TILES)
-                    ? 1
-                    : g_map.solid[(unsigned)ty * SIM_MAP_TILES + tx];
-    lua_pushboolean(L, solid);
+    lua_pushboolean(L, SIM_TILE_CLASS(sim_tile_at(&g_map, tx, ty))
+                       == SIM_TILE_SOLID);
+    return 1;
+}
+
+// class, variant. Everything the renderer needs to tell one tile from another.
+int TileAt(lua_State* L) {
+    uint8_t t = sim_tile_at(&g_map, (int32_t)luaL_checkinteger(L, 1),
+                            (int32_t)luaL_checkinteger(L, 2));
+    lua_pushnumber(L, SIM_TILE_CLASS(t));
+    lua_pushnumber(L, SIM_TILE_VARIANT(t));
+    return 2;
+}
+
+int DoorOpen(lua_State* L) {
+    lua_pushboolean(L, sim_door_open(&g_cfg, g_cur->tick,
+                                     (uint8_t)luaL_checkinteger(L, 1)));
+    return 1;
+}
+
+int InSafe(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    lua_pushboolean(L, sim_in_safe(&g_map, g_cur->ships[i].x, g_cur->ships[i].y));
     return 1;
 }
 
@@ -327,6 +324,9 @@ const luaL_reg kFunctions[] = {
     {"prize_count", PrizeCount},
     {"prize_at", PrizeAt},
     {"solid", Solid},
+    {"tile", TileAt},
+    {"door_open", DoorOpen},
+    {"in_safe", InSafe},
     {"event_count", EventCount},
     {"event_at", EventAt},
     {"flag_count", FlagCount},
@@ -347,6 +347,17 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_BTN_FIRE);    lua_setfield(L, -2, "BTN_FIRE");
     lua_pushnumber(L, SIM_BTN_BOMB);    lua_setfield(L, -2, "BTN_BOMB");
     lua_pushnumber(L, SIM_TILE_PX);     lua_setfield(L, -2, "TILE_PX");
+
+    // Tile classes, so the renderer never hard-codes one.
+    lua_pushnumber(L, SIM_TILE_EMPTY);    lua_setfield(L, -2, "T_EMPTY");
+    lua_pushnumber(L, SIM_TILE_SOLID);    lua_setfield(L, -2, "T_SOLID");
+    lua_pushnumber(L, SIM_TILE_SAFE);     lua_setfield(L, -2, "T_SAFE");
+    lua_pushnumber(L, SIM_TILE_DOOR);     lua_setfield(L, -2, "T_DOOR");
+    lua_pushnumber(L, SIM_TILE_GOAL);     lua_setfield(L, -2, "T_GOAL");
+    lua_pushnumber(L, SIM_TILE_WORMHOLE); lua_setfield(L, -2, "T_WORMHOLE");
+    lua_pushnumber(L, SIM_TILE_OVER);     lua_setfield(L, -2, "T_OVER");
+    lua_pushnumber(L, SIM_TILE_UNDER);    lua_setfield(L, -2, "T_UNDER");
+    lua_pushnumber(L, SIM_TILE_TURF);     lua_setfield(L, -2, "T_TURF");
 
     // Event and weapon kinds, so the client never hard-codes an enum the
     // core is free to renumber.

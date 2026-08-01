@@ -18,13 +18,14 @@ static int failures = 0;
 
 static sim_map *walled_map(void) {
     sim_map *m = malloc(sizeof *m);
-    memset(m->solid, 0, sizeof m->solid);
+    memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
     for (int i = 0; i < SIM_MAP_TILES; i++) {
-        m->solid[i] = 1;
-        m->solid[(size_t)(SIM_MAP_TILES - 1) * SIM_MAP_TILES + i] = 1;
-        m->solid[(size_t)i * SIM_MAP_TILES] = 1;
-        m->solid[(size_t)i * SIM_MAP_TILES + SIM_MAP_TILES - 1] = 1;
+        m->tile[i] = SIM_TILE_SOLID;
+        m->tile[(size_t)(SIM_MAP_TILES - 1) * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
+        m->tile[(size_t)i * SIM_MAP_TILES] = SIM_TILE_SOLID;
+        m->tile[(size_t)i * SIM_MAP_TILES + SIM_MAP_TILES - 1] = SIM_TILE_SOLID;
     }
+    sim_map_index(m);
     return m;
 }
 
@@ -194,6 +195,122 @@ int main(void) {
               "a fresh bar affords three bombs, as the original's 1000/300 did");
         ev_counts c = step_counting(&s, &cfg, SIM_BTN_BOMB, 0, 600);
         CHECK(c.fires > 1, "bombs actually leave the ship");
+    }
+
+    /* --- tiles ------------------------------------------------------- */
+
+    /* A safe zone is the only brake in the game. Everywhere else momentum is
+     * permanent, so without one a ship can never come to rest. */
+    {
+        sim_map *sm = walled_map();
+        for (int ty = 500; ty < 506; ty++)
+            for (int tx = 500; tx < 506; tx++)
+                sm->tile[(size_t)ty * SIM_MAP_TILES + tx] = SIM_TILE_SAFE;
+        sim_map_index(sm);
+        sim_settings sc;
+        memset(&sc, 0, sizeof sc);
+        sim_settings_baseline(&sc, sm);
+
+        sim_state s;
+        sim_init(&s, 1);
+        int id = sim_spawn(&s, APEX, 0, 502 * 16, 502 * 16, 0, &sc);
+        CHECK(sim_in_safe(sm, s.ships[id].x, s.ships[id].y),
+              "the ship is standing in the safe zone");
+        step_n(&s, &sc, SIM_BTN_THRUST, 0, 60);
+        step_n(&s, &sc, 0, 0, 200);
+        CHECK(s.ships[id].vx == 0 && s.ships[id].vy == 0,
+              "a safe zone brings a ship to a complete stop");
+
+        /* Nothing may be fired out of one, or it is a firing position with
+         * immunity attached. */
+        ev_counts c = step_counting(&s, &sc, SIM_BTN_FIRE, 0, 200);
+        CHECK(c.fires == 0, "no weapon leaves a safe zone");
+
+        /* And nothing reaches in. */
+        sim_state t;
+        sim_init(&t, 1);
+        int a_id = sim_spawn(&t, APEX, 0, 502 * 16, 520 * 16, 0, &sc);
+        int v_id = sim_spawn(&t, APEX, 1, 502 * 16, 502 * 16, 0, &sc);
+        (void)a_id;
+        int32_t e0 = t.ships[v_id].energy;
+        step_counting(&t, &sc, SIM_BTN_FIRE, 0, 400);
+        CHECK(t.ships[v_id].energy >= e0,
+              "a ship in a safe zone takes no damage");
+        free(sm);
+    }
+
+    /* A door is a wall on a clock. Both states have to actually happen, or it
+     * is either a wall or nothing at all. */
+    {
+        CHECK(cfg.door_period > 0, "doors have a cycle");
+        int opened = 0, shut = 0;
+        for (uint32_t t = 0; t < cfg.door_period; t++) {
+            if (sim_door_open(&cfg, t, 0)) opened++; else shut++;
+        }
+        CHECK(opened > 0 && shut > 0, "a door both opens and shuts");
+        /* Variants are phase offsets, so one channel can be open while
+         * another is not -- a map that breathes rather than blinks. */
+        int differ = 0;
+        for (uint32_t t = 0; t < cfg.door_period; t++)
+            if (sim_door_open(&cfg, t, 0) != sim_door_open(&cfg, t, 4)) differ = 1;
+        CHECK(differ, "two door variants are out of phase");
+
+        sim_map *dm = walled_map();
+        for (int tx = 500; tx < 510; tx++)
+            dm->tile[(size_t)504 * SIM_MAP_TILES + tx] = SIM_TILE(SIM_TILE_DOOR, 0);
+        sim_map_index(dm);
+        sim_settings dc;
+        memset(&dc, 0, sizeof dc);
+        sim_settings_baseline(&dc, dm);
+
+        /* Shut, the door stops a ship; open, the same ship crosses it. */
+        int blocked = 0, crossed = 0;
+        for (int phase = 0; phase < 2; phase++) {
+            sim_state s;
+            sim_init(&s, 1);
+            /* Start on the tick where the door is in the state we want. */
+            uint32_t t0 = 0;
+            while (sim_door_open(&dc, t0, 0) != phase) t0++;
+            s.tick = t0;
+            int id = sim_spawn(&s, APEX, 0, 505 * 16, 508 * 16, 0, &dc);
+            step_n(&s, &dc, SIM_BTN_THRUST, 0, 120);
+            int past = s.ships[id].y < 504 * 16 * 256;
+            if (phase == 0 && !past) blocked = 1;
+            if (phase == 1 && past) crossed = 1;
+        }
+        CHECK(blocked, "a shut door stops a ship");
+        CHECK(crossed, "an open door lets the same ship through");
+        free(dm);
+    }
+
+    /* A wormhole pulls. It is the one force in the game a pilot does not
+     * apply themselves. */
+    {
+        sim_map *wm = walled_map();
+        wm->tile[(size_t)512 * SIM_MAP_TILES + 512] = SIM_TILE_WORMHOLE;
+        sim_map_index(wm);
+        CHECK(wm->feature_count == 1, "the wormhole is indexed as a feature");
+        sim_settings wc;
+        memset(&wc, 0, sizeof wc);
+        sim_settings_baseline(&wc, wm);
+
+        sim_state s;
+        sim_init(&s, 1);
+        int id = sim_spawn(&s, APEX, 0, 512 * 16, 520 * 16, 0, &wc);
+        int32_t y0 = s.ships[id].y;
+        step_n(&s, &wc, 0, 0, 60);
+        CHECK(s.ships[id].y < y0, "a drifting ship falls toward a wormhole");
+        CHECK(s.ships[id].vy < 0, "and keeps accelerating into it");
+
+        /* Out of range it is not felt at all, or the whole map would sag. */
+        sim_state f;
+        sim_init(&f, 1);
+        int fid = sim_spawn(&f, APEX, 0, 512 * 16, 700 * 16, 0, &wc);
+        int32_t fy = f.ships[fid].y;
+        step_n(&f, &wc, 0, 0, 60);
+        CHECK(f.ships[fid].y == fy && f.ships[fid].vy == 0,
+              "a ship beyond the rim is untouched");
+        free(wm);
     }
 
     /* Friendly fire passes through: same team, no damage. */

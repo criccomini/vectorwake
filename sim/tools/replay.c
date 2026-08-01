@@ -22,18 +22,27 @@
 /* The test map: a solid border plus a square block near the center, so
  * traces exercise open flight, wall bounces, and bombs against geometry. */
 static void build_map(sim_map *m) {
-    memset(m->solid, 0, sizeof m->solid);
+    memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
     for (int i = 0; i < SIM_MAP_TILES; i++) {
         for (int b = 0; b < 2; b++) {
-            m->solid[(size_t)b * SIM_MAP_TILES + i] = 1;
-            m->solid[(size_t)(SIM_MAP_TILES - 1 - b) * SIM_MAP_TILES + i] = 1;
-            m->solid[(size_t)i * SIM_MAP_TILES + b] = 1;
-            m->solid[(size_t)i * SIM_MAP_TILES + (SIM_MAP_TILES - 1 - b)] = 1;
+            m->tile[(size_t)b * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
+            m->tile[(size_t)(SIM_MAP_TILES - 1 - b) * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
+            m->tile[(size_t)i * SIM_MAP_TILES + b] = SIM_TILE_SOLID;
+            m->tile[(size_t)i * SIM_MAP_TILES + (SIM_MAP_TILES - 1 - b)] = SIM_TILE_SOLID;
         }
     }
     for (int ty = 500; ty < 512; ty++)
         for (int tx = 520; tx < 532; tx++)
-            m->solid[(size_t)ty * SIM_MAP_TILES + tx] = 1;
+            m->tile[(size_t)ty * SIM_MAP_TILES + tx] = SIM_TILE_SOLID;
+    /* A safe zone, a door and a wormhole, so the trace covers the tile
+     * behaviours as well as the walls. */
+    for (int ty = 496; ty < 500; ty++)
+        for (int tx = 496; tx < 502; tx++)
+            m->tile[(size_t)ty * SIM_MAP_TILES + tx] = SIM_TILE_SAFE;
+    for (int tx = 508; tx < 516; tx++)
+        m->tile[(size_t)492 * SIM_MAP_TILES + tx] = SIM_TILE(SIM_TILE_DOOR, 0);
+    m->tile[(size_t)520 * SIM_MAP_TILES + 500] = SIM_TILE_WORMHOLE;
+    sim_map_index(m);
 }
 
 int main(int argc, char **argv) {

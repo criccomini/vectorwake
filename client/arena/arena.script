@@ -153,6 +153,13 @@ local function bot_think(b)
     local mx, my = sim.ship_x(b.id), sim.ship_y(b.id)
     local team = sim.ship_team(b.id)
 
+    -- Leave a safe zone. Nothing in one can shoot or be shot, so a bot that
+    -- drifts in and brakes to a stop is an invulnerable ornament.
+    if sim.in_safe(b.id) then
+        local out = steer(b, 512 * 16 - mx, 512 * 16 - my, false)
+        return out + sim.BTN_THRUST
+    end
+
     -- A loose flag outranks a fight: flags decide the round.
     for i = 0, sim.flag_count() - 1 do
         local fx_, fy, fteam, carried = sim.flag_at(i)
@@ -681,6 +688,9 @@ function update(self, dt)
         end
     end
 
+    -- Doors and wormholes: world geometry that moves, so it cannot live in
+    -- the static mesh the way the walls do.
+    world.draw_tiles(fill, glow, map_lo, map_hi)
     fx.draw(glow)
     fill:flush()
     glow:flush()

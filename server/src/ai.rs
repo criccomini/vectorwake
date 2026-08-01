@@ -152,6 +152,16 @@ impl Bot {
         let mx = me.x as f32 / 256.0;
         let my = me.y as f32 / 256.0;
 
+        // Get out of a safe zone. Nothing in there can be shot and nothing in
+        // there can shoot, so a bot that wanders in and brakes to a halt is
+        // an invulnerable ornament -- which is exactly what one did, sitting
+        // in the east zone with a flag game going on around it.
+        if unsafe { sim::sim_in_safe(&*w.map, me.x, me.y) } != 0 {
+            let cx = (sim::MAP_TILES as f32 / 2.0) * 16.0;
+            let cy = (sim::MAP_TILES as f32 / 2.0) * 16.0;
+            return self.steer(w, cx - mx, cy - my, false) | sim::BTN_THRUST;
+        }
+
         // Nearest live enemy.
         let mut best: Option<(f32, f32, f32)> = None; // (dist2, dx, dy)
         let mut best_v = (0.0f32, 0.0f32);

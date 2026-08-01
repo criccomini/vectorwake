@@ -6,6 +6,8 @@
  *
  * Class order matches docs/design/ships.md.
  */
+#include <stddef.h>
+#include <string.h>
 #include "sim/baseline.h"
 
 typedef struct {
@@ -48,6 +50,15 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->prize_lo = 472;      /* inside the arena walls */
     cfg->prize_hi = 552;
     cfg->map = map;
+    /* Doors breathe on a six second cycle, open for four of it: long enough
+     * to commit to a crossing, short enough that the choice matters. */
+    cfg->door_period = 600;
+    cfg->door_open = 400;
+    /* A safe zone sheds about a fifth of your speed a tick, so a ship coasts
+     * to rest in well under a second without feeling like it hit glue. */
+    cfg->safe_brake = 210;
+    cfg->wormhole_pull = sim_units_speed(90);
+    cfg->wormhole_range = 220 * 256;
 
     for (int i = 0; i < SIM_MAX_CLASSES; i++) {
         const class_row *r = &rows[i];
@@ -74,4 +85,87 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             c->bomb_energy = (int32_t)((int64_t)c->max_energy * 300 / 1700);
         }
     }
+}
+
+/* ---- maps ---- */
+
+void sim_map_index(sim_map *m) {
+    m->feature_count = 0;
+    for (int ty = 0; ty < SIM_MAP_TILES; ty++) {
+        for (int tx = 0; tx < SIM_MAP_TILES; tx++) {
+            uint8_t t = m->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx];
+            int cls = SIM_TILE_CLASS(t);
+            if (cls != SIM_TILE_WORMHOLE && cls != SIM_TILE_GOAL
+                && cls != SIM_TILE_TURF)
+                continue;
+            if (m->feature_count >= SIM_MAX_FEATURES) return;
+            sim_feature *f = &m->features[m->feature_count++];
+            f->tx = (uint16_t)tx;
+            f->ty = (uint16_t)ty;
+            f->kind = (uint8_t)cls;
+            f->variant = SIM_TILE_VARIANT(t);
+        }
+    }
+}
+
+static void fill(sim_map *m, int x0, int y0, int x1, int y1, uint8_t t) {
+    for (int ty = y0; ty <= y1; ty++)
+        for (int tx = x0; tx <= x1; tx++)
+            m->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx] = t;
+}
+
+/* The public arena: a wall around the outside, four pillars, and baffles that
+ * break line of sight through the middle. Two safe zones on the long axis to
+ * spawn into and to stop in, a pair of doors on the short one that open and
+ * shut out of phase.
+ *
+ * No wormhole. One reaches 220 px, which is fourteen tiles of an arena that
+ * is eighty-four across, so a single well placed anywhere near the middle
+ * bends every crossing in the room. The bot ladder found this before a
+ * player would have: pilots spawned eight tiles from one stopped fighting
+ * each other entirely and orbited it instead, and the tournament graded a
+ * whole roster as equal because nobody ever landed a shot. The feature is
+ * real and tested; a map big enough to hold one should place it. */
+void sim_map_arena(sim_map *m) {
+    const int LO = 470, HI = 554;
+    memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
+    fill(m, LO, LO, HI, LO + 1, SIM_TILE_SOLID);
+    fill(m, LO, HI - 1, HI, HI, SIM_TILE_SOLID);
+    fill(m, LO, LO, LO + 1, HI, SIM_TILE_SOLID);
+    fill(m, HI - 1, LO, HI, HI, SIM_TILE_SOLID);
+    fill(m, 489, 489, 495, 495, SIM_TILE_SOLID);
+    fill(m, 529, 489, 535, 495, SIM_TILE_SOLID);
+    fill(m, 489, 529, 495, 535, SIM_TILE_SOLID);
+    fill(m, 529, 529, 535, 535, SIM_TILE_SOLID);
+    fill(m, 505, 480, 519, 483, SIM_TILE_SOLID);
+    fill(m, 505, 541, 519, 544, SIM_TILE_SOLID);
+    fill(m, 480, 505, 483, 519, SIM_TILE_SOLID);
+    fill(m, 541, 505, 544, 519, SIM_TILE_SOLID);
+
+    fill(m, 473, 508, 478, 516, SIM_TILE_SAFE);
+    fill(m, 546, 508, 551, 516, SIM_TILE_SAFE);
+
+    fill(m, 505, 484, 519, 485, SIM_TILE(SIM_TILE_DOOR, 0));
+    fill(m, 505, 539, 519, 540, SIM_TILE(SIM_TILE_DOOR, 4));
+
+    fill(m, 500, 500, 502, 502, SIM_TILE_UNDER);
+    fill(m, 522, 522, 524, 524, SIM_TILE_UNDER);
+    sim_map_index(m);
+}
+
+/* The duel arena: small, symmetric, and bare. No wormhole and no safe zone --
+ * a duel is decided by the two pilots and nothing else, and a room this size
+ * with somewhere invulnerable in it is not a duel. The bot ladder found that
+ * too: a pilot that wandered into one stopped dead, could not be shot and
+ * could not shoot, and the match ended with nobody having landed anything. */
+void sim_map_duel(sim_map *m) {
+    const int LO = 496, HI = 528;
+    memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
+    fill(m, LO, LO, HI, LO + 1, SIM_TILE_SOLID);
+    fill(m, LO, HI - 1, HI, HI, SIM_TILE_SOLID);
+    fill(m, LO, LO, LO + 1, HI, SIM_TILE_SOLID);
+    fill(m, HI - 1, LO, HI, HI, SIM_TILE_SOLID);
+    fill(m, 505, 505, 509, 509, SIM_TILE_SOLID);
+    fill(m, 515, 515, 519, 519, SIM_TILE_SOLID);
+    sim_map_index(m);
 }

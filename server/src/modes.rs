@@ -168,29 +168,10 @@ impl Mode for Duel {
     }
 }
 
-/// Duel arenas are small and closed: a room a fight cannot leave.
+/// Duel arenas are small and closed: a room a fight cannot leave. The room
+/// itself is the core's, so this and the client cannot disagree about it.
 pub fn build_duel_map(map: &mut sim::sim_map) {
-    const LO: usize = 496;
-    const HI: usize = 528;
-    for ty in 0..sim::MAP_TILES {
-        for tx in 0..sim::MAP_TILES {
-            map.solid[ty * sim::MAP_TILES + tx] = 0;
-        }
-    }
-    let mut fill = |x0: usize, y0: usize, x1: usize, y1: usize| {
-        for ty in y0..=y1 {
-            for tx in x0..=x1 {
-                map.solid[ty * sim::MAP_TILES + tx] = 1;
-            }
-        }
-    };
-    fill(LO, LO, HI, LO + 1);
-    fill(LO, HI - 1, HI, HI);
-    fill(LO, LO, LO + 1, HI);
-    fill(HI - 1, LO, HI, HI);
-    // Two pillars, so the room rewards positioning rather than pure aim.
-    fill(505, 505, 509, 509);
-    fill(515, 515, 519, 519);
+    sim::build_duel(map)
 }
 
 #[cfg(test)]

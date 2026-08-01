@@ -180,18 +180,49 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
  * ship grinding along a wall does not fire a sound effect every tick. */
 #define SIM_IMPACT_MIN 32768       /* Q16: 1/2 px per tick */
 
-static int solid(const sim_map *m, int32_t tx, int32_t ty) {
-    if (tx < 0 || ty < 0 || tx >= SIM_MAP_TILES || ty >= SIM_MAP_TILES) return 1;
-    return m->solid[(size_t)ty * SIM_MAP_TILES + (size_t)tx] != 0;
+uint8_t sim_tile_at(const sim_map *m, int32_t tx, int32_t ty) {
+    if (tx < 0 || ty < 0 || tx >= SIM_MAP_TILES || ty >= SIM_MAP_TILES)
+        return SIM_TILE_SOLID;
+    return m->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx];
 }
 
-static int box_hits(const sim_map *m, int32_t x, int32_t y, int32_t r) {
+/* A door's variant is its phase, an eighth of the cycle apart, so a map with
+ * several channels opens and shuts in sequence instead of all at once. */
+int sim_door_open(const sim_settings *cfg, uint32_t tick, uint8_t variant) {
+    if (cfg->door_period == 0) return 0;
+    uint32_t phase = (tick + (uint32_t)variant * cfg->door_period / 8)
+                     % cfg->door_period;
+    return phase < cfg->door_open;
+}
+
+static int solid(const sim_map *m, const sim_settings *cfg, uint32_t tick,
+                 int32_t tx, int32_t ty) {
+    uint8_t t = sim_tile_at(m, tx, ty);
+    switch (SIM_TILE_CLASS(t)) {
+        case SIM_TILE_SOLID: return 1;
+        case SIM_TILE_DOOR:
+            return !sim_door_open(cfg, tick, SIM_TILE_VARIANT(t));
+        default: return 0;
+    }
+}
+
+static int box_hits(const sim_map *m, const sim_settings *cfg, uint32_t tick,
+                    int32_t x, int32_t y, int32_t r) {
     int32_t tx0 = (x - r) >> 12, tx1 = (x + r) >> 12;
     int32_t ty0 = (y - r) >> 12, ty1 = (y + r) >> 12;
     for (int32_t ty = ty0; ty <= ty1; ty++)
         for (int32_t tx = tx0; tx <= tx1; tx++)
-            if (solid(m, tx, ty)) return 1;
+            if (solid(m, cfg, tick, tx, ty)) return 1;
     return 0;
+}
+
+/* The tile a point stands in, by class. */
+static int class_at(const sim_map *m, int32_t x, int32_t y) {
+    return SIM_TILE_CLASS(sim_tile_at(m, x >> 12, y >> 12));
+}
+
+int sim_in_safe(const sim_map *m, int32_t x, int32_t y) {
+    return class_at(m, x, y) == SIM_TILE_SAFE;
 }
 
 /* ---- weapons ---- */
@@ -224,6 +255,9 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
                          uint8_t attacker, int32_t amount, sim_events *ev) {
     sim_ship *v = &s->ships[victim];
     if (!v->active || !v->alive) return;
+    /* Nothing reaches a ship in a safe zone. A splash that clips the edge of
+     * one does not leak in either, which is the whole point of the tile. */
+    if (sim_in_safe(cfg->map, v->x, v->y)) return;
     v->energy -= amount;
     emit(ev, SIM_EV_HIT, victim, attacker, amount);
     if (v->energy <= 0) {
@@ -331,7 +365,9 @@ static void spawn_prize(sim_state *s, const sim_settings *cfg) {
         int32_t tx = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
         s->rng = xorshift32(s->rng);
         int32_t ty = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
-        if (solid(cfg->map, tx, ty)) continue;
+        if (solid(cfg->map, cfg, s->tick, tx, ty)) continue;
+        if (SIM_TILE_CLASS(sim_tile_at(cfg->map, tx, ty)) == SIM_TILE_SAFE)
+            continue;
         s->rng = xorshift32(s->rng);
         sim_prize *p = &s->prizes[slot];
         p->active = 1;
@@ -434,7 +470,20 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
 
         /* 3. Fire. Guns take precedence over bombs when both are held, and
          * one cooldown covers both, so a ship cannot alternate to cheat it. */
-        if (sh->fire_cooldown == 0 && (b & (SIM_BTN_FIRE | SIM_BTN_BOMB))) {
+        /* A safe zone is safe both ways: nothing can hurt you there and you
+         * cannot shoot out of it, which is what stops it being a firing
+         * position with immunity attached. */
+        int in_safe = sim_in_safe(cfg->map, sh->x, sh->y);
+        if (in_safe) {
+            /* The only brake in the game. Everywhere else momentum is
+             * permanent, so without this a ship could never come to rest. */
+            sh->vx = (int32_t)((int64_t)sh->vx * cfg->safe_brake / 256);
+            sh->vy = (int32_t)((int64_t)sh->vy * cfg->safe_brake / 256);
+            if (sh->vx < SIM_REST_EPS && sh->vx > -SIM_REST_EPS) sh->vx = 0;
+            if (sh->vy < SIM_REST_EPS && sh->vy > -SIM_REST_EPS) sh->vy = 0;
+        }
+        if (!in_safe && sh->fire_cooldown == 0
+            && (b & (SIM_BTN_FIRE | SIM_BTN_BOMB))) {
             int bomb = (b & SIM_BTN_FIRE) == 0;
             int32_t cost = bomb ? cls->bomb_energy : cls->bullet_energy;
             if (sh->energy > cost) {
@@ -458,6 +507,24 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             }
         }
 
+        /* 3b. Wormholes. The pull falls off linearly to nothing at the
+         * rim, so a ship can cross the outer edge and still get away. */
+        for (uint16_t f = 0; f < cfg->map->feature_count; f++) {
+            const sim_feature *ft = &cfg->map->features[f];
+            if (ft->kind != SIM_TILE_WORMHOLE) continue;
+            int32_t wx = (int32_t)ft->tx * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
+            int32_t wy = (int32_t)ft->ty * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
+            int64_t dx = (int64_t)wx - sh->x, dy = (int64_t)wy - sh->y;
+            int64_t d2 = dx * dx + dy * dy;
+            int64_t range = cfg->wormhole_range;
+            if (d2 == 0 || d2 > range * range) continue;
+            int64_t d = isqrt64(d2);
+            if (d == 0) continue;
+            int64_t strength = (int64_t)cfg->wormhole_pull * (range - d) / range;
+            sh->vx += (int32_t)(dx * strength / d);
+            sh->vy += (int32_t)(dy * strength / d);
+        }
+
         /* 4. Clamp to top speed. No drag term anywhere. */
         {
             int64_t mag2 = (int64_t)sh->vx * sh->vx + (int64_t)sh->vy * sh->vy;
@@ -476,7 +543,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             int32_t r = cls->radius;
 
             int32_t nx = sh->x + sh->vx / 256;
-            if (box_hits(m, nx, sh->y, r)) {
+            if (box_hits(m, cfg, next->tick, nx, sh->y, r)) {
                 if (sh->vx > 0)
                     nx = ((((sh->x + r) >> 12) + 1) << 12) - r - 1;
                 else if (sh->vx < 0)
@@ -495,7 +562,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             sh->x = nx;
 
             int32_t ny = sh->y + sh->vy / 256;
-            if (box_hits(m, sh->x, ny, r)) {
+            if (box_hits(m, cfg, next->tick, sh->x, ny, r)) {
                 if (sh->vy > 0)
                     ny = ((((sh->y + r) >> 12) + 1) << 12) - r - 1;
                 else if (sh->vy < 0)
@@ -510,6 +577,12 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     emit(ev, SIM_EV_BOUNCE, (uint8_t)i, 0, impact);
             }
             sh->y = ny;
+        }
+
+        {
+            uint8_t t = sim_tile_at(cfg->map, sh->x >> 12, sh->y >> 12);
+            if (SIM_TILE_CLASS(t) == SIM_TILE_GOAL)
+                emit(ev, SIM_EV_GOAL, (uint8_t)i, SIM_TILE_VARIANT(t), 0);
         }
 
         /* 6. Recharge, after firing, so a shot costs a full tick of energy. */
@@ -539,7 +612,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         w->y += w->vy / 256;
 
         /* Walls. Bullets die on contact; bombs detonate. */
-        if (box_hits(cfg->map, w->x, w->y, 0)) {
+        if (box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0)) {
             if (w->type == SIM_W_BOMB) {
                 for (int i = 0; i < next->ship_count; i++) {
                     sim_ship *sh = &next->ships[i];
