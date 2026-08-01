@@ -9,6 +9,7 @@
 //! yet; see docs/architecture/networking.md.
 
 mod ai;
+mod rating;
 mod sim;
 
 use std::collections::HashMap;
@@ -30,6 +31,7 @@ const C2S_INPUT: u8 = 2;
 const S2C_WELCOME: u8 = 1;
 const S2C_SNAPSHOT: u8 = 2;
 const S2C_ROSTER: u8 = 3;
+const S2C_KILL: u8 = 4;
 
 struct Player {
     ship: u8,
@@ -47,6 +49,7 @@ struct Arena {
     bots: Vec<ai::Bot>,
     names: HashMap<u8, (String, bool)>, // ship -> (name, is_ai)
     next_id: u64,
+    rating: rating::Rating,
 }
 
 impl Arena {
@@ -72,6 +75,7 @@ impl Arena {
             bots,
             names,
             next_id: 1,
+            rating: rating::Rating::new(),
         }
     }
 
@@ -117,6 +121,7 @@ impl Arena {
 
     fn leave(&mut self, id: u64) {
         if let Some(p) = self.players.remove(&id) {
+            self.rating.forget(&p.name);
             // Hand the ship back to a bot rather than leaving a corpse.
             self.bots.push(ai::Bot::new(p.ship, 0.5));
             self.names
@@ -140,6 +145,61 @@ impl Arena {
             });
         }
         self.world.step(&inputs);
+        self.score_events();
+    }
+
+    /// Turn this tick's events into rating movement. The simulation does not
+    /// know rating exists; this layer reads what it produced.
+    fn score_events(&mut self) {
+        let tick = self.world.state.tick;
+        let ev = &*self.world.events;
+        let mut deaths: Vec<(u8, u8)> = Vec::new();
+        for i in 0..ev.count as usize {
+            let e = ev.e[i];
+            match e.etype {
+                sim::EV_HIT => {
+                    let victim = e.a as usize;
+                    let attacker = e.b as usize;
+                    if victim < sim::MAX_SHIPS && attacker < sim::MAX_SHIPS {
+                        let same = self.world.state.ships[victim].team
+                            == self.world.state.ships[attacker].team;
+                        let vid = self.name_of(e.a);
+                        let aid = self.name_of(e.b);
+                        self.rating.damage(tick, &vid, &aid, e.v, same);
+                    }
+                }
+                sim::EV_DEATH => deaths.push((e.a, e.b)),
+                _ => {}
+            }
+        }
+        for (victim, killer) in deaths {
+            let vname = self.name_of(victim);
+            let kname = self.name_of(killer);
+            let rated = self.rating.death(tick, &vname);
+            let mut m = vec![S2C_KILL];
+            m.push(victim);
+            m.push(killer);
+            // Rating after the exchange, rounded, for the scoreboard.
+            let vr = self.rating.rating_of(&vname).round() as i16;
+            let kr = self.rating.rating_of(&kname).round() as i16;
+            m.extend_from_slice(&vr.to_le_bytes());
+            m.extend_from_slice(&kr.to_le_bytes());
+            m.push(rated.as_ref().map_or(0, |r| r.credits.len() as u8));
+            for p in self.players.values() {
+                let _ = p.tx.send(m.clone());
+            }
+            let assists = rated.as_ref().map_or(0, |r| r.credits.len());
+            if assists > 1 {
+                println!("tick {tick}: {kname} killed {vname} with {assists} contributors");
+            }
+        }
+    }
+
+    fn name_of(&self, ship: u8) -> String {
+        self.names
+            .get(&ship)
+            .map(|(n, _)| n.clone())
+            .unwrap_or_else(|| format!("ship{ship}"))
     }
 
     fn broadcast_snapshot(&self, buf: &mut [u8]) {
@@ -165,6 +225,7 @@ impl Arena {
         for (ship, (name, is_ai)) in &self.names {
             m.push(*ship);
             m.push(if *is_ai { 1 } else { 0 });
+            m.extend_from_slice(&(self.rating.rating_of(name).round() as i16).to_le_bytes());
             let bytes = name.as_bytes();
             let len = bytes.len().min(24) as u8;
             m.push(len);

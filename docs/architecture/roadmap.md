@@ -1,5 +1,21 @@
 # Roadmap
 
+## Where we are
+
+| Milestone | State |
+|---|---|
+| M0 sim core and determinism | Done. Green in CI on x86-64, arm64, and WebAssembly |
+| M1 a ship on screen | Done. Web client at 60 fps; flight and energy confirmed by playtest |
+| M1.5 prizes and inelastic walls | Done, added after that playtest |
+| M2 server authoritative | Done. Peak prediction error 0.9 px at 150 ms, 11 KB/s per client |
+| M3.5 AI opponents | Done server-side: input-only bots, labeled, taking and yielding seats |
+| M4 rating | Damage ledgers and attribution done; game modes not started |
+| M4.5 duels | Not started |
+| M5, M6 | Not started |
+
+The rest of this document is the original plan, kept as written.
+
+
 Ordered by risk retired per week of work, not by what is satisfying to build.
 The three things that could invalidate the architecture are cross-platform
 determinism, the feel of server-authoritative shooting, and whether Defold can
