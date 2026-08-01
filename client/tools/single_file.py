@@ -157,6 +157,53 @@ SHIM = """
       clearInterval(poll);
     }
   }, 250);
+
+  // Sound. A browser starts every page muted: the audio context is created
+  // suspended and only a user gesture may resume it. The engine takes that
+  // gesture from exactly one place -- a mouse or touch event whose target is
+  // the canvas -- and has no keyboard path at all. So a pilot who never
+  // clicks the canvas plays the whole match in silence, which looks precisely
+  // like broken sound rather than a page that was never unlocked. Measured on
+  // the shipped build: a click reaches "running" and queues audio within a
+  // frame; Enter, space and the arrows leave it "suspended" indefinitely.
+  //
+  // Unlock on anything, from anywhere, and keep trying afterwards, because
+  // the first gesture can easily land before the engine has opened its audio
+  // device at all.
+  try {
+    // iOS mutes Web Audio outright when the ring/silent switch is on, unless
+    // the page declares itself playback rather than interface noise.
+    if (navigator.audioSession) navigator.audioSession.type = "playback";
+  } catch (e) {}
+
+  var gestured = false, pump = null, pumped = 0;
+  function audioRunning() {
+    var shared = window._dmJSDeviceShared;
+    var ctx = shared && shared.audioCtx;
+    if (!ctx) return false;
+    if (ctx.state !== "running") { try { ctx.resume(); } catch (e) {} }
+    return ctx.state === "running";
+  }
+  function gesture() {
+    gestured = true;
+    if (audioRunning() || pump) return;
+    // resume() is asynchronous even when it works, so one call proves
+    // nothing. Watch until it takes, then stop watching.
+    pumped = 0;
+    pump = setInterval(function () {
+      if (audioRunning() || ++pumped > 40) { clearInterval(pump); pump = null; }
+    }, 250);
+  }
+  ["pointerdown", "mousedown", "touchstart", "touchend", "keydown", "click"]
+    .forEach(function (t) {
+      window.addEventListener(t, gesture, {capture: true, passive: true});
+    });
+  // A backgrounded tab suspends its own context. Coming back is not a
+  // gesture, but the page has had one by then, which is what the browser
+  // actually requires.
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && gestured) gesture();
+  });
 })();
 """
 
