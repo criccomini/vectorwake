@@ -139,8 +139,15 @@ void sim_map_arena(sim_map *m) {
     fill(m, 480, 505, 483, 519, SIM_TILE_SOLID);
     fill(m, 541, 505, 544, 519, SIM_TILE_SOLID);
 
-    fill(m, 473, 508, 478, 516, SIM_TILE_SAFE);
-    fill(m, 546, 508, 551, 516, SIM_TILE_SAFE);
+    /* Held off the boundary wall. Against it -- which is where these were,
+     * one tile clear -- a safe zone is a dead end: a ship flying in reaches
+     * the wall immediately and grinds along it, bleeding speed to bounce and
+     * friction every tick. That reads as the zone itself being sticky, and
+     * no amount of correctness in the safe zone code fixes it, because the
+     * damping is the wall's. A safe zone wants open space around it so it is
+     * somewhere to pass through rather than somewhere to get wedged. */
+    fill(m, 480, 507, 486, 517, SIM_TILE_SAFE);
+    fill(m, 538, 507, 544, 517, SIM_TILE_SAFE);
 
     fill(m, 505, 484, 519, 485, SIM_TILE(SIM_TILE_DOOR, 0));
     fill(m, 505, 539, 519, 540, SIM_TILE(SIM_TILE_DOOR, 4));
