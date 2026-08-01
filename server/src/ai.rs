@@ -28,6 +28,7 @@ pub fn roster() -> Vec<RosterEntry> {
         RosterEntry { name: "Meridian",   class: 7, team: 1, tile_x: 478, tile_y: 512, skill: 0.38 },
         RosterEntry { name: "Ozone",      class: 1, team: 0, tile_x: 546, tile_y: 512, skill: 0.54 },
         RosterEntry { name: "Tessellate", class: 4, team: 0, tile_x: 512, tile_y: 546, skill: 0.70 },
+        RosterEntry { name: "Cirrus",     class: 2, team: 0, tile_x: 500, tile_y: 546, skill: 0.44 },
     ]
 }
 
@@ -97,6 +98,14 @@ impl Bot {
                 best = Some((d2, dx, dy));
                 best_v = (o.vx as f32 / 65536.0, o.vy as f32 / 65536.0);
             }
+        }
+
+        // A flag nobody owns, or one the other side holds, is worth crossing
+        // the room for. Flags decide the round; kills only clear the way.
+        if let Some((dx, dy)) = nearest_flag(w, mx, my, me.team, 420.0) {
+            let out = self.steer(w, dx, dy, false);
+            self.want = out;
+            return out;
         }
 
         // A green within easy reach is worth the detour when energy allows.
@@ -176,6 +185,24 @@ impl Bot {
         }
         out
     }
+}
+
+/// The closest flag this pilot's team does not already hold.
+fn nearest_flag(w: &World, mx: f32, my: f32, team: u8, within: f32) -> Option<(f32, f32)> {
+    let mut best: Option<(f32, f32, f32)> = None;
+    for i in 0..w.state.flag_count as usize {
+        let f = &w.state.flags[i];
+        if f.active == 0 || f.team == team || f.carried == 1 {
+            continue;
+        }
+        let dx = f.x as f32 / 256.0 - mx;
+        let dy = f.y as f32 / 256.0 - my;
+        let d2 = dx * dx + dy * dy;
+        if d2 <= within * within && best.map_or(true, |b| d2 < b.0) {
+            best = Some((d2, dx, dy));
+        }
+    }
+    best.map(|(_, dx, dy)| (dx, dy))
 }
 
 fn nearest_prize(w: &World, mx: f32, my: f32, within: f32) -> Option<(f32, f32)> {

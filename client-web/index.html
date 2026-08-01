@@ -207,7 +207,7 @@ function startGame() {
   // with a spread of skill and archetype so the room feels like a room.
   const layout = [
     [0, 1, 486, 486], [3, 1, 538, 486], [6, 1, 538, 538], [2, 1, 486, 538],
-    [5, 1, 512, 478], [7, 1, 478, 512], [1, 0, 546, 512], [4, 0, 512, 546],
+    [5, 0, 512, 478], [7, 0, 478, 512], [1, 0, 546, 512], [4, 1, 512, 546],
   ];
   layout.forEach((L, i) => {
     const [cls, team, tx, ty] = L;
@@ -217,6 +217,11 @@ function startGame() {
       ai: makeBot(0.28 + (i % 5) * 0.16, id),
     });
   });
+
+  // Flags sit between the spawns, so nobody begins the round already holding
+  // one and every flag has to be crossed for.
+  [[512, 492], [532, 512], [512, 532], [492, 512]].forEach(([tx, ty]) =>
+    W.vw_add_flag(tx, ty));
 
   document.getElementById("start").style.display = "none";
   if (wantFullscreen) goFullscreen();
@@ -244,6 +249,19 @@ function makeBot(skill, id) {
 }
 
 // With no enemy in reach, a bot goes shopping. Same input path as always.
+function nearestFlag(b, within) {
+  const mx = W.vw_ship_x(b.id) / 256, my = W.vw_ship_y(b.id) / 256;
+  const team = W.vw_ship_team(b.id);
+  let bx = 0, by = 0, bd = within * within, found = false;
+  for (let i = 0, n = W.vw_flag_count(); i < n; i++) {
+    if (W.vw_flag_team(i) === team || W.vw_flag_carried(i)) continue;
+    const dx = W.vw_flag_x(i) / 256 - mx, dy = W.vw_flag_y(i) / 256 - my;
+    const d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; bx = dx; by = dy; found = true; }
+  }
+  return found ? steerTo(b, bx, by) : 0;
+}
+
 function nearestPrize(b, within) {
   const mx = W.vw_ship_x(b.id) / 256, my = W.vw_ship_y(b.id) / 256;
   let bx = 0, by = 0, bd = within * within;
@@ -296,6 +314,10 @@ function botThink(b) {
     if (d < bestD) { bestD = d; best = i; }
   }
   if (best < 0) return seekPrize(b);
+
+  // A loose flag outranks a fight: flags decide the round.
+  const flag = nearestFlag(b, 420);
+  if (flag) return flag;
 
   // A green within easy reach is worth the detour even mid-fight, which is
   // how the original actually played.
@@ -552,6 +574,40 @@ function startDuel() {
   requestAnimationFrame(frame);
 }
 
+// Warzone offline: hold every flag for two seconds to take the round. The
+// server runs the same rule; this is the local mirror of it.
+let wz = { hold: null, since: 0, clock: 0, wins: [0, 0], round: 1, resetAt: 0 };
+
+function warzoneTick() {
+  const n = W.vw_flag_count();
+  if (!n) return;
+  wz.clock++;
+  if (wz.resetAt) {
+    if (wz.clock >= wz.resetAt) { wz.resetAt = 0; wz.hold = null; wz.round++; W.vw_reset_flags(); }
+    return;
+  }
+  let leader = null;
+  for (const team of [0, 1]) if (W.vw_flags_held(team) === n) { leader = team; break; }
+  if (leader === null) {
+    wz.hold = null;
+    const a = W.vw_flags_held(0), b = W.vw_flags_held(1);
+    banner = `flags  you ${a} - ${b} them   ${n - a - b} loose`;
+  } else if (wz.hold === leader) {
+    const left = 200 - (wz.clock - wz.since);
+    if (left <= 0) {
+      wz.wins[leader]++;
+      wz.resetAt = wz.clock + 400;
+      banner = leader === myTeam() ? "you take the round" : "they take the round";
+    } else {
+      banner = (leader === myTeam() ? "you hold all flags: " : "they hold all flags: ")
+             + (Math.ceil(left / 100) || 1);
+    }
+  } else {
+    wz.hold = leader;
+    wz.since = wz.clock;
+  }
+}
+
 function duelTick() {
   if (!duel) return;
   duel.timer++;
@@ -643,6 +699,7 @@ function stepOnce() {
   }
   W.vw_step(BTN_PTR, n);
   duelTick();
+  if (!duel && !net) warzoneTick();
 
   drainEvents();
 }
@@ -710,6 +767,7 @@ function render() {
 
   drawTiles(camx, camy, w / scale, h / scale);
   drawPrizes();
+  drawFlags();
   drawWeapons();
   drawShips();
 
@@ -806,6 +864,34 @@ function drawShips() {
       cx.fillText(pilots[i] ? pilots[i].name : "", x, y + 30);
     }
   }
+}
+
+// Flags: a diamond on a post, tinted by the team holding it. Carried flags
+// ride their carrier, which the simulation already does for us.
+function drawFlags() {
+  for (let i = 0, n = W.vw_flag_count(); i < n; i++) {
+    const x = W.vw_flag_x(i) / 256, y = W.vw_flag_y(i) / 256;
+    const team = W.vw_flag_team(i);
+    const col = team === 255 ? "#8fa0b8" : (team === myTeam() ? "#7fe3a0" : "#ff8080");
+    const carried = W.vw_flag_carried(i);
+    cx.save();
+    cx.translate(x, y);
+    if (carried) cx.translate(0, -16);
+    cx.strokeStyle = col;
+    cx.lineWidth = 1.6;
+    cx.beginPath(); cx.moveTo(0, 6); cx.lineTo(0, -10); cx.stroke();
+    cx.beginPath();
+    cx.moveTo(0, -10); cx.lineTo(11, -6); cx.lineTo(0, -2);
+    cx.closePath();
+    cx.fillStyle = col + (carried ? "cc" : "66");
+    cx.fill();
+    cx.stroke();
+    cx.restore();
+  }
+}
+
+function myTeam() {
+  return W.vw_ship_team ? W.vw_ship_team(ME) : 0;
 }
 
 function drawPrizes() {

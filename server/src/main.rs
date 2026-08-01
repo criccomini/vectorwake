@@ -75,6 +75,11 @@ impl Arena {
                 names.insert(ship as u8, (r.name.to_string(), true));
             }
         }
+        // Away from every spawn: a flag nobody starts on top of.
+        for (tx, ty) in [(512, 492), (532, 512), (512, 532), (492, 512)] {
+            world.add_flag(tx, ty);
+        }
+
         Arena {
             world,
             players: HashMap::new(),
@@ -82,7 +87,7 @@ impl Arena {
             names,
             next_id: 1,
             rating: rating::Rating::new(),
-            mode: Box::new(modes::FreeForAll),
+            mode: Box::new(modes::Warzone::new(4)),
             banner: String::new(),
             finished: false,
         }

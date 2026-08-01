@@ -99,6 +99,13 @@ EXPORT int vw_flag_y(int i) { return g_cur->flags[i].y; }
 EXPORT int vw_flag_team(int i) { return g_cur->flags[i].team; }
 EXPORT int vw_flag_carried(int i) { return g_cur->flags[i].carried; }
 EXPORT int vw_flags_held(int team) { return sim_flags_held(g_cur, (uint8_t)team); }
+EXPORT void vw_reset_flags(void) {
+    for (int i = 0; i < g_cur->flag_count; i++) {
+        g_cur->flags[i].team = SIM_TEAM_NONE;
+        g_cur->flags[i].carried = 0;
+        g_cur->flags[i].cooldown = 0;
+    }
+}
 
 EXPORT int vw_spawn(int cls, int team, int tile_x, int tile_y, int heading) {
     return sim_spawn(g_cur, (uint8_t)cls, (uint8_t)team, tile_x * SIM_TILE_PX,

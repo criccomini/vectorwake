@@ -27,6 +27,8 @@ pub const EV_BOUNCE: u8 = 2;
 pub const EV_HIT: u8 = 3;
 pub const EV_DEATH: u8 = 4;
 pub const EV_SPAWN: u8 = 5;
+pub const EV_FLAG_TAKE: u8 = 7;
+pub const EV_FLAG_DROP: u8 = 8;
 
 #[repr(C)]
 pub struct sim_map {
@@ -70,6 +72,8 @@ pub struct sim_settings {
     pub prize_radius: i32,
     pub prize_lo: i32,
     pub prize_hi: i32,
+    pub flag_radius: i32,
+    pub flag_drop_cooldown: u16,
     pub map: *const sim_map,
 }
 
@@ -94,6 +98,21 @@ pub struct sim_ship {
     pub deaths: u16,
     pub up: [u8; UP_COUNT],
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct sim_flag {
+    pub active: u8,
+    pub carried: u8,
+    pub carrier: u8,
+    pub team: u8,
+    pub x: i32,
+    pub y: i32,
+    pub cooldown: u16,
+}
+
+pub const MAX_FLAGS: usize = 16;
+pub const TEAM_NONE: u8 = 255;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -129,6 +148,8 @@ pub struct sim_state {
     pub ships: [sim_ship; MAX_SHIPS],
     pub weapons: [sim_weapon; MAX_WEAPONS],
     pub prizes: [sim_prize; MAX_PRIZES],
+    pub flags: [sim_flag; MAX_FLAGS],
+    pub flag_count: u8,
 }
 
 pub const MAX_PRIZES: usize = 64;
@@ -180,6 +201,8 @@ extern "C" {
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
+    pub fn sim_add_flag(s: *mut sim_state, x_px: i32, y_px: i32) -> c_int;
+    pub fn sim_flags_held(s: *const sim_state, team: u8) -> c_int;
 }
 
 pub const PACK_MAX: usize = 64 * 1024;
@@ -273,6 +296,14 @@ impl World {
 
     pub fn pack(&self, out: &mut [u8]) -> i32 {
         unsafe { sim_pack(&*self.state, out.as_mut_ptr(), out.len() as c_int) }
+    }
+
+    pub fn add_flag(&mut self, tile_x: i32, tile_y: i32) -> i32 {
+        unsafe { sim_add_flag(&mut *self.state, tile_x * TILE_PX, tile_y * TILE_PX) }
+    }
+
+    pub fn flags_held(&self, team: u8) -> i32 {
+        unsafe { sim_flags_held(&*self.state, team) }
     }
 
     pub fn eff_max_energy(&self, ship: usize) -> i32 {
