@@ -157,9 +157,6 @@ typedef struct {
      * so one map can breathe rather than blink. */
     uint16_t door_period;  /* ticks for a full cycle; 0 leaves doors shut */
     uint16_t door_open;    /* ticks of that cycle a door stands open */
-    /* A safe zone bleeds speed until a ship can sit still, which is the only
-     * way to stop in a game with no friction anywhere else. */
-    int32_t safe_brake;    /* retained speed per tick, out of 256 */
     int32_t wormhole_pull;   /* Q16 px/tick^2 at the mouth */
     int32_t wormhole_range;  /* Q8 px, beyond which it does not reach */
     int32_t prize_radius;  /* Q8 px, pickup distance */

@@ -54,9 +54,6 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * to commit to a crossing, short enough that the choice matters. */
     cfg->door_period = 600;
     cfg->door_open = 400;
-    /* A safe zone sheds about a fifth of your speed a tick, so a ship coasts
-     * to rest in well under a second without feeling like it hit glue. */
-    cfg->safe_brake = 210;
     cfg->wormhole_pull = sim_units_speed(90);
     cfg->wormhole_range = 220 * 256;
 

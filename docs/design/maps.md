@@ -37,9 +37,11 @@ anywhere in the game. A safe zone is where you get one, which makes it the
 only place a ship can come to rest. That is why the original had them, and
 why an arena without them has nowhere to disengage to.
 
-Flight inside one is otherwise untouched -- a ship crosses at speed like
-anywhere else. Braking on entry made a safe zone flypaper, and a zone that
-cannot be crossed is a wall in a different colour.
+Flight inside one is identical to flight anywhere else -- not merely
+unbraked, identical, and there is a test that measures it against open space
+rather than against a threshold. The first attempt bled 18% of speed a tick,
+which reads as "slower but still moving", and any threshold loose enough to
+be safe would have passed it.
 
 The trigger is the brake. Pressing fire in a safe zone does not shoot; it
 stops the ship dead. That puts coming to rest under the pilot's thumb rather

@@ -226,6 +226,30 @@ int main(void) {
         step_n(&s, &sc, 0, 0, 5);
         CHECK(s.ships[id].vy == vy, "and coasts through one unimpeded");
 
+        /* Flight in a safe zone is not merely "not braked", it is identical
+         * to flight anywhere else. Measured against open space rather than
+         * against a threshold, because "slower but moving" is exactly what
+         * the first attempt at this felt like and a threshold would have
+         * passed it. */
+        {
+            sim_map *om = walled_map();
+            sim_settings oc;
+            memset(&oc, 0, sizeof oc);
+            sim_settings_baseline(&oc, om);
+            sim_state in_zone, open;
+            sim_init(&in_zone, 1);
+            sim_init(&open, 1);
+            int a_id = sim_spawn(&in_zone, APEX, 0, 502 * 16, 502 * 16, 0, &sc);
+            int b_id = sim_spawn(&open, APEX, 0, 502 * 16, 502 * 16, 0, &oc);
+            step_n(&in_zone, &sc, SIM_BTN_THRUST, 0, 100);
+            step_n(&open, &oc, SIM_BTN_THRUST, 0, 100);
+            CHECK(in_zone.ships[a_id].vy == open.ships[b_id].vy,
+                  "a safe zone does not slow a ship by so much as a unit");
+            CHECK(in_zone.ships[a_id].y == open.ships[b_id].y,
+                  "and it travels exactly as far");
+            free(om);
+        }
+
         /* The trigger is the brake, and it is the only one in the game. */
         ev_counts c = step_counting(&s, &sc, SIM_BTN_FIRE, 0, 1);
         CHECK(s.ships[id].vx == 0 && s.ships[id].vy == 0,

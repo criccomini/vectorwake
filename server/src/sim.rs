@@ -93,7 +93,6 @@ pub struct sim_settings {
     pub flag_drop_cooldown: u16,
     pub door_period: u16,
     pub door_open: u16,
-    pub safe_brake: i32,
     pub wormhole_pull: i32,
     pub wormhole_range: i32,
     pub map: *const sim_map,
