@@ -227,7 +227,8 @@ typedef enum {
     SIM_EV_PRIZE,    /* a: ship, b: sim_upgrade collected */
     SIM_EV_FLAG_TAKE,/* a: ship, b: flag index */
     SIM_EV_FLAG_DROP,/* a: flag index, b: team that keeps it */
-    SIM_EV_GOAL      /* a: ship, b: the goal's variant */
+    SIM_EV_GOAL,     /* a: ship, b: the goal's variant */
+    SIM_EV_WARP      /* a: ship caught by a closing door, sent home */
 } sim_event_type;
 
 typedef struct {

@@ -122,6 +122,11 @@ impl Bot {
         if me.active == 0 || me.alive == 0 || self.aim == (0.0, 0.0) {
             return 0;
         }
+        // In a safe zone the trigger is the brake. A bot crossing one with a
+        // shot lined up would stop dead in the middle of it.
+        if unsafe { sim::sim_in_safe(&*w.map, me.x, me.y) } != 0 {
+            return 0;
+        }
         let max_e = w.eff_max_energy(self.ship as usize) as f32;
         let e = me.energy as f32 / max_e;
         // Energy is health and ammunition in one pool, so knowing when to
@@ -152,10 +157,9 @@ impl Bot {
         let mx = me.x as f32 / 256.0;
         let my = me.y as f32 / 256.0;
 
-        // Get out of a safe zone. Nothing in there can be shot and nothing in
-        // there can shoot, so a bot that wanders in and brakes to a halt is
-        // an invulnerable ornament -- which is exactly what one did, sitting
-        // in the east zone with a flag game going on around it.
+        // Get out of a safe zone, and never pull the trigger inside one: in
+        // there the trigger is the brake, so a bot that fires on its way
+        // through stops dead in the one place nothing can shoot into.
         if unsafe { sim::sim_in_safe(&*w.map, me.x, me.y) } != 0 {
             let cx = (sim::MAP_TILES as f32 / 2.0) * 16.0;
             let cy = (sim::MAP_TILES as f32 / 2.0) * 16.0;

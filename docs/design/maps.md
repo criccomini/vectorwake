@@ -32,14 +32,25 @@ goals use it as the team that scores there.
 
 ## Safe zones are load-bearing
 
-Flight is frictionless: momentum never bleeds off, and there is no brake. A
-safe zone is the only thing in the game that sheds speed, which makes it the
+Flight is frictionless: momentum never bleeds off, and there is no brake
+anywhere in the game. A safe zone is where you get one, which makes it the
 only place a ship can come to rest. That is why the original had them, and
 why an arena without them has nowhere to disengage to.
 
+Flight inside one is otherwise untouched -- a ship crosses at speed like
+anywhere else. Braking on entry made a safe zone flypaper, and a zone that
+cannot be crossed is a wall in a different colour.
+
+The trigger is the brake. Pressing fire in a safe zone does not shoot; it
+stops the ship dead. That puts coming to rest under the pilot's thumb rather
+than under the floor, and it costs nothing to learn, because pressing fire is
+what a pilot does anyway.
+
 They cut both ways on purpose. Nothing can hurt a ship inside one, including
 a blast that clips the edge, and nothing can be fired out of one either --
-otherwise it is a firing position with immunity attached.
+otherwise it is a firing position with immunity attached. Anything the ship
+already had in the air comes down with it, so firing and running for cover
+cannot score from the one place nothing can answer.
 
 ## Doors breathe
 
@@ -49,6 +60,11 @@ than blinking at once.
 
 Open doors still draw their frame, faintly, so a pilot can see where the wall
 will be and time the crossing rather than discovering it.
+
+A door that shuts on a ship warps it back to where it started. Leaving it
+there is not an option the collision can resolve -- both axes are blocked, so
+the ship sits inside the wall until something kills it. Warping keeps a door
+lethal to position without being lethal to the pilot.
 
 ## What the reference arenas use, and what they do not
 

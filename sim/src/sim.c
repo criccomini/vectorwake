@@ -472,15 +472,32 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * one cooldown covers both, so a ship cannot alternate to cheat it. */
         /* A safe zone is safe both ways: nothing can hurt you there and you
          * cannot shoot out of it, which is what stops it being a firing
-         * position with immunity attached. */
+         * position with immunity attached.
+         *
+         * Flight is otherwise untouched. A ship crosses one at speed like
+         * anywhere else -- braking on entry made it flypaper, and a zone you
+         * cannot pass through is a wall wearing a different colour.
+         *
+         * The trigger is the brake. Pressing fire in here does not shoot; it
+         * stops you dead, which is the only way to come to rest in a game
+         * with no friction, and it puts that under the pilot's thumb rather
+         * than under the floor. */
         int in_safe = sim_in_safe(cfg->map, sh->x, sh->y);
         if (in_safe) {
-            /* The only brake in the game. Everywhere else momentum is
-             * permanent, so without this a ship could never come to rest. */
-            sh->vx = (int32_t)((int64_t)sh->vx * cfg->safe_brake / 256);
-            sh->vy = (int32_t)((int64_t)sh->vy * cfg->safe_brake / 256);
-            if (sh->vx < SIM_REST_EPS && sh->vx > -SIM_REST_EPS) sh->vx = 0;
-            if (sh->vy < SIM_REST_EPS && sh->vy > -SIM_REST_EPS) sh->vy = 0;
+            if (b & (SIM_BTN_FIRE | SIM_BTN_BOMB)) {
+                sh->vx = 0;
+                sh->vy = 0;
+            }
+            /* Whatever this ship still has in the air comes down with it. A
+             * pilot who fires and runs for cover should not be scoring from
+             * inside the one place nothing can answer. */
+            for (uint16_t wi = 0; wi < next->weapon_count;) {
+                if (next->weapons[wi].owner == (uint8_t)i) {
+                    kill_weapon(next, wi);
+                } else {
+                    wi++;
+                }
+            }
         }
         if (!in_safe && sh->fire_cooldown == 0
             && (b & (SIM_BTN_FIRE | SIM_BTN_BOMB))) {
@@ -534,6 +551,21 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 sh->vx = (int32_t)((int64_t)sh->vx * max / mag);
                 sh->vy = (int32_t)((int64_t)sh->vy * max / mag);
             }
+        }
+
+        /* 4b. A door that shuts on a ship warps it rather than swallowing it.
+         * The alternative is a ship inside a wall, which the axis-by-axis
+         * collision below cannot resolve: both axes are blocked, so it stays
+         * stuck until something kills it. Warping keeps the door lethal to
+         * position without being lethal to the pilot. */
+        if (SIM_TILE_CLASS(sim_tile_at(cfg->map, sh->x >> 12, sh->y >> 12))
+                == SIM_TILE_DOOR
+            && box_hits(cfg->map, cfg, next->tick, sh->x, sh->y, 0)) {
+            sh->x = sh->spawn_x;
+            sh->y = sh->spawn_y;
+            sh->vx = 0;
+            sh->vy = 0;
+            emit(ev, SIM_EV_WARP, (uint8_t)i, 0, 0);
         }
 
         /* 5. Integrate and collide, one axis at a time so a wall kills only

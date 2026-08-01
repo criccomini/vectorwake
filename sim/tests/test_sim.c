@@ -42,12 +42,12 @@ static void step_n(sim_state *s, const sim_settings *cfg, uint16_t b0,
 /* Counts of each event type over n ticks. Energy is a poor probe for damage
  * because recharge erases the evidence within a second; events do not lie. */
 typedef struct {
-    int fires, hits, deaths, bounces, spawns, prizes;
+    int fires, hits, deaths, bounces, spawns, prizes, warps;
 } ev_counts;
 
 static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
                                uint16_t b0, uint16_t b1, int n) {
-    ev_counts c = {0, 0, 0, 0, 0, 0};
+    ev_counts c = {0, 0, 0, 0, 0, 0, 0};
     sim_state tmp;
     sim_events ev;
     for (int i = 0; i < n; i++) {
@@ -61,6 +61,7 @@ static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
                 case SIM_EV_BOUNCE: c.bounces++; break;
                 case SIM_EV_SPAWN: c.spawns++; break;
                 case SIM_EV_PRIZE: c.prizes++; break;
+                case SIM_EV_WARP: c.warps++; break;
                 default: break;
             }
     }
@@ -216,15 +217,42 @@ int main(void) {
         int id = sim_spawn(&s, APEX, 0, 502 * 16, 502 * 16, 0, &sc);
         CHECK(sim_in_safe(sm, s.ships[id].x, s.ships[id].y),
               "the ship is standing in the safe zone");
-        step_n(&s, &sc, SIM_BTN_THRUST, 0, 60);
-        step_n(&s, &sc, 0, 0, 200);
-        CHECK(s.ships[id].vx == 0 && s.ships[id].vy == 0,
-              "a safe zone brings a ship to a complete stop");
+        /* Flight is untouched. Braking on entry made a safe zone flypaper,
+         * and a zone that cannot be crossed at speed is a wall in a
+         * different colour. */
+        step_n(&s, &sc, SIM_BTN_THRUST, 0, 30);
+        int32_t vy = s.ships[id].vy;
+        CHECK(vy != 0, "a ship accelerates inside a safe zone");
+        step_n(&s, &sc, 0, 0, 5);
+        CHECK(s.ships[id].vy == vy, "and coasts through one unimpeded");
 
-        /* Nothing may be fired out of one, or it is a firing position with
-         * immunity attached. */
-        ev_counts c = step_counting(&s, &sc, SIM_BTN_FIRE, 0, 200);
-        CHECK(c.fires == 0, "no weapon leaves a safe zone");
+        /* The trigger is the brake, and it is the only one in the game. */
+        ev_counts c = step_counting(&s, &sc, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.ships[id].vx == 0 && s.ships[id].vy == 0,
+              "pressing fire in a safe zone stops the ship dead");
+        c = step_counting(&s, &sc, SIM_BTN_FIRE, 0, 200);
+        CHECK(c.fires == 0, "and no weapon leaves one");
+
+        /* Whatever was already in the air comes down. Firing and running for
+         * cover must not score from inside the one place nothing answers. */
+        sim_state g;
+        sim_init(&g, 1);
+        int gid = sim_spawn(&g, APEX, 0, 502 * 16, 516 * 16, 0, &sc);
+        step_n(&g, &sc, SIM_BTN_FIRE, 0, 1);
+        CHECK(g.weapon_count > 0, "a shot fired outside exists");
+        /* Walk it in rather than guess the distance: an Apex at full thrust
+         * crosses a six tile zone and out the far side inside a second. */
+        int arrived = 0;
+        for (int t = 0; t < 400 && !arrived; t++) {
+            step_n(&g, &sc, SIM_BTN_THRUST, 0, 1);
+            arrived = sim_in_safe(sm, g.ships[gid].x, g.ships[gid].y);
+        }
+        CHECK(arrived, "the ship reached the safe zone");
+        /* The sweep reads the position it had at the top of the tick, so it
+         * takes effect on the one after it arrives. */
+        step_n(&g, &sc, 0, 0, 2);
+        CHECK(g.weapon_count == 0,
+              "and its shots are gone with it");
 
         /* And nothing reaches in. */
         sim_state t;
@@ -279,6 +307,25 @@ int main(void) {
             if (phase == 1 && past) crossed = 1;
         }
         CHECK(blocked, "a shut door stops a ship");
+
+        /* Caught in the doorway when it shuts, a ship is warped. Left where
+         * it was, both axes are blocked and the collision below cannot free
+         * it: it would sit inside a wall until something killed it. */
+        {
+            sim_state s;
+            sim_init(&s, 1);
+            uint32_t t0 = 0;
+            while (!sim_door_open(&dc, t0, 0)) t0++;
+            s.tick = t0;
+            int id = sim_spawn(&s, APEX, 0, 505 * 16, 504 * 16, 0, &dc);
+            int32_t sx = s.ships[id].spawn_x, sy = s.ships[id].spawn_y;
+            /* Sit in the doorway until it comes down. */
+            ev_counts c = step_counting(&s, &dc, 0, 0, dc.door_period);
+            CHECK(c.warps > 0, "a door shutting on a ship warps it");
+            CHECK(s.ships[id].x == sx && s.ships[id].y == sy,
+                  "and puts it back where it started");
+            CHECK(s.ships[id].alive, "without killing it");
+        }
         CHECK(crossed, "an open door lets the same ship through");
         free(dm);
     }

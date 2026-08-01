@@ -153,8 +153,9 @@ local function bot_think(b)
     local mx, my = sim.ship_x(b.id), sim.ship_y(b.id)
     local team = sim.ship_team(b.id)
 
-    -- Leave a safe zone. Nothing in one can shoot or be shot, so a bot that
-    -- drifts in and brakes to a stop is an invulnerable ornament.
+    -- Leave a safe zone, and never press the trigger inside one: in here
+    -- that is the brake, and a bot that stops in a place nothing can shoot
+    -- into is an invulnerable ornament.
     if sim.in_safe(b.id) then
         local out = steer(b, 512 * 16 - mx, 512 * 16 - my, false)
         return out + sim.BTN_THRUST
