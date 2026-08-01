@@ -5,9 +5,20 @@ damage, deaths, and prize pickups are outputs of `sim_step` and cannot be
 asserted from outside.
 
 ```sh
-cargo run --release            # listens on ws://127.0.0.1:9010
-cargo run --release -- 0.0.0.0:9010
+cargo run --release -- 127.0.0.1:9010 ../zone
 ```
+
+The second argument is a zone directory holding `zone.toml`. Without one the
+server runs on the built-in defaults and says so. `../zone` in this repo is a
+reference zone worth reading: it documents every setting an operator can
+touch.
+
+Settings reload while the server runs. Save `zone.toml` and the numbers
+change with nobody disconnected; a broken edit is logged and ignored rather
+than taking the zone down. Bans apply the same way.
+
+Ratings persist to `ratings.json` beside the config, written through a
+temporary file so a crash cannot leave half a record.
 
 Then open the client, put the URL in the box, and press CONNECT.
 

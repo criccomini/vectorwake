@@ -203,6 +203,11 @@ extern "C" {
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
     pub fn sim_add_flag(s: *mut sim_state, x_px: i32, y_px: i32) -> c_int;
     pub fn sim_flags_held(s: *const sim_state, team: u8) -> c_int;
+    pub fn sim_units_speed(v: i32) -> i32;
+    pub fn sim_units_thrust(v: i32) -> i32;
+    pub fn sim_units_rotation(v: i32) -> i32;
+    pub fn sim_units_energy(v: i32) -> i32;
+    pub fn sim_units_recharge(v: i32) -> i32;
 }
 
 pub const PACK_MAX: usize = 64 * 1024;

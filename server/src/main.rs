@@ -9,7 +9,9 @@
 //! yet; see docs/architecture/networking.md.
 
 mod ai;
+mod config;
 mod modes;
+mod persist;
 mod rating;
 mod sim;
 
@@ -35,6 +37,8 @@ const S2C_SNAPSHOT: u8 = 2;
 const S2C_ROSTER: u8 = 3;
 const S2C_KILL: u8 = 4;
 const S2C_BANNER: u8 = 5;
+const S2C_ZONE: u8 = 6;
+const S2C_DENIED: u8 = 7;
 
 struct Player {
     ship: u8,
@@ -59,6 +63,45 @@ struct Arena {
 }
 
 impl Arena {
+    /// Apply the operator's tuning over the baseline. Anything the zone file
+    /// leaves out keeps the value the core ships with, which is what makes a
+    /// short config file legal.
+    fn apply_config(world: &mut sim::World, c: &config::ArenaConfig) {
+        if c.bounce > 0 { world.cfg.bounce = c.bounce; }
+        if c.friction > 0 { world.cfg.friction = c.friction; }
+        if c.respawn_delay > 0 { world.cfg.respawn_delay = c.respawn_delay; }
+        if c.prize_delay > 0 { world.cfg.prize_delay = c.prize_delay; }
+        if c.prize_max > 0 { world.cfg.prize_max = c.prize_max; }
+        for s in &c.ships {
+            let Some(idx) = ai::class_index(&s.name) else { continue };
+            let cls = &mut world.cfg.classes[idx];
+            unsafe {
+                if s.speed > 0 { cls.max_speed = sim::sim_units_speed(s.speed); }
+                if s.thrust > 0 { cls.thrust = sim::sim_units_thrust(s.thrust); }
+                if s.rotation > 0 { cls.rot = sim::sim_units_rotation(s.rotation); }
+                if s.energy > 0 { cls.max_energy = sim::sim_units_energy(s.energy); }
+                if s.recharge > 0 { cls.recharge = sim::sim_units_recharge(s.recharge); }
+            }
+            // Upgrades climb toward whatever ceiling the operator set.
+            cls.init_speed = cls.max_speed * 70 / 100;
+            cls.up_speed = (cls.max_speed - cls.init_speed) / 8;
+            cls.init_thrust = cls.thrust * 70 / 100;
+            cls.up_thrust = (cls.thrust - cls.init_thrust) / 8;
+            cls.init_rot = cls.rot * 70 / 100;
+            cls.up_rot = (cls.rot - cls.init_rot) / 8;
+            cls.init_energy = cls.max_energy * 70 / 100;
+            cls.up_energy = (cls.max_energy - cls.init_energy) / 8;
+            cls.init_recharge = cls.recharge * 70 / 100;
+            cls.up_recharge = (cls.recharge - cls.init_recharge) / 8;
+        }
+    }
+
+    fn new_from(cfg: &config::ZoneConfig) -> Self {
+        let mut a = Arena::new();
+        Arena::apply_config(&mut a.world, &cfg.arena);
+        a
+    }
+
     fn new() -> Self {
         let mut world = sim::World::new(0x5eed);
         let mut bots = Vec::new();
@@ -332,23 +375,52 @@ impl Arena {
 struct Zone {
     arenas: HashMap<u32, Arena>,
     next_arena: u32,
+    cfg: config::ConfigWatcher,
+    store: persist::Store,
 }
 
 impl Zone {
-    fn new() -> Self {
+    fn new(cfg: config::ConfigWatcher, store: persist::Store) -> Self {
         let mut arenas = HashMap::new();
-        arenas.insert(0, Arena::new());
-        Zone { arenas, next_arena: 1 }
+        arenas.insert(0, Arena::new_from(&cfg.current));
+        Zone { arenas, next_arena: 1, cfg, store }
+    }
+
+    /// Re-read the zone file and push the new numbers into every live arena.
+    /// Nobody is disconnected: an operator tuning a bounce factor should not
+    /// cost the room its round.
+    fn reload(&mut self) {
+        if let Some(msg) = self.cfg.poll() {
+            println!("{msg}");
+            for a in self.arenas.values_mut() {
+                Arena::apply_config(&mut a.world, &self.cfg.current.arena);
+            }
+        }
+    }
+
+    fn zone_msg(&self) -> Vec<u8> {
+        let mut m = vec![S2C_ZONE];
+        let text = format!("{}\n{}", self.cfg.current.name, self.cfg.current.description);
+        m.extend_from_slice(text.as_bytes());
+        m
     }
 }
 
 #[tokio::main]
 async fn main() {
-    let addr = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "127.0.0.1:9010".to_string());
+    let addr_arg = std::env::args().nth(1);
 
-    let zone = Arc::new(Mutex::new(Zone::new()));
+    let dir = std::env::args().nth(2).unwrap_or_else(|| ".".into());
+    let (watcher, err) = config::ConfigWatcher::load(format!("{dir}/zone.toml"));
+    if let Some(e) = err {
+        println!("no usable zone.toml ({e}); running on the built-in defaults");
+    }
+    let store = persist::Store::open(format!("{dir}/ratings.json"));
+    println!("zone \"{}\": {}", watcher.current.name, watcher.current.description);
+    // The command line wins over the zone file, so an operator can move a
+    // zone to another port without editing its configuration.
+    let addr = addr_arg.unwrap_or_else(|| watcher.current.listen.clone());
+    let zone = Arc::new(Mutex::new(Zone::new(watcher, store)));
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind failed");
@@ -368,6 +440,23 @@ async fn main() {
                 ticker.tick().await;
                 let mut z = zone.lock().await;
                 n += 1;
+                if n % 300 == 0 {
+                    z.reload();
+                }
+                if n % 3000 == 0 {
+                    let ratings: Vec<(String, f64)> = z.arenas[&0]
+                        .rating
+                        .score
+                        .iter()
+                        .map(|(k, v)| (k.clone(), *v))
+                        .collect();
+                    for (k, v) in ratings {
+                        z.store.set_rating(&k, v);
+                    }
+                    if let Err(e) = z.store.flush() {
+                        println!("could not save ratings: {e}");
+                    }
+                }
                 for a in z.arenas.values_mut() {
                     a.tick();
                     if n % SNAPSHOT_EVERY == 0 {
@@ -417,6 +506,16 @@ async fn main() {
                         let name = String::from_utf8_lossy(&data[2..]).to_string();
                         let name = if name.is_empty() { "pilot".into() } else { name };
                         let mut z = zone.lock().await;
+                        if z.cfg.current.is_banned(&name) {
+                            let mut m = vec![S2C_DENIED];
+                            m.extend_from_slice(b"you are banned from this zone");
+                            let _ = tx.send(m);
+                            break;
+                        }
+                        let _ = tx.send(z.zone_msg());
+                        if let Some(saved) = z.store.rating(&name) {
+                            z.arenas.get_mut(&0).unwrap().rating.score.insert(name.clone(), saved);
+                        }
                         let a = z.arenas.get_mut(&0).unwrap();
                         if let Some(new_id) = a.join(name, class, tx.clone()) {
                             seat = Some((0, new_id));

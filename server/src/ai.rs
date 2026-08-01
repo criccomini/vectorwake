@@ -32,6 +32,15 @@ pub fn roster() -> Vec<RosterEntry> {
     ]
 }
 
+/// Map a class name from a zone file to its index, so an operator writes
+/// "Apex" rather than remembering that Apex is 0.
+pub fn class_index(name: &str) -> Option<usize> {
+    const NAMES: [&str; 8] = [
+        "Apex", "Wedge", "Chord", "Anvil", "Spire", "Cipher", "Facet", "Lattice",
+    ];
+    NAMES.iter().position(|n| n.eq_ignore_ascii_case(name))
+}
+
 pub fn name_for(ship: u8) -> String {
     roster()
         .get(ship as usize)

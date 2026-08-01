@@ -9,9 +9,14 @@
 | M1.5 prizes and inelastic walls | Done, added after that playtest |
 | M2 server authoritative | Done. Peak prediction error 0.9 px at 150 ms, 11 KB/s per client |
 | M3.5 AI opponents | Done server-side: input-only bots, labeled, taking and yielding seats |
-| M4 rating | Damage ledgers and attribution done; game modes not started |
-| M4.5 duels | Not started |
-| M5, M6 | Not started |
+| M4 rating and modes | Done: damage ledgers, attribution, and the warzone flag game |
+| M4.5 duels | Done, offline and networked |
+| M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities, persistence |
+| M6 platforms and meta-layer | Blocked on accounts, not on code. See below |
+
+M6 needs a Steam partner account, console manufacturer approval, and a
+Postgres deployment for Nakama. Those are credentials and decisions rather
+than engineering, so the milestone waits on somebody making them.
 
 The rest of this document is the original plan, kept as written.
 
