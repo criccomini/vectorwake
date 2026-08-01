@@ -59,9 +59,7 @@ function M.play(name, x, y)
         if pan > 1 then pan = 1 elseif pan < -1 then pan = -1 end
     end
 
-    -- pcall, because a sound component that failed to load must not take the
-    -- frame loop with it. A silent game is a bug; a crashed one is worse.
-    pcall(sound.play, "#" .. name, {
+    M.fire(name, {
         gain = gain,
         pan = pan,
         speed = 0.93 + rnd() * 0.14,
@@ -70,7 +68,21 @@ end
 
 -- Interface sounds are not in the world and are never attenuated.
 function M.ui(name)
-    pcall(sound.play, "#" .. name, {gain = 1, pan = 0, speed = 1})
+    M.fire(name, {gain = 1, pan = 0, speed = 1})
+end
+
+-- One place where a sound actually starts.
+--
+-- Guarded, because a sound component that failed to load must not take the
+-- frame loop with it -- but reported, once, because a client that has gone
+-- silent looks exactly like a client with the volume down and nothing in the
+-- log would ever say which. Swallowing this is how audio stays broken.
+local complained = false
+function M.fire(name, opts)
+    local ok, err = pcall(sound.play, "#" .. name, opts)
+    if ok or complained then return end
+    complained = true
+    print("SOUND: cannot play '" .. name .. "': " .. tostring(err))
 end
 
 return M
