@@ -361,6 +361,28 @@ FRAME_CSS = """
 # page has to keep it.
 FRAME_HEAD = """
 <script>
+// A fragment has no head of its own -- the host supplies it -- so Defold's
+// <meta name="viewport"> goes out with the rest of the document shell. A phone
+// with no viewport meta lays the page out at 980 css pixels and scales the
+// result down to the screen, which means the interface is sized for a display
+// nobody is holding: the scoreboard and the desktop key hints appear, at about
+// a third of the size they are meant to be read at, and the compact layout
+// never triggers because the game is told it has 980 points of width.
+//
+// Embedded in an iframe none of this happens -- the parent's element sets the
+// width, a phone reports 390, and everything is correct -- which is exactly
+// why it went unnoticed: the page is normally played inside a frame and the
+// standalone file is what gets handed to somebody to try.
+(function () {
+  if (document.querySelector('meta[name="viewport"]')) return;
+  var m = document.createElement("meta");
+  m.name = "viewport";
+  m.content = "width=device-width, initial-scale=1.0, maximum-scale=1.0, " +
+              "user-scalable=0, viewport-fit=cover";
+  (document.head || document.documentElement).appendChild(m);
+})();
+</script>
+<script>
 // Text entry for a canvas game.
 //
 // A canvas cannot hold a caret, so tapping a field drawn inside one tells the

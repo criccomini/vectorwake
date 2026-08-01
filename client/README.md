@@ -27,6 +27,14 @@ nothing in a browser. To get something playable:
 with no network requests, so it runs from a static host, under a strict CSP,
 or straight off a disk.
 
+`--fragment` drops the document shell for hosts that supply their own, which
+takes Defold's `<meta name="viewport">` with it -- so the fragment puts one
+back from script. Without it a phone lays the page out at 980 css pixels and
+scales the result down: the compact layout never triggers, and the interface
+is sized for a display nobody is holding. It only bites the standalone file,
+because inside an iframe the parent element sets the width, which is why it
+went unnoticed -- the page is normally played in a frame.
+
 Needs `bob.jar` (set `BOB_JAR`, defaults to `/tmp/bob.jar`) and a JDK new
 enough to run it: 1.13.0 wants Java 25. Native extensions are compiled by
 Defold's build server, so the build needs network access.
