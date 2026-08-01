@@ -282,6 +282,9 @@ function init(self)
     -- build with nothing behind it playable.
     local dir = sys.get_config_string("vectorwake.directory", "")
     local url = sys.get_config_string("vectorwake.server", "")
+    -- A generated call sign, restored if this browser has one already. The
+    -- configuration still wins, which is how a test names its clients.
+    menu.load_identity()
     menu.defaults(sys.get_config_string("vectorwake.name", ""), url)
     if url == "" and dir ~= "" then
         sim.init(0x5eed)
@@ -477,6 +480,7 @@ local function start_chosen(what, cls)
         -- reason leaves that message on screen with nothing left to clear it.
         menu.note = "connecting to " .. menu.server
         menu.open = true
+        menu.save_identity()
         if not net.connect(menu.server, cls, menu.name, lost) then
             return "menu"
         end

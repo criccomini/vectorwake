@@ -49,5 +49,5 @@ include_dirs = ext/simcore, websocket
 zoom = 1.0
 directory =
 server =
-name = defoldpilot
+name =
 

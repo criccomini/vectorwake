@@ -62,11 +62,20 @@ in `sim/`.
 
 ## Playing with other people
 
-The start screen's third button is JOIN. Type a name, type a zone address,
-and the server owns the arena instead of this client. Nothing has to be
-rebuilt to point at a different zone, which matters because the published
-page is a single file that anybody can open and there is no zone baked into
-it.
+The start screen's third button is JOIN, and the fourth is ZONES. The server
+owns the arena instead of this client. Nothing has to be rebuilt to point at
+a different zone, which matters because the published page is a single file
+anybody can open and there is no zone baked into it.
+
+Nobody types a name. A call sign is generated on first run, kept in the
+browser's save file so ratings have a stable identity to accumulate against,
+and redrawn by tapping it. That is the whole of naming on a phone, and on a
+console it is what we will replace with the platform's own name -- which is
+what those platforms expect and what certification generally requires.
+
+An address cannot be generated, so ZONES asks a directory what is running and
+the player picks from a list. Typing one into the ZONE field is the escape
+hatch for a zone that is not listed, not the path most players take.
 
 Run one:
 
@@ -75,9 +84,9 @@ Run one:
 ```
 
 Then every player opens the client and puts `ws://<that host>:9040` in the
-ZONE field. They appear in each other's rosters, kill feeds, and radar,
-because online every name comes from the server's roster rather than from
-the local one.
+ZONE field, or picks it from a directory through ZONES. They appear in each
+other's rosters, kill feeds, and radar, because online every name comes from
+the server's roster rather than from the local one.
 
 `LAUNCH` and `DUEL` stay offline against bots, so a page with no zone behind
 it is still a game.

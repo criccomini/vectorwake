@@ -9,6 +9,8 @@
 -- arena script does that when this reports a choice, and arena/ui.lua draws
 -- it.
 
+local callsign = require("arena.callsign")
+
 local M = {}
 
 M.open = true
@@ -16,15 +18,45 @@ M.class = 0
 M.mode = 1              -- 1 launch, 2 duel, 3 join, 4 browse
 M.MODES = 4
 
--- Who you are and where you are going. A published page has no server behind
--- it, so these are editable: whoever runs a zone hands out an address, and
--- the name is what everyone else in that zone sees over your hull.
+-- Who you are and where you are going.
+--
+-- The name is generated, never typed. A player is flying immediately, a phone
+-- never has to raise a keyboard for it, and a console will hand us the
+-- platform's own name when we get there. Tapping it draws another.
+--
+-- The address is still typed, because an address cannot be invented -- but it
+-- is the escape hatch rather than the path: ZONES asks a directory what is
+-- running and the player picks from a list.
 M.name = "pilot"
 M.server = "ws://127.0.0.1:9040"
-M.focus = nil           -- nil, "name", or "server"
+M.focus = nil           -- nil or "server"; the name is not a text field
 M.note = nil            -- set by the arena script when a connection fails
 
-local LIMITS = {name = 16, server = 64}
+local LIMITS = {server = 64}
+local SAVE = sys.get_save_file("vectorwake", "pilot")
+
+function M.save_identity()
+    pcall(sys.save, SAVE, {name = M.name, server = M.server})
+end
+
+-- A call sign has to outlive the tab. Ratings are keyed by who you are, and a
+-- player who is somebody new on every reload has no record to build.
+function M.load_identity()
+    callsign.seed(os.time() + math.floor(os.clock() * 100000))
+    local ok, d = pcall(sys.load, SAVE)
+    if ok and type(d) == "table" and type(d.name) == "string" and d.name ~= "" then
+        M.name = d.name
+        if type(d.server) == "string" and d.server ~= "" then M.server = d.server end
+    else
+        M.name = callsign.generate()
+        M.save_identity()
+    end
+end
+
+function M.reroll()
+    M.name = callsign.generate()
+    M.save_identity()
+end
 
 function M.defaults(name, server)
     if name and name ~= "" then M.name = name end
@@ -73,9 +105,7 @@ function M.step(keys)
     -- player cannot type an address at all, which on a page whose whole
     -- point is joining somebody else's zone is not a small omission.
     if keys.tab then
-        M.focus = (M.focus == nil and "name")
-            or (M.focus == "name" and "server")
-            or nil
+        M.focus = (M.focus == nil) and "server" or nil
         return nil, true
     end
 
@@ -105,6 +135,10 @@ end
 function M.click(action, value)
     if action == "class" then
         M.class = value
+        M.focus = nil
+        return nil, true
+    elseif action == "reroll" then
+        M.reroll()
         M.focus = nil
         return nil, true
     elseif action == "field" then

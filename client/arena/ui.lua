@@ -479,7 +479,7 @@ function M.menu(o, names)
     local FW = math.min(grid_w, 460 * S)
     local fx = cx - FW / 2
     local stacked = M.compact or FW < 340 * S
-    local nw = stacked and FW or FW * 0.34
+    local nw = stacked and FW or FW * 0.42
     local sw = stacked and FW or FW - nw - 8 * S
 
     local function field(x, fy, w, key, label, value)
@@ -497,7 +497,19 @@ function M.menu(o, names)
         hit(x, fy, w, FIELD_H, "field", key)
     end
 
-    field(fx, y, nw, "name", "NAME", o.name)
+    -- The call sign is not a text box. It is generated, and tapping it draws
+    -- another -- which is the whole of naming on a device with no keyboard.
+    local function callsign_box(x, fy, w)
+        rect(x, fy, w, FIELD_H, pal.BTN_BG)
+        u:frame(x, ry(fy, FIELD_H), w, FIELD_H, S, pal.BAR_EDGE)
+        txt("YOU", x + 8 * S, fy + FIELD_H / 2, 11 * S, pal.DIM)
+        txt(o.name, x + 8 * S + 34 * S, fy + FIELD_H / 2, FONT * S, pal.INK)
+        txt("reroll", x + w - 8 * S, fy + FIELD_H / 2, 11 * S,
+            pal.a(pal.FRIEND, 0.85), "right")
+        hit(x, fy, w, FIELD_H, "reroll", 0)
+    end
+
+    callsign_box(fx, y, nw)
     if stacked then
         y = y + FIELD_H + 6 * S
         field(fx, y, sw, "server", "ZONE", o.server)
@@ -563,8 +575,8 @@ function M.menu(o, names)
         txt(o.note, cx, y + 9 * S, FONT * S, pal.ENEMY, "center")
     else
         txt((M.touching or M.compact)
-                and "tap a hull, then LAUNCH -- or type a zone and tap JOIN"
-                or "← → hull   ↑ ↓ mode   enter launches   JOIN plays with others",
+                and "tap a hull, then LAUNCH -- or tap ZONES to find a game"
+                or "← → hull   ↑ ↓ mode   enter launches   ZONES finds a game",
             cx, y + 9 * S, FONT * S, pal.a(pal.DIM, 0.85), "center")
     end
 end
