@@ -411,6 +411,14 @@ end
 -- because it *is* one -- the appearance follows a simulation property rather
 -- than a second field that could disagree with it.
 local blast_of = {}
+
+-- A spec id means whatever the current settings say it means, and a zone
+-- sends its own -- so the answers cached here stop being true the moment a
+-- settings message lands. Cheap to rebuild, wrong to keep.
+function M.forget_specs()
+    blast_of = {}
+end
+
 local function spec_blast(id)
     local r = blast_of[id]
     if r == nil then

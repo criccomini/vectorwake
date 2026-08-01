@@ -429,6 +429,9 @@ local function start_chosen(what, cls)
     pickup = nil
     hurt = 0
     fx.reset()
+    -- Leaving a zone re-derives the tables from the baseline, so what a spec
+    -- id means changes on the way *out* of one as well as into it.
+    world.forget_specs()
     if what == "zones" then
         -- The one address serves both buttons: JOIN treats it as a zone,
         -- ZONES treats it as a directory and asks what is running. An
@@ -701,6 +704,13 @@ function update(self, dt)
     if net.map_epoch ~= (self.map_epoch or 0) then
         self.map_epoch = net.map_epoch
         rebuild_static()
+    end
+    -- Same reason, for what a weapon looks like: a zone's spec table is its
+    -- own, so a bolt here can be a bomb there, and the drawing code caches
+    -- that answer per spec id.
+    if net.settings_epoch ~= (self.settings_epoch or 0) then
+        self.settings_epoch = net.settings_epoch
+        world.forget_specs()
     end
 
     fill:reset()

@@ -27,6 +27,9 @@ M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
 -- Set when a map arrives, so the arena knows to rebuild terrain it had
 -- already decided was static.
 M.map_epoch = 0
+-- Bumped when the zone's tuning changes, so anything the client cached about
+-- what a weapon *is* can be thrown away.
+M.settings_epoch = 0
 
 local conn = nil
 local on_lost_cb = nil
@@ -138,6 +141,8 @@ local function on_message(s)
         -- the map makes, for the same reason.
         if sim.apply_settings(string.sub(s, 2)) ~= 0 then
             lost("the zone sent settings this client cannot read")
+        else
+            M.settings_epoch = M.settings_epoch + 1
         end
     elseif kind == S2C_WELCOME then
         M.me = string.byte(s, 2)
