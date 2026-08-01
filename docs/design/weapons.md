@@ -165,6 +165,12 @@ gun pattern, and for the six hulls with a rack, a shell and a bomb pattern.
 Nothing in the shipped zone bounces, splinters, stalls or pushes yet. The
 mechanics are live and tested; turning one on is a table edit.
 
+And the table is the zone's, not the client's. A zone sends its whole weapon
+table to every player as it joins, so a client predicts and draws the weapons
+that zone actually has rather than the ones its own build compiled. That is
+what makes a new weapon content: a spec is an index, and a client guessing at
+its own table would not even agree on what an index means.
+
 Firing costs are a fraction of the hull's own energy, taken from the original's
 numbers -- it gave every ship 1700 energy and charged 20 for a bullet and 300
 for a bomb. Pricing a shot off its damage instead, which is what this did

@@ -50,6 +50,10 @@ const S2C_STATUS: u8 = directory::STATUS_REPLY;
 /// predicts collisions locally, so it needs the room before it needs anyone
 /// in it.
 const S2C_MAP: u8 = 9;
+/// The tuning, sent straight after the map and again whenever an operator
+/// reloads the zone file. A client that predicts on its own compiled
+/// defaults is predicting a different game the moment a zone tunes anything.
+const S2C_SETTINGS: u8 = 10;
 
 struct Player {
     ship: u8,
@@ -431,6 +435,17 @@ impl Arena {
         m
     }
 
+    /// Everyone in the room gets the new numbers. An operator retuning a
+    /// live arena would otherwise leave every client predicting the game as
+    /// it was when they joined.
+    fn broadcast_settings(&self) {
+        let mut m = vec![S2C_SETTINGS];
+        m.extend_from_slice(&self.world.packed_settings());
+        for p in self.players.values() {
+            let _ = p.tx.send(m.clone());
+        }
+    }
+
     fn broadcast_roster(&self) {
         let m = self.roster_msg();
         for p in self.players.values() {
@@ -493,6 +508,7 @@ impl Zone {
             println!("{msg}");
             for a in self.arenas.values_mut() {
                 Arena::apply_config(&mut a.world, &self.cfg.current.arena);
+                a.broadcast_settings();
             }
         }
     }
@@ -788,6 +804,9 @@ async fn main() {
                             let mut m = vec![S2C_MAP];
                             m.extend_from_slice(&a.world.packed_map());
                             let _ = tx.send(m);
+                            let mut c = vec![S2C_SETTINGS];
+                            c.extend_from_slice(&a.world.packed_settings());
+                            let _ = tx.send(c);
                             let mut w = vec![S2C_WELCOME, ship];
                             w.extend_from_slice(&a.world.state.tick.to_le_bytes());
                             let _ = tx.send(w);
@@ -836,6 +855,9 @@ async fn main() {
                         let mut m = vec![S2C_MAP];
                         m.extend_from_slice(&z.arenas[&aid].world.packed_map());
                         let _ = tx.send(m);
+                        let mut c = vec![S2C_SETTINGS];
+                        c.extend_from_slice(&z.arenas[&aid].world.packed_settings());
+                        let _ = tx.send(c);
                         let mut w = vec![S2C_WELCOME, ship];
                         w.extend_from_slice(&0u32.to_le_bytes());
                         let _ = tx.send(w);

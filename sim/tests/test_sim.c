@@ -937,6 +937,65 @@ int main(void) {
         CHECK(sim_unpack(&back, buf, 3) == -1, "unpacking rejects a truncated snapshot");
     }
 
+    /* Settings travel too, and the test that matters is not that the fields
+     * survive but that a fresh core given them steps the same way. A client
+     * compiles its own baseline; that is only ever a starting guess. */
+    {
+        /* A zone that has tuned something and added a weapon nobody else
+         * has: the case where compiling the same defaults is not enough. */
+        sim_settings zone = cfg;
+        zone.bounce = 16;
+        zone.classes[APEX].max_speed = sim_units_speed(6000);
+        sim_weapon_spec sp = *gun_spec(&zone, APEX);
+        sp.on_wall = SIM_WALL_BOUNCE;
+        sp.bounces = 2;
+        sim_fire_pattern fp = *gun_of(&zone, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&zone, &sp);
+        fp.count = 3;
+        fp.spacing = 65536 / 24;
+        zone.classes[APEX].gun = (uint8_t)sim_add_pattern(&zone, &fp);
+
+        static uint8_t buf[SIM_SETTINGS_PACK_MAX];
+        int n = sim_settings_pack(&zone, buf, sizeof buf);
+        CHECK(n > 0, "settings pack");
+        CHECK(n < SIM_SETTINGS_PACK_MAX, "and fit in the buffer they claim to");
+
+        /* The receiving end is a client: baseline settings, and a map it
+         * already had. Unpacking must not disturb the geometry. */
+        sim_settings got;
+        memset(&got, 0, sizeof got);
+        sim_settings_baseline(&got, m);
+        CHECK(sim_settings_unpack(&got, buf, n) == 0, "settings unpack");
+        CHECK(got.map == m, "and leave the map alone");
+
+        sim_state s1, s2;
+        sim_init(&s1, 7);
+        sim_init(&s2, 7);
+        sim_spawn(&s1, APEX, 0, 8192, 300, 0, &zone);
+        sim_spawn(&s2, APEX, 0, 8192, 300, 0, &got);
+        step_n(&s1, &zone, SIM_BTN_THRUST | SIM_BTN_FIRE, 0, 200);
+        step_n(&s2, &got, SIM_BTN_THRUST | SIM_BTN_FIRE, 0, 200);
+        CHECK(sim_hash(&s1) == sim_hash(&s2),
+              "and the two ends step to the same state");
+        /* Which is a claim about the zone's numbers, not about any numbers:
+         * the same run on the baseline must reach somewhere else, or the
+         * test would pass with the message thrown away. */
+        sim_state s3;
+        sim_init(&s3, 7);
+        sim_spawn(&s3, APEX, 0, 8192, 300, 0, &cfg);
+        step_n(&s3, &cfg, SIM_BTN_THRUST | SIM_BTN_FIRE, 0, 200);
+        CHECK(sim_hash(&s3) != sim_hash(&s1),
+              "where a client on its own defaults would not have");
+
+        CHECK(sim_settings_pack(&zone, buf, 8) == -1,
+              "packing reports an undersized buffer");
+        CHECK(sim_settings_unpack(&got, buf, 3) == -1,
+              "unpacking rejects a truncated message");
+        buf[0] ^= 0xff;
+        CHECK(sim_settings_unpack(&got, buf, n) == -1,
+              "and something that is not settings at all");
+    }
+
     /* Determinism: identical runs give identical hashes and bytes. */
     {
         sim_state s1, s2;

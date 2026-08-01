@@ -13,7 +13,7 @@ local C2S_JOIN, C2S_INPUT, C2S_DUEL = 1, 2, 3
 local C2S_SHIP = 5
 local S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER = 1, 2, 3
 local S2C_KILL, S2C_BANNER, S2C_ZONE, S2C_DENIED = 4, 5, 6, 7
-local S2C_MAP = 9
+local S2C_MAP, S2C_SETTINGS = 9, 10
 
 M.connected = false
 M.me = 0
@@ -29,7 +29,20 @@ M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
 M.map_epoch = 0
 
 local conn = nil
+local on_lost_cb = nil
 local input_log = {}
+
+-- Reported once, with a reason fit to print, and the connection is over. This
+-- lives out here rather than inside `connect` because the decoders need it
+-- too: a map or a set of settings this client cannot read is exactly as
+-- final as a socket that dropped, and used to set a field nobody read.
+local function lost(why)
+    if M.lost then return end
+    M.lost = why
+    M.connected = false
+    conn = nil
+    if on_lost_cb then on_lost_cb(why) end
+end
 local predicted_tick = 0
 
 local function u16(a, b) return a + b * 256 end
@@ -115,8 +128,16 @@ local function on_message(s)
             -- -2 is a hash mismatch, which means the zone and this client
             -- disagree about the room. Better to say so than to spend a match
             -- bouncing off walls nobody else can see.
-            M.lost_map = (r == -2) and "the zone sent a map that did not verify"
-                or "the zone sent a map this client cannot read"
+            lost((r == -2) and "the zone sent a map that did not verify"
+                 or "the zone sent a map this client cannot read")
+        end
+    elseif kind == S2C_SETTINGS then
+        -- The zone's numbers, over this client's compiled defaults. Refusing
+        -- them would mean predicting a different game, so a message we
+        -- cannot read is worth losing the connection over -- the same call
+        -- the map makes, for the same reason.
+        if sim.apply_settings(string.sub(s, 2)) ~= 0 then
+            lost("the zone sent settings this client cannot read")
         end
     elseif kind == S2C_WELCOME then
         M.me = string.byte(s, 2)
@@ -144,14 +165,7 @@ function M.connect(url, class, name, on_lost)
     M.ratings = {}
     M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
     M.lost = nil
-
-    local function lost(why)
-        if M.lost then return end
-        M.lost = why
-        M.connected = false
-        conn = nil
-        if on_lost then on_lost(why) end
-    end
+    on_lost_cb = on_lost
 
     local ok, err = pcall(function()
         conn = websocket.connect(url, {}, function(self, cid, data)

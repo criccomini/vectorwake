@@ -348,6 +348,19 @@ int ApplyMap(lua_State* L) {
     return 1;
 }
 
+// And the zone's tuning, straight after it. Until this arrived a client
+// predicted on whatever numbers its own build compiled, which held only for
+// as long as no zone tuned anything -- and not at all once one adds a
+// weapon, because a spec is an index and two tables do not agree on what an
+// index means.
+int ApplySettings(lua_State* L) {
+    size_t len = 0;
+    const char* data = luaL_checklstring(L, 1, &len);
+    int r = sim_settings_unpack(&g_cfg, (const uint8_t*)data, (int)len);
+    lua_pushnumber(L, r);
+    return 1;
+}
+
 int Hash(lua_State* L) {
     lua_pushnumber(L, (double)(uint32_t)(sim_hash(g_cur) & 0xffffffffu));
     return 1;
@@ -394,6 +407,7 @@ const luaL_reg kFunctions[] = {
     {"add_flag", AddFlag},
     {"hash", Hash},
     {"apply_map", ApplyMap},
+    {"apply_settings", ApplySettings},
     {0, 0}};
 
 void LuaInit(lua_State* L) {

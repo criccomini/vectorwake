@@ -17,6 +17,23 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap);
 /* Read a snapshot into s. Returns 0, or -1 on malformed input. */
 int sim_unpack(sim_state *s, const uint8_t *in, int len);
 
+/* ---- settings -----------------------------------------------------------
+ *
+ * A zone's tuning, including its whole weapon table. A client predicts by
+ * stepping the core, so it has to be stepping the server's numbers rather
+ * than the ones it happened to compile. */
+
+/* Every table full, plus a header. Under two kilobytes; sent once at join
+ * and again whenever an operator reloads the zone file. */
+#define SIM_SETTINGS_PACK_MAX 4096
+
+/* Write cfg into out. Returns bytes written, or -1 if cap was too small. */
+int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap);
+
+/* Read settings into cfg. Returns 0, or -1 on malformed input. `cfg->map` is
+ * left exactly as it was: geometry travels as a map, and arrives first. */
+int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len);
+
 /* ---- maps ---------------------------------------------------------------
  *
  * A map is a megabyte of tiles that is almost all one value, so it travels

@@ -191,6 +191,182 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
     return r.underflow ? -1 : 0;
 }
 
+/* ---- settings ----
+ *
+ * The tuning a zone runs on, on the wire for the same reason the map is: a
+ * client predicts by stepping the core itself, so it has to be stepping the
+ * server's numbers. Before this the two ends agreed by both compiling
+ * `sim_settings_baseline`, which held right up until a zone file overrode
+ * something -- and would have held a lot less well once a zone starts adding
+ * weapons, because a spec is an index into a table and two different tables
+ * do not even agree on what an index means.
+ *
+ * The map pointer is not on the wire. Geometry travels as a map, arrives
+ * first, and is left alone here.
+ */
+
+#define CFG_MAGIC 0x56434647u /* "VCFG" */
+#define CFG_VERSION 1
+
+int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
+    wr w = {out, out + cap, 0};
+    w32(&w, CFG_MAGIC);
+    w8(&w, CFG_VERSION);
+
+    w8(&w, cfg->class_count);
+    for (int i = 0; i < cfg->class_count; i++) {
+        const sim_ship_class *c = &cfg->classes[i];
+        w32(&w, (uint32_t)c->max_speed);
+        w32(&w, (uint32_t)c->init_speed);
+        w32(&w, (uint32_t)c->up_speed);
+        w32(&w, (uint32_t)c->thrust);
+        w32(&w, (uint32_t)c->init_thrust);
+        w32(&w, (uint32_t)c->up_thrust);
+        w32(&w, (uint32_t)c->rot);
+        w32(&w, (uint32_t)c->init_rot);
+        w32(&w, (uint32_t)c->up_rot);
+        w32(&w, (uint32_t)c->max_energy);
+        w32(&w, (uint32_t)c->init_energy);
+        w32(&w, (uint32_t)c->up_energy);
+        w32(&w, (uint32_t)c->recharge);
+        w32(&w, (uint32_t)c->init_recharge);
+        w32(&w, (uint32_t)c->up_recharge);
+        w32(&w, (uint32_t)c->radius);
+        w8(&w, c->gun);
+        w8(&w, c->bomb);
+    }
+
+    w8(&w, cfg->spec_count);
+    for (int i = 0; i < cfg->spec_count; i++) {
+        const sim_weapon_spec *sp = &cfg->specs[i];
+        w32(&w, (uint32_t)sp->speed);
+        w16(&w, sp->life);
+        w8(&w, sp->on_wall);
+        w8(&w, sp->bounces);
+        w32(&w, (uint32_t)sp->trigger);
+        w8(&w, sp->expire_ends);
+        w8(&w, sp->splinter);
+        w32(&w, (uint32_t)sp->damage);
+        w32(&w, (uint32_t)sp->blast);
+        w32(&w, (uint32_t)sp->push);
+        w16(&w, sp->stall);
+    }
+
+    w8(&w, cfg->pattern_count);
+    for (int i = 0; i < cfg->pattern_count; i++) {
+        const sim_fire_pattern *p = &cfg->patterns[i];
+        w8(&w, p->spec);
+        w8(&w, p->count);
+        w16(&w, p->spacing);
+        w32(&w, (uint32_t)p->energy);
+        w16(&w, p->delay);
+        w32(&w, (uint32_t)p->recoil);
+    }
+
+    w32(&w, (uint32_t)cfg->bounce);
+    w32(&w, (uint32_t)cfg->friction);
+    w16(&w, cfg->respawn_delay);
+    w16(&w, cfg->prize_delay);
+    w16(&w, cfg->prize_max);
+    w16(&w, cfg->prize_life);
+    w16(&w, cfg->door_period);
+    w16(&w, cfg->door_open);
+    w32(&w, (uint32_t)cfg->wormhole_pull);
+    w32(&w, (uint32_t)cfg->wormhole_range);
+    w32(&w, (uint32_t)cfg->prize_radius);
+    w32(&w, (uint32_t)cfg->prize_lo);
+    w32(&w, (uint32_t)cfg->prize_hi);
+    w32(&w, (uint32_t)cfg->flag_radius);
+    w16(&w, cfg->flag_drop_cooldown);
+
+    return w.overflow ? -1 : (int)(w.p - out);
+}
+
+int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
+    rd r = {in, in + len, 0};
+    if (r32(&r) != CFG_MAGIC) return -1;
+    if (r8(&r) != CFG_VERSION) return -1;
+
+    /* Geometry is not in here and is not ours to clear. */
+    const sim_map *map = cfg->map;
+    memset(cfg, 0, sizeof *cfg);
+    cfg->map = map;
+
+    uint32_t classes = r8(&r);
+    if (classes > SIM_MAX_CLASSES) return -1;
+    cfg->class_count = (uint8_t)classes;
+    for (uint32_t i = 0; i < classes; i++) {
+        sim_ship_class *c = &cfg->classes[i];
+        c->max_speed = (int32_t)r32(&r);
+        c->init_speed = (int32_t)r32(&r);
+        c->up_speed = (int32_t)r32(&r);
+        c->thrust = (int32_t)r32(&r);
+        c->init_thrust = (int32_t)r32(&r);
+        c->up_thrust = (int32_t)r32(&r);
+        c->rot = (int32_t)r32(&r);
+        c->init_rot = (int32_t)r32(&r);
+        c->up_rot = (int32_t)r32(&r);
+        c->max_energy = (int32_t)r32(&r);
+        c->init_energy = (int32_t)r32(&r);
+        c->up_energy = (int32_t)r32(&r);
+        c->recharge = (int32_t)r32(&r);
+        c->init_recharge = (int32_t)r32(&r);
+        c->up_recharge = (int32_t)r32(&r);
+        c->radius = (int32_t)r32(&r);
+        c->gun = (uint8_t)r8(&r);
+        c->bomb = (uint8_t)r8(&r);
+    }
+
+    uint32_t specs = r8(&r);
+    if (specs > SIM_MAX_SPECS) return -1;
+    cfg->spec_count = (uint8_t)specs;
+    for (uint32_t i = 0; i < specs; i++) {
+        sim_weapon_spec *sp = &cfg->specs[i];
+        sp->speed = (int32_t)r32(&r);
+        sp->life = (uint16_t)r16(&r);
+        sp->on_wall = (uint8_t)r8(&r);
+        sp->bounces = (uint8_t)r8(&r);
+        sp->trigger = (int32_t)r32(&r);
+        sp->expire_ends = (uint8_t)r8(&r);
+        sp->splinter = (uint8_t)r8(&r);
+        sp->damage = (int32_t)r32(&r);
+        sp->blast = (int32_t)r32(&r);
+        sp->push = (int32_t)r32(&r);
+        sp->stall = (uint16_t)r16(&r);
+    }
+
+    uint32_t patterns = r8(&r);
+    if (patterns > SIM_MAX_PATTERNS) return -1;
+    cfg->pattern_count = (uint8_t)patterns;
+    for (uint32_t i = 0; i < patterns; i++) {
+        sim_fire_pattern *p = &cfg->patterns[i];
+        p->spec = (uint8_t)r8(&r);
+        p->count = (uint8_t)r8(&r);
+        p->spacing = (uint16_t)r16(&r);
+        p->energy = (int32_t)r32(&r);
+        p->delay = (uint16_t)r16(&r);
+        p->recoil = (int32_t)r32(&r);
+    }
+
+    cfg->bounce = (int32_t)r32(&r);
+    cfg->friction = (int32_t)r32(&r);
+    cfg->respawn_delay = (uint16_t)r16(&r);
+    cfg->prize_delay = (uint16_t)r16(&r);
+    cfg->prize_max = (uint16_t)r16(&r);
+    cfg->prize_life = (uint16_t)r16(&r);
+    cfg->door_period = (uint16_t)r16(&r);
+    cfg->door_open = (uint16_t)r16(&r);
+    cfg->wormhole_pull = (int32_t)r32(&r);
+    cfg->wormhole_range = (int32_t)r32(&r);
+    cfg->prize_radius = (int32_t)r32(&r);
+    cfg->prize_lo = (int32_t)r32(&r);
+    cfg->prize_hi = (int32_t)r32(&r);
+    cfg->flag_radius = (int32_t)r32(&r);
+    cfg->flag_drop_cooldown = (uint16_t)r16(&r);
+
+    return r.underflow ? -1 : 0;
+}
+
 /* ---- maps ---- */
 
 #define MAP_MAGIC 0x564d4150u /* "VMAP" */

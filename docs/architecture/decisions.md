@@ -517,12 +517,20 @@ in order -- it runs out, it moves, something ends it, the ending happens -- so
 every difference between a bullet, a bomb, a mine and a fragment is a number
 read during those phases rather than a branch between them.
 
+Because a spec is an *index*, the table has to travel: a zone sends its whole
+settings block to every client at join, straight after the map. Both ends
+compiled the same baseline before this, which held only for as long as no zone
+overrode anything -- a raised top speed measured as 11 px of peak prediction
+error against 1 px once the settings were on the wire.
+
 **Cost:** two more bytes on every projectile in every snapshot (`left` bounces
 and splinter `depth`, both spent as it flies, both needed by a client that
 predicts). A recursion that has to be bounded by hand, because nothing in a
 table stops a fragment naming the pattern that made it -- one generation, and
-the cap lives on the projectile. And an indirection: reading what a hull fires
-now means two table hops instead of a field.
+the cap lives on the projectile. An indirection: reading what a hull fires now
+means two table hops instead of a field. And 1.2 KB at join, plus a version
+byte that will refuse an old client outright rather than let it play a game it
+half understands.
 
 **Reconsider if:** a weapon needs a genuinely new verb rather than a new
 number -- homing, charging, chaining -- at which point the question is whether

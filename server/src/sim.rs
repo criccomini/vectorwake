@@ -272,6 +272,7 @@ extern "C" {
     pub fn sim_map_duel(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
+    pub fn sim_settings_pack(cfg: *const sim_settings, out: *mut u8, cap: c_int) -> c_int;
     pub fn sim_add_flag(s: *mut sim_state, x_px: i32, y_px: i32) -> c_int;
     pub fn sim_flags_held(s: *const sim_state, team: u8) -> c_int;
     pub fn sim_units_speed(v: i32) -> i32;
@@ -282,6 +283,7 @@ extern "C" {
 }
 
 pub const PACK_MAX: usize = 64 * 1024;
+pub const SETTINGS_PACK_MAX: usize = 4096;
 pub const UP_COUNT: usize = 5;
 
 // Safe wrappers. The core has no globals and no allocation, so a state is a
@@ -347,6 +349,20 @@ impl World {
             -2 => Err("the tiles do not match the hash in its header".into()),
             _ => Err("not a map file, or truncated".into()),
         }
+    }
+
+    /// The tuning this arena is running, packed. A client predicts by
+    /// stepping the core, so it steps these rather than whatever its own
+    /// build compiled -- and a zone that has added a weapon has a spec table
+    /// nothing else can guess.
+    pub fn packed_settings(&self) -> Vec<u8> {
+        let mut buf = vec![0u8; SETTINGS_PACK_MAX];
+        let n = unsafe {
+            sim_settings_pack(&*self.cfg as *const sim_settings,
+                              buf.as_mut_ptr(), buf.len() as i32)
+        };
+        buf.truncate(if n > 0 { n as usize } else { 0 });
+        buf
     }
 
     /// The map, packed, ready to hand a joining client.

@@ -66,6 +66,33 @@ is chat, arena changes, ship changes, and requests, all reliable and all rare.
 
 ## Server to client
 
+### Joining: the room, then the rules, then the game
+
+A client that joins gets three things before it gets any state, in this order:
+the map, the settings, and a welcome naming its ship.
+
+That order is the dependency order. The map is geometry, and prediction runs
+collision locally, so a client cannot step anything without it. The settings
+are the rules -- every hull's tuning and the zone's whole weapon table -- and
+they land second because decoding a map re-derives settings from the baseline,
+which would throw away anything sent before it.
+
+Both are packed by the core (`sim_map_pack`, `sim_settings_pack`), so there is
+one definition of each and the two ends cannot drift. Settings are about 1.2 KB
+for a full table, sent once at join and again to everyone in the room whenever
+an operator reloads the zone file -- retuning a live arena should not leave the
+players in it predicting the game as it was when they arrived.
+
+Before this, both ends compiled `sim_settings_baseline` and hoped. That held
+exactly as long as no zone overrode anything: a zone that raised a hull's top
+speed had every client predicting the old one, which a test measured as 11 px
+of peak prediction error against 1 px once the settings travelled. It would not
+hold at all for weapons, because a projectile carries a spec *index* and two
+different tables do not agree on what an index means.
+
+A client that cannot decode either message loses the connection with a reason
+rather than playing on against rules it has guessed.
+
 Snapshots at 20 Hz by default, carrying the authoritative state of everything
 the player can see:
 
