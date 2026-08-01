@@ -1,0 +1,67 @@
+-- Render pipeline.
+--
+-- The camera shows a fixed extent of the world in tiles regardless of the
+-- window, per decision 13: a phone and an ultrawide see the same amount of
+-- game. Ships are drawn as line geometry, which is what the clean vector
+-- direction in docs/design/identity.md asks for and what keeps the bundle
+-- small enough to be one link away.
+
+local VIEW_TILES = 34    -- world extent across the shorter screen axis
+
+function init(self)
+    self.sprite_pred = render.predicate({"tile"})
+    self.gui_pred = render.predicate({"gui"})
+    -- 1.13 moved the buffer constants onto the graphics module.
+    self.clear = {
+        [graphics.BUFFER_TYPE_COLOR0_BIT] = vmath.vector4(0.024, 0.035, 0.055, 1),
+        [graphics.BUFFER_TYPE_DEPTH_BIT] = 1,
+    }
+    self.view = vmath.matrix4()
+end
+
+function update(self)
+    local w, h = render.get_window_width(), render.get_window_height()
+    if w == 0 or h == 0 then return end
+
+    render.set_depth_mask(true)
+    render.set_stencil_mask(0xff)
+    render.clear(self.clear)
+    render.set_viewport(0, 0, w, h)
+
+    -- Fixed world extent: scale by the shorter axis so neither a tall nor a
+    -- wide window is an advantage.
+    local px = VIEW_TILES * 16
+    local short = math.min(w, h)
+    local half_w = px * 0.5 * (w / short)
+    local half_h = px * 0.5 * (h / short)
+    local cam = self.camera or vmath.vector3(512 * 16, 512 * 16, 0)
+
+    render.set_view(vmath.matrix4_look_at(
+        vmath.vector3(cam.x, cam.y, 1),
+        vmath.vector3(cam.x, cam.y, 0),
+        vmath.vector3(0, 1, 0)))
+    render.set_projection(vmath.matrix4_orthographic(
+        -half_w, half_w, -half_h, half_h, -1, 1))
+
+    render.enable_state(graphics.STATE_BLEND)
+    render.set_blend_func(graphics.BLEND_FACTOR_SRC_ALPHA,
+                          graphics.BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
+    render.disable_state(graphics.STATE_DEPTH_TEST)
+
+    render.draw(self.sprite_pred)
+    -- Ships, walls, weapons, and flags are all line geometry, which
+    -- draw_debug3d renders without an atlas or a material of our own. Clean
+    -- vector art costs nothing to draw and nothing to ship.
+    render.draw_debug3d()
+
+    -- Interface last, in screen space.
+    render.set_view(vmath.matrix4())
+    render.set_projection(vmath.matrix4_orthographic(0, w, 0, h, -1, 1))
+    render.draw(self.gui_pred)
+end
+
+function on_message(self, message_id, message)
+    if message_id == hash("camera") then
+        self.camera = message.position
+    end
+end

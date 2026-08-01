@@ -2,3 +2,10 @@ sim/build/
 sim/build2/
 client-web/build/
 server/target/
+client/ext/simcore/src/sim.c
+client/ext/simcore/src/baseline.c
+client/ext/simcore/src/pack.c
+client/ext/simcore/src/sintab.h
+client/ext/simcore/include/sim/
+client/build/
+client/.internal/

@@ -1,0 +1,56 @@
+key_trigger {
+  input: KEY_LEFT
+  action: "turn_left"
+}
+key_trigger {
+  input: KEY_RIGHT
+  action: "turn_right"
+}
+key_trigger {
+  input: KEY_UP
+  action: "thrust"
+}
+key_trigger {
+  input: KEY_DOWN
+  action: "reverse"
+}
+key_trigger {
+  input: KEY_A
+  action: "turn_left"
+}
+key_trigger {
+  input: KEY_D
+  action: "turn_right"
+}
+key_trigger {
+  input: KEY_W
+  action: "thrust"
+}
+key_trigger {
+  input: KEY_S
+  action: "reverse"
+}
+key_trigger {
+  input: KEY_SPACE
+  action: "guns"
+}
+key_trigger {
+  input: KEY_Z
+  action: "guns"
+}
+key_trigger {
+  input: KEY_LSHIFT
+  action: "bombs"
+}
+key_trigger {
+  input: KEY_X
+  action: "bombs"
+}
+mouse_trigger {
+  input: MOUSE_BUTTON_LEFT
+  action: "guns"
+}
+mouse_trigger {
+  input: MOUSE_BUTTON_RIGHT
+  action: "bombs"
+}

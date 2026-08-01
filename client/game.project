@@ -1,0 +1,40 @@
+[project]
+title = vectorwake
+version = 0.1
+publisher = vectorwake
+developer = vectorwake
+
+[bootstrap]
+main_collection = /main/main.collectionc
+render = /render/vectorwake.renderc
+
+[display]
+width = 1280
+height = 800
+high_dpi = 1
+samples = 0
+update_frequency = 0
+vsync = 1
+
+[physics]
+type = 2D
+gravity_y = 0
+max_collision_object_count = 0
+
+[script]
+shared_state = 1
+
+[engine]
+fixed_update_frequency = 0
+max_time_step = 0.05
+
+[graphics]
+default_texture_min_filter = nearest
+default_texture_mag_filter = nearest
+
+[input]
+game_binding = /main/game.input_bindingc
+use_accelerometer = 0
+
+[library]
+include_dirs = ext/simcore

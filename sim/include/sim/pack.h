@@ -3,6 +3,10 @@
 #define SIM_PACK_H
 
 #include "sim/sim.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 /* Largest snapshot a full arena can produce. */
 #define SIM_PACK_MAX (64 * 1024)
@@ -12,5 +16,9 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap);
 
 /* Read a snapshot into s. Returns 0, or -1 on malformed input. */
 int sim_unpack(sim_state *s, const uint8_t *in, int len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

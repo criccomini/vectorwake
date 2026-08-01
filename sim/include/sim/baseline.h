@@ -3,10 +3,18 @@
 #define SIM_BASELINE_H
 
 #include "sim/sim.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 extern const char *const sim_class_names[SIM_MAX_CLASSES];
 
 /* Fill cfg with the baseline tuning for every class. */
 void sim_settings_baseline(sim_settings *cfg, const sim_map *map);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

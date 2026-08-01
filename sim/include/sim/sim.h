@@ -15,6 +15,10 @@
 #define SIM_H
 
 #include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 #define SIM_MAX_SHIPS 64
 #define SIM_MAX_WEAPONS 1024
@@ -227,5 +231,9 @@ int sim_add_flag(sim_state *s, int32_t x_px, int32_t y_px);
 
 /* How many flags a team holds, counting carried and grounded alike. */
 int sim_flags_held(const sim_state *s, uint8_t team);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
