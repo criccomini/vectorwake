@@ -6,53 +6,29 @@
 -- order within a collection is unspecified, and HTML5 builds run Lua 5.1.4
 -- rather than LuaJIT, so state distributed across scripts would have neither
 -- a defined order nor adequate speed on the platform that matters most.
+--
+-- Drawing is five mesh layers, built here and in arena/world.lua and
+-- arena/ui.lua, and uploaded once each per frame. It used to be
+-- `draw_debug3d`, which is one pixel wide, one blend mode, and compiled out
+-- of release builds entirely -- a shipped bundle drew an empty arena.
 
 local net = require("arena.net")
 local touch = require("arena.touch")
 local browser = require("arena.browser")
-local hud = require("arena.hud")
 local menu = require("arena.menu")
+local pal = require("arena.palette")
+local world = require("arena.world")
+local fx = require("arena.fx")
+local sfx = require("arena.sfx")
+local ui = require("arena.ui")
+local vec = require("render.vec")
 
 local TICK_HZ = 100
 local DT = 1 / TICK_HZ
 local MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
 
-local CLASSES = {
-    {name = "Apex",    color = vmath.vector4(0.31, 0.84, 1.00, 1)},
-    {name = "Wedge",   color = vmath.vector4(1.00, 0.82, 0.40, 1)},
-    {name = "Chord",   color = vmath.vector4(0.55, 0.89, 0.62, 1)},
-    {name = "Anvil",   color = vmath.vector4(1.00, 0.60, 0.36, 1)},
-    {name = "Spire",   color = vmath.vector4(0.78, 0.61, 1.00, 1)},
-    {name = "Cipher",  color = vmath.vector4(0.66, 0.72, 0.82, 1)},
-    {name = "Facet",   color = vmath.vector4(1.00, 0.45, 0.45, 1)},
-    {name = "Lattice", color = vmath.vector4(0.35, 0.78, 0.78, 1)},
-}
-
--- Ship outlines in local pixels, nose along +y. Shape carries class and
--- colour carries team, so neither has to carry both, and every class has to
--- be identifiable by silhouette alone at radar scale -- which means each one
--- needs a front that is visibly not its back. See docs/design/ships.md.
-local HULLS = {
-    -- Apex: a narrow chevron. Fastest and sharpest turn in the game.
-    {{0, 16}, {7, -8}, {0, -3}, {-7, -8}},
-    -- Wedge: a flat triangle. Wide and shallow, so it reads as a platform.
-    {{0, 8}, {14, -7}, {-14, -7}},
-    -- Chord: a wide shallow arc, hollow at the back.
-    {{0, 11}, {10, 7}, {15, -2}, {8, -1}, {0, 3}, {-8, -1}, {-15, -2}, {-10, 7}},
-    -- Anvil: a blunt hexagon. The front is a flat face, not a point: nothing
-    -- about this ship should look sharp.
-    {{-6, 12}, {6, 12}, {11, 3}, {9, -9}, {-9, -9}, {-11, 3}},
-    -- Spire: a tall diamond carrying a mast, which is where the turrets go.
-    {{0, 18}, {2, 10}, {6, 0}, {0, -12}, {-6, 0}, {-2, 10}},
-    -- Cipher: a thin sliver, barely there.
-    {{0, 17}, {3, -2}, {0, -10}, {-3, -2}},
-    -- Facet: a compact pentagon with a real nose on it.
-    {{0, 12}, {9, 2}, {6, -9}, {-6, -9}, {-9, 2}},
-    -- Lattice: a cross. It owns terrain, and it should look like a marker
-    -- planted in it. The forward arm is longest so the shape still points.
-    {{-3, 14}, {3, 14}, {3, 4}, {12, 4}, {12, -2}, {3, -2}, {3, -11},
-     {-3, -11}, {-3, -2}, {-12, -2}, {-12, 4}, {-3, 4}},
-}
+local CLASS_NAMES = {"Apex", "Wedge", "Chord", "Anvil",
+                     "Spire", "Cipher", "Facet", "Lattice"}
 
 -- The offline roster: hull, team, spawn tile, name. Shared by the cold start
 -- and by dropping out of the browser, which are the same game.
@@ -63,11 +39,6 @@ local LAYOUT = {
     {1, 0, 546, 512, "Ozone"},   {4, 1, 512, 546, "Tessellate"},
 }
 
-local ACTIONS = {
-    turn_left = nil, turn_right = nil, thrust = nil, reverse = nil,
-    guns = nil, bombs = nil,
-}
-
 local held = {}
 -- A tap can go down and up inside one frame, so the frame loop never sees it
 -- in `held`. Presses are latched here and consumed by whatever reads them,
@@ -76,6 +47,17 @@ local tapped = {}
 local me = 0
 local pilots = {}
 local accum = 0
+local feed = {}
+local hurt = 0
+local pickup = nil
+local layers = nil
+local map_lo, map_hi = 470, 554
+
+-- HTML5 builds run Lua 5.1, which has no bitwise operators. Every bitfield in
+-- this client is a sum of distinct powers of two, so a digit test is exact.
+local function has(bits, bit)
+    return math.floor(bits / bit) % 2 == 1
+end
 
 -- Defold hands on_input a hashed action_id, never the string it was written
 -- as in the input binding. Comparing it to a string literal silently yields
@@ -127,6 +109,7 @@ local function make_bot(id, skill)
         react = math.max(3, math.floor(38 - skill * 30)),
         aim_err = (1 - skill) * 0.42,
         seed = 12345 + id * 7919,
+        bomb_at = 120 + id * 37,
     }
 end
 
@@ -155,9 +138,9 @@ local function bot_think(b)
 
     -- A loose flag outranks a fight: flags decide the round.
     for i = 0, sim.flag_count() - 1 do
-        local fx, fy, fteam, carried = sim.flag_at(i)
+        local fx_, fy, fteam, carried = sim.flag_at(i)
         if fteam ~= team and not carried then
-            local dx, dy = fx - mx, fy - my
+            local dx, dy = fx_ - mx, fy - my
             if dx * dx + dy * dy < 420 * 420 then
                 local out, off = steer(b, dx, dy, false)
                 if off < 0.5 then out = out + sim.BTN_THRUST end
@@ -185,15 +168,41 @@ local function bot_think(b)
     local e = sim.ship_energy(b.id) / math.max(1, sim.ship_max_energy(b.id))
     if off < 0.16 and e > 0.16 + b.skill * 0.28 then
         out = out + sim.BTN_FIRE
+        -- A bomb now and then, from the pilots good enough to afford one at
+        -- seventeen per cent of a bar. Its own clock, not `timer % 64`: this
+        -- runs at the bot's reaction cadence, so a modulo here only fires
+        -- when the two periods happen to coincide -- every 1728 ticks for an
+        -- odd reaction time, which is to say never.
+        if dist < 320 and b.skill > 0.5 and b.timer >= b.bomb_at then
+            out = out + sim.BTN_BOMB
+            b.bomb_at = b.timer + 200 + math.floor(bot_rand(b) * 220)
+        end
     end
     return out
 end
 
 local start_offline
 
+-- The terrain and the starfield never move, so they are built once per map
+-- rather than per frame. Rebuilding them was the single most expensive thing
+-- the old renderer did, and it did it sixty times a second.
+local function rebuild_static()
+    if layers then
+        world.build_static(layers.bg, layers.bgglow, map_lo, map_hi)
+    end
+end
+
 function init(self)
     msg.post(".", "acquire_input_focus")
     math.randomseed(1)
+
+    layers = {
+        bg = vec.layer("#bg", 20480),
+        bgglow = vec.layer("#bgglow", 16384),
+        fill = vec.layer("#fill", 3072),
+        glow = vec.layer("#glow", 10240),
+        ui = vec.layer("#ui", 6144),
+    }
 
     -- A directory means "let the player choose"; a pinned server means
     -- "go here". Neither means play the local game, which is what keeps a
@@ -202,6 +211,7 @@ function init(self)
     local url = sys.get_config_string("vectorwake.server", "")
     if url == "" and dir ~= "" then
         sim.init(0x5eed)
+        rebuild_static()
         menu.open = false
         browser.connect(dir)
         self.browsing = true
@@ -212,6 +222,7 @@ function init(self)
         -- and settings: prediction runs collision locally between snapshots,
         -- and a snapshot carries state, not rules.
         sim.init(0x5eed)
+        rebuild_static()
         menu.open = false
         net.connect(url, 0, sys.get_config_string("vectorwake.name", "pilot"))
         self.online = true
@@ -219,6 +230,7 @@ function init(self)
     end
 
     sim.init(0x5eed)
+    rebuild_static()
     start_offline()
 end
 
@@ -226,9 +238,39 @@ function final(self)
     msg.post(".", "release_input_focus")
 end
 
+-- Every report the simulation made this tick, turned into light, noise and
+-- feed lines. Drained per tick rather than per frame: a frame can advance the
+-- simulation eight times, and the event list is replaced by each one.
+local function drain_events()
+    world.events(me, sfx.play)
+    for i = 0, sim.event_count() - 1 do
+        local ty, a, b = sim.event_at(i)
+        if ty == sim.EV_DEATH then
+            local vn = (pilots[a] and pilots[a].name) or ("ship " .. a)
+            local kn = (b ~= 255 and pilots[b] and pilots[b].name)
+                or ((b == 255) and "the arena") or ("ship " .. b)
+            -- Your own bomb counts as your kill in the ledger, which is
+            -- correct and reads as nonsense in a feed line.
+            local line = (a == b) and (vn .. " was caught in it")
+                or (b == 255) and (vn .. " flew into the wall")
+                or (kn .. " killed " .. vn)
+            table.insert(feed, 1, line)
+            while #feed > 9 do table.remove(feed) end
+        elseif ty == sim.EV_HIT and a == me then
+            hurt = 1
+        elseif ty == sim.EV_PRIZE and a == me then
+            local u = pal.UPGRADES[b + 1]
+            if u then pickup = {name = u.name, col = u.col, t = 1} end
+        end
+    end
+end
+
 local function step_once()
     -- Online, the server owns everybody else and this predicts only itself.
-    if net.step(my_buttons()) then return end
+    if net.step(my_buttons()) then
+        drain_events()
+        return
+    end
 
     local buttons = {}
     buttons[me] = my_buttons()
@@ -241,30 +283,7 @@ local function step_once()
         end
     end
     sim.step(buttons)
-end
-
-local function draw_hull(cls, x, y, heading, color)
-    local pts = HULLS[cls + 1] or HULLS[1]
-    local a = (heading / 65536) * math.pi * 2
-    local ca, sa = math.cos(a), math.sin(a)
-    local n = #pts
-    for i = 1, n do
-        local p, q = pts[i], pts[i % n + 1]
-        -- Heading a travels along (sin a, -cos a) in simulation
-        -- coordinates, so that is where the local +y axis has to point. The
-        -- previous sign here pointed the nose along (sin a, cos a): correct
-        -- at a quarter turn, reversed at none, and wrong by everything in
-        -- between, which is why the hulls looked out of true as they turned.
-        local px = x + p[1] * ca + p[2] * sa
-        local py = y + p[1] * sa - p[2] * ca
-        local qx = x + q[1] * ca + q[2] * sa
-        local qy = y + q[1] * sa - q[2] * ca
-        msg.post("@render:", "draw_line", {
-            start_point = vmath.vector3(px, py, 0),
-            end_point = vmath.vector3(qx, qy, 0),
-            color = color,
-        })
-    end
+    drain_events()
 end
 
 function start_offline(cls)
@@ -284,34 +303,67 @@ end
 -- swapping a ship inside it.
 local function start_chosen(what, cls)
     pilots = {}
-    hud.reset()
+    feed = {}
+    pickup = nil
+    hurt = 0
+    fx.reset()
     if what == "duel" then
         sim.init_duel(0x5eed)
+        map_lo, map_hi = 496, 528
+        rebuild_static()
         me = sim.spawn(cls, 0, 512, 522, 0)
         pilots[me] = {name = "you"}
         local id = sim.spawn((cls + 3) % 8, 1, 512, 502, 32768)
         pilots[id] = {name = "Ridgeline", bot = make_bot(id, 0.62)}
     else
         sim.init(0x5eed)
+        map_lo, map_hi = 470, 554
+        rebuild_static()
         start_offline(cls)
     end
 end
 
+-- The flag tally, in the words the web prototype uses. Reporting only: the
+-- core owns pickup, carry and drop, and which arrangement of flags wins a
+-- round is a game mode's business, which offline there is not one of.
+local function flag_banner(my_team)
+    local n = sim.flag_count()
+    if n == 0 then return nil end
+    local mine, theirs = 0, 0
+    for i = 0, n - 1 do
+        local _, _, team = sim.flag_at(i)
+        if team == my_team then mine = mine + 1
+        elseif team ~= 255 then theirs = theirs + 1 end
+    end
+    return string.format("flags  you %d - %d them   %d loose",
+                         mine, theirs, n - mine - theirs)
+end
+
+-- Whether a ship is burning its engine this frame, which is the only thing on
+-- screen that separates a pilot accelerating from one coasting.
+local function thrusting(i, mine_buttons)
+    if i == me then return has(mine_buttons, sim.BTN_THRUST) end
+    local p = pilots[i]
+    if p and p.bot then return has(p.bot.want, sim.BTN_THRUST) end
+    return false
+end
+
 function update(self, dt)
+    local ww, wh = self.vw or 0, self.vh or 0
+    local density = self.density or 1
+    if ww == 0 or wh == 0 then return end
+
     if browser.open then
-        local w, h = window.get_size()
-        browser.draw(w, h)
-        -- Same heartbeat idea as the arena: without it there is no way to see
-        -- what the browser thinks is selected in a headless run.
-        self.report = (self.report or 0) + dt
-        if self.report > 3 then
-            self.report = 0
-            print(string.format("browser rows %d sel %d %s",
-                #browser.rows, browser.selected, browser.note))
-        end
+        ui.begin(layers.ui, ww, wh, density)
+        browser.draw(layers.ui, ui, ww, wh, density)
+        ui.finish()
+        layers.fill:reset() layers.fill:flush()
+        layers.glow:reset() layers.glow:flush()
         return
     end
     if self.online and sim.ship_count() == 0 then return end
+
+    sfx.frame()
 
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
@@ -325,33 +377,13 @@ function update(self, dt)
     end
     if steps == MAX_CATCHUP then accum = 0 end
 
-    -- A heartbeat, which is the only way to see anything in a headless
-    -- build and cheap enough to leave in.
-    self.report = (self.report or 0) + dt
-    if self.report > 5 then
-        self.report = 0
-        local flags = {}
-        for i = 0, sim.flag_count() - 1 do
-            local _, _, team = sim.flag_at(i)
-            flags[#flags + 1] = tostring(team)
-        end
-        if self.online then
-            print(string.format("tick %d  ships %d  online %s  err %.2fpx  peak %.1fpx  %s",
-                sim.tick(), sim.ship_count(), tostring(net.connected),
-                net.stats.err, net.stats.err_max, net.banner))
-        else
-            print(string.format("tick %d  ships %d  hash %d  at %.0f,%.0f  flags %s",
-                sim.tick(), sim.ship_count(), sim.hash(),
-                sim.ship_x(me), sim.ship_y(me), table.concat(flags, ",")))
-        end
-    end
-
     if menu.open then
-        local chose = menu.step({
+        local chose, moved = menu.step({
             left = tapped[hash("turn_left")], right = tapped[hash("turn_right")],
             up = tapped[hash("thrust")], down = tapped[hash("reverse")],
             go = tapped[hash("select")] or tapped[hash("guns")],
         })
+        if moved then sfx.ui(chose and "ui_go" or "ui_move") end
         if chose then start_chosen(chose, menu.class) end
     end
     tapped = {}
@@ -359,99 +391,89 @@ function update(self, dt)
     if self.online and net.connected then me = net.me end
 
     local cx, cy = sim.ship_x(me), sim.ship_y(me)
-    msg.post("@render:", "camera", {position = vmath.vector3(cx, cy, 0)})
-
-    -- Touch controls, drawn in world space at a fixed offset from the camera.
-    -- The same view extent the render script uses, so they land where the
-    -- thumb actually is.
-    local ww, wh = self.vw or 0, self.vh or 0
-    if ww > 0 and wh > 0 then
-        touch.draw(cx, cy, self.hw, self.hh, ww, wh)
+    sfx.listener(cx, cy)
+    fx.listener(cx, cy)
+    fx.update(dt)
+    hurt = hurt * (0.955 ^ (dt * 60))
+    if pickup then
+        pickup.t = pickup.t * (0.975 ^ (dt * 60))
+        if pickup.t < 0.02 then pickup = nil end
     end
 
-    -- Deaths become feed lines. The simulation reports them; this only
-    -- names the pilots involved.
-    for i = 0, sim.event_count() - 1 do
-        local ty, va, vb = sim.event_at(i)
-        if ty == 4 then
-            local vn = (pilots[va] and pilots[va].name) or ("ship " .. va)
-            local kn = (vb ~= 255 and pilots[vb] and pilots[vb].name)
-                or ((vb == 255) and "the arena") or ("ship " .. vb)
-            hud.kill(kn, vn)
+    local sx, sy = fx.shake_offset()
+    msg.post("@render:", "camera",
+             {position = vmath.vector3(cx + sx, cy + sy, 0)})
+
+    -- A heartbeat, which is the only way to see anything in a headless
+    -- build and cheap enough to leave in.
+    self.report = (self.report or 0) + dt
+    if self.report > 5 then
+        self.report = 0
+        if self.online then
+            print(string.format("tick %d  ships %d  online %s  err %.2fpx  peak %.1fpx  %s",
+                sim.tick(), sim.ship_count(), tostring(net.connected),
+                net.stats.err, net.stats.err_max, net.banner))
+        else
+            print(string.format("tick %d  ships %d  hash %d  at %.0f,%.0f  verts %d/%d",
+                sim.tick(), sim.ship_count(), sim.hash(), cx, cy,
+                layers.glow.n, layers.ui.n))
         end
     end
 
-    -- Walls near the camera.
-    local wall = vmath.vector4(0.16, 0.24, 0.38, 1)
-    local t0x, t0y = math.floor(cx / 16) - 26, math.floor(cy / 16) - 26
-    for ty = t0y, t0y + 52 do
-        for tx = t0x, t0x + 52 do
-            if sim.solid(tx, ty) then
-                local x, y = tx * 16, ty * 16
-                msg.post("@render:", "draw_line", {
-                    start_point = vmath.vector3(x, y, 0),
-                    end_point = vmath.vector3(x + 16, y, 0), color = wall})
-                msg.post("@render:", "draw_line", {
-                    start_point = vmath.vector3(x, y, 0),
-                    end_point = vmath.vector3(x, y + 16, 0), color = wall})
+    -- --- the world -------------------------------------------------------
+    local fill, glow = layers.fill, layers.glow
+    fill:reset()
+    glow:reset()
+
+    local t = sim.tick() / TICK_HZ
+    local my_team = sim.ship_team(me)
+    local mine_buttons = my_buttons()
+
+    world.flags(fill, glow, my_team, t)
+    world.prizes(fill, glow, t)
+    world.weapons(fill, glow, my_team, t)
+
+    for i = 0, sim.ship_count() - 1 do
+        if sim.ship_alive(i) == 1 then
+            local col = (sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY
+            world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
+                       sim.ship_y(i), sim.ship_heading(i), col, {
+                mine = i == me,
+                thrusting = thrusting(i, mine_buttons),
+                flicker = (sim.tick() * 7 + i * 13) % 11 / 11,
+            })
+            -- Only the wounded carry a pip. A bar over every hull in a
+            -- nine-ship room is noise; a bar over the one that is hurt is
+            -- the single most useful thing on screen.
+            local frac = sim.ship_energy(i) / math.max(1, sim.ship_max_energy(i))
+            if frac < 0.995 then
+                world.ship_bar(fill, glow, sim.ship_x(i), sim.ship_y(i), frac, col)
             end
         end
     end
 
-    -- Ships.
-    local my_team = sim.ship_team(me)
-    for i = 0, sim.ship_count() - 1 do
-        if sim.ship_alive(i) == 1 then
-            local cls = sim.ship_class(i)
-            local col = (i == me) and vmath.vector4(0.31, 0.84, 1, 1)
-                or (sim.ship_team(i) == my_team and vmath.vector4(0.5, 0.89, 0.63, 1)
-                                                or vmath.vector4(1, 0.5, 0.5, 1))
-            draw_hull(cls, sim.ship_x(i), sim.ship_y(i), sim.ship_heading(i), col)
-            hud.ship_bar(sim.ship_x(i), sim.ship_y(i),
-                         sim.ship_energy(i) / math.max(1, sim.ship_max_energy(i)),
-                         sim.ship_team(i) ~= my_team)
-        end
-    end
+    fx.draw(glow)
+    fill:flush()
+    glow:flush()
 
-    -- Weapons.
-    local shot = vmath.vector4(1, 0.86, 0.4, 1)
-    for i = 0, sim.weapon_count() - 1 do
-        local x, y = sim.weapon_at(i)
-        msg.post("@render:", "draw_line", {
-            start_point = vmath.vector3(x - 2, y, 0),
-            end_point = vmath.vector3(x + 2, y, 0), color = shot})
+    -- --- the interface ---------------------------------------------------
+    ui.begin(layers.ui, ww, wh, density)
+    if menu.open then
+        ui.menu(menu, CLASS_NAMES)
+    else
+        ui.hud({
+            me = me, pilots = pilots, class_names = CLASS_NAMES,
+            feed = feed, hurt = hurt, pickup = pickup,
+            cam_x = cx, cam_y = cy,
+            banner = self.online and net.banner or flag_banner(my_team),
+            netinfo = self.online and string.format(
+                "err %.1fpx · peak %.0fpx", net.stats.err, net.stats.err_max)
+                or nil,
+        })
     end
-
-    -- Interface last, so it reads over the world rather than under it.
-    if ww > 0 and wh > 0 then
-        local names = {}
-        for i, c in ipairs(CLASSES) do names[i] = c.name end
-        if menu.open then
-            menu.draw(ww, wh, names, HULLS, cx, cy, self.hw, self.hh)
-        else
-            hud.draw({
-                me = me, pilots = pilots, class_names = names,
-                w = ww, h = wh, cam_x = cx, cam_y = cy,
-                half_w = self.hw, half_h = self.hh,
-            })
-        end
-    end
-
-    -- Flags.
-    for i = 0, sim.flag_count() - 1 do
-        local x, y, team = sim.flag_at(i)
-        local col = (team == 255) and vmath.vector4(0.56, 0.63, 0.72, 1)
-            or (team == my_team and vmath.vector4(0.5, 0.89, 0.63, 1)
-                                 or vmath.vector4(1, 0.5, 0.5, 1))
-        -- The pole rises, so it runs toward smaller y now that the world
-        -- renders +y downward.
-        msg.post("@render:", "draw_line", {
-            start_point = vmath.vector3(x, y + 6, 0),
-            end_point = vmath.vector3(x, y - 12, 0), color = col})
-        msg.post("@render:", "draw_line", {
-            start_point = vmath.vector3(x, y - 12, 0),
-            end_point = vmath.vector3(x + 11, y - 7, 0), color = col})
-    end
+    local sw, sh = window.get_size()
+    touch.draw(layers.ui, sw, sh, density)
+    ui.finish()
 end
 
 -- The render script reports the pixel space it projects the interface into.
@@ -461,17 +483,19 @@ function on_message(self, message_id, message)
     if message_id == hash("viewport") then
         self.vw, self.vh = message.w, message.h
         self.hw, self.hh = message.hw, message.hh
+        self.density = message.density
     end
 end
 
 function on_input(self, action_id, action)
     if browser.open then
         if not action.pressed then return end
-        if action_id == hash("thrust") then browser.move(-1)
-        elseif action_id == hash("reverse") then browser.move(1)
+        if action_id == hash("thrust") then browser.move(-1) sfx.ui("ui_move")
+        elseif action_id == hash("reverse") then browser.move(1) sfx.ui("ui_move")
         elseif action_id == hash("select") then
             local address = browser.chosen()
             if address then
+                sfx.ui("ui_go")
                 browser.close()
                 net.connect(address, 0,
                             sys.get_config_string("vectorwake.name", "pilot"))
@@ -487,6 +511,22 @@ function on_input(self, action_id, action)
     end
     if action_id == hash("touch") then
         local w, h = window.get_size()
+        -- On the start screen a tap is a click on whatever it landed on. The
+        -- interface publishes its own hit boxes in the same pixel space it
+        -- drew them in, so this needs no second copy of the layout.
+        if menu.open and action.pressed then
+            local d = self.density or 1
+            local px, py = action.x * d, (h - action.y) * d
+            for _, r in ipairs(ui.hits) do
+                if px >= r.x and px <= r.x + r.w
+                   and py >= r.y and py <= r.y + r.h then
+                    local chose, moved = menu.click(r.action, r.value)
+                    if moved then sfx.ui(chose and "ui_go" or "ui_move") end
+                    if chose then start_chosen(chose, menu.class) end
+                    return
+                end
+            end
+        end
         touch.on_touch(action, w, h)
         return
     end

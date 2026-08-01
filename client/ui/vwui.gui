@@ -1,0 +1,8 @@
+script: "/ui/vwui.gui_script"
+fonts {
+  name: "ui"
+  font: "/ui/ui.font"
+}
+material: "/builtins/materials/gui.material"
+adjust_reference: ADJUST_REFERENCE_DISABLED
+max_nodes: 256

@@ -1,0 +1,378 @@
+-- Drawing the world.
+--
+-- Ships, weapons, flags, prizes and terrain, in the two world layers: a dark
+-- alpha fill that occludes the starfield, and an additive glow that carries
+-- every bright edge. Nothing here reads input or advances anything; it asks
+-- the simulation what is true and describes it in triangles.
+--
+-- The look is the one docs/design/identity.md asks for: bright geometric
+-- silhouettes on a near-black field, thin outlines over a darker fill, bolts
+-- with sharp falloff and short trails, blasts that bloom into rings rather
+-- than fireballs.
+
+local pal = require("arena.palette")
+local fx = require("arena.fx")
+
+local M = {}
+
+local TILE = 16
+local TAU = math.pi * 2
+
+-- Hulls, in local pixels with the nose along +y. Shape carries class and
+-- colour carries team, so neither has to carry both, and every class has to be
+-- identifiable by silhouette alone at radar scale -- which means each one
+-- needs a front that is visibly not its back. See docs/design/ships.md.
+--
+-- `spine` is the interior detail: line pairs that give a hull a read at close
+-- range without adding a second silhouette. `jets` are where thrust comes out.
+M.HULLS = {
+    -- Apex: a swept dart. Fastest and sharpest turn in the game.
+    {poly = {0,17, 5,-2, 9,-10, 0,-5, -9,-10, -5,-2},
+     spine = {0,11, 0,1}, jets = {0,-5}},
+    -- Wedge: a flat wide triangle. It reads as a platform, not a fighter.
+    {poly = {0,11, 6,2, 14,-8, 5,-5, -5,-5, -14,-8, -6,2},
+     spine = {-4,-3, 4,-3}, jets = {-6,-5, 6,-5}},
+    -- Chord: a wide shallow arc, hollow at the back.
+    {poly = {0,12, 9,8, 16,-1, 9,-3, 0,2, -9,-3, -16,-1, -9,8},
+     spine = {0,9, 0,3}, jets = {-6,-1, 6,-1}},
+    -- Anvil: a blunt hexagon. The front is a flat face, not a point: nothing
+    -- about this ship should look sharp.
+    {poly = {-7,13, 7,13, 12,4, 10,-9, -10,-9, -12,4},
+     spine = {-6,7, 6,7}, jets = {-5,-9, 5,-9}},
+    -- Spire: a tall diamond carrying a mast, which is where the turrets go.
+    {poly = {0,19, 3,9, 7,0, 3,-11, -3,-11, -7,0, -3,9},
+     spine = {0,15, 0,-7}, jets = {0,-11}},
+    -- Cipher: a thin sliver, barely there.
+    {poly = {0,18, 3,0, 2,-8, 0,-11, -2,-8, -3,0},
+     spine = {0,12, 0,-6}, jets = {0,-11}},
+    -- Facet: a compact pentagon with a real nose on it.
+    {poly = {0,13, 10,3, 7,-10, -7,-10, -10,3},
+     spine = {-4,6, 4,6}, jets = {-4,-10, 4,-10}},
+    -- Lattice: a cross. It owns terrain, and it should look like a marker
+    -- planted in it. The forward arm is longest so the shape still points.
+    {poly = {-3,15, 3,15, 3,4, 13,4, 13,-2, 3,-2, 3,-12,
+             -3,-12, -3,-2, -13,-2, -13,4, -3,4},
+     spine = {0,11, 0,-9}, jets = {0,-12}},
+}
+
+-- The centroid of each hull, so a fill can fan from inside the shape. Fanning
+-- from a vertex double-covers a concave hull -- the cross especially -- and
+-- the overlap shows as a darker wedge through the middle of the ship.
+for _, h in ipairs(M.HULLS) do
+    local sx, sy, n = 0, 0, #h.poly / 2
+    for i = 1, #h.poly, 2 do sx, sy = sx + h.poly[i], sy + h.poly[i + 1] end
+    h.cx, h.cy = sx / n, sy / n
+    h.tmp = {}
+end
+
+-- --- static terrain --------------------------------------------------------
+--
+-- Walls and stars never move, so they are built once per map into their own
+-- buffers and never touched again. A per-frame rebuild of a thousand tiles was
+-- the single largest thing the old renderer did, and it did it every frame.
+
+local STAR_SEED = 7717
+
+-- Terrain for the radar, sampled once. At the radar's scale a hundred and
+-- fifty tiles cross a hundred and sixty-eight pixels, so one dot every four
+-- tiles is already denser than the display can show, and it turns a
+-- thousand-tile scan per frame into a list of seventy.
+M.radar_tiles = {}
+
+function M.build_static(bg, glow, lo, hi)
+    bg:reset()
+    glow:reset()
+
+    local rt = {}
+    for ty = lo - 2, hi + 2, 4 do
+        for tx = lo - 2, hi + 2, 4 do
+            if sim.solid(tx, ty) then
+                rt[#rt + 1] = tx * TILE
+                rt[#rt + 1] = ty * TILE
+            end
+        end
+    end
+    M.radar_tiles = rt
+
+    -- Starfield. Two depths, the far one dimmer and denser, both in world
+    -- space: at this zoom a parallax layer would slide against the terrain
+    -- and read as a bug rather than as distance.
+    local seed = STAR_SEED
+    local function rnd()
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        return seed / 2147483648
+    end
+    local x0, y0 = (lo - 3) * TILE, (lo - 3) * TILE
+    local span = (hi - lo + 6) * TILE
+    for i = 1, 900 do
+        local x, y = x0 + rnd() * span, y0 + rnd() * span
+        local far = i % 3 ~= 0
+        local s = far and 0.9 or 1.4
+        bg:rect(x, y, s, s, far and pal.STAR_FAR or pal.STAR)
+        -- A handful of them are near enough to bloom.
+        if i % 47 == 0 then
+            glow:halo(x, y, 7, 8, pal.a(pal.STAR, 0.5))
+        end
+    end
+
+    -- Wall bodies, and a lit edge only on the faces that touch open space.
+    -- Drawing every tile's border outlines the grid inside a solid block,
+    -- which turns a wall into graph paper. The edge gets the same two-stroke
+    -- treatment a hull does, so terrain glows rather than being merely
+    -- outlined -- and since it is built once, the second stroke is free.
+    local edge = pal.a(pal.WALL_EDGE, 1)
+    local spill = pal.a(pal.WALL_EDGE, 0.16)
+    local function face(x1, y1, x2, y2)
+        glow:seg(x1, y1, x2, y2, 7, spill)
+        glow:seg(x1, y1, x2, y2, 1.6, edge)
+    end
+    for ty = lo - 2, hi + 2 do
+        for tx = lo - 2, hi + 2 do
+            if sim.solid(tx, ty) then
+                local x, y = tx * TILE, ty * TILE
+                bg:rect(x, y, TILE, TILE, pal.WALL)
+                if not sim.solid(tx, ty - 1) then face(x, y, x + TILE, y) end
+                if not sim.solid(tx, ty + 1) then
+                    face(x, y + TILE, x + TILE, y + TILE)
+                end
+                if not sim.solid(tx - 1, ty) then face(x, y, x, y + TILE) end
+                if not sim.solid(tx + 1, ty) then
+                    face(x + TILE, y, x + TILE, y + TILE)
+                end
+            end
+        end
+    end
+
+    bg:flush()
+    glow:flush()
+end
+
+-- --- ships -----------------------------------------------------------------
+
+-- Transform a hull into world space. Heading a travels along (sin a, -cos a)
+-- in simulation coordinates, so that is where the local +y axis has to point.
+local function place(pts, out, x, y, ca, sa, scale)
+    for i = 1, #pts, 2 do
+        local px, py = pts[i] * scale, pts[i + 1] * scale
+        out[i] = x + px * ca + py * sa
+        out[i + 1] = y + px * sa - py * ca
+    end
+    return out
+end
+
+-- One ship. `thrusting` draws the flame, which is the only thing on screen
+-- that says a pilot is accelerating rather than coasting.
+function M.ship(fill, glow, cls, x, y, heading, col, opts)
+    local h = M.HULLS[cls + 1] or M.HULLS[1]
+    local a = heading / 65536 * TAU
+    local ca, sa = math.cos(a), math.sin(a)
+    local pts = place(h.poly, h.tmp, x, y, ca, sa, 1)
+    local mine = opts and opts.mine
+    local dim = (opts and opts.alpha) or 1
+
+    -- The flame first, so the hull sits on top of it.
+    if opts and opts.thrusting then
+        local flick = 0.72 + (opts.flicker or 0) * 0.28
+        for i = 1, #h.jets, 2 do
+            local jx = x + h.jets[i] * ca + h.jets[i + 1] * sa
+            local jy = y + h.jets[i] * sa - h.jets[i + 1] * ca
+            local len = 15 * flick
+            glow:seg_fade(jx, jy, jx - sa * len, jy + ca * len,
+                          6.5, 1.0, 0.85 * dim, 0, pal.THRUST)
+            glow:seg_fade(jx, jy, jx - sa * len * 0.45, jy + ca * len * 0.45,
+                          3.0, 0.8, 1.0 * dim, 0, pal.hot(pal.THRUST, 0.75, 1))
+        end
+    end
+
+    -- A dark interior, tinted toward the team so a hull is never a black
+    -- hole, and opaque enough that a star behind it does not shine through.
+    local cxw = x + h.cx * ca + h.cy * sa
+    local cyw = y + h.cx * sa - h.cy * ca
+    local body = {col[1] * 0.16 + 0.02, col[2] * 0.16 + 0.03,
+                  col[3] * 0.16 + 0.05, 0.94 * dim}
+    local n = #pts
+    for i = 1, n, 2 do
+        local j = (i + 1 < n) and i + 2 or 1
+        fill:tri(cxw, cyw, pts[i], pts[i + 1], pts[j], pts[j + 1], body)
+    end
+
+    -- Outline: three concentric strokes, widest and faintest first. That is
+    -- the whole bloom -- no post pass, no second target -- and additively it
+    -- reads as a bright edge with light spilling off it rather than as three
+    -- lines. Anything past three is invisible and costs a third of the layer.
+    glow:outline(pts, 8.0, pal.a(col, 0.055 * dim))
+    glow:outline(pts, 3.4, pal.a(col, 0.16 * dim))
+    glow:outline(pts, 1.4, pal.hot(col, mine and 0.6 or 0.3, dim))
+
+    if h.spine then
+        local s = place(h.spine, {}, x, y, ca, sa, 1)
+        glow:seg(s[1], s[2], s[3], s[4], 1.1, pal.a(col, 0.45 * dim))
+    end
+
+    -- Your own ship carries a halo. In a room of nine identical outlines the
+    -- one question a player asks every second is "which one is me".
+    if mine then
+        glow:halo(x, y, 26, 12, pal.a(col, 0.10 * dim))
+    end
+end
+
+-- The energy pip above a hull. Energy is health in this game -- it powers the
+-- guns and it absorbs the damage -- so one bar says both things, and a
+-- wounded enemy reads at a glance without a number anywhere near it.
+--
+-- World space, not screen: zoom is fixed at one, so twenty-two world pixels
+-- are twenty-two screen pixels and the pip needs no projection of its own.
+function M.ship_bar(fill, glow, sx, sy, frac, col)
+    local W, H = 22, 2.5
+    local x, y = sx - W / 2, sy - 26
+    fill:rect(x - 1, y - 1, W + 2, H + 2, pal.a(pal.BG, 0.8))
+    fill:rect(x, y, W, H, pal.a(pal.BAR_EDGE, 0.5))
+    if frac > 0 then
+        glow:rect(x, y, W * math.min(1, frac), H, pal.a(col, 0.9))
+    end
+end
+
+-- --- weapons ---------------------------------------------------------------
+
+function M.weapons(fill, glow, me_team, t)
+    local pulse = 0.72 + 0.28 * math.sin(t * 11)
+    for i = 0, sim.weapon_count() - 1 do
+        local x, y, ty, vx, vy, team = sim.weapon_at(i)
+        if ty == sim.W_BOMB then
+            -- A bomb is a heavy, slow, obviously dangerous object: a hot core
+            -- inside a ring that breathes, with a trail long enough to read
+            -- its heading from across the arena.
+            local col = pal.BOMB
+            glow:seg_fade(x - vx * 7, y - vy * 7, x, y, 1.5, 5.5, 0, 0.55, col)
+            glow:halo(x, y, 13 * pulse, 10, pal.a(col, 0.5))
+            glow:ring(x, y, 4.6, 1.4, 10, pal.a(col, 0.95))
+            fill:disc(x, y, 3.6, 8, pal.a(pal.hot(col, 0.8, 1), 0.9))
+        else
+            -- A bolt: a streak along its own velocity with a hot head. The
+            -- streak is what makes a stream of fire read as a direction
+            -- rather than as a scatter of dots, and it is the whole reason
+            -- the core reports weapon velocity to the client at all.
+            local col = (team == me_team) and pal.FRIEND or pal.ENEMY
+            glow:seg_fade(x - vx * 14, y - vy * 14, x, y, 0.6, 4.5, 0, 0.30, col)
+            glow:seg_fade(x - vx * 6, y - vy * 6, x, y, 0.8, 2.6, 0, 0.85, col)
+            glow:seg_fade(x - vx * 2, y - vy * 2, x, y, 0.6, 1.6, 0, 1,
+                          pal.hot(col, 0.9, 1))
+            glow:halo(x, y, 7, 8, pal.a(col, 0.55))
+        end
+    end
+end
+
+-- --- prizes and flags ------------------------------------------------------
+
+function M.prizes(fill, glow, t)
+    local spin = t * 1.1
+    local ca, sa = math.cos(spin), math.sin(spin)
+    local pulse = 0.78 + 0.22 * math.sin(t * 3.4)
+    for i = 0, sim.prize_count() - 1 do
+        local active, x, y, kind, life = sim.prize_at(i)
+        if active then
+            local u = pal.UPGRADES[kind + 1] or pal.UPGRADES[1]
+            local col = u.col
+            -- A prize about to time out blinks, so a player can tell the
+            -- difference between one worth crossing the arena for and one
+            -- that will be gone before they arrive.
+            local fade = (life < 120) and (0.35 + 0.65 * math.abs(math.sin(t * 9))) or 1
+            local r = 6.5 * pulse
+            local pts = {}
+            for k = 0, 3 do
+                local px = (k == 0 and 0) or (k == 1 and r) or (k == 2 and 0) or -r
+                local py = (k == 0 and -r) or (k == 1 and 0) or (k == 2 and r) or 0
+                pts[k * 2 + 1] = x + px * ca + py * sa
+                pts[k * 2 + 2] = y + px * sa - py * ca
+            end
+            glow:halo(x, y, 15, 10, pal.a(col, 0.20 * fade))
+            fill:fan(pts, pal.a(col, 0.28 * fade))
+            glow:outline(pts, 1.4, pal.a(col, 0.95 * fade))
+        end
+    end
+end
+
+function M.flags(fill, glow, my_team, t)
+    local wave = math.sin(t * 2.2) * 1.6
+    for i = 0, sim.flag_count() - 1 do
+        local x, y, team, carried = sim.flag_at(i)
+        local col = (team == 255) and pal.INK
+            or (team == my_team and pal.FRIEND or pal.ENEMY)
+        local top = y - (carried and 26 or 13)
+        local base = y + (carried and -10 or 6)
+        glow:seg(x, base, x, top, 1.6, pal.a(col, 0.9))
+        local pts = {x, top, x + 12 + wave, top + 4.5, x, top + 9}
+        fill:fan(pts, pal.a(col, carried and 0.6 or 0.25))
+        glow:outline(pts, 1.3, pal.a(col, carried and 1 or 0.7))
+        glow:halo(x, top + 4, carried and 22 or 14, 10, pal.a(col, 0.13))
+    end
+end
+
+-- --- events ----------------------------------------------------------------
+--
+-- The simulation reports what happened; this turns each report into light and
+-- noise. Positions come from the event where the core carries one, because by
+-- the time the client looks a dead weapon is already gone from the state.
+
+function M.events(me, sfx)
+    for i = 0, sim.event_count() - 1 do
+        local ty, a, b, v = sim.event_at(i)
+        if ty == sim.EV_FIRE then
+            local x, y = sim.ship_x(a), sim.ship_y(a)
+            local ang = sim.ship_heading(a) / 65536 * TAU
+            local bomb = b == sim.W_BOMB
+            local col = bomb and pal.BOMB
+                or (sim.ship_team(a) == sim.ship_team(me) and pal.FRIEND or pal.ENEMY)
+            fx.cone(x + math.sin(ang) * 10, y - math.cos(ang) * 10, ang,
+                    bomb and 0.9 or 0.35, bomb and 7 or 3,
+                    bomb and 120 or 190, 0.14, bomb and 2.2 or 1.4, col)
+            sfx(bomb and "bomb" or "gun", x, y)
+        elseif ty == sim.EV_EXPIRE then
+            local x = math.floor(v / 16384)
+            local y = v % 16384
+            if a == sim.W_BOMB then
+                local r = sim.ship_bomb_radius(b)
+                fx.detonate(x, y, r > 0 and r or 60, pal.BOMB)
+                sfx("blast", x, y)
+            else
+                fx.burst(x, y, 4, 90, 0.22, 1.5, pal.a(pal.INK, 0.9))
+            end
+        elseif ty == sim.EV_HIT then
+            local x, y = sim.ship_x(a), sim.ship_y(a)
+            local col = (sim.ship_team(a) == sim.ship_team(me)) and pal.FRIEND or pal.ENEMY
+            fx.burst(x, y, 5, 130, 0.26, 1.8, pal.hot(col, 0.6, 1))
+            if a == me then fx.jolt(0.30) end
+            sfx("hit", x, y)
+        elseif ty == sim.EV_DEATH then
+            local x, y = sim.ship_x(a), sim.ship_y(a)
+            local vx, vy = sim.ship_vel(a)
+            local col = (sim.ship_team(a) == sim.ship_team(me)) and pal.FRIEND or pal.ENEMY
+            fx.destroy(x, y, vx, vy, col)
+            sfx("death", x, y)
+        elseif ty == sim.EV_SPAWN then
+            local x, y = sim.ship_x(a), sim.ship_y(a)
+            fx.wave(x, y, 46, 5, 0.4, 4, pal.a(pal.FRIEND, 0.9))
+            sfx("spawn", x, y)
+        elseif ty == sim.EV_BOUNCE then
+            local x, y = sim.ship_x(a), sim.ship_y(a)
+            if v > 40000 then
+                fx.burst(x, y, 3, 70, 0.2, 1.2, pal.a(pal.WALL_EDGE, 1))
+                sfx("bounce", x, y)
+            end
+        elseif ty == sim.EV_PRIZE then
+            local x, y = sim.ship_x(a), sim.ship_y(a)
+            local u = pal.UPGRADES[b + 1] or pal.UPGRADES[1]
+            fx.wave(x, y, 4, 26, 0.35, 3, u.col)
+            fx.burst(x, y, 6, 60, 0.5, 1.4, u.col)
+            sfx("prize", x, y)
+        elseif ty == sim.EV_FLAG_TAKE then
+            local x, y = sim.ship_x(a), sim.ship_y(a)
+            local col = (sim.ship_team(a) == sim.ship_team(me)) and pal.FRIEND or pal.ENEMY
+            fx.wave(x, y, 6, 30, 0.45, 5, pal.a(col, 0.55))
+            fx.burst(x, y, 5, 55, 0.4, 1.4, pal.a(col, 0.8))
+            sfx("flag", x, y)
+        end
+    end
+end
+
+return M

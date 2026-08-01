@@ -83,23 +83,38 @@ function M.chosen()
     return nil
 end
 
-function M.draw(w, h)
+-- Drawn through the same two-layer interface as everything else: shapes into
+-- the screen-space mesh, text onto the shared list. `u` is the ui layer, `ui`
+-- the layout module, so this file needs neither of their internals.
+function M.draw(u, ui, w, h, s)
     if not M.open then return end
-    local function line(text, x, y)
-        msg.post("@render:", "draw_text",
-                 {text = text, position = vmath.vector3(x, y, 0)})
-    end
-    local top = h - 90
-    line("VECTORWAKE", 60, top + 40)
-    line("choose a zone     up/down to move, enter to join, esc to play offline",
-         60, top + 20)
+    local pal = require("arena.palette")
 
-    if M.note ~= "" then line(M.note, 60, top - 10) end
+    u:rect(0, 0, w, h, pal.rgb(0x030509, 0.95))
+
+    local x = math.max(40 * s, (w - 720 * s) / 2)
+    local y = 90 * s
+    ui.line("v e c t o r w a k e", x, y, 30 * s, pal.FRIEND)
+    ui.line("choose a zone", x, y + 36 * s, 13 * s, pal.INK)
+    ui.line("↑ ↓ move    enter joins    esc plays offline",
+            x, y + 56 * s, 13 * s, pal.DIM)
+
+    y = y + 96 * s
+    if M.note ~= "" then
+        ui.line(M.note, x, y, 13 * s, pal.DIM)
+        y = y + 26 * s
+    end
     for i, r in ipairs(M.rows) do
-        local y = top - 10 - i * 22
-        local mark = (i == M.selected) and ">" or " "
-        line(string.format("%s %-28s %-24s %s", mark, r.name, r.detail, r.address),
-             60, y)
+        local on = i == M.selected
+        local rw, rh = 640 * s, 30 * s
+        u:rect(x, h - y - rh, rw, rh, on and pal.BTN_SEL or pal.BTN_BG)
+        u:frame(x, h - y - rh, rw, rh, s, on and pal.FRIEND or pal.BORDER)
+        ui.line((on and "▸ " or "  ") .. r.name, x + 12 * s, y + rh / 2,
+                13 * s, r.live and pal.INK or pal.DIM)
+        ui.line(r.detail, x + 300 * s, y + rh / 2, 13 * s, pal.DIM)
+        ui.line(r.address, x + rw - 12 * s, y + rh / 2, 13 * s, pal.DIM,
+                "right")
+        y = y + rh + 6 * s
     end
 end
 

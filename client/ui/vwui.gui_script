@@ -1,0 +1,62 @@
+-- Text, and only text.
+--
+-- Every box, bar, border and blip in this game is triangles in the `vwui`
+-- mesh layer, drawn before this one under the same screen-space projection.
+-- Glyphs are the one thing a mesh cannot do without an atlas of our own, so
+-- they come through the gui, and the division is absolute: if it has a
+-- shape, arena/ui.lua drew it; if it has words, this did.
+--
+-- Nodes are created here rather than authored in the .gui file. The interface
+-- is a different shape in the menu than in flight and a different shape again
+-- online, and a pool that the layout drives is far less to maintain than
+-- three authored screens that have to be kept in agreement with the code.
+
+local state = require("arena.state")
+
+local FONT = "ui"
+local FONT_SIZE = 26     -- the size ui.font was built at; scale is relative
+local POOL = 128
+
+local PIVOTS = {
+    left = gui.PIVOT_W,
+    right = gui.PIVOT_E,
+    center = gui.PIVOT_CENTER,
+}
+
+function init(self)
+    self.nodes = {}
+    for i = 1, POOL do
+        local n = gui.new_text_node(vmath.vector3(0, 0, 0), "")
+        gui.set_font(n, FONT)
+        gui.set_adjust_mode(n, gui.ADJUST_FIT)
+        gui.set_enabled(n, false)
+        self.nodes[i] = n
+    end
+    self.live = 0
+    self.version = -1
+end
+
+function update(self)
+    if state.version == self.version then return end
+    self.version = state.version
+
+    local text, count = state.text, state.n
+    if count > POOL then count = POOL end
+
+    for i = 1, count do
+        local t = text[i]
+        local node = self.nodes[i]
+        local s = t.px / FONT_SIZE
+        gui.set_enabled(node, true)
+        gui.set_text(node, t.s)
+        gui.set_pivot(node, PIVOTS[t.pivot] or gui.PIVOT_W)
+        gui.set_position(node, vmath.vector3(t.x, t.y, 0))
+        gui.set_scale(node, vmath.vector3(s, s, 1))
+        local c = t.col
+        gui.set_color(node, vmath.vector4(c[1], c[2], c[3], c[4]))
+    end
+    for i = count + 1, self.live do
+        gui.set_enabled(self.nodes[i], false)
+    end
+    self.live = count
+end

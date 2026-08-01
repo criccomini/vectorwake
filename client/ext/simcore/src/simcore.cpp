@@ -155,6 +155,39 @@ SHIP_GETTER(ShipEnergy, s->energy)
 SHIP_GETTER(ShipKills, s->kills)
 SHIP_GETTER(ShipDeaths, s->deaths)
 
+// Velocity, in pixels per tick. The renderer leans on it for motion trails
+// and the HUD reports speed, so both would otherwise have to difference
+// positions across frames and get it wrong whenever a snapshot lands.
+int ShipVel(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    const sim_ship* s = &g_cur->ships[i];
+    lua_pushnumber(L, s->vx / 65536.0);
+    lua_pushnumber(L, s->vy / 65536.0);
+    return 2;
+}
+
+// Upgrades held, by sim_upgrade index.
+int ShipUp(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    int k = (int)luaL_checkinteger(L, 2);
+    lua_pushnumber(L, (k >= 0 && k < SIM_UP_COUNT) ? g_cur->ships[i].up[k] : 0);
+    return 1;
+}
+
+int ShipRadius(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].radius / 256.0);
+    return 1;
+}
+
+// The blast radius of this ship's bombs, which is what an explosion has to
+// be drawn at for the picture to match the damage.
+int ShipBombRadius(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].bomb_radius / 256.0);
+    return 1;
+}
+
 int ShipCount(lua_State* L) {
     lua_pushnumber(L, g_cur->ship_count);
     return 1;
@@ -177,13 +210,42 @@ int WeaponCount(lua_State* L) {
     return 1;
 }
 
+// x, y, type, vx, vy, team, life. A bolt is drawn as a streak along its own
+// velocity and tinted by whose it is, so the renderer needs all of it, and
+// asking for it in seven separate calls per weapon per frame is the kind of
+// cost that only shows up on the platform that matters most.
 int WeaponAt(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     const sim_weapon* w = &g_cur->weapons[i];
     lua_pushnumber(L, w->x / 256.0);
     lua_pushnumber(L, w->y / 256.0);
     lua_pushnumber(L, w->type);
-    return 3;
+    lua_pushnumber(L, w->vx / 65536.0);
+    lua_pushnumber(L, w->vy / 65536.0);
+    lua_pushnumber(L, w->team);
+    lua_pushnumber(L, w->life);
+    return 7;
+}
+
+int PrizeCount(lua_State* L) {
+    lua_pushnumber(L, SIM_MAX_PRIZES);
+    return 1;
+}
+
+// x, y, type, life. Inactive slots report life 0 and nothing else valid.
+int PrizeAt(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    const sim_prize* p = &g_cur->prizes[i];
+    if (!p->active) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    lua_pushboolean(L, 1);
+    lua_pushnumber(L, p->x / 256.0);
+    lua_pushnumber(L, p->y / 256.0);
+    lua_pushnumber(L, p->type);
+    lua_pushnumber(L, p->life);
+    return 5;
 }
 
 int Solid(lua_State* L) {
@@ -255,9 +317,15 @@ const luaL_reg kFunctions[] = {
     {"ship_max_energy", ShipMaxEnergy},
     {"ship_kills", ShipKills},
     {"ship_deaths", ShipDeaths},
+    {"ship_vel", ShipVel},
+    {"ship_up", ShipUp},
+    {"ship_radius", ShipRadius},
+    {"ship_bomb_radius", ShipBombRadius},
     {"tick", Tick},
     {"weapon_count", WeaponCount},
     {"weapon_at", WeaponAt},
+    {"prize_count", PrizeCount},
+    {"prize_at", PrizeAt},
     {"solid", Solid},
     {"event_count", EventCount},
     {"event_at", EventAt},
@@ -279,6 +347,21 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_BTN_FIRE);    lua_setfield(L, -2, "BTN_FIRE");
     lua_pushnumber(L, SIM_BTN_BOMB);    lua_setfield(L, -2, "BTN_BOMB");
     lua_pushnumber(L, SIM_TILE_PX);     lua_setfield(L, -2, "TILE_PX");
+
+    // Event and weapon kinds, so the client never hard-codes an enum the
+    // core is free to renumber.
+    lua_pushnumber(L, SIM_EV_FIRE);      lua_setfield(L, -2, "EV_FIRE");
+    lua_pushnumber(L, SIM_EV_BOUNCE);    lua_setfield(L, -2, "EV_BOUNCE");
+    lua_pushnumber(L, SIM_EV_HIT);       lua_setfield(L, -2, "EV_HIT");
+    lua_pushnumber(L, SIM_EV_DEATH);     lua_setfield(L, -2, "EV_DEATH");
+    lua_pushnumber(L, SIM_EV_SPAWN);     lua_setfield(L, -2, "EV_SPAWN");
+    lua_pushnumber(L, SIM_EV_EXPIRE);    lua_setfield(L, -2, "EV_EXPIRE");
+    lua_pushnumber(L, SIM_EV_PRIZE);     lua_setfield(L, -2, "EV_PRIZE");
+    lua_pushnumber(L, SIM_EV_FLAG_TAKE); lua_setfield(L, -2, "EV_FLAG_TAKE");
+    lua_pushnumber(L, SIM_EV_FLAG_DROP); lua_setfield(L, -2, "EV_FLAG_DROP");
+    lua_pushnumber(L, SIM_W_BULLET);     lua_setfield(L, -2, "W_BULLET");
+    lua_pushnumber(L, SIM_W_BOMB);       lua_setfield(L, -2, "W_BOMB");
+    lua_pushnumber(L, SIM_UP_COUNT);     lua_setfield(L, -2, "UP_COUNT");
 
     lua_pop(L, 1);
     assert(top == lua_gettop(L));

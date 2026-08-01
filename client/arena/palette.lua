@@ -1,0 +1,73 @@
+-- The palette, in one place.
+--
+-- These are the values the web prototype in `client-web/` uses, because that
+-- page is what the game has actually been looked at in and the production
+-- client has no business looking like a different game. Colours are
+-- {r, g, b, a} in 0..1 rather than vector4s: every one of them is read inside
+-- a draw loop, and a table index is cheaper than a userdata field.
+--
+-- Two teams separated by hue *and* luminance, per docs/design/identity.md, so
+-- the distinction survives colourblind vision.
+
+local function rgb(hex, a)
+    return {
+        math.floor(hex / 65536) % 256 / 255,
+        math.floor(hex / 256) % 256 / 255,
+        hex % 256 / 255,
+        a or 1,
+    }
+end
+
+local M = {rgb = rgb}
+
+M.BG        = rgb(0x05070c)
+M.INK       = rgb(0xdfe9f5)
+M.DIM       = rgb(0x6c7a90)
+M.FRIEND    = rgb(0x4fd6ff)
+M.ENEMY     = rgb(0xffa552)
+M.BOMB      = rgb(0xff5ea8)
+M.WHITE     = rgb(0xffffff)
+
+M.PANEL     = rgb(0x05080e, 0.72)
+M.BORDER    = rgb(0x1d2838)
+M.BAR_BG    = rgb(0x121a26)
+M.BAR_EDGE  = rgb(0x22304a)
+M.RADAR_BG  = rgb(0x070b12)
+M.RADAR_TILE= rgb(0x16243a)
+M.BTN_BG    = rgb(0x0a0f18)
+M.BTN_SEL   = rgb(0x0d1826)
+
+M.WALL      = rgb(0x0d1726)
+M.WALL_EDGE = rgb(0x22344f)
+M.STAR      = rgb(0x1b2740)
+M.STAR_FAR  = rgb(0x121b2e)
+
+M.THRUST    = rgb(0xffbe78)
+M.HURT      = rgb(0xff505a)
+
+-- Prize kinds, in the order the core defines them.
+M.UPGRADES = {
+    {name = "energy",   short = "NRG", col = rgb(0x7fe3a0)},
+    {name = "recharge", short = "RCH", col = rgb(0x4fd6ff)},
+    {name = "speed",    short = "SPD", col = rgb(0xffd166)},
+    {name = "thrust",   short = "THR", col = rgb(0xff9a5c)},
+    {name = "rotation", short = "ROT", col = rgb(0xc79bff)},
+}
+
+-- A copy at a different alpha. Draw code asks for these constantly and must
+-- never mutate the shared table to get one.
+function M.a(col, alpha)
+    return {col[1], col[2], col[3], alpha}
+end
+
+-- A copy scaled toward white, for the hot core of a bright thing.
+function M.hot(col, k, alpha)
+    return {
+        col[1] + (1 - col[1]) * k,
+        col[2] + (1 - col[2]) * k,
+        col[3] + (1 - col[3]) * k,
+        alpha or col[4],
+    }
+end
+
+return M

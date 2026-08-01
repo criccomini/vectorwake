@@ -104,49 +104,33 @@ function M.steering()
     return stick ~= nil
 end
 
--- Draw the controls in world space, offset from the camera, which puts them
--- at fixed screen positions without needing a second render pass. The first
--- draw_debug3d of a frame consumes every queued line, so a screen-space pass
--- would swallow the arena with it.
-function M.draw(cam_x, cam_y, half_w, half_h, w, h)
+-- Drawn in the screen-space interface layer, which is where a control that
+-- follows the thumb belongs: touch coordinates arrive in window pixels
+-- counting up from the bottom, and that is exactly the space this layer
+-- projects, so the only conversion left is the drawable's pixel density.
+--
+-- w and h are the window, not the drawable.
+function M.draw(u, w, h, density)
     if not M.used then return end
-    local dim = vmath.vector4(0.35, 0.44, 0.58, 1)
-    local live = vmath.vector4(0.31, 0.84, 1.00, 1)
+    local pal = require("arena.palette")
+    local dim = pal.a(pal.DIM, 0.5)
+    local live = pal.a(pal.FRIEND, 0.9)
+    local s = density
 
-    -- Screen pixels to world units, and screen origin to world.
-    local sx = (2 * half_w) / w
-    local sy = (2 * half_h) / h
-    -- Touch y counts up from the bottom of the window; the world now renders
-    -- +y downward, so the vertical term is negated.
-    local function world(px, py)
-        return cam_x + (px - w * 0.5) * sx, cam_y - (py - h * 0.5) * sy
-    end
-
-    local function ring(px, py, r, color, segments)
-        local n = segments or 20
-        local rx, ry = r * sx, r * sy
-        local wx, wy = world(px, py)
-        for i = 0, n - 1 do
-            local a, b = (i / n) * math.pi * 2, ((i + 1) / n) * math.pi * 2
-            msg.post("@render:", "draw_line", {
-                start_point = vmath.vector3(wx + math.cos(a) * rx, wy + math.sin(a) * ry, 0),
-                end_point = vmath.vector3(wx + math.cos(b) * rx, wy + math.sin(b) * ry, 0),
-                color = color})
-        end
+    local function ring(px, py, r, col, segments)
+        u:ring(px * s, py * s, r * s, 1.8 * s, segments or 26, col)
     end
 
     -- The two weapon pads sit where a right thumb falls.
     ring(w * 0.86, h * 0.22, 46, guns and live or dim)
+    if guns then u:halo(w * 0.86 * s, h * 0.22 * s, 52 * s, 16, pal.a(pal.FRIEND, 0.16)) end
     ring(w * 0.86, h * 0.58, 34, bombs and live or dim)
+    if bombs then u:halo(w * 0.86 * s, h * 0.58 * s, 40 * s, 16, pal.a(pal.BOMB, 0.18)) end
 
     if stick then
         ring(stick.ox, stick.oy, 52, dim)
-        ring(stick.x, stick.y, 20, live, 12)
-        local ax, ay = world(stick.ox, stick.oy)
-        local bx, by = world(stick.x, stick.y)
-        msg.post("@render:", "draw_line", {
-            start_point = vmath.vector3(ax, ay, 0),
-            end_point = vmath.vector3(bx, by, 0), color = live})
+        ring(stick.x, stick.y, 20, live, 16)
+        u:seg(stick.ox * s, stick.oy * s, stick.x * s, stick.y * s, 2 * s, live)
     end
 end
 

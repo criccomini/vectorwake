@@ -155,7 +155,11 @@ typedef enum {
     SIM_EV_HIT,      /* a: victim, b: attacker, v: damage Q10 */
     SIM_EV_DEATH,    /* a: victim, b: killer (255 = none) */
     SIM_EV_SPAWN,    /* a: ship */
-    SIM_EV_EXPIRE,   /* a: weapon type */
+    /* A weapon stopped existing: it ran out of life, hit a wall, or struck a
+     * ship. The position is where, which is the only report of it there is:
+     * by the time a caller looks, the weapon is gone from the state. Whole
+     * pixels, packed (x << 14) | y. */
+    SIM_EV_EXPIRE,   /* a: weapon type, b: owner, v: packed position */
     SIM_EV_PRIZE,    /* a: ship, b: sim_upgrade collected */
     SIM_EV_FLAG_TAKE,/* a: ship, b: flag index */
     SIM_EV_FLAG_DROP /* a: flag index, b: team that keeps it */
