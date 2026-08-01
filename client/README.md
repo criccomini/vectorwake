@@ -197,6 +197,36 @@ through a gui component (`ui/vwui.gui_script`) that draws a pool of text nodes
 and nothing else. The division is absolute: if it has a shape, `arena/ui.lua`
 drew it; if it has words, the gui did.
 
+## Sound in a browser is gated, and the engine's gate is narrow
+
+Every page starts muted: the audio context is created suspended and only a
+user gesture resumes it. The engine asks for that resume from exactly one
+place -- a mouse or touch event whose `target` is the canvas -- and never
+from the keyboard. The start screen says `enter launches`, so a pilot can
+reach the arena without a pointer ever touching the page, and then fly a
+whole match in silence.
+
+Measured on the shipped build with autoplay gated on activation: a click
+reaches `running` and queues audio immediately; `enter`, space and the arrows
+leave it `suspended` indefinitely. A cross-origin iframe reaches `running`
+either way, with or without `allow="autoplay"`, so an embedded page is not
+the reason -- which was worth knowing, because it is the first thing anyone
+suspects.
+
+`tools/single_file.py` unlocks it instead, from any pointer, touch or key
+anywhere on the page, and keeps watching until `resume()` takes, because the
+first gesture can easily land before the engine has opened its audio device.
+It also sets `navigator.audioSession.type = "playback"`, without which an
+iPhone with the ring switch off mutes Web Audio by policy no matter what the
+page does.
+
+The diagnosis is worth repeating because "no sound" looks identical whether
+the cause is the gate, a missing component, or a silent mixer. Wrap
+`AudioBuffer.copyToChannel` from the test harness and read the peak
+amplitude: firing peaks at 0.32 across 194 non-silent buffers, which says the
+generator, the components and the mixer are all fine and the fault is
+upstream of all of them.
+
 This replaced `draw_debug3d`, which was one pixel wide, one blend mode, and --
 the part that mattered -- compiled out of `release` builds entirely, so a
 shipped bundle drew an empty arena. **`release` is now the shipping target**,
