@@ -102,6 +102,19 @@ local function lcg(s)
     return (s * 48271) % 2147483647
 end
 
+-- Eight brightnesses per layer, made once. A star's alpha used to be a fresh
+-- {r,g,b,a} per star per frame -- three hundred and fifty tables a frame,
+-- twenty thousand a second, all of them garbage -- and at a pixel and a half
+-- across nobody can tell an eighth of a step of alpha from a sixteenth.
+local STAR_SHADES = 8
+for _, L in ipairs(STARS) do
+    L.shade = {}
+    for i = 1, STAR_SHADES do
+        L.shade[i] = pal.a(L.col, 0.45 + (i - 1) / (STAR_SHADES - 1) * 0.55)
+    end
+    L.bloom = pal.a(L.col, 0.30)
+end
+
 function M.stars(fill, glow, cam_x, cam_y, hw, hh)
     for li = 1, #STARS do
         local L = STARS[li]
@@ -112,7 +125,8 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
         local bx, by = cam_x * L.k, cam_y * L.k
         local i0, i1 = math.floor((bx - hw) / c), math.floor((bx + hw) / c)
         local j0, j1 = math.floor((by - hh) / c), math.floor((by + hh) / c)
-        local size, col = L.size, L.col
+        local size, shade = L.size, L.shade
+        local bloom = L.k > 0.5 and L.bloom or nil
         for j = j0, j1 do
             for i = i0, i1 do
                 local s = lcg((i * 1973 + j * 9277 + li * 26699) % 2147483646 + 1)
@@ -125,13 +139,12 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                     -- wall interiors live in a layer under this one.
                     if not sim.solid(math.floor(px / TILE), math.floor(py / TILE)) then
                         s = lcg(s)
-                        local a = 0.45 + (s / 2147483647) * 0.55
-                        fill:rect(px, py, size, size, pal.a(col, a))
+                        fill:rect(px, py, size, size,
+                                  shade[s % STAR_SHADES + 1])
                         -- One in a while is close enough to bloom. Additive,
                         -- so it reads as light rather than a bigger dot.
-                        if L.k > 0.5 and s % 17 == 0 then
-                            glow:halo(px + size / 2, py + size / 2, 5, 8,
-                                      pal.a(col, 0.30))
+                        if bloom and s % 17 == 0 then
+                            glow:halo(px + size / 2, py + size / 2, 5, 8, bloom)
                         end
                     end
                 end
@@ -154,9 +167,43 @@ M.radar_tiles = {}
 M.radar_safe = {}
 M.radar_doors = {}
 
+-- Doors and wormholes, found once per map.
+--
+-- This used to be a scan: every tile in the arena, every frame, asking the
+-- core what class it was. Eighty-nine tiles square is seven thousand nine
+-- hundred crossings into C to find four doors, and it cost more than the
+-- simulation it was drawing. The tiles do not move, so the search is a
+-- property of the map and belongs where the walls are built.
+M.moving_tiles = {}
+
+local function index_moving(lo, hi)
+    local out = {}
+    for ty = lo - 2, hi + 2 do
+        for tx = lo - 2, hi + 2 do
+            local cls, variant = sim.tile(tx, ty)
+            if cls == sim.T_DOOR or cls == sim.T_WORMHOLE then
+                out[#out + 1] = {tx = tx, ty = ty, cls = cls, variant = variant}
+            end
+        end
+    end
+    M.moving_tiles = out
+end
+
+-- Made once, not per tile per frame: these are constants wearing a function's
+-- clothes, and allocating them in a draw loop is what a garbage collector
+-- notices first.
+local DOOR_GHOST = pal.a(pal.WALL_EDGE, 0.30)
+local DOOR_LIT = pal.a(pal.ENEMY, 0.75)
+local HOLE_RING = {pal.a(pal.BOMB, 0.34), pal.a(pal.BOMB, 0.17),
+                   pal.a(pal.BOMB, 0.34 / 3)}
+
 function M.build_static(bg, glow, lo, hi)
     bg:reset()
     glow:reset()
+
+    -- The doors and wormholes, found once here rather than searched for on
+    -- every frame that draws them.
+    index_moving(lo, hi)
 
     -- Every second tile, not every fourth. The arena's outer walls are two
     -- tiles thick, so a four-tile stride aliased them away completely and the
@@ -243,32 +290,28 @@ end
 -- Doors and the tiles that mark a place rather than block one. These cannot
 -- go in the static mesh: a door is a wall on a clock, and a wall nobody can
 -- see is the worst thing in the game.
-function M.draw_tiles(fill, glow, lo, hi)
-    for ty = lo - 2, hi + 2 do
-        for tx = lo - 2, hi + 2 do
-            local cls, variant = sim.tile(tx, ty)
-            if cls == sim.T_DOOR then
-                local x, y = tx * TILE, ty * TILE
-                if sim.door_open(variant) then
-                    -- Open: the frame stays, so a pilot can see where it will
-                    -- be when it shuts, and time the crossing.
-                    local ghost = pal.a(pal.WALL_EDGE, 0.30)
-                    glow:seg(x, y, x, y + TILE, 1.0, ghost)
-                    glow:seg(x + TILE, y, x + TILE, y + TILE, 1.0, ghost)
-                else
-                    fill:rect(x, y, TILE, TILE, pal.WALL)
-                    local lit = pal.a(pal.ENEMY, 0.75)
-                    glow:seg(x, y, x + TILE, y, 1.4, lit)
-                    glow:seg(x, y + TILE, x + TILE, y + TILE, 1.4, lit)
-                end
-            elseif cls == sim.T_WORMHOLE then
-                local cx, cy = tx * TILE + TILE / 2, ty * TILE + TILE / 2
-                -- Three rings falling off outward, which is what the pull
-                -- does: something to read the reach of before entering it.
-                for r = 1, 3 do
-                    glow:ring(cx, cy, r * 9, 1.0, 18,
-                              pal.a(pal.BOMB, 0.34 / r))
-                end
+function M.draw_tiles(fill, glow)
+    local list = M.moving_tiles
+    for n = 1, #list do
+        local t = list[n]
+        if t.cls == sim.T_DOOR then
+            local x, y = t.tx * TILE, t.ty * TILE
+            if sim.door_open(t.variant) then
+                -- Open: the frame stays, so a pilot can see where it will be
+                -- when it shuts, and time the crossing.
+                glow:seg(x, y, x, y + TILE, 1.0, DOOR_GHOST)
+                glow:seg(x + TILE, y, x + TILE, y + TILE, 1.0, DOOR_GHOST)
+            else
+                fill:rect(x, y, TILE, TILE, pal.WALL)
+                glow:seg(x, y, x + TILE, y, 1.4, DOOR_LIT)
+                glow:seg(x, y + TILE, x + TILE, y + TILE, 1.4, DOOR_LIT)
+            end
+        else
+            local cx, cy = t.tx * TILE + TILE / 2, t.ty * TILE + TILE / 2
+            -- Three rings falling off outward, which is what the pull does:
+            -- something to read the reach of before entering it.
+            for r = 1, 3 do
+                glow:ring(cx, cy, r * 9, 1.0, 18, HOLE_RING[r])
             end
         end
     end

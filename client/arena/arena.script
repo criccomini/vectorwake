@@ -288,11 +288,14 @@ function init(self)
     layers = {
         bg = vec.layer("#bg", 20480),
         bgglow = vec.layer("#bgglow", 16384),
-        -- Room for the starfield, which is three hundred-odd quads a frame on
-        -- top of the hull interiors it used to hold alone.
-        fill = vec.layer("#fill", 12288),
-        glow = vec.layer("#glow", 10240),
-        ui = vec.layer("#ui", 6144),
+        -- The two static layers above are uploaded once per map. These three
+        -- go up every frame, whole, however little of them is used -- so the
+        -- headroom is bandwidth spent on nothing, and these are sized against
+        -- what a heavy frame actually measures (fill 2.8k, glow 3.8k, ui 2.1k)
+        -- with room to spare rather than by an order of magnitude.
+        fill = vec.layer("#fill", 6144),
+        glow = vec.layer("#glow", 8192),
+        ui = vec.layer("#ui", 4096),
     }
 
     -- A directory means "let the player choose"; a pinned server means
@@ -687,9 +690,14 @@ function update(self, dt)
                 sim.tick(), sim.ship_count(), tostring(net.connected),
                 net.stats.err, table.concat(who, " ")))
         else
-            print(string.format("tick %d  ships %d  hash %d  at %.0f,%.0f  verts %d/%d",
+            local fp, fl, fc = layers.fill:stats()
+            local gp, gl, gc = layers.glow:stats()
+            local up, ul, uc = layers.ui:stats()
+            print(string.format(
+                "tick %d  ships %d  hash %d  at %.0f,%.0f  " ..
+                "peak f%d/%d g%d/%d u%d/%d  lost %d",
                 sim.tick(), sim.ship_count(), sim.hash(), cx, cy,
-                layers.glow.n, layers.ui.n))
+                fp, fc, gp, gc, up, uc, fl + gl + ul))
         end
     end
 
@@ -746,7 +754,7 @@ function update(self, dt)
 
     -- Doors and wormholes: world geometry that moves, so it cannot live in
     -- the static mesh the way the walls do.
-    world.draw_tiles(fill, glow, map_lo, map_hi)
+    world.draw_tiles(fill, glow)
     fx.draw(glow)
     fill:flush()
     glow:flush()

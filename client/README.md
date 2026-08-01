@@ -194,6 +194,55 @@ extends as far as anyone can fly, and a star whose tile is solid is dropped --
 the wall interiors are in the layer underneath and would otherwise be shone
 through.
 
+## What a frame costs, and where it went
+
+The client was spending about eight and a half milliseconds of Lua a frame in
+a browser -- half a core at sixty frames a second, on the start screen as much
+as in a fight, because the start screen draws a live arena behind itself.
+Measured per phase with `socket.gettime` in a debug wasm build, in the
+browser rather than natively, which matters: desktop builds run LuaJIT and
+HTML5 runs plain Lua 5.1, so a native profile understates the web by five
+times and points at the wrong thing.
+
+| phase | before | after |
+|---|---|---|
+| ships, weapons, prizes, effects | 2.20 ms | 0.39 ms |
+| interface and radar | 2.06 ms | 0.43 ms |
+| starfield | 1.92 ms | 0.26 ms |
+| doors and wormholes | 1.63 ms | 0.09 ms |
+| buffer upload | 0.46 ms | 0.37 ms |
+| simulation, 100 Hz | 0.09 ms | 0.12 ms |
+
+Three things, none of which changed a pixel -- the vertex counts before and
+after are the same numbers.
+
+**Writing vertices was the whole bill.** Indexing a buffer stream from Lua is
+one call into C per float: twenty-one per triangle, fifty-two thousand a
+frame. `vwbuf` in the native extension takes a shape at a time instead, so a
+rectangle costs one crossing rather than forty-two. The geometry is still
+described in Lua, where it can be read.
+
+**`draw_tiles` searched the whole map every frame** -- eighty-nine tiles
+square, seven thousand nine hundred crossings into the core, to find four
+doors. Tiles do not move, so the search happens once, where the walls are
+built.
+
+**A star allocated a colour.** Three hundred and fifty `{r,g,b,a}` tables a
+frame is twenty thousand a second, all garbage; eight brightnesses per depth
+are made once instead, and at a pixel and a half across nobody can tell.
+
+The interface's text got the same treatment: a node is only told its text,
+position, scale, pivot and colour again when one of them changed, and the
+vectors it is told with are made once and mutated rather than allocated per
+line per frame.
+
+Chrome's `Performance.getMetrics` puts the whole thing at 12% of a core where
+it was 40%. The layers are sized against measured watermarks now rather than
+by an order of magnitude, since the buffer is uploaded whole every frame
+whether it is full or not; the heartbeat prints the high water mark and
+anything a layer refused to draw, so a capacity set too tight shows up as a
+number rather than as geometry that quietly stopped appearing.
+
 Additive is what makes the glow layer read as light rather than paint:
 overlapping bolts brighten instead of stacking, and because addition does not
 care about order, the static wall edges share that pass with the per-frame

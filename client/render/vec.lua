@@ -11,9 +11,13 @@
 -- nothing, and `flush` hands the whole thing over. Nothing here knows what a
 -- ship is; it knows lines, discs and quads.
 --
--- Speed matters more than elegance in this file. HTML5 runs Lua 5.1 rather
--- than LuaJIT, and every stream write is a call into C, so the hot paths hold
--- their streams in locals and avoid building tables per primitive.
+-- Speed matters more than elegance in this file, and the reason is the
+-- platform: HTML5 builds run Lua 5.1, not LuaJIT. Indexing a buffer stream
+-- from Lua is one call into C per float -- twenty-one per triangle, fifty
+-- thousand a frame -- which measured about five milliseconds a frame of pure
+-- boundary crossing, more than the simulation and the interface put together.
+-- The shapes are described here and written by `vwbuf` in the native
+-- extension, one call each.
 
 local M = {}
 
@@ -22,6 +26,22 @@ local STREAM_COL = hash("color")
 
 local Layer = {}
 Layer.__index = Layer
+
+-- Writing is the native extension's job. Every float used to be its own call
+-- into C -- twenty-one per triangle, fifty thousand a frame -- and on the web,
+-- where Lua 5.1 runs the interpreter rather than LuaJIT, that alone was about
+-- five milliseconds a frame. It is one call per shape now. The arithmetic
+-- that decides where a shape goes is still here, where it can be read.
+local attach, reset = vwbuf.attach, vwbuf.reset
+local w_tri, w_tri_fade = vwbuf.tri, vwbuf.tri_fade
+local w_quad, w_rect, finish = vwbuf.quad, vwbuf.rect, vwbuf.finish
+
+-- The busiest frame this layer has had, everything it has refused to draw for
+-- want of room, and what it holds. A capacity set too tight does not raise
+-- anything: geometry just stops appearing.
+function Layer:stats()
+    return vwbuf.stats(self.id)
+end
 
 -- url: the mesh component to feed. capacity: vertices, which is three per
 -- triangle and the hard ceiling on how much a layer can draw in a frame.
@@ -32,76 +52,45 @@ function M.layer(url, capacity)
     })
     return setmetatable({
         buf = buf,
-        p = buffer.get_stream(buf, STREAM_POS),
-        c = buffer.get_stream(buf, STREAM_COL),
+        id = attach(buf),
         res = go.get(url, "vertices"),
         cap = capacity,
-        n = 0,     -- vertices written this frame
-        high = 0,  -- vertices written last frame, so only the delta is cleared
+        n = 0,        -- vertices written, as of the last flush
         dropped = 0,
     }, Layer)
 end
 
 function Layer:reset()
-    self.n = 0
+    reset(self.id)
 end
 
 -- Degenerate whatever a busier frame left behind, then upload. A triangle
 -- whose three corners are the same point covers no pixels, which is a cheaper
 -- way to erase than rebuilding the buffer at the exact size every frame.
 function Layer:flush()
-    local n, high = self.n, self.high
-    if high > n then
-        local p = self.p
-        for i = n * 3 + 1, high * 3 do p[i] = 0 end
-    end
-    self.high = n
+    self.n, self.dropped = finish(self.id)
     resource.set_buffer(self.res, self.buf)
 end
 
 -- --- primitives ------------------------------------------------------------
 
 function Layer:tri(x1, y1, x2, y2, x3, y3, col)
-    local n = self.n
-    if n + 3 > self.cap then self.dropped = self.dropped + 1 return end
-    local p, c = self.p, self.c
-    local r, g, b, a = col[1], col[2], col[3], col[4]
-    local i, j = n * 3, n * 4
-    p[i + 1] = x1; p[i + 2] = y1; p[i + 3] = 0
-    p[i + 4] = x2; p[i + 5] = y2; p[i + 6] = 0
-    p[i + 7] = x3; p[i + 8] = y3; p[i + 9] = 0
-    for k = 0, 8, 4 do
-        c[j + k + 1] = r; c[j + k + 2] = g; c[j + k + 3] = b; c[j + k + 4] = a
-    end
-    self.n = n + 3
+    w_tri(self.id, x1, y1, x2, y2, x3, y3, col)
 end
 
 -- A triangle whose corners carry their own alpha. Every soft edge in the game
 -- -- glow falloff, trail fade, blast rim -- is this and nothing more.
 function Layer:tri_fade(x1, y1, a1, x2, y2, a2, x3, y3, a3, col)
-    local n = self.n
-    if n + 3 > self.cap then self.dropped = self.dropped + 1 return end
-    local p, c = self.p, self.c
-    local r, g, b = col[1], col[2], col[3]
-    local base = col[4]
-    local i, j = n * 3, n * 4
-    p[i + 1] = x1; p[i + 2] = y1; p[i + 3] = 0
-    p[i + 4] = x2; p[i + 5] = y2; p[i + 6] = 0
-    p[i + 7] = x3; p[i + 8] = y3; p[i + 9] = 0
-    c[j + 1] = r; c[j + 2] = g; c[j + 3] = b; c[j + 4] = base * a1
-    c[j + 5] = r; c[j + 6] = g; c[j + 7] = b; c[j + 8] = base * a2
-    c[j + 9] = r; c[j + 10] = g; c[j + 11] = b; c[j + 12] = base * a3
-    self.n = n + 3
+    w_tri_fade(self.id, x1, y1, a1, x2, y2, a2, x3, y3, a3, col)
 end
 
 function Layer:quad(x1, y1, x2, y2, x3, y3, x4, y4, col)
-    self:tri(x1, y1, x2, y2, x3, y3, col)
-    self:tri(x1, y1, x3, y3, x4, y4, col)
+    w_quad(self.id, x1, y1, x2, y2, x3, y3, x4, y4, col)
 end
 
 -- Axis-aligned, from a corner. Screen-space panels and bars are all this.
 function Layer:rect(x, y, w, h, col)
-    self:quad(x, y, x + w, y, x + w, y + h, x, y + h, col)
+    w_rect(self.id, x, y, w, h, col)
 end
 
 -- A one-pixel-thick frame, drawn as four rects rather than an outline, so it

@@ -20,6 +20,10 @@
 #include "sim/pack.h"
 #include "sim/sim.h"
 
+// The vertex writer, which lives in vwbuf.cpp and is registered from here.
+void VwBufInit(lua_State* L);
+void VwBufFinal();
+
 namespace {
 
 // Static storage. The core allocates nothing, so the extension does not
@@ -408,6 +412,7 @@ dmExtension::Result AppInitialize(dmExtension::AppParams* params) {
 
 dmExtension::Result Initialize(dmExtension::Params* params) {
     LuaInit(params->m_L);
+    VwBufInit(params->m_L);
     return dmExtension::RESULT_OK;
 }
 
@@ -416,6 +421,7 @@ dmExtension::Result AppFinalize(dmExtension::AppParams* params) {
 }
 
 dmExtension::Result Finalize(dmExtension::Params* params) {
+    VwBufFinal();
     return dmExtension::RESULT_OK;
 }
 
