@@ -56,7 +56,13 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
                            r->recharge, r->radius);
         c->bullet_damage = sim_units_energy(r->bullet_damage);
         c->bullet_delay = (uint16_t)r->bullet_delay;
-        c->bullet_energy = sim_units_energy(r->bullet_damage + 130);
+        /* Firing costs are a fraction of the ship's own energy, taken from
+         * the original's numbers: it gave every ship 1700 maximum energy and
+         * charged 20 for a bullet and 300 for a bomb. Pricing a shot off its
+         * damage instead -- which is what this did -- made a bullet cost 35%
+         * of a full bar and a bomb 63%, so the bomb key did nothing at all
+         * unless you had been left alone to recharge, and silently. */
+        c->bullet_energy = (int32_t)((int64_t)c->max_energy * 20 / 1700);
         if (r->bomb_damage == 0) {
             /* No bomb for this class: an impossible cost and zero damage. */
             c->bomb_damage = 0;
@@ -65,7 +71,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         } else {
             c->bomb_damage = sim_units_energy(r->bomb_damage);
             c->bomb_delay = (uint16_t)r->bomb_delay;
-            c->bomb_energy = sim_units_energy(r->bomb_damage + 200);
+            c->bomb_energy = (int32_t)((int64_t)c->max_energy * 300 / 1700);
         }
     }
 }

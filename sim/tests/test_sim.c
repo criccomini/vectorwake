@@ -163,9 +163,15 @@ int main(void) {
         CHECK(s.ships[1].alive, "one bullet does not kill");
     }
 
-    /* Trading fire at range does not kill: energy is the whole economy, and
-     * a target that recharges faster than it is hit survives. Landing the
-     * kill means landing a burst, which is the game the original played. */
+    /* Sustained unanswered fire kills. Energy is the whole economy: it is the
+     * health pool and the ammunition at once, and a ship that is being hit
+     * faster than it recharges dies. Roughly five bullets does it, which is
+     * where the original sat too -- 200 damage against 1000 starting energy.
+     *
+     * This asserted the opposite until the firing costs were corrected. A
+     * bullet used to cost 35% of a full bar, so an attacker ran itself dry
+     * long before the target was in danger, and nothing could ever die at
+     * range. That was a bug wearing a test as an alibi. */
     {
         sim_state s;
         sim_init(&s, 1);
@@ -173,7 +179,21 @@ int main(void) {
         sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &cfg);
         ev_counts c = step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 4000);
         CHECK(c.hits > 3, "many hits land over a long exchange");
-        CHECK(c.deaths == 0, "recharge outpaces sustained ranged fire");
+        CHECK(c.deaths > 0, "sustained fire eventually kills");
+    }
+
+    /* A bomb has to be affordable from a full bar, or the key is dead. It
+     * costs 300 against a fresh bar of 1000 in the original -- three of them
+     * -- so a fight has bombs in it rather than one opening move. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        int32_t full = sim_eff_max_energy(&cfg.classes[APEX], &s.ships[id]);
+        CHECK(cfg.classes[APEX].bomb_energy * 3 < full,
+              "a fresh bar affords three bombs, as the original's 1000/300 did");
+        ev_counts c = step_counting(&s, &cfg, SIM_BTN_BOMB, 0, 600);
+        CHECK(c.fires > 1, "bombs actually leave the ship");
     }
 
     /* Friendly fire passes through: same team, no damage. */

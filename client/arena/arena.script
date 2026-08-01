@@ -10,6 +10,7 @@
 local net = require("arena.net")
 local touch = require("arena.touch")
 local browser = require("arena.browser")
+local hud = require("arena.hud")
 
 local TICK_HZ = 100
 local DT = 1 / TICK_HZ
@@ -327,11 +328,23 @@ function update(self, dt)
     -- Touch controls, drawn in world space at a fixed offset from the camera.
     -- The same view extent the render script uses, so they land where the
     -- thumb actually is.
-    local ww, wh = window.get_size()
+    local ww, wh = self.vw or 0, self.vh or 0
     if ww > 0 and wh > 0 then
         local px = sys.get_config_int("vectorwake.view_tiles", 34) * 16
         local short = math.min(ww, wh)
         touch.draw(cx, cy, px * 0.5 * (ww / short), px * 0.5 * (wh / short), ww, wh)
+    end
+
+    -- Deaths become feed lines. The simulation reports them; this only
+    -- names the pilots involved.
+    for i = 0, sim.event_count() - 1 do
+        local ty, va, vb = sim.event_at(i)
+        if ty == 4 then
+            local vn = (pilots[va] and pilots[va].name) or ("ship " .. va)
+            local kn = (vb ~= 255 and pilots[vb] and pilots[vb].name)
+                or ((vb == 255) and "the arena") or ("ship " .. vb)
+            hud.kill(kn, vn)
+        end
     end
 
     -- Walls near the camera.
@@ -360,6 +373,9 @@ function update(self, dt)
                 or (sim.ship_team(i) == my_team and vmath.vector4(0.5, 0.89, 0.63, 1)
                                                 or vmath.vector4(1, 0.5, 0.5, 1))
             draw_hull(cls, sim.ship_x(i), sim.ship_y(i), sim.ship_heading(i), col)
+            hud.ship_bar(sim.ship_x(i), sim.ship_y(i),
+                         sim.ship_energy(i) / math.max(1, sim.ship_max_energy(i)),
+                         sim.ship_team(i) ~= my_team)
         end
     end
 
@@ -370,6 +386,19 @@ function update(self, dt)
         msg.post("@render:", "draw_line", {
             start_point = vmath.vector3(x - 2, y, 0),
             end_point = vmath.vector3(x + 2, y, 0), color = shot})
+    end
+
+    -- Interface last, so it reads over the world rather than under it.
+    if ww > 0 and wh > 0 then
+        local px = sys.get_config_int("vectorwake.view_tiles", 34) * 16
+        local short = math.min(ww, wh)
+        local names = {}
+        for i, c in ipairs(CLASSES) do names[i] = c.name end
+        hud.draw({
+            me = me, pilots = pilots, class_names = names,
+            w = ww, h = wh, cam_x = cx, cam_y = cy,
+            half_w = px * 0.5 * (ww / short), half_h = px * 0.5 * (wh / short),
+        })
     end
 
     -- Flags.
@@ -386,6 +415,15 @@ function update(self, dt)
         msg.post("@render:", "draw_line", {
             start_point = vmath.vector3(x, y - 12, 0),
             end_point = vmath.vector3(x + 11, y - 7, 0), color = col})
+    end
+end
+
+-- The render script reports the pixel space it projects the interface into.
+-- On HTML5 that is not always what window.get_size() says, and the interface
+-- has to agree with the projection or it draws off the screen.
+function on_message(self, message_id, message)
+    if message_id == hash("viewport") then
+        self.vw, self.vh = message.w, message.h
     end
 end
 

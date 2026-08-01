@@ -73,6 +73,12 @@ function update(self)
     render.set_projection(vmath.matrix4_orthographic(0, w, 0, h, -1, 1))
     render.draw(self.gui_pred)
     render.draw(self.text_pred)
+
+    -- The interface positions text in exactly this pixel space, so it is
+    -- told the numbers rather than asking the window for them: on HTML5 the
+    -- canvas drawable and the window size are not always the same, and a
+    -- HUD laid out against the wrong one lands off the edge of the screen.
+    msg.post("main:/arena#arena", "viewport", {w = w, h = h})
 end
 
 function on_message(self, message_id, message)

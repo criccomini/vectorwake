@@ -11,7 +11,7 @@ render = /render/vectorwake.renderc
 [display]
 width = 1280
 height = 800
-high_dpi = 1
+high_dpi = 0
 samples = 0
 update_frequency = 0
 vsync = 1

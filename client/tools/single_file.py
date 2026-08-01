@@ -166,48 +166,33 @@ SHIM = """
 # only thing with any brightness in it.
 FRAME_CSS = """
 <style>
-  :root {
-    --ground: #05070d;   /* the sim's own clear colour */
-    --panel:  #0b0f18;
-    --rule:   #1b2436;
-    --ink:    #c6d0e0;
-    --dim:    #6b7a92;
-    --accent: #4fd0ff;   /* the player hull, from the class table */
+  /* The game is the page. No title, no help bar, no Defold chrome: a canvas
+     the size of the window and nothing else in front of it. */
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: #05070d; overflow: hidden;
   }
-  html, body, .canvas-app-container, #canvas-container {
-    background: var(--ground);
+  .canvas-app-container, #canvas-container, .canvas-app-canvas-container {
+    margin: 0; padding: 0; width: 100vw; height: 100vh;
+    background: #05070d; display: block; border: 0;
   }
-  body {
-    margin: 0; color: var(--ink);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  #canvas, .canvas-app-canvas {
+    display: block; width: 100vw; height: 100vh;
+    margin: 0; padding: 0; border: 0; outline: none; background: #05070d;
   }
-  .vw-bar {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1.5rem;
-    padding: .7rem 1rem; border-bottom: 1px solid var(--rule);
-    background: var(--panel); box-sizing: border-box;
-    /* Defold lays the body out as a flex row, so a plain width:100% still
-       shrinks to content. Claim the whole line instead. */
-    flex: 0 0 100%; width: 100%;
+  /* Defold's own footer: a fullscreen button and a credit link. */
+  .buttons-background, #canvas-app-buttons, .canvas-app-buttons {
+    display: none !important;
   }
-  .buttons-background { background: var(--panel); color: var(--dim); }
-  .vw-name {
-    font-size: .95rem; font-weight: 600; letter-spacing: .14em;
-    text-transform: uppercase; color: var(--accent);
-  }
-  .vw-keys { font-size: .8rem; color: var(--dim); letter-spacing: .04em; }
-  .vw-keys b { color: var(--ink); font-weight: 600; }
-  #canvas { display: block; outline: none; }
-  .vw-stage { display: flex; justify-content: center; }
 </style>
 """
 
-FRAME_HEAD = """
-<div class="vw-bar">
-  <span class="vw-name">%s</span>
-  <span class="vw-keys"><b>Arrows</b> steer &nbsp; <b>Space</b> guns
-    &nbsp; <b>Shift</b> bombs</span>
-</div>
-"""
+# Defold owns the canvas buffer, sized from game.project. Resizing it from
+# here fought that: the engine kept its own idea of the drawable, the render
+# script projected the interface into it, and the part past the visible edge
+# was simply cropped. CSS scales the finished frame to the window instead,
+# which cannot crop anything.
+FRAME_HEAD = ""
 
 
 def to_fragment(html, title):
@@ -223,7 +208,7 @@ def to_fragment(html, title):
         sys.exit("no <body> to extract")
     # Ours last: Defold's stylesheet paints the page white, and whoever comes
     # second wins.
-    return "\n".join(styles) + FRAME_CSS + FRAME_HEAD % title + body.group(1)
+    return "\n".join(styles) + FRAME_CSS + FRAME_HEAD + body.group(1)
 
 
 def main():
