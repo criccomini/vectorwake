@@ -107,21 +107,10 @@ void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
     tier(c->rot, &c->init_rot, &c->up_rot);
     tier(c->max_energy, &c->init_energy, &c->up_energy);
     tier(c->recharge, &c->init_recharge, &c->up_recharge);
-
-    /* Weapon defaults in the same units; zones override every one. */
-    c->bullet_speed = sim_units_speed(2000);
-    c->bullet_energy = sim_units_energy(330);
-    c->bullet_delay = 25;
-    c->bullet_life = 200;
-    c->bullet_damage = sim_units_energy(200);
-
-    c->bomb_speed = sim_units_speed(1500);
-    c->bomb_energy = sim_units_energy(600);
-    c->bomb_delay = 100;
-    c->bomb_life = 500;
-    c->bomb_damage = sim_units_energy(500);
-    c->bomb_radius = 48 * 256;
-    c->bomb_thrust = sim_units_speed(200);
+    /* No weapons until something gives it some. What a hull fires is a
+     * pattern in the settings, and the settings are what a zone tunes. */
+    c->gun = SIM_NO_PATTERN;
+    c->bomb = SIM_NO_PATTERN;
 }
 
 /* ---- upgrades ---- */
@@ -227,12 +216,24 @@ int sim_in_safe(const sim_map *m, int32_t x, int32_t y) {
 
 /* ---- weapons ---- */
 
-static void spawn_weapon(sim_state *s, uint8_t type, uint8_t owner,
+int sim_add_spec(sim_settings *cfg, const sim_weapon_spec *spec) {
+    if (cfg->spec_count >= SIM_MAX_SPECS) return -1;
+    cfg->specs[cfg->spec_count] = *spec;
+    return cfg->spec_count++;
+}
+
+int sim_add_pattern(sim_settings *cfg, const sim_fire_pattern *pattern) {
+    if (cfg->pattern_count >= SIM_MAX_PATTERNS) return -1;
+    cfg->patterns[cfg->pattern_count] = *pattern;
+    return cfg->pattern_count++;
+}
+
+static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
                          uint8_t team, int32_t x, int32_t y, int32_t vx,
                          int32_t vy, uint16_t life) {
     if (s->weapon_count >= SIM_MAX_WEAPONS) return; /* silently dropped */
     sim_weapon *w = &s->weapons[s->weapon_count++];
-    w->type = type;
+    w->spec = spec;
     w->owner = owner;
     w->team = team;
     w->x = x;
@@ -241,6 +242,22 @@ static void spawn_weapon(sim_state *s, uint8_t type, uint8_t owner,
     w->vy = vy;
     w->life = life;
 }
+
+/* Put a pattern's projectiles into the world.
+ *
+ * The angles are laid out symmetrically about `heading` -- an odd count puts
+ * one down the middle, an even count straddles it -- and they come out of the
+ * table rather than a random number, so the same shot is the same shot on
+ * every machine.
+ *
+ * Origin and heading are arguments rather than read off a ship, because the
+ * other caller is a projectile that just ended: shrapnel is this function
+ * called from inside `weapon_end`.
+ */
+static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
+                          uint8_t owner, uint8_t team, int32_t x, int32_t y,
+                          int32_t vx0, int32_t vy0, uint16_t heading,
+                          sim_events *ev);
 
 /* Remove a weapon by swapping the last one into its slot. Order is
  * deterministic because it depends only on state, never on time. */
@@ -273,30 +290,103 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
     }
 }
 
-/* A bomb that arrives somewhere goes off, and everything inside the blast
- * radius takes damage falling off linearly to nothing at the edge.
+/* What a projectile does where it ends.
  *
- * That includes the ship it struck, which is at very nearly zero distance and
- * so takes very nearly the whole charge, and it includes the pilot who fired
- * it, because a blast does not know whose it is. This used to be reachable
- * only by hitting a wall: a bomb that connected with a ship damaged that one
- * ship and nobody standing next to it, which makes an area weapon into a slow
- * bullet whenever it is aimed well. */
-static void detonate(sim_state *s, const sim_settings *cfg,
-                     const sim_ship_class *ocls, const sim_weapon *w,
-                     sim_events *ev) {
-    int64_t rad = ocls->bomb_radius;
-    if (rad <= 0) return;
-    for (int i = 0; i < s->ship_count; i++) {
-        sim_ship *sh = &s->ships[i];
-        if (!sh->active || !sh->alive) continue;
-        int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
-        int64_t d2 = ddx * ddx + ddy * ddy;
-        if (d2 > rad * rad) continue;
-        int64_t d = isqrt64(d2);
-        int32_t dmg = (int32_t)((int64_t)ocls->bomb_damage * (rad - d) / rad);
-        if (dmg > 0) apply_damage(s, cfg, (uint8_t)i, w->owner, dmg, ev);
+ * One ending, four things it might do, all optional and all read off the
+ * spec: hurt the hull it touched, hurt everything inside a blast, shove what
+ * is nearby, and fire another pattern from the same spot. A plain bullet has
+ * only the first; a bomb has the first two; shrapnel is the fourth, and a
+ * repel is the third with nothing else at all.
+ *
+ * Damage inside a blast falls off linearly from the centre, which is what
+ * makes the damage a measure of how close you were standing -- the screen
+ * shake reads it back out.
+ */
+static void weapon_end(sim_state *s, const sim_settings *cfg,
+                       const sim_weapon_spec *spec, const sim_weapon *w,
+                       int hit_ship, sim_events *ev) {
+    if (spec->blast > 0) {
+        int64_t rad = spec->blast;
+        for (int i = 0; i < s->ship_count; i++) {
+            sim_ship *sh = &s->ships[i];
+            if (!sh->active || !sh->alive) continue;
+            int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
+            int64_t d2 = ddx * ddx + ddy * ddy;
+            if (d2 > rad * rad) continue;
+            int64_t d = isqrt64(d2);
+            int32_t dmg = (int32_t)((int64_t)spec->damage * (rad - d) / rad);
+            if (dmg > 0) apply_damage(s, cfg, (uint8_t)i, w->owner, dmg, ev);
+        }
+    } else if (hit_ship >= 0 && spec->damage > 0) {
+        apply_damage(s, cfg, (uint8_t)hit_ship, w->owner, spec->damage, ev);
     }
+
+    /* A shove, outward, falling off to nothing at the rim. Weapons are moved
+     * too: pushing an incoming bomb away is the whole point of the thing. */
+    if (spec->push > 0) {
+        int64_t rad = spec->blast > 0 ? spec->blast : spec->trigger;
+        if (rad > 0) {
+            for (int i = 0; i < s->ship_count; i++) {
+                sim_ship *sh = &s->ships[i];
+                if (!sh->active || !sh->alive) continue;
+                int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
+                int64_t d2 = ddx * ddx + ddy * ddy;
+                if (d2 > rad * rad) continue;
+                int64_t d = isqrt64(d2);
+                if (d == 0) continue;      /* dead centre has no direction */
+                int64_t k = (int64_t)spec->push * (rad - d) / rad;
+                sh->vx += (int32_t)(ddx * k / d);
+                sh->vy += (int32_t)(ddy * k / d);
+            }
+            for (uint16_t i = 0; i < s->weapon_count; i++) {
+                sim_weapon *o = &s->weapons[i];
+                int64_t ddx = (int64_t)o->x - w->x, ddy = (int64_t)o->y - w->y;
+                int64_t d2 = ddx * ddx + ddy * ddy;
+                if (d2 > rad * rad || d2 == 0) continue;
+                int64_t d = isqrt64(d2);
+                int64_t k = (int64_t)spec->push * (rad - d) / rad;
+                o->vx += (int32_t)(ddx * k / d);
+                o->vy += (int32_t)(ddy * k / d);
+            }
+        }
+    }
+
+    if (spec->splinter != SIM_NO_PATTERN) {
+        /* Fragments leave from where the parent stopped, at rest, spread
+         * about world north. A shell of sixteen is rotationally symmetric, so
+         * the base angle does not matter and a fixed one is one less thing to
+         * get wrong across machines. A *directional* splinter -- a cone that
+         * follows the parent's travel -- would need the heading kept on the
+         * projectile, which is state, which is a snapshot byte. Not until
+         * something wants it. */
+        spawn_pattern(s, cfg, spec->splinter, w->owner, w->team, w->x, w->y,
+                      0, 0, 0, ev);
+    }
+}
+
+static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
+                          uint8_t owner, uint8_t team, int32_t x, int32_t y,
+                          int32_t vx0, int32_t vy0, uint16_t heading,
+                          sim_events *ev) {
+    if (pat >= cfg->pattern_count) return;
+    const sim_fire_pattern *p = &cfg->patterns[pat];
+    if (p->spec >= cfg->spec_count) return;
+    const sim_weapon_spec *spec = &cfg->specs[p->spec];
+    int count = p->count ? p->count : 1;
+    for (int n = 0; n < count; n++) {
+        /* (2n - (count-1)) / 2 is the symmetric offset in units of spacing:
+         * zero for a single shot, ±half for a pair, -1/0/+1 for a trio. C
+         * truncates toward zero, which is symmetric, so the two halves of a
+         * spread are mirror images rather than one being a unit wider. */
+        int32_t off = (int32_t)p->spacing * (2 * n - (count - 1)) / 2;
+        uint16_t h = (uint16_t)((int32_t)heading + off);
+        int32_t dx, dy;
+        heading_dir(h, &dx, &dy);
+        int32_t vx = vx0 + (int32_t)(((int64_t)spec->speed * dx) >> 15);
+        int32_t vy = vy0 + (int32_t)(((int64_t)spec->speed * dy) >> 15);
+        spawn_weapon(s, p->spec, owner, team, x, y, vx, vy, spec->life);
+    }
+    emit(ev, SIM_EV_FIRE, owner, p->spec, 0);
 }
 
 /* ---- flags ---- */
@@ -568,26 +658,23 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         }
         if (!in_safe && sh->fire_cooldown == 0
             && (b & (SIM_BTN_FIRE | SIM_BTN_BOMB))) {
-            int bomb = (b & SIM_BTN_FIRE) == 0;
-            int32_t cost = bomb ? cls->bomb_energy : cls->bullet_energy;
-            if (sh->energy > cost) {
-                int32_t sp = bomb ? cls->bomb_speed : cls->bullet_speed;
-                int32_t vx = sh->vx + (int32_t)(((int64_t)sp * dx) >> 15);
-                int32_t vy = sh->vy + (int32_t)(((int64_t)sp * dy) >> 15);
-                /* Muzzle just outside the hull so a shot never spawns
-                 * inside its own ship. */
-                int32_t mx = sh->x + (int32_t)(((int64_t)(cls->radius + 512) * dx) >> 15);
-                int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
-                spawn_weapon(next, bomb ? SIM_W_BOMB : SIM_W_BULLET, (uint8_t)i,
-                             sh->team, mx, my, vx, vy,
-                             bomb ? cls->bomb_life : cls->bullet_life);
-                sh->energy -= cost;
-                sh->fire_cooldown = bomb ? cls->bomb_delay : cls->bullet_delay;
-                if (bomb) { /* recoil */
-                    sh->vx -= (int32_t)(((int64_t)cls->bomb_thrust * dx) >> 15);
-                    sh->vy -= (int32_t)(((int64_t)cls->bomb_thrust * dy) >> 15);
+            uint8_t pat = ((b & SIM_BTN_FIRE) == 0) ? cls->bomb : cls->gun;
+            if (pat < cfg->pattern_count) {
+                const sim_fire_pattern *p = &cfg->patterns[pat];
+                /* The cost is the shot's, not each projectile's: a burst of
+                 * sixteen costs what pulling the trigger costs. */
+                if (sh->energy > p->energy) {
+                    /* Muzzle just outside the hull, so a shot never spawns
+                     * inside its own ship. */
+                    int32_t mx = sh->x + (int32_t)(((int64_t)(cls->radius + 512) * dx) >> 15);
+                    int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
+                    spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
+                                  sh->vx, sh->vy, sh->heading, ev);
+                    sh->energy -= p->energy;
+                    sh->fire_cooldown = p->delay;
+                    sh->vx -= (int32_t)(((int64_t)p->recoil * dx) >> 15);
+                    sh->vy -= (int32_t)(((int64_t)p->recoil * dy) >> 15);
                 }
-                emit(ev, SIM_EV_FIRE, (uint8_t)i, bomb ? SIM_W_BOMB : SIM_W_BULLET, 0);
             }
         }
 
@@ -695,18 +782,25 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
     update_prizes(next, cfg, ev);
     update_flags(next, cfg, ev);
 
-    /* --- weapons --- */
+    /* --- weapons ---
+     *
+     * Four phases, in order: it runs out, it moves, something ends it, and
+     * the ending happens. Every difference between a bullet, a bomb, a mine
+     * and a fragment is a number in its spec rather than a branch here.
+     */
     for (uint16_t wi = 0; wi < next->weapon_count;) {
         sim_weapon *w = &next->weapons[wi];
-        const sim_ship_class *ocls = &cfg->classes[next->ships[w->owner].cls];
-        int removed = 0;
+        const sim_weapon_spec *spec = &cfg->specs[w->spec];
+        int ended = 0, hit_ship = -1;
 
+        /* 1. Out of life. Arriving somewhere is what sets a weapon off, and
+         * running out is not arriving: at five seconds of flight a bomb that
+         * simply expires has crossed the arena without touching anything.
+         * A spec can ask for the other rule -- a mine's whole life is its
+         * timer -- which is what `expire_ends` is. */
         if (w->life == 0) {
-            /* Out of range is not a detonation. A bomb has to arrive
-             * somewhere to go off, so one that simply runs out hurts nobody.
-             * At five seconds of flight that is a bomb which has crossed the
-             * whole arena without touching anything. */
-            emit(ev, SIM_EV_EXPIRE, w->type, w->owner, pack_pos(w->x, w->y));
+            if (spec->expire_ends) weapon_end(next, cfg, spec, w, -1, ev);
+            emit(ev, SIM_EV_EXPIRE, w->spec, w->owner, pack_pos(w->x, w->y));
             kill_weapon(next, wi);
             continue;
         }
@@ -714,43 +808,38 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         w->x += w->vx / 256;
         w->y += w->vy / 256;
 
-        /* Walls. Bullets die on contact; bombs detonate. */
-        if (box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0)) {
-            if (w->type == SIM_W_BOMB) detonate(next, cfg, ocls, w, ev);
-            emit(ev, SIM_EV_EXPIRE, w->type, w->owner, pack_pos(w->x, w->y));
-            kill_weapon(next, wi);
-            removed = 1;
+        /* 2. Walls: stop here, bounce off, or ignore them entirely. */
+        if (spec->on_wall != SIM_WALL_PASS
+            && box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0)) {
+            ended = 1;
         }
 
-        /* Ships. A weapon never hits its owner or a teammate. */
-        if (!removed) {
-            for (int i = 0; i < next->ship_count && !removed; i++) {
+        /* 3. Ships. A weapon never arrives at its owner or a teammate, and
+         * `trigger` is how close counts: zero is contact with the hull, which
+         * is a bullet, and anything larger is a proximity fuse. */
+        if (!ended) {
+            for (int i = 0; i < next->ship_count && !ended; i++) {
                 sim_ship *sh = &next->ships[i];
                 if (!sh->active || !sh->alive) continue;
                 if ((uint8_t)i == w->owner || sh->team == w->team) continue;
-                const sim_ship_class *vcls = &cfg->classes[sh->cls];
                 int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
                 int64_t d2 = ddx * ddx + ddy * ddy;
-                int64_t r = vcls->radius;
+                int64_t r = cfg->classes[sh->cls].radius + spec->trigger;
                 if (d2 <= r * r) {
-                    /* A bomb that connects still goes off: the ship it hit
-                     * takes the middle of the blast and everyone standing
-                     * next to them takes the rest of it. */
-                    if (w->type == SIM_W_BOMB) {
-                        detonate(next, cfg, ocls, w, ev);
-                    } else {
-                        apply_damage(next, cfg, (uint8_t)i, w->owner,
-                                     ocls->bullet_damage, ev);
-                    }
-                    emit(ev, SIM_EV_EXPIRE, w->type, w->owner,
-                         pack_pos(w->x, w->y));
-                    kill_weapon(next, wi);
-                    removed = 1;
+                    ended = 1;
+                    hit_ship = i;
                 }
             }
         }
 
-        if (!removed) wi++;
+        /* 4. The ending. */
+        if (ended) {
+            weapon_end(next, cfg, spec, w, hit_ship, ev);
+            emit(ev, SIM_EV_EXPIRE, w->spec, w->owner, pack_pos(w->x, w->y));
+            kill_weapon(next, wi);
+            continue;
+        }
+        wi++;
     }
 }
 
@@ -813,7 +902,7 @@ uint64_t sim_hash(const sim_state *s) {
     }
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *w = &s->weapons[i];
-        h = hash_u32(h, (uint32_t)(w->type | (w->owner << 8) | (w->team << 16)));
+        h = hash_u32(h, (uint32_t)(w->spec | (w->owner << 8) | (w->team << 16)));
         h = hash_u32(h, (uint32_t)w->x);
         h = hash_u32(h, (uint32_t)w->y);
         h = hash_u32(h, (uint32_t)w->vx);

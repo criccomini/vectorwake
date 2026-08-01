@@ -111,11 +111,58 @@ int sim_map_spawn(const sim_map *m, uint8_t team, uint32_t nth,
 void sim_map_arena(sim_map *m);
 void sim_map_duel(sim_map *m);
 
+/* ---- weapons ----
+ *
+ * One model for everything that leaves a ship, in two halves.
+ *
+ * A *pattern* is what pressing a trigger makes: how many projectiles, how far
+ * apart, at what cost. A *spec* is what one projectile is: how it flies, what
+ * ends it, and what happens where it ends. A spec's splinter names another
+ * pattern, and that recursion is the whole trick -- a burst is a pattern of
+ * sixteen at a full turn's spacing, a spread is three at twenty degrees, and
+ * shrapnel is a bomb whose ending fires a burst. Three features in the
+ * original; one mechanism here.
+ *
+ * Two things stay out deliberately. Appearance is the client's, keyed by spec
+ * id in its own table -- the simulation carries no colours, exactly as a tile
+ * class carries no picture. And nothing here is per-shot random: the angles
+ * come out of the table, so a rosette is the same rosette on every machine.
+ */
+#define SIM_MAX_SPECS 32
+#define SIM_MAX_PATTERNS 32
+#define SIM_NO_PATTERN 255
+
 typedef enum {
-    SIM_W_NONE = 0,
-    SIM_W_BULLET,
-    SIM_W_BOMB
-} sim_weapon_type;
+    SIM_WALL_END = 0,   /* stop, and do whatever ending does */
+    SIM_WALL_BOUNCE,    /* reflect, spending one of the spec's bounces */
+    SIM_WALL_PASS       /* ignore walls entirely */
+} sim_wall_rule;
+
+typedef struct {
+    /* flight */
+    int32_t speed;        /* Q16 px/tick, along the firing heading */
+    uint16_t life;        /* ticks before it runs out */
+    uint8_t on_wall;      /* sim_wall_rule */
+    uint8_t bounces;      /* walls survived, when bouncing */
+    /* arrival: what counts as having got somewhere */
+    int32_t trigger;      /* Q8 px from a hull; 0 is contact */
+    uint8_t expire_ends;  /* whether running out of life also counts */
+    uint8_t splinter;     /* a pattern fired where it ended, or SIM_NO_PATTERN */
+    /* ending */
+    int32_t damage;       /* Q10 energy at the centre */
+    int32_t blast;        /* Q8 px; 0 means the damage lands on one hull */
+    int32_t push;         /* Q16 px/tick shoved outward at the centre */
+    uint16_t stall;       /* ticks of suppressed recharge on whoever it hits */
+} sim_weapon_spec;
+
+typedef struct {
+    uint8_t spec;
+    uint8_t count;        /* projectiles per shot */
+    uint16_t spacing;     /* heading units between them; 65536 is a full turn */
+    int32_t energy;       /* Q10 to fire */
+    uint16_t delay;       /* ticks of cooldown */
+    int32_t recoil;       /* Q16 px/tick backwards on the ship that fired */
+} sim_fire_pattern;
 
 /* Prizes, the original's "greens": fly over one and the ship improves until
  * it dies. Every upgrade is a count, and the effective stat is the initial
@@ -141,24 +188,20 @@ typedef struct {
     int32_t recharge, init_recharge, up_recharge;  /* Q10 per tick */
     int32_t radius;                                /* Q8 px */
 
-    int32_t bullet_speed;  /* Q16 px/tick */
-    int32_t bullet_energy; /* Q10 cost per shot */
-    uint16_t bullet_delay; /* ticks between shots */
-    uint16_t bullet_life;  /* ticks before expiry */
-    int32_t bullet_damage; /* Q10 */
-
-    int32_t bomb_speed;
-    int32_t bomb_energy;
-    uint16_t bomb_delay;
-    uint16_t bomb_life;
-    int32_t bomb_damage;
-    int32_t bomb_radius;  /* Q8 px, blast radius */
-    int32_t bomb_thrust;  /* Q16 px/tick recoil */
+    /* What the two triggers fire, as indices into the settings' patterns.
+     * SIM_NO_PATTERN is a hull with no bomb rack at all. */
+    uint8_t gun;
+    uint8_t bomb;
 } sim_ship_class;
 
 typedef struct {
     sim_ship_class classes[SIM_MAX_CLASSES];
     uint8_t class_count;
+    /* Every weapon in the zone, and every way of firing one. */
+    sim_weapon_spec specs[SIM_MAX_SPECS];
+    sim_fire_pattern patterns[SIM_MAX_PATTERNS];
+    uint8_t spec_count;
+    uint8_t pattern_count;
     int32_t bounce;   /* restitution on the axis that hit, out of 16 */
     int32_t friction; /* retained speed along the wall, out of 16 */
     uint16_t respawn_delay; /* ticks dead before respawn */
@@ -214,7 +257,7 @@ typedef struct {
 } sim_flag;
 
 typedef struct {
-    uint8_t type;  /* sim_weapon_type */
+    uint8_t spec;  /* index into the settings' spec table */
     uint8_t owner; /* ship index */
     uint8_t team;
     int32_t x, y;
@@ -276,6 +319,12 @@ typedef struct {
 void sim_init(sim_state *s, uint32_t seed);
 
 /* Add a ship. Returns its index, or -1 if full. */
+/* Append a projectile spec, or a way of firing one, and hand back its index.
+ * Both return -1 when the table is full. A pattern names a spec; a spec's
+ * splinter names a pattern, which is how one ending fires the next. */
+int sim_add_spec(sim_settings *cfg, const sim_weapon_spec *spec);
+int sim_add_pattern(sim_settings *cfg, const sim_fire_pattern *pattern);
+
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg);
 

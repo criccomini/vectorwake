@@ -181,11 +181,31 @@ int ShipRadius(lua_State* L) {
     return 1;
 }
 
-// The blast radius of this ship's bombs, which is what an explosion has to
-// be drawn at for the picture to match the damage.
+// How big a spec's blast is, which is what an explosion has to be drawn at
+// for the picture to match the damage. Zero means it has none, which is also
+// how the client decides a projectile is a bolt rather than a bomb -- a
+// weapon that goes off looks like one because it is one, and the simulation
+// never has to carry an appearance to say so.
+int SpecBlast(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_cfg.spec_count) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.specs[i].blast / 256.0);
+    return 1;
+}
+
+// The blast a ship's own bomb makes, for the effects that have to be sized
+// before anything has been fired.
 int ShipBombRadius(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
-    lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].bomb_radius / 256.0);
+    uint8_t pat = g_cfg.classes[g_cur->ships[i].cls].bomb;
+    if (pat >= g_cfg.pattern_count) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.specs[g_cfg.patterns[pat].spec].blast / 256.0);
     return 1;
 }
 
@@ -220,7 +240,7 @@ int WeaponAt(lua_State* L) {
     const sim_weapon* w = &g_cur->weapons[i];
     lua_pushnumber(L, w->x / 256.0);
     lua_pushnumber(L, w->y / 256.0);
-    lua_pushnumber(L, w->type);
+    lua_pushnumber(L, w->spec);
     lua_pushnumber(L, w->vx / 65536.0);
     lua_pushnumber(L, w->vy / 65536.0);
     lua_pushnumber(L, w->team);
@@ -357,6 +377,7 @@ const luaL_reg kFunctions[] = {
     {"ship_up", ShipUp},
     {"ship_radius", ShipRadius},
     {"ship_bomb_radius", ShipBombRadius},
+    {"spec_blast", SpecBlast},
     {"tick", Tick},
     {"weapon_count", WeaponCount},
     {"weapon_at", WeaponAt},
@@ -410,8 +431,6 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_EV_PRIZE);     lua_setfield(L, -2, "EV_PRIZE");
     lua_pushnumber(L, SIM_EV_FLAG_TAKE); lua_setfield(L, -2, "EV_FLAG_TAKE");
     lua_pushnumber(L, SIM_EV_FLAG_DROP); lua_setfield(L, -2, "EV_FLAG_DROP");
-    lua_pushnumber(L, SIM_W_BULLET);     lua_setfield(L, -2, "W_BULLET");
-    lua_pushnumber(L, SIM_W_BOMB);       lua_setfield(L, -2, "W_BOMB");
     lua_pushnumber(L, SIM_UP_COUNT);     lua_setfield(L, -2, "UP_COUNT");
 
     lua_pop(L, 1);

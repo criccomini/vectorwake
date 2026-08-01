@@ -12,6 +12,8 @@ pub const MAX_SHIPS: usize = 64;
 pub const MAX_WEAPONS: usize = 1024;
 pub const MAX_EVENTS: usize = 256;
 pub const MAX_CLASSES: usize = 8;
+pub const MAX_SPECS: usize = 32;
+pub const MAX_PATTERNS: usize = 32;
 pub const MAP_TILES: usize = 1024;
 pub const TILE_PX: i32 = 16;
 
@@ -52,6 +54,39 @@ pub struct sim_map {
     pub features: [sim_feature; MAX_FEATURES],
 }
 
+/// One projectile: how it flies, what ends it, and what happens where it
+/// ends. Mirrors `sim_weapon_spec`; the model is documented in
+/// sim/include/sim/sim.h and docs/design/weapons.md.
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub struct sim_weapon_spec {
+    pub speed: i32,
+    pub life: u16,
+    pub on_wall: u8,
+    pub bounces: u8,
+    pub trigger: i32,
+    pub expire_ends: u8,
+    pub splinter: u8,
+    pub damage: i32,
+    pub blast: i32,
+    pub push: i32,
+    pub stall: u16,
+}
+
+/// What pulling a trigger makes. Mirrors `sim_fire_pattern`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub struct sim_fire_pattern {
+    pub spec: u8,
+    pub count: u8,
+    pub spacing: u16,
+    pub energy: i32,
+    pub delay: u16,
+    pub recoil: i32,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
@@ -62,24 +97,21 @@ pub struct sim_ship_class {
     pub max_energy: i32, pub init_energy: i32, pub up_energy: i32,
     pub recharge: i32, pub init_recharge: i32, pub up_recharge: i32,
     pub radius: i32,
-    pub bullet_speed: i32,
-    pub bullet_energy: i32,
-    pub bullet_delay: u16,
-    pub bullet_life: u16,
-    pub bullet_damage: i32,
-    pub bomb_speed: i32,
-    pub bomb_energy: i32,
-    pub bomb_delay: u16,
-    pub bomb_life: u16,
-    pub bomb_damage: i32,
-    pub bomb_radius: i32,
-    pub bomb_thrust: i32,
+    /// Indices into the settings' pattern table, or 255 for a hull with no
+    /// bomb rack. What a weapon *is* lives in the tables below, not here.
+    pub gun: u8,
+    pub bomb: u8,
 }
 
 #[repr(C)]
 pub struct sim_settings {
     pub classes: [sim_ship_class; MAX_CLASSES],
     pub class_count: u8,
+    /// Every weapon in the zone, and every way of firing one.
+    pub specs: [sim_weapon_spec; MAX_SPECS],
+    pub patterns: [sim_fire_pattern; MAX_PATTERNS],
+    pub spec_count: u8,
+    pub pattern_count: u8,
     pub bounce: i32,
     pub friction: i32,
     pub respawn_delay: u16,
@@ -148,7 +180,8 @@ pub struct sim_prize {
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct sim_weapon {
-    pub wtype: u8,
+    /// Index into the settings' spec table: what this projectile *is*.
+    pub spec: u8,
     pub owner: u8,
     pub team: u8,
     pub x: i32,

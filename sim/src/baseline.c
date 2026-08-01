@@ -35,6 +35,8 @@ const char *const sim_class_names[SIM_MAX_CLASSES] = {
 
 void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->class_count = SIM_MAX_CLASSES;
+    cfg->spec_count = 0;
+    cfg->pattern_count = 0;
     /* Walls are inelastic: a hit returns about 60% of the speed that went
      * into it and scrubs some of the speed along it. Clipping a wall should
      * hurt, which is what makes tight flying a skill. */
@@ -62,25 +64,57 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         sim_ship_class *c = &cfg->classes[i];
         sim_class_from_units(c, r->speed, r->thrust, r->rotation, r->energy,
                            r->recharge, r->radius);
-        c->bullet_damage = sim_units_energy(r->bullet_damage);
-        c->bullet_delay = (uint16_t)r->bullet_delay;
-        /* Firing costs are a fraction of the ship's own energy, taken from
+        /* Each hull's gun and bomb are a spec and a pattern of their own,
+         * built from the roster row. Two rows in the table per hull rather
+         * than twelve numbers on the hull: the difference between a bullet
+         * and a bomb is now entirely what those rows say, which is what lets
+         * a zone add a third weapon without the core learning a third name.
+         *
+         * Firing costs are a fraction of the ship's own energy, taken from
          * the original's numbers: it gave every ship 1700 maximum energy and
          * charged 20 for a bullet and 300 for a bomb. Pricing a shot off its
          * damage instead -- which is what this did -- made a bullet cost 35%
          * of a full bar and a bomb 63%, so the bomb key did nothing at all
          * unless you had been left alone to recharge, and silently. */
-        c->bullet_energy = (int32_t)((int64_t)c->max_energy * 20 / 1700);
+        sim_weapon_spec bolt;
+        memset(&bolt, 0, sizeof bolt);
+        bolt.speed = sim_units_speed(2000);
+        bolt.life = 200;
+        bolt.on_wall = SIM_WALL_END;
+        bolt.damage = sim_units_energy(r->bullet_damage);
+        bolt.splinter = SIM_NO_PATTERN;
+
+        sim_fire_pattern gun;
+        memset(&gun, 0, sizeof gun);
+        gun.spec = (uint8_t)sim_add_spec(cfg, &bolt);
+        gun.count = 1;
+        gun.energy = (int32_t)((int64_t)c->max_energy * 20 / 1700);
+        gun.delay = (uint16_t)r->bullet_delay;
+        c->gun = (uint8_t)sim_add_pattern(cfg, &gun);
+
+        /* A hull with no bomb rack has no bomb pattern at all, rather than an
+         * unaffordable one. The trigger is simply dead. */
         if (r->bomb_damage == 0) {
-            /* No bomb for this class: an impossible cost and zero damage. */
-            c->bomb_damage = 0;
-            c->bomb_energy = sim_units_energy(1 << 20);
-            c->bomb_delay = 1000;
-        } else {
-            c->bomb_damage = sim_units_energy(r->bomb_damage);
-            c->bomb_delay = (uint16_t)r->bomb_delay;
-            c->bomb_energy = (int32_t)((int64_t)c->max_energy * 300 / 1700);
+            c->bomb = SIM_NO_PATTERN;
+            continue;
         }
+        sim_weapon_spec sh;
+        memset(&sh, 0, sizeof sh);
+        sh.speed = sim_units_speed(1500);
+        sh.life = 500;
+        sh.on_wall = SIM_WALL_END;
+        sh.damage = sim_units_energy(r->bomb_damage);
+        sh.blast = 48 * 256;
+        sh.splinter = SIM_NO_PATTERN;
+
+        sim_fire_pattern bomb;
+        memset(&bomb, 0, sizeof bomb);
+        bomb.spec = (uint8_t)sim_add_spec(cfg, &sh);
+        bomb.count = 1;
+        bomb.energy = (int32_t)((int64_t)c->max_energy * 300 / 1700);
+        bomb.delay = (uint16_t)r->bomb_delay;
+        bomb.recoil = sim_units_speed(200);
+        c->bomb = (uint8_t)sim_add_pattern(cfg, &bomb);
     }
 }
 

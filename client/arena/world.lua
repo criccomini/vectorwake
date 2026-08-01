@@ -403,12 +403,28 @@ function M.ship_bar(fill, glow, sx, sy, frac, col)
 end
 
 -- --- weapons ---------------------------------------------------------------
+--
+-- What a projectile looks like is this file's business and nowhere else's.
+-- The simulation hands over a spec id and the numbers that spec flies by; the
+-- picture is looked up here, exactly as a tile's class carries no picture and
+-- the terrain builder chooses one. A weapon with a blast is drawn as a bomb
+-- because it *is* one -- the appearance follows a simulation property rather
+-- than a second field that could disagree with it.
+local blast_of = {}
+local function spec_blast(id)
+    local r = blast_of[id]
+    if r == nil then
+        r = sim.spec_blast(id)
+        blast_of[id] = r
+    end
+    return r
+end
 
 function M.weapons(fill, glow, me_team, t)
     local pulse = 0.72 + 0.28 * math.sin(t * 11)
     for i = 0, sim.weapon_count() - 1 do
-        local x, y, ty, vx, vy, team = sim.weapon_at(i)
-        if ty == sim.W_BOMB then
+        local x, y, spec, vx, vy, team = sim.weapon_at(i)
+        if spec_blast(spec) > 0 then
             -- A bomb is a heavy, slow, obviously dangerous object: a hot core
             -- inside a ring that breathes, with a trail long enough to read
             -- its heading from across the arena.
@@ -490,7 +506,7 @@ function M.events(me, sfx)
         if ty == sim.EV_FIRE then
             local x, y = sim.ship_x(a), sim.ship_y(a)
             local ang = sim.ship_heading(a) / 65536 * TAU
-            local bomb = b == sim.W_BOMB
+            local bomb = spec_blast(b) > 0
             local col = bomb and pal.BOMB
                 or (sim.ship_team(a) == sim.ship_team(me) and pal.FRIEND or pal.ENEMY)
             fx.cone(x + math.sin(ang) * 10, y - math.cos(ang) * 10, ang,
@@ -500,9 +516,9 @@ function M.events(me, sfx)
         elseif ty == sim.EV_EXPIRE then
             local x = math.floor(v / 16384)
             local y = v % 16384
-            if a == sim.W_BOMB then
-                local r = sim.ship_bomb_radius(b)
-                fx.detonate(x, y, r > 0 and r or 60, pal.BOMB)
+            local r = spec_blast(a)
+            if r > 0 then
+                fx.detonate(x, y, r, pal.BOMB)
                 sfx("blast", x, y)
             else
                 fx.burst(x, y, 4, 90, 0.22, 1.5, pal.a(pal.INK, 0.9))

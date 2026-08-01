@@ -68,6 +68,20 @@ static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
     return c;
 }
 
+/* A hull's gun and bomb, through the tables. Tests used to read weapon
+ * numbers off the class; they live in the settings now, one step further
+ * out, because a weapon is a thing a zone configures rather than a property
+ * of a hull. */
+static const sim_fire_pattern *gun_of(const sim_settings *cfg, int cls) {
+    return &cfg->patterns[cfg->classes[cls].gun];
+}
+static const sim_weapon_spec *gun_spec(const sim_settings *cfg, int cls) {
+    return &cfg->specs[gun_of(cfg, cls)->spec];
+}
+static const sim_fire_pattern *bomb_of(const sim_settings *cfg, int cls) {
+    return &cfg->patterns[cfg->classes[cls].bomb];
+}
+
 int main(void) {
     sim_map *m = walled_map();
     sim_settings cfg;
@@ -148,7 +162,7 @@ int main(void) {
         int32_t y0 = s.weapons[0].y;
         step_n(&s, &cfg, 0, 0, 10);
         CHECK(s.weapon_count == 1 && s.weapons[0].y < y0, "bullet moves up");
-        step_n(&s, &cfg, 0, 0, cfg.classes[APEX].bullet_life + 5);
+        step_n(&s, &cfg, 0, 0, gun_spec(&cfg, APEX)->life + 5);
         CHECK(s.weapon_count == 0, "bullet expires");
     }
 
@@ -192,7 +206,7 @@ int main(void) {
         sim_init(&s, 1);
         int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         int32_t full = sim_eff_max_energy(&cfg.classes[APEX], &s.ships[id]);
-        CHECK(cfg.classes[APEX].bomb_energy * 3 < full,
+        CHECK(bomb_of(&cfg, APEX)->energy * 3 < full,
               "a fresh bar affords three bombs, as the original's 1000/300 did");
         ev_counts c = step_counting(&s, &cfg, SIM_BTN_BOMB, 0, 600);
         CHECK(c.fires > 1, "bombs actually leave the ship");
@@ -606,7 +620,7 @@ int main(void) {
         sim_init(&s, 1);
         sim_spawn(&s, ANVIL, 0, 8192, 8192, 16384, &cfg);
         sim_settings brief = cfg;
-        brief.classes[ANVIL].bomb_life = 60;
+        brief.specs[bomb_of(&brief, ANVIL)->spec].life = 60;
         step_n(&s, &brief, SIM_BTN_BOMB, 0, 50);
         CHECK(s.weapon_count == 1, "the bomb is still in the air at 50 ticks");
         /* Beside where it is about to die: inside the blast, too far off the
