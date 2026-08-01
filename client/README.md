@@ -131,6 +131,28 @@ A `server` address skips the browser and connects straight there. Neither
 set plays the local game, which is what keeps a build with nothing behind it
 playable.
 
+## Driving it from a test
+
+Clicks have to be held. The engine polls the mouse once a frame, so a press
+and release inside one frame reads as no press at all, and an instantaneous
+`mouse.click()` under a software renderer -- where frames are long -- lands
+that way every time. Move, wait, hold for ~90 ms, release:
+
+```js
+await p.mouse.move(x, y); await p.waitForTimeout(120);
+await p.mouse.down(); await p.waitForTimeout(90); await p.mouse.up();
+```
+
+A hand cannot click faster than a frame at 60 Hz, so this is a property of
+the harness rather than of the game. It cost an afternoon once: fast clicks
+plus coordinates measured from a screenshot taken before a button was added
+to the row looked exactly like a dead interface.
+
+`release` strips `print`, so a test that reads the client's own log needs a
+`debug` bundle. Anything checking whether a player actually reached a zone
+should ask the server instead -- its status reports players and bots, and it
+is the honest witness either way.
+
 ## Two things worth knowing
 
 The simulation steps at 100 Hz under the arena script's own accumulator

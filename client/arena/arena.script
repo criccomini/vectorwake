@@ -733,6 +733,14 @@ function on_input(self, action_id, action)
         touch.on_touch(action, self.vw or 0, self.vh or 0, self.density or 1)
         return
     end
+    -- A press and a release that land inside the same engine frame are
+    -- dropped before this ever runs: the button state is polled once a frame,
+    -- and a down followed by an up between two polls reads as never pressed.
+    -- At 60 Hz that needs a sub-16 ms click, which a hand cannot produce, but
+    -- an automated one can -- Playwright's click() is instantaneous, and
+    -- under a software renderer the frames are long enough that every click
+    -- vanishes. A test driving this has to hold the button for ~90 ms, or it
+    -- will conclude the interface is dead when it is not.
     if action_id == hash("pointer") and action.pressed and not touch.used then
         if hit(action.screen_x or action.x, action.screen_y or action.y) then
             return
