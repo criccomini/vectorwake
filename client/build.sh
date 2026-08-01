@@ -23,6 +23,24 @@ cd "$(dirname "$0")"
 PLATFORM="${1:-x86_64-linux}"
 VARIANT="${2:-headless}"
 TASK="${3:-build}"
+
+# Both of these are positional, and getting them out of order fails silently:
+# `build.sh wasm-web bundle` reads "bundle" as the variant, builds with a
+# variant bob does not know, skips bundling entirely, and leaves the previous
+# bundle on disk to be published as though it were the new one. It cost a
+# release. Reject the mistake instead.
+case "$VARIANT" in
+  debug|release|headless) ;;
+  *) echo "build.sh: unknown variant '$VARIANT'" >&2
+     echo "usage: build.sh [platform] [debug|release|headless] [build|bundle]" >&2
+     exit 2 ;;
+esac
+case "$TASK" in
+  build|bundle) ;;
+  *) echo "build.sh: unknown task '$TASK'" >&2
+     echo "usage: build.sh [platform] [debug|release|headless] [build|bundle]" >&2
+     exit 2 ;;
+esac
 JAVA="${JAVA_HOME:-/usr}/bin/java"
 BOB="${BOB_JAR:-/tmp/bob.jar}"
 

@@ -184,10 +184,7 @@ FRAME_CSS = """
     margin: 0 !important; padding: 0 !important; border: 0 !important;
     display: block !important; background: #05070d;
   }
-  /* The engine picks its own buffer and keeps 16:10. Letterbox rather than
-     stretch: a stretched world draws a circle as an ellipse, and aiming is
-     done by eye. */
-  #canvas, .canvas-app-canvas { object-fit: contain; outline: none; }
+  #canvas, .canvas-app-canvas { outline: none; }
   /* Defold's own footer: a fullscreen button and a credit link. */
   .buttons-background, #canvas-app-buttons, .canvas-app-buttons {
     display: none !important;
@@ -201,6 +198,22 @@ FRAME_CSS = """
 # was simply cropped. CSS scales the finished frame to the window instead,
 # which cannot crop anything.
 FRAME_HEAD = ""
+
+
+# Defold's loader sizes the canvas by fitting game.project's 1280x800 into
+# the window with the aspect preserved, and centres what is left with a
+# margin -- which is where the interface-cropping offset came from. With a
+# fixed zoom that fit is exactly wrong: the buffer should be the window, so
+# a reshaped window shows more or less of the arena instead of the same
+# arena letterboxed or squashed. Two numbers do it.
+def fill_window(html):
+    out = html.replace("var width = 1280;\n        var height = 800;",
+                       "var width = innerWidth;\n        var height = innerHeight;")
+    if out == html:
+        sys.exit("loader canvas size not found; Defold's template changed")
+    # The footer is hidden, so it must not reserve height either.
+    out = out.replace("buttonHeight = 42;", "buttonHeight = 0;")
+    return out
 
 
 def to_fragment(html, title):
@@ -258,6 +271,7 @@ def main():
         r'\s*else\s*\{.*?\n\s*\}',
         re.S,
     )
+    html = fill_window(html)
     html, n = guard.subn('EngineLoader.load("canvas", "%s");' % exe, html)
     if n != 1:
         sys.exit("could not rewrite the file:// guard (matched %d times)" % n)

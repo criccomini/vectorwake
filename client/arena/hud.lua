@@ -124,14 +124,17 @@ function M.draw(o)
     text(bombable and "BOMB READY" or "BOMB: LOW ENERGY",
          18, 32, bombable and GOOD or DIM)
 
-    -- Kill feed, above the status block and out of the world's way.
-    local fy = 130
+    -- Kill feed, above the status block, clear of the panel.
+    local fy = 132
     for _, f in ipairs(feed) do
         text(f, 18, fy, DIM)
         fy = fy + 17
     end
 
-    -- Player list, top right.
+    -- Player list, top left, in a panel like the one the prototype had.
+    -- The frame is world-space line geometry offset from the camera, the
+    -- same way the radar is placed; text is screen space. Zoom converts
+    -- between them, so a panel is the same size on screen at any zoom.
     local rows = {}
     for i = 0, sim.ship_count() - 1 do
         local p = o.pilots[i]
@@ -145,14 +148,31 @@ function M.draw(o)
         if a.k ~= b.k then return a.k > b.k end
         return a.name < b.name
     end)
-    local y = o.h - 24
-    text("PILOT           K   D", o.w - 250, y, DIM)
+
+    local zoom = o.w / (2 * o.half_w)
+    local PAD, W = 14, 244
+    local H = 48 + #rows * 18
+    -- Top left in world units: +y renders downward, so the top is the
+    -- smaller y.
+    local bx = o.cam_x - o.half_w + PAD / zoom
+    local by = o.cam_y - o.half_h + PAD / zoom
+    local bw, bh = W / zoom, H / zoom
+    line(bx, by, bx + bw, by, DIM)
+    line(bx + bw, by, bx + bw, by + bh, DIM)
+    line(bx + bw, by + bh, bx, by + bh, DIM)
+    line(bx, by + bh, bx, by, DIM)
+
+    -- Screen text, measured down from the top edge of that frame.
+    local tx = PAD + 12
+    local y = o.h - PAD - 20
+    text("PILOT              K    D", tx, y, DIM)
     y = y - 20
     for _, r in ipairs(rows) do
         local col = (r.i == me) and ACCENT
             or (r.team == sim.ship_team(me) and INK or WARN)
         local nm = string.sub(r.name, 1, 14)
-        text(string.format("%-14s %3d %3d", nm, r.k, r.d), o.w - 250, y, col)
+        text(string.format("%s%-14s %3d  %3d", r.i == me and "> " or "  ",
+                           nm, r.k, r.d), tx, y, col)
         y = y - 18
     end
 
