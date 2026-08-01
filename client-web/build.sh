@@ -14,7 +14,7 @@ clang --target=wasm32 -O2 -std=c99 -nostdlib \
   -I../sim/include -Ifreestanding \
   -Wl,--no-entry -Wl,--export-dynamic -Wl,--allow-undefined \
   -Wl,-z,stack-size=131072 -Wl,--initial-memory=33554432 \
-  wasm_shim.c ../sim/src/sim.c ../sim/src/baseline.c \
+  wasm_shim.c ../sim/src/sim.c ../sim/src/baseline.c ../sim/src/pack.c \
   -o build/vectorwake.wasm
 
 python3 - <<'PY'

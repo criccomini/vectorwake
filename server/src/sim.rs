@@ -6,7 +6,7 @@
 
 #![allow(non_camel_case_types)]
 
-use std::os::raw::{c_int, c_uchar};
+use std::os::raw::c_int;
 
 pub const MAX_SHIPS: usize = 64;
 pub const MAX_WEAPONS: usize = 1024;
@@ -35,13 +35,14 @@ pub struct sim_map {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 pub struct sim_ship_class {
-    pub max_speed: i32,
-    pub thrust: i32,
-    pub rot: i32,
+    pub max_speed: i32, pub init_speed: i32, pub up_speed: i32,
+    pub thrust: i32, pub init_thrust: i32, pub up_thrust: i32,
+    pub rot: i32, pub init_rot: i32, pub up_rot: i32,
+    pub max_energy: i32, pub init_energy: i32, pub up_energy: i32,
+    pub recharge: i32, pub init_recharge: i32, pub up_recharge: i32,
     pub radius: i32,
-    pub max_energy: i32,
-    pub recharge: i32,
     pub bullet_speed: i32,
     pub bullet_energy: i32,
     pub bullet_delay: u16,
@@ -61,7 +62,14 @@ pub struct sim_settings {
     pub classes: [sim_ship_class; MAX_CLASSES],
     pub class_count: u8,
     pub bounce: i32,
+    pub friction: i32,
     pub respawn_delay: u16,
+    pub prize_delay: u16,
+    pub prize_max: u16,
+    pub prize_life: u16,
+    pub prize_radius: i32,
+    pub prize_lo: i32,
+    pub prize_hi: i32,
     pub map: *const sim_map,
 }
 
@@ -84,6 +92,17 @@ pub struct sim_ship {
     pub spawn_y: i32,
     pub kills: u16,
     pub deaths: u16,
+    pub up: [u8; UP_COUNT],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct sim_prize {
+    pub active: u8,
+    pub ptype: u8,
+    pub x: i32,
+    pub y: i32,
+    pub life: u16,
 }
 
 #[repr(C)]
@@ -106,9 +125,13 @@ pub struct sim_state {
     pub rng: u32,
     pub ship_count: u8,
     pub weapon_count: u16,
+    pub prize_timer: u16,
     pub ships: [sim_ship; MAX_SHIPS],
     pub weapons: [sim_weapon; MAX_WEAPONS],
+    pub prizes: [sim_prize; MAX_PRIZES],
 }
+
+pub const MAX_PRIZES: usize = 64;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -155,8 +178,12 @@ extern "C" {
     );
     pub fn sim_hash(s: *const sim_state) -> u64;
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
-    fn sim_solid_unused(m: *const sim_map, tx: c_int, ty: c_int) -> c_uchar;
+    pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
+    pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
 }
+
+pub const PACK_MAX: usize = 64 * 1024;
+pub const UP_COUNT: usize = 5;
 
 // Safe wrappers. The core has no globals and no allocation, so a state is a
 // plain value a thread can own for the duration of a tick.
@@ -173,6 +200,10 @@ impl Default for sim_events {
         unsafe { std::mem::zeroed() }
     }
 }
+
+// Safety: the only raw pointer in the graph is `sim_settings.map`, which
+// points at the map this World owns and which the core only ever reads.
+unsafe impl Send for World {}
 
 pub struct World {
     pub map: Box<sim_map>,
@@ -230,6 +261,15 @@ impl World {
     pub fn hash(&self) -> u64 {
         unsafe { sim_hash(&*self.state) }
     }
+
+    pub fn pack(&self, out: &mut [u8]) -> i32 {
+        unsafe { sim_pack(&*self.state, out.as_mut_ptr(), out.len() as c_int) }
+    }
+
+    pub fn eff_max_energy(&self, ship: usize) -> i32 {
+        let cls = self.state.ships[ship].cls as usize;
+        unsafe { sim_eff_max_energy(&self.cfg.classes[cls], &self.state.ships[ship]) }
+    }
 }
 
 /// The same arena the single-player client builds, so a player sees the same
@@ -258,7 +298,3 @@ pub fn build_arena(map: &mut sim_map) {
     fill(541, 505, 544, 519);
 }
 
-#[allow(dead_code)]
-fn _unused(m: *const sim_map) {
-    unsafe { sim_solid_unused(m, 0, 0) };
-}

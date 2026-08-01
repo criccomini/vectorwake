@@ -21,13 +21,16 @@ $(B)/sim.o: src/sim.c src/sintab.h include/sim/sim.h | $(B)
 $(B)/baseline.o: src/baseline.c include/sim/baseline.h include/sim/sim.h | $(B)
 	$(CC) $(ALL_CFLAGS) -c src/baseline.c -o $@
 
-$(B)/libsim.a: $(B)/sim.o $(B)/baseline.o
+$(B)/pack.o: src/pack.c include/sim/pack.h include/sim/sim.h | $(B)
+	$(CC) $(ALL_CFLAGS) -c src/pack.c -o $@
+
+$(B)/libsim.a: $(B)/sim.o $(B)/baseline.o $(B)/pack.o
 	$(AR) rcs $@ $^
 
-$(B)/replay: tools/replay.c $(B)/sim.o $(B)/baseline.o
+$(B)/replay: tools/replay.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
-$(B)/test_sim: tests/test_sim.c $(B)/sim.o $(B)/baseline.o
+$(B)/test_sim: tests/test_sim.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
 # Regenerate the committed sine table. Deliberately not a file rule: a fresh
@@ -57,7 +60,7 @@ check: $(B)/test_sim $(B)/replay
 # read the trace file directly.
 wasm:
 	mkdir -p $(B)
-	emcc -O2 -std=c99 -Iinclude src/sim.c src/baseline.c tools/replay.c \
+	emcc -O2 -std=c99 -Iinclude src/sim.c src/baseline.c src/pack.c tools/replay.c \
 	  -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -o $(B)/replay.js
 
 check-wasm: wasm

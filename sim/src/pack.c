@@ -1,0 +1,162 @@
+/* Snapshot serialization.
+ *
+ * Written in the core, not in the server or the client, so there is exactly
+ * one definition of what a snapshot is. The server packs, the client
+ * unpacks, and neither can drift from the other.
+ *
+ * Every field is written byte by byte in little-endian order, so the format
+ * does not depend on struct layout, alignment, or host endianness: an x86-64
+ * server and a WebAssembly client agree by construction.
+ *
+ * Only live entities are sent. A quiet arena costs a few hundred bytes.
+ */
+#include "sim/pack.h"
+
+#include <string.h>
+
+typedef struct {
+    uint8_t *p;
+    const uint8_t *end;
+    int overflow;
+} wr;
+
+typedef struct {
+    const uint8_t *p;
+    const uint8_t *end;
+    int underflow;
+} rd;
+
+static void w8(wr *w, uint32_t v) {
+    if (w->p + 1 > w->end) { w->overflow = 1; return; }
+    *w->p++ = (uint8_t)v;
+}
+static void w16(wr *w, uint32_t v) { w8(w, v); w8(w, v >> 8); }
+static void w32(wr *w, uint32_t v) { w16(w, v); w16(w, v >> 16); }
+
+static uint32_t r8(rd *r) {
+    if (r->p + 1 > r->end) { r->underflow = 1; return 0; }
+    return *r->p++;
+}
+static uint32_t r16(rd *r) { uint32_t a = r8(r); return a | (r8(r) << 8); }
+static uint32_t r32(rd *r) { uint32_t a = r16(r); return a | (r16(r) << 16); }
+
+int sim_pack(const sim_state *s, uint8_t *out, int cap) {
+    wr w = {out, out + cap, 0};
+
+    w32(&w, s->tick);
+    w32(&w, s->rng);
+    w16(&w, s->prize_timer);
+
+    w8(&w, s->ship_count);
+    for (int i = 0; i < s->ship_count; i++) {
+        const sim_ship *sh = &s->ships[i];
+        w8(&w, (uint32_t)(sh->active | (sh->alive << 1)));
+        w8(&w, sh->cls);
+        w8(&w, sh->team);
+        w32(&w, (uint32_t)sh->x);
+        w32(&w, (uint32_t)sh->y);
+        w32(&w, (uint32_t)sh->vx);
+        w32(&w, (uint32_t)sh->vy);
+        w16(&w, sh->heading);
+        w32(&w, (uint32_t)sh->energy);
+        w16(&w, sh->fire_cooldown);
+        w16(&w, sh->respawn_at);
+        w32(&w, (uint32_t)sh->spawn_x);
+        w32(&w, (uint32_t)sh->spawn_y);
+        w16(&w, sh->kills);
+        w16(&w, sh->deaths);
+        for (int u = 0; u < SIM_UP_COUNT; u++) w8(&w, sh->up[u]);
+    }
+
+    w16(&w, s->weapon_count);
+    for (uint16_t i = 0; i < s->weapon_count; i++) {
+        const sim_weapon *p = &s->weapons[i];
+        w8(&w, p->type);
+        w8(&w, p->owner);
+        w8(&w, p->team);
+        w32(&w, (uint32_t)p->x);
+        w32(&w, (uint32_t)p->y);
+        w32(&w, (uint32_t)p->vx);
+        w32(&w, (uint32_t)p->vy);
+        w16(&w, p->life);
+    }
+
+    uint8_t live = 0;
+    for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s->prizes[i].active ? 1 : 0;
+    w8(&w, live);
+    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+        const sim_prize *p = &s->prizes[i];
+        if (!p->active) continue;
+        w8(&w, (uint32_t)i);
+        w8(&w, p->type);
+        w32(&w, (uint32_t)p->x);
+        w32(&w, (uint32_t)p->y);
+        w16(&w, p->life);
+    }
+
+    return w.overflow ? -1 : (int)(w.p - out);
+}
+
+int sim_unpack(sim_state *s, const uint8_t *in, int len) {
+    rd r = {in, in + len, 0};
+    memset(s, 0, sizeof *s);
+
+    s->tick = r32(&r);
+    s->rng = r32(&r);
+    s->prize_timer = (uint16_t)r16(&r);
+
+    uint32_t ships = r8(&r);
+    if (ships > SIM_MAX_SHIPS) return -1;
+    s->ship_count = (uint8_t)ships;
+    for (uint32_t i = 0; i < ships; i++) {
+        sim_ship *sh = &s->ships[i];
+        uint32_t flags = r8(&r);
+        sh->active = (uint8_t)(flags & 1);
+        sh->alive = (uint8_t)((flags >> 1) & 1);
+        sh->cls = (uint8_t)r8(&r);
+        sh->team = (uint8_t)r8(&r);
+        sh->x = (int32_t)r32(&r);
+        sh->y = (int32_t)r32(&r);
+        sh->vx = (int32_t)r32(&r);
+        sh->vy = (int32_t)r32(&r);
+        sh->heading = (uint16_t)r16(&r);
+        sh->energy = (int32_t)r32(&r);
+        sh->fire_cooldown = (uint16_t)r16(&r);
+        sh->respawn_at = (uint16_t)r16(&r);
+        sh->spawn_x = (int32_t)r32(&r);
+        sh->spawn_y = (int32_t)r32(&r);
+        sh->kills = (uint16_t)r16(&r);
+        sh->deaths = (uint16_t)r16(&r);
+        for (int u = 0; u < SIM_UP_COUNT; u++) sh->up[u] = (uint8_t)r8(&r);
+    }
+
+    uint32_t weapons = r16(&r);
+    if (weapons > SIM_MAX_WEAPONS) return -1;
+    s->weapon_count = (uint16_t)weapons;
+    for (uint32_t i = 0; i < weapons; i++) {
+        sim_weapon *p = &s->weapons[i];
+        p->type = (uint8_t)r8(&r);
+        p->owner = (uint8_t)r8(&r);
+        p->team = (uint8_t)r8(&r);
+        p->x = (int32_t)r32(&r);
+        p->y = (int32_t)r32(&r);
+        p->vx = (int32_t)r32(&r);
+        p->vy = (int32_t)r32(&r);
+        p->life = (uint16_t)r16(&r);
+    }
+
+    uint32_t prizes = r8(&r);
+    if (prizes > SIM_MAX_PRIZES) return -1;
+    for (uint32_t i = 0; i < prizes; i++) {
+        uint32_t idx = r8(&r);
+        if (idx >= SIM_MAX_PRIZES) return -1;
+        sim_prize *p = &s->prizes[idx];
+        p->active = 1;
+        p->type = (uint8_t)r8(&r);
+        p->x = (int32_t)r32(&r);
+        p->y = (int32_t)r32(&r);
+        p->life = (uint16_t)r16(&r);
+    }
+
+    return r.underflow ? -1 : 0;
+}

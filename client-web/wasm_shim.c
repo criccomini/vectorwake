@@ -5,6 +5,7 @@
  * runtime, no glue. The result is a bare .wasm the page instantiates itself.
  */
 #include "sim/baseline.h"
+#include "sim/pack.h"
 #include "sim/sim.h"
 
 /* clang lowers struct assignment and array init to these. */
@@ -120,6 +121,29 @@ EXPORT int vw_weapon_vx(int i) { return g_cur->weapons[i].vx; }
 EXPORT int vw_weapon_vy(int i) { return g_cur->weapons[i].vy; }
 EXPORT int vw_weapon_type(int i) { return g_cur->weapons[i].type; }
 EXPORT int vw_weapon_team(int i) { return g_cur->weapons[i].team; }
+
+/* Networking. The page writes snapshot bytes into this buffer and calls
+ * vw_unpack; the unpacker is the core's own, so the client cannot disagree
+ * with the server about what a snapshot means. */
+static uint8_t g_net[SIM_PACK_MAX];
+EXPORT uint8_t *vw_netbuf(void) { return g_net; }
+EXPORT int vw_netbuf_size(void) { return (int)sizeof g_net; }
+
+EXPORT int vw_apply_snapshot(int len) {
+    return sim_unpack(g_cur, g_net, len);
+}
+
+/* Re-simulate one tick applying only the local ship's input. Remote ships
+ * coast, which is what prediction between snapshots amounts to. */
+EXPORT void vw_replay(int ship, int buttons) {
+    sim_input in = {(uint8_t)ship, (uint16_t)buttons};
+    sim_step(g_nxt, g_cur, &in, 1, &g_cfg, &g_ev);
+    sim_state *t = g_cur;
+    g_cur = g_nxt;
+    g_nxt = t;
+}
+
+EXPORT unsigned vw_hash_lo(void) { return (unsigned)(sim_hash(g_cur) & 0xffffffffu); }
 
 EXPORT int vw_prize_count(void) { return SIM_MAX_PRIZES; }
 EXPORT int vw_prize_active(int i) { return g_cur->prizes[i].active; }

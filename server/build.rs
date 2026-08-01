@@ -4,6 +4,7 @@ fn main() {
     cc::Build::new()
         .file("../sim/src/sim.c")
         .file("../sim/src/baseline.c")
+        .file("../sim/src/pack.c")
         .include("../sim/include")
         .std("c99")
         .opt_level(2)

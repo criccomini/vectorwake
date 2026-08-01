@@ -5,6 +5,7 @@
 
 #include "sim/sim.h"
 #include "sim/baseline.h"
+#include "sim/pack.h"
 
 static int failures = 0;
 #define CHECK(cond, msg)                                          \
@@ -290,6 +291,33 @@ int main(void) {
         step_n(&s, &cfg, SIM_BTN_THRUST, 0, 600);
         ev_counts c = step_counting(&s, &cfg, SIM_BTN_THRUST, 0, 200);
         CHECK(c.bounces < 20, "grinding on a wall does not spam impacts");
+    }
+
+    /* A snapshot round trip reproduces the state exactly. This is what lets
+     * a client accept the server's word without drifting from it. */
+    {
+        sim_state s, back;
+        sim_init(&s, 11);
+        sim_spawn(&s, APEX, 0, 8000, 8000, 900, &cfg);
+        sim_spawn(&s, ANVIL, 1, 8000, 7800, 32768, &cfg);
+        step_counting(&s, &cfg, SIM_BTN_THRUST | SIM_BTN_FIRE, SIM_BTN_BOMB, 900);
+
+        static uint8_t buf[SIM_PACK_MAX];
+        int n = sim_pack(&s, buf, sizeof buf);
+        CHECK(n > 0, "a snapshot packs");
+        CHECK(sim_unpack(&back, buf, n) == 0, "a snapshot unpacks");
+        CHECK(sim_hash(&back) == sim_hash(&s), "the round trip is exact");
+
+        /* And an unpacked state steps identically to the original, which is
+         * the property client prediction actually depends on. */
+        sim_state a2, b2;
+        sim_input in = {0, SIM_BTN_THRUST};
+        sim_step(&a2, &s, &in, 1, &cfg, NULL);
+        sim_step(&b2, &back, &in, 1, &cfg, NULL);
+        CHECK(sim_hash(&a2) == sim_hash(&b2), "an unpacked state steps identically");
+
+        CHECK(sim_pack(&s, buf, 8) == -1, "packing reports an undersized buffer");
+        CHECK(sim_unpack(&back, buf, 3) == -1, "unpacking rejects a truncated snapshot");
     }
 
     /* Determinism: identical runs give identical hashes and bytes. */

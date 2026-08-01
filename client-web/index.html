@@ -84,6 +84,11 @@
        Pick a hull and fight eight AI pilots.</p>
     <div id="ships"></div>
     <button id="go">launch</button>
+    <button id="online" style="margin-left:8px;background:#0a0f18;color:#4fd6ff;border:1px solid #22304a;padding:11px 22px;font:inherit;letter-spacing:.16em;cursor:pointer;text-transform:uppercase">connect</button>
+    <div style="margin-top:10px">
+      <input id="url" value="ws://127.0.0.1:9010" style="background:#0a0f18;border:1px solid #22304a;color:#dfe9f5;padding:6px 8px;font:inherit;width:230px">
+      <input id="pname" value="pilot" style="background:#0a0f18;border:1px solid #22304a;color:#dfe9f5;padding:6px 8px;font:inherit;width:110px">
+    </div>
     <div style="margin-top:14px;color:#6c7a90">
       <label><input type="checkbox" id="fs"> fullscreen</label>
     </div>
@@ -391,6 +396,109 @@ function myButtons() {
   return b;
 }
 
+// --- network -------------------------------------------------------------
+//
+// The server owns the truth. This client sends buttons, predicts its own ship
+// forward from the last snapshot, and accepts every correction the server
+// sends. Nothing here decides a hit, a death, or a pickup.
+
+const C2S_JOIN = 1, C2S_INPUT = 2;
+const S2C_WELCOME = 1, S2C_SNAPSHOT = 2, S2C_ROSTER = 3;
+
+let net = null;          // WebSocket when online, null when playing solo
+// errPx is the distance between where we predicted our own ship would be and
+// where the server says it is, after replaying the inputs the server had not
+// seen. That is the number that decides whether prediction is working; a
+// whole-state hash would differ every snapshot simply because remote ships
+// moved, which says nothing about our own accuracy.
+let netStats = { snaps: 0, errPx: 0, errMax: 0, maxRewind: 0, bytes: 0 };
+const inputLog = new Map();   // predicted tick -> buttons, for replay
+
+function connect(url, className, name) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () => {
+      const nb = new TextEncoder().encode(name);
+      const msg = new Uint8Array(2 + nb.length);
+      msg[0] = C2S_JOIN; msg[1] = className;
+      msg.set(nb, 2);
+      ws.send(msg);
+    };
+    ws.onmessage = e => {
+      const d = new Uint8Array(e.data);
+      if (d[0] === S2C_WELCOME) {
+        ME = d[1];
+        net = ws;
+        resolve();
+      } else if (d[0] === S2C_SNAPSHOT) {
+        onSnapshot(d);
+      } else if (d[0] === S2C_ROSTER) {
+        onRoster(d);
+      }
+    };
+    ws.onerror = () => reject(new Error("connection failed"));
+    ws.onclose = () => { net = null; };
+  });
+}
+
+function onRoster(d) {
+  let o = 2;
+  const n = d[1];
+  for (let i = 0; i < n; i++) {
+    const ship = d[o++], isAi = d[o++] === 1, len = d[o++];
+    const name = new TextDecoder().decode(d.subarray(o, o + len));
+    o += len;
+    pilots[ship] = { name, ai: isAi ? { server: true } : null };
+  }
+}
+
+function onSnapshot(d) {
+  // header: type, your ship, last input tick echoed back
+  const ackTick = d[2] | (d[3] << 8) | (d[4] << 16) | (d[5] << 24);
+  const body = d.subarray(6);
+  netStats.snaps++;
+  netStats.bytes += d.length;
+
+  const px = W.vw_ship_x(ME), py = W.vw_ship_y(ME);
+  const bufPtr = W.vw_netbuf();
+  new Uint8Array(W.memory.buffer, bufPtr, body.length).set(body);
+  if (W.vw_apply_snapshot(body.length) !== 0) return;
+
+  // Replay the local inputs the server had not yet applied when it sent
+  // this. At 100 Hz and a fifth of a second of history that is at most a
+  // few dozen steps of one ship, cheap enough to do inside a frame.
+  const from = W.vw_tick();
+  let steps = 0;
+  for (let tk = from + 1; tk <= predictedTick; tk++) {
+    W.vw_replay(ME, inputLog.get(tk) || 0);
+    steps++;
+  }
+  if (steps > netStats.maxRewind) netStats.maxRewind = steps;
+  const dx = (W.vw_ship_x(ME) - px) / 256, dy = (W.vw_ship_y(ME) - py) / 256;
+  const err = Math.hypot(dx, dy);
+  netStats.errPx = err;
+  // The first snapshots after joining move the ship from nowhere to its real
+  // position, which is a teleport rather than a misprediction.
+  if (netStats.snaps > 3 && err > netStats.errMax) netStats.errMax = err;
+
+  for (const k of inputLog.keys()) if (k < from - 400) inputLog.delete(k);
+  predictedTick = W.vw_tick();
+  void ackTick;
+}
+
+function sendInput(buttons, tick) {
+  if (!net || net.readyState !== 1) return;
+  const m = new Uint8Array(7);
+  m[0] = C2S_INPUT;
+  m[1] = buttons & 0xff; m[2] = (buttons >> 8) & 0xff;
+  m[3] = tick & 0xff; m[4] = (tick >> 8) & 0xff;
+  m[5] = (tick >> 16) & 0xff; m[6] = (tick >>> 24) & 0xff;
+  net.send(m);
+}
+
+let predictedTick = 0;
+
 // --- loop ------------------------------------------------------------------
 //
 // The simulation runs at a fixed 100 Hz regardless of display rate, with the
@@ -416,10 +524,22 @@ function frame(now) {
 
 function stepOnce() {
   const n = W.vw_ship_count();
-  mem8[BTN_PTR + ME] = myButtons();
+  const mine = myButtons();
+
+  if (net) {
+    // Online: predict this ship only. Everything else arrives in snapshots.
+    predictedTick = W.vw_tick() + 1;
+    inputLog.set(predictedTick, mine);
+    sendInput(mine, predictedTick);
+    W.vw_replay(ME, mine);
+    drainEvents();
+    return;
+  }
+
+  mem8[BTN_PTR + ME] = mine;
   for (let i = 0; i < n; i++) {
     const p = pilots[i];
-    if (!p || !p.ai) continue;
+    if (!p || !p.ai || p.ai.server) continue;
     const b = p.ai;
     b.timer++;
     if (b.timer % b.react === 0) b.want = botThink(b);
@@ -427,6 +547,10 @@ function stepOnce() {
   }
   W.vw_step(BTN_PTR, n);
 
+  drainEvents();
+}
+
+function drainEvents() {
   for (let e = 0, c = W.vw_event_count(); e < c; e++) {
     if (W.vw_event_type(e) === EV.HIT && W.vw_event_a(e) === ME) hurt = 1;
     if (W.vw_event_type(e) === EV.PRIZE && W.vw_event_a(e) === ME) {
@@ -647,7 +771,10 @@ function drawHud() {
     `<div id="bar"><div id="barfill" style="width:${(e * 100).toFixed(1)}%"></div></div>` +
     `<div class="row" style="margin-top:6px;color:var(--dim)">` +
     `<span>energy ${Math.round(e * 100)}%</span><span>${sp.toFixed(1)} tiles/s</span></div>` +
-    `<div style="margin-top:5px;letter-spacing:.06em">${ups}</div>${note}`;
+    `<div style="margin-top:5px;letter-spacing:.06em">${ups}</div>${note}` +
+    (net ? `<div class="row" style="margin-top:5px;color:var(--dim)">` +
+           `<span>online</span><span>err ${netStats.errPx.toFixed(1)}px ` +
+           `&middot; peak ${netStats.errMax.toFixed(0)}px</span></div>` : "");
 
   const n = W.vw_ship_count();
   const rows = [];
@@ -702,6 +829,24 @@ function drawRadar(camx, camy) {
 document.getElementById("go").onclick = () => {
   wantFullscreen = document.getElementById("fs").checked;
   startGame();
+};
+
+document.getElementById("online").onclick = async () => {
+  const btn = document.getElementById("online");
+  btn.textContent = "connecting";
+  try {
+    W.vw_init(1);                       // the server owns state from here
+    pilots = [];
+    await connect(document.getElementById("url").value,
+                  selected,
+                  document.getElementById("pname").value || "pilot");
+    document.getElementById("start").style.display = "none";
+    running = true;
+    requestAnimationFrame(frame);
+  } catch (e) {
+    btn.textContent = "connect failed";
+    setTimeout(() => (btn.textContent = "connect"), 1600);
+  }
 };
 addEventListener("keydown", e => {
   if (!running && e.code === "Enter") startGame();
