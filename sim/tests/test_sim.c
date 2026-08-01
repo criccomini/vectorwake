@@ -313,6 +313,48 @@ int main(void) {
         free(wm);
     }
 
+    /* A map survives the trip and is caught when it does not. */
+    {
+        sim_map *src = malloc(sizeof *src);
+        sim_map_arena(src);
+        uint8_t *buf = malloc(SIM_MAP_PACK_MAX);
+        int n = sim_map_pack(src, buf, SIM_MAP_PACK_MAX);
+        CHECK(n > 0, "the arena packs");
+        /* A megabyte of tiles that is almost all one value has no business
+         * costing a megabyte on the wire. */
+        CHECK(n < 4096, "an arena packs to under 4 KB");
+
+        sim_map *dst = malloc(sizeof *dst);
+        memset(dst->tile, 0xee, sizeof dst->tile);
+        CHECK(sim_map_unpack(dst, buf, n) == 0, "and unpacks");
+        CHECK(memcmp(src->tile, dst->tile, sizeof src->tile) == 0,
+              "every tile survives the round trip");
+        CHECK(dst->feature_count == src->feature_count,
+              "and the features are rebuilt on arrival");
+        CHECK(sim_map_hash(src) == sim_map_hash(dst), "the hashes agree");
+
+        /* A different map must not hash the same, or the check is theatre. */
+        sim_map *duel = malloc(sizeof *duel);
+        sim_map_duel(duel);
+        CHECK(sim_map_hash(duel) != sim_map_hash(src),
+              "two different maps hash differently");
+
+        /* Corruption in the tiles is what the hash is for. */
+        buf[n - 1] ^= 0xff;
+        CHECK(sim_map_unpack(dst, buf, n) == -2, "a flipped tile is rejected");
+        buf[n - 1] ^= 0xff;
+
+        /* Truncation is not an empty tail. */
+        CHECK(sim_map_unpack(dst, buf, n - 3) == -1, "a short map is rejected");
+        CHECK(sim_map_unpack(dst, buf, 4) == -1, "a stub is rejected");
+
+        /* And something that is not a map at all. */
+        buf[0] ^= 0xff;
+        CHECK(sim_map_unpack(dst, buf, n) == -1, "a bad magic is rejected");
+
+        free(src); free(dst); free(duel); free(buf);
+    }
+
     /* Friendly fire passes through: same team, no damage. */
     {
         sim_state s;

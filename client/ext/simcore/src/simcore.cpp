@@ -291,6 +291,17 @@ int AddFlag(lua_State* L) {
     return 1;
 }
 
+// A map arrives from the zone before anything else does, because prediction
+// runs collision locally and cannot do that against a room it has not got.
+int ApplyMap(lua_State* L) {
+    size_t len = 0;
+    const char* data = luaL_checklstring(L, 1, &len);
+    int r = sim_map_unpack(&g_map, (const uint8_t*)data, (int)len);
+    if (r == 0) sim_settings_baseline(&g_cfg, &g_map);
+    lua_pushnumber(L, r);
+    return 1;
+}
+
 int Hash(lua_State* L) {
     lua_pushnumber(L, (double)(uint32_t)(sim_hash(g_cur) & 0xffffffffu));
     return 1;
@@ -333,6 +344,7 @@ const luaL_reg kFunctions[] = {
     {"flag_at", FlagAt},
     {"add_flag", AddFlag},
     {"hash", Hash},
+    {"apply_map", ApplyMap},
     {0, 0}};
 
 void LuaInit(lua_State* L) {

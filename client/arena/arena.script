@@ -594,6 +594,8 @@ function update(self, dt)
 
     if self.online and net.connected then me = net.me end
 
+nd
+
     -- A zone that accepts the socket but never sends a snapshot is as broken
     -- as one that refuses it, and on the web a connection to a dead port can
     -- hang without ever raising an error. Either way the player gets the
@@ -658,6 +660,15 @@ function update(self, dt)
 
     -- --- the world -------------------------------------------------------
     local fill, glow = layers.fill, layers.glow
+    -- A zone's map replaces the built-in room, and the terrain mesh was built
+    -- once on the assumption that never happens. Rebuilt here rather than
+    -- where the message lands: this is the phase that owns the layers, and a
+    -- static buffer refilled from the middle of a frame does not survive it.
+    if net.map_epoch ~= (self.map_epoch or 0) then
+        self.map_epoch = net.map_epoch
+        rebuild_static()
+    end
+
     fill:reset()
     glow:reset()
 

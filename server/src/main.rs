@@ -45,6 +45,10 @@ const S2C_BANNER: u8 = 5;
 const S2C_ZONE: u8 = 6;
 const S2C_DENIED: u8 = 7;
 const S2C_STATUS: u8 = directory::STATUS_REPLY;
+/// The map, run-length encoded, sent before the first snapshot. A client
+/// predicts collisions locally, so it needs the room before it needs anyone
+/// in it.
+const S2C_MAP: u8 = 9;
 
 struct Player {
     ship: u8,
@@ -132,13 +136,43 @@ impl Arena {
     }
 
     fn new_from(cfg: &config::ZoneConfig) -> Self {
-        let mut a = Arena::new();
+        let mut a = Arena::new_on_map(&cfg.map);
         Arena::apply_config(&mut a.world, &cfg.arena);
         a
     }
 
+    /// A zone's own map, if it named one. A map that will not load is
+    /// reported and then ignored: a zone that refuses to start because of a
+    /// bad file is worse for the people trying to play in it than one that
+    /// runs the built-in room and says so.
+    fn new_on_map(path: &str) -> Self {
+        if path.is_empty() {
+            return Arena::new();
+        }
+        match std::fs::read(path) {
+            Ok(bytes) => match sim::World::from_packed(0x5eed, &bytes) {
+                Ok(w) => {
+                    println!("map {path}: {} bytes", bytes.len());
+                    Arena::with_world(w)
+                }
+                Err(e) => {
+                    println!("map {path}: {e}; running the built-in arena");
+                    Arena::new()
+                }
+            },
+            Err(e) => {
+                println!("map {path}: {e}; running the built-in arena");
+                Arena::new()
+            }
+        }
+    }
+
     fn new() -> Self {
-        let mut world = sim::World::new(0x5eed);
+        Self::with_world(sim::World::new(0x5eed))
+    }
+
+    fn with_world(world: sim::World) -> Self {
+        let mut world = world;
         let mut bots = Vec::new();
         let mut names = HashMap::new();
 
@@ -743,6 +777,9 @@ async fn main() {
                         if let Some(new_id) = a.join(name, class, tx.clone()) {
                             seat = Some((0, new_id));
                             let ship = a.players[&new_id].ship;
+                            let mut m = vec![S2C_MAP];
+                            m.extend_from_slice(&a.world.packed_map());
+                            let _ = tx.send(m);
                             let mut w = vec![S2C_WELCOME, ship];
                             w.extend_from_slice(&a.world.state.tick.to_le_bytes());
                             let _ = tx.send(w);
@@ -788,6 +825,9 @@ async fn main() {
                         let ship = arena.players[&pid].ship;
                         z.arenas.insert(aid, arena);
                         seat = Some((aid, pid));
+                        let mut m = vec![S2C_MAP];
+                        m.extend_from_slice(&z.arenas[&aid].world.packed_map());
+                        let _ = tx.send(m);
                         let mut w = vec![S2C_WELCOME, ship];
                         w.extend_from_slice(&0u32.to_le_bytes());
                         let _ = tx.send(w);

@@ -186,3 +186,72 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
 
     return r.underflow ? -1 : 0;
 }
+
+/* ---- maps ---- */
+
+#define MAP_MAGIC 0x564d4150u /* "VMAP" */
+#define MAP_VERSION 1
+
+uint32_t sim_map_hash(const sim_map *m) {
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < sizeof m->tile; i++) {
+        h ^= m->tile[i];
+        h *= 16777619u;
+    }
+    return h;
+}
+
+int sim_map_pack(const sim_map *m, uint8_t *out, int cap) {
+    if (cap < 12) return -1;
+    int n = 0;
+    uint32_t magic = MAP_MAGIC;
+    for (int b = 0; b < 4; b++) out[n++] = (uint8_t)(magic >> (b * 8));
+    out[n++] = MAP_VERSION;
+    out[n++] = 0; /* reserved */
+    uint32_t h = sim_map_hash(m);
+    for (int b = 0; b < 4; b++) out[n++] = (uint8_t)(h >> (b * 8));
+
+    size_t total = sizeof m->tile;
+    size_t i = 0;
+    while (i < total) {
+        uint8_t v = m->tile[i];
+        size_t run = 1;
+        /* 65535 is the longest a run can say, and an empty map is one tile
+         * short of 1048576 of them, so long runs simply repeat. */
+        while (i + run < total && m->tile[i + run] == v && run < 65535) run++;
+        if (n + 3 > cap) return -1;
+        out[n++] = (uint8_t)(run & 0xff);
+        out[n++] = (uint8_t)(run >> 8);
+        out[n++] = v;
+        i += run;
+    }
+    return n;
+}
+
+int sim_map_unpack(sim_map *m, const uint8_t *in, int len) {
+    if (len < 12) return -1;
+    int n = 0;
+    uint32_t magic = 0;
+    for (int b = 0; b < 4; b++) magic |= (uint32_t)in[n++] << (b * 8);
+    if (magic != MAP_MAGIC) return -1;
+    if (in[n++] != MAP_VERSION) return -1;
+    n++; /* reserved */
+    uint32_t want = 0;
+    for (int b = 0; b < 4; b++) want |= (uint32_t)in[n++] << (b * 8);
+
+    size_t total = sizeof m->tile;
+    size_t i = 0;
+    while (n + 3 <= len && i < total) {
+        size_t run = (size_t)in[n] | ((size_t)in[n + 1] << 8);
+        uint8_t v = in[n + 2];
+        n += 3;
+        if (run == 0 || i + run > total) return -1;
+        memset(m->tile + i, v, run);
+        i += run;
+    }
+    /* A map that stops early is a truncated map, not an empty tail. */
+    if (i != total) return -1;
+    if (sim_map_hash(m) != want) return -2;
+    sim_map_index(m);
+    return 0;
+}

@@ -83,3 +83,50 @@ against a wall the server does not have.
 Loading maps from files is the next step and is not done. When it lands, the
 tile classes above are what the format carries -- not a tileset index, which
 is a rendering concern that has no business in a simulation.
+
+## Map files
+
+A map travels as a run-length encoded tile array behind a twelve byte header:
+magic, version, and an FNV-1a hash of the tiles. The reference arena is 1615
+bytes and the duel room 487, out of a megabyte of tiles.
+
+The encoding lives in the core, next to snapshot packing and for the same
+reason: the client has to decode it identically or it predicts collisions
+against a different room.
+
+The hash is the point of the header. A client that decodes a map and gets a
+different number has a different map, and would rather be told than spend a
+match wondering why it keeps hitting nothing. The original checksummed its
+maps too; this just refuses to play rather than reporting a mismatch and
+carrying on.
+
+```sh
+make -C sim build/mapdump
+./sim/build/mapdump arena zone/maps/arena.vwmap
+```
+
+A zone names one in `zone.toml`:
+
+```toml
+map = "maps/arena.vwmap"
+```
+
+Empty runs the built-in arena, so a zone with no map is still a zone. A map
+that will not load is reported and then ignored, because a zone that refuses
+to start over a bad file is worse for the people trying to play in it than
+one that runs the reference room and says so.
+
+Clients are sent the map before the welcome, since prediction runs collision
+locally and needs the room before it needs anyone in it.
+
+## Spawn points do not travel with the map, yet
+
+A map carries terrain and nothing else. Where ships start is still zone
+configuration, so pointing a zone at a new map without moving its spawns puts
+everyone outside the walls -- which, tried on a corridor map, is exactly what
+happened: ships spawned in open space and drifted off at twenty tiles a
+second.
+
+`TURF` tiles exist for flag stands and the feature index already finds them.
+Spawns should work the same way, and until they do a map and the zone that
+serves it have to agree by hand.

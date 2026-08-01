@@ -86,6 +86,12 @@ The map is a 1024x1024 grid of 16-pixel tiles. Collision is a swept test against
 the grid rather than a physics engine: step along the movement vector in tile
 increments, stop at the first solid tile, reflect the component that hit.
 
+A tile is not a boolean. It carries a behaviour class and a variant -- safe
+zones, doors on a clock, wormholes, goals -- so "solid" is a question asked of
+the tile and the tick rather than a bit read out of an array. A door is solid
+for part of its cycle and not for the rest, which is why collision takes the
+settings and the tick at all. See [design/maps.md](../design/maps.md).
+
 This is cheap, exact in fixed point, and reproduces Subspace's characteristic
 wall-hugging behavior, where you can hold thrust into a wall and slide along it.
 A general physics engine would give us friction, resting contacts, and rotation

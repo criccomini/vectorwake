@@ -31,6 +31,7 @@ pub const EV_FLAG_TAKE: u8 = 7;
 pub const EV_FLAG_DROP: u8 = 8;
 
 pub const MAX_FEATURES: usize = 256;
+pub const MAP_PACK_MAX: usize = MAP_TILES * MAP_TILES * 3 / 2 + 32;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -223,6 +224,8 @@ extern "C" {
     /// The arenas live in the core so this and the client cannot disagree
     /// about the shape of the same room.
     pub fn sim_in_safe(map: *const sim_map, x: i32, y: i32) -> i32;
+    pub fn sim_map_pack(map: *const sim_map, out: *mut u8, cap: i32) -> i32;
+    pub fn sim_map_unpack(map: *mut sim_map, inp: *const u8, len: i32) -> i32;
     pub fn sim_map_arena(map: *mut sim_map);
     pub fn sim_map_duel(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
@@ -287,6 +290,31 @@ fn zeroed_box<T>() -> Box<T> {
 impl World {
     pub fn new(seed: u32) -> Self {
         Self::with_map(seed, build_arena)
+    }
+
+    /// Build from a packed map file. Errors carry the reason rather than a
+    /// number, because the only person who sees one is an operator holding a
+    /// file they believed was a map.
+    pub fn from_packed(seed: u32, bytes: &[u8]) -> Result<Self, String> {
+        let mut w = Self::with_map(seed, |_| {});
+        let r = unsafe {
+            sim_map_unpack(&mut *w.map as *mut sim_map, bytes.as_ptr(), bytes.len() as i32)
+        };
+        match r {
+            0 => Ok(w),
+            -2 => Err("the tiles do not match the hash in its header".into()),
+            _ => Err("not a map file, or truncated".into()),
+        }
+    }
+
+    /// The map, packed, ready to hand a joining client.
+    pub fn packed_map(&self) -> Vec<u8> {
+        let mut buf = vec![0u8; MAP_PACK_MAX];
+        let n = unsafe {
+            sim_map_pack(&*self.map as *const sim_map, buf.as_mut_ptr(), buf.len() as i32)
+        };
+        buf.truncate(if n > 0 { n as usize } else { 0 });
+        buf
     }
 
     pub fn with_map(seed: u32, build: fn(&mut sim_map)) -> Self {

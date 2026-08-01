@@ -21,6 +21,9 @@ pub struct ZoneConfig {
     /// wss instead of ws, which a page delivered over https is required to
     /// use: browsers refuse a plain ws socket from a secure origin, and
     /// loopback is the only exception.
+    /// A map file, relative to the zone directory. Empty uses the built-in
+    /// arena, so a zone with no map is still a zone.
+    pub map: String,
     pub tls_cert: String,
     pub tls_key: String,
     pub max_players: usize,
@@ -83,6 +86,7 @@ impl Default for ZoneConfig {
             name: "vectorwake".into(),
             description: "an unconfigured zone".into(),
             listen: "127.0.0.1:9010".into(),
+            map: String::new(),
             tls_cert: String::new(),
             tls_key: String::new(),
             max_players: 16,

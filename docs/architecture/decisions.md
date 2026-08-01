@@ -437,3 +437,30 @@ with prizes) that the final text has to address explicitly.
 
 **Reconsider if:** counsel advises differently, or if the contributor pool the
 license costs us turns out to matter more than the exclusivity it buys.
+
+---
+
+## 19. A tile is its behaviour, not a number in a tileset
+
+**Status:** accepted
+
+Map tiles carry a behaviour class -- empty, solid, safe, door, goal, wormhole,
+over, under, turf -- in the low nibble of a byte, and a variant in the high
+one. The variant is a door's channel or a goal's team.
+
+The original encoded behaviour in the tile's own value: 1 through 160 were
+walls, 162 through 169 doors, 171 a safe zone, 176 through 190 scenery you
+flew under. Every rule in the engine was a range check against a constant, a
+map editor had to know all of them, and the 160 wall values existed to say
+which *picture* to draw -- a rendering concern welded into the simulation.
+
+Nine classes replace 190 numbers because appearance is not in the list. What
+a wall looks like is the client's business.
+
+**Cost:** No compatibility with `.lvl` files. A converter has to map tileset
+indices onto classes, and the 160 wall pictures collapse to one class, so a
+converted map loses its look until the client is given a way to vary it.
+
+**Reconsider if:** a mode needs per-tile behaviour the nine classes cannot
+express, in which case the variant nibble is the place to look before adding
+a tenth class.

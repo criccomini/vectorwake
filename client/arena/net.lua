@@ -12,6 +12,7 @@ local M = {}
 local C2S_JOIN, C2S_INPUT, C2S_DUEL = 1, 2, 3
 local S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER = 1, 2, 3
 local S2C_KILL, S2C_BANNER, S2C_ZONE, S2C_DENIED = 4, 5, 6, 7
+local S2C_MAP = 9
 
 M.connected = false
 M.me = 0
@@ -22,6 +23,9 @@ M.lost = nil
 M.pilots = {}
 M.ratings = {}
 M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
+-- Set when a map arrives, so the arena knows to rebuild terrain it had
+-- already decided was static.
+M.map_epoch = 0
 
 local conn = nil
 local input_log = {}
@@ -102,7 +106,18 @@ end
 
 local function on_message(s)
     local kind = string.byte(s, 1)
-    if kind == S2C_WELCOME then
+    if kind == S2C_MAP then
+        local r = sim.apply_map(string.sub(s, 2))
+        if r == 0 then
+            M.map_epoch = M.map_epoch + 1
+        else
+            -- -2 is a hash mismatch, which means the zone and this client
+            -- disagree about the room. Better to say so than to spend a match
+            -- bouncing off walls nobody else can see.
+            M.lost_map = (r == -2) and "the zone sent a map that did not verify"
+                or "the zone sent a map this client cannot read"
+        end
+    elseif kind == S2C_WELCOME then
         M.me = string.byte(s, 2)
         M.connected = true
     elseif kind == S2C_SNAPSHOT then

@@ -30,6 +30,9 @@ $(B)/libsim.a: $(B)/sim.o $(B)/baseline.o $(B)/pack.o
 $(B)/replay: tools/replay.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
+$(B)/mapdump: tools/mapdump.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
+	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
+
 $(B)/test_sim: tests/test_sim.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
