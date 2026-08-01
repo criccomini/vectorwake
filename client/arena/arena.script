@@ -39,6 +39,8 @@ local LAYOUT = {
     {1, 0, 546, 512, "Ozone"},   {4, 1, 512, 546, "Tessellate"},
 }
 
+local DUEL_FOES = {"Ridgeline", "Nocturne", "Quarry", "Bramble", "Cinder"}
+
 local held = {}
 -- A tap can go down and up inside one frame, so the frame loop never sees it
 -- in `held`. Presses are latched here and consumed by whatever reads them,
@@ -238,6 +240,44 @@ function final(self)
     msg.post(".", "release_input_focus")
 end
 
+-- An offline duel: warmup, countdown, first to five, exactly as the web
+-- prototype runs it. The zone server owns this ruleset when there is one to
+-- connect to; a published page has nothing behind it, so the same shape runs
+-- locally. Nothing here touches the simulation -- during warmup and the
+-- countdown both pilots simply have no buttons held.
+local duel = nil
+
+local function duel_tick()
+    if not duel then return end
+    duel.timer = duel.timer + 1
+    if duel.phase == "warmup" then
+        duel.banner = "warmup " .. math.max(1, math.ceil((400 - duel.timer) / 100))
+        if duel.timer >= 400 then duel.phase = "countdown" duel.timer = 0 end
+    elseif duel.phase == "countdown" then
+        duel.banner = tostring(math.max(1, math.ceil((300 - duel.timer) / 100)))
+        if duel.timer >= 300 then duel.phase = "live" duel.timer = 0 end
+    elseif duel.phase == "live" then
+        duel.banner = string.format("%d - %d   first to %d",
+                                    duel.score[1], duel.score[2], duel.target)
+    else
+        duel.banner = string.format("%d - %d   %s", duel.score[1], duel.score[2],
+                                    duel.winner == duel.a and "you win"
+                                        or (duel.foe .. " wins"))
+    end
+end
+
+local function duel_death(victim)
+    if not duel or duel.phase ~= "live" then return end
+    if victim == duel.a then duel.score[2] = duel.score[2] + 1
+    elseif victim == duel.b then duel.score[1] = duel.score[1] + 1
+    else return end
+    if duel.score[1] >= duel.target then
+        duel.winner, duel.phase = duel.a, "over"
+    elseif duel.score[2] >= duel.target then
+        duel.winner, duel.phase = duel.b, "over"
+    end
+end
+
 -- Every report the simulation made this tick, turned into light, noise and
 -- feed lines. Drained per tick rather than per frame: a frame can advance the
 -- simulation eight times, and the event list is replaced by each one.
@@ -255,6 +295,7 @@ local function drain_events()
                 or (b == 255) and (vn .. " flew into the wall")
                 or (kn .. " killed " .. vn)
             table.insert(feed, 1, line)
+            duel_death(a)
             while #feed > 9 do table.remove(feed) end
         elseif ty == sim.EV_HIT and a == me then
             hurt = 1
@@ -272,17 +313,23 @@ local function step_once()
         return
     end
 
+    -- Between rounds nobody flies. Held buttons are simply not passed on,
+    -- which freezes both pilots without the simulation knowing there is such
+    -- a thing as a countdown.
+    local sealed = duel and duel.phase ~= "live" and duel.phase ~= "over"
+
     local buttons = {}
-    buttons[me] = my_buttons()
+    buttons[me] = sealed and 0 or my_buttons()
     for id, p in pairs(pilots) do
         if p.bot then
             local b = p.bot
             b.timer = b.timer + 1
             if b.timer % b.react == 0 then b.want = bot_think(b) end
-            buttons[id] = (sim.ship_alive(id) == 1) and b.want or 0
+            buttons[id] = (not sealed and sim.ship_alive(id) == 1) and b.want or 0
         end
     end
     sim.step(buttons)
+    duel_tick()
     drain_events()
 end
 
@@ -313,9 +360,15 @@ local function start_chosen(what, cls)
         rebuild_static()
         me = sim.spawn(cls, 0, 512, 522, 0)
         pilots[me] = {name = "you"}
+        -- An opponent whose hull is not yours, so a run of duels is a tour of
+        -- matchups rather than a mirror every time.
+        local foe = DUEL_FOES[cls % #DUEL_FOES + 1]
         local id = sim.spawn((cls + 3) % 8, 1, 512, 502, 32768)
-        pilots[id] = {name = "Ridgeline", bot = make_bot(id, 0.62)}
+        pilots[id] = {name = foe, bot = make_bot(id, 0.62)}
+        duel = {a = me, b = id, foe = foe, target = 5, score = {0, 0},
+                phase = "warmup", timer = 0, winner = nil, banner = ""}
     else
+        duel = nil
         sim.init(0x5eed)
         map_lo, map_hi = 470, 554
         rebuild_static()
@@ -465,7 +518,8 @@ function update(self, dt)
             me = me, pilots = pilots, class_names = CLASS_NAMES,
             feed = feed, hurt = hurt, pickup = pickup,
             cam_x = cx, cam_y = cy,
-            banner = self.online and net.banner or flag_banner(my_team),
+            banner = (self.online and net.banner)
+                or (duel and duel.banner) or flag_banner(my_team),
             netinfo = self.online and string.format(
                 "err %.1fpx · peak %.0fpx", net.stats.err, net.stats.err_max)
                 or nil,
