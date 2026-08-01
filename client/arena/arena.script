@@ -74,6 +74,14 @@ local function bit_for(action)
             [hash("reverse")] = sim.BTN_REVERSE,
             [hash("guns")] = sim.BTN_FIRE,
             [hash("bombs")] = sim.BTN_BOMB,
+            -- The mouse buttons are their own actions rather than aliases of
+            -- guns and bombs. A browser synthesises a click from every touch,
+            -- so while they shared a name, one tap anywhere on a phone was a
+            -- trigger pull -- and the start screen read a trigger pull as
+            -- "launch". You could not pick a hull on a phone at all: the
+            -- first thing you touched started the game.
+            [hash("pointer")] = sim.BTN_FIRE,
+            [hash("pointer_alt")] = sim.BTN_BOMB,
         }
     end
     return ACTION_BITS[action] or 0
@@ -87,7 +95,14 @@ local function my_buttons()
     local bits = {}
     local steering = touch.steering()
     for action, down in pairs(held) do
-        if down then
+        -- Defold raises a mouse action for every touch as well as the touch
+        -- itself. On a phone that made the whole screen a trigger: putting a
+        -- thumb down to steer fired the guns, and there was no way to turn
+        -- without shooting. Once a device has shown it has a touchscreen the
+        -- emulated pointer is ignored and the pads are the only triggers.
+        local emulated = touch.used and (action == hash("pointer")
+                                         or action == hash("pointer_alt"))
+        if down and not emulated then
             -- Two sources on the rudder would fight; the stick wins while it
             -- is down, and the keys keep everything else.
             local bit = bit_for(action)
@@ -407,7 +422,7 @@ function update(self, dt)
     if ww == 0 or wh == 0 then return end
 
     if browser.open then
-        ui.begin(layers.ui, ww, wh, density)
+        ui.begin(layers.ui, ww, wh, density, touch.used)
         browser.draw(layers.ui, ui, ww, wh, density)
         ui.finish()
         layers.fill:reset() layers.fill:flush()
@@ -434,6 +449,9 @@ function update(self, dt)
         local chose, moved = menu.step({
             left = tapped[hash("turn_left")], right = tapped[hash("turn_right")],
             up = tapped[hash("thrust")], down = tapped[hash("reverse")],
+            -- Enter and the keyboard trigger only. A pointer press commits
+            -- through the hit boxes below, because a pointer has a position
+            -- and "wherever you happened to touch" is not a choice.
             go = tapped[hash("select")] or tapped[hash("guns")],
         })
         if moved then sfx.ui(chose and "ui_go" or "ui_move") end
@@ -510,7 +528,7 @@ function update(self, dt)
     glow:flush()
 
     -- --- the interface ---------------------------------------------------
-    ui.begin(layers.ui, ww, wh, density)
+    ui.begin(layers.ui, ww, wh, density, touch.used)
     if menu.open then
         ui.menu(menu, CLASS_NAMES)
     else
@@ -525,8 +543,11 @@ function update(self, dt)
                 or nil,
         })
     end
-    local sw, sh = window.get_size()
-    touch.draw(layers.ui, sw, sh, density)
+    -- Not over the start screen: the stick and the pads belong to flight, and
+    -- drawn under a menu they read as buttons that do nothing.
+    if not menu.open then
+        touch.draw(layers.ui, ww, wh, density)
+    end
     ui.finish()
 end
 
@@ -563,26 +584,49 @@ function on_input(self, action_id, action)
         end
         return
     end
+    -- A press on the start screen is a press on whatever it landed on. The
+    -- interface publishes its own hit boxes in the pixel space it drew them
+    -- in, so this needs no second copy of the layout.
+    --
+    -- `screen_x`/`screen_y`, in drawable pixels counting up from the bottom.
+    -- Never `x`/`y`: on HTML5 Defold scales those into the resolution
+    -- game.project asks for rather than the size the canvas actually is, so
+    -- on any window that is not exactly 1280 by 800 every button was tested
+    -- against the wrong place -- and on a phone, by a factor of three.
+    local function hit(x, y)
+        if not menu.open then return false end
+        local px, py = x, (self.vh or 0) - y
+        for _, r in ipairs(ui.hits) do
+            if px >= r.x and px <= r.x + r.w
+               and py >= r.y and py <= r.y + r.h then
+                local chose, moved = menu.click(r.action, r.value)
+                if moved then sfx.ui(chose and "ui_go" or "ui_move") end
+                if chose then start_chosen(chose, menu.class) end
+                return true
+            end
+        end
+        return false
+    end
+
     if action_id == hash("touch") then
-        local w, h = window.get_size()
-        -- On the start screen a tap is a click on whatever it landed on. The
-        -- interface publishes its own hit boxes in the same pixel space it
-        -- drew them in, so this needs no second copy of the layout.
-        if menu.open and action.pressed then
-            local d = self.density or 1
-            local px, py = action.x * d, (h - action.y) * d
-            for _, r in ipairs(ui.hits) do
-                if px >= r.x and px <= r.x + r.w
-                   and py >= r.y and py <= r.y + r.h then
-                    local chose, moved = menu.click(r.action, r.value)
-                    if moved then sfx.ui(chose and "ui_go" or "ui_move") end
-                    if chose then start_chosen(chose, menu.class) end
+        -- Every touch that went down this frame, not just whichever one the
+        -- engine decided was primary: on a phone the finger that reaches the
+        -- button is often the second one down.
+        if action.touch then touch.note_used() end
+        if menu.open and action.touch then
+            for _, t in ipairs(action.touch) do
+                if t.pressed and hit(t.screen_x or t.x, t.screen_y or t.y) then
                     return
                 end
             end
         end
-        touch.on_touch(action, w, h)
+        touch.on_touch(action, self.vw or 0, self.vh or 0, self.density or 1)
         return
+    end
+    if action_id == hash("pointer") and action.pressed and not touch.used then
+        if hit(action.screen_x or action.x, action.screen_y or action.y) then
+            return
+        end
     end
     if action_id == nil then return end
     local name = action_id

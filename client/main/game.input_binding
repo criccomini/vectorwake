@@ -48,11 +48,11 @@ key_trigger {
 }
 mouse_trigger {
   input: MOUSE_BUTTON_LEFT
-  action: "guns"
+  action: "pointer"
 }
 mouse_trigger {
   input: MOUSE_BUTTON_RIGHT
-  action: "bombs"
+  action: "pointer_alt"
 }
 touch_trigger {
   input: TOUCH_MULTI

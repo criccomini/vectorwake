@@ -28,6 +28,19 @@ function init(self)
     self.ui_pred = render.predicate({"vwui"})
     self.gui_pred = render.predicate({"gui"})
     self.text_pred = render.predicate({"debug_text"})
+    -- Device pixels per point of screen.
+    --
+    -- With high_dpi on, the drawable already is the device-pixel size and
+    -- window.get_size() reports the same number, so the ratio between them is
+    -- one and tells us nothing -- which is how the interface ended up laid
+    -- out in raw device pixels on a phone, at half the size it was meant to
+    -- be read at. On the web the browser is the only thing that knows.
+    self.dpr = 1
+    if html5 then
+        local ok, v = pcall(html5.run, "window.devicePixelRatio")
+        local n = ok and tonumber(v)
+        if n and n > 0.5 then self.dpr = n end
+    end
     -- 1.13 moved the buffer constants onto the graphics module.
     self.clear = {
         [graphics.BUFFER_TYPE_COLOR0_BIT] = vmath.vector4(0.020, 0.027, 0.047, 1),
@@ -51,9 +64,11 @@ function update(self)
     -- fills; drawing at that density is what keeps the lines sharp instead of
     -- upscaled and soft. Fold the density into the zoom so a ship stays the
     -- same size on screen and only the sharpness changes.
-    local density = 1
+    -- Native retina reports it as a bigger drawable than window; the browser
+    -- reports it only through devicePixelRatio. Take whichever knows.
+    local density = self.dpr
     local ok, cw = pcall(window.get_size)
-    if ok and cw and cw > 0 then density = w / cw end
+    if ok and cw and cw > 0 and w / cw > density then density = w / cw end
     if density < 1 then density = 1 end
     local z = ZOOM * density
     local half_w = w * 0.5 / z

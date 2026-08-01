@@ -80,8 +80,27 @@ end
 
 -- --- frame -----------------------------------------------------------------
 
-function M.begin(layer, w, h, density)
-    u, W, H, S = layer, w, h, density
+-- True when the screen is too narrow for the desktop layout: three columns of
+-- 248 points plus their margins want about 640, and a phone in portrait has
+-- 390. Below that the scoreboard and the radar were drawn straight through
+-- each other and the hull grid ran off both edges of the screen.
+M.compact = false
+M.touching = false
+
+function M.begin(layer, w, h, density, touching)
+    u, W, H = layer, w, h
+    -- Points of screen rather than pixels: a phone at two device pixels per
+    -- point is a small screen, not a large one, and laying the interface out
+    -- against the pixel count is how it ends up drawn at half size on the
+    -- device it most needs to be readable on.
+    local points = w / math.max(density, 0.0001)
+    M.compact = points < 620
+    -- No global shrink. Dropping the scoreboard and reflowing the hull grid
+    -- is what makes a phone fit; scaling the type down as well only made it
+    -- unreadable on the device with the least room to spare. Panels are 248
+    -- points wide and a narrow phone is 390, so one column always fits.
+    S = density
+    M.touching = touching or false
     text = state.text
     nt = 0
     u:reset()
@@ -156,6 +175,10 @@ end
 local rows = {}
 
 local function scores(me, pilots)
+    -- A phone has no room for a nine-row table beside the radar, and mid-fight
+    -- it is the least useful thing on the screen. The feed still says who is
+    -- killing whom.
+    if M.compact then return 0 end
     local n = 0
     for i = 0, sim.ship_count() - 1 do
         n = n + 1
@@ -199,7 +222,7 @@ local function scores(me, pilots)
 end
 
 local function feed(lines, top)
-    local shown = math.min(#lines, 9)
+    local shown = math.min(#lines, M.compact and 4 or 9)
     if shown == 0 then return end
     local w = COL_W * S
     local h = PANEL_Y * 2 * S + shown * LINE * S
@@ -213,7 +236,7 @@ local function feed(lines, top)
     end
 end
 
-local function status(me, class_names, netinfo, pickup)
+local function status(me, class_names, netinfo, pickup, lift)
     local emax = math.max(1, sim.ship_max_energy(me))
     local frac = sim.ship_energy(me) / emax
     local vx, vy = sim.ship_vel(me)
@@ -228,7 +251,7 @@ local function status(me, class_names, netinfo, pickup)
 
     local w = COL_W * S
     local x = PAD * S
-    local y = H - PAD * S - h
+    local y = H - PAD * S - h - (lift or 0)
     panel(x, y, w, h)
 
     local ix = x + PANEL_X * S
@@ -284,9 +307,18 @@ local function status(me, class_names, netinfo, pickup)
     end
 end
 
-local function help()
+local function help(lift)
     local h = 17 * S
-    local y = H - PAD * S - h
+    local y = H - PAD * S - h - (lift or 0)
+    -- Naming keys to somebody holding a phone is worse than saying nothing:
+    -- it describes controls their device does not have while the ones it does
+    -- have sit unexplained on screen. The touch layer draws the stick and the
+    -- pads; this says what they are.
+    if M.touching or M.compact then
+        txt("thumb left to steer     pads right to fire",
+            W / 2, y + h / 2, FONT * S, pal.a(pal.DIM, 0.9), "center")
+        return
+    end
     -- Measured first so the row can be centred: a control hint that drifts
     -- off centre as its own contents change looks like a bug.
     local parts = {
@@ -335,18 +367,26 @@ function M.hud(o)
     if sim.ship_count() == 0 then return end
     local me = o.me
 
+    -- On a touchscreen the bottom of the screen belongs to the thumbs. The
+    -- stick sits in the bottom left corner and the pads in the bottom right,
+    -- which is exactly where the status panel and the control hint were, so
+    -- everything else moves up out of the way of them.
+    local lift = M.touching and 150 * S or 0
+
     local top = scores(me, o.pilots)
     radar(o.cam_x, o.cam_y, me)
     feed(o.feed, PAD * S + (RADAR + 16) * S + 12 * S)
-    status(me, o.class_names, o.netinfo, o.pickup)
-    help()
+    status(me, o.class_names, o.netinfo, o.pickup, lift)
+    help(lift + (M.touching and 118 * S or 0))
     vignette(o.hurt or 0)
 
     if o.banner and o.banner ~= "" then
-        txt(o.banner, W / 2, 64 * S, 24 * S, pal.a(pal.INK, 0.92), "center")
+        txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
+            pal.a(pal.INK, 0.92), "center")
     end
     if sim.ship_alive(me) == 0 then
-        txt("D E S T R O Y E D", W / 2, H * 0.46, 22 * S, pal.ENEMY, "center")
+        txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
+            pal.ENEMY, "center")
     end
 end
 
@@ -383,16 +423,30 @@ function M.menu(o, names)
     rect(0, 0, W, H, pal.rgb(0x030509, 0.93))
 
     local BW, BH, GAP = 148 * S, 66 * S, 8 * S
-    local grid_w = BW * 4 + GAP * 3
-    local grid_h = BH * 2 + GAP
+    -- As many columns of hulls as the screen can hold. Four across is 616
+    -- points, which a phone in portrait does not have and used to run off
+    -- both edges with three of the eight hulls unreachable.
+    local cols = 4
+    while cols > 1 and BW * cols + GAP * (cols - 1) > W - 24 * S do
+        cols = cols / 2
+    end
+    local rows = math.ceil(8 / cols)
+    local grid_w = BW * cols + GAP * (cols - 1)
+    local grid_h = BH * rows + GAP * (rows - 1)
     local block = 40 * S + 12 * S + 2 * 18 * S + 26 * S + grid_h + 26 * S
                   + 42 * S + 26 * S + 18 * S
-    local y = (H - block) / 2
+    local y = math.max(12 * S, (H - block) / 2)
 
-    txt("v e c t o r w a k e", cx, y + 20 * S, 34 * S, pal.FRIEND, "center")
+    txt("v e c t o r w a k e", cx, y + 20 * S, (M.compact and 25 or 34) * S,
+        pal.FRIEND, "center")
     y = y + 40 * S + 12 * S
-    txt("Frictionless flight. Energy is your health and your ammunition.",
-        cx, y + 9 * S, FONT * S, pal.DIM, "center")
+    if M.compact then
+        txt("Energy is your health and your ammunition.",
+            cx, y + 9 * S, FONT * S, pal.DIM, "center")
+    else
+        txt("Frictionless flight. Energy is your health and your ammunition.",
+            cx, y + 9 * S, FONT * S, pal.DIM, "center")
+    end
     y = y + 18 * S
     txt("Pick a hull and fight eight AI pilots.", cx, y + 9 * S, FONT * S,
         pal.DIM, "center")
@@ -400,8 +454,8 @@ function M.menu(o, names)
 
     local gx = cx - grid_w / 2
     for i = 0, 7 do
-        local bx = gx + (i % 4) * (BW + GAP)
-        local by = y + math.floor(i / 4) * (BH + GAP)
+        local bx = gx + (i % cols) * (BW + GAP)
+        local by = y + math.floor(i / cols) * (BH + GAP)
         local sel = i == o.class
         rect(bx, by, BW, BH, sel and pal.BTN_SEL or pal.BTN_BG)
         u:frame(bx, ry(by, BH), BW, BH, S, sel and pal.FRIEND or pal.BAR_EDGE)
@@ -435,7 +489,8 @@ function M.menu(o, names)
     hit(dx, y, DW, BH2, "go", 2)
     y = y + BH2 + 26 * S
 
-    txt("← → pick a hull    ↑ ↓ pick a mode    enter launches",
+    txt((M.touching or M.compact) and "tap a hull, then tap LAUNCH"
+            or "← → pick a hull    ↑ ↓ pick a mode    enter launches",
         cx, y + 9 * S, FONT * S, pal.a(pal.DIM, 0.85), "center")
 end
 

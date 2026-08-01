@@ -15,34 +15,82 @@
 
 local M = {}
 
--- Screen is split by fraction of width and height, so the layout holds on any
--- aspect from a phone to an ultrawide.
-local STICK_SIDE = 0.45   -- left of this is the stick
-local WEAPON_SPLIT = 0.5  -- right side: below is guns, above is bombs
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
 local THRUST_PX = 46      -- push past this and the engine lights
 
 M.used = false            -- has this device ever reported a touch?
+M.scale = 1               -- drawable pixels per point
 
 local stick = nil         -- {id, ox, oy, x, y}
 local guns = nil          -- touch id holding the guns pad
 local bombs = nil
 
-local function zone(x, y, w, h)
-    if x < w * STICK_SIDE then return "stick" end
-    if y < h * WEAPON_SPLIT then return "guns" end
-    return "bombs"
+-- Where the controls are. One definition, used by the hit test and by the
+-- drawing, because they were written out separately and had drifted: the pads
+-- were drawn at one height and tested at another, so half of a pad did
+-- nothing and the dead space beside it fired.
+--
+-- Coordinates are drawable pixels counting up from the bottom, which is the
+-- space `screen_x`/`screen_y` arrive in and the space the interface layer
+-- projects, so nothing has to be converted. Sized off the smaller screen
+-- dimension so a pad is a thumb wide on a phone and does not become a dinner
+-- plate on a monitor, with the limits in points rather than pixels: a phone
+-- at two pixels per point would otherwise get pads half the size it needs.
+function M.layout(w, h, s)
+    s = s or 1
+    local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
+    return {
+        r = r,
+        guns  = {x = w - r * 1.4, y = r * 1.5, r = r},
+        bombs = {x = w - r * 1.4, y = r * 3.8, r = r * 0.8},
+        home  = {x = r * 1.6,     y = r * 1.8, r = r * 1.15},
+    }
 end
 
--- Feed Defold's multitouch action. Returns nothing; state is read by buttons().
-function M.on_touch(action, w, h)
+local function near(pad, x, y, slack)
+    local dx, dy = x - pad.x, y - pad.y
+    local reach = pad.r * (slack or 1.3)
+    return dx * dx + dy * dy <= reach * reach
+end
+
+-- Which control a finger landed on. The pads win over the stick wherever they
+-- overlap, and everything on the left half that is not a pad is the stick, so
+-- a thumb never has to find an exact spot to start steering.
+local function zone(x, y, w, h, s)
+    local L = M.layout(w, h, s)
+    if near(L.guns, x, y) then return "guns" end
+    if near(L.bombs, x, y) then return "bombs" end
+    if x < w * 0.55 then return "stick" end
+    return nil
+end
+
+-- This device has a touchscreen. Recorded separately from on_touch because
+-- the interface eats the taps that land on its own buttons, and whether to
+-- draw a stick and pads at all is a question about the device, not about
+-- where the last finger happened to go.
+function M.note_used()
+    M.used = true
+end
+
+-- Feed Defold's multitouch action.
+--
+-- `screen_x`/`screen_y`, not `x`/`y`. On HTML5 Defold scales x and y into the
+-- resolution game.project asks for -- 1280 by 800 -- rather than the size the
+-- canvas actually is, so on a 390-point phone every touch arrived 3.3 times
+-- too far to the right. The stick, the pads and the start screen's buttons
+-- were all being tested against coordinates off the side of the screen, which
+-- is why none of them worked on a phone. screen_x is the real drawable pixel
+-- and needs no correction anywhere.
+function M.on_touch(action, w, h, s)
     if not action.touch then return end
     M.used = true
+    M.scale = s or 1
     for _, t in ipairs(action.touch) do
+        local tx, ty = t.screen_x or t.x, t.screen_y or t.y
         if t.pressed then
-            local z = zone(t.x, t.y, w, h)
+            local z = zone(tx, ty, w, h, s)
             if z == "stick" and not stick then
-                stick = {id = t.id, ox = t.x, oy = t.y, x = t.x, y = t.y}
+                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
             elseif z == "guns" then
                 guns = t.id
             elseif z == "bombs" then
@@ -53,7 +101,7 @@ function M.on_touch(action, w, h)
             if guns == t.id then guns = nil end
             if bombs == t.id then bombs = nil end
         elseif stick and stick.id == t.id then
-            stick.x, stick.y = t.x, t.y
+            stick.x, stick.y = tx, ty
         end
     end
 end
@@ -77,7 +125,7 @@ function M.bits(heading)
 
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
     local mag = math.sqrt(dx * dx + dy * dy)
-    if mag < DEAD_PX then return out end
+    if mag < DEAD_PX * M.scale then return out end
 
     -- Screen +y is up and the simulation's +y is down, which is why this is
     -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
@@ -92,7 +140,7 @@ function M.bits(heading)
 
     -- Thrust once the thumb is committed and the nose is roughly there, so a
     -- hard turn does not fling the ship the way it used to be facing.
-    if mag > THRUST_PX and math.abs(diff) < 1.0 then
+    if mag > THRUST_PX * M.scale and math.abs(diff) < 1.0 then
         out[#out + 1] = sim.BTN_THRUST
     end
     return out
@@ -105,32 +153,37 @@ function M.steering()
 end
 
 -- Drawn in the screen-space interface layer, which is where a control that
--- follows the thumb belongs: touch coordinates arrive in window pixels
--- counting up from the bottom, and that is exactly the space this layer
--- projects, so the only conversion left is the drawable's pixel density.
---
--- w and h are the window, not the drawable.
-function M.draw(u, w, h, density)
+-- follows the thumb belongs: touches and this layer are both in drawable
+-- pixels counting up from the bottom, so there is nothing to convert.
+function M.draw(u, w, h, s)
     if not M.used then return end
     local pal = require("arena.palette")
-    local dim = pal.a(pal.DIM, 0.5)
+    local dim = pal.a(pal.DIM, 0.45)
     local live = pal.a(pal.FRIEND, 0.9)
-    local s = density
+    local L = M.layout(w, h, s)
 
     local function ring(px, py, r, col, segments)
-        u:ring(px * s, py * s, r * s, 1.8 * s, segments or 26, col)
+        u:ring(px, py, r, 1.8 * s, segments or 26, col)
+    end
+    local function glow(pad, col)
+        u:halo(pad.x, pad.y, pad.r * 1.25, 18, pal.a(col, 0.17))
     end
 
-    -- The two weapon pads sit where a right thumb falls.
-    ring(w * 0.86, h * 0.22, 46, guns and live or dim)
-    if guns then u:halo(w * 0.86 * s, h * 0.22 * s, 52 * s, 16, pal.a(pal.FRIEND, 0.16)) end
-    ring(w * 0.86, h * 0.58, 34, bombs and live or dim)
-    if bombs then u:halo(w * 0.86 * s, h * 0.58 * s, 40 * s, 16, pal.a(pal.BOMB, 0.18)) end
+    ring(L.guns.x, L.guns.y, L.guns.r, guns and live or dim)
+    if guns then glow(L.guns, pal.FRIEND) end
+    ring(L.bombs.x, L.bombs.y, L.bombs.r, bombs and pal.a(pal.BOMB, 0.95) or dim)
+    if bombs then glow(L.bombs, pal.BOMB) end
 
     if stick then
-        ring(stick.ox, stick.oy, 52, dim)
-        ring(stick.x, stick.y, 20, live, 16)
-        u:seg(stick.ox * s, stick.oy * s, stick.x * s, stick.y * s, 2 * s, live)
+        ring(stick.ox, stick.oy, L.home.r, dim)
+        ring(stick.x, stick.y, L.r * 0.42, live, 16)
+        u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, live)
+    else
+        -- A resting mark where a thumb should go. The stick itself is
+        -- relative -- it appears wherever you press -- but a control that is
+        -- invisible until you find it is a control nobody finds.
+        ring(L.home.x, L.home.y, L.home.r, pal.a(pal.DIM, 0.28))
+        ring(L.home.x, L.home.y, L.r * 0.3, pal.a(pal.DIM, 0.35), 16)
     end
 end
 
