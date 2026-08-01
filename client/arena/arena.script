@@ -595,8 +595,6 @@ function update(self, dt)
 
     if self.online and net.connected then me = net.me end
 
-nd
-
     -- A zone that accepts the socket but never sends a snapshot is as broken
     -- as one that refuses it, and on the web a connection to a dead port can
     -- hang without ever raising an error. Either way the player gets the

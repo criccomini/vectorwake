@@ -139,15 +139,18 @@ void sim_map_arena(sim_map *m) {
     fill(m, 480, 505, 483, 519, SIM_TILE_SOLID);
     fill(m, 541, 505, 544, 519, SIM_TILE_SOLID);
 
-    /* Held off the boundary wall. Against it -- which is where these were,
-     * one tile clear -- a safe zone is a dead end: a ship flying in reaches
-     * the wall immediately and grinds along it, bleeding speed to bounce and
-     * friction every tick. That reads as the zone itself being sticky, and
-     * no amount of correctness in the safe zone code fixes it, because the
-     * damping is the wall's. A safe zone wants open space around it so it is
-     * somewhere to pass through rather than somewhere to get wedged. */
-    fill(m, 480, 507, 486, 517, SIM_TILE_SAFE);
-    fill(m, 538, 507, 544, 517, SIM_TILE_SAFE);
+    /* In the open channels between the pillars, clear of everything by four
+     * tiles or more, so every way out of a zone continues somewhere.
+     *
+     * The first placement was a pocket against the boundary wall, and the
+     * second still funnelled west into one. A traced flight showed the zone
+     * itself transparent -- full clamp speed across every safe tile -- and
+     * then a bounce-thrust trap in the slot beyond it: held thrust against
+     * an inelastic wall converges to a tenth of a pixel per tick, which a
+     * pilot reports as the zone being sticky. The zone was never sticky.
+     * The cul-de-sac behind it was. */
+    fill(m, 488, 508, 494, 516, SIM_TILE_SAFE);
+    fill(m, 530, 508, 536, 516, SIM_TILE_SAFE);
 
     fill(m, 505, 484, 519, 485, SIM_TILE(SIM_TILE_DOOR, 0));
     fill(m, 505, 539, 519, 540, SIM_TILE(SIM_TILE_DOOR, 4));

@@ -48,7 +48,13 @@ mkdir -p ext/simcore/src ext/simcore/include/sim
 cp ../sim/src/sim.c ../sim/src/baseline.c ../sim/src/pack.c ../sim/src/sintab.h ext/simcore/src/
 cp ../sim/include/sim/*.h ext/simcore/include/sim/
 
-set -- --archive --platform "$PLATFORM" --variant "$VARIANT"
+# Stamp the build with the commit it came from, so the start screen can say
+# which build a player is looking at. "Is this the old page" stops being a
+# debate the moment the answer is printed on it. A dirty tree gets a "+".
+STAMP="$(git rev-parse --short HEAD 2>/dev/null || echo dev)$(git diff --quiet 2>/dev/null || echo +)"
+printf '[project]\nversion = %s\n' "$STAMP" > /tmp/vw-stamp.settings
+
+set -- --archive --platform "$PLATFORM" --variant "$VARIANT" --settings /tmp/vw-stamp.settings
 if [ "$TASK" = "bundle" ]; then
   set -- "$@" --bundle-output bundle/"$PLATFORM"
 fi

@@ -85,6 +85,15 @@ and could not shoot, and the match ended with nothing having happened.
 Both are lessons about *placement*, not about the features. A map large
 enough to hold a wormhole should have one.
 
+The safe zones taught a third. Placed near the boundary wall they made a
+cul-de-sac, and a traced flight showed what that feels like: full clamp speed
+across every safe tile, then a bounce-thrust trap in the slot beyond --
+held thrust against an inelastic wall converges to a tenth of a pixel per
+tick, which a pilot reports as "the safe zone is sticky". The zone was never
+sticky; the pocket behind it was. They sit in the open channels now, where
+every way out continues somewhere, and the rule generalises: never put a
+safe zone where the natural way through it ends in a wall.
+
 ## Bots know about safe zones
 
 Only just enough: a bot that finds itself in one flies out. Without that it

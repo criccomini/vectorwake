@@ -568,6 +568,10 @@ function M.menu(o, names)
     hit(zx, zy, ZW, BH2, "go", 4)
     y = zy + BH2 + 26 * S
 
+    -- Which build this is, so "reload the page" has a checkable answer.
+    txt("build " .. sys.get_config_string("project.version", "?"),
+        cx, y + 30 * S, 11 * S, pal.a(pal.DIM, 0.7), "center")
+
     -- Whatever the connection last had to say outranks the key hints: a
     -- player who just failed to reach a zone needs the reason, not a lesson
     -- in arrow keys.
