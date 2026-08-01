@@ -7,6 +7,8 @@
 -- rather than LuaJIT, so state distributed across scripts would have neither
 -- a defined order nor adequate speed on the platform that matters most.
 
+local net = require("arena.net")
+
 local TICK_HZ = 100
 local DT = 1 / TICK_HZ
 local MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
@@ -137,6 +139,20 @@ function init(self)
     msg.post(".", "acquire_input_focus")
     math.randomseed(1)
 
+    -- A server address makes this a networked client; without one it plays
+    -- the same game locally, which is what keeps a build with nothing behind
+    -- it playable.
+    local url = sys.get_config_string("vectorwake.server", "")
+    if url ~= "" then
+        -- The server owns state from here, but the core still needs its map
+        -- and settings: prediction runs collision locally between snapshots,
+        -- and a snapshot carries state, not rules.
+        sim.init(0x5eed)
+        net.connect(url, 0, sys.get_config_string("vectorwake.name", "pilot"))
+        self.online = true
+        return
+    end
+
     sim.init(0x5eed)
     me = sim.spawn(0, 0, 512, 522, 0)
     pilots[me] = {name = "you"}
@@ -162,6 +178,9 @@ function final(self)
 end
 
 local function step_once()
+    -- Online, the server owns everybody else and this predicts only itself.
+    if net.step(my_buttons()) then return end
+
     local buttons = {}
     buttons[me] = my_buttons()
     for id, p in pairs(pilots) do
@@ -196,6 +215,8 @@ local function draw_hull(cls, x, y, heading, color)
 end
 
 function update(self, dt)
+    if self.online and sim.ship_count() == 0 then return end
+
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
     -- timestep, and Defold's physics is off entirely.
@@ -218,9 +239,17 @@ function update(self, dt)
             local _, _, team = sim.flag_at(i)
             flags[#flags + 1] = tostring(team)
         end
-        print(string.format("tick %d  ships %d  hash %d  flags %s",
-            sim.tick(), sim.ship_count(), sim.hash(), table.concat(flags, ",")))
+        if self.online then
+            print(string.format("tick %d  ships %d  online %s  err %.2fpx  peak %.1fpx  %s",
+                sim.tick(), sim.ship_count(), tostring(net.connected),
+                net.stats.err, net.stats.err_max, net.banner))
+        else
+            print(string.format("tick %d  ships %d  hash %d  flags %s",
+                sim.tick(), sim.ship_count(), sim.hash(), table.concat(flags, ",")))
+        end
     end
+
+    if self.online and net.connected then me = net.me end
 
     local cx, cy = sim.ship_x(me), sim.ship_y(me)
     msg.post("@render:", "camera", {position = vmath.vector3(cx, cy, 0)})

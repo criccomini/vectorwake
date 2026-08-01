@@ -12,7 +12,12 @@
 | M4 rating and modes | Done: damage ledgers, attribution, and the warzone flag game |
 | M4.5 duels | Done, offline and networked |
 | M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities, persistence |
+| M5.5 Defold client | Done: real core as a native extension, builds for host and browser, plays offline and networked |
 | M6 platforms and meta-layer | Blocked on accounts, not on code. See below |
+
+The Defold client is the production one; `client-web/` remains the prototype
+that proved the networking contract, and the two now share it. Both link the
+same C core, so neither can drift from the rules.
 
 M6 needs a Steam partner account, console manufacturer approval, and a
 Postgres deployment for Nakama. Those are credentials and decisions rather

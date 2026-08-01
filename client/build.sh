@@ -8,7 +8,10 @@
 # they cannot drift from sim/.
 #
 #   ./client/build.sh                 # build for this host
-#   ./client/build.sh js-web          # build for the browser
+#   ./client/build.sh wasm-web        # build for the browser
+#
+# Platform names are bob's, not the ones the web uses: the browser target is
+# wasm-web. `js-web` is rejected outright.
 set -e
 cd "$(dirname "$0")"
 

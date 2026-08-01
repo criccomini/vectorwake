@@ -37,4 +37,9 @@ game_binding = /main/game.input_bindingc
 use_accelerometer = 0
 
 [library]
-include_dirs = ext/simcore
+include_dirs = ext/simcore, websocket
+
+[vectorwake]
+server =
+name = defoldpilot
+
