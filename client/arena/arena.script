@@ -209,6 +209,62 @@ local function rebuild_static()
     end
 end
 
+
+-- Text entry on the web goes through real inputs laid over the fields, because
+-- a canvas cannot hold a caret and a phone will not raise a keyboard for
+-- something that was never focused. arena/ui.lua already publishes where the
+-- fields are; this hands those rectangles to the page and reads back what was
+-- typed. Everywhere else, the engine's own key events are the whole story.
+local web_text = {on = false, sent = ""}
+
+local function esc(v)
+    return (string.gsub(tostring(v or ""), '[\\"%c]', ""))
+end
+
+local function web_fields_sync()
+    if not html5 then return end
+    if not menu.open then
+        if web_text.on then
+            html5.run("vwFieldsOff()")
+            web_text.on, web_text.sent = false, ""
+        end
+        return
+    end
+
+    local parts = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "field" then
+            parts[#parts + 1] = string.format(
+                '{"k":"%s","x":%d,"y":%d,"w":%d,"h":%d,"v":"%s"}',
+                esc(r.value), math.floor(r.x), math.floor(r.y),
+                math.floor(r.w), math.floor(r.h), esc(menu[r.value]))
+        end
+    end
+    if #parts == 0 then return end
+    local payload = "[" .. table.concat(parts, ",") .. "]"
+    -- Only when something moved or changed: this crosses into JavaScript, and
+    -- doing it sixty times a second for an unchanged layout is waste.
+    if payload ~= web_text.sent then
+        html5.run("vwFields(" .. payload .. ")")
+        web_text.sent = payload
+    end
+    web_text.on = true
+
+    local raw = html5.run("vwFieldState()")
+    if not raw or raw == "" then return end
+    local ok, st = pcall(json.decode, raw)
+    if not ok or type(st) ~= "table" then return end
+    -- The page owns focus while it has it: the caret the player can see is
+    -- the browser's, so the menu follows rather than leads.
+    menu.focus = (st.focus ~= "" and st.focus) or nil
+    for _, key in ipairs({"name", "server"}) do
+        if type(st[key]) == "string" and st[key] ~= menu[key] then
+            menu[key] = st[key]
+            web_text.sent = ""
+        end
+    end
+end
+
 function init(self)
     msg.post(".", "acquire_input_focus")
     math.randomseed(1)
@@ -650,6 +706,7 @@ function update(self, dt)
         touch.draw(layers.ui, ww, wh, density)
     end
     ui.finish()
+    web_fields_sync()
 end
 
 -- The render script reports the pixel space it projects the interface into.
