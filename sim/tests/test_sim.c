@@ -457,16 +457,37 @@ int main(void) {
             }
         }
 
-        /* Walking them spreads a roster out rather than stacking it. */
+        /* Walking them spreads a roster out rather than stacking it, and on
+         * a map this size "spread" has to mean spread: eight pilots inside
+         * one 84-tile box on a 1024-tile map is the small arena again with
+         * unused address space around it. So the starts are checked for
+         * distance, not just for being different tiles. */
         uint16_t ax, ay, bx, by;
         sim_map_spawn(am, 1, 0, &ax, &ay);
         sim_map_spawn(am, 1, 1, &bx, &by);
         CHECK(ax != bx || ay != by, "consecutive starts differ");
 
-        /* And they wrap, so a roster longer than the map's starts still fits. */
+        int far_apart = 0, count = 0;
+        for (uint32_t n = 0; n < 64; n++) {
+            uint16_t nx, ny;
+            sim_map_spawn(am, 1, n, &nx, &ny);
+            if (n > 0 && nx == ax && ny == ay) { count = (int)n; break; }
+            int dx = (int)nx - (int)ax, dy = (int)ny - (int)ay;
+            if (dx * dx + dy * dy > 200 * 200) far_apart++;
+        }
+        CHECK(count > 4, "a side has more than a corner's worth of starts");
+        CHECK(far_apart >= 3, "and they are hundreds of tiles apart");
+
+        /* They wrap, so a roster longer than the map's starts still fits. */
         uint16_t wx, wy;
-        sim_map_spawn(am, 1, 4, &wx, &wy);
-        CHECK(wx == ax && wy == ay, "the fifth start wraps to the first");
+        sim_map_spawn(am, 1, (uint32_t)count, &wx, &wy);
+        CHECK(wx == ax && wy == ay, "walking past the last wraps to the first");
+
+        /* And the two sides start apart, or the map has no front line. */
+        uint16_t zx, zy;
+        sim_map_spawn(am, 0, 0, &zx, &zy);
+        CHECK((int)zy - (int)ay > 300 || (int)ay - (int)zy > 300,
+              "the two sides start in different halves");
 
         /* A map with no starts says so rather than inventing one. */
         sim_map *bare = malloc(sizeof *bare);

@@ -22,7 +22,11 @@ extern "C" {
 
 #define SIM_MAX_SHIPS 64
 #define SIM_MAX_WEAPONS 1024
-#define SIM_MAX_PRIZES 64
+/* Greens alive at once. The snapshot writes a u8 index and a u8 count, so
+ * 255 is the wire's ceiling and not an arbitrary one. A full-size map needs
+ * most of it: sixty greens over a thousand tiles square is one per seventeen
+ * thousand tiles, which a pilot can fly past for minutes without meeting. */
+#define SIM_MAX_PRIZES 255
 #define SIM_MAX_FLAGS 16
 #define SIM_TEAM_NONE 255
 #define SIM_MAX_EVENTS 256
@@ -115,6 +119,19 @@ int sim_in_safe(const sim_map *m, int32_t x, int32_t y);
  * pointing a zone at a new map put every ship outside its walls. */
 int sim_map_spawn(const sim_map *m, uint8_t team, uint32_t nth,
                   uint16_t *tx, uint16_t *ty);
+
+/* Sizes of the structs a foreign binding has to mirror.
+ *
+ * The server keeps a `#[repr(C)]` copy of `sim_state`, allocates it, and hands
+ * the pointer to `sim_step`. If its copy is smaller than this one -- one array
+ * bound left behind, one field missed -- the core writes past the end of the
+ * allocation and the failure is heap corruption a long way from the cause. It
+ * has happened twice: a field inserted in the middle, and `SIM_MAX_PRIZES`
+ * raised from 64. Neither is a compile error on the far side, so the far side
+ * asserts against these instead. */
+uint32_t sim_sizeof_state(void);
+uint32_t sim_sizeof_settings(void);
+uint32_t sim_sizeof_ship(void);
 
 void sim_map_arena(sim_map *m);
 void sim_map_duel(sim_map *m);

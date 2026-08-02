@@ -88,11 +88,29 @@ refuge -- a small safe zone -- sits every fourth cell each way, so nowhere in
 the field is more than a couple of hundred tiles from somewhere to stop.
 
 The old room survives at the centre, minus its enclosing box: the four
-pillars, the baffles, the two safe zones and the pair of out-of-phase doors,
-and every spawn point. The game that existed before is the middle of the game
-that exists now, and the rest is somewhere to take a fight rather than a
-second arena. Spawns stay central deliberately -- eight pilots scattered over
-1024 tiles would spend a match looking for each other.
+pillars, the baffles, the two safe zones and the pair of out-of-phase doors.
+It is contested ground rather than home.
+
+**Everything else is spread over the map, because otherwise the size is
+decoration.** The first version of this kept every spawn, both safe zones and
+the whole green field in the middle, on the reasoning that pilots scattered
+over 1024 tiles would never find each other. That produces a full-size arena
+whose players are all inside one 84-tile box -- which is the small arena
+again, with a lot of unused address space around it.
+
+So: each side gets a home band, team 1 across the north and team 0 across the
+south, **eight starts apiece 256 tiles apart**, from (180,180) to (948,884).
+Flags sit one per quadrant, three hundred tiles apart -- they used to be four
+tiles apart in the middle, which made the flag game a scrum in one room. And
+the green field covers the whole map.
+
+Crossing takes about thirty seconds at a hull's top speed, which is a journey
+rather than a walk. The bots fly it: their targeting has no range limit, only
+a preference for what is close and expensive, and the green detour they take
+on the way is capped at twenty tiles for exactly this reason -- on a map with
+greens everywhere there is always another one nearer than a target half a map
+away, so a generous detour radius is a bot that hoovers its way around the
+arena and never arrives.
 
 It has no wormhole. One reaches 220 px, fourteen tiles, and the bot ladder
 found what that does to a small room: pilots spawned eight tiles from one
@@ -100,14 +118,20 @@ stopped fighting and orbited it instead, and the tournament graded a whole
 roster equal because nobody landed a shot. A map this size can hold one; where
 to put it is a map-editor decision rather than a C-file one.
 
-**Two things scale with the map rather than sitting in it.** The client meshes
-terrain in a 113-tile window around the camera and rebuilds it when the camera
-has walked 16 tiles, because a million tile queries per map load is not a
-thing a browser does. And the green field covers the middle 256 tiles rather
-than all 1024: `SIM_MAX_PRIZES` is 64 and a snapshot carries every live one,
-so spread over the whole map that would be one green per quarter of a million
-tiles. The real answer is prizes placed near players, which is a feature and
-not a number.
+**Two things had to scale with the map rather than sit in it.** The client
+meshes terrain in a 113-tile window around the camera and rebuilds it when the
+camera has walked 16 tiles, because a million tile queries per map load is not
+a thing a browser does. And the green field went from 20 prizes over 80 tiles
+to 200 over 1024, which meant raising `SIM_MAX_PRIZES` to 255 -- the wire's
+own ceiling, since a snapshot writes a u8 index and a u8 count. Steady state
+is about 150 alive.
+
+That costs bandwidth: a snapshot carries every live green at eleven bytes, so
+150 is 1.6 KB a snapshot and about 33 KB/s at the 20 Hz rate, for greens most
+of which are nowhere near the player reading them. The way out, when it
+matters, is sending a client only what is near it. That is interest
+management, it is a feature rather than a number, and it is the same answer
+for every other thing a 1024-tile map has too many of.
 
 The duel arena has neither. A duel is decided by two pilots, and a room that
 size with somewhere invulnerable in it is not a duel. The ladder found that

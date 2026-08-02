@@ -400,8 +400,10 @@ impl Arena {
                 names.insert(ship as u8, (r.name.to_string(), true));
             }
         }
-        // Away from every spawn: a flag nobody starts on top of.
-        for (tx, ty) in [(512, 492), (532, 512), (512, 532), (492, 512)] {
+        // One per quadrant, three hundred tiles apart, on the clear cell
+        // offset the map's starts use. Away from every spawn, and far enough
+        // from each other that holding two is a decision.
+        for (tx, ty) in [(308, 308), (756, 308), (308, 756), (756, 756)] {
             world.add_flag(tx, ty);
         }
 

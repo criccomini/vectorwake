@@ -131,25 +131,25 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->bounce = 10;
     cfg->friction = 14;
     cfg->respawn_delay = 300; /* 3 s */
-    cfg->prize_delay = 100;   /* a green every second until the map is full */
-    cfg->prize_max = 60;
+    cfg->prize_delay = 20;    /* five a second until the map is full */
+    cfg->prize_max = 200;
     cfg->prize_life = 3000;   /* 30 s */
     cfg->prize_radius = 16 * 256; /* generous: chasing a green should not be fiddly */
     cfg->flag_radius = 18 * 256;
     cfg->flag_drop_cooldown = 200; /* 2 s before a dropped flag can be retaken */
-    /* The green field, over the middle 256 tiles rather than all 1024.
+    /* The green field is the whole map, because the players are spread over
+     * the whole map. Two hundred of them is one per five thousand tiles, or
+     * roughly one every seventy tiles in each direction -- close enough that
+     * flying anywhere passes some.
      *
-     * Sixty greens is the most this can usefully be: `SIM_MAX_PRIZES` is 64,
-     * and a snapshot carries every live one. Spread over the whole map that
-     * would be a green per quarter-million tiles -- a pilot could fly for
-     * minutes without meeting one -- so the field covers where the fighting
-     * is and thins out beyond it, which is also where the spawns are.
-     *
-     * The real answer for a map this size is prizes placed near players
-     * rather than a bigger uniform field, and that is a feature rather than
-     * a number. Until it exists this is the honest middle. */
-    cfg->prize_lo = 384;
-    cfg->prize_hi = 640;
+     * That costs the wire: a snapshot carries every live green at eleven
+     * bytes, so two hundred is 2.2 KB a snapshot and about 44 KB/s at the
+     * 20 Hz rate. Worth knowing before raising it further. The way out, when
+     * it matters, is sending a client only the greens near it -- which is
+     * interest management, a feature rather than a number, and the same
+     * answer for every other thing a 1024-tile map has too many of. */
+    cfg->prize_lo = 8;
+    cfg->prize_hi = 1015;
     cfg->map = map;
     /* Doors breathe on a six second cycle, open for four of it: long enough
      * to commit to a crossing, short enough that the choice matters. */
@@ -479,8 +479,9 @@ void sim_map_arena(sim_map *m) {
     fill(m, 0, 0, EDGE, LAST, SIM_TILE_SOLID);
     fill(m, LAST - EDGE, 0, LAST, LAST, SIM_TILE_SOLID);
 
-    /* The field. */
     const int CELL = 64;
+
+    /* The field. */
     for (int cy = 0; cy < SIM_MAP_TILES / CELL; cy++) {
         for (int cx = 0; cx < SIM_MAP_TILES / CELL; cx++) {
             int ox = cx * CELL + CELL / 2;      /* the cell's middle */
@@ -546,24 +547,34 @@ void sim_map_arena(sim_map *m) {
     fill(m, 500, 500, 502, 502, SIM_TILE_UNDER);
     fill(m, 522, 522, 524, 524, SIM_TILE_UNDER);
 
-    /* Starts, four a side, in the corners the roster already used. Carried by
-     * the map so a zone can be pointed at a different one without knowing
-     * anything about its geometry -- which is what went wrong the first time
-     * a custom map was loaded: every ship began outside its walls and drifted
-     * off at twenty tiles a second.
+    /* Starts, eight a side, spread across the map rather than parked in the
+     * middle of it.
      *
-     * Still in the middle, on a map this size deliberately. Eight pilots
-     * scattered over 1024 tiles would spend a match looking for each other;
-     * spawning them together and letting them range out is a game, and the
-     * reverse is a screensaver. */
-    fill(m, 486, 486, 486, 486, SIM_TILE(SIM_TILE_SPAWN, 1));
-    fill(m, 538, 486, 538, 486, SIM_TILE(SIM_TILE_SPAWN, 1));
-    fill(m, 538, 538, 538, 538, SIM_TILE(SIM_TILE_SPAWN, 1));
-    fill(m, 486, 538, 486, 538, SIM_TILE(SIM_TILE_SPAWN, 1));
-    fill(m, 512, 478, 512, 478, SIM_TILE(SIM_TILE_SPAWN, 0));
-    fill(m, 478, 512, 478, 512, SIM_TILE(SIM_TILE_SPAWN, 0));
-    fill(m, 546, 512, 546, 512, SIM_TILE(SIM_TILE_SPAWN, 0));
-    fill(m, 512, 546, 512, 546, SIM_TILE(SIM_TILE_SPAWN, 0));
+     * The first version of this map kept every spawn in the centre room, on
+     * the reasoning that pilots scattered over 1024 tiles would never find
+     * each other. That reasoning made the map decorative: a full-size arena
+     * whose players are all inside one 84-tile box is an 84-tile arena with a
+     * lot of unused address space around it.
+     *
+     * So each side gets a home band -- team 1 across the north, team 0 across
+     * the south -- eight starts apiece, 256 tiles apart, with the old centre
+     * room as the contested ground between them. Crossing takes about thirty
+     * seconds at a hull's top speed, which is a journey rather than a walk,
+     * and the bots fly it: their targeting has no range limit, only a
+     * preference for what is close and expensive.
+     *
+     * Cell-local (52, 52) is the offset used. A cell's structure occupies
+     * tiles 22 to 42 of it and a refuge 9 to 15, so 52 is clear of both
+     * whatever the hash rolled for that cell -- which is the property that
+     * matters, because a spawn inside a wall is a ship that cannot move. */
+    for (int n = 0; n < 4; n++) {
+        int cx = 2 + n * 4;
+        int x = cx * CELL + 52;
+        fill(m, x, 2 * CELL + 52, x, 2 * CELL + 52, SIM_TILE(SIM_TILE_SPAWN, 1));
+        fill(m, x, 5 * CELL + 52, x, 5 * CELL + 52, SIM_TILE(SIM_TILE_SPAWN, 1));
+        fill(m, x, 10 * CELL + 52, x, 10 * CELL + 52, SIM_TILE(SIM_TILE_SPAWN, 0));
+        fill(m, x, 13 * CELL + 52, x, 13 * CELL + 52, SIM_TILE(SIM_TILE_SPAWN, 0));
+    }
     sim_map_index(m);
 }
 

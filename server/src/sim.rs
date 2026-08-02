@@ -252,7 +252,11 @@ pub struct sim_state {
     pub flag_count: u8,
 }
 
-pub const MAX_PRIZES: usize = 64;
+/// Must match `SIM_MAX_PRIZES`. The C core writes `sim_state` through this
+/// mirror, so a smaller number here is not a smaller array -- it is a buffer
+/// overrun into whatever the allocator put next, which is exactly how raising
+/// it from 64 announced itself: a glibc malloc assertion, in every test.
+pub const MAX_PRIZES: usize = 255;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -303,6 +307,9 @@ extern "C" {
     /// What a pilot is worth to whoever kills them: a sum over what they hold
     /// plus what killing has earned. Derived, never stored.
     pub fn sim_bounty(sh: *const sim_ship) -> i32;
+    pub fn sim_sizeof_state() -> u32;
+    pub fn sim_sizeof_settings() -> u32;
+    pub fn sim_sizeof_ship() -> u32;
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
     /// The arenas live in the core so this and the client cannot disagree
     /// about the shape of the same room.
@@ -558,3 +565,32 @@ pub fn build_duel(map: &mut sim_map) {
     unsafe { sim_map_duel(map as *mut sim_map) }
 }
 
+
+#[cfg(test)]
+mod layout {
+    use super::*;
+
+    /// The mirrors above have to be the same size as the structs they mirror.
+    ///
+    /// Nothing else checks this. The core writes through these pointers, so a
+    /// mirror one array bound behind is not a smaller struct -- it is a write
+    /// past the end of the allocation, and what you see is a glibc malloc
+    /// assertion in an unrelated test. That is how raising `SIM_MAX_PRIZES`
+    /// from 64 to 255 announced itself, and how a field inserted in the middle
+    /// of `sim_settings` announced itself before that.
+    ///
+    /// A size match does not prove the field *order* matches -- for that the
+    /// config tests read a field either side of the one they set -- but every
+    /// mismatch that has actually happened here would have been caught by it.
+    #[test]
+    fn mirrors_are_the_size_of_what_they_mirror() {
+        unsafe {
+            assert_eq!(std::mem::size_of::<sim_state>(), sim_sizeof_state() as usize,
+                       "sim_state mirror is the wrong size");
+            assert_eq!(std::mem::size_of::<sim_settings>(), sim_sizeof_settings() as usize,
+                       "sim_settings mirror is the wrong size");
+            assert_eq!(std::mem::size_of::<sim_ship>(), sim_sizeof_ship() as usize,
+                       "sim_ship mirror is the wrong size");
+        }
+    }
+}

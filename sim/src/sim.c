@@ -176,6 +176,10 @@ static void outfit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
         sim_take_prize(sh, cfg, rng, NULL);
 }
 
+uint32_t sim_sizeof_state(void) { return (uint32_t)sizeof(sim_state); }
+uint32_t sim_sizeof_settings(void) { return (uint32_t)sizeof(sim_settings); }
+uint32_t sim_sizeof_ship(void) { return (uint32_t)sizeof(sim_ship); }
+
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg) {
     if (s->ship_count >= SIM_MAX_SHIPS) return -1;

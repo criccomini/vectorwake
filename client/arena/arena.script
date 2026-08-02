@@ -263,11 +263,17 @@ local function bot_think(b)
         end
     end
 
-    -- Nothing to fight, or nothing close: go and get stronger. A green is
+    -- Nothing to fight, or something worth grabbing on the way. A green is
     -- worth bounty as well as an upgrade, so a bot doing this is also making
     -- itself worth hunting, which is the loop working.
+    --
+    -- The radius is deliberately short. On a map a thousand tiles across
+    -- there is nearly always another green nearer than a target half a map
+    -- away, so a generous radius is a bot that hoovers its way around the
+    -- arena and never arrives anywhere. Twenty tiles is a detour; anything
+    -- more is a career.
     if best == nil or bdist2 > 560 * 560 then
-        local px, py, pd2 = nil, nil, 520 * 520
+        local px, py, pd2 = nil, nil, 320 * 320
         for i = 0, sim.prize_count() - 1 do
             local active, x, y = sim.prize_at(i)
             if active then
@@ -541,7 +547,10 @@ function start_offline(cls)
         local id = spawn_at(L[1], L[2], i, L[3], L[4], (i * 8192) % 65536)
         pilots[id] = {name = L[5], bot = make_bot(id, 0.28 + (i % 5) * 0.16)}
     end
-    for _, f in ipairs({{512, 492}, {532, 512}, {512, 532}, {492, 512}}) do
+    -- One flag per quadrant, three hundred tiles apart, on the same clear
+    -- cell offset the starts use. They were four tiles apart in the middle of
+    -- the map, which made the whole flag game a scrum in one room.
+    for _, f in ipairs({{308, 308}, {756, 308}, {308, 756}, {756, 756}}) do
         sim.add_flag(f[1], f[2])
     end
 end
