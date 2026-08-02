@@ -174,7 +174,19 @@ local NODES = {
         {label = "fly", detail = "arrow keys, or WASD"},
         {label = "guns", detail = "space, or Z"},
         {label = "bombs", detail = "shift, or X"},
+        {label = "use", detail = "C, or ctrl"},
+        {label = "swap", detail = "V, or tab"},
         {label = "menu", detail = "escape"},
+        {label = "", detail = ""},
+        -- Every key here has a second binding, and this is the reason. Most
+        -- keyboards are a matrix that cannot report certain three-key
+        -- combinations at all, and arrows-plus-space is one of the common
+        -- casualties: turning stops working while you thrust and fire. No
+        -- software can recover a keystroke the keyboard never sent, so the
+        -- answer is a key on a different row.
+        {label = "", detail = "if a third key stops working while two are held,"},
+        {label = "", detail = "your keyboard cannot see that combination:"},
+        {label = "", detail = "try Z for guns, or WASD to fly"},
         {label = "", detail = ""},
         {label = "", detail = function()
             return "build " .. (sys.get_config("project.version") or "dev")
