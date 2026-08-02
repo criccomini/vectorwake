@@ -15,6 +15,23 @@ local S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER = 1, 2, 3
 local S2C_KILL, S2C_BANNER, S2C_ZONE, S2C_DENIED = 4, 5, 6, 7
 local S2C_MAP, S2C_SETTINGS = 9, 10
 
+-- The client wire's own version, checked by the zone before it reads anything
+-- else in a join. A stale build is told its build is stale rather than left to
+-- misparse snapshots.
+local CLIENT_PROTOCOL = 1
+
+-- Why a join was refused. Three of these mean the address was fine and another
+-- instance would have taken us, which is a different thing to tell a player than
+-- "stop trying". See the refusal table in docs/architecture/zones-and-arenas.md.
+local DENY_FULL, DENY_DRAINING, DENY_WRONG_ZONE = 1, 2, 3
+local DENY_BANNED, DENY_VERSION = 4, 5
+-- True when re-browsing would plausibly get the player into the game they
+-- picked. The arena browser is not built yet, so for now this only decides how
+-- the reason is worded.
+local RETRYABLE = {
+    [DENY_FULL] = true, [DENY_DRAINING] = true, [DENY_WRONG_ZONE] = true,
+}
+
 M.connected = false
 M.me = 0
 M.banner = ""
@@ -156,7 +173,13 @@ local function on_message(s)
     elseif kind == S2C_ZONE then
         M.zone = string.sub(s, 2)
     elseif kind == S2C_DENIED then
-        M.denied = string.sub(s, 2)
+        -- Code first, then the sentence. Reading from byte 2 put the code
+        -- itself at the front of the text a player was shown.
+        M.deny_code = string.byte(s, 2) or 0
+        M.denied = string.sub(s, 3)
+        if RETRYABLE[M.deny_code] then
+            M.denied = M.denied .. " (another server for this game may have room)"
+        end
     end
 end
 
@@ -164,8 +187,9 @@ end
 -- the player is looking at a start screen they just left, and "nothing
 -- happened" is the one thing the client must never say. `on_lost` is called
 -- once, with a reason fit to print.
-function M.connect(url, class, name, on_lost)
+function M.connect(url, class, name, on_lost, zone)
     M.denied = nil
+    M.deny_code = 0
     M.pilots = {}
     M.ratings = {}
     M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
@@ -175,7 +199,12 @@ function M.connect(url, class, name, on_lost)
     local ok, err = pcall(function()
         conn = websocket.connect(url, {}, function(self, cid, data)
             if data.event == websocket.EVENT_CONNECTED then
-                local msg = string.char(C2S_JOIN, class) .. name
+                -- class, protocol, then the game we think we picked, then the
+                -- name. An empty zone means "whatever you are running", which
+                -- is what typing an address directly means.
+                local want = zone or ""
+                local msg = string.char(C2S_JOIN, class, CLIENT_PROTOCOL, #want)
+                    .. want .. name
                 websocket.send(conn, msg, {type = websocket.DATA_TYPE_BINARY})
             elseif data.event == websocket.EVENT_MESSAGE then
                 on_message(data.message)

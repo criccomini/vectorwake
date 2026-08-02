@@ -12,60 +12,57 @@ not, so where a decision rests on arithmetic the numbers are written out.
 Measured against the current core rather than estimated:
 
 ```
-sizeof(sim_map)        1,050,114 B   shared: sim_settings holds a pointer
-sim_sizeof_state()        37,636 B   x2, for double buffering
-sim_sizeof_settings()      3,872 B
-one room                  79,144 B
+SIM_MAX_SHIPS                  255
+sizeof(sim_map)          1,050,114 B   shared: sim_settings holds a pointer
+sim_sizeof_state()          51,388 B   x2, for double buffering
+sim_sizeof_settings()        3,872 B
+one room                   106,648 B
 
- 2 ships:  1.6 us/tick = 0.02% of a core  ->  6,400 rooms per core
- 4 ships:  2.0 us/tick                    ->  5,000 rooms per core
-16 ships:  5.3 us/tick                    ->  1,900 rooms per core
-64 ships: 16.3 us/tick = 0.16% of a core  ->    615 rooms per core
+  2 ships:  1.8 us/tick = 0.02% of a core  ->  5,500 rooms per core
+  4 ships:  2.2 us/tick                    ->  4,600 rooms per core
+ 16 ships:  5.5 us/tick                    ->  1,800 rooms per core
+ 64 ships: 16.4 us/tick = 0.16% of a core  ->    610 rooms per core
+128 ships: 29.9 us/tick                    ->    334 rooms per core
+255 ships: 58.0 us/tick = 0.58% of a core  ->    172 rooms per core
 ```
 
 The map being shared rather than copied is what makes the small numbers small. A
-zone has one map, so a process holding a hundred duel rooms holds one megabyte of
-tiles and a hundred lots of 79 KB, not a hundred megabytes.
+zone has one map and its rooms hold an `Arc` of it, so a process with a hundred
+small rooms holds one megabyte of tiles and a hundred lots of 107 KB, not a
+hundred megabytes. Nothing in a step writes to the map -- doors are computed from
+the tick rather than stored, and the core takes it as `const sim_map *` -- so
+sharing it costs nothing in correctness. A test asserts two rooms of a zone point
+at the same allocation, because the first implementation quietly unpacked the
+bytes again per room and the arithmetic above would have been out by a factor of
+ten.
 
 Two consequences follow, and they run in opposite directions from what the
 architecture first implied.
 
-`SIM_MAX_SHIPS` is 64, so **a zone with 100 to 200 players is currently two to
-four rooms**, and "one zone, 200 players, running smoothly" means three rooms
-that each run well plus a policy that keeps them full. This is a constraint we
-introduced rather than one we inherited: ASSS had no per-arena cap at all, and
-its only documented player maxima are `Team:MaxPerTeam` and
+A room's ship array is 255 long and a zone says how much of it to use, so **a
+zone with 100 to 200 players can be one room or four**, and which it is becomes a
+game-design decision rather than a limit. Raising the ceiling from 64 was cheap
+in exactly the way it looked: `sim_hash` iterates `ship_count` rather than the
+array bound, so the golden trace was unaffected, and ship indices were already
+`uint8_t` with 255 as the "no ship" sentinel. What it cost is memory, 27 KB per
+room, paid whether a zone uses the width or not, and tick time proportional to
+the ships actually present rather than to the bound.
+
+Two constants have to move together, the header and `MAX_SHIPS` in
+`server/src/sim.rs`, and a mismatch there is heap corruption rather than a
+compile error, which is why a test asserts the struct sizes agree with
+`sim_sizeof_state`. This is also not a limit we inherited: ASSS had no per-arena
+player cap at all, and its only documented maxima are `Team:MaxPerTeam` and
 `Team:MaxPerPrivateTeam`, both defaulting to 1000.
 
-It is also cheap to change, which is worth writing down before it becomes folk
-knowledge that it isn't. `sim_hash` iterates `ship_count` rather than the array
-bound, so raising the cap leaves the golden trace alone: set it to 255 and
-`make -C sim check` passes untouched, verified. Ship indices are `uint8_t`
-throughout, so 0 to 254 is available with no type changes and 255 stays the "no
-ship" sentinel. The cost at the ceiling:
-
-```
-SIM_MAX_SHIPS=255   sim_state 51,388 B (from 37,636)   one ship 72 B
- 64 ships: 13.5 us/tick     200 ships: 43.0 us/tick
-128 ships: 25.3 us/tick     255 ships: 50.3 us/tick = 0.5% of a core
-```
-
-A room grows from 79 KB to about 107 KB. Two constants have to move together,
-the header and `MAX_SHIPS` in `server/src/sim.rs`, and a mismatch there is heap
-corruption rather than a compile error, which is why a test asserts the struct
-sizes agree with `sim_sizeof_state`.
-
-The reason not to raise it yet is game design rather than cost. 64 is already
-four times what the original targeted, and the committed design is several rooms
-plus a concentration rule, so nothing has pushed against this number in practice.
-
-The fill target is a separate question, and 64 is the wrong anchor for it. The
-original's equivalent knob is `General:DesiredPlaying`, whose entire job is
-deciding when to open another public arena, and it **defaults to 15** playing
-players with spectators excluded. So thirty years of the game this one descends
-from settled on a public room being good at roughly 15 to 30, far below any
-technical ceiling. Our fill target is a feel number to playtest against, not a
-figure to derive from an array bound; `SIM_MAX_SHIPS` is only the wall behind it.
+The fill target is a separate question, and the array bound is the wrong anchor
+for it. The original's equivalent knob is `General:DesiredPlaying`, whose entire
+job is deciding when to open another public arena, and it **defaults to 15**
+playing players with spectators excluded. So thirty years of the game this one
+descends from settled on a public room being good at roughly 15 to 30, far below
+any technical ceiling. Our fill target is a feel number to playtest against;
+`SIM_MAX_SHIPS` is only the wall behind it, and a zone's own `max_ships` is where
+a zone says how much of that wall it wants.
 
 And a room is cheap enough that **one process should be able to hold many of
 them**, which [decision 23](decisions.md) did not allow for. See the amendment

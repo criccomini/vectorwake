@@ -110,7 +110,7 @@ fill_target = 20
 
 # The most simulations one process may hold for this zone. Rooms are created on
 # demand up to this and reclaimed when they empty, so it is a ceiling and not a
-# count. It bounds memory at max_rooms x 79 KB plus one shared map, and it bounds
+# count. It bounds memory at max_rooms x 107 KB plus one shared map, and it bounds
 # the blast radius, since rooms in a process share its fate: War keeps 1 because
 # sixty-four players should not lose a flag game to somebody else's crash, and
 # Duel takes 100 because a duel is two people and a fresh room.

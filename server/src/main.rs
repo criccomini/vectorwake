@@ -44,9 +44,22 @@ const PRIZE_INTEREST: i32 = 256 * 16 * 256;
 const DEFAULT_MAX_PLAYERS: usize = 16;
 
 // Client to server
+/// `[C2S_JOIN, class, protocol, zone_len] zone name`
+///
+/// The zone is what the player picked out of a browse list, and it is checked
+/// rather than assumed: an instance is free to change zone the moment its last
+/// player leaves, so a client can arrive at an address that no longer serves the
+/// game it chose. Empty means "whatever you are running", which is what somebody
+/// typing an address directly means. The name runs to the end of the message, so
+/// it is last and needs no length.
 const C2S_JOIN: u8 = 1;
 const C2S_INPUT: u8 = 2;
 const C2S_SHIP: u8 = 5;
+/// The client wire, which versions separately from the arena-to-directory one in
+/// `fleet.rs`: they change for different reasons and are spoken by different
+/// programs. Bump when a message's layout changes, so a stale build is told its
+/// build is stale rather than left to misparse a snapshot.
+const CLIENT_PROTOCOL: u8 = 1;
 /// Asked by the directory, and by any client that wants to know what a zone
 /// is before committing to it. Answerable without joining.
 const C2S_STATUS: u8 = directory::STATUS_REQUEST;
@@ -59,6 +72,14 @@ const S2C_KILL: u8 = 4;
 const S2C_BANNER: u8 = 5;
 const S2C_ZONE: u8 = 6;
 const S2C_DENIED: u8 = 7;
+/// Why a join was refused. Three of these mean "try another instance" and two
+/// mean "stop trying", which is the distinction a client cannot make from a
+/// sentence. See the refusal table in docs/architecture/zones-and-arenas.md.
+const DENY_FULL: u8 = 1;
+const DENY_DRAINING: u8 = 2;
+const DENY_WRONG_ZONE: u8 = 3;
+const DENY_BANNED: u8 = 4;
+const DENY_VERSION: u8 = 5;
 const S2C_STATUS: u8 = directory::STATUS_REPLY;
 /// The map, run-length encoded, sent before the first snapshot. A client
 /// predicts collisions locally, so it needs the room before it needs anyone
@@ -76,8 +97,20 @@ struct Player {
     /// it knows how far its prediction has been confirmed.
     last_input_tick: u32,
     name: String,
-    tx: mpsc::UnboundedSender<Vec<u8>>,
+    tx: mpsc::Sender<Vec<u8>>,
 }
+
+/// Messages a client may fall behind by before the arena stops queueing for it.
+///
+/// The queue used to be unbounded, which meant a client that stopped reading
+/// cost this process memory without limit: two hundred stalled clients in one
+/// room took it from 8 MB to 450 MB in twenty-five seconds, measured. A snapshot
+/// is a whole state pack rather than a delta, so the next one supersedes any that
+/// was dropped and the cure is simply not to send it. Two seconds of snapshots at
+/// 20 Hz: long enough to ride out a hiccup, short enough that two hundred hopeless
+/// clients in one room cost tens of megabytes rather than hundreds. Disconnecting
+/// a client this far behind is a lag action, which server.md defers.
+const OUT_QUEUE: usize = 40;
 
 /// Feed one tick's damage into the ledger and hand back the deaths it
 /// contained. Shared by the live arena and the offline calibration
@@ -468,7 +501,7 @@ impl Arena {
     /// is `arena.max_ships` and the two are different questions, since a wide
     /// room with a small player cap is a zone that wants mostly bots.
     fn join(&mut self, name: String, class: u8, max_players: usize,
-            tx: mpsc::UnboundedSender<Vec<u8>>) -> Option<u64> {
+            tx: mpsc::Sender<Vec<u8>>) -> Option<u64> {
         if self.players.len() >= max_players {
             return None;
         }
@@ -639,7 +672,7 @@ impl Arena {
             m.extend_from_slice(&kr.to_le_bytes());
             m.push(rated.as_ref().map_or(0, |r| r.credits.len() as u8));
             for p in self.players.values() {
-                let _ = p.tx.send(m.clone());
+                let _ = p.tx.try_send(m.clone());
             }
             let assists = rated.as_ref().map_or(0, |r| r.credits.len());
             if assists > 1 {
@@ -659,7 +692,7 @@ impl Arena {
         let mut m = vec![S2C_BANNER];
         m.extend_from_slice(self.banner.as_bytes());
         for p in self.players.values() {
-            let _ = p.tx.send(m.clone());
+            let _ = p.tx.try_send(m.clone());
         }
     }
 
@@ -684,7 +717,7 @@ impl Arena {
             msg.push(p.ship);
             msg.extend_from_slice(&p.last_input_tick.to_le_bytes());
             msg.extend_from_slice(&buf[..n as usize]);
-            let _ = p.tx.send(msg);
+            let _ = p.tx.try_send(msg);
         }
     }
 
@@ -717,14 +750,14 @@ impl Arena {
         let mut m = vec![S2C_SETTINGS];
         m.extend_from_slice(&self.world.packed_settings());
         for p in self.players.values() {
-            let _ = p.tx.send(m.clone());
+            let _ = p.tx.try_send(m.clone());
         }
     }
 
     fn broadcast_roster(&self) {
         let m = self.roster_msg();
         for p in self.players.values() {
-            let _ = p.tx.send(m.clone());
+            let _ = p.tx.try_send(m.clone());
         }
     }
 }
@@ -734,7 +767,12 @@ impl Arena {
 /// second one, and one process to one room is where decision 23 was going
 /// anyway.
 struct Zone {
-    arena: Arena,
+    /// Rooms this process holds for its zone, created on demand and reclaimed
+    /// when they empty, capped by the zone's `max_rooms`. Never empty: an
+    /// instance serving a zone always keeps one, so it still *is* an instance of
+    /// that zone and appears as one. See the fill ladder in
+    /// docs/architecture/zones-and-arenas.md.
+    rooms: Vec<Arena>,
     cfg: config::ConfigWatcher,
     store: persist::Store,
     /// The zone this process is serving, empty when it is running the built-in
@@ -757,6 +795,128 @@ struct Zone {
 }
 
 impl Zone {
+    /// Every player in every room, which is what a status push reports.
+    ///
+    /// There is deliberately no "the arena" accessor. There was one, meaning
+    /// room zero, and every caller that used it was wrong once a process held
+    /// more than one room: rule 1 let an instance change zone under players in
+    /// room two, a kick could not reach them, and their ratings were never
+    /// saved. Anything asking about the process asks about all of its rooms.
+    fn total_players(&self) -> usize {
+        self.rooms.iter().map(|r| r.players.len()).sum()
+    }
+
+    /// Where the next arrival goes, per the fill ladder. Rung one is the fullest
+    /// room below its player cap, which is most of the work and needs no
+    /// coordination. Rung two is a new room here, when every room is at the
+    /// zone's fill target and we are below `max_rooms`: 79 KB and a shared map,
+    /// which is why it comes before anything involving another process.
+    ///
+    /// `None` means this instance is out of room, and the client should try the
+    /// next address the directory gave it.
+    fn room_for_join(&mut self) -> Option<usize> {
+        let cap = self.max_players();
+        let target = self.fill_target();
+
+        // Rung 1: fullest below cap.
+        let best = self
+            .rooms
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.players.len() < cap)
+            .max_by_key(|(_, r)| r.players.len())
+            .map(|(i, _)| i);
+
+        // Only grow when every room has reached the target. A room holding six of
+        // twenty wants the next six players, not a sibling.
+        let all_at_target = self.rooms.iter().all(|r| r.players.len() >= target);
+        if let Some(i) = best {
+            if !all_at_target || self.rooms.len() >= self.max_rooms() {
+                return Some(i);
+            }
+        }
+
+        // Rung 2: a new room here.
+        if self.rooms.len() < self.max_rooms() {
+            match self.open_room() {
+                Ok(i) => return Some(i),
+                Err(e) => {
+                    println!("cannot open another room: {e}");
+                    return best;
+                }
+            }
+        }
+        best
+    }
+
+    /// Another simulation of the same zone, sharing the map bytes. Bounded by
+    /// `max_rooms`, which bounds both memory and the blast radius of this process
+    /// dying, since rooms in a process share its fate.
+    fn open_room(&mut self) -> Result<usize, String> {
+        let z = self.wire_zone().cloned().ok_or("no zone definition")?;
+        // On the map the first room already holds, rather than unpacking the
+        // bytes again. Geometry is a megabyte and immutable, so a hundred rooms
+        // share one copy; without this the ceiling would be a memory limit
+        // instead of a blast-radius one.
+        let mut fresh = Self::build_room(&z, Some(&self.rooms[0].world))?;
+        prime_ratings(&mut fresh.rating, &load_ladder("zone"));
+        self.rooms.push(fresh);
+        let n = self.rooms.len();
+        println!("opened room {n} of {} for zone {:?}", self.max_rooms(), z.name);
+        Ok(n - 1)
+    }
+
+    /// Give back rooms nobody is in, keeping the first. A process shrinks as
+    /// matches end rather than holding its high-water mark forever.
+    fn reclaim_rooms(&mut self) {
+        if self.rooms.len() <= 1 {
+            return;
+        }
+        let before = self.rooms.len();
+        let mut keep_first = true;
+        self.rooms.retain(|r| {
+            if keep_first {
+                keep_first = false;
+                return true;
+            }
+            !r.players.is_empty()
+        });
+        if self.rooms.len() != before {
+            println!("reclaimed {} empty room(s)", before - self.rooms.len());
+        }
+    }
+
+    /// One room built from a zone definition. Shared by the first room and by
+    /// every room grown after it, so they cannot differ. `on` is a room already
+    /// running this zone, whose map the new one borrows instead of unpacking a
+    /// second megabyte of identical tiles.
+    fn build_room(z: &fleet::WireZone, on: Option<&sim::World>) -> Result<Arena, String> {
+        let world = match on {
+            Some(w) => w.sibling(0x5eed),
+            None => {
+                let bytes = fleet::unb64(&z.map_b64).ok_or("map is not base64")?;
+                sim::World::from_packed(0x5eed, &bytes).map_err(|e| e.to_string())?
+            }
+        };
+        let def: catalog::ZoneDef =
+            toml::from_str(&z.zone_toml).map_err(|e| format!("zone.toml: {e}"))?;
+        let mut arena = Arena::with_world_bare(world);
+        for w in Arena::apply_config(&mut arena.world, &def.arena) {
+            println!("zone {}: {w}", z.name);
+        }
+        if let Some(m) = def.max_ships {
+            arena.world.cfg.max_ships = m;
+        }
+        arena.mode = modes::build(&z.mode, def.arena.flags, z.teams);
+        arena.teams = z.teams.max(1);
+        arena.balance = def.balance.clone();
+        arena.fill_bots();
+        if z.mode == "warzone" {
+            arena.add_default_flags();
+        }
+        Ok(arena)
+    }
+
     /// Take a catalog a directory offered. Highest version wins; a tie with
     /// different content is an author error rather than a race, so it is a log
     /// line naming both directories rather than a vote.
@@ -793,13 +953,16 @@ impl Zone {
         if !self.zone_name.is_empty() {
             if let Some(z) = c.zone(&self.zone_name).cloned() {
                 if let Ok(def) = toml::from_str::<catalog::ZoneDef>(&z.zone_toml) {
-                    for w in Arena::apply_config(&mut self.arena.world, &def.arena) {
-                        println!("zone {}: {w}", self.zone_name);
+                    let name = self.zone_name.clone();
+                    for r in self.rooms.iter_mut() {
+                        for w in Arena::apply_config(&mut r.world, &def.arena) {
+                            println!("zone {name}: {w}");
+                        }
+                        if let Some(m) = def.max_ships {
+                            r.world.cfg.max_ships = m;
+                        }
+                        r.broadcast_settings();
                     }
-                    if let Some(m) = def.max_ships {
-                        self.arena.world.cfg.max_ships = m;
-                    }
-                    self.arena.broadcast_settings();
                 }
             }
         }
@@ -849,7 +1012,7 @@ impl Zone {
         match c.verb.as_str() {
             "drain" => {
                 self.draining = true;
-                ("done", format!("draining {} player(s)", self.arena.players.len()))
+                ("done", format!("draining {} player(s)", self.total_players()))
             }
             "pin" => {
                 if self.catalog.as_ref().and_then(|k| k.zone(&c.args)).is_none() {
@@ -858,7 +1021,7 @@ impl Zone {
                 self.pinned = Some((c.args.clone(), c.actor.clone(), fleet::now_ms()));
                 let def = self.catalog.as_ref().and_then(|k| k.zone(&c.args)).cloned();
                 if let Some(def) = def {
-                    if self.arena.players.is_empty() {
+                    if self.total_players() == 0 {
                         if let Err(e) = self.serve_zone(&def) {
                             return ("refused", e);
                         }
@@ -874,22 +1037,29 @@ impl Zone {
                 ("done", String::new())
             }
             "kick" => {
-                let before = self.arena.players.len();
-                let ids: Vec<u64> = self
-                    .arena
-                    .players
-                    .iter()
-                    .filter(|(_, p)| p.name.eq_ignore_ascii_case(&c.args))
-                    .map(|(id, _)| *id)
-                    .collect();
-                for id in &ids {
-                    self.arena.leave(*id);
+                // Every room, because an operator naming a player does not know
+                // or care which room of this process holds them.
+                let before = self.total_players();
+                let mut hit = 0;
+                for r in self.rooms.iter_mut() {
+                    let ids: Vec<u64> = r
+                        .players
+                        .iter()
+                        .filter(|(_, p)| p.name.eq_ignore_ascii_case(&c.args))
+                        .map(|(id, _)| *id)
+                        .collect();
+                    for id in &ids {
+                        r.leave(*id);
+                    }
+                    if !ids.is_empty() {
+                        hit += ids.len();
+                        r.broadcast_roster();
+                    }
                 }
-                if ids.is_empty() {
+                if hit == 0 {
                     ("refused", format!("nobody here called {:?}", c.args))
                 } else {
-                    self.arena.broadcast_roster();
-                    ("done", format!("kicked {} of {before}", ids.len()))
+                    ("done", format!("kicked {hit} of {before}"))
                 }
             }
             "restart" => {
@@ -936,29 +1106,12 @@ impl Zone {
     /// settings, its mode. The one path by which a process changes what game it
     /// is running, so the map failing is a refusal rather than a half-change.
     fn serve_zone(&mut self, z: &fleet::WireZone) -> Result<(), String> {
-        let bytes = fleet::unb64(&z.map_b64).ok_or("map is not base64")?;
-        let world = sim::World::from_packed(0x5eed, &bytes).map_err(|e| e.to_string())?;
-        // The zone's own text, parsed by the same parser the catalog loader
-        // uses, so there is one schema for a zone however it arrived.
-        let def: catalog::ZoneDef =
-            toml::from_str(&z.zone_toml).map_err(|e| format!("zone.toml: {e}"))?;
-
-        let mut arena = Arena::with_world_bare(world);
-        for w in Arena::apply_config(&mut arena.world, &def.arena) {
-            println!("zone {}: {w}", z.name);
-        }
-        if let Some(m) = def.max_ships {
-            arena.world.cfg.max_ships = m;
-        }
-        arena.mode = modes::build(&z.mode, def.arena.flags, z.teams);
-        arena.teams = z.teams.max(1);
-        arena.balance = def.balance.clone();
-        arena.fill_bots();
-        if z.mode == "warzone" {
-            arena.add_default_flags();
-        }
+        // From the bytes, not from a sibling: this is a change of zone, so the
+        // map the running rooms hold is the wrong map.
+        let mut arena = Self::build_room(z, None)?;
         prime_ratings(&mut arena.rating, &load_ladder("zone"));
-        self.arena = arena;
+        // A change of zone replaces every room: they all served the old game.
+        self.rooms = vec![arena];
         self.zone_name = z.name.clone();
         self.draining = false;
         println!(
@@ -997,7 +1150,7 @@ impl Zone {
         let mut arena = Arena::new_from(&cfg.current);
         prime_ratings(&mut arena.rating, &ladder);
         Zone {
-            arena,
+            rooms: vec![arena],
             cfg,
             store,
             zone_name: String::new(),
@@ -1015,10 +1168,15 @@ impl Zone {
     fn reload(&mut self) {
         if let Some(msg) = self.cfg.poll() {
             println!("{msg}");
-            for w in Arena::apply_config(&mut self.arena.world, &self.cfg.current.arena) {
-                println!("zone: {w}");
+            // Cloned so the arena can be borrowed mutably while reading it, and
+            // applied to every room: they are all the same game.
+            let block = self.cfg.current.arena.clone();
+            for r in self.rooms.iter_mut() {
+                for w in Arena::apply_config(&mut r.world, &block) {
+                    println!("zone: {w}");
+                }
+                r.broadcast_settings();
             }
-            self.arena.broadcast_settings();
         }
     }
 
@@ -1035,24 +1193,47 @@ impl Zone {
         let target = self.fill_target();
         fleet::Status {
             zone,
-            players: self.arena.players.len() as u32,
-            bots: self.arena.bots.len() as u32,
-            rooms: 1,
+            players: self.total_players() as u32,
+            bots: self.rooms.iter().map(|r| r.bots.len()).sum::<usize>() as u32,
+            rooms: self.rooms.len() as u32,
             max_rooms: self.max_rooms() as u32,
-            // The arena's own answer to "am I out of room", so the rule lives
-            // in one place rather than being recomputed by every reader.
-            capped: self.arena.players.len() >= target,
+            // This instance's own answer to "am I out of room", so the rule lives
+            // in one place rather than being recomputed by every reader. Capped
+            // means every room is at the target *and* there is no headroom to
+            // open another, which is the fill ladder's second rung exhausted.
+            capped: self.rooms.iter().all(|r| r.players.len() >= target)
+                && self.rooms.len() >= self.max_rooms(),
             metrics: fleet::Metrics {
                 tick_us: self.tick_us,
+                // The worst-off client in the process. A depth near `OUT_QUEUE`
+                // is a connection that cannot keep up and is losing snapshots,
+                // which is the one player-visible symptom an operator cannot see
+                // from a player count.
+                queue_depth: self
+                    .rooms
+                    .iter()
+                    .flat_map(|r| r.players.values())
+                    .map(|p| (OUT_QUEUE - p.tx.capacity()) as u32)
+                    .max()
+                    .unwrap_or(0),
                 ..Default::default()
             },
         }
     }
 
+    /// The name a joining player is shown. The catalog's when this process is
+    /// serving a catalog zone, because that is the game they picked; the local
+    /// file's only when no directory was ever reached.
     fn zone_msg(&self) -> Vec<u8> {
         let mut m = vec![S2C_ZONE];
-        let text = format!("{}\n{}", self.cfg.current.name, self.cfg.current.description);
-        m.extend_from_slice(text.as_bytes());
+        let (name, desc) = match self.wire_zone() {
+            Some(z) => (z.name.clone(), z.description.clone()),
+            None => (
+                self.cfg.current.name.clone(),
+                self.cfg.current.description.clone(),
+            ),
+        };
+        m.extend_from_slice(format!("{name}\n{desc}").as_bytes());
         m
     }
 }
@@ -1293,11 +1474,14 @@ async fn main() {
                     z.reload();
                 }
                 if n % 3000 == 0 {
-                    let ratings: Vec<(String, f64)> = z.arena
-                        .rating
-                        .score
+                    // Every room. A human is in exactly one at a time, so their
+                    // score saves cleanly; a bot name appears in all of them and
+                    // the last room wins, which costs nothing because bots are
+                    // re-seeded from the calibrated ladder whenever a room is built.
+                    let ratings: Vec<(String, f64)> = z
+                        .rooms
                         .iter()
-                        .map(|(k, v)| (k.clone(), *v))
+                        .flat_map(|r| r.rating.score.iter().map(|(k, v)| (k.clone(), *v)))
                         .collect();
                     for (k, v) in ratings {
                         z.store.set_rating(&k, v);
@@ -1306,10 +1490,40 @@ async fn main() {
                         println!("could not save ratings: {e}");
                     }
                 }
-                z.arena.tick();
-                if n % SNAPSHOT_EVERY == 0 {
-                    z.arena.broadcast_snapshot(&mut buf);
-                    z.arena.broadcast_banner();
+                // Every room, in order. The process holds one arena per room and
+                // ticks them all on this thread: at 16 us for sixty-four ships
+                // and 1.6 for two, a hundred duel rooms is a sixth of a core, so
+                // there is nothing here a pool would buy.
+                let snap = n % SNAPSHOT_EVERY == 0;
+                let t0 = std::time::Instant::now();
+                for a in z.rooms.iter_mut() {
+                    a.tick();
+                    if snap {
+                        a.broadcast_snapshot(&mut buf);
+                        a.broadcast_banner();
+                    }
+                }
+                z.tick_us = t0.elapsed().as_micros() as u32;
+
+                // A drain that has finished is an instance free to choose again,
+                // and an empty extra room is memory to give back.
+                if n % 100 == 0 {
+                    z.reclaim_rooms();
+                    if z.draining && z.total_players() == 0 {
+                        println!("drain complete");
+                        z.draining = false;
+                        if let Some((want, who, _)) = z.pinned.clone() {
+                            if let Some(def) =
+                                z.catalog.as_ref().and_then(|c| c.zone(&want)).cloned()
+                            {
+                                match z.serve_zone(&def) {
+                                    Ok(()) => println!("pinned to {want:?} by {who}"),
+                                    Err(e) => println!("cannot serve pinned {want:?}: {e}"),
+                                }
+                            }
+                        }
+                        z.push_status();
+                    }
                 }
             }
         });
@@ -1333,18 +1547,23 @@ async fn main() {
                 Err(_) => return,
             };
             let (mut sink, mut source) = ws.split();
-            let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+            let (tx, mut rx) = mpsc::channel::<Vec<u8>>(OUT_QUEUE);
 
             let writer = tokio::spawn(async move {
                 while let Some(msg) = rx.recv().await {
                     if sink.send(Message::Binary(msg)).await.is_err() {
-                        break;
+                        return;
                     }
                 }
+                // A proper close once the channel is done, so a refused client
+                // sees a closed socket rather than a dropped one and can tell
+                // "you are not welcome" from "the network ate it".
+                let _ = sink.close().await;
             });
 
             // This connection's id in the arena, once it has joined.
-            let mut seat: Option<u64> = None;
+            // Which room, and which id within it.
+            let mut seat: Option<(usize, u64)> = None;
             while let Some(Ok(msg)) = source.next().await {
                 let data = match msg {
                     Message::Binary(b) => b,
@@ -1361,43 +1580,105 @@ async fn main() {
                         let z = zone.lock().await;
                         let mut m = vec![S2C_STATUS];
                         m.extend_from_slice(z.status_json().as_bytes());
-                        let _ = tx.send(m);
+                        let _ = tx.try_send(m);
                     }
                     C2S_JOIN if seat.is_none() => {
                         let class = data.get(1).copied().unwrap_or(0);
-                        let name = String::from_utf8_lossy(&data[2..]).to_string();
+                        let proto = data.get(2).copied().unwrap_or(0);
+                        let zlen = data.get(3).copied().unwrap_or(0) as usize;
+                        let want = String::from_utf8_lossy(
+                            data.get(4..4 + zlen).unwrap_or_default(),
+                        )
+                        .to_string();
+                        let name =
+                            String::from_utf8_lossy(data.get(4 + zlen..).unwrap_or_default())
+                                .to_string();
                         let name = if name.is_empty() { "pilot".into() } else { name };
                         let mut z = zone.lock().await;
-                        if z.cfg.current.is_banned(&name) {
-                            let mut m = vec![S2C_DENIED];
-                            m.extend_from_slice(b"you are banned from this zone");
-                            let _ = tx.send(m);
+
+                        // A refusal has to say which of five things went wrong,
+                        // because three mean "try another instance" and two mean
+                        // "stop trying". The code is the first byte after the tag.
+                        let deny = |code: u8, why: &str| {
+                            let mut m = vec![S2C_DENIED, code];
+                            m.extend_from_slice(why.as_bytes());
+                            m
+                        };
+                        if proto != CLIENT_PROTOCOL {
+                            // Before anything else: a client that misparses this
+                            // wire would misread every refusal below it too.
+                            let _ = tx.try_send(deny(
+                                DENY_VERSION,
+                                &format!("this zone speaks protocol {CLIENT_PROTOCOL}"),
+                            ));
                             break;
                         }
-                        let _ = tx.send(z.zone_msg());
-                        if let Some(saved) = z.store.rating(&name) {
-                            z.arena.rating.score.insert(name.clone(), saved);
+                        // A player picked a game, not an address. This instance may
+                        // have changed zone since the browse reply they are acting
+                        // on, and sending them into a different game because the
+                        // address still answers is worse than telling them to
+                        // re-browse.
+                        if !want.is_empty() && want != z.zone_name {
+                            let _ = tx.try_send(deny(
+                                DENY_WRONG_ZONE,
+                                &format!(
+                                    "this instance serves {:?} now; re-browse",
+                                    z.zone_name
+                                ),
+                            ));
+                            break;
                         }
-                        let cap = if z.cfg.current.max_players > 0 {
-                            z.cfg.current.max_players
-                        } else {
-                            DEFAULT_MAX_PLAYERS
+                        if z.is_banned(&name) {
+                            let _ = tx.try_send(deny(DENY_BANNED, "you are banned here"));
+                            break;
+                        }
+                        if z.draining {
+                            let _ = tx.try_send(deny(
+                                DENY_DRAINING,
+                                "this arena is draining; try another instance",
+                            ));
+                            break;
+                        }
+                        let _ = tx.try_send(z.zone_msg());
+                        let cap = z.max_players();
+                        // The fill ladder: fullest room below cap, else a new room
+                        // here if the zone allows one, else this instance is out
+                        // of room and the client should try the next address.
+                        let Some(idx) = z.room_for_join() else {
+                            let _ = tx.try_send(deny(
+                                DENY_FULL,
+                                "no room here; try another instance of this zone",
+                            ));
+                            break;
                         };
-                        let a = &mut z.arena;
+                        // Into the room they are actually joining. Rooms keep their
+                        // own ladders, so putting a returning player's rating in
+                        // room zero would leave them unrated wherever they landed.
+                        let saved = z.store.rating(&name);
+                        let a = &mut z.rooms[idx];
+                        if let Some(saved) = saved {
+                            a.rating.score.insert(name.clone(), saved);
+                        }
                         if let Some(new_id) = a.join(name, class, cap, tx.clone()) {
-                            seat = Some(new_id);
+                            seat = Some((idx, new_id));
                             let ship = a.players[&new_id].ship;
                             let mut m = vec![S2C_MAP];
                             m.extend_from_slice(&a.world.packed_map());
-                            let _ = tx.send(m);
+                            let _ = tx.try_send(m);
                             let mut c = vec![S2C_SETTINGS];
                             c.extend_from_slice(&a.world.packed_settings());
-                            let _ = tx.send(c);
+                            let _ = tx.try_send(c);
                             let mut w = vec![S2C_WELCOME, ship];
                             w.extend_from_slice(&a.world.state.tick.to_le_bytes());
-                            let _ = tx.send(w);
+                            let _ = tx.try_send(w);
                             a.broadcast_roster();
+                        } else {
+                            let _ = tx.try_send(deny(DENY_FULL, "no seat in that room"));
                         }
+                        // A join changes the count a directory reports, and a
+                        // stale count is a directory routing players to the wrong
+                        // place, so it goes out now rather than on the heartbeat.
+                        z.push_status();
                     }
                     C2S_SHIP => {
                         // A hull change, in place. The core refuses it unless
@@ -1407,12 +1688,14 @@ async fn main() {
                         // snapshot carries the new class, and a refusal leaves
                         // the old one, which is the same answer either way.
                         if data.len() >= 2 {
-                            if let Some(pid) = seat {
+                            if let Some((room, pid)) = seat {
                                 let cls = data[1];
                                 let mut z = zone.lock().await;
-                                let ship = z.arena.players.get(&pid).map(|p| p.ship);
-                                if let Some(ship) = ship {
-                                    z.arena.world.set_ship_class(ship, cls);
+                                if let Some(a) = z.rooms.get_mut(room) {
+                                    let ship = a.players.get(&pid).map(|p| p.ship);
+                                    if let Some(ship) = ship {
+                                        a.world.set_ship_class(ship, cls);
+                                    }
                                 }
                             }
                         }
@@ -1422,11 +1705,15 @@ async fn main() {
                         // server applies inputs when it receives them and
                         // echoes the number back so the client can reconcile.
                         if data.len() >= 7 {
-                            if let Some(pid) = seat {
+                            if let Some((room, pid)) = seat {
                                 let buttons = u16::from_le_bytes([data[1], data[2]]);
                                 let t = u32::from_le_bytes([data[3], data[4], data[5], data[6]]);
                                 let mut z = zone.lock().await;
-                                if let Some(p) = z.arena.players.get_mut(&pid) {
+                                if let Some(p) = z
+                                    .rooms
+                                    .get_mut(room)
+                                    .and_then(|a| a.players.get_mut(&pid))
+                                {
                                     p.buttons = buttons;
                                     p.last_input_tick = t;
                                 }
@@ -1437,12 +1724,32 @@ async fn main() {
                 }
             }
 
-            if let Some(pid) = seat {
+            if let Some((room, pid)) = seat {
                 let mut z = zone.lock().await;
-                z.arena.leave(pid);
-                z.arena.broadcast_roster();
+                if let Some(a) = z.rooms.get_mut(room) {
+                    a.leave(pid);
+                    a.broadcast_roster();
+                }
+                // An empty room goes back, except the first: a process shrinks as
+                // matches end rather than holding its high-water mark.
+                z.reclaim_rooms();
+                z.push_status();
             }
-            writer.abort();
+
+            // Let the writer drain before it goes. A refusal is enqueued and then
+            // the read loop breaks immediately, so aborting here threw away the
+            // very byte that tells a client whether to try the next instance or
+            // stop trying. Dropping our sender closes the channel, the writer
+            // finishes what is in it and exits; the timeout is for the case where
+            // the socket is gone and the send will never complete.
+            let mut writer = writer;
+            drop(tx);
+            if tokio::time::timeout(std::time::Duration::from_secs(2), &mut writer)
+                .await
+                .is_err()
+            {
+                writer.abort();
+            }
         });
     }
 }
@@ -1467,6 +1774,232 @@ mod tests {
     fn gun(w: &sim::World, cls: usize) -> (sim::sim_fire_pattern, sim::sim_weapon_spec) {
         let p = w.cfg.patterns[w.cfg.classes[cls].trigger[0][0] as usize];
         (p, w.cfg.specs[p.spec as usize])
+    }
+
+    // ---- rooms on demand ---------------------------------------------------
+    //
+    // The fill ladder's first two rungs live entirely inside one process, so
+    // they are testable without a directory, a socket, or a second binary.
+
+    /// A zone as a catalog would deliver it, with a real packed map so
+    /// `build_room` takes the same path it takes in production.
+    fn wire_zone(rooms: u32, target: u32, cap: u32) -> fleet::WireZone {
+        fleet::WireZone {
+            name: "testzone".into(),
+            description: "a zone for tests".into(),
+            mode: "arena".into(),
+            max_ships: 64,
+            max_players: cap,
+            fill_target: target,
+            max_rooms: rooms,
+            teams: 1,
+            balance: "smaller".into(),
+            map_b64: fleet::b64(&sim::World::new(1).packed_map()),
+            // A zone's name lives in the catalog that references it, never in the
+            // zone's own file, so there is one place a name can be.
+            zone_toml: "description = \"a zone for tests\"\n".into(),
+        }
+    }
+
+    /// A zone process already serving that definition. No config file and no
+    /// store file: both read defaults when the path is absent, which is what a
+    /// catalog-served arena runs on anyway.
+    fn serving(rooms: u32, target: u32, cap: u32) -> Zone {
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+                              HashMap::new());
+        let def = wire_zone(rooms, target, cap);
+        z.catalog = Some(fleet::WireCatalog {
+            version: 1,
+            name: "test".into(),
+            default_zone: "testzone".into(),
+            zones: vec![def.clone()],
+            ..Default::default()
+        });
+        z.serve_zone(&def).expect("the definition builds a room");
+        z
+    }
+
+    /// Seat `n` players in a room without a socket on the other end. A dropped
+    /// receiver is fine: every send is `let _ =`, because a client that has gone
+    /// away must not take the tick loop with it.
+    fn seat(z: &mut Zone, room: usize, n: usize) {
+        let cap = z.max_players();
+        for i in 0..n {
+            let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+            z.rooms[room]
+                .join(format!("p{room}-{i}"), 0, cap, tx)
+                .expect("a seat below the cap");
+        }
+    }
+
+    #[test]
+    fn a_room_fills_before_a_second_one_opens() {
+        // Rung one: the fullest room below cap. A room holding four of a target
+        // of six wants the next arrival, not a sibling with nobody in it.
+        let mut z = serving(4, 6, 16);
+        assert_eq!(z.rooms.len(), 1, "one room to start");
+        for _ in 0..6 {
+            let i = z.room_for_join().expect("room");
+            assert_eq!(i, 0, "everything lands in the first room until it hits target");
+            seat(&mut z, i, 1);
+        }
+        assert_eq!(z.rooms.len(), 1, "still one room at exactly the target");
+
+        // The seventh is the first arrival every room could refuse to concentrate.
+        let i = z.room_for_join().expect("room");
+        assert_eq!(i, 1, "so a second room opens for them");
+        assert_eq!(z.rooms.len(), 2);
+    }
+
+    #[test]
+    fn the_room_ceiling_holds_and_players_stack_past_the_target() {
+        // `max_rooms` is a ceiling, not a target: once it is reached the fill
+        // target stops mattering and rooms take players up to `max_players`.
+        let mut z = serving(2, 2, 5);
+        for _ in 0..10 {
+            let Some(i) = z.room_for_join() else { break };
+            seat(&mut z, i, 1);
+        }
+        assert_eq!(z.rooms.len(), 2, "never a third room");
+        assert_eq!(z.total_players(), 10, "two rooms of five");
+        assert!(z.status().capped, "and the instance says so");
+        assert_eq!(z.room_for_join(), None, "the eleventh is sent elsewhere");
+    }
+
+    #[test]
+    fn an_emptied_room_goes_back_but_never_the_first() {
+        let mut z = serving(3, 1, 16);
+        for _ in 0..3 {
+            let i = z.room_for_join().expect("room");
+            seat(&mut z, i, 1);
+        }
+        assert_eq!(z.rooms.len(), 3, "a target of one grows a room per player");
+
+        // Empty the last two. The first stays whatever happens: an instance
+        // serving a zone always has a room, or it is not an instance of it.
+        for r in 1..3 {
+            let ids: Vec<u64> = z.rooms[r].players.keys().copied().collect();
+            for id in ids {
+                z.rooms[r].leave(id);
+            }
+        }
+        z.reclaim_rooms();
+        assert_eq!(z.rooms.len(), 1, "the empty ones are given back");
+
+        let ids: Vec<u64> = z.rooms[0].players.keys().copied().collect();
+        for id in ids {
+            z.rooms[0].leave(id);
+        }
+        z.reclaim_rooms();
+        assert_eq!(z.rooms.len(), 1, "and the first survives being empty");
+    }
+
+    #[test]
+    fn every_room_runs_the_same_game() {
+        // Rooms differing would make which room you landed in matter, which is
+        // the one thing the fill ladder is allowed to decide for a player.
+        let mut z = serving(2, 1, 16);
+        seat(&mut z, 0, 1);
+        let i = z.room_for_join().expect("a second room");
+        assert_eq!(i, 1);
+        assert_eq!(z.rooms[0].world.cfg.max_ships, z.rooms[1].world.cfg.max_ships);
+        assert_eq!(z.rooms[0].teams, z.rooms[1].teams);
+        // A joining pilot takes a bot's slot, so the roster is one shorter where
+        // somebody sat down. Bots plus players is what stays equal.
+        assert_eq!(z.rooms[0].bots.len() + z.rooms[0].players.len(),
+                   z.rooms[1].bots.len() + z.rooms[1].players.len(),
+                   "including the roster of bots");
+        assert_eq!(z.rooms[0].world.packed_map(), z.rooms[1].world.packed_map());
+        // The same tiles, not a copy of them. A megabyte per room would make
+        // `max_rooms` a memory limit rather than the blast-radius limit it is
+        // meant to be, and would put the per-room figure in hosting.md out by
+        // a factor of thirteen.
+        assert!(
+            std::sync::Arc::ptr_eq(&z.rooms[0].world.map, &z.rooms[1].world.map),
+            "rooms of one zone share one map"
+        );
+        assert_eq!(std::sync::Arc::strong_count(&z.rooms[0].world.map), 2);
+    }
+
+    #[test]
+    fn a_hundred_rooms_share_one_map() {
+        // What M7.5 asks for: a small-room zone grows to its ceiling in one
+        // process, and the geometry is paid for once.
+        let mut z = serving(100, 1, 2);
+        for _ in 0..100 {
+            let Some(i) = z.room_for_join() else { break };
+            seat(&mut z, i, 1);
+        }
+        assert_eq!(z.rooms.len(), 100, "the ceiling is reachable");
+        assert_eq!(z.total_players(), 100);
+        let map = z.rooms[0].world.map.clone();
+        for (n, r) in z.rooms.iter().enumerate() {
+            assert!(std::sync::Arc::ptr_eq(&map, &r.world.map), "room {n} shares it");
+        }
+    }
+
+    #[test]
+    fn changing_zone_replaces_every_room() {
+        let mut z = serving(3, 1, 16);
+        for _ in 0..3 {
+            let i = z.room_for_join().expect("room");
+            seat(&mut z, i, 1);
+        }
+        assert_eq!(z.rooms.len(), 3);
+        let other = fleet::WireZone { name: "elsewhere".into(), ..wire_zone(3, 1, 16) };
+        z.serve_zone(&other).expect("it builds");
+        assert_eq!(z.zone_name, "elsewhere");
+        assert_eq!(z.rooms.len(), 1, "the old rooms served the old game");
+        assert_eq!(z.total_players(), 0);
+    }
+
+    #[test]
+    fn a_kick_reaches_a_player_in_any_room() {
+        let mut z = serving(2, 1, 16);
+        seat(&mut z, 0, 1);
+        let i = z.room_for_join().expect("a second room");
+        seat(&mut z, i, 1);
+        // p1-0 is in room one, which the operator neither knows nor should.
+        let (outcome, _why) = z.run_command(&fleet::Command {
+            command_id: 1,
+            verb: "kick".into(),
+            args: "p1-0".into(),
+            actor: "tester".into(),
+        });
+        assert_eq!(outcome, "done");
+        assert_eq!(z.total_players(), 1);
+    }
+
+    #[test]
+    fn a_client_that_stops_reading_costs_a_bounded_amount() {
+        // The queue used to be unbounded, so a client that stopped reading made
+        // the process allocate for as long as it stayed connected. A snapshot is
+        // a whole state pack, so dropping one is correct: the next supersedes it.
+        let mut z = serving(1, 2, 4);
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        let id = z.rooms[0].join("stalled".into(), 0, 4, tx).expect("a seat");
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for _ in 0..OUT_QUEUE * 10 {
+            z.rooms[0].tick();
+            z.rooms[0].broadcast_snapshot(&mut buf);
+        }
+        assert_eq!(rx.len(), OUT_QUEUE, "the queue stops at the bound");
+        assert_eq!(z.status().metrics.queue_depth, OUT_QUEUE as u32,
+                   "and an operator can see which connection is drowning");
+        // Still in the room, still simulated: falling behind is not an eviction.
+        assert!(z.rooms[0].players.contains_key(&id));
+    }
+
+    #[test]
+    fn a_joining_player_is_told_the_zone_they_picked() {
+        // Not the local file's name: this process is serving a catalog zone, and
+        // the name in the browse list is the name they chose from.
+        let z = serving(1, 6, 16);
+        let msg = z.zone_msg();
+        let text = String::from_utf8_lossy(&msg[1..]).to_string();
+        assert!(text.starts_with("testzone\n"), "{text:?}");
+        assert!(text.contains("a zone for tests"), "{text:?}");
     }
 
     #[test]

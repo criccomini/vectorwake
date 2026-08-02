@@ -254,7 +254,7 @@ A zone also declares `max_rooms`, the most simulations one process may hold for
 it. Rooms are created on demand up to that ceiling and reclaimed when they empty,
 so the number is a cap rather than a count: a process configured for a hundred
 duel rooms holds as many as there are matches, and its memory is bounded at
-`max_rooms` times 79 KB plus one shared map. War sets it to 1, because a 64-player
+`max_rooms` times 107 KB plus one shared map. War sets it to 1, because a 64-player
 fight deserves its own blast radius. Duel sets it to 100, because the rooms are
 tiny and share a map. Same binary either way. The measurements are in
 [hosting.md](hosting.md), and the amendment to [decision 23](decisions.md) records
@@ -270,7 +270,7 @@ procedure:
 1. **The fullest room below its player cap, on the instance the client chose.**
    This is the client's own preference and it does most of the work.
 2. **A new room on that instance**, if every room it holds for this zone is at
-   `fill_target` and it is below `max_rooms`. Costs 79 KB and no coordination,
+   `fill_target` and it is below `max_rooms`. Costs 107 KB and no coordination,
    which is why it comes before anything involving another process.
 3. **Another instance already serving this zone**, if that one is at `max_rooms`.
    The client tries the next address the directory gave it.
@@ -375,8 +375,23 @@ three of them mean "try another instance" and two mean "stop trying":
 | Banned | Say so and stop |
 | Bad protocol version | Say so and stop; the build is stale |
 
-`S2C_DENIED` already exists and carries a string. It wants a code alongside it, so
-the client can act on the first three without parsing English.
+`S2C_DENIED` carries the code in its first byte and then the sentence, so a client
+acts on the first three without parsing English.
+
+Two of the five need the client to say something, which is why `C2S_JOIN` carries
+more than a hull and a name:
+
+```
+C2S_JOIN class protocol zone_len zone name
+```
+
+The protocol is checked first, before anything else in the message is trusted: a
+build that misparses this wire would misparse the refusal too. The zone is the
+game the player picked out of a browse list, and it is checked rather than
+assumed, because an instance is free to change zone the moment its last player
+leaves and the browse reply a client is acting on may be seconds old. Empty means
+"whatever you are running", which is what typing an address directly means and the
+only case where a wrong-zone refusal cannot happen.
 
 ## Duel is the exception
 

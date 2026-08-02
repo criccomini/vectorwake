@@ -233,9 +233,13 @@ impl Directory {
             }
         }
         // Fullest first, so a client taking the head of the list concentrates a
-        // population by default rather than scattering it.
+        // population by default rather than scattering it. Full instances go
+        // last regardless: they are still listed, because a spectator or an
+        // operator wants to see them, but the head of the list has to be an
+        // address that will actually take the player who clicked it.
         for z in zones.iter_mut() {
-            z.instances.sort_by(|a, b| b.players.cmp(&a.players));
+            z.instances
+                .sort_by(|a, b| a.full.cmp(&b.full).then(b.players.cmp(&a.players)));
         }
         Browse {
             name: self.catalog.name.clone(),
@@ -726,6 +730,22 @@ mod tests {
         d.regs.get_mut("b").unwrap().status.max_rooms = 4;
         let inst = &d.browse().zones[0].instances[0];
         assert!(!inst.full, "room headroom means a seat can still be made");
+    }
+
+    #[test]
+    fn a_full_instance_is_listed_but_never_first() {
+        // The head of the list is what a client takes by default, so it has to
+        // be an address that will accept the player who clicked it. Before this,
+        // sorting purely by population put the one full instance at the top and
+        // the default click was a guaranteed refusal.
+        let mut d = Directory::new(cat());
+        reg(&mut d, "packed", "chaos", 8, true); // at max_players, one room of one
+        reg(&mut d, "roomy", "chaos", 3, true);
+        let chaos = d.browse().zones.into_iter().find(|z| z.name == "chaos").unwrap();
+        assert_eq!(chaos.instances.len(), 2, "the full one is still shown");
+        assert_eq!(chaos.instances[0].players, 3, "but the one with room is first");
+        assert!(chaos.instances[1].full);
+        assert_eq!(chaos.players, 11, "and both count toward the zone's total");
     }
 
     #[test]

@@ -370,12 +370,21 @@ impl Default for sim_events {
     }
 }
 
-// Safety: the only raw pointer in the graph is `sim_settings.map`, which
-// points at the map this World owns and which the core only ever reads.
+// Safety: the only raw pointer in the graph is `sim_settings.map`, which points
+// at the map this World holds a reference to and which the core only ever reads.
+// The `Arc` keeps that allocation alive for at least as long as the settings that
+// point into it, and an `Arc`'s payload does not move when the `Arc` is cloned or
+// the World is moved.
 unsafe impl Send for World {}
 
 pub struct World {
-    pub map: Box<sim_map>,
+    /// Shared, because geometry is a megabyte and every room of a zone runs the
+    /// same one. It is immutable once loaded: doors are computed from the tick
+    /// rather than stored, so nothing in a step writes to it, and the core takes
+    /// it as `const sim_map *`. This is what makes a room cost 79 KB instead of
+    /// 1.1 MB, which is the whole basis of the per-room figure in
+    /// docs/architecture/hosting.md.
+    pub map: std::sync::Arc<sim_map>,
     pub cfg: Box<sim_settings>,
     pub state: Box<sim_state>,
     scratch: Box<sim_state>,
@@ -407,16 +416,26 @@ impl World {
     /// Build from a packed map file. Errors carry the reason rather than a
     /// number, because the only person who sees one is an operator holding a
     /// file they believed was a map.
+    ///
+    /// The map is unpacked before anything shares it, so the settings that point
+    /// into it are derived from the geometry they will actually be played on.
     pub fn from_packed(seed: u32, bytes: &[u8]) -> Result<Self, String> {
-        let mut w = Self::with_map(seed, |_| {});
+        let mut map: Box<sim_map> = zeroed_box();
         let r = unsafe {
-            sim_map_unpack(&mut *w.map as *mut sim_map, bytes.as_ptr(), bytes.len() as i32)
+            sim_map_unpack(&mut *map as *mut sim_map, bytes.as_ptr(), bytes.len() as i32)
         };
         match r {
-            0 => Ok(w),
+            0 => Ok(Self::on_map(seed, std::sync::Arc::from(map))),
             -2 => Err("the tiles do not match the hash in its header".into()),
             _ => Err("not a map file, or truncated".into()),
         }
+    }
+
+    /// Another simulation of the same geometry, for a second room of a zone.
+    /// Settings come from the baseline again and the caller re-applies the zone
+    /// file, which is the same path the first room took, so rooms cannot differ.
+    pub fn sibling(&self, seed: u32) -> Self {
+        Self::on_map(seed, std::sync::Arc::clone(&self.map))
     }
 
     /// A blank weapon, appended to both tables, and the pattern index that
@@ -472,6 +491,14 @@ impl World {
     fn build(seed: u32, build: fn(&mut sim_map)) -> Self {
         let mut map: Box<sim_map> = zeroed_box();
         build(&mut map);
+        Self::on_map(seed, std::sync::Arc::from(map))
+    }
+
+    /// Everything but the geometry: fresh settings from the baseline, a fresh
+    /// state, and the scratch and event buffers a step needs. The one place a
+    /// World is assembled, so a room built here and a room built by `sibling`
+    /// start from the same numbers.
+    fn on_map(seed: u32, map: std::sync::Arc<sim_map>) -> Self {
         let mut cfg: Box<sim_settings> = zeroed_box();
         unsafe { sim_settings_baseline(&mut *cfg, &*map) };
         let mut state: Box<sim_state> = zeroed_box();

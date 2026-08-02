@@ -212,6 +212,14 @@ underneath so the client can choose. `full` is the directory's summary of whethe
 a join would be refused, which saves a client a round trip it would otherwise
 spend learning the same thing.
 
+The instance list is ordered so that taking its head is the right default: full
+instances go last, and the rest are fullest first. Both halves matter and the
+second is the less obvious one. Concentrating is the goal, so a client that takes
+the head lands where the people are; but sorting purely by population puts a full
+instance at the top, and then the default choice is a guaranteed refusal. A full
+instance is still listed, because a player deciding between games wants to know
+Chaos has three hundred people in it, and an operator wants to see the same.
+
 The client caches this and may use a stale copy. Under assignment a directory
 outage would block every join including joins to rooms running perfectly well;
 reporting instead of routing means the addresses in a stale list still work, and

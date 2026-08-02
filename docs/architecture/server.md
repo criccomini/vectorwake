@@ -192,6 +192,17 @@ Metrics we care about from the start: tick duration per arena, bandwidth per
 player, snapshot size, input queue depth, and the count of lag actions taken.
 Those five numbers tell us whether the architecture is holding.
 
+Queue depth is the one that is load-bearing rather than merely interesting. Each
+connection has a bounded outbound queue and the arena drops rather than blocks
+when it is full, which is safe because a snapshot is a whole state pack: the next
+one supersedes any that was dropped. Unbounded was the original, and it made a
+client that stopped reading into a memory leak with a socket on the end of it --
+two hundred stalled clients in one room took a process from 8 MB to 450 MB in
+twenty-five seconds, measured, and the bound holds it to a tenth of that. Reported
+depth is the worst-off connection in the process, because that is the one whose
+player is losing frames. Disconnecting a client that stays at the bound is a lag
+action, and lag actions are still deferred.
+
 ## Open questions
 
 Whether WASM module startup cost is acceptable when an arena loads, and how

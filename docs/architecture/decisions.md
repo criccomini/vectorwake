@@ -666,10 +666,10 @@ than elastic capacity does, or if the process-per-room overhead stops being
 noise at the population we actually reach.
 
 **Amended: rooms per process is a property of the zone.** That last
-reconsideration fired as soon as anybody measured. A room is 79 KB, because the
-map is shared by pointer rather than copied, and it steps in 1.6 microseconds at
-two ships and 16.3 at sixty-four, which is 615 to 6,400 rooms per core. So a
-thousand concurrent duels is 75 MB and a sixth of a core, and insisting each one
+reconsideration fired as soon as anybody measured. A room is 107 KB, because the
+map is shared by pointer rather than copied, and it steps in 1.8 microseconds at
+two ships and 16.4 at sixty-four, which is 610 to 5,500 rooms per core. So a
+thousand concurrent duels is 107 MB and a fifth of a core, and insisting each one
 gets a process would mean a thousand of everything: runtimes, TLS stacks,
 registration sockets, container overhead.
 

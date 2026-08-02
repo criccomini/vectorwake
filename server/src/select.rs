@@ -665,8 +665,10 @@ pub async fn decide_loop(zone: std::sync::Arc<tokio::sync::Mutex<crate::Zone>>) 
             if z.catalog.is_none() || z.pinned.is_some() {
                 continue;
             }
-            if !z.arena.players.is_empty() {
-                continue; // rule 1, and it is absolute
+            // Every room, not just the first: an instance with anybody playing
+            // anywhere in it does not change zone. Rule 1, and it is absolute.
+            if z.total_players() != 0 {
+                continue;
             }
             if now_ms().saturating_sub(z.fleet.last_commit_ms) < RECHOOSE_COOLDOWN_MS
                 && !z.zone_name.is_empty()
@@ -693,7 +695,7 @@ pub async fn decide_loop(zone: std::sync::Arc<tokio::sync::Mutex<crate::Zone>>) 
         // Phase three: commit only if the announcements we can now see still
         // leave room for us.
         let mut z = zone.lock().await;
-        if !z.arena.players.is_empty() || z.pinned.is_some() {
+        if z.total_players() != 0 || z.pinned.is_some() {
             continue; // somebody arrived while we waited; they win
         }
         let cat = match z.catalog.clone() {

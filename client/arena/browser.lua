@@ -1,8 +1,16 @@
--- The server browser.
+-- The game browser.
 --
 -- Asks a directory what is running and lets the player pick. It speaks the
 -- same protocol a zone does, so this needs no second transport, and it holds
 -- nothing: close it and the answer is forgotten.
+--
+-- A player picks a game, not a machine. The directory's reply is a list of
+-- zones with the instances running each one underneath, so a row here is a game
+-- and choosing it takes the head of that zone's instance list -- which the
+-- directory has already ordered so the head is the fullest one with room. The
+-- address is shown but is not the thing being chosen, and the zone's name
+-- travels with the join so arriving at an instance that has since changed game
+-- is a refusal rather than a surprise.
 --
 -- A directory being unreachable is not an error worth blocking on. The client
 -- is playable with nothing behind it, so a browser that cannot reach anything
@@ -22,27 +30,33 @@ local conn = nil
 
 local function on_message(s)
     if string.byte(s, 1) ~= S2C_STATUS then return end
-    local ok, list = pcall(json.decode, string.sub(s, 2))
-    if not ok or type(list) ~= "table" then
+    local ok, reply = pcall(json.decode, string.sub(s, 2))
+    if not ok or type(reply) ~= "table" or type(reply.zones) ~= "table" then
         M.note = "the directory sent something unreadable"
         return
     end
     M.rows = {}
-    for _, e in ipairs(list) do
-        local st = e.status
+    for _, z in ipairs(reply.zones) do
+        local up = z.instances and z.instances[1] or nil
+        local players = z.players or 0
         M.rows[#M.rows + 1] = {
-            address = e.address,
-            -- A zone that is listed but not answering is a row, not a gap:
-            -- the player is better off seeing it is down than wondering.
-            name = st and st.name or e.address,
-            detail = st
-                and string.format("%d playing, %d AI", st.players or 0, st.bots or 0)
-                or "not answering",
-            live = st ~= nil,
+            zone = z.name,
+            -- The head of the zone's list, already ordered by the directory so
+            -- it is the fullest instance that still has room.
+            address = up and up.address or "",
+            name = z.name,
+            -- A zone with nobody running it is a row, not a gap: a player is
+            -- better off seeing that Chaos exists and is down than wondering
+            -- whether they misread the list.
+            detail = up
+                and string.format("%d playing, %d AI  ·  %s", players, z.bots or 0,
+                                  z.description or "")
+                or "nobody is running it",
+            live = up ~= nil,
         }
     end
     M.selected = 1
-    M.note = (#M.rows == 0) and "the directory lists no zones" or ""
+    M.note = (#M.rows == 0) and "the directory lists no games" or ""
 end
 
 function M.connect(url)
@@ -76,10 +90,11 @@ function M.move(delta)
     if M.selected > #M.rows then M.selected = 1 end
 end
 
--- The chosen address, or nil when the selection is a zone that is not up.
+-- The chosen game: an address to dial and the zone name to ask for. Nil when
+-- the selection is a game nobody is currently running.
 function M.chosen()
     local r = M.rows[M.selected]
-    if r and r.live then return r.address end
+    if r and r.live then return r.address, r.zone end
     return nil
 end
 
@@ -95,7 +110,7 @@ function M.draw(u, ui, w, h, s)
     local x = math.max(40 * s, (w - 720 * s) / 2)
     local y = 90 * s
     ui.line("v e c t o r w a k e", x, y, 30 * s, pal.FRIEND)
-    ui.line("choose a zone", x, y + 36 * s, 13 * s, pal.INK)
+    ui.line("choose a game", x, y + 36 * s, 13 * s, pal.INK)
     ui.line("↑ ↓ move    enter joins    esc plays offline",
             x, y + 56 * s, 13 * s, pal.DIM)
 
