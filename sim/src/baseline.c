@@ -186,6 +186,11 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_PUSH)] = 25;     /* ours */
     }
     cfg->rust_chance = 10;
+    /* Thirty greens in hand the moment a ship spawns. A fight between two
+     * empty ships is the least interesting fight in the game, and without
+     * this it is the one every match opens with and the one every death
+     * returns you to. A zone that wants pilots to earn it all sets zero. */
+    cfg->spawn_prizes = 30;
     /* A kill is worth three bounty to the killer, so a pilot on a streak
      * becomes a target without having touched a green -- and a flag carrier
      * is worth crossing the map for. The original's reference zone used six

@@ -331,6 +331,12 @@ typedef struct {
      * fresh one is never punished for arriving; when there is nothing to take
      * the green is an ordinary upgrade. */
     uint16_t rust_chance;
+    /* Greens a ship is handed the moment it spawns, rolled the same way a
+     * green found on the floor is. A zone that wants pilots to start plain
+     * sets it to zero; the baseline starts everyone loaded, because a fight
+     * between two empty ships is the least interesting fight in the game and
+     * it is the one every match opens with. */
+    uint16_t spawn_prizes;
     /* What one rung of each add-on is worth. Units are the field it changes:
      * extra projectiles, walls, Q8 px of fuse, ticks of stall, Q16 push. */
     int32_t mod_step[SIM_MOD_COUNT];

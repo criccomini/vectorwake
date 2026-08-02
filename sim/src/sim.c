@@ -156,6 +156,26 @@ void sim_init(sim_state *s, uint32_t seed) {
     s->rng = seed ? seed : 1u;
 }
 
+/* Hand a fresh ship its opening greens.
+ *
+ * The same roll a green on the floor gets, run `spawn_prizes` times off the
+ * state's own generator -- so it is deterministic, it respects the hull's
+ * roster and every ceiling in it, and a zone that reweights the tree gets the
+ * spawn it asked for without a second table.
+ *
+ * Rust is left in rather than suppressed. It cannot bite on the first roll --
+ * an empty pilot has nothing to corrode -- and after that it is one green in a
+ * hundred, so it costs a spawn a fraction of an item on average and needs no
+ * special case to say so.
+ *
+ * The caller sets energy afterwards, not before: the energy ceiling is a
+ * function of `up[SIM_UP_ENERGY]`, and filling the bar before the prizes lands
+ * would leave a ship at less than the full one it just earned. */
+static void outfit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
+    for (uint16_t n = 0; n < cfg->spawn_prizes; n++)
+        sim_take_prize(sh, cfg, rng, NULL);
+}
+
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg) {
     if (s->ship_count >= SIM_MAX_SHIPS) return -1;
@@ -169,6 +189,7 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
     sh->x = sh->spawn_x = x_px * 256;
     sh->y = sh->spawn_y = y_px * 256;
     sh->heading = heading;
+    outfit(sh, cfg, &s->rng);
     sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
     return i;
 }
@@ -617,6 +638,9 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     sh->y = sh->spawn_y;
     sh->vx = sh->vy = 0;
     sh->fire_cooldown = 0;
+    /* Rerolled for the new hull rather than carried across: the roster row
+     * changed, so the old items may not be things this hull can hold. */
+    outfit(sh, cfg, &s->rng);
     sh->energy = sim_eff_max_energy(&cfg->classes[cls], sh);
     return 0;
 }
@@ -904,6 +928,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 sh->x = sh->spawn_x;
                 sh->y = sh->spawn_y;
                 sh->vx = sh->vy = 0;
+                outfit(sh, cfg, &next->rng);
                 sh->energy = sim_eff_max_energy(cls, sh);
                 sh->fire_cooldown = 0;
                 emit(ev, SIM_EV_SPAWN, (uint8_t)i, 0, 0);

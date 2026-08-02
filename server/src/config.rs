@@ -68,6 +68,9 @@ pub struct ArenaConfig {
     /// giving it. Rust can only corrode what a pilot is holding, so it costs
     /// the loaded and never the newly spawned.
     pub rust: Option<u16>,
+    /// Greens a ship is handed the moment it spawns, rolled the same way one
+    /// found on the floor is. Zero starts pilots plain.
+    pub spawn_prizes: Option<u16>,
     /// What a kill adds to the killer's own bounty, so a pilot on a streak
     /// becomes a target without having touched a green.
     pub bounty_per_kill: Option<u16>,
@@ -206,6 +209,7 @@ impl Default for ArenaConfig {
             mod_step: HashMap::new(),
             prize_weight: HashMap::new(),
             rust: None,
+            spawn_prizes: None,
             bounty_per_kill: None,
             points_per_flag: None,
             multi_energy: None,

@@ -128,6 +128,8 @@ pub struct sim_settings {
     pub points_per_flag: u16,
     /// Out of a thousand, how often a green corrodes instead of granting.
     pub rust_chance: u16,
+    /// Greens a ship is handed the moment it spawns.
+    pub spawn_prizes: u16,
     /// What one rung of each add-on is worth, in the units of the field it
     /// moves.
     pub mod_step: [i32; MOD_COUNT],

@@ -19,6 +19,19 @@ const MATCH_TICKS: u32 = 30_000; // five minutes of arena time
 /// One duel, fought to a result, with both pilots' credit going into `r`.
 fn duel(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: u32) {
     let mut world = sim::World::with_map(0xd0e1 ^ salt, modes::build_duel_map);
+    // No opening loadout, whatever the zone ships. This is a measurement of
+    // the pilot, and thirty random greens at every spawn is not noise on that
+    // measurement -- it erases it. Over a 48-round round-robin the skill
+    // parameter moves kills 93 / 102 / 187 across the three bots with this at
+    // zero, and 313 / 290 / 299 with it at thirty: a two-to-one gap becomes
+    // flat, because everyone is firing multifire from the first second and
+    // the fight is decided before flying it matters.
+    //
+    // Which is a fact about the zone rather than about the pilots, and this
+    // harness already controls for the others -- one map, fixed spawns, sides
+    // alternated, one seed. The ladder has to rank pilots, so it holds the
+    // loadout still the same way it holds the hull still.
+    world.cfg.spawn_prizes = 0;
 
     // Alternate which pilot starts on which side, so a positional advantage
     // in the duel room cannot accumulate into a rating.

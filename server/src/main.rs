@@ -147,6 +147,7 @@ impl Arena {
             }
         }
         if let Some(v) = c.rust { world.cfg.rust_chance = v.min(1000); }
+        if let Some(v) = c.spawn_prizes { world.cfg.spawn_prizes = v; }
         if let Some(v) = c.bounty_per_kill { world.cfg.bounty_per_kill = v; }
         if let Some(v) = c.points_per_flag { world.cfg.points_per_flag = v; }
         if let Some(v) = c.multi_energy { world.cfg.mod_multi_energy = v; }
@@ -1365,6 +1366,26 @@ mod tests {
         assert_eq!(w.cfg.bounty_per_kill, 3);
         assert_eq!(w.cfg.points_per_flag, 100);
         assert_eq!(w.cfg.rust_chance, 10);
+    }
+
+    #[test]
+    fn a_zone_sets_the_opening_loadout() {
+        let (w, warn) = tuned(r#"
+            [arena]
+            spawn_prizes = 0
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(w.cfg.spawn_prizes, 0, "a zone can start pilots plain");
+
+        // Untouched it is thirty. Reading the field on either side too,
+        // because a u16 landing in the wrong place is how this mirror drifts.
+        let (w, _) = tuned(r#"
+            [arena]
+            mode = "warzone"
+        "#);
+        assert_eq!(w.cfg.spawn_prizes, 30);
+        assert_eq!(w.cfg.rust_chance, 10, "and the field before it");
+        assert_eq!(w.cfg.mod_step[0], 2, "and the one after");
     }
 
     #[test]

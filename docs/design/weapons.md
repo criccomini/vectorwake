@@ -397,6 +397,39 @@ The cost is that you can only have one thing ready, so carrying a mixed
 inventory is a decision rather than a hotkey. That is slower than muscle
 memory on seven keys, and it is the trade.
 
+### A ship starts loaded
+
+`spawn_prizes`, default **30**. A ship is handed thirty greens the moment it
+spawns, rolled exactly the way one found on the floor is rolled: off the
+state's own generator, against the hull's own pool, respecting every ceiling
+in it. So this is a head start, not a way round the tree -- an Apex still
+cannot be handed a bomb rung it has no ladder for.
+
+It applies to a first spawn, a respawn and a hull change alike. A setting that
+only paid out once would mean the interesting fight is the first one and every
+fight after a death is the boring one.
+
+Rust is left in rather than suppressed. It cannot bite on the first roll --
+an empty pilot has nothing to corrode -- and after that it is one green in a
+hundred, so it costs a spawn a fraction of an item and needs no special case.
+
+**Know what this does to skill.** It is the strongest single lever in the
+tuning, and it does not merely make openings livelier. Running the bot
+calibration ladder over a 48-round round-robin -- same hull, three pilots at
+skill 0.15, 0.50 and 0.95 -- the kills come out:
+
+| | low | mid | high |
+|---|---|---|---|
+| `spawn_prizes = 0` | 93 | 102 | **187** |
+| `spawn_prizes = 30` | 313 | 290 | 299 |
+
+A two-to-one skill gap becomes flat, and the total number of kills triples.
+With everyone carrying multifire from the first second, time to kill collapses
+and the fight is over before flying it decides anything. Thirty is a choice
+for a game that wants its openings loud; a competitive zone wants a much
+smaller number, and the offline calibration in `server/src/calibrate.rs`
+pins it to zero for exactly this reason -- a ladder has to rank pilots.
+
 ### The odds, and rust
 
 Each place in the prize space carries a weight, and the roll reads them against

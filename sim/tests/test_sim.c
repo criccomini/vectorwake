@@ -121,6 +121,11 @@ int main(void) {
     sim_settings cfg;
     memset(&cfg, 0, sizeof cfg);
     sim_settings_baseline(&cfg, m);
+    /* Every test below that is not about the opening loadout wants a plain
+     * ship: with the baseline's thirty spawn greens, a "does one trigger pull
+     * make one bullet" test is really asking whether the roll handed out
+     * multifire. The feature has its own test, which sets this back. */
+    cfg.spawn_prizes = 0;
     const int APEX = 0, ANVIL = 3;
 
     /* Thrust at heading 0 moves up (-y) and nowhere else. */
@@ -1032,6 +1037,79 @@ int main(void) {
                 only_level = 0;
         }
         CHECK(only_level, "zeroing the stats takes them out of the roll");
+    }
+
+    {
+        /* A ship starts loaded. Thirty greens, rolled the way a green on the
+         * floor is rolled, so what a pilot opens with respects the hull's
+         * roster and every ceiling in it. */
+        sim_settings w = cfg;
+        w.spawn_prizes = 30;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        const sim_ship *sh = &s.ships[0];
+
+        int held_count = 0;
+        for (int u = 0; u < SIM_UP_COUNT; u++) held_count += sh->up[u];
+        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+            held_count += sh->level[t];
+            for (int mo = 0; mo < SIM_MOD_COUNT; mo++)
+                held_count += sim_mod_get(sh->mods[t], mo);
+        }
+        for (int k = 0; k < SIM_MAX_CHARGES; k++) held_count += sh->charge[k];
+
+        /* Not exactly thirty: a green that lands on something already at its
+         * ceiling is taken and named without moving a count, and one in a
+         * hundred rusts. The claim is that a spawn is loaded, not that it is
+         * loaded to a number. */
+        CHECK(held_count > 18, "a ship spawns carrying most of thirty greens");
+        CHECK(held_count <= 30, "and never more than it was handed");
+        CHECK(sim_bounty(sh) >= held_count, "which is what it is worth");
+
+        /* The roster still holds. An Apex has no bomb ladder and freeze is
+         * not on its row, however the thirty fall. */
+        CHECK(sh->level[SIM_TRIG_BOMB] == 0, "a hull cannot be handed a rung it lacks");
+        CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_FREEZE) == 0,
+              "nor an add-on that is not on its row");
+
+        /* And the bar is filled after the prizes land, not before: a spawn
+         * that rolled energy steps must open at the ceiling it just earned,
+         * not at the one it would have had empty. */
+        CHECK(s.ships[0].energy == sim_eff_max_energy(&w.classes[APEX], sh),
+              "the bar opens full at the ceiling the greens just bought");
+
+        /* Two ships spawned from one state differ, because the roll runs off
+         * the state's own generator rather than a fixed seed per ship. */
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        CHECK(memcmp(&s.ships[0].up, &s.ships[1].up, sizeof s.ships[0].up) != 0
+              || s.ships[0].mods[SIM_TRIG_GUN] != s.ships[1].mods[SIM_TRIG_GUN]
+              || memcmp(&s.ships[0].charge, &s.ships[1].charge,
+                        sizeof s.ships[0].charge) != 0,
+              "and two spawns are not the same spawn");
+
+        /* A zone that wants pilots to earn it says so, and gets a plain ship. */
+        w.spawn_prizes = 0;
+        sim_state t;
+        sim_init(&t, 1);
+        sim_spawn(&t, APEX, 0, 8192, 8192, 0, &w);
+        CHECK(sim_bounty(&t.ships[0]) == 0, "zero spawn prizes is a plain ship");
+
+        /* A respawn is a spawn: dying strips everything and the next life is
+         * outfitted again, or the setting would only apply to the first. */
+        w.spawn_prizes = 30;
+        sim_init(&t, 1);
+        sim_spawn(&t, APEX, 0, 8192, 8192, 0, &w);
+        t.ships[0].alive = 0;
+        t.ships[0].respawn_at = 1;
+        memset(t.ships[0].up, 0, sizeof t.ships[0].up);
+        memset(t.ships[0].level, 0, sizeof t.ships[0].level);
+        memset(t.ships[0].mods, 0, sizeof t.ships[0].mods);
+        memset(t.ships[0].charge, 0, sizeof t.ships[0].charge);
+        t.ships[0].earned = 0;
+        step_n(&t, &w, 0, 0, 1);
+        CHECK(t.ships[0].alive, "the respawn happened");
+        CHECK(sim_bounty(&t.ships[0]) > 0, "and it came back loaded");
     }
 
     {

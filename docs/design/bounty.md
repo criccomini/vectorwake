@@ -74,16 +74,30 @@ one out from under someone.
 A teamkill pays neither points nor bounty, which is the rule the rating layer
 already applies to teammate damage.
 
-### The best part is what falls out
+### What falls out, and what `spawn_prizes` costs
 
-**A fresh spawn is worth nothing, so camping a respawn pays nothing.** No
-anti-farming rule, no repeat-kill decay, no timer. The original needed
-`DebtKills` and `NoRewardKillDelay`; this needs neither, because the payout is
-the victim's bounty and a pilot who has just died is carrying zero.
+**A fresh spawn is worth whatever it spawned holding**, and that is a knob.
+With `spawn_prizes = 0` a pilot who has just died carries zero, so camping a
+respawn pays nothing -- no anti-farming rule, no repeat-kill decay, no timer,
+where the original needed `DebtKills` and `NoRewardKillDelay`. The property is
+free, because the payout is the victim's bounty and the victim has none.
 
-That property depends on there being no fixed component to a kill. If a zone
-ever adds one, it buys back the farming problem, and that is the trade to know
-about before adding it.
+**The baseline's 30 spawn greens buy that property back.** Every fresh spawn
+is worth about thirty, so a pilot camped on a respawn point is being paid
+thirty a kill for shooting people who have been alive for a second. That is
+the cost of a loaded opening and it should be a deliberate trade, not a
+surprise: a zone that cares about spawn camping either turns `spawn_prizes`
+down or needs the anti-farming rule this design was pleased to be doing
+without.
+
+It also raises the floor under every number in the game. Nobody is ever worth
+nothing, so the spread between a fresh pilot and a loaded one narrows from
+"everything" to "thirty against sixty", and the hunt-the-leader pressure this
+mechanic exists to create is correspondingly softer.
+
+The other property still holds regardless: there is no *fixed* component to a
+kill. The payout is the victim's bounty and nothing else, so a zone that sets
+`spawn_prizes = 0` gets the free anti-farming back with one line.
 
 ## What a kill is worth to the killer
 

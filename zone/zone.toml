@@ -44,6 +44,12 @@ prize_max = 20
 # and never touches one who has just spawned.
 rust = 10
 
+# Greens a ship is handed the moment it spawns, rolled exactly the way one
+# found on the floor is: the hull's roster and every ceiling in it still
+# apply, so this is a head start rather than a way round the tree. Zero
+# starts pilots plain.
+spawn_prizes = 30
+
 # What a kill is worth. A killer is paid the victim's whole bounty, which is
 # derived from what that pilot was carrying -- so a fresh spawn is worth
 # nothing and camping one pays nothing. bounty_per_kill is what a kill adds to
