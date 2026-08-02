@@ -837,11 +837,18 @@ function update(self, dt)
             local fp, fl, fc = layers.fill:stats()
             local gp, gl, gc = layers.glow:stats()
             local up, ul, uc = layers.ui:stats()
+            -- The static pair is in here because it was not, and a terrain
+            -- window that outgrew its buffer would have dropped walls with
+            -- nothing saying so. `lost` is the number that matters: anything
+            -- but zero is a frame drawing less than it was asked to.
+            local bp, bl, bc = layers.bg:stats()
+            local sp, sl, sc = layers.bgglow:stats()
             print(string.format(
                 "tick %d  ships %d  hash %d  at %.0f,%.0f  " ..
-                "peak f%d/%d g%d/%d u%d/%d  lost %d",
+                "peak f%d/%d g%d/%d u%d/%d bg%d/%d bgl%d/%d  lost %d",
                 sim.tick(), sim.ship_count(), sim.hash(), cx, cy,
-                fp, fc, gp, gc, up, uc, fl + gl + ul))
+                fp, fc, gp, gc, up, uc, bp, bc, sp, sc,
+                fl + gl + ul + bl + sl))
         end
     end
 
@@ -881,11 +888,23 @@ function update(self, dt)
     -- camera, so they cannot live in the mesh the walls are baked into.
     world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
     world.flags(fill, glow, my_team, t)
-    world.prizes(fill, glow, t)
-    world.weapons(fill, glow, my_team, t)
+    -- What is on screen, grown by enough that nothing pops at the edge: a
+    -- bomb's halo is 13 px, a hull's is 26, a blast reaches further. Drawing
+    -- the rest of a thousand-tile map is not merely wasted work -- it
+    -- overflows the layer and the primitives that fall past the cap simply
+    -- vanish, which reads as hulls changing shape and energy bars blinking
+    -- empty rather than as a slow frame.
+    local cull = {x0 = cx - self.hw - 96, x1 = cx + self.hw + 96,
+                  y0 = cy - self.hh - 96, y1 = cy + self.hh + 96}
+    world.prizes(fill, glow, t, cull)
+    world.weapons(fill, glow, my_team, t, cull)
 
     for i = 0, sim.ship_count() - 1 do
-        if sim.ship_alive(i) == 1 then
+        -- Yours is always drawn: the camera is on it, so it cannot be off
+        -- screen, and a frame that skipped it would be a frame with no ship.
+        if sim.ship_alive(i) == 1
+           and (i == me or not (sim.ship_x(i) < cull.x0 or sim.ship_x(i) > cull.x1
+                                or sim.ship_y(i) < cull.y0 or sim.ship_y(i) > cull.y1)) then
             local col = (sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY
             world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
                        sim.ship_y(i), sim.ship_heading(i), col, {

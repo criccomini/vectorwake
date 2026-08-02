@@ -441,11 +441,17 @@ local function spec_blast(id)
     return r
 end
 
-function M.weapons(fill, glow, me_team, t)
+local function outside(cull, x, y)
+    return x < cull.x0 or x > cull.x1 or y < cull.y0 or y > cull.y1
+end
+
+function M.weapons(fill, glow, me_team, t, cull)
     local pulse = 0.72 + 0.28 * math.sin(t * 11)
     for i = 0, sim.weapon_count() - 1 do
         local x, y, spec, vx, vy, team = sim.weapon_at(i)
-        if spec_blast(spec) > 0 then
+        if outside(cull, x, y) then
+            -- nothing: off screen
+        elseif spec_blast(spec) > 0 then
             -- A bomb is a heavy, slow, obviously dangerous object: a hot core
             -- inside a ring that breathes, with a trail long enough to read
             -- its heading from across the arena.
@@ -471,13 +477,25 @@ end
 
 -- --- prizes and flags ------------------------------------------------------
 
-function M.prizes(fill, glow, t)
+-- Everything below takes a cull box -- the camera's own extents, grown by a
+-- margin -- and skips what falls outside it.
+--
+-- This was not needed when the arena was 84 tiles: everything in the world
+-- was on screen or a few tiles off it. On a map a thousand tiles across, all
+-- but a fraction of it is somewhere nobody is looking, and drawing it is not
+-- merely wasted -- it *overflows the layer*. A hundred and fifty greens at a
+-- ten segment halo each pinned the glow buffer at 8190 of 8192 and dropped a
+-- million primitives a minute, which is not a slow frame but a wrong one:
+-- whichever strokes fell past the cap that frame simply vanished. It read as
+-- hulls that changed shape and energy bars that blinked empty, because a
+-- bar's backing is on the fill layer and its level is on the glow one.
+function M.prizes(fill, glow, t, cull)
     local spin = t * 1.1
     local ca, sa = math.cos(spin), math.sin(spin)
     local pulse = 0.78 + 0.22 * math.sin(t * 3.4)
     for i = 0, sim.prize_count() - 1 do
         local active, x, y, life = sim.prize_at(i)
-        if active then
+        if active and not outside(cull, x, y) then
             -- Every green looks the same, because every green *is* the same:
             -- what it turns out to be is decided when somebody takes it, from
             -- what their hull can hold. Colouring them by kind would have been
