@@ -192,6 +192,13 @@ typedef enum {
 #define SIM_MAX_CHARGES 4
 #define SIM_CHARGE_MAX 15  /* how many of one kind a pilot can hold */
 
+/* The slot field in the buttons and the number of charge kinds are two halves
+ * of one fact. Raising SIM_MAX_CHARGES without widening the field would leave
+ * the top slots quietly unreachable, so say it here and fail to compile
+ * instead. */
+typedef char sim_slot_field_is_wide_enough[
+    ((SIM_BTN_SLOT_MASK >> SIM_BTN_SLOT_SHIFT) + 1 >= SIM_MAX_CHARGES) ? 1 : -1];
+
 /* Add-on counts pack two bits each into one word, on the ship and on every
  * projectile it fires. */
 static inline uint8_t sim_mod_get(uint16_t mods, int m) {
