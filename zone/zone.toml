@@ -39,6 +39,11 @@ respawn_delay = 300   # ticks, so three seconds
 prize_delay = 100     # a green every second until the map is full
 prize_max = 20
 
+# Out of a thousand, how often a green takes something back instead of giving
+# it. Rust can only corrode what a pilot is holding, so it costs the loaded
+# and never touches one who has just spawned.
+rust = 100
+
 # Per-hull tuning, in settings-file units. Name the hull and set only what
 # you want to change; upgrades climb toward whatever ceiling you give.
 [[arena.ships]]
@@ -136,6 +141,19 @@ recharge = 1000
 #   name = "Anvil"
 #   bomb_mods = { shrapnel = 3, prox = 1 }
 #   gun_mods = { multi = 1 }
+#
+# How often a green turns out to be each thing. Relative, not percentages, and
+# read against the pool of whoever picked it up -- so this is the shape of the
+# tree, and the roster decides which of it a given hull ever sees. The five
+# stats keep their own names; a level and an add-on are named for the trigger.
+# Anything left out keeps the baseline: 100 a stat, 30 a level, 20 an add-on.
+#   [arena.prize_weight]
+#   speed = 120
+#   gun-level = 30
+#   bomb-shrapnel = 20
+#
+# And rust, which is a key on [arena] rather than a weight -- see the top of
+# that section.
 
 # Authority is a set of named powers rather than a rank, the way ASSS did it.
 [[staff]]

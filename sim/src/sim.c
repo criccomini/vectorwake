@@ -626,35 +626,108 @@ int sim_prize_pool(const sim_ship_class *c, uint8_t *out) {
     return n;
 }
 
-/* Raise one count, as far as its ceiling allows and no further. */
-static void raise_count(sim_ship *sh, const sim_ship_class *c, uint8_t type) {
+/* Move one count by a step, within its ceiling and never below zero. */
+static void move_count(sim_ship *sh, const sim_ship_class *c, uint8_t type,
+                       int by) {
     if (type < SIM_UP_COUNT) {
-        if (sh->up[type] < SIM_UP_STEPS) sh->up[type]++;
+        if (by < 0) { if (sh->up[type]) sh->up[type]--; }
+        else if (sh->up[type] < SIM_UP_STEPS) sh->up[type]++;
         return;
     }
     type = (uint8_t)(type - SIM_UP_COUNT);
     if (type < SIM_TRIG_COUNT) {
-        int next = sh->level[type] + 1;
-        if (next < SIM_MAX_RUNGS && c->trigger[type][next] != SIM_NO_PATTERN)
-            sh->level[type] = (uint8_t)next;
+        if (by < 0) {
+            if (sh->level[type]) sh->level[type]--;
+        } else {
+            int next = sh->level[type] + 1;
+            if (next < SIM_MAX_RUNGS && c->trigger[type][next] != SIM_NO_PATTERN)
+                sh->level[type] = (uint8_t)next;
+        }
         return;
     }
     type = (uint8_t)(type - SIM_TRIG_COUNT);
     {
         int t = type / SIM_MOD_COUNT, m = type % SIM_MOD_COUNT;
         uint8_t have = sim_mod_get(sh->mods[t], m);
-        if (have < sim_mod_get(c->mod_max[t], m))
+        if (by < 0) {
+            if (have) sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have - 1));
+        } else if (have < sim_mod_get(c->mod_max[t], m)) {
             sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have + 1));
+        }
     }
 }
 
-uint8_t sim_take_prize(sim_ship *sh, const sim_ship_class *c, uint32_t *rng) {
+/* How much of `type` this pilot is holding, which is what rust can take. */
+static uint8_t held(const sim_ship *sh, uint8_t type) {
+    if (type < SIM_UP_COUNT) return sh->up[type];
+    type = (uint8_t)(type - SIM_UP_COUNT);
+    if (type < SIM_TRIG_COUNT) return sh->level[type];
+    type = (uint8_t)(type - SIM_TRIG_COUNT);
+    return sim_mod_get(sh->mods[type / SIM_MOD_COUNT], type % SIM_MOD_COUNT);
+}
+
+/* Rust: a green that takes something instead of giving it.
+ *
+ * It can only corrode what the pilot is actually holding, chosen evenly among
+ * those, which is the whole of why it is not simply cruel. A pilot who has
+ * just spawned holds nothing and cannot be rusted at all, so the punishment
+ * lands on the loaded rather than on the arriving -- the same pressure bounty
+ * applies, coming from a second direction. Returns 0 when there is nothing to
+ * take, and the green goes back to being an ordinary one.
+ */
+static int rust_one(sim_ship *sh, const sim_ship_class *c, uint32_t *rng,
+                    uint8_t *out) {
+    uint8_t pool[SIM_PRIZE_COUNT], have[SIM_PRIZE_COUNT];
+    int n = sim_prize_pool(c, pool), k = 0;
+    for (int i = 0; i < n; i++)
+        if (held(sh, pool[i])) have[k++] = pool[i];
+    if (k == 0) return 0;
+    *rng = xorshift32(*rng);
+    *out = have[*rng % (uint32_t)k];
+    move_count(sh, c, *out, -1);
+    return 1;
+}
+
+uint8_t sim_take_prize(sim_ship *sh, const sim_settings *cfg, uint32_t *rng,
+                       int *delta) {
+    const sim_ship_class *c = &cfg->classes[sh->cls];
+    if (delta) *delta = 1;
+
+    if (cfg->rust_chance) {
+        *rng = xorshift32(*rng);
+        if (*rng % 1000u < cfg->rust_chance) {
+            uint8_t got;
+            if (rust_one(sh, c, rng, &got)) {
+                if (delta) *delta = -1;
+                return got;
+            }
+        }
+    }
+
     uint8_t pool[SIM_PRIZE_COUNT];
     int n = sim_prize_pool(c, pool);
     if (n == 0) return SIM_PRIZE_NONE;
+    /* Weighted over the hull's own pool, so a zone writes the shape of its
+     * tree and the roster decides which parts of it this pilot can see. A
+     * zone that zeroes everything gets an even roll rather than a division
+     * by nothing. */
+    uint32_t total = 0;
+    for (int i = 0; i < n; i++) total += cfg->prize_weight[pool[i]];
     *rng = xorshift32(*rng);
-    uint8_t type = pool[*rng % (uint32_t)n];
-    raise_count(sh, c, type);
+    uint8_t type;
+    if (total == 0) {
+        type = pool[*rng % (uint32_t)n];
+    } else {
+        uint32_t r = *rng % total;
+        int i = 0;
+        for (; i < n - 1; i++) {
+            uint32_t w = cfg->prize_weight[pool[i]];
+            if (r < w) break;
+            r -= w;
+        }
+        type = pool[i];
+    }
+    move_count(sh, c, type, 1);
     return type;
 }
 
@@ -703,12 +776,17 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
              * count simply does not move. A green that refuses to be picked
              * up reads as a broken pickup, and one that is eaten in silence
              * is a green that lies. */
-            uint8_t got = sim_take_prize(sh, &cfg->classes[sh->cls], &s->rng);
+            int delta = 1;
+            uint8_t got = sim_take_prize(sh, cfg, &s->rng, &delta);
             /* Collecting energy or recharge should feel immediate rather than
-             * arriving over the next few seconds. */
-            if (got == SIM_UP_ENERGY || got == SIM_UP_RECHARGE)
-                sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
-            emit(ev, SIM_EV_PRIZE, (uint8_t)k, got, 0);
+             * arriving over the next few seconds. Losing one is not the same
+             * shape: the bar is clamped down to the new ceiling rather than
+             * refilled to it. */
+            if (got == SIM_UP_ENERGY || got == SIM_UP_RECHARGE) {
+                int32_t cap = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
+                if (delta > 0 || sh->energy > cap) sh->energy = cap;
+            }
+            emit(ev, SIM_EV_PRIZE, (uint8_t)k, got, delta);
             p->active = 0;
             live--;
             break;

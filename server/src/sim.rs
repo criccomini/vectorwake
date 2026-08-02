@@ -116,6 +116,10 @@ pub struct sim_settings {
     pub patterns: [sim_fire_pattern; MAX_PATTERNS],
     pub spec_count: u8,
     pub pattern_count: u8,
+    /// Odds a green turns out to be each thing, over the flat prize space.
+    pub prize_weight: [u16; PRIZE_COUNT],
+    /// Out of a thousand, how often a green corrodes instead of granting.
+    pub rust_chance: u16,
     /// What one rung of each add-on is worth, in the units of the field it
     /// moves.
     pub mod_step: [i32; MOD_COUNT],
@@ -308,6 +312,7 @@ pub const TRIG_COUNT: usize = 2;
 pub const MOD_COUNT: usize = 6;
 pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;
+pub const PRIZE_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT;
 pub const MOD_PROX: usize = 2;
 pub const MOD_PUSH: usize = 5;
 

@@ -214,7 +214,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-#define CFG_VERSION 2
+#define CFG_VERSION 3
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -273,6 +273,8 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w32(&w, (uint32_t)p->recoil);
     }
 
+    for (int i = 0; i < SIM_PRIZE_COUNT; i++) w16(&w, cfg->prize_weight[i]);
+    w16(&w, cfg->rust_chance);
     for (int m = 0; m < SIM_MOD_COUNT; m++) w32(&w, (uint32_t)cfg->mod_step[m]);
     w16(&w, cfg->mod_spread);
     for (int r = 0; r < SIM_MAX_RUNGS; r++) w8(&w, cfg->mod_splinter[r]);
@@ -364,6 +366,9 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         p->recoil = (int32_t)r32(&r);
     }
 
+    for (int i = 0; i < SIM_PRIZE_COUNT; i++)
+        cfg->prize_weight[i] = (uint16_t)r16(&r);
+    cfg->rust_chance = (uint16_t)r16(&r);
     for (int m = 0; m < SIM_MOD_COUNT; m++) cfg->mod_step[m] = (int32_t)r32(&r);
     cfg->mod_spread = (uint16_t)r16(&r);
     for (int k = 0; k < SIM_MAX_RUNGS; k++)

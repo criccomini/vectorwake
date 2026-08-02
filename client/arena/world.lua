@@ -568,11 +568,20 @@ function M.events(me, sfx)
                 sfx("bounce", x, y)
             end
         elseif ty == sim.EV_PRIZE then
+            -- v is +1 for an upgrade and -1 for rust. A green that took
+            -- something has to look and sound like a loss, or the one
+            -- mechanic that costs you anything is invisible.
             local x, y = sim.ship_x(a), sim.ship_y(a)
-            local col = pal.prize(b)
-            fx.wave(x, y, 4, 26, 0.35, 3, col)
-            fx.burst(x, y, 6, 60, 0.5, 1.4, col)
-            sfx("prize", x, y)
+            local col = (v < 0) and pal.RUST or pal.prize(b)
+            if v < 0 then
+                fx.wave(x, y, 5, 22, 0.4, 3, col)
+                fx.burst(x, y, 5, 40, 0.45, 1.2, col)
+                sfx("rust", x, y)
+            else
+                fx.wave(x, y, 4, 26, 0.35, 3, col)
+                fx.burst(x, y, 6, 60, 0.5, 1.4, col)
+                sfx("prize", x, y)
+            end
         elseif ty == sim.EV_FLAG_TAKE then
             local x, y = sim.ship_x(a), sim.ship_y(a)
             local col = (sim.ship_team(a) == sim.ship_team(me)) and pal.FRIEND or pal.ENEMY

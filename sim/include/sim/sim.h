@@ -276,6 +276,16 @@ typedef struct {
     sim_fire_pattern patterns[SIM_MAX_PATTERNS];
     uint8_t spec_count;
     uint8_t pattern_count;
+    /* Odds a green turns out to be each thing, over the flat prize space.
+     * Relative rather than percentages -- doubling every number changes
+     * nothing -- and read against the pool of the hull that took it, so what
+     * a zone writes is the shape of the tree rather than its arithmetic. */
+    uint16_t prize_weight[SIM_PRIZE_COUNT];
+    /* Out of a thousand, how often a green corrodes something instead of
+     * granting it. Rust can only take what a pilot is actually holding, so a
+     * fresh one is never punished for arriving; when there is nothing to take
+     * the green is an ordinary upgrade. */
+    uint16_t rust_chance;
     /* What one rung of each add-on is worth. Units are the field it changes:
      * extra projectiles, walls, Q8 px of fuse, ticks of stall, Q16 push. */
     int32_t mod_step[SIM_MOD_COUNT];
@@ -343,13 +353,15 @@ typedef struct {
 int sim_prize_pool(const sim_ship_class *c, uint8_t *out);
 
 /* Roll what a green is for this pilot, apply it, and return which it was.
+ * `delta` comes back +1 for an upgrade and -1 for rust.
  *
  * The roll is over what the hull could *ever* hold rather than what it can
  * still take, so a pilot at the ceiling is told what they found and the count
  * simply does not move -- a green that is eaten in silence is a green that
  * lies. Advances `rng` in place, which is state, which is why the roll can
  * happen here at all and still be the same roll on both machines. */
-uint8_t sim_take_prize(sim_ship *sh, const sim_ship_class *c, uint32_t *rng);
+uint8_t sim_take_prize(sim_ship *sh, const sim_settings *cfg, uint32_t *rng,
+                       int *delta);
 
 /* Flags. The core owns pickup, carry, and drop, exactly as the original's
  * flagcore did; which arrangement of flags wins a round is a game mode's

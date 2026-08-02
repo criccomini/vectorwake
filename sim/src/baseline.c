@@ -84,6 +84,22 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->wormhole_pull = sim_units_speed(90);
     cfg->wormhole_range = 220 * 256;
 
+    /* What a green turns out to be. Stats are the bread of the tree, levels
+     * are the thing worth crossing a map for, and add-ons sit between them.
+     * These are relative and read against one hull's pool, so an Apex -- five
+     * stats, one level, one add-on -- sees a level about one green in twenty.
+     *
+     * Rust is the number to tune first. One green in ten takes something
+     * back, and it can only take what you are holding, so it costs a loaded
+     * pilot and never touches one who has just spawned. */
+    for (int i = 0; i < SIM_UP_COUNT; i++) cfg->prize_weight[i] = 100;
+    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        cfg->prize_weight[SIM_PRIZE_LEVEL(t)] = 30;
+        for (int m = 0; m < SIM_MOD_COUNT; m++)
+            cfg->prize_weight[SIM_PRIZE_MOD(t, m)] = 20;
+    }
+    cfg->rust_chance = 100;
+
     /* What one rung of each add-on is worth, in the units of the field it
      * moves. These are the numbers that decide whether an add-on is a nice
      * surprise or the thing everyone chases, so they live here in the open

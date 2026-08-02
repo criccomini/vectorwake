@@ -79,6 +79,8 @@ M.MODS = {
 }
 -- Every green on the map, one colour. See world.prizes.
 M.PRIZE     = rgb(0x8dffb0)
+-- And the colour of one that took something back.
+M.RUST      = rgb(0xff8a5c)
 M.LEVEL_COL = rgb(0xff7ba8)
 M.MOD_COL   = rgb(0x9df0ff)
 

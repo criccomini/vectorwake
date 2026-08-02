@@ -257,6 +257,21 @@ def prize():
     return v
 
 
+def rust():
+    """A green that took something. The prize sound's intervals, downward and
+    duller: the same event going the other way, which is what it is."""
+    v = Voice(0.26)
+    v.sine(660, 494, 0.3, curve=0.8)
+    a = Voice(0.26)
+    a.sine(440, 330, 0.26, curve=0.8)
+    for i in range(min(v.n, a.n)):
+        d = int(0.06 * RATE)
+        if i >= d:
+            v.buf[i] += a.buf[i - d]
+    v.noise(0.05, 200, 1400, curve=1.4, rng=random.Random(17))
+    return v
+
+
 def flag():
     """A flag changing hands: two tones, the second higher, quick."""
     v = Voice(0.3)
@@ -301,7 +316,8 @@ def ui_go():
 
 KIT = {
     "gun": gun, "bomb": bomb, "blast": blast, "death": death, "hit": hit,
-    "bounce": bounce, "spawn": spawn, "prize": prize, "flag": flag,
+    "bounce": bounce, "spawn": spawn, "prize": prize, "rust": rust,
+    "flag": flag,
     "thrust": thrust, "ui_move": ui_move, "ui_go": ui_go,
 }
 
@@ -319,7 +335,8 @@ loopcount: 0
 # and everything else has to be audible over it, so it sits well under them.
 GAIN = {
     "gun": 0.30, "bomb": 0.55, "blast": 0.80, "death": 0.85, "hit": 0.40,
-    "bounce": 0.30, "spawn": 0.45, "prize": 0.45, "flag": 0.55,
+    "bounce": 0.30, "spawn": 0.45, "prize": 0.45, "rust": 0.50,
+    "flag": 0.55,
     "thrust": 0.13, "ui_move": 0.35, "ui_go": 0.55,
 }
 

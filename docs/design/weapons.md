@@ -290,6 +290,39 @@ The consequence to accept is that you cannot choose which green to chase. They
 are identical on the map and always worth taking, which is the trade: the
 gamble is the mechanic, and it is the same gamble for everybody.
 
+### The odds, and rust
+
+Each place in the prize space carries a weight, and the roll reads them against
+the pool of whoever took the green. So a zone writes the *shape* of its tree --
+stats common, levels the thing worth crossing a map for, add-ons between -- and
+the roster decides which parts of that shape a given pilot can see. The
+baseline is 100 a stat, 30 a level, 20 an add-on, which puts a level at about
+one green in twenty for an Apex.
+
+The weights are relative rather than percentages. Doubling every number changes
+nothing, which means a zone can add a weapon without recalculating the file.
+
+**Rust** is a green that takes something back. It is not a place in the space
+-- it is a chance, out of a thousand, that the green corrodes instead of
+granting, and the baseline is 100.
+
+What it takes is chosen evenly from **what the pilot is actually holding**, and
+that is the whole reason it is not simply cruel:
+
+- a pilot who has just spawned holds nothing, cannot be rusted, and the green
+  quietly becomes an ordinary one. The punishment never lands on arriving.
+- a loaded pilot is the one with something to lose, so rust is a second source
+  of the pressure bounty applies -- being ahead costs something.
+- nothing can rust below nothing, and nothing can rust into a state the hull
+  could not have reached on its own.
+
+Losing an energy step clamps the bar down to the new ceiling rather than
+leaving a pilot standing above it.
+
+The client draws and sounds a rust as a loss: the feed says `- speed` in the
+rust colour, and there is a separate sound, because the one mechanic in the
+game that costs you something should not be silent.
+
 ### Writing a tree
 
 Rungs above the first are named for their level, so a zone tunes them the same

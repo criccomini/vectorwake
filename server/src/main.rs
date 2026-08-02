@@ -146,6 +146,13 @@ impl Arena {
                 }
             }
         }
+        if let Some(v) = c.rust { world.cfg.rust_chance = v.min(1000); }
+        for (name, v) in &c.prize_weight {
+            match Arena::prize_index(name) {
+                Some(i) => world.cfg.prize_weight[i] = *v,
+                None => warn.push(format!("\"{name}\" is not a prize")),
+            }
+        }
         // What a rung of each add-on is worth, before any hull is told which
         // ones it may hold.
         for (name, v) in &c.mod_step {
@@ -238,6 +245,28 @@ impl Arena {
             cls.up_recharge = (cls.recharge - cls.init_recharge) / 8;
         }
         warn
+    }
+
+    /// Prizes are named in a zone file and numbered in the core. The five
+    /// stats keep the names the panel shows; a level and an add-on are named
+    /// for the trigger they belong to, because both are per trigger.
+    fn prize_index(name: &str) -> Option<usize> {
+        const STATS: [&str; sim::UP_COUNT] =
+            ["energy", "recharge", "speed", "thrust", "rotation"];
+        if let Some(i) = STATS.iter().position(|n| n.eq_ignore_ascii_case(name)) {
+            return Some(i);
+        }
+        let (trig, rest) = name.split_once('-')?;
+        let t = match trig.to_ascii_lowercase().as_str() {
+            "gun" => 0,
+            "bomb" => 1,
+            _ => return None,
+        };
+        if rest.eq_ignore_ascii_case("level") {
+            return Some(sim::UP_COUNT + t);
+        }
+        let m = Arena::mod_index(rest)?;
+        Some(sim::UP_COUNT + sim::TRIG_COUNT + t * sim::MOD_COUNT + m)
     }
 
     /// Add-ons are named in a zone file and numbered in the core. The order
@@ -1269,6 +1298,34 @@ mod tests {
         assert_ne!(rungs[0], sim::NO_PATTERN, "the repel is on the trigger");
         assert_eq!(rungs[1], sim::NO_PATTERN,
                    "and there is nothing to level into");
+    }
+
+    #[test]
+    fn a_zone_sets_the_odds_and_the_rust() {
+        let (w, warn) = tuned(r#"
+            [arena]
+            rust = 250
+
+            [arena.prize_weight]
+            speed = 5
+            gun-level = 400
+            bomb-shrapnel = 90
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(w.cfg.rust_chance, 250);
+        assert_eq!(w.cfg.prize_weight[2], 5, "speed is the third stat");
+        assert_eq!(w.cfg.prize_weight[sim::UP_COUNT], 400, "gun level");
+        let bomb_shrap = sim::UP_COUNT + sim::TRIG_COUNT + sim::MOD_COUNT + 3;
+        assert_eq!(w.cfg.prize_weight[bomb_shrap], 90);
+        // Everything unnamed keeps the baseline's odds.
+        assert_eq!(w.cfg.prize_weight[0], 100, "energy is untouched");
+
+        let (w, warn) = tuned(r#"
+            [arena.prize_weight]
+            luck = 10
+        "#);
+        assert!(warn.iter().any(|x| x.contains("luck")), "{warn:?}");
+        assert_eq!(w.cfg.rust_chance, 100, "and rust keeps its default");
     }
 
     /// The reason apply_config rebuilds from the baseline. An operator saves

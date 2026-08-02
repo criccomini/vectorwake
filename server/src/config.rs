@@ -58,6 +58,16 @@ pub struct ArenaConfig {
     /// field each moves: barrels, walls, px of fuse, ticks of stall, px/s/10
     /// of shove. Anything left out keeps the baseline's.
     pub mod_step: HashMap<String, i32>,
+    /// How often a green turns out to be each thing, by prize name: the five
+    /// stats, `gun-level` and `bomb-level`, and `gun-multi`, `bomb-shrapnel`
+    /// and the rest. Relative rather than percentages, and read against the
+    /// pool of whichever hull took the green, so this is the shape of the
+    /// tree rather than its arithmetic.
+    pub prize_weight: HashMap<String, u16>,
+    /// Out of a thousand, how often a green takes something back instead of
+    /// giving it. Rust can only corrode what a pilot is holding, so it costs
+    /// the loaded and never the newly spawned.
+    pub rust: Option<u16>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -184,6 +194,8 @@ impl Default for ArenaConfig {
             ships: Vec::new(),
             weapons: Vec::new(),
             mod_step: HashMap::new(),
+            prize_weight: HashMap::new(),
+            rust: None,
         }
     }
 }

@@ -68,6 +68,16 @@ static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
     return c;
 }
 
+/* How much of one prize kind a pilot is holding. The core keeps this rule to
+ * itself; the test needs it to check that rust took what it says it took. */
+static uint8_t held_of(const sim_ship *sh, uint8_t type) {
+    if (type < SIM_UP_COUNT) return sh->up[type];
+    type = (uint8_t)(type - SIM_UP_COUNT);
+    if (type < SIM_TRIG_COUNT) return sh->level[type];
+    type = (uint8_t)(type - SIM_TRIG_COUNT);
+    return sim_mod_get(sh->mods[type / SIM_MOD_COUNT], type % SIM_MOD_COUNT);
+}
+
 /* A hull's gun and bomb, through the tables. Tests used to read weapon
  * numbers off the class; they live in the settings now, one step further
  * out, because a weapon is a thing a zone configures rather than a property
@@ -880,12 +890,13 @@ int main(void) {
          * ceiling and stops, and nothing it cannot hold ever appears. Which
          * is the claim -- the roll is over the roster row, so luck cannot
          * turn one hull into another. */
+        sim_settings w = cfg;
+        w.rust_chance = 0;          /* rust has its own tests below */
         sim_ship sh;
         memset(&sh, 0, sizeof sh);
-        const sim_ship_class *c = &cfg.classes[APEX];
         uint32_t rng = 12345;
-        for (int i = 0; i < 400; i++) {
-            uint8_t got = sim_take_prize(&sh, c, &rng);
+        for (int i = 0; i < 4000; i++) {
+            uint8_t got = sim_take_prize(&sh, &w, &rng, NULL);
             CHECK(got != SIM_PRIZE_NONE, "a green is always something");
         }
         for (int u = 0; u < SIM_UP_COUNT; u++)
@@ -901,14 +912,17 @@ int main(void) {
     {
         /* A pilot at the ceiling is still told what they found. The count
          * does not move; the green is taken and named. */
+        sim_settings w = cfg;
+        w.rust_chance = 0;
         sim_ship sh;
         memset(&sh, 0, sizeof sh);
-        const sim_ship_class *c = &cfg.classes[APEX];
         uint32_t rng = 999;
-        for (int i = 0; i < 400; i++) sim_take_prize(&sh, c, &rng);
+        for (int i = 0; i < 4000; i++) sim_take_prize(&sh, &w, &rng, NULL);
         sim_ship before = sh;
-        uint8_t got = sim_take_prize(&sh, c, &rng);
+        int delta = 0;
+        uint8_t got = sim_take_prize(&sh, &w, &rng, &delta);
         CHECK(got != SIM_PRIZE_NONE, "a maxed pilot still gets an answer");
+        CHECK(delta > 0, "still reported as an upgrade");
         CHECK(memcmp(&before, &sh, sizeof sh) == 0, "and nothing moves");
     }
 
@@ -920,11 +934,105 @@ int main(void) {
         memset(&b, 0, sizeof b);
         uint32_t ra = 7, rb = 7;
         for (int i = 0; i < 50; i++) {
-            CHECK(sim_take_prize(&a, &cfg.classes[APEX], &ra)
-                  == sim_take_prize(&b, &cfg.classes[APEX], &rb),
+            CHECK(sim_take_prize(&a, &cfg, &ra, NULL)
+                  == sim_take_prize(&b, &cfg, &rb, NULL),
                   "the roll is the same roll on both machines");
         }
         CHECK(memcmp(&a, &b, sizeof a) == 0, "and lands in the same place");
+    }
+
+    {
+        /* Weights decide what a green usually is, read against the pool of
+         * whoever took it. Ten thousand greens into a pilot who is reset
+         * between each, so nothing fills up and skews the counting. */
+        sim_settings w = cfg;
+        w.rust_chance = 0;
+        uint32_t rng = 4242;
+        int stats = 0, levels = 0, mods = 0;
+        for (int i = 0; i < 10000; i++) {
+            sim_ship sh;
+            memset(&sh, 0, sizeof sh);
+            uint8_t got = sim_take_prize(&sh, &w, &rng, NULL);
+            if (got < SIM_UP_COUNT) stats++;
+            else if (got < SIM_UP_COUNT + SIM_TRIG_COUNT) levels++;
+            else mods++;
+        }
+        /* An Apex's pool is five stats at 100, one level at 30, one add-on at
+         * 20: 500/550, 30/550, 20/550. Bands rather than exact numbers,
+         * because the point under test is the shape and not the generator. */
+        CHECK(stats > 8600 && stats < 9600, "stats are the bread of the tree");
+        CHECK(levels > 350 && levels < 750, "a level is about one green in twenty");
+        CHECK(mods > 200 && mods < 550, "and an add-on rarer still");
+
+        /* And a zone that says otherwise gets otherwise. */
+        for (int i = 0; i < SIM_UP_COUNT; i++) w.prize_weight[i] = 0;
+        int only_level = 1;
+        for (int i = 0; i < 500; i++) {
+            sim_ship sh;
+            memset(&sh, 0, sizeof sh);
+            if (sim_take_prize(&sh, &w, &rng, NULL) < SIM_UP_COUNT)
+                only_level = 0;
+        }
+        CHECK(only_level, "zeroing the stats takes them out of the roll");
+    }
+
+    {
+        /* Rust takes something back, and only something you are holding. */
+        sim_settings w = cfg;
+        w.rust_chance = 1000;      /* every green, so the test is not a lottery */
+        sim_ship sh;
+        memset(&sh, 0, sizeof sh);
+        uint32_t rng = 31337;
+
+        /* A pilot who has just arrived holds nothing, so there is nothing to
+         * corrode and the green is an ordinary one. */
+        int delta = 0;
+        uint8_t got = sim_take_prize(&sh, &w, &rng, &delta);
+        CHECK(delta > 0, "an empty pilot cannot be rusted");
+        CHECK(held_of(&sh, got) == 1, "and is given the thing instead");
+
+        /* Load one up and it goes the other way. */
+        sh.up[SIM_UP_SPEED] = 4;
+        sh.up[SIM_UP_THRUST] = 2;
+        int before = sh.up[SIM_UP_SPEED] + sh.up[SIM_UP_THRUST];
+        got = sim_take_prize(&sh, &w, &rng, &delta);
+        CHECK(delta < 0, "a loaded pilot is");
+        CHECK(got == SIM_UP_SPEED || got == SIM_UP_THRUST,
+              "and what corrodes is something they had");
+        CHECK(sh.up[SIM_UP_SPEED] + sh.up[SIM_UP_THRUST] == before - 1,
+              "one step of it");
+
+        /* It never goes below nothing, and never leaves the pilot in a state
+         * the hull could not have reached. */
+        for (int i = 0; i < 200; i++) sim_take_prize(&sh, &w, &rng, &delta);
+        for (int u = 0; u < SIM_UP_COUNT; u++)
+            CHECK(sh.up[u] == 0, "and rust stops at empty");
+    }
+
+    {
+        /* Losing an energy step clamps the bar down to the new ceiling rather
+         * than leaving a pilot over it. */
+        sim_settings w = cfg;
+        w.rust_chance = 1000;
+        for (int i = 0; i < SIM_PRIZE_COUNT; i++) w.prize_weight[i] = 0;
+        sim_state s;
+        sim_init(&s, 3);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        s.ships[0].up[SIM_UP_ENERGY] = 6;
+        s.ships[0].energy = sim_eff_max_energy(&w.classes[APEX], &s.ships[0]);
+        int32_t full = s.ships[0].energy;
+        step_n(&s, &w, 0, 0, w.prize_delay + 2);
+        int idx = -1;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++)
+            if (s.prizes[i].active) { idx = i; break; }
+        CHECK(idx >= 0, "a prize appears");
+        s.ships[0].x = s.prizes[idx].x;
+        s.ships[0].y = s.prizes[idx].y;
+        step_n(&s, &w, 0, 0, 2);
+        CHECK(s.ships[0].energy <= sim_eff_max_energy(&w.classes[APEX], &s.ships[0]),
+              "the bar is never above the ceiling it now has");
+        CHECK(s.ships[0].energy < full || s.ships[0].up[SIM_UP_ENERGY] == 6,
+              "and it came down if the ceiling did");
     }
 
     {

@@ -350,7 +350,7 @@ end
 local function drain_events()
     world.events(me, sfx.play)
     for i = 0, sim.event_count() - 1 do
-        local ty, a, b = sim.event_at(i)
+        local ty, a, b, v = sim.event_at(i)
         if ty == sim.EV_DEATH then
             local vn = pilot_name(a)
             local kn = (b ~= 255) and pilot_name(b) or "the arena"
@@ -364,10 +364,12 @@ local function drain_events()
             hurt = 1
         elseif ty == sim.EV_PRIZE and a == me then
             local col, name = pal.prize(b)
-            pickup = {name = name, col = col, t = 1}
-            -- In the green's own colour, because the feed is now the one
-            -- place that says what it actually was.
-            notify("+ " .. name, col)
+            -- v is the sign: a green can take as well as give, and the feed
+            -- is the one place that says which happened.
+            local up = v >= 0
+            if not up then col = pal.RUST end
+            pickup = {name = name, col = col, t = 1, sign = up and "+" or "-"}
+            notify((up and "+ " or "- ") .. name, col)
         elseif ty == sim.EV_FLAG_TAKE or ty == sim.EV_FLAG_DROP then
             local col = (sim.ship_team(a) == sim.ship_team(me))
                 and pal.FRIEND or pal.ENEMY

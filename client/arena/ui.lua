@@ -430,8 +430,8 @@ local function status(me, class_names, netinfo, pickup, lift)
     end
 
     if pickup then
-        txt("+ " .. pickup.name, ix, cy + rows_h / 2, FONT * S,
-            pal.a(pickup.col, pickup.t))
+        txt((pickup.sign or "+") .. " " .. pickup.name, ix,
+            cy + rows_h / 2, FONT * S, pal.a(pickup.col, pickup.t))
         cy = cy + rows_h
     end
     if netinfo then
