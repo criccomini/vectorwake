@@ -414,9 +414,14 @@ local function drain_events()
             local kn = (b ~= 255) and pilot_name(b) or "the arena"
             -- Your own bomb counts as your kill in the ledger, which is
             -- correct and reads as nonsense in a feed line.
+            -- What the kill paid, when it paid anything. A pilot who was
+            -- carrying nothing is worth nothing, and the line says so by
+            -- staying quiet rather than by printing a zero.
+            local paid = (v and v > 0 and b ~= 255 and b ~= a)
+                and (" for " .. v) or ""
             notify((a == b) and (vn .. " was caught in it")
                 or (b == 255) and (vn .. " flew into the wall")
-                or (kn .. " killed " .. vn))
+                or (kn .. " killed " .. vn .. paid))
             duel_death(a)
         elseif ty == sim.EV_HIT and a == me then
             hurt = 1

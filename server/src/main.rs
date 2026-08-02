@@ -147,6 +147,8 @@ impl Arena {
             }
         }
         if let Some(v) = c.rust { world.cfg.rust_chance = v.min(1000); }
+        if let Some(v) = c.bounty_per_kill { world.cfg.bounty_per_kill = v; }
+        if let Some(v) = c.points_per_flag { world.cfg.points_per_flag = v; }
         for (name, v) in &c.prize_weight {
             match Arena::prize_index(name) {
                 Some(i) => world.cfg.prize_weight[i] = *v,
@@ -1337,6 +1339,30 @@ mod tests {
         "#);
         assert!(warn.iter().any(|x| x.contains("luck")), "{warn:?}");
         assert_eq!(w.cfg.rust_chance, 100, "and rust keeps its default");
+    }
+
+    #[test]
+    fn a_zone_prices_a_kill() {
+        let (w, warn) = tuned(r#"
+            [arena]
+            bounty_per_kill = 9
+            points_per_flag = 25
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(w.cfg.bounty_per_kill, 9);
+        assert_eq!(w.cfg.points_per_flag, 25);
+
+        // And a file that says nothing keeps the core's own numbers, which is
+        // the check that catches a mirror drifting out of step with the C
+        // struct -- the reason this reads a field two along from the ones it
+        // set.
+        let (w, _) = tuned(r#"
+            [arena]
+            mode = "warzone"
+        "#);
+        assert_eq!(w.cfg.bounty_per_kill, 3);
+        assert_eq!(w.cfg.points_per_flag, 100);
+        assert_eq!(w.cfg.rust_chance, 100);
     }
 
     /// The reason apply_config rebuilds from the baseline. An operator saves

@@ -3,7 +3,7 @@
 Every player carries a skill rating that moves when they kill and when they die,
 against humans and against AI alike. It is separate from score: bounty and points
 are gameplay, configured per zone, and they stay exactly as the zone author wants
-them. Rating is a cross-zone estimate of how good you are.
+them -- see [bounty.md](bounty.md). Rating is a cross-zone estimate of how good you are.
 
 ## The hard part
 

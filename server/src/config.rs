@@ -68,6 +68,11 @@ pub struct ArenaConfig {
     /// giving it. Rust can only corrode what a pilot is holding, so it costs
     /// the loaded and never the newly spawned.
     pub rust: Option<u16>,
+    /// What a kill adds to the killer's own bounty, so a pilot on a streak
+    /// becomes a target without having touched a green.
+    pub bounty_per_kill: Option<u16>,
+    /// Points on top of the victim's bounty for each flag they were holding.
+    pub points_per_flag: Option<u16>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -196,6 +201,8 @@ impl Default for ArenaConfig {
             mod_step: HashMap::new(),
             prize_weight: HashMap::new(),
             rust: None,
+            bounty_per_kill: None,
+            points_per_flag: None,
         }
     }
 }

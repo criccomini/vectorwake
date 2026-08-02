@@ -122,6 +122,10 @@ pub struct sim_settings {
     pub charge: [u8; MAX_CHARGES],
     /// Odds a green turns out to be each thing, over the flat prize space.
     pub prize_weight: [u16; PRIZE_COUNT],
+    /// What a kill adds to the killer's own bounty.
+    pub bounty_per_kill: u16,
+    /// Points on top of the victim's bounty per flag they were carrying.
+    pub points_per_flag: u16,
     /// Out of a thousand, how often a green corrodes instead of granting.
     pub rust_chance: u16,
     /// What one rung of each add-on is worth, in the units of the field it
@@ -175,6 +179,10 @@ pub struct sim_ship {
     pub mods: [u16; TRIG_COUNT],
     /// Charges in hand, spent one at a time.
     pub charge: [u8; MAX_CHARGES],
+    /// Bounty earned by killing, as opposed to bounty carried.
+    pub earned: u16,
+    /// The score. Not cleared by death.
+    pub points: u32,
 }
 
 #[repr(C)]
@@ -287,6 +295,9 @@ extern "C" {
     pub fn sim_set_ship_class(s: *mut sim_state, cfg: *const sim_settings, i: u8,
                               cls: u8) -> c_int;
     pub fn sim_hash(s: *const sim_state) -> u64;
+    /// What a pilot is worth to whoever kills them: a sum over what they hold
+    /// plus what killing has earned. Derived, never stored.
+    pub fn sim_bounty(sh: *const sim_ship) -> i32;
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
     /// The arenas live in the core so this and the client cannot disagree
     /// about the shape of the same room.

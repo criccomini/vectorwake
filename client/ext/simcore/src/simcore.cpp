@@ -215,6 +215,21 @@ int ChargeMax(lua_State* L) {
     return 1;
 }
 
+// What a pilot is worth, and what they have been paid. Bounty is derived
+// from what they hold, so it costs the wire nothing: the client already has
+// every count it is a sum over.
+int ShipBounty(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    lua_pushnumber(L, sim_bounty(&g_cur->ships[i]));
+    return 1;
+}
+
+int ShipPoints(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    lua_pushnumber(L, (double)g_cur->ships[i].points);
+    return 1;
+}
+
 int ShipRadius(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].radius / 256.0);
@@ -440,6 +455,8 @@ const luaL_reg kFunctions[] = {
     {"ship_up", ShipUp},
     {"ship_level", ShipLevel},
     {"ship_charge", ShipCharge},
+    {"ship_bounty", ShipBounty},
+    {"ship_points", ShipPoints},
     {"charge_max", ChargeMax},
     {"ship_mod", ShipMod},
     {"ship_radius", ShipRadius},

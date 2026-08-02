@@ -321,6 +321,11 @@ typedef struct {
      * nothing -- and read against the pool of the hull that took it, so what
      * a zone writes is the shape of the tree rather than its arithmetic. */
     uint16_t prize_weight[SIM_PRIZE_COUNT];
+    /* What a kill adds to the killer's own bounty, so a pilot on a streak
+     * becomes a target without having touched a green. */
+    uint16_t bounty_per_kill;
+    /* Points on top of the victim's bounty for each flag they were carrying. */
+    uint16_t points_per_flag;
     /* Out of a thousand, how often a green corrodes something instead of
      * granting it. Rust can only take what a pilot is actually holding, so a
      * fresh one is never punished for arriving; when there is nothing to take
@@ -376,7 +381,27 @@ typedef struct {
     uint16_t mods[SIM_TRIG_COUNT];
     /* Charges in hand, spent one at a time. */
     uint8_t charge[SIM_MAX_CHARGES];
+    /* Bounty a pilot has earned by killing, as opposed to the bounty they
+     * are carrying. Cleared by death with everything else. */
+    uint16_t earned;
+    /* The score. Not cleared by death: what you have been paid is yours,
+     * and what you are worth is a different number entirely. */
+    uint32_t points;
 } sim_ship;
+
+/* What this pilot is worth to whoever kills them.
+ *
+ * Derived rather than stored, and that is the whole trick. Every count in the
+ * tech tree is already authoritative state, so bounty is a sum over it plus
+ * what killing has earned -- which means rust lowers your price, a green
+ * taken at the ceiling does not inflate you, and dying resets it, all without
+ * a line of code in any of those places. The original kept bounty as its own
+ * counter, in the client, where it could disagree with what you were actually
+ * carrying. This one cannot.
+ *
+ * Everything held counts one, so bounty is exactly the number of greens a
+ * pilot has successfully absorbed. */
+int32_t sim_bounty(const sim_ship *sh);
 
 /* A green carries no type. Every green is takeable by everybody, and what it
  * turns out to be is rolled where it is picked up, from what that hull could
@@ -436,7 +461,9 @@ typedef enum {
     SIM_EV_FIRE = 1,
     SIM_EV_BOUNCE,   /* a: ship, b: unused */
     SIM_EV_HIT,      /* a: victim, b: attacker, v: damage Q10 */
-    SIM_EV_DEATH,    /* a: victim, b: killer (255 = none) */
+    /* a: victim, b: killer (255 = none), v: points the kill paid, which is
+     * the victim's bounty plus what their flags were worth. */
+    SIM_EV_DEATH,
     SIM_EV_SPAWN,    /* a: ship */
     /* A weapon stopped existing: it ran out of life, hit a wall, or struck a
      * ship. The position is where, which is the only report of it there is:

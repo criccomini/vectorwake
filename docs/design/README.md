@@ -12,6 +12,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [menu.md](menu.md) | Landing in the game, the menu tree, changing hull, and the loading hand-off |
 | [ai-players.md](ai-players.md) | AI opponents that fill empty arenas and yield to humans: styles, skill, the long-lived roster, and the population director |
 | [duel-mode.md](duel-mode.md) | One on one against a rating-matched human or bot: format, queue, rating, replays |
+| [bounty.md](bounty.md) | What you are worth and what you have been paid: bounty derived from what you carry, points paid as the victim's bounty |
 | [rating.md](rating.md) | Skill rating across humans and AI, and how credit for a kill is split among everyone who caused it |
 
 ## The one-line version

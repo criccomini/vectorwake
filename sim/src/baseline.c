@@ -105,6 +105,13 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             cfg->prize_weight[SIM_PRIZE_MOD(t, m)] = 20;
     }
     cfg->rust_chance = 100;
+    /* A kill is worth three bounty to the killer, so a pilot on a streak
+     * becomes a target without having touched a green -- and a flag carrier
+     * is worth crossing the map for. The original's reference zone used six
+     * and a hundred; three keeps the number over a ship mostly a readout of
+     * what they are carrying, which is what the tech tree made it. */
+    cfg->bounty_per_kill = 3;
+    cfg->points_per_flag = 100;
 
     /* What one rung of each add-on is worth, in the units of the field it
      * moves. These are the numbers that decide whether an add-on is a nice

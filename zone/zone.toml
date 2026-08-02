@@ -44,6 +44,14 @@ prize_max = 20
 # and never touches one who has just spawned.
 rust = 100
 
+# What a kill is worth. A killer is paid the victim's whole bounty, which is
+# derived from what that pilot was carrying -- so a fresh spawn is worth
+# nothing and camping one pays nothing. bounty_per_kill is what a kill adds to
+# the killer's own price; points_per_flag is the bonus for each flag the victim
+# was holding. See docs/design/bounty.md.
+bounty_per_kill = 3
+points_per_flag = 100
+
 # Per-hull tuning, in settings-file units. Name the hull and set only what
 # you want to change; upgrades climb toward whatever ceiling you give.
 [[arena.ships]]

@@ -71,6 +71,8 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap) {
             w16(&w, sh->mods[t]);
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, sh->charge[k]);
+        w16(&w, sh->earned);
+        w32(&w, sh->points);
     }
 
     w16(&w, s->weapon_count);
@@ -152,6 +154,8 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
             sh->charge[k] = (uint8_t)r8(&r);
+        sh->earned = (uint16_t)r16(&r);
+        sh->points = r32(&r);
     }
 
     uint32_t weapons = r16(&r);
@@ -217,7 +221,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-#define CFG_VERSION 4
+#define CFG_VERSION 5
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -280,6 +284,8 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, cfg->charge[k]);
     for (int i = 0; i < SIM_PRIZE_COUNT; i++) w16(&w, cfg->prize_weight[i]);
     w16(&w, cfg->rust_chance);
+    w16(&w, cfg->bounty_per_kill);
+    w16(&w, cfg->points_per_flag);
     for (int m = 0; m < SIM_MOD_COUNT; m++) w32(&w, (uint32_t)cfg->mod_step[m]);
     w16(&w, cfg->mod_spread);
     for (int r = 0; r < SIM_MAX_RUNGS; r++) w8(&w, cfg->mod_splinter[r]);
@@ -377,6 +383,8 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
     for (int i = 0; i < SIM_PRIZE_COUNT; i++)
         cfg->prize_weight[i] = (uint16_t)r16(&r);
     cfg->rust_chance = (uint16_t)r16(&r);
+    cfg->bounty_per_kill = (uint16_t)r16(&r);
+    cfg->points_per_flag = (uint16_t)r16(&r);
     for (int m = 0; m < SIM_MOD_COUNT; m++) cfg->mod_step[m] = (int32_t)r32(&r);
     cfg->mod_spread = (uint16_t)r16(&r);
     for (int k = 0; k < SIM_MAX_RUNGS; k++)

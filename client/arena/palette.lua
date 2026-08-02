@@ -89,6 +89,9 @@ M.CHARGES = {
     {name = "charge 4", short = "C4"},
 }
 M.CHARGE_COL = rgb(0xffd166)
+-- What a pilot is worth. Its own colour, because it is neither a team nor a
+-- kind of upgrade: it is a price.
+M.BOUNTY    = rgb(0xffe08a)
 M.LEVEL_COL = rgb(0xff7ba8)
 M.MOD_COL   = rgb(0x9df0ff)
 

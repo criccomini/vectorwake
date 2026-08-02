@@ -341,6 +341,17 @@ static void kill_weapon(sim_state *s, uint16_t i) {
 static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
                        sim_events *ev);
 
+int32_t sim_bounty(const sim_ship *sh) {
+    int32_t n = sh->earned;
+    for (int u = 0; u < SIM_UP_COUNT; u++) n += sh->up[u];
+    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        n += sh->level[t];
+        for (int m = 0; m < SIM_MOD_COUNT; m++) n += sim_mod_get(sh->mods[t], m);
+    }
+    for (int k = 0; k < SIM_MAX_CHARGES; k++) n += sh->charge[k];
+    return n;
+}
+
 static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
                          uint8_t attacker, int32_t amount, uint16_t stall,
                          sim_events *ev) {
@@ -362,15 +373,38 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         v->deaths++;
         v->respawn_at = cfg->respawn_delay;
         v->vx = v->vy = 0;
-        /* Dying costs you everything: stats, rungs and add-ons alike. What
-         * you are carrying is what you have survived with. */
+        /* What the kill is worth, read before the pilot is stripped: the
+         * price is what they were carrying, and in one more instruction it
+         * will be nothing. A fresh spawn is therefore worth nothing at all,
+         * which is why this game needs no anti-farming rule -- camping a
+         * respawn pays exactly zero. */
+        int32_t paid = 0;
+        if (attacker != 255 && attacker != victim) {
+            sim_ship *k = &s->ships[attacker];
+            k->kills++;
+            /* A teammate's death pays neither points nor bounty. The rating
+             * layer already refuses to score teammate damage; this is the
+             * same rule where a player can see it. */
+            if (k->team != v->team) {
+                paid = sim_bounty(v);
+                for (int f = 0; f < s->flag_count; f++)
+                    if (s->flags[f].active && s->flags[f].carried
+                        && s->flags[f].carrier == victim)
+                        paid += cfg->points_per_flag;
+                k->points += (uint32_t)paid;
+                k->earned = (uint16_t)(k->earned + cfg->bounty_per_kill);
+            }
+        }
+        /* Dying costs you everything: stats, rungs, add-ons and the bounty
+         * killing earned you. What you are carrying is what you have
+         * survived with -- but the points already paid to you are yours. */
         memset(v->up, 0, sizeof v->up);
         memset(v->level, 0, sizeof v->level);
         memset(v->mods, 0, sizeof v->mods);
         memset(v->charge, 0, sizeof v->charge);
-        if (attacker != 255 && attacker != victim) s->ships[attacker].kills++;
+        v->earned = 0;
         drop_flags(s, cfg, victim, ev);
-        emit(ev, SIM_EV_DEATH, victim, attacker, 0);
+        emit(ev, SIM_EV_DEATH, victim, attacker, paid);
     }
 }
 
@@ -558,6 +592,7 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     memset(sh->level, 0, sizeof sh->level);
     memset(sh->mods, 0, sizeof sh->mods);
     memset(sh->charge, 0, sizeof sh->charge);
+    sh->earned = 0;
     sh->alive = 1;
     sh->respawn_at = 0;
     sh->x = sh->spawn_x;
@@ -1202,6 +1237,8 @@ uint64_t sim_hash(const sim_state *s) {
         for (int t = 0; t < SIM_TRIG_COUNT; t++)
             h = hash_u32(h, (uint32_t)(sh->level[t] | (sh->mods[t] << 8)));
         for (int k = 0; k < SIM_MAX_CHARGES; k++) h = hash_u32(h, sh->charge[k]);
+        h = hash_u32(h, sh->earned);
+        h = hash_u32(h, sh->points);
     }
     h = hash_u32(h, s->prize_timer);
     h = hash_u32(h, s->flag_count);

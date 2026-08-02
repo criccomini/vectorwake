@@ -1278,6 +1278,135 @@ int main(void) {
         CHECK(s.ships[0].up[SIM_UP_SPEED] == 0, "and the stats, as before");
     }
 
+    /* --- bounty and points ----------------------------------------------
+     *
+     * Bounty is what you are worth and points are what you have been paid,
+     * and they are different numbers. Bounty is derived from what a pilot is
+     * holding rather than stored, which is what keeps it honest: rust lowers
+     * it, a green at the ceiling does not raise it, and death resets it
+     * without a line of code in any of those places. */
+    {
+        sim_ship sh;
+        memset(&sh, 0, sizeof sh);
+        CHECK(sim_bounty(&sh) == 0, "a fresh pilot is worth nothing");
+        sh.up[SIM_UP_SPEED] = 3;
+        sh.level[SIM_TRIG_GUN] = 1;
+        sh.mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 2);
+        sh.charge[1] = 4;
+        CHECK(sim_bounty(&sh) == 10, "and otherwise worth what it holds");
+        sh.earned = 6;
+        CHECK(sim_bounty(&sh) == 16, "plus what killing has earned");
+    }
+
+    {
+        /* Every green raises it by exactly one, and rust lowers it. Which is
+         * not a rule anybody wrote: it falls out of the sum. */
+        sim_settings w = cfg;
+        w.rust_chance = 0;
+        sim_ship sh;
+        memset(&sh, 0, sizeof sh);
+        uint32_t rng = 4;
+        for (int i = 1; i <= 12; i++) {
+            sim_take_prize(&sh, &w, &rng, NULL);
+            CHECK(sim_bounty(&sh) == i, "a green is worth one bounty");
+        }
+        w.rust_chance = 1000;
+        int before = sim_bounty(&sh);
+        sim_take_prize(&sh, &w, &rng, NULL);
+        CHECK(sim_bounty(&sh) == before - 1, "and rust takes one back");
+    }
+
+    {
+        /* A kill pays the victim's bounty, and nothing at all for a pilot
+         * who was carrying nothing. Camping a respawn is worthless without
+         * an anti-farming rule, because a fresh spawn is worth zero. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);      /* faces down */
+        sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);    /* the victim */
+        s.ships[1].energy = 1;
+        step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 400);
+        CHECK(s.ships[1].deaths > 0, "the empty pilot dies");
+        CHECK(s.ships[0].kills == 1, "and it counts as a kill");
+        CHECK(s.ships[0].points == 0, "worth nothing to whoever did it");
+        CHECK(sim_bounty(&s.ships[0]) == (int32_t)cfg.bounty_per_kill,
+              "though the killer is a little more dangerous for it");
+
+        /* Load the victim up and the same kill pays. */
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);
+        sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);
+        s.ships[1].up[SIM_UP_SPEED] = 5;
+        s.ships[1].up[SIM_UP_THRUST] = 4;
+        int32_t worth = sim_bounty(&s.ships[1]);
+        CHECK(worth == 9, "a loaded pilot is worth what they carry");
+        s.ships[1].energy = 1;
+        step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 400);
+        CHECK(s.ships[1].deaths > 0, "they die too");
+        CHECK(s.ships[0].points == (uint32_t)worth,
+              "and the killer is paid exactly what they were worth");
+        CHECK(sim_bounty(&s.ships[1]) == 0, "the dead are worth nothing again");
+    }
+
+    {
+        /* Points are the score and survive dying; bounty is the price and
+         * does not. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);
+        sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);
+        s.ships[0].points = 500;
+        s.ships[0].earned = 12;
+        s.ships[0].up[SIM_UP_SPEED] = 2;
+        s.ships[0].energy = 1;
+        step_counting(&s, &cfg, 0, SIM_BTN_FIRE, 400);
+        CHECK(s.ships[0].deaths > 0, "the scorer dies");
+        CHECK(s.ships[0].points == 500, "and keeps every point they were paid");
+        CHECK(sim_bounty(&s.ships[0]) == 0, "while their price goes to nothing");
+    }
+
+    {
+        /* A teammate's death pays neither points nor bounty, which is the
+         * rule the rating layer already applies to teammate damage.
+         *
+         * A weapon never arrives at a teammate, so the only way to kill one
+         * is a blast -- which does not check teams, and is exactly why the
+         * rule has to exist. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 120, 0, &cfg);        /* faces the wall */
+        sim_spawn(&s, APEX, 0, 8192, 55, 0, &cfg);          /* same team, near it */
+        s.ships[1].up[SIM_UP_SPEED] = 6;
+        s.ships[1].energy = 1;
+        ev_counts c = step_counting(&s, &cfg, SIM_BTN_BOMB, 0, 200);
+        CHECK(c.deaths > 0, "the bomb's blast kills the teammate");
+        CHECK(s.ships[1].deaths == 1, "and it is the teammate who died");
+        CHECK(s.ships[0].points == 0, "a teamkill pays no points");
+        CHECK(s.ships[0].earned == 0, "and no bounty");
+    }
+
+    {
+        /* Flags a victim was carrying are worth extra, on top of what they
+         * were carrying in upgrades. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);
+        sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);
+        sim_add_flag(&s, 100, 100);
+        sim_add_flag(&s, 200, 200);
+        for (int f = 0; f < 2; f++) {
+            s.flags[f].carried = 1;
+            s.flags[f].carrier = 1;
+        }
+        s.ships[1].up[SIM_UP_ENERGY] = 2;
+        int32_t worth = sim_bounty(&s.ships[1]);
+        s.ships[1].energy = 1;
+        step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 400);
+        CHECK(s.ships[1].deaths > 0, "the carrier dies");
+        CHECK(s.ships[0].points == (uint32_t)(worth + 2 * cfg.points_per_flag),
+              "and the flags they held are worth extra");
+    }
+
     /* Prizes spawn, get collected, and raise the ship's effective stats. */
     {
         sim_state s;

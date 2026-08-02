@@ -245,7 +245,15 @@ local function nameplates(o)
                 local nm = (p and p.name) or ("ship " .. i)
                 local col = (sim.ship_team(i) == my_team) and pal.FRIEND
                     or pal.ENEMY
+                -- The bounty rides with the name, always. It is what killing
+                -- them pays, so it is the one number that says which of two
+                -- ships in front of you is worth the risk.
+                local bty = sim.ship_bounty(i)
                 txt(nm, sx + 12 * S, sy + 13 * S, 11 * S, pal.a(col, 0.7))
+                if bty > 0 then
+                    txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
+                        pal.a(pal.BOUNTY, 0.85))
+                end
             end
         end
     end
@@ -274,12 +282,18 @@ local function scores(me, pilots)
         r.i = i
         r.k = sim.ship_kills(i)
         r.d = sim.ship_deaths(i)
+        r.p = sim.ship_points(i)
         local p = pilots[i]
         r.name = (p and p.name) or ("ship " .. i)
         r.ai = p and p.bot ~= nil
     end
     for i = n + 1, #rows do rows[i] = nil end
+    -- By points, because points are the score. Kills stay on the row: they
+    -- are what a player counts in their head, and the two numbers say
+    -- different things -- a pilot who kills loaded ships outscores one who
+    -- kills more of the empty.
     table.sort(rows, function(a, b)
+        if a.p ~= b.p then return a.p > b.p end
         if a.k ~= b.k then return a.k > b.k end
         if a.d ~= b.d then return a.d < b.d end
         return a.name < b.name
@@ -301,7 +315,9 @@ local function scores(me, pilots)
         local name = string.sub(r.name, 1, 15)
         txt((mine and "▸ " or "") .. name .. (r.ai and "  AI" or ""),
             PAD * S + PANEL_X * S, y + LINE * S / 2, FONT * S, col)
-        txt(r.k .. " / " .. r.d, PAD * S + w - PANEL_X * S,
+        txt(r.k .. " / " .. r.d, PAD * S + w - PANEL_X * S - 44 * S,
+            y + LINE * S / 2, FONT * S, pal.a(pal.DIM, 0.7), "right")
+        txt(tostring(r.p), PAD * S + w - PANEL_X * S,
             y + LINE * S / 2, FONT * S, pal.DIM, "right")
         y = y + LINE * S
     end
@@ -355,7 +371,7 @@ local function status(me, class_names, netinfo, pickup, charges, lift)
     -- hand when the hull has any.
     local slots = charges or {}
     local h = PANEL_Y * 2 * S + rows_h + 7 * S + bar_h + 6 * S + rows_h
-              + 5 * S + rows_h + SIM_TRIGGERS * rows_h
+              + rows_h + 5 * S + rows_h + SIM_TRIGGERS * rows_h
               + ((#slots > 0) and rows_h or 0)
     if pickup then h = h + rows_h end
     if netinfo then h = h + rows_h end
@@ -393,6 +409,15 @@ local function status(me, class_names, netinfo, pickup, charges, lift)
         FONT * S, frac < 0.2 and pal.HURT or pal.DIM)
     txt(string.format("%.1f tiles/s", speed), ix + iw, cy + rows_h / 2,
         FONT * S, pal.DIM, "right")
+    cy = cy + rows_h
+
+    -- What you have been paid, and what you are worth. Two different numbers
+    -- and the second is the one everybody else can see.
+    txt(sim.ship_points(me) .. " points", ix, cy + rows_h / 2, (FONT - 1) * S,
+        pal.DIM)
+    local bty = sim.ship_bounty(me)
+    txt("worth " .. bty, ix + iw, cy + rows_h / 2, (FONT - 1) * S,
+        bty > 0 and pal.BOUNTY or pal.a(pal.DIM, 0.5), "right")
     cy = cy + rows_h + 5 * S
 
     -- Upgrades, as the prototype shows them: every slot always present, so
