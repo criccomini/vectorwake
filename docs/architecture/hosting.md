@@ -30,12 +30,34 @@ tiles and a hundred lots of 79 KB, not a hundred megabytes.
 Two consequences follow, and they run in opposite directions from what the
 architecture first implied.
 
-`SIM_MAX_SHIPS` is 64, so **a zone with 100 to 200 players is already two to
-four rooms** whether anybody wanted that or not, and "one zone, 200 players,
-running smoothly" means three rooms that each run well plus a policy that keeps
-them full. Worth knowing this is a constraint we introduced: ASSS had no
-per-arena cap at all. Its only documented player maxima are `Team:MaxPerTeam` and
-`Team:MaxPerPrivateTeam`, both defaulting to 1000, which is uncapped in practice.
+`SIM_MAX_SHIPS` is 64, so **a zone with 100 to 200 players is currently two to
+four rooms**, and "one zone, 200 players, running smoothly" means three rooms
+that each run well plus a policy that keeps them full. This is a constraint we
+introduced rather than one we inherited: ASSS had no per-arena cap at all, and
+its only documented player maxima are `Team:MaxPerTeam` and
+`Team:MaxPerPrivateTeam`, both defaulting to 1000.
+
+It is also cheap to change, which is worth writing down before it becomes folk
+knowledge that it isn't. `sim_hash` iterates `ship_count` rather than the array
+bound, so raising the cap leaves the golden trace alone: set it to 255 and
+`make -C sim check` passes untouched, verified. Ship indices are `uint8_t`
+throughout, so 0 to 254 is available with no type changes and 255 stays the "no
+ship" sentinel. The cost at the ceiling:
+
+```
+SIM_MAX_SHIPS=255   sim_state 51,388 B (from 37,636)   one ship 72 B
+ 64 ships: 13.5 us/tick     200 ships: 43.0 us/tick
+128 ships: 25.3 us/tick     255 ships: 50.3 us/tick = 0.5% of a core
+```
+
+A room grows from 79 KB to about 107 KB. Two constants have to move together,
+the header and `MAX_SHIPS` in `server/src/sim.rs`, and a mismatch there is heap
+corruption rather than a compile error, which is why a test asserts the struct
+sizes agree with `sim_sizeof_state`.
+
+The reason not to raise it yet is game design rather than cost. 64 is already
+four times what the original targeted, and the committed design is several rooms
+plus a concentration rule, so nothing has pushed against this number in practice.
 
 The fill target is a separate question, and 64 is the wrong anchor for it. The
 original's equivalent knob is `General:DesiredPlaying`, whose entire job is
