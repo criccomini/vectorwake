@@ -176,10 +176,10 @@ M.radar_doors = {}
 -- property of the map and belongs where the walls are built.
 M.moving_tiles = {}
 
-local function index_moving(lo, hi)
+local function index_moving(x0, y0, x1, y1)
     local out = {}
-    for ty = lo - 2, hi + 2 do
-        for tx = lo - 2, hi + 2 do
+    for ty = y0, y1 do
+        for tx = x0, x1 do
             local cls, variant = sim.tile(tx, ty)
             if cls == sim.T_DOOR or cls == sim.T_WORMHOLE then
                 out[#out + 1] = {tx = tx, ty = ty, cls = cls, variant = variant}
@@ -197,13 +197,26 @@ local DOOR_LIT = pal.a(pal.ENEMY, 0.75)
 local HOLE_RING = {pal.a(pal.BOMB, 0.34), pal.a(pal.BOMB, 0.17),
                    pal.a(pal.BOMB, 0.34 / 3)}
 
-function M.build_static(bg, glow, lo, hi)
+-- Terrain inside a tile window, rebuilt when the camera leaves it.
+--
+-- This used to take the whole map's bounds, because the whole map was
+-- eighty-four tiles square and meshing it was seven thousand tile queries
+-- once. The arena is 1024 tiles now -- a million queries and a wall mesh
+-- nothing would draw at speed -- so what gets built is a window around the
+-- camera, and arena.script rebuilds it when the camera has walked far enough
+-- to see the edge of one.
+function M.build_static(bg, glow, x0, y0, x1, y1)
     bg:reset()
     glow:reset()
+    local LAST = 1023
+    if x0 < 0 then x0 = 0 end
+    if y0 < 0 then y0 = 0 end
+    if x1 > LAST then x1 = LAST end
+    if y1 > LAST then y1 = LAST end
 
     -- The doors and wormholes, found once here rather than searched for on
     -- every frame that draws them.
-    index_moving(lo, hi)
+    index_moving(x0, y0, x1, y1)
 
     -- Every second tile, not every fourth. The arena's outer walls are two
     -- tiles thick, so a four-tile stride aliased them away completely and the
@@ -212,8 +225,8 @@ function M.build_static(bg, glow, lo, hi)
     -- Safe zones and doors get their own lists: they are the two things worth
     -- steering by, and they were not on the radar at all.
     local rt, rs, rd = {}, {}, {}
-    for ty = lo - 2, hi + 2, 2 do
-        for tx = lo - 2, hi + 2, 2 do
+    for ty = y0, y1, 2 do
+        for tx = x0, x1, 2 do
             local cls = sim.tile(tx, ty)
             local out = (cls == sim.T_SOLID and rt)
                 or (cls == sim.T_SAFE and rs)
@@ -239,8 +252,8 @@ function M.build_static(bg, glow, lo, hi)
         glow:seg(x1, y1, x2, y2, 7, spill)
         glow:seg(x1, y1, x2, y2, 1.6, edge)
     end
-    for ty = lo - 2, hi + 2 do
-        for tx = lo - 2, hi + 2 do
+    for ty = y0, y1 do
+        for tx = x0, x1 do
             if sim.solid(tx, ty) then
                 local x, y = tx * TILE, ty * TILE
                 bg:rect(x, y, TILE, TILE, pal.WALL)
@@ -260,8 +273,8 @@ function M.build_static(bg, glow, lo, hi)
     -- lit border, so it reads as a place rather than as a coloured patch.
     local safe_fill = pal.a(pal.FRIEND, 0.07)
     local safe_edge = pal.a(pal.FRIEND, 0.55)
-    for ty = lo - 2, hi + 2 do
-        for tx = lo - 2, hi + 2 do
+    for ty = y0, y1 do
+        for tx = x0, x1 do
             if sim.tile(tx, ty) == sim.T_SAFE then
                 local x, y = tx * TILE, ty * TILE
                 bg:rect(x, y, TILE, TILE, safe_fill)

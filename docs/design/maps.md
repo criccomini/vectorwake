@@ -70,12 +70,44 @@ lethal to position without being lethal to the pilot.
 
 ## What the reference arenas use, and what they do not
 
-The public arena has two safe zones on its long axis and a pair of doors out
-of phase. It has no wormhole: one reaches 220 px, fourteen tiles of an arena
-that is eighty-four across, so any placement near the middle bends every
-crossing in the room. The bot ladder found that before a player would have --
-pilots spawned eight tiles from one stopped fighting and orbited it instead,
-and the tournament graded a whole roster equal because nobody landed a shot.
+The public arena is the map's full size: **1024 tiles square**, 16384 pixels on
+a side, which is the size the original's maps were.
+
+It was an 84-tile room in the middle of all that space, about ten seconds to
+cross at a hull's top speed. That is a duel room wearing an arena's name --
+nowhere to go, no distance for a chase to happen over, no reason to choose a
+direction.
+
+The field is a lattice of 64-tile cells, each holding one of four structures
+picked by a hash of its coordinates: a block, a cross, four pillars, or open
+space. 256 landmarks, none wider than twenty tiles, so the lanes between them
+are always at least twice the width of what is in them. A lattice rather than
+a drawn map because a drawn 1024-tile map is a job for a map editor and a
+person, and this has to stay legible from a C file until that exists. A
+refuge -- a small safe zone -- sits every fourth cell each way, so nowhere in
+the field is more than a couple of hundred tiles from somewhere to stop.
+
+The old room survives at the centre, minus its enclosing box: the four
+pillars, the baffles, the two safe zones and the pair of out-of-phase doors,
+and every spawn point. The game that existed before is the middle of the game
+that exists now, and the rest is somewhere to take a fight rather than a
+second arena. Spawns stay central deliberately -- eight pilots scattered over
+1024 tiles would spend a match looking for each other.
+
+It has no wormhole. One reaches 220 px, fourteen tiles, and the bot ladder
+found what that does to a small room: pilots spawned eight tiles from one
+stopped fighting and orbited it instead, and the tournament graded a whole
+roster equal because nobody landed a shot. A map this size can hold one; where
+to put it is a map-editor decision rather than a C-file one.
+
+**Two things scale with the map rather than sitting in it.** The client meshes
+terrain in a 113-tile window around the camera and rebuilds it when the camera
+has walked 16 tiles, because a million tile queries per map load is not a
+thing a browser does. And the green field covers the middle 256 tiles rather
+than all 1024: `SIM_MAX_PRIZES` is 64 and a snapshot carries every live one,
+so spread over the whole map that would be one green per quarter of a million
+tiles. The real answer is prizes placed near players, which is a feature and
+not a number.
 
 The duel arena has neither. A duel is decided by two pilots, and a room that
 size with somewhere invulnerable in it is not a duel. The ladder found that
@@ -113,8 +145,10 @@ rendering concern that has no business in a simulation.
 ## Map files
 
 A map travels as a run-length encoded tile array behind a twelve byte header:
-magic, version, and an FNV-1a hash of the tiles. The reference arena is 1615
-bytes and the duel room 487, out of a megabyte of tiles.
+magic, version, and an FNV-1a hash of the tiles. The full-size reference arena
+is 28 KB and the duel room 487 bytes, out of a megabyte of tiles. It was 1615
+bytes when the arena was one room; the difference is the 256 structures in the
+field, and it is sent once when a client joins.
 
 The encoding lives in the core, next to snapshot packing and for the same
 reason: the client has to decode it identically or it predicts collisions

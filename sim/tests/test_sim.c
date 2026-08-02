@@ -485,9 +485,13 @@ int main(void) {
         uint8_t *buf = malloc(SIM_MAP_PACK_MAX);
         int n = sim_map_pack(src, buf, SIM_MAP_PACK_MAX);
         CHECK(n > 0, "the arena packs");
-        /* A megabyte of tiles that is almost all one value has no business
-         * costing a megabyte on the wire. */
-        CHECK(n < 4096, "an arena packs to under 4 KB");
+        /* A megabyte of tiles has no business costing a megabyte on the
+         * wire. Twenty-eight kilobytes for the full-size arena -- it was
+         * under four when the arena was an 84-tile room, and the difference
+         * is the two hundred and fifty-six structures in the field. Sent
+         * once, when a client joins, so the bound is here to catch the run
+         * encoding breaking rather than to hold a budget. */
+        CHECK(n < 32768, "an arena packs to under 32 KB");
 
         sim_map *dst = malloc(sizeof *dst);
         memset(dst->tile, 0xee, sizeof dst->tile);

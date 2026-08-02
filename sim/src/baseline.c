@@ -132,13 +132,24 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->friction = 14;
     cfg->respawn_delay = 300; /* 3 s */
     cfg->prize_delay = 100;   /* a green every second until the map is full */
-    cfg->prize_max = 20;
+    cfg->prize_max = 60;
     cfg->prize_life = 3000;   /* 30 s */
     cfg->prize_radius = 16 * 256; /* generous: chasing a green should not be fiddly */
     cfg->flag_radius = 18 * 256;
     cfg->flag_drop_cooldown = 200; /* 2 s before a dropped flag can be retaken */
-    cfg->prize_lo = 472;      /* inside the arena walls */
-    cfg->prize_hi = 552;
+    /* The green field, over the middle 256 tiles rather than all 1024.
+     *
+     * Sixty greens is the most this can usefully be: `SIM_MAX_PRIZES` is 64,
+     * and a snapshot carries every live one. Spread over the whole map that
+     * would be a green per quarter-million tiles -- a pilot could fly for
+     * minutes without meeting one -- so the field covers where the fighting
+     * is and thins out beyond it, which is also where the spawns are.
+     *
+     * The real answer for a map this size is prizes placed near players
+     * rather than a bigger uniform field, and that is a feature rather than
+     * a number. Until it exists this is the honest middle. */
+    cfg->prize_lo = 384;
+    cfg->prize_hi = 640;
     cfg->map = map;
     /* Doors breathe on a six second cycle, open for four of it: long enough
      * to commit to a crossing, short enough that the choice matters. */
@@ -416,25 +427,97 @@ static void fill(sim_map *m, int x0, int y0, int x1, int y1, uint8_t t) {
             m->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx] = t;
 }
 
-/* The public arena: a wall around the outside, four pillars, and baffles that
- * break line of sight through the middle. Two safe zones on the long axis to
- * spawn into and to stop in, a pair of doors on the short one that open and
- * shut out of phase.
+/* A deterministic per-cell variant. Pure unsigned arithmetic, because this
+ * decides terrain and terrain has to be identical on every machine that
+ * builds the map -- the client meshes it, the server collides against it, and
+ * a wall in a different place on one of them is a desync you see rather than
+ * measure. */
+static uint32_t cell_hash(uint32_t cx, uint32_t cy) {
+    uint32_t h = cx * 73856093u ^ cy * 19349663u;
+    h ^= h >> 13;
+    h *= 2654435761u;
+    h ^= h >> 16;
+    return h;
+}
+
+/* The public arena, at the map's full size: 1024 tiles square, which is the
+ * original's map size and 16384 pixels on a side.
  *
- * No wormhole. One reaches 220 px, which is fourteen tiles of an arena that
- * is eighty-four across, so a single well placed anywhere near the middle
- * bends every crossing in the room. The bot ladder found this before a
- * player would have: pilots spawned eight tiles from one stopped fighting
- * each other entirely and orbited it instead, and the tournament graded a
- * whole roster as equal because nobody ever landed a shot. The feature is
- * real and tested; a map big enough to hold one should place it. */
+ * It used to be an 84-tile room in the middle of all that space, which is
+ * about ten seconds to cross at a hull's top speed. That is a duel room
+ * wearing an arena's name: there is nowhere to go, no distance for a chase to
+ * happen over, and no reason to ever choose a direction.
+ *
+ * The field is a lattice of 64-tile cells, each holding one of four
+ * structures chosen by a hash of its coordinates. That is 256 landmarks, none
+ * of them wider than twenty tiles, so the lanes between them are always at
+ * least twice a cell's structure. A lattice rather than a hand-drawn map
+ * because a hand-drawn 1024-tile map is a job for a map editor and a person,
+ * and this has to be legible from a C file until that exists.
+ *
+ * The old room survives at the centre, minus its enclosing box: the pillars,
+ * the baffles, the two safe zones and the pair of out-of-phase doors are
+ * still there, and are still where every ship spawns. So the game that
+ * existed before this is the middle of the game that exists now, and the rest
+ * of the map is somewhere to take a fight rather than a second arena.
+ *
+ * No wormhole. One reaches 220 px, which is fourteen tiles, and the bot
+ * ladder found what a well placed one does to a small room: pilots orbited it
+ * instead of each other and a whole roster graded equal because nobody landed
+ * a shot. A map this size can hold one now; placing it is a map-editor
+ * decision rather than a C-file one. */
 void sim_map_arena(sim_map *m) {
-    const int LO = 470, HI = 554;
+    const int LAST = SIM_MAP_TILES - 1;
+    const int EDGE = 4;
     memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
-    fill(m, LO, LO, HI, LO + 1, SIM_TILE_SOLID);
-    fill(m, LO, HI - 1, HI, HI, SIM_TILE_SOLID);
-    fill(m, LO, LO, LO + 1, HI, SIM_TILE_SOLID);
-    fill(m, HI - 1, LO, HI, HI, SIM_TILE_SOLID);
+
+    /* The boundary. Four tiles thick, because two is thin enough that a hull
+     * at full speed can cross it inside one tick's move and the axis-by-axis
+     * collision has nothing to push it back out of. */
+    fill(m, 0, 0, LAST, EDGE, SIM_TILE_SOLID);
+    fill(m, 0, LAST - EDGE, LAST, LAST, SIM_TILE_SOLID);
+    fill(m, 0, 0, EDGE, LAST, SIM_TILE_SOLID);
+    fill(m, LAST - EDGE, 0, LAST, LAST, SIM_TILE_SOLID);
+
+    /* The field. */
+    const int CELL = 64;
+    for (int cy = 0; cy < SIM_MAP_TILES / CELL; cy++) {
+        for (int cx = 0; cx < SIM_MAP_TILES / CELL; cx++) {
+            int ox = cx * CELL + CELL / 2;      /* the cell's middle */
+            int oy = cy * CELL + CELL / 2;
+            /* The middle four cells are the old room's, and it draws its own
+             * furniture below. */
+            if (ox > 460 && ox < 564 && oy > 460 && oy < 564) continue;
+            uint32_t h = cell_hash((uint32_t)cx, (uint32_t)cy);
+            switch (h & 3u) {
+            case 0:                              /* a block to hide behind */
+                fill(m, ox - 6, oy - 6, ox + 5, oy + 5, SIM_TILE_SOLID);
+                break;
+            case 1:                              /* a cross, so it has lanes */
+                fill(m, ox - 10, oy - 2, ox + 9, oy + 1, SIM_TILE_SOLID);
+                fill(m, ox - 2, oy - 10, ox + 1, oy + 9, SIM_TILE_SOLID);
+                break;
+            case 2:                              /* four pillars in a square */
+                fill(m, ox - 9, oy - 9, ox - 5, oy - 5, SIM_TILE_SOLID);
+                fill(m, ox + 5, oy - 9, ox + 9, oy - 5, SIM_TILE_SOLID);
+                fill(m, ox - 9, oy + 5, ox - 5, oy + 9, SIM_TILE_SOLID);
+                fill(m, ox + 5, oy + 5, ox + 9, oy + 9, SIM_TILE_SOLID);
+                break;
+            default:                             /* open, and marked so */
+                fill(m, ox - 2, oy - 2, ox + 1, oy + 1, SIM_TILE_UNDER);
+                break;
+            }
+            /* A refuge every fourth cell each way -- 256 tiles apart, so a
+             * pilot anywhere in the field is inside a couple of hundred of
+             * one. Without them the whole map outside the middle is a place
+             * you cannot stop, and the two central zones are the only reason
+             * to ever come back. */
+            if ((cx & 3) == 2 && (cy & 3) == 2)
+                fill(m, ox - 20, oy - 3, ox - 14, oy + 3, SIM_TILE_SAFE);
+        }
+    }
+
+    /* --- the middle, which is the room this arena used to be entirely --- */
     fill(m, 489, 489, 495, 495, SIM_TILE_SOLID);
     fill(m, 529, 489, 535, 495, SIM_TILE_SOLID);
     fill(m, 489, 529, 495, 535, SIM_TILE_SOLID);
@@ -467,7 +550,12 @@ void sim_map_arena(sim_map *m) {
      * the map so a zone can be pointed at a different one without knowing
      * anything about its geometry -- which is what went wrong the first time
      * a custom map was loaded: every ship began outside its walls and drifted
-     * off at twenty tiles a second. */
+     * off at twenty tiles a second.
+     *
+     * Still in the middle, on a map this size deliberately. Eight pilots
+     * scattered over 1024 tiles would spend a match looking for each other;
+     * spawning them together and letting them range out is a game, and the
+     * reverse is a screensaver. */
     fill(m, 486, 486, 486, 486, SIM_TILE(SIM_TILE_SPAWN, 1));
     fill(m, 538, 486, 538, 486, SIM_TILE(SIM_TILE_SPAWN, 1));
     fill(m, 538, 538, 538, 538, SIM_TILE(SIM_TILE_SPAWN, 1));

@@ -55,7 +55,14 @@ local pickup = nil
 -- Which charge the use key spends. The client's, not the simulation's.
 local charge_slot = 0
 local layers = nil
-local map_lo, map_hi = 470, 554
+-- The terrain window, in tiles either side of the camera, and how far the
+-- camera may walk before it is rebuilt. The map is 1024 tiles square now, so
+-- what gets meshed is a window rather than the map: 113 tiles across is about
+-- the same work the whole old arena was, and at 56 out against a view about
+-- 20 tiles wide there are two rebuilds' worth of margin beyond the screen.
+local STATIC_HALF = 56
+local STATIC_STEP = 16
+local static_tx, static_ty = nil, nil
 -- Forward declared: the field sync acts on the page's own enter, and it runs
 -- above the place that knows what an action means.
 local apply_menu
@@ -326,10 +333,21 @@ end
 -- The terrain and the starfield never move, so they are built once per map
 -- rather than per frame. Rebuilding them was the single most expensive thing
 -- the old renderer did, and it did it sixty times a second.
-local function rebuild_static()
-    if layers then
-        world.build_static(layers.bg, layers.bgglow, map_lo, map_hi)
+local function rebuild_static(tx, ty)
+    if not layers then return end
+    if not tx then
+        -- Whatever is on screen, or the middle of the map before anything is.
+        if sim.ship_count() > 0 then
+            tx = math.floor(sim.ship_x(me) / 16)
+            ty = math.floor(sim.ship_y(me) / 16)
+        else
+            tx, ty = 512, 512
+        end
     end
+    static_tx, static_ty = tx, ty
+    world.build_static(layers.bg, layers.bgglow,
+                       tx - STATIC_HALF, ty - STATIC_HALF,
+                       tx + STATIC_HALF, ty + STATIC_HALF)
 end
 
 
@@ -552,7 +570,6 @@ local function start_chosen(what, cls)
     end
     if what == "duel" then
         sim.init_duel(0x5eed)
-        map_lo, map_hi = 496, 528
         rebuild_static()
         me = spawn_at(cls, 0, 0, 512, 522, 0)
         pilots[me] = {name = "you"}
@@ -566,7 +583,6 @@ local function start_chosen(what, cls)
     else
         duel = nil
         sim.init(0x5eed)
-        map_lo, map_hi = 470, 554
         rebuild_static()
         start_offline(cls)
     end
@@ -769,6 +785,14 @@ function update(self, dt)
     if sim.ship_count() > 0 then menu.class = sim.ship_class(me) end
 
     local cx, cy = sim.ship_x(me), sim.ship_y(me)
+    -- Terrain follows the camera. A map this size cannot be meshed whole, so
+    -- the window is rebuilt once the camera has walked far enough that its
+    -- edge is getting close to the screen.
+    local ctx, cty = math.floor(cx / 16), math.floor(cy / 16)
+    if not static_tx or math.abs(ctx - static_tx) >= STATIC_STEP
+       or math.abs(cty - static_ty) >= STATIC_STEP then
+        rebuild_static(ctx, cty)
+    end
     sfx.listener(cx, cy)
     fx.listener(cx, cy)
     fx.update(dt)
