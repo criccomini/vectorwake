@@ -1,8 +1,8 @@
 -- Touch controls.
 --
 -- The question platforms.md asks is whether mobile is a playing client or a
--- spectating one. This is the playing answer: a thumbstick that is the four
--- arrow keys, and pads for the weapons and charges.
+-- spectating one. This is the playing answer: a d-pad that is the four arrow
+-- keys, and pads for the weapons and charges.
 --
 -- The stick pointed the nose at first -- put a thumb where you want to be
 -- facing and the ship turns that way. It reads beautifully and it cannot play
@@ -10,25 +10,30 @@
 -- exists in the core, the keyboard has it on Down and the AI backs off with
 -- it, and the whole reason it matters is that it breaks that weld: you hold
 -- your guns on somebody while opening the range. A stick that means "point
--- here" has no way to say that, at any tuning.
+-- here" has no way to say that at any tuning.
 --
--- So the thumb offset is the two keyboard axes. Sideways is rotate, up is
--- thrust, down is reverse, and a diagonal is both -- exactly what holding two
--- arrows does. What it costs is that acquiring a heading is now a thing you
--- hold and watch rather than a place you point, which is the same thing it
--- costs on a keyboard.
+-- A relative stick reading the same two axes was tried in between and was
+-- worse than either: its origin is wherever your thumb first landed, so there
+-- is nothing to aim at and nothing under the thumb to feel. The pad is fixed
+-- and drawn, four keys you can find and watch light up.
 --
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
 
 local M = {}
 
--- How far the thumb travels on each axis before that bit goes out. Two
--- numbers rather than one radius, because the axes are not equally forgiving:
--- heading is corrected constantly and wants a short throw, while lighting the
--- engine is a commitment and a sloppy sideways drag should not do it.
-local ROT_PX = 14
-local DRIVE_PX = 26
+-- Where each key points. A direction is held while the thumb is within sixty
+-- degrees of it, so the wedges between two keys hold both -- which is how a
+-- thumb asks for "turn while burning" on a cross with no corners to feel for.
+-- Cardinals get sixty degrees to themselves and each diagonal thirty, which
+-- is the split that stops a straight push up from also rotating.
+local SPREAD = math.pi / 3
+local DIRS = {
+    {a = 0,             key = "thrust"},
+    {a = math.pi / 2,   key = "right"},
+    {a = math.pi,       key = "reverse"},
+    {a = math.pi * 1.5, key = "left"},
+}
 
 M.used = false            -- has this device ever reported a touch?
 M.scale = 1               -- drawable pixels per point
@@ -87,7 +92,10 @@ function M.layout(w, h, s)
     local row = r * 1.5
     local guns  = {x = w - r * 1.4, y = row, r = r}
     local bombs = {x = guns.x - (r + gap + r * 0.8), y = row, r = r * 0.8}
-    local home  = {x = r * 1.6, y = r * 1.8, r = r * 1.15}
+    -- The d-pad. Bigger than the resting mark the relative stick had, because
+    -- this one is aimed at rather than pressed near: four keys inside it have
+    -- to each be a thumb wide.
+    local home  = {x = r * 1.55, y = r * 1.6, r = r * 1.35}
 
     -- The charges continue the row, smaller: they are tapped once in a while
     -- rather than held, and a target the size of a trigger would crowd the
@@ -122,19 +130,24 @@ local function near(pad, x, y, slack)
     return dx * dx + dy * dy <= reach * reach
 end
 
--- Which control a finger landed on. The pads win over the stick wherever they
--- overlap, and everything on the left half that is not a pad is the stick, so
--- a thumb never has to find an exact spot to start steering.
+-- Which control a finger landed on. The weapon pads win wherever they overlap
+-- anything else.
 local function zone(x, y, w, h, s)
     local L = M.layout(w, h, s)
     if near(L.guns, x, y) then return "guns" end
-    -- Not tested when the hull has no rack, so the space falls through to the
-    -- stick rather than being eaten by a control that is not drawn.
+    -- Not tested when the hull has no rack, so the space falls through rather
+    -- than being eaten by a control that is not drawn.
     if M.has_bomb and near(L.bombs, x, y) then return "bombs" end
     for _, c in ipairs(L.charge) do
         if near(c, x, y) then return c.slot end     -- a number, not a name
     end
-    if x < w * 0.55 then return "stick" end
+    -- The pad is a place, not a half of the screen. The relative stick took
+    -- everything left of centre because it had to appear wherever you
+    -- pressed; a drawn control is aimed at, and claiming ground nowhere near
+    -- it would only steal touches meant for something else. Generously
+    -- though: a rim slightly wider than the drawing, and once a thumb has the
+    -- pad it keeps it however far it slides.
+    if near(L.home, x, y, 1.2) then return "stick" end
     return nil
 end
 
@@ -164,7 +177,12 @@ function M.on_touch(action, w, h, s)
         if t.pressed then
             local z = zone(tx, ty, w, h, s)
             if z == "stick" and not stick then
-                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
+                -- Anchored to the pad, not to where the thumb landed: which
+                -- key you are on is a question about the pad's centre, and it
+                -- has to keep meaning that as the thumb slides across.
+                local L = M.layout(w, h, s)
+                stick = {id = t.id, ox = L.home.x, oy = L.home.y,
+                         r = L.home.r, x = tx, y = ty}
             elseif z == "guns" then
                 guns = t.id
             elseif z == "bombs" then
@@ -196,37 +214,50 @@ function M.fired_charge()
     return k
 end
 
+-- Which keys the thumb is on, as a set of the names in DIRS.
+--
+-- Angle rather than a box per key, so the wedge between two keys presses both
+-- and a thumb sliding around the rim never falls through a seam. Shared by
+-- the bits and by the drawing, because a key that lights and a key that fires
+-- have to be the same key.
+local function pressed()
+    local out = {}
+    if not stick then return out end
+    local dx, dy = stick.x - stick.ox, stick.y - stick.oy
+    -- A dead centre, so resting a thumb on the middle of the pad is a thumb
+    -- resting rather than a direction nobody chose.
+    if dx * dx + dy * dy < (stick.r * 0.30) ^ 2 then return out end
+    -- Touches arrive counting up from the bottom of the screen, so up is a
+    -- larger y and atan2(x, y) puts zero at the top.
+    local a = math.atan2(dx, dy)
+    for _, d in ipairs(DIRS) do
+        local diff = a - d.a
+        while diff > math.pi do diff = diff - math.pi * 2 end
+        while diff < -math.pi do diff = diff + math.pi * 2 end
+        if diff < SPREAD and diff > -SPREAD then out[d.key] = true end
+    end
+    return out
+end
+
 -- The bits held this frame.
 --
 -- A list rather than a bitfield, because the caller merges this with the
 -- keyboard and HTML5 builds run Lua 5.1, which has no bitwise or. Summing a
 -- set of distinct bits is exact and needs no library.
---
--- The two axes are read independently, so every combination a keyboard can
--- hold is reachable: turn while burning, turn while backing off, back off
--- with the nose held still.
 function M.bits()
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
     if bombs then out[#out + 1] = sim.BTN_BOMB end
-    if not stick then return out end
-
-    local dx, dy = stick.x - stick.ox, stick.y - stick.oy
-    local rot = ROT_PX * M.scale
-    local drive = DRIVE_PX * M.scale
-
-    if dx > rot then out[#out + 1] = sim.BTN_RIGHT
-    elseif dx < -rot then out[#out + 1] = sim.BTN_LEFT end
-
-    -- Touches arrive counting up from the bottom of the screen, so up is a
-    -- larger y and up is the throttle.
-    if dy > drive then out[#out + 1] = sim.BTN_THRUST
-    elseif dy < -drive then out[#out + 1] = sim.BTN_REVERSE end
+    local on = pressed()
+    if on.left then out[#out + 1] = sim.BTN_LEFT end
+    if on.right then out[#out + 1] = sim.BTN_RIGHT end
+    if on.thrust then out[#out + 1] = sim.BTN_THRUST end
+    if on.reverse then out[#out + 1] = sim.BTN_REVERSE end
     return out
 end
 
--- True while the stick is steering, so the caller can drop keyboard steering
--- rather than let two sources fight over the rudder.
+-- True while the pad is held, so the caller can drop keyboard flight rather
+-- than let two sources fight over the controls.
 function M.steering()
     return stick ~= nil
 end
@@ -288,38 +319,25 @@ function M.draw(u, w, h, s)
         end
     end
 
-    -- The four gates, drawn where they actually are: a tick across each axis
-    -- at the distance that axis needs before its bit goes out. A bare ring
-    -- says "drag somewhere"; this says how far, in which direction, and --
-    -- once it lights -- that the ship heard you. Which is most of what the
-    -- old stick had for free, since pointing showed you its own answer.
-    local function gates(ox, oy, dx, dy, base)
-        local rot = ROT_PX * s
-        local drive = DRIVE_PX * s
-        local arm = L.r * 0.3
-        local function tick(x0, y0, x1, y1, on)
-            u:seg(x0, y0, x1, y1, (on and 2.6 or 1.6) * s, on and live or base)
+    -- The d-pad: four arrowheads around a dead centre, drawn whether or not a
+    -- thumb is on it. A fixed control has to be visible from across the
+    -- screen -- you aim at it without looking, which means it has to have
+    -- been looked at once.
+    local on = pressed()
+    local R = L.home.r
+    ring(L.home.x, L.home.y, R, stick and dim or pal.a(pal.DIM, 0.3))
+    ring(L.home.x, L.home.y, R * 0.30, pal.a(pal.DIM, 0.3), 14)
+    for _, d in ipairs(DIRS) do
+        local ux, uy = math.sin(d.a), math.cos(d.a)
+        local tx, ty = L.home.x + ux * R * 0.86, L.home.y + uy * R * 0.86
+        local lit = on[d.key]
+        local col = lit and live or dim
+        local wide = (lit and 3.2 or 2.0) * s
+        for _, k in ipairs({-0.32, 0.32}) do
+            local b = d.a + k
+            u:seg(tx, ty, L.home.x + math.sin(b) * R * 0.48,
+                  L.home.y + math.cos(b) * R * 0.48, wide, col)
         end
-        tick(ox + rot, oy - arm, ox + rot, oy + arm, dx > rot)
-        tick(ox - rot, oy - arm, ox - rot, oy + arm, dx < -rot)
-        tick(ox - arm, oy + drive, ox + arm, oy + drive, dy > drive)
-        tick(ox - arm, oy - drive, ox + arm, oy - drive, dy < -drive)
-    end
-
-    if stick then
-        ring(stick.ox, stick.oy, L.home.r, dim)
-        gates(stick.ox, stick.oy, stick.x - stick.ox, stick.y - stick.oy, dim)
-        ring(stick.x, stick.y, L.r * 0.42, live, 16)
-        u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, live)
-    else
-        -- A resting mark where a thumb should go. The stick itself is
-        -- relative -- it appears wherever you press -- but a control that is
-        -- invisible until you find it is a control nobody finds, and the
-        -- gates are the half of it that has to be learned before the first
-        -- press rather than during it.
-        local faint = pal.a(pal.DIM, 0.28)
-        ring(L.home.x, L.home.y, L.home.r, faint)
-        gates(L.home.x, L.home.y, 0, 0, faint)
     end
 end
 

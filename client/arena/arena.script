@@ -148,11 +148,11 @@ local function my_buttons()
         local emulated = touch.used and (action == hash("pointer")
                                          or action == hash("pointer_alt"))
         if down and not emulated then
-            -- Two sources on the controls would fight; the stick wins every
-            -- flight bit while it is down, and the keys keep everything else.
-            -- All four, not just the rudder: the stick is both axes now, and
-            -- a key that could still light the engine under it would mean a
-            -- thumb pulled back to reverse got nothing.
+            -- Two sources on the controls would fight; the pad wins every
+            -- flight bit while it is held, and the keys keep everything else.
+            -- All four, not just the rudder: the pad is both axes now, and a
+            -- key that could still light the engine under it would mean a
+            -- thumb on the reverse key got nothing.
             local bit = bit_for(action)
             local flight = bit == sim.BTN_LEFT or bit == sim.BTN_RIGHT
                 or bit == sim.BTN_THRUST or bit == sim.BTN_REVERSE
