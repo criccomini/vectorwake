@@ -97,7 +97,9 @@ static uint8_t held_of(const sim_ship *sh, uint8_t type) {
     type = (uint8_t)(type - SIM_UP_COUNT);
     if (type < SIM_TRIG_COUNT) return sh->level[type];
     type = (uint8_t)(type - SIM_TRIG_COUNT);
-    return sim_mod_get(sh->mods[type / SIM_MOD_COUNT], type % SIM_MOD_COUNT);
+    if (type < SIM_TRIG_COUNT * SIM_MOD_COUNT)
+        return sim_mod_get(sh->mods[type / SIM_MOD_COUNT], type % SIM_MOD_COUNT);
+    return sh->charge[type - SIM_TRIG_COUNT * SIM_MOD_COUNT];
 }
 
 /* A hull's gun and bomb, through the tables. Tests used to read weapon
@@ -898,8 +900,9 @@ int main(void) {
         for (int i = 0; i < n; i++)
             CHECK(pool[i] < SIM_UP_COUNT
                   || pool[i] == SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE)
-                  || pool[i] == SIM_PRIZE_CHARGE(0),
-                  "a Spire is offered stats, freeze and repels, nothing else");
+                  || pool[i] == SIM_PRIZE_CHARGE(0)
+                  || pool[i] == SIM_PRIZE_CHARGE(1),
+                  "a Spire is offered stats, freeze and the charges, nothing else");
 
         n = sim_prize_pool(&cfg.classes[LATTICE], pool);
         int has_push = 0;
@@ -990,14 +993,17 @@ int main(void) {
             else charges++;
         }
         /* On the original's table an Apex's pool is five stats at 40, a gun
-         * level at 25, multifire at 30 and a burst at 70: 325 in total, so a
-         * green is a stat three times in five and a charge better than one
-         * time in five. Bands rather than exact numbers, because the point
-         * under test is the shape of the tree and not the generator. */
-        CHECK(stats > 5800 && stats < 6500, "stats are the bread of the tree");
-        CHECK(levels > 600 && levels < 950, "a level is about one green in thirteen");
-        CHECK(mods > 750 && mods < 1100, "an add-on a little more often");
-        CHECK(charges > 1900 && charges < 2400, "and a charge is the one you want");
+         * level at 25, multifire at 30, and both charges at 70: 395 in total.
+         * So a green is a stat half the time and a charge better than one
+         * time in three -- charges are the heavy entries in its table and
+         * every hull may hold them, which is what makes them the common
+         * green rather than the rare one. Bands rather than exact numbers,
+         * because the point under test is the shape of the tree and not the
+         * generator. */
+        CHECK(stats > 4750 && stats < 5400, "stats are the bread of the tree");
+        CHECK(levels > 500 && levels < 800, "a level is the rare one");
+        CHECK(mods > 620 && mods < 920, "an add-on a little more often");
+        CHECK(charges > 3250 && charges < 3850, "and a charge is the common one");
 
         /* And a zone that says otherwise gets otherwise. */
         for (int i = 0; i < SIM_UP_COUNT; i++) w.prize_weight[i] = 0;
@@ -1194,32 +1200,44 @@ int main(void) {
     }
 
     {
-        /* A hull only carries what its row allows, and a slot the zone never
-         * filled is not a slot. */
+        /* A hull carries what its row allows, and a slot the zone never
+         * filled is not a slot.
+         *
+         * The shipped roster gives every hull three of each charge, which is
+         * the original's rule -- RepelMax through RocketMax are 3 on all
+         * eight of its ships. So the gate is tested by closing one rather
+         * than by finding a hull that happens to be shut. */
         uint8_t pool[SIM_PRIZE_COUNT];
-        const int LATTICE = 7, WEDGE = 1;
+        const int LATTICE = 7;
         int n = sim_prize_pool(&cfg.classes[LATTICE], pool);
-        int repel = 0, burst = 0;
+        int repel = 0, burst = 0, empty_slot = 0;
         for (int i = 0; i < n; i++) {
             if (pool[i] == SIM_PRIZE_CHARGE(0)) repel = 1;
             if (pool[i] == SIM_PRIZE_CHARGE(1)) burst = 1;
+            if (pool[i] == SIM_PRIZE_CHARGE(2)
+                || pool[i] == SIM_PRIZE_CHARGE(3)) empty_slot = 1;
         }
-        CHECK(repel, "the denial hull is offered repels");
-        CHECK(!burst, "and never a burst");
+        CHECK(repel && burst, "a hull is offered both charges the zone filled");
+        CHECK(!empty_slot, "and never a slot the zone left empty");
+
+        /* Close one on the hull and it leaves that hull's pool. */
+        sim_settings w = cfg;
+        w.rust_chance = 0;
+        w.classes[LATTICE].charge_max[1] = 0;
+        n = sim_prize_pool(&w.classes[LATTICE], pool);
+        burst = 0;
+        for (int i = 0; i < n; i++)
+            if (pool[i] == SIM_PRIZE_CHARGE(1)) burst = 1;
+        CHECK(!burst, "a hull with no room for a burst is not offered one");
 
         sim_ship sh;
         memset(&sh, 0, sizeof sh);
-        uint32_t rng = 77;
-        sim_settings w = cfg;
-        w.rust_chance = 0;
-        for (int i = 0; i < 4000; i++) sim_take_prize(&sh, &w, &rng, NULL);
-        CHECK(sh.charge[0] == 0, "an Apex holds no repels however lucky");
         sh.cls = LATTICE;
-        memset(&sh.charge, 0, sizeof sh.charge);
+        uint32_t rng = 77;
         for (int i = 0; i < 4000; i++) sim_take_prize(&sh, &w, &rng, NULL);
+        CHECK(sh.charge[1] == 0, "and never picks one up however lucky");
         CHECK(sh.charge[0] == cfg.classes[LATTICE].charge_max[0],
-              "and a Lattice fills to its row and stops");
-        CHECK(cfg.classes[WEDGE].charge_max[1] == 0, "a Wedge has no burst");
+              "while the one it may hold fills to the row and stops");
     }
 
     {
@@ -1486,7 +1504,8 @@ int main(void) {
         CHECK(!s.prizes[idx].active, "and takes it off the map");
         CHECK(memcmp(&before.up, &s.ships[0].up, sizeof before.up) != 0
               || before.level[SIM_TRIG_GUN] != s.ships[0].level[SIM_TRIG_GUN]
-              || before.mods[SIM_TRIG_GUN] != s.ships[0].mods[SIM_TRIG_GUN],
+              || before.mods[SIM_TRIG_GUN] != s.ships[0].mods[SIM_TRIG_GUN]
+              || memcmp(&before.charge, &s.ships[0].charge, sizeof before.charge) != 0,
               "and something the pilot holds went up");
 
         /* Dying strips everything. */

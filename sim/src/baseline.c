@@ -24,7 +24,20 @@ typedef struct {
     int32_t bullet_damage, bullet_delay, bomb_damage, bomb_delay;
     uint8_t gun_rungs, bomb_rungs;
     uint16_t gun_mods, bomb_mods;
-    /* How many of each charge this hull may carry, by slot: repel, burst. */
+    /* How many of each charge this hull may carry, by slot: repel, burst.
+     *
+     * Three of each, for every hull, which is the original's rule: `RepelMax`
+     * through `RocketMax` are all 3 on all eight of its ships, and none of
+     * them starts holding any. Charges are not a roster trait there, they are
+     * loot, and the hull does not gate them.
+     *
+     * The ceiling stays a per-class field so a zone can still make it a trait
+     * -- the core has always gated on it and the tests close a slot to prove
+     * it -- but the shipped roster does not. What makes an Apex an Apex is its
+     * ladders, its add-ons and the way it flies, and a uniform column is what
+     * makes carrying a mixed inventory, and the key that cycles it, mean
+     * anything to anybody: with one kind per hull, nobody could ever hold two
+     * and the cycle key was dead. */
     uint8_t charges[SIM_MAX_CHARGES];
 } class_row;
 
@@ -44,21 +57,21 @@ static const class_row rows[SIM_MAX_CLASSES] = {
     /* speed thrust  rot  energy  rech  rad  bdmg bdly  bombdmg bombdly
        gun  bomb  gun add-ons                 bomb add-ons        charges */
     {4900, 30, 420, 1350, 1500, 14, 200, 25, 400, 150,
-     2, 1, M1(SIM_MOD_MULTI), 0,                        {0, 3, 0, 0}},
+     2, 1, M1(SIM_MOD_MULTI), 0,                        {3, 3, 0, 0}},
     {4400, 22, 340, 1450, 1300, 14, 150, 30, 600, 80,
-     1, 2, 0, M1(SIM_MOD_PROX) | M1(SIM_MOD_SHRAPNEL),  {1, 0, 0, 0}},
+     1, 2, 0, M1(SIM_MOD_PROX) | M1(SIM_MOD_SHRAPNEL),  {3, 3, 0, 0}},
     {4300, 26, 400, 1500, 1800, 14, 120, 15, 0, 0,
-     2, 0, M2(SIM_MOD_MULTI) | M1(SIM_MOD_FREEZE), 0,   {0, 2, 0, 0}},
+     2, 0, M2(SIM_MOD_MULTI) | M1(SIM_MOD_FREEZE), 0,   {3, 3, 0, 0}},
     {3200, 14, 240, 2600, 1000, 16, 150, 35, 900, 60,
-     1, 3, 0, M2(SIM_MOD_SHRAPNEL) | M1(SIM_MOD_PROX),  {2, 0, 0, 0}},
+     1, 3, 0, M2(SIM_MOD_SHRAPNEL) | M1(SIM_MOD_PROX),  {3, 3, 0, 0}},
     {4600, 28, 380, 1200, 2200, 14, 100, 30, 0, 0,
-     1, 0, M2(SIM_MOD_FREEZE), 0,                       {3, 0, 0, 0}},
+     1, 0, M2(SIM_MOD_FREEZE), 0,                       {3, 3, 0, 0}},
     {4700, 24, 390, 1100, 1200, 12, 300, 40, 300, 200,
-     3, 1, M1(SIM_MOD_BOUNCE), 0,                       {0, 4, 0, 0}},
+     3, 1, M1(SIM_MOD_BOUNCE), 0,                       {3, 3, 0, 0}},
     {4200, 27, 410, 1600, 1400, 14, 180, 20, 300, 180,
-     2, 1, M2(SIM_MOD_MULTI), M1(SIM_MOD_PROX),         {0, 3, 0, 0}},
+     2, 1, M2(SIM_MOD_MULTI), M1(SIM_MOD_PROX),         {3, 3, 0, 0}},
     {3800, 20, 330, 1900, 1250, 15, 150, 30, 500, 100,
-     1, 2, 0, M2(SIM_MOD_PUSH) | M2(SIM_MOD_BOUNCE),    {4, 0, 0, 0}},
+     1, 2, 0, M2(SIM_MOD_PUSH) | M2(SIM_MOD_BOUNCE),    {3, 3, 0, 0}},
 };
 
 const char *const sim_class_names[SIM_MAX_CLASSES] = {

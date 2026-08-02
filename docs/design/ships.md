@@ -82,6 +82,12 @@ repels that push everything away. It scores less than anything else and decides
 more fights than its stats suggest, which is a role type the original proved
 players love once they find it.
 
+The repel here is the **add-on** -- the one that welds a shove onto Lattice's
+own bombs, and the one thing on the matrix nobody else can hold. The repel you
+*carry and spend* is a charge, and every hull gets three of those; see
+[weapons.md](weapons.md#charges). Two things called repel, one mechanic, and
+only one of them is a roster trait.
+
 ## The tech tree
 
 Each hull's row also says how far its weapons climb and which add-ons it may

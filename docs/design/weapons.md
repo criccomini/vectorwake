@@ -295,6 +295,9 @@ bomber.
 | **Facet** brawler | 2 | 1 | multi ×2 | prox |
 | **Lattice** denial | 1 | 2 | | repel ×2, bounce ×2 |
 
+**Charges are not on this matrix**, and that is the original's rule rather than
+an omission -- see below.
+
 A rung is 40% more damage and costs the same to fire. A level is a straight
 upgrade, which is what makes it worth crossing the map for; what stops it
 running away with a match is that the pilot holding it is carrying a bounty
@@ -334,8 +337,30 @@ full turn's spacing, the rosette that motivated `count` and `spacing` in the
 first place.
 
 Four kinds, zone-wide, so slot two means the same weapon for everybody and a
-zone can weight "the odds of finding a burst". What each hull may carry is its
-own row, the same way add-ons are.
+zone can weight "the odds of finding a burst".
+
+**Every hull may carry three of every charge.** That is the original's rule:
+`RepelMax`, `BurstMax`, `DecoyMax`, `ThorMax`, `BrickMax`, `PortalMax` and
+`RocketMax` are all 3 on all eight of its ships, and every ship starts holding
+none of them. Charges are not a roster trait there; they are loot, and the
+hull does not gate them.
+
+The ceiling is still a per-class field, so a zone that wants charges to be a
+trait can say so and the core will honour it -- but the shipped roster does
+not. Two reasons:
+
+- **Hull identity already has three carriers** -- the ladders, the add-ons,
+  and the flight model. A fourth buys little and costs the thing below.
+- **A mixed inventory is the whole point of the cycle key.** An earlier roster
+  gave each hull exactly one kind, which meant nobody could ever hold two,
+  which meant the key that cycles them and the pad that draws them could never
+  do anything. The control was correct and unreachable.
+
+The consequence to know: charges are the *common* green. Both slots at 70
+against five stats at 40 makes a charge better than one green in three for
+every hull. That is faithful -- in the original's table `Brick` alone outweighs
+every stat put together -- and it is the number to move if the arena starts
+feeling like a fireworks display.
 
 **Which one is ready is not simulation state.** The client picks a slot and
 sends it in the two spare button bits; the core just spends what it is told.
