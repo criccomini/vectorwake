@@ -127,6 +127,104 @@ consistent channel, which is worth saying out loud rather than discovering later
 is underprovisioned in its own region, and falls back to global need. A
 deployment in one region ignores the field entirely.
 
+### The rules as an algorithm
+
+Prose is enough to argue with and not enough to build. The four rules resolve to
+this, run by every arena server on its own:
+
+```
+constants (all overridable per deployment, defaults chosen to be boring)
+  DECIDE_JITTER      0..5000 ms   spread before a cold instance decides
+  ANNOUNCE_HOLD      3000 ms      wait between announcing and committing
+  INTENT_TTL         15000 ms     how long an announcement reserves a zone
+  DRAIN_GRACE        120000 ms    empty-room patience before re-choosing
+  RECHOOSE_COOLDOWN  60000 ms     minimum between two commits by one instance
+
+choose():
+  if room is not empty:            return            # rule 1, and it is absolute
+  if pinned by an operator:        return pin.zone   # admin.md wins over policy
+  if now - last_commit < RECHOOSE_COOLDOWN: return
+
+  view = union(per-directory views, dedup by instance, keep newest observed_at)
+  sleep(random 0..DECIDE_JITTER)                     # rule 3, first half
+
+  want = pick(view)
+  if want is none:                 return            # nothing is short; stay put
+  announce(INTENT{want, now + INTENT_TTL})           # rule 3, second half
+  sleep(ANNOUNCE_HOLD)
+
+  view = union(...)                        # re-read; peers announced too
+  if pick(view) != want:           return            # somebody else covered it
+  commit(want); last_commit = now
+
+pick(view):
+  live(z)   = instances serving z, plus unexpired intents naming z
+  short(z)  = live(z) is empty, or every instance of z is below fill_target(z)
+  # rule 2: a zone with a live instance under target does not need another one;
+  # it needs the clients that are already choosing the fullest room below cap.
+  needy    = [z for z in willing if live(z) is empty]
+  if needy is empty:               return none
+  prefer   = [z in needy if under-provisioned in my region]   # rule 4
+  return lowest-priority-index of (prefer if prefer else needy)
+```
+
+Three things in there are load-bearing and easy to get wrong.
+
+`live(z)` counts unexpired intents as though they were instances. That is the
+whole of the anti-herding mechanism: an announcement occupies the zone it names
+for `INTENT_TTL`, so nine of ten instances booting together see the tenth's claim
+and look elsewhere. It also means a crashed announcer releases its claim on a
+timer rather than holding a zone empty forever, which is why the TTL travels in
+the message rather than being a directory-side rule.
+
+`needy` is zones with **no** live instance, not zones below target. A zone with
+one room holding six of twenty does not want a second room; it wants the next six
+players, and the client's own preference for the fullest room below cap delivers
+them. Widening `needy` to "below target" is the mistake that turns the
+concentration rule inside out and scatters a population across half-empty rooms.
+
+The tie-break is the catalog's zone order rather than anything computed. Two
+instances with identical views must reach the same answer or the announce step
+has nothing to detect a collision against, and "first in the file" is the only
+total order both of them already agree on.
+
+## The arena server as a state machine
+
+The lifecycle above is the happy path. The edges are where the design either
+holds or does not:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Booting
+    Booting --> Registering: instance id loaded or minted
+    Registering --> Unverified: ACCEPTED, verified=false
+    Registering --> Offline: REJECTED, or no directory reachable
+    Registering --> Choosing: ACCEPTED, verified=true
+    Unverified --> Choosing: verification passes on retry
+    Offline --> Choosing: serve default_zone anyway
+    Offline --> Registering: a directory answers
+    Choosing --> Announcing: picked a zone
+    Choosing --> Choosing: nothing short; wait and re-read
+    Announcing --> Choosing: peer covered it
+    Announcing --> Serving: committed, map and settings loaded
+    Serving --> Serving: catalog changed; new settings, same zone
+    Serving --> Draining: operator drain, or a better zone exists
+    Draining --> Choosing: empty, or DRAIN_GRACE elapsed
+    Serving --> Serving: pinned; policy stops applying
+```
+
+`Offline` is the state worth defending. An arena server that cannot reach any
+directory serves the last zone it chose, or the catalog's `default_zone` if it
+never chose one, or the built-in arena if it has no catalog at all. It keeps
+ticking and keeps accepting the clients that already know its address. A
+discovery outage must not be a gameplay outage, and this is the state where that
+promise is either kept or quietly broken.
+
+`Unverified` is registered but unlisted: the directory holds the socket and will
+keep retrying the callback, and the arena serves anybody who reaches it directly.
+That combination is deliberate. A misconfigured address should cost an operator
+visibility, not the players already connected.
+
 ## The catalog
 
 Zone configurations are the one thing that must not be gossiped. Two directories

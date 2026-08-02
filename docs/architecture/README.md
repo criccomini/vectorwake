@@ -19,7 +19,8 @@ it says so.
 | [client-defold.md](client-defold.md) | What Defold does for us, what it does not, project layout, map rendering, prediction |
 | [server.md](server.md) | Authority, extension modules, lag response, persistence, operations |
 | [zones-and-arenas.md](zones-and-arenas.md) | One arena to a process, what a zone is, how an arena server picks which one it serves |
-| [discovery.md](discovery.md) | Registration, credentials, verification, several directories, how a client finds a game |
+| [catalog.md](catalog.md) | The one artifact with an author: every zone, credential and ban, and what validation rejects |
+| [discovery.md](discovery.md) | Registration, credentials, verification, the wire format, how a client finds a game |
 | [admin.md](admin.md) | The operator web UI: what it observes, what it edits, what it may command |
 | [hosting.md](hosting.md) | What a room costs, why the bill is egress, the provider choice, Docker, Nakama's database |
 | [networking.md](networking.md) | Transports, packet model, snapshots and inputs, lag response, anti-cheat |
