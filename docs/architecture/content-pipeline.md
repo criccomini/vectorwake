@@ -129,29 +129,39 @@ the maps and the settings, and is versioned with them.
 
 ## What a zone looks like on disk
 
+A zone's content is a catalog: authored in one place, versioned as a unit, and
+served to arena processes by the directories. It is not a directory a running
+server reads, which is the part that changed with
+[decision 25](decisions.md).
+
 ```
-myzone/
-  zone.toml                    name, description, identity, listen ports
-  arenas/
-    pub/
-      arena.toml               settings, or includes of shared files
-      pub.map
-      pub.overlay
+myzone/                        the catalog, versioned (git is the obvious host)
+  catalog.toml                 zone name, version, staff, bans, the type list
+  types/
+    war/
+      type.toml                mode, fill target, settings or includes
+      war.map
+      war.overlay
     duel/
-      arena.toml
+      type.toml
   shared/
-    ships/warbird.toml         ship definitions the arenas include
+    ships/apex.toml            ship definitions the types include
     tilesets/standard.png
   modules/
     warzone.wasm
     league.lua
-  data/
-    zone.db
 ```
 
-The debt to ASSS's layout is obvious and intentional. It was a good layout, zone
-operators already know it, and the parts we changed are the parts that were
-1997 artifacts.
+An arena process holds almost nothing. Its own config names the directories it
+registers with, where to read each token, its region, and which types it is
+willing to run; everything else arrives over the registration socket as the same
+packed bytes a client gets at join. Its only durable local state is the instance
+id it minted at first boot, plus whatever scores it has not yet handed to
+persistence.
+
+The debt to ASSS's layout is still obvious and still intentional. What moved is
+the ownership: ASSS put the game on the disk of the machine serving it, and a
+fleet that scales by replica count cannot.
 
 ## Open questions
 

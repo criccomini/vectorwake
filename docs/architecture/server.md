@@ -1,10 +1,17 @@
 # The zone server
 
+> The zone and arena model in this document has been superseded. One process now
+> holds one arena, a zone is a catalog of arena types served by directories, and
+> an arena picks its own type rather than being placed by a scheduler. See
+> [zones-and-arenas.md](zones-and-arenas.md), [discovery.md](discovery.md) and
+> decisions 23 through 26. Everything else here, authority and validation, lag
+> response, modules, persistence and identity, stands unchanged.
+
 ## Responsibility
 
-The server owns the truth. It accepts connections, authenticates players, places
-them in arenas, feeds inputs to the simulation, decides every kill, and writes
-what happened to disk. Clients render its decisions and predict ahead of them.
+The server owns the truth. It accepts connections, authenticates players, feeds
+inputs to the simulation, decides every kill, and writes what happened to disk.
+Clients render its decisions and predict ahead of them.
 
 It is a separate program from the client rather than a headless Defold build.
 The reasons are in [decisions.md](decisions.md), and the short version is that a
@@ -35,7 +42,8 @@ server/
     main.rs
     transport/        udp.rs, websocket.rs, throttle.rs
     session/          handshake, auth, capabilities, chat
-    arena/            arena.rs, scheduler.rs, settings.rs, map.rs
+    arena/            arena.rs, settings.rs, map.rs
+    directory/        registration client, fleet view, type selection
     sim/              FFI bindings to sim/
     lag/              measurement and actions
     ai/               controllers, perception, navigation, population director
@@ -45,27 +53,27 @@ server/
   tests/
 ```
 
-## The arena scheduler
+## The tick
 
-Arenas are independent. Each holds a `sim_state`, its settings, its map, its
-player list, and its module instances. A worker pool ticks them: one thread owns
-an arena for the duration of a tick, and an arena is never ticked concurrently
-with itself.
+One process, one arena, one tick loop. The arena holds a `sim_state`, its
+settings, its map, its player list, and its module instances, and nothing else in
+the process competes for them. The worker pool, the lazy load by name, the
+template resolution and the unload grace period that used to be described here
+are all gone with [decision 23](decisions.md); a fleet is many processes and the
+container platform schedules them.
 
-A tick is: drain the input queue for this arena, let AI controllers add their
-inputs, call `sim_step`, hand the resulting events to modules, to the rating
-layer, and to the snapshot builder, then enqueue any persistence writes. At
-100 Hz that is a 10 ms budget, and a 40-player arena should use a small fraction
-of it, with under 1 ms of it going to AI per [ai-runtime.md](ai-runtime.md).
+A tick is: drain the input queue, let AI controllers add their inputs, call
+`sim_step`, hand the resulting events to modules, to the rating layer, and to the
+snapshot builder, then enqueue any persistence writes. At 100 Hz that is a 10 ms
+budget, and a 40-player arena should use a small fraction of it, with under 1 ms
+going to AI per [ai-runtime.md](ai-runtime.md). Measured tick cost is in memory
+#75: 64 ships ran at 205 microseconds before the weapon-spec cache took a third
+off that.
 
-Arenas load lazily by name and unload after a grace period with nobody in them.
-Naming follows the ASSS convention we liked: `pub1`, `pub2`, and `pub3` all take
-their configuration from the `pub` template, which makes running eight identical
-public arenas a matter of one directory.
-
-The same mechanism gives us ephemeral arenas for free. A duel match creates
-`duel#a1b2` from the `duel` template, loads the duel module, and unloads when the
-match ends, with a shorter grace period than a public arena. See
+Which type the arena runs, and when it drains to become a different one, is
+[zones-and-arenas.md](zones-and-arenas.md). Duels keep their own lifecycle: a
+duel arena runs matches back to back out of a warm pool rather than being created
+per match, per the amendment to [decision 16](decisions.md). See
 [design/duel-mode.md](../design/duel-mode.md).
 
 ## Authority and validation
@@ -153,13 +161,15 @@ Those five numbers tell us whether the architecture is holding.
 
 ## Open questions
 
-Whether one process per zone is right, or whether an arena should be able to
-move to another process for isolation. Subspace's virtual servers let one
-process present as several zones on different ports, which suggests the opposite
-direction.
-
 Whether WASM module startup cost is acceptable when an arena loads, and how
-modules get distributed to operators.
+modules get distributed to operators. The catalog is now the obvious channel for
+the second half of that, which makes module bytes something a directory hands out
+alongside a map.
 
-Whether the arena worker pool needs work stealing, or whether arenas are
-uniform enough that a simple assignment holds.
+How chat spans a zone once the population is spread across processes, since one
+process holding every arena is what made it free.
+
+Two questions that used to live here are answered. Whether an arena should be
+able to move to another process for isolation: yes, and it is the only thing in a
+process now, per [decision 23](decisions.md). Whether the arena worker pool needs
+work stealing: there is no pool.

@@ -248,6 +248,14 @@ rewrite. That property is worth protecting deliberately.
 leaderboards before M5, in which case adopt early. Or if the game turns out to
 need none of them, in which case skip it.
 
+**Amended by [decision 25](#25-an-arena-chooses-its-own-type-from-a-unioned-view):**
+the zone directory is no longer on the list of things Nakama gets. A directory
+that holds a catalog, a token table, and a live fleet view is a piece of our own
+infrastructure rather than a leaderboard, and nothing Nakama offers implements
+it. Identity, friends, parties, chat outside the arena, leaderboards and
+tournaments are unchanged, and keeping identity *out* of the directory process is
+now load-bearing: it is what lets directory replicas stay independent.
+
 ---
 
 ## 12. Inspired by, not a clone
@@ -379,6 +387,13 @@ have.
 **Reconsider if:** duel matches turn out to need sub-second creation at a rate
 that arena loading cannot sustain, in which case a pool of warm duel arenas
 replaces creation on demand.
+
+**Amended by [decision 23](#23-one-arena-per-process):** that reconsideration has
+fired. With one arena to a process, creating an arena per match means creating a
+*process* per match, which costs milliseconds and memory instead of a hash map
+insert. So the warm pool named above becomes the design rather than the fallback,
+and a duel arena runs matches back to back rather than dying with each one. The
+ruleset, the queue, and the module-API argument are unaffected.
 
 ---
 
@@ -582,3 +597,167 @@ which is the price of every one of them being worth taking.
 pattern. Shrapnel already needs a per-rung pattern rather than a per-rung
 integer, and a second of those would mean the transform table has outgrown
 being a table.
+
+---
+
+## 23. One arena per process
+
+**Status:** proposed
+
+A zone server hosts exactly one arena: one map, one mode, one tick loop, one
+simulation. Many arenas means many processes, and the fleet is horizontal.
+
+This reverses the shape we inherited from ASSS, where one process holds every
+arena and players move between them without reconnecting. The reason is that
+almost everything the multi-arena process buys us has to be built, while
+everything the flat model buys us comes from the container platform for free.
+Named arenas, template resolution by name prefix, per-arena configuration files,
+arena groups sharing score intervals, lazy loading, unload grace periods, a
+worker pool and a scheduler to assign arenas to threads are all described in
+[server.md](server.md) and none of them exist. Under one arena per process none
+of them ever need to.
+
+It also answers that document's own open question about process isolation in the
+direction that needs no code. A wedged arena takes down only itself, and the
+supervisor that restarts it is whatever already restarts containers. Resource
+accounting per arena stops being a metric we compute and starts being a number
+the platform reports.
+
+The players see types rather than servers, which is the user-visible half:
+Alpha, Chaos, War, Duel are things you join, and which instance you land on is a
+routing detail. See [zones-and-arenas.md](zones-and-arenas.md).
+
+**Cost:** Population stops being one social space by construction. Zone-wide
+chat and instant arena switching were free when one process held everything; both
+now need building, and moving rooms becomes a reconnect. That is a real
+regression against the original and against what [server.md](server.md)
+promised. Duels lose their cheap ephemeral arena, per the amendment to
+[decision 16](#16-duels-are-an-ephemeral-arena-plus-a-zone-module). And a small
+zone that would have been one process is now a directory plus at least one arena,
+which raises the floor on running your own game.
+
+**Reconsider if:** zone-wide social presence turns out to matter more to players
+than elastic capacity does, or if the process-per-room overhead stops being
+noise at the population we actually reach.
+
+---
+
+## 24. An arena registers with a directory, and a token names its pool
+
+**Status:** proposed
+
+Arena servers push. Each connects to every directory it knows over TLS, presents
+a token, and holds the socket open; the listing lives as long as the connection.
+This replaces a directory that reads a hand-written address list once at startup
+and polls it every ten seconds.
+
+The credential is a row in a table rather than one shared secret, and the row
+carries the name. A single shared password stops strangers registering but does
+nothing about a credentialed party registering *as somebody else*, which is
+precisely how the original's directory filled with duplicates and junk: it
+believed whatever a zone said about itself. Because the name comes from the
+directory's side of the table, impersonation is structurally unavailable rather
+than merely discouraged. One row authorises a pool of instances with an instance
+cap, which is what makes scaling out a replica count.
+
+The old poll survives with a new job. Push establishes that an arena is alive and
+how full it is; it cannot establish that the address the arena reported works, or
+that anything there speaks our protocol. So the directory calls the claimed
+address back and requires a well-formed status reply before listing it, which
+closes the redirect and lets an operator move hosts without asking for a new
+credential.
+
+Details, including the message tables and what a directory may relay, are in
+[discovery.md](discovery.md).
+
+**Cost:** Credentials to issue, rotate and revoke, where before there were none.
+TLS on the directory, which today binds a bare `TcpListener`. Tokens that want to
+live outside the arena's config file, since that file is what an operator pastes
+into a bug report. And a listed-but-down arena stops being a row a player can
+see, which the current code deliberately shows.
+
+**Reconsider if:** we ever want an open, unauthenticated public list, at which
+point the question is what stops it filling with junk, and the honest answer is
+probably an account rather than a token.
+
+---
+
+## 25. An arena chooses its own type from a unioned view
+
+**Status:** proposed
+
+No scheduler assigns work. Each directory tells its registered arenas what it has
+observed itself; each arena unions those reports, deduplicates by instance id,
+keeps the most recent observation of each, and decides for itself which type to
+run. Clients decide for themselves which arena to join. The directory observes
+and reports; the edges decide.
+
+The alternative we rejected was assignment, which reads as simpler until two
+directories assign the same instance two different types. Fixing that needs one
+authority, which needs election or shared state, which is the coordination the
+flat model was supposed to buy us out of. Autonomy costs a herding problem
+instead, and a herding problem can be blunted locally.
+
+Four rules do the blunting. Only an empty arena chooses, so a type change never
+disconnects anybody and drain time rate-limits decisions. An arena opens a new
+instance of a type only when every live instance of that type is above its fill
+target, because five War rooms of four players is worse than one of twenty and
+declining to scale is the hard half of autoscaling. Decisions are jittered, then
+announced and re-read before committing, which is carrier sense with backoff.
+And region is a preference rather than a constraint.
+
+Type definitions are the exception: the catalog is a versioned artifact with one
+author, deployed identically to a zone's directories, and an arena takes the
+highest version it is offered and logs a mismatch rather than voting on it.
+Configuration management, not agreement.
+
+**Cost:** Eventually consistent scheduling, so transient over- and
+under-provision is normal and a fleet will sometimes hold two half-full rooms for
+a few minutes. The announce-and-backoff step is a lock protocol over an
+eventually consistent channel, which is worth naming rather than discovering. And
+the directory's fleet view is only as complete as its registration overlap, so
+every arena wants to register with every directory.
+
+**Reconsider if:** a fleet reaches the hundreds of instances, where backoff starts
+doing serious work and a leader begins to look cheap by comparison.
+
+---
+
+## 26. The admin surface writes configuration, not commands
+
+**Status:** proposed
+
+One web UI, and it does two separable things. It reads the same fleet view an
+arena reads, unioned across a zone's directories, which makes the whole
+observability half a second consumer of a protocol that exists. And it edits the
+catalog, producing a new version that flows to directories and then to arenas by
+the path already built for it.
+
+Bans, a type's map and settings, fill targets, staff and their capabilities are
+all edits rather than commands, and treating them as edits puts the central thing
+in the right place. The authoring side is central for *authorship* and not for
+*runtime*: if it is down, directories keep serving the version they hold and
+arenas keep running the type they chose. Nothing stops. Backing the catalog with
+git makes the audit trail free.
+
+The genuinely imperative actions, kicking a player and draining, pinning or
+restarting an arena, travel down the registration socket that already exists,
+scoped so a directory may only command arenas registered with it. No arena needs
+an admin listener of its own. Two directories can still send conflicting pins, so
+a pin is sticky local state with last-write-wins and it is displayed with who set
+it and when, which turns a conflict into visible operator error instead of a
+protocol problem.
+
+This is also the first caller for `has_capability`, which has sat in `config.rs`
+with tests and no invocation because there has never been a command channel to
+gate. See [admin.md](admin.md).
+
+**Cost:** A human-held credential with fleet-wide reach, which wants better than
+a token in a file before it is exposed publicly. A second UI to build and keep,
+in HTML rather than in the client, because our client draws vector art and text
+on purpose. And imperative actions get no audit trail from the catalog, so they
+need logging at both ends.
+
+**Reconsider if:** operators end up wanting to script the fleet more than click
+it, in which case the catalog wants an API and a CLI before it wants more
+buttons.
