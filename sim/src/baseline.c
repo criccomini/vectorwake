@@ -132,8 +132,8 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     {
         sim_weapon_spec frag;
         memset(&frag, 0, sizeof frag);
-        frag.speed = sim_units_speed(1100);
-        frag.life = 45;
+        frag.speed = sim_units_speed(4000);
+        frag.life = 30;
         frag.on_wall = SIM_WALL_END;
         frag.damage = sim_units_energy(60);
         frag.splinter = SIM_NO_PATTERN;
@@ -176,8 +176,8 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
 
         sim_weapon_spec bs;
         memset(&bs, 0, sizeof bs);
-        bs.speed = sim_units_speed(1800);
-        bs.life = 70;
+        bs.speed = sim_units_speed(6000);
+        bs.life = 21;
         bs.on_wall = SIM_WALL_END;
         bs.damage = sim_units_energy(180);
         bs.splinter = SIM_NO_PATTERN;
@@ -224,8 +224,13 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         for (int k = 0; k < r->gun_rungs && k < SIM_MAX_RUNGS; k++) {
             sim_weapon_spec bolt;
             memset(&bolt, 0, sizeof bolt);
-            bolt.speed = sim_units_speed(2000);
-            bolt.life = 200;
+            /* Four times what this used to be, and a quarter of the life, so
+             * the range is the same 400 px it always was and only the travel
+             * time changed. A bolt used to fly at 200 px/s against a hull
+             * that tops out at 490: bullets slower than the ships they chase,
+             * which made a running fight unwinnable and a retreat free. */
+            bolt.speed = sim_units_speed(8000);
+            bolt.life = 50;
             bolt.on_wall = SIM_WALL_END;
             bolt.damage = sim_units_energy(r->bullet_damage * (5 + 2 * k) / 5);
             bolt.splinter = SIM_NO_PATTERN;
@@ -245,8 +250,12 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         for (int k = 0; k < r->bomb_rungs && k < SIM_MAX_RUNGS; k++) {
             sim_weapon_spec sh;
             memset(&sh, 0, sizeof sh);
-            sh.speed = sim_units_speed(1500);
-            sh.life = 500;
+            /* Same treatment, same 750 px of range. A bomb stays clearly
+             * slower than a bolt -- it is an area weapon and being dodgeable
+             * is the point -- but 150 px/s meant you could simply fly away
+             * from one, which is not a weapon. */
+            sh.speed = sim_units_speed(5000);
+            sh.life = 150;
             sh.on_wall = SIM_WALL_END;
             sh.damage = sim_units_energy(r->bomb_damage * (5 + 2 * k) / 5);
             sh.blast = 48 * 256;

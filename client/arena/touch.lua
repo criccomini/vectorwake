@@ -24,6 +24,10 @@ M.scale = 1               -- drawable pixels per point
 local stick = nil         -- {id, ox, oy, x, y}
 local guns = nil          -- touch id holding the guns pad
 local bombs = nil
+local use = nil           -- spend the ready charge
+-- Swapping which charge is ready is a tap rather than a hold, so it is
+-- latched here and read once. A held pad would cycle sixty times a second.
+local swap_tap = false
 
 -- Where the controls are. One definition, used by the hit test and by the
 -- drawing, because they were written out separately and had drifted: the pads
@@ -43,6 +47,11 @@ function M.layout(w, h, s)
         r = r,
         guns  = {x = w - r * 1.4, y = r * 1.5, r = r},
         bombs = {x = w - r * 1.4, y = r * 3.8, r = r * 0.8},
+        -- The charge pair, inboard of the weapons and smaller: they are used
+        -- once in a while rather than held, and the thumb that reaches them
+        -- is not the thumb on the trigger.
+        use   = {x = w - r * 3.3, y = r * 1.5, r = r * 0.72},
+        swap  = {x = w - r * 3.3, y = r * 3.4, r = r * 0.6},
         home  = {x = r * 1.6,     y = r * 1.8, r = r * 1.15},
     }
 end
@@ -60,6 +69,8 @@ local function zone(x, y, w, h, s)
     local L = M.layout(w, h, s)
     if near(L.guns, x, y) then return "guns" end
     if near(L.bombs, x, y) then return "bombs" end
+    if near(L.use, x, y) then return "use" end
+    if near(L.swap, x, y) then return "swap" end
     if x < w * 0.55 then return "stick" end
     return nil
 end
@@ -95,11 +106,16 @@ function M.on_touch(action, w, h, s)
                 guns = t.id
             elseif z == "bombs" then
                 bombs = t.id
+            elseif z == "use" then
+                use = t.id
+            elseif z == "swap" then
+                swap_tap = true
             end
         elseif t.released then
             if stick and stick.id == t.id then stick = nil end
             if guns == t.id then guns = nil end
             if bombs == t.id then bombs = nil end
+            if use == t.id then use = nil end
         elseif stick and stick.id == t.id then
             stick.x, stick.y = tx, ty
         end
@@ -109,7 +125,15 @@ end
 -- Lifting a finger outside the window does not always produce a release, so
 -- a lost touch has to be forgettable.
 function M.release_all()
-    stick, guns, bombs = nil, nil, nil
+    stick, guns, bombs, use = nil, nil, nil, nil
+end
+
+-- Whether the swap pad was tapped since this was last asked. Consumed by the
+-- read, because a tap is an event and the caller acts on it once.
+function M.swapped()
+    local t = swap_tap
+    swap_tap = false
+    return t
 end
 
 -- The bits held this frame, given where the ship is currently pointing.
@@ -121,6 +145,7 @@ function M.bits(heading)
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
     if bombs then out[#out + 1] = sim.BTN_BOMB end
+    if use then out[#out + 1] = sim.BTN_USE end
     if not stick then return out end
 
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
@@ -173,6 +198,12 @@ function M.draw(u, w, h, s)
     if guns then glow(L.guns, pal.FRIEND) end
     ring(L.bombs.x, L.bombs.y, L.bombs.r, bombs and pal.a(pal.BOMB, 0.95) or dim)
     if bombs then glow(L.bombs, pal.BOMB) end
+    -- The charge pair. Drawn always, in their own colour, so a pilot who has
+    -- never found one still knows the control is there -- the same reason the
+    -- stat row shows the upgrades you do not hold.
+    ring(L.use.x, L.use.y, L.use.r, use and pal.a(pal.CHARGE_COL, 0.95) or dim)
+    if use then glow(L.use, pal.CHARGE_COL) end
+    ring(L.swap.x, L.swap.y, L.swap.r, pal.a(pal.CHARGE_COL, 0.4), 18)
 
     if stick then
         ring(stick.ox, stick.oy, L.home.r, dim)

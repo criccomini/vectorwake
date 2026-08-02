@@ -188,6 +188,7 @@ local function make_bot(id, skill)
         aim_err = (1 - skill) * 0.42,
         seed = 12345 + id * 7919,
         bomb_at = 120 + id * 37,
+        charge_at = 200 + id * 53,
     }
 end
 
@@ -235,21 +236,66 @@ local function bot_think(b)
         end
     end
 
-    local best, bdx, bdy = nil, 0, 0
+    -- Who to go after. Nearest is the floor; a bounty is what makes one
+    -- worth crossing a room for, and killing them pays it. A bot that only
+    -- ever took the closest target would leave the mechanic decorative --
+    -- the whole point of a number over a ship is that somebody comes for it.
+    --
+    -- The weight is skill: a poor pilot fights whatever is in front of them,
+    -- a good one picks. Bounty is divided into the squared distance, so it
+    -- shortens a trip rather than overriding it outright.
+    local best, bdx, bdy, bdist2 = nil, 0, 0, 0
     for i = 0, sim.ship_count() - 1 do
         if i ~= b.id and sim.ship_alive(i) == 1 and sim.ship_team(i) ~= team then
             local dx, dy = sim.ship_x(i) - mx, sim.ship_y(i) - my
             local d2 = dx * dx + dy * dy
-            if best == nil or d2 < best then best, bdx, bdy = d2, dx, dy end
+            local score = d2 / (1 + sim.ship_bounty(i) * b.skill * 0.12)
+            if best == nil or score < best then
+                best, bdx, bdy, bdist2 = score, dx, dy, d2
+            end
+        end
+    end
+
+    -- Nothing to fight, or nothing close: go and get stronger. A green is
+    -- worth bounty as well as an upgrade, so a bot doing this is also making
+    -- itself worth hunting, which is the loop working.
+    if best == nil or bdist2 > 560 * 560 then
+        local px, py, pd2 = nil, nil, 520 * 520
+        for i = 0, sim.prize_count() - 1 do
+            local active, x, y = sim.prize_at(i)
+            if active then
+                local dx, dy = x - mx, y - my
+                local d2 = dx * dx + dy * dy
+                if d2 < pd2 then px, py, pd2 = dx, dy, d2 end
+            end
+        end
+        if px then
+            local out, off = steer(b, px, py, false)
+            if off < 0.5 then out = out + sim.BTN_THRUST end
+            return out
         end
     end
     if best == nil then return 0 end
+    best = bdist2
 
     local dist = math.sqrt(best)
     local out, off = steer(b, bdx, bdy, true)
     local ideal = 130 + (1 - b.skill) * 90
     if dist > ideal * 1.15 then out = out + sim.BTN_THRUST
     elseif dist < ideal * 0.55 then out = out + sim.BTN_REVERSE end
+
+    -- A charge, at the range one is for. Both of the roster's are close
+    -- work: a repel to break contact, a burst to fill the space in front of
+    -- you. Spent on its own clock so a bot does not empty its pockets the
+    -- moment it gets near somebody.
+    if dist < 150 and b.timer >= b.charge_at then
+        for k = 0, sim.MAX_CHARGES - 1 do
+            if sim.ship_charge(b.id, k) > 0 then
+                b.charge_at = b.timer + 260 + math.floor(bot_rand(b) * 300)
+                return out + sim.BTN_USE + k * sim.BTN_SLOT_STEP
+            end
+        end
+    end
 
     local e = sim.ship_energy(b.id) / math.max(1, sim.ship_max_energy(b.id))
     if off < 0.16 and e > 0.16 + b.skill * 0.28 then
@@ -659,7 +705,7 @@ function update(self, dt)
     -- One key cycles which charge is ready and one spends it, which is two
     -- inputs for any number of charge kinds. A key per kind is what the
     -- original did and it does not survive a phone.
-    if tapped[hash("cycle")] and not menu.open then
+    if (tapped[hash("cycle")] or touch.swapped()) and not menu.open then
         tapped[hash("cycle")] = nil
         cycle_charge()
         sfx.ui("ui_move")
