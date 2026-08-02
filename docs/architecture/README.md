@@ -6,9 +6,13 @@ read [docs/research](../research/README.md), particularly
 decisions come from. For what the game is rather than how it is built, see
 [docs/design](../design/README.md).
 
-Nothing here is built yet. Treat every document as a proposal with a named
-tradeoff, not as a description of running code. Where a decision is still open
-it says so.
+These started as proposals and are no longer uniformly that. The simulation core,
+the client, the authoritative server, bots, rating and the zone settings surface
+are built and playable; the fleet described in
+[zones-and-arenas.md](zones-and-arenas.md), [catalog.md](catalog.md),
+[discovery.md](discovery.md) and [admin.md](admin.md) is designed and not built,
+and [roadmap.md](roadmap.md) says in what order it should be. Each document says
+which of the two it is, and where a decision is still open it says so.
 
 | Document | Contents |
 |---|---|

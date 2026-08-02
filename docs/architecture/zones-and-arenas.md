@@ -431,3 +431,44 @@ directory, and at least one arena server.
 There is no global list of directories, and we are not building one. A player
 reaches a deployment because the client ships its directory addresses or because
 somebody handed them one.
+
+## Open questions
+
+The ones that are genuinely undecided rather than merely unbuilt. Each is a place
+where building will teach us more than arguing will.
+
+**Where a rated event goes.** [server.md](server.md) has the argument: the
+directory is the convenient answer and the wrong one, because a directory holding
+durable state loses the property that its replicas need no shared storage, and
+that property is why a directory is a process we can afford to lose. The
+meta-layer directly is probably right and costs an arena one more thing to reach
+and authenticate to. Unresolved until M7.7.
+
+**Chat, and whether a deployment is one social space.** ASSS got zone-wide chat
+free because one process held every arena. We pay for it, and nothing in this
+design provides it. The options are a hub the arena servers relay through, which
+makes something in the middle stateful again, or the meta-layer, which is where
+[decision 11](decisions.md) already puts chat outside the arena. The second is
+more likely, and it means a player's chat survives a room change while their
+connection does not.
+
+**Whether the herding backoff holds at scale.** The announce-and-recheck step is a
+lock protocol over an eventually consistent channel, and it blunts collisions
+rather than preventing them. At tens of instances the arithmetic is comfortable.
+At hundreds, `INTENT_TTL` and `ANNOUNCE_HOLD` start doing real work and a leader
+begins to look cheap by comparison. The harness in
+[roadmap.md](roadmap.md) exists to find that edge before production does.
+
+**How a client discovers directories in the first place.** Shipping the addresses
+in the build is what we do, and it means a directory cannot move without a client
+release. DNS would fix that and adds a dependency the design otherwise does not
+have. Worth revisiting the first time an address has to change.
+
+**Whether the interest radius can serve a spectator.** A snapshot is built around
+the viewer's ship, and a spectator has none. Following a chosen pilot is the
+obvious answer; a free camera is the one people will ask for.
+
+**Whether `rooms_per_process` wants to be dynamic.** It is a catalog number, so a
+process holding a hundred duel rooms holds a hundred whether four are busy or all
+of them. Growing on demand inside a process is easy and gives the fill logic a
+second place to live, which is the argument against.
