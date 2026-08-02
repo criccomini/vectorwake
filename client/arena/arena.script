@@ -929,15 +929,6 @@ function update(self, dt)
         end
     end
 
-    -- What the use pad should be showing. The pad draws it; this is the only
-    -- place that knows which slot is ready.
-    do
-        local k = ready_slot()
-        local c = pal.CHARGES[k + 1]
-        touch.ready = c and {short = c.short, count = sim.ship_charge(me, k)}
-            or nil
-    end
-
     -- Doors and wormholes: world geometry that moves, so it cannot live in
     -- the static mesh the way the walls do.
     world.draw_tiles(fill, glow, cull)

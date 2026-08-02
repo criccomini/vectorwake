@@ -18,6 +18,7 @@
 -- at the point of drawing.
 
 local pal = require("arena.palette")
+local touch = require("arena.touch")
 local state = require("arena.state")
 local world = require("arena.world")
 
@@ -584,6 +585,44 @@ local function menu_button()
     hit(bx, y, w, h, "details")
 end
 
+-- What the use pad is holding, written into the pad.
+--
+-- The pads are drawn by touch.lua and this is not, because a pad is a mesh
+-- and a name is a glyph. It has to be a name: the pips that were here first
+-- said how many and never of what, and on a control whose whole purpose is
+-- that a neighbouring button cycles it, which one is ready is the question.
+--
+-- Its own count comes with it rather than as a second thing to look at, and a
+-- kind you hold none of is still named, greyed -- the same rule the stat row
+-- follows, so cycling onto an empty slot reads as empty rather than as
+-- nothing having happened.
+local function pad_charge(charges)
+    if not M.touching then return end
+    local ready
+    for _, c in ipairs(charges or {}) do
+        if c.ready then ready = c end
+    end
+    if not ready then return end
+    local L = touch.layout(W, H, S)
+    -- touch.lua counts up from the bottom; text counts down from the top.
+    txt(ready.short .. (ready.count > 0 and ("×" .. ready.count) or ""),
+        L.use.x, H - L.use.y, (FONT - 1) * S,
+        ready.count > 0 and pal.CHARGE_COL or pal.a(pal.DIM, 0.6), "center")
+
+    -- And what the swap pad would give you, in the swap pad, dimmer. A button
+    -- whose label is the thing it does rather than the word "swap": with two
+    -- kinds you can read the pair as a state and a choice without pressing
+    -- anything, which is the point at which a pilot stops guessing.
+    if #charges < 2 then return end
+    local nxt
+    for i, c in ipairs(charges) do
+        if c.ready then nxt = charges[i % #charges + 1] end
+    end
+    if not nxt then return end
+    txt(nxt.short, L.swap.x, H - L.swap.y, (FONT - 2) * S,
+        pal.a(pal.CHARGE_COL, nxt.count > 0 and 0.55 or 0.3), "center")
+end
+
 -- The flags, as flags.
 --
 -- This was a sentence -- "flags  you 2 - 1 them   1 loose" -- which is three
@@ -638,6 +677,7 @@ function M.hud(o)
     -- The two big centred lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
+    pad_charge(o.charges)
     flag_strip(me)
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
