@@ -206,6 +206,21 @@ local GATE = 3.5                     -- radians a second, about two hundred
 local LAND = 0.08                    -- seconds below the gate before deciding
 local PATIENCE = 0.6                 -- and a stop, for a thumb going in circles
 
+-- How near the thumb has to come to a ship before the swipe is read as
+-- pointing at it rather than past it. Generous, because a thumb on glass is
+-- worth about twenty degrees on a good day and the thing it is pointing at is
+-- moving: a cone you have to hit is a cone that reads as broken.
+local AIM = math.pi * 5 / 18         -- fifty degrees
+
+-- The enemy a swipe is read against: {id, bearing}, or nil when nobody is
+-- close enough to be the one you are fighting. Set by the caller each frame,
+-- because which ship that is belongs to the game, not to the controls.
+--
+-- One ship, the nearest, rather than every enemy on screen. In a melee a cone
+-- astern has somebody in it more often than not, and a rule that turns you
+-- around a third of the times you meant to back off is worse than no rule.
+M.foe = nil
+
 -- One frame of stick tracking.
 --
 -- Called once a frame by the caller rather than folded into bits(), which is
@@ -236,6 +251,22 @@ function M.tick(dt)
     s.swept = s.swept + turned
     if turned / dt > GATE then s.calm = 0 else s.calm = s.calm + dt end
     if s.settling then s.waited = s.waited + dt end
+
+    -- Whether the thumb is pointing at the ship you are fighting. Tracked
+    -- every frame rather than only when the choice is read, so the caller can
+    -- mark that ship while the thumb is still on its way there -- the rule is
+    -- only fair if you can see it decide.
+    local out = dx * dx + dy * dy >= (DEAD_PX * M.scale) ^ 2
+    if out and M.foe and math.abs(wrap(ang - M.foe.bearing)) < AIM then
+        s.aimed = M.foe.id
+    else
+        s.aimed = nil
+    end
+end
+
+-- The ship the thumb is pointing at, if any, so it can be marked on screen.
+function M.aiming()
+    return stick and stick.aimed or nil
 end
 
 -- Which charge slot was tapped since this was last asked, or nil. Consumed by
@@ -318,7 +349,22 @@ function M.bits(heading)
     -- through a manoeuvre, which is also why there is no hysteresis here: a
     -- choice made once has nothing to oscillate against.
     if stick.back == nil then
-        stick.back = math.abs(diff) > math.pi / 2
+        -- Behind you means back up -- unless you are pointing at the ship you
+        -- are fighting, which always means turn and face them.
+        --
+        -- Those two are the same gesture. Swiping astern in a fight means
+        -- "open the range" when the enemy is in front of you and "come about"
+        -- when they are behind you, and nothing in the swipe itself can tell
+        -- them apart -- which is why every tuning of thresholds, rates and
+        -- hysteresis kept being right half the time. The difference is not in
+        -- the hand, it is on the screen, so that is where it is read from.
+        --
+        -- Old ground: an action game locks on for the same reason, because
+        -- one stick cannot say where you face and where you go at once, and
+        -- a fighting game quietly flips what "back" means when you cross
+        -- sides. Reading the input against what you are fighting is the
+        -- standard answer, not a trick.
+        stick.back = math.abs(diff) > math.pi / 2 and stick.aimed == nil
         stick.swept = 0
     end
 
