@@ -9,6 +9,7 @@
 //! yet; see docs/architecture/networking.md.
 
 mod ai;
+mod admin;
 mod calibrate;
 mod catalog;
 mod config;
@@ -809,6 +810,17 @@ impl Zone {
         // the same zone and skip selection entirely, which is exactly what the
         // first end-to-end run did. The decision loop chooses, within a couple of
         // seconds, and it is the only thing that chooses.
+    }
+
+    /// Tell every directory what we are serving, now rather than on the next
+    /// heartbeat. Called on commit, because a directory that learns seconds late
+    /// is a directory whose view is stale exactly when another instance is
+    /// deciding against it, which is how a redundant commit happens.
+    fn push_status(&self) {
+        let msg = fleet::frame(fleet::A2D_STATUS, &self.status());
+        for tx in self.fleet.senders.values() {
+            let _ = tx.send(msg.clone());
+        }
     }
 
     /// Announce an intent to every directory, now rather than on the next

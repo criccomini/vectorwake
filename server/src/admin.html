@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vectorwake fleet</title>
+<!-- Inline, so the page stays one self-contained file and the console stays
+     clean. An admin surface is wanted during an outage; it must not fetch. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%237fd1ff' d='M8 1 14 15 8 12 2 15Z'/%3E%3C/svg%3E">
+<style>
+  /* No external anything: an admin surface is wanted during an outage, and a
+     page that fetches its stylesheet from elsewhere is a page that stops working
+     exactly then. */
+  :root {
+    --bg: #0b0e14; --panel: #121722; --line: #1e2633; --ink: #c8d3e0;
+    --dim: #6b7a90; --hot: #7fd1ff; --warn: #ffb454; --bad: #ff6b6b;
+    --good: #8ae234;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .04em; }
+  .grow { flex: 1; }
+  .dim { color: var(--dim); }
+  main { padding: 16px; display: grid; gap: 16px; max-width: 1100px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  }
+  h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--dim); margin: 0; padding: 10px 12px;
+    border-bottom: 1px solid var(--line); font-weight: 600;
+  }
+  .body { padding: 12px; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: left; padding: 5px 10px 5px 0; white-space: nowrap; }
+  th { color: var(--dim); font-weight: 600; }
+  tr + tr td { border-top: 1px solid var(--line); }
+  code { color: var(--hot); }
+  .pill {
+    display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px;
+    border: 1px solid currentColor;
+  }
+  .ok { color: var(--good); } .no { color: var(--bad); } .maybe { color: var(--warn); }
+  input, select, button {
+    font: inherit; background: #0d1219; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--hot); color: var(--hot); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .note { color: var(--dim); font-size: 12px; margin-top: 8px; }
+  .empty { color: var(--dim); font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>vectorwake fleet</h1>
+  <span class="dim" id="head">connecting…</span>
+  <span class="grow"></span>
+  <label class="dim">acting as
+    <input id="actor" size="10" placeholder="name" title="Capabilities are checked against the catalog's staff table">
+  </label>
+  <label class="dim">token
+    <input id="token" size="14" type="password" placeholder="VW_ADMIN_TOKEN">
+  </label>
+</header>
+
+<main>
+  <section>
+    <h2>Arena servers</h2>
+    <div class="body" id="instances"></div>
+    <div class="note">
+      Unverified rows appear here and are withheld from players: the address is
+      unproven, so a player sent there would learn that the hard way. Pins and
+      drains take effect when a room next empties.
+    </div>
+  </section>
+
+  <section>
+    <h2>What a player sees</h2>
+    <div class="body" id="browse"></div>
+    <div class="note">
+      The browse reply, exactly as the game client receives it. Fullest instance
+      first, so taking the head of the list concentrates a population rather than
+      scattering it.
+    </div>
+  </section>
+
+  <section>
+    <h2>Catalog</h2>
+    <div class="body" id="catalog"></div>
+    <div class="note">
+      Read-only here on purpose. Editing the catalog is authorship, not runtime:
+      it is a versioned artifact with one author, so a change is a new version
+      published to every directory rather than a write through this page.
+    </div>
+  </section>
+
+  <section>
+    <h2>Command log</h2>
+    <div class="body" id="audit"></div>
+  </section>
+</main>
+
+<script>
+// The whole app: poll the view, draw four tables, post verbs. No framework,
+// because there is nothing here a framework would carry.
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
+  ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+
+// The actor and token persist locally so a reload does not mean retyping. The
+// token is a human credential, so it stays in this browser and never in a URL.
+for (const k of ['actor', 'token']) {
+  $(k).value = localStorage.getItem('vw-' + k) || '';
+  $(k).addEventListener('change', () => localStorage.setItem('vw-' + k, $(k).value));
+}
+
+const ago = ms => ms < 1500 ? 'now'
+  : ms < 60000 ? Math.round(ms / 1000) + 's'
+  : Math.round(ms / 60000) + 'm';
+
+function table(head, rows) {
+  if (!rows.length) return '<p class="empty">nothing here</p>';
+  return '<table><tr>' + head.map(h => `<th>${esc(h)}</th>`).join('') + '</tr>'
+    + rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('')
+    + '</table>';
+}
+
+async function send(instance, verb, args) {
+  const actor = $('actor').value.trim();
+  if (!actor) return alert('Set a name first: capabilities are per person.');
+  const res = await fetch('/api/command', {
+    method: 'POST',
+    headers: {'content-type': 'application/json', 'x-vw-token': $('token').value},
+    body: JSON.stringify({instance, verb, args, actor}),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) alert(out.error || ('HTTP ' + res.status));
+  draw();
+}
+window.vwSend = send;
+
+function drawInstances(d) {
+  const zones = d.catalog.zones;
+  const rows = d.instances
+    .sort((a, b) => (a.zone || '~').localeCompare(b.zone || '~') || a.instance.localeCompare(b.instance))
+    .map(i => {
+      const health = i.verified
+        ? '<span class="pill ok">verified</span>'
+        : '<span class="pill no">unverified</span>';
+      const intent = i.intent
+        ? ` <span class="pill maybe">wants ${esc(i.intent)}</span>` : '';
+      const picker = `<select id="z-${esc(i.instance)}">`
+        + zones.map(z => `<option>${esc(z)}</option>`).join('') + '</select>';
+      return [
+        `<code>${esc(i.instance.slice(0, 8))}</code>`,
+        esc(i.zone || '—') + intent,
+        `<code>${esc(i.address)}</code>`,
+        esc(i.region),
+        `${i.players} + ${i.bots} ai`,
+        `${i.rooms}/${i.max_rooms}` + (i.capped ? ' <span class="pill maybe">full</span>' : ''),
+        health,
+        ago(i.age_ms),
+        `<span class="row">`
+          + `<button onclick="vwSend('${esc(i.instance)}','drain','')">drain</button>`
+          + picker
+          + `<button onclick="vwSend('${esc(i.instance)}','pin',document.getElementById('z-${esc(i.instance)}').value)">pin</button>`
+          + `<button onclick="vwSend('${esc(i.instance)}','unpin','')">unpin</button>`
+          + `<button onclick="vwSend('${esc(i.instance)}','restart','')">restart</button>`
+        + `</span>`,
+      ];
+    });
+  $('instances').innerHTML = table(
+    ['instance', 'zone', 'address', 'region', 'players', 'rooms', 'address check', 'seen', ''],
+    rows);
+}
+
+function drawBrowse(b) {
+  const rows = [];
+  for (const z of b.zones) {
+    rows.push([`<strong>${esc(z.name)}</strong>`, esc(z.description),
+               `${z.players} + ${z.bots} ai`, `${z.instances.length} instance(s)`, '']);
+    for (const i of z.instances) {
+      rows.push(['', `<span class="dim">↳ <code>${esc(i.address)}</code></span>`,
+                 `${i.players}`, esc(i.region),
+                 i.full ? '<span class="pill maybe">full</span>' : '']);
+    }
+  }
+  $('browse').innerHTML = table(['zone', '', 'players', '', ''], rows);
+}
+
+function drawCatalog(c) {
+  $('catalog').innerHTML =
+    table(['', ''], [
+      ['name', esc(c.name)],
+      ['version', `<code>${c.version}</code>`],
+      ['zones', c.zones.map(z => `<code>${esc(z)}</code>`).join(' ') || '<span class="empty">none</span>'],
+      ['bans', c.bans.length ? c.bans.map(esc).join(', ') : '<span class="empty">none</span>'],
+      ['pools', c.pools.map(p =>
+        `<code>${esc(p.name)}</code> ${esc(p.region)} cap ${p.max_instances}`).join('<br>')
+        || '<span class="empty">none</span>'],
+      ['staff', c.staff.map(s =>
+        `<code>${esc(s.name)}</code> ${s.capabilities.map(esc).join(' ')}`).join('<br>')
+        || '<span class="empty">none</span>'],
+    ]);
+}
+
+function drawAudit(rows) {
+  $('audit').innerHTML = table(['when', 'actor', 'verb', 'target', 'args', 'outcome'],
+    rows.slice(-40).reverse().map(r => [
+      new Date(r.at_ms).toLocaleTimeString(),
+      esc(r.actor) || '<span class="dim">—</span>',
+      `<code>${esc(r.verb)}</code>`,
+      `<code>${esc(r.target.slice(0, 8))}</code>`,
+      esc(r.args),
+      r.outcome === 'done' || r.outcome === 'sent'
+        ? `<span class="ok">${esc(r.outcome)}</span>`
+        : `<span class="no">${esc(r.outcome)}</span>`,
+    ]));
+}
+
+async function draw() {
+  try {
+    const d = await (await fetch('/api/fleet')).json();
+    const live = d.instances.length;
+    const players = d.instances.reduce((n, i) => n + i.players, 0);
+    $('head').textContent =
+      `${esc(d.catalog.name)} · catalog v${d.catalog.version} · `
+      + `${live} arena server(s) · ${players} player(s)`;
+    drawInstances(d);
+    drawBrowse(d.browse);
+    drawCatalog(d.catalog);
+    drawAudit(d.audit);
+  } catch (e) {
+    $('head').textContent = 'directory unreachable';
+  }
+}
+
+draw();
+setInterval(draw, 2000);
+</script>
+</body>
+</html>

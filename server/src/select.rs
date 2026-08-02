@@ -711,6 +711,7 @@ pub async fn decide_loop(zone: std::sync::Arc<tokio::sync::Mutex<crate::Zone>>) 
             Ok(()) => {
                 z.fleet.last_commit_ms = now_ms();
                 z.fleet.announced = None;
+                z.push_status();
             }
             Err(e) => println!("selection: cannot serve {want:?}: {e}"),
         }

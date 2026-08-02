@@ -25,6 +25,10 @@ pub const D2A_VIEW: u8 = 0x52;
 pub const D2A_CATALOG: u8 = 0x53;
 pub const D2A_COMMAND: u8 = 0x54;
 
+/// Every operator verb. The admin surface checks against this so a typo is a
+/// refusal rather than a message an arena answers with `unknown_verb`.
+pub const VERBS: [&str; 5] = ["kick", "drain", "pin", "unpin", "restart"];
+
 /// The registration protocol's own version, answered with `version_unsupported`
 /// rather than guessed at. Without this field every later change is a flag day.
 pub const PROTOCOL: u32 = 1;

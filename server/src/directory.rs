@@ -585,6 +585,8 @@ pub async fn run() {
         println!("VW_TLS_CERT set without VW_TLS_KEY; serving cleartext");
     }
 
+    crate::admin::spawn(dir.clone());
+
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind failed");
