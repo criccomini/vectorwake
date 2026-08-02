@@ -1,1 +1,2 @@
 vectorwake (criccomini, push to main): Subspace-inspired MMO with own art. Deterministic C99 core, Rust authoritative server, Defold client; bots emit inputs only, damage-weighted Elo. Built through M5.5.                                                                                   
+The client grew multiplayer, call signs and map files, and a silent build failure shipped three stale artifacts. Zones now own their rules and send them over the wire: one weapon model, a tech tree of levels and add-ons and charges, bounty derived from what you hold.                    
