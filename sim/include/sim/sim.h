@@ -612,11 +612,26 @@ int32_t sim_units_rotation(int32_t r); /* r/400 turns/s -> units/tick */
 int32_t sim_units_energy(int32_t e);   /* energy units -> Q10 */
 int32_t sim_units_recharge(int32_t r); /* r/10 energy per second -> Q10/tick */
 
-/* Fill a class from settings-file units. Initial values start at `init_pct`
- * percent of maximum and eight prizes climb the rest of the way. */
-void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
-                          int32_t rotation, int32_t energy, int32_t recharge,
-                          int32_t radius_px);
+/* A hull's flight stats in settings-file units, laid out the way the original
+ * writes them: what a fresh pilot has, what one green adds, and the ceiling.
+ * Its `InitialSpeed`, `UpgradeSpeed` and `MaximumSpeed` and so on down.
+ *
+ * All three, rather than a ceiling and a rule for the rest, because there is
+ * no rule: the original starts a pilot at 62% of top speed and 88% of top
+ * thrust, and one green closes a quarter of the speed gap against a seventh
+ * of the energy gap. */
+typedef struct {
+    int32_t init_speed, up_speed, max_speed;
+    int32_t init_thrust, up_thrust, max_thrust;
+    int32_t init_rotation, up_rotation, max_rotation;
+    int32_t init_energy, up_energy, max_energy;
+    int32_t init_recharge, up_recharge, max_recharge;
+    int32_t radius_px;
+} sim_class_units;
+
+/* Fill a class from settings-file units. Weapons, add-ons and charges are
+ * left empty: what a hull fires is a ladder of patterns a zone tunes. */
+void sim_class_from_units(sim_ship_class *c, const sim_class_units *u);
 
 /* Effective stats after upgrades. The client HUD and the AI both ask. */
 int32_t sim_eff_speed(const sim_ship_class *c, const sim_ship *s);

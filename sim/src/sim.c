@@ -82,32 +82,36 @@ int32_t sim_units_recharge(int32_t r) {
     return (int32_t)(((int64_t)r * 1024) / 1000);
 }
 
-/* A fresh ship flies at this fraction of its ceiling; SIM_UP_STEPS prizes
- * close the gap. Both numbers are deliberately visible here rather than
- * buried in the baseline, because they set how much a green is worth. */
-#define SIM_INIT_PCT 70
+/* How many prizes of one kind a pilot may hold. The ceiling is what stops a
+ * stat climbing, not this: `eff` clamps at the maximum, so collecting more
+ * than the ladder needs does nothing, which is what the original does too. */
 #define SIM_UP_STEPS 8
 
-static void tier(int32_t max, int32_t *init, int32_t *step) {
-    *init = (int32_t)(((int64_t)max * SIM_INIT_PCT) / 100);
-    *step = (max - *init) / SIM_UP_STEPS;
-}
-
-void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
-                          int32_t rotation, int32_t energy, int32_t recharge,
-                          int32_t radius_px) {
+void sim_class_from_units(sim_ship_class *c, const sim_class_units *u) {
     memset(c, 0, sizeof *c);
-    c->max_speed = sim_units_speed(speed);
-    c->thrust = sim_units_thrust(thrust);
-    c->rot = sim_units_rotation(rotation);
-    c->max_energy = sim_units_energy(energy);
-    c->recharge = sim_units_recharge(recharge);
-    c->radius = radius_px * 256;
-    tier(c->max_speed, &c->init_speed, &c->up_speed);
-    tier(c->thrust, &c->init_thrust, &c->up_thrust);
-    tier(c->rot, &c->init_rot, &c->up_rot);
-    tier(c->max_energy, &c->init_energy, &c->up_energy);
-    tier(c->recharge, &c->init_recharge, &c->up_recharge);
+    c->max_speed = sim_units_speed(u->max_speed);
+    c->thrust = sim_units_thrust(u->max_thrust);
+    c->rot = sim_units_rotation(u->max_rotation);
+    c->max_energy = sim_units_energy(u->max_energy);
+    c->recharge = sim_units_recharge(u->max_recharge);
+    c->radius = u->radius_px * 256;
+    /* Where a fresh hull starts and what one prize is worth, both named
+     * rather than derived. They used to be a flat seventy per cent of the
+     * ceiling and an eighth of the gap, which is tidy and is not what the
+     * original does: it starts a pilot at 62% of top speed but 88% of top
+     * thrust, and one green is worth a quarter of the speed gap against a
+     * seventh of the energy gap. A rule cannot express that, so it is a
+     * table. */
+    c->init_speed = sim_units_speed(u->init_speed);
+    c->up_speed = sim_units_speed(u->up_speed);
+    c->init_thrust = sim_units_thrust(u->init_thrust);
+    c->up_thrust = sim_units_thrust(u->up_thrust);
+    c->init_rot = sim_units_rotation(u->init_rotation);
+    c->up_rot = sim_units_rotation(u->up_rotation);
+    c->init_energy = sim_units_energy(u->init_energy);
+    c->up_energy = sim_units_energy(u->up_energy);
+    c->init_recharge = sim_units_recharge(u->init_recharge);
+    c->up_recharge = sim_units_recharge(u->up_recharge);
     /* No weapons until something gives it some, and no add-ons it may hold.
      * What a hull fires is a ladder of patterns in the settings, and the
      * settings are what a zone tunes. */
@@ -738,6 +742,14 @@ int sim_prize_pool(const sim_ship_class *c, uint8_t *out) {
     int n = 0;
     for (int u = 0; u < SIM_UP_COUNT; u++) out[n++] = (uint8_t)SIM_PRIZE_STAT(u);
     for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        /* No trigger, nothing to hand out for it. An add-on is a transform on
+         * a weapon and a level is a rung of one, so neither means anything
+         * without the weapon -- and this has to be the code's rule rather
+         * than the roster's. It used to be enforced by the table, by giving a
+         * rackless hull an empty add-on field, which held only for as long as
+         * every such hull remembered to. Every shipped hull carries a rack
+         * now, so the table cannot say it at all. */
+        if (c->trigger[t][0] == SIM_NO_PATTERN) continue;
         if (c->trigger[t][1] != SIM_NO_PATTERN)
             out[n++] = (uint8_t)SIM_PRIZE_LEVEL(t);
         for (int m = 0; m < SIM_MOD_COUNT; m++)

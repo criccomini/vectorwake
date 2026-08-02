@@ -244,24 +244,52 @@ impl Arena {
                 world.cfg.classes[idx].mod_max[t] = packed;
             }
             let cls = &mut world.cfg.classes[idx];
-            unsafe {
-                if let Some(v) = s.speed { cls.max_speed = sim::sim_units_speed(v); }
-                if let Some(v) = s.thrust { cls.thrust = sim::sim_units_thrust(v); }
-                if let Some(v) = s.rotation { cls.rot = sim::sim_units_rotation(v); }
-                if let Some(v) = s.energy { cls.max_energy = sim::sim_units_energy(v); }
-                if let Some(v) = s.recharge { cls.recharge = sim::sim_units_recharge(v); }
+            // Raise the ceiling and the ladder under it moves with it, in
+            // proportion. A zone that says nothing keeps the baseline's own
+            // numbers exactly, which is the whole point: those are the
+            // original's, and it starts a pilot at 62% of top speed but 88%
+            // of top thrust and closes a quarter of the speed gap per green
+            // against a seventh of the energy gap. Recomputing them from a
+            // flat rule -- seventy per cent of the ceiling and an eighth of
+            // the gap, which is what stood here -- overwrote all of that on
+            // every reload, whether or not the file mentioned the ship.
+            fn scaled(old_max: i32, new_max: i32, v: &mut i32) {
+                if old_max > 0 && new_max != old_max {
+                    *v = ((*v as i64) * new_max as i64 / old_max as i64) as i32;
+                }
             }
-            // Upgrades climb toward whatever ceiling the operator set.
-            cls.init_speed = cls.max_speed * 70 / 100;
-            cls.up_speed = (cls.max_speed - cls.init_speed) / 8;
-            cls.init_thrust = cls.thrust * 70 / 100;
-            cls.up_thrust = (cls.thrust - cls.init_thrust) / 8;
-            cls.init_rot = cls.rot * 70 / 100;
-            cls.up_rot = (cls.rot - cls.init_rot) / 8;
-            cls.init_energy = cls.max_energy * 70 / 100;
-            cls.up_energy = (cls.max_energy - cls.init_energy) / 8;
-            cls.init_recharge = cls.recharge * 70 / 100;
-            cls.up_recharge = (cls.recharge - cls.init_recharge) / 8;
+            unsafe {
+                if let Some(v) = s.speed {
+                    let m = sim::sim_units_speed(v);
+                    scaled(cls.max_speed, m, &mut cls.init_speed);
+                    scaled(cls.max_speed, m, &mut cls.up_speed);
+                    cls.max_speed = m;
+                }
+                if let Some(v) = s.thrust {
+                    let m = sim::sim_units_thrust(v);
+                    scaled(cls.thrust, m, &mut cls.init_thrust);
+                    scaled(cls.thrust, m, &mut cls.up_thrust);
+                    cls.thrust = m;
+                }
+                if let Some(v) = s.rotation {
+                    let m = sim::sim_units_rotation(v);
+                    scaled(cls.rot, m, &mut cls.init_rot);
+                    scaled(cls.rot, m, &mut cls.up_rot);
+                    cls.rot = m;
+                }
+                if let Some(v) = s.energy {
+                    let m = sim::sim_units_energy(v);
+                    scaled(cls.max_energy, m, &mut cls.init_energy);
+                    scaled(cls.max_energy, m, &mut cls.up_energy);
+                    cls.max_energy = m;
+                }
+                if let Some(v) = s.recharge {
+                    let m = sim::sim_units_recharge(v);
+                    scaled(cls.recharge, m, &mut cls.init_recharge);
+                    scaled(cls.recharge, m, &mut cls.up_recharge);
+                    cls.recharge = m;
+                }
+            }
         }
         warn
     }
@@ -1129,9 +1157,12 @@ mod tests {
         assert_eq!(sp.splinter, sim::NO_PATTERN, "a new weapon splinters into nothing");
         // Degrees, because nobody thinks in sixty-five thousandths of a turn.
         assert_eq!(p.spacing, (22 * 65536 / 360) as u16);
-        // The Spire has no bomb rack in the baseline, so this gave it one.
+        // Every hull carries a rack in the baseline now, the way every one
+        // of the original's ships does, so what this proves is that the named
+        // weapon replaced the rack rather than sat beside it.
         let fresh = sim::World::new(1);
-        assert_eq!(fresh.cfg.classes[spire].trigger[1][0], sim::NO_PATTERN);
+        let base = fresh.cfg.patterns[fresh.cfg.classes[spire].trigger[1][0] as usize];
+        assert_ne!(base.count, p.count, "the zone's weapon is not the baseline's");
     }
 
     #[test]
@@ -1204,7 +1235,13 @@ mod tests {
         let base = w.cfg.specs[w.cfg.patterns[rungs[0] as usize].spec as usize];
         assert_eq!(top.blast, 96 * 256, "the third rung got the wider blast");
         assert_eq!(base.blast, 80 * 256, "and the first kept its own");
-        assert!(top.damage > base.damage, "a rung is still the same weapon harder");
+        // A bomb rung buys no damage. BombDamageLevel is defined "for all
+        // bomb levels" and there is no upgrade beside it; what a level costs
+        // is BombFireEnergyUpgrade, so that is where the ladder shows.
+        assert_eq!(top.damage, base.damage, "a bomb rung is the same bomb");
+        let top_p = w.cfg.patterns[rungs[2] as usize];
+        let base_p = w.cfg.patterns[rungs[0] as usize];
+        assert!(top_p.energy > base_p.energy, "and it costs more to let go");
     }
 
     #[test]

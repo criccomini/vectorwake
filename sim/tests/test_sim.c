@@ -172,7 +172,11 @@ int main(void) {
         s.ships[0].energy = 0;
         step_n(&s, &cfg, 0, 0, 10);
         CHECK(s.ships[0].energy > 0, "energy recharges");
-        step_n(&s, &cfg, 0, 0, 2000);
+        /* Four thousand ticks, not two. A fresh hull recharges at
+         * InitialRecharge, which is 400 in the original's units and so 40
+         * energy a second against a 1000 bar: twenty-five seconds to fill
+         * from empty, where our own numbers used to do it in nine. */
+        step_n(&s, &cfg, 0, 0, 4000);
         CHECK(s.ships[0].energy == sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]),
               "energy clamps at the effective maximum");
     }
@@ -1061,21 +1065,27 @@ int main(void) {
             if (pool[i] == SIM_PRIZE_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)) has_shrap = 1;
         }
         CHECK(n >= SIM_UP_COUNT, "every hull can be handed every stat");
-        CHECK(has_gun_level, "an Apex gun levels once, so a level is on offer");
-        CHECK(!has_bomb_level, "its bomb ladder is one rung, so that is not");
+        CHECK(has_gun_level, "MaxGuns is 3, so a gun level is on offer");
+        CHECK(has_bomb_level, "and MaxBombs is 2, so a bomb level is too");
         CHECK(has_multi, "multifire is universal, as it is in the original");
         CHECK(has_shrap, "and so is shrapnel, on any hull with a rack");
 
         /* A hull with no rack is offered no bomb add-on: an add-on is a
-         * transform on a trigger, and the Spire has no bomb trigger. That,
-         * rather than a list of forbidden items, is what keeps it out of the
-         * bombing business. */
-        n = sim_prize_pool(&cfg.classes[SPIRE], pool);
+         * transform on a trigger, and a trigger that does not exist cannot be
+         * transformed. No shipped hull is in that position any more, since
+         * every one of the original's ships carries a rack, so this takes the
+         * rack away to prove the rule still holds for a zone that does. */
+        sim_settings *nb = malloc(sizeof *nb);
+        *nb = cfg;
+        for (int r = 0; r < SIM_MAX_RUNGS; r++)
+            nb->classes[SPIRE].trigger[SIM_TRIG_BOMB][r] = SIM_NO_PATTERN;
+        n = sim_prize_pool(&nb->classes[SPIRE], pool);
         int bomb_addon = 0;
         for (int i = 0; i < n; i++)
             if (pool[i] >= SIM_PRIZE_MOD(SIM_TRIG_BOMB, 0)
                 && pool[i] < SIM_PRIZE_CHARGE(0)) bomb_addon = 1;
         CHECK(!bomb_addon, "a hull with no rack is offered no bomb add-on");
+        free(nb);
 
         /* The roster is ceilings now, so that is what to check it by. Two
          * bits per add-on and `GUN_ALL | M2(MULTI)` is three rungs rather
@@ -1114,8 +1124,8 @@ int main(void) {
         }
         for (int u = 0; u < SIM_UP_COUNT; u++)
             CHECK(sh.up[u] == 8, "every stat reaches its eighth step and stops");
-        CHECK(sh.level[SIM_TRIG_GUN] == 1, "the gun climbs its one rung");
-        CHECK(sh.level[SIM_TRIG_BOMB] == 0, "the bomb has none to climb");
+        CHECK(sh.level[SIM_TRIG_GUN] == 2, "the gun climbs MaxGuns rungs");
+        CHECK(sh.level[SIM_TRIG_BOMB] == 1, "and the bomb climbs MaxBombs");
         CHECK(sim_mod_get(sh.mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
               "multifire fills to the row's allowance");
         CHECK(sim_mod_get(sh.mods[SIM_TRIG_BOMB], SIM_MOD_SHRAPNEL) == 2,
@@ -1188,7 +1198,7 @@ int main(void) {
          * twenty. Bands rather than exact numbers, because the point under
          * test is the shape of the tree and not the generator. */
         CHECK(stats > 3950 && stats < 4500, "stats are the bread of the tree");
-        CHECK(levels > 420 && levels < 660, "a level is the rare one");
+        CHECK(levels > 850 && levels < 1250, "a level is the rare one");
         CHECK(mods > 2100 && mods < 2550, "an add-on is ordinary now");
         CHECK(charges > 2700 && charges < 3200, "and a charge is common");
 
@@ -1232,9 +1242,10 @@ int main(void) {
         CHECK(held_count <= 30, "and never more than it was handed");
         CHECK(sim_bounty(sh) >= held_count, "which is what it is worth");
 
-        /* The roster still holds. An Apex has no bomb ladder and freeze is
-         * not on its row, however the thirty fall. */
-        CHECK(sh->level[SIM_TRIG_BOMB] == 0, "a hull cannot be handed a rung it lacks");
+        /* What is left of the roster still holds. Freeze is not on an Apex
+         * row, however the thirty fall, and a rung above the ladder cannot be
+         * handed out. */
+        CHECK(sh->level[SIM_TRIG_BOMB] <= 1, "a hull cannot be handed a rung it lacks");
         CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_FREEZE) == 0,
               "nor an add-on that is not on its row");
 
@@ -1292,7 +1303,11 @@ int main(void) {
         CHECK(delta > 0, "an empty pilot cannot be rusted");
         CHECK(held_of(&sh, got) == 1, "and is given the thing instead");
 
-        /* Load one up and it goes the other way. */
+        /* Load one up and it goes the other way. Cleared first, because the
+         * green above left something in their hands and rust takes whatever
+         * is there: with a bomb level now on offer to every hull, the thing
+         * it reached for stopped being one of the two set below. */
+        memset(&sh, 0, sizeof sh);
         sh.up[SIM_UP_SPEED] = 4;
         sh.up[SIM_UP_THRUST] = 2;
         int before = sh.up[SIM_UP_SPEED] + sh.up[SIM_UP_THRUST];
@@ -1304,10 +1319,22 @@ int main(void) {
               "one step of it");
 
         /* It never goes below nothing, and never leaves the pilot in a state
-         * the hull could not have reached. */
-        for (int i = 0; i < 200; i++) sim_take_prize(&sh, &w, &rng, &delta);
-        for (int u = 0; u < SIM_UP_COUNT; u++)
-            CHECK(sh.up[u] == 0, "and rust stops at empty");
+         * the hull could not have reached.
+         *
+         * Checked every step rather than at the end. An empty pilot is given
+         * a green instead of being rusted, so the two alternate and where two
+         * hundred of them happen to stop is a parity rather than a property:
+         * it used to land on empty and stopped doing so the moment a bomb
+         * level joined the pool and changed what a give hands out. */
+        int wrapped = 0;
+        for (int i = 0; i < 200; i++) {
+            sim_take_prize(&sh, &w, &rng, &delta);
+            for (int u = 0; u < SIM_UP_COUNT; u++)
+                if (sh.up[u] > 8) wrapped = 1;
+            for (int t = 0; t < SIM_TRIG_COUNT; t++)
+                if (sh.level[t] >= SIM_MAX_RUNGS) wrapped = 1;
+        }
+        CHECK(!wrapped, "and rust never takes a pilot past nothing");
     }
 
     {

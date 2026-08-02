@@ -119,6 +119,21 @@ impl Bot {
         self.want | self.trigger(w)
     }
 
+    /// The share of the bar a pilot keeps back rather than shooting it away.
+    /// Energy is health and ammunition in one pool, so this is the reserve
+    /// that stops a bot sitting at empty and dying to the first round that
+    /// lands.
+    ///
+    /// Skill buys a bigger reserve, but only a little, because what it costs
+    /// is the time to earn it back. The original recharges a fresh hull at 40
+    /// energy a second against a 1000 bar where our own numbers did 105
+    /// against 945, so the twenty points of reserve that used to cost under
+    /// two seconds came to cost five: a skilled bot spent the fight waiting
+    /// instead of shooting, and lost to an unskilled one in calibration.
+    fn reserve(&self) -> f32 {
+        0.22 + self.skill * 0.07
+    }
+
     /// The reflex: fire when the shot is on and the reserve allows it.
     fn trigger(&mut self, w: &World) -> u16 {
         let me = &w.state.ships[self.ship as usize];
@@ -136,8 +151,7 @@ impl Bot {
         // stop shooting is the whole game. A pilot who fires whenever the
         // shot is on sits permanently at their floor and dies to the first
         // round that lands. Skill is the size of the reserve kept back.
-        let floor = 0.22 + self.skill * 0.20;
-        if e <= floor {
+        if e <= self.reserve() {
             return 0;
         }
         if self.aim_diff(w, self.aim.0, self.aim.1).abs() >= 0.16 {
@@ -295,7 +309,7 @@ impl Bot {
         // Break off and rebuild rather than trade at the floor. The trigger
         // itself lives in trigger(); this is only where the pilot goes.
         let e = me.energy as f32 / max_e;
-        if e < (0.22 + self.skill * 0.20) * 0.6 {
+        if e < self.reserve() * 0.6 {
             out &= !sim::BTN_THRUST;
             if dist < ideal * 1.6 {
                 out |= sim::BTN_REVERSE;
