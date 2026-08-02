@@ -77,6 +77,8 @@ M.MODS = {
     {name = "freeze",   short = "FRZ"},
     {name = "repel",    short = "RPL"},
 }
+-- Every green on the map, one colour. See world.prizes.
+M.PRIZE     = rgb(0x8dffb0)
 M.LEVEL_COL = rgb(0xff7ba8)
 M.MOD_COL   = rgb(0x9df0ff)
 

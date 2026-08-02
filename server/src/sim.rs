@@ -188,7 +188,6 @@ pub const NO_PATTERN: u8 = 255;
 #[derive(Clone, Copy, Default)]
 pub struct sim_prize {
     pub active: u8,
-    pub ptype: u8,
     pub x: i32,
     pub y: i32,
     pub life: u16,

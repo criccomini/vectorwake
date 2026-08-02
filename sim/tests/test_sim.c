@@ -845,47 +845,86 @@ int main(void) {
      * Keeping them apart is the whole design: as rows, three levels against
      * six add-ons would be a hundred and ninety-two patterns per weapon. */
     {
-        /* Climbing a rung swaps which pattern the trigger fires, and the
-         * hull's ladder length is the ceiling. */
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        sim_ship *sh = &s.ships[0];
-        const sim_ship_class *c = &cfg.classes[APEX];
+        /* What a hull can be handed is its roster row, and nothing else. */
+        uint8_t pool[SIM_PRIZE_COUNT];
+        const int SPIRE = 4, LATTICE = 7;
+        int n = sim_prize_pool(&cfg.classes[APEX], pool);
+        int has_gun_level = 0, has_bomb_level = 0, has_multi = 0, has_shrap = 0;
+        for (int i = 0; i < n; i++) {
+            if (pool[i] == SIM_PRIZE_LEVEL(SIM_TRIG_GUN)) has_gun_level = 1;
+            if (pool[i] == SIM_PRIZE_LEVEL(SIM_TRIG_BOMB)) has_bomb_level = 1;
+            if (pool[i] == SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)) has_multi = 1;
+            if (pool[i] == SIM_PRIZE_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)) has_shrap = 1;
+        }
+        CHECK(n >= SIM_UP_COUNT, "every hull can be handed every stat");
+        CHECK(has_gun_level, "an Apex gun levels once, so a level is on offer");
+        CHECK(!has_bomb_level, "its bomb ladder is one rung, so that is not");
+        CHECK(has_multi, "multifire is on its row");
+        CHECK(!has_shrap, "shrapnel is not");
 
-        int32_t l1 = cfg.specs[gun_of(&cfg, APEX)->spec].damage;
-        CHECK(sim_take_prize(sh, c, SIM_PRIZE_LEVEL(SIM_TRIG_GUN)),
-              "a gun level is taken");
-        CHECK(sh->level[SIM_TRIG_GUN] == 1, "and climbs one rung");
-        int32_t l2 = cfg.specs[cfg.patterns[c->trigger[SIM_TRIG_GUN][1]].spec].damage;
-        CHECK(l2 > l1, "the rung above hits harder");
-        /* The Apex ladder is two rungs, so there is no third. */
-        CHECK(!sim_take_prize(sh, c, SIM_PRIZE_LEVEL(SIM_TRIG_GUN)),
-              "the top of the ladder refuses");
-        /* And a hull with no rack never starts one. */
-        CHECK(c->trigger[SIM_TRIG_BOMB][0] != SIM_NO_PATTERN, "an Apex has a bomb");
-        const sim_ship_class *spire = &cfg.classes[4];
-        CHECK(spire->trigger[SIM_TRIG_BOMB][0] == SIM_NO_PATTERN,
-              "a Spire has no rack");
-        sim_ship dummy;
-        memset(&dummy, 0, sizeof dummy);
-        CHECK(!sim_take_prize(&dummy, spire, SIM_PRIZE_LEVEL(SIM_TRIG_BOMB)),
-              "so a bomb level does nothing for it");
+        n = sim_prize_pool(&cfg.classes[SPIRE], pool);
+        for (int i = 0; i < n; i++)
+            CHECK(pool[i] < SIM_UP_COUNT
+                  || pool[i] == SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE),
+                  "a Spire is offered stats and freeze, and nothing else");
+
+        n = sim_prize_pool(&cfg.classes[LATTICE], pool);
+        int has_push = 0;
+        for (int i = 0; i < n; i++)
+            if (pool[i] == SIM_PRIZE_MOD(SIM_TRIG_BOMB, SIM_MOD_PUSH)) has_push = 1;
+        CHECK(has_push, "the denial hull is the one whose bombs shove");
     }
 
     {
-        /* An add-on is capped by the roster, not by the pilot's luck. */
+        /* A hundred greens into one Apex: everything it can hold fills to its
+         * ceiling and stops, and nothing it cannot hold ever appears. Which
+         * is the claim -- the roll is over the roster row, so luck cannot
+         * turn one hull into another. */
         sim_ship sh;
         memset(&sh, 0, sizeof sh);
-        const sim_ship_class *apex = &cfg.classes[APEX];
-        CHECK(sim_take_prize(&sh, apex, SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)),
-              "an Apex takes a multifire");
-        CHECK(!sim_take_prize(&sh, apex, SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)),
-              "and only the one rung its row allows");
-        CHECK(!sim_take_prize(&sh, apex, SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_SHRAPNEL)),
-              "shrapnel belongs to bombers");
+        const sim_ship_class *c = &cfg.classes[APEX];
+        uint32_t rng = 12345;
+        for (int i = 0; i < 400; i++) {
+            uint8_t got = sim_take_prize(&sh, c, &rng);
+            CHECK(got != SIM_PRIZE_NONE, "a green is always something");
+        }
+        for (int u = 0; u < SIM_UP_COUNT; u++)
+            CHECK(sh.up[u] == 8, "every stat reaches its eighth step and stops");
+        CHECK(sh.level[SIM_TRIG_GUN] == 1, "the gun climbs its one rung");
+        CHECK(sh.level[SIM_TRIG_BOMB] == 0, "the bomb has none to climb");
         CHECK(sim_mod_get(sh.mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
-              "and what it holds is what it took");
+              "multifire fills to the row's allowance");
+        CHECK(sim_mod_get(sh.mods[SIM_TRIG_BOMB], SIM_MOD_SHRAPNEL) == 0,
+              "and shrapnel never arrives at all");
+    }
+
+    {
+        /* A pilot at the ceiling is still told what they found. The count
+         * does not move; the green is taken and named. */
+        sim_ship sh;
+        memset(&sh, 0, sizeof sh);
+        const sim_ship_class *c = &cfg.classes[APEX];
+        uint32_t rng = 999;
+        for (int i = 0; i < 400; i++) sim_take_prize(&sh, c, &rng);
+        sim_ship before = sh;
+        uint8_t got = sim_take_prize(&sh, c, &rng);
+        CHECK(got != SIM_PRIZE_NONE, "a maxed pilot still gets an answer");
+        CHECK(memcmp(&before, &sh, sizeof sh) == 0, "and nothing moves");
+    }
+
+    {
+        /* And the same green in two places gives the same answer, because
+         * the roll runs off the state's own generator. */
+        sim_ship a, b;
+        memset(&a, 0, sizeof a);
+        memset(&b, 0, sizeof b);
+        uint32_t ra = 7, rb = 7;
+        for (int i = 0; i < 50; i++) {
+            CHECK(sim_take_prize(&a, &cfg.classes[APEX], &ra)
+                  == sim_take_prize(&b, &cfg.classes[APEX], &rb),
+                  "the roll is the same roll on both machines");
+        }
+        CHECK(memcmp(&a, &b, sizeof a) == 0, "and lands in the same place");
     }
 
     {
@@ -902,8 +941,7 @@ int main(void) {
 
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].mods[SIM_TRIG_GUN] =
-            sim_mod_set(0, SIM_MOD_MULTI, 1);
+        s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
         bar = s.ships[0].energy;
         step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1 + cfg.mod_step[SIM_MOD_MULTI],
@@ -913,9 +951,26 @@ int main(void) {
     }
 
     {
+        /* Climbing a rung swaps which pattern the trigger fires, and the one
+         * above hits harder. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        const sim_ship_class *c = &cfg.classes[APEX];
+        int32_t l1 = cfg.specs[cfg.patterns[c->trigger[SIM_TRIG_GUN][0]].spec].damage;
+        int32_t l2 = cfg.specs[cfg.patterns[c->trigger[SIM_TRIG_GUN][1]].spec].damage;
+        CHECK(l2 > l1, "the rung above hits harder");
+        s.ships[0].level[SIM_TRIG_GUN] = 1;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1, "fired");
+        CHECK(cfg.specs[s.weapons[0].spec].damage == l2,
+              "and what left the ship is the rung it is on");
+    }
+
+    {
         /* A shot is what it was when it left. The add-ons ride on the
-         * projectile, so losing them -- by dying, in this case -- does not
-         * reach back and disarm what is already in the air. */
+         * projectile, so losing them does not reach back and disarm what is
+         * already in the air. */
         sim_settings w = cfg;
         w.classes[APEX].mod_max[SIM_TRIG_GUN] =
             sim_mod_set(0, SIM_MOD_BOUNCE, 1);
@@ -930,7 +985,6 @@ int main(void) {
         CHECK(s.weapons[0].mods == s.ships[0].mods[SIM_TRIG_GUN],
               "the shot carries what fired it");
         CHECK(s.weapons[0].left > 0, "with a bounce on it");
-        /* Take everything off the pilot; the shot is already gone. */
         s.ships[0].mods[SIM_TRIG_GUN] = 0;
         step_n(&s, &w, 0, 0, 60);
         CHECK(s.weapon_count == 1, "and the wall did not end it");
@@ -941,15 +995,14 @@ int main(void) {
         /* Shrapnel is the one add-on whose magnitude is another weapon, and
          * fragments do not inherit it: a shell that broke into eight would
          * otherwise have each of those break into eight again. */
-        sim_settings w = cfg;
         const int WEDGE = 1;
         sim_state s;
         sim_init(&s, 1);
-        sim_spawn(&s, WEDGE, 0, 8192, 300, 0, &w);
+        sim_spawn(&s, WEDGE, 0, 8192, 300, 0, &cfg);
         s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 1);
-        step_n(&s, &w, SIM_BTN_BOMB, 0, 1);
+        step_n(&s, &cfg, SIM_BTN_BOMB, 0, 1);
         CHECK(s.weapon_count == 1, "one bomb away");
-        step_n(&s, &w, 0, 0, 200);
+        step_n(&s, &cfg, 0, 0, 200);
         CHECK(s.weapon_count > 1, "the wall broke it up");
         for (uint16_t i = 0; i < s.weapon_count; i++)
             CHECK(s.weapons[i].mods == 0, "and the fragments carry nothing");
@@ -972,27 +1025,6 @@ int main(void) {
         CHECK(s.ships[0].up[SIM_UP_SPEED] == 0, "and the stats, as before");
     }
 
-    {
-        /* A green nobody in this hull can use stays on the map rather than
-         * being eaten. The original consumed those and said nothing, which is
-         * a green that lies about what it was. */
-        sim_state s;
-        sim_init(&s, 5);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        step_n(&s, &cfg, 0, 0, cfg.prize_delay + 2);
-        int idx = -1;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++)
-            if (s.prizes[i].active) { idx = i; break; }
-        CHECK(idx >= 0, "a prize appears");
-        /* Shrapnel on the gun: no hull in the roster holds that. */
-        s.prizes[idx].type = (uint8_t)SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_SHRAPNEL);
-        s.ships[0].x = s.prizes[idx].x;
-        s.ships[0].y = s.prizes[idx].y;
-        ev_counts c = step_counting(&s, &cfg, 0, 0, 2);
-        CHECK(c.prizes == 0, "flying over it collects nothing");
-        CHECK(s.prizes[idx].active, "and leaves it for somebody who can");
-    }
-
     /* Prizes spawn, get collected, and raise the ship's effective stats. */
     {
         sim_state s;
@@ -1007,19 +1039,23 @@ int main(void) {
         int idx = -1;
         for (int i = 0; i < SIM_MAX_PRIZES; i++)
             if (s.prizes[i].active) { idx = i; break; }
-        s.ships[0].up[SIM_UP_SPEED] = 0;
-        uint8_t want = SIM_UP_SPEED;
-        s.prizes[idx].type = want;
+        /* A green carries no type, so what it turns out to be is whatever
+         * the roll says. Start the pilot one step below every ceiling and
+         * something has to move. */
+        for (int u = 0; u < SIM_UP_COUNT; u++) s.ships[0].up[u] = 7;
+        sim_ship before = s.ships[0];
         s.ships[0].x = s.prizes[idx].x;
         s.ships[0].y = s.prizes[idx].y;
-        int32_t before = sim_eff_speed(&cfg.classes[APEX], &s.ships[0]);
         ev_counts c = step_counting(&s, &cfg, 0, 0, 2);
         CHECK(c.prizes > 0, "flying over a prize collects it");
-        CHECK(s.ships[0].up[want] == 1, "the upgrade is recorded");
-        CHECK(sim_eff_speed(&cfg.classes[APEX], &s.ships[0]) > before,
-              "the upgrade raises effective speed");
+        CHECK(!s.prizes[idx].active, "and takes it off the map");
+        CHECK(memcmp(&before.up, &s.ships[0].up, sizeof before.up) != 0
+              || before.level[SIM_TRIG_GUN] != s.ships[0].level[SIM_TRIG_GUN]
+              || before.mods[SIM_TRIG_GUN] != s.ships[0].mods[SIM_TRIG_GUN],
+              "and something the pilot holds went up");
 
         /* Dying strips everything. */
+        s.ships[0].up[SIM_UP_SPEED] = 4;
         s.ships[0].up[SIM_UP_ENERGY] = 4;
         /* Spawn the shooter above and facing down, or it fires away. */
         sim_spawn(&s, APEX, 1, s.ships[0].x / 256, s.ships[0].y / 256 - 200,

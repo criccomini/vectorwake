@@ -606,35 +606,56 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
 /* Spawn one prize at a random open tile inside the configured bounds. Every
  * draw comes from the state's own PRNG, so prize placement is part of the
  * deterministic stream and a client can predict it exactly. */
-/* Hand a green to a pilot. Returns 0 when it would do nothing -- a stat
- * already at the top, a rung the hull's ladder does not have, an add-on the
- * roster says this hull never gets -- and the caller leaves it on the map for
- * somebody who can use it. The original consumed those and told you nothing,
- * which is a green that lies. */
-int sim_take_prize(sim_ship *sh, const sim_ship_class *c, uint8_t type) {
+/* Everything this hull could ever be given.
+ *
+ * Built per pickup rather than stored on the class, because it is a dozen
+ * comparisons and a stored copy is a second version of the roster row that
+ * can disagree with the first. A ladder with one rung is a weapon that never
+ * levels, so a level is not something that hull can be handed.
+ */
+int sim_prize_pool(const sim_ship_class *c, uint8_t *out) {
+    int n = 0;
+    for (int u = 0; u < SIM_UP_COUNT; u++) out[n++] = (uint8_t)SIM_PRIZE_STAT(u);
+    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        if (c->trigger[t][1] != SIM_NO_PATTERN)
+            out[n++] = (uint8_t)SIM_PRIZE_LEVEL(t);
+        for (int m = 0; m < SIM_MOD_COUNT; m++)
+            if (sim_mod_get(c->mod_max[t], m) > 0)
+                out[n++] = (uint8_t)SIM_PRIZE_MOD(t, m);
+    }
+    return n;
+}
+
+/* Raise one count, as far as its ceiling allows and no further. */
+static void raise_count(sim_ship *sh, const sim_ship_class *c, uint8_t type) {
     if (type < SIM_UP_COUNT) {
-        if (sh->up[type] >= SIM_UP_STEPS) return 0;
-        sh->up[type]++;
-        return 1;
+        if (sh->up[type] < SIM_UP_STEPS) sh->up[type]++;
+        return;
     }
     type = (uint8_t)(type - SIM_UP_COUNT);
     if (type < SIM_TRIG_COUNT) {
-        /* The ladder's length is the ceiling. A hull with one rung of bombs
-         * never climbs, and one with no rack never starts. */
         int next = sh->level[type] + 1;
-        if (next >= SIM_MAX_RUNGS || c->trigger[type][next] == SIM_NO_PATTERN)
-            return 0;
-        sh->level[type] = (uint8_t)next;
-        return 1;
+        if (next < SIM_MAX_RUNGS && c->trigger[type][next] != SIM_NO_PATTERN)
+            sh->level[type] = (uint8_t)next;
+        return;
     }
     type = (uint8_t)(type - SIM_TRIG_COUNT);
     {
         int t = type / SIM_MOD_COUNT, m = type % SIM_MOD_COUNT;
         uint8_t have = sim_mod_get(sh->mods[t], m);
-        if (have >= sim_mod_get(c->mod_max[t], m)) return 0;
-        sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have + 1));
-        return 1;
+        if (have < sim_mod_get(c->mod_max[t], m))
+            sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have + 1));
     }
+}
+
+uint8_t sim_take_prize(sim_ship *sh, const sim_ship_class *c, uint32_t *rng) {
+    uint8_t pool[SIM_PRIZE_COUNT];
+    int n = sim_prize_pool(c, pool);
+    if (n == 0) return SIM_PRIZE_NONE;
+    *rng = xorshift32(*rng);
+    uint8_t type = pool[*rng % (uint32_t)n];
+    raise_count(sh, c, type);
+    return type;
 }
 
 static void spawn_prize(sim_state *s, const sim_settings *cfg) {
@@ -653,10 +674,8 @@ static void spawn_prize(sim_state *s, const sim_settings *cfg) {
         if (solid(cfg->map, cfg, s->tick, tx, ty)) continue;
         if (SIM_TILE_CLASS(sim_tile_at(cfg->map, tx, ty)) == SIM_TILE_SAFE)
             continue;
-        s->rng = xorshift32(s->rng);
         sim_prize *p = &s->prizes[slot];
         p->active = 1;
-        p->type = (uint8_t)(s->rng % SIM_PRIZE_COUNT);
         p->x = (tx * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
         p->y = (ty * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
         p->life = cfg->prize_life;
@@ -678,12 +697,18 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
             int64_t dx = (int64_t)sh->x - p->x, dy = (int64_t)sh->y - p->y;
             int64_t r = cfg->prize_radius + cfg->classes[sh->cls].radius;
             if (dx * dx + dy * dy > r * r) continue;
-            if (!sim_take_prize(sh, &cfg->classes[sh->cls], p->type)) continue;
+            /* Every green is takeable by everybody; what it turns out to be
+             * is rolled here, from what this hull could ever hold. A pilot
+             * already at that ceiling is still told what they found -- the
+             * count simply does not move. A green that refuses to be picked
+             * up reads as a broken pickup, and one that is eaten in silence
+             * is a green that lies. */
+            uint8_t got = sim_take_prize(sh, &cfg->classes[sh->cls], &s->rng);
             /* Collecting energy or recharge should feel immediate rather than
              * arriving over the next few seconds. */
-            if (p->type == SIM_UP_ENERGY || p->type == SIM_UP_RECHARGE)
+            if (got == SIM_UP_ENERGY || got == SIM_UP_RECHARGE)
                 sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
-            emit(ev, SIM_EV_PRIZE, (uint8_t)k, p->type, 0);
+            emit(ev, SIM_EV_PRIZE, (uint8_t)k, got, 0);
             p->active = 0;
             live--;
             break;
@@ -1067,7 +1092,7 @@ uint64_t sim_hash(const sim_state *s) {
     for (int i = 0; i < SIM_MAX_PRIZES; i++) {
         const sim_prize *p = &s->prizes[i];
         if (!p->active) continue;
-        h = hash_u32(h, (uint32_t)(i | (p->type << 8) | (p->active << 16)));
+        h = hash_u32(h, (uint32_t)(i | (p->active << 16)));
         h = hash_u32(h, (uint32_t)p->x);
         h = hash_u32(h, (uint32_t)p->y);
         h = hash_u32(h, p->life);

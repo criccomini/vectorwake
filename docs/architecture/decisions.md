@@ -563,12 +563,17 @@ pilot holds. Each hull's row says which it may ever have, which is what keeps
 the roster a roster once greens are flying: no run of luck turns a Spire into
 a bomber.
 
+Greens carry no type, and what one turns out to be is rolled where it is
+picked up, from what that hull could ever hold. Typing them at spawn filled
+the arena with greens that refused two thirds of the players -- and the roll
+covers what the hull can hold rather than what it can still take, so a pilot
+at the ceiling is told what they found and simply does not move.
+
 **Cost:** two more bytes on every projectile in the snapshot, because a shot
 has to carry the add-ons it was fired with -- reading them off the owner would
 disarm a bomb already in the air when its owner died. Four more on the pilot.
-A prize space of nineteen rather than five, most of which any given hull
-cannot use, which needs the client to draw the ones that are not yours as
-scenery or the pickup reads as broken.
+And you cannot choose which green to chase: they are identical on the map,
+which is the price of every one of them being worth taking.
 
 **Reconsider if:** an add-on wants a magnitude that is not a number and not a
 pattern. Shrapnel already needs a per-rung pattern rather than a per-rung

@@ -241,6 +241,7 @@ typedef enum {
                                + (t) * SIM_MOD_COUNT + (m))
 #define SIM_PRIZE_COUNT       (SIM_UP_COUNT + SIM_TRIG_COUNT \
                                + SIM_TRIG_COUNT * SIM_MOD_COUNT)
+#define SIM_PRIZE_NONE 255
 
 
 /* Per-class tuning in core units. sim_class_from_units fills this from
@@ -325,19 +326,30 @@ typedef struct {
     uint16_t mods[SIM_TRIG_COUNT];
 } sim_ship;
 
+/* A green carries no type. Every green is takeable by everybody, and what it
+ * turns out to be is rolled where it is picked up, from what that hull could
+ * ever hold -- so there is no such thing as a green with somebody else's name
+ * on it, and every one of them is worth crossing the map for. */
 typedef struct {
     uint8_t active;
-    uint8_t type;   /* an index into the prize space; see SIM_PRIZE_* */
     int32_t x, y;   /* Q8 px */
     uint16_t life;  /* ticks remaining */
 } sim_prize;
 
-/* Hand a green to a pilot. Returns 0 when it would do nothing -- a stat
- * already at the top, a rung the hull's ladder does not have, an add-on the
- * roster says this hull never gets -- and the simulation then leaves it on
- * the map for somebody who can use it. Public because the client asks the
- * same question of a copy, to show you which greens are yours. */
-int sim_take_prize(sim_ship *sh, const sim_ship_class *c, uint8_t type);
+/* Every prize id this hull could ever be handed, into `out` (which must hold
+ * SIM_PRIZE_COUNT), returning how many. This is the roster's half of the tech
+ * tree: a hull whose ladder is one rung deep is never offered a level, and one
+ * whose row allows no shrapnel is never offered shrapnel. */
+int sim_prize_pool(const sim_ship_class *c, uint8_t *out);
+
+/* Roll what a green is for this pilot, apply it, and return which it was.
+ *
+ * The roll is over what the hull could *ever* hold rather than what it can
+ * still take, so a pilot at the ceiling is told what they found and the count
+ * simply does not move -- a green that is eaten in silence is a green that
+ * lies. Advances `rng` in place, which is state, which is why the roll can
+ * happen here at all and still be the same roll on both machines. */
+uint8_t sim_take_prize(sim_ship *sh, const sim_ship_class *c, uint32_t *rng);
 
 /* Flags. The core owns pickup, carry, and drop, exactly as the original's
  * flagcore did; which arrangement of flags wins a round is a game mode's

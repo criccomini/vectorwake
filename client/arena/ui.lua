@@ -415,7 +415,9 @@ local function status(me, class_names, netinfo, pickup, lift)
         txt(name .. (lvl > 0 and (" " .. (lvl + 1)) or ""),
             x, cy + rows_h / 2, (FONT - 1) * S,
             lvl > 0 and pal.LEVEL_COL or pal.a(pal.DIM, 0.55))
-        local at = x + 34 * S
+        -- Clear of the widest label plus its rung: "bomb" and "gun 2" both
+        -- have to fit before the first add-on chip lands.
+        local at = x + 52 * S
         for m, mod in ipairs(pal.MODS) do
             local n = sim.ship_mod(me, t, m - 1)
             if n > 0 then

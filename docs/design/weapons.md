@@ -266,16 +266,29 @@ upgrade, which is what makes it worth crossing the map for; what stops it
 running away with a match is that the pilot holding it is carrying a bounty
 everyone can see.
 
-### A green you cannot use stays on the map
+### A green is a green
 
-A Spire flying over a bomb-level green takes nothing, and the green is still
-there afterwards for somebody who can use it. The original ate those and told
-you nothing, which is a green that lies about what it was.
+Greens carry no type. Every one of them is takeable by everybody, and what it
+turns out to be is rolled where it is picked up, from what that hull could ever
+hold. There is no such thing as a green with somebody else's name on it.
 
-The client draws them at a quarter alpha, so you can see before you cross the
-arena that one was never yours. That is a rendering decision built on a
-simulation question -- `sim_take_prize` against a copy of your ship -- rather
-than a second table that could disagree with the first.
+The first version typed them at spawn, and the arena filled with greens that
+refused to be picked up -- two thirds of them, for an Apex. The treatment was
+drawing the ones that were not yours at a quarter alpha, which is a lot of
+machinery to make a rule legible instead of removing the rule.
+
+The roll is over what the hull could *ever* hold, not what it can still take.
+So a pilot already at the ceiling takes the green, is told what they found, and
+nothing moves. That matters: a green eaten in silence is a green that lies, and
+one that cannot be picked up reads as a broken pickup. Being told "+ speed" and
+watching the number stay where it is says the true thing -- you are full.
+
+It runs off the state's own generator, so the roll is the same roll on the
+server and on every client predicting it.
+
+The consequence to accept is that you cannot choose which green to chase. They
+are identical on the map and always worth taking, which is the trade: the
+gamble is the mechanic, and it is the same gamble for everybody.
 
 ### Writing a tree
 

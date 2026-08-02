@@ -458,24 +458,22 @@ end
 
 -- --- prizes and flags ------------------------------------------------------
 
-function M.prizes(fill, glow, t, me)
+function M.prizes(fill, glow, t)
     local spin = t * 1.1
     local ca, sa = math.cos(spin), math.sin(spin)
     local pulse = 0.78 + 0.22 * math.sin(t * 3.4)
     for i = 0, sim.prize_count() - 1 do
-        local active, x, y, kind, life = sim.prize_at(i)
+        local active, x, y, life = sim.prize_at(i)
         if active then
-            local col = pal.prize(kind)
+            -- Every green looks the same, because every green *is* the same:
+            -- what it turns out to be is decided when somebody takes it, from
+            -- what their hull can hold. Colouring them by kind would have been
+            -- colouring them by a decision that has not been made yet.
+            local col = pal.PRIZE
             -- A prize about to time out blinks, so a player can tell the
             -- difference between one worth crossing the arena for and one
             -- that will be gone before they arrive.
             local fade = (life < 120) and (0.35 + 0.65 * math.abs(math.sin(t * 9))) or 1
-            -- And one this hull cannot use is drawn as scenery. A green that
-            -- refuses to be picked up reads as a broken pickup unless you can
-            -- see, before you cross the map for it, that it was never yours.
-            if me and sim.prize_useful(me, kind) == false then
-                fade = fade * 0.28
-            end
             local r = 6.5 * pulse
             local pts = {}
             for k = 0, 3 do

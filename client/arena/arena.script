@@ -729,7 +729,7 @@ function update(self, dt)
     -- camera, so they cannot live in the mesh the walls are baked into.
     world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
     world.flags(fill, glow, my_team, t)
-    world.prizes(fill, glow, t, me)
+    world.prizes(fill, glow, t)
     world.weapons(fill, glow, my_team, t)
 
     for i = 0, sim.ship_count() - 1 do

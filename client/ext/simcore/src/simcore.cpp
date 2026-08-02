@@ -197,19 +197,6 @@ int ShipMod(lua_State* L) {
     return 1;
 }
 
-// Would this green do anything for this pilot? A hull that never gets
-// shrapnel flies over a shrapnel green and leaves it, so the drawing has to
-// be able to say which ones are yours -- otherwise the rule reads as the
-// pickup being broken.
-int PrizeUseful(lua_State* L) {
-    int ship = (int)luaL_checkinteger(L, 1);
-    int type = (int)luaL_checkinteger(L, 2);
-    sim_ship copy = g_cur->ships[ship];
-    const sim_ship_class* c = &g_cfg.classes[copy.cls];
-    lua_pushboolean(L, sim_take_prize(&copy, c, (uint8_t)type));
-    return 1;
-}
-
 int ShipRadius(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].radius / 256.0);
@@ -298,7 +285,8 @@ int PrizeCount(lua_State* L) {
     return 1;
 }
 
-// x, y, type, life. Inactive slots report life 0 and nothing else valid.
+// x, y, life. A green carries no type: every one of them is takeable by
+// everybody, and what it turns out to be is rolled where it is picked up.
 int PrizeAt(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     const sim_prize* p = &g_cur->prizes[i];
@@ -309,9 +297,8 @@ int PrizeAt(lua_State* L) {
     lua_pushboolean(L, 1);
     lua_pushnumber(L, p->x / 256.0);
     lua_pushnumber(L, p->y / 256.0);
-    lua_pushnumber(L, p->type);
     lua_pushnumber(L, p->life);
-    return 5;
+    return 4;
 }
 
 // Solid means "a wall that never moves", which is what the static terrain
@@ -435,7 +422,6 @@ const luaL_reg kFunctions[] = {
     {"ship_up", ShipUp},
     {"ship_level", ShipLevel},
     {"ship_mod", ShipMod},
-    {"prize_useful", PrizeUseful},
     {"ship_radius", ShipRadius},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},

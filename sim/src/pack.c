@@ -95,7 +95,6 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap) {
         const sim_prize *p = &s->prizes[i];
         if (!p->active) continue;
         w8(&w, (uint32_t)i);
-        w8(&w, p->type);
         w32(&w, (uint32_t)p->x);
         w32(&w, (uint32_t)p->y);
         w16(&w, p->life);
@@ -177,7 +176,6 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         if (idx >= SIM_MAX_PRIZES) return -1;
         sim_prize *p = &s->prizes[idx];
         p->active = 1;
-        p->type = (uint8_t)r8(&r);
         p->x = (int32_t)r32(&r);
         p->y = (int32_t)r32(&r);
         p->life = (uint16_t)r16(&r);
