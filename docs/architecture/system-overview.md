@@ -11,10 +11,11 @@ place where game rules execute.
 Reads input, runs the sim core forward for local prediction, interpolates
 everyone else, and draws the result. Owns no authoritative state.
 
-**Zone server** (`server/`, native binary). Accepts connections, places players
-in arenas, runs one sim core instance per arena at a fixed tick, decides
-everything that matters, and writes scores to a database. Hosts sandboxed zone
-modules that observe and adjust the rules.
+**Arena server** (`server/`, native binary). Accepts connections, runs one sim
+core instance at a fixed tick, decides everything that matters, and writes scores
+to a database. Hosts sandboxed zone modules that observe and adjust the rules.
+One process holds one arena; a zone is many of them plus the directories that
+list them, per [zones-and-arenas.md](zones-and-arenas.md).
 
 **Zone modules** (`modules/`, sandboxed WebAssembly or Lua). Game modes, event
 logic, and anything a zone author wants to add. They receive events and may
@@ -31,8 +32,14 @@ zone identity lives in bots, so they are a supported interface rather than a
 side effect. Distinct from AI players: these are tooling and league logic, not
 opponents.
 
-**Directory.** A small service listing live zones for the client's server
-browser. Optional, and a zone runs fine without it.
+**Directory** (`server/`, same binary, `directory` subcommand). A zone's front
+door: it holds the catalog of arena types and the token table, accepts arena
+registrations, verifies the addresses they claim, and answers browse requests. It
+assigns nothing. An arena that cannot reach one keeps running whatever it last
+chose. See [discovery.md](discovery.md).
+
+**Admin UI** (static HTML). Reads the same fleet view an arena reads and edits
+the catalog, which is the whole of its authority. See [admin.md](admin.md).
 
 ## How a frame moves through the system
 
@@ -59,45 +66,53 @@ server only to learn whether a shot connected.
 
 ## Process and deployment shape
 
-One zone server process hosts many arenas. Arenas are independent simulations
-that share a process, a socket, and a player list, which is exactly the
-structure that let Subspace feel like one social space on a tiny budget.
+One process holds one arena. A zone is a catalog of arena types, one or more
+directories serving it, and however many arena processes are running. Scaling is
+a replica count.
+
+This reverses the structure that let Subspace feel like one social space on a
+tiny budget, and [decision 23](decisions.md) argues the trade with its costs
+named.
 
 ```mermaid
 flowchart TB
-    subgraph Host["Zone server process"]
-        direction TB
-        NET["Transport layer<br/>UDP + WebSocket, one port each"]
-        PL["Player registry<br/>identity, chat, capabilities"]
-        A1["Arena: pub1"]
-        A2["Arena: pub2"]
-        A3["Arena: duel"]
-        A4["Arena: ball"]
-        DB[("SQLite")]
-        NET --> PL
-        PL --> A1 & A2 & A3 & A4
-        A1 & A2 & A3 & A4 --> DB
+    subgraph Zone["Zone: vectorwake"]
+        CAT[["Catalog v37<br/>Alpha, Chaos, War, Duel"]]
+        D1["Directory A"]
+        D2["Directory B"]
+        CAT --> D1 & D2
     end
-    W["Web client (WASM)"] -- WebSocket --> NET
+    subgraph Arena["Arena process (one of many)"]
+        NET["Transport<br/>UDP + WebSocket"]
+        SIM["One sim core instance"]
+        MOD["Zone modules (sandboxed)"]
+        DB[("SQLite")]
+        NET --> SIM
+        SIM <--> MOD
+        SIM --> DB
+    end
+    D1 <-- "register, view, catalog" --> NET
+    D2 <-- "register, view, catalog" --> NET
+    W["Web client (WASM)"] -- browse --> D1
+    W -- play --> NET
     N["Native client"] -- UDP --> NET
-    B["Bots"] -- either --> NET
 ```
 
-Chat, player identity, and arena listings are process-wide. Simulation,
-settings, maps, and scores are per-arena. Moving between arenas does not
-reconnect.
+Settings, map, simulation and scores are per process. The catalog, bans, and
+staff capabilities are zone-wide and arrive from a directory. Moving between
+arenas is a reconnect, which is the sharpest thing this model gives up.
 
 ## Threading
 
-The transport layer runs on its own thread and hands each arena a queue of
-decoded inputs. Each arena ticks on a worker from a pool, one arena to one
-thread at a time, so an arena's simulation never runs concurrently with itself
-and never blocks another arena. Database writes go to a separate thread behind a
-queue.
+The transport layer runs on its own thread and hands the arena a queue of decoded
+inputs. The arena ticks on one thread, and since the process holds a single arena
+there is no pool and nothing to schedule. Database writes go to a separate thread
+behind a queue. The registration client runs on the async runtime alongside the
+transport and never blocks a tick.
 
-The sim core is single-threaded by construction and holds no globals, so an
-arena is a plain value that a worker owns for the duration of a tick. This falls
-out of writing the core as a pure function rather than as an engine.
+The sim core is single-threaded by construction and holds no globals, so an arena
+is a plain value one thread owns for the duration of a tick. This falls out of
+writing the core as a pure function rather than as an engine.
 
 ## Tick rates and time
 
@@ -115,8 +130,10 @@ position for nearby players sent more often than for distant ones. See
 
 | Subspace concept | Where it lives here |
 |---|---|
-| Zone | One server process |
-| Arena | One sim core instance plus its settings and map |
+| Zone | A catalog of arena types plus the directories that serve it |
+| Arena | One process: a sim core instance plus its settings and map |
+| Named arena (`pub1`, `?go`) | Deleted. A player picks an arena type and the client picks the instance |
+| Directory server | A zone's own front door, not a global list of zones |
 | Freq | A team id inside arena state |
 | `arena.conf` settings | Configuration compiled into a settings struct the sim core reads |
 | Flag and ball game modules | Zone modules, sandboxed |

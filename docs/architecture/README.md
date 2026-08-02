@@ -17,7 +17,10 @@ it says so.
 | [platforms.md](platforms.md) | Browser, Steam, mobile, consoles: what each one costs us and in what order |
 | [simulation-core.md](simulation-core.md) | The deterministic C core: fixed point, tick model, state layout, API |
 | [client-defold.md](client-defold.md) | What Defold does for us, what it does not, project layout, map rendering, prediction |
-| [server.md](server.md) | Zone and arena model, authority, extension modules, persistence, operations |
+| [server.md](server.md) | Authority, extension modules, lag response, persistence, operations |
+| [zones-and-arenas.md](zones-and-arenas.md) | One arena to a process, arena types, how an arena picks what to run, what a fleet costs |
+| [discovery.md](discovery.md) | Registration, credentials, verification, several directories, how a client finds a game |
+| [admin.md](admin.md) | The operator web UI: what it observes, what it edits, what it may command |
 | [networking.md](networking.md) | Transports, packet model, snapshots and inputs, lag response, anti-cheat |
 | [ai-runtime.md](ai-runtime.md) | Where bots run, how they perceive and fly, and why they cannot cheat |
 | [content-pipeline.md](content-pipeline.md) | Settings, maps, assets, and how a zone author works |
@@ -30,6 +33,13 @@ vectorwake is a top-down space MMO in the tradition of Subspace Continuum.
 Frictionless inertial flight, energy as both health and ammunition, teams called
 freqs, and arenas whose rules come from configuration rather than from our
 source code.
+
+The zone and arena model moved after these documents were first written. A zone
+is now a catalog of arena types plus the directories that serve it, and one
+process holds one arena. [zones-and-arenas.md](zones-and-arenas.md) is the
+current account; where [server.md](server.md) and
+[system-overview.md](system-overview.md) still describe one process hosting many
+named arenas, they say so and point here.
 
 The architecture rests on one idea: the simulation is a small, deterministic,
 fixed-point C library that both the client and the server run, tick for tick.
@@ -44,9 +54,9 @@ flowchart LR
         SC1 --> R
     end
 
-    subgraph Server["Zone server"]
+    subgraph Server["Arena server"]
         NET["Transport: UDP + WebSocket"]
-        AR["Arenas: one sim instance each"]
+        AR["One arena, one sim instance"]
         SC2["sim core (static lib)"]
         MOD["Zone modules (sandboxed)"]
         DB[("SQLite: scores, bans, config")]
