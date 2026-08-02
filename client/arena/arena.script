@@ -39,7 +39,6 @@ local LAYOUT = {
     {1, 0, 546, 512, "Ozone"},   {4, 1, 512, 546, "Tessellate"},
 }
 
-
 local held = {}
 -- A tap can go down and up inside one frame, so the frame loop never sees it
 -- in `held`. Presses are latched here and consumed by whatever reads them,
