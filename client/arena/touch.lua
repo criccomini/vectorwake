@@ -180,6 +180,12 @@ end
 -- Drawn in the screen-space interface layer, which is where a control that
 -- follows the thumb belongs: touches and this layer are both in drawable
 -- pixels counting up from the bottom, so there is nothing to convert.
+-- What the use pad is holding, set by the caller each frame: the ready
+-- charge's short name and how many are in hand. Drawn inside the pad rather
+-- than in a row across the screen, because that is where the thumb already
+-- is and where the question is asked.
+M.ready = nil
+
 function M.draw(u, w, h, s)
     if not M.used then return end
     local pal = require("arena.palette")
@@ -204,6 +210,22 @@ function M.draw(u, w, h, s)
     ring(L.use.x, L.use.y, L.use.r, use and pal.a(pal.CHARGE_COL, 0.95) or dim)
     if use then glow(L.use, pal.CHARGE_COL) end
     ring(L.swap.x, L.swap.y, L.swap.r, pal.a(pal.CHARGE_COL, 0.4), 18)
+    -- How many of the ready charge are in hand, as pips *inside* the use pad.
+    -- A count you can see without reading, on the control that spends it --
+    -- and nothing at all when you hold none, which is the same rule the
+    -- hull's energy pip follows.
+    --
+    -- Inside rather than around: the pads sit close enough together that an
+    -- arc outside one lands on its neighbour, which read as three loose dots
+    -- floating between the controls rather than as the contents of one.
+    local held = M.ready and M.ready.count or 0
+    if held > 0 then
+        local pitch = 9 * s
+        for i = 1, held do
+            u:disc(L.use.x + (i - 1) * pitch - (held - 1) * pitch / 2,
+                   L.use.y, 3 * s, 7, pal.a(pal.CHARGE_COL, 0.95))
+        end
+    end
 
     if stick then
         ring(stick.ox, stick.oy, L.home.r, dim)

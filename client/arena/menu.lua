@@ -139,6 +139,7 @@ local NODES = {
          go = "play"},
         {label = "pilot", detail = function() return M.name end, go = "pilot"},
         {label = "settings", go = "settings"},
+        {label = "help", go = "help"},
         {label = "about", go = "about"},
     }},
 
@@ -167,15 +168,24 @@ local NODES = {
         {label = "fullscreen", detail = "fill the screen", act = "fullscreen"},
     }},
 
-    about = {title = "about", rows = {
-        {label = "", detail = "a top-down space game about frictionless flight"},
-        {label = "", detail = "energy is your health and your ammunition at once"},
+    -- The controls used to be a line of text across the bottom of the screen
+    -- in every frame of every game. They are read once and never again, and
+    -- on a phone they were laid over the thumbs, naming keys the device does
+    -- not have while the controls it does have sat unexplained. A thing you
+    -- consult belongs somewhere you go to consult it.
+    help = {title = "help", rows = {
+        {label = "", detail = "on a touchscreen"},
+        {label = "steer", detail = "left thumb: point where you want the nose"},
+        {label = "fire", detail = "right pads: guns above bombs"},
+        {label = "charges", detail = "inner pads: swap above use"},
         {label = "", detail = ""},
+        {label = "", detail = "on a keyboard"},
         {label = "fly", detail = "arrow keys, or WASD"},
         {label = "guns", detail = "space, or Z"},
         {label = "bombs", detail = "shift, or X"},
         {label = "use", detail = "C, or ctrl"},
         {label = "swap", detail = "V, or tab"},
+        {label = "scores", detail = "I, or the info button"},
         {label = "menu", detail = "escape"},
         {label = "", detail = ""},
         -- Every key here has a second binding, and this is the reason. Most
@@ -187,7 +197,16 @@ local NODES = {
         {label = "", detail = "if a third key stops working while two are held,"},
         {label = "", detail = "your keyboard cannot see that combination:"},
         {label = "", detail = "try Z for guns, or WASD to fly"},
+    }},
+
+    about = {title = "about", rows = {
+        {label = "", detail = "a top-down space game about frictionless flight"},
+        {label = "", detail = "energy is your health and your ammunition at once"},
         {label = "", detail = ""},
+        {label = "", detail = "the bar over a ship is its energy, which is its"},
+        {label = "", detail = "health and its ammunition at once"},
+        {label = "", detail = "the number under it is its bounty: what killing"},
+        {label = "", detail = "it pays, and what dying costs you"},
         {label = "", detail = function()
             return "build " .. (sys.get_config("project.version") or "dev")
         end},

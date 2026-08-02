@@ -75,6 +75,10 @@ key_trigger {
   action: "cycle"
 }
 key_trigger {
+  input: KEY_I
+  action: "details"
+}
+key_trigger {
   input: KEY_ENTER
   action: "select"
 }

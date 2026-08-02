@@ -98,6 +98,10 @@ end
 -- each other and the hull grid ran off both edges of the screen.
 M.compact = false
 M.touching = false
+-- The scoreboard and your loadout, off until asked for. A guess about screen
+-- size decided this before and got it backwards on the device it was written
+-- for; see M.begin.
+M.details = false
 
 function M.begin(layer, w, h, density, touching)
     u, W, H = layer, w, h
@@ -105,8 +109,15 @@ function M.begin(layer, w, h, density, touching)
     -- point is a small screen, not a large one, and laying the interface out
     -- against the pixel count is how it ends up drawn at half size on the
     -- device it most needs to be readable on.
-    local points = w / math.max(density, 0.0001)
-    M.compact = points < 620
+    -- The *scarce* axis, not the width. This measured width alone, so a phone
+    -- held in landscape -- 844 points wide and 390 tall, which is how anybody
+    -- plays a game like this -- was classed as a large screen and got the
+    -- full desktop interface stacked down a 390-point column. The tight
+    -- dimension is the one that decides.
+    local pw = w / math.max(density, 0.0001)
+    local ph = h / math.max(density, 0.0001)
+    local points = pw < ph and pw or ph
+    M.compact = points < 480
     -- No global shrink. Dropping the scoreboard and reflowing the hull grid
     -- is what makes a phone fit; scaling the type down as well only made it
     -- unreadable on the device with the least room to spare. Panels are 248
@@ -132,13 +143,18 @@ end
 -- that a blip means something.
 
 local function radar(cx, cy, me)
-    local box = RADAR * S + 16 * S
-    local x = W - PAD * S - box
-    local y = PAD * S
-    panel(x, y, box, box)
-    local ix, iy = x + 8 * S, y + 8 * S
+    -- No panel and no inset. The dial is the most valuable thing on screen on
+    -- a map a thousand tiles across and it keeps every pixel; what made it
+    -- read as half a phone's height was the opaque box, the border and eight
+    -- points of padding on each side, none of which is information.
+    --
+    -- A faint wash stays, because dots over a starfield are dots lost in a
+    -- starfield -- but it is a wash rather than a panel.
     local r = RADAR * S
-    rect(ix, iy, r, r, pal.RADAR_BG)
+    local pad = (M.compact and 8 or PAD) * S
+    local ix = W - pad - r
+    local iy = pad
+    rect(ix, iy, r, r, pal.a(pal.RADAR_BG, 0.55))
 
     -- Sixty tiles out, so the reference arena nearly fills the dial. At a
     -- hundred and fifty it sat in the middle quarter with the rest of the
@@ -281,6 +297,16 @@ local function nameplates(o)
             end
         end
     end
+
+    -- Your own bounty, under your own hull, in the place and the colour every
+    -- other ship carries theirs. It used to be a row in a corner panel, which
+    -- asked you to look away to read the one number about you that everyone
+    -- else reads without looking anywhere.
+    local mine = sim.ship_bounty(o.me)
+    if mine > 0 and sim.ship_alive(o.me) == 1 then
+        txt(tostring(mine), W / 2 + 12 * S, H / 2 + 25 * S, 11 * S,
+            pal.a(pal.BOUNTY, 0.85))
+    end
 end
 
 -- --- panels ----------------------------------------------------------------
@@ -294,10 +320,10 @@ local function top_y()
 end
 
 local function scores(me, pilots)
-    -- A phone has no room for a nine-row table beside the radar, and mid-fight
-    -- it is the least useful thing on the screen. The feed still says who is
-    -- killing whom.
-    if M.compact then return 0 end
+    -- Asked for, not assumed. Mid-fight this is the least useful thing on the
+    -- screen and the feed still says who is killing whom, so it lives behind
+    -- the same toggle your own loadout does.
+    if not M.details then return 0 end
     local n = 0
     for i = 0, sim.ship_count() - 1 do
         n = n + 1
@@ -345,7 +371,9 @@ local function scores(me, pilots)
             y + LINE * S / 2, FONT * S, pal.DIM, "right")
         y = y + LINE * S
     end
-    return h
+    -- The bottom edge, not the height: what the loadout below needs to know
+    -- is where this ends, and it does not start at the top of the screen.
+    return top_y() + h
 end
 
 -- The notification feed: kills, greens, flags. Newest first.
@@ -378,28 +406,30 @@ local function feed(lines, top)
     end
 end
 
-local function status(me, class_names, netinfo, pickup, charges, lift)
-    local emax = math.max(1, sim.ship_max_energy(me))
-    -- Clamped, because energy is allowed to go far negative: a bomb overkills
-    -- by whatever it overkills by, and the ship carries that until it
-    -- respawns. The bar clamped and the number did not, so a fresh corpse
-    -- read "energy -221614%".
-    local frac = sim.ship_energy(me) / emax
-    if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
-    local vx, vy = sim.ship_vel(me)
-    local speed = math.sqrt(vx * vx + vy * vy) * 100 / 16
-
-    local rows_h = LINE * S              -- name / score
-    local bar_h = 6 * S
-    -- Rows: the five stats, what each trigger carries, and the charges in
-    -- hand when the hull has any.
+-- What is left of the status panel.
+--
+-- Energy is not here. Your own hull already carries the pip every other ship
+-- carries -- same routine, same threshold -- so a bar and a percentage in a
+-- corner were the same number drawn twice, in the place you are least likely
+-- to be looking. Nor is your hull's name, which the silhouette says and you
+-- chose; nor your speed, which nobody has ever made a decision on; nor your
+-- kills, deaths and points, which are three scoreboard numbers.
+--
+-- What stays is what you cannot get anywhere else and need mid-fight: which
+-- charge is ready and how many are in hand. On a touchscreen not even that,
+-- because the pad draws it -- so the panel disappears entirely unless a green
+-- was just taken or the netinfo line is up, and most of the time a phone
+-- draws no panel at all.
+local function status(me, netinfo, pickup, charges, lift)
     local slots = charges or {}
-    local h = PANEL_Y * 2 * S + rows_h + 7 * S + bar_h + 6 * S + rows_h
-              + rows_h + 5 * S + rows_h + SIM_TRIGGERS * rows_h
-              + ((#slots > 0) and rows_h or 0)
-    if pickup then h = h + rows_h end
-    if netinfo then h = h + rows_h end
+    -- The pad carries the marker on a touchscreen, so the row would be the
+    -- same thing twice at opposite corners.
+    local show_charges = #slots > 0 and not M.touching
+    local rows_h = LINE * S
+    local n = (show_charges and 1 or 0) + (pickup and 1 or 0) + (netinfo and 1 or 0)
+    if n == 0 then return 0 end
 
+    local h = PANEL_Y * 2 * S + n * rows_h
     local w = COL_W * S
     local x = PAD * S
     local y = H - PAD * S - h - (lift or 0)
@@ -409,81 +439,7 @@ local function status(me, class_names, netinfo, pickup, charges, lift)
     local iw = w - PANEL_X * 2 * S
     local cy = y + PANEL_Y * S
 
-    txt(class_names[sim.ship_class(me) + 1] or "?", ix, cy + rows_h / 2,
-        FONT * S, pal.FRIEND)
-    txt(sim.ship_kills(me) .. "k / " .. sim.ship_deaths(me) .. "d",
-        ix + iw, cy + rows_h / 2, FONT * S, pal.INK, "right")
-    cy = cy + rows_h + 7 * S
-
-    -- Energy. The bar is the one element that has to be readable without
-    -- being looked at, so it is the full width of the panel and it changes
-    -- colour rather than only length.
-    rect(ix, cy, iw, bar_h, pal.BAR_BG)
-    u:frame(ix, ry(cy, bar_h), iw, bar_h, S, pal.BAR_EDGE)
-    local bar_col = pal.FRIEND
-    if frac < 0.2 then bar_col = pal.HURT
-    elseif frac < 0.45 then bar_col = pal.ENEMY end
-    if frac > 0 then
-        rect(ix + S, cy + S, (iw - 2 * S) * math.min(1, frac), bar_h - 2 * S,
-             bar_col)
-    end
-    cy = cy + bar_h + 6 * S
-
-    txt("energy " .. math.floor(frac * 100 + 0.5) .. "%", ix, cy + rows_h / 2,
-        FONT * S, frac < 0.2 and pal.HURT or pal.DIM)
-    txt(string.format("%.1f tiles/s", speed), ix + iw, cy + rows_h / 2,
-        FONT * S, pal.DIM, "right")
-    cy = cy + rows_h
-
-    -- What you have been paid, and what you are worth. Two different numbers
-    -- and the second is the one everybody else can see.
-    txt(sim.ship_points(me) .. " points", ix, cy + rows_h / 2, (FONT - 1) * S,
-        pal.DIM)
-    local bty = sim.ship_bounty(me)
-    txt("worth " .. bty, ix + iw, cy + rows_h / 2, (FONT - 1) * S,
-        bty > 0 and pal.BOUNTY or pal.a(pal.DIM, 0.5), "right")
-    cy = cy + rows_h + 5 * S
-
-    -- Upgrades, as the prototype shows them: every slot always present, so
-    -- the row does not reflow as prizes are picked up, and the ones you do
-    -- not hold sit there greyed as a list of what is out there to find.
-    local gap = iw / #pal.UPGRADES
-    for i, up in ipairs(pal.UPGRADES) do
-        local held = sim.ship_up(me, i - 1)
-        local label = held > 0 and (up.short .. "×" .. held) or up.short
-        txt(label, ix + (i - 1) * gap, cy + rows_h / 2, (FONT - 1) * S,
-            held > 0 and up.col or pal.a(pal.DIM, 0.45))
-    end
-    cy = cy + rows_h
-
-    -- And what the two triggers are carrying. A level is the same weapon
-    -- harder and an add-on changes its character, so they read differently:
-    -- "gun 2" is a rung, "MUL" is a thing bolted on. Both are per trigger,
-    -- which is the point of showing them as two lines rather than one list.
-    for t = 0, SIM_TRIGGERS - 1 do
-        local x = ix
-        local lvl = sim.ship_level(me, t)
-        local name = (t == sim.TRIG_GUN) and "gun" or "bomb"
-        txt(name .. (lvl > 0 and (" " .. (lvl + 1)) or ""),
-            x, cy + rows_h / 2, (FONT - 1) * S,
-            lvl > 0 and pal.LEVEL_COL or pal.a(pal.DIM, 0.55))
-        -- Clear of the widest label plus its rung: "bomb" and "gun 2" both
-        -- have to fit before the first add-on chip lands.
-        local at = x + 52 * S
-        for m, mod in ipairs(pal.MODS) do
-            local n = sim.ship_mod(me, t, m - 1)
-            if n > 0 then
-                txt(mod.short .. (n > 1 and ("×" .. n) or ""), at,
-                    cy + rows_h / 2, (FONT - 2) * S, pal.MOD_COL)
-                at = at + 30 * S
-            end
-        end
-        cy = cy + rows_h
-    end
-
-    -- Charges: a count you spend, and one of them is the one the use key
-    -- fires. The marker is what makes a single fire key work for four kinds.
-    if #slots > 0 then
+    if show_charges then
         local at = ix
         for _, c in ipairs(slots) do
             local label = (c.ready and "> " or "") .. c.short .. "x" .. c.count
@@ -495,7 +451,6 @@ local function status(me, class_names, netinfo, pickup, charges, lift)
         end
         cy = cy + rows_h
     end
-
     if pickup then
         txt((pickup.sign or "+") .. " " .. pickup.name, ix,
             cy + rows_h / 2, FONT * S, pal.a(pickup.col, pickup.t))
@@ -505,52 +460,88 @@ local function status(me, class_names, netinfo, pickup, charges, lift)
         txt("online", ix, cy + rows_h / 2, FONT * S, pal.DIM)
         txt(netinfo, ix + iw, cy + rows_h / 2, FONT * S, pal.DIM, "right")
     end
+    return h + 6 * S
 end
 
-local function help(lift)
-    local h = 17 * S
-    local y = H - PAD * S - h - (lift or 0)
-    -- Naming keys to somebody holding a phone is worse than saying nothing:
-    -- it describes controls their device does not have while the ones it does
-    -- have sit unexplained on screen. The touch layer draws the stick and the
-    -- pads; this says what they are.
-    if M.touching or M.compact then
-        txt("thumb left to steer     pads right to fire",
-            W / 2, y + h / 2, FONT * S, pal.a(pal.DIM, 0.9), "center")
-        return
+-- Everything you own, on demand: the tech tree you are carrying and the two
+-- score numbers, under the same toggle as the scoreboard. These change when
+-- you fly over a green and not otherwise, so they are a thing you look up
+-- between fights rather than a thing you watch during one -- and the feed
+-- already announces every pickup as it happens, which is where a player
+-- actually learns the tree exists.
+-- Under the scoreboard, not at the foot of the screen.
+--
+-- It was anchored to the bottom like the panel it came out of, which is fine
+-- on a desktop and wrong on a phone: with the thumbs lifting it 150 points
+-- and only 390 to play with, it climbed into the scoreboard and the two drew
+-- through each other. They are one stack now, because they are one toggle --
+-- you asked one question and this is the whole answer to it.
+local function loadout(me, class_names, top)
+    if not M.details then return end
+    local rows_h = LINE * S
+    local h = PANEL_Y * 2 * S + rows_h * (3 + SIM_TRIGGERS)
+    local w = COL_W * S
+    local x = PAD * S
+    local y = (top or 0) + 6 * S
+    panel(x, y, w, h)
+
+    local ix = x + PANEL_X * S
+    local iw = w - PANEL_X * 2 * S
+    local cy = y + PANEL_Y * S
+
+    txt(class_names[sim.ship_class(me) + 1] or "?", ix, cy + rows_h / 2,
+        FONT * S, pal.FRIEND)
+    txt(sim.ship_kills(me) .. "k / " .. sim.ship_deaths(me) .. "d",
+        ix + iw, cy + rows_h / 2, FONT * S, pal.INK, "right")
+    cy = cy + rows_h
+
+    txt(sim.ship_points(me) .. " points", ix, cy + rows_h / 2, (FONT - 1) * S,
+        pal.DIM)
+    local bty = sim.ship_bounty(me)
+    txt("worth " .. bty, ix + iw, cy + rows_h / 2, (FONT - 1) * S,
+        bty > 0 and pal.BOUNTY or pal.a(pal.DIM, 0.5), "right")
+    cy = cy + rows_h
+
+    -- Every slot always present, so the row does not reflow as prizes are
+    -- picked up, and the ones you do not hold sit there greyed as a list of
+    -- what is out there to find.
+    local gap = iw / #pal.UPGRADES
+    for i, up in ipairs(pal.UPGRADES) do
+        local held = sim.ship_up(me, i - 1)
+        local label = held > 0 and (up.short .. "×" .. held) or up.short
+        txt(label, ix + (i - 1) * gap, cy + rows_h / 2, (FONT - 1) * S,
+            held > 0 and up.col or pal.a(pal.DIM, 0.45))
     end
-    -- Measured first so the row can be centred: a control hint that drifts
-    -- off centre as its own contents change looks like a bug.
-    local parts = {
-        {k = "←"}, {k = "↑"}, {k = "↓"}, {k = "→"}, {s = " fly    "},
-        {k = "space"}, {s = " guns    "}, {k = "shift"}, {s = " bombs    "},
-        {k = "c"}, {s = " use    "}, {k = "v"}, {s = " swap    "},
-        -- The one thing a new player has to be told, because nothing else on
-        -- screen implies it: there is a menu, and this is where it lives.
-        {k = "esc"}, {s = " menu"},
-    }
-    local total = 0
-    for _, p in ipairs(parts) do
-        if p.k then
-            p.w = math.max(h * 0.72, #p.k * FONT * S * 0.62 + 8 * S) + 3 * S
-        else
-            p.w = #p.s * FONT * S * 0.62
+    cy = cy + rows_h
+
+    -- A level is the same weapon harder and an add-on changes its character,
+    -- so they read differently: "gun 2" is a rung, "MUL" is bolted on.
+    for t = 0, SIM_TRIGGERS - 1 do
+        local lvl = sim.ship_level(me, t)
+        local name = (t == sim.TRIG_GUN) and "gun" or "bomb"
+        txt(name .. (lvl > 0 and (" " .. (lvl + 1)) or ""),
+            ix, cy + rows_h / 2, (FONT - 1) * S,
+            lvl > 0 and pal.LEVEL_COL or pal.a(pal.DIM, 0.55))
+        local at = ix + 52 * S
+        for m, mod in ipairs(pal.MODS) do
+            local nn = sim.ship_mod(me, t, m - 1)
+            if nn > 0 then
+                txt(mod.short .. (nn > 1 and ("×" .. nn) or ""), at,
+                    cy + rows_h / 2, (FONT - 2) * S, pal.MOD_COL)
+                at = at + 30 * S
+            end
         end
-        total = total + p.w
-    end
-    local x = (W - total) / 2
-    for _, p in ipairs(parts) do
-        if p.k then
-            kbd(x, y, p.k, h)
-        else
-            txt(p.s, x, y + h / 2, FONT * S, pal.a(pal.DIM, 0.9))
-        end
-        x = x + p.w
+        cy = cy + rows_h
     end
 end
 
 -- The damage vignette: red creeping in from the edges rather than a flash
 -- over the middle, so it never hides the ship that is shooting you.
+--
+-- With the corner energy bar gone this carries more weight than it used to:
+-- the vignette says "you are being hit", the hull's pip says how much is
+-- left, and its colour says how urgent that is. Three channels, none of them
+-- a panel.
 local function vignette(amount)
     if amount <= 0.01 then return end
     local col = pal.a(pal.HURT, 0.55 * amount)
@@ -565,15 +556,11 @@ local function vignette(amount)
     band(W, 0, W, H, W - d, H - d, W - d, d)
 end
 
--- --- the flight interface --------------------------------------------------
+-- The control hints used to live here, across the bottom of the screen, in
+-- every frame of every game. They are read once and then never again, and on
+-- a phone they were a line of text laid over the thumbs. They are in the
+-- menu now, under `help`, which is where a thing you consult belongs.
 
--- The way into the menu, in the corner, on every device and every layout.
---
--- It was drawn only for touch and only on a narrow screen, which meant it
--- depended on two guesses -- that a touch had been seen, and that the screen
--- counted as small -- to be findable at all. On an emulated phone both came
--- out false and the menu had no way in but a key that phone does not have.
--- A button that must always work cannot be behind a test.
 local function menu_button()
     local w, h = 62 * S, 26 * S
     -- The corner, on every layout. It used to dodge sideways when the
@@ -584,6 +571,44 @@ local function menu_button()
     u:frame(x, ry(y, h), w, h, S, pal.BAR_EDGE)
     txt("menu", x + w / 2, y + h / 2, FONT * S, pal.a(pal.INK, 0.92), "center")
     hit(x, y, w, h, "open")
+
+    -- And the switch for everything that is not needed mid-fight: the
+    -- scoreboard and your own loadout, together, because they answer the same
+    -- question and you ask it at the same moments.
+    local bx = x + w + 6 * S
+    rect(bx, y, w, h, pal.a(pal.BTN_BG, M.details and 0.92 or 0.6))
+    u:frame(bx, ry(y, h), w, h, S,
+            M.details and pal.FRIEND or pal.a(pal.BAR_EDGE, 0.8))
+    txt("info", bx + w / 2, y + h / 2, FONT * S,
+        pal.a(M.details and pal.FRIEND or pal.INK, 0.92), "center")
+    hit(bx, y, w, h, "details")
+end
+
+-- The flags, as flags.
+--
+-- This was a sentence -- "flags  you 2 - 1 them   1 loose" -- which is three
+-- numbers, two of them derivable from the third, in enough characters to
+-- cross a phone. One pennant per flag, coloured by who holds it, says the
+-- same thing in a glance and in a fifth of the width: you count shapes, not
+-- words, and it scales to whatever number of flags a mode puts out.
+local function flag_strip(me)
+    local n = sim.flag_count()
+    if n == 0 then return end
+    local my_team = sim.ship_team(me)
+    local pitch = 15 * S
+    local x0 = W / 2 - (n - 1) * pitch / 2
+    local y = 30 * S
+    for i = 0, n - 1 do
+        local _, _, team = sim.flag_at(i)
+        local col = (team == 255) and pal.a(pal.DIM, 0.55)
+            or (team == my_team and pal.FRIEND or pal.ENEMY)
+        local px = x0 + i * pitch
+        -- The same pennant the radar draws, so a flag looks like a flag
+        -- wherever it is shown.
+        u:seg(px, ry(y + 9 * S, 0), px, ry(y - 8 * S, 0), 1.6 * S, col)
+        u:tri(px, ry(y - 8 * S, 0), px + 9 * S, ry(y - 4 * S, 0),
+              px, ry(y, 0), col)
+    end
 end
 
 function M.hud(o)
@@ -599,15 +624,21 @@ function M.hud(o)
     local top = scores(me, o.pilots)
     nameplates(o)
     radar(o.cam_x, o.cam_y, me)
-    feed(o.feed, PAD * S + (RADAR + 16) * S + 12 * S)
-    status(me, o.class_names, o.netinfo, o.pickup, o.charges, lift)
+    -- Under the dial, wherever the dial now ends: it lost its panel and its
+    -- padding, so a constant here would have left a gap or an overlap.
+    local rpad = (M.compact and 8 or PAD) * S
+    feed(o.feed, rpad + RADAR * S + 12 * S)
+    -- Stacked, not overlaid: the panel that is always there sits at the
+    -- bottom and the one you asked for sits on top of it.
+    status(me, o.netinfo, o.pickup, o.charges, lift)
+    loadout(me, o.class_names, top)
     menu_button()
-    help(lift + (M.touching and 118 * S or 0))
     vignette(o.hurt or 0)
 
     -- The two big centred lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
+    flag_strip(me)
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
             pal.a(pal.INK, 0.92), "center")
