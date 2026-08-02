@@ -148,15 +148,11 @@ local function my_buttons()
         local emulated = touch.used and (action == hash("pointer")
                                          or action == hash("pointer_alt"))
         if down and not emulated then
-            -- Two sources on the controls would fight; the pad wins every
-            -- flight bit while it is held, and the keys keep everything else.
-            -- All four, not just the rudder: the pad is both axes now, and a
-            -- key that could still light the engine under it would mean a
-            -- thumb on the reverse key got nothing.
+            -- Two sources on the rudder would fight; the stick wins while it
+            -- is down, and the keys keep everything else.
             local bit = bit_for(action)
-            local flight = bit == sim.BTN_LEFT or bit == sim.BTN_RIGHT
-                or bit == sim.BTN_THRUST or bit == sim.BTN_REVERSE
-            if not (steering and flight) then bits[bit] = true end
+            local rudder = bit == sim.BTN_LEFT or bit == sim.BTN_RIGHT
+            if not (steering and rudder) then bits[bit] = true end
         end
     end
     for _, bit in ipairs(touch.bits(sim.ship_heading(me))) do
@@ -700,36 +696,12 @@ end
 -- The flag tally, in the words the web prototype uses. Reporting only: the
 -- core owns pickup, carry and drop, and which arrangement of flags wins a
 -- round is a game mode's business, which offline there is not one of.
--- The ship a swipe is read against: the nearest live enemy close enough to be
--- the one you are actually fighting. Bearing is in the stick's own angle
--- space -- zero at north, clockwise -- which is why it is atan2(dx, -dy):
--- north is a smaller y down in the simulation.
---
--- Close enough matters. Read across the whole screen, a melee puts somebody
--- inside the cone astern more often than not and the stick would turn you
--- around when you meant to back off. Two dozen tiles is duelling range.
-local FOE_RANGE = 24 * 16
-
-local function nearest_foe()
-    if sim.ship_count() == 0 or sim.ship_alive(me) ~= 1 then return nil end
-    local mx, my = sim.ship_x(me), sim.ship_y(me)
-    local team = sim.ship_team(me)
-    local best, bd = nil, FOE_RANGE * FOE_RANGE
-    for i = 0, sim.ship_count() - 1 do
-        if i ~= me and sim.ship_alive(i) == 1 and sim.ship_team(i) ~= team then
-            local dx, dy = sim.ship_x(i) - mx, sim.ship_y(i) - my
-            local d = dx * dx + dy * dy
-            if d < bd then best, bd = i, d end
-        end
-    end
-    if not best then return nil end
-    return {id = best,
-            bearing = math.atan2(sim.ship_x(best) - mx, my - sim.ship_y(best))}
-end
-
 -- Whether a ship is burning its engine this frame, which is the only thing on
--- screen that separates a pilot accelerating from one coasting. Either sign:
--- the main flame and the retros are drawn from the same answer.
+-- screen that separates a pilot accelerating from one coasting.
+-- Either sign: the tail flame and the retros are drawn from the same answer,
+-- so a ship backing up is as legible as one accelerating. Reverse is the
+-- keyboard's Down key and the bots use it to open range; the stick has no way
+-- to ask for it, which is a gap in the controls rather than in the model.
 local function burning(i, mine_buttons, bit)
     if i == me then return has(mine_buttons, bit) end
     local p = pilots[i]
@@ -757,11 +729,6 @@ function update(self, dt)
     if self.online and sim.ship_count() == 0 and not menu.open then return end
 
     sfx.frame()
-    -- Here, not in the step loop below: the stick times a sweep in seconds,
-    -- and that loop runs anywhere from nought to eight times depending on how
-    -- long the last frame took.
-    touch.foe = nearest_foe()
-    touch.tick(dt)
 
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
@@ -981,18 +948,6 @@ function update(self, dt)
                 reversing = burning(i, mine_buttons, sim.BTN_REVERSE),
                 flicker = (sim.tick() * 7 + i * 13) % 11 / 11,
             })
-            -- A ring on the ship the thumb is pointing at, while it is
-            -- pointing. This is the one place the swipe rule can be seen:
-            -- ringed means a swipe this way comes about onto them, unringed
-            -- means it backs you off. A rule read off the screen has to be
-            -- visible on it.
-            -- Cool, over a warm hull. The ring is your own interface marking
-            -- a target, not something about the ship, and in the enemy's
-            -- colour it read as part of them.
-            if i == touch.aiming() then
-                glow:ring(sim.ship_x(i), sim.ship_y(i), 26, 1.4, 22,
-                          pal.a(pal.FRIEND, 0.55))
-            end
             -- Only the wounded carry a pip. A bar over every hull in a
             -- nine-ship room is noise; a bar over the one that is hurt is
             -- the single most useful thing on screen -- and its *appearing*
