@@ -893,16 +893,33 @@ int main(void) {
         CHECK(n >= SIM_UP_COUNT, "every hull can be handed every stat");
         CHECK(has_gun_level, "an Apex gun levels once, so a level is on offer");
         CHECK(!has_bomb_level, "its bomb ladder is one rung, so that is not");
-        CHECK(has_multi, "multifire is on its row");
-        CHECK(!has_shrap, "shrapnel is not");
+        CHECK(has_multi, "multifire is universal, as it is in the original");
+        CHECK(has_shrap, "and so is shrapnel, on any hull with a rack");
 
+        /* A hull with no rack is offered no bomb add-on: an add-on is a
+         * transform on a trigger, and the Spire has no bomb trigger. That,
+         * rather than a list of forbidden items, is what keeps it out of the
+         * bombing business. */
         n = sim_prize_pool(&cfg.classes[SPIRE], pool);
+        int bomb_addon = 0;
         for (int i = 0; i < n; i++)
-            CHECK(pool[i] < SIM_UP_COUNT
-                  || pool[i] == SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE)
-                  || pool[i] == SIM_PRIZE_CHARGE(0)
-                  || pool[i] == SIM_PRIZE_CHARGE(1),
-                  "a Spire is offered stats, freeze and the charges, nothing else");
+            if (pool[i] >= SIM_PRIZE_MOD(SIM_TRIG_BOMB, 0)
+                && pool[i] < SIM_PRIZE_CHARGE(0)) bomb_addon = 1;
+        CHECK(!bomb_addon, "a hull with no rack is offered no bomb add-on");
+
+        /* The roster is ceilings now, so that is what to check it by. Two
+         * bits per add-on and `GUN_ALL | M2(MULTI)` is three rungs rather
+         * than two, so these also catch a row built by OR-ing over the
+         * macro. */
+        const int CHORD = 2, FACET = 6, WEDGE = 1;
+        CHECK(sim_mod_get(cfg.classes[CHORD].mod_max[SIM_TRIG_GUN],
+                          SIM_MOD_MULTI) == 2, "a Chord climbs two of multifire");
+        CHECK(sim_mod_get(cfg.classes[FACET].mod_max[SIM_TRIG_GUN],
+                          SIM_MOD_MULTI) == 2, "and so does a Facet");
+        CHECK(sim_mod_get(cfg.classes[APEX].mod_max[SIM_TRIG_GUN],
+                          SIM_MOD_MULTI) == 1, "where an Apex climbs one");
+        CHECK(sim_mod_get(cfg.classes[WEDGE].mod_max[SIM_TRIG_BOMB],
+                          SIM_MOD_SHRAPNEL) == 3, "a bomber holds the most shrapnel");
 
         n = sim_prize_pool(&cfg.classes[LATTICE], pool);
         int has_push = 0;
@@ -931,8 +948,10 @@ int main(void) {
         CHECK(sh.level[SIM_TRIG_BOMB] == 0, "the bomb has none to climb");
         CHECK(sim_mod_get(sh.mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
               "multifire fills to the row's allowance");
-        CHECK(sim_mod_get(sh.mods[SIM_TRIG_BOMB], SIM_MOD_SHRAPNEL) == 0,
-              "and shrapnel never arrives at all");
+        CHECK(sim_mod_get(sh.mods[SIM_TRIG_BOMB], SIM_MOD_SHRAPNEL) == 2,
+              "and so does shrapnel, which every racked hull may hold");
+        CHECK(sim_mod_get(sh.mods[SIM_TRIG_GUN], SIM_MOD_FREEZE) == 0,
+              "while freeze, which is ours and not on its row, never arrives");
     }
 
     {
@@ -993,17 +1012,15 @@ int main(void) {
             else charges++;
         }
         /* On the original's table an Apex's pool is five stats at 40, a gun
-         * level at 25, multifire at 30, and both charges at 70: 395 in total.
-         * So a green is a stat half the time and a charge better than one
-         * time in three -- charges are the heavy entries in its table and
-         * every hull may hold them, which is what makes them the common
-         * green rather than the rare one. Bands rather than exact numbers,
-         * because the point under test is the shape of the tree and not the
-         * generator. */
-        CHECK(stats > 4750 && stats < 5400, "stats are the bread of the tree");
-        CHECK(levels > 500 && levels < 800, "a level is the rare one");
-        CHECK(mods > 620 && mods < 920, "an add-on a little more often");
-        CHECK(charges > 3250 && charges < 3850, "and a charge is the common one");
+         * level at 25, four add-ons at 110 between them, and both charges at
+         * 70: 475 in total. So a green is a stat a little over four times in
+         * ten, a charge three, an add-on two, and a level about one in
+         * twenty. Bands rather than exact numbers, because the point under
+         * test is the shape of the tree and not the generator. */
+        CHECK(stats > 3950 && stats < 4500, "stats are the bread of the tree");
+        CHECK(levels > 420 && levels < 660, "a level is the rare one");
+        CHECK(mods > 2100 && mods < 2550, "an add-on is ordinary now");
+        CHECK(charges > 2700 && charges < 3200, "and a charge is common");
 
         /* And a zone that says otherwise gets otherwise. */
         for (int i = 0; i < SIM_UP_COUNT; i++) w.prize_weight[i] = 0;

@@ -15,10 +15,11 @@
  * `gun_rungs` and `bomb_rungs` are the ladders: how many levels of that
  * weapon this hull can climb, where one is a hull that never levels and zero
  * is a hull without the rack at all. `gun_mods` and `bomb_mods` are which
- * add-ons it may ever hold and how many rungs of each -- packed the same way
- * the pilot's are, and the reason the roster stays a roster once greens are
- * flying: shrapnel belongs to bombers and spread belongs to brawlers, and no
- * amount of luck with the prize table changes that. */
+ * add-ons it may ever hold and how many rungs of each, packed the same way the
+ * pilot's are. Availability follows the original -- every hull may hold the
+ * add-ons it had prizes for -- so what makes a bomber a bomber is the rack it
+ * has and the ceiling it climbs to, not a list of things nobody else may
+ * touch. See the table's own note. */
 typedef struct {
     int32_t speed, thrust, rotation, energy, recharge, radius;
     int32_t bullet_damage, bullet_delay, bomb_damage, bomb_delay;
@@ -50,29 +51,72 @@ typedef struct {
 #define M2(a) ((uint16_t)(2u << ((a) * 2)))
 #define M3(a) ((uint16_t)(3u << ((a) * 2)))
 
-/* Energy per second is recharge/10, so 1500 refills a 1350-energy hull in
+/* Every hull gets multifire and bouncing bullets on its gun, and proximity
+ * and shrapnel on its bomb if it has one. That is the original's rule: those
+ * are entries in [PrizeWeight] with no per-ship gate anywhere in its config,
+ * so any ship can be handed any of them.
+ *
+ * What it varies is the *ceiling*, not the availability. Its whole per-ship
+ * differentiation is nine settings, and the ones that matter here are
+ * `MaxBombs` -- 3 on the Leviathan against 2 everywhere else -- `ShrapnelMax`
+ * at 8 against the Shark's 31, and `BombBounceCount`, which is 1 on the
+ * Lancaster alone. So a bomber is not the hull that *may* hold shrapnel, it
+ * is the hull that holds more of it than anyone.
+ *
+ * Freeze and push have no setting to copy, because the original has no such
+ * prize. They stay roster traits, which is a choice of ours and the only part
+ * of this table that is.
+ *
+ * A hull with no rack (`bomb_rungs` 0) gets no bomb add-ons: an add-on is a
+ * transform on a trigger, and a trigger that does not exist cannot be
+ * transformed. That, not the add-on list, is what still keeps a Spire out of
+ * the bombing business.
+ *
+ * `GUN_ALL` and `BOMB_ALL` are the plain ceilings. A row that wants a
+ * different one spells its whole field out rather than OR-ing over the macro:
+ * the field is two bits per add-on, so `GUN_ALL | M2(MULTI)` is 1|2 = three
+ * rungs, not two. OR builds a field, it does not override one.
+ *
+ * Energy per second is recharge/10, so 1500 refills a 1350-energy hull in
  * about nine seconds. Getting this wrong by a factor of ten makes ships that
  * can never shoot twice, which is what the first test run caught. */
+#define GUN_ALL   (M1(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE))
+#define BOMB_ALL  (M1(SIM_MOD_PROX) | M2(SIM_MOD_SHRAPNEL))
 static const class_row rows[SIM_MAX_CLASSES] = {
     /* speed thrust  rot  energy  rech  rad  bdmg bdly  bombdmg bombdly
        gun  bomb  gun add-ons                 bomb add-ons        charges */
     {4900, 30, 420, 1350, 1500, 14, 200, 25, 400, 150,
-     2, 1, M1(SIM_MOD_MULTI), 0,                        {3, 3, 0, 0}},
+     2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}},
+    /* Wedge and Anvil are the bombers, so they are the hulls that hold the
+       most shrapnel and the deepest fuse -- the Shark's 31 against 8. */
     {4400, 22, 340, 1450, 1300, 14, 150, 30, 600, 80,
-     1, 2, 0, M1(SIM_MOD_PROX) | M1(SIM_MOD_SHRAPNEL),  {3, 3, 0, 0}},
+     1, 2, GUN_ALL,
+     M2(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),           {3, 3, 0, 0}},
+    /* No rack, so no bomb add-ons. Spread is Chord's, freeze is ours. */
     {4300, 26, 400, 1500, 1800, 14, 120, 15, 0, 0,
-     2, 0, M2(SIM_MOD_MULTI) | M1(SIM_MOD_FREEZE), 0,   {3, 3, 0, 0}},
+     2, 0, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE) | M1(SIM_MOD_FREEZE), 0,
+                                                        {3, 3, 0, 0}},
     {3200, 14, 240, 2600, 1000, 16, 150, 35, 900, 60,
-     1, 3, 0, M2(SIM_MOD_SHRAPNEL) | M1(SIM_MOD_PROX),  {3, 3, 0, 0}},
+     1, 3, GUN_ALL,
+     M2(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),           {3, 3, 0, 0}},
     {4600, 28, 380, 1200, 2200, 14, 100, 30, 0, 0,
-     1, 0, M2(SIM_MOD_FREEZE), 0,                       {3, 3, 0, 0}},
+     1, 0, GUN_ALL | M2(SIM_MOD_FREEZE), 0,             {3, 3, 0, 0}},
     {4700, 24, 390, 1100, 1200, 12, 300, 40, 300, 200,
-     3, 1, M1(SIM_MOD_BOUNCE), 0,                       {3, 3, 0, 0}},
+     3, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}},
+    /* Facet is the Terrier's DoubleBarrel: the hull whose spread is the
+       point, so it climbs multifire a rung further than anyone. */
     {4200, 27, 410, 1600, 1400, 14, 180, 20, 300, 180,
-     2, 1, M2(SIM_MOD_MULTI), M1(SIM_MOD_PROX),         {3, 3, 0, 0}},
+     2, 1, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE), BOMB_ALL,
+                                                        {3, 3, 0, 0}},
+    /* Lattice is the Lancaster: BombBounceCount is 1 on that ship and 0 on
+       every other, so bombs that come back off a wall are its alone. Push is
+       ours and stays with it for the same reason. */
     {3800, 20, 330, 1900, 1250, 15, 150, 30, 500, 100,
-     1, 2, 0, M2(SIM_MOD_PUSH) | M2(SIM_MOD_BOUNCE),    {3, 3, 0, 0}},
+     1, 2, GUN_ALL,
+     BOMB_ALL | M2(SIM_MOD_BOUNCE) | M2(SIM_MOD_PUSH),  {3, 3, 0, 0}},
 };
+#undef GUN_ALL
+#undef BOMB_ALL
 
 const char *const sim_class_names[SIM_MAX_CLASSES] = {
     "Apex", "Wedge", "Chord", "Anvil", "Spire", "Cipher", "Facet", "Lattice"};

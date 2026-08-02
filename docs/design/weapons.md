@@ -280,20 +280,37 @@ shrapnel-loaded bomb still gets the bomb they threw.
 
 ### The matrix
 
-Each hull's row says how far it climbs and what it may hold. This is what keeps
-the roster a roster once greens are flying: no run of luck turns a Spire into a
-bomber.
+Each hull's row says how far it climbs and how far it may take each add-on.
+
+**Availability follows the original; ceilings are ours.** `MultiFire`,
+`BouncingBullets`, `Proximity` and `Shrapnel` appear nowhere in the original's
+per-ship config -- they are `[PrizeWeight]` entries any ship can be handed. The
+whole of its per-ship differentiation is nine settings, and the ones that bear
+on this are `MaxBombs` (3 on the Leviathan, 2 elsewhere), `ShrapnelMax` (8
+everywhere, 31 on the Shark) and `BombBounceCount` (1 on the Lancaster alone).
+So a bomber is not the hull that *may* hold shrapnel. It is the hull that holds
+more of it than anyone.
 
 | | gun | bomb | gun add-ons | bomb add-ons |
 |---|---|---|---|---|
-| **Apex** interceptor | 2 | 1 | multi | |
-| **Wedge** bomber | 1 | 2 | | prox, shrapnel |
-| **Chord** skirmisher | 2 | — | multi ×2, freeze | |
-| **Anvil** heavy | 1 | 3 | | shrapnel ×2, prox |
-| **Spire** support | 1 | — | freeze ×2 | |
-| **Cipher** stealth | 3 | 1 | bounce | |
-| **Facet** brawler | 2 | 1 | multi ×2 | prox |
-| **Lattice** denial | 1 | 2 | | repel ×2, bounce ×2 |
+| **Apex** interceptor | 2 | 1 | multi, bounce | prox, shrapnel ×2 |
+| **Wedge** bomber | 1 | 2 | multi, bounce | prox ×2, shrapnel ×3 |
+| **Chord** skirmisher | 2 | — | multi ×2, bounce, freeze | |
+| **Anvil** heavy | 1 | 3 | multi, bounce | prox ×2, shrapnel ×3 |
+| **Spire** support | 1 | — | multi, bounce, freeze ×2 | |
+| **Cipher** stealth | 3 | 1 | multi, bounce | prox, shrapnel ×2 |
+| **Facet** brawler | 2 | 1 | multi ×2, bounce | prox, shrapnel ×2 |
+| **Lattice** denial | 1 | 2 | multi, bounce | prox, shrapnel ×2, bounce ×2, repel ×2 |
+
+**Freeze and repel are the exception**, and the only part of this table that is
+ours: the original has no such prize, so there is nothing to copy and they stay
+roster traits.
+
+What still keeps a Spire out of the bombing business is not a list of forbidden
+items -- it is that a Spire has **no rack**. An add-on is a transform on a
+trigger, and a trigger that does not exist cannot be transformed. Hull identity
+lives in the ladders, the ceilings and the flight model, which is where the
+original put it too.
 
 **Charges are not on this matrix**, and that is the original's rule rather than
 an omission -- see below.
@@ -482,8 +499,11 @@ number, and none of the seven originals needs one.
 
 Two rows per hull, built from the roster in `sim/src/baseline.c`: a bolt and a
 gun pattern, and for the six hulls with a rack, a shell and a bomb pattern.
-Nothing in the shipped zone bounces, splinters, stalls or pushes yet. The
-mechanics are live and tested; turning one on is a table edit.
+
+No *base* weapon bounces, splinters, stalls or pushes -- every one of those
+arrives as an add-on, off a green, and composes onto whichever rung the trigger
+is on. So a pilot who has found nothing fires a plain bolt, and the same bolt
+becomes a bouncing one the moment they do.
 
 And the table is the zone's, not the client's. A zone sends its whole weapon
 table to every player as it joins, so a client predicts and draws the weapons
