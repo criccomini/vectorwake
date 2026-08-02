@@ -345,6 +345,10 @@ pub const PACK_MAX: usize = 64 * 1024;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
 pub const TRIG_COUNT: usize = 2;
+/// Which trigger is which, mirroring SIM_TRIG_GUN and SIM_TRIG_BOMB. The
+/// index was written out as a bare 1 wherever a bomb was meant.
+pub const TRIG_GUN: usize = 0;
+pub const TRIG_BOMB: usize = 1;
 pub const MOD_COUNT: usize = 6;
 pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;

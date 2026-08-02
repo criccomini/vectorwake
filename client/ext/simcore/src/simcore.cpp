@@ -213,6 +213,46 @@ int HasTrigger(lua_State* L) {
     return 1;
 }
 
+// What a trigger is worth per tick of the cooldown it imposes, and what one
+// shot of it costs. Returns rate, energy; rate is zero when the hull has no
+// such weapon.
+//
+// One cooldown covers both triggers, so a bomb does not add to a ship's
+// gunfire, it stands in for it, and whether that trade is worth taking
+// differs enormously by hull: an Anvil bomb is 900 damage on a 60 tick
+// lockout against 150 on 35, while an Apex bomb is 400 on 150 against 200 on
+// 25. A pilot deciding whether to bomb needs the comparison, and it belongs
+// here rather than in each of the two bots that want it, which would be two
+// copies of a rule about weapons neither of them owns.
+//
+// The rung is the one the core would pick, walking down from the pilot's
+// level: a level is kept through a hull change, so a third rung has to mean
+// rung zero on a ship that only has one.
+int TriggerRate(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    int t = (int)luaL_checkinteger(L, 2);
+    lua_pushnumber(L, 0);
+    lua_pushnumber(L, 0);
+    if (t < 0 || t >= SIM_TRIG_COUNT || i < 0 || i >= g_cur->ship_count)
+        return 2;
+    const sim_ship* sh = &g_cur->ships[i];
+    const sim_ship_class* c = &g_cfg.classes[sh->cls];
+    int start = sh->level[t];
+    if (start >= SIM_MAX_RUNGS) start = SIM_MAX_RUNGS - 1;
+    for (int r = start; r >= 0; r--) {
+        uint8_t pat = c->trigger[t][r];
+        if (pat == SIM_NO_PATTERN) continue;
+        const sim_fire_pattern* p = &g_cfg.patterns[pat];
+        double dmg = (double)g_cfg.specs[p->spec].damage * p->count;
+        double delay = p->delay > 0 ? p->delay : 1;
+        lua_pop(L, 2);
+        lua_pushnumber(L, dmg / delay);
+        lua_pushnumber(L, p->energy);
+        return 2;
+    }
+    return 2;
+}
+
 int ChargeMax(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     int k = (int)luaL_checkinteger(L, 2);
@@ -464,6 +504,7 @@ const luaL_reg kFunctions[] = {
     {"ship_points", ShipPoints},
     {"charge_max", ChargeMax},
     {"has_trigger", HasTrigger},
+    {"trigger_rate", TriggerRate},
     {"ship_mod", ShipMod},
     {"ship_radius", ShipRadius},
     {"ship_bomb_radius", ShipBombRadius},

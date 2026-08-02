@@ -232,6 +232,25 @@ local function bot_rand(b)
     return b.seed / 2147483648
 end
 
+-- Whether a bomb is the better shot for this hull to take right now: a rack,
+-- the energy the shot costs, and a better rate of damage than the gun it
+-- would stand in for.
+--
+-- `trigger_rate` is what each trigger is worth per tick of the cooldown it
+-- imposes, which is the comparison that matters because one cooldown covers
+-- both. The core owns that arithmetic so the two bots cannot come to
+-- different conclusions about the same weapon.
+--
+-- Declared up here rather than beside the one place that calls it, because a
+-- Lua local is only in scope below its own declaration, which is the shape of
+-- four bugs in this client already.
+local function pays_to_bomb(id)
+    local bomb, cost = sim.trigger_rate(id, sim.TRIG_BOMB)
+    if bomb <= 0 then return false end               -- no rack on this hull
+    if sim.ship_energy(id) <= cost then return false end
+    return bomb > sim.trigger_rate(id, sim.TRIG_GUN)
+end
+
 local function steer(b, dx, dy, sloppy)
     local want = math.atan2(dx, -dy)
     local head = (sim.ship_heading(b.id) / 65536) * math.pi * 2
@@ -340,16 +359,28 @@ local function bot_think(b)
 
     local e = sim.ship_energy(b.id) / math.max(1, sim.ship_max_energy(b.id))
     if off < 0.16 and e > 0.16 + b.skill * 0.28 then
-        out = out + sim.BTN_FIRE
         -- A bomb now and then, from the pilots good enough to afford one at
         -- seventeen per cent of a bar. Its own clock, not `timer % 64`: this
         -- runs at the bot's reaction cadence, so a modulo here only fires
         -- when the two periods happen to coincide -- every 1728 ticks for an
         -- odd reaction time, which is to say never.
-        if dist < 320 and b.skill > 0.5 and b.timer >= b.bomb_at then
-            out = out + sim.BTN_BOMB
+        --
+        -- Instead of the gun, never as well as it. The core reads a held gun
+        -- as a gun and one cooldown covers both, so adding this bit on top of
+        -- a trigger that was never released fired a bomb precisely never: a
+        -- full hull round-robin measured zero bombs thrown by anybody,
+        -- including the Anvil.
+        --
+        -- And only when the trade pays. A bomb stands in for the gunfire it
+        -- displaces rather than adding to it, which is worth three and a half
+        -- times the rate on an Anvil and a third of it on an Apex. Skill used
+        -- to be the thing that unlocked the worse weapon.
+        if dist < 320 and b.skill > 0.5 and b.timer >= b.bomb_at
+           and pays_to_bomb(b.id) then
             b.bomb_at = b.timer + 200 + math.floor(bot_rand(b) * 220)
+            return out + sim.BTN_BOMB
         end
+        out = out + sim.BTN_FIRE
     end
     return out
 end
