@@ -19,6 +19,18 @@ local M = {}
 local TILE = 16
 local TAU = math.pi * 2
 
+-- Is this world point outside what the camera can see? Every draw that walks
+-- a list of things in the world asks this first.
+--
+-- Declared here, above everything, because a `local function` is only in
+-- scope below its own declaration: sitting further down the file it was a nil
+-- global to every function defined above it, which is a crash rather than a
+-- missing cull. That has now been the shape of three bugs in this client.
+local function outside(cull, x, y)
+    return x < cull.x0 or x > cull.x1 or y < cull.y0 or y > cull.y1
+end
+
+
 -- Hulls, in local pixels with the nose along +y. Shape carries class and
 -- colour carries team, so neither has to carry both, and every class has to be
 -- identifiable by silhouette alone at radar scale -- which means each one
@@ -205,18 +217,45 @@ local HOLE_RING = {pal.a(pal.BOMB, 0.34), pal.a(pal.BOMB, 0.17),
 -- nothing would draw at speed -- so what gets built is a window around the
 -- camera, and arena.script rebuilds it when the camera has walked far enough
 -- to see the edge of one.
+-- How much further than the mesh window the radar has to be sampled.
+--
+-- The radar reaches `RADAR_TILES` from the camera, and the mesh window is
+-- rebuilt only once the camera has walked `STATIC_STEP` tiles from where it
+-- was built. So in the direction of travel the radar can want terrain up to
+-- `RADAR_TILES + STATIC_STEP` from the build centre, and a window sized for
+-- drawing alone is short of that -- which is not a subtle artefact: the radar
+-- carries no terrain out there at all, and then a whole slab of it appears
+-- the moment the window is rebuilt. It reads as the map blinking in at the
+-- edges, because it is.
+--
+-- Sampling wider is nearly free. This loop makes no geometry -- it collects
+-- points at a two-tile stride for the radar to draw as dots -- so the wide
+-- box costs tile reads and a longer list, while the mesh, which is the
+-- expensive half, keeps the window it needs for the screen.
+local RADAR_TILES = 60          -- must match ui.lua's SPAN
+local RADAR_SLACK = 24          -- > arena.script's STATIC_STEP
+local RADAR_REACH = RADAR_TILES + RADAR_SLACK
+
 function M.build_static(bg, glow, x0, y0, x1, y1)
     bg:reset()
     glow:reset()
     local LAST = 1023
+    local cx = (x0 + x1) / 2
+    local cy = (y0 + y1) / 2
     if x0 < 0 then x0 = 0 end
     if y0 < 0 then y0 = 0 end
     if x1 > LAST then x1 = LAST end
     if y1 > LAST then y1 = LAST end
 
     -- The doors and wormholes, found once here rather than searched for on
-    -- every frame that draws them.
-    index_moving(x0, y0, x1, y1)
+    -- every frame that draws them. Over the radar's box rather than the
+    -- mesh's: a door is drawn in the world *and* on the radar, and the radar
+    -- sees further.
+    local rx0 = math.max(0, math.floor(cx - RADAR_REACH))
+    local ry0 = math.max(0, math.floor(cy - RADAR_REACH))
+    local rx1 = math.min(LAST, math.floor(cx + RADAR_REACH))
+    local ry1 = math.min(LAST, math.floor(cy + RADAR_REACH))
+    index_moving(rx0, ry0, rx1, ry1)
 
     -- Every second tile, not every fourth. The arena's outer walls are two
     -- tiles thick, so a four-tile stride aliased them away completely and the
@@ -225,8 +264,8 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
     -- Safe zones and doors get their own lists: they are the two things worth
     -- steering by, and they were not on the radar at all.
     local rt, rs, rd = {}, {}, {}
-    for ty = y0, y1, 2 do
-        for tx = x0, x1, 2 do
+    for ty = ry0, ry1, 2 do
+        for tx = rx0, rx1, 2 do
             local cls = sim.tile(tx, ty)
             local out = (cls == sim.T_SOLID and rt)
                 or (cls == sim.T_SAFE and rs)
@@ -303,11 +342,18 @@ end
 -- Doors and the tiles that mark a place rather than block one. These cannot
 -- go in the static mesh: a door is a wall on a clock, and a wall nobody can
 -- see is the worst thing in the game.
-function M.draw_tiles(fill, glow)
+function M.draw_tiles(fill, glow, cull)
     local list = M.moving_tiles
     for n = 1, #list do
         local t = list[n]
-        if t.cls == sim.T_DOOR then
+        -- The index behind this spans the radar's reach rather than the
+        -- screen's, because the radar draws doors too. So the world draw has
+        -- to cull, or a map with doors all over it would put every one of
+        -- them into the frame's buffers.
+        local wx, wy = t.tx * TILE, t.ty * TILE
+        if outside(cull, wx, wy) then
+            -- off screen
+        elseif t.cls == sim.T_DOOR then
             local x, y = t.tx * TILE, t.ty * TILE
             if sim.door_open(t.variant) then
                 -- Open: the frame stays, so a pilot can see where it will be
@@ -439,10 +485,6 @@ local function spec_blast(id)
         blast_of[id] = r
     end
     return r
-end
-
-local function outside(cull, x, y)
-    return x < cull.x0 or x > cull.x1 or y < cull.y0 or y > cull.y1
 end
 
 function M.weapons(fill, glow, me_team, t, cull)

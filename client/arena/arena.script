@@ -924,7 +924,7 @@ function update(self, dt)
 
     -- Doors and wormholes: world geometry that moves, so it cannot live in
     -- the static mesh the way the walls do.
-    world.draw_tiles(fill, glow)
+    world.draw_tiles(fill, glow, cull)
     fx.draw(glow)
     fill:flush()
     glow:flush()
