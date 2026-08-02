@@ -20,6 +20,9 @@ local THRUST_PX = 46      -- push past this and the engine lights
 
 M.used = false            -- has this device ever reported a touch?
 M.scale = 1               -- drawable pixels per point
+-- How many of each charge slot are in hand, by slot. Set by the caller.
+M.counts = {}
+
 -- Whether the hull flying has a bomb rack. Two of the eight do not, and a pad
 -- for a weapon that cannot exist is a pad that does nothing when pressed --
 -- worse than useless, because it also swallows the touch. Set by the caller,
@@ -30,10 +33,22 @@ M.has_bomb = true
 local stick = nil         -- {id, ox, oy, x, y}
 local guns = nil          -- touch id holding the guns pad
 local bombs = nil
-local use = nil           -- spend the ready charge
--- Swapping which charge is ready is a tap rather than a hold, so it is
--- latched here and read once. A held pad would cycle sixty times a second.
-local swap_tap = false
+-- Which charge a tap asked for, latched and read once.
+--
+-- One pad per kind rather than a use pad and a swap pad. The simulation takes
+-- the slot in the buttons and keeps no selection of its own, so "fire slot k"
+-- was always expressible -- swapping was one way for an interface to choose
+-- and it is the worse one on glass: two taps to spend a thing, and a state to
+-- read back before either of them means anything.
+--
+-- Latched rather than held, because a charge is a thing you spend. A held pad
+-- would spend a second one the moment the cooldown lapsed, and there are only
+-- three.
+local fired = nil
+
+-- The charge slots this hull can carry, newest set by the caller. Empty until
+-- told, so a hull with none draws none.
+M.charges = {}
 
 -- Where the controls are. One definition, used by the hit test and by the
 -- drawing, because they were written out separately and had drifted: the pads
@@ -46,20 +61,47 @@ local swap_tap = false
 -- dimension so a pad is a thumb wide on a phone and does not become a dinner
 -- plate on a monitor, with the limits in points rather than pixels: a phone
 -- at two pixels per point would otherwise get pads half the size it needs.
+--
+-- Everything the right thumb touches is one row along the bottom, walking
+-- left from the corner: guns, then bombs, then a pad per charge. Stacking
+-- them up the right edge instead cost the radar its corner and still did not
+-- fit -- the band between the top weapon and the dial is about a fifth of a
+-- landscape phone, and two pads want more than that. A row has the whole
+-- width to spend and keeps every control inside one thumb's arc.
 function M.layout(w, h, s)
     s = s or 1
     local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
-    return {
-        r = r,
-        guns  = {x = w - r * 1.4, y = r * 1.5, r = r},
-        bombs = {x = w - r * 1.4, y = r * 3.8, r = r * 0.8},
-        -- The charge pair, inboard of the weapons and smaller: they are used
-        -- once in a while rather than held, and the thumb that reaches them
-        -- is not the thumb on the trigger.
-        use   = {x = w - r * 3.3, y = r * 1.5, r = r * 0.72},
-        swap  = {x = w - r * 3.3, y = r * 3.4, r = r * 0.6},
-        home  = {x = r * 1.6,     y = r * 1.8, r = r * 1.15},
-    }
+    local gap = r * 0.35
+    local row = r * 1.5
+    local guns  = {x = w - r * 1.4, y = row, r = r}
+    local bombs = {x = guns.x - (r + gap + r * 0.8), y = row, r = r * 0.8}
+    local home  = {x = r * 1.6, y = r * 1.8, r = r * 1.15}
+
+    -- The charges continue the row, smaller: they are tapped once in a while
+    -- rather than held, and a target the size of a trigger would crowd the
+    -- one control a thumb must never miss. They start clear of whichever
+    -- weapon pad is actually drawn, so a hull with no rack closes the gap
+    -- instead of leaving a hole where the bomb pad would have been.
+    local cr = r * 0.55
+    local lead = M.has_bomb and bombs or guns
+    local x = lead.x - lead.r - gap - cr
+    local y = row
+    -- The stick's resting mark owns the other corner, and a pad that reaches
+    -- it is a pad the steering thumb presses by accident. Past that point the
+    -- row wraps upward instead -- which is what a narrow phone held upright
+    -- does, and it is why this is a limit rather than an assumption that the
+    -- width is always there.
+    local edge = home.x + home.r * 1.6
+    local charge = {}
+    for i, k in ipairs(M.charges) do
+        if x - cr < edge then
+            x, y, edge = guns.x, y + r + gap + cr, cr
+        end
+        charge[i] = {slot = k, x = x, y = y, r = cr}
+        x = x - (cr * 2 + gap)
+    end
+
+    return {r = r, guns = guns, bombs = bombs, home = home, charge = charge}
 end
 
 local function near(pad, x, y, slack)
@@ -77,8 +119,9 @@ local function zone(x, y, w, h, s)
     -- Not tested when the hull has no rack, so the space falls through to the
     -- stick rather than being eaten by a control that is not drawn.
     if M.has_bomb and near(L.bombs, x, y) then return "bombs" end
-    if near(L.use, x, y) then return "use" end
-    if near(L.swap, x, y) then return "swap" end
+    for _, c in ipairs(L.charge) do
+        if near(c, x, y) then return c.slot end     -- a number, not a name
+    end
     if x < w * 0.55 then return "stick" end
     return nil
 end
@@ -114,16 +157,13 @@ function M.on_touch(action, w, h, s)
                 guns = t.id
             elseif z == "bombs" then
                 bombs = t.id
-            elseif z == "use" then
-                use = t.id
-            elseif z == "swap" then
-                swap_tap = true
+            elseif type(z) == "number" then
+                fired = z
             end
         elseif t.released then
             if stick and stick.id == t.id then stick = nil end
             if guns == t.id then guns = nil end
             if bombs == t.id then bombs = nil end
-            if use == t.id then use = nil end
         elseif stick and stick.id == t.id then
             stick.x, stick.y = tx, ty
         end
@@ -133,15 +173,15 @@ end
 -- Lifting a finger outside the window does not always produce a release, so
 -- a lost touch has to be forgettable.
 function M.release_all()
-    stick, guns, bombs, use = nil, nil, nil, nil
+    stick, guns, bombs = nil, nil, nil
 end
 
--- Whether the swap pad was tapped since this was last asked. Consumed by the
--- read, because a tap is an event and the caller acts on it once.
-function M.swapped()
-    local t = swap_tap
-    swap_tap = false
-    return t
+-- Which charge slot was tapped since this was last asked, or nil. Consumed by
+-- the read, because a tap is an event and the caller acts on it once.
+function M.fired_charge()
+    local k = fired
+    fired = nil
+    return k
 end
 
 -- The bits held this frame, given where the ship is currently pointing.
@@ -153,7 +193,6 @@ function M.bits(heading)
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
     if bombs then out[#out + 1] = sim.BTN_BOMB end
-    if use then out[#out + 1] = sim.BTN_USE end
     if not stick then return out end
 
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
@@ -209,17 +248,38 @@ function M.draw(u, w, h, s)
              bombs and pal.a(pal.BOMB, 0.95) or dim)
         if bombs then glow(L.bombs, pal.BOMB) end
     end
-    -- The charge pair. Drawn always, in their own colour, so a pilot who has
-    -- never found one still knows the control is there -- the same reason the
-    -- stat row shows the upgrades you do not hold.
-    ring(L.use.x, L.use.y, L.use.r, use and pal.a(pal.CHARGE_COL, 0.95) or dim)
-    if use then glow(L.use, pal.CHARGE_COL) end
-    ring(L.swap.x, L.swap.y, L.swap.r, pal.a(pal.CHARGE_COL, 0.4), 18)
-    -- What is in the use pad is drawn by ui.lua, not here: it is the charge's
-    -- name and count, and glyphs are the one thing a bare mesh cannot do. A
-    -- row of pips lived here first and said how many without ever saying of
-    -- what, which on a pad you cycle with a neighbouring button is the half
-    -- of the question nobody was asking.
+    -- A pad per charge, each with a picture of what it does inside it, drawn
+    -- whether or not you hold any: the same reason the stat row shows the
+    -- upgrades you do not have.
+    --
+    -- The icon is drawn from the weapon's own behaviour rather than from a
+    -- second field that could disagree with it, which is the rule the client
+    -- already follows for projectiles: a repel shoves and hurts nobody, so it
+    -- is rings going outward; a burst is many rounds at once, so it is a
+    -- rosette. Anything a zone puts in the other two slots gets a plain disc
+    -- and ui.lua's short name over it, which says "a charge" honestly rather
+    -- than drawing a repel and being wrong.
+    --
+    -- The count is a numeral from ui.lua, because glyphs are the one thing a
+    -- bare mesh cannot do.
+    for _, c in ipairs(L.charge) do
+        local n = M.counts and M.counts[c.slot] or 0
+        local lit = n > 0
+        ring(c.x, c.y, c.r, lit and pal.a(pal.CHARGE_COL, 0.9) or dim)
+        local ic = pal.a(pal.CHARGE_COL, lit and 0.85 or 0.28)
+        if c.slot == 0 then                       -- repel: a shove outward
+            u:ring(c.x, c.y, c.r * 0.30, 1.4 * s, 14, ic)
+            u:ring(c.x, c.y, c.r * 0.52, 1.2 * s, 16, ic)
+        elseif c.slot == 1 then                   -- burst: a rosette
+            for i = 0, 7 do
+                local a = i * math.pi / 4
+                u:disc(c.x + math.cos(a) * c.r * 0.46,
+                       c.y + math.sin(a) * c.r * 0.46, 2.2 * s, 6, ic)
+            end
+        else
+            u:disc(c.x, c.y, c.r * 0.22, 10, ic)
+        end
+    end
 
     if stick then
         ring(stick.ox, stick.oy, L.home.r, dim)

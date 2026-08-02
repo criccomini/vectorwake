@@ -143,6 +143,13 @@ end
 -- about six screens across: far enough to see a fight starting, close enough
 -- that a blip means something.
 
+-- How much vertical room the dial takes, so the feed under it can be told
+-- rather than guess. Returned rather than duplicated: a second copy of this
+-- arithmetic is how the pads and their own hit test drifted apart once.
+function M.radar_span()
+    return PAD * S * 2 + RADAR * S
+end
+
 local function radar(cx, cy, me)
     -- No panel and no inset. The dial is the most valuable thing on screen on
     -- a map a thousand tiles across and it keeps every pixel; what made it
@@ -595,42 +602,32 @@ local function menu_button()
     hit(bx, y, w, h, "details")
 end
 
--- What the use pad is holding, written into the pad.
+-- The count in each charge pad.
 --
--- The pads are drawn by touch.lua and this is not, because a pad is a mesh
--- and a name is a glyph. It has to be a name: the pips that were here first
--- said how many and never of what, and on a control whose whole purpose is
--- that a neighbouring button cycles it, which one is ready is the question.
+-- The pad and its icon are drawn by touch.lua, which owns where a pad is and
+-- tests taps against the same arithmetic -- the two were written out
+-- separately once and drifted, so half a pad did nothing and the dead space
+-- beside it fired. This adds the one thing a mesh cannot: a numeral.
 --
--- Its own count comes with it rather than as a second thing to look at, and a
--- kind you hold none of is still named, greyed -- the same rule the stat row
--- follows, so cycling onto an empty slot reads as empty rather than as
--- nothing having happened.
-local function pad_charge(charges)
+-- A kind you hold none of still shows its zero rather than vanishing. The
+-- pad is a control, and a control that disappears when it has nothing to do
+-- is a control a player stops believing in.
+local function pad_charges(charges)
     if not M.touching then return end
-    local ready
-    for _, c in ipairs(charges or {}) do
-        if c.ready then ready = c end
-    end
-    if not ready then return end
     local L = touch.layout(W, H, S)
-    -- touch.lua counts up from the bottom; text counts down from the top.
-    txt(ready.short .. (ready.count > 0 and ("×" .. ready.count) or ""),
-        L.use.x, H - L.use.y, (FONT - 1) * S,
-        ready.count > 0 and pal.CHARGE_COL or pal.a(pal.DIM, 0.6), "center")
-
-    -- And what the swap pad would give you, in the swap pad, dimmer. A button
-    -- whose label is the thing it does rather than the word "swap": with two
-    -- kinds you can read the pair as a state and a choice without pressing
-    -- anything, which is the point at which a pilot stops guessing.
-    if #charges < 2 then return end
-    local nxt
-    for i, c in ipairs(charges) do
-        if c.ready then nxt = charges[i % #charges + 1] end
+    for i, pad in ipairs(L.charge or {}) do
+        local c = charges and charges[i]
+        if c then
+            -- Above the pad, not inside it. A pad is a thumb's worth of ring
+            -- with a picture already in it, and a numeral in there lands on
+            -- the picture or on the stroke; there is nothing above it.
+            -- touch.lua counts up from the bottom; text counts down from the
+            -- top.
+            txt(tostring(c.count), pad.x, H - (pad.y + pad.r * 1.5),
+                (FONT - 1) * S,
+                c.count > 0 and pal.CHARGE_COL or pal.a(pal.DIM, 0.5), "center")
+        end
     end
-    if not nxt then return end
-    txt(nxt.short, L.swap.x, H - L.swap.y, (FONT - 2) * S,
-        pal.a(pal.CHARGE_COL, nxt.count > 0 and 0.55 or 0.3), "center")
 end
 
 -- The flags, as flags.
@@ -675,8 +672,7 @@ function M.hud(o)
     radar(o.cam_x, o.cam_y, me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap.
-    local rpad = (M.compact and 8 or PAD) * S
-    feed(o.feed, rpad + RADAR * S + 12 * S)
+    feed(o.feed, M.radar_span())
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it.
     status(me, o.netinfo, o.pickup, o.charges, lift)
@@ -687,7 +683,7 @@ function M.hud(o)
     -- The two big centred lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
-    pad_charge(o.charges)
+    pad_charges(o.charges)
     flag_strip(me)
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,

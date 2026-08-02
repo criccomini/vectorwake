@@ -122,6 +122,16 @@ local function ready_slot()
     return slots[1] or 0
 end
 
+-- The charge a pad asked for this frame, read from the latch once and held
+-- until the step has used it.
+--
+-- It cannot be consumed inside `my_buttons`: that runs three times a frame --
+-- once for the network, once for the simulation and once to know whether to
+-- draw an engine flame -- and `net.step(my_buttons())` evaluates its argument
+-- even when there is no connection to hand it to, so offline the very first
+-- call swallowed the tap and the one that mattered saw nothing.
+local charge_tap = nil
+
 local function my_buttons()
     if menu.open then return 0 end
     -- Collected as a set of distinct bits and summed, rather than or-ed:
@@ -148,14 +158,21 @@ local function my_buttons()
     for _, bit in ipairs(touch.bits(sim.ship_heading(me))) do
         bits[bit] = true
     end
+    -- A tapped charge pad names its own slot, so on a touchscreen there is no
+    -- selection to read back: the control you pressed is the thing you get.
+    -- The keyboard still cycles, because a key per kind is what does not
+    -- survive a phone, and a phone is no longer the thing choosing.
+    --
+    -- Set rather than added, or a tap arriving on the same frame as the use
+    -- key would count the bit twice.
+    if charge_tap then bits[sim.BTN_USE] = true end
+
     local b = 0
     for bit in pairs(bits) do b = b + bit end
-    -- Which charge is ready rides in the buttons rather than in the
+    -- Which charge is spent rides in the buttons rather than in the
     -- simulation: selection is a thing a pilot does with their own interface,
     -- so it costs no snapshot byte and no edge detection down in the core.
-    -- One input cycles it and one spends it, which is two inputs for any
-    -- number of charge kinds -- a key per kind does not survive a phone.
-    return b + ready_slot() * sim.BTN_SLOT_STEP
+    return b + (charge_tap or ready_slot()) * sim.BTN_SLOT_STEP
 end
 
 -- What the panel draws: every slot this hull can carry, how many are in
@@ -715,7 +732,11 @@ function update(self, dt)
     accum = accum + math.min(dt, 0.25)
     local steps = 0
     while accum >= DT and steps < MAX_CATCHUP do
+        -- Read once, before anything asks for the buttons, and cleared after
+        -- the step that spends it.
+        charge_tap = touch.fired_charge()
         step_once()
+        charge_tap = nil
         accum = accum - DT
         steps = steps + 1
     end
@@ -731,7 +752,7 @@ function update(self, dt)
     -- One key cycles which charge is ready and one spends it, which is two
     -- inputs for any number of charge kinds. A key per kind is what the
     -- original did and it does not survive a phone.
-    if (tapped[hash("cycle")] or touch.swapped()) and not menu.open then
+    if tapped[hash("cycle")] and not menu.open then
         tapped[hash("cycle")] = nil
         cycle_charge()
         sfx.ui("ui_move")
@@ -950,6 +971,14 @@ function update(self, dt)
     -- nothing to fire. Told every frame rather than on the hull change,
     -- because a zone can hand you a different ship than the one you asked for.
     touch.has_bomb = sim.has_trigger(me, sim.TRIG_BOMB)
+    -- Which charge slots this hull carries, and how many of each are in hand.
+    -- The pads are built from this, so a hull with none draws none and a zone
+    -- that fills all four gets four.
+    touch.charges = my_slots()
+    touch.counts = {}
+    for _, k in ipairs(touch.charges) do
+        touch.counts[k] = sim.ship_charge(me, k)
+    end
 
     -- Doors and wormholes: world geometry that moves, so it cannot live in
     -- the static mesh the way the walls do.
