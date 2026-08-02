@@ -173,13 +173,21 @@ Consoles come after this, if at all, and only once
 
 Everything in [zones-and-arenas.md](zones-and-arenas.md),
 [catalog.md](catalog.md), [discovery.md](discovery.md) and
-[admin.md](admin.md). It is designed in full and built not at all, and it is
-large enough that the order matters more than the total.
+[admin.md](admin.md). It is large enough that the order matters more than the
+total.
 
 The ordering principle is that every step should leave a running game. Nothing
 here is a flag day, because at each stage the previous arrangement still works:
 a single zone server with a `zone.toml` keeps playing while the catalog grows
 beside it.
+
+**M7.1 through M7.6 are built.** A directory serves a catalog, arena servers
+register and choose their own zone, rooms open and close on demand, the client
+lists games rather than machines, and an operator can see and steer the fleet
+from a page. What remains of M7 is 7.7, durable state leaving the arena, which
+is a prerequisite for a second instance of a zone rather than a nicety. The
+descriptions below are kept because each one states its own done condition, and
+those are the claims that were checked.
 
 **M7.1, the catalog as a file.** Parse `catalog.toml` and `zones/<name>/zone.toml`
 with the validation table from [catalog.md](catalog.md), and make a zone server
@@ -216,6 +224,27 @@ hundred-and-first rather than growing past the cap.
 authoring, and the imperative verbs down the registration socket with
 `has_capability` finally gating them. Done when an operator bans a name, drains an
 instance and pins one to a zone without touching a shell.
+
+What those done conditions actually produced, since several of them are the kind
+of claim worth writing down once rather than re-deriving:
+
+- Ten arena servers started in the same second against the four-zone catalog
+  took one zone each and the remaining six stood down, because nothing was
+  needy. No zone got two.
+- Killing the directory left all four games playing, kept the player who was
+  already in Alpha, and a new player could still join an address directly. The
+  browse list is empty during the outage, which is the whole of the damage.
+- Bringing the directory back re-registered every instance within ten seconds,
+  each still serving the zone it had chosen. This needed the retry ceiling
+  brought down from a minute to five seconds: an unregistered arena is a game
+  nobody can find, so waiting is more expensive than dialling.
+- A hundred rooms in one process grew as players arrived, refused the
+  two-hundred-and-first, and fell back as they left. RSS went from 8 MB to
+  30 MB, which is the rooms plus two connections each rather than the rooms
+  alone.
+- A duel zone was the original wording of that last one. Duels are out, so it
+  was a small-room test zone instead; the shape of the test is the same and the
+  ladder does not know what a zone is for.
 
 **M7.7, durable state leaves the arena.** Deferred, but not indefinitely, and the
 deadline is structural rather than chosen: `ratings.json` beside the process is

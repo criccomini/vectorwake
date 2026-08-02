@@ -179,9 +179,18 @@ five seconds likewise. Both sides treat thirty seconds of silence as a dead peer
 and close, which is short enough that a delisting is prompt and long enough that
 a garbage-collection pause is not fatal.
 
-The arena reconnects with exponential backoff from one second to a minute, with
-jitter, and keeps serving throughout. Losing every directory is not an outage for
-the players already in a room.
+The arena reconnects with exponential backoff from one second to **five seconds**,
+with jitter, and keeps serving throughout. Losing every directory is not an outage
+for the players already in a room.
+
+A minute was the first ceiling and it was wrong, for a reason worth keeping: an
+unregistered arena is invisible. Its game is running perfectly and no player can
+find it, so the cost of waiting is not a delayed reconnect but a game nobody can
+reach, and a directory restart emptied the whole browse list for as long as the
+longest backoff. A connect attempt every five seconds costs nothing measurable
+against that. The jitter comes from the instance id rather than a random source,
+so a retry storm would at least be reproducible, and the failure is logged once
+per outage rather than once per attempt.
 
 ## The browse reply
 

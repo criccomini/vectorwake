@@ -483,14 +483,37 @@ pub async fn register_with(
     token: String,
     zone: std::sync::Arc<tokio::sync::Mutex<crate::Zone>>,
 ) {
-    let mut backoff_ms = 1_000u64;
+    // Spread out, so a directory coming back does not take ten simultaneous
+    // registrations. Derived from the instance id rather than a random source:
+    // the same instance always waits the same amount, which makes a retry storm
+    // reproducible if there ever is one.
+    let jitter = {
+        let z = zone.lock().await;
+        z.fleet
+            .instance
+            .bytes()
+            .fold(0u64, |a, b| a.wrapping_mul(31).wrapping_add(b as u64))
+            % 1_000
+    };
+    let mut backoff_ms = RETRY_MIN_MS;
+    let mut quiet = false;
     loop {
         match run_one(&url, &token, &zone).await {
             Ok(()) => {
                 println!("directory {url}: disconnected");
-                backoff_ms = 1_000;
+                backoff_ms = RETRY_MIN_MS;
+                quiet = false;
             }
-            Err(e) => println!("directory {url}: {e}"),
+            Err(e) => {
+                // Said once per outage rather than once per attempt. A retry
+                // every few seconds for an hour is three thousand identical
+                // lines, and the one that matters is the first.
+                if !quiet {
+                    println!("directory {url}: {e}");
+                    println!("  retrying every {}s until it answers", RETRY_MAX_MS / 1000);
+                    quiet = true;
+                }
+            }
         }
         {
             // A directory that is gone should stop contributing to the union, or
@@ -500,10 +523,21 @@ pub async fn register_with(
             z.fleet.senders.remove(&url);
             z.fleet.accepted_by.retain(|u| u != &url);
         }
-        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
-        backoff_ms = (backoff_ms * 2).min(60_000);
+        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms + jitter)).await;
+        backoff_ms = (backoff_ms * 2).min(RETRY_MAX_MS);
     }
 }
+
+/// How long an arena waits before dialling a directory again, first and at most.
+///
+/// The ceiling is low on purpose. An unregistered arena is invisible: its game is
+/// running perfectly and no player can find it, so the cost of waiting is a game
+/// nobody can reach. A doubling backoff capped at a minute -- which is what this
+/// was -- meant a directory restart left the whole browse list empty for up to
+/// that long. A connect attempt every five seconds costs nothing worth measuring
+/// against that.
+const RETRY_MIN_MS: u64 = 1_000;
+const RETRY_MAX_MS: u64 = 5_000;
 
 async fn run_one(
     url: &str,
