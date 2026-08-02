@@ -150,16 +150,36 @@ call site.
 ## Duel is the exception
 
 A War arena server is long-lived and shared. A duel is one match between two
-pilots, and [decision 16](decisions.md) makes each one an ephemeral arena created
-on demand. Process-per-arena fires that decision's own "reconsider if"
-immediately, because process creation costs milliseconds and memory rather than a
-hash map insert.
+pilots, and [decision 16](decisions.md) makes each match its own arena, created
+when the match forms and destroyed when it ends. That was cheap when arenas
+shared a process: build a small map, construct the mode, insert it into a map of
+live arenas. Microseconds, and you could do it per match forever.
 
-So an arena server on the Duel zone hosts matches back to back rather than dying
-with each one, and the deployment keeps a small warm set of them sized against
-the queue. Duel appears in the catalog and in the player's list like any other
-zone, but what it offers is a queue rather than a room, which is worth naming
-rather than pretending the four are symmetric.
+One arena per process makes it expensive. Not because launching a program is
+slow, which it is not, but because of everything between launch and being ready
+for a player: a TLS handshake to each directory, the registration exchange, the
+catalog fetch, and the directory's verification call back. That is a second or
+more, and on a platform that has to schedule a container first it is several.
+Nobody should wait that long to fight someone.
+
+So a duel arena server stays alive and runs matches back to back, out of a small
+set of them kept registered and idle. A player waits for an opponent and never
+for a machine. This is the warm pool [decision 16](decisions.md) held in reserve,
+promoted from fallback to design.
+
+Something has to pair players, and nothing in this architecture is a matchmaker.
+The answer that needs no new authority is to put the queue inside the duel arena
+server: everyone waiting for a duel joins the same one and is paired with whoever
+else is waiting there. The join rule already sends a client to the fullest
+instance below its cap, which is exactly the concentration a waiting room wants.
+The cost is that rating-matched pairing is only as good as one room's queue,
+which is fine while the players fit in one room and worse when they do not. A
+queue that spans a deployment needs somewhere to live, and that somewhere is the
+meta-layer matchmaker in [decision 11](decisions.md) rather than the directory.
+
+So Duel appears in the catalog and in the player's list like any other zone, but
+what it offers is a queue rather than a room. Worth naming, rather than
+pretending the four are symmetric.
 
 ## Joining
 

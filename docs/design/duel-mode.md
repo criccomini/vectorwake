@@ -124,23 +124,31 @@ architecture rather than being built for it, per
 
 ## Implementation shape
 
-Duels are a zone module and an ephemeral arena, not a special case in the server.
+Duel is a zone, and its arena servers stay alive between matches. A few of them
+sit registered and empty; two players arrive, one takes the match, runs it,
+reports the result, resets, and takes the next pair. Nobody waits for a machine
+to boot.
 
-When a match forms, the server creates an arena from the duel template with a
-generated name, loads the duel module, and unloads the whole thing when the match
-ends. Arenas already load lazily and unload when empty, so this costs no new
-lifecycle machinery.
+That is a change from the original plan, which built a fresh arena per match and
+threw it away afterwards. It was free when arenas shared a process. It is not
+free when an arena is a process, and the reason is not the launch: it is the TLS
+handshake, the registration exchange, the config fetch and the verification
+callback that stand between launching and being ready for a player. See
+[zones-and-arenas.md](../architecture/zones-and-arenas.md).
 
-The module owns the rules: round state, spawns, the countdown, weapon lockout
-during warmup, the win condition, and the forfeit timer. It uses the same adviser
-hooks as any other game mode. If the duel ruleset needs something the module API
-cannot express, the module API is wrong, and we would rather find that out here
-than in a more complicated mode.
+The queue lives in the arena server too. Everyone waiting for a duel joins the
+same one and is paired with whoever else is waiting there, which needs no
+matchmaker anywhere else in the system. The client already picks the fullest
+instance below its cap, so waiting players collect in one room by default. The
+limit is honest: pairing is only as good as one room's queue. A queue that spans
+a whole deployment belongs to the meta-layer matchmaker in
+[decision 11](../architecture/decisions.md), not to a directory.
 
-Matchmaking starts as an in-zone queue, which is enough while a zone is the unit
-of population. It moves to the meta-layer's matchmaker when that exists, per
-[decision 11](../architecture/decisions.md), so the queue spans zones instead of
-fragmenting across them.
+The module still owns the rules: round state, spawns, the countdown, weapon
+lockout during warmup, the win condition, and the forfeit timer. It uses the same
+adviser hooks as any other game mode. If the duel ruleset needs something the
+module API cannot express, the module API is wrong, and we would rather find that
+out here than in a more complicated mode.
 
 ## Maps
 

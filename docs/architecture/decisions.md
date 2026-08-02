@@ -390,11 +390,19 @@ that arena loading cannot sustain, in which case a pool of warm duel arenas
 replaces creation on demand.
 
 **Amended by [decision 23](#23-one-arena-per-process):** that reconsideration has
-fired. With one arena to a process, creating an arena per match means creating a
-*process* per match, which costs milliseconds and memory instead of a hash map
-insert. So the warm pool named above becomes the design rather than the fallback,
-and a duel arena runs matches back to back rather than dying with each one. The
-ruleset, the queue, and the module-API argument are unaffected.
+fired. With one arena to a process, an arena per match means a *process* per
+match, and the cost is not the launch. It is the setup between launching and
+being ready for a player: TLS to each directory, the registration exchange, the
+catalog fetch, and the verification call back, which is a second or more and
+several if a container has to be scheduled first. So the warm pool named above
+becomes the design rather than the fallback, and a duel arena server runs matches
+back to back instead of dying with each one.
+
+The queue moves with it. Pairing players is the one thing
+[decision 25](#25-an-arena-server-chooses-which-zone-it-serves) leaves nobody in
+charge of, and the answer that adds no authority is to hold it inside the duel
+arena server, so everyone waiting joins the same one and is paired there. The
+ruleset and the module-API argument are unaffected.
 
 ---
 
