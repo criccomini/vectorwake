@@ -169,6 +169,30 @@ local function radar(cx, cy, me)
     blips(world.radar_safe, pal.a(pal.RADAR_SAFE, 0.95))
     blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1.15)
 
+    -- Greens, under the flags and ships and over the terrain: a green is
+    -- worth steering for, but never worth steering for instead of the pilot
+    -- carrying thirty of them.
+    --
+    -- Read live rather than sampled into a list the way terrain is. Terrain
+    -- can be cached because it does not move; a green appears, is taken, and
+    -- times out, and a radar showing one that is already gone is worse than
+    -- a radar showing none.
+    --
+    -- One about to expire is dimmed, for the same reason the world draw
+    -- blinks it: the useful question is not "is there a green there" but "will
+    -- it still be there when I arrive", and on the radar that is a question
+    -- about somewhere half a screen away.
+    for i = 0, sim.prize_count() - 1 do
+        local active, wx, wy, life = sim.prize_at(i)
+        if active then
+            local px, py = put(wx, wy)
+            if px then
+                u:disc(px, ry(py, 0), 1.9 * S, 6,
+                       pal.a(pal.PRIZE, life < 120 and 0.4 or 0.95))
+            end
+        end
+    end
+
     local my_team = sim.ship_team(me)
     for i = 0, sim.flag_count() - 1 do
         local fx, fy, team = sim.flag_at(i)
