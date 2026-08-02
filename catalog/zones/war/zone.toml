@@ -1,0 +1,26 @@
+# War: two teams, four flags, hold them all to take a round.
+
+description = "two teams, four flags"
+
+mode = "warzone"
+map = "war.vwmap"
+
+max_ships = 64
+max_players = 32
+fill_target = 16
+max_rooms = 1
+
+teams = 2
+balance = "smaller"
+
+[arena]
+flags = 4
+bounce = 10
+friction = 14
+respawn_delay = 300
+prize_delay = 100
+prize_max = 20
+rust = 10
+spawn_prizes = 0
+bounty_per_kill = 3
+points_per_flag = 100

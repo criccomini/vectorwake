@@ -13,9 +13,11 @@ mod calibrate;
 mod catalog;
 mod config;
 mod directory;
+mod fleet;
 mod modes;
 mod persist;
 mod rating;
+mod select;
 mod sim;
 
 use std::collections::HashMap;
@@ -115,6 +117,12 @@ struct Arena {
     mode: Box<dyn modes::Mode>,
     banner: String,
     finished: bool,
+    /// How many teams the zone allows, and how an arrival is placed among them.
+    /// The mode owns the policy and the catalog owns the shape, which is why a
+    /// client never asserts a team: "what is a team here" is the same question
+    /// as "what game is this".
+    teams: u8,
+    balance: String,
 }
 
 impl Arena {
@@ -396,46 +404,61 @@ impl Arena {
     }
 
     fn with_world(world: sim::World) -> Self {
-        let mut world = world;
-        let mut bots = Vec::new();
-        let mut names = HashMap::new();
+        let mut a = Arena::with_world_bare(world);
+        a.mode = Box::new(modes::Warzone::new(4));
+        a.fill_bots();
+        a.add_default_flags();
+        a
+    }
 
-        // The population director in miniature: fill the arena with AI so a
-        // player arriving alone still finds a game. Bots leave as humans
-        // arrive, per docs/design/ai-players.md.
-        let roster = ai::roster();
-        for (i, r) in roster.iter().enumerate() {
-            // The map's own start wins over the roster's tile: a zone
-            // pointed at a new map should not need its roster rewritten to
-            // match that map's walls.
-            // Headings spread around the circle. The multiply has to happen
-            // wider than u16 or the ninth pilot overflows it, which a release
-            // build wrapped quietly and a debug build panicked on.
-            let heading = ((i as u32 * 8192) % 65536) as u16;
-            let ship = world.spawn_on_map(r.class, r.team, i as u32,
-                                          r.tile_x, r.tile_y, heading);
-            if ship >= 0 {
-                bots.push(ai::Bot::new(ship as u8, r.skill));
-                names.insert(ship as u8, (r.name.to_string(), true));
-            }
-        }
-        // One per quadrant, three hundred tiles apart, on the clear cell
-        // offset the map's starts use. Away from every spawn, and far enough
-        // from each other that holding two is a decision.
-        for (tx, ty) in [(308, 308), (756, 308), (308, 756), (756, 756)] {
-            world.add_flag(tx, ty);
-        }
-
+    /// An empty room. A catalog zone builds one of these and then decides its
+    /// mode, its teams and its population, rather than inheriting a warzone.
+    fn with_world_bare(world: sim::World) -> Self {
         Arena {
             world,
             players: HashMap::new(),
-            bots,
-            names,
+            bots: Vec::new(),
+            names: HashMap::new(),
             next_id: 1,
             rating: rating::Rating::new(),
-            mode: Box::new(modes::Warzone::new(4)),
+            mode: Box::new(modes::FreeForAll),
             banner: String::new(),
             finished: false,
+            teams: 2,
+            balance: "smaller".into(),
+        }
+    }
+
+    /// The population director in miniature: fill the room with AI so a player
+    /// arriving alone still finds a game. Bots leave as humans arrive, per
+    /// docs/design/ai-players.md.
+    fn fill_bots(&mut self) {
+        let roster = ai::roster();
+        for (i, r) in roster.iter().enumerate() {
+            // The map's own start wins over the roster's tile: a zone pointed at
+            // a new map should not need its roster rewritten to match that map's
+            // walls. Headings spread around the circle, and the multiply has to
+            // happen wider than u16 or the ninth pilot overflows it.
+            let heading = ((i as u32 * 8192) % 65536) as u16;
+            // A one-team zone puts everybody on the same side; otherwise the
+            // roster's own team is folded into what the zone allows.
+            let team = if self.teams <= 1 { 0 } else { r.team % self.teams };
+            let ship = self
+                .world
+                .spawn_on_map(r.class, team, i as u32, r.tile_x, r.tile_y, heading);
+            if ship >= 0 {
+                self.bots.push(ai::Bot::new(ship as u8, r.skill));
+                self.names.insert(ship as u8, (r.name.to_string(), true));
+            }
+        }
+    }
+
+    /// One flag per quadrant, three hundred tiles apart, on the clear cell
+    /// offset the map's starts use. Away from every spawn, and far enough from
+    /// each other that holding two is a decision.
+    fn add_default_flags(&mut self) {
+        for (tx, ty) in [(308, 308), (756, 308), (308, 756), (756, 756)] {
+            self.world.add_flag(tx, ty);
         }
     }
 
@@ -464,9 +487,13 @@ impl Arena {
             s as u8
         };
 
+        // Which team is the zone's question and the mode's answer, never the
+        // client's. `smaller` is ASSS's behaviour, whose MaxTeamDifference
+        // defaults to 1, so the balancer tolerates almost nothing.
+        let team = self.pick_team(ship);
         let sh = &mut self.world.state.ships[ship as usize];
         sh.cls = class.min(7);
-        sh.team = 0;
+        sh.team = team;
         sh.alive = 1;
         sh.up = [0; sim::UP_COUNT];
         sh.energy = i32::MAX; // clamped to the effective maximum next tick
@@ -485,6 +512,44 @@ impl Arena {
             },
         );
         Some(id)
+    }
+
+    /// Where an arrival goes. One team is a free-for-all and there is nothing to
+    /// decide; otherwise `smaller` counts live ships per team and takes the
+    /// thinnest, `random` spreads without counting, and `none` leaves everybody
+    /// on team zero.
+    fn pick_team(&self, joining: u8) -> u8 {
+        if self.teams <= 1 {
+            return 0;
+        }
+        match self.balance.as_str() {
+            "none" => 0,
+            "random" => {
+                // The world's rng is the simulation's and must not be disturbed
+                // by something outside it, so this uses the seat number, which
+                // is arbitrary enough and costs no state.
+                joining % self.teams
+            }
+            // "smaller", and anything the catalog let through.
+            _ => {
+                let mut count = vec![0usize; self.teams as usize];
+                for (i, s) in self.world.state.ships.iter().enumerate() {
+                    if s.active == 0 || i as u8 == joining {
+                        continue;
+                    }
+                    if let Some(c) = count.get_mut(s.team as usize) {
+                        *c += 1;
+                    }
+                }
+                let mut best = 0u8;
+                for t in 1..self.teams {
+                    if count[t as usize] < count[best as usize] {
+                        best = t;
+                    }
+                }
+                best
+            }
+        }
     }
 
     fn leave(&mut self, id: u64) {
@@ -671,6 +736,225 @@ struct Zone {
     arena: Arena,
     cfg: config::ConfigWatcher,
     store: persist::Store,
+    /// The zone this process is serving, empty when it is running the built-in
+    /// room because no catalog reached it.
+    zone_name: String,
+    /// The catalog as a directory handed it over, and the version, so the
+    /// highest offered wins and a disagreement is a log line rather than a vote.
+    catalog: Option<fleet::WireCatalog>,
+    /// Last measured tick cost, for the metrics that ride in `STATUS`.
+    tick_us: u32,
+    /// An operator pin. While set, policy stops applying: admin.md's verbs win
+    /// over selection, and the pin is displayed with who set it and when.
+    pinned: Option<(String, String, u64)>,
+    /// Set by a `drain` command or by wanting a different zone. No new joins.
+    draining: bool,
+    /// Everything about this instance's place in a fleet: its id, the views the
+    /// directories pushed, what it has announced. Empty and harmless when no
+    /// directory was ever configured.
+    fleet: select::Fleet,
+}
+
+impl Zone {
+    /// Take a catalog a directory offered. Highest version wins; a tie with
+    /// different content is an author error rather than a race, so it is a log
+    /// line naming both directories rather than a vote.
+    fn take_catalog(&mut self, c: fleet::WireCatalog, from: &str) {
+        let have = self.catalog.as_ref().map(|c| c.version).unwrap_or(0);
+        if c.version < have {
+            println!(
+                "catalog: {from} offered v{} and we hold v{have} from {:?}; keeping ours",
+                c.version, self.fleet.catalog_from
+            );
+            return;
+        }
+        if c.version == have {
+            let same = self
+                .catalog
+                .as_ref()
+                .map(|old| serde_json::to_string(old).ok() == serde_json::to_string(&c).ok())
+                .unwrap_or(false);
+            if !same {
+                println!(
+                    "catalog: {from} and {:?} both call this v{have} with different \
+                     content; keeping what we hold. This is an author error, not a race",
+                    self.fleet.catalog_from
+                );
+            }
+            return;
+        }
+        println!("catalog: v{} from {from} ({} zones)", c.version, c.zones.len());
+        self.fleet.catalog_from = from.to_string();
+
+        // A running room does not change zone because the catalog changed: it
+        // takes new settings for the zone it already serves, and the rest at its
+        // next drain. A catalog edit is not a reason to disconnect anybody.
+        if !self.zone_name.is_empty() {
+            if let Some(z) = c.zone(&self.zone_name).cloned() {
+                if let Ok(def) = toml::from_str::<catalog::ZoneDef>(&z.zone_toml) {
+                    for w in Arena::apply_config(&mut self.arena.world, &def.arena) {
+                        println!("zone {}: {w}", self.zone_name);
+                    }
+                    if let Some(m) = def.max_ships {
+                        self.arena.world.cfg.max_ships = m;
+                    }
+                    self.arena.broadcast_settings();
+                }
+            }
+        }
+        self.catalog = Some(c);
+        // Deliberately not serving anything here. `default_zone` is what an
+        // arena falls back to when it can reach no directory at all; taking it
+        // the moment a catalog arrives would have every instance in a fleet grab
+        // the same zone and skip selection entirely, which is exactly what the
+        // first end-to-end run did. The decision loop chooses, within a couple of
+        // seconds, and it is the only thing that chooses.
+    }
+
+    /// Announce an intent to every directory, now rather than on the next
+    /// heartbeat. The expiry travels with it, so a crash here releases the claim
+    /// on a timer rather than holding a zone empty forever.
+    fn announce(&self, zone: &str) {
+        let msg = fleet::frame(
+            fleet::A2D_INTENT,
+            &fleet::Intent {
+                zone: zone.to_string(),
+                expires_ms: select::INTENT_TTL_MS,
+            },
+        );
+        let mut sent = 0;
+        for tx in self.fleet.senders.values() {
+            if tx.send(msg.clone()).is_ok() {
+                sent += 1;
+            }
+        }
+        println!("selection: announced intent to serve {zone:?} to {sent} directory(s)");
+    }
+
+    /// An operator verb from a directory. `unknown_verb` is what lets a
+    /// directory be newer than an arena without either pretending.
+    fn run_command(&mut self, c: &fleet::Command) -> (&'static str, String) {
+        match c.verb.as_str() {
+            "drain" => {
+                self.draining = true;
+                ("done", format!("draining {} player(s)", self.arena.players.len()))
+            }
+            "pin" => {
+                if self.catalog.as_ref().and_then(|k| k.zone(&c.args)).is_none() {
+                    return ("refused", format!("no zone {:?} in the catalog", c.args));
+                }
+                self.pinned = Some((c.args.clone(), c.actor.clone(), fleet::now_ms()));
+                let def = self.catalog.as_ref().and_then(|k| k.zone(&c.args)).cloned();
+                if let Some(def) = def {
+                    if self.arena.players.is_empty() {
+                        if let Err(e) = self.serve_zone(&def) {
+                            return ("refused", e);
+                        }
+                    } else {
+                        self.draining = true;
+                        return ("done", "pinned; draining before the switch".into());
+                    }
+                }
+                ("done", format!("pinned to {:?}", c.args))
+            }
+            "unpin" => {
+                self.pinned = None;
+                ("done", String::new())
+            }
+            "kick" => {
+                let before = self.arena.players.len();
+                let ids: Vec<u64> = self
+                    .arena
+                    .players
+                    .iter()
+                    .filter(|(_, p)| p.name.eq_ignore_ascii_case(&c.args))
+                    .map(|(id, _)| *id)
+                    .collect();
+                for id in &ids {
+                    self.arena.leave(*id);
+                }
+                if ids.is_empty() {
+                    ("refused", format!("nobody here called {:?}", c.args))
+                } else {
+                    self.arena.broadcast_roster();
+                    ("done", format!("kicked {} of {before}", ids.len()))
+                }
+            }
+            "restart" => {
+                println!("restart asked for by {:?}; exiting so the supervisor restarts us",
+                         c.actor);
+                // The container platform owns restarts. Exiting is the whole
+                // implementation, and it is the honest one.
+                std::process::exit(0);
+            }
+            _ => ("unknown_verb", c.verb.clone()),
+        }
+    }
+
+    fn wire_zone(&self) -> Option<&fleet::WireZone> {
+        self.catalog.as_ref()?.zone(&self.zone_name)
+    }
+
+    fn fill_target(&self) -> usize {
+        self.wire_zone()
+            .map(|z| z.fill_target as usize)
+            .unwrap_or(catalog::DEFAULT_FILL_TARGET)
+    }
+
+    fn max_rooms(&self) -> usize {
+        self.wire_zone().map(|z| z.max_rooms as usize).unwrap_or(1).max(1)
+    }
+
+    fn max_players(&self) -> usize {
+        self.wire_zone()
+            .map(|z| z.max_players as usize)
+            .unwrap_or(DEFAULT_MAX_PLAYERS)
+    }
+
+    /// Bans come from the catalog when there is one, because they are
+    /// deployment-wide, and from the local file only when there is not.
+    fn is_banned(&self, name: &str) -> bool {
+        match &self.catalog {
+            Some(c) => c.is_banned(name),
+            None => self.cfg.current.is_banned(name),
+        }
+    }
+
+    /// Take a zone definition and rebuild the room around it: its map, its
+    /// settings, its mode. The one path by which a process changes what game it
+    /// is running, so the map failing is a refusal rather than a half-change.
+    fn serve_zone(&mut self, z: &fleet::WireZone) -> Result<(), String> {
+        let bytes = fleet::unb64(&z.map_b64).ok_or("map is not base64")?;
+        let world = sim::World::from_packed(0x5eed, &bytes).map_err(|e| e.to_string())?;
+        // The zone's own text, parsed by the same parser the catalog loader
+        // uses, so there is one schema for a zone however it arrived.
+        let def: catalog::ZoneDef =
+            toml::from_str(&z.zone_toml).map_err(|e| format!("zone.toml: {e}"))?;
+
+        let mut arena = Arena::with_world_bare(world);
+        for w in Arena::apply_config(&mut arena.world, &def.arena) {
+            println!("zone {}: {w}", z.name);
+        }
+        if let Some(m) = def.max_ships {
+            arena.world.cfg.max_ships = m;
+        }
+        arena.mode = modes::build(&z.mode, def.arena.flags, z.teams);
+        arena.teams = z.teams.max(1);
+        arena.balance = def.balance.clone();
+        arena.fill_bots();
+        if z.mode == "warzone" {
+            arena.add_default_flags();
+        }
+        prime_ratings(&mut arena.rating, &load_ladder("zone"));
+        self.arena = arena;
+        self.zone_name = z.name.clone();
+        self.draining = false;
+        println!(
+            "serving zone {:?}: mode {}, {} ships, {} players, {} team(s)",
+            z.name, z.mode, z.max_ships, z.max_players, z.teams
+        );
+        Ok(())
+    }
 }
 
 /// Put an arena's ratings on the same footing as every other: the AI marked
@@ -700,7 +984,17 @@ impl Zone {
            ladder: HashMap<String, f64>) -> Self {
         let mut arena = Arena::new_from(&cfg.current);
         prime_ratings(&mut arena.rating, &ladder);
-        Zone { arena, cfg, store }
+        Zone {
+            arena,
+            cfg,
+            store,
+            zone_name: String::new(),
+            catalog: None,
+            tick_us: 0,
+            pinned: None,
+            draining: false,
+            fleet: select::Fleet::default(),
+        }
     }
 
     /// Re-read the zone file and push the new numbers into every live arena.
@@ -716,18 +1010,31 @@ impl Zone {
         }
     }
 
-    /// What this zone tells a directory, and anybody else who asks.
+    /// What this arena server tells a directory, and anybody else who asks.
+    /// This doubles as the verification answer: a directory dials the claimed
+    /// address, asks for status, and requires a well-formed reply, so the shape
+    /// here is what proves an address works.
     fn status_json(&self) -> String {
-        let players = self.arena.players.len() as u32;
-        let bots = self.arena.bots.len() as u32;
-        serde_json::to_string(&directory::Status {
-            name: self.cfg.current.name.clone(),
-            description: self.cfg.current.description.clone(),
-            players,
-            bots,
-            arenas: 1,
-        })
-        .unwrap_or_default()
+        serde_json::to_string(&self.status()).unwrap_or_default()
+    }
+
+    fn status(&self) -> fleet::Status {
+        let zone = self.zone_name.clone();
+        let target = self.fill_target();
+        fleet::Status {
+            zone,
+            players: self.arena.players.len() as u32,
+            bots: self.arena.bots.len() as u32,
+            rooms: 1,
+            max_rooms: self.max_rooms() as u32,
+            // The arena's own answer to "am I out of room", so the rule lives
+            // in one place rather than being recomputed by every reader.
+            capped: self.arena.players.len() >= target,
+            metrics: fleet::Metrics {
+                tick_us: self.tick_us,
+                ..Default::default()
+            },
+        }
     }
 
     fn zone_msg(&self) -> Vec<u8> {
@@ -767,63 +1074,81 @@ fn run_calibration() {
     }
 }
 
-/// Serve the zone directory.
+/// Where the directories are. `VW_DIRECTORY` names a host, which is resolved,
+/// so one hostname with several records is a whole deployment and a directory can
+/// be added or moved without touching an arena server. That is the DNS decision
+/// in docs/architecture/discovery.md: `directory.vectorwake.game` resolves to
+/// every directory of this deployment.
 ///
-///     vectorwake-server directory <listen> [dir]
-async fn run_directory() {
-    let addr = std::env::args().nth(2).unwrap_or_else(|| "0.0.0.0:9000".into());
-    let dir = std::env::args().nth(3).unwrap_or_else(|| ".".into());
-    let (d, err) = directory::Directory::load(&format!("{dir}/directory.toml"));
-    if let Some(e) = err {
-        println!("no usable directory.toml ({e}); serving an empty list");
+/// An explicit `ws://` or `wss://` URL is taken as given, which is what a
+/// developer running one of each on a laptop wants.
+async fn directory_urls() -> Vec<String> {
+    let spec = std::env::var("VW_DIRECTORY").unwrap_or_default();
+    if spec.is_empty() {
+        return Vec::new();
     }
-    println!("directory \"{}\": {} zones", d.name, d.entries.len());
-    let d = Arc::new(Mutex::new(d));
-
-    // Poll on a timer rather than on demand, so one slow zone cannot make a
-    // player's browse request hang.
-    {
-        let d = d.clone();
-        tokio::spawn(async move {
-            loop {
-                directory::refresh(&d).await;
-                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-            }
-        });
-    }
-
-    let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind failed");
-    println!("vectorwake directory listening on ws://{addr}");
-    while let Ok((stream, _)) = listener.accept().await {
-        let d = d.clone();
-        tokio::spawn(async move {
-            let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else { return };
-            while let Some(Ok(msg)) = ws.next().await {
-                if let Message::Binary(b) = msg {
-                    if b.first() == Some(&C2S_STATUS) {
-                        let mut m = vec![S2C_STATUS];
-                        m.extend_from_slice(d.lock().await.as_json().as_bytes());
-                        if ws.send(Message::Binary(m)).await.is_err() {
-                            return;
-                        }
+    let mut out = Vec::new();
+    for part in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        if part.starts_with("ws://") || part.starts_with("wss://") {
+            out.push(part.to_string());
+            continue;
+        }
+        // A bare host, optionally with a port. Resolve it and take every record,
+        // so a round-robin name is a list of directories.
+        let (host, port) = match part.rsplit_once(':') {
+            Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => (h, p.to_string()),
+            _ => (part, "9000".to_string()),
+        };
+        match tokio::net::lookup_host(format!("{host}:{port}")).await {
+            Ok(addrs) => {
+                let mut seen = Vec::new();
+                for a in addrs {
+                    // wss for a real hostname, because the token is a bearer
+                    // credential and the directory will refuse it in the clear.
+                    // Loopback is development and stays ws.
+                    let scheme = if a.ip().is_loopback() { "ws" } else { "wss" };
+                    // Dial the name rather than the address so TLS verifies: the
+                    // certificate is issued for the hostname, and all of a
+                    // deployment's directories share it.
+                    let url = if a.ip().is_loopback() {
+                        format!("{scheme}://{a}")
+                    } else {
+                        format!("{scheme}://{host}:{port}")
+                    };
+                    if !seen.contains(&url) {
+                        seen.push(url);
                     }
                 }
+                if seen.is_empty() {
+                    println!("VW_DIRECTORY {part:?} resolved to nothing");
+                }
+                out.extend(seen);
             }
-        });
+            Err(e) => println!("VW_DIRECTORY {part:?}: {e}"),
+        }
     }
+    // Shuffled, so a fleet of identical containers does not all prefer the same
+    // directory. The order is arbitrary and only needs to differ between hosts.
+    let n = out.len();
+    if n > 1 {
+        let seed = (fleet::now_ms() as usize).wrapping_mul(2654435761);
+        out.rotate_left(seed % n);
+    }
+    println!("directories: {}", out.join(", "));
+    out
 }
 
 /// Either kind of accepted connection, boxed so the connection handler is
 /// written once. tokio implements AsyncRead and AsyncWrite for Box<T>, and a
 /// trait object carries its supertraits, so this needs no glue of its own.
-trait Conn: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+pub trait Conn: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> Conn for T {}
 
 /// Build a TLS acceptor from PEM files, or None when the zone is plain ws.
 /// A zone that is configured for TLS and cannot load its certificate must
 /// not quietly fall back to cleartext: the operator asked for wss, and
 /// serving ws instead would look like it worked.
-fn tls_acceptor(cert: &str, key: &str) -> Option<tokio_rustls::TlsAcceptor> {
+pub fn tls_acceptor(cert: &str, key: &str) -> Option<tokio_rustls::TlsAcceptor> {
     if cert.is_empty() && key.is_empty() {
         return None;
     }
@@ -850,7 +1175,15 @@ fn tls_acceptor(cert: &str, key: &str) -> Option<tokio_rustls::TlsAcceptor> {
 #[tokio::main]
 async fn main() {
     if std::env::args().nth(1).as_deref() == Some("directory") {
-        run_directory().await;
+        directory::run().await;
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("catalog") {
+        catalog::run_check();
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("token") {
+        catalog::run_token();
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("calibrate") {
@@ -887,10 +1220,48 @@ async fn main() {
         .await
         .expect("bind failed");
     let tls = tls_acceptor(&cfg_tls.0, &cfg_tls.1);
-    println!(
-        "vectorwake zone server listening on {}://{addr}",
-        if tls.is_some() { "wss" } else { "ws" }
-    );
+    let scheme = if tls.is_some() { "wss" } else { "ws" };
+    println!("vectorwake arena server listening on {scheme}://{addr}");
+
+    // Join a fleet, if one was configured. An arena server with no directory is
+    // still a whole game: it serves the built-in room or its local zone file to
+    // anybody who knows its address, which is the Offline state in
+    // docs/architecture/zones-and-arenas.md and the reason a discovery outage is
+    // not a gameplay outage.
+    {
+        let mut z = zone.lock().await;
+        z.fleet.instance = select::Fleet::load_instance_id(&dir);
+        z.fleet.region = std::env::var("VW_REGION").unwrap_or_else(|_| "local".into());
+        // What a client should dial. Defaults to the listen address, which is
+        // right for a single host and wrong behind NAT, so it is overridable.
+        z.fleet.address = std::env::var("VW_ADDRESS")
+            .unwrap_or_else(|_| format!("{scheme}://{addr}"));
+        z.fleet.willing = std::env::var("VW_ZONES")
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        println!(
+            "instance {} in region {:?}, reachable at {}",
+            z.fleet.instance, z.fleet.region, z.fleet.address
+        );
+        if !z.fleet.willing.is_empty() {
+            println!("  willing to serve only {:?}", z.fleet.willing);
+        }
+    }
+    let token = std::env::var("VW_TOKEN").unwrap_or_default();
+    let urls = directory_urls().await;
+    if urls.is_empty() {
+        println!("no directory configured (VW_DIRECTORY); serving standalone");
+    } else if token.is_empty() {
+        println!("VW_DIRECTORY is set but VW_TOKEN is empty; serving standalone");
+    } else {
+        for url in urls {
+            tokio::spawn(select::register_with(url, token.clone(), zone.clone()));
+        }
+        tokio::spawn(select::decide_loop(zone.clone()));
+    }
 
     // The arena loop. One thread owns the simulation for the duration of a
     // tick; connections only ever enqueue inputs.

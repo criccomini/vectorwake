@@ -40,6 +40,11 @@ pub struct ZoneDef {
     pub balance: String,
     pub private_teams: bool,
     pub arena: crate::config::ArenaConfig,
+    /// The text this was parsed from, kept so a directory can hand the zone to
+    /// an arena verbatim rather than re-serialising it. Not a field in the file;
+    /// `deny_unknown_fields` would reject it, hence `skip`.
+    #[serde(skip)]
+    pub raw: String,
 }
 
 impl Default for ZoneDef {
@@ -56,6 +61,7 @@ impl Default for ZoneDef {
             balance: "smaller".into(),
             private_teams: false,
             arena: crate::config::ArenaConfig::default(),
+            raw: String::new(),
         }
     }
 }
@@ -261,8 +267,9 @@ pub fn load(dir: impl AsRef<Path>) -> Result<Catalog, String> {
         let zpath = zdir.join("zone.toml");
         let ztext = std::fs::read_to_string(&zpath)
             .map_err(|e| format!("zone {:?}: {}: {e}", r.name, zpath.display()))?;
-        let z: ZoneDef = toml::from_str(&ztext)
+        let mut z: ZoneDef = toml::from_str(&ztext)
             .map_err(|e| format!("zone {:?}: {}: {e}", r.name, zpath.display()))?;
+        z.raw = ztext;
         validate_zone(&r.name, &z, &zdir)?;
         cat.order.push(r.name.clone());
         cat.dirs.insert(r.name.clone(), zdir);
@@ -587,4 +594,61 @@ mod tests {
         assert!(!c.has_capability("chris", "catalog"), "capabilities are explicit");
         assert!(!c.has_capability("nobody", "ban"));
     }
+}
+
+/// `vectorwake-server catalog <dir>`: load it and say what it holds, or say why
+/// it will not load. The operator-facing half of every rejection above.
+pub fn run_check() {
+    let dir = std::env::args().nth(2).unwrap_or_else(|| "catalog".into());
+    match load(&dir) {
+        Err(e) => {
+            println!("catalog {dir}: {e}");
+            std::process::exit(1);
+        }
+        Ok(c) => {
+            println!("catalog {dir}: {:?} version {}", c.name, c.version);
+            println!("  {} pools, {} staff, {} bans", c.pools.len(), c.staff.len(),
+                     c.bans.len());
+            for name in &c.order {
+                let z = &c.zones[name];
+                let map = c.map_bytes(name).map(|b| b.len()).unwrap_or(0);
+                println!(
+                    "  zone {name:<10} mode {:<8} {} ships / {} players, fill {}, \
+                     {} room(s), {} team(s), map {map} B",
+                    z.mode, z.max_ships.unwrap_or(64), z.max_players(),
+                    z.fill_target(), z.max_rooms(), z.teams()
+                );
+            }
+            println!("  default {:?}", c.fallback_zone().unwrap_or_default());
+        }
+    }
+}
+
+/// `vectorwake-server token`: mint one and print the row to paste. Generated
+/// rather than typed, because hashing at rest is only worth anything if the
+/// input has entropy, and an operator asked to invent a token invents a short
+/// one.
+pub fn run_token() {
+    // Exactly 32 bytes from the OS. read_exact rather than fs::read, because
+    // /dev/urandom has no EOF and reading it to the end allocates until the
+    // kernel kills you.
+    use std::io::Read;
+    let mut raw = [0u8; 32];
+    let ok = std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut raw))
+        .is_ok();
+    if !ok {
+        println!("could not read 32 bytes of randomness");
+        std::process::exit(1);
+    }
+    let token: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+    println!("token (shown once, put it in the arena's environment):");
+    println!("  VW_TOKEN={token}");
+    println!();
+    println!("row for catalog.toml (safe to commit):");
+    println!("  [[pool]]");
+    println!("  name = \"a pool\"");
+    println!("  token = \"sha256:{}\"", sha256_hex(token.as_bytes()));
+    println!("  region = \"local\"");
+    println!("  max_instances = 8");
 }

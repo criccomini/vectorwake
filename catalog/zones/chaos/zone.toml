@@ -1,0 +1,31 @@
+# Chaos: everybody against everybody, on the full map.
+
+description = "everybody against everybody"
+
+mode = "arena"
+map = "chaos.vwmap"
+
+max_ships = 64
+max_players = 32
+
+# Absent this would be 15, which is what the original's DesiredPlaying defaults
+# to. A free-for-all reads well a little fuller than a flag game.
+fill_target = 20
+
+# One room to a process: sixty-four players should not lose their game to
+# somebody else's crash.
+max_rooms = 1
+
+# One team is a free-for-all, and then balance has nothing to do.
+teams = 1
+balance = "none"
+
+[arena]
+bounce = 10
+friction = 14
+respawn_delay = 300
+prize_delay = 100
+prize_max = 20
+rust = 10
+spawn_prizes = 0
+bounty_per_kill = 3
