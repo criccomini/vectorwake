@@ -1,6 +1,7 @@
 /* vectorwake simulation core. See include/sim/sim.h for the contract. */
 #include "sim/sim.h"
 
+#include <stddef.h>
 #include <string.h>
 
 #include "sintab.h"
@@ -142,6 +143,14 @@ int32_t sim_eff_thrust(const sim_ship_class *c, const sim_ship *s) {
 int32_t sim_eff_rot(const sim_ship_class *c, const sim_ship *s) {
     return eff(c->init_rot, c->up_rot, c->rot, s->up[SIM_UP_ROTATION]);
 }
+uint8_t sim_eff_max_ships(const sim_settings *cfg) {
+    /* Written as a min rather than a range check because max_ships is a u8 and
+     * the ceiling is 255, so `> SIM_MAX_SHIPS` is unreachable and -Wtype-limits
+     * says so. This stays correct if the ceiling is ever lowered. */
+    if (cfg->max_ships == 0) return SIM_MAX_SHIPS;
+    return cfg->max_ships < SIM_MAX_SHIPS ? cfg->max_ships : SIM_MAX_SHIPS;
+}
+
 int32_t sim_eff_max_energy(const sim_ship_class *c, const sim_ship *s) {
     return eff(c->init_energy, c->up_energy, c->max_energy, s->up[SIM_UP_ENERGY]);
 }
@@ -176,13 +185,17 @@ static void outfit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
         sim_take_prize(sh, cfg, rng, NULL);
 }
 
+uint32_t sim_offsetof_settings_max_ships(void) {
+    return (uint32_t)offsetof(sim_settings, max_ships);
+}
+
 uint32_t sim_sizeof_state(void) { return (uint32_t)sizeof(sim_state); }
 uint32_t sim_sizeof_settings(void) { return (uint32_t)sizeof(sim_settings); }
 uint32_t sim_sizeof_ship(void) { return (uint32_t)sizeof(sim_ship); }
 
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg) {
-    if (s->ship_count >= SIM_MAX_SHIPS) return -1;
+    if (s->ship_count >= sim_eff_max_ships(cfg)) return -1;
     int i = s->ship_count++;
     sim_ship *sh = &s->ships[i];
     memset(sh, 0, sizeof *sh);

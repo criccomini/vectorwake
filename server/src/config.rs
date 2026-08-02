@@ -44,6 +44,11 @@ pub struct ArenaConfig {
     /// Speed retained along a wall, out of 16.
     pub friction: i32,
     pub respawn_delay: u16,
+    /// Pilots this room holds, bots included, capped at 255 by the wire: a ship
+    /// index is a byte everywhere it appears. Zero or absent keeps the
+    /// baseline's 64, which is already four times what the original aimed a
+    /// public room at. See docs/architecture/hosting.md.
+    pub max_ships: Option<u8>,
     pub prize_delay: u16,
     pub prize_max: u16,
     /// Per class, in settings-file units. Anything left out keeps the
@@ -202,6 +207,7 @@ impl Default for ArenaConfig {
             bounce: 10,
             friction: 14,
             respawn_delay: 300,
+            max_ships: None,
             prize_delay: 100,
             prize_max: 20,
             ships: Vec::new(),

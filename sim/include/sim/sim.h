@@ -20,7 +20,17 @@ extern "C" {
 #endif
 
 
-#define SIM_MAX_SHIPS 64
+/* Ships a room can ever hold. 255 is the wire's ceiling, not a preference: a
+ * ship index is a uint8_t everywhere it appears -- a projectile's owner, an
+ * input's target, a kill event's victim and killer -- and 255 is already the
+ * "no ship" sentinel in those fields, so indices run 0 to 254.
+ *
+ * This is the array bound and not the room size. What a zone actually allows is
+ * `sim_settings.max_ships`, which is what sim_spawn enforces, because a room
+ * that plays well is a game design question and this is a memory allocation.
+ * At the ceiling a state is 51 KB against 37 KB at 64, and a tick costs 50 us
+ * against 13.5. See docs/architecture/hosting.md. */
+#define SIM_MAX_SHIPS 255
 #define SIM_MAX_WEAPONS 1024
 /* Greens alive at once. The snapshot writes a u8 index and a u8 count, so
  * 255 is the wire's ceiling and not an arbitrary one. A full-size map needs
@@ -130,6 +140,10 @@ int sim_map_spawn(const sim_map *m, uint8_t team, uint32_t nth,
  * raised from 64. Neither is a compile error on the far side, so the far side
  * asserts against these instead. */
 uint32_t sim_sizeof_state(void);
+/* Where max_ships sits. A mirror in another language cannot rely on sizeof to
+ * catch a missing or misplaced field: this one landed inside existing padding,
+ * so the struct did not grow by a byte when it was added. */
+uint32_t sim_offsetof_settings_max_ships(void);
 uint32_t sim_sizeof_settings(void);
 uint32_t sim_sizeof_ship(void);
 
@@ -385,6 +399,12 @@ typedef struct {
     int32_t prize_lo, prize_hi; /* tile bounds prizes spawn within */
     int32_t flag_radius;    /* Q8 px, pickup distance */
     uint16_t flag_drop_cooldown; /* ticks a dropped flag is untouchable */
+    /* Ships this room will hold, which is a rule about the game rather than
+     * about memory: the array is always SIM_MAX_SHIPS long. Clamped to that on
+     * the way in, so a zone asking for more gets the ceiling instead of an
+     * overflow. Zero means the ceiling too, since a zone that says nothing
+     * should not get a room nobody can enter. */
+    uint8_t max_ships;
     const sim_map *map;    /* geometry; not part of rolled-back state */
 } sim_settings;
 
@@ -553,6 +573,11 @@ void sim_init(sim_state *s, uint32_t seed);
  * splinter names a pattern, which is how one ending fires the next. */
 int sim_add_spec(sim_settings *cfg, const sim_weapon_spec *spec);
 int sim_add_pattern(sim_settings *cfg, const sim_fire_pattern *pattern);
+
+/* How many ships this room allows: the zone's number, clamped to the array
+ * bound, with zero reading as the ceiling. One place so the server, the client
+ * and the core cannot disagree about it. */
+uint8_t sim_eff_max_ships(const sim_settings *cfg);
 
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg);

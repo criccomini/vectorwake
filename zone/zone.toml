@@ -19,6 +19,9 @@ listen = "127.0.0.1:9010"
 # strangers reach from a hosted client needs these.
 tls_cert = ""
 tls_key = ""
+# Humans this zone admits. The room may hold more seats than this: max_ships
+# under [arena] sizes the room and this bounds how many of its seats people get,
+# which is what leaves the bot roster somewhere to sit.
 max_players = 16
 
 # Names here cannot join. Root-level keys must sit above every [table]:
@@ -34,6 +37,15 @@ flags = 4
 # friction is the speed retained along the wall. 16 and 16 would be lossless.
 bounce = 10
 friction = 14
+
+# Pilots the room holds at once, bots included. 255 is the ceiling and not a
+# preference: a ship index is one byte everywhere it appears, and 255 is already
+# the "no ship" value in those fields. Leaving this out keeps 64, which is
+# four times what the original aimed a public room at -- its DesiredPlaying
+# defaults to 15 and exists only to decide when to open another arena. Widening
+# is cheap (50 us a tick at the ceiling against 13.5 at 64) so the reason to
+# stay near 64 is how the game plays, not what it costs.
+max_ships = 64
 
 respawn_delay = 300   # ticks, so three seconds
 prize_delay = 100     # a green every second until the map is full

@@ -545,6 +545,58 @@ int main(void) {
         free(src); free(dst); free(pit); free(buf);
     }
 
+    /* The room size is the zone's, and the array bound is only the ceiling. */
+    {
+        sim_settings small = cfg;
+        small.max_ships = 3;
+        sim_state s;
+        sim_init(&s, 1);
+        for (int i = 0; i < 3; i++)
+            CHECK(sim_spawn(&s, APEX, 0, 8192, 8192, 0, &small) == i,
+                  "spawns fill the room the zone asked for");
+        CHECK(sim_spawn(&s, APEX, 0, 8192, 8192, 0, &small) == -1,
+              "and the next one is refused");
+        CHECK(s.ship_count == 3, "a refused spawn takes no seat");
+
+        /* Zero is not an empty room. A zone that says nothing gets the ceiling
+         * rather than a game nobody can join. */
+        sim_settings unset = cfg;
+        unset.max_ships = 0;
+        CHECK(sim_eff_max_ships(&unset) == SIM_MAX_SHIPS,
+              "an unset limit reads as the ceiling");
+        CHECK(sim_eff_max_ships(&cfg) == 64,
+              "and the baseline ships a 64-pilot room");
+    }
+
+    /* The ceiling itself holds: fill it and the next spawn is refused. */
+    {
+        sim_settings full = cfg;
+        full.max_ships = SIM_MAX_SHIPS;
+        sim_state s;
+        sim_init(&s, 1);
+        for (int i = 0; i < SIM_MAX_SHIPS; i++)
+            CHECK(sim_spawn(&s, APEX, (uint8_t)(i % 4),
+                            (300 + (i % 24) * 8) << 8,
+                            (300 + (i / 24) * 8) << 8, 0, &full) == i,
+                  "every index up to the ceiling is available");
+        CHECK(sim_spawn(&s, APEX, 0, 8192, 8192, 0, &full) == -1,
+              "the array bound is still a bound");
+        CHECK(s.ship_count == SIM_MAX_SHIPS, "and the count stops there");
+    }
+
+    /* A room size survives the wire, which is what lets a client predict in a
+     * zone that widened its arena. */
+    {
+        sim_settings src = cfg, dst;
+        src.max_ships = 200;
+        uint8_t buf[SIM_SETTINGS_PACK_MAX];
+        int n = sim_settings_pack(&src, buf, sizeof buf);
+        CHECK(n > 0, "settings pack");
+        memset(&dst, 0, sizeof dst);
+        CHECK(sim_settings_unpack(&dst, buf, n) == 0, "settings unpack");
+        CHECK(dst.max_ships == 200, "the room size crosses the wire");
+    }
+
     /* Friendly fire passes through: same team, no damage. */
     {
         sim_state s;

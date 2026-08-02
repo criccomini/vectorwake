@@ -250,7 +250,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-#define CFG_VERSION 7
+#define CFG_VERSION 8
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -336,6 +336,7 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w32(&w, (uint32_t)cfg->prize_hi);
     w32(&w, (uint32_t)cfg->flag_radius);
     w16(&w, cfg->flag_drop_cooldown);
+    w8(&w, cfg->max_ships);
 
     return w.overflow ? -1 : (int)(w.p - out);
 }
@@ -439,6 +440,7 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
     cfg->prize_hi = (int32_t)r32(&r);
     cfg->flag_radius = (int32_t)r32(&r);
     cfg->flag_drop_cooldown = (uint16_t)r16(&r);
+    cfg->max_ships = r8(&r);
 
     return r.underflow ? -1 : 0;
 }

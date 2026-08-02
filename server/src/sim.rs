@@ -8,7 +8,9 @@
 
 use std::os::raw::c_int;
 
-pub const MAX_SHIPS: usize = 64;
+/* The array bound, matching SIM_MAX_SHIPS. What a zone actually allows is
+ * sim_settings.max_ships, which the core clamps to this. */
+pub const MAX_SHIPS: usize = 255;
 pub const MAX_WEAPONS: usize = 1024;
 pub const MAX_EVENTS: usize = 256;
 pub const MAX_CLASSES: usize = 8;
@@ -145,15 +147,16 @@ pub struct sim_settings {
     pub prize_delay: u16,
     pub prize_max: u16,
     pub prize_life: u16,
+    pub door_period: u16,
+    pub door_open: u16,
+    pub wormhole_pull: i32,
+    pub wormhole_range: i32,
     pub prize_radius: i32,
     pub prize_lo: i32,
     pub prize_hi: i32,
     pub flag_radius: i32,
     pub flag_drop_cooldown: u16,
-    pub door_period: u16,
-    pub door_open: u16,
-    pub wormhole_pull: i32,
-    pub wormhole_range: i32,
+    pub max_ships: u8,
     pub map: *const sim_map,
 }
 
@@ -310,6 +313,8 @@ extern "C" {
     pub fn sim_pack_around(s: *const sim_state, out: *mut u8, cap: c_int,
                            cx: i32, cy: i32, radius: i32) -> c_int;
     pub fn sim_sizeof_state() -> u32;
+    pub fn sim_offsetof_settings_max_ships() -> u32;
+    pub fn sim_eff_max_ships(cfg: *const sim_settings) -> u8;
     pub fn sim_sizeof_settings() -> u32;
     pub fn sim_sizeof_ship() -> u32;
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
@@ -603,5 +608,39 @@ mod layout {
             assert_eq!(std::mem::size_of::<sim_ship>(), sim_sizeof_ship() as usize,
                        "sim_ship mirror is the wrong size");
         }
+    }
+
+    /// Size is not enough, and this is the test that proves why. `max_ships`
+    /// was added to the end of `sim_settings` and landed inside padding the
+    /// struct already had, so `sizeof` did not move by a byte. A mirror missing
+    /// the field entirely, or carrying it in the wrong place, would pass the
+    /// test above and then read a neighbour's bytes as a room size.
+    ///
+    /// Two blocks of this struct were genuinely in the wrong order when this
+    /// was written, for the same reason: swapping equal-width neighbours is
+    /// invisible to `sizeof`.
+    #[test]
+    fn the_room_size_is_where_c_keeps_it() {
+        unsafe {
+            assert_eq!(
+                std::mem::offset_of!(sim_settings, max_ships),
+                sim_offsetof_settings_max_ships() as usize,
+                "max_ships is at a different offset than the core keeps it"
+            );
+        }
+    }
+
+    /// The zone's number wins, clamped to the array bound, and zero reads as
+    /// the ceiling rather than as a room nobody can enter.
+    #[test]
+    fn a_zone_sets_its_own_room_size() {
+        let mut w = World::new(0x5eed);
+        assert_eq!(unsafe { sim_eff_max_ships(&*w.cfg) }, 64,
+                   "the baseline ships a 64-pilot room");
+        w.cfg.max_ships = 200;
+        assert_eq!(unsafe { sim_eff_max_ships(&*w.cfg) }, 200);
+        w.cfg.max_ships = 0;
+        assert_eq!(unsafe { sim_eff_max_ships(&*w.cfg) }, MAX_SHIPS as u8,
+                   "unset means the ceiling");
     }
 }

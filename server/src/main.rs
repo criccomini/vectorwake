@@ -34,7 +34,10 @@ const SNAPSHOT_EVERY: u32 = 5; // 20 Hz
 /// so a ship covers 24 px between snapshots against 3136 px of margin beyond
 /// the radar -- the boundary is not somewhere a player can arrive at.
 const PRIZE_INTEREST: i32 = 256 * 16 * 256;
-const MAX_PLAYERS: usize = 16;
+/// Humans a zone admits when its file says nothing. The room may hold more
+/// seats than this: `max_ships` sizes the room, and this bounds how many of its
+/// seats people get, which is what leaves room for the bot roster.
+const DEFAULT_MAX_PLAYERS: usize = 16;
 
 // Client to server
 const C2S_JOIN: u8 = 1;
@@ -127,6 +130,10 @@ impl Arena {
         if c.bounce > 0 { world.cfg.bounce = c.bounce; }
         if c.friction > 0 { world.cfg.friction = c.friction; }
         if c.respawn_delay > 0 { world.cfg.respawn_delay = c.respawn_delay; }
+        // The core clamps this to SIM_MAX_SHIPS and reads zero as the ceiling,
+        // so a zone asking for more than the array holds gets the array rather
+        // than an overflow.
+        if let Some(v) = c.max_ships { world.cfg.max_ships = v; }
         if c.prize_delay > 0 { world.cfg.prize_delay = c.prize_delay; }
         if c.prize_max > 0 { world.cfg.prize_max = c.prize_max; }
 
@@ -431,8 +438,13 @@ impl Arena {
         }
     }
 
-    fn join(&mut self, name: String, class: u8, tx: mpsc::UnboundedSender<Vec<u8>>) -> Option<u64> {
-        if self.players.len() >= MAX_PLAYERS {
+    /// `max_players` is the zone's, which used to be a constant here while the
+    /// key in the file was read by nobody. It bounds humans; the room's own size
+    /// is `arena.max_ships` and the two are different questions, since a wide
+    /// room with a small player cap is a zone that wants mostly bots.
+    fn join(&mut self, name: String, class: u8, max_players: usize,
+            tx: mpsc::UnboundedSender<Vec<u8>>) -> Option<u64> {
+        if self.players.len() >= max_players {
             return None;
         }
         // Take a bot's slot if one is available, so the arena size stays put.
@@ -982,8 +994,13 @@ async fn main() {
                         if let Some(saved) = z.store.rating(&name) {
                             z.arena.rating.score.insert(name.clone(), saved);
                         }
+                        let cap = if z.cfg.current.max_players > 0 {
+                            z.cfg.current.max_players
+                        } else {
+                            DEFAULT_MAX_PLAYERS
+                        };
                         let a = &mut z.arena;
-                        if let Some(new_id) = a.join(name, class, tx.clone()) {
+                        if let Some(new_id) = a.join(name, class, cap, tx.clone()) {
                             seat = Some(new_id);
                             let ship = a.players[&new_id].ship;
                             let mut m = vec![S2C_MAP];
@@ -1237,6 +1254,17 @@ mod tests {
         assert_ne!(rungs[0], sim::NO_PATTERN, "the repel is on the trigger");
         assert_eq!(rungs[1], sim::NO_PATTERN,
                    "and there is nothing to level into");
+    }
+
+    #[test]
+    fn a_zone_sets_its_room_size() {
+        let mut w = sim::World::new(1);
+        assert_eq!(w.cfg.max_ships, 64, "the baseline's room");
+        Arena::apply_config(&mut w, &parse("[arena]\nmax_ships = 200\n"));
+        assert_eq!(w.cfg.max_ships, 200, "a zone can widen it");
+        // Reload builds from the baseline first, so dropping the line reverts.
+        Arena::apply_config(&mut w, &parse("[arena]\n"));
+        assert_eq!(w.cfg.max_ships, 64, "and removing the line puts it back");
     }
 
     #[test]

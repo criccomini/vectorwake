@@ -136,7 +136,13 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->prize_life = 3000;   /* 30 s */
     cfg->prize_radius = 16 * 256; /* generous: chasing a green should not be fiddly */
     cfg->flag_radius = 18 * 256;
-    cfg->flag_drop_cooldown = 200; /* 2 s before a dropped flag can be retaken */
+    cfg->flag_drop_cooldown = 200;
+    /* Sixty-four is four times what the original aimed a public room at:
+     * General:DesiredPlaying defaults to 15 playing pilots and its whole job is
+     * deciding when to open another arena. So this is the room size we think
+     * plays, not the most the array can take, and a zone that wants more can
+     * say so up to SIM_MAX_SHIPS. */
+    cfg->max_ships = 64; /* 2 s before a dropped flag can be retaken */
     /* The green field is the whole map, because the players are spread over
      * the whole map. Two hundred of them is one per five thousand tiles, or
      * roughly one every seventy tiles in each direction -- close enough that
