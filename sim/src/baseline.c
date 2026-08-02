@@ -71,6 +71,7 @@ static const sim_class_units flight = {
 #define BOMB_ENERGY     300   /* BombFireEnergy */
 #define BOMB_ENERGY_UP   50   /* BombFireEnergyUpgrade, per level */
 #define BOMB_THRUST     400   /* BombThrust: the recoil of letting one go */
+#define BOMB_BLAST       80   /* BombExplodePixels, for an L1 bomb */
 
 /* The charge slots the baseline uses. A zone can fill the other two. */
 #define CH_REPEL 0
@@ -124,14 +125,14 @@ static const class_row rows[SIM_MAX_CLASSES] = {
        most shrapnel: the Shark's ShrapnelMax of 31 against everyone else's
        8, which here is a deeper rung on the add-on rather than a count. */
     {3, 2, GUN_ALL,
-     M2(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}},
+     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}},
     /* Spread is Chord's and freeze is ours: neither has a setting in the
        original, so add-on ceilings are where our roster still lives. */
     {3, 2, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE) | M1(SIM_MOD_FREEZE),
      BOMB_ALL,                                             {3, 3, 0, 0}},
     /* The Leviathan: MaxBombs 3. */
     {3, 3, GUN_ALL,
-     M2(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}},
+     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}},
     {3, 2, GUN_ALL | M2(SIM_MOD_FREEZE), BOMB_ALL,         {3, 3, 0, 0}},
     {3, 2, GUN_ALL, BOMB_ALL,                              {3, 3, 0, 0}},
     /* Facet is the Terrier's DoubleBarrel: the hull whose spread is the
@@ -251,7 +252,16 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * rather than inside the transform that applies them. */
     cfg->mod_step[SIM_MOD_MULTI] = 2;              /* a pair of extra barrels */
     cfg->mod_step[SIM_MOD_BOUNCE] = 1;             /* one more wall survived */
-    cfg->mod_step[SIM_MOD_PROX] = 24 * 256;        /* 24 px of fuse */
+    /* ProximityDistance=3, in tiles. Binary in the original: a bomb is a
+     * contact bomb until the prize makes it a proximity one, and the radius
+     * comes from the bomb's level rather than from how many of the prize you
+     * have. This core hangs it on the add-on instead, so every row below
+     * holds proximity at one rung and one rung is the L1 radius.
+     *
+     * What that does not reproduce is the widening: there, a level 2 bomb
+     * senses at four tiles and a level 3 at five. Here the radius is what the
+     * add-on says and the level does not reach it. */
+    cfg->mod_step[SIM_MOD_PROX] = 3 * 16 * 256;    /* three tiles of fuse */
     cfg->mod_step[SIM_MOD_SHRAPNEL] = 0;           /* a pattern, not a number */
     cfg->mod_step[SIM_MOD_FREEZE] = 100;           /* a second of no recharge */
     cfg->mod_step[SIM_MOD_PUSH] = sim_units_speed(1200);
@@ -275,10 +285,14 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * fragment hits for a whole L1 bullet, which is 200 there. Life is
          * BulletAliveTime, since it has no shrapnel clock of its own.
          *
-         * ShrapnelRate=2 a level, so a rung buys two more fragments. The
-         * original caps that at ShrapnelMax, which is 8 on seven of its ships
-         * and 31 on the Shark; here the cap is the ladder itself, and which
-         * hulls may climb it is already a per-class field. */
+         * ShrapnelRate=2, which its help calls the shrapnel "gained by a
+         * 'Shrapnel Upgrade' prize", so a rung buys two more fragments.
+         *
+         * The cap is where this stops matching. ShrapnelMax is 8 on seven of
+         * the original's ships and 31 on the Shark, and an add-on here is two
+         * bits, so three rungs and six fragments is the ceiling however many
+         * prizes a pilot finds. Reaching eight would mean a fourth rung and a
+         * wider field, which is a wire change rather than a number. */
         frag.speed = sim_units_speed(3000);
         frag.life = 550;
         frag.on_wall = SIM_WALL_END;
@@ -415,7 +429,11 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             sh.life = 8000;
             sh.on_wall = SIM_WALL_END;
             sh.damage = sim_units_energy(BOMB_DAMAGE);
-            sh.blast = 80 * 256;
+            /* BombExplodePixels is the L1 radius and its help spells the rest
+             * out: "L2 bombs double this, L3 bombs triple this". So the blast
+             * is what a bomb level buys, since the damage at the centre does
+             * not move. */
+            sh.blast = BOMB_BLAST * (k + 1) * 256;
             sh.splinter = SIM_NO_PATTERN;
 
             sim_fire_pattern bomb;
