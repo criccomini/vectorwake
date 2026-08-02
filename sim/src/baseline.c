@@ -110,9 +110,9 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * allweapons, multiprize -- is simply absent from our space rather than
      * present at zero.
      *
-     * Rust is the number to tune first. One green in ten takes something
-     * back, and it can only take what you are holding, so it costs a loaded
-     * pilot and never touches one who has just spawned. */
+     * Rust is the number to tune first. One green in a hundred takes
+     * something back, and it can only take what you are holding, so it costs
+     * a loaded pilot and never touches one who has just spawned. */
     cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_ENERGY)] = 40;    /* Energy */
     cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_RECHARGE)] = 40;  /* QuickCharge */
     cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_SPEED)] = 40;     /* TopSpeed */
@@ -128,7 +128,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_FREEZE)] = 25;   /* ours */
         cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_PUSH)] = 25;     /* ours */
     }
-    cfg->rust_chance = 100;
+    cfg->rust_chance = 10;
     /* A kill is worth three bounty to the killer, so a pilot on a streak
      * becomes a target without having touched a green -- and a flag carrier
      * is worth crossing the map for. The original's reference zone used six

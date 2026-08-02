@@ -390,14 +390,13 @@ nothing, which means a zone can add a weapon without recalculating the file.
 
 **Rust** is a green that takes something back. It is not a place in the space
 -- it is a chance, out of a thousand, that the green corrodes instead of
-granting, and the baseline is 100.
+granting, and the baseline is 10: one green in a hundred.
 
-This is the one number here that is deliberately *not* the original's. It ships
-`PrizeNegativeFactor=300`, one green in three hundred, which is rare enough to
-be a curiosity. Ours is one in ten, because rust is doing a job in this design
-that it was not doing there: it is the counterweight to a tech tree that has no
-other way down, and at one in three hundred a loaded pilot would never feel it.
-If it turns out to be too much, this is the number to move first.
+The original ships `PrizeNegativeFactor=300`, one in three hundred, which is
+rare enough to be a curiosity rather than a mechanic. Ours is three times more
+common because rust is doing a job here that it was not doing there -- it is
+the only way *down* a tech tree that otherwise only climbs -- but it is still
+the rare case. A pilot notices rust; a pilot does not plan around it.
 
 What it takes is chosen evenly from **what the pilot is actually holding**, and
 that is the whole reason it is not simply cruel:

@@ -42,7 +42,7 @@ prize_max = 20
 # Out of a thousand, how often a green takes something back instead of giving
 # it. Rust can only corrode what a pilot is holding, so it costs the loaded
 # and never touches one who has just spawned.
-rust = 100
+rust = 10
 
 # What a kill is worth. A killer is paid the victim's whole bounty, which is
 # derived from what that pilot was carrying -- so a fresh spawn is worth

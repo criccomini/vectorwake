@@ -1340,7 +1340,7 @@ mod tests {
             luck = 10
         "#);
         assert!(warn.iter().any(|x| x.contains("luck")), "{warn:?}");
-        assert_eq!(w.cfg.rust_chance, 100, "and rust keeps its default");
+        assert_eq!(w.cfg.rust_chance, 10, "and rust keeps its default");
     }
 
     #[test]
@@ -1364,7 +1364,7 @@ mod tests {
         "#);
         assert_eq!(w.cfg.bounty_per_kill, 3);
         assert_eq!(w.cfg.points_per_flag, 100);
-        assert_eq!(w.cfg.rust_chance, 100);
+        assert_eq!(w.cfg.rust_chance, 10);
     }
 
     #[test]
