@@ -31,10 +31,19 @@ Two consequences follow, and they run in opposite directions from what the
 architecture first implied.
 
 `SIM_MAX_SHIPS` is 64, so **a zone with 100 to 200 players is already two to
-four rooms** whether anybody wanted that or not. The fill target in the
-concentration rule therefore wants to sit near 60 rather than being a free
-parameter, and "one zone, 200 players, running smoothly" means three rooms that
-each run well plus a policy that keeps them full.
+four rooms** whether anybody wanted that or not, and "one zone, 200 players,
+running smoothly" means three rooms that each run well plus a policy that keeps
+them full. Worth knowing this is a constraint we introduced: ASSS had no
+per-arena cap at all. Its only documented player maxima are `Team:MaxPerTeam` and
+`Team:MaxPerPrivateTeam`, both defaulting to 1000, which is uncapped in practice.
+
+The fill target is a separate question, and 64 is the wrong anchor for it. The
+original's equivalent knob is `General:DesiredPlaying`, whose entire job is
+deciding when to open another public arena, and it **defaults to 15** playing
+players with spectators excluded. So thirty years of the game this one descends
+from settled on a public room being good at roughly 15 to 30, far below any
+technical ceiling. Our fill target is a feel number to playtest against, not a
+figure to derive from an array bound; `SIM_MAX_SHIPS` is only the wall behind it.
 
 And a room is cheap enough that **one process should be able to hold many of
 them**, which [decision 23](decisions.md) did not allow for. See the amendment
