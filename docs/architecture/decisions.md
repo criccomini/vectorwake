@@ -248,9 +248,10 @@ rewrite. That property is worth protecting deliberately.
 leaderboards before M5, in which case adopt early. Or if the game turns out to
 need none of them, in which case skip it.
 
-**Amended by [decision 25](#25-an-arena-chooses-its-own-type-from-a-unioned-view):**
+**Amended by [decision 25](#25-an-arena-server-chooses-which-zone-it-serves):**
 the zone directory is no longer on the list of things Nakama gets. A directory
-that holds a catalog, a token table, and a live fleet view is a piece of our own
+that holds a catalog, a token table, and a live view of the arena servers is a
+piece of our own
 infrastructure rather than a leaderboard, and nothing Nakama offers implements
 it. Identity, friends, parties, chat outside the arena, leaderboards and
 tournaments are unchanged, and keeping identity *out* of the directory process is
@@ -623,8 +624,8 @@ supervisor that restarts it is whatever already restarts containers. Resource
 accounting per arena stops being a metric we compute and starts being a number
 the platform reports.
 
-The players see types rather than servers, which is the user-visible half:
-Alpha, Chaos, War, Duel are things you join, and which instance you land on is a
+Players see zones rather than servers, which is the user-visible half: Alpha,
+Chaos, War and Duel are things you join, and which arena server you land on is a
 routing detail. See [zones-and-arenas.md](zones-and-arenas.md).
 
 **Cost:** Population stops being one social space by construction. Zone-wide
@@ -682,40 +683,40 @@ probably an account rather than a token.
 
 ---
 
-## 25. An arena chooses its own type from a unioned view
+## 25. An arena server chooses which zone it serves
 
 **Status:** proposed
 
-No scheduler assigns work. Each directory tells its registered arenas what it has
-observed itself; each arena unions those reports, deduplicates by instance id,
-keeps the most recent observation of each, and decides for itself which type to
-run. Clients decide for themselves which arena to join. The directory observes
-and reports; the edges decide.
+No scheduler assigns work. Each directory tells its registered arena servers
+what it has observed itself; each of them unions those reports, deduplicates by
+instance id, keeps the most recent observation of each, and decides for itself
+which zone to serve. Clients decide for themselves which arena server to join.
+The directory observes and reports; the edges decide.
 
 The alternative we rejected was assignment, which reads as simpler until two
-directories assign the same instance two different types. Fixing that needs one
+directories assign the same instance two different zones. Fixing that needs one
 authority, which needs election or shared state, which is the coordination the
 flat model was supposed to buy us out of. Autonomy costs a herding problem
 instead, and a herding problem can be blunted locally.
 
-Four rules do the blunting. Only an empty arena chooses, so a type change never
-disconnects anybody and drain time rate-limits decisions. An arena opens a new
-instance of a type only when every live instance of that type is above its fill
-target, because five War rooms of four players is worse than one of twenty and
-declining to scale is the hard half of autoscaling. Decisions are jittered, then
-announced and re-read before committing, which is carrier sense with backoff.
-And region is a preference rather than a constraint.
+Four rules do the blunting. Only an empty arena server chooses, so a change of
+zone never disconnects anybody and drain time rate-limits decisions. An arena
+server opens a new instance of a zone only when every live instance of that zone
+is above its fill target, because five War rooms of four players is worse than
+one of twenty and declining to scale is the hard half of autoscaling. Decisions
+are jittered, then announced and re-read before committing, which is carrier
+sense with backoff. And region is a preference rather than a constraint.
 
-Type definitions are the exception: the catalog is a versioned artifact with one
-author, deployed identically to a zone's directories, and an arena takes the
-highest version it is offered and logs a mismatch rather than voting on it.
-Configuration management, not agreement.
+Zone definitions are the exception: the catalog is a versioned artifact with one
+author, deployed identically to a deployment's directories, and an arena server
+takes the highest version it is offered and logs a mismatch rather than voting
+on it. Configuration management, not agreement.
 
 **Cost:** Eventually consistent scheduling, so transient over- and
 under-provision is normal and a fleet will sometimes hold two half-full rooms for
 a few minutes. The announce-and-backoff step is a lock protocol over an
 eventually consistent channel, which is worth naming rather than discovering. And
-the directory's fleet view is only as complete as its registration overlap, so
+a directory's view is only as complete as its registration overlap, so
 every arena wants to register with every directory.
 
 **Reconsider if:** a fleet reaches the hundreds of instances, where backoff starts
@@ -727,18 +728,18 @@ doing serious work and a leader begins to look cheap by comparison.
 
 **Status:** proposed
 
-One web UI, and it does two separable things. It reads the same fleet view an
-arena reads, unioned across a zone's directories, which makes the whole
+One web UI, and it does two separable things. It reads the same view an arena
+server reads, unioned across a deployment's directories, which makes the whole
 observability half a second consumer of a protocol that exists. And it edits the
 catalog, producing a new version that flows to directories and then to arenas by
 the path already built for it.
 
-Bans, a type's map and settings, fill targets, staff and their capabilities are
-all edits rather than commands, and treating them as edits puts the central thing
-in the right place. The authoring side is central for *authorship* and not for
-*runtime*: if it is down, directories keep serving the version they hold and
-arenas keep running the type they chose. Nothing stops. Backing the catalog with
-git makes the audit trail free.
+Bans, a zone's map and settings, fill targets, staff and their capabilities are
+all edits rather than commands, and treating them as edits puts the central
+thing in the right place. The authoring side is central for *authorship* and not
+for *runtime*: if it is down, directories keep serving the version they hold and
+arena servers keep serving the zone they chose. Nothing stops. Backing the
+catalog with git makes the audit trail free.
 
 The genuinely imperative actions, kicking a player and draining, pinning or
 restarting an arena, travel down the registration socket that already exists,

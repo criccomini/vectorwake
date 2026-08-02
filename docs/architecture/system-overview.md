@@ -21,10 +21,11 @@ list them, per [zones-and-arenas.md](zones-and-arenas.md).
 logic, and anything a zone author wants to add. They receive events and may
 answer questions the server asks, in the shape of ASSS's adviser pattern.
 
-**AI players** (`server/ai/`). Bots that fill an arena when humans are scarce and
-leave as humans arrive. They run in the arena's tick and emit the same input
+**AI players** (`server/ai/`). Bots that fill an arena when humans are scarce
+and leave as humans arrive. They run in the arena's tick and emit the same input
 commands a network client does, so they cannot cheat. See
-[ai-runtime.md](ai-runtime.md) and [design/ai-players.md](../design/ai-players.md).
+[ai-runtime.md](ai-runtime.md) and
+[design/ai-players.md](../design/ai-players.md).
 
 **External bots.** Programs that connect over the same protocol as players, with
 elevated rights granted by capability. Reading Subspace taught us that most
@@ -32,13 +33,13 @@ zone identity lives in bots, so they are a supported interface rather than a
 side effect. Distinct from AI players: these are tooling and league logic, not
 opponents.
 
-**Directory** (`server/`, same binary, `directory` subcommand). A zone's front
-door: it holds the catalog of arena types and the token table, accepts arena
-registrations, verifies the addresses they claim, and answers browse requests. It
-assigns nothing. An arena that cannot reach one keeps running whatever it last
-chose. See [discovery.md](discovery.md).
+**Directory** (`server/`, same binary, `directory` subcommand). The front door for
+many zones: it holds every zone's configuration and the token table, accepts arena
+server registrations, verifies the addresses they claim, and answers browse
+requests. It assigns nothing. An arena server that cannot reach one keeps serving
+whatever it last chose. See [discovery.md](discovery.md).
 
-**Admin UI** (static HTML). Reads the same fleet view an arena reads and edits
+**Admin UI** (static HTML). Reads the same view an arena server reads and edits
 the catalog, which is the whole of its authority. See [admin.md](admin.md).
 
 ## How a frame moves through the system
@@ -66,9 +67,9 @@ server only to learn whether a shot connected.
 
 ## Process and deployment shape
 
-One process holds one arena. A zone is a catalog of arena types, one or more
-directories serving it, and however many arena processes are running. Scaling is
-a replica count.
+One process holds one arena. A zone is a named game, one configuration plus
+however many arena servers are running it, and a directory serves many zones at
+once. Scaling is a replica count.
 
 This reverses the structure that let Subspace feel like one social space on a
 tiny budget, and [decision 23](decisions.md) argues the trade with its costs
@@ -130,9 +131,9 @@ position for nearby players sent more often than for distant ones. See
 
 | Subspace concept | Where it lives here |
 |---|---|
-| Zone | A catalog of arena types plus the directories that serve it |
+| Zone | A named game: one configuration plus the arena servers running it |
 | Arena | One process: a sim core instance plus its settings and map |
-| Named arena (`pub1`, `?go`) | Deleted. A player picks an arena type and the client picks the instance |
+| Named arena (`pub1`, `?go`) | Deleted. A player picks a zone and the client picks the arena server |
 | Directory server | A zone's own front door, not a global list of zones |
 | Freq | A team id inside arena state |
 | `arena.conf` settings | Configuration compiled into a settings struct the sim core reads |

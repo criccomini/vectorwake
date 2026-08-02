@@ -1,8 +1,9 @@
-# The zone server
+# The arena server
 
 > The zone and arena model in this document has been superseded. One process now
-> holds one arena, a zone is a catalog of arena types served by directories, and
-> an arena picks its own type rather than being placed by a scheduler. See
+> holds one arena, a zone is one game backed by interchangeable arena servers, and
+> an arena server picks which zone it serves rather than being placed by a
+> scheduler. See
 > [zones-and-arenas.md](zones-and-arenas.md), [discovery.md](discovery.md) and
 > decisions 23 through 26. Everything else here, authority and validation, lag
 > response, modules, persistence and identity, stands unchanged.
@@ -43,7 +44,7 @@ server/
     transport/        udp.rs, websocket.rs, throttle.rs
     session/          handshake, auth, capabilities, chat
     arena/            arena.rs, settings.rs, map.rs
-    directory/        registration client, fleet view, type selection
+    directory/        registration client, the unioned view, zone selection
     sim/              FFI bindings to sim/
     lag/              measurement and actions
     ai/               controllers, perception, navigation, population director
@@ -59,7 +60,7 @@ One process, one arena, one tick loop. The arena holds a `sim_state`, its
 settings, its map, its player list, and its module instances, and nothing else in
 the process competes for them. The worker pool, the lazy load by name, the
 template resolution and the unload grace period that used to be described here
-are all gone with [decision 23](decisions.md); a fleet is many processes and the
+are all gone with [decision 23](decisions.md); capacity is many processes and the
 container platform schedules them.
 
 A tick is: drain the input queue, let AI controllers add their inputs, call
@@ -70,7 +71,7 @@ going to AI per [ai-runtime.md](ai-runtime.md). Measured tick cost is in memory
 #75: 64 ships ran at 205 microseconds before the weapon-spec cache took a third
 off that.
 
-Which type the arena runs, and when it drains to become a different one, is
+Which zone this process serves, and when it drains to serve a different one, is
 [zones-and-arenas.md](zones-and-arenas.md). Duels keep their own lifecycle: a
 duel arena runs matches back to back out of a warm pool rather than being created
 per match, per the amendment to [decision 16](decisions.md). See
@@ -150,10 +151,12 @@ authority issued it stays out of the arena code.
 
 ## Operations
 
-A zone is a directory of configuration, maps, and modules, plus one binary. The
-process reloads settings without a restart, because zone operators tune numbers
-constantly and taking an arena down to change a bounce factor is how you lose
-players.
+An arena server is one binary and a short config naming its directories. The
+configuration it serves arrives from a directory and reloads without a restart,
+because zone operators tune numbers constantly and taking an arena down to change
+a bounce factor is how you lose players. What used to be a zone directory on the
+serving host is now the catalog, per
+[content-pipeline.md](content-pipeline.md).
 
 Metrics we care about from the start: tick duration per arena, bandwidth per
 player, snapshot size, input queue depth, and the count of lag actions taken.

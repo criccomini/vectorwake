@@ -14,14 +14,15 @@ authority question answerable.
 ## Seeing costs nothing
 
 A directory already holds what an operator wants to look at: every registered
-arena, its type, its verified player count, its region, when it was last
-observed, and whether it passed verification. The admin UI is therefore another
-client of the browse protocol with an authenticated superset of the same reply.
+arena server, the zone it serves, its verified player count, its region, when it
+was last observed, and whether it passed verification. The admin UI is therefore
+another client of the browse protocol with an authenticated superset of the same
+reply.
 
 Because each directory relays only its own observations, an admin unioning
-across all of a zone's directories sees a more complete picture than any single
-directory holds. That is the same union an arena performs to choose a type, run
-for a different reason.
+across all of a deployment's directories sees a more complete picture than any
+single directory holds. That is the same union an arena server performs to choose
+a zone, run for a different reason.
 
 Build it as a static HTML page rather than inside the Defold client. It wants
 tables, forms, and text entry; our client draws vector art and text on purpose,
@@ -32,7 +33,7 @@ serve it as a convenience, but nothing depends on that.
 
 ## Control, part one: edits
 
-Bans, a type's map or settings, fill targets, adding a type, retiring one, pool
+Bans, a zone's map or settings, fill targets, adding a zone, retiring one, pool
 tokens and their instance caps. These are not commands, they are edits, and the
 architecture already has a distribution path for edits: a versioned catalog
 deployed to every directory, which arenas take by highest version.
@@ -43,7 +44,7 @@ a configuration authoring tool that happens to have a live view attached.
 That does create one central place, and the distinction worth holding onto is
 that it is central for authorship rather than for runtime. If the authoring side
 is down, every directory keeps serving the catalog version it has and every arena
-keeps running the type it chose. Nothing stops. An assignment scheduler going
+keeps serving the zone it chose. Nothing stops. An assignment scheduler going
 down stops joins; a config author going down stops config changes, which is the
 correct blast radius for the feature.
 
@@ -53,7 +54,7 @@ answer.
 
 ## Control, part two: actions
 
-Kicking a player, draining an arena, pinning one to a type, unpinning it,
+Kicking a player, draining an arena server, pinning one to a zone, unpinning it,
 restarting it. These have to reach one specific process now.
 
 Send them down the registration socket that already exists, scoped so a

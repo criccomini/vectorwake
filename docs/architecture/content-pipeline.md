@@ -124,40 +124,43 @@ the web build.
 
 A zone whose rules exceed configuration writes a module. See
 [server.md](server.md) for the sandbox and the adviser pattern. The relevant
-point for content authors is that the module ships in the zone directory next to
-the maps and the settings, and is versioned with them.
+point for content authors is that the module ships in the catalog next to the maps
+and the settings, and is versioned with them.
 
-## What a zone looks like on disk
+## What the content looks like on disk
 
-A zone's content is a catalog: authored in one place, versioned as a unit, and
-served to arena processes by the directories. It is not a directory a running
-server reads, which is the part that changed with
-[decision 25](decisions.md).
+Every zone a directory serves lives in one catalog: authored in one place,
+versioned as a unit, and handed to arena servers over the registration socket. It
+is no longer a directory that a running server reads off its own disk, which is
+the part that changed with [decision 25](decisions.md).
 
 ```
-myzone/                        the catalog, versioned (git is the obvious host)
-  catalog.toml                 zone name, version, staff, bans, the type list
-  types/
+catalog/                       versioned as a unit (git is the obvious host)
+  catalog.toml                 directory name, version, staff, bans, the zone list
+  zones/
     war/
-      type.toml                mode, fill target, settings or includes
+      zone.toml                mode, fill target, settings or includes
       war.map
       war.overlay
     duel/
-      type.toml
+      zone.toml
   shared/
-    ships/apex.toml            ship definitions the types include
+    ships/apex.toml            ship definitions the zones include
     tilesets/standard.png
   modules/
     warzone.wasm
     league.lua
 ```
 
-An arena process holds almost nothing. Its own config names the directories it
-registers with, where to read each token, its region, and which types it is
-willing to run; everything else arrives over the registration socket as the same
-packed bytes a client gets at join. Its only durable local state is the instance
-id it minted at first boot, plus whatever scores it has not yet handed to
-persistence.
+`zone.toml` keeps its name and loses its second job. It describes a game and
+nothing about a host, so the listen address, the TLS paths and the player cap are
+gone from it.
+
+An arena server holds almost nothing of its own. Its config names the directories
+it registers with, where to read each token, its region, and which zones it is
+willing to serve; everything else arrives over the socket as the same packed bytes
+a client gets at join. Its only durable local state is the instance id it minted
+at first boot, plus whatever scores it has not yet handed to persistence.
 
 The debt to ASSS's layout is still obvious and still intentional. What moved is
 the ownership: ASSS put the game on the disk of the machine serving it, and a

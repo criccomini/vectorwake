@@ -20,7 +20,7 @@ ten seconds late, and an arena that dies is delisted immediately instead of
 lingering as a row that nobody can join.
 
 Registration state is therefore a held socket and a local file, and never a
-database. That is what lets a zone run several directories with no shared
+database. That is what lets a deployment run several directories with no shared
 storage and no agreement between them.
 
 A registered-but-disconnected arena is dropped rather than shown as down. The
@@ -49,9 +49,9 @@ passwords:
 
 ```toml
 name = "vectorwake"
-catalog = "catalog.toml"
+catalog = "catalog.toml"                 # the zones this directory serves
 
-[[fleet]]
+[[pool]]
 name  = "us-east pool"                   # the directory names it, not the pool
 token = "sha256:9f86d081884c7d65..."     # hashed at rest
 region = "us-east"
@@ -65,9 +65,11 @@ impersonation is structurally impossible, revocation is one row rather than a
 rotation across the fleet, and a leaked token costs one pool's listing.
 
 The name labels an operator's pool in the admin surface and is never shown to
-players, who see arena types. One token therefore authorises many instances,
-which is what makes horizontal scaling a matter of raising a replica count.
-`max_instances` bounds what a compromised token can do.
+players, who see zones. One token therefore authorises many instances, which is
+what makes horizontal scaling a matter of raising a replica count, and it says
+nothing about which zone any of them serves: pools are capacity, zones are games,
+and the two groupings cut across each other. `max_instances` bounds what a
+compromised token can do.
 
 Tokens are generated (`vectorwake-server token`), never typed. Hashing at rest
 is only worth anything if the input carries real entropy, and an operator left
@@ -111,9 +113,9 @@ role differ. Arena to directory:
 
 | Message | Carries |
 |---|---|
-| `REGISTER` | token, instance id, client-facing address, region, the types this instance is willing to run |
-| `STATUS` | current type, players, bots, and the five metrics from [server.md](server.md) |
-| `INTENT` | the type this instance proposes to take next |
+| `REGISTER` | token, instance id, client-facing address, region, the zones this instance is willing to serve |
+| `STATUS` | current zone, players, bots, and the five metrics from [server.md](server.md) |
+| `INTENT` | the zone this instance proposes to serve next |
 
 Directory to arena:
 
@@ -121,12 +123,12 @@ Directory to arena:
 |---|---|
 | `ACCEPTED` | pool name, catalog version, the catalog, verification result |
 | `REJECTED` | reason: unknown token, pool at `max_instances`, failed verification |
-| `VIEW` | every instance this directory holds a registration for: id, type, players, region, observed-at |
+| `VIEW` | every instance this directory holds a registration for: id, zone, players, region, observed-at |
 | `CATALOG` | a new version, pushed when it changes |
 | `COMMAND` | an operator action, per [admin.md](admin.md) |
 
 A willingness list on `REGISTER` covers heterogeneous hardware and an operator
-who only wants to host one type. The default is "any", which is what a fleet of
+who only wants to host one zone. The default is "any", which is what a block of
 identical containers wants.
 
 ## What a directory may relay
@@ -134,8 +136,8 @@ identical containers wants.
 **Only what it observed itself.** A directory forwards registrations it holds
 and counts it verified, never another directory's account of a third party.
 
-Without that rule a single arena poisons the fleet's picture by claiming Alpha
-holds five hundred players, and every other arena avoids Alpha. With it, the
+Without that rule a single arena server poisons the shared picture by claiming
+Alpha holds five hundred players, and every other one avoids Alpha. With it, the
 worst available lie is about the liar's own numbers, and both directions of that
 lie are self-limiting: claim to be full and nobody is routed to you, claim to be
 empty and players arrive to be turned away. Region is self-reported for the same
@@ -144,35 +146,35 @@ placement.
 
 A directory operator, by contrast, is trusted. They hold the token table, they
 serve the catalog, and they can send commands, so a compromised directory can
-mislead its own arenas and its own players. Splitting a zone's directories
-across operators does not divide that trust, it multiplies it. This is inherent
-rather than a gap to close.
+mislead its own arena servers and its own players. Splitting a deployment's
+directories across operators does not divide that trust, it multiplies it. This
+is inherent rather than a gap to close.
 
 ## Several directories
 
 Two different things share one mechanism, and they behave differently enough to
 keep apart.
 
-*Replicas* are several directories of one zone: same catalog, same token table,
-for availability. Because registration is a socket and the token table is a
-file, replicas need no consensus, no gossip and no shared storage. They will
+*Replicas* are several directories of one deployment: same catalog, same token
+table, for availability. Because registration is a socket and the token table is
+a file, replicas need no consensus, no gossip and no shared storage. They will
 report slightly different player counts at any instant, which nobody notices.
 
-*Federation* is somebody else's zone: their catalog, their tokens, their fleet.
-The mechanism is identical, and it is what keeps the ecosystem from being ours
-alone.
+*Federation* is somebody else's deployment: their catalog, their zones, their
+tokens, their arena servers. The mechanism is identical, and it is what keeps the
+ecosystem from being ours alone.
 
-Load is not the argument for either. A directory serving fifty arenas sends
-about six kilobytes of JSON per browse and holds idle sockets the rest of the
-time; one small host absorbs every player we are going to get. The arguments
+Load is not the argument for either. A directory serving fifty arena servers
+sends about six kilobytes of JSON per browse and holds idle sockets the rest of
+the time; one small host absorbs every player we are going to get. The arguments
 are that the directory is the front door, so its outage stops new players from
 finding anything, and that a list nobody else can run is a list we own.
 
-Directories never connect to each other. An arena registered with several
-carries each one's observations to the others, so the fleet's picture propagates
+Directories never connect to each other. An arena server registered with several
+carries each one's observations to the others, so the shared picture propagates
 through the workers. Completeness therefore depends on registration overlap,
-which makes the natural configuration every arena registering with every
-directory of its zone.
+which makes the natural configuration every arena server registering with every
+directory of its deployment.
 
 ## The client
 
@@ -189,13 +191,14 @@ A client may also union across directories, since instance ids make
 deduplication well defined. That gives a complete picture without either
 directory trusting the other, and at two or three directories it costs a couple
 of extra sockets per browse. Failing over to one complete-enough list is the
-simpler default; unioning is available when a zone's registration overlap is
-poor.
+simpler default; unioning is available when a deployment's registration overlap
+is poor.
 
 The browse reply grows from a list of addresses into the catalog plus the live
 arena list, because a player now picks a game rather than a server. `Status`
-carrying `arenas: u32` was all a single-room zone could say.
+carrying `arenas: u32` was all a one-room-per-process zone could say.
 
-There is no global registry of zones. A player reaches one because the client
+There is no global registry of directories. A player reaches one because the
+client
 ships its directory addresses or because somebody handed them one, and we are
 not building the thing that would list every fleet.
