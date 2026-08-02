@@ -148,14 +148,18 @@ local function my_buttons()
         local emulated = touch.used and (action == hash("pointer")
                                          or action == hash("pointer_alt"))
         if down and not emulated then
-            -- Two sources on the rudder would fight; the stick wins while it
-            -- is down, and the keys keep everything else.
+            -- Two sources on the controls would fight; the stick wins every
+            -- flight bit while it is down, and the keys keep everything else.
+            -- All four, not just the rudder: the stick is both axes now, and
+            -- a key that could still light the engine under it would mean a
+            -- thumb pulled back to reverse got nothing.
             local bit = bit_for(action)
-            local rudder = bit == sim.BTN_LEFT or bit == sim.BTN_RIGHT
-            if not (steering and rudder) then bits[bit] = true end
+            local flight = bit == sim.BTN_LEFT or bit == sim.BTN_RIGHT
+                or bit == sim.BTN_THRUST or bit == sim.BTN_REVERSE
+            if not (steering and flight) then bits[bit] = true end
         end
     end
-    for _, bit in ipairs(touch.bits(sim.ship_heading(me))) do
+    for _, bit in ipairs(touch.bits()) do
         bits[bit] = true
     end
     -- A tapped charge pad names its own slot, so on a touchscreen there is no

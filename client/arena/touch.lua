@@ -1,22 +1,34 @@
 -- Touch controls.
 --
 -- The question platforms.md asks is whether mobile is a playing client or a
--- spectating one. This is the playing answer: a thumbstick that points where
--- you want the nose to go, and two pads for the two weapons.
+-- spectating one. This is the playing answer: a thumbstick that is the four
+-- arrow keys, and pads for the weapons and charges.
 --
--- Pointing beats a rotate-left/rotate-right pair on glass. There is no tactile
--- edge to feel for, so a player cannot hold a rotation and stop it on time;
--- they can put a thumb where they want to be facing. The ship still turns at
--- its own rate, so nothing about the flight model changes -- this only decides
--- which way the turn is applied, exactly as the AI does it.
+-- The stick pointed the nose at first -- put a thumb where you want to be
+-- facing and the ship turns that way. It reads beautifully and it cannot play
+-- this game, because it welds the nose to the direction of travel. Reverse
+-- exists in the core, the keyboard has it on Down and the AI backs off with
+-- it, and the whole reason it matters is that it breaks that weld: you hold
+-- your guns on somebody while opening the range. A stick that means "point
+-- here" has no way to say that, at any tuning.
+--
+-- So the thumb offset is the two keyboard axes. Sideways is rotate, up is
+-- thrust, down is reverse, and a diagonal is both -- exactly what holding two
+-- arrows does. What it costs is that acquiring a heading is now a thing you
+-- hold and watch rather than a place you point, which is the same thing it
+-- costs on a keyboard.
 --
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
 
 local M = {}
 
-local DEAD_PX = 14        -- ignore a thumb that has barely moved
-local THRUST_PX = 46      -- push past this and the engine lights
+-- How far the thumb travels on each axis before that bit goes out. Two
+-- numbers rather than one radius, because the axes are not equally forgiving:
+-- heading is corrected constantly and wants a short throw, while lighting the
+-- engine is a commitment and a sloppy sideways drag should not do it.
+local ROT_PX = 14
+local DRIVE_PX = 26
 
 M.used = false            -- has this device ever reported a touch?
 M.scale = 1               -- drawable pixels per point
@@ -184,37 +196,32 @@ function M.fired_charge()
     return k
 end
 
--- The bits held this frame, given where the ship is currently pointing.
+-- The bits held this frame.
 --
 -- A list rather than a bitfield, because the caller merges this with the
 -- keyboard and HTML5 builds run Lua 5.1, which has no bitwise or. Summing a
 -- set of distinct bits is exact and needs no library.
-function M.bits(heading)
+--
+-- The two axes are read independently, so every combination a keyboard can
+-- hold is reachable: turn while burning, turn while backing off, back off
+-- with the nose held still.
+function M.bits()
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
     if bombs then out[#out + 1] = sim.BTN_BOMB end
     if not stick then return out end
 
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
-    local mag = math.sqrt(dx * dx + dy * dy)
-    if mag < DEAD_PX * M.scale then return out end
+    local rot = ROT_PX * M.scale
+    local drive = DRIVE_PX * M.scale
 
-    -- Screen +y is up and the simulation's +y is down, which is why this is
-    -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
-    local want = math.atan2(dx, dy)
-    local head = (heading / 65536) * math.pi * 2
-    local diff = want - head
-    while diff > math.pi do diff = diff - math.pi * 2 end
-    while diff < -math.pi do diff = diff + math.pi * 2 end
+    if dx > rot then out[#out + 1] = sim.BTN_RIGHT
+    elseif dx < -rot then out[#out + 1] = sim.BTN_LEFT end
 
-    if diff > 0.06 then out[#out + 1] = sim.BTN_RIGHT
-    elseif diff < -0.06 then out[#out + 1] = sim.BTN_LEFT end
-
-    -- Thrust once the thumb is committed and the nose is roughly there, so a
-    -- hard turn does not fling the ship the way it used to be facing.
-    if mag > THRUST_PX * M.scale and math.abs(diff) < 1.0 then
-        out[#out + 1] = sim.BTN_THRUST
-    end
+    -- Touches arrive counting up from the bottom of the screen, so up is a
+    -- larger y and up is the throttle.
+    if dy > drive then out[#out + 1] = sim.BTN_THRUST
+    elseif dy < -drive then out[#out + 1] = sim.BTN_REVERSE end
     return out
 end
 
@@ -281,16 +288,38 @@ function M.draw(u, w, h, s)
         end
     end
 
+    -- The four gates, drawn where they actually are: a tick across each axis
+    -- at the distance that axis needs before its bit goes out. A bare ring
+    -- says "drag somewhere"; this says how far, in which direction, and --
+    -- once it lights -- that the ship heard you. Which is most of what the
+    -- old stick had for free, since pointing showed you its own answer.
+    local function gates(ox, oy, dx, dy, base)
+        local rot = ROT_PX * s
+        local drive = DRIVE_PX * s
+        local arm = L.r * 0.3
+        local function tick(x0, y0, x1, y1, on)
+            u:seg(x0, y0, x1, y1, (on and 2.6 or 1.6) * s, on and live or base)
+        end
+        tick(ox + rot, oy - arm, ox + rot, oy + arm, dx > rot)
+        tick(ox - rot, oy - arm, ox - rot, oy + arm, dx < -rot)
+        tick(ox - arm, oy + drive, ox + arm, oy + drive, dy > drive)
+        tick(ox - arm, oy - drive, ox + arm, oy - drive, dy < -drive)
+    end
+
     if stick then
         ring(stick.ox, stick.oy, L.home.r, dim)
+        gates(stick.ox, stick.oy, stick.x - stick.ox, stick.y - stick.oy, dim)
         ring(stick.x, stick.y, L.r * 0.42, live, 16)
         u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, live)
     else
         -- A resting mark where a thumb should go. The stick itself is
         -- relative -- it appears wherever you press -- but a control that is
-        -- invisible until you find it is a control nobody finds.
-        ring(L.home.x, L.home.y, L.home.r, pal.a(pal.DIM, 0.28))
-        ring(L.home.x, L.home.y, L.r * 0.3, pal.a(pal.DIM, 0.35), 16)
+        -- invisible until you find it is a control nobody finds, and the
+        -- gates are the half of it that has to be learned before the first
+        -- press rather than during it.
+        local faint = pal.a(pal.DIM, 0.28)
+        ring(L.home.x, L.home.y, L.home.r, faint)
+        gates(L.home.x, L.home.y, 0, 0, faint)
     end
 end
 
