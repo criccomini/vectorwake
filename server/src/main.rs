@@ -10,6 +10,7 @@
 
 mod ai;
 mod calibrate;
+mod catalog;
 mod config;
 mod directory;
 mod modes;

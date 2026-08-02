@@ -98,12 +98,14 @@ max_ships = 64
 
 # How many humans of those seats people get, which is what leaves the bot roster
 # somewhere to sit.
-max_players = 16
+max_players = 32
 
-# The concentration rule. An arena server opens another instance of this zone
-# only when every live instance is at or above this, so it is the number that
-# decides whether a population concentrates or scatters. The original's
-# equivalent, General:DesiredPlaying, defaulted to 15.
+# The concentration rule: another room or instance opens only when every live one
+# is at or above this, so it is the number that decides whether a population
+# concentrates or scatters. Absent it is 15, which is General:DesiredPlaying's
+# default in ASSS and what thirty years of the original settled on for a public
+# room. It must not exceed max_players, or the rule can never fire and the zone
+# can never grow -- which is a validation error, not a warning.
 fill_target = 20
 
 # The most simulations one process may hold for this zone. Rooms are created on

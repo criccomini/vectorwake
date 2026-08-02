@@ -21,6 +21,27 @@ pub struct ModeCtx<'a> {
     pub finished: bool,
 }
 
+/// Every mode a zone may name. The catalog checks against this rather than
+/// falling back to warzone, which is exactly how `arena.mode` came to be a key
+/// that parsed and did nothing for months.
+pub const NAMES: [&str; 3] = ["arena", "warzone", "duel"];
+
+pub fn exists(name: &str) -> bool {
+    NAMES.contains(&name)
+}
+
+/// Build the mode a zone asked for. `teams` and `flags` come from the zone, so
+/// a two-team warzone with three flags is configuration rather than a rebuild.
+pub fn build(name: &str, flags: u8, _teams: u8) -> Box<dyn Mode> {
+    match name {
+        "warzone" => Box::new(Warzone::new(flags.max(1))),
+        // Duel is deferred; see docs/design/duel-mode.md. Naming it in a zone
+        // gets a free-for-all rather than a refusal, because the catalog has
+        // already accepted the name and a running room beats a dead one.
+        _ => Box::new(FreeForAll),
+    }
+}
+
 pub trait Mode: Send {
     fn tick(&mut self, ctx: &mut ModeCtx);
     fn on_death(&mut self, ctx: &mut ModeCtx, victim: u8, killer: u8);
