@@ -129,41 +129,28 @@ and the settings, and is versioned with them.
 
 ## What the content looks like on disk
 
-Every zone a directory serves lives in one catalog: authored in one place,
-versioned as a unit, and handed to arena servers over the registration socket. It
-is no longer a directory that a running server reads off its own disk, which is
-the part that changed with [decision 25](decisions.md).
+Every zone a deployment serves lives in one catalog, authored in one place,
+versioned as a unit, and handed to arena servers over the registration socket
+rather than read off the serving machine's own disk. The layout and every field
+in it are [catalog.md](catalog.md); this document is about how a zone author
+works, not about the schema, and repeating the schema here would only give it two
+places to drift.
 
-```
-catalog/                       versioned as a unit (git is the obvious host)
-  catalog.toml                 directory name, version, staff, bans, the zone list
-  zones/
-    war/
-      zone.toml                mode, fill target, settings or includes
-      war.map
-      war.overlay
-    duel/
-      zone.toml
-  shared/
-    ships/apex.toml            ship definitions the zones include
-    tilesets/standard.png
-  modules/
-    warzone.wasm
-    league.lua
-```
+Two things about it belong to authoring rather than to structure.
 
-`zone.toml` keeps its name and loses its second job. It describes a game and
-nothing about a host, so the listen address, the TLS paths and the player cap are
-gone from it.
+`zone.toml` keeps its name and loses its second job. It always described a game,
+so what left it is the part that described a host: the listen address, the TLS
+paths, the player cap. An author edits games; an operator sizes machines.
 
-An arena server holds almost nothing of its own. Its config names the directories
-it registers with, where to read each token, its region, and which zones it is
-willing to serve; everything else arrives over the socket as the same packed bytes
-a client gets at join. Its only durable local state is the instance id it minted
-at first boot, plus whatever scores it has not yet handed to persistence.
+And an arena server holds almost nothing of its own. Its config names the
+directories it registers with, where to read each token, its region, and which
+zones it is willing to serve. Everything a game consists of arrives over the
+socket as the same packed bytes a client gets at join, which means an author never
+deploys to a serving host at all: they publish a catalog version and the fleet
+picks it up.
 
 The debt to ASSS's layout is still obvious and still intentional. What moved is
-the ownership: ASSS put the game on the disk of the machine serving it, and a
+the ownership. ASSS put the game on the disk of the machine serving it, and a
 fleet that scales by replica count cannot.
 
 ## Open questions

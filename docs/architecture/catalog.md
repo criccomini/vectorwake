@@ -111,6 +111,13 @@ fill_target = 20
 # a map.
 rooms_per_process = 1
 
+# Teams. The mode decides who goes where; this is the shape it works within.
+# 1 is a free-for-all. "smaller" is ASSS's behaviour, whose MaxTeamDifference
+# defaults to 1, so the balancer tolerates almost nothing.
+teams = 2
+balance = "smaller"        # smaller | random | none
+private_teams = false     # the original's private freqs, off until wanted
+
 # Everything below is the settings surface that already existed, unchanged.
 [arena]
 flags = 4
@@ -128,9 +135,10 @@ name = "anvil-bomb"
 on_wall = "bounce"
 ```
 
-Three fields are new and the rest is the zone file we already had, which is the
-point: a zone was always mostly settings, and what this adds is the handful of
-facts a fleet needs to place it.
+Everything under `[arena]` is the zone file we already had. What is new above it
+is the handful of facts a fleet needs in order to place a game rather than tune
+one: where it runs, how full is full, how many rooms to a process, and what a team
+means here. A zone was always mostly settings, and it still is.
 
 ## What validation must reject
 
@@ -147,6 +155,8 @@ tooling validates and the directory validates again on load:
 | `rooms_per_process` of zero | A process that holds no rooms is a process doing nothing |
 | Two `[[zone]]` entries with one name | Which one a client joins would depend on parse order |
 | A `[[pool]]` token that is not `sha256:` and 64 hex digits | A plaintext token in the catalog is a leaked token |
+| `teams` of zero | Every pilot needs a team; one team is a free-for-all, none is nothing |
+| `balance` naming something unimplemented | The same dead-key failure as `mode`, one field over |
 | A `version` not greater than the one being replaced | Arena servers take the highest; a rollback needs a new higher number, not a reused one |
 
 That last row is worth stating plainly because it is the surprising one. To roll

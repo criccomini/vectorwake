@@ -254,6 +254,87 @@ and a per-zone ban is available as a field on the row for the cases that want it
 This moves bans out of the `bans` list in `zone.toml`, which today has exactly one
 call site.
 
+## Joining, seats, and teams
+
+A client has picked an arena server. What happens between that and flying is the
+part of this design most easily left implicit, and it has a hole in it today:
+every human who joins is forced onto team 0, because the code that would decide
+otherwise does not exist.
+
+The sequence is four questions, and each has an answer that belongs to a different
+layer:
+
+1. **Is this pilot allowed in?** The catalog's bans, checked by the arena server
+   against the name the client presents. Deployment-wide, per
+   [catalog.md](catalog.md).
+2. **Is there a seat?** A room holds `max_ships` ships and admits `max_players`
+   humans. A joining pilot takes a bot's seat if one is free, which keeps the room
+   the same size and is what the code already does. Otherwise it spawns a new
+   ship, and if neither is possible the join is refused.
+3. **Which team?** The mode decides, and the catalog gives it a number to work
+   with. Warzone wants balance, so it puts the arrival on the smaller side. Free
+   for all wants none, so everyone shares a team and friendly fire is off by being
+   irrelevant. Duel wants exactly two.
+4. **Flying or watching?** A pilot may join as a spectator, and some are put there
+   without asking.
+
+Team assignment is the one that needs a decision rather than a description, and it
+should not be a fifth rule in the selection algorithm or a field in the client's
+join message. It belongs to the mode, because "what is a team here" is the same
+question as "what game is this," and a client asserting a team is a client
+asserting something the server should own. So the catalog carries the shape and
+the mode carries the policy:
+
+```toml
+teams = 2              # how many the mode may use; 1 is a free-for-all
+balance = "smaller"    # smaller | random | none
+private_teams = false  # whether players may form their own, ASSS's private freqs
+```
+
+`balance = "smaller"` is ASSS's default behaviour and the right one to ship:
+`Team:MaxTeamDifference` defaults to 1 there, so the balancer tolerates almost
+nothing. Private teams are off until there is a reason, because the original's
+private freqs came with passwords, ownership and a whole social layer we have no
+use for yet.
+
+### Spectating is not a feature, it is three
+
+Spectating keeps arriving from different directions, which is the sign it should
+be built once rather than three times:
+
+- The duel queue needs pilots present but not playing while they wait for a pair.
+- Lag response needs `SpecToSpec`'s force-to-spectator, which
+  [server.md](server.md) lifts from ASSS as the gentlest of the four thresholds.
+- An operator wants to watch a room without joining it, and the admin surface has
+  no other way to see a game rather than a number.
+
+A spectator is a player with a seat in the player list and no ship in the
+simulation. That is the whole of it, and it is why it costs almost nothing: the
+sim needs no spectator concept, `sim_state` gains no field, and a spectator is
+simply a connection that receives snapshots and sends no inputs. The one thing it
+does need is a snapshot that is not centred on a ship the viewer does not have,
+which the interest radius currently assumes.
+
+A pilot moving between spectating and flying is a spawn and a despawn, not a
+reconnect. That matters for the duel queue especially: waiting in a room and then
+being paired should not cost a round trip to a directory.
+
+### What a refusal has to say
+
+A join can fail for five reasons and the client has to tell them apart, because
+three of them mean "try another instance" and two mean "stop trying":
+
+| Reason | The client should |
+|---|---|
+| Room full | Try the next instance of this zone |
+| Draining | Try the next instance; this one is on its way out |
+| Zone no longer served here | Re-browse; the instance changed zone under it |
+| Banned | Say so and stop |
+| Bad protocol version | Say so and stop; the build is stale |
+
+`S2C_DENIED` already exists and carries a string. It wants a code alongside it, so
+the client can act on the first three without parsing English.
+
 ## Duel is the exception
 
 Duels are not currently built. They worked, offline and networked, and the code
