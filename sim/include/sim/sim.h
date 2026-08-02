@@ -383,6 +383,16 @@ typedef struct {
     /* What each rung of shrapnel breaks into. Shrapnel is the one add-on
      * whose magnitude is another weapon rather than a number. */
     uint8_t mod_splinter[SIM_MAX_RUNGS];
+    /* Proximity widens with the bomb's level: ProximityDistance is the L1
+     * radius and "each bomb level adds 1 to this amount". Q8 px per level. */
+    int32_t prox_step;
+    /* InactiveShrapDamage, and how long a fragment counts as inactive. A
+     * shard does almost nothing for its first quarter second, which is what
+     * stops a bomb killing at point blank twice over: once with the blast and
+     * again with the shrapnel born inside the hull it just hit. Q10 energy
+     * and ticks. */
+    int32_t shrap_inactive;
+    uint16_t shrap_inactive_ticks;
     int32_t bounce;   /* restitution on the axis that hit, out of 16 */
     int32_t friction; /* retained speed along the wall, out of 16 */
     uint16_t respawn_delay; /* ticks dead before respawn */

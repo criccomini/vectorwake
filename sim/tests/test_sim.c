@@ -1447,14 +1447,35 @@ int main(void) {
         const int WEDGE = 1;
         sim_state s;
         sim_init(&s, 1);
+        /* Broken on a ship out in the open rather than against a wall.
+         * Fragments scatter now, and a shell that ends on a wall throws half
+         * of them straight back into it, so the count a tick later says more
+         * about which way one seed threw them than about splitting. */
         sim_spawn(&s, WEDGE, 0, 8192, 300, 0, &cfg);
+        sim_spawn(&s, WEDGE, 1, 8192, 150, 0, &cfg);   /* short of the wall */
         s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 1);
         step_n(&s, &cfg, SIM_BTN_BOMB, 0, 1);
         CHECK(s.weapon_count == 1, "one bomb away");
-        step_n(&s, &cfg, 0, 0, 200);
-        CHECK(s.weapon_count > 1, "the wall broke it up");
-        for (uint16_t i = 0; i < s.weapon_count; i++)
-            CHECK(s.weapons[i].mods == 0, "and the fragments carry nothing");
+        /* Counted by the shot it fires rather than by what is in the air a
+         * tick later. Fragments come into being at the point of impact, which
+         * is on top of the hull that was hit, and scattered ones mostly die
+         * against it in the same tick they were born -- which is faithful,
+         * and is the reason the original pays shrapnel almost nothing for its
+         * first quarter second. */
+        int seen = 0, carried = 0;
+        ev_counts ec = {0, 0, 0, 0, 0, 0, 0};
+        for (int t = 0; t < 200; t++) {
+            ev_counts one = step_counting(&s, &cfg, 0, 0, 1);
+            ec.fires += one.fires;
+            for (uint16_t i = 0; i < s.weapon_count; i++)
+                if (s.weapons[i].depth > 0) {
+                    seen = 1;
+                    if (s.weapons[i].mods != 0) carried = 1;
+                }
+        }
+        CHECK(ec.fires >= 1, "the hit broke it up");
+        CHECK(seen, "and the fragments were there to look at");
+        CHECK(!carried, "and they carry nothing");
     }
 
     {

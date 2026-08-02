@@ -314,7 +314,7 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
  * it moves. `p` is NULL when a projectile already in flight is being resolved:
  * how it was fired is settled, and only what it *is* still matters.
  */
-static void compose(const sim_settings *cfg, uint16_t mods,
+static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
                     sim_weapon_spec *sp, sim_fire_pattern *p) {
     uint8_t n;
     if (p && (n = sim_mod_get(mods, SIM_MOD_MULTI)) != 0) {
@@ -348,8 +348,14 @@ static void compose(const sim_settings *cfg, uint16_t mods,
         sp->on_wall = SIM_WALL_BOUNCE;
         sp->bounces = (uint8_t)(sp->bounces + n * cfg->mod_step[SIM_MOD_BOUNCE]);
     }
-    if ((n = sim_mod_get(mods, SIM_MOD_PROX)) != 0)
-        sp->trigger += n * cfg->mod_step[SIM_MOD_PROX];
+    if ((n = sim_mod_get(mods, SIM_MOD_PROX)) != 0) {
+        /* ProximityDistance is the L1 radius and each bomb level adds one
+         * tile to it, so a fuse is what the prize gives plus what the ladder
+         * has climbed. The level has to be passed in because the rung picks
+         * the spec before an add-on is ever applied to it, so by here the
+         * pattern no longer knows which rung it came from. */
+        sp->trigger += n * cfg->mod_step[SIM_MOD_PROX] + level * cfg->prox_step;
+    }
     if ((n = sim_mod_get(mods, SIM_MOD_SHRAPNEL)) != 0)
         sp->splinter = cfg->mod_splinter[n < SIM_MAX_RUNGS ? n : SIM_MAX_RUNGS - 1];
     if ((n = sim_mod_get(mods, SIM_MOD_FREEZE)) != 0)
@@ -367,12 +373,12 @@ static void compose(const sim_settings *cfg, uint16_t mods,
 /* A trigger's pattern and projectile as the pilot holding these add-ons
  * actually fires them. Zero when the trigger has nothing on it. */
 static int resolve(const sim_settings *cfg, uint8_t pat, uint16_t mods,
-                   sim_fire_pattern *p, sim_weapon_spec *sp) {
+                   uint8_t level, sim_fire_pattern *p, sim_weapon_spec *sp) {
     if (pat >= cfg->pattern_count) return 0;
     *p = cfg->patterns[pat];
     if (p->spec >= cfg->spec_count) return 0;
     *sp = cfg->specs[p->spec];
-    compose(cfg, mods, sp, p);
+    compose(cfg, mods, level, sp, p);
     return 1;
 }
 
@@ -390,7 +396,8 @@ static int resolve(const sim_settings *cfg, uint8_t pat, uint16_t mods,
 static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
                           uint8_t owner, uint8_t team, int32_t x, int32_t y,
                           int32_t vx0, int32_t vy0, uint16_t heading,
-                          uint8_t depth, uint16_t mods, sim_events *ev);
+                          uint8_t depth, uint16_t mods, uint8_t level,
+                          sim_events *ev);
 
 /* Remove a weapon by swapping the last one into its slot. Order is
  * deterministic because it depends only on state, never on time. */
@@ -483,6 +490,24 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
 static void weapon_end(sim_state *s, const sim_settings *cfg,
                        const sim_weapon_spec *spec, const sim_weapon *w,
                        int hit_ship, sim_events *ev) {
+    /* InactiveShrapDamage: a fragment does almost nothing for its first
+     * quarter second.
+     *
+     * Shrapnel comes into being at the point of impact, which is inside the
+     * hull the bomb just hit, so without this a bomb lands twice over -- once
+     * as a blast and again as a ring of fragments already touching their
+     * victim, none of which had to be aimed. Depth is what marks a fragment:
+     * it is only ever set by a splinter.
+     *
+     * Age rather than a flag on the projectile, because the spec knows the
+     * life it was born with and the weapon knows what is left of it, so this
+     * costs nothing on the wire. */
+    int32_t damage = spec->damage;
+    if (w->depth > 0 && cfg->shrap_inactive_ticks > 0
+        && spec->life > w->life
+        && (uint16_t)(spec->life - w->life) < cfg->shrap_inactive_ticks) {
+        damage = cfg->shrap_inactive;
+    }
     if (spec->blast > 0) {
         int64_t rad = spec->blast;
         for (int i = 0; i < s->ship_count; i++) {
@@ -492,7 +517,7 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
             int64_t d2 = ddx * ddx + ddy * ddy;
             if (d2 > rad * rad) continue;
             int64_t d = isqrt64(d2);
-            int32_t dmg = (int32_t)((int64_t)spec->damage * (rad - d) / rad);
+            int32_t dmg = (int32_t)((int64_t)damage * (rad - d) / rad);
             /* A round that only stalls does no damage at all, so `dmg > 0`
              * cannot be the test for whether anything happened -- that is
              * what made the first stall round land silently. */
@@ -500,7 +525,7 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
                 apply_damage(s, cfg, (uint8_t)i, w->owner, dmg, spec->stall, ev);
         }
     } else if (hit_ship >= 0 && (spec->damage > 0 || spec->stall > 0)) {
-        apply_damage(s, cfg, (uint8_t)hit_ship, w->owner, spec->damage,
+        apply_damage(s, cfg, (uint8_t)hit_ship, w->owner, damage,
                      spec->stall, ev);
     }
 
@@ -572,7 +597,7 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
          * projectile is the stop. */
         if (w->depth < SIM_MAX_SPLINTER_DEPTH) {
             spawn_pattern(s, cfg, spec->splinter, w->owner, w->team, w->x, w->y,
-                          0, 0, 0, (uint8_t)(w->depth + 1), 0, ev);
+                          0, 0, 0, (uint8_t)(w->depth + 1), 0, 0, ev);
         }
     }
 }
@@ -580,10 +605,11 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
 static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
                           uint8_t owner, uint8_t team, int32_t x, int32_t y,
                           int32_t vx0, int32_t vy0, uint16_t heading,
-                          uint8_t depth, uint16_t mods, sim_events *ev) {
+                          uint8_t depth, uint16_t mods, uint8_t level,
+                          sim_events *ev) {
     sim_fire_pattern fp;
     sim_weapon_spec sp;
-    if (!resolve(cfg, pat, mods, &fp, &sp)) return;
+    if (!resolve(cfg, pat, mods, level, &fp, &sp)) return;
     const sim_fire_pattern *p = &fp;
     const sim_weapon_spec *spec = &sp;
     int count = p->count ? p->count : 1;
@@ -593,6 +619,20 @@ static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
          * truncates toward zero, which is symmetric, so the two halves of a
          * spread are mirror images rather than one being a unit wider. */
         int32_t off = (int32_t)p->spacing * (2 * n - (count - 1)) / 2;
+        /* Spacing of zero on a pattern of many means they scatter instead of
+         * sitting on a ring. That is Shrapnel:Random, which the original
+         * ships set, and it is the difference between a wall of fragments and
+         * a cloud of them: an even ring has gaps a pilot can be standing in,
+         * and the same eight pieces thrown at random do not.
+         *
+         * Zero used to mean every round left on the same heading, which is
+         * not a thing any pattern wants, so the encoding was free. The roll
+         * comes off the state's own generator, so it is as deterministic as
+         * everything else here. */
+        if (p->spacing == 0 && count > 1) {
+            s->rng = xorshift32(s->rng);
+            off = (int32_t)(s->rng >> 16);
+        }
         uint16_t h = (uint16_t)((int32_t)heading + off);
         int32_t dx, dy;
         heading_dir(h, &dx, &dy);
@@ -1051,7 +1091,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             uint8_t pat = cfg->charge[k];
             sim_fire_pattern cp;
             sim_weapon_spec cs;
-            if (sh->charge[k] > 0 && resolve(cfg, pat, 0, &cp, &cs)
+            if (sh->charge[k] > 0 && resolve(cfg, pat, 0, 0, &cp, &cs)
                 && sh->energy > cp.energy) {
                 int32_t mx = sh->x + (int32_t)(((int64_t)(cls->radius + 512) * dx) >> 15);
                 int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
@@ -1060,7 +1100,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                  * a repel that inherited shrapnel would be a surprise nobody
                  * asked for. */
                 spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
-                              sh->vx, sh->vy, sh->heading, 0, 0, ev);
+                              sh->vx, sh->vy, sh->heading, 0, 0, 0, ev);
                 sh->charge[k]--;
                 sh->energy -= cp.energy;
                 sh->fire_cooldown = cp.delay;
@@ -1076,7 +1116,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             uint8_t pat = trigger_pattern(cls, trig, sh->level[trig]);
             sim_fire_pattern fp;
             sim_weapon_spec fs;
-            if (resolve(cfg, pat, sh->mods[trig], &fp, &fs)) {
+            if (resolve(cfg, pat, sh->mods[trig], sh->level[trig], &fp, &fs)) {
                 /* The cost is the shot's, not each projectile's: a burst of
                  * sixteen costs what pulling the trigger costs, and so does
                  * multifire -- an add-on that made a shot cost per barrel
@@ -1088,7 +1128,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
                     spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
                                   sh->vx, sh->vy, sh->heading, 0,
-                                  sh->mods[trig], ev);
+                                  sh->mods[trig], sh->level[trig], ev);
                     sh->energy -= fp.energy;
                     sh->fire_cooldown = fp.delay;
                     sh->vx -= (int32_t)(((int64_t)fp.recoil * dx) >> 15);
@@ -1256,7 +1296,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         uint32_t key = ((uint32_t)w->spec << 16) | w->mods;
         if (key != cached_key) {
             cached = cfg->specs[w->spec];
-            compose(cfg, w->mods, &cached, NULL);
+            compose(cfg, w->mods, 0, &cached, NULL);
             cached_key = key;
         }
         const sim_weapon_spec *spec = &cached;

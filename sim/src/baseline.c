@@ -262,6 +262,15 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * senses at four tiles and a level 3 at five. Here the radius is what the
      * add-on says and the level does not reach it. */
     cfg->mod_step[SIM_MOD_PROX] = 3 * 16 * 256;    /* three tiles of fuse */
+    /* And "each bomb level adds 1 to this amount", so a level 2 bomb senses
+     * at four tiles and a level 3 at five. */
+    cfg->prox_step = 16 * 256;
+    /* InactiveShrapDamage=3, over the first quarter second of a fragment's
+     * life. Shrapnel is born at the point of impact, which is inside the hull
+     * the bomb just hit, so without this a bomb lands twice: once as a blast
+     * and again as a ring of fragments already touching their victim. */
+    cfg->shrap_inactive = sim_units_energy(3);
+    cfg->shrap_inactive_ticks = 25;
     cfg->mod_step[SIM_MOD_SHRAPNEL] = 0;           /* a pattern, not a number */
     cfg->mod_step[SIM_MOD_FREEZE] = 100;           /* a second of no recharge */
     cfg->mod_step[SIM_MOD_PUSH] = sim_units_speed(1200);
@@ -304,8 +313,16 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             sim_fire_pattern shell;
             memset(&shell, 0, sizeof shell);
             shell.spec = frag_spec;
-            shell.count = (uint8_t)(2 * k);
-            shell.spacing = (uint16_t)(65536 / shell.count);
+            /* ShrapnelRate is two a prize and ShrapnelMax is eight, which is
+             * four prizes. An add-on here is two bits, so three rungs have to
+             * carry four prizes' worth: the first two are the rate and the
+             * last one reaches the cap. */
+            static const uint8_t frags[SIM_MAX_RUNGS] = {0, 2, 4, 8};
+            shell.count = frags[k];
+            /* Shrapnel:Random is 1 in the original's own arena file, so
+             * fragments scatter rather than leaving on an even ring. Spacing
+             * of zero is how a pattern asks for that. */
+            shell.spacing = 0;
             cfg->mod_splinter[k] = (uint8_t)sim_add_pattern(cfg, &shell);
         }
     }

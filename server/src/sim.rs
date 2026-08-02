@@ -141,6 +141,12 @@ pub struct sim_settings {
     pub mod_multi_delay: u16,
     /// What each rung of shrapnel breaks into.
     pub mod_splinter: [u8; MAX_RUNGS],
+    /// Q8 px a bomb level adds to the proximity fuse.
+    pub prox_step: i32,
+    /// Q10 energy a fragment does while it is still inactive, and how long
+    /// that lasts in ticks.
+    pub shrap_inactive: i32,
+    pub shrap_inactive_ticks: u16,
     pub bounce: i32,
     pub friction: i32,
     pub respawn_delay: u16,
