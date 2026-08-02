@@ -90,19 +90,43 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->wormhole_pull = sim_units_speed(90);
     cfg->wormhole_range = 220 * 256;
 
-    /* What a green turns out to be. Stats are the bread of the tree, levels
-     * are the thing worth crossing a map for, and add-ons sit between them.
-     * These are relative and read against one hull's pool, so an Apex -- five
-     * stats, one level, one add-on -- sees a level about one green in twenty.
+    /* What a green turns out to be, on the original's odds.
+     *
+     * These are its [PrizeWeight] table, entry for entry, from the settings
+     * shipped with the reference server: a stat is 40, a weapon level is 25,
+     * multifire and shrapnel are 30, bouncing and proximity are 25, and a
+     * charge is 70. They are relative -- doubling every number changes
+     * nothing -- and read against the pool of the hull that took the green,
+     * so what is written here is the shape of the tree rather than its
+     * arithmetic.
+     *
+     * Two of our add-ons have no entry to copy, because the original has no
+     * such prize: freeze and push exist as weapon effects there, never as
+     * something a green hands you. They get 25, the band its comparable
+     * add-ons sit in, and that is a number we chose rather than inherited.
+     *
+     * Everything in its table we do not have -- cloak, stealth, xradar,
+     * antiwarp, warp, decoy, thor, brick, rocket, portal, shields,
+     * allweapons, multiprize -- is simply absent from our space rather than
+     * present at zero.
      *
      * Rust is the number to tune first. One green in ten takes something
      * back, and it can only take what you are holding, so it costs a loaded
      * pilot and never touches one who has just spawned. */
-    for (int i = 0; i < SIM_UP_COUNT; i++) cfg->prize_weight[i] = 100;
+    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_ENERGY)] = 40;    /* Energy */
+    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_RECHARGE)] = 40;  /* QuickCharge */
+    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_SPEED)] = 40;     /* TopSpeed */
+    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_THRUST)] = 40;    /* Thruster */
+    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_ROTATION)] = 40;  /* Rotation */
     for (int t = 0; t < SIM_TRIG_COUNT; t++) {
-        cfg->prize_weight[SIM_PRIZE_LEVEL(t)] = 30;
-        for (int m = 0; m < SIM_MOD_COUNT; m++)
-            cfg->prize_weight[SIM_PRIZE_MOD(t, m)] = 20;
+        /* Gun=25, Bomb=25 */
+        cfg->prize_weight[SIM_PRIZE_LEVEL(t)] = 25;
+        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_MULTI)] = 30;    /* MultiFire */
+        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_BOUNCE)] = 25;   /* BouncingBullets */
+        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_PROX)] = 25;     /* Proximity */
+        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_SHRAPNEL)] = 30; /* Shrapnel */
+        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_FREEZE)] = 25;   /* ours */
+        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_PUSH)] = 25;     /* ours */
     }
     cfg->rust_chance = 100;
     /* A kill is worth three bounty to the killer, so a pilot on a streak
@@ -124,6 +148,11 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->mod_step[SIM_MOD_FREEZE] = 100;           /* a second of no recharge */
     cfg->mod_step[SIM_MOD_PUSH] = sim_units_speed(1200);
     cfg->mod_spread = 65536 / 24;                  /* fifteen degrees */
+    /* Straight from the original: 20 energy a bullet against 30 for multifire,
+     * and 25 ticks of cooldown against 50. Three rounds for half again the
+     * energy and twice the wait. */
+    cfg->mod_multi_energy = 50;
+    cfg->mod_multi_delay = 100;
 
     /* Shrapnel, one pattern per rung: four fragments, then eight, then
      * sixteen. The fragments themselves are one spec -- a rung of shrapnel
@@ -191,8 +220,16 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
 
         cfg->charge[2] = SIM_NO_PATTERN;
         cfg->charge[3] = SIM_NO_PATTERN;
-        for (int k = 0; k < SIM_MAX_CHARGES; k++)
-            cfg->prize_weight[SIM_PRIZE_CHARGE(k)] = 25;
+        /* Repel=70 and Burst=70, and they are the two heaviest entries in the
+         * original's table by a distance -- almost twice a stat. A charge is
+         * the green you are pleased to see, which is a thing the odds say
+         * rather than the item. The two slots this zone does not use are
+         * zero; a weight is the only thing that keeps a prize out of a pool
+         * the hull would otherwise accept. */
+        cfg->prize_weight[SIM_PRIZE_CHARGE(0)] = 70;
+        cfg->prize_weight[SIM_PRIZE_CHARGE(1)] = 70;
+        cfg->prize_weight[SIM_PRIZE_CHARGE(2)] = 0;
+        cfg->prize_weight[SIM_PRIZE_CHARGE(3)] = 0;
     }
 
     for (int i = 0; i < SIM_MAX_CLASSES; i++) {

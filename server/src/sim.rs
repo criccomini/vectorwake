@@ -132,6 +132,9 @@ pub struct sim_settings {
     /// moves.
     pub mod_step: [i32; MOD_COUNT],
     pub mod_spread: u16,
+    /// Percent a rung of multifire adds to the shot's energy and cooldown.
+    pub mod_multi_energy: u16,
+    pub mod_multi_delay: u16,
     /// What each rung of shrapnel breaks into.
     pub mod_splinter: [u8; MAX_RUNGS],
     pub bounce: i32,

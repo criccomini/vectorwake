@@ -337,6 +337,12 @@ typedef struct {
     /* Spacing a multifire add-on fans to, when the pattern has none of its
      * own. A pattern that already spreads keeps its own angle. */
     uint16_t mod_spread;
+    /* What a rung of multifire adds to the cost of pulling the trigger, as a
+     * percentage of the shot's own energy and cooldown. The original's
+     * numbers, which are 50 and 100: three bullets for half again the energy
+     * and twice the wait. */
+    uint16_t mod_multi_energy;
+    uint16_t mod_multi_delay;
     /* What each rung of shrapnel breaks into. Shrapnel is the one add-on
      * whose magnitude is another weapon rather than a number. */
     uint8_t mod_splinter[SIM_MAX_RUNGS];

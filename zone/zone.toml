@@ -144,6 +144,16 @@ recharge = 1000
 #   freeze = 100
 #   push = 1200
 #
+# What a rung of multifire adds to the cost of pulling the trigger, as a
+# percentage of the shot's own energy and cooldown. The defaults are the
+# original's -- 20 energy a bullet against 30 for multifire, 25 ticks of
+# cooldown against 50 -- so three rounds cost half again the energy and twice
+# the wait. Most of the price is in the rate, which is the half a pilot cannot
+# out-recharge.
+#   [arena]
+#   multi_energy = 50
+#   multi_delay = 100
+#
 # And who may hold what, under a ship:
 #   [[arena.ships]]
 #   name = "Anvil"
@@ -154,7 +164,9 @@ recharge = 1000
 # read against the pool of whoever picked it up -- so this is the shape of the
 # tree, and the roster decides which of it a given hull ever sees. The five
 # stats keep their own names; a level and an add-on are named for the trigger.
-# Anything left out keeps the baseline: 100 a stat, 30 a level, 20 an add-on.
+# Anything left out keeps the baseline, which is the original's own table: 40 a
+# stat, 25 a level, 30 for multi or shrapnel, 25 for bounce or prox, 70 for a
+# charge.
 #   [arena.prize_weight]
 #   speed = 120
 #   gun-level = 30

@@ -221,7 +221,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-#define CFG_VERSION 5
+#define CFG_VERSION 6
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -288,6 +288,8 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w16(&w, cfg->points_per_flag);
     for (int m = 0; m < SIM_MOD_COUNT; m++) w32(&w, (uint32_t)cfg->mod_step[m]);
     w16(&w, cfg->mod_spread);
+    w16(&w, cfg->mod_multi_energy);
+    w16(&w, cfg->mod_multi_delay);
     for (int r = 0; r < SIM_MAX_RUNGS; r++) w8(&w, cfg->mod_splinter[r]);
     w32(&w, (uint32_t)cfg->bounce);
     w32(&w, (uint32_t)cfg->friction);
@@ -387,6 +389,8 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
     cfg->points_per_flag = (uint16_t)r16(&r);
     for (int m = 0; m < SIM_MOD_COUNT; m++) cfg->mod_step[m] = (int32_t)r32(&r);
     cfg->mod_spread = (uint16_t)r16(&r);
+    cfg->mod_multi_energy = (uint16_t)r16(&r);
+    cfg->mod_multi_delay = (uint16_t)r16(&r);
     for (int k = 0; k < SIM_MAX_RUNGS; k++)
         cfg->mod_splinter[k] = (uint8_t)r8(&r);
     cfg->bounce = (int32_t)r32(&r);

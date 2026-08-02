@@ -55,7 +55,8 @@ sim_fire_pattern              sim_weapon_spec
 
 The cost is the *shot's*, not each projectile's: a burst of sixteen costs what
 pulling the trigger costs, which is what makes count a design knob rather than
-a multiplier on price.
+a multiplier on price. Multifire is the one exception, and it is priced the way
+the original priced it -- see [add-ons](#add-ons) below.
 
 Spread angles are laid out symmetrically about the heading -- an odd count puts
 one down the middle, an even count straddles it -- and they come out of the
@@ -233,6 +234,28 @@ Six add-ons, two bits each, two triggers: four bytes on the pilot.
 whether it is bolted onto your bomb or fired on its own as a charge: an add-on
 and an item, one mechanic.
 
+**Multifire also changes what the shot costs**, and it is the only add-on that
+does. The rest change a weapon's character; this one hands you more bullets,
+and more bullets for the same price is the whole of the balance problem.
+
+The original priced it as two separate settings rather than per round:
+
+| | plain | multifire |
+|---|---|---|
+| `BulletFireEnergy` | 20 | 30 |
+| `BulletFireDelay` | 25 ticks | 50 ticks |
+
+Three rounds for half again the energy and twice the wait. Note where the
+weight sits: most of the price is the **rate**, not the energy. Energy comes
+back on its own, so a cost paid in energy is a cost paid once and recovered;
+a cost paid in cooldown is paid every time you pull the trigger and cannot be
+out-recharged. A pilot with multifire fires fewer, wider, more expensive
+volleys, which is a different weapon rather than a better one.
+
+Ours is those two ratios as a percentage per rung -- `mod_multi_energy = 50`,
+`mod_multi_delay = 100` -- because we have rungs and the original did not. A
+second rung is a second helping of both, linear like every other add-on here.
+
 ### A shot is what it was when it left
 
 A projectile carries the add-ons of the trigger that fired it -- two bytes, on
@@ -335,11 +358,32 @@ memory on seven keys, and it is the trade.
 ### The odds, and rust
 
 Each place in the prize space carries a weight, and the roll reads them against
-the pool of whoever took the green. So a zone writes the *shape* of its tree --
-stats common, levels the thing worth crossing a map for, add-ons between -- and
-the roster decides which parts of that shape a given pilot can see. The
-baseline is 100 a stat, 30 a level, 20 an add-on, which puts a level at about
-one green in twenty for an Apex.
+the pool of whoever took the green. So a zone writes the *shape* of its tree,
+and the roster decides which parts of that shape a given pilot can see.
+
+**The baseline is the original's `[PrizeWeight]` table**, entry for entry, out
+of the settings shipped with the reference server:
+
+| | weight | theirs |
+|---|---|---|
+| each stat | 40 | `Energy`, `QuickCharge`, `TopSpeed`, `Thruster`, `Rotation` |
+| a weapon level | 25 | `Gun`, `Bomb` |
+| multi, shrapnel | 30 | `MultiFire`, `Shrapnel` |
+| bounce, prox | 25 | `BouncingBullets`, `Proximity` |
+| a charge | 70 | `Repel`, `Burst` |
+
+A charge being the heaviest entry by a distance is the part worth noticing: in
+the original the green you are pleased to see is a thing the *odds* say, not
+the item. For an Apex -- five stats, a gun level, multifire, a burst -- that
+works out to a green being a stat three times in five and a charge better than
+one time in five.
+
+Two of our add-ons have no entry to copy, because the original has no such
+prize: freeze and push exist there as weapon effects, never as something a
+green hands you. They get 25, the band its comparable add-ons sit in, and that
+is a number we chose rather than inherited. Everything in its table we do not
+have -- cloak, stealth, xradar, antiwarp, warp, decoy, thor, brick, rocket,
+portal, shields, allweapons, multiprize -- is simply absent from our space.
 
 The weights are relative rather than percentages. Doubling every number changes
 nothing, which means a zone can add a weapon without recalculating the file.
@@ -347,6 +391,13 @@ nothing, which means a zone can add a weapon without recalculating the file.
 **Rust** is a green that takes something back. It is not a place in the space
 -- it is a chance, out of a thousand, that the green corrodes instead of
 granting, and the baseline is 100.
+
+This is the one number here that is deliberately *not* the original's. It ships
+`PrizeNegativeFactor=300`, one green in three hundred, which is rare enough to
+be a curiosity. Ours is one in ten, because rust is doing a job in this design
+that it was not doing there: it is the counterweight to a tech tree that has no
+other way down, and at one in three hundred a loaded pilot would never feel it.
+If it turns out to be too much, this is the number to move first.
 
 What it takes is chosen evenly from **what the pilot is actually holding**, and
 that is the whole reason it is not simply cruel:

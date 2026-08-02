@@ -149,6 +149,8 @@ impl Arena {
         if let Some(v) = c.rust { world.cfg.rust_chance = v.min(1000); }
         if let Some(v) = c.bounty_per_kill { world.cfg.bounty_per_kill = v; }
         if let Some(v) = c.points_per_flag { world.cfg.points_per_flag = v; }
+        if let Some(v) = c.multi_energy { world.cfg.mod_multi_energy = v; }
+        if let Some(v) = c.multi_delay { world.cfg.mod_multi_delay = v; }
         for (name, v) in &c.prize_weight {
             match Arena::prize_index(name) {
                 Some(i) => world.cfg.prize_weight[i] = *v,
@@ -1331,7 +1333,7 @@ mod tests {
         let bomb_shrap = sim::UP_COUNT + sim::TRIG_COUNT + sim::MOD_COUNT + 3;
         assert_eq!(w.cfg.prize_weight[bomb_shrap], 90);
         // Everything unnamed keeps the baseline's odds.
-        assert_eq!(w.cfg.prize_weight[0], 100, "energy is untouched");
+        assert_eq!(w.cfg.prize_weight[0], 40, "energy keeps the original's odds");
 
         let (w, warn) = tuned(r#"
             [arena.prize_weight]
@@ -1363,6 +1365,31 @@ mod tests {
         assert_eq!(w.cfg.bounty_per_kill, 3);
         assert_eq!(w.cfg.points_per_flag, 100);
         assert_eq!(w.cfg.rust_chance, 100);
+    }
+
+    #[test]
+    fn a_zone_prices_multifire() {
+        let (w, warn) = tuned(r#"
+            [arena]
+            multi_energy = 200
+            multi_delay = 25
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(w.cfg.mod_multi_energy, 200);
+        assert_eq!(w.cfg.mod_multi_delay, 25);
+
+        // Untouched, these are the original's: MultiFireEnergy 30 against
+        // BulletFireEnergy 20, and MultiFireDelay 50 against BulletFireDelay
+        // 25. Reading the fields on either side too, because two u16s landing
+        // in the wrong place is exactly how this mirror drifts.
+        let (w, _) = tuned(r#"
+            [arena]
+            mode = "warzone"
+        "#);
+        assert_eq!(w.cfg.mod_multi_energy, 50);
+        assert_eq!(w.cfg.mod_multi_delay, 100);
+        assert_eq!(w.cfg.mod_spread, 2730, "fifteen degrees, still");
+        assert_eq!(w.cfg.bounce, 10, "and the field past the splinters");
     }
 
     /// The reason apply_config rebuilds from the baseline. An operator saves

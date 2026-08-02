@@ -169,6 +169,44 @@ A version of this worth keeping: settings are pushed to the client, hashed, and
 verified. A version worth dropping: the schema is a C struct with reserved
 padding bits.
 
+### Numbers worth not re-deriving
+
+From the settings shipped with ASSS (`dist/conf/svs`), which is the closest
+thing to a reference zone in the source we have. Identical across all eight
+hulls unless noted.
+
+| Setting | Value | Note |
+|---|---|---|
+| `MaximumSpeed` | 3250 | 325 px/s |
+| `BulletSpeed`, `BombSpeed` | 2000 | 200 px/s -- deliberately slower than a ship |
+| `BulletFireEnergy` | 20 | of `MaximumEnergy` 1700 |
+| `MultiFireEnergy` | 30 | half again, for three rounds |
+| `BulletFireDelay` | 25 ticks | |
+| `MultiFireDelay` | 50 ticks | twice -- most of multifire's price is rate |
+| `BombFireEnergy` | 300 | `+50` per level |
+| `PrizeNegativeFactor` | 300 | one green in three hundred takes something back |
+| `PrizeDelay` | 700 | |
+
+Projectile speed is added to the ship's velocity, so a bullet's number is its
+speed *relative to the shooter* and does not change with how fast anyone is
+travelling. Rounds slower than ships is a deliberate choice, not an oversight.
+
+`[PrizeWeight]`, relative, from the same tree:
+
+```
+QuickCharge=40  Energy=40   Rotation=40   Stealth=40   Cloak=25    AntiWarp=25
+XRadar=40       Warp=7      Gun=25        Bomb=25      Thruster=40 TopSpeed=40
+BouncingBullets=25          Recharge=10   MultiFire=30 Proximity=25 Glue=0
+AllWeapons=10   Shields=10  Shrapnel=30   Repel=70     Burst=70    Decoy=40
+Thor=30         Portal=60   Brick=200     Rocket=50    MultiPrize=130
+```
+
+Charges are the heavy entries: a repel or a burst is nearly twice as likely as
+a stat, and `Brick` at 200 is the heaviest thing in the table.
+
+These are the subgame-standard values, not any particular live zone's -- Chaos
+and Alpha both tuned their own and we do not have those files.
+
 ## Maps
 
 `.lvl` is an optional Windows BMP tileset followed by raw tile data to the end

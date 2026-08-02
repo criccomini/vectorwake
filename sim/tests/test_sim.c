@@ -68,6 +68,28 @@ static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
     return c;
 }
 
+/* What one pull of the gun trigger charges, and how long it locks the
+ * trigger for.
+ *
+ * Measured against an identical tick that did not fire, because recharge
+ * lands in the same tick as the shot and the bar alone cannot tell the two
+ * apart -- reading the drop directly makes every shot look a recharge
+ * cheaper than it is. Energy is dropped below full first so that neither
+ * tick clamps at the ceiling and hides part of the answer. */
+static int32_t gun_cost(const sim_settings *cfg, uint8_t cls, uint16_t mods,
+                        uint16_t *wait) {
+    sim_state a, b;
+    sim_init(&a, 1);
+    sim_spawn(&a, cls, 0, 8192, 8192, 0, cfg);
+    a.ships[0].energy /= 2;
+    a.ships[0].mods[SIM_TRIG_GUN] = mods;
+    b = a;
+    step_n(&a, cfg, 0, 0, 1);
+    step_n(&b, cfg, SIM_BTN_FIRE, 0, 1);
+    if (wait) *wait = b.ships[0].fire_cooldown;
+    return a.ships[0].energy - b.ships[0].energy;
+}
+
 /* How much of one prize kind a pilot is holding. The core keeps this rule to
  * itself; the test needs it to check that rust took what it says it took. */
 static uint8_t held_of(const sim_ship *sh, uint8_t type) {
@@ -967,14 +989,15 @@ int main(void) {
             else if (got < SIM_PRIZE_CHARGE(0)) mods++;
             else charges++;
         }
-        /* An Apex's pool is five stats at 100, one level at 30, one add-on at
-         * 20 and one charge at 25: 575 in total. Bands rather than exact
-         * numbers, because the point under test is the shape of the tree and
-         * not the generator. */
-        CHECK(stats > 8300 && stats < 9100, "stats are the bread of the tree");
-        CHECK(levels > 350 && levels < 750, "a level is about one green in twenty");
-        CHECK(mods > 200 && mods < 530, "an add-on is rarer still");
-        CHECK(charges > 280 && charges < 620, "and a charge sits between them");
+        /* On the original's table an Apex's pool is five stats at 40, a gun
+         * level at 25, multifire at 30 and a burst at 70: 325 in total, so a
+         * green is a stat three times in five and a charge better than one
+         * time in five. Bands rather than exact numbers, because the point
+         * under test is the shape of the tree and not the generator. */
+        CHECK(stats > 5800 && stats < 6500, "stats are the bread of the tree");
+        CHECK(levels > 600 && levels < 950, "a level is about one green in thirteen");
+        CHECK(mods > 750 && mods < 1100, "an add-on a little more often");
+        CHECK(charges > 1900 && charges < 2400, "and a charge is the one you want");
 
         /* And a zone that says otherwise gets otherwise. */
         for (int i = 0; i < SIM_UP_COUNT; i++) w.prize_weight[i] = 0;
@@ -1048,25 +1071,38 @@ int main(void) {
     }
 
     {
-        /* Multifire composes onto whatever rung the trigger is on, and the
-         * shot costs what one trigger pull costs -- an add-on you could not
-         * afford to use would be a punishment. */
+        /* Multifire composes onto whatever rung the trigger is on, and it is
+         * the one add-on that changes what pulling the trigger costs. The
+         * original charged 20 energy for a bullet and 30 for multifire, and
+         * waited 25 ticks against 50: half again the energy and twice the
+         * cooldown for three rounds.
+         *
+         * Most of the price is in the rate, which is the half a pilot cannot
+         * out-recharge. */
+        uint16_t plain_wait = 0, multi_wait = 0;
+        int32_t plain = gun_cost(&cfg, (uint8_t)APEX, 0, &plain_wait);
+        int32_t multi = gun_cost(&cfg, (uint8_t)APEX,
+                                 sim_mod_set(0, SIM_MOD_MULTI, 1), &multi_wait);
+        CHECK(multi == plain * 3 / 2, "multifire costs half again the energy");
+        CHECK(multi_wait == plain_wait * 2, "and twice the wait");
+
+        /* A second rung is a second helping of both, because every other
+         * add-on here is linear in its rung and this one has no reason not
+         * to be. */
+        uint16_t two_wait = 0;
+        int32_t two = gun_cost(&cfg, (uint8_t)APEX,
+                               sim_mod_set(0, SIM_MOD_MULTI, 2), &two_wait);
+        CHECK(two == plain * 2, "two rungs, twice the energy");
+        CHECK(two_wait == plain_wait * 3, "and three times the wait");
+
+        /* And it is still a fan of barrels, which is what you paid for. */
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        int32_t bar = s.ships[0].energy;
-        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(s.weapon_count == 1, "one barrel to start");
-        int32_t plain = bar - s.ships[0].energy;
-
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
-        bar = s.ships[0].energy;
         step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1 + cfg.mod_step[SIM_MOD_MULTI],
               "a rung of multifire is a pair of extra barrels");
-        CHECK(bar - s.ships[0].energy == plain, "at the same price");
         CHECK(s.weapons[0].vx != s.weapons[1].vx, "and they fan out");
     }
 

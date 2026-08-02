@@ -276,13 +276,31 @@ static void compose(const sim_settings *cfg, uint16_t mods,
                     sim_weapon_spec *sp, sim_fire_pattern *p) {
     uint8_t n;
     if (p && (n = sim_mod_get(mods, SIM_MOD_MULTI)) != 0) {
+        int32_t base = (int32_t)(p->count ? p->count : 1);
         int32_t extra = n * cfg->mod_step[SIM_MOD_MULTI];
-        int32_t total = (int32_t)(p->count ? p->count : 1) + extra;
+        int32_t total = base + extra;
         p->count = (uint8_t)(total > 255 ? 255 : total);
         /* A pattern that already fans keeps its own angle; one that does not
          * gets the zone's, or the extra barrels would all fire down the
          * same line. */
         if (p->spacing == 0) p->spacing = cfg->mod_spread;
+        /* Multifire is the one add-on that costs more to pull the trigger
+         * with. Everything else here is a shape or a fuse; this is literally
+         * more bullets, and free bullets is the whole of the balance problem.
+         *
+         * The original priced it as two separate numbers rather than per
+         * round -- `BulletFireEnergy=20` against `MultiFireEnergy=30`, and
+         * `BulletFireDelay=25` against `MultiFireDelay=50` -- so three
+         * bullets cost half again as much energy and twice the cooldown. Most
+         * of the price is in the rate, which is the part that cannot be
+         * out-recharged. Ours is those two ratios as a percentage per rung,
+         * because we have rungs and it did not. */
+        p->energy = (int32_t)((int64_t)p->energy
+                              * (100 + n * cfg->mod_multi_energy) / 100);
+        {
+            int32_t d = (int32_t)p->delay * (100 + n * cfg->mod_multi_delay) / 100;
+            p->delay = (uint16_t)(d > 65535 ? 65535 : d);
+        }
     }
     if ((n = sim_mod_get(mods, SIM_MOD_BOUNCE)) != 0) {
         sp->on_wall = SIM_WALL_BOUNCE;
