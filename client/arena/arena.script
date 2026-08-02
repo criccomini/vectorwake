@@ -730,6 +730,11 @@ function update(self, dt)
     if self.online and sim.ship_count() == 0 and not menu.open then return end
 
     sfx.frame()
+    -- Here, not in the step loop below: the stick counts frames of movement
+    -- and stillness to tell a sweep from a correction, and that loop runs
+    -- anywhere from nought to eight times depending on how long the last
+    -- frame took.
+    touch.tick(dt)
 
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics

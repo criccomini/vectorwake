@@ -167,7 +167,8 @@ function M.on_touch(action, w, h, s)
         if t.pressed then
             local z = zone(tx, ty, w, h, s)
             if z == "stick" and not stick then
-                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
+                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty,
+                         px = 0, py = 0, swept = 0, calm = 0, waited = 0}
             elseif z == "guns" then
                 guns = t.id
             elseif z == "bombs" then
@@ -189,6 +190,52 @@ end
 -- a lost touch has to be forgettable.
 function M.release_all()
     stick, guns, bombs = nil, nil, nil
+end
+
+-- How far around the stick a thumb travels before this counts as asking for a
+-- new course rather than trimming the one it has, and how fast it has to be
+-- going for the ship to give up trying to follow. The rate is the meaningful
+-- one: a hull turns about a revolution a second, so a thumb crossing faster
+-- than that is not asking for a turn, because no turn could keep up with it.
+--
+-- Both, not either. Rate alone would gate the quick small corrections you
+-- make tracking somebody; distance alone cannot tell an arc from a re-aim
+-- until it lands.
+local SWEEP = math.pi * 2 / 9        -- forty degrees
+local GATE = 3.5                     -- radians a second, about two hundred
+local LAND = 0.08                    -- seconds below the gate before deciding
+local PATIENCE = 0.6                 -- and a stop, for a thumb going in circles
+
+-- One frame of stick tracking.
+--
+-- Called once a frame by the caller rather than folded into bits(), which is
+-- asked three times -- once for the network, once for the step, once to know
+-- whether to draw a flame -- so anything accumulated in there would be
+-- counted three times over.
+--
+-- Everything here is in seconds rather than frames. Frames were what the
+-- first version counted, and under a software rasteriser they are not a
+-- clock: whether a sweep was seen as a sweep depended on how long the last
+-- frame happened to take.
+function M.tick(dt)
+    local s = stick
+    if not s then return end
+    dt = math.max(dt or 0, 1e-4)
+    local dx, dy = s.x - s.ox, s.y - s.oy
+
+    -- Crossing the origin: the offset reverses between frames whatever the
+    -- speed, which is how a thumb pulled straight back and out the far side
+    -- announces itself. Re-arms the choice on the spot; there is nothing to
+    -- settle, because the ship has already stopped turning in the middle.
+    if s.px * dx + s.py * dy < 0 then s.back, s.swept = nil, 0 end
+    s.px, s.py = dx, dy
+
+    local ang = math.atan2(dx, dy)
+    local turned = s.ang and math.abs(wrap(ang - s.ang)) or 0
+    s.ang = ang
+    s.swept = s.swept + turned
+    if turned / dt > GATE then s.calm = 0 else s.calm = s.calm + dt end
+    if s.settling then s.waited = s.waited + dt end
 end
 
 -- Which charge slot was tapped since this was last asked, or nil. Consumed by
@@ -213,29 +260,39 @@ function M.bits(heading)
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
     local mag = math.sqrt(dx * dx + dy * dy)
 
-    -- Re-arm the forward/back choice when the thumb comes back through the
-    -- middle. Swinging across the origin and out the far side is what a hand
-    -- already does to mean "the other way", and it is the only moment the
-    -- choice can be read honestly: everywhere else the ship is turning toward
-    -- the thumb, so the angle has been dragged back toward whatever was
-    -- decided last time.
+    if mag < DEAD_PX * M.scale then
+        stick.back, stick.swept, stick.ang = nil, 0, nil
+        stick.settling = false
+        return out
+    end
+
+    -- A sweep, not a correction: the thumb has gone far enough around the
+    -- stick to be asking for a different course rather than trimming this
+    -- one. Hold the rudder and the engine until the hand finishes.
     --
-    -- That chase is what made a hysteresis band sticky rather than the band
-    -- being too wide. Sweeping from ahead to astern never reached the far
-    -- threshold, because the hull ate the difference on the way -- an Apex
-    -- turns 1.05 revolutions a second, so it covers a hundred and thirteen
-    -- degrees in the time a thumb crosses the stick. Whether it tripped at
-    -- all came down to hull rotation against thumb speed, which is not a rule
-    -- anybody can learn.
+    -- The hold is the whole trick. The choice of which end leads is read from
+    -- the thumb against the heading, and the ship spends every frame turning
+    -- that heading toward the thumb -- so by the time an arc lands, the angle
+    -- the choice would be read from has already been dragged most of the way
+    -- closed, and the answer comes out as whatever the hull happened to be
+    -- able to turn in the time. An Apex turns 1.05 revolutions a second; an
+    -- Anvil does not; the same gesture meant different things in different
+    -- ships. Stop turning and the reading is honest again.
     --
-    -- Two tests, for slow hands and quick ones: inside the dead zone, or the
-    -- offset reversing between frames, which is what crossing the origin does
-    -- to it at any speed.
-    local crossed = (stick.px or 0) * dx + (stick.py or 0) * dy < 0
-    stick.px, stick.py = dx, dy
-    local idle = mag < DEAD_PX * M.scale
-    if idle or crossed then stick.back = nil end
-    if idle then return out end
+    -- It has to be a hold rather than a test on the jump itself, because at
+    -- the instant a thumb leaves, an eighty-degree re-aim and the first frame
+    -- of a half-circle arc are the same event. Only where it lands tells them
+    -- apart, and that is a hundred milliseconds later.
+    if not stick.settling and stick.swept > SWEEP then
+        stick.settling, stick.waited = true, 0
+    end
+    if stick.settling then
+        -- Out once the thumb has been below the gate long enough to have
+        -- landed, or on the patience cap, so a thumb going in circles cannot
+        -- leave the ship without a rudder.
+        if stick.calm < LAND and stick.waited < PATIENCE then return out end
+        stick.settling, stick.swept, stick.back = false, 0, nil
+    end
 
     -- Screen +y is up and the simulation's +y is down, which is why this is
     -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
@@ -255,12 +312,15 @@ function M.bits(heading)
     -- there are two thumbs, and the only reason the stick works at all is
     -- that it folds the engine into the steering.
     --
-    -- Read once, when the thumb commits, and held until it swings back
-    -- through the middle. Held rather than re-read every frame so the ship
-    -- cannot change its mind about which end leads halfway through a
-    -- manoeuvre, which is also why there is no hysteresis here: a choice made
-    -- once has nothing to oscillate against.
-    if stick.back == nil then stick.back = math.abs(diff) > math.pi / 2 end
+    -- Read once, when the thumb commits, and held until it asks again --
+    -- through the middle, or by sweeping. Held rather than re-read every
+    -- frame so the ship cannot change its mind about which end leads halfway
+    -- through a manoeuvre, which is also why there is no hysteresis here: a
+    -- choice made once has nothing to oscillate against.
+    if stick.back == nil then
+        stick.back = math.abs(diff) > math.pi / 2
+        stick.swept = 0
+    end
 
     local err = stick.back and wrap(diff - math.pi) or diff
 
