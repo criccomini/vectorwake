@@ -119,6 +119,21 @@ impl Bot {
         self.want | self.trigger(w)
     }
 
+    /// The share of the bar a pilot keeps back rather than shooting it away.
+    /// Energy is health and ammunition in one pool, so this is the reserve
+    /// that stops a bot sitting at empty and dying to the first round that
+    /// lands.
+    ///
+    /// Skill buys a bigger reserve, but only a little, because what it costs
+    /// is the time to earn it back. The original recharges a fresh hull at 40
+    /// energy a second against a 1000 bar where our own numbers did 105
+    /// against 945, so the twenty points of reserve that used to cost under
+    /// two seconds came to cost five: a skilled bot spent the fight waiting
+    /// instead of shooting, and lost to an unskilled one in calibration.
+    fn reserve(&self) -> f32 {
+        0.22 + self.skill * 0.07
+    }
+
     /// The reflex: fire when the shot is on and the reserve allows it.
     fn trigger(&mut self, w: &World) -> u16 {
         let me = &w.state.ships[self.ship as usize];
@@ -136,18 +151,77 @@ impl Bot {
         // stop shooting is the whole game. A pilot who fires whenever the
         // shot is on sits permanently at their floor and dies to the first
         // round that lands. Skill is the size of the reserve kept back.
-        let floor = 0.22 + self.skill * 0.20;
-        if e <= floor {
+        if e <= self.reserve() {
             return 0;
         }
         if self.aim_diff(w, self.aim.0, self.aim.1).abs() >= 0.16 {
             return 0;
         }
-        let mut out = sim::BTN_FIRE;
-        if self.dist < 320.0 && self.skill > 0.5 && self.timer % 180 < self.react {
-            out |= sim::BTN_BOMB;
+        // A bomb instead of the burst of gunfire, never as well as it. The
+        // core reads a held gun as a gun -- `int trig = ((b & BTN_FIRE) == 0)
+        // ? TRIG_BOMB : TRIG_GUN` -- and one cooldown covers both, so a bot
+        // that or-ed the bomb bit on top of a gun it never let go of fired a
+        // bomb precisely never. Measured over a full hull round-robin, every
+        // ship in the roster including the Anvil threw zero bombs.
+        //
+        // Which is why letting go has to be conditional. A tick spent asking
+        // for a bomb that does not come is a tick of gunfire given away, and
+        // the core drops the shot silently in both of the cases below: a hull
+        // with no rack resolves no pattern, and a shot costs 300 of the
+        // original's 1700 energy, which is nearly a fifth of the bar.
+        if self.dist < 320.0
+            && self.skill > 0.5
+            && self.timer % 180 < self.react
+            && self.can_bomb(w, me)
+        {
+            return sim::BTN_BOMB;
         }
-        out
+        sim::BTN_FIRE
+    }
+
+    /// Whether a bomb is the better shot to take right now: a rack on this
+    /// hull, the energy it costs, and a better rate of damage than the gun it
+    /// would replace.
+    ///
+    /// The rate test is the one that matters. One cooldown covers both
+    /// triggers, so a bomb does not add to the gunfire, it stands in for it,
+    /// and the hulls differ enormously in what that trade is worth. An Anvil
+    /// bomb is 900 damage on a 60 tick lockout against 150 on 35, three and a
+    /// half times the rate. An Apex bomb is 400 on 150 ticks against 200 on
+    /// 25: a third of what its guns would have done in the same time, and for
+    /// fifteen times the energy of a bullet. Without this, fixing the bug
+    /// below made a skilled bot lose to an unskilled one, because skill was
+    /// the thing that unlocked the worse weapon.
+    fn can_bomb(&self, w: &World, me: &sim::sim_ship) -> bool {
+        let gun = match self.rate_of(w, me, sim::TRIG_GUN) {
+            Some((r, _)) => r,
+            None => return true,      // no guns to give up
+        };
+        match self.rate_of(w, me, sim::TRIG_BOMB) {
+            Some((r, cost)) => r > gun && me.energy > cost,
+            None => false,            // no rack
+        }
+    }
+
+    /// A trigger's damage per tick of the cooldown it imposes, and what one
+    /// shot costs, at the rung this pilot is on. None when the hull has no
+    /// such weapon.
+    ///
+    /// The rung is resolved the way the core does it, walking down from the
+    /// pilot's level: a level is kept through a hull change, so a third rung
+    /// has to mean rung zero on a ship that only has one.
+    fn rate_of(&self, w: &World, me: &sim::sim_ship, trig: usize)
+               -> Option<(f32, i32)> {
+        let cls = &w.cfg.classes[me.cls as usize];
+        let start = (me.level[trig] as usize).min(sim::MAX_RUNGS - 1);
+        for r in (0..=start).rev() {
+            let pat = cls.trigger[trig][r];
+            if pat == sim::NO_PATTERN { continue }
+            let p = &w.cfg.patterns[pat as usize];
+            let dmg = w.cfg.specs[p.spec as usize].damage as f32 * p.count as f32;
+            return Some((dmg / p.delay.max(1) as f32, p.energy));
+        }
+        None
     }
 
     fn plan(&mut self, w: &World) -> u16 {
@@ -235,7 +309,7 @@ impl Bot {
         // Break off and rebuild rather than trade at the floor. The trigger
         // itself lives in trigger(); this is only where the pilot goes.
         let e = me.energy as f32 / max_e;
-        if e < (0.22 + self.skill * 0.20) * 0.6 {
+        if e < self.reserve() * 0.6 {
             out &= !sim::BTN_THRUST;
             if dist < ideal * 1.6 {
                 out |= sim::BTN_REVERSE;

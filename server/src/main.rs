@@ -170,15 +170,32 @@ impl Arena {
     fn apply_config(world: &mut sim::World, c: &config::ArenaConfig) -> Vec<String> {
         let mut warn = Vec::new();
         world.reset_settings();
-        if c.bounce > 0 { world.cfg.bounce = c.bounce; }
-        if c.friction > 0 { world.cfg.friction = c.friction; }
-        if c.respawn_delay > 0 { world.cfg.respawn_delay = c.respawn_delay; }
+        // The room, and the shape of the space in it. Every one of these is
+        // absent-means-baseline rather than zero-means-baseline, because zero
+        // is a legal value for most of them: a bounce of zero is a wall that
+        // eats everything that hits it, and a door period of zero is a zone
+        // whose doors never open.
+        if let Some(v) = c.bounce { world.cfg.bounce = v; }
+        if let Some(v) = c.friction { world.cfg.friction = v; }
+        if let Some(v) = c.respawn_delay { world.cfg.respawn_delay = v; }
         // The core clamps this to SIM_MAX_SHIPS and reads zero as the ceiling,
         // so a zone asking for more than the array holds gets the array rather
         // than an overflow.
         if let Some(v) = c.max_ships { world.cfg.max_ships = v; }
-        if c.prize_delay > 0 { world.cfg.prize_delay = c.prize_delay; }
-        if c.prize_max > 0 { world.cfg.prize_max = c.prize_max; }
+        if let Some(v) = c.prize_delay { world.cfg.prize_delay = v; }
+        if let Some(v) = c.prize_max { world.cfg.prize_max = v; }
+        if let Some(v) = c.prize_life { world.cfg.prize_life = v; }
+        if let Some(v) = c.prize_radius { world.cfg.prize_radius = v * 256; }
+        if let Some(v) = c.prize_lo { world.cfg.prize_lo = v; }
+        if let Some(v) = c.prize_hi { world.cfg.prize_hi = v; }
+        if let Some(v) = c.flag_radius { world.cfg.flag_radius = v * 256; }
+        if let Some(v) = c.flag_drop_cooldown { world.cfg.flag_drop_cooldown = v; }
+        if let Some(v) = c.door_period { world.cfg.door_period = v; }
+        if let Some(v) = c.door_open { world.cfg.door_open = v; }
+        if let Some(v) = c.wormhole_pull {
+            world.cfg.wormhole_pull = unsafe { sim::sim_units_speed(v) };
+        }
+        if let Some(v) = c.wormhole_range { world.cfg.wormhole_range = v * 256; }
 
         // Weapons are named here and numbered in the core. The baseline
         // built one gun and one bomb per hull, so those get the names an
@@ -202,6 +219,14 @@ impl Arena {
                     named.push((n, pat));
                 }
             }
+        }
+        // And the weapons that belong to a slot in the settings rather than to
+        // a hull: the four charges, and what each rung of shrapnel breaks
+        // into. Without names those were the only weapons in the zone an
+        // operator could not touch -- the repel's own radius was ours and
+        // nobody else's.
+        for (name, pat) in Arena::slots(world) {
+            if pat != sim::NO_PATTERN { named.push((name, pat)); }
         }
         if let Some(v) = c.rust { world.cfg.rust_chance = v.min(1000); }
         if let Some(v) = c.spawn_prizes { world.cfg.spawn_prizes = v; }
@@ -227,6 +252,14 @@ impl Arena {
                 None => warn.push(format!("\"{name}\" is not an add-on")),
             }
         }
+        if let Some(v) = c.mod_spread {
+            world.cfg.mod_spread = ((v as i64 * 65536 / 360) & 0xffff) as u16;
+        }
+        if let Some(v) = c.prox_step { world.cfg.prox_step = v * 256; }
+        if let Some(v) = c.shrap_inactive {
+            world.cfg.shrap_inactive = unsafe { sim::sim_units_energy(v) };
+        }
+        if let Some(v) = c.shrap_inactive_ticks { world.cfg.shrap_inactive_ticks = v; }
         // Two passes, because a splinter may name a weapon written later in
         // the file, or one that does not exist until this pass makes it.
         for w in &c.weapons {
@@ -236,7 +269,14 @@ impl Arena {
             }
             if named.iter().any(|(n, _)| *n == w.name) { continue; }
             match world.add_weapon() {
-                Some(p) => named.push((w.name.clone(), p)),
+                Some(p) => {
+                    // A slot name the baseline left empty -- `charge-3`, say
+                    // -- fills that slot as well as making the weapon, so a
+                    // zone adding a third charge writes one block rather than
+                    // a block and a wiring line that does not exist.
+                    Arena::fill_slot(world, &w.name, p);
+                    named.push((w.name.clone(), p));
+                }
                 None => warn.push(format!("no room in the weapon table for \"{}\"", w.name)),
             }
         }
@@ -254,23 +294,30 @@ impl Arena {
                 .into_iter().enumerate()
             {
                 let Some(want) = want else { continue };
-                // An empty name takes the trigger away, which is how a hull
-                // loses its bomb rack rather than being given a free one.
-                let pat = if want.is_empty() {
-                    Some(sim::NO_PATTERN)
-                } else {
-                    named.iter().find(|(n, _)| n == want).map(|&(_, p)| p)
-                };
-                match pat {
-                    // Naming one weapon replaces the whole ladder with it, so
-                    // a hull given a repel does not level into a bomb.
-                    Some(p) => {
-                        world.cfg.classes[idx].trigger[t] =
-                            [p, sim::NO_PATTERN, sim::NO_PATTERN, sim::NO_PATTERN];
-                    }
-                    None => warn.push(format!(
-                        "{} has no weapon called \"{want}\" to put on its {field}", s.name)),
+                if want.len() > sim::MAX_RUNGS {
+                    warn.push(format!("{}'s {field} ladder is {} rungs and {} is the ceiling",
+                                      s.name, want.len(), sim::MAX_RUNGS));
+                    continue;
                 }
+                // The whole ladder, first rung first, and an empty list takes
+                // the trigger away -- which is how a hull loses its bomb rack
+                // rather than being handed a free one. A name that resolves to
+                // nothing leaves the hull's own ladder alone: half-applying it
+                // would silently shorten the ladder, and a shortened ladder is
+                // a hull that stops levelling for no reason a log would show.
+                let mut ladder = [sim::NO_PATTERN; sim::MAX_RUNGS];
+                let mut ok = true;
+                for (rung, n) in want.iter().enumerate() {
+                    match named.iter().find(|(nm, _)| nm == n) {
+                        Some(&(_, p)) => ladder[rung] = p,
+                        None => {
+                            warn.push(format!(
+                                "{} has no weapon called \"{n}\" to put on its {field}", s.name));
+                            ok = false;
+                        }
+                    }
+                }
+                if ok { world.cfg.classes[idx].trigger[t] = ladder; }
             }
             for (t, mods) in [&s.gun_mods, &s.bomb_mods].into_iter().enumerate() {
                 if mods.is_empty() { continue }
@@ -286,27 +333,113 @@ impl Arena {
                 }
                 world.cfg.classes[idx].mod_max[t] = packed;
             }
-            let cls = &mut world.cfg.classes[idx];
-            unsafe {
-                if let Some(v) = s.speed { cls.max_speed = sim::sim_units_speed(v); }
-                if let Some(v) = s.thrust { cls.thrust = sim::sim_units_thrust(v); }
-                if let Some(v) = s.rotation { cls.rot = sim::sim_units_rotation(v); }
-                if let Some(v) = s.energy { cls.max_energy = sim::sim_units_energy(v); }
-                if let Some(v) = s.recharge { cls.recharge = sim::sim_units_recharge(v); }
+            if s.charges.len() > sim::MAX_CHARGES {
+                warn.push(format!("{} names {} charge slots and there are {}",
+                                  s.name, s.charges.len(), sim::MAX_CHARGES));
             }
-            // Upgrades climb toward whatever ceiling the operator set.
-            cls.init_speed = cls.max_speed * 70 / 100;
-            cls.up_speed = (cls.max_speed - cls.init_speed) / 8;
-            cls.init_thrust = cls.thrust * 70 / 100;
-            cls.up_thrust = (cls.thrust - cls.init_thrust) / 8;
-            cls.init_rot = cls.rot * 70 / 100;
-            cls.up_rot = (cls.rot - cls.init_rot) / 8;
-            cls.init_energy = cls.max_energy * 70 / 100;
-            cls.up_energy = (cls.max_energy - cls.init_energy) / 8;
-            cls.init_recharge = cls.recharge * 70 / 100;
-            cls.up_recharge = (cls.recharge - cls.init_recharge) / 8;
+            for (k, &n) in s.charges.iter().take(sim::MAX_CHARGES).enumerate() {
+                world.cfg.classes[idx].charge_max[k] = n.min(sim::CHARGE_MAX);
+            }
+            let cls = &mut world.cfg.classes[idx];
+            // Raise the ceiling and the ladder under it moves with it, in
+            // proportion. A zone that says nothing keeps the baseline's own
+            // numbers exactly, which is the whole point: those are the
+            // original's, and it starts a pilot at 62% of top speed but 88%
+            // of top thrust and closes a quarter of the speed gap per green
+            // against a seventh of the energy gap. Recomputing them from a
+            // flat rule -- seventy per cent of the ceiling and an eighth of
+            // the gap, which is what stood here -- overwrote all of that on
+            // every reload, whether or not the file mentioned the ship.
+            fn scaled(old_max: i32, new_max: i32, v: &mut i32) {
+                if old_max > 0 && new_max != old_max {
+                    *v = ((*v as i64) * new_max as i64 / old_max as i64) as i32;
+                }
+            }
+            unsafe {
+                if let Some(v) = s.speed {
+                    let m = sim::sim_units_speed(v);
+                    scaled(cls.max_speed, m, &mut cls.init_speed);
+                    scaled(cls.max_speed, m, &mut cls.up_speed);
+                    cls.max_speed = m;
+                }
+                if let Some(v) = s.thrust {
+                    let m = sim::sim_units_thrust(v);
+                    scaled(cls.thrust, m, &mut cls.init_thrust);
+                    scaled(cls.thrust, m, &mut cls.up_thrust);
+                    cls.thrust = m;
+                }
+                if let Some(v) = s.rotation {
+                    let m = sim::sim_units_rotation(v);
+                    scaled(cls.rot, m, &mut cls.init_rot);
+                    scaled(cls.rot, m, &mut cls.up_rot);
+                    cls.rot = m;
+                }
+                if let Some(v) = s.energy {
+                    let m = sim::sim_units_energy(v);
+                    scaled(cls.max_energy, m, &mut cls.init_energy);
+                    scaled(cls.max_energy, m, &mut cls.up_energy);
+                    cls.max_energy = m;
+                }
+                if let Some(v) = s.recharge {
+                    let m = sim::sim_units_recharge(v);
+                    scaled(cls.recharge, m, &mut cls.init_recharge);
+                    scaled(cls.recharge, m, &mut cls.up_recharge);
+                    cls.recharge = m;
+                }
+                // A floor or a step written out beats the proportion, so a
+                // zone can say what the original's files say -- InitialSpeed,
+                // UpgradeSpeed and MaximumSpeed as three independent numbers
+                // -- rather than only being able to move all three together.
+                if let Some(v) = s.initial_speed { cls.init_speed = sim::sim_units_speed(v); }
+                if let Some(v) = s.upgrade_speed { cls.up_speed = sim::sim_units_speed(v); }
+                if let Some(v) = s.initial_thrust { cls.init_thrust = sim::sim_units_thrust(v); }
+                if let Some(v) = s.upgrade_thrust { cls.up_thrust = sim::sim_units_thrust(v); }
+                if let Some(v) = s.initial_rotation { cls.init_rot = sim::sim_units_rotation(v); }
+                if let Some(v) = s.upgrade_rotation { cls.up_rot = sim::sim_units_rotation(v); }
+                if let Some(v) = s.initial_energy { cls.init_energy = sim::sim_units_energy(v); }
+                if let Some(v) = s.upgrade_energy { cls.up_energy = sim::sim_units_energy(v); }
+                if let Some(v) = s.initial_recharge {
+                    cls.init_recharge = sim::sim_units_recharge(v);
+                }
+                if let Some(v) = s.upgrade_recharge {
+                    cls.up_recharge = sim::sim_units_recharge(v);
+                }
+            }
+            if let Some(v) = s.radius { cls.radius = v * 256; }
         }
         warn
+    }
+
+    /// The weapons that belong to a settings slot rather than to a hull, under
+    /// the names a zone file reaches them by: `charge-1` through `charge-4`,
+    /// and `shrapnel-1` up, one per rung of the add-on.
+    ///
+    /// Numbered rather than called repel and burst, because what sits in a
+    /// charge slot is the zone's own choice and the prize weights name them
+    /// the same way.
+    fn slots(world: &sim::World) -> Vec<(String, u8)> {
+        let mut v = Vec::new();
+        for k in 0..sim::MAX_CHARGES {
+            v.push((format!("charge-{}", k + 1), world.cfg.charge[k]));
+        }
+        for k in 1..sim::MAX_RUNGS {
+            v.push((format!("shrapnel-{k}"), world.cfg.mod_splinter[k]));
+        }
+        v
+    }
+
+    /// Put a freshly made weapon in the slot its name asks for, if it asks for
+    /// one. This is what lets a zone fill a slot the baseline leaves empty.
+    fn fill_slot(world: &mut sim::World, name: &str, pat: u8) {
+        if let Some(n) = name.strip_prefix("charge-") {
+            if let Ok(k) = n.parse::<usize>() {
+                if k >= 1 && k <= sim::MAX_CHARGES { world.cfg.charge[k - 1] = pat; }
+            }
+        } else if let Some(n) = name.strip_prefix("shrapnel-") {
+            if let Ok(k) = n.parse::<usize>() {
+                if k >= 1 && k < sim::MAX_RUNGS { world.cfg.mod_splinter[k] = pat; }
+            }
+        }
     }
 
     /// Prizes are named in a zone file and numbered in the core. The five
@@ -401,6 +534,24 @@ impl Arena {
 
     fn new_from(cfg: &config::ZoneConfig) -> Self {
         let mut a = Arena::new_on_map(&cfg.map);
+        // Mode and flags were keys in the file that nobody read: the arena
+        // built a four-flag warzone whatever they said. They settle at start
+        // rather than on reload, because changing what a round is for while
+        // one is being played is not a tuning change.
+        //
+        // Flags can come down but not up: where they stand is the map's, and
+        // the built-in arena puts four in the four quadrants. A zone asking
+        // for more is told so rather than quietly given four.
+        let placed = a.world.state.flag_count;
+        if cfg.arena.flags > placed {
+            println!("zone: this map places {placed} flags and the file asks for {}",
+                     cfg.arena.flags);
+        }
+        a.world.state.flag_count = cfg.arena.flags.min(placed);
+        a.mode = match cfg.arena.mode.as_str() {
+            "arena" | "ffa" => Box::new(modes::FreeForAll),
+            _ => Box::new(modes::Warzone::new(a.world.state.flag_count)),
+        };
         for w in Arena::apply_config(&mut a.world, &cfg.arena) {
             println!("zone: {w}");
         }
@@ -2035,7 +2186,7 @@ mod tests {
 
             [[arena.ships]]
             name = "Spire"
-            bomb = "burst"
+            bomb = ["burst"]
         "#);
         assert!(warn.is_empty(), "{warn:?}");
         let spire = ai::class_index("Spire").unwrap();
@@ -2046,9 +2197,12 @@ mod tests {
         assert_eq!(sp.splinter, sim::NO_PATTERN, "a new weapon splinters into nothing");
         // Degrees, because nobody thinks in sixty-five thousandths of a turn.
         assert_eq!(p.spacing, (22 * 65536 / 360) as u16);
-        // The Spire has no bomb rack in the baseline, so this gave it one.
+        // Every hull carries a rack in the baseline now, the way every one
+        // of the original's ships does, so what this proves is that the named
+        // weapon replaced the rack rather than sat beside it.
         let fresh = sim::World::new(1);
-        assert_eq!(fresh.cfg.classes[spire].trigger[1][0], sim::NO_PATTERN);
+        let base = fresh.cfg.patterns[fresh.cfg.classes[spire].trigger[1][0] as usize];
+        assert_ne!(base.count, p.count, "the zone's weapon is not the baseline's");
     }
 
     #[test]
@@ -2079,7 +2233,7 @@ mod tests {
         let (w, warn) = tuned(r#"
             [[arena.ships]]
             name = "Anvil"
-            bomb = ""
+            bomb = []
         "#);
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(w.cfg.classes[ai::class_index("Anvil").unwrap()].trigger[1][0], sim::NO_PATTERN);
@@ -2098,7 +2252,7 @@ mod tests {
 
             [[arena.ships]]
             name = "Apex"
-            gun = "also-not-a-weapon"
+            gun = ["also-not-a-weapon"]
         "#);
         assert_eq!(warn.len(), 4, "{warn:?}");
         assert!(warn.iter().any(|w| w.contains("sideways")));
@@ -2121,7 +2275,13 @@ mod tests {
         let base = w.cfg.specs[w.cfg.patterns[rungs[0] as usize].spec as usize];
         assert_eq!(top.blast, 96 * 256, "the third rung got the wider blast");
         assert_eq!(base.blast, 80 * 256, "and the first kept its own");
-        assert!(top.damage > base.damage, "a rung is still the same weapon harder");
+        // A bomb rung buys no damage. BombDamageLevel is defined "for all
+        // bomb levels" and there is no upgrade beside it; what a level costs
+        // is BombFireEnergyUpgrade, so that is where the ladder shows.
+        assert_eq!(top.damage, base.damage, "a bomb rung is the same bomb");
+        let top_p = w.cfg.patterns[rungs[2] as usize];
+        let base_p = w.cfg.patterns[rungs[0] as usize];
+        assert!(top_p.energy > base_p.energy, "and it costs more to let go");
     }
 
     #[test]
@@ -2163,7 +2323,7 @@ mod tests {
 
             [[arena.ships]]
             name = "Anvil"
-            bomb = "repel"
+            bomb = ["repel"]
         "#);
         assert!(warn.is_empty(), "{warn:?}");
         let anvil = ai::class_index("Anvil").unwrap();
@@ -2279,6 +2439,230 @@ mod tests {
         assert_eq!(w.cfg.mod_multi_delay, 100);
         assert_eq!(w.cfg.mod_spread, 2730, "fifteen degrees, still");
         assert_eq!(w.cfg.bounce, 10, "and the field past the splinters");
+    }
+
+    /// `mode` and `flags` were documented keys that nobody read: the arena
+    /// built a four-flag warzone whatever the file said.
+    #[test]
+    fn a_zone_picks_its_mode_and_how_many_flags_it_plays_for() {
+        let cfg: config::ZoneConfig =
+            toml::from_str("[arena]\nmode = \"arena\"\nflags = 2\n").unwrap();
+        let a = Arena::new_from(&cfg);
+        assert_eq!(a.mode.name(), "arena");
+        assert_eq!(a.world.state.flag_count, 2);
+
+        let cfg: config::ZoneConfig = toml::from_str("name = \"bare\"").unwrap();
+        let a = Arena::new_from(&cfg);
+        assert_eq!(a.mode.name(), "warzone", "and a file that says nothing is a warzone");
+        assert_eq!(a.world.state.flag_count, 4);
+    }
+
+    /// The zone we ship is the documentation for this format. Parsing it is
+    /// half the check; the other half is that every name in it resolves, since
+    /// a weapon or an add-on the file cannot have is a warning rather than an
+    /// error and would otherwise go out unnoticed.
+    #[test]
+    fn the_reference_zone_applies_without_a_complaint() {
+        let (_, warn) = tuned(include_str!("../../zone/zone.toml"));
+        assert!(warn.is_empty(), "{warn:?}");
+    }
+
+    /// The bomb rules the original spells out, as settings rather than as
+    /// numbers compiled into the baseline.
+    #[test]
+    fn a_zone_writes_its_own_bomb_rules() {
+        let (w, warn) = tuned(r#"
+            [arena]
+            prox_step = 32
+            shrap_inactive = 100
+            shrap_inactive_ticks = 5
+            mod_spread = 30
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(w.cfg.prox_step, 32 * 256, "two tiles wider a bomb level");
+        assert_eq!(w.cfg.shrap_inactive, unsafe { sim::sim_units_energy(100) });
+        assert_eq!(w.cfg.shrap_inactive_ticks, 5);
+        assert_eq!(w.cfg.mod_spread, (30 * 65536 / 360) as u16);
+
+        // And untouched they are the original's: ProximityDistance gains a
+        // tile a level, InactiveShrapDamage is 3 over a quarter second.
+        let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
+        assert_eq!(w.cfg.prox_step, 16 * 256);
+        assert_eq!(w.cfg.shrap_inactive, unsafe { sim::sim_units_energy(3) });
+        assert_eq!(w.cfg.shrap_inactive_ticks, 25);
+    }
+
+    /// The weapons that sit in a settings slot rather than on a hull. These
+    /// were the only ones in the zone nothing could reach: the repel's radius
+    /// and the fragments a bomb breaks into were ours and nobody else's.
+    #[test]
+    fn a_zone_tunes_the_charges_and_the_shrapnel() {
+        let (w, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "charge-1"
+            blast = 200
+            push = 1000
+
+            [[arena.weapons]]
+            name = "shrapnel-2"
+            count = 12
+            damage = 30
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        let repel = w.cfg.specs[w.cfg.patterns[w.cfg.charge[0] as usize].spec as usize];
+        assert_eq!(repel.blast, 200 * 256, "a shorter shove");
+        assert_eq!(repel.push, unsafe { sim::sim_units_speed(1000) });
+        let shell = w.cfg.patterns[w.cfg.mod_splinter[2] as usize];
+        assert_eq!(shell.count, 12, "a second rung of shrapnel is twelve now");
+        assert_eq!(w.cfg.patterns[w.cfg.mod_splinter[1] as usize].count, 2,
+                   "and the rung below it is untouched");
+    }
+
+    /// The baseline fills two charge slots and leaves two empty. Naming an
+    /// empty one makes the weapon and puts it in the slot, so adding a third
+    /// charge is one block rather than a block plus a wiring line.
+    #[test]
+    fn naming_an_empty_charge_slot_fills_it() {
+        let (w, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "charge-3"
+            speed = 0
+            life = 1
+            on_wall = "pass"
+            expire_ends = true
+            blast = 400
+            damage = 900
+            delay = 200
+
+            [arena.prize_weight]
+            charge-3 = 40
+
+            [[arena.ships]]
+            name = "Anvil"
+            charges = [3, 3, 2]
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_ne!(w.cfg.charge[2], sim::NO_PATTERN, "the slot is filled");
+        let sp = w.cfg.specs[w.cfg.patterns[w.cfg.charge[2] as usize].spec as usize];
+        assert_eq!(sp.blast, 400 * 256);
+        assert_eq!(w.cfg.prize_weight[sim::PRIZE_COUNT - 2], 40, "and greens can be it");
+        let anvil = ai::class_index("Anvil").unwrap();
+        assert_eq!(w.cfg.classes[anvil].charge_max[2], 2, "the Anvil carries two");
+        assert_eq!(w.cfg.classes[ai::class_index("Apex").unwrap()].charge_max[2], 0,
+                   "and nobody else carries any");
+        assert_eq!(w.cfg.charge[3], sim::NO_PATTERN, "the fourth slot is still empty");
+    }
+
+    #[test]
+    fn a_zone_builds_a_ladder_rather_than_a_single_weapon() {
+        let (w, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "spike"
+            damage = 300
+
+            [[arena.ships]]
+            name = "Spire"
+            gun = ["spike", "apex-gun-2", "apex-gun-3"]
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        let spire = ai::class_index("Spire").unwrap();
+        let rungs = w.cfg.classes[spire].trigger[0];
+        assert_ne!(rungs[2], sim::NO_PATTERN, "three rungs to climb");
+        assert_eq!(rungs[3], sim::NO_PATTERN, "and the ladder ends there");
+        let first = w.cfg.specs[w.cfg.patterns[rungs[0] as usize].spec as usize];
+        assert_eq!(first.damage, unsafe { sim::sim_units_energy(300) });
+
+        // A rung that names nothing leaves the hull alone rather than
+        // half-applying: a ladder silently shortened is a hull that stops
+        // levelling for a reason no log would show.
+        let (w, warn) = tuned(r#"
+            [[arena.ships]]
+            name = "Spire"
+            gun = ["apex-gun", "not-a-weapon"]
+        "#);
+        assert!(warn.iter().any(|x| x.contains("not-a-weapon")), "{warn:?}");
+        let rungs = w.cfg.classes[spire].trigger[0];
+        assert_ne!(rungs[1], sim::NO_PATTERN, "the hull kept its own ladder");
+    }
+
+    /// A stat is three numbers -- the original's InitialSpeed, UpgradeSpeed
+    /// and MaximumSpeed -- and a zone can write all three.
+    #[test]
+    fn a_zone_sets_a_floor_and_a_step_as_well_as_a_ceiling() {
+        let (w, warn) = tuned(r#"
+            [[arena.ships]]
+            name = "Apex"
+            speed = 4000
+            initial_speed = 1000
+            upgrade_speed = 600
+            initial_energy = 500
+            upgrade_recharge = 200
+            radius = 20
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        let apex = w.cfg.classes[ai::class_index("Apex").unwrap()];
+        unsafe {
+            assert_eq!(apex.max_speed, sim::sim_units_speed(4000));
+            assert_eq!(apex.init_speed, sim::sim_units_speed(1000), "written, not scaled");
+            assert_eq!(apex.up_speed, sim::sim_units_speed(600));
+            assert_eq!(apex.init_energy, sim::sim_units_energy(500));
+            assert_eq!(apex.up_recharge, sim::sim_units_recharge(200));
+        }
+        assert_eq!(apex.radius, 20 * 256);
+
+        // A ceiling on its own still moves the floor and the step with it, so
+        // raising a hull's top speed does not make it start slower relative to
+        // where it can get.
+        let (w, _) = tuned(r#"
+            [[arena.ships]]
+            name = "Apex"
+            speed = 6500
+        "#);
+        let apex = w.cfg.classes[ai::class_index("Apex").unwrap()];
+        let base = sim::World::new(1).cfg.classes[0];
+        assert_eq!(apex.init_speed, base.init_speed * 2, "doubling the ceiling doubled it");
+    }
+
+    /// Absent and zero are different things. Every setting the core owns is
+    /// absent-means-baseline, which leaves zero free to mean zero: a wall that
+    /// gives nothing back, doors that never open, a room with no greens in it.
+    #[test]
+    fn zero_is_a_setting_rather_than_a_missing_one() {
+        let (w, warn) = tuned(r#"
+            [arena]
+            bounce = 0
+            prize_max = 0
+            door_period = 0
+            prize_life = 400
+            prize_radius = 4
+            prize_lo = 100
+            prize_hi = 900
+            flag_radius = 30
+            flag_drop_cooldown = 50
+            door_open = 100
+            wormhole_pull = 40
+            wormhole_range = 500
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(w.cfg.bounce, 0, "a wall that eats everything that hits it");
+        assert_eq!(w.cfg.prize_max, 0, "and a room with no greens in it");
+        assert_eq!(w.cfg.door_period, 0);
+        assert_eq!(w.cfg.prize_life, 400);
+        assert_eq!(w.cfg.prize_radius, 4 * 256);
+        assert_eq!((w.cfg.prize_lo, w.cfg.prize_hi), (100, 900));
+        assert_eq!(w.cfg.flag_radius, 30 * 256);
+        assert_eq!(w.cfg.flag_drop_cooldown, 50);
+        assert_eq!(w.cfg.door_open, 100);
+        assert_eq!(w.cfg.wormhole_pull, unsafe { sim::sim_units_speed(40) });
+        assert_eq!(w.cfg.wormhole_range, 500 * 256);
+
+        // Left out, each is the core's own.
+        let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
+        assert_eq!(w.cfg.bounce, 10);
+        assert_eq!(w.cfg.prize_max, 200);
+        assert_eq!(w.cfg.door_period, 600);
+        assert_eq!(w.cfg.prize_life, 3000);
+        assert_eq!(w.cfg.flag_radius, 18 * 256);
     }
 
     /// The reason apply_config rebuilds from the baseline. An operator saves

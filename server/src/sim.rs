@@ -141,6 +141,12 @@ pub struct sim_settings {
     pub mod_multi_delay: u16,
     /// What each rung of shrapnel breaks into.
     pub mod_splinter: [u8; MAX_RUNGS],
+    /// Q8 px a bomb level adds to the proximity fuse.
+    pub prox_step: i32,
+    /// Q10 energy a fragment does while it is still inactive, and how long
+    /// that lasts in ticks.
+    pub shrap_inactive: i32,
+    pub shrap_inactive_ticks: u16,
     pub bounce: i32,
     pub friction: i32,
     pub respawn_delay: u16,
@@ -345,10 +351,15 @@ pub const PACK_MAX: usize = 64 * 1024;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
 pub const TRIG_COUNT: usize = 2;
+/// Which trigger is which, mirroring SIM_TRIG_GUN and SIM_TRIG_BOMB. The
+/// index was written out as a bare 1 wherever a bomb was meant.
+pub const TRIG_GUN: usize = 0;
+pub const TRIG_BOMB: usize = 1;
 pub const MOD_COUNT: usize = 6;
 pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;
 pub const MAX_CHARGES: usize = 4;
+pub const CHARGE_MAX: u8 = 15;
 pub const PRIZE_COUNT: usize =
     UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
 pub const MOD_PROX: usize = 2;

@@ -250,7 +250,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-#define CFG_VERSION 8
+#define CFG_VERSION 9
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -282,6 +282,10 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, c->charge_max[k]);
     }
+
+    w32(&w, (uint32_t)cfg->prox_step);
+    w32(&w, (uint32_t)cfg->shrap_inactive);
+    w16(&w, cfg->shrap_inactive_ticks);
 
     w8(&w, cfg->spec_count);
     for (int i = 0; i < cfg->spec_count; i++) {
@@ -380,6 +384,10 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
             c->charge_max[k] = (uint8_t)r8(&r);
     }
+
+    cfg->prox_step = (int32_t)r32(&r);
+    cfg->shrap_inactive = (int32_t)r32(&r);
+    cfg->shrap_inactive_ticks = (uint16_t)r16(&r);
 
     uint32_t specs = r8(&r);
     if (specs > SIM_MAX_SPECS) return -1;
