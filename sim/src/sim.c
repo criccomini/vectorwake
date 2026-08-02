@@ -1164,14 +1164,53 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
      * the ending happens. Every difference between a bullet, a bomb, a mine
      * and a fragment is a number in its spec rather than a branch here.
      */
+    /* What a projectile is depends only on the spec it was fired from and the
+     * add-ons that were on the trigger, so resolving it is the same answer for
+     * every round of the same shot. It used to be a struct copy and a pass of
+     * `compose` per weapon per tick, which at four hundred rounds in the air is
+     * forty thousand of each a second for a handful of distinct answers.
+     *
+     * One entry is enough because the rounds that share an answer are adjacent
+     * in the array: a burst of sixteen and a multifire of three are spawned
+     * together, so they sit together. `weapon_end` takes its spec const, and
+     * nothing else writes through the pointer, so handing out the cached one
+     * is the same value by a different address. */
+    uint32_t cached_key = 0xffffffffu;
+    sim_weapon_spec cached;
+    memset(&cached, 0, sizeof cached);
+
+    /* Where every ship is and how big it is, in one compact array.
+     *
+     * The test below runs once per projectile per ship -- four hundred rounds
+     * against forty hulls is sixteen thousand a tick -- and each iteration was
+     * striding a 72-byte ship to read two coordinates and then chasing
+     * `cfg->classes[cls].radius` into a different structure again. Pulling the
+     * three numbers into 64 x 12 bytes puts the whole scan in L1.
+     *
+     * Position, class and team do not move during this loop: ships were
+     * stepped before it and an ending only changes energy and velocity.
+     * `alive` is deliberately *not* cached -- a weapon that kills a ship early
+     * in the loop must leave later weapons seeing a dead one, and freezing
+     * that flag would let a corpse be shot twice. */
+    struct { int32_t x, y, r; } hull[SIM_MAX_SHIPS];
+    for (int i = 0; i < next->ship_count; i++) {
+        hull[i].x = next->ships[i].x;
+        hull[i].y = next->ships[i].y;
+        hull[i].r = cfg->classes[next->ships[i].cls].radius;
+    }
+
     for (uint16_t wi = 0; wi < next->weapon_count;) {
         sim_weapon *w = &next->weapons[wi];
-        /* What this projectile is, as it was fired. The add-ons ride on the
-         * shot rather than on its owner: a bomb thrown while you had shrapnel
-         * still breaks up, whatever you are carrying by the time it lands. */
-        sim_weapon_spec resolved = cfg->specs[w->spec];
-        compose(cfg, w->mods, &resolved, NULL);
-        const sim_weapon_spec *spec = &resolved;
+        /* The add-ons ride on the shot rather than on its owner: a bomb thrown
+         * while you had shrapnel still breaks up, whatever you are carrying by
+         * the time it lands. */
+        uint32_t key = ((uint32_t)w->spec << 16) | w->mods;
+        if (key != cached_key) {
+            cached = cfg->specs[w->spec];
+            compose(cfg, w->mods, &cached, NULL);
+            cached_key = key;
+        }
+        const sim_weapon_spec *spec = &cached;
         int ended = 0, hit_ship = -1;
 
         /* 1. Out of life. Arriving somewhere is what sets a weapon off, and
@@ -1225,12 +1264,13 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * is a bullet, and anything larger is a proximity fuse. */
         if (!ended) {
             for (int i = 0; i < next->ship_count && !ended; i++) {
-                sim_ship *sh = &next->ships[i];
+                const sim_ship *sh = &next->ships[i];
                 if (!sh->active || !sh->alive) continue;
                 if ((uint8_t)i == w->owner || sh->team == w->team) continue;
-                int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
+                int64_t ddx = (int64_t)hull[i].x - w->x;
+                int64_t ddy = (int64_t)hull[i].y - w->y;
                 int64_t d2 = ddx * ddx + ddy * ddy;
-                int64_t r = cfg->classes[sh->cls].radius + spec->trigger;
+                int64_t r = hull[i].r + spec->trigger;
                 if (d2 <= r * r) {
                     ended = 1;
                     hit_ship = i;

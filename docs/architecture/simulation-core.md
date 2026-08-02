@@ -138,6 +138,52 @@ Randomness comes from an explicit PRNG in the state, seeded per arena and
 advanced only inside `sim_step`. Prize rolls, shrapnel spread, and spawn
 selection are therefore reproducible, and the client can predict them.
 
+## What a tick costs, measured
+
+One arena, a full green field, everyone firing, on one core:
+
+| ships | per tick | of a 10 ms tick | weapons in the air |
+|---|---|---|---|
+| 9 | 10.0 us | 1.0% | 102 |
+| 16 | 18.2 us | 1.8% | 176 |
+| 40 | 65.6 us | 6.6% | 427 |
+| 64 | 139.4 us | 13.9% | 685 |
+
+**It is superlinear, and that is the shape to know.** Doubling the ships more
+than doubles the cost, because the projectiles they fire scale with them and
+every projectile is tested against every ship. At 64 ships that is 685 x 64
+tests a tick. The tests themselves are two subtractions, two multiplies and a
+compare -- there is nothing left to shave off one -- so the only way past this
+is fewer pairs, which means a broad phase.
+
+A broad phase is not free to add here, and the reason is worth stating: hit
+resolution is ordered. A projectile stops at the *first* ship it finds in
+index order, and two rounds arriving in the same tick kill in the order the
+loop runs. Any spatial structure that changes which ship is considered first
+changes who dies. It is doable -- a grid that yields candidates in index order
+would preserve it -- but it is a change to what the simulation *does*, not just
+to how fast it does it, and it needs the golden trace regenerated deliberately
+rather than defended.
+
+Two things that were free, and took a third off every row above:
+
+**A projectile's resolved spec is cached across the weapon loop.** What a round
+*is* depends only on the spec it came from and the add-ons on the trigger, so
+it is the same answer for every round of the same shot -- and a burst of
+sixteen or a multifire of three sit adjacent in the array, so one cache entry
+catches them. It was a 44-byte struct copy and a pass of `compose` per weapon
+per tick: forty thousand of each a second at four hundred rounds, for a handful
+of distinct answers.
+
+**Ship position and radius are pulled into a compact array** before the loop
+rather than read through a 72-byte ship and a second lookup into the class
+table per pair. 64 x 12 bytes fits L1.
+
+`alive` is deliberately *not* cached with them. A weapon that kills a ship
+early in the loop must leave later weapons seeing a dead one, and freezing that
+flag would let a corpse be shot twice -- which the golden trace catches, and
+did.
+
 ## What the core does not do
 
 No networking, no serialization of its own, no file access, no strings, no
