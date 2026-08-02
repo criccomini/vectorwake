@@ -2,20 +2,13 @@
 --
 -- The question platforms.md asks is whether mobile is a playing client or a
 -- spectating one. This is the playing answer: a thumbstick that points where
--- you want to go, and pads for the weapons and the charges.
+-- you want the nose to go, and two pads for the two weapons.
 --
 -- Pointing beats a rotate-left/rotate-right pair on glass. There is no tactile
 -- edge to feel for, so a player cannot hold a rotation and stop it on time;
--- they can put a thumb where they want to be going. The ship still turns at
+-- they can put a thumb where they want to be facing. The ship still turns at
 -- its own rate, so nothing about the flight model changes -- this only decides
--- which way the turn is applied, exactly as the AI does it. Both alternatives
--- have been built and both were worse: a relative stick read as two keyboard
--- axes, and a drawn d-pad. They make the pilot hold a rotation and judge when
--- to release it, which is the thing glass cannot help you do.
---
--- Where the thumb points is a course, not a facing. Ask for one behind you
--- and the ship backs up rather than turning around, which is how the stick
--- reaches the half of the flight model that Down owns on a keyboard.
+-- which way the turn is applied, exactly as the AI does it.
 --
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
@@ -24,14 +17,6 @@ local M = {}
 
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
 local THRUST_PX = 46      -- push past this and the engine lights
-
--- An angle folded into [-pi, pi]. Written once because it is wanted twice and
--- the second copy is where a sign error hides.
-local function wrap(a)
-    while a > math.pi do a = a - math.pi * 2 end
-    while a < -math.pi do a = a + math.pi * 2 end
-    return a
-end
 
 M.used = false            -- has this device ever reported a touch?
 M.scale = 1               -- drawable pixels per point
@@ -167,8 +152,7 @@ function M.on_touch(action, w, h, s)
         if t.pressed then
             local z = zone(tx, ty, w, h, s)
             if z == "stick" and not stick then
-                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty,
-                         px = 0, py = 0, swept = 0, calm = 0, waited = 0}
+                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
             elseif z == "guns" then
                 guns = t.id
             elseif z == "bombs" then
@@ -192,52 +176,6 @@ function M.release_all()
     stick, guns, bombs = nil, nil, nil
 end
 
--- How far around the stick a thumb travels before this counts as asking for a
--- new course rather than trimming the one it has, and how fast it has to be
--- going for the ship to give up trying to follow. The rate is the meaningful
--- one: a hull turns about a revolution a second, so a thumb crossing faster
--- than that is not asking for a turn, because no turn could keep up with it.
---
--- Both, not either. Rate alone would gate the quick small corrections you
--- make tracking somebody; distance alone cannot tell an arc from a re-aim
--- until it lands.
-local SWEEP = math.pi * 2 / 9        -- forty degrees
-local GATE = 3.5                     -- radians a second, about two hundred
-local LAND = 0.08                    -- seconds below the gate before deciding
-local PATIENCE = 0.6                 -- and a stop, for a thumb going in circles
-
--- One frame of stick tracking.
---
--- Called once a frame by the caller rather than folded into bits(), which is
--- asked three times -- once for the network, once for the step, once to know
--- whether to draw a flame -- so anything accumulated in there would be
--- counted three times over.
---
--- Everything here is in seconds rather than frames. Frames were what the
--- first version counted, and under a software rasteriser they are not a
--- clock: whether a sweep was seen as a sweep depended on how long the last
--- frame happened to take.
-function M.tick(dt)
-    local s = stick
-    if not s then return end
-    dt = math.max(dt or 0, 1e-4)
-    local dx, dy = s.x - s.ox, s.y - s.oy
-
-    -- Crossing the origin: the offset reverses between frames whatever the
-    -- speed, which is how a thumb pulled straight back and out the far side
-    -- announces itself. Re-arms the choice on the spot; there is nothing to
-    -- settle, because the ship has already stopped turning in the middle.
-    if s.px * dx + s.py * dy < 0 then s.back, s.swept = nil, 0 end
-    s.px, s.py = dx, dy
-
-    local ang = math.atan2(dx, dy)
-    local turned = s.ang and math.abs(wrap(ang - s.ang)) or 0
-    s.ang = ang
-    s.swept = s.swept + turned
-    if turned / dt > GATE then s.calm = 0 else s.calm = s.calm + dt end
-    if s.settling then s.waited = s.waited + dt end
-end
-
 -- Which charge slot was tapped since this was last asked, or nil. Consumed by
 -- the read, because a tap is an event and the caller acts on it once.
 function M.fired_charge()
@@ -259,87 +197,25 @@ function M.bits(heading)
 
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
     local mag = math.sqrt(dx * dx + dy * dy)
-
-    if mag < DEAD_PX * M.scale then
-        stick.back, stick.swept, stick.ang = nil, 0, nil
-        stick.settling = false
-        return out
-    end
-
-    -- A sweep, not a correction: the thumb has gone far enough around the
-    -- stick to be asking for a different course rather than trimming this
-    -- one. Hold the rudder and the engine until the hand finishes.
-    --
-    -- The hold is the whole trick. The choice of which end leads is read from
-    -- the thumb against the heading, and the ship spends every frame turning
-    -- that heading toward the thumb -- so by the time an arc lands, the angle
-    -- the choice would be read from has already been dragged most of the way
-    -- closed, and the answer comes out as whatever the hull happened to be
-    -- able to turn in the time. An Apex turns 1.05 revolutions a second; an
-    -- Anvil does not; the same gesture meant different things in different
-    -- ships. Stop turning and the reading is honest again.
-    --
-    -- It has to be a hold rather than a test on the jump itself, because at
-    -- the instant a thumb leaves, an eighty-degree re-aim and the first frame
-    -- of a half-circle arc are the same event. Only where it lands tells them
-    -- apart, and that is a hundred milliseconds later.
-    if not stick.settling and stick.swept > SWEEP then
-        stick.settling, stick.waited = true, 0
-    end
-    if stick.settling then
-        -- Out once the thumb has been below the gate long enough to have
-        -- landed, or on the patience cap, so a thumb going in circles cannot
-        -- leave the ship without a rudder.
-        if stick.calm < LAND and stick.waited < PATIENCE then return out end
-        stick.settling, stick.swept, stick.back = false, 0, nil
-    end
+    if mag < DEAD_PX * M.scale then return out end
 
     -- Screen +y is up and the simulation's +y is down, which is why this is
     -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
     local want = math.atan2(dx, dy)
     local head = (heading / 65536) * math.pi * 2
-    local diff = wrap(want - head)
+    local diff = want - head
+    while diff > math.pi do diff = diff - math.pi * 2 end
+    while diff < -math.pi do diff = diff + math.pi * 2 end
 
-    -- Which end of the ship goes toward the thumb: whichever is already
-    -- nearer it. The stick asks for a direction of travel, not for a place to
-    -- point, so a course that is behind you backs the ship up instead of
-    -- spinning it around -- which is the move the pointing stick could never
-    -- make, holding your guns on somebody while the range opens.
-    --
-    -- The keyboard says the same thing with a heading and a thrust sign. This
-    -- infers the sign from the geometry, because the thumbs are all spoken
-    -- for: steering, the engine and the trigger are three things to hold and
-    -- there are two thumbs, and the only reason the stick works at all is
-    -- that it folds the engine into the steering.
-    --
-    -- Read once, when the thumb commits, and held until it asks again --
-    -- through the middle, or by sweeping. Held rather than re-read every
-    -- frame so the ship cannot change its mind about which end leads halfway
-    -- through a manoeuvre, which is also why there is no hysteresis here: a
-    -- choice made once has nothing to oscillate against.
-    if stick.back == nil then
-        stick.back = math.abs(diff) > math.pi / 2
-        stick.swept = 0
-    end
+    if diff > 0.06 then out[#out + 1] = sim.BTN_RIGHT
+    elseif diff < -0.06 then out[#out + 1] = sim.BTN_LEFT end
 
-    local err = stick.back and wrap(diff - math.pi) or diff
-
-    if err > 0.06 then out[#out + 1] = sim.BTN_RIGHT
-    elseif err < -0.06 then out[#out + 1] = sim.BTN_LEFT end
-
-    -- Burn once the thumb is committed and the chosen end is roughly there,
-    -- so a hard turn does not fling the ship the way it used to be facing.
-    if mag > THRUST_PX * M.scale and math.abs(err) < 1.0 then
-        out[#out + 1] = stick.back and sim.BTN_REVERSE or sim.BTN_THRUST
+    -- Thrust once the thumb is committed and the nose is roughly there, so a
+    -- hard turn does not fling the ship the way it used to be facing.
+    if mag > THRUST_PX * M.scale and math.abs(diff) < 1.0 then
+        out[#out + 1] = sim.BTN_THRUST
     end
     return out
-end
-
--- Whether the stick is currently backing the ship up rather than driving it
--- forward, so the caller can show it. An inferred control has to be legible
--- or it reads as the game doing something you did not ask for.
-function M.reversing()
-    return stick ~= nil and stick.back == true
 end
 
 -- True while the stick is steering, so the caller can drop keyboard steering
@@ -406,13 +282,9 @@ function M.draw(u, w, h, s)
     end
 
     if stick then
-        -- Amber while the ship is backing up rather than driving forward.
-        -- The retro flames on the hull are the feedback that matters, since
-        -- that is where a pilot is looking; this is for the glance down.
-        local col = M.reversing() and pal.a(pal.THRUST, 0.9) or live
         ring(stick.ox, stick.oy, L.home.r, dim)
-        ring(stick.x, stick.y, L.r * 0.42, col, 16)
-        u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, col)
+        ring(stick.x, stick.y, L.r * 0.42, live, 16)
+        u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, live)
     else
         -- A resting mark where a thumb should go. The stick itself is
         -- relative -- it appears wherever you press -- but a control that is

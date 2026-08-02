@@ -147,15 +147,11 @@ local function my_buttons()
         local emulated = touch.used and (action == hash("pointer")
                                          or action == hash("pointer_alt"))
         if down and not emulated then
-            -- Two sources on the controls would fight; the pad wins every
-            -- flight bit while it is held, and the keys keep everything else.
-            -- All four, not just the rudder: the pad is both axes now, and a
-            -- key that could still light the engine under it would mean a
-            -- thumb on the reverse key got nothing.
+            -- Two sources on the rudder would fight; the stick wins while it
+            -- is down, and the keys keep everything else.
             local bit = bit_for(action)
-            local flight = bit == sim.BTN_LEFT or bit == sim.BTN_RIGHT
-                or bit == sim.BTN_THRUST or bit == sim.BTN_REVERSE
-            if not (steering and flight) then bits[bit] = true end
+            local rudder = bit == sim.BTN_LEFT or bit == sim.BTN_RIGHT
+            if not (steering and rudder) then bits[bit] = true end
         end
     end
     for _, bit in ipairs(touch.bits(sim.ship_heading(me))) do
@@ -640,8 +636,11 @@ end
 -- core owns pickup, carry and drop, and which arrangement of flags wins a
 -- round is a game mode's business, which offline there is not one of.
 -- Whether a ship is burning its engine this frame, which is the only thing on
--- screen that separates a pilot accelerating from one coasting. Either sign:
--- the main flame and the retros are drawn from the same answer.
+-- screen that separates a pilot accelerating from one coasting.
+-- Either sign: the tail flame and the retros are drawn from the same answer,
+-- so a ship backing up is as legible as one accelerating. Reverse is the
+-- keyboard's Down key and the bots use it to open range; the stick has no way
+-- to ask for it, which is a gap in the controls rather than in the model.
 local function burning(i, mine_buttons, bit)
     if i == me then return has(mine_buttons, bit) end
     local p = pilots[i]
@@ -669,11 +668,6 @@ function update(self, dt)
     if self.online and sim.ship_count() == 0 and not menu.open then return end
 
     sfx.frame()
-    -- Here, not in the step loop below: the stick counts frames of movement
-    -- and stillness to tell a sweep from a correction, and that loop runs
-    -- anywhere from nought to eight times depending on how long the last
-    -- frame took.
-    touch.tick(dt)
 
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
