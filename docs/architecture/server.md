@@ -27,7 +27,7 @@ prototype, and it is on the roadmap as one.
 Rust, linking the C simulation core through a thin FFI wrapper.
 
 The server is where the untrusted input arrives: packet parsing, session
-handling, chat, file transfer, and module hosting are all attack surface, and
+handling, file transfer, and module hosting are all attack surface, and
 they are the parts of the system where memory safety earns its keep. The
 simulation, by contrast, sees only validated integers and allocates nothing,
 which is why it stays in C where Defold's build server can compile it.
@@ -43,7 +43,7 @@ server/
   src/
     main.rs
     transport/        udp.rs, websocket.rs, throttle.rs
-    session/          handshake, auth, capabilities, chat
+    session/          handshake, auth, capabilities
     arena/            arena.rs, settings.rs, map.rs
     directory/        registration client, the unioned view, zone selection
     sim/              FFI bindings to sim/
@@ -91,8 +91,8 @@ cheats that Subspace's `C2S_DIE` packet enabled, and it means the security
 module we do not have to write is the checksum treadmill Continuum is stuck on.
 
 Rate limiting and sanity checks stay: an input stream arriving faster than the
-tick rate, a chat flood, or a ship change every frame all get throttled at the
-session layer before they reach an arena.
+tick rate or a ship change every frame gets throttled at the session layer before
+it reaches an arena.
 
 ## Lag response
 
@@ -123,8 +123,8 @@ the arena. This is the deliberate reversal of ASSS's model, where a `.so` has
 full process access and can segfault the server.
 
 The module API is small on purpose: subscribe to events, read arena and player
-state, adjust settings at runtime, send chat, set scores, spawn and move flags
-and balls, and answer adviser questions. Writing a warzone flag game or a
+state, adjust settings at runtime, set scores, spawn and move flags and balls, and
+answer adviser questions. Writing a warzone flag game or a
 powerball mode should take a few hundred lines.
 
 Lua as a second module language is likely, since more zone authors write Lua
@@ -198,9 +198,6 @@ Whether WASM module startup cost is acceptable when an arena loads, and how
 modules get distributed to operators. The catalog is now the obvious channel for
 the second half of that, which makes module bytes something a directory hands out
 alongside a map.
-
-How chat spans a zone once the population is spread across processes, since one
-process holding every arena is what made it free.
 
 Two questions that used to live here are answered. Whether an arena should be
 able to move to another process for isolation: yes, and it is the only thing in a

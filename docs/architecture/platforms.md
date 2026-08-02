@@ -56,14 +56,25 @@ headers is the version of the simulation most likely to compile on a toolchain
 we have never seen. This is worth more than any single language feature we give
 up.
 
-**Consoles also force a decision about community content.** Our zone model lets
-anybody host a server with their own maps, modules, and chat. On a console that
-is user-generated content flowing through a certified application, and every
-manufacturer has moderation and safety obligations attached to it. The likely
-shape is that console builds see a curated zone list and platform-native chat
-restrictions, while web and desktop builds see everything. Deciding this late
-would be expensive, so the server browser is designed from the start to serve
-different zone lists to different client classes.
+**Consoles also force a decision about community content**, and half of it is now
+answered. Our zone model lets anybody host a deployment with their own maps and
+modules. On a console that is user-generated content flowing through a certified
+application, and every manufacturer has moderation and safety obligations attached
+to it.
+
+The half that is answered is text. [Decision 28](decisions.md#28-no-chat)
+removes chat from the game entirely, and one of its arguments was exactly this:
+text between strangers is a permanent moderation commitment, and the cheapest
+way to satisfy a platform holder's safety requirements is to have nothing unsafe
+to carry. Player-chosen call signs remain the only free text anywhere near a
+console build, and a name filter is a bounded problem in a way a message channel
+is not.
+
+The half that remains is maps and modules, which are still user-generated
+content even with nothing written on them. The likely shape is that console
+builds see a curated list of deployments while web and desktop builds see any
+hostname. Deciding that late would be expensive, so the browse path is designed
+from the start to serve different lists to different client classes.
 
 **Mobile forces a control scheme we do not have.** Subspace-style flight needs
 continuous rotation, thrust, and fire, with precision. Touch gives us none of

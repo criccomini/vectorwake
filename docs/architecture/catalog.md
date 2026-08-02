@@ -16,7 +16,7 @@ catalog/                        one artifact, versioned as a unit
   catalog.toml                  the deployment: version, zones, staff, bans, pools
   zones/
     war/
-      zone.toml                 mode, fill target, rooms per process, settings
+      zone.toml                 mode, fill target, room cap, teams, settings
       war.vwmap
     chaos/
       zone.toml
@@ -106,10 +106,13 @@ max_players = 16
 # equivalent, General:DesiredPlaying, defaulted to 15.
 fill_target = 20
 
-# Rooms one process holds. War wants one, because a 64-player fight deserves its
-# own blast radius. Duel wants a hundred, because a room is 79 KB and they share
-# a map.
-rooms_per_process = 1
+# The most simulations one process may hold for this zone. Rooms are created on
+# demand up to this and reclaimed when they empty, so it is a ceiling and not a
+# count. It bounds memory at max_rooms x 79 KB plus one shared map, and it bounds
+# the blast radius, since rooms in a process share its fate: War keeps 1 because
+# sixty-four players should not lose a flag game to somebody else's crash, and
+# Duel takes 100 because a duel is two people and a fresh room.
+max_rooms = 1
 
 # Teams. The mode decides who goes where; this is the shape it works within.
 # 1 is a free-for-all. "smaller" is ASSS's behaviour, whose MaxTeamDifference
@@ -152,7 +155,7 @@ tooling validates and the directory validates again on load:
 | `mode` naming something the server has no constructor for | Silently falling back to warzone is how `arena.mode` came to be a dead key |
 | `max_ships` above 255 | The wire cannot address it; clamping quietly hides an operator's mistake |
 | `fill_target` above `max_players` | The rule would never fire and the zone would never scale out |
-| `rooms_per_process` of zero | A process that holds no rooms is a process doing nothing |
+| `max_rooms` of zero | A process that may hold no rooms cannot serve the zone |
 | Two `[[zone]]` entries with one name | Which one a client joins would depend on parse order |
 | A `[[pool]]` token that is not `sha256:` and 64 hex digits | A plaintext token in the catalog is a leaked token |
 | `teams` of zero | Every pilot needs a team; one team is a free-for-all, none is nothing |

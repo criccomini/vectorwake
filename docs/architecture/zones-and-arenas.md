@@ -110,10 +110,15 @@ rather than merely clever: instances may flap all they like while nobody is
 affected, and drain time rate-limits decisions for free.
 
 **Prefer not to exist.** An arena server opens a new instance of a zone only when
-every live instance of that zone sits above its fill target. Five War rooms
-holding four players each is a worse game than one holding twenty, and
-concentration was the entire point of the arena model we are replacing. Scaling
-out is the easy half of autoscaling; declining to is the half that needs a rule.
+every live instance of that zone is out of room. Five War rooms holding four
+players each is a worse game than one holding twenty, and concentration was the
+entire point of the arena model we are replacing. Scaling out is the easy half of
+autoscaling; declining to is the half that needs a rule.
+
+"Out of room" has two levels now, because rooms are created on demand inside a
+process and not fixed at its start. See the fill ladder below: a process grows a
+room before the fleet grows a process, and that ordering is what keeps the number
+of registered instances small.
 
 **Jitter, announce, re-read.** Ten arena servers booting after a deploy will all
 union the same view, all conclude Alpha is underserved, and all become Alpha. So
@@ -158,11 +163,13 @@ choose():
   commit(want); last_commit = now
 
 pick(view):
-  live(z)   = instances serving z, plus unexpired intents naming z
-  short(z)  = live(z) is empty, or every instance of z is below fill_target(z)
-  # rule 2: a zone with a live instance under target does not need another one;
-  # it needs the clients that are already choosing the fullest room below cap.
-  needy    = [z for z in willing if live(z) is empty]
+  live(z)  = instances serving z, plus unexpired intents naming z
+  # Rule 2, and the fill ladder: an instance with room headroom can grow its own
+  # room, so it is not a reason to add an instance. Only a zone whose every
+  # instance is capped -- or which has none at all -- needs one.
+  capped(i) = i.rooms >= max_rooms(i.zone) and every room at fill_target
+  needy    = [z for z in willing
+                if live(z) is empty or all(capped(i) for i in live(z))]
   if needy is empty:               return none
   prefer   = [z in needy if under-provisioned in my region]   # rule 4
   return lowest-priority-index of (prefer if prefer else needy)
@@ -177,11 +184,14 @@ and look elsewhere. It also means a crashed announcer releases its claim on a
 timer rather than holding a zone empty forever, which is why the TTL travels in
 the message rather than being a directory-side rule.
 
-`needy` is zones with **no** live instance, not zones below target. A zone with
-one room holding six of twenty does not want a second room; it wants the next six
-players, and the client's own preference for the fullest room below cap delivers
-them. Widening `needy` to "below target" is the mistake that turns the
-concentration rule inside out and scatters a population across half-empty rooms.
+`needy` is zones with no live instance *or* no headroom left in any of them, and
+the second half is doing the same work the first half is: a zone with one
+instance holding six players of twenty does not want another instance, and it
+does not want another room either. It wants the next six players, which the
+client's own preference for the fullest room below cap delivers. Loosening
+`capped` to "below target" is the mistake that turns the concentration rule
+inside out and scatters a population across half-empty rooms, and it is easier
+to make now that there are two places to make it.
 
 The tie-break is the catalog's zone order rather than anything computed. Two
 instances with identical views must reach the same answer or the announce step
@@ -208,6 +218,7 @@ stateDiagram-v2
     Announcing --> Choosing: peer covered it
     Announcing --> Serving: committed, map and settings loaded
     Serving --> Serving: catalog changed; new settings, same zone
+    Serving --> Serving: room opened or reclaimed; below max_rooms
     Serving --> Draining: operator drain, or a better zone exists
     Draining --> Choosing: empty, or DRAIN_GRACE elapsed
     Serving --> Serving: pinned; policy stops applying
@@ -239,14 +250,46 @@ flapping between two definitions. This is configuration management, not
 agreement: the authoring side can be down for a week and every arena server keeps
 serving the last version it received.
 
-A zone also declares how many rooms one process should hold. A room is 79 KB and
-steps in 1.6 microseconds at two ships, so War asks for one room per process
-because a 64-player fight deserves its own blast radius, while Duel asks for a
-hundred because the rooms are tiny and share a map. Same binary either way; only
-the count of simulations inside the process changes. The measurements and the
-reasoning are in [hosting.md](hosting.md), and the amendment to
-[decision 23](decisions.md) records why the original one-room-per-process rule
-did not survive contact with them.
+A zone also declares `max_rooms`, the most simulations one process may hold for
+it. Rooms are created on demand up to that ceiling and reclaimed when they empty,
+so the number is a cap rather than a count: a process configured for a hundred
+duel rooms holds as many as there are matches, and its memory is bounded at
+`max_rooms` times 79 KB plus one shared map. War sets it to 1, because a 64-player
+fight deserves its own blast radius. Duel sets it to 100, because the rooms are
+tiny and share a map. Same binary either way. The measurements are in
+[hosting.md](hosting.md), and the amendment to [decision 23](decisions.md) records
+why the original fixed one-room-per-process rule did not survive contact with
+them.
+
+### The fill ladder
+
+With rooms appearing on demand, "where does the next player go" has four rungs,
+and they are tried in order. The order is the concentration rule, restated as a
+procedure:
+
+1. **The fullest room below its player cap, on the instance the client chose.**
+   This is the client's own preference and it does most of the work.
+2. **A new room on that instance**, if every room it holds for this zone is at
+   `fill_target` and it is below `max_rooms`. Costs 79 KB and no coordination,
+   which is why it comes before anything involving another process.
+3. **Another instance already serving this zone**, if that one is at `max_rooms`.
+   The client tries the next address the directory gave it.
+4. **A new instance**, which is the only rung that needs the selection algorithm,
+   an announcement, and a wait. It fires when every instance of the zone is at
+   `max_rooms` with every room at target.
+
+Rung 2 is the one that changes the shape of the fleet. A duel zone with
+`max_rooms = 100` covers its first hundred concurrent matches inside a single
+registered process, so the fleet stays small, `VIEW` stays short, and the herding
+problem barely arises because there is rarely a reason to add an instance. The
+cost is that a process is no longer a fixed size, and a hard cap is what keeps
+that honest: unbounded growth inside a process would turn one busy zone into an
+out-of-memory kill that takes every room in it down together.
+
+A room that empties is reclaimed rather than kept warm, except that an instance
+serving a zone always keeps one room, so it still *is* an instance of that zone
+and appears as one. Draining, then, means all rooms empty and the last one closes,
+which is when the instance may choose a different zone.
 
 Bans and staff capabilities live in the catalog rather than beside one zone. A
 player banned from Chaos but not from War is a support ticket waiting to happen,
@@ -413,12 +456,19 @@ deployment will sometimes hold two half-full War rooms for a few minutes. At ten
 of arena servers that trade is obviously right; at hundreds the backoff starts
 doing serious work and this document needs revisiting.
 
-Population is no longer one social space by construction. ASSS got zone-wide chat
-and instant arena switching for free because one process held everything; we pay
-for both. Chat spanning a deployment needs a hub the arena servers do not
-provide, and moving between zones is a reconnect rather than a message. The
-second is a real regression against the original and against
-[server.md](server.md)'s promise that moving between arenas does not reconnect.
+Rooms sharing a process share its fate. A wedged or killed arena server takes
+down every room it holds, so `max_rooms` is also a blast-radius setting and not
+only a memory one. That is the honest reason War keeps it at 1: a hundred
+duellists losing their match to one crash is annoying, and sixty-four players
+losing a flag game they were twenty minutes into is worse.
+
+Population is no longer one social space by construction. ASSS got zone-wide
+chat and instant arena switching for free because one process held everything.
+Moving between zones is now a reconnect, which is a real regression against the
+original and against [server.md](server.md)'s promise that it would not be. Chat
+is not paid for at all: [decision 28](decisions.md#28-no-chat) removes it,
+partly because this model would have made it a hub in the middle that has to be
+up.
 
 Authorship moves up a level. A third-party author no longer runs a zone with
 their own settings on their own box; they run a *directory* with their own catalog
@@ -429,46 +479,50 @@ floor on running your own game, from one binary and a config file to a catalog, 
 directory, and at least one arena server.
 
 There is no global list of directories, and we are not building one. A player
-reaches a deployment because the client ships its directory addresses or because
-somebody handed them one.
+reaches ours because the client resolves `directory.vectorwake.game`, and reaches
+anybody else's because somebody handed them a hostname.
 
 ## Open questions
+One is genuinely open. Five were closed by the decisions below, and two of those
+closed by being deferred rather than answered, which is a different thing and
+worth keeping visible.
 
-The ones that are genuinely undecided rather than merely unbuilt. Each is a place
-where building will teach us more than arguing will.
+**Open: whether the herding backoff holds at scale.** The announce-and-recheck
+step is a lock protocol over an eventually consistent channel, and it blunts
+collisions rather than preventing them. At tens of instances the arithmetic is
+comfortable. At hundreds, `INTENT_TTL` and `ANNOUNCE_HOLD` start doing real work
+and a leader begins to look cheap by comparison. This one cannot be argued to a
+conclusion, which is why [roadmap.md](roadmap.md) asks for a harness rather than
+a playtest.
 
-**Where a rated event goes.** [server.md](server.md) has the argument: the
-directory is the convenient answer and the wrong one, because a directory holding
-durable state loses the property that its replicas need no shared storage, and
-that property is why a directory is a process we can afford to lose. The
-meta-layer directly is probably right and costs an arena one more thing to reach
-and authenticate to. Unresolved until M7.7.
+The fill ladder makes it less pressing than it was. Rung 2 means a process grows
+a room before the fleet grows a process, so most demand is absorbed without any
+instance choosing anything, and choosing is the only thing that can herd.
 
-**Chat, and whether a deployment is one social space.** ASSS got zone-wide chat
-free because one process held every arena. We pay for it, and nothing in this
-design provides it. The options are a hub the arena servers relay through, which
-makes something in the middle stateful again, or the meta-layer, which is where
-[decision 11](decisions.md) already puts chat outside the arena. The second is
-more likely, and it means a player's chat survives a room change while their
-connection does not.
+**Closed: chat does not exist.** [Decision 28](decisions.md#28-no-chat). The
+question was where a hub would live, and the answer is that there is no hub
+because there is no chat. This model helped force that: chat here would have
+been a stateful thing in the middle, which is what the whole design avoids.
 
-**Whether the herding backoff holds at scale.** The announce-and-recheck step is a
-lock protocol over an eventually consistent channel, and it blunts collisions
-rather than preventing them. At tens of instances the arithmetic is comfortable.
-At hundreds, `INTENT_TTL` and `ANNOUNCE_HOLD` start doing real work and a leader
-begins to look cheap by comparison. The harness in
-[roadmap.md](roadmap.md) exists to find that edge before production does.
+**Closed: the client finds directories through DNS.**
+`directory.vectorwake.game` resolves to every directory of this deployment; the
+client shuffles the records and takes the first that answers. Arena servers
+resolve the same name. See [discovery.md](discovery.md) for what that does to
+the TLS certificate, which is the one non-obvious consequence.
 
-**How a client discovers directories in the first place.** Shipping the addresses
-in the build is what we do, and it means a directory cannot move without a client
-release. DNS would fix that and adds a dependency the design otherwise does not
-have. Worth revisiting the first time an address has to change.
+**Closed: rooms are dynamic, with a hard cap.** The fill ladder above, and
+`max_rooms` in [catalog.md](catalog.md). The cap earns its keep twice, bounding
+memory and bounding the blast radius of one process dying.
 
-**Whether the interest radius can serve a spectator.** A snapshot is built around
-the viewer's ship, and a spectator has none. Following a chosen pilot is the
-obvious answer; a free camera is the one people will ask for.
+**Deferred: where a rated event goes.** Not answered, and deliberately not
+blocking. `persist.rs` writing `ratings.json` beside the process is correct for
+one instance per zone and wrong the moment there are two, so this has to be
+settled before a zone is ever served by more than one arena server at once.
+Until then the argument is recorded in [server.md](server.md): the directory is
+the tempting sink and the wrong one.
 
-**Whether `rooms_per_process` wants to be dynamic.** It is a catalog number, so a
-process holding a hundred duel rooms holds a hundred whether four are busy or all
-of them. Growing on demand inside a process is easy and gives the fill logic a
-second place to live, which is the argument against.
+**Deferred: spectators.** The design is in the join path above and stands; it is
+simply not being built yet. Two things wait on it. The duel queue needs pilots
+present but not playing, which is one reason duels stay out. And lag response's
+force-to-spectator is the gentlest of ASSS's four thresholds, so until
+spectating exists, the only lag actions available are the harsher ones.

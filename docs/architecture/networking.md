@@ -27,7 +27,7 @@ follows in 50 ms. On UDP they are sent once and never retransmitted. On
 WebSocket they inherit TCP's ordering, which we cannot avoid, so we keep them
 small and let the client discard stale ones by tick number.
 
-Reliable messages carry things that must arrive exactly once: chat, arena joins,
+Reliable messages carry things that must arrive exactly once: arena joins,
 settings, map metadata, score updates, kill notifications. On UDP they get
 sequence numbers, acknowledgements, and retransmission with backoff. On
 WebSocket they ride the socket's own guarantees.
@@ -62,7 +62,7 @@ Losing a datagram then costs nothing as long as the next arrives within the
 window, which is the standard trick and it works here because inputs are tiny.
 
 That is nearly the whole client-to-server surface for gameplay. Everything else
-is chat, arena changes, ship changes, and requests, all reliable and all rare.
+is arena changes, ship changes, and requests, all reliable and all rare.
 
 ## Server to client
 
@@ -188,7 +188,8 @@ and 20 KB/s. Upstream is trivial: 8 bytes per tick at 100 Hz, batched, is under
 1 KB/s.
 
 When a link cannot carry that, the server throttles by priority the way ASSS
-does: weapons and positions outrank chat, some share of bandwidth is reserved
+does: weapons and positions outrank everything else, some share of bandwidth is
+reserved
 per class, and the snapshot rate for distant players degrades before anything
 near you does.
 

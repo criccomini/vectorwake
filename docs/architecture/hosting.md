@@ -69,8 +69,8 @@ figure to derive from an array bound; `SIM_MAX_SHIPS` is only the wall behind it
 
 And a room is cheap enough that **one process should be able to hold many of
 them**, which [decision 23](decisions.md) did not allow for. See the amendment
-there: rooms per process is a property of the zone, because a 64-player War room
-wants its own blast radius while a two-player duel wants to share.
+there: `max_rooms` is a property of the zone, because a 64-player War room wants
+its own blast radius while a two-player duel wants to share.
 
 ## The bill is egress
 

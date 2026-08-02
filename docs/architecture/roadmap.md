@@ -205,25 +205,37 @@ the test below rather than a playtest. Done when ten arena servers booting at on
 against a four-zone catalog distribute without piling onto one zone, and when
 killing every directory leaves every room playing.
 
-**M7.5, rooms per process.** More than one simulation in a process, sharing a map,
-with the count coming from the zone. Done when a duel zone holds a hundred rooms
-in one process at the memory [hosting.md](hosting.md) predicts.
+**M7.5, rooms on demand.** More than one simulation in a process, sharing a map,
+created as players arrive and reclaimed as rooms empty, capped by the zone's
+`max_rooms`. This is where the fill ladder's second rung lands. Done when a duel
+zone grows to a hundred rooms in one process at the memory
+[hosting.md](hosting.md) predicts, shrinks back as matches end, and refuses the
+hundred-and-first rather than growing past the cap.
 
 **M7.6, the admin surface.** The static page, the unioned read view, catalog
 authoring, and the imperative verbs down the registration socket with
 `has_capability` finally gating them. Done when an operator bans a name, drains an
 instance and pins one to a zone without touching a shell.
 
-**M7.7, durable state leaves the arena.** Rated events batched and handed off, and
-the open question in [server.md](server.md) closed: the meta-layer directly rather
-than through a directory, unless building it says otherwise. Done when two
-instances of one zone can both rate the same pilot without disagreeing, which is
-the case `ratings.json` cannot survive.
+**M7.7, durable state leaves the arena.** Deferred, but not indefinitely, and the
+deadline is structural rather than chosen: `ratings.json` beside the process is
+correct while one instance serves a zone and wrong the moment two do. So this has
+to land before the fill ladder's fourth rung ever fires in anger, which makes it
+a prerequisite for a second instance of any zone rather than a milestone free to
+slip. Rated events batched and handed off, and the open question in
+[server.md](server.md) closed. Done when two instances of one zone can both rate
+the same pilot without disagreeing.
 
 Duels return after M7.1 and M7.5, because they need a mode to be a catalog row
-and a hundred rooms to a process. See
+and rooms on demand in a process. They also need spectating, since a queue is
+pilots present and not playing. See
 [design/duel-mode.md](../design/duel-mode.md) for what came out and what putting
 it back requires.
+
+Two things are deliberately absent. Chat is not deferred, it is gone, per
+[decision 28](decisions.md#28-no-chat). Spectating is deferred, which also holds
+back the gentlest of the four lag actions in [server.md](server.md), so until it
+lands a laggy player gets a harsher response than they should.
 
 ### What to test rather than to play
 

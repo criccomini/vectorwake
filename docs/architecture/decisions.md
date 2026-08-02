@@ -233,8 +233,9 @@ tick per presence and a 1500-byte message ceiling, which does not fit our
 snapshot, delta, and priority model. And it would cost native clients their UDP.
 
 So: our zone server keeps the arenas, and Nakama gets identity, friends,
-parties, chat outside the arena, leaderboards, tournaments, and the zone
-directory, if and when we want those.
+parties, leaderboards, tournaments, and the zone directory, if and when we want
+those. Not chat: there is none, per
+[decision 28](#28-no-chat).
 
 **Cost:** A second backend to run, a Postgres dependency, and two authentication
 paths to keep consistent.
@@ -256,11 +257,10 @@ roughly quadruples the hosting bill and nearly all of that is the database.
 **Amended by [decision 25](#25-an-arena-server-chooses-which-zone-it-serves):**
 the zone directory is no longer on the list of things Nakama gets. A directory
 that holds a catalog, a token table, and a live view of the arena servers is a
-piece of our own
-infrastructure rather than a leaderboard, and nothing Nakama offers implements
-it. Identity, friends, parties, chat outside the arena, leaderboards and
-tournaments are unchanged, and keeping identity *out* of the directory process is
-now load-bearing: it is what lets directory replicas stay independent.
+piece of our own infrastructure rather than a leaderboard, and nothing Nakama
+offers implements it. Identity, friends, parties, leaderboards and tournaments
+are unchanged, and keeping identity *out* of the directory process is now
+load-bearing: it is what lets directory replicas stay independent.
 
 ---
 
@@ -652,13 +652,14 @@ Chaos, War and Duel are things you join, and which arena server you land on is a
 routing detail. See [zones-and-arenas.md](zones-and-arenas.md).
 
 **Cost:** Population stops being one social space by construction. Zone-wide
-chat and instant arena switching were free when one process held everything; both
-now need building, and moving rooms becomes a reconnect. That is a real
-regression against the original and against what [server.md](server.md)
-promised. Duels lose their cheap ephemeral arena, per the amendment to
-[decision 16](#16-duels-are-an-ephemeral-arena-plus-a-zone-module). And a small
-zone that would have been one process is now a directory plus at least one arena,
-which raises the floor on running your own game.
+chat and instant arena switching were free when one process held everything.
+Moving rooms becomes a reconnect, and chat is not rebuilt at all, per [decision
+28](#28-no-chat), which is a subtraction this record helped force. That is a
+real regression against the original and against what [server.md](server.md)
+promised. Duels lose their cheap ephemeral arena, per the amendment to [decision
+16](#16-duels-are-an-ephemeral-arena-plus-a-zone-module). And a small zone that
+would have been one process is now a directory plus at least one arena, which
+raises the floor on running your own game.
 
 **Reconsider if:** zone-wide social presence turns out to matter more to players
 than elastic capacity does, or if the process-per-room overhead stops being
@@ -675,11 +676,20 @@ registration sockets, container overhead.
 The strict form of this record conflated three things that were never the same:
 a room is one simulation, a process is one OS process, a host is one machine
 somebody bills you for. Only the first two were ever coupled, and the numbers say
-even that should be a setting. So the catalog carries a rooms-per-process figure
-per zone. War says one, because a 64-player room deserves its own blast radius
-and its own memory. Duel says a hundred, because the rooms are tiny and share a
-map. Same binary, same registration, same autonomous zone selection; only the
-count of simulations inside the process differs.
+even that should be a setting. So the catalog carries `max_rooms` per zone: a
+ceiling on simulations in one process, with rooms created on demand up to it and
+reclaimed when they empty. War says one, because a 64-player room deserves its own
+blast radius and its own memory. Duel says a hundred, because the rooms are tiny
+and share a map. Same binary, same registration, same autonomous zone selection;
+only the number of simulations inside the process differs.
+
+Dynamic rather than fixed, because a process configured for a hundred duel rooms
+should not hold a hundred while four are busy. The cap is what keeps that honest:
+growth inside a process is bounded memory and a bounded blast radius, and
+unbounded growth would turn one popular zone into an out-of-memory kill that takes
+every room in it down together. It also gives the concentration rule a second
+rung, since a process grows a room before the fleet grows a process; the ladder is
+in [zones-and-arenas.md](zones-and-arenas.md).
 
 This does bring back a container of rooms inside one process, which is what
 [decision 16](#16-duels-are-an-ephemeral-arena-plus-a-zone-module)'s removal
@@ -874,3 +884,50 @@ first place that pays off. If bandwidth ever becomes existential rather than
 annoying, the only structural escape is a provider that does not charge for
 egress at all, and that means a room living somewhere like a Durable Object and a
 rewrite this project should not want.
+
+---
+
+## 28. No chat
+
+**Status:** accepted
+
+vectorwake has no chat. Not a deferred chat, not chat behind a flag: the game does
+not carry text between players.
+
+This is the largest deliberate subtraction in the project, and it needs saying
+plainly because the original's social layer was substantially chat. Zone-wide
+messages, private freq coordination, the mod channel, and the bots that lived on
+all of it are most of what made a Subspace zone feel like a place.
+
+Three things make the subtraction survivable rather than merely cheap. The
+architecture no longer wants it: one process held every arena in ASSS, so chat
+across a population was free, and [decision 23](#23-one-arena-per-process) spread
+the population across processes, which means chat would now be a hub in the middle
+that has to be up. Whatever we most want to be able to lose, a chat hub is the
+opposite. The game reads without it, because flight, bounty and the feed already
+carry what a fight needs to communicate, and the moment-to-moment vocabulary of
+this game is manoeuvre rather than talk. And the thing we would be building is not
+a message router, it is moderation: reporting, muting, blocking, appeals, logs,
+and somebody to read them.
+
+That last point is the real one. Text between strangers is a moderation
+commitment, permanently, and it is the commitment this project is least equipped
+to keep. [platforms.md](platforms.md) already gates consoles on having an answer
+to it, and this decision is that answer: there is nothing to moderate.
+
+**Cost:** The game is less of a social space and more of a sport, and some players
+will bounce off that immediately. Team coordination in a flag game has to happen
+through play, which caps how organised a team can be and changes what the mode
+should ask of them. No zone bots, which the research notes identify as where most
+zone identity lived. And any future league or clan scene will organise on Discord,
+which means the community's real home is somewhere we do not control.
+
+**Reconsider if:** the answer is a bounded channel rather than a general one.
+Fixed phrases, a ping wheel, or team-only signals cost no moderation because there
+is nothing unsafe to say, and they recover most of the coordination a flag game
+wants. That is a different feature from chat and it would get its own record.
+
+**Cascades:** [decision
+11](#11-nakama-for-the-meta-layer-never-for-the-arena-tick) no longer wants
+Nakama's chat. The client's `chat.gui` and the server's chat throttling, module
+`send chat` hook, and reliable-message chat class all come out or never go in.

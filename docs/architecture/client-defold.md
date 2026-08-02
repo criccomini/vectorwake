@@ -17,7 +17,7 @@ needs it least. Putting state in one C struct sidesteps both problems.
 
 - Sample input and build the command sent to the server
 - Call `sim.step()` for local prediction and reconciliation
-- Drive the camera, the HUD, the radar, chat, and menus with Defold GUI
+- Drive the camera, the HUD, the radar, and menus with Defold GUI
 - Turn sim events into sounds, particles, and screen shake
 - Manage connection state, arena joins, and the server browser
 
@@ -38,7 +38,7 @@ client/
     vectorwake.render_script   custom render pipeline
     tiles/                     tilemap window chunks
   gui/
-    hud.gui, radar.gui, chat.gui, statbox.gui, menu.gui
+    hud.gui, radar.gui, statbox.gui, menu.gui
   ext/
     simcore/                   native extension wrapping sim/
       ext.manifest
@@ -153,5 +153,5 @@ whether we need the custom tile renderer.
 How large the WASM bundle gets with the sim core included, and whether the
 HTML5 build's Lua 5.1.4 costs enough in the non-simulation code to matter.
 
-Whether Defold GUI is sufficient for the statbox and chat, which are dense and
+Whether Defold GUI is sufficient for the statbox, which is dense and
 text-heavy in a way Defold's GUI system is not obviously built for.

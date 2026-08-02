@@ -268,10 +268,22 @@ The client needs a list of directories, not one address. `menu.lua:44` holds a
 single string and `browser.connect` takes a single address, so redundancy would
 currently be invisible to players, which is the same as not having it.
 
-Ship a short list, shuffle it at use, take the first that answers. The shuffle
-is the load spreading, and it needs neither a DNS failover window nor a load
-balancer that reintroduces the single point. An operator override for pointing
-at their own directory stays.
+The addresses come from DNS. `directory.vectorwake.game` resolves to every
+directory of this deployment, and the client shuffles the records it gets and
+takes the first that answers.
+
+That does the same job a baked-in list would and fixes the one thing a baked-in
+list cannot: a directory can move, or be added, or be retired, without a client
+release. It also gives load spreading for free, since the client is shuffling
+several records rather than trusting resolver ordering.
+
+Three consequences worth stating. The TLS certificate has to be valid for that
+name, because both browse and registration are `wss` and a browser will not
+tolerate otherwise, so all of a deployment's directories share one certificate for
+one hostname rather than each having its own. Arena servers resolve the same name
+for the same reason, which means an operator configures one hostname rather than a
+list. And federation is untouched: somebody else's deployment is somebody else's
+hostname, and the client keeps its operator override for pointing at one.
 
 A client may also union across directories, since instance ids make
 deduplication well defined. That gives a complete picture without either
@@ -284,7 +296,6 @@ The browse reply grows from a list of addresses into the catalog plus the live
 arena list, because a player now picks a game rather than a server. `Status`
 carrying `arenas: u32` was all a one-room-per-process zone could say.
 
-There is no global registry of directories. A player reaches one because the
-client
-ships its directory addresses or because somebody handed them one, and we are
-not building the thing that would list every fleet.
+There is no global registry of directories. A player reaches ours because the
+client resolves one hostname, and reaches anybody else's because somebody handed
+them one. We are not building the thing that would list every deployment.
