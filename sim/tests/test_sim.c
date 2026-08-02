@@ -924,7 +924,15 @@ int main(void) {
         uint8_t got = sim_take_prize(&sh, &w, &rng, &delta);
         CHECK(got != SIM_PRIZE_NONE, "a maxed pilot still gets an answer");
         CHECK(delta > 0, "still reported as an upgrade");
-        CHECK(memcmp(&before, &sh, sizeof sh) == 0, "and nothing moves");
+        CHECK(memcmp(before.up, sh.up, sizeof sh.up) == 0
+              && memcmp(before.level, sh.level, sizeof sh.level) == 0
+              && memcmp(before.mods, sh.mods, sizeof sh.mods) == 0
+              && memcmp(before.charge, sh.charge, sizeof sh.charge) == 0,
+              "and no count moves");
+        /* But they are worth more for having taken it. A pilot at every
+         * ceiling who keeps hoovering keeps becoming a target. */
+        CHECK(sim_bounty(&sh) == sim_bounty(&before) + 1,
+              "while still being worth one more");
     }
 
     {
@@ -1314,6 +1322,15 @@ int main(void) {
         int before = sim_bounty(&sh);
         sim_take_prize(&sh, &w, &rng, NULL);
         CHECK(sim_bounty(&sh) == before - 1, "and rust takes one back");
+
+        /* And it keeps being one a green, long past every ceiling: four
+         * hundred of them is four hundred bounty, whatever the hull could
+         * actually absorb. */
+        w.rust_chance = 0;
+        before = sim_bounty(&sh);
+        for (int i = 0; i < 400; i++) sim_take_prize(&sh, &w, &rng, NULL);
+        CHECK(sim_bounty(&sh) == before + 400,
+              "a ceiling stops the upgrade, not the price");
     }
 
     {

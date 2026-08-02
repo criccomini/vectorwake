@@ -381,8 +381,9 @@ typedef struct {
     uint16_t mods[SIM_TRIG_COUNT];
     /* Charges in hand, spent one at a time. */
     uint8_t charge[SIM_MAX_CHARGES];
-    /* Bounty a pilot has earned by killing, as opposed to the bounty they
-     * are carrying. Cleared by death with everything else. */
+    /* Bounty that is not sitting in an upgrade slot: what killing has paid,
+     * and what greens taken at a ceiling were worth. Cleared by death with
+     * everything else. */
     uint16_t earned;
     /* The score. Not cleared by death: what you have been paid is yours,
      * and what you are worth is a different number entirely. */
@@ -399,8 +400,10 @@ typedef struct {
  * counter, in the client, where it could disagree with what you were actually
  * carrying. This one cannot.
  *
- * Everything held counts one, so bounty is exactly the number of greens a
- * pilot has successfully absorbed. */
+ * Everything held counts one, and a green taken at a ceiling counts one in
+ * `earned` instead -- so every green is worth exactly one bounty whatever it
+ * turned out to be, and a pilot who is already at every ceiling still gets
+ * more dangerous by taking them. */
 int32_t sim_bounty(const sim_ship *sh);
 
 /* A green carries no type. Every green is takeable by everybody, and what it

@@ -778,7 +778,14 @@ uint8_t sim_take_prize(sim_ship *sh, const sim_settings *cfg, uint32_t *rng,
         }
         type = pool[i];
     }
+    /* A green is worth one bounty whatever it turns out to be, including one
+     * that turns out to be nothing. A pilot at every ceiling still gets more
+     * dangerous by hoovering, which is the point: otherwise the pressure
+     * bounty applies stops growing exactly when somebody is at their most
+     * dominant, and the best player in the room becomes the safest. */
+    uint8_t was = held(sh, type);
     move_count(sh, c, type, 1);
+    if (held(sh, type) == was && sh->earned < 60000) sh->earned++;
     return type;
 }
 

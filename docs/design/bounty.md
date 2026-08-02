@@ -12,35 +12,47 @@ The mechanic is that the first is the price of the second: killing someone pays
 exactly their bounty. So the player who is winning is the player everyone else
 is hunting, and a snowball is visible and contested rather than quiet.
 
-## Bounty is derived, not stored
+## Bounty is mostly derived
 
 ```c
 int32_t sim_bounty(const sim_ship *sh);   /* up[] + level[] + mods + charge[] + earned */
 ```
 
-Every count in the tech tree is already authoritative state, so bounty is a sum
-over it. Everything held counts one, which makes bounty **exactly the number of
-greens a pilot has successfully absorbed**, plus `earned` — the small
-accumulator for kills.
+Every count in the tech tree is already authoritative state, so most of bounty
+is a sum over it. Everything held counts one; `earned` carries the rest — what
+killing has paid, and what greens taken at a ceiling were worth.
 
-Not storing it is the whole trick, and it buys three rules for free:
+**Every green is worth exactly one bounty**, whatever it turned out to be. A
+green that raised a count is worth one because the count went up. A green that
+found you already at the ceiling is worth one because `earned` went up instead.
+
+That second case matters more than it looks. If a maxed pilot stopped
+accumulating bounty, the pressure this whole mechanic exists to apply would
+stop growing at exactly the moment somebody is most dominant — the best player
+in the room would become the safest. So a ceiling stops the upgrade, not the
+price.
+
+Deriving the held part still buys two rules for free:
 
 - **rust lowers your price** in the same instruction that takes the upgrade.
-- **a green at the ceiling does not inflate you.** You were told what you found
-  and nothing moved; your bounty does not move either.
 - **death resets it**, because death already strips everything.
 
-None of those is written anywhere. They are consequences of the sum.
+Neither of those is written anywhere. They are consequences of the sum.
 
-The original could not do this. Subspace's bounty is a counter inside Continuum
-that the server copies out of the position packet without ever deriving or
-checking it — `p->position.bounty = pos->bounty;` is the whole of the server's
-involvement. That number *can* disagree with what a pilot is actually carrying.
-Ours cannot, and it is authoritative because it is a function of state the
-server owns.
+Ours can exceed what a pilot is holding, and that is deliberate: the gap is
+exactly what killing has paid them and what they hoovered after filling up. It
+cannot be *lower* than what they hold, and it cannot drift, because the held
+part is not a copy of anything — it is the counts themselves.
 
-It also costs the wire nothing. Every count it sums is already in the snapshot,
-so the client computes it locally rather than being told.
+The original's could drift, in both directions. Subspace's bounty is a counter
+inside Continuum that the server copies out of the position packet without ever
+deriving or checking it — `p->position.bounty = pos->bounty;` is the whole of
+the server's involvement. Ours is authoritative because it is a function of
+state the server owns, and the one piece that is a counter (`earned`) is only
+ever written by the simulation.
+
+It costs the wire two bytes. Every count the sum runs over is already in the
+snapshot, so the client adds them up locally rather than being told a total.
 
 ## Points are the victim's bounty
 
