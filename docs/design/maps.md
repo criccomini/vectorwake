@@ -54,6 +54,14 @@ otherwise it is a firing position with immunity attached. Anything the ship
 already had in the air comes down with it, so firing and running for cover
 cannot score from the one place nothing can answer.
 
+**Nothing can shove one out, either.** A repel is `push` with no damage, so
+it went straight past the rule that stops damage and threw a sheltering pilot
+into the open at speed. That is worse than damage rather than a lesser
+version of it: the zone is the only place in the game a ship can stop, so
+taking somebody out of one takes away the exact thing they went there for,
+and it did it from outside, where they could not answer. "Nothing reaches a
+ship in a safe zone" now means the shove as well as the hit.
+
 ## Doors breathe
 
 A door cycles on a period, open for part of it. The variant offsets the phase

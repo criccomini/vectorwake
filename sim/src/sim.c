@@ -495,6 +495,14 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
             for (int i = 0; i < s->ship_count; i++) {
                 sim_ship *sh = &s->ships[i];
                 if (!sh->active || !sh->alive) continue;
+                /* Nothing reaches a ship in a safe zone, and a shove is a
+                 * thing reaching it. `apply_damage` has had this rule since
+                 * the tile existed; the push loop never learned it, so a
+                 * repel could throw somebody out of the one place in the
+                 * arena that is supposed to be somewhere you cannot be
+                 * touched -- and out into the open, at speed, which is worse
+                 * than damage because the zone is where you stop. */
+                if (sim_in_safe(cfg->map, sh->x, sh->y)) continue;
                 int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
                 int64_t d2 = ddx * ddx + ddy * ddy;
                 if (d2 > rad * rad) continue;

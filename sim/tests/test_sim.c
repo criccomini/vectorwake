@@ -873,6 +873,40 @@ int main(void) {
         step_n(&s, &w, SIM_BTN_FIRE, 0, 3);
         CHECK(s.ships[1].vy < 0, "the neighbour was shoved away");
         CHECK(s.ships[1].energy >= e1, "and not hurt");
+
+        /* But not into somebody standing in a safe zone.
+         *
+         * Nothing reaches a ship in one -- `apply_damage` has said so since
+         * the tile existed -- and a shove is a thing reaching it. Worse than
+         * damage, in fact: the zone is the one place in the arena you can
+         * stop, so throwing somebody out of it at speed takes away exactly
+         * what they went there for.
+         *
+         * Two victims, so this cannot pass by the repel having failed to go
+         * off at all: the one on the safe tile keeps still and the one beside
+         * it in the open is thrown. */
+        sim_map *sm = malloc(sizeof *sm);
+        memcpy(sm->tile, m->tile, sizeof sm->tile);
+        for (int ty = 497; ty <= 501; ty++)
+            for (int tx = 510; tx <= 514; tx++)
+                sm->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx] = SIM_TILE_SAFE;
+        sim_map_index(sm);
+        w.map = sm;
+
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);          /* the firer */
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &w);    /* on safe ground */
+        sim_spawn(&s, APEX, 2, 8192 + 200, 8192, 0, &w);    /* in the open */
+        CHECK(sim_in_safe(sm, s.ships[1].x, s.ships[1].y),
+              "the sheltered one is actually on a safe tile");
+        CHECK(!sim_in_safe(sm, s.ships[2].x, s.ships[2].y),
+              "and the other is not");
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 3);
+        CHECK(s.ships[1].vx == 0 && s.ships[1].vy == 0,
+              "a repel does not move a ship in a safe zone");
+        CHECK(s.ships[2].vx > 0, "and still shoves the one out in the open");
+        w.map = m;
+        free(sm);
     }
 
     {
