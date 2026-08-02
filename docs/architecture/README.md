@@ -61,10 +61,8 @@ flowchart LR
         AR["One arena, one sim instance"]
         SC2["sim core (static lib)"]
         MOD["Zone modules (sandboxed)"]
-        DB[("SQLite: scores, bans, config")]
         NET --> AR --> SC2
         AR <--> MOD
-        AR --> DB
     end
 
     Client -- "inputs (60 Hz)" --> Server

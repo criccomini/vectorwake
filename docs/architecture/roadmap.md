@@ -15,6 +15,7 @@
 | M5.5 Defold client | Done: real core as a native extension, builds for host and browser, plays offline and networked |
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and server browser |
 | M6 platforms | Blocked on accounts, not on code. See below |
+| M7 the fleet | Designed, not built. The directory, catalog and zone selection below |
 
 What M6 asked for that is code has landed. The bot ladder is calibrated by
 an offline tournament and seeds every zone; ratings show as tiers once a
@@ -115,7 +116,7 @@ arenas than full ones.
 ## M4: a game, not a sandbox
 
 Flag and ball modes as sandboxed zone modules, with the adviser hooks the
-modules need. Scoring, kill rewards, bounty, and persistence to SQLite. Lag
+modules need. Scoring, kill rewards, bounty, and persistence. Lag
 measurement and the four-threshold response.
 
 Damage ledgers and the rated event log start here, since rating is computed from
@@ -167,6 +168,77 @@ the Steam build and the web build share an account.
 
 Consoles come after this, if at all, and only once
 [platforms.md](platforms.md)'s moderation question has an answer.
+
+## M7: the fleet
+
+Everything in [zones-and-arenas.md](zones-and-arenas.md),
+[catalog.md](catalog.md), [discovery.md](discovery.md) and
+[admin.md](admin.md). It is designed in full and built not at all, and it is
+large enough that the order matters more than the total.
+
+The ordering principle is that every step should leave a running game. Nothing
+here is a flag day, because at each stage the previous arrangement still works:
+a single zone server with a `zone.toml` keeps playing while the catalog grows
+beside it.
+
+**M7.1, the catalog as a file.** Parse `catalog.toml` and `zones/<name>/zone.toml`
+with the validation table from [catalog.md](catalog.md), and make a zone server
+able to load a named zone out of it instead of reading one `zone.toml`. Nothing
+registers with anything yet. Done when `mode` and `flags` are read rather than
+ignored, which retires the oldest dead keys in the file, and when a bad catalog is
+refused with a reason rather than half-applied.
+
+**M7.2, registration.** The wire format, the token table, TLS on the directory,
+callback verification, and the `VIEW` push. The directory stops reading a
+hand-written address list. Arena servers still serve one fixed zone. Done when two
+arena servers on different hosts appear in one directory's browse reply within a
+second of starting, and when a killed process is delisted as fast.
+
+**M7.3, the client picks a game.** The browse reply carries zones with instances
+underneath, and the client's server browser lists games rather than servers,
+preferring its own region and the fullest room below the cap. Done when a player
+picks Chaos and lands on the busiest Chaos room without knowing an address.
+
+**M7.4, zone selection.** The algorithm, the constants, `INTENT`, the drain path,
+and the state machine's failure edges. This is the step that can herd, so it wants
+the test below rather than a playtest. Done when ten arena servers booting at once
+against a four-zone catalog distribute without piling onto one zone, and when
+killing every directory leaves every room playing.
+
+**M7.5, rooms per process.** More than one simulation in a process, sharing a map,
+with the count coming from the zone. Done when a duel zone holds a hundred rooms
+in one process at the memory [hosting.md](hosting.md) predicts.
+
+**M7.6, the admin surface.** The static page, the unioned read view, catalog
+authoring, and the imperative verbs down the registration socket with
+`has_capability` finally gating them. Done when an operator bans a name, drains an
+instance and pins one to a zone without touching a shell.
+
+**M7.7, durable state leaves the arena.** Rated events batched and handed off, and
+the open question in [server.md](server.md) closed: the meta-layer directly rather
+than through a directory, unless building it says otherwise. Done when two
+instances of one zone can both rate the same pilot without disagreeing, which is
+the case `ratings.json` cannot survive.
+
+Duels return after M7.1 and M7.5, because they need a mode to be a catalog row
+and a hundred rooms to a process. See
+[design/duel-mode.md](../design/duel-mode.md) for what came out and what putting
+it back requires.
+
+### What to test rather than to play
+
+Most milestones here are confirmed by playing. Two are not, and they are the two
+most likely to fail quietly in production and not in a playtest.
+
+Herding needs a harness: N arena servers, a catalog of M zones, a fake directory
+that can be made slow or partitioned, and an assertion about the distribution that
+results. A herd is invisible with three servers on a laptop and obvious with
+thirty in a deploy.
+
+The eventually consistent view needs a partition test: two directories that
+disagree, an arena that can see one or both, and an assertion that no arrangement
+of stale views makes an instance flap between zones while occupied. Rule one says
+it cannot, and rule one is worth a test rather than a promise.
 
 ## Ongoing from M2
 

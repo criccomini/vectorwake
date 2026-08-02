@@ -12,10 +12,11 @@ Reads input, runs the sim core forward for local prediction, interpolates
 everyone else, and draws the result. Owns no authoritative state.
 
 **Arena server** (`server/`, native binary). Accepts connections, runs one sim
-core instance at a fixed tick, decides everything that matters, and writes scores
-to a database. Hosts sandboxed zone modules that observe and adjust the rules.
-One process holds one arena; a zone is many of them plus the directories that
-list them, per [zones-and-arenas.md](zones-and-arenas.md).
+core instance at a fixed tick, decides everything that matters, and emits rated
+events for the meta-layer to keep. Hosts sandboxed zone modules that observe and
+adjust the rules. It holds nothing durable of its own but its instance id. One
+process holds one arena; a zone is many of them plus the directories that list
+them, per [zones-and-arenas.md](zones-and-arenas.md).
 
 **Zone modules** (`modules/`, sandboxed WebAssembly or Lua). Game modes, event
 logic, and anything a zone author wants to add. They receive events and may
@@ -91,10 +92,8 @@ flowchart TB
         NET["Transport<br/>UDP + WebSocket"]
         SIM["One sim core instance"]
         MOD["Zone modules (sandboxed)"]
-        DB[("SQLite")]
         NET --> SIM
         SIM <--> MOD
-        SIM --> DB
     end
     D1 <-- "register, view, catalog" --> NET
     D2 <-- "register, view, catalog" --> NET
@@ -103,17 +102,20 @@ flowchart TB
     N["Native client"] -- UDP --> NET
 ```
 
-Settings, map, simulation and scores are per process. The catalog, bans, and
-staff capabilities are zone-wide and arrive from a directory. Moving between
-arenas is a reconnect, which is the sharpest thing this model gives up.
+Settings, map and simulation are per process, and none of them are durable. The
+catalog, bans and staff capabilities are deployment-wide and arrive from a
+directory; identity, ratings and the rated event log belong to the meta-layer.
+Moving between arenas is a reconnect, which is the sharpest thing this model gives
+up.
 
 ## Threading
 
 The transport layer runs on its own thread and hands the arena a queue of decoded
 inputs. The arena ticks on one thread, and since the process holds a single arena
 there is no pool and nothing to schedule. Database writes go to a separate thread
-behind a queue. The registration client runs on the async runtime alongside the
-transport and never blocks a tick.
+behind a queue, as does the batch of rated events on its way to the meta-layer.
+The registration client runs on the async runtime alongside the transport and
+never blocks a tick.
 
 The sim core is single-threaded by construction and holds no globals, so an arena
 is a plain value one thread owns for the duration of a tick. This falls out of
@@ -142,7 +144,8 @@ position for nearby players sent more often than for distant ones. See
 | Freq | A team id inside arena state |
 | `arena.conf` settings | Configuration compiled into a settings struct the sim core reads |
 | Flag and ball game modules | Zone modules, sandboxed |
-| Capabilities | Server-side player registry, unchanged in spirit |
+| Capabilities | Named powers in the catalog, gating the admin channel |
+| `data.db` per zone | Deleted. Arena servers are disposable; durable state is the meta-layer's |
 | Lag actions | Server, between transport and arena |
 | Client-authoritative death | Deleted. The arena decides |
 | `.lvl` maps | Imported to our map format, rendered through Defold tilemaps |

@@ -5,14 +5,15 @@
 > an arena server picks which zone it serves rather than being placed by a
 > scheduler. See
 > [zones-and-arenas.md](zones-and-arenas.md), [discovery.md](discovery.md) and
-> decisions 23 through 26. Everything else here, authority and validation, lag
-> response, modules, persistence and identity, stands unchanged.
+> decisions 23 through 27. Authority and validation, lag response, modules and
+> identity stand unchanged. Persistence does not: an arena server now holds
+> nothing durable, and the section below says where each kind of state went.
 
 ## Responsibility
 
 The server owns the truth. It accepts connections, authenticates players, feeds
-inputs to the simulation, decides every kill, and writes what happened to disk.
-Clients render its decisions and predict ahead of them.
+inputs to the simulation, decides every kill, and emits a durable record of what
+happened. Clients render its decisions and predict ahead of them.
 
 It is a separate program from the client rather than a headless Defold build.
 The reasons are in [decisions.md](decisions.md), and the short version is that a
@@ -50,7 +51,7 @@ server/
     ai/               controllers, perception, navigation, population director
     rating/           damage ledgers, rated events, Elo
     modules/          wasm host, adviser dispatch
-    persist/          sqlite, scores, bans, rated event log
+    persist/          rated-event batching and handoff; no local database
   tests/
 ```
 
@@ -132,14 +133,43 @@ without a second sandbox.
 
 ## Persistence
 
-SQLite by default, with the schema covering identity, scores per arena and per
-interval, bans, and chat history if the operator wants it. ASSS keeps score
-intervals as forever, per-reset, and per-game, and shares the first two across
-an arena group; we copy that model because it is what tournament and league play
-needs.
+An arena server holds nothing durable. That is a change from what this document
+said, and the reason is that the rest of the architecture now depends on it: a
+process that owns a database is a process you cannot lose, and
+[zones-and-arenas.md](zones-and-arenas.md) is built on arena servers being
+disposable. SQLite per arena would have quietly made every instance precious.
 
-Writes go through a queue to a dedicated thread. A simulation tick never waits
-on the disk.
+So the split is:
+
+| Lives where | What |
+|---|---|
+| Nowhere; dies with the room | Positions, energy, upgrades, the round in progress, flags held |
+| The meta-layer's Postgres | Identity, ratings, the rated event log, career records |
+| The catalog, in git | Bans, staff and capabilities, every zone's settings |
+| An arena's local disk | Its instance id, and nothing else |
+
+The rated event log is the case that decides the shape. Rating is computed from
+events rather than stored as a number, per
+[design/rating.md](../design/rating.md), so a match produces a durable record
+that must outlive both the room and the process. An arena server therefore
+*emits* rated events rather than owning them: it batches them and hands them off,
+and a tick never waits on the network any more than it used to wait on a disk.
+
+Handing off to what is the open question. The candidates are the directory, which
+would make a directory stateful and cost us the property that its replicas need
+no shared storage, or the meta-layer directly, which is one more thing an arena
+must reach and authenticate to. The second is more likely right for exactly the
+reason the first is tempting: the directory is the piece we most want to be able
+to lose.
+
+Until that is settled, `persist.rs` writing `ratings.json` beside the process is
+the honest interim, and its own header says so. It is correct for one process
+serving one zone and wrong the moment two instances of the same zone both hold
+opinions about a pilot's rating.
+
+ASSS's score intervals, forever and per-reset and per-game, are still the model
+worth copying when this lands, because they are what tournament and league play
+needs. They belong in the meta-layer's schema rather than in an arena.
 
 ## Identity
 
