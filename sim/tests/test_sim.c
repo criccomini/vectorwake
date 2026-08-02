@@ -1457,15 +1457,14 @@ int main(void) {
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, CIPHER, 0, 8192, 8192, 0, &cfg);
-        /* Close, and for two reasons. A burst round lives 70 ticks at 1.8 px
-         * a tick, so the ring reaches about 126 px. And sixteen is an even
-         * count, which straddles the heading rather than putting one down the
-         * middle -- the two nearest rounds leave at eleven degrees, so a
-         * target far enough away is missed on both sides. */
+        /* Close, because twenty-four is an even count, which straddles the
+         * heading rather than putting one round down the middle: the two
+         * nearest leave at seven and a half degrees, so a target far enough
+         * away is missed on both sides. */
         sim_spawn(&s, APEX, 1, 8192, 8192 - 60, 0, &cfg);
         s.ships[0].charge[1] = 1;
         step_n(&s, &cfg, SIM_BTN_USE | (1u << SIM_BTN_SLOT_SHIFT), 0, 1);
-        CHECK(s.weapon_count == 16, "a burst is sixteen rounds");
+        CHECK(s.weapon_count == 24, "a burst is BurstShrapnel rounds");
         CHECK(s.ships[0].charge[1] == 0, "and the charge is spent");
 
         s.ships[0].alive = 0;

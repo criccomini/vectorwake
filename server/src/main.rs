@@ -1186,7 +1186,7 @@ mod tests {
         let top = w.cfg.specs[w.cfg.patterns[rungs[2] as usize].spec as usize];
         let base = w.cfg.specs[w.cfg.patterns[rungs[0] as usize].spec as usize];
         assert_eq!(top.blast, 96 * 256, "the third rung got the wider blast");
-        assert_eq!(base.blast, 48 * 256, "and the first kept its own");
+        assert_eq!(base.blast, 80 * 256, "and the first kept its own");
         assert!(top.damage > base.damage, "a rung is still the same weapon harder");
     }
 

@@ -234,10 +234,20 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     {
         sim_weapon_spec frag;
         memset(&frag, 0, sizeof frag);
-        frag.speed = sim_units_speed(1100);
-        frag.life = 45;
+        /* The original's numbers: ShrapnelSpeed=3000, and
+         * ShrapnelDamagePercent=1000, which its own help text defines as
+         * tenths of a percent "relative to bullets of same level" -- so a
+         * fragment hits for a whole L1 bullet, which is 200 there. Life is
+         * BulletAliveTime, since it has no shrapnel clock of its own.
+         *
+         * ShrapnelRate=2 a level, so a rung buys two more fragments. The
+         * original caps that at ShrapnelMax, which is 8 on seven of its ships
+         * and 31 on the Shark; here the cap is the ladder itself, and which
+         * hulls may climb it is already a per-class field. */
+        frag.speed = sim_units_speed(3000);
+        frag.life = 550;
         frag.on_wall = SIM_WALL_END;
-        frag.damage = sim_units_energy(60);
+        frag.damage = sim_units_energy(200);
         frag.splinter = SIM_NO_PATTERN;
         uint8_t frag_spec = (uint8_t)sim_add_spec(cfg, &frag);
         cfg->mod_splinter[0] = SIM_NO_PATTERN;   /* rung zero is no shrapnel */
@@ -245,7 +255,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             sim_fire_pattern shell;
             memset(&shell, 0, sizeof shell);
             shell.spec = frag_spec;
-            shell.count = (uint8_t)(4 << (k - 1));
+            shell.count = (uint8_t)(2 * k);
             shell.spacing = (uint16_t)(65536 / shell.count);
             cfg->mod_splinter[k] = (uint8_t)sim_add_pattern(cfg, &shell);
         }
@@ -262,12 +272,17 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     {
         sim_weapon_spec rp;
         memset(&rp, 0, sizeof rp);
+        /* RepelDistance=512 and RepelSpeed=5000, straight across. RepelTime
+         * is the one number here with nowhere to go: its help calls it the
+         * time a player stays affected, which is a status the core does not
+         * have, so the shove lands as a single impulse instead of over two
+         * and a quarter seconds. */
         rp.speed = 0;
         rp.life = 1;
         rp.on_wall = SIM_WALL_PASS;
         rp.expire_ends = 1;
-        rp.blast = 260 * 256;
-        rp.push = sim_units_speed(3400);
+        rp.blast = 512 * 256;
+        rp.push = sim_units_speed(5000);
         rp.splinter = SIM_NO_PATTERN;
         sim_fire_pattern rf;
         memset(&rf, 0, sizeof rf);
@@ -278,16 +293,21 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
 
         sim_weapon_spec bs;
         memset(&bs, 0, sizeof bs);
-        bs.speed = sim_units_speed(1800);
-        bs.life = 70;
+        /* BurstShrapnel=24 at BurstSpeed=3000 and BurstDamageLevel=700,
+         * which its help calls the damage of a single burst bullet. Alive
+         * time is the bullet clock again. This is a great deal more burst
+         * than the sixteen rounds at 180 that were here, and it is meant to
+         * be: in the original a burst at close range ends somebody. */
+        bs.speed = sim_units_speed(3000);
+        bs.life = 550;
         bs.on_wall = SIM_WALL_END;
-        bs.damage = sim_units_energy(180);
+        bs.damage = sim_units_energy(700);
         bs.splinter = SIM_NO_PATTERN;
         sim_fire_pattern bf;
         memset(&bf, 0, sizeof bf);
         bf.spec = (uint8_t)sim_add_spec(cfg, &bs);
-        bf.count = 16;
-        bf.spacing = 65536 / 16;
+        bf.count = 24;
+        bf.spacing = 65536 / 24;
         bf.delay = 120;
         cfg->charge[1] = (uint8_t)sim_add_pattern(cfg, &bf);
 
@@ -335,7 +355,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             sim_weapon_spec bolt;
             memset(&bolt, 0, sizeof bolt);
             bolt.speed = sim_units_speed(2000);
-            bolt.life = 200;
+            bolt.life = 550;    /* BulletAliveTime: 5.5 s, 69 tiles of reach */
             bolt.on_wall = SIM_WALL_END;
             bolt.damage = sim_units_energy(r->bullet_damage * (5 + 2 * k) / 5);
             bolt.splinter = SIM_NO_PATTERN;
@@ -355,11 +375,14 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         for (int k = 0; k < r->bomb_rungs && k < SIM_MAX_RUNGS; k++) {
             sim_weapon_spec sh;
             memset(&sh, 0, sizeof sh);
-            sh.speed = sim_units_speed(1500);
-            sh.life = 500;
+            /* BombSpeed=2000, BombAliveTime=8000 and BombExplodePixels=80.
+             * Eighty seconds is not a fuse, it is "until it hits something",
+             * which is what the original means on a map this size. */
+            sh.speed = sim_units_speed(2000);
+            sh.life = 8000;
             sh.on_wall = SIM_WALL_END;
             sh.damage = sim_units_energy(r->bomb_damage * (5 + 2 * k) / 5);
-            sh.blast = 48 * 256;
+            sh.blast = 80 * 256;
             sh.splinter = SIM_NO_PATTERN;
 
             sim_fire_pattern bomb;
