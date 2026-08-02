@@ -141,6 +141,15 @@ flapping between two definitions. This is configuration management, not
 agreement: the authoring side can be down for a week and every arena server keeps
 serving the last version it received.
 
+A zone also declares how many rooms one process should hold. A room is 79 KB and
+steps in 1.6 microseconds at two ships, so War asks for one room per process
+because a 64-player fight deserves its own blast radius, while Duel asks for a
+hundred because the rooms are tiny and share a map. Same binary either way; only
+the count of simulations inside the process changes. The measurements and the
+reasoning are in [hosting.md](hosting.md), and the amendment to
+[decision 23](decisions.md) records why the original one-room-per-process rule
+did not survive contact with them.
+
 Bans and staff capabilities live in the catalog rather than beside one zone. A
 player banned from Chaos but not from War is a support ticket waiting to happen,
 and a per-zone ban is available as a field on the row for the cases that want it.

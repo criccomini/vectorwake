@@ -21,6 +21,7 @@ it says so.
 | [zones-and-arenas.md](zones-and-arenas.md) | One arena to a process, what a zone is, how an arena server picks which one it serves |
 | [discovery.md](discovery.md) | Registration, credentials, verification, several directories, how a client finds a game |
 | [admin.md](admin.md) | The operator web UI: what it observes, what it edits, what it may command |
+| [hosting.md](hosting.md) | What a room costs, why the bill is egress, the provider choice, Docker, Nakama's database |
 | [networking.md](networking.md) | Transports, packet model, snapshots and inputs, lag response, anti-cheat |
 | [ai-runtime.md](ai-runtime.md) | Where bots run, how they perceive and fly, and why they cannot cheat |
 | [content-pipeline.md](content-pipeline.md) | Settings, maps, assets, and how a zone author works |

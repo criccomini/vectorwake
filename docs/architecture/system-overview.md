@@ -67,9 +67,13 @@ server only to learn whether a shot connected.
 
 ## Process and deployment shape
 
-One process holds one arena. A zone is a named game, one configuration plus
-however many arena servers are running it, and a directory serves many zones at
-once. Scaling is a replica count.
+One process holds one arena, or several of them where a zone says so: a room is
+79 KB and steps in microseconds, so the catalog carries a rooms-per-process
+figure and a duel zone packs a hundred where War takes one. A zone is a named
+game, one configuration plus however many arena servers are running it, and a
+directory serves many zones at once. Scaling is a replica count. Where those
+replicas run, what they cost, and why the bill is egress rather than compute is
+[hosting.md](hosting.md).
 
 This reverses the structure that let Subspace feel like one social space on a
 tiny budget, and [decision 23](decisions.md) argues the trade with its costs

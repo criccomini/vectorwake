@@ -248,6 +248,11 @@ rewrite. That property is worth protecting deliberately.
 leaderboards before M5, in which case adopt early. Or if the game turns out to
 need none of them, in which case skip it.
 
+**Priced, by decision 27:** the tax this record warns about has a number. Nakama
+needs PostgreSQL, and a small instance plus managed Postgres runs about $20 a
+month against a few dollars for the entire arena fleet, so adopting it early
+roughly quadruples the hosting bill and nearly all of that is the database.
+
 **Amended by [decision 25](#25-an-arena-server-chooses-which-zone-it-serves):**
 the zone directory is no longer on the list of things Nakama gets. A directory
 that holds a catalog, a token table, and a live view of the arena servers is a
@@ -659,6 +664,30 @@ which raises the floor on running your own game.
 than elastic capacity does, or if the process-per-room overhead stops being
 noise at the population we actually reach.
 
+**Amended: rooms per process is a property of the zone.** That last
+reconsideration fired as soon as anybody measured. A room is 79 KB, because the
+map is shared by pointer rather than copied, and it steps in 1.6 microseconds at
+two ships and 16.3 at sixty-four, which is 615 to 6,400 rooms per core. So a
+thousand concurrent duels is 75 MB and a sixth of a core, and insisting each one
+gets a process would mean a thousand of everything: runtimes, TLS stacks,
+registration sockets, container overhead.
+
+The strict form of this record conflated three things that were never the same:
+a room is one simulation, a process is one OS process, a host is one machine
+somebody bills you for. Only the first two were ever coupled, and the numbers say
+even that should be a setting. So the catalog carries a rooms-per-process figure
+per zone. War says one, because a 64-player room deserves its own blast radius
+and its own memory. Duel says a hundred, because the rooms are tiny and share a
+map. Same binary, same registration, same autonomous zone selection; only the
+count of simulations inside the process differs.
+
+This does bring back a container of rooms inside one process, which is what
+[decision 16](#16-duels-are-an-ephemeral-arena-plus-a-zone-module)'s removal
+deleted. The difference is that it is now configuration read from the catalog
+rather than a duel-shaped special case in the server. See
+[hosting.md](hosting.md) for the measurements and
+[zones-and-arenas.md](zones-and-arenas.md) for how a zone declares it.
+
 ---
 
 ## 24. An arena registers with a directory, and a token names its pool
@@ -780,3 +809,68 @@ need logging at both ends.
 **Reconsider if:** operators end up wanting to script the fleet more than click
 it, in which case the catalog wants an API and a CLI before it wants more
 buttons.
+
+---
+
+## 27. Vultr for everything, in Docker, with the database bought
+
+**Status:** accepted
+
+Arena servers, directories and Nakama all ship as Docker containers on plain
+Vultr instances, with Vultr's managed PostgreSQL behind Nakama. One vendor, one
+API, one bill.
+
+The choice is driven by a measurement rather than a preference. Compute for this
+game rounds to nothing: 200 concurrent players is four rooms and under one
+percent of a core. Egress does not: at 30 KB/s per client it is 75 GiB a month
+per concurrent player, so the hosting question is only ever who sells bandwidth
+cheaply, in enough places, with the least operational work.
+
+Vultr wins or ties on every axis that matters. Thirty-three regions in nineteen
+countries against DigitalOcean's twelve, including the South America, Japan and
+Africa coverage that a latency-sensitive game wants and DigitalOcean has none of.
+Managed Postgres at $15 a month in all of them, so the database sits beside
+Nakama wherever Nakama sits. Plain instances with their own public addresses, so
+Docker with host networking behaves, UDP for native clients survives, and a
+client can connect straight to the arena server the directory named without a
+proxy in the way. And tooling as straightforward as DigitalOcean's, which is the
+simplicity half of the requirement.
+
+Two candidates lost on the database rather than the price. Hetzner is the cost
+champion, with 20 TB of European traffic included for about five dollars, and
+sells no managed Postgres at all. OVHcloud has unmetered bandwidth in Europe and
+North America, which is structurally the best possible answer to an
+egress-dominated bill, and charges $64 per node per month for managed Postgres
+against Vultr's $15.
+
+Fly.io lost on three counts recorded in [hosting.md](hosting.md): reaching a
+named machine from a browser needs a `fly-replay` bounce because a browser cannot
+set headers on a WebSocket handshake, `fly-replay` is HTTP-only so per-machine
+UDP addressing is unavailable, and egress at $0.02/GB is ten to thirty times the
+alternatives. Its fast machine starts optimise an operation we barely perform,
+and its anycast region steering duplicates what the directory already does.
+
+Buying the database rather than running it is the one place "Docker for
+everything" bends, and it bends for a reason: arena servers and directories hold
+nothing, so losing one costs capacity, while the identity and rating database is
+the only thing here whose loss cannot be repaired by rebuilding. A container on a
+bind mount would turn one instance into a machine we can never lose.
+
+**Cost:** metered egress, which is the dominant line. Roughly $50 to $100 a
+month in transfer at 200 concurrent players where unmetered bandwidth would cost
+five, and about $1,400 against $8.50 at two thousand. Australia is charged at
+$0.10/GB, ten times the North American and European rate. And the meta-layer is
+now the expensive part: a small instance plus managed Postgres is around $20 a
+month against a few dollars for the entire game-serving fleet, which puts a
+number on [decision 11](#11-nakama-for-the-meta-layer-never-for-the-arena-tick)'s
+warning about unused dependencies.
+
+**Reconsider if:** the egress line gets annoying, at which point the answer is
+additive rather than a migration. An OVHcloud pool carries European and North
+American volume while Vultr keeps the regions OVHcloud cannot reach and keeps the
+database, because a pool already carries a provider and a region and arena
+servers from several pools serving one zone is the normal case. Australia is the
+first place that pays off. If bandwidth ever becomes existential rather than
+annoying, the only structural escape is a provider that does not charge for
+egress at all, and that means a room living somewhere like a Durable Object and a
+rewrite this project should not want.
