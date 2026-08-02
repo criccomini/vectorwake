@@ -488,13 +488,28 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
     }
 
     /* A shove, outward, falling off to nothing at the rim. Weapons are moved
-     * too: pushing an incoming bomb away is the whole point of the thing. */
+     * too: pushing an incoming bomb away is the whole point of the thing.
+     *
+     * Hostile only, both loops. A repel in the original moves enemies and
+     * enemy fire and leaves you, your side and your own rounds alone, and
+     * without the test this was symmetric: it threw the pilot who let it off
+     * backwards at 484 px/s -- faster than any hull can fly -- because the
+     * charge spawns at a muzzle offset rather than at the hull centre, so the
+     * "dead centre has no direction" guard below never saw them. It shoved
+     * team mates as hard as enemies, and it scattered the volley you had just
+     * fired along with the one coming at you.
+     *
+     * The test is on team rather than on owner, which covers the firer too,
+     * since a round carries the team of whoever fired it. It applies to every
+     * spec with push, not just the charge: the push add-on on a Lattice bomb
+     * should no more knock your own side about than the charge does. */
     if (spec->push > 0) {
         int64_t rad = spec->blast > 0 ? spec->blast : spec->trigger;
         if (rad > 0) {
             for (int i = 0; i < s->ship_count; i++) {
                 sim_ship *sh = &s->ships[i];
                 if (!sh->active || !sh->alive) continue;
+                if (sh->team == w->team) continue;
                 /* Nothing reaches a ship in a safe zone, and a shove is a
                  * thing reaching it. `apply_damage` has had this rule since
                  * the tile existed; the push loop never learned it, so a
@@ -514,6 +529,7 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
             }
             for (uint16_t i = 0; i < s->weapon_count; i++) {
                 sim_weapon *o = &s->weapons[i];
+                if (o->team == w->team) continue;
                 int64_t ddx = (int64_t)o->x - w->x, ddy = (int64_t)o->y - w->y;
                 int64_t d2 = ddx * ddx + ddy * ddy;
                 if (d2 > rad * rad || d2 == 0) continue;

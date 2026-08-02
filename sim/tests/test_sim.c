@@ -910,6 +910,60 @@ int main(void) {
     }
 
     {
+        /* Hostile only, ships and rounds alike.
+         *
+         * A repel in the original moves enemies and enemy fire and leaves
+         * you, your side and your own rounds alone. Without the team test the
+         * shove was symmetric, and the worst of it landed on the pilot who
+         * let it off: the charge spawns at a muzzle offset rather than at the
+         * hull centre, so the guard for a body at dead centre never saw them
+         * and they were thrown backwards at 484 px/s, which is faster than
+         * any hull in the roster can fly.
+         *
+         * The shipped charge rather than a spec built here, because this is a
+         * claim about the item a player picks up. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);         /* lets it off */
+        sim_spawn(&s, APEX, 0, 8192 + 200, 8192, 0, &cfg);   /* team mate   */
+        sim_spawn(&s, APEX, 1, 8192 - 200, 8192, 0, &cfg);   /* enemy       */
+        s.ships[0].charge[0] = 1;
+
+        /* A round of each side's in the air when it goes off. Both hulls face
+         * north, so a bullet leaves with no sideways speed at all and any x
+         * it has afterwards came from the shove. */
+        sim_state tmp;
+        sim_input in[3] = {{0, 0}, {1, SIM_BTN_FIRE}, {2, SIM_BTN_FIRE}};
+        sim_step(&tmp, &s, in, 3, &cfg, NULL); s = tmp;
+        CHECK(s.weapon_count >= 2, "both sides have a round in the air");
+
+        in[1].buttons = 0;
+        in[2].buttons = 0;
+        in[0].buttons = SIM_BTN_USE;          /* slot zero is the repel */
+        sim_step(&tmp, &s, in, 3, &cfg, NULL); s = tmp;
+        /* Spent on the tick it is asked for, but the round it makes carries
+         * one tick of life, so the blast lands on the step after. */
+        in[0].buttons = 0;
+        sim_step(&tmp, &s, in, 3, &cfg, NULL); s = tmp;
+
+        CHECK(s.ships[0].vx == 0 && s.ships[0].vy == 0,
+              "a repel does not move the pilot who let it off");
+        CHECK(s.ships[1].vx == 0 && s.ships[1].vy == 0, "nor a team mate");
+        CHECK(s.ships[2].vx < 0, "and still throws the enemy clear");
+
+        int friendly_still = 1, hostile_thrown = 0;
+        for (uint16_t i = 0; i < s.weapon_count; i++) {
+            if (s.weapons[i].team == 0) {
+                if (s.weapons[i].vx != 0) friendly_still = 0;
+            } else if (s.weapons[i].vx < 0) {
+                hostile_thrown = 1;
+            }
+        }
+        CHECK(friendly_still, "and leaves the rounds your own side fired");
+        CHECK(hostile_thrown, "while still turning theirs away");
+    }
+
+    {
         /* A stall round: the bar stops refilling rather than emptying. */
         sim_settings w = cfg;
         sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
