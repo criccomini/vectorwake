@@ -359,6 +359,7 @@ pub const MOD_COUNT: usize = 6;
 pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;
 pub const MAX_CHARGES: usize = 4;
+pub const CHARGE_MAX: u8 = 15;
 pub const PRIZE_COUNT: usize =
     UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
 pub const MOD_PROX: usize = 2;

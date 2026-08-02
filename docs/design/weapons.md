@@ -154,6 +154,11 @@ on_wall = "bounce"
 bounces = 3
 ```
 
+The weapons that belong to a settings slot rather than to a hull are named for
+the slot: `charge-1` through `charge-4`, and `shrapnel-1` up, one per rung of
+the add-on. Naming a charge slot the baseline leaves empty makes the weapon and
+fills the slot in one block.
+
 Any *other* name makes a weapon that did not exist, which a hull can carry or
 another weapon can splinter into. Order in the file does not matter -- names
 are all collected before any of them are resolved:
@@ -173,7 +178,7 @@ spread = 45          # a full turn over eight, so a rosette
 
 [[arena.ships]]
 name = "Spire"
-bomb = "repel"       # and bomb = "" takes a rack away
+bomb = ["repel"]     # the ladder, first rung first; [] takes a rack away
 ```
 
 One block is a pattern *and* its spec, because every weapon anybody has wanted
