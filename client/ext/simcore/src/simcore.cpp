@@ -207,6 +207,20 @@ int ShipCharge(lua_State* L) {
     return 1;
 }
 
+// Whether this hull has the trigger at all, as opposed to being on rung zero
+// of it. A hull with no bomb rack carries SIM_NO_PATTERN at rung zero, which
+// is a different thing from carrying a bomb that happens to be weak -- and the
+// interface has to tell them apart, because a control for a weapon that cannot
+// exist is a control that does nothing when pressed.
+int HasTrigger(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    int t = (int)luaL_checkinteger(L, 2);
+    if (t < 0 || t >= SIM_TRIG_COUNT) { lua_pushboolean(L, 0); return 1; }
+    const sim_ship_class* c = &g_cfg.classes[g_cur->ships[i].cls];
+    lua_pushboolean(L, c->trigger[t][0] != SIM_NO_PATTERN);
+    return 1;
+}
+
 int ChargeMax(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     int k = (int)luaL_checkinteger(L, 2);
@@ -458,6 +472,7 @@ const luaL_reg kFunctions[] = {
     {"ship_bounty", ShipBounty},
     {"ship_points", ShipPoints},
     {"charge_max", ChargeMax},
+    {"has_trigger", HasTrigger},
     {"ship_mod", ShipMod},
     {"ship_radius", ShipRadius},
     {"ship_bomb_radius", ShipBombRadius},

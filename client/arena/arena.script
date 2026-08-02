@@ -946,6 +946,11 @@ function update(self, dt)
         end
     end
 
+    -- Two of the eight hulls have no bomb rack, so the pad that fires one has
+    -- nothing to fire. Told every frame rather than on the hull change,
+    -- because a zone can hand you a different ship than the one you asked for.
+    touch.has_bomb = sim.has_trigger(me, sim.TRIG_BOMB)
+
     -- Doors and wormholes: world geometry that moves, so it cannot live in
     -- the static mesh the way the walls do.
     world.draw_tiles(fill, glow, cull)

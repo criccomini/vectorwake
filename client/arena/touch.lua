@@ -20,6 +20,12 @@ local THRUST_PX = 46      -- push past this and the engine lights
 
 M.used = false            -- has this device ever reported a touch?
 M.scale = 1               -- drawable pixels per point
+-- Whether the hull flying has a bomb rack. Two of the eight do not, and a pad
+-- for a weapon that cannot exist is a pad that does nothing when pressed --
+-- worse than useless, because it also swallows the touch. Set by the caller,
+-- and true until told otherwise so a missing update never removes a control
+-- somebody actually has.
+M.has_bomb = true
 
 local stick = nil         -- {id, ox, oy, x, y}
 local guns = nil          -- touch id holding the guns pad
@@ -68,7 +74,9 @@ end
 local function zone(x, y, w, h, s)
     local L = M.layout(w, h, s)
     if near(L.guns, x, y) then return "guns" end
-    if near(L.bombs, x, y) then return "bombs" end
+    -- Not tested when the hull has no rack, so the space falls through to the
+    -- stick rather than being eaten by a control that is not drawn.
+    if M.has_bomb and near(L.bombs, x, y) then return "bombs" end
     if near(L.use, x, y) then return "use" end
     if near(L.swap, x, y) then return "swap" end
     if x < w * 0.55 then return "stick" end
@@ -196,8 +204,11 @@ function M.draw(u, w, h, s)
 
     ring(L.guns.x, L.guns.y, L.guns.r, guns and live or dim)
     if guns then glow(L.guns, pal.FRIEND) end
-    ring(L.bombs.x, L.bombs.y, L.bombs.r, bombs and pal.a(pal.BOMB, 0.95) or dim)
-    if bombs then glow(L.bombs, pal.BOMB) end
+    if M.has_bomb then
+        ring(L.bombs.x, L.bombs.y, L.bombs.r,
+             bombs and pal.a(pal.BOMB, 0.95) or dim)
+        if bombs then glow(L.bombs, pal.BOMB) end
+    end
     -- The charge pair. Drawn always, in their own colour, so a pilot who has
     -- never found one still knows the control is there -- the same reason the
     -- stat row shows the upgrades you do not hold.

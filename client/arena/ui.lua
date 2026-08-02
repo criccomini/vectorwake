@@ -480,7 +480,15 @@ end
 local function loadout(me, class_names, top)
     if not M.details then return end
     local rows_h = LINE * S
-    local h = PANEL_Y * 2 * S + rows_h * (3 + SIM_TRIGGERS)
+    -- Only the triggers this hull actually has. Everything else in this panel
+    -- shows what you do not hold as a list of what is out there to find, and
+    -- a greyed `bomb` on a hull with no rack says exactly that -- about a
+    -- weapon it can never be handed.
+    local trigs = 0
+    for t = 0, SIM_TRIGGERS - 1 do
+        if sim.has_trigger(me, t) then trigs = trigs + 1 end
+    end
+    local h = PANEL_Y * 2 * S + rows_h * (3 + trigs)
     local w = COL_W * S
     local x = PAD * S
     local y = (top or 0) + 6 * S
@@ -518,21 +526,23 @@ local function loadout(me, class_names, top)
     -- A level is the same weapon harder and an add-on changes its character,
     -- so they read differently: "gun 2" is a rung, "MUL" is bolted on.
     for t = 0, SIM_TRIGGERS - 1 do
-        local lvl = sim.ship_level(me, t)
-        local name = (t == sim.TRIG_GUN) and "gun" or "bomb"
-        txt(name .. (lvl > 0 and (" " .. (lvl + 1)) or ""),
-            ix, cy + rows_h / 2, (FONT - 1) * S,
-            lvl > 0 and pal.LEVEL_COL or pal.a(pal.DIM, 0.55))
-        local at = ix + 52 * S
-        for m, mod in ipairs(pal.MODS) do
-            local nn = sim.ship_mod(me, t, m - 1)
-            if nn > 0 then
-                txt(mod.short .. (nn > 1 and ("×" .. nn) or ""), at,
-                    cy + rows_h / 2, (FONT - 2) * S, pal.MOD_COL)
-                at = at + 30 * S
+        if sim.has_trigger(me, t) then
+            local lvl = sim.ship_level(me, t)
+            local name = (t == sim.TRIG_GUN) and "gun" or "bomb"
+            txt(name .. (lvl > 0 and (" " .. (lvl + 1)) or ""),
+                ix, cy + rows_h / 2, (FONT - 1) * S,
+                lvl > 0 and pal.LEVEL_COL or pal.a(pal.DIM, 0.55))
+            local at = ix + 52 * S
+            for m, mod in ipairs(pal.MODS) do
+                local nn = sim.ship_mod(me, t, m - 1)
+                if nn > 0 then
+                    txt(mod.short .. (nn > 1 and ("×" .. nn) or ""), at,
+                        cy + rows_h / 2, (FONT - 2) * S, pal.MOD_COL)
+                    at = at + 30 * S
+                end
             end
+            cy = cy + rows_h
         end
-        cy = cy + rows_h
     end
 end
 
