@@ -71,10 +71,19 @@ M.HULLS = {
 -- The centroid of each hull, so a fill can fan from inside the shape. Fanning
 -- from a vertex double-covers a concave hull -- the cross especially -- and
 -- the overlap shows as a darker wedge through the middle of the ship.
+-- `nose` is how far forward the silhouette reaches, so the retros fire from
+-- in front of the hull rather than from inside it, where the body fill hides
+-- them. Measured off the outline rather than named per hull, since two of the
+-- eight have a flat face where the others have a point.
 for _, h in ipairs(M.HULLS) do
     local sx, sy, n = 0, 0, #h.poly / 2
-    for i = 1, #h.poly, 2 do sx, sy = sx + h.poly[i], sy + h.poly[i + 1] end
+    local nose = h.poly[2]
+    for i = 1, #h.poly, 2 do
+        sx, sy = sx + h.poly[i], sy + h.poly[i + 1]
+        if h.poly[i + 1] > nose then nose = h.poly[i + 1] end
+    end
     h.cx, h.cy = sx / n, sy / n
+    h.nose = nose
     h.tmp = {}
 end
 
@@ -411,6 +420,25 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
             glow:seg_fade(jx, jy, jx - sa * len * 0.45, jy + ca * len * 0.45,
                           3.0, 0.8, 1.0 * dim, 0, pal.hot(pal.THRUST, 0.75, 1))
         end
+    end
+
+    -- Retros: one flame off the bow, firing forward. Smaller than the main
+    -- flame, because reverse is a manoeuvre rather than a charge and a plume
+    -- the same size ahead of the hull reads as flying the other way round.
+    --
+    -- Drawn at all because on a touchscreen the thrust sign is inferred from
+    -- where your thumb is rather than commanded, and a pilot has to be able
+    -- to see the answer somewhere they are already looking. That is the ship,
+    -- not the corner their own thumb is covering.
+    if opts and opts.reversing then
+        local flick = 0.7 + (opts.flicker or 0) * 0.3
+        local nx = x + h.nose * sa
+        local ny = y - h.nose * ca
+        local len = 10 * flick
+        glow:seg_fade(nx, ny, nx + sa * len, ny - ca * len,
+                      5.0, 0.95, 0.8 * dim, 0, pal.THRUST)
+        glow:seg_fade(nx, ny, nx + sa * len * 0.45, ny - ca * len * 0.45,
+                      2.6, 0.75, 1.0 * dim, 0, pal.hot(pal.THRUST, 0.75, 1))
     end
 
     -- A dark interior, tinted toward the team so a hull is never a black

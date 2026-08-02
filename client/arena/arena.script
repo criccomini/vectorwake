@@ -159,7 +159,7 @@ local function my_buttons()
             if not (steering and flight) then bits[bit] = true end
         end
     end
-    for _, bit in ipairs(touch.bits()) do
+    for _, bit in ipairs(touch.bits(sim.ship_heading(me))) do
         bits[bit] = true
     end
     -- A tapped charge pad names its own slot, so on a touchscreen there is no
@@ -701,11 +701,12 @@ end
 -- core owns pickup, carry and drop, and which arrangement of flags wins a
 -- round is a game mode's business, which offline there is not one of.
 -- Whether a ship is burning its engine this frame, which is the only thing on
--- screen that separates a pilot accelerating from one coasting.
-local function thrusting(i, mine_buttons)
-    if i == me then return has(mine_buttons, sim.BTN_THRUST) end
+-- screen that separates a pilot accelerating from one coasting. Either sign:
+-- the main flame and the retros are drawn from the same answer.
+local function burning(i, mine_buttons, bit)
+    if i == me then return has(mine_buttons, bit) end
     local p = pilots[i]
-    if p and p.bot then return has(p.bot.want, sim.BTN_THRUST) end
+    if p and p.bot then return has(p.bot.want, bit) end
     return false
 end
 
@@ -944,7 +945,8 @@ function update(self, dt)
             world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
                        sim.ship_y(i), sim.ship_heading(i), col, {
                 mine = i == me,
-                thrusting = thrusting(i, mine_buttons),
+                thrusting = burning(i, mine_buttons, sim.BTN_THRUST),
+                reversing = burning(i, mine_buttons, sim.BTN_REVERSE),
                 flicker = (sim.tick() * 7 + i * 13) % 11 / 11,
             })
             -- Only the wounded carry a pip. A bar over every hull in a

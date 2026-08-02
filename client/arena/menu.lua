@@ -175,8 +175,9 @@ local NODES = {
     -- consult belongs somewhere you go to consult it.
     help = {title = "help", rows = {
         {label = "", detail = "on a touchscreen"},
-        {label = "turn", detail = "d-pad: left and right keys"},
-        {label = "fly", detail = "d-pad: up thrusts, down reverses"},
+        {label = "fly", detail = "left thumb: point where you want to go"},
+        {label = "back up", detail = "point behind you and it reverses,"},
+        {label = "", detail = "holding your aim instead of turning around"},
         {label = "fire", detail = "right pads: guns, then bombs"},
         {label = "charges", detail = "tap a charge pad to spend it"},
         {label = "", detail = ""},
