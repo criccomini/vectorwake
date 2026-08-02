@@ -1684,11 +1684,22 @@ int main(void) {
         sim_spawn(&s, ANVIL, 1, 8000, 7800, 32768, &cfg);
         step_counting(&s, &cfg, SIM_BTN_THRUST | SIM_BTN_FIRE, SIM_BTN_BOMB, 900);
 
+        /* With a prize field on it, because prizes are most of a snapshot
+         * and their position is the one thing on the wire that is not stored
+         * the way it is sent -- two tile indices out, two Q8 pixel
+         * coordinates back. A round trip over an empty field would prove
+         * nothing about the part most likely to be wrong. */
+        int live = 0;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
+        CHECK(live > 20, "the state under test carries a prize field");
+
         static uint8_t buf[SIM_PACK_MAX];
         int n = sim_pack(&s, buf, sizeof buf);
         CHECK(n > 0, "a snapshot packs");
         CHECK(sim_unpack(&back, buf, n) == 0, "a snapshot unpacks");
         CHECK(sim_hash(&back) == sim_hash(&s), "the round trip is exact");
+        CHECK(memcmp(back.prizes, s.prizes, sizeof s.prizes) == 0,
+              "every prize comes back at the pixel it went out on");
 
         /* And an unpacked state steps identically to the original, which is
          * the property client prediction actually depends on. */
@@ -1697,6 +1708,53 @@ int main(void) {
         sim_step(&a2, &s, &in, 1, &cfg, NULL);
         sim_step(&b2, &back, &in, 1, &cfg, NULL);
         CHECK(sim_hash(&a2) == sim_hash(&b2), "an unpacked state steps identically");
+
+        /* And a snapshot packed around a point carries the prizes near it
+         * and none of the far ones -- which is the claim the wire saving
+         * rests on. The near ones still arrive at the pixel they left. */
+        {
+            int32_t cx = s.ships[0].x, cy = s.ships[0].y;
+            /* Two hundred tiles rather than the radar's sixty. This state
+             * holds about forty-five prizes spread over a thousand tiles
+             * square, so a sixty-tile circle catches none of them and the
+             * test would be asserting over an empty set. The radius under
+             * test is the filter, not the number the server picks. */
+            const int32_t R = 200 * 16 * 256;
+            int near = 0, far = 0;
+            for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+                if (!s.prizes[i].active) continue;
+                int64_t dx = (int64_t)s.prizes[i].x - cx;
+                int64_t dy = (int64_t)s.prizes[i].y - cy;
+                if (dx * dx + dy * dy <= (int64_t)R * R) near++; else far++;
+            }
+            CHECK(near > 0 && far > 0, "the field straddles the radius");
+
+            int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R);
+            CHECK(m > 0 && m < n, "a filtered snapshot is smaller");
+            sim_state cut;
+            CHECK(sim_unpack(&cut, buf, m) == 0, "and unpacks");
+
+            int got = 0;
+            for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+                if (!cut.prizes[i].active) continue;
+                got++;
+                CHECK(cut.prizes[i].x == s.prizes[i].x
+                      && cut.prizes[i].y == s.prizes[i].y
+                      && cut.prizes[i].life == s.prizes[i].life,
+                      "a prize that was sent is unchanged");
+                int64_t dx = (int64_t)cut.prizes[i].x - cx;
+                int64_t dy = (int64_t)cut.prizes[i].y - cy;
+                CHECK(dx * dx + dy * dy <= (int64_t)R * R,
+                      "and nothing outside the radius was sent");
+            }
+            CHECK(got == near, "every prize inside the radius was sent");
+
+            /* Everything that is not a prize still travels whole: a client
+             * that was not told about a ship could not name it. */
+            CHECK(cut.ship_count == s.ship_count, "every ship still travels");
+            CHECK(cut.weapon_count == s.weapon_count, "and every projectile");
+            CHECK(cut.flag_count == s.flag_count, "and every flag");
+        }
 
         CHECK(sim_pack(&s, buf, 8) == -1, "packing reports an undersized buffer");
         CHECK(sim_unpack(&back, buf, 3) == -1, "unpacking rejects a truncated snapshot");

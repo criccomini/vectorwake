@@ -26,6 +26,14 @@ use tokio_tungstenite::tungstenite::Message;
 
 const TICK_HZ: u64 = 100;
 const SNAPSHOT_EVERY: u32 = 5; // 20 Hz
+/// How far from a player a prize has to be before it is left out of that
+/// player's snapshot, in Q8 pixels. 256 tiles.
+///
+/// Four times the radar's reach, which is the furthest a client can see one
+/// by any means. A hull tops out at 490 px/s and a snapshot period is 50 ms,
+/// so a ship covers 24 px between snapshots against 3136 px of margin beyond
+/// the radar -- the boundary is not somewhere a player can arrive at.
+const PRIZE_INTEREST: i32 = 256 * 16 * 256;
 const MAX_PLAYERS: usize = 16;
 
 // Client to server
@@ -605,11 +613,21 @@ impl Arena {
     }
 
     fn broadcast_snapshot(&self, buf: &mut [u8]) {
-        let n = self.world.pack(buf);
-        if n <= 0 {
-            return;
-        }
         for p in self.players.values() {
+            // Packed per player rather than once for everybody, so each is
+            // sent only the prizes near its own ship. Prizes are most of a
+            // snapshot -- two hundred of them outweigh the ships and every
+            // projectile together -- and a client can only see the handful
+            // inside its radar, sixty tiles out.
+            //
+            // A pack is under two microseconds, so sixteen of them is thirty
+            // microseconds of a fifty millisecond period. The bytes saved are
+            // worth far more than the pack costs.
+            let sh = &self.world.state.ships[p.ship as usize];
+            let n = self.world.pack_around(buf, sh.x, sh.y, PRIZE_INTEREST);
+            if n <= 0 {
+                continue;
+            }
             let mut msg = Vec::with_capacity(n as usize + 10);
             msg.push(S2C_SNAPSHOT);
             msg.push(p.ship);

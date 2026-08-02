@@ -14,6 +14,27 @@ extern "C" {
 /* Write s into out. Returns bytes written, or -1 if cap was too small. */
 int sim_pack(const sim_state *s, uint8_t *out, int cap);
 
+/* The same snapshot, carrying only the prizes within `radius` of a point.
+ *
+ * Prizes are most of a snapshot -- two hundred of them outweigh the ships and
+ * every projectile in the air together -- and a client can only ever see the
+ * handful inside its radar, sixty tiles out. Sending it the rest is bytes for
+ * something it has no way to look at.
+ *
+ * Everything else still travels whole. Ships, weapons and flags are few and
+ * all of them matter: a scoreboard names every pilot in the arena and a
+ * client that was not told about a ship could not draw its name.
+ *
+ * Safe because an unpack replaces the state outright, so nothing goes stale,
+ * and because a radius is chosen far enough out that no ship can cross into
+ * the gap between one snapshot and the next. Prediction is unaffected: a
+ * client steps the same core off the same rng and reaches the same prizes
+ * inside the radius it was told about.
+ *
+ * A negative radius means everything, which is what `sim_pack` passes. */
+int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
+                    int32_t cx, int32_t cy, int32_t radius);
+
 /* Read a snapshot into s. Returns 0, or -1 on malformed input. */
 int sim_unpack(sim_state *s, const uint8_t *in, int len);
 

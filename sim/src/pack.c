@@ -40,8 +40,23 @@ static uint32_t r8(rd *r) {
 static uint32_t r16(rd *r) { uint32_t a = r8(r); return a | (r8(r) << 8); }
 static uint32_t r32(rd *r) { uint32_t a = r16(r); return a | (r16(r) << 16); }
 
+/* Is this prize inside the interest radius? A negative radius is "everything",
+ * which keeps `sim_pack` and the replay tool packing whole states. */
+static int near_enough(const sim_prize *p, int32_t cx, int32_t cy,
+                       int32_t radius, int64_t r2) {
+    if (radius < 0) return 1;
+    int64_t dx = (int64_t)p->x - cx, dy = (int64_t)p->y - cy;
+    return dx * dx + dy * dy <= r2;
+}
+
 int sim_pack(const sim_state *s, uint8_t *out, int cap) {
+    return sim_pack_around(s, out, cap, 0, 0, -1);
+}
+
+int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
+                    int32_t cx, int32_t cy, int32_t radius) {
     wr w = {out, out + cap, 0};
+    int64_t r2 = (int64_t)radius * radius;
 
     w32(&w, s->tick);
     w32(&w, s->rng);
@@ -91,15 +106,27 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap) {
         w16(&w, p->life);
     }
 
+    /* A prize is always at the centre of a tile -- `spawn_prize` puts it
+     * there and nothing moves it -- so its position is two tile indices
+     * rather than two Q8 pixel coordinates. Four bytes each way instead of
+     * eight, and the unpacked state is bit-identical: the arithmetic below is
+     * the same expression `spawn_prize` used to place it.
+     *
+     * This is worth its own note because prizes are most of a snapshot. At
+     * two hundred on the map they were 1651 bytes of a 3048-byte packet --
+     * more than the ships and every projectile in the air put together. */
     uint8_t live = 0;
-    for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s->prizes[i].active ? 1 : 0;
+    for (int i = 0; i < SIM_MAX_PRIZES; i++)
+        live += (s->prizes[i].active && near_enough(&s->prizes[i], cx, cy, radius, r2))
+                ? 1 : 0;
     w8(&w, live);
     for (int i = 0; i < SIM_MAX_PRIZES; i++) {
         const sim_prize *p = &s->prizes[i];
         if (!p->active) continue;
+        if (!near_enough(p, cx, cy, radius, r2)) continue;
         w8(&w, (uint32_t)i);
-        w32(&w, (uint32_t)p->x);
-        w32(&w, (uint32_t)p->y);
+        w16(&w, (uint32_t)(p->x / (SIM_TILE_PX * 256)));
+        w16(&w, (uint32_t)(p->y / (SIM_TILE_PX * 256)));
         w16(&w, p->life);
     }
 
@@ -183,8 +210,10 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         if (idx >= SIM_MAX_PRIZES) return -1;
         sim_prize *p = &s->prizes[idx];
         p->active = 1;
-        p->x = (int32_t)r32(&r);
-        p->y = (int32_t)r32(&r);
+        /* The same expression spawn_prize places a prize with, so the state
+         * that comes off the wire is the state that went on it. */
+        p->x = (int32_t)((int32_t)r16(&r) * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
+        p->y = (int32_t)((int32_t)r16(&r) * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
         p->life = (uint16_t)r16(&r);
     }
 

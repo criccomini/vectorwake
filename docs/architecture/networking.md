@@ -122,6 +122,66 @@ The target is 30 KB/s downstream per player in a 40-player arena, which is
 generous by 2026 standards and lets us run arenas larger than Subspace's on a
 modest server.
 
+### Where it actually goes, measured
+
+A snapshot of the shipped arena -- nine ships, a full green field, projectiles
+in the air -- came to 3048 bytes, or 59.5 KB/s at 20 Hz. Twice the target, and
+the split was not where the design above assumes:
+
+| | bytes | |
+|---|---|---|
+| prizes | 1651 | **54%** |
+| weapons | 827 | 27% |
+| ships | 559 | 18% |
+
+Prizes outweighed the ships and every projectile in the air put together,
+because a full-size map carries two hundred greens and every one of them was
+being sent to every client twenty times a second.
+
+Two changes, neither of which a player can observe:
+
+**A prize's position travels as two tile indices, not two Q8 pixel
+coordinates.** A prize is always at the centre of a tile -- `spawn_prize` puts
+it there and nothing moves it, checked over 5.7 million samples -- so four of
+its eight position bytes were carrying nothing. The unpacked state is
+bit-identical; `sim_unpack` reconstructs with the same expression that placed
+it. Saves 600 bytes.
+
+**A client is only sent the prizes within 256 tiles of its own ship**
+(`sim_pack_around`). That is four times the radar's reach, which is the
+furthest a client can see a green by any means, and a hull covers 24 px between
+snapshots against 3136 px of margin -- the boundary is not somewhere a player
+can arrive at. Safe because an unpack replaces the state outright, so nothing
+goes stale, and because prediction runs off the same core and the same rng and
+reaches the same prizes inside the radius it was told about.
+
+Everything that is not a prize still travels whole. Ships, weapons and flags
+are few and all of them matter: a scoreboard names every pilot in the arena,
+and a client that was not told about a ship could not draw its name.
+
+Measured on one state with nine ships at the map's real spawns, packed both
+ways: **2898 to 1323 bytes, 56.6 to 25.8 KB/s, 54% off** -- and under the
+target it was twice over. A live client against a live server reports 0.00 px
+of prediction error across the change.
+
+The packing cost is under two microseconds, so doing it per player rather than
+once for everybody is thirty microseconds of a fifty millisecond period.
+
+### Load time is the host's job, and it is already doing it
+
+Worth writing down so nobody optimizes it twice. The published browser build is
+a single 4.03 MB HTML file, most of which is base64 of a 2.43 MB wasm binary.
+That looks like an obvious target -- embed the wasm pre-compressed and inflate
+it with `DecompressionStream` -- and it is not one.
+
+The host serves the page with `content-encoding: br`, so a browser downloads
+**1.55 MB**. Pre-compressing the wasm and base64-ing it gives 1.21 MB for the
+binary plus about 0.3 MB for the loader and assets, which is the same number --
+except that base64 of compressed data is incompressible, so it would arrive at
+that size rather than compressing further, and it would put an inflate step in
+front of a loader that already needs a shim to stop it streaming. Measured, not
+assumed: 4,034,007 bytes of HTML, 1,549,745 after brotli.
+
 Rough arithmetic at 20 Hz: 40 ships at roughly 16 bytes each after delta
 encoding is 640 bytes, plus projectiles and events, so call it 1 KB per snapshot
 and 20 KB/s. Upstream is trivial: 8 bytes per tick at 100 Hz, batched, is under
