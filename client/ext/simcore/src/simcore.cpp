@@ -197,6 +197,24 @@ int ShipMod(lua_State* L) {
     return 1;
 }
 
+// How many of a charge kind a pilot is holding, and how many their hull may
+// ever hold. The second is the roster's rule, and the panel needs it to know
+// which slots to draw at all.
+int ShipCharge(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    int k = (int)luaL_checkinteger(L, 2);
+    lua_pushnumber(L, (k >= 0 && k < SIM_MAX_CHARGES) ? g_cur->ships[i].charge[k] : 0);
+    return 1;
+}
+
+int ChargeMax(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    int k = (int)luaL_checkinteger(L, 2);
+    if (k < 0 || k >= SIM_MAX_CHARGES) { lua_pushnumber(L, 0); return 1; }
+    lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].charge_max[k]);
+    return 1;
+}
+
 int ShipRadius(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].radius / 256.0);
@@ -421,6 +439,8 @@ const luaL_reg kFunctions[] = {
     {"ship_vel", ShipVel},
     {"ship_up", ShipUp},
     {"ship_level", ShipLevel},
+    {"ship_charge", ShipCharge},
+    {"charge_max", ChargeMax},
     {"ship_mod", ShipMod},
     {"ship_radius", ShipRadius},
     {"ship_bomb_radius", ShipBombRadius},
@@ -491,6 +511,11 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_PRIZE_COUNT);  lua_setfield(L, -2, "PRIZE_COUNT");
     lua_pushnumber(L, SIM_PRIZE_LEVEL(0)); lua_setfield(L, -2, "PRIZE_LEVEL0");
     lua_pushnumber(L, SIM_PRIZE_MOD(0, 0)); lua_setfield(L, -2, "PRIZE_MOD0");
+    lua_pushnumber(L, SIM_PRIZE_CHARGE(0)); lua_setfield(L, -2, "PRIZE_CHARGE0");
+    lua_pushnumber(L, SIM_MAX_CHARGES);  lua_setfield(L, -2, "MAX_CHARGES");
+    lua_pushnumber(L, SIM_BTN_USE);      lua_setfield(L, -2, "BTN_USE");
+    lua_pushnumber(L, 1u << SIM_BTN_SLOT_SHIFT); lua_setfield(L, -2, "BTN_SLOT_STEP");
+    lua_pushnumber(L, SIM_EV_CHARGE);    lua_setfield(L, -2, "EV_CHARGE");
 
     lua_pop(L, 1);
     assert(top == lua_gettop(L));

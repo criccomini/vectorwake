@@ -24,7 +24,13 @@ typedef struct {
     int32_t bullet_damage, bullet_delay, bomb_damage, bomb_delay;
     uint8_t gun_rungs, bomb_rungs;
     uint16_t gun_mods, bomb_mods;
+    /* How many of each charge this hull may carry, by slot: repel, burst. */
+    uint8_t charges[SIM_MAX_CHARGES];
 } class_row;
+
+/* The charge slots the baseline uses. A zone can fill the other two. */
+#define CH_REPEL 0
+#define CH_BURST 1
 
 /* Two bits per add-on, so a row reads as a list rather than a number. */
 #define M1(a) ((uint16_t)(1u << ((a) * 2)))
@@ -36,23 +42,23 @@ typedef struct {
  * can never shoot twice, which is what the first test run caught. */
 static const class_row rows[SIM_MAX_CLASSES] = {
     /* speed thrust  rot  energy  rech  rad  bdmg bdly  bombdmg bombdly
-       gun  bomb  what the gun may hold        what the bomb may hold */
+       gun  bomb  gun add-ons                 bomb add-ons        charges */
     {4900, 30, 420, 1350, 1500, 14, 200, 25, 400, 150,
-     2, 1, M1(SIM_MOD_MULTI), 0},                        /* Apex    */
+     2, 1, M1(SIM_MOD_MULTI), 0,                        {0, 3, 0, 0}},
     {4400, 22, 340, 1450, 1300, 14, 150, 30, 600, 80,
-     1, 2, 0, M1(SIM_MOD_PROX) | M1(SIM_MOD_SHRAPNEL)},  /* Wedge   */
+     1, 2, 0, M1(SIM_MOD_PROX) | M1(SIM_MOD_SHRAPNEL),  {1, 0, 0, 0}},
     {4300, 26, 400, 1500, 1800, 14, 120, 15, 0, 0,
-     2, 0, M2(SIM_MOD_MULTI) | M1(SIM_MOD_FREEZE), 0},   /* Chord   */
+     2, 0, M2(SIM_MOD_MULTI) | M1(SIM_MOD_FREEZE), 0,   {0, 2, 0, 0}},
     {3200, 14, 240, 2600, 1000, 16, 150, 35, 900, 60,
-     1, 3, 0, M2(SIM_MOD_SHRAPNEL) | M1(SIM_MOD_PROX)},  /* Anvil   */
+     1, 3, 0, M2(SIM_MOD_SHRAPNEL) | M1(SIM_MOD_PROX),  {2, 0, 0, 0}},
     {4600, 28, 380, 1200, 2200, 14, 100, 30, 0, 0,
-     1, 0, M2(SIM_MOD_FREEZE), 0},                       /* Spire   */
+     1, 0, M2(SIM_MOD_FREEZE), 0,                       {3, 0, 0, 0}},
     {4700, 24, 390, 1100, 1200, 12, 300, 40, 300, 200,
-     3, 1, M1(SIM_MOD_BOUNCE), 0},                       /* Cipher  */
+     3, 1, M1(SIM_MOD_BOUNCE), 0,                       {0, 4, 0, 0}},
     {4200, 27, 410, 1600, 1400, 14, 180, 20, 300, 180,
-     2, 1, M2(SIM_MOD_MULTI), M1(SIM_MOD_PROX)},         /* Facet   */
+     2, 1, M2(SIM_MOD_MULTI), M1(SIM_MOD_PROX),         {0, 3, 0, 0}},
     {3800, 20, 330, 1900, 1250, 15, 150, 30, 500, 100,
-     1, 2, 0, M2(SIM_MOD_PUSH) | M2(SIM_MOD_BOUNCE)},    /* Lattice */
+     1, 2, 0, M2(SIM_MOD_PUSH) | M2(SIM_MOD_BOUNCE),    {4, 0, 0, 0}},
 };
 
 const char *const sim_class_names[SIM_MAX_CLASSES] = {
@@ -136,6 +142,52 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         }
     }
 
+    /* The two charges the roster uses. A charge is a pattern plus an
+     * inventory and nothing else: the repel is `push` with no damage at all,
+     * which the weapon model has been able to express since the day it was
+     * written, and the burst is sixteen rounds at a full turn's spacing --
+     * the rosette that motivated `count` and `spacing` in the first place.
+     *
+     * Both are deliberately expensive to fire and slow to follow up. A charge
+     * is a thing you spend, and spending it should be a decision. */
+    {
+        sim_weapon_spec rp;
+        memset(&rp, 0, sizeof rp);
+        rp.speed = 0;
+        rp.life = 1;
+        rp.on_wall = SIM_WALL_PASS;
+        rp.expire_ends = 1;
+        rp.blast = 260 * 256;
+        rp.push = sim_units_speed(3400);
+        rp.splinter = SIM_NO_PATTERN;
+        sim_fire_pattern rf;
+        memset(&rf, 0, sizeof rf);
+        rf.spec = (uint8_t)sim_add_spec(cfg, &rp);
+        rf.count = 1;
+        rf.delay = 120;
+        cfg->charge[0] = (uint8_t)sim_add_pattern(cfg, &rf);
+
+        sim_weapon_spec bs;
+        memset(&bs, 0, sizeof bs);
+        bs.speed = sim_units_speed(1800);
+        bs.life = 70;
+        bs.on_wall = SIM_WALL_END;
+        bs.damage = sim_units_energy(180);
+        bs.splinter = SIM_NO_PATTERN;
+        sim_fire_pattern bf;
+        memset(&bf, 0, sizeof bf);
+        bf.spec = (uint8_t)sim_add_spec(cfg, &bs);
+        bf.count = 16;
+        bf.spacing = 65536 / 16;
+        bf.delay = 120;
+        cfg->charge[1] = (uint8_t)sim_add_pattern(cfg, &bf);
+
+        cfg->charge[2] = SIM_NO_PATTERN;
+        cfg->charge[3] = SIM_NO_PATTERN;
+        for (int k = 0; k < SIM_MAX_CHARGES; k++)
+            cfg->prize_weight[SIM_PRIZE_CHARGE(k)] = 25;
+    }
+
     for (int i = 0; i < SIM_MAX_CLASSES; i++) {
         const class_row *r = &rows[i];
         sim_ship_class *c = &cfg->classes[i];
@@ -143,6 +195,8 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
                            r->recharge, r->radius);
         c->mod_max[SIM_TRIG_GUN] = r->gun_mods;
         c->mod_max[SIM_TRIG_BOMB] = r->bomb_mods;
+        for (int k = 0; k < SIM_MAX_CHARGES; k++)
+            c->charge_max[k] = r->charges[k];
 
         /* A ladder per trigger, built from the roster row. A rung is the same
          * weapon harder -- 40% more damage each -- and nothing else: an

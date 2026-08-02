@@ -567,6 +567,13 @@ function M.events(me, sfx)
                 fx.burst(x, y, 3, 70, 0.2, 1.2, pal.a(pal.WALL_EDGE, 1))
                 sfx("bounce", x, y)
             end
+        elseif ty == sim.EV_CHARGE then
+            -- Spending one is a small flare at the hull rather than a shot
+            -- effect: the weapon it made draws itself, and what wants
+            -- reporting here is that the inventory went down by one.
+            local x, y = sim.ship_x(a), sim.ship_y(a)
+            fx.wave(x, y, 5, 30, 0.3, 4, pal.CHARGE_COL)
+            sfx("charge", x, y)
         elseif ty == sim.EV_PRIZE then
             -- v is +1 for an upgrade and -1 for rust. A green that took
             -- something has to look and sound like a loss, or the one

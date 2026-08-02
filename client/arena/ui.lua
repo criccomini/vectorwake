@@ -338,7 +338,7 @@ local function feed(lines, top)
     end
 end
 
-local function status(me, class_names, netinfo, pickup, lift)
+local function status(me, class_names, netinfo, pickup, charges, lift)
     local emax = math.max(1, sim.ship_max_energy(me))
     -- Clamped, because energy is allowed to go far negative: a bomb overkills
     -- by whatever it overkills by, and the ship carries that until it
@@ -351,9 +351,12 @@ local function status(me, class_names, netinfo, pickup, lift)
 
     local rows_h = LINE * S              -- name / score
     local bar_h = 6 * S
-    -- Two upgrade rows now: the five stats, and what each trigger carries.
+    -- Rows: the five stats, what each trigger carries, and the charges in
+    -- hand when the hull has any.
+    local slots = charges or {}
     local h = PANEL_Y * 2 * S + rows_h + 7 * S + bar_h + 6 * S + rows_h
               + 5 * S + rows_h + SIM_TRIGGERS * rows_h
+              + ((#slots > 0) and rows_h or 0)
     if pickup then h = h + rows_h end
     if netinfo then h = h + rows_h end
 
@@ -429,6 +432,21 @@ local function status(me, class_names, netinfo, pickup, lift)
         cy = cy + rows_h
     end
 
+    -- Charges: a count you spend, and one of them is the one the use key
+    -- fires. The marker is what makes a single fire key work for four kinds.
+    if #slots > 0 then
+        local at = ix
+        for _, c in ipairs(slots) do
+            local label = (c.ready and "> " or "") .. c.short .. "x" .. c.count
+            txt(label, at, cy + rows_h / 2, (FONT - 1) * S,
+                c.count > 0 and (c.ready and pal.CHARGE_COL
+                                 or pal.a(pal.CHARGE_COL, 0.6))
+                or pal.a(pal.DIM, 0.45))
+            at = at + 62 * S
+        end
+        cy = cy + rows_h
+    end
+
     if pickup then
         txt((pickup.sign or "+") .. " " .. pickup.name, ix,
             cy + rows_h / 2, FONT * S, pal.a(pickup.col, pickup.t))
@@ -457,6 +475,7 @@ local function help(lift)
     local parts = {
         {k = "←"}, {k = "↑"}, {k = "↓"}, {k = "→"}, {s = " fly    "},
         {k = "space"}, {s = " guns    "}, {k = "shift"}, {s = " bombs    "},
+        {k = "c"}, {s = " use    "}, {k = "v"}, {s = " swap    "},
         -- The one thing a new player has to be told, because nothing else on
         -- screen implies it: there is a menu, and this is where it lives.
         {k = "esc"}, {s = " menu"},
@@ -532,7 +551,7 @@ function M.hud(o)
     nameplates(o)
     radar(o.cam_x, o.cam_y, me)
     feed(o.feed, PAD * S + (RADAR + 16) * S + 12 * S)
-    status(me, o.class_names, o.netinfo, o.pickup, lift)
+    status(me, o.class_names, o.netinfo, o.pickup, o.charges, lift)
     menu_button()
     help(lift + (M.touching and 118 * S or 0))
     vignette(o.hurt or 0)

@@ -256,6 +256,17 @@ impl Arena {
         if let Some(i) = STATS.iter().position(|n| n.eq_ignore_ascii_case(name)) {
             return Some(i);
         }
+        // Charge slots are named by position, because what sits in each is
+        // the zone's own choice: the baseline puts a repel in one and a burst
+        // in two, and a zone that fills three and four names those.
+        if let Some(n) = name.strip_prefix("charge-") {
+            let k: usize = n.parse().ok()?;
+            if k >= 1 && k <= sim::MAX_CHARGES {
+                return Some(sim::UP_COUNT + sim::TRIG_COUNT
+                            + sim::TRIG_COUNT * sim::MOD_COUNT + k - 1);
+            }
+            return None;
+        }
         let (trig, rest) = name.split_once('-')?;
         let t = match trig.to_ascii_lowercase().as_str() {
             "gun" => 0,

@@ -81,6 +81,14 @@ M.MODS = {
 M.PRIZE     = rgb(0x8dffb0)
 -- And the colour of one that took something back.
 M.RUST      = rgb(0xff8a5c)
+-- Charges: things you carry a count of and spend.
+M.CHARGES = {
+    {name = "repel", short = "RPL"},
+    {name = "burst", short = "BST"},
+    {name = "charge 3", short = "C3"},
+    {name = "charge 4", short = "C4"},
+}
+M.CHARGE_COL = rgb(0xffd166)
 M.LEVEL_COL = rgb(0xff7ba8)
 M.MOD_COL   = rgb(0x9df0ff)
 
@@ -94,9 +102,13 @@ function M.prize(kind)
         return M.LEVEL_COL, (t == 0 and "gun level" or "bomb level")
     end
     t = t - 2
-    local m = M.MODS[t % #M.MODS + 1]
-    local trig = (t < #M.MODS) and "gun " or "bomb "
-    return M.MOD_COL, trig .. (m and m.name or "?")
+    if t < 2 * #M.MODS then
+        local m = M.MODS[t % #M.MODS + 1]
+        local trig = (t < #M.MODS) and "gun " or "bomb "
+        return M.MOD_COL, trig .. (m and m.name or "?")
+    end
+    local c = M.CHARGES[t - 2 * #M.MODS + 1]
+    return M.CHARGE_COL, (c and c.name or "charge")
 end
 
 -- A copy at a different alpha. Draw code asks for these constantly and must

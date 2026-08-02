@@ -151,6 +151,12 @@ recharge = 1000
 #   speed = 120
 #   gun-level = 30
 #   bomb-shrapnel = 20
+#   charge-2 = 25
+#
+# Charges are named by slot, because what sits in each is the zone's choice:
+# the baseline puts a repel in one and a burst in two. A charge is a weapon
+# you carry a count of and spend -- one key cycles which is ready and one
+# fires it, so a zone can add a third and fourth without asking for a key.
 #
 # And rust, which is a key on [arena] rather than a weight -- see the top of
 # that section.

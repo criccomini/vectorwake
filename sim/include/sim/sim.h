@@ -39,6 +39,14 @@ extern "C" {
 #define SIM_BTN_REVERSE 0x0008u
 #define SIM_BTN_FIRE 0x0010u  /* guns */
 #define SIM_BTN_BOMB 0x0020u  /* bombs */
+/* Spend one of the selected charge. Which one is selected is *not* in here
+ * and is not simulation state: the client picks a slot and says which, so
+ * cycling a selection needs no edge detection down here and no byte in a
+ * snapshot. Two bits is four slots, which is what a pilot can carry. */
+#define SIM_BTN_USE 0x0040u
+#define SIM_BTN_SLOT_SHIFT 7
+#define SIM_BTN_SLOT_MASK 0x0180u
+#define SIM_BTN_SLOT(b) (((b) & SIM_BTN_SLOT_MASK) >> SIM_BTN_SLOT_SHIFT)
 
 /* What a tile does. The original encoded behaviour in the tile's own number
  * -- doors at 162 through 169, a safe zone at 171, scenery you fly under at
@@ -170,6 +178,20 @@ typedef enum {
 #define SIM_MOD_MAX 3    /* rungs per add-on; two bits each */
 #define SIM_MAX_RUNGS 4  /* levels a weapon ladder can hold */
 
+/* ---- charges ----
+ *
+ * A charge is a weapon you carry a count of and spend, rather than one a
+ * trigger fires for free: a repel, a burst, a portal. It needs no new
+ * mechanism at all -- it is a pattern, exactly like a gun's, plus an
+ * inventory. The whole of a repel is `push` with no damage, which the model
+ * has had since the day it was written.
+ *
+ * Four kinds, zone-wide, so slot two means the same weapon for everybody and
+ * a zone can weight "the odds of finding a burst". What each hull may carry
+ * is its own row, the same way add-ons work. */
+#define SIM_MAX_CHARGES 4
+#define SIM_CHARGE_MAX 15  /* how many of one kind a pilot can hold */
+
 /* Add-on counts pack two bits each into one word, on the ship and on every
  * projectile it fires. */
 static inline uint8_t sim_mod_get(uint16_t mods, int m) {
@@ -234,13 +256,17 @@ typedef enum {
  *   0 .. 4     a stat            sim_upgrade
  *   5 .. 6     a level           per trigger
  *   7 .. 18    an add-on         per trigger, per sim_mod
+ *  19 .. 22    a charge          per kind
  */
 #define SIM_PRIZE_STAT(u)     (u)
 #define SIM_PRIZE_LEVEL(t)    (SIM_UP_COUNT + (t))
 #define SIM_PRIZE_MOD(t, m)   (SIM_UP_COUNT + SIM_TRIG_COUNT \
                                + (t) * SIM_MOD_COUNT + (m))
+#define SIM_PRIZE_CHARGE(k)   (SIM_UP_COUNT + SIM_TRIG_COUNT \
+                               + SIM_TRIG_COUNT * SIM_MOD_COUNT + (k))
 #define SIM_PRIZE_COUNT       (SIM_UP_COUNT + SIM_TRIG_COUNT \
-                               + SIM_TRIG_COUNT * SIM_MOD_COUNT)
+                               + SIM_TRIG_COUNT * SIM_MOD_COUNT \
+                               + SIM_MAX_CHARGES)
 #define SIM_PRIZE_NONE 255
 
 
@@ -266,6 +292,9 @@ typedef struct {
      * way the pilot's are. Zero is a hull that never gets that add-on, which
      * is how the roster stays a roster: shrapnel belongs to bombers. */
     uint16_t mod_max[SIM_TRIG_COUNT];
+    /* How many of each charge kind this hull may carry. Zero is a hull that
+     * never gets one, which is how a repel stays the denial ship's thing. */
+    uint8_t charge_max[SIM_MAX_CHARGES];
 } sim_ship_class;
 
 typedef struct {
@@ -276,6 +305,10 @@ typedef struct {
     sim_fire_pattern patterns[SIM_MAX_PATTERNS];
     uint8_t spec_count;
     uint8_t pattern_count;
+    /* What each charge kind fires, as a pattern index, or SIM_NO_PATTERN for
+     * a slot this zone does not use. Zone-wide rather than per hull, so a
+     * charge means the same thing to everybody who has one. */
+    uint8_t charge[SIM_MAX_CHARGES];
     /* Odds a green turns out to be each thing, over the flat prize space.
      * Relative rather than percentages -- doubling every number changes
      * nothing -- and read against the pool of the hull that took it, so what
@@ -334,6 +367,8 @@ typedef struct {
      * survived with. */
     uint8_t level[SIM_TRIG_COUNT];
     uint16_t mods[SIM_TRIG_COUNT];
+    /* Charges in hand, spent one at a time. */
+    uint8_t charge[SIM_MAX_CHARGES];
 } sim_ship;
 
 /* A green carries no type. Every green is takeable by everybody, and what it
@@ -402,6 +437,9 @@ typedef enum {
      * pixels, packed (x << 14) | y. */
     SIM_EV_EXPIRE,   /* a: weapon type, b: owner, v: packed position */
     SIM_EV_PRIZE,    /* a: ship, b: sim_upgrade collected */
+    /* A charge was spent. b is the slot, v is how many are left, which is
+     * what a panel wants and what a sound wants to know it happened. */
+    SIM_EV_CHARGE,
     SIM_EV_FLAG_TAKE,/* a: ship, b: flag index */
     SIM_EV_FLAG_DROP,/* a: flag index, b: team that keeps it */
     SIM_EV_GOAL,     /* a: ship, b: the goal's variant */

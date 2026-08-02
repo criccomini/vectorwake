@@ -105,6 +105,8 @@ pub struct sim_ship_class {
     /// each exactly as the pilot's are. This is what keeps the roster a
     /// roster once greens are flying.
     pub mod_max: [u16; TRIG_COUNT],
+    /// How many of each charge kind this hull may carry.
+    pub charge_max: [u8; MAX_CHARGES],
 }
 
 #[repr(C)]
@@ -116,6 +118,8 @@ pub struct sim_settings {
     pub patterns: [sim_fire_pattern; MAX_PATTERNS],
     pub spec_count: u8,
     pub pattern_count: u8,
+    /// What each charge kind fires, as a pattern index.
+    pub charge: [u8; MAX_CHARGES],
     /// Odds a green turns out to be each thing, over the flat prize space.
     pub prize_weight: [u16; PRIZE_COUNT],
     /// Out of a thousand, how often a green corrodes instead of granting.
@@ -169,6 +173,8 @@ pub struct sim_ship {
     /// The rung each trigger is on, and the add-ons held on each.
     pub level: [u8; TRIG_COUNT],
     pub mods: [u16; TRIG_COUNT],
+    /// Charges in hand, spent one at a time.
+    pub charge: [u8; MAX_CHARGES],
 }
 
 #[repr(C)]
@@ -312,7 +318,9 @@ pub const TRIG_COUNT: usize = 2;
 pub const MOD_COUNT: usize = 6;
 pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;
-pub const PRIZE_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT;
+pub const MAX_CHARGES: usize = 4;
+pub const PRIZE_COUNT: usize =
+    UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
 pub const MOD_PROX: usize = 2;
 pub const MOD_PUSH: usize = 5;
 

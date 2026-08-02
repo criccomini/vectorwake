@@ -875,8 +875,9 @@ int main(void) {
         n = sim_prize_pool(&cfg.classes[SPIRE], pool);
         for (int i = 0; i < n; i++)
             CHECK(pool[i] < SIM_UP_COUNT
-                  || pool[i] == SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE),
-                  "a Spire is offered stats and freeze, and nothing else");
+                  || pool[i] == SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE)
+                  || pool[i] == SIM_PRIZE_CHARGE(0),
+                  "a Spire is offered stats, freeze and repels, nothing else");
 
         n = sim_prize_pool(&cfg.classes[LATTICE], pool);
         int has_push = 0;
@@ -948,21 +949,24 @@ int main(void) {
         sim_settings w = cfg;
         w.rust_chance = 0;
         uint32_t rng = 4242;
-        int stats = 0, levels = 0, mods = 0;
+        int stats = 0, levels = 0, mods = 0, charges = 0;
         for (int i = 0; i < 10000; i++) {
             sim_ship sh;
             memset(&sh, 0, sizeof sh);
             uint8_t got = sim_take_prize(&sh, &w, &rng, NULL);
             if (got < SIM_UP_COUNT) stats++;
             else if (got < SIM_UP_COUNT + SIM_TRIG_COUNT) levels++;
-            else mods++;
+            else if (got < SIM_PRIZE_CHARGE(0)) mods++;
+            else charges++;
         }
         /* An Apex's pool is five stats at 100, one level at 30, one add-on at
-         * 20: 500/550, 30/550, 20/550. Bands rather than exact numbers,
-         * because the point under test is the shape and not the generator. */
-        CHECK(stats > 8600 && stats < 9600, "stats are the bread of the tree");
+         * 20 and one charge at 25: 575 in total. Bands rather than exact
+         * numbers, because the point under test is the shape of the tree and
+         * not the generator. */
+        CHECK(stats > 8300 && stats < 9100, "stats are the bread of the tree");
         CHECK(levels > 350 && levels < 750, "a level is about one green in twenty");
-        CHECK(mods > 200 && mods < 550, "and an add-on rarer still");
+        CHECK(mods > 200 && mods < 530, "an add-on is rarer still");
+        CHECK(charges > 280 && charges < 620, "and a charge sits between them");
 
         /* And a zone that says otherwise gets otherwise. */
         for (int i = 0; i < SIM_UP_COUNT; i++) w.prize_weight[i] = 0;
@@ -1114,6 +1118,64 @@ int main(void) {
         CHECK(s.weapon_count > 1, "the wall broke it up");
         for (uint16_t i = 0; i < s.weapon_count; i++)
             CHECK(s.weapons[i].mods == 0, "and the fragments carry nothing");
+    }
+
+    {
+        /* A charge: a weapon you carry a count of and spend. The Lattice
+         * carries repels, which are `push` with no damage at all -- the
+         * shape the weapon model has been able to express since it was
+         * written, now with an inventory in front of it. */
+        const int LATTICE = 7;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 120, 0, &cfg);
+        s.ships[0].charge[0] = 2;
+        int32_t vy0 = s.ships[1].vy, e1 = s.ships[1].energy;
+
+        /* The slot rides in the buttons rather than on the ship: choosing
+         * which charge is ready is the client's business. */
+        uint16_t use = SIM_BTN_USE | (0u << SIM_BTN_SLOT_SHIFT);
+        ev_counts c = step_counting(&s, &cfg, use, 0, 3);
+        CHECK(s.ships[0].charge[0] == 1, "one repel is spent");
+        CHECK(s.ships[1].vy < vy0, "the neighbour is shoved away");
+        CHECK(s.ships[1].energy >= e1, "and not hurt");
+        CHECK(c.fires > 0, "and it counts as a shot");
+
+        /* The cooldown holds, then it fires the last one and stops. */
+        step_n(&s, &cfg, use, 0, 200);
+        CHECK(s.ships[0].charge[0] == 0, "the second is spent too");
+        step_n(&s, &cfg, use, 0, 400);
+        CHECK(s.ships[0].charge[0] == 0, "and an empty slot fires nothing");
+    }
+
+    {
+        /* A hull only carries what its row allows, and a slot the zone never
+         * filled is not a slot. */
+        uint8_t pool[SIM_PRIZE_COUNT];
+        const int LATTICE = 7, WEDGE = 1;
+        int n = sim_prize_pool(&cfg.classes[LATTICE], pool);
+        int repel = 0, burst = 0;
+        for (int i = 0; i < n; i++) {
+            if (pool[i] == SIM_PRIZE_CHARGE(0)) repel = 1;
+            if (pool[i] == SIM_PRIZE_CHARGE(1)) burst = 1;
+        }
+        CHECK(repel, "the denial hull is offered repels");
+        CHECK(!burst, "and never a burst");
+
+        sim_ship sh;
+        memset(&sh, 0, sizeof sh);
+        uint32_t rng = 77;
+        sim_settings w = cfg;
+        w.rust_chance = 0;
+        for (int i = 0; i < 4000; i++) sim_take_prize(&sh, &w, &rng, NULL);
+        CHECK(sh.charge[0] == 0, "an Apex holds no repels however lucky");
+        sh.cls = LATTICE;
+        memset(&sh.charge, 0, sizeof sh.charge);
+        for (int i = 0; i < 4000; i++) sim_take_prize(&sh, &w, &rng, NULL);
+        CHECK(sh.charge[0] == cfg.classes[LATTICE].charge_max[0],
+              "and a Lattice fills to its row and stops");
+        CHECK(cfg.classes[WEDGE].charge_max[1] == 0, "a Wedge has no burst");
     }
 
     {

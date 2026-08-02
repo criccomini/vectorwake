@@ -114,6 +114,7 @@ void sim_class_from_units(sim_ship_class *c, int32_t speed, int32_t thrust,
         for (int r = 0; r < SIM_MAX_RUNGS; r++) c->trigger[t][r] = SIM_NO_PATTERN;
         c->mod_max[t] = 0;
     }
+    for (int k = 0; k < SIM_MAX_CHARGES; k++) c->charge_max[k] = 0;
 }
 
 /* ---- upgrades ---- */
@@ -366,6 +367,7 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         memset(v->up, 0, sizeof v->up);
         memset(v->level, 0, sizeof v->level);
         memset(v->mods, 0, sizeof v->mods);
+        memset(v->charge, 0, sizeof v->charge);
         if (attacker != 255 && attacker != victim) s->ships[attacker].kills++;
         drop_flags(s, cfg, victim, ev);
         emit(ev, SIM_EV_DEATH, victim, attacker, 0);
@@ -555,6 +557,7 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     memset(sh->up, 0, sizeof sh->up);
     memset(sh->level, 0, sizeof sh->level);
     memset(sh->mods, 0, sizeof sh->mods);
+    memset(sh->charge, 0, sizeof sh->charge);
     sh->alive = 1;
     sh->respawn_at = 0;
     sh->x = sh->spawn_x;
@@ -623,6 +626,8 @@ int sim_prize_pool(const sim_ship_class *c, uint8_t *out) {
             if (sim_mod_get(c->mod_max[t], m) > 0)
                 out[n++] = (uint8_t)SIM_PRIZE_MOD(t, m);
     }
+    for (int k = 0; k < SIM_MAX_CHARGES; k++)
+        if (c->charge_max[k] > 0) out[n++] = (uint8_t)SIM_PRIZE_CHARGE(k);
     return n;
 }
 
@@ -646,13 +651,22 @@ static void move_count(sim_ship *sh, const sim_ship_class *c, uint8_t type,
         return;
     }
     type = (uint8_t)(type - SIM_TRIG_COUNT);
-    {
+    if (type < SIM_TRIG_COUNT * SIM_MOD_COUNT) {
         int t = type / SIM_MOD_COUNT, m = type % SIM_MOD_COUNT;
         uint8_t have = sim_mod_get(sh->mods[t], m);
         if (by < 0) {
             if (have) sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have - 1));
         } else if (have < sim_mod_get(c->mod_max[t], m)) {
             sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have + 1));
+        }
+        return;
+    }
+    {
+        int k = type - SIM_TRIG_COUNT * SIM_MOD_COUNT;
+        if (by < 0) {
+            if (sh->charge[k]) sh->charge[k]--;
+        } else if (sh->charge[k] < c->charge_max[k]) {
+            sh->charge[k]++;
         }
     }
 }
@@ -663,7 +677,9 @@ static uint8_t held(const sim_ship *sh, uint8_t type) {
     type = (uint8_t)(type - SIM_UP_COUNT);
     if (type < SIM_TRIG_COUNT) return sh->level[type];
     type = (uint8_t)(type - SIM_TRIG_COUNT);
-    return sim_mod_get(sh->mods[type / SIM_MOD_COUNT], type % SIM_MOD_COUNT);
+    if (type < SIM_TRIG_COUNT * SIM_MOD_COUNT)
+        return sim_mod_get(sh->mods[type / SIM_MOD_COUNT], type % SIM_MOD_COUNT);
+    return sh->charge[type - SIM_TRIG_COUNT * SIM_MOD_COUNT];
 }
 
 /* Rust: a green that takes something instead of giving it.
@@ -887,6 +903,35 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 }
             }
         }
+        /* 3a. A charge: a weapon carried by the count and spent. The slot
+         * comes down in the buttons rather than living on the ship, so
+         * choosing which one is ready is the client's business and costs the
+         * simulation nothing -- no selection byte in a snapshot, and no edge
+         * detection to get wrong when a shot is replayed. */
+        if (!in_safe && sh->fire_cooldown == 0 && (b & SIM_BTN_USE)) {
+            int k = (int)SIM_BTN_SLOT(b);
+            uint8_t pat = cfg->charge[k];
+            sim_fire_pattern cp;
+            sim_weapon_spec cs;
+            if (sh->charge[k] > 0 && resolve(cfg, pat, 0, &cp, &cs)
+                && sh->energy > cp.energy) {
+                int32_t mx = sh->x + (int32_t)(((int64_t)(cls->radius + 512) * dx) >> 15);
+                int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
+                /* A charge carries none of the pilot's add-ons. It is a thing
+                 * you found whole, not a weapon you have been improving, and
+                 * a repel that inherited shrapnel would be a surprise nobody
+                 * asked for. */
+                spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
+                              sh->vx, sh->vy, sh->heading, 0, 0, ev);
+                sh->charge[k]--;
+                sh->energy -= cp.energy;
+                sh->fire_cooldown = cp.delay;
+                sh->vx -= (int32_t)(((int64_t)cp.recoil * dx) >> 15);
+                sh->vy -= (int32_t)(((int64_t)cp.recoil * dy) >> 15);
+                emit(ev, SIM_EV_CHARGE, (uint8_t)i, (uint8_t)k, sh->charge[k]);
+            }
+        }
+
         if (!in_safe && sh->fire_cooldown == 0
             && (b & (SIM_BTN_FIRE | SIM_BTN_BOMB))) {
             int trig = ((b & SIM_BTN_FIRE) == 0) ? SIM_TRIG_BOMB : SIM_TRIG_GUN;
@@ -1156,6 +1201,7 @@ uint64_t sim_hash(const sim_state *s) {
         for (int u = 0; u < SIM_UP_COUNT; u++) h = hash_u32(h, sh->up[u]);
         for (int t = 0; t < SIM_TRIG_COUNT; t++)
             h = hash_u32(h, (uint32_t)(sh->level[t] | (sh->mods[t] << 8)));
+        for (int k = 0; k < SIM_MAX_CHARGES; k++) h = hash_u32(h, sh->charge[k]);
     }
     h = hash_u32(h, s->prize_timer);
     h = hash_u32(h, s->flag_count);

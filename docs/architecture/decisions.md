@@ -555,7 +555,10 @@ had: bombs that repel, bullets that stall a bar.
 
 That makes the whole tech tree one shape -- a count with a ceiling. A stat
 count interpolates a range, a level count indexes a ladder, an add-on count
-transforms a shot, and a future charge count is inventory. One flat prize
+transforms a shot, and a charge count is inventory you spend. Which charge is
+*ready* is deliberately not in there: the client picks a slot and sends it in
+two spare button bits, so selection costs no snapshot byte and no edge
+detection in a function that gets replayed. One flat prize
 space, one byte on a green, one table for a zone to weight.
 
 Add-ons are per trigger, so "bounce on guns, shrapnel on bombs" is a thing a

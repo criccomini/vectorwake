@@ -52,6 +52,8 @@ local accum = 0
 local feed = {}
 local hurt = 0
 local pickup = nil
+-- Which charge the use key spends. The client's, not the simulation's.
+local charge_slot = 0
 local layers = nil
 local map_lo, map_hi = 470, 554
 -- Forward declared: the field sync acts on the page's own enter, and it runs
@@ -77,6 +79,7 @@ local function bit_for(action)
             [hash("reverse")] = sim.BTN_REVERSE,
             [hash("guns")] = sim.BTN_FIRE,
             [hash("bombs")] = sim.BTN_BOMB,
+            [hash("use")] = sim.BTN_USE,
             -- The mouse buttons are their own actions rather than aliases of
             -- guns and bombs. A browser synthesises a click from every touch,
             -- so while they shared a name, one tap anywhere on a phone was a
@@ -88,6 +91,28 @@ local function bit_for(action)
         }
     end
     return ACTION_BITS[action] or 0
+end
+
+-- The charge slots this hull can ever carry, in order. An empty list means a
+-- hull with no charges at all, and the row simply is not drawn.
+local function my_slots()
+    local out = {}
+    for k = 0, sim.MAX_CHARGES - 1 do
+        if sim.charge_max(me, k) > 0 then out[#out + 1] = k end
+    end
+    return out
+end
+
+-- The slot the use key would actually spend. Resolved rather than stored,
+-- because a hull change moves which slots exist and a remembered index would
+-- point at a charge this hull cannot carry -- which is a use key that
+-- silently does nothing.
+local function ready_slot()
+    local slots = my_slots()
+    for _, k in ipairs(slots) do
+        if k == charge_slot then return k end
+    end
+    return slots[1] or 0
 end
 
 local function my_buttons()
@@ -118,7 +143,40 @@ local function my_buttons()
     end
     local b = 0
     for bit in pairs(bits) do b = b + bit end
-    return b
+    -- Which charge is ready rides in the buttons rather than in the
+    -- simulation: selection is a thing a pilot does with their own interface,
+    -- so it costs no snapshot byte and no edge detection down in the core.
+    -- One input cycles it and one spends it, which is two inputs for any
+    -- number of charge kinds -- a key per kind does not survive a phone.
+    return b + ready_slot() * sim.BTN_SLOT_STEP
+end
+
+-- What the panel draws: every slot this hull can carry, how many are in
+-- hand, and which one the use key would spend.
+local function charge_row()
+    local out = {}
+    for _, k in ipairs(my_slots()) do
+        local c = pal.CHARGES[k + 1]
+        out[#out + 1] = {
+            short = c and c.short or "C",
+            count = sim.ship_charge(me, k),
+            ready = (k == ready_slot()),
+        }
+    end
+    return out
+end
+
+local function cycle_charge()
+    local slots = my_slots()
+    if #slots == 0 then return end
+    local cur = ready_slot()
+    for i, k in ipairs(slots) do
+        if k == cur then
+            charge_slot = slots[i % #slots + 1]
+            return
+        end
+    end
+    charge_slot = slots[1]
 end
 
 -- A bot: reads what the page can read, produces a button bitfield, and has no
@@ -593,6 +651,14 @@ function update(self, dt)
         tapped[hash("menu")] = nil
         sfx.ui("ui_go")
     end
+    -- One key cycles which charge is ready and one spends it, which is two
+    -- inputs for any number of charge kinds. A key per kind is what the
+    -- original did and it does not survive a phone.
+    if tapped[hash("cycle")] and not menu.open then
+        tapped[hash("cycle")] = nil
+        cycle_charge()
+        sfx.ui("ui_move")
+    end
     if menu.open then
         local act, moved = menu.step({
             left = tapped[hash("turn_left")], right = tapped[hash("turn_right")],
@@ -772,6 +838,7 @@ function update(self, dt)
             -- people's names and only it knows them.
             pilots = (self.online and net.connected) and net.pilots or pilots,
             feed = feed, hurt = hurt, pickup = pickup,
+            charges = charge_row(),
             cam_x = cx, cam_y = cy,
             half_w = self.hw, half_h = self.hh,
             banner = (self.online and net.banner)

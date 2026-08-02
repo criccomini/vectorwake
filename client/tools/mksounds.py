@@ -257,6 +257,15 @@ def prize():
     return v
 
 
+def charge():
+    """A charge spent: a short downward chirp with a body to it, so it reads
+    as something leaving your hands rather than a shot going out."""
+    v = Voice(0.18)
+    v.sine(700, 300, 0.34, curve=1.3)
+    v.noise(0.07, 400, 2600, curve=1.5, rng=random.Random(41))
+    return v
+
+
 def rust():
     """A green that took something. The prize sound's intervals, downward and
     duller: the same event going the other way, which is what it is."""
@@ -317,7 +326,7 @@ def ui_go():
 KIT = {
     "gun": gun, "bomb": bomb, "blast": blast, "death": death, "hit": hit,
     "bounce": bounce, "spawn": spawn, "prize": prize, "rust": rust,
-    "flag": flag,
+    "charge": charge, "flag": flag,
     "thrust": thrust, "ui_move": ui_move, "ui_go": ui_go,
 }
 
@@ -336,7 +345,7 @@ loopcount: 0
 GAIN = {
     "gun": 0.30, "bomb": 0.55, "blast": 0.80, "death": 0.85, "hit": 0.40,
     "bounce": 0.30, "spawn": 0.45, "prize": 0.45, "rust": 0.50,
-    "flag": 0.55,
+    "charge": 0.55, "flag": 0.55,
     "thrust": 0.13, "ui_move": 0.35, "ui_go": 0.55,
 }
 

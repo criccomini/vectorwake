@@ -208,7 +208,7 @@ tree needed.
 | stat | steps from the hull's floor toward its ceiling | eight |
 | level | which rung of the trigger's ladder | the ladder's length |
 | add-on | how much of that add-on | the hull's row |
-| charge *(not built)* | how many you are carrying | the hull's row |
+| charge | how many you are carrying | the hull's row |
 
 One shape, four meanings. A green is one byte naming a place in that space --
 five stats, then a level per trigger, then an add-on per trigger per kind --
@@ -289,6 +289,37 @@ server and on every client predicting it.
 The consequence to accept is that you cannot choose which green to chase. They
 are identical on the map and always worth taking, which is the trade: the
 gamble is the mechanic, and it is the same gamble for everybody.
+
+### Charges
+
+A charge is a weapon you carry a count of and spend: a repel, a burst. It
+needed no new mechanism at all -- it is a pattern, exactly like a gun's, plus
+an inventory. The repel is `push` with no damage, which the model has been
+able to express since the day it was written; the burst is sixteen rounds at a
+full turn's spacing, the rosette that motivated `count` and `spacing` in the
+first place.
+
+Four kinds, zone-wide, so slot two means the same weapon for everybody and a
+zone can weight "the odds of finding a burst". What each hull may carry is its
+own row, the same way add-ons are.
+
+**Which one is ready is not simulation state.** The client picks a slot and
+sends it in the two spare button bits; the core just spends what it is told.
+That keeps a selection byte out of every snapshot, keeps edge detection out of
+a function that gets replayed, and means the whole feature costs the wire four
+bits of button and four bytes of inventory.
+
+The input is the reason it works that way. Vectorwake is built on five inputs,
+because that is what a d-pad has and what a phone can draw, and the game
+already spends four arrows plus guns, bombs and menu. A key per charge kind is
+what the original did and it does not survive a touchscreen. **One input
+cycles which charge is ready and one spends it** -- two inputs for any number
+of kinds, with the panel showing `> BST×2` so the marker carries what the
+extra keys used to.
+
+The cost is that you can only have one thing ready, so carrying a mixed
+inventory is a decision rather than a hotkey. That is slower than muscle
+memory on seven keys, and it is the trade.
 
 ### The odds, and rust
 

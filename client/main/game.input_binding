@@ -59,6 +59,22 @@ touch_trigger {
   action: "touch"
 }
 key_trigger {
+  input: KEY_C
+  action: "use"
+}
+key_trigger {
+  input: KEY_LCTRL
+  action: "use"
+}
+key_trigger {
+  input: KEY_TAB
+  action: "cycle"
+}
+key_trigger {
+  input: KEY_V
+  action: "cycle"
+}
+key_trigger {
   input: KEY_ENTER
   action: "select"
 }
