@@ -45,12 +45,12 @@ local function on_message(s)
             -- it is the fullest instance that still has room.
             address = up and up.address or "",
             name = z.name,
+            detail = z.description or "",
             -- A zone with nobody running it is a row, not a gap: a player is
             -- better off seeing that Chaos exists and is down than wondering
             -- whether they misread the list.
-            detail = up
-                and string.format("%d playing, %d AI  ·  %s", players, z.bots or 0,
-                                  z.description or "")
+            count = up
+                and string.format("%d playing, %d AI", players, z.bots or 0)
                 or "nobody is running it",
             live = up ~= nil,
         }
@@ -126,9 +126,12 @@ function M.draw(u, ui, w, h, s)
         u:frame(x, h - y - rh, rw, rh, s, on and pal.FRIEND or pal.BORDER)
         ui.line((on and "▸ " or "  ") .. r.name, x + 12 * s, y + rh / 2,
                 13 * s, r.live and pal.INK or pal.DIM)
-        ui.line(r.detail, x + 300 * s, y + rh / 2, 13 * s, pal.DIM)
-        ui.line(r.address, x + rw - 12 * s, y + rh / 2, 13 * s, pal.DIM,
-                "right")
+        -- Name, then what the game is, then how busy it is. No address: a
+        -- player picks a game, and which machine serves it is the directory's
+        -- business. It used to be drawn on the right, where a description long
+        -- enough to be useful ran straight into it.
+        ui.line(r.detail, x + 160 * s, y + rh / 2, 13 * s, pal.DIM)
+        ui.line(r.count, x + rw - 12 * s, y + rh / 2, 13 * s, pal.DIM, "right")
         y = y + rh + 6 * s
     end
 end
