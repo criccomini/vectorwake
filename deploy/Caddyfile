@@ -1,0 +1,69 @@
+# TLS and routing for one host.
+#
+# A page served over https may only open a wss socket, so every address a player
+# dials needs a certificate. Caddy gets one per name automatically over HTTP-01,
+# which needs nothing but port 80 reachable and the A records pointing here: no
+# DNS credentials, no renewal cron, no certificate in the arena's config.
+#
+# Routing is by hostname on 443 rather than a port per arena. One port means
+# nothing to open in a firewall and nothing for a corporate proxy to object to,
+# and it means adding an arena is a name and a compose service rather than a
+# port negotiation.
+#
+# {$VW_DOMAIN} lets the same file serve a real deployment and a local one:
+# `VW_DOMAIN=localhost` gives directory.localhost and a1.localhost, which Caddy
+# signs with its own internal CA and which browsers resolve to loopback without
+# a hosts entry.
+
+# No global block, and specifically no ACME email. Let's Encrypt stopped
+# requiring one, the only thing it buys is expiry warnings, and Caddy renews on
+# its own -- so the mail would be about a failure mode that is already handled.
+# An empty `email` directive is a parse error rather than an omission, which is
+# how a blank variable took the whole proxy down in a restart loop.
+
+# Reachable by raw IP over plain http, which is the only thing that works before
+# DNS has propagated and a certificate exists. That window is exactly when a
+# fresh host is least diagnosable, and it is where a first deploy goes wrong, so
+# provisioning writes coarse progress here and Caddy comes up before the build
+# rather than after it. Nothing secret is written: anyone can read this.
+#
+# It shadows the http-to-https redirect Caddy would otherwise generate for the
+# named sites below, so http://directory.<domain> answers "vectorwake" instead of
+# redirecting. Harmless, because a game client dials wss directly.
+http:// {
+	handle_path /deploy* {
+		root * /srv/deploy
+		file_server browse
+	}
+	handle {
+		respond "vectorwake" 200
+	}
+}
+
+# What a player's client asks for the list of games. Also the socket arena
+# servers register over, but they reach it on loopback and never through here.
+directory.{$VW_DOMAIN} {
+	# Plain HTTP, so the chain up to Caddy can be checked with curl from
+	# anywhere. Everything else here is a WebSocket upgrade, which plenty of
+	# networks and proxies will not carry, and "cannot connect" is a useless
+	# symptom when it could be DNS, the certificate, Caddy, or the game.
+	handle /health {
+		respond "ok" 200
+	}
+	reverse_proxy 127.0.0.1:9000
+}
+
+a1.{$VW_DOMAIN} {
+	reverse_proxy 127.0.0.1:9001
+}
+
+a2.{$VW_DOMAIN} {
+	reverse_proxy 127.0.0.1:9002
+}
+
+# Deliberately absent: the admin surface. docs/architecture/admin.md says a
+# secret in a file is not enough to put it on the public internet, and the read
+# view needs no token at all, so it would hand a stranger the fleet. It listens
+# on loopback and is reached through an ssh tunnel:
+#
+#   ssh -L 9100:127.0.0.1:9100 root@<host>   then http://127.0.0.1:9100

@@ -47,7 +47,7 @@ include_dirs = ext/simcore, websocket
 
 [vectorwake]
 zoom = 1.0
-directory =
+directory = wss://directory.vectorwake.net
 server =
 name =
 

@@ -25,9 +25,9 @@ capabilities = ["ban", "catalog", "kick", "drain", "pin", "reload"]
 # `vectorwake-server token`, which prints the raw token once and the row to
 # paste here. The digest is safe to commit; the raw token is not.
 [[pool]]
-name = "local pool"
-token = "sha256:0c7cb30b51f8f56b0e5f6088289393ee3f0f9b342e0c95de6b7bbb7be7a56e4d"
-region = "local"
+name = "vultr ewr"
+token = "sha256:062c6ca2d58e585a4aa49b7c58035f5235332abd48f10317df8c75aa05fd1a5e"
+region = "ewr"
 max_instances = 8
 
 # Declared rather than scanned, so retiring a zone is a reviewed line removed

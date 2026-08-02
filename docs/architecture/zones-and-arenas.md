@@ -494,7 +494,7 @@ floor on running your own game, from one binary and a config file to a catalog, 
 directory, and at least one arena server.
 
 There is no global list of directories, and we are not building one. A player
-reaches ours because the client resolves `directory.vectorwake.game`, and reaches
+reaches ours because the client resolves `directory.vectorwake.net`, and reaches
 anybody else's because somebody handed them a hostname.
 
 ## Open questions
@@ -520,7 +520,7 @@ because there is no chat. This model helped force that: chat here would have
 been a stateful thing in the middle, which is what the whole design avoids.
 
 **Closed: the client finds directories through DNS.**
-`directory.vectorwake.game` resolves to every directory of this deployment; the
+`directory.vectorwake.net` resolves to every directory of this deployment; the
 client shuffles the records and takes the first that answers. Arena servers
 resolve the same name. See [discovery.md](discovery.md) for what that does to
 the TLS certificate, which is the one non-obvious consequence.

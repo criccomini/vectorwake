@@ -285,7 +285,7 @@ The client needs a list of directories, not one address. `menu.lua:44` holds a
 single string and `browser.connect` takes a single address, so redundancy would
 currently be invisible to players, which is the same as not having it.
 
-The addresses come from DNS. `directory.vectorwake.game` resolves to every
+The addresses come from DNS. `directory.vectorwake.net` resolves to every
 directory of this deployment, and the client shuffles the records it gets and
 takes the first that answers.
 

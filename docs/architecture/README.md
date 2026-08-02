@@ -27,6 +27,7 @@ which of the two it is, and where a decision is still open it says so.
 | [discovery.md](discovery.md) | Registration, credentials, verification, the wire format, how a client finds a game |
 | [admin.md](admin.md) | The operator web UI: what it observes, what it edits, what it may command |
 | [hosting.md](hosting.md) | What a room costs, why the bill is egress, the provider choice, Docker, Nakama's database |
+| [deployment.md](deployment.md) | The arrangement on a real host: Caddy, hostname routing, provisioning with nobody logged in |
 | [networking.md](networking.md) | Transports, packet model, snapshots and inputs, lag response, anti-cheat |
 | [ai-runtime.md](ai-runtime.md) | Where bots run, how they perceive and fly, and why they cannot cheat |
 | [content-pipeline.md](content-pipeline.md) | Settings, maps, assets, and how a zone author works |

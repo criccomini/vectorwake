@@ -1,0 +1,88 @@
+# One host: a directory, two arena servers, and Caddy in front of all of it.
+#
+# Two arenas rather than one because that is what makes zone selection real
+# rather than asserted. They read the same catalog and choose between themselves,
+# so a fresh host comes up with one serving Chaos and the other War without
+# anybody assigning either.
+#
+# Host networking throughout, per docs/architecture/hosting.md: bridge mode
+# publishes through NAT and a userland proxy, which hides the player's source
+# address and puts every long-lived game connection through nf_conntrack. It
+# also means these services reach each other on loopback, which is why the
+# directory can bind 127.0.0.1 and still be registered with.
+name: vectorwake
+
+x-arena: &arena
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  image: vectorwake:local
+  network_mode: host
+  # Any exit restarts, including a clean one. That is what makes the admin
+  # surface's `restart` verb work: the process exits 0 and the platform brings
+  # it back, which is the honest implementation of a restart button.
+  restart: unless-stopped
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys. Losing this volume means asking
+      # Let's Encrypt for everything again, which is rate limited.
+      - caddy-data:/data
+      - caddy-config:/config
+      # Coarse provisioning progress, served over plain http by IP. The proxy
+      # starts before the build so this is readable while the slow part runs.
+      - ${VW_DEPLOY_LOG:-./deploy-log}:/srv/deploy:ro
+    environment:
+      VW_DOMAIN: ${VW_DOMAIN:?set VW_DOMAIN}
+
+  directory:
+    <<: *arena
+    command: ["directory", "127.0.0.1:9000", "/catalog"]
+    environment:
+      # Loopback on purpose. The directory refuses a credential over cleartext
+      # unless the peer is loopback, and behind a proxy every peer looks like
+      # loopback -- so a public port here would be a pool token accepted in the
+      # clear from anyone. Caddy terminates TLS and is the only way in.
+      VW_ADMIN_LISTEN: 127.0.0.1:9100
+      VW_ADMIN_TOKEN: ${VW_ADMIN_TOKEN:?set VW_ADMIN_TOKEN}
+
+  a1:
+    <<: *arena
+    command: ["127.0.0.1:9001", "/var/lib/vectorwake"]
+    environment:
+      VW_DIRECTORY: ws://127.0.0.1:9000
+      VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
+      # What the directory hands players, which is not what this process binds:
+      # it serves cleartext on loopback and Caddy is the wss endpoint.
+      VW_ADDRESS: wss://a1.${VW_DOMAIN}
+      VW_REGION: ${VW_REGION:-local}
+    volumes:
+      - a1:/var/lib/vectorwake
+    depends_on: [directory]
+
+  a2:
+    <<: *arena
+    command: ["127.0.0.1:9002", "/var/lib/vectorwake"]
+    environment:
+      VW_DIRECTORY: ws://127.0.0.1:9000
+      VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
+      VW_ADDRESS: wss://a2.${VW_DOMAIN}
+      VW_REGION: ${VW_REGION:-local}
+    volumes:
+      - a2:/var/lib/vectorwake
+    depends_on: [directory]
+
+volumes:
+  caddy-data:
+  caddy-config:
+  # Per arena, and the reason is the instance id: it is written on first start
+  # and read on every one after, so an arena that loses this file comes back
+  # looking like a different instance and the directory lists a ghost until the
+  # old registration is reaped.
+  a1:
+  a2:

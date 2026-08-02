@@ -1,0 +1,69 @@
+#cloud-config
+# Provisioning for one vectorwake host, start to finish, with nobody logged in.
+#
+# This runs once, on first boot, and it is the whole of the host's
+# configuration: there is no second step performed by hand, so rebuilding the
+# box is one API call rather than a remembered sequence. Anything that has to be
+# true of the host is true because it is written here.
+#
+# Three placeholders are substituted before this is submitted, and none of them
+# may be committed: __POOL_TOKEN__, __ADMIN_TOKEN__, __BRANCH__. The pool token
+# and the admin token end up in the instance's user-data, which anything on the
+# box can read from the metadata service. That is acceptable because the box is
+# what holds them anyway, and it is the reason these are generated per host
+# rather than shared.
+
+package_update: true
+packages:
+  - git
+  - curl
+  - ca-certificates
+
+write_files:
+  # Progress, served over plain http by IP by the proxy. Coarse and never
+  # secret: it is readable by anyone who knows the address.
+  - path: /var/lib/vw-deploy/status
+    content: "booted, provisioning has not started yet\n"
+    permissions: "0644"
+  # The step-by-step, so a failure says which step and the log is on the box for
+  # anyone who can get a shell.
+  - path: /usr/local/bin/vw-say
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # One line to the served status file and one to the journal.
+      printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*" >> /var/lib/vw-deploy/status
+      logger -t vw-deploy "$*"
+
+runcmd:
+  - vw-say "installing docker"
+  # Swap first, and specifically before the build. This host compiles the server
+  # itself, and cargo linking tokio and rustls is the peak of its memory use by a
+  # wide margin. A linker killed by the OOM reaper on a box with no shell is the
+  # worst failure available here, and 2 GB of disk removes it.
+  - [sh, -c, "fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile"]
+  - [sh, -c, "echo '/swapfile none swap sw 0 0' >> /etc/fstab"]
+  - [sh, -c, "curl -fsSL https://get.docker.com | sh"]
+  - [systemctl, enable, --now, docker]
+
+  - vw-say "cloning the repository"
+  - [sh, -c, "git clone --depth 1 --branch __BRANCH__ https://github.com/criccomini/vectorwake.git /opt/vectorwake"]
+
+  # The tokens, and only here. 0600 and root-owned, which is as much as a file on
+  # the same host as the process can be.
+  - [sh, -c, "install -m 0600 /dev/null /opt/vectorwake/deploy/.env"]
+  - [sh, -c, "printf 'VW_DOMAIN=vectorwake.net\\nVW_REGION=ewr\\nVW_DEPLOY_LOG=/var/lib/vw-deploy\\nVW_POOL_TOKEN=__POOL_TOKEN__\\nVW_ADMIN_TOKEN=__ADMIN_TOKEN__\\n' > /opt/vectorwake/deploy/.env"]
+
+  # The proxy before the game, deliberately. It needs none of our code, so it
+  # comes up in seconds and serves the status file for the ten minutes the build
+  # takes -- which is the difference between watching a deploy and waiting on it.
+  - vw-say "starting the proxy"
+  - [sh, -c, "cd /opt/vectorwake/deploy && docker compose --env-file .env up -d caddy"]
+
+  - vw-say "building the server; this takes about ten minutes on one core"
+  - [sh, -c, "cd /opt/vectorwake/deploy && docker compose --env-file .env up -d --build >> /var/lib/vw-deploy/build.log 2>&1 && vw-say 'built and running' || vw-say 'BUILD FAILED, see build.log'"]
+
+  # What the host thinks is true, for whoever reads the status next.
+  - [sh, -c, "cd /opt/vectorwake/deploy && docker compose --env-file .env ps --format '{{.Service}} {{.State}}' >> /var/lib/vw-deploy/status 2>&1"]
+  - vw-say "provisioning finished"
+  - vw-say "certificates arrive once vectorwake.net delegates to Vultr; Caddy retries on its own"

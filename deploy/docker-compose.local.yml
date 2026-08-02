@@ -1,0 +1,29 @@
+# Overlay for running the whole stack on one machine, before it goes anywhere.
+#
+#   printf 'VW_DOMAIN=localhost\nVW_POOL_TOKEN=...\nVW_ADMIN_TOKEN=...\n' > deploy/.env
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml \
+#       --env-file deploy/.env up -d --build
+#
+# It exists for one reason: name resolution. Caddy routes by hostname and issues
+# a certificate per name, so the stack needs `a1.<domain>` to resolve, and glibc
+# does not resolve `*.localhost` however much it looks like it should. Without
+# these entries the directory's address check fails, both arenas stay unverified,
+# and the browse reply offers nothing while every game is in fact running -- a
+# confusing enough symptom to be worth a file to prevent it.
+#
+# On a real host these are unnecessary: the names are in public DNS, and the
+# directory's check reaches the public address the way a player would, which is
+# the thing it is supposed to prove. Add `--resolve` or a hosts entry on whatever
+# machine you test from too.
+services:
+  caddy:
+    extra_hosts: &names
+      - "directory.${VW_DOMAIN}:127.0.0.1"
+      - "a1.${VW_DOMAIN}:127.0.0.1"
+      - "a2.${VW_DOMAIN}:127.0.0.1"
+  directory:
+    extra_hosts: *names
+  a1:
+    extra_hosts: *names
+  a2:
+    extra_hosts: *names

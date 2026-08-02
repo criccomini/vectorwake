@@ -1421,7 +1421,7 @@ fn run_calibration() {
 /// Where the directories are. `VW_DIRECTORY` names a host, which is resolved,
 /// so one hostname with several records is a whole deployment and a directory can
 /// be added or moved without touching an arena server. That is the DNS decision
-/// in docs/architecture/discovery.md: `directory.vectorwake.game` resolves to
+/// in docs/architecture/discovery.md: `directory.vectorwake.net` resolves to
 /// every directory of this deployment.
 ///
 /// An explicit `ws://` or `wss://` URL is taken as given, which is what a

@@ -20,3 +20,6 @@ client/bundle/
 # rewrote a tracked file, and one of mine dropped a bot from the ladder
 # entirely before I noticed.
 ratings.json
+deploy/.env
+sandbox-ca.crt
+deploy/deploy-log/

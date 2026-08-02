@@ -291,28 +291,45 @@ impl Directory {
 /// status, require a well-formed answer. The party with a reason to care runs
 /// the check, and an operator can move hosts without a new credential.
 pub async fn verify(address: &str) -> bool {
+    check(address).await.is_ok()
+}
+
+/// The same check, keeping the reason it failed.
+///
+/// A failure here is invisible in the worst way: every game is running, the
+/// arena is registered, and the browse reply offers nothing, because an
+/// unproven address is withheld from players. "No games" is then the only
+/// symptom, and the cause is one of half a dozen unrelated things -- DNS not
+/// propagated, a certificate not issued yet, a firewall, a reverse proxy that
+/// will not carry an upgrade, a host that cannot reach its own public address.
+/// Guessing between those on a box with no shell is the situation this avoids.
+async fn check(address: &str) -> Result<(), String> {
+    const PATIENCE: std::time::Duration = std::time::Duration::from_secs(4);
     let connect = tokio_tungstenite::connect_async(address);
-    let Ok(Ok((mut ws, _))) =
-        tokio::time::timeout(std::time::Duration::from_secs(4), connect).await
-    else {
-        return false;
+    let mut ws = match tokio::time::timeout(PATIENCE, connect).await {
+        Err(_) => return Err("timed out connecting".into()),
+        Ok(Err(e)) => return Err(format!("{e}")),
+        Ok(Ok((ws, _))) => ws,
     };
-    if ws.send(Message::Binary(vec![STATUS_REQUEST])).await.is_err() {
-        return false;
+    if let Err(e) = ws.send(Message::Binary(vec![STATUS_REQUEST])).await {
+        return Err(format!("connected, then could not ask for status: {e}"));
     }
     let read = async {
-        while let Some(Ok(msg)) = ws.next().await {
-            if let Message::Binary(b) = msg {
-                if b.first() == Some(&STATUS_REPLY) && b.len() > 1 {
-                    return true;
+        while let Some(msg) = ws.next().await {
+            match msg {
+                Ok(Message::Binary(b)) if b.first() == Some(&STATUS_REPLY) && b.len() > 1 => {
+                    return Ok(());
                 }
+                Ok(_) => continue,
+                Err(e) => return Err(format!("connected, then the socket broke: {e}")),
             }
         }
-        false
+        Err("connected, but it closed without answering".to_string())
     };
-    tokio::time::timeout(std::time::Duration::from_secs(4), read)
-        .await
-        .unwrap_or(false)
+    match tokio::time::timeout(PATIENCE, read).await {
+        Err(_) => Err("connected, but no status arrived".into()),
+        Ok(r) => r,
+    }
 }
 
 /// One registration socket, for its whole life.
@@ -427,17 +444,30 @@ async fn serve_registration(
                 let inst = r.instance.clone();
                 let addr = r.address.clone();
                 tokio::spawn(async move {
+                    // Said on every change, and on the first attempt whatever it
+                    // says, because the first one is the one an operator watching
+                    // a deploy is waiting for. Not on every attempt after that: a
+                    // failing address would otherwise be two lines a minute
+                    // forever.
+                    let mut spoken = false;
                     loop {
-                        let ok = verify(&addr).await;
+                        let outcome = check(&addr).await;
+                        let ok = outcome.is_ok();
                         {
                             let mut d = dir2.lock().await;
                             match d.regs.get_mut(&inst) {
                                 Some(reg) if reg.address == addr => {
-                                    if reg.verified != ok {
-                                        println!(
-                                            "{inst} at {addr}: {}",
-                                            if ok { "verified" } else { "verification failed" }
-                                        );
+                                    if reg.verified != ok || !spoken {
+                                        match &outcome {
+                                            Ok(()) => println!("{inst} at {addr}: verified"),
+                                            Err(why) => println!(
+                                                "{inst} at {addr}: address check failed: {why}\n  \
+                                                 players are not being sent here until it passes; \
+                                                 retrying every {}s",
+                                                VERIFY_EVERY_MS / 1000
+                                            ),
+                                        }
+                                        spoken = true;
                                     }
                                     reg.verified = ok;
                                 }
