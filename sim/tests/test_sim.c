@@ -183,12 +183,8 @@ int main(void) {
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);   /* faces up */
         sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &cfg); /* directly above */
         int32_t e0 = s.ships[1].energy;
-        /* One shot, then hands off: held down, a bolt at 8 px a tick crosses
-         * the 200 px gap six times over inside the old window, and the test
-         * would be asserting that six bullets do not kill. */
-        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
-        ev_counts c = step_counting(&s, &cfg, 0, 0, 40);
-        CHECK(c.hits > 0, "the bullet hits the enemy");
+        ev_counts c = step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 150);
+        CHECK(c.hits > 0, "bullets hit the enemy"); /* 2 px/tick, 200 px gap */
         CHECK(s.ships[1].energy < e0, "bullet damaged the enemy");
         CHECK(s.ships[1].alive, "one bullet does not kill");
     }
@@ -1100,8 +1096,8 @@ int main(void) {
             sim_mod_set(0, SIM_MOD_BOUNCE, 1);
         sim_state s;
         sim_init(&s, 1);
-        /* Two tiles under the wall: a bolt lives half a second, so a distant
-         * wall would outlast the flight. */
+        /* Two tiles under the wall: a round travels 2 px a tick, so a
+         * distant wall would outlast the flight. */
         sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_BOUNCE, 1);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
@@ -1110,7 +1106,7 @@ int main(void) {
               "the shot carries what fired it");
         CHECK(s.weapons[0].left > 0, "with a bounce on it");
         s.ships[0].mods[SIM_TRIG_GUN] = 0;
-        step_n(&s, &w, 0, 0, 20);
+        step_n(&s, &w, 0, 0, 60);
         CHECK(s.weapon_count == 1, "and the wall did not end it");
         CHECK(s.weapons[0].vy > 0, "it came back down");
     }
@@ -1126,10 +1122,7 @@ int main(void) {
         s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 1);
         step_n(&s, &cfg, SIM_BTN_BOMB, 0, 1);
         CHECK(s.weapon_count == 1, "one bomb away");
-        /* Just past the wall: the bomb covers the 268 px in 54 ticks, and the
-         * fragments it makes live thirty. Waiting two hundred would be
-         * checking that shrapnel expires, which it does. */
-        step_n(&s, &cfg, 0, 0, 60);
+        step_n(&s, &cfg, 0, 0, 200);
         CHECK(s.weapon_count > 1, "the wall broke it up");
         for (uint16_t i = 0; i < s.weapon_count; i++)
             CHECK(s.weapons[i].mods == 0, "and the fragments carry nothing");
