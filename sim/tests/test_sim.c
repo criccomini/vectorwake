@@ -1179,6 +1179,89 @@ int main(void) {
     }
 
     {
+        /* A shot outlives its owner, whole.
+         *
+         * The rung is baked into the projectile's `spec` at the moment it is
+         * fired -- a level-two bullet was spawned from the level-two pattern
+         * -- exactly as the add-ons are baked into its `mods`. So the
+         * inventory a death clears is what gates *firing*, and nothing that
+         * is already in the air reads it. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 300, 0, &cfg);
+        const sim_ship_class *c = &cfg.classes[APEX];
+        int32_t l1 = cfg.specs[cfg.patterns[c->trigger[SIM_TRIG_GUN][0]].spec].damage;
+        int32_t l2 = cfg.specs[cfg.patterns[c->trigger[SIM_TRIG_GUN][1]].spec].damage;
+
+        s.ships[0].level[SIM_TRIG_GUN] = 1;
+        s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 3, "a levelled, multifired shot leaves");
+        uint8_t spec = s.weapons[0].spec;
+        uint16_t mods = s.weapons[0].mods;
+        CHECK(cfg.specs[spec].damage == l2 && l2 > l1,
+              "and it is the harder round");
+
+        /* Kill the owner outright and strip them, exactly as a death does. */
+        s.ships[0].alive = 0;
+        s.ships[0].respawn_at = 3000;
+        memset(s.ships[0].up, 0, sizeof s.ships[0].up);
+        memset(s.ships[0].level, 0, sizeof s.ships[0].level);
+        memset(s.ships[0].mods, 0, sizeof s.ships[0].mods);
+        memset(s.ships[0].charge, 0, sizeof s.ships[0].charge);
+
+        step_n(&s, &cfg, 0, 0, 1);
+        CHECK(s.weapon_count == 3, "the shots are still in the air");
+        CHECK(s.weapons[0].spec == spec, "carrying the rung they left on");
+        CHECK(s.weapons[0].mods == mods, "and the add-ons they left with");
+
+        /* Read off the hit event rather than the bar: recharge erases the
+         * evidence within a second, which is why every damage test here
+         * counts events. */
+        int32_t worst = 0;
+        for (int t = 0; t < 200; t++) {
+            sim_state tmp;
+            sim_events ev;
+            sim_input in[2] = {{0, 0}, {1, 0}};
+            sim_step(&tmp, &s, in, 2, &cfg, &ev);
+            s = tmp;
+            for (uint16_t e = 0; e < ev.count; e++)
+                if (ev.e[e].type == SIM_EV_HIT && ev.e[e].v > worst)
+                    worst = ev.e[e].v;
+        }
+        CHECK(worst == l2, "a dead pilot's shot lands for what it was worth");
+    }
+
+    {
+        /* And the same for a charge, which is the case where the inventory
+         * really is gone: the burst is spent at the trigger, and the sixteen
+         * rounds it made are ordinary projectiles from that moment on. */
+        const int CIPHER = 5;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, CIPHER, 0, 8192, 8192, 0, &cfg);
+        /* Close, and for two reasons. A burst round lives 70 ticks at 1.8 px
+         * a tick, so the ring reaches about 126 px. And sixteen is an even
+         * count, which straddles the heading rather than putting one down the
+         * middle -- the two nearest rounds leave at eleven degrees, so a
+         * target far enough away is missed on both sides. */
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 60, 0, &cfg);
+        s.ships[0].charge[1] = 1;
+        step_n(&s, &cfg, SIM_BTN_USE | (1u << SIM_BTN_SLOT_SHIFT), 0, 1);
+        CHECK(s.weapon_count == 16, "a burst is sixteen rounds");
+        CHECK(s.ships[0].charge[1] == 0, "and the charge is spent");
+
+        s.ships[0].alive = 0;
+        s.ships[0].respawn_at = 3000;
+        memset(s.ships[0].charge, 0, sizeof s.ships[0].charge);
+        int32_t e0 = s.ships[1].energy;
+        ev_counts ec = step_counting(&s, &cfg, 0, 0, 120);
+        CHECK(ec.hits > 0, "the ring still reaches whoever was standing there");
+        CHECK(s.ships[1].energy < e0, "and still hurts");
+    }
+
+    {
         /* Dying costs the tree as well as the stats. */
         sim_state s;
         sim_init(&s, 1);

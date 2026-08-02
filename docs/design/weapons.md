@@ -244,6 +244,17 @@ right rule and also the only one a client can predict.
 Fragments carry nothing. A shell that broke into eight would otherwise have
 each of those break into eight again.
 
+The same is true of a **level**: a rung swaps which pattern the trigger fires,
+so a level-two bullet was spawned from the level-two row and its spec -- with
+the harder damage in it -- is what the projectile carries. And of a **charge**:
+the count is spent at the trigger, and the sixteen rounds a burst makes are
+ordinary projectiles from that moment on.
+
+So dying clears the *inventory*, which is what gates firing. Nothing in flight
+reads it: the update loop touches `owner` only to skip you in collision and to
+name you in an event. A pilot who is killed a tick after throwing a levelled,
+shrapnel-loaded bomb still gets the bomb they threw.
+
 ### The matrix
 
 Each hull's row says how far it climbs and what it may hold. This is what keeps
