@@ -77,7 +77,7 @@ that is information a player wants.
 vectorwake-server calibrate 8 zone     # writes zone/ladder.json
 ```
 
-Every roster pilot duels every other, repeatedly, in the real simulation with
+Every roster pilot fights every other, repeatedly, in the real simulation with
 the real bots and the real rating math. Zones seed their bots from the
 result. Without it the bots simply start level and earn their places in live
 play.

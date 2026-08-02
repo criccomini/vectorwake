@@ -39,7 +39,6 @@ const MAX_PLAYERS: usize = 16;
 // Client to server
 const C2S_JOIN: u8 = 1;
 const C2S_INPUT: u8 = 2;
-const C2S_DUEL: u8 = 3;
 const C2S_SHIP: u8 = 5;
 /// Asked by the directory, and by any client that wants to know what a zone
 /// is before committing to it. Answerable without joining.
@@ -401,8 +400,12 @@ impl Arena {
             // The map's own start wins over the roster's tile: a zone
             // pointed at a new map should not need its roster rewritten to
             // match that map's walls.
+            // Headings spread around the circle. The multiply has to happen
+            // wider than u16 or the ninth pilot overflows it, which a release
+            // build wrapped quietly and a debug build panicked on.
+            let heading = ((i as u32 * 8192) % 65536) as u16;
             let ship = world.spawn_on_map(r.class, r.team, i as u32,
-                                          r.tile_x, r.tile_y, (i as u16) * 8192);
+                                          r.tile_x, r.tile_y, heading);
             if ship >= 0 {
                 bots.push(ai::Bot::new(ship as u8, r.skill));
                 names.insert(ship as u8, (r.name.to_string(), true));
@@ -426,37 +429,6 @@ impl Arena {
             banner: String::new(),
             finished: false,
         }
-    }
-
-    /// A one on one arena: a small room, two seats, and the duel ruleset.
-    /// The opponent is a rating-matched bot when nobody else is queued,
-    /// which is what makes duels playable before there is a population.
-    fn duel(player_name: String, class: u8, tx: mpsc::UnboundedSender<Vec<u8>>,
-            bot_name: &str, bot_skill: f32, bot_class: u8) -> (Self, u64) {
-        let mut world = sim::World::with_map(0xd0e1, modes::build_duel_map);
-        let a = world.spawn_on_map(class.min(7), 0, 0, 505, 522, 0) as u8;
-        let b = world.spawn_on_map(bot_class.min(7), 1, 0, 519, 502, 32768) as u8;
-
-        let mut names = HashMap::new();
-        names.insert(a, (player_name.clone(), false));
-        names.insert(b, (bot_name.to_string(), true));
-
-        let mut arena = Arena {
-            world,
-            players: HashMap::new(),
-            bots: vec![ai::Bot::new(b, bot_skill)],
-            names,
-            next_id: 1,
-            rating: rating::Rating::new(),
-            mode: Box::new(modes::Duel::new(a, b, 5)),
-            banner: String::new(),
-            finished: false,
-        };
-        arena.players.insert(
-            1,
-            Player { ship: a, buttons: 0, last_input_tick: 0, name: player_name, tx },
-        );
-        (arena, 1)
     }
 
     fn join(&mut self, name: String, class: u8, tx: mpsc::UnboundedSender<Vec<u8>>) -> Option<u64> {
@@ -678,18 +650,14 @@ impl Arena {
     }
 }
 
-/// Every arena the zone is hosting. The public room is arena 0; duels get
-/// their own, created on request and torn down when the match ends, which
-/// is decision 16 in practice.
+/// The zone and the one arena it is hosting. This held a map of arenas while
+/// duels made rooms of their own; with duels out nothing else ever made a
+/// second one, and one process to one room is where decision 23 was going
+/// anyway.
 struct Zone {
-    arenas: HashMap<u32, Arena>,
-    next_arena: u32,
+    arena: Arena,
     cfg: config::ConfigWatcher,
     store: persist::Store,
-    /// The calibrated bot ladder, from `vectorwake-server calibrate`. Empty
-    /// when the zone has never been calibrated, which only means the bots
-    /// start level and earn their places in live play instead.
-    ladder: HashMap<String, f64>,
 }
 
 /// Put an arena's ratings on the same footing as every other: the AI marked
@@ -717,11 +685,9 @@ fn load_ladder(dir: &str) -> HashMap<String, f64> {
 impl Zone {
     fn new(cfg: config::ConfigWatcher, store: persist::Store,
            ladder: HashMap<String, f64>) -> Self {
-        let mut arenas = HashMap::new();
-        let mut a = Arena::new_from(&cfg.current);
-        prime_ratings(&mut a.rating, &ladder);
-        arenas.insert(0, a);
-        Zone { arenas, next_arena: 1, cfg, store, ladder }
+        let mut arena = Arena::new_from(&cfg.current);
+        prime_ratings(&mut arena.rating, &ladder);
+        Zone { arena, cfg, store }
     }
 
     /// Re-read the zone file and push the new numbers into every live arena.
@@ -730,25 +696,23 @@ impl Zone {
     fn reload(&mut self) {
         if let Some(msg) = self.cfg.poll() {
             println!("{msg}");
-            for a in self.arenas.values_mut() {
-                for w in Arena::apply_config(&mut a.world, &self.cfg.current.arena) {
-                    println!("zone: {w}");
-                }
-                a.broadcast_settings();
+            for w in Arena::apply_config(&mut self.arena.world, &self.cfg.current.arena) {
+                println!("zone: {w}");
             }
+            self.arena.broadcast_settings();
         }
     }
 
     /// What this zone tells a directory, and anybody else who asks.
     fn status_json(&self) -> String {
-        let players: u32 = self.arenas.values().map(|a| a.players.len() as u32).sum();
-        let bots: u32 = self.arenas.values().map(|a| a.bots.len() as u32).sum();
+        let players = self.arena.players.len() as u32;
+        let bots = self.arena.bots.len() as u32;
         serde_json::to_string(&directory::Status {
             name: self.cfg.current.name.clone(),
             description: self.cfg.current.description.clone(),
             players,
             bots,
-            arenas: self.arenas.len() as u32,
+            arenas: 1,
         })
         .unwrap_or_default()
     }
@@ -772,7 +736,7 @@ fn run_calibration() {
     let dir = std::env::args().nth(3).unwrap_or_else(|| ".".into());
     let path = format!("{dir}/ladder.json");
 
-    println!("calibrating: {rounds} rounds of round-robin duels");
+    println!("calibrating: {rounds} rounds of round-robin matches");
     let r = calibrate::run(rounds, true);
 
     println!("\n{:<12} {:>7}  {:>6}  {}", "pilot", "rating", "games", "tier");
@@ -933,7 +897,7 @@ async fn main() {
                     z.reload();
                 }
                 if n % 3000 == 0 {
-                    let ratings: Vec<(String, f64)> = z.arenas[&0]
+                    let ratings: Vec<(String, f64)> = z.arena
                         .rating
                         .score
                         .iter()
@@ -946,16 +910,11 @@ async fn main() {
                         println!("could not save ratings: {e}");
                     }
                 }
-                for a in z.arenas.values_mut() {
-                    a.tick();
-                    if n % SNAPSHOT_EVERY == 0 {
-                        a.broadcast_snapshot(&mut buf);
-                        a.broadcast_banner();
-                    }
+                z.arena.tick();
+                if n % SNAPSHOT_EVERY == 0 {
+                    z.arena.broadcast_snapshot(&mut buf);
+                    z.arena.broadcast_banner();
                 }
-                // A finished duel takes its room with it. Arena 0 is the
-                // public room and never leaves.
-                z.arenas.retain(|id, a| *id == 0 || !(a.finished || a.players.is_empty()));
             }
         });
     }
@@ -988,8 +947,8 @@ async fn main() {
                 }
             });
 
-            // Which arena this connection is in, and its id there.
-            let mut seat: Option<(u32, u64)> = None;
+            // This connection's id in the arena, once it has joined.
+            let mut seat: Option<u64> = None;
             while let Some(Ok(msg)) = source.next().await {
                 let data = match msg {
                     Message::Binary(b) => b,
@@ -1021,11 +980,11 @@ async fn main() {
                         }
                         let _ = tx.send(z.zone_msg());
                         if let Some(saved) = z.store.rating(&name) {
-                            z.arenas.get_mut(&0).unwrap().rating.score.insert(name.clone(), saved);
+                            z.arena.rating.score.insert(name.clone(), saved);
                         }
-                        let a = z.arenas.get_mut(&0).unwrap();
+                        let a = &mut z.arena;
                         if let Some(new_id) = a.join(name, class, tx.clone()) {
-                            seat = Some((0, new_id));
+                            seat = Some(new_id);
                             let ship = a.players[&new_id].ship;
                             let mut m = vec![S2C_MAP];
                             m.extend_from_slice(&a.world.packed_map());
@@ -1039,56 +998,6 @@ async fn main() {
                             a.broadcast_roster();
                         }
                     }
-                    C2S_DUEL => {
-                        // Leave whatever room we are in and open a duel against
-                        // a rating-matched bot. Nobody waits in a queue that
-                        // has nobody else in it.
-                        let class = data.get(1).copied().unwrap_or(0);
-                        let name = String::from_utf8_lossy(&data[2..]).to_string();
-                        let name = if name.is_empty() { "pilot".into() } else { name };
-                        let mut z = zone.lock().await;
-                        if let Some((aid, pid)) = seat.take() {
-                            if let Some(a) = z.arenas.get_mut(&aid) {
-                                a.leave(pid);
-                                a.broadcast_roster();
-                            }
-                        }
-                        let my_rating = z.arenas[&0].rating.rating_of(&name);
-                        let roster = ai::roster();
-                        let pick = roster
-                            .iter()
-                            .min_by(|x, y| {
-                                let rx = (z.arenas[&0].rating.rating_of(x.name) - my_rating).abs();
-                                let ry = (z.arenas[&0].rating.rating_of(y.name) - my_rating).abs();
-                                rx.partial_cmp(&ry).unwrap()
-                            })
-                            .unwrap();
-                        let (mut arena, pid) = Arena::duel(
-                            name.clone(), class, tx.clone(), pick.name, pick.skill, pick.class,
-                        );
-                        // A duel is rated on the same scale as the main room:
-                        // both pilots bring the rating they already have.
-                        let ladder = z.ladder.clone();
-                        prime_ratings(&mut arena.rating, &ladder);
-                        arena.rating.score.insert(name.clone(), my_rating);
-                        let games = z.arenas[&0].rating.games_of(&name);
-                        arena.rating.games.insert(name, games);
-                        let aid = z.next_arena;
-                        z.next_arena += 1;
-                        let ship = arena.players[&pid].ship;
-                        z.arenas.insert(aid, arena);
-                        seat = Some((aid, pid));
-                        let mut m = vec![S2C_MAP];
-                        m.extend_from_slice(&z.arenas[&aid].world.packed_map());
-                        let _ = tx.send(m);
-                        let mut c = vec![S2C_SETTINGS];
-                        c.extend_from_slice(&z.arenas[&aid].world.packed_settings());
-                        let _ = tx.send(c);
-                        let mut w = vec![S2C_WELCOME, ship];
-                        w.extend_from_slice(&0u32.to_le_bytes());
-                        let _ = tx.send(w);
-                        z.arenas[&aid].broadcast_roster();
-                    }
                     C2S_SHIP => {
                         // A hull change, in place. The core refuses it unless
                         // the pilot is alive and at a full bar, which is what
@@ -1097,14 +1006,12 @@ async fn main() {
                         // snapshot carries the new class, and a refusal leaves
                         // the old one, which is the same answer either way.
                         if data.len() >= 2 {
-                            if let Some((aid, pid)) = seat {
+                            if let Some(pid) = seat {
                                 let cls = data[1];
                                 let mut z = zone.lock().await;
-                                if let Some(a) = z.arenas.get_mut(&aid) {
-                                    let ship = a.players.get(&pid).map(|p| p.ship);
-                                    if let Some(ship) = ship {
-                                        a.world.set_ship_class(ship, cls);
-                                    }
+                                let ship = z.arena.players.get(&pid).map(|p| p.ship);
+                                if let Some(ship) = ship {
+                                    z.arena.world.set_ship_class(ship, cls);
                                 }
                             }
                         }
@@ -1114,15 +1021,13 @@ async fn main() {
                         // server applies inputs when it receives them and
                         // echoes the number back so the client can reconcile.
                         if data.len() >= 7 {
-                            if let Some((aid, pid)) = seat {
+                            if let Some(pid) = seat {
                                 let buttons = u16::from_le_bytes([data[1], data[2]]);
                                 let t = u32::from_le_bytes([data[3], data[4], data[5], data[6]]);
                                 let mut z = zone.lock().await;
-                                if let Some(a) = z.arenas.get_mut(&aid) {
-                                    if let Some(p) = a.players.get_mut(&pid) {
-                                        p.buttons = buttons;
-                                        p.last_input_tick = t;
-                                    }
+                                if let Some(p) = z.arena.players.get_mut(&pid) {
+                                    p.buttons = buttons;
+                                    p.last_input_tick = t;
                                 }
                             }
                         }
@@ -1131,12 +1036,10 @@ async fn main() {
                 }
             }
 
-            if let Some((aid, pid)) = seat {
+            if let Some(pid) = seat {
                 let mut z = zone.lock().await;
-                if let Some(a) = z.arenas.get_mut(&aid) {
-                    a.leave(pid);
-                    a.broadcast_roster();
-                }
+                z.arena.leave(pid);
+                z.arena.broadcast_roster();
             }
             writer.abort();
         });

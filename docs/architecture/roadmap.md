@@ -10,7 +10,7 @@
 | M2 server authoritative | Done. Peak prediction error 0.9 px at 150 ms, 11 KB/s per client |
 | M3.5 AI opponents | Done server-side: input-only bots, labeled, taking and yielding seats |
 | M4 rating and modes | Done: damage ledgers, attribution, and the warzone flag game |
-| M4.5 duels | Done, offline and networked |
+| M4.5 duels | Built, then removed: deferred until a mode is catalog content |
 | M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities, persistence |
 | M5.5 Defold client | Done: real core as a native extension, builds for host and browser, plays offline and networked |
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and server browser |

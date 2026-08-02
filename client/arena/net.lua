@@ -9,7 +9,7 @@
 
 local M = {}
 
-local C2S_JOIN, C2S_INPUT, C2S_DUEL = 1, 2, 3
+local C2S_JOIN, C2S_INPUT = 1, 2
 local C2S_SHIP = 5
 local S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER = 1, 2, 3
 local S2C_KILL, S2C_BANNER, S2C_ZONE, S2C_DENIED = 4, 5, 6, 7
@@ -194,15 +194,6 @@ function M.connect(url, class, name, on_lost)
         return false
     end
     return true
-end
-
-function M.request_duel(class, name)
-    if not conn then return end
-    local msg = string.char(C2S_DUEL, class) .. name
-    websocket.send(conn, msg, {type = websocket.DATA_TYPE_BINARY})
-    M.pilots = {}
-    M.ratings = {}
-    M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
 end
 
 -- One predicted tick. Returns true when the caller should not step locally,

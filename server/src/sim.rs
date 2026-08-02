@@ -321,7 +321,7 @@ extern "C" {
     pub fn sim_map_spawn(map: *const sim_map, team: u8, nth: u32,
                          tx: *mut u16, ty: *mut u16) -> i32;
     pub fn sim_map_arena(map: *mut sim_map);
-    pub fn sim_map_duel(map: *mut sim_map);
+    pub fn sim_map_pit(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
     pub fn sim_settings_pack(cfg: *const sim_settings, out: *mut u8, cap: c_int) -> c_int;
@@ -572,8 +572,8 @@ pub fn build_arena(map: &mut sim_map) {
     unsafe { sim_map_arena(map as *mut sim_map) }
 }
 
-pub fn build_duel(map: &mut sim_map) {
-    unsafe { sim_map_duel(map as *mut sim_map) }
+pub fn build_pit(map: &mut sim_map) {
+    unsafe { sim_map_pit(map as *mut sim_map) }
 }
 
 

@@ -5,20 +5,20 @@
 //! that already means something. Implements the "initial calibration is
 //! offline" paragraph of docs/design/rating.md.
 //!
-//! Every match is a real duel: the real simulation, the real bots, the real
+//! Every match is fought for real: the real simulation, the real bots, the real
 //! rating math. Nothing here models an outcome, because a model of a fight is
 //! exactly the thing that would drift away from the fight.
 
-use crate::{ai, ingest_damage, modes, rating, sim};
+use crate::{ai, ingest_damage, rating, sim};
 
 /// A match ends at this many kills, or this many ticks if the two are too
 /// evenly matched to settle it. 100 ticks is a second.
 const KILL_TARGET: u16 = 5;
 const MATCH_TICKS: u32 = 30_000; // five minutes of arena time
 
-/// One duel, fought to a result, with both pilots' credit going into `r`.
-fn duel(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: u32) {
-    let mut world = sim::World::with_map(0xd0e1 ^ salt, modes::build_duel_map);
+/// One match, fought to a result, with both pilots' credit going into `r`.
+fn bout(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: u32) {
+    let mut world = sim::World::with_map(0xd0e1 ^ salt, sim::build_pit);
     // No opening loadout, whatever the zone ships. This is a measurement of
     // the pilot, and thirty random greens at every spawn is not noise on that
     // measurement -- it erases it. Over a 48-round round-robin the skill
@@ -34,7 +34,7 @@ fn duel(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: 
     world.cfg.spawn_prizes = 0;
 
     // Alternate which pilot starts on which side, so a positional advantage
-    // in the duel room cannot accumulate into a rating.
+    // in the pit cannot accumulate into a rating.
     let (first, second) = if salt % 2 == 0 { (a, b) } else { (b, a) };
     let s1 = world.spawn(first.class, 0, 505, 522, 0) as u8;
     let s2 = world.spawn(second.class, 1, 519, 502, 32768) as u8;
@@ -93,7 +93,7 @@ pub fn run_roster(roster: &[ai::RosterEntry], rounds: u32, verbose: bool) -> rat
     for round in 0..rounds {
         for i in 0..roster.len() {
             for j in (i + 1)..roster.len() {
-                duel(&mut r, &roster[i], &roster[j], salt);
+                bout(&mut r, &roster[i], &roster[j], salt);
                 salt = salt.wrapping_add(1);
             }
         }

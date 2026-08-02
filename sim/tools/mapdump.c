@@ -12,12 +12,12 @@
 
 int main(int argc, char **argv) {
     if (argc < 3) {
-        fprintf(stderr, "usage: %s <arena|duel> <out.vwmap>\n", argv[0]);
+        fprintf(stderr, "usage: %s <arena|pit> <out.vwmap>\n", argv[0]);
         return 2;
     }
     sim_map *m = malloc(sizeof *m);
     if (!m) return 1;
-    if (strcmp(argv[1], "duel") == 0) sim_map_duel(m);
+    if (strcmp(argv[1], "pit") == 0) sim_map_pit(m);
     else sim_map_arena(m);
 
     uint8_t *buf = malloc(SIM_MAP_PACK_MAX);

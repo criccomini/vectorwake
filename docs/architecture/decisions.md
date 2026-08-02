@@ -366,7 +366,7 @@ recoverable.
 
 ## 16. Duels are an ephemeral arena plus a zone module
 
-**Status:** accepted
+**Status:** deferred, code removed
 
 One on one against a rating-matched human or bot, per
 [design/duel-mode.md](../design/duel-mode.md). When a match forms, the server
@@ -388,6 +388,16 @@ have.
 **Reconsider if:** duel matches turn out to need sub-second creation at a rate
 that arena loading cannot sustain, in which case a pool of warm duel arenas
 replaces creation on demand.
+
+**Deferred, and the code is out.** Duels were built and worked, offline and
+networked, and then came out again while the zone and arena model is being
+rebuilt underneath them. Keeping a mode alive across that rebuild meant carrying
+a duel-shaped hole in every piece of it: a bespoke `C2S_DUEL` message, a second
+map generator in the simulation core, a second copy of the ruleset in Lua for the
+offline page, and the multi-arena container that existed for nothing else. What
+remains of the removal is written up in
+[design/duel-mode.md](../design/duel-mode.md), which is the plan for bringing
+them back once a mode is a row in a catalog rather than a branch in the server.
 
 **Amended by [decision 23](#23-one-arena-per-process):** that reconsideration has
 fired. With one arena to a process, an arena per match means a *process* per

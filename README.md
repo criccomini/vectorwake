@@ -16,7 +16,7 @@ first steps. Nothing is playable yet.
 |---|---|
 | `docs/research/` | What we learned from Subspace, ASSS, and the projects that rebuilt them |
 | `docs/architecture/` | How vectorwake is built, with numbered decision records |
-| `docs/design/` | What the game is: identity, ships, AI players, rating, duels |
+| `docs/design/` | What the game is: identity, ships, AI players, rating |
 | `sim/` | The deterministic simulation core: C99, fixed point, no dependencies |
 
 ## The one idea

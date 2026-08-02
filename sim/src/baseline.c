@@ -444,7 +444,7 @@ static uint32_t cell_hash(uint32_t cx, uint32_t cy) {
  * original's map size and 16384 pixels on a side.
  *
  * It used to be an 84-tile room in the middle of all that space, which is
- * about ten seconds to cross at a hull's top speed. That is a duel room
+ * about ten seconds to cross at a hull's top speed. That is a pit
  * wearing an arena's name: there is nowhere to go, no distance for a chase to
  * happen over, and no reason to ever choose a direction.
  *
@@ -578,12 +578,15 @@ void sim_map_arena(sim_map *m) {
     sim_map_index(m);
 }
 
-/* The duel arena: small, symmetric, and bare. No wormhole and no safe zone --
- * a duel is decided by the two pilots and nothing else, and a room this size
- * with somewhere invulnerable in it is not a duel. The bot ladder found that
- * too: a pilot that wandered into one stopped dead, could not be shot and
- * could not shoot, and the match ended with nobody having landed anything. */
-void sim_map_duel(sim_map *m) {
+/* The pit: small, symmetric, and bare, for measuring two pilots against each
+ * other. No wormhole and no safe zone -- a room this size with somewhere
+ * invulnerable in it settles nothing. The bot ladder found that the hard way:
+ * a pilot that wandered into one stopped dead, could not be shot and could not
+ * shoot, and the match ended with nobody having landed anything.
+ *
+ * Offline ladder calibration is the only caller. It was the duel room too,
+ * until duels were taken out; see docs/design/duel-mode.md. */
+void sim_map_pit(sim_map *m) {
     const int LO = 496, HI = 528;
     memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
     fill(m, LO, LO, HI, LO + 1, SIM_TILE_SOLID);

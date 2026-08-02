@@ -1,5 +1,12 @@
 # Duel mode
 
+> **Not currently built.** Duels shipped, offline and networked, and then came
+> out again: keeping them alive through the zone and arena rebuild meant carrying
+> a duel-shaped hole through every piece of it. What went is listed at the bottom
+> of this document. The design below stands, and it is the plan for bringing them
+> back once a mode is a row in a catalog rather than a branch in the server. See
+> [decision 16](../architecture/decisions.md).
+
 One player, one opponent, a small closed map, first to five. The opponent is
 either a human near your rating or a bot near your rating, and you choose which
 you are willing to accept.
@@ -174,3 +181,42 @@ duels are a large part of what league play actually looks like.
 Whether losing rating to a bot feels acceptable to players, or whether the
 honesty of it costs more than it buys. The alternative is asymmetric rating where
 AI losses cost less, which is a lie we would have to maintain forever.
+
+## What was removed, and what it takes to bring it back
+
+The removal is the honest measure of how much a mode cost when it was not
+content. What came out:
+
+- `sim_map_duel` in the simulation core, now `sim_map_pit` because offline ladder
+  calibration still needs a small room for two. The core no longer knows what a
+  duel is.
+- `C2S_DUEL`, a protocol message of its own, and about fifty lines handling it:
+  leave your current room, scan the bot roster for the nearest rating, build the
+  arena, carry your rating across, send map and settings and welcome.
+- `Arena::duel`, which hardcoded both spawn tiles and passed first-to-five as a
+  literal, and the `Duel` mode with warmup, countdown and time limit as Rust
+  constants.
+- The whole ruleset a second time, in Lua, because the published page has no
+  server to ask.
+- `Zone`'s map of arenas. Duels were the only thing that ever made a second one.
+
+Bringing them back is mostly reading configuration that already parses. `mode`
+is a key in the zone file that nothing reads today, so the arena is hardcoded to
+warzone; that lookup is the first piece. Target score, warmup, countdown and time
+limit become fields rather than constants. The map loads from a file instead of
+being generated in C, and the mode asks the map for its two starts rather than
+naming tiles, which is machinery that already works for ordinary joins.
+
+Three things are not just moves. Picking a rating-matched bot belongs in the
+population director as something any mode can ask for. Carrying a rating between
+rooms becomes persistence rather than a copy, because the rooms are separate
+processes now. And the waiting room needs the mode to hold arriving players out
+of the simulation, which the `Mode` trait cannot express: it gets a seat list,
+sets a banner, and sets a finished flag. That is a genuine addition, though the
+lag response wants a spectator state anyway.
+
+The offline page is the one thing with no clean answer. Its duel existed because
+a published artifact has nothing behind it, and rules that live in the server
+cannot run there. Either the approximation comes back in Lua, or modes become
+sandboxed WebAssembly the client can run too, which
+[decision 6](../architecture/decisions.md) already commits to for other reasons.

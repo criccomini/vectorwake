@@ -524,9 +524,9 @@ int main(void) {
         CHECK(sim_map_hash(src) == sim_map_hash(dst), "the hashes agree");
 
         /* A different map must not hash the same, or the check is theatre. */
-        sim_map *duel = malloc(sizeof *duel);
-        sim_map_duel(duel);
-        CHECK(sim_map_hash(duel) != sim_map_hash(src),
+        sim_map *pit = malloc(sizeof *pit);
+        sim_map_pit(pit);
+        CHECK(sim_map_hash(pit) != sim_map_hash(src),
               "two different maps hash differently");
 
         /* Corruption in the tiles is what the hash is for. */
@@ -542,7 +542,7 @@ int main(void) {
         buf[0] ^= 0xff;
         CHECK(sim_map_unpack(dst, buf, n) == -1, "a bad magic is rejected");
 
-        free(src); free(dst); free(duel); free(buf);
+        free(src); free(dst); free(pit); free(buf);
     }
 
     /* Friendly fire passes through: same team, no damage. */

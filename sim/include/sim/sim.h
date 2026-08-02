@@ -134,7 +134,7 @@ uint32_t sim_sizeof_settings(void);
 uint32_t sim_sizeof_ship(void);
 
 void sim_map_arena(sim_map *m);
-void sim_map_duel(sim_map *m);
+void sim_map_pit(sim_map *m);
 
 /* ---- weapons ----
  *

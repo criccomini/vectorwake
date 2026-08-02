@@ -148,7 +148,6 @@ local NODES = {
     play = {title = "play", rows = {
         {label = "practice", detail = "eight AI pilots and four flags",
          act = "practice"},
-        {label = "duel", detail = "first to five, one on one", act = "duel"},
         {label = "zones", detail = "find a game to join", act = "zones"},
     }},
 
@@ -252,7 +251,7 @@ end
 -- Closing forgets where you were. A menu that reopens three levels down is a
 -- menu that answers a different question than the one you asked it: the first
 -- version of this kept the stack, and pressing escape then down then enter --
--- which had meant "duel" a moment earlier -- silently changed hull instead.
+-- which had meant a play row a moment earlier -- silently changed hull instead.
 function M.close()
     M.open = false
     M.stack = {"root"}

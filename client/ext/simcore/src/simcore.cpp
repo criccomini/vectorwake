@@ -47,14 +47,6 @@ int Init(lua_State* L) {
     return 0;
 }
 
-int InitDuel(lua_State* L) {
-    uint32_t seed = (uint32_t)luaL_checkinteger(L, 1);
-    sim_map_duel(&g_map);
-    sim_settings_baseline(&g_cfg, &g_map);
-    sim_init(g_cur, seed);
-    return 0;
-}
-
 // Where the map says a ship of this team starts, or nil when it names none.
 int MapSpawn(lua_State* L) {
     uint16_t tx = 0, ty = 0;
@@ -447,7 +439,6 @@ int Hash(lua_State* L) {
 
 const luaL_reg kFunctions[] = {
     {"init", Init},
-    {"init_duel", InitDuel},
     {"spawn", Spawn},
     {"map_spawn", MapSpawn},
     {"set_class", SetClass},

@@ -149,6 +149,13 @@ call site.
 
 ## Duel is the exception
 
+Duels are not currently built. They worked, offline and networked, and the code
+came out rather than being carried through this rebuild; the reasoning is under
+[decision 16](decisions.md) and the plan for their return is in
+[design/duel-mode.md](../design/duel-mode.md). This section is what the shape
+should be when they come back, and it is the case that most tests whether a mode
+can really be a row in a catalog.
+
 A War arena server is long-lived and shared. A duel is one match between two
 pilots, and [decision 16](decisions.md) makes each match its own arena, created
 when the match forms and destroyed when it ends. That was cheap when arenas
