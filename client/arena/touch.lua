@@ -212,7 +212,30 @@ function M.bits(heading)
 
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
     local mag = math.sqrt(dx * dx + dy * dy)
-    if mag < DEAD_PX * M.scale then return out end
+
+    -- Re-arm the forward/back choice when the thumb comes back through the
+    -- middle. Swinging across the origin and out the far side is what a hand
+    -- already does to mean "the other way", and it is the only moment the
+    -- choice can be read honestly: everywhere else the ship is turning toward
+    -- the thumb, so the angle has been dragged back toward whatever was
+    -- decided last time.
+    --
+    -- That chase is what made a hysteresis band sticky rather than the band
+    -- being too wide. Sweeping from ahead to astern never reached the far
+    -- threshold, because the hull ate the difference on the way -- an Apex
+    -- turns 1.05 revolutions a second, so it covers a hundred and thirteen
+    -- degrees in the time a thumb crosses the stick. Whether it tripped at
+    -- all came down to hull rotation against thumb speed, which is not a rule
+    -- anybody can learn.
+    --
+    -- Two tests, for slow hands and quick ones: inside the dead zone, or the
+    -- offset reversing between frames, which is what crossing the origin does
+    -- to it at any speed.
+    local crossed = (stick.px or 0) * dx + (stick.py or 0) * dy < 0
+    stick.px, stick.py = dx, dy
+    local idle = mag < DEAD_PX * M.scale
+    if idle or crossed then stick.back = nil end
+    if idle then return out end
 
     -- Screen +y is up and the simulation's +y is down, which is why this is
     -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
@@ -232,18 +255,12 @@ function M.bits(heading)
     -- there are two thumbs, and the only reason the stick works at all is
     -- that it folds the engine into the steering.
     --
-    -- Hysteresis, because the two answers are a hundred and eighty degrees of
-    -- rotation apart: on a hard boundary at ninety a wobbling thumb would
-    -- spin the ship one way and then back, which is exactly how an inferred
-    -- control earns its reputation.
-    local off = math.abs(diff)
-    if stick.back == nil then
-        stick.back = off > math.pi / 2
-    elseif stick.back then
-        if off < math.pi * 4 / 9 then stick.back = false end
-    else
-        if off > math.pi * 5 / 9 then stick.back = true end
-    end
+    -- Read once, when the thumb commits, and held until it swings back
+    -- through the middle. Held rather than re-read every frame so the ship
+    -- cannot change its mind about which end leads halfway through a
+    -- manoeuvre, which is also why there is no hysteresis here: a choice made
+    -- once has nothing to oscillate against.
+    if stick.back == nil then stick.back = math.abs(diff) > math.pi / 2 end
 
     local err = stick.back and wrap(diff - math.pi) or diff
 

@@ -178,6 +178,7 @@ local NODES = {
         {label = "fly", detail = "left thumb: point where you want to go"},
         {label = "back up", detail = "point behind you and it reverses,"},
         {label = "", detail = "holding your aim instead of turning around"},
+        {label = "", detail = "swing back through the middle to change ends"},
         {label = "fire", detail = "right pads: guns, then bombs"},
         {label = "charges", detail = "tap a charge pad to spend it"},
         {label = "", detail = ""},
