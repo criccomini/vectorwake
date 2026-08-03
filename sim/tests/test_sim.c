@@ -2073,6 +2073,58 @@ int main(void) {
         CHECK(c.bounces < 20, "grinding on a wall does not spam impacts");
     }
 
+    /* A weapon coming off a wall is a ricochet and not a ship's bounce.
+     *
+     * They shared SIM_EV_BOUNCE once, and the two carry different things in
+     * v: an impact speed for a ship, a packed position for a weapon. Nothing
+     * in the event says which, so a reader that assumed impact got a position
+     * and could not tell. The client's was drawing and sounding every one of
+     * its own ricochets on its own hull. */
+    {
+        sim_state s;
+        sim_init(&s, 5);
+        /* Well clear of every wall but the one it is aimed at, and told to
+         * hold still, so the only thing that can reach a wall is the bullet. */
+        sim_spawn(&s, APEX, 0, 8192, 400, 0, &cfg);
+        s.ships[0].mods[SIM_TRIG_GUN] =
+            sim_mod_set(s.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_BOUNCE, 1);
+
+        sim_state tmp;
+        sim_events ev;
+        int ricochets = 0, bounces = 0;
+        int32_t where = 0;
+        uint8_t owner = 255;
+        for (int i = 0; i < 500; i++) {
+            sim_input in = {0, (uint16_t)(i == 0 ? SIM_BTN_FIRE : 0)};
+            sim_step(&tmp, &s, &in, 1, &cfg, &ev);
+            s = tmp;
+            for (uint16_t e = 0; e < ev.count; e++) {
+                if (ev.e[e].type == SIM_EV_BOUNCE) bounces++;
+                if (ev.e[e].type == SIM_EV_RICOCHET) {
+                    ricochets++;
+                    where = ev.e[e].v;
+                    owner = ev.e[e].a;
+                }
+            }
+        }
+        CHECK(ricochets > 0, "a bouncing bullet reports a ricochet");
+        CHECK(bounces == 0, "and not a ship's bounce, with no ship near a wall");
+        if (ricochets > 0) {
+            /* Packed (x << 14) | y in whole pixels, which is what makes it
+             * unusable as an impact: near enough any position clears any
+             * threshold a caller would put on one. */
+            int32_t px = where >> 14, py = where & 16383;
+            CHECK(owner == 0, "the ricochet names the ship that fired it");
+            /* The boundary every map is closed with is four tiles thick, so
+             * the face a shot comes off is at 64 px and not at the top of the
+             * world. */
+            CHECK(py >= 16 * 4 && py <= 16 * 5,
+                  "the ricochet is at the wall it hit");
+            CHECK(px > 8192 - 64 && px < 8192 + 64,
+                  "and under the ship that fired straight up");
+        }
+    }
+
     /* A snapshot round trip reproduces the state exactly. This is what lets
      * a client accept the server's word without drifting from it. */
     {

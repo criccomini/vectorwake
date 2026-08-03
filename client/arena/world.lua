@@ -1564,6 +1564,15 @@ function M.events(me, sfx)
             fx.wave(x, y, 46, 5, 0.4, 4, pal.a(pal.FRIEND, 0.9))
             sfx("spawn", x, y)
         elseif ty == sim.EV_BOUNCE then
+            -- A ship off a wall, and only a ship. A weapon coming off one is
+            -- SIM_EV_RICOCHET and is deliberately not handled: a bouncing
+            -- bullet is silent, decided rather than overlooked.
+            --
+            -- The two used to share this event, and reading one as the other
+            -- is what made a ricochet thump: v is an impact here and a packed
+            -- position there, and a position clears this gate almost always,
+            -- so every bounce anywhere on the map put a wall hit on the
+            -- shooter's own hull.
             local x, y = sim.ship_x(a), sim.ship_y(a)
             if v > 40000 then
                 fx.burst(x, y, 3, 70, 0.2, 1.2, pal.a(pal.WALL_EDGE, 1))
