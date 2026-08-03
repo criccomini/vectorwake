@@ -189,6 +189,13 @@ pub struct WireCatalog {
     pub default_zone: String,
     pub bans: Vec<String>,
     pub staff: Vec<WireStaff>,
+    /// The Ed25519 verifying key for session tokens, hex, empty on a
+    /// deployment without accounts. This is why an arena can check who a pilot
+    /// is without asking anybody: the key it needs arrives with the zones it
+    /// serves. Public by nature, so it travels in the clear like everything
+    /// else here, unlike the pool tokens that deliberately do not.
+    #[serde(default)]
+    pub meta_key: String,
     /// Declared order preserved: the selection tie-break is "first in the file".
     pub zones: Vec<WireZone>,
 }

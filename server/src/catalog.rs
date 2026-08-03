@@ -129,6 +129,26 @@ struct ZoneRef {
     dir: String,
 }
 
+/// Where accounts live, and the key that proves a session token came from
+/// there. This is the one thing in the catalog an arena needs but no operator
+/// authored: `vectorwake-server metakey` prints both halves, the secret one
+/// goes in the meta-layer's environment and this one goes here.
+///
+/// It rides the catalog because the catalog is already the versioned artifact
+/// every arena receives whole, which makes rotating the key a publish rather
+/// than a new distribution channel.
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(deny_unknown_fields)]
+pub struct MetaDef {
+    /// Where a client logs in. Arenas never call it.
+    #[serde(default)]
+    pub url: String,
+    /// 64 hex characters of Ed25519 verifying key. Public by nature: it can
+    /// check a signature and cannot make one.
+    #[serde(default)]
+    pub key: String,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default, deny_unknown_fields)]
 struct Head {
@@ -140,6 +160,7 @@ struct Head {
     staff: Vec<StaffDef>,
     pool: Vec<PoolDef>,
     zone: Vec<ZoneRef>,
+    meta: MetaDef,
 }
 
 impl Default for Head {
@@ -153,6 +174,7 @@ impl Default for Head {
             staff: Vec::new(),
             pool: Vec::new(),
             zone: Vec::new(),
+            meta: MetaDef::default(),
         }
     }
 }
@@ -168,6 +190,9 @@ pub struct Catalog {
     pub bans: Vec<String>,
     pub staff: Vec<StaffDef>,
     pub pools: Vec<PoolDef>,
+    /// Empty when a deployment runs without accounts, which is a supported
+    /// arrangement: everyone flies as a guest and nothing durable is written.
+    pub meta: MetaDef,
     pub order: Vec<String>,
     pub zones: HashMap<String, ZoneDef>,
     /// Where each zone's files live, for resolving its map.
@@ -249,6 +274,21 @@ pub fn load(dir: impl AsRef<Path>) -> Result<Catalog, String> {
             return Err("a pool needs a name; it is what an arena is told it is".into());
         }
     }
+    // A key that is present and wrong is worse than one that is absent: absent
+    // means a deployment without accounts, which works, and wrong means every
+    // token in the fleet fails to verify at the door.
+    if !head.meta.key.is_empty()
+        && crate::token::verifying_key_from_hex(&head.meta.key).is_none()
+    {
+        return Err("[meta] key must be 64 hex characters of Ed25519 verifying key; \
+                    'vectorwake-server metakey' prints one"
+            .into());
+    }
+    if head.meta.key.is_empty() && !head.meta.url.is_empty() {
+        return Err("[meta] url is set without a key, so no arena could check a \
+                    token minted by it"
+            .into());
+    }
 
     let mut cat = Catalog {
         version: head.version,
@@ -258,6 +298,7 @@ pub fn load(dir: impl AsRef<Path>) -> Result<Catalog, String> {
         bans: head.bans,
         staff: head.staff,
         pools: head.pool,
+        meta: head.meta,
         ..Default::default()
     };
 

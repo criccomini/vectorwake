@@ -135,6 +135,7 @@ impl Directory {
                     capabilities: s.capabilities.clone(),
                 })
                 .collect(),
+            meta_key: c.meta.key.clone(),
             zones: c
                 .order
                 .iter()
