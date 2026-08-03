@@ -74,6 +74,80 @@ local function hit(x, y, w, h, action, value)
                            action = action, value = value}
 end
 
+-- Four chamfered corners and nothing between them. It is what holds a cluster
+-- together without drawing a box round it, and it is the same diagonal the
+-- walls cut off their own corners with. See docs/design/identity.md: a border
+-- is the one shape this game does not otherwise contain.
+local function bracket(x, y, w, h, col, arm, chamfer)
+    arm = arm or 14 * S
+    chamfer = chamfer or 5 * S
+    for _, c in ipairs({{x, y, 1, 1}, {x + w, y, -1, 1},
+                        {x + w, y + h, -1, -1}, {x, y + h, 1, -1}}) do
+        local cx, cy, sx, sy = c[1], c[2], c[3], c[4]
+        u:seg(cx + sx * chamfer, ry(cy), cx + sx * arm, ry(cy), S, col, true)
+        u:seg(cx, ry(cy + sy * chamfer), cx, ry(cy + sy * arm), S, col, true)
+        u:seg(cx + sx * chamfer, ry(cy), cx, ry(cy + sy * chamfer), S, col,
+              true)
+    end
+end
+
+-- A lit rule with the light falling off one side of it, which is a wall face
+-- stood on end. Everything in a column hangs off one of these.
+local function vrule(x, y, h, col, spill)
+    u:skirt(x, ry(y), x, ry(y + h), (spill or 26 * S), 0, 0.07, col)
+    u:seg(x, ry(y), x, ry(y + h), 1.4 * S, col)
+end
+
+-- The map border's tick, used as a rule between things.
+local function ticks(x, y, w, col, pitch)
+    pitch = pitch or 12 * S
+    u:seg(x, ry(y), x + w, ry(y), 0.8 * S, pal.a(col, (col[4] or 1) * 0.7))
+    local n = math.max(1, math.floor(w / pitch))
+    for k = 0, n do
+        local px = x + w * k / n
+        u:seg(px, ry(y - 2.5 * S), px, ry(y), 0.8 * S, col)
+    end
+end
+
+-- A selection: bright where it meets its rule and gone across the row. It was
+-- a filled rectangle.
+local function wash(x, y, w, h, col)
+    u:skirt(x, ry(y), x, ry(y + h), w, 0, col[4] or 0.14, col)
+end
+
+-- A count, as marks rather than as a number: it reads at a glance and never
+-- asks the eye to parse a digit.
+local function pips(x, y, n, filled, col, r, pitch)
+    r = r or 2.2 * S
+    pitch = pitch or 7.5 * S
+    for k = 0, n - 1 do
+        local px = x + k * pitch
+        if k < filled then
+            u:disc(px, ry(y), r, 8, col)
+        else
+            u:ring(px, ry(y), r, 0.9 * S, 8, pal.a(col, (col[4] or 1) * 0.3))
+        end
+    end
+end
+
+-- A weapon level, as filled rungs. Three rungs and how many are lit, which is
+-- a rung count read without reading a numeral.
+local function ladder(x, y, rungs, level, col, w, h)
+    w = w or 34 * S
+    h = h or 3.4 * S
+    local step = w / rungs
+    for k = 0, rungs - 1 do
+        local px = x + k * step
+        local wk = step - 2 * S
+        if k < level then
+            rect(px, y, wk, h, col)
+        else
+            u:frame(px, ry(y, h), wk, h, 0.8 * S,
+                    pal.a(col, (col[4] or 1) * 0.32))
+        end
+    end
+end
+
 -- A keycap, the way the prototype's <kbd> reads: a boxed glyph in a line of
 -- ordinary text. Returns the width it consumed.
 local function kbd(x, y, label, h)
@@ -140,7 +214,7 @@ end
 -- rather than guess. Returned rather than duplicated: a second copy of this
 -- arithmetic is how the pads and their own hit test drifted apart once.
 function M.radar_span()
-    return PAD * S * 2 + RADAR * S
+    return PAD * S * 2 + RADAR * S + 18 * S
 end
 
 local function radar(cx, cy, me)
@@ -154,7 +228,8 @@ local function radar(cx, cy, me)
     local r = RADAR * S
     local pad = (M.compact and 8 or PAD) * S
     local ix = W - pad - r
-    local iy = pad
+    -- Under the link readout, which owns the top right corner now.
+    local iy = pad + 18 * S
     rect(ix, iy, r, r, pal.a(pal.RADAR_BG, 0.55))
 
     -- Sixty tiles out, so the reference arena nearly fills the dial. At a
@@ -241,6 +316,27 @@ local function radar(cx, cy, me)
             end
         end
     end
+
+    -- Two rings and a bearing tick on each eighth, so a contact has something
+    -- to be read against. A dot in an empty square says where something is
+    -- and nothing about how far, and how far is the whole question.
+    --
+    -- No range printed anywhere: the number of tiles the dial spans is not a
+    -- thing anybody converts mid-fight, and the rings answer the comparison
+    -- people actually make, which is whether that one is closer than this one.
+    local mx, my = ix + r / 2, iy + r / 2
+    u:ring(mx, ry(my), r / 4, 0.7 * S, 20, pal.a(pal.RADAR_GRID, 0.9))
+    u:ring(mx, ry(my), r / 2.4, 0.7 * S, 24, pal.a(pal.RADAR_GRID, 0.55))
+    for i = 0, 7 do
+        local a = i * math.pi / 4
+        local long = (i % 2 == 0)
+        local e = r / 2
+        local inn = e - (long and 7 or 4) * S
+        u:seg(mx + math.cos(a) * inn, ry(my + math.sin(a) * inn),
+              mx + math.cos(a) * e, ry(my + math.sin(a) * e), S,
+              pal.a(pal.RADAR_TILE, long and 0.55 or 0.3))
+    end
+    bracket(ix, iy, r, r, pal.a(pal.RADAR_TILE, 0.8), 18 * S)
 
     -- You, last and as an arrow: on a radar the one thing worth knowing
     -- besides where you are is which way you are pointing.
@@ -356,23 +452,49 @@ local function scores(me, pilots)
     local shown = math.min(n, 9)
     if shown == 0 then return 0 end
     local w = COL_W * S
-    local h = PANEL_Y * 2 * S + shown * LINE * S
-    panel(PAD * S, top_y(), w, h)
+    local head = 24 * S
+    local h = head + shown * LINE * S + 10 * S
+    local x = PAD * S
+    -- Enough behind it to read over a starfield, and no border: a rule down
+    -- the left is what holds the column, the way it holds a wall face.
+    rect(x, top_y(), w, h, pal.a(pal.BG, 0.62))
+    vrule(x, top_y(), h, pal.a(pal.RADAR_TILE, 0.7))
+
+    local kx = x + w - 74 * S
+    local dx = x + w - 44 * S
+    local px = x + w - 12 * S
+    local small = (FONT - 3) * S
+    txt("PILOTS", x + 12 * S, top_y() + 14 * S, (FONT - 2) * S,
+        pal.a(pal.INK, 0.9))
+    txt("K", kx, top_y() + 14 * S, small, pal.a(pal.DIM, 0.7), "right")
+    txt("D", dx, top_y() + 14 * S, small, pal.a(pal.DIM, 0.7), "right")
+    txt("PTS", px, top_y() + 14 * S, small, pal.a(pal.DIM, 0.7), "right")
+    ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
+          pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
     local my_team = sim.ship_team(me)
-    local y = top_y() + PANEL_Y * S
+    local y = top_y() + head
     for i = 1, shown do
         local r = rows[i]
         local mine = r.i == me
-        local col = mine and pal.WHITE
-            or (sim.ship_team(r.i) == my_team and pal.FRIEND or pal.ENEMY)
-        local name = string.sub(r.name, 1, 15)
-        txt((mine and "▸ " or "") .. name .. (r.ai and "  AI" or ""),
-            PAD * S + PANEL_X * S, y + LINE * S / 2, FONT * S, col)
-        txt(r.k .. " / " .. r.d, PAD * S + w - PANEL_X * S - 44 * S,
-            y + LINE * S / 2, FONT * S, pal.a(pal.DIM, 0.7), "right")
-        txt(tostring(r.p), PAD * S + w - PANEL_X * S,
-            y + LINE * S / 2, FONT * S, pal.DIM, "right")
+        local col = (sim.ship_team(r.i) == my_team) and pal.FRIEND or pal.ENEMY
+        if mine then
+            -- Your row, marked the way a selected row is marked everywhere
+            -- else in this interface: a lit rule and a wash off it, not a
+            -- glyph in front of your name.
+            wash(x, y, w, LINE * S, pal.a(pal.FRIEND, 0.13))
+            u:seg(x, ry(y), x, ry(y + LINE * S), 1.6 * S,
+                  pal.a(pal.FRIEND, 0.95))
+        end
+        local name = string.sub(r.name, 1, 14)
+        txt(name .. (r.ai and "  AI" or ""), x + 12 * S, y + LINE * S / 2,
+            (FONT - 2) * S, pal.a(col, mine and 1.0 or 0.8))
+        txt(tostring(r.k), kx, y + LINE * S / 2, (FONT - 2) * S,
+            pal.a(pal.INK, 0.85), "right")
+        txt(tostring(r.d), dx, y + LINE * S / 2, (FONT - 2) * S,
+            pal.a(pal.DIM, 0.85), "right")
+        txt(tostring(r.p), px, y + LINE * S / 2, (FONT - 2) * S,
+            pal.a(pal.BOUNTY, 0.9), "right")
         y = y + LINE * S
     end
     -- The bottom edge, not the height: what the loadout below needs to know
@@ -410,142 +532,115 @@ local function feed(lines, top)
     end
 end
 
--- What is left of the status panel.
+-- The corner stack: what the triggers do, what you carry and can spend, and
+-- what you are worth. Five rows, no panel and no rules between them.
 --
--- Energy is not here. Your own hull already carries the pip every other ship
--- carries -- same routine, same threshold -- so a bar and a percentage in a
--- corner were the same number drawn twice, in the place you are least likely
--- to be looking. Nor is your hull's name, which the silhouette says and you
--- chose; nor your speed, which nobody has ever made a decision on; nor your
--- kills, deaths and points, which are three scoreboard numbers.
+-- What a trigger does is the team colour and what you carry is gold, and that
+-- separation is the whole reason there is no divider: a rule between them
+-- would say a second time what the colour already says once.
 --
--- What stays is what you cannot get anywhere else and need mid-fight: which
--- charge is ready and how many are in hand. On a touchscreen not even that,
--- because the pad draws it -- so the panel disappears entirely unless a green
--- was just taken or the netinfo line is up, and most of the time a phone
--- draws no panel at all.
-local function status(me, netinfo, pickup, charges, lift)
+-- Energy is not here. Your own hull carries the pip every other hull carries,
+-- so a bar in a corner was the same number drawn twice in the place you are
+-- least likely to be looking. Nor is your speed, which nobody has made a
+-- decision on, nor the prediction error in pixels, which was this client
+-- debugging itself on a player's screen.
+local function status(me, pickup, charges, lift)
     local slots = charges or {}
-    -- The pad carries the marker on a touchscreen, so the row would be the
-    -- same thing twice at opposite corners.
-    local show_charges = #slots > 0 and not M.touching
-    local rows_h = LINE * S
-    local n = (show_charges and 1 or 0) + (pickup and 1 or 0) + (netinfo and 1 or 0)
-    if n == 0 then return 0 end
-
-    local h = PANEL_Y * 2 * S + n * rows_h
-    local w = COL_W * S
+    local rows_h = 18 * S
     local x = PAD * S
-    local y = H - PAD * S - h - (lift or 0)
-    panel(x, y, w, h)
+    local lab = (FONT - 3) * S
+    local val = x + 50 * S
 
-    local ix = x + PANEL_X * S
-    local iw = w - PANEL_X * 2 * S
-    local cy = y + PANEL_Y * S
-
-    if show_charges then
-        local at = ix
-        for _, c in ipairs(slots) do
-            local label = (c.ready and "> " or "") .. c.short .. "x" .. c.count
-            txt(label, at, cy + rows_h / 2, (FONT - 1) * S,
-                c.count > 0 and (c.ready and pal.CHARGE_COL
-                                 or pal.a(pal.CHARGE_COL, 0.6))
-                or pal.a(pal.DIM, 0.45))
-            at = at + 62 * S
-        end
-        cy = cy + rows_h
-    end
-    if pickup then
-        txt((pickup.sign or "+") .. " " .. pickup.name, ix,
-            cy + rows_h / 2, FONT * S, pal.a(pickup.col, pickup.t))
-        cy = cy + rows_h
-    end
-    if netinfo then
-        txt("online", ix, cy + rows_h / 2, FONT * S, pal.DIM)
-        txt(netinfo, ix + iw, cy + rows_h / 2, FONT * S, pal.DIM, "right")
-    end
-    return h + 6 * S
-end
-
--- Everything you own, on demand: the tech tree you are carrying and the two
--- score numbers, under the same toggle as the scoreboard. These change when
--- you fly over a green and not otherwise, so they are a thing you look up
--- between fights rather than a thing you watch during one -- and the feed
--- already announces every pickup as it happens, which is where a player
--- actually learns the tree exists.
--- Under the scoreboard, not at the foot of the screen.
---
--- It was anchored to the bottom like the panel it came out of, which is fine
--- on a desktop and wrong on a phone: with the thumbs lifting it 150 points
--- and only 390 to play with, it climbed into the scoreboard and the two drew
--- through each other. They are one stack now, because they are one toggle --
--- you asked one question and this is the whole answer to it.
-local function loadout(me, class_names, top)
-    if not M.details then return end
-    local rows_h = LINE * S
-    -- Only the triggers this hull actually has. Everything else in this panel
-    -- shows what you do not hold as a list of what is out there to find, and
-    -- a greyed `bomb` on a hull with no rack says exactly that -- about a
-    -- weapon it can never be handed.
+    -- The pad carries the charge counts on a touchscreen, so those rows would
+    -- be the same thing twice at opposite corners.
+    local show_charges = #slots > 0 and not M.touching
     local trigs = 0
     for t = 0, SIM_TRIGGERS - 1 do
         if sim.has_trigger(me, t) then trigs = trigs + 1 end
     end
-    local h = PANEL_Y * 2 * S + rows_h * (3 + trigs)
-    local w = COL_W * S
-    local x = PAD * S
-    local y = (top or 0) + 6 * S
-    panel(x, y, w, h)
+    local n = trigs + (show_charges and #slots or 0) + 1
+        + (pickup and 1 or 0)
+    local y = H - PAD * S - n * rows_h - (lift or 0)
 
-    local ix = x + PANEL_X * S
-    local iw = w - PANEL_X * 2 * S
-    local cy = y + PANEL_Y * S
-
-    txt(class_names[sim.ship_class(me) + 1] or "?", ix, cy + rows_h / 2,
-        FONT * S, pal.FRIEND)
-    txt(sim.ship_kills(me) .. "k / " .. sim.ship_deaths(me) .. "d",
-        ix + iw, cy + rows_h / 2, FONT * S, pal.INK, "right")
-    cy = cy + rows_h
-
-    txt(sim.ship_points(me) .. " points", ix, cy + rows_h / 2, (FONT - 1) * S,
-        pal.DIM)
-    local bty = sim.ship_bounty(me)
-    txt("worth " .. bty, ix + iw, cy + rows_h / 2, (FONT - 1) * S,
-        bty > 0 and pal.BOUNTY or pal.a(pal.DIM, 0.5), "right")
-    cy = cy + rows_h
-
-    -- Every slot always present, so the row does not reflow as prizes are
-    -- picked up, and the ones you do not hold sit there greyed as a list of
-    -- what is out there to find.
-    local gap = iw / #pal.UPGRADES
-    for i, up in ipairs(pal.UPGRADES) do
-        local held = sim.ship_up(me, i - 1)
-        local label = held > 0 and (up.short .. "×" .. held) or up.short
-        txt(label, ix + (i - 1) * gap, cy + rows_h / 2, (FONT - 1) * S,
-            held > 0 and up.col or pal.a(pal.DIM, 0.45))
-    end
-    cy = cy + rows_h
-
-    -- A level is the same weapon harder and an add-on changes its character,
-    -- so they read differently: "gun 2" is a rung, "MUL" is bolted on.
+    -- A level is the same weapon harder, so it is rungs; an add-on changes
+    -- its character, so it is a word.
     for t = 0, SIM_TRIGGERS - 1 do
         if sim.has_trigger(me, t) then
             local lvl = sim.ship_level(me, t)
-            local name = (t == sim.TRIG_GUN) and "gun" or "bomb"
-            txt(name .. (lvl > 0 and (" " .. (lvl + 1)) or ""),
-                ix, cy + rows_h / 2, (FONT - 1) * S,
-                lvl > 0 and pal.LEVEL_COL or pal.a(pal.DIM, 0.55))
-            local at = ix + 52 * S
+            txt((t == sim.TRIG_GUN) and "GUN" or "BOMB", x,
+                y + rows_h / 2, lab, pal.a(pal.DIM, 0.8))
+            ladder(val, y + rows_h / 2 - 2 * S, 3, lvl + 1, pal.FRIEND)
+            local at = val + 42 * S
             for m, mod in ipairs(pal.MODS) do
                 local nn = sim.ship_mod(me, t, m - 1)
                 if nn > 0 then
-                    txt(mod.short .. (nn > 1 and ("×" .. nn) or ""), at,
-                        cy + rows_h / 2, (FONT - 2) * S, pal.MOD_COL)
-                    at = at + 30 * S
+                    txt(mod.name .. (nn > 1 and ("x" .. nn) or ""), at,
+                        y + rows_h / 2, (FONT - 4) * S,
+                        pal.a(pal.FRIEND, 0.75))
+                    at = at + 38 * S
                 end
             end
-            cy = cy + rows_h
+            y = y + rows_h
         end
+    end
+
+    if show_charges then
+        for _, c in ipairs(slots) do
+            txt(string.upper(c.name or c.short), x, y + rows_h / 2, lab,
+                pal.a(pal.DIM, 0.8))
+            pips(val + 2 * S, y + rows_h / 2, math.max(1, c.max or 3), c.count,
+                 c.ready and pal.CHARGE_COL or pal.a(pal.CHARGE_COL, 0.7))
+            y = y + rows_h
+        end
+    end
+
+    -- What you are worth, which is the number that decides who comes for you,
+    -- and which was only ever behind the info toggle.
+    txt("BOUNTY", x, y + rows_h / 2, lab, pal.a(pal.DIM, 0.8))
+    local bty = sim.ship_bounty(me)
+    txt(tostring(bty), val, y + rows_h / 2, (FONT - 4) * S,
+        bty > 0 and pal.a(pal.PRIZE, 0.95) or pal.a(pal.DIM, 0.5))
+    y = y + rows_h
+
+    if pickup then
+        txt((pickup.sign or "+") .. " " .. pickup.name, x,
+            y + rows_h / 2, (FONT - 2) * S, pal.a(pickup.col, pickup.t))
+    end
+    return 0
+end
+
+-- What a season of play has added up to, under the same toggle as the
+-- scoreboard: which hull you are in and how far up each stat the greens have
+-- carried you.
+--
+-- The gun and bomb ladders used to be here too. They are what a trigger does
+-- rather than what a run has accumulated, and they belong in the corner with
+-- the rest of what the ship is carrying, where they can be read without
+-- opening a panel at all.
+local function loadout(me, class_names, top)
+    if not M.details then return end
+    local w = COL_W * S
+    local x = PAD * S
+    local h = 54 * S
+    local y = (top or 0) + 6 * S
+    rect(x, y, w, h, pal.a(pal.BG, 0.62))
+    vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.7))
+
+    txt(class_names[sim.ship_class(me) + 1] or "?", x + 12 * S, y + 16 * S,
+        (FONT - 1) * S, pal.FRIEND)
+    txt(sim.ship_kills(me) .. "k  " .. sim.ship_deaths(me) .. "d",
+        x + w - 12 * S, y + 16 * S, (FONT - 3) * S, pal.a(pal.DIM, 0.85),
+        "right")
+
+    -- Every slot always present, so the row does not reflow as prizes are
+    -- picked up, and the ones you do not hold sit there as empties: a list of
+    -- what is still out there to find.
+    local gap = (w - 24 * S) / #pal.UPGRADES
+    for i, up in ipairs(pal.UPGRADES) do
+        local held = sim.ship_up(me, i - 1)
+        local sx = x + 14 * S + (i - 1) * gap
+        txt(up.short, sx, y + 32 * S, (FONT - 4) * S, pal.a(pal.DIM, 0.75))
+        pips(sx + 3 * S, y + 42 * S, 4, held, up.col, 1.9 * S, 6 * S)
     end
 end
 
@@ -576,26 +671,51 @@ end
 -- menu now, under `help`, which is where a thing you consult belongs.
 
 local function menu_button()
-    local w, h = 62 * S, 26 * S
-    -- The corner, on every layout. It used to dodge sideways when the
-    -- scoreboard was drawn, which put it somewhere no thumb goes looking and
-    -- made it depend on a width test to be findable at all.
+    -- Two words and a rule, where there were two boxed labels. A box is the
+    -- one shape the rest of this game does not contain, and a control does not
+    -- need one to be a control: the rule under the pair says they belong
+    -- together, and the lit segment says which is on.
     local x, y = PAD * S, PAD * S
-    rect(x, y, w, h, pal.a(pal.BTN_BG, 0.92))
-    u:frame(x, ry(y, h), w, h, S, pal.BAR_EDGE)
-    txt("menu", x + w / 2, y + h / 2, FONT * S, pal.a(pal.INK, 0.92), "center")
-    hit(x, y, w, h, "open")
+    local w, h = 52 * S, 26 * S
+    txt("MENU", x, y + h / 2, (FONT - 1) * S, pal.a(pal.INK, 0.9))
+    hit(x - 4 * S, y, w, h, "open")
 
-    -- And the switch for everything that is not needed mid-fight: the
-    -- scoreboard and your own loadout, together, because they answer the same
-    -- question and you ask it at the same moments.
-    local bx = x + w + 6 * S
-    rect(bx, y, w, h, pal.a(pal.BTN_BG, M.details and 0.92 or 0.6))
-    u:frame(bx, ry(y, h), w, h, S,
-            M.details and pal.FRIEND or pal.a(pal.BAR_EDGE, 0.8))
-    txt("info", bx + w / 2, y + h / 2, FONT * S,
-        pal.a(M.details and pal.FRIEND or pal.INK, 0.92), "center")
-    hit(bx, y, w, h, "details")
+    local bx = x + w
+    txt("INFO", bx, y + h / 2, (FONT - 1) * S,
+        M.details and pal.FRIEND or pal.a(pal.DIM, 0.85))
+    hit(bx - 4 * S, y, w, h, "details")
+
+    local ruley = y + h - 6 * S
+    u:seg(x, ry(ruley), x + w * 2 - 16 * S, ry(ruley), 0.8 * S,
+          pal.a(pal.RADAR_TILE, 0.5))
+    if M.details then
+        u:seg(bx, ry(ruley), bx + w - 16 * S, ry(ruley), 1.4 * S,
+              pal.a(pal.FRIEND, 0.9))
+    end
+end
+
+-- How good the line is, above the dial. It belongs up here with the
+-- instrument rather than down in the corner with what the ship is carrying:
+-- it is a fact about the connection, not about the ship.
+--
+-- Four bars off the round trip the predictor already measures, in ticks of a
+-- centisecond. It replaces "online  err 0.0 / 1 px", which was the client's
+-- own debugging left on a player's screen: nobody flying has ever made a
+-- decision on a prediction error in pixels.
+local function link(lag)
+    local q = 4
+    if lag > 24 then q = 1 elseif lag > 12 then q = 2 elseif lag > 6 then q = 3 end
+    local pad = (M.compact and 8 or PAD) * S
+    local right = W - pad
+    local base = pad + 13 * S
+    for k = 0, 3 do
+        local bh = (3 + k * 2.6) * S
+        local bx = right - (26 - k * 6) * S
+        rect(bx, base - bh, 4 * S, bh,
+             k < q and pal.a(pal.PRIZE, 0.85) or pal.a(pal.DIM, 0.22))
+    end
+    txt("LINK", right - 34 * S, base - 4 * S, (FONT - 3) * S,
+        pal.a(pal.DIM, 0.8), "right")
 end
 
 -- The count in each charge pad.
@@ -666,12 +786,13 @@ function M.hud(o)
     local top = scores(me, o.pilots)
     nameplates(o)
     radar(o.cam_x, o.cam_y, me)
+    link(o.lag or 0)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap.
     feed(o.feed, M.radar_span())
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it.
-    status(me, o.netinfo, o.pickup, o.charges, lift)
+    status(me, o.pickup, o.charges, lift)
     loadout(me, o.class_names, top)
     menu_button()
     vignette(o.hurt or 0)
@@ -727,7 +848,7 @@ local MENU_W = 460
 
 function M.menu(v)
     local w = math.min(MENU_W * S, W - 24 * S)
-    local x = (W - w) / 2
+    local x = math.max(24 * S, (W - w) / 2 - 120 * S)
     local rows = #v.rows
     local h = ROW_H * S * rows + 76 * S
     local y = math.max(20 * S, (H - h) / 2)
@@ -735,13 +856,20 @@ function M.menu(v)
     -- Not a curtain: dimmed enough to read against, clear enough to see the
     -- arena still running behind it. Opening the menu does not pause anything
     -- and should not look as though it does.
-    rect(0, 0, W, H, pal.rgb(0x03050a, 0.62))
-    panel(x, y, w, h)
+    rect(0, 0, W, H, pal.rgb(0x03050a, 0.58))
+
+    -- No panel. A modal box with a border is the one shape this game does not
+    -- otherwise contain, and it made the menu look like a settings dialog
+    -- borrowed from another application. What holds the column together is
+    -- the same thing that holds a wall together: a lit rule with the light
+    -- falling off it. The column sits left of centre so the arena keeps the
+    -- middle of the screen.
+    vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.8), 40 * S)
 
     txt(v.title, x + 20 * S, y + 26 * S, (M.compact and 19 or 23) * S,
         pal.FRIEND)
     -- A phone has no escape key, so the way out is drawn. At the root of the
-    -- home screen there is no way out to draw: nothing is behind the panel,
+    -- home screen there is no way out to draw: nothing is behind the column,
     -- and a `close` that leaves a player on an empty starfield would be a
     -- button that breaks the game.
     if v.closable then
@@ -749,26 +877,30 @@ function M.menu(v)
             11 * S, pal.a(pal.DIM, 0.8), "right")
         hit(x + w - 90 * S, y + 8 * S, 90 * S, 34 * S, "row", -1)
     end
+    ticks(x + 20 * S, y + 40 * S, w - 20 * S, pal.a(pal.RADAR_TILE, 0.4),
+          12 * S)
 
     local ry0 = y + 48 * S
     for i, r in ipairs(v.rows) do
         local top = ry0 + (i - 1) * ROW_H * S
         local on = i == v.sel
         if on and r.pick then
-            rect(x + 8 * S, top, w - 16 * S, ROW_H * S,
-                 pal.a(pal.BTN_SEL, 0.95))
-            rect(x + 8 * S, top, 3 * S, ROW_H * S, pal.FRIEND)
+            -- A wash off the rule, and the rule lit where the row meets it.
+            wash(x, top, w, ROW_H * S, pal.a(pal.FRIEND, 0.14))
+            u:seg(x, ry(top), x, ry(top + ROW_H * S), 2.2 * S, pal.FRIEND)
+            u:seg(x + 8 * S, ry(top + ROW_H * S / 2),
+                  x + 13 * S, ry(top + ROW_H * S / 2), 1.4 * S, pal.FRIEND)
         end
-        local ink = r.pick and (on and pal.INK or pal.a(pal.INK, 0.72))
+        local ink = r.pick and (on and pal.INK or pal.a(pal.INK, 0.7))
             or pal.a(pal.DIM, 0.9)
-        local lx = x + 22 * S
+        local lx = x + 20 * S
         if r.hull then
             -- The silhouette is what picks a ship. Eight names mean nothing
             -- to somebody who has not flown them; eight shapes are the game
             -- telling you what it has.
-            thumb(x + 34 * S, top + ROW_H * S / 2, r.hull,
-                  on and pal.INK or pal.a(pal.INK, 0.55), 0.55 * S)
-            lx = x + 58 * S
+            thumb(x + 36 * S, top + ROW_H * S / 2, r.hull,
+                  on and pal.INK or pal.a(pal.INK, 0.55), 0.62 * S)
+            lx = x + 62 * S
         end
         if r.label ~= "" then
             txt(r.label, lx, top + ROW_H * S / 2, FONT * S, ink)
@@ -776,13 +908,10 @@ function M.menu(v)
         if r.detail and r.detail ~= "" then
             -- The value sits on the right of the row it belongs to, which is
             -- how a settings list reads everywhere else in the world.
-            txt(r.detail, x + w - 22 * S, top + ROW_H * S / 2, FONT * S,
+            txt(r.detail, x + w - 20 * S, top + ROW_H * S / 2, FONT * S,
                 r.mark and pal.FRIEND or pal.a(pal.DIM, 0.95), "right")
         end
-        if r.mark and not r.hull then
-            txt("▸", x + 12 * S, top + ROW_H * S / 2, FONT * S, pal.FRIEND)
-        end
-        if r.pick then hit(x + 8 * S, top, w - 16 * S, ROW_H * S, "row", i) end
+        if r.pick then hit(x, top, w, ROW_H * S, "row", i) end
     end
 
     -- One line under the list, and three things want it. A note is why
@@ -791,15 +920,16 @@ function M.menu(v)
     -- what it is without a second column no phone has room for. The controls
     -- are what is left when there is nothing more useful to say.
     local by = y + h - 16 * S
+    ticks(x + 20 * S, by - 16 * S, w - 20 * S, pal.a(pal.RADAR_TILE, 0.25),
+          12 * S)
     if v.note then
-        txt(v.note, x + w / 2, by, FONT * S, pal.ENEMY, "center")
+        txt(v.note, x + 20 * S, by, FONT * S, pal.ENEMY)
     elseif v.hint then
-        txt(v.hint, x + w / 2, by, (FONT - 1) * S, pal.a(pal.DIM, 0.95),
-            "center")
+        txt(v.hint, x + 20 * S, by, (FONT - 1) * S, pal.a(pal.DIM, 0.95))
     else
         txt((M.touching or M.compact) and "tap a row"
-                or "↑ ↓ move    enter choose    esc back",
-            x + w / 2, by, 11 * S, pal.a(pal.DIM, 0.8), "center")
+            or "up down to move    enter to choose    esc to go back",
+            x + 20 * S, by, (FONT - 2) * S, pal.a(pal.DIM, 0.7))
     end
 end
 

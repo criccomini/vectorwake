@@ -175,7 +175,13 @@ local function charge_row()
         local c = pal.CHARGES[k + 1]
         out[#out + 1] = {
             short = c and c.short or "C",
+            -- The full word, because the corner stack has room for it and
+            -- "RPL" is three letters nobody has been taught.
+            name = c and c.name or "charge",
             count = sim.ship_charge(me, k),
+            -- How many this hull can hold, so the row can draw the empties
+            -- as well as the full ones.
+            max = sim.charge_max(me, k),
             ready = (k == ready_slot()),
         }
     end
@@ -759,11 +765,11 @@ function update(self, dt)
             -- Flags are drawn as flags now, so the banner is only for the
             -- things that are genuinely a sentence.
             banner = net.banner,
-            -- Short enough to share a row with the word "online": a hull
-            -- change teleports you to a spawn the client never predicted, so
-            -- the peak can reach three digits and the two texts collided.
-            netinfo = string.format("err %.1f / %.0f px",
-                                    net.stats.err, net.stats.err_max),
+            -- The round trip, in ticks of a centisecond, which the readout
+            -- above the dial turns into four bars. The prediction error that
+            -- used to be printed here was this client debugging itself on a
+            -- player's screen.
+            lag = net.stats.lag,
         })
     end
     if menu.open then ui.menu(menu.view()) end
