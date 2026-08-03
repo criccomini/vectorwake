@@ -17,9 +17,21 @@ LOG=$DIR/deploy                 # served by Caddy, at /deploy
 mkdir -p "$LOG"
 exec >>"$LOG/provision.log" 2>&1
 
+# Progress goes three places: the served log, the journal, and outbound to a
+# throwaway ntfy topic.
+#
+# The third one is not redundancy, it is the only channel that does not depend on
+# this host being reachable. Two deploys were lost to exactly that: something
+# dropped inbound 80 and the log explaining why was behind the port that was
+# dropped. Outbound https works from anywhere, so the box can always talk even
+# when nothing can talk to it. The topic is random per host and carries no
+# secrets, because anyone who learns it can read it.
+TOPIC=__STATUS_TOPIC__
 say() {
 	printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*" >>"$LOG/status"
 	echo "=== $*"
+	[ -n "$TOPIC" ] && curl -fsS --max-time 8 -d "$*" "https://ntfy.sh/$TOPIC" >/dev/null 2>&1
+	return 0
 }
 
 # The log is served by a python one-liner until Caddy takes the port. Both of
@@ -55,7 +67,23 @@ die() {
 # this needs no package, no network and no repository -- which is the point,
 # since the steps most likely to break are the ones that need all three. Caddy
 # replaces it on the same port once there is something to reverse-proxy.
-say "provisioning started; serving this log on port 80"
+say "provisioning started"
+
+# Before anything binds a port, make the ports reachable. Vultr's Ubuntu images
+# ship ufw enabled with ssh alone permitted, which drops inbound 80 and 443 and
+# looks exactly like a service that failed to start: connections time out rather
+# than being refused, so there is nothing to distinguish it from a dead listener.
+# Two deploys were spent on that. The state goes in the log either way.
+say "host firewall before: $(ufw status 2>/dev/null | head -1 || echo 'no ufw')"
+if command -v ufw >/dev/null 2>&1; then
+	ufw allow 80/tcp >/dev/null 2>&1
+	ufw allow 443/tcp >/dev/null 2>&1
+	ufw allow 22/tcp >/dev/null 2>&1
+fi
+echo "--- ufw"; ufw status verbose 2>&1
+echo "--- iptables INPUT"; iptables -S INPUT 2>&1
+
+say "serving this log on port 80"
 bootstrap_up
 
 # Swap before the build. cargo linking tokio and rustls is the peak memory of
