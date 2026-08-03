@@ -341,6 +341,9 @@ end
 function init(self)
     msg.post(".", "acquire_input_focus")
     math.randomseed(1)
+    -- Before anything can ask for a sound. The components start out pointed at
+    -- silence and this is what puts audio behind them.
+    sfx.init()
     -- Wanted from the first frame. It will not start until the page has been
     -- touched and the audio device is awake, which is why this is a request
     -- the frame loop keeps making rather than a call that either works or

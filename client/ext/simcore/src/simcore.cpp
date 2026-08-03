@@ -24,6 +24,9 @@
 void VwBufInit(lua_State* L);
 void VwBufFinal();
 
+// The sound kit, same arrangement, in vwsfx.cpp over sfx.c.
+void VwSfxInit(lua_State* L);
+
 namespace {
 
 // Static storage. The core allocates nothing, so the extension does not
@@ -592,6 +595,7 @@ dmExtension::Result AppInitialize(dmExtension::AppParams* params) {
 dmExtension::Result Initialize(dmExtension::Params* params) {
     LuaInit(params->m_L);
     VwBufInit(params->m_L);
+    VwSfxInit(params->m_L);
     return dmExtension::RESULT_OK;
 }
 
