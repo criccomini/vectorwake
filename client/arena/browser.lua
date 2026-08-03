@@ -55,6 +55,17 @@ local function on_message(s)
             live = up ~= nil,
         }
     end
+    -- Alphabetical, rather than the order the reply arrives in. That order is
+    -- the catalog's declaration order, which is the deployment's own business
+    -- and reads as arbitrary from in here: it puts a newly added game last for
+    -- good, so the list quietly becomes a history of when each one was written.
+    -- Lowercased for the comparison so a capital cannot jump a game to the top,
+    -- and the raw name breaks a tie so the order is total.
+    table.sort(M.rows, function(a, b)
+        local la, lb = string.lower(a.name), string.lower(b.name)
+        if la ~= lb then return la < lb end
+        return a.name < b.name
+    end)
     M.selected = 1
     M.note = (#M.rows == 0) and "the directory lists no games" or ""
 end
