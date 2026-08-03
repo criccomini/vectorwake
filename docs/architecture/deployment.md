@@ -245,3 +245,5 @@ image registry, per above. No Nakama and no Postgres, because the first
 deployment has no accounts and ratings still sit on the arena's own disk, which
 [roadmap.md](roadmap.md) M7.7 is what changes. No monitoring beyond the metrics
 in `STATUS` and what the admin page draws from them.
+
+<!-- deploy path verified by pull, not reinstall -->
