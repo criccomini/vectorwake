@@ -794,11 +794,12 @@ end
 local function spawn_mark(glow, tx, ty, team, my_team)
     local x, y = tx * TILE + TILE / 2, ty * TILE + TILE / 2
     local col = (team == my_team) and pal.FRIEND or pal.ENEMY
-    glow:arc(x, y, 7, -0.4, math.pi + 0.4, 1.0, 10, pal.a(col, 0.3))
-    glow:arc(x, y, 4.2, -0.4, math.pi + 0.4, 1.0, 8, pal.a(col, 0.5))
-    glow:seg(x, y + 4.5, x, y - 5.5, 1.3, pal.a(col, 0.8))
-    glow:seg(x - 2.6, y - 2.6, x, y - 5.8, 1.1, pal.a(col, 0.8))
-    glow:seg(x + 2.6, y - 2.6, x, y - 5.8, 1.1, pal.a(col, 0.8))
+    -- Two rings and nothing else. It carried an arrow out of a cradle before,
+    -- which meant nothing in a game with no up: a ship arrives pointing
+    -- wherever the mode says. Dimmer than it was, too. This is a mark on the
+    -- ground, not something anybody flies into.
+    glow:ring(x, y, 7, 1.0, 16, pal.a(col, 0.22))
+    glow:ring(x, y, 4.2, 1.0, 12, pal.a(col, 0.38))
 end
 
 -- A mouth to put something into: three sides and a net, open to the field.
