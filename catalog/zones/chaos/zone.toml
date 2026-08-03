@@ -3,6 +3,9 @@
 description = "everybody against everybody"
 
 mode = "arena"
+# Converted from a `.lvl` by `sim/tools/lvl2vw`. A free-for-all wants structure
+# everywhere rather than one arena in the middle, which is what this map is:
+# rooms and corridors across the whole thousand tiles, and two wormholes.
 map = "chaos.vwmap"
 
 max_ships = 64

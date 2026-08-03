@@ -48,6 +48,12 @@ Those tools are internal. Their output does not ship, is not distributed, and
 does not become vectorwake content. A converted map from an existing zone is
 that zone's map.
 
+One exception, and it is about provenance rather than about converters. Alpha,
+Chaos and War are served on maps converted from `.lvl` files supplied by the
+owner of this repository, who asked for them by name. Those three ship. A file
+somebody else drew does not become shippable by passing through the same tool,
+so the rule above is unchanged for everything we did not receive that way.
+
 ## Art direction: clean vector
 
 Bright geometric ships on a black field, high contrast, readable at any zoom.
