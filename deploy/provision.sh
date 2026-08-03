@@ -86,11 +86,15 @@ echo "--- iptables INPUT"; iptables -S INPUT 2>&1
 say "serving this log on port 80"
 bootstrap_up
 
-# Swap before the build. cargo linking tokio and rustls is the peak memory of
-# this host's life by a wide margin, and a linker killed by the OOM reaper is
-# the worst failure available on a box nobody can log into. The fstab line is
-# guarded: written unconditionally it produces a duplicate entry and systemd
-# complains about it every ten seconds forever.
+# Swap. This was here for the build: cargo linking tokio and rustls was the peak
+# memory of this host's life by a wide margin, and a linker killed by the OOM
+# reaper is the worst failure available on a box nobody can log into. The build
+# has moved to CI, so that reason is gone and this stays for a smaller one --
+# headroom on a box that is meant to shrink to 1 GB now that it holds no
+# toolchain, where extracting an image layer is the largest thing left.
+#
+# The fstab line is guarded: written unconditionally it produces a duplicate
+# entry and systemd complains about it every ten seconds forever.
 if ! swapon --show=NAME --noheadings | grep -q /swapfile; then
 	say "adding 2G of swap"
 	fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile \
@@ -149,8 +153,25 @@ if [ $i -ge 20 ]; then
 fi
 say "proxy is answering on port 80"
 
-say "building the server; about ten minutes on one core"
-docker compose --env-file .env up -d --build || die "build; see provision.log"
+# A credential, if the package is private. Empty placeholders mean it is public
+# and no login is needed, which is the only difference between the two cases.
+#
+# `docker login` writes /root/.docker/config.json, which outlives reboots, so the
+# updater's own pull needs nothing further. The token wants `read:packages` and
+# nothing else: this box only ever reads.
+REGISTRY_USER='__REGISTRY_USER__'
+REGISTRY_TOKEN='__REGISTRY_TOKEN__'
+if [ -n "$REGISTRY_TOKEN" ]; then
+	say "logging in to ghcr"
+	printf '%s' "$REGISTRY_TOKEN" \
+		| docker login ghcr.io -u "$REGISTRY_USER" --password-stdin \
+		|| die "ghcr login; is the token scoped read:packages?"
+fi
+
+# Pulled rather than built, which is the difference between ten minutes and one.
+say "pulling the server image"
+docker compose --env-file .env pull --quiet || die "pull; see provision.log"
+docker compose --env-file .env up -d || die "start; see provision.log"
 
 say "up:"
 docker compose --env-file .env ps --format '{{.Service}} {{.State}}' >>"$LOG/status"
@@ -166,22 +187,49 @@ docker compose --env-file .env ps --format '{{.Service}} {{.State}}' >>"$LOG/sta
 say "installing the updater; deploys are a git push from now on"
 cat >/usr/local/bin/vw-update <<'UPD'
 #!/bin/sh
-# Pull main and rebuild only if something actually changed. Quiet when idle.
+# Converge on what main and the registry say. Quiet when there is nothing to do.
+#
+# Two things can move and both are checked, because they move for different
+# reasons. The checkout carries the compose file, the Caddyfile and the client
+# bundle, which are read from disk at container start. The image carries the
+# binary and the catalog. A commit that only touches docs changes neither, and
+# this exits without a word.
 set -u
 cd /opt/vectorwake || exit 0
+
 before=$(git rev-parse HEAD)
 GIT_SSH_COMMAND='ssh -i /root/.ssh/vw_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new' \
 	git fetch --quiet origin main || exit 0
 after=$(git rev-parse origin/main)
-[ "$before" = "$after" ] && exit 0
-logger -t vw-update "updating $before -> $after"
-git reset --hard origin/main >/dev/null 2>&1 || exit 1
+[ "$before" = "$after" ] || git reset --hard "$after" >/dev/null 2>&1 || exit 1
+
 cd deploy || exit 1
-# No --force-recreate: Caddy is only restarted if its own config or image
-# changed, so a server-only change does not disturb TLS or the certificates.
-docker compose --env-file .env up -d --build >>/var/lib/vw-deploy/deploy/update.log 2>&1
-logger -t vw-update "updated to $after"
-printf '%s  updated to %s\n' "$(date -u +%H:%M:%SZ)" "$after" >>/var/lib/vw-deploy/deploy/status
+LOG=/var/lib/vw-deploy/deploy/update.log
+seat() { docker compose --env-file .env ps -q a1 2>/dev/null \
+	| xargs -r docker inspect --format '{{.Image}}' 2>/dev/null; }
+
+# Pull, then converge. No condition around either, because `up -d` already is
+# one: compose recreates a container only when its configuration or its image id
+# actually differs, so this is a no-op on the minutes when nothing moved. An
+# earlier version compared digests by hand to decide whether to run it at all,
+# which is the same decision made twice and the second copy is the one that gets
+# it wrong.
+#
+# And no --force-recreate, which is the important part: compose touches only what
+# changed, so a server image change does not restart Caddy and therefore cannot
+# disturb TLS. That is what keeps a deploy off the Let's Encrypt rate limit, and
+# it is the whole reason deploying is this and not a reinstall.
+was=$(seat)
+docker compose --env-file .env pull --quiet >>"$LOG" 2>&1 || true
+docker compose --env-file .env up -d >>"$LOG" 2>&1
+now=$(seat)
+
+# Reported after the fact rather than predicted. What an arena is running is the
+# only thing worth writing down, and the honest way to know is to look.
+[ "$before" = "$after" ] && [ "$was" = "$now" ] && exit 0
+logger -t vw-update "converged to $after, image ${now:-none}"
+printf '%s  updated to %s (image %.19s)\n' "$(date -u +%H:%M:%SZ)" "$after" \
+	"${now#sha256:}" >>/var/lib/vw-deploy/deploy/status
 UPD
 chmod +x /usr/local/bin/vw-update
 

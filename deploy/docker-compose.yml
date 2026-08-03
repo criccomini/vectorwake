@@ -13,10 +13,19 @@
 name: vectorwake
 
 x-arena: &arena
-  build:
-    context: ..
-    dockerfile: Dockerfile
-  image: vectorwake:local
+  # Pulled, not built. The host compiled its own binary because the machine that
+  # did the first deploy had no registry credential; CI has one, so a deploy is a
+  # pull and this box needs no Rust toolchain, no C compiler, and none of the
+  # 2 GB of swap that existed because cargo linking tokio and rustls was the peak
+  # memory of its life.
+  #
+  # `prod` is a moving pointer CI retags on every push to main. Rollback is
+  # retagging it at an older `sha-` and letting the updater converge, which beats
+  # reverting a commit and rebuilding. Pin VW_IMAGE to a `sha-` tag to hold a
+  # host at a known build.
+  #
+  # docker-compose.local.yml puts the build back for working on a laptop.
+  image: ${VW_IMAGE:-ghcr.io/criccomini/vectorwake:prod}
   network_mode: host
   # Any exit restarts, including a clean one. That is what makes the admin
   # surface's `restart` verb work: the process exits 0 and the platform brings

@@ -51,13 +51,24 @@ ran out and the game went dark -- while the static client kept serving, because
 its name was new enough to still have a certificate, and `/health` kept
 answering 200 because Caddy was fine. One name means one certificate to lose.
 
-**Deploys are a git push, not a reinstall.** A timer on the host pulls `main`
-every minute and runs `docker compose up -d --build` only when the revision
-actually moved. Measured: a push at 04:09 was live at 04:10:15, about fifty
-seconds, with both zones still verified and serving either side of it. That is what makes the paragraph above safe rather than merely
-survived: a pull touches the checkout and the containers and nothing else, so
-certificates, ACME account keys and arena instance ids all persist. Reinstall is
-for changing the provisioning script itself, and each one costs a certificate.
+**Deploys are a push, not a reinstall.** A timer on the host converges on what
+`main` and the registry say, every minute, and says nothing when neither moved.
+
+It checks both because they move for different reasons. The checkout carries the
+compose file, the Caddyfile and the client bundle, all read from disk at container
+start; the image carries the binary and the catalog. So it compares the image
+digest rather than blindly pulling and recreating -- `prod` is retagged on every
+push to main, including pushes that build byte-identical images, and recreating
+containers for an unchanged digest would restart live games for nothing.
+
+Measured while the host still built its own binary: a push at 04:09 was live at
+04:10:15, about fifty seconds, with both zones verified and serving either side
+of it. That is what makes the certificate paragraph above safe rather than merely
+survived: a converge touches the checkout and the containers and nothing else, so
+certificates, ACME account keys and arena instance ids all persist. Compose
+recreates only what changed, so a server-image change does not restart Caddy and
+therefore cannot disturb TLS. Reinstall is for changing the provisioning script
+itself, and each one costs a certificate.
 
 **Two arena servers, not one.** A single arena would never make zone selection
 do anything: with two, a fresh host comes up with one serving Chaos and the other
@@ -105,13 +116,27 @@ rather than a remembered sequence.
 
 Two things about it are shaped by a constraint rather than taste.
 
-**The host compiles the server itself.** There is no image registry in the
-picture, because pushing to one needs a credential that the machine doing the
-deploy did not have, and the repository is public so a clone costs nothing. The
-consequence is a ten-minute first boot and a 2 GB instance rather than a 1 GB
-one: `cargo` linking tokio and rustls is the peak memory of the whole host's
-life, and a linker killed by the OOM reaper is the worst failure available on a
-box nobody can log into. 2 GB of swap on top, for the same reason.
+**The host runs a published image and compiles nothing.** It used to compile the
+server itself, for one reason: pushing to a registry needs a credential the
+machine doing the deploy did not have. GitHub Actions has one for free, so
+`.github/workflows/image.yml` builds `ghcr.io/criccomini/vectorwake` and the host
+pulls it.
+
+What that reason cost while it stood is worth recording, because it is the shape
+of every build-on-the-box arrangement. A ten-minute first boot; a 2 GB instance
+rather than a 1 GB one, because cargo linking tokio and rustls was the peak
+memory of the whole host's life and a linker killed by the OOM reaper is the
+worst failure available on a box nobody can log into; 2 GB of swap on top for the
+same reason; and a Rust toolchain and a C compiler sitting on a public-facing
+machine for the rest of its life. Measured at the end: a source change took ten
+minutes to deploy, against the fifty seconds a cached layer managed, and every
+one-line fix paid the full price.
+
+Two tags come out of CI. `sha-<short>` is immutable, and an OCI `revision` label
+means `docker inspect` maps a running container back to a commit. `prod` is the
+moving pointer the host follows, so a rollback is retagging `prod` at an older
+`sha-` and letting the updater converge -- no revert, no rebuild. `VW_IMAGE` pins
+a host to one build when that is wanted.
 
 **Caddy starts before the build, and serves the deploy log.** That inverts the
 obvious order on purpose. The proxy needs none of our code, so it is up in
@@ -242,7 +267,9 @@ them from being readable by any unprivileged process that can open a socket to
 ## What is deliberately not here
 
 No Kubernetes: zone selection is the scheduler, so nothing needs placing. No
-image registry, per above. No Nakama and no Postgres, because the first
-deployment has no accounts and ratings still sit on the arena's own disk, which
-[roadmap.md](roadmap.md) M7.7 is what changes. No monitoring beyond the metrics
-in `STATUS` and what the admin page draws from them.
+Nakama and no Postgres, because the first deployment has no accounts and ratings
+still sit on the arena's own disk, which [roadmap.md](roadmap.md) M7.7 is what
+changes. No monitoring beyond the metrics in `STATUS` and what the admin page
+draws from them, and in particular nothing that plays the game -- every bug found
+in the first days of running this was invisible to `/health` and obvious to
+thirty seconds of `tools/pilot`, which is the gap most worth closing next.
