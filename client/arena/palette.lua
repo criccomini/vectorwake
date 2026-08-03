@@ -55,6 +55,13 @@ M.STAR_FAR  = rgb(0x2a3a58)
 M.THRUST    = rgb(0xffbe78)
 M.HURT      = rgb(0xff505a)
 
+-- A hull's interior structure: plates, panel lines, the truss inside a
+-- Lattice's arms. Neutral on purpose and the same on both teams, so the team
+-- read stays on the silhouette where identity.md puts it. Drawn in the team
+-- colour instead, a ship looks cut from a single sheet of neon rather than
+-- built out of parts.
+M.PANEL_INK = rgb(0x9fb6d4)
+
 -- The five stats, in the order the core defines them.
 M.UPGRADES = {
     {name = "energy",   short = "NRG", col = rgb(0x7fe3a0)},
