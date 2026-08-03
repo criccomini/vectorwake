@@ -26,7 +26,7 @@ capabilities = ["ban", "catalog", "kick", "drain", "pin", "reload"]
 # paste here. The digest is safe to commit; the raw token is not.
 [[pool]]
 name = "vultr ewr"
-token = "sha256:062c6ca2d58e585a4aa49b7c58035f5235332abd48f10317df8c75aa05fd1a5e"
+token = "sha256:27dc0b5be922ca34c18652bf9d3a3bd3bf0c617cc0097afe1c34deaf1d59c735"
 region = "ewr"
 max_instances = 8
 
