@@ -7,4 +7,9 @@
 !sim
 !catalog
 server/target
+
+# Not used by the Dockerfile and absent from a normal checkout. It exists so a
+# build behind a TLS-intercepting proxy can add that proxy's CA in an extra
+# layer, which needs the file inside the build context. Gitignored, so this line
+# does nothing unless somebody has deliberately put one there.
 !sandbox-ca.crt
