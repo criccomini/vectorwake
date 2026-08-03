@@ -56,7 +56,13 @@ services:
     # repaired by rebuilding. On a laptop it is a container that can be thrown
     # away, which is the opposite requirement.
     environment:
-      VW_META_DATABASE: postgres://vectorwake:vectorwake@127.0.0.1:5432/vectorwake
+      # Explicitly cleartext, because this database is a container on the same
+      # machine and the postgres image ships no certificate. Said out loud so a
+      # base image that starts offering TLS cannot turn this into a handshake
+      # against a CA that was never going to verify.
+      VW_META_DATABASE: postgres://vectorwake:vectorwake@127.0.0.1:5432/vectorwake?sslmode=disable
+      # No CA to trust: the connection above is cleartext.
+      VW_META_CA: ""
     depends_on: [db]
 
   db:

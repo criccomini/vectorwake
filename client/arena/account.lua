@@ -27,6 +27,10 @@ M.note = ""
 -- second copy of the same thing, and the player was told to keep it.
 M.key = ""
 M.link_code = ""
+-- Whether the meta-layer has ever answered. It separates "waiting" from
+-- "there is nothing there", which are the same empty token and very different
+-- sentences to show somebody.
+M.reached = false
 
 local secret = ""
 -- One request of each kind in flight at a time. The games list re-asks the
@@ -71,6 +75,7 @@ local function post(path, body, cb)
             cb(nil, res and ("meta-layer said " .. tostring(res.status)) or "no reply")
             return
         end
+        M.reached = true
         local ok, parsed = pcall(json.decode, res.response or "")
         if not ok or type(parsed) ~= "table" then
             cb(nil, "unreadable reply")
@@ -202,9 +207,17 @@ function M.redeem_code(code, cb)
 end
 
 -- What the menu says about this pilot, in one line.
+--
+-- Never a status code. `M.note` carries what actually went wrong for anybody
+-- reading a log, and a player gets a sentence about their pilot instead: an
+-- unreachable meta-layer costs them persistence and nothing else, which is a
+-- thing to say plainly rather than an error to hand over.
 function M.status()
     if M.base == "" then return "this deployment has no accounts; nothing is saved" end
-    if M.token == "" then return M.note ~= "" and M.note or "signing in" end
+    if M.token == "" then
+        if M.reached then return "signing in" end
+        return "flying as a guest; nothing is being saved right now"
+    end
     if M.claimed then return "claimed, so your rating follows you" end
     return "a guest on this device only"
 end

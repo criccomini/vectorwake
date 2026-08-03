@@ -164,9 +164,17 @@ services:
     <<: *arena
     restart: on-failure
     command: ["meta", "/catalog"]
+    volumes:
+      # The managed database's CA. Vultr signs each project's databases with
+      # its own rather than a publicly trusted one, so without this the
+      # meta-layer will not talk to it at all. Not a secret; see the file.
+      - ./db-ca.pem:/etc/vectorwake/db-ca.pem:ro
     environment:
       VW_META_LISTEN: 127.0.0.1:9400
-      # Empty means no accounts. See above.
+      VW_META_CA: /etc/vectorwake/db-ca.pem
+      # Empty means no accounts. See above. A managed database wants
+      # `?sslmode=require` on the end of it, which is what makes the connection
+      # use the CA above rather than going out in the clear.
       VW_META_DATABASE: ${VW_META_DATABASE:-}
       # 64 hex characters from `vectorwake-server metakey`, whose other half
       # goes in the catalog's [meta] block. Losing this invalidates every live

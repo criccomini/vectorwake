@@ -21,7 +21,6 @@ use std::sync::Arc;
 use deadpool_postgres::{Client, Pool};
 use rand::Rng;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio_postgres::NoTls;
 
 use crate::catalog::sha256_hex;
 use crate::token::{self, ClassRating, Claims, Kind};
@@ -807,9 +806,45 @@ pub async fn run() {
         Default::default()
     });
 
+    // TLS on the database connection, because a bought database is reached
+    // over somebody else's network. Vultr's managed Postgres refuses a
+    // cleartext connection outright, so this is not a hardening pass but the
+    // difference between connecting and not.
+    //
+    // `sslmode` in the connection string decides whether it is used:
+    // `require` for a managed database, and the default `prefer` on a laptop
+    // falls back to cleartext against a container that offers no TLS. One code
+    // path either way.
+    let tls = {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        // A provider that is not publicly trusted, which some managed
+        // databases use. The file goes beside the process and its path in the
+        // environment; without one, public roots are all we trust.
+        if let Ok(path) = std::env::var("VW_META_CA") {
+            match std::fs::read(&path) {
+                Ok(pem) => {
+                    let mut rd = std::io::BufReader::new(&pem[..]);
+                    let mut added = 0;
+                    for cert in rustls_pemfile::certs(&mut rd).flatten() {
+                        if roots.add(cert).is_ok() {
+                            added += 1;
+                        }
+                    }
+                    println!("meta: trusting {added} certificate(s) from {path}");
+                }
+                Err(e) => println!("meta: cannot read VW_META_CA {path}: {e}"),
+            }
+        }
+        let cfg = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        tokio_postgres_rustls::MakeRustlsConnect::new(cfg)
+    };
+
     let mut cfg = deadpool_postgres::Config::new();
     cfg.url = Some(url);
-    let pool = match cfg.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls) {
+    let pool = match cfg.create_pool(Some(deadpool_postgres::Runtime::Tokio1), tls) {
         Ok(p) => p,
         Err(e) => {
             println!("meta: cannot build a connection pool: {e}");
