@@ -2459,6 +2459,86 @@ mod tests {
         assert!(moved, "a pilot with nobody in sight sat still instead of looking");
     }
 
+    /// Put one green on the map, wherever asked, and nothing else.
+    fn only_prize(w: &mut sim::World, tile_x: i32, tile_y: i32) {
+        for p in w.state.prizes.iter_mut() {
+            p.active = 0;
+        }
+        w.state.prizes[0] = sim::sim_prize {
+            active: 1,
+            x: (tile_x * 16 + 8) * 256,
+            y: (tile_y * 16 + 8) * 256,
+            life: 30_000,
+        };
+    }
+
+    #[test]
+    fn a_green_behind_a_wall_is_not_a_green_worth_chasing() {
+        // Reported from the live server: bots with their noses against a wall and
+        // a green on the other side of it. Selection tested distance and nothing
+        // else, and a green does not move, so the next plan chose the same one,
+        // for the same reason, for ever.
+        //
+        // The pit's inner block spans tiles 505 to 508. A pilot at 503 has it
+        // between them and anything at 511 on the same row, and open floor above.
+        let mut w = sim::World::with_map(1, sim::build_pit);
+        let ship = w.spawn(0, 0, 503, 506, 0) as u8;
+
+        only_prize(&mut w, 503, 502);
+        assert!(
+            ai::scan(&w, ship).prize.is_some(),
+            "a green four tiles away across open floor is worth the detour"
+        );
+
+        only_prize(&mut w, 511, 506);
+        assert!(
+            ai::scan(&w, ship).prize.is_none(),
+            "a green with a wall in front of it was chosen anyway"
+        );
+    }
+
+    #[test]
+    fn a_pilot_pushing_at_a_wall_eventually_does_something_else() {
+        // The case the line of sight test above cannot catch: somewhere visible,
+        // not behind a straight wall, and still not reachable, which is what a
+        // corner is. So the green is handed over directly rather than found by
+        // `scan`, and the only way out is the pilot noticing it is not getting
+        // any closer.
+        //
+        // An enemy sits in range throughout. Greens are chosen before foes and a
+        // pilot running one takes its hands off the trigger, so a shot fired is
+        // proof the green was abandoned: it cannot fire until it has been.
+        let mut w = sim::World::with_map(1, sim::build_pit);
+        let ship = w.spawn(0, 0, 503, 506, 0) as u8;
+        let mut bot = ai::Bot::new(ship, 0.5);
+
+        let px = |t: i32| (t * 16 + 8) as f32;
+        let stuck_on = ai::Scan {
+            prize: Some((px(511), px(506))),
+            foe: Some(ai::Foe { x: px(503), y: px(517), vx: 0.0, vy: 0.0, clear: true }),
+            flag: None,
+        };
+
+        let mut fired_at = None;
+        for t in 0..1500u32 {
+            // Handed over once and never refreshed. Working from a stale picture
+            // is the ordinary case for these pilots, and here it is what keeps
+            // the unreachable green in front of them.
+            let fresh = (t == 0).then(|| stuck_on.clone());
+            let buttons = bot.think(&ai::own(&w, ship), fresh);
+            if buttons & (sim::BTN_FIRE | sim::BTN_BOMB) != 0 && fired_at.is_none() {
+                fired_at = Some(t);
+            }
+            w.step(&[sim::sim_input { ship, buttons }]);
+        }
+        // Measured at 290: two seconds of no progress, plus the reaction cycle it
+        // takes to act on that and the one it takes to line up the shot. The
+        // bound is loose because the exact tick is not the point; giving up at
+        // all is.
+        let t = fired_at.expect("never gave up on a green it could not reach");
+        assert!((200..600).contains(&t), "gave up on the green at tick {t}");
+    }
+
     /// A seat is furniture, and its last occupant does not come with it.
     ///
     /// Joining cleared the stat upgrades and nothing else, so a pilot handed a

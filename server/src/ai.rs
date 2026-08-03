@@ -237,6 +237,33 @@ fn shot_of(w: &World, me: &sim::sim_ship, trig: usize, max_e: f32) -> Option<Sho
     None
 }
 
+/// The things a plan can head towards, so an approach that stops closing can be
+/// abandoned without the pilot deciding it all over again on the next cycle.
+///
+/// Leaving a safe zone is not on the list. The way out is the way the pilot came
+/// in, and a bot that gave up on it would stay in the one place nothing can be
+/// shot from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Goal {
+    Flag = 0,
+    Prize = 1,
+    Foe = 2,
+    Roam = 3,
+}
+
+/// How long a pilot pushes at something that is not getting any closer, and how
+/// long it leaves that kind of thing alone afterwards. Ticks, so two seconds and
+/// five.
+const STUCK_TICKS: u32 = 200;
+const GIVE_UP_TICKS: u32 = 500;
+/// Closing by less than this over the window does not count as closing. A hull
+/// does up to 3 px a tick, so anything actually making its way somewhere clears
+/// it by an order of magnitude; a hull with its nose against a wall does zero.
+const PROGRESS_PX: f32 = 32.0;
+/// Two destinations this close together are the same destination, so a green
+/// taken and replaced nearby continues the attempt rather than restarting it.
+const SAME_GOAL_PX: f32 = 48.0;
+
 pub struct Bot {
     pub ship: u8,
     skill: f32,
@@ -258,6 +285,13 @@ pub struct Bot {
     /// Where this pilot is heading when there is nothing to fight. Zero means
     /// "pick somewhere", which is also the starting state.
     roam: (f32, f32),
+    /// The approach in progress: what kind it is, where it is going, the closest
+    /// this pilot has been to it, and when that closest approach was.
+    goal: Option<(Goal, f32, f32)>,
+    best_dist: f32,
+    best_at: u32,
+    /// When each kind of approach is worth trying again, indexed by `Goal`.
+    blocked: [u32; 4],
 }
 
 impl Bot {
@@ -280,6 +314,10 @@ impl Bot {
             aim: (0.0, 0.0),
             dist: 0.0,
             roam: (0.0, 0.0),
+            goal: None,
+            best_dist: 0.0,
+            best_at: 0,
+            blocked: [0; 4],
         }
     }
 
@@ -419,9 +457,59 @@ impl Bot {
         self.dist > near && self.dist < far
     }
 
+    /// Whether this kind of approach is worth trying at all right now.
+    fn worth_trying(&self, g: Goal) -> bool {
+        self.timer >= self.blocked[g as usize]
+    }
+
+    /// Note how an approach is going, and give up on it when it stops closing.
+    ///
+    /// This is the whole of the routing this AI has, and it is deliberately not
+    /// routing: rather than working out whether somewhere is reachable, a pilot
+    /// heads for it and notices when that is not working. The alternative on the
+    /// table was A* over a coarse grid, per docs/architecture/ai-runtime.md, and
+    /// it would not have fixed the thing that was actually wrong. What was wrong
+    /// is that a plan committed to a destination and then re-derived the same
+    /// destination for ever, so any target chosen badly once was chosen badly
+    /// until the pilot died. A pathfinder still needs this underneath it, for
+    /// every case the path is right and the flying is not.
+    ///
+    /// `arrive` is the distance at which the approach has succeeded rather than
+    /// stalled, which is what keeps a bot holding its working range from
+    /// deciding it is stuck against the enemy it is busy shooting.
+    fn approaching(&mut self, o: &Own, g: Goal, tx: f32, ty: f32, arrive: f32) {
+        let (dx, dy) = (tx - o.x, ty - o.y);
+        let d = (dx * dx + dy * dy).sqrt();
+        if d <= arrive {
+            self.goal = None;
+            return;
+        }
+        let same = self.goal.map_or(false, |(og, ox, oy)| {
+            og == g && (ox - tx).abs() < SAME_GOAL_PX && (oy - ty).abs() < SAME_GOAL_PX
+        });
+        if !same {
+            self.goal = Some((g, tx, ty));
+            self.best_dist = d;
+            self.best_at = self.timer;
+        } else if d < self.best_dist - PROGRESS_PX {
+            self.best_dist = d;
+            self.best_at = self.timer;
+        } else if self.timer.saturating_sub(self.best_at) > STUCK_TICKS {
+            self.goal = None;
+            match g {
+                // Nothing falls through past roaming, so an unreachable roam
+                // point is replaced rather than given up on. Zero is how `roam`
+                // is told to pick somewhere.
+                Goal::Roam => self.roam = (0.0, 0.0),
+                _ => self.blocked[g as usize] = self.timer + GIVE_UP_TICKS,
+            }
+        }
+    }
+
     fn plan(&mut self, o: &Own) -> u16 {
         if !o.alive {
             self.aim = (0.0, 0.0);
+            self.goal = None;
             return 0;
         }
 
@@ -435,20 +523,23 @@ impl Bot {
 
         // A flag nobody owns, or one the other side holds, is worth crossing
         // the room for. Flags decide the round; kills only clear the way.
-        if let Some((fx, fy)) = self.seen.flag {
+        if let Some((fx, fy)) = self.seen.flag.filter(|_| self.worth_trying(Goal::Flag)) {
             self.aim = (0.0, 0.0); // hands off the trigger while running a flag
+            self.approaching(o, Goal::Flag, fx, fy, 16.0);
             return self.steer(o, fx - o.x, fy - o.y, false);
         }
 
         // A green within easy reach is worth the detour when energy allows.
         if o.energy > 0.4 {
-            if let Some((px, py)) = self.seen.prize {
+            if let Some((px, py)) = self.seen.prize.filter(|_| self.worth_trying(Goal::Prize)) {
                 self.aim = (0.0, 0.0);
+                self.approaching(o, Goal::Prize, px, py, 16.0);
                 return self.steer(o, px - o.x, py - o.y, false);
             }
         }
 
-        let Some(foe) = self.seen.foe else {
+        let foe = self.seen.foe.filter(|_| self.worth_trying(Goal::Foe));
+        let Some(foe) = foe else {
             self.aim = (0.0, 0.0);
             return self.roam(o);
         };
@@ -475,6 +566,10 @@ impl Bot {
 
         // Hold a working range; weaker pilots misjudge it.
         let ideal = 130.0 + (1.0 - self.skill) * 90.0;
+        // Inside that range the pilot has arrived and is fighting, so closing no
+        // further is the plan working rather than a wall. Only the run in counts
+        // as an approach.
+        self.approaching(o, Goal::Foe, fx, fy, ideal * 1.15);
         if dist > ideal * 1.15 {
             out |= sim::BTN_THRUST;
         } else if dist < ideal * 0.55 {
@@ -516,6 +611,10 @@ impl Bot {
             let (rx, ry) = (self.rand(), self.rand());
             self.roam = (c + (rx - 0.5) * 2.0 * spread, c + (ry - 0.5) * 2.0 * spread);
         }
+        // A point rolled inside a wall would otherwise be pushed at for ever:
+        // nothing is nearer than twenty tiles, so `arrived` never fires, and a
+        // roam is the one approach with nothing after it to fall through to.
+        self.approaching(o, Goal::Roam, self.roam.0, self.roam.1, 20.0 * 16.0);
         self.steer(o, self.roam.0 - o.x, self.roam.1 - o.y, false) | sim::BTN_THRUST
     }
 
@@ -569,6 +668,20 @@ fn nearest_flag(w: &World, mx: f32, my: f32, team: u8, within: f32) -> Option<(f
     best.map(|(_, x, y)| (x, y))
 }
 
+/// The closest green this pilot has a clear run at.
+///
+/// The line matters more here than it does for a foe. A green does not move, so
+/// a bot that picks one behind a wall thrusts into that wall and stays there:
+/// the next plan chooses the same green, because it is still the nearest and
+/// still sitting there precisely because nobody can reach it. Greens appear in a
+/// ring six to twenty-eight tiles from a live pilot, which on a map of scattered
+/// furniture puts a good number of them on the far side of something.
+///
+/// A straight line is not a route, so a green around a corner is passed over.
+/// For a green that is the right trade: they are opportunistic, another is along
+/// shortly, and a clear line at two hundred pixels is about what a player would
+/// bother with. Flags get no such filter, because there are four of them and
+/// they decide the round.
 fn nearest_prize(w: &World, mx: f32, my: f32, within: f32) -> Option<(f32, f32)> {
     let mut best: Option<(f32, f32, f32)> = None;
     for p in w.state.prizes.iter() {
@@ -577,7 +690,12 @@ fn nearest_prize(w: &World, mx: f32, my: f32, within: f32) -> Option<(f32, f32)>
         }
         let (px, py) = (p.x as f32 / 256.0, p.y as f32 / 256.0);
         let d2 = (px - mx) * (px - mx) + (py - my) * (py - my);
-        if d2 <= within * within && best.map_or(true, |b| d2 < b.0) {
+        if d2 > within * within || best.map_or(false, |b| d2 >= b.0) {
+            continue;
+        }
+        // Last, because it is the expensive test: a couple of dozen tile reads
+        // against the two subtractions above.
+        if clear_line(w, mx, my, px, py) {
             best = Some((d2, px, py));
         }
     }

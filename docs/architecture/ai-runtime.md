@@ -83,7 +83,27 @@ Frictionless flight means reaching a point is a control problem rather than a
 pathfinding one: a bot that thrusts at its target arrives at speed and sails past
 it into a wall.
 
-Two layers:
+Neither layer below is built. What exists instead is one rule, and it is worth
+saying why, because the obvious reading of this section is that routing is done.
+
+A pilot heads straight for where it wants to be and gives up when that stops
+working: it keeps the closest it has come to its destination, and two seconds
+without closing by 32 px means the destination is behind something. Then it
+abandons that kind of destination for five seconds and falls through to the next
+thing it would rather be doing. Greens also get a straight-line check before
+they are chosen at all, since a green does not move and one behind a wall is
+selected again by every plan that follows.
+
+That fixed the bug that was actually reported, which was bots pressing their
+noses into a wall with a green on the other side, and A* would not have. A plan
+committed to a destination and then re-derived the same destination for ever, so
+anything chosen badly once was chosen badly until the pilot died. A pathfinder
+needs the give-up underneath it anyway, for every case where the path is right
+and the flying is not.
+
+The two layers below are still the plan for when a map has corridors worth
+routing through. On a lattice of mostly open cells, straight-line steering plus
+give-up covers it.
 
 **Route.** A* over a coarse grid, downsampled from 1024x1024 tiles to 128x128
 cells of eight tiles each, with cell cost from wall density. Built once at map
