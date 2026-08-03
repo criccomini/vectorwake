@@ -89,6 +89,57 @@ function M.loop(name, on)
     end
 end
 
+-- The soundtrack, which is a loop like thrust but wanted the moment there is
+-- anything to hear rather than on an edge the game computes.
+--
+-- Asked rather than told: a browser makes no sound at all until the page has
+-- been interacted with, so the first attempt is often refused and nothing
+-- says so. Checking whether it is actually running and starting it again if
+-- not is what makes that self-healing, and it costs one call a keypress.
+local music = {want = false, settled = false, wait = 0, tries = 0}
+
+function M.music(on)
+    music.want = on and true or false
+    music.settled = false
+    music.wait = 0
+    music.tries = 0
+    if not music.want then pcall(sound.stop, "#music") end
+end
+
+-- Once a frame, and the reason the soundtrack is asked for rather than told.
+--
+-- Two gates sit between wanting music and hearing it. A browser makes no
+-- sound at all until the page has been interacted with, and Defold's audio
+-- device does not wake until something has actually played -- so the first
+-- request is accepted, returns success, and is silently dropped. Measured:
+-- asking once at the first keypress left the track silent forever, and firing
+-- the guns was what let it in.
+--
+-- So this asks again every couple of seconds until the engine agrees it is
+-- running, and then stops asking. Stopping before each retry is what makes
+-- that safe: a second voice of a nineteen second loop playing against itself
+-- is the worst sound this game could make. The attempt count is a backstop
+-- for the case where `is_playing` is wrong about a component -- a bounded
+-- number of restarts beats an endless one.
+function M.music_tick(dt)
+    if not music.want or music.settled then return end
+    local ok, playing = pcall(sound.is_playing, "#music")
+    if ok and playing then
+        music.settled = true
+        return
+    end
+    if music.tries >= 12 then
+        music.settled = true
+        return
+    end
+    music.wait = music.wait - (dt or 0)
+    if music.wait > 0 then return end
+    music.wait = 2.0
+    music.tries = music.tries + 1
+    pcall(sound.stop, "#music")
+    M.fire("music", {gain = 1, pan = 0, speed = 1})
+end
+
 -- One place where a sound actually starts.
 --
 -- Guarded, because a sound component that failed to load must not take the

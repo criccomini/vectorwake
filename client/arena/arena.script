@@ -424,6 +424,11 @@ end
 function init(self)
     msg.post(".", "acquire_input_focus")
     math.randomseed(1)
+    -- Wanted from the first frame. It will not start until the page has been
+    -- touched and the audio device is awake, which is why this is a request
+    -- the frame loop keeps making rather than a call that either works or
+    -- does not. See sfx.music_tick.
+    sfx.music(true)
 
     layers = {
         bg = vec.layer("#bg", 20480),
@@ -698,6 +703,9 @@ function update(self, dt)
     if self.online and sim.ship_count() == 0 and not menu.open then return end
 
     sfx.frame()
+    -- The soundtrack wants to be running from the first frame and cannot be,
+    -- so it is asked for repeatedly until it is. See sfx.music_tick.
+    sfx.music_tick(dt)
 
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics

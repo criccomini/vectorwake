@@ -42,8 +42,9 @@ def env(t, dur, attack=0.004, curve=3.0):
 class Voice:
     """A mono buffer with the handful of shaping tools these sounds need."""
 
-    def __init__(self, dur):
-        self.n = int(dur * RATE)
+    def __init__(self, dur, rate=RATE):
+        self.rate = rate
+        self.n = int(dur * rate)
         self.dur = dur
         self.buf = [0.0] * self.n
 
@@ -51,28 +52,28 @@ class Voice:
         """A swept sine. Phase is integrated so the sweep has no clicks."""
         ph = phase
         for i in range(self.n):
-            t = i / RATE
+            t = i / self.rate
             x = (t / self.dur) ** curve
             f = f0 + (f1 - f0) * x
-            ph += 2 * math.pi * f / RATE
+            ph += 2 * math.pi * f / self.rate
             self.buf[i] += math.sin(ph) * gain * env(t, self.dur)
         return self
 
     def saw(self, f0, f1, gain, curve=1.0):
         ph = 0.0
         for i in range(self.n):
-            t = i / RATE
+            t = i / self.rate
             f = f0 + (f1 - f0) * (t / self.dur) ** curve
-            ph = (ph + f / RATE) % 1.0
+            ph = (ph + f / self.rate) % 1.0
             self.buf[i] += (2 * ph - 1) * gain * env(t, self.dur)
         return self
 
     def square(self, f0, f1, gain, duty=0.5, curve=1.0):
         ph = 0.0
         for i in range(self.n):
-            t = i / RATE
+            t = i / self.rate
             f = f0 + (f1 - f0) * (t / self.dur) ** curve
-            ph = (ph + f / RATE) % 1.0
+            ph = (ph + f / self.rate) % 1.0
             self.buf[i] += (1.0 if ph < duty else -1.0) * gain * env(t, self.dur)
         return self
 
@@ -87,10 +88,10 @@ class Voice:
         cutoff_end = cutoff if cutoff_end is None else cutoff_end
         y = 0.0
         for i in range(self.n):
-            t = i / RATE
+            t = i / self.rate
             x = t / self.dur
             fc = cutoff + (cutoff_end - cutoff) * x
-            a = 1.0 - math.exp(-2 * math.pi * max(20.0, fc) / RATE)
+            a = 1.0 - math.exp(-2 * math.pi * max(20.0, fc) / self.rate)
             y += a * (rng.uniform(-1.0, 1.0) - y)
             self.buf[i] += y * gain * env(t, self.dur, curve=curve)
         return self
@@ -123,7 +124,7 @@ class Voice:
         """
         rng = rng or random.Random(1)
         raw = [rng.uniform(-1.0, 1.0) for _ in range(self.n)]
-        a = 1.0 - math.exp(-2 * math.pi * max(20.0, cutoff) / RATE)
+        a = 1.0 - math.exp(-2 * math.pi * max(20.0, cutoff) / self.rate)
         y = 0.0
         for i in range(self.n):        # a lap to settle the filter's state
             y += a * (raw[i] - y)
@@ -133,7 +134,7 @@ class Voice:
         return self
 
     def highpass(self, fc):
-        a = math.exp(-2 * math.pi * fc / RATE)
+        a = math.exp(-2 * math.pi * fc / self.rate)
         prev_x, prev_y = 0.0, 0.0
         for i in range(self.n):
             x = self.buf[i]
@@ -149,7 +150,7 @@ class Voice:
         return self
 
     def fade_out(self, seconds=0.008):
-        m = min(self.n, int(seconds * RATE))
+        m = min(self.n, int(seconds * self.rate))
         for i in range(m):
             self.buf[self.n - 1 - i] *= i / m
         return self
@@ -173,7 +174,7 @@ class Voice:
         with wave.open(path, "wb") as w:
             w.setnchannels(1)
             w.setsampwidth(2)
-            w.setframerate(RATE)
+            w.setframerate(self.rate)
             w.writeframes(bytes(frames))
         print("%-12s %5.0f ms  %6d bytes" % (
             os.path.basename(path), self.dur * 1000, len(frames)))
@@ -309,6 +310,257 @@ def thrust():
     return v.drive(1.25)
 
 
+# --- the soundtrack --------------------------------------------------------
+#
+# One track, eight bars, playing under everything for as long as the game is
+# open. It has to come round without a seam and it has to stay welcome after
+# the fortieth pass, which are different problems: the first is arithmetic and
+# the second is restraint. So there is no melody doing anything clever, and
+# nothing in it arrives more often than the ear stops noticing.
+
+MUSIC_RATE = RATE    # 22050; the engine takes no other rate, see music()
+BPM = 100
+BEAT = MUSIC_RATE * 60 // BPM       # 13230 samples, exactly
+BAR = BEAT * 4
+BARS = 8
+
+# Note names to frequencies, equal temperament from A4 = 440.
+NOTE = {}
+for _i, _n in enumerate("c cs d ds e f fs g gs a as b".split()):
+    for _oct in range(9):
+        NOTE["%s%d" % (_n, _oct)] = 440.0 * 2.0 ** ((12 + _oct * 12 + _i - 69) / 12.0)
+
+
+def lowpass(buf, fc, rate, poles=2):
+    """A one-pole lowpass, run `poles` times. Every voice here goes through
+    one: the genre is a filter sweep with a band behind it, and a raw saw is
+    the sound of something that has not been recorded yet."""
+    a = 1.0 - math.exp(-2 * math.pi * fc / rate)
+    for _ in range(poles):
+        y = 0.0
+        for i in range(len(buf)):
+            y += a * (buf[i] - y)
+            buf[i] = y
+    return buf
+
+
+def note_saw(f, dur, rate, decay=4.0, attack=0.004, cutoff=2200.0, detune=0.0):
+    """A saw with an exponential decay. Two of them a few cents apart is the
+    whole width of this mix, since it is mono and there is no chorus."""
+    n = int(dur * rate)
+    out = [0.0] * n
+    voices = [f] if detune <= 0 else [f * (1 - detune), f * (1 + detune)]
+    for vf in voices:
+        ph = 0.0
+        for i in range(n):
+            ph = (ph + vf / rate) % 1.0
+            out[i] += (2.0 * ph - 1.0) / len(voices)
+    at = max(1, int(attack * rate))
+    for i in range(n):
+        x = i / n
+        a = (i / at) if i < at else math.exp(-decay * x)
+        out[i] *= a
+    return lowpass(out, cutoff, rate)
+
+
+def note_pad(f, dur, rate, cutoff=1400.0):
+    """A pad: slow in, slow out, and detuned enough to beat gently. The rise
+    and fall are the point -- an organ that arrives instantly is a stab."""
+    n = int(dur * rate)
+    out = [0.0] * n
+    for vf in (f * 0.9965, f * 1.0035, f * 2.0):
+        g = 0.35 if vf > f * 1.5 else 1.0
+        ph = 0.0
+        for i in range(n):
+            ph = (ph + vf / rate) % 1.0
+            out[i] += (2.0 * ph - 1.0) * g
+    rise = int(0.35 * rate)
+    fall = int(0.55 * rate)
+    for i in range(n):
+        a = 1.0
+        if i < rise:
+            a = i / rise
+        if i > n - fall:
+            a *= (n - i) / fall
+        out[i] *= a
+    return lowpass(out, cutoff, rate, poles=3)
+
+
+def note_lead(f, dur, rate):
+    """The one thing playing a tune. A sine with a fifth over it and a slow
+    vibrato, quiet enough to be atmosphere rather than a part."""
+    n = int(dur * rate)
+    out = [0.0] * n
+    ph = ph5 = 0.0
+    for i in range(n):
+        t = i / rate
+        vib = 1.0 + 0.004 * math.sin(2 * math.pi * 5.2 * t)
+        ph += 2 * math.pi * f * vib / rate
+        ph5 += 2 * math.pi * f * 1.5 * vib / rate
+        x = i / n
+        a = min(1.0, i / (0.18 * rate)) * min(1.0, (n - i) / (0.4 * rate))
+        out[i] = (math.sin(ph) + 0.3 * math.sin(ph5)) * a * (1.0 - 0.3 * x)
+    return out
+
+
+def kick(rate, rng):
+    """Four to the bar. A sine dropping fast onto a floor, with a click on top
+    so it survives being played over a firefight."""
+    n = int(0.17 * rate)
+    out = [0.0] * n
+    ph = 0.0
+    for i in range(n):
+        x = i / n
+        ph += 2 * math.pi * (135.0 * math.exp(-7.0 * x) + 44.0) / rate
+        out[i] = math.sin(ph) * math.exp(-6.0 * x)
+    click = int(0.005 * rate)
+    for i in range(click):
+        out[i] += rng.uniform(-1, 1) * 0.35 * (1.0 - i / click)
+    return out
+
+
+def snare(rate, rng, gate=0.19):
+    """Two and four, with the gate that dates this music exactly. A tail is
+    allowed to bloom and is then cut off flat rather than allowed to fade,
+    which is a mistake somebody made in 1982 and everybody kept."""
+    n = int(0.30 * rate)
+    body = [rng.uniform(-1, 1) for _ in range(n)]
+    body = lowpass(body, 5200.0, rate, poles=1)
+    tone = 0.0
+    ph = 0.0
+    out = [0.0] * n
+    for i in range(n):
+        x = i / n
+        ph += 2 * math.pi * 195.0 / rate
+        tone = math.sin(ph) * math.exp(-16.0 * x) * 0.45
+        # The tail decays slowly and then the gate shuts on it.
+        env_body = math.exp(-22.0 * x)
+        env_tail = math.exp(-3.2 * x) * 0.5
+        g = 1.0
+        cut = gate * rate
+        if i > cut:
+            g = max(0.0, 1.0 - (i - cut) / (0.012 * rate))
+        out[i] = (body[i] * (env_body + env_tail) + tone) * g
+    return out
+
+
+def hat(rate, rng, dur=0.045):
+    n = int(dur * rate)
+    out = [rng.uniform(-1, 1) for _ in range(n)]
+    lp = lowpass(list(out), 2500.0, rate, poles=1)
+    for i in range(n):
+        out[i] = (out[i] - lp[i]) * math.exp(-38.0 * (i / n))
+    return out
+
+
+class Track(Voice):
+    """A fixed number of bars, mixed into by sample offset, wrapping.
+
+    Wrapping is the whole trick. A pad still ringing when the buffer ends
+    comes back at the start rather than being chopped, so the loop point has
+    nothing in it to hear -- which is the difference between a loop and a
+    repeat.
+    """
+
+    def at(self, pos, samples, gain=1.0):
+        for i, v in enumerate(samples):
+            self.buf[(pos + i) % self.n] += v * gain
+        return self
+
+
+def music():
+    """The soundtrack: eight bars of synthwave that come round without a seam.
+
+    Nothing here is sampled either. It is the genre's own furniture put up out
+    of arithmetic -- eighth-note bass, a sixteenth arpeggio, a detuned pad,
+    four on the floor under a gated snare -- over i-VI-III-VII in A minor,
+    which is the progression the whole style is built on and the reason every
+    track in it sounds like every other.
+
+    Two things make it loop rather than restart. Everything is mixed in
+    through `at`, which wraps. And a hundred beats a minute at sixteen
+    kilohertz is 13230 samples a beat exactly, so eight bars is a whole number
+    of samples and the seam lands on the downbeat rather than a hair off it.
+
+    It is most of the download on its own -- one file against fourteen, and
+    nineteen seconds against a fifth of a second -- and the obvious economy is
+    to render it at a lower rate, since there is nothing in it above eight
+    kilohertz except the hats. That does not work: the engine plays 22050 and
+    44100 and nothing else, and a file at any other rate is built without
+    complaint, shipped, and silent. Measured, not read: the whole track was
+    inaudible at sixteen kilohertz with no error anywhere to say why.
+    """
+    rate = MUSIC_RATE
+    n = BAR * BARS
+    bed = Track(n / rate, rate)      # bass, arp, pad, lead -- ducked
+    drums = Track(n / rate, rate)    # kick, snare, hats -- not
+    rng = random.Random(20250802)
+
+    # i - VI - III - VII, two bars each: the root, the arpeggio cell it is
+    # played through, the pad voicing, and the note the lead holds over it.
+    CHORDS = [
+        ("a2",  ["a4", "c5", "e5", "c5"], ["a3", "c4", "e4"], "e5"),
+        ("f2",  ["f4", "a4", "c5", "a4"], ["f3", "a3", "c4"], "c5"),
+        ("c3",  ["e4", "g4", "c5", "g4"], ["e3", "g3", "c4"], "g4"),
+        ("g2",  ["d4", "g4", "b4", "g4"], ["d3", "g3", "b3"], "d5"),
+    ]
+
+    for c, (root, cell, voicing, top) in enumerate(CHORDS):
+        base = c * 2 * BAR
+
+        # Pad: one chord held across its two bars, arriving before the bar it
+        # belongs to so the change is a swell rather than an edit.
+        for f in voicing:
+            bed.at(base - int(0.12 * rate),
+                   note_pad(NOTE[f], 2 * BAR / rate + 0.5, rate), 0.16)
+
+        # Lead: one note, most of the two bars, and then out of the way.
+        bed.at(base + BEAT, note_lead(NOTE[top], 2 * BAR / rate - BEAT / rate, rate), 0.10)
+
+        for bar in range(2):
+            b0 = base + bar * BAR
+
+            # Bass on the eighths, up an octave for the last one, which is
+            # what stops a driving bassline from being a drone.
+            for e in range(8):
+                f = NOTE[root] * (2.0 if e == 7 else 1.0)
+                bed.at(b0 + e * BEAT // 2,
+                       note_saw(f, 0.30, rate, decay=5.0, cutoff=900.0), 0.50)
+                bed.at(b0 + e * BEAT // 2,
+                       note_saw(f / 2, 0.26, rate, decay=6.0, cutoff=420.0), 0.22)
+
+            # Arpeggio on the sixteenths, the cell four times a bar.
+            for s in range(16):
+                f = NOTE[cell[s % 4]] * (2.0 if bar == 1 and s >= 12 else 1.0)
+                bed.at(b0 + s * BEAT // 4,
+                       note_saw(f, 0.20, rate, decay=9.0, cutoff=3000.0,
+                                detune=0.006),
+                       0.16 if s % 2 else 0.22)
+
+            # Four on the floor, snare on two and four, hats on the eighths
+            # with the weight on the off-beat.
+            for beat in range(4):
+                drums.at(b0 + beat * BEAT, kick(rate, rng), 0.80)
+                if beat % 2 == 1:
+                    drums.at(b0 + beat * BEAT, snare(rate, rng), 0.34)
+                drums.at(b0 + beat * BEAT, hat(rate, rng), 0.09)
+                drums.at(b0 + beat * BEAT + BEAT // 2, hat(rate, rng), 0.16)
+
+    # The turnaround: one extra snare on the last off-beat, so the eighth bar
+    # points at the first instead of merely stopping next to it.
+    drums.at(n - BEAT // 2, snare(rate, rng), 0.30)
+
+    # Sidechain. Everything but the drums ducks under each kick and comes back
+    # over the beat, which is the breathing this music is mostly made of.
+    for i in range(n):
+        x = (i % BEAT) / BEAT
+        bed.buf[i] *= 0.55 + 0.45 * min(1.0, x / 0.45) ** 0.6
+
+    for i in range(n):
+        bed.buf[i] += drums.buf[i]
+    return bed.drive(1.15)
+
+
 def ui_move():
     v = Voice(0.035)
     v.square(1200, 900, 0.4, duty=0.4)
@@ -328,16 +580,22 @@ KIT = {
     "bounce": bounce, "spawn": spawn, "prize": prize, "rust": rust,
     "charge": charge, "flag": flag,
     "thrust": thrust, "ui_move": ui_move, "ui_go": ui_go,
+    "music": music,
 }
 
 SOUND_COMPONENT = """sound: "/sounds/%s.wav"
 looping: %d
-group: "master"
+group: "%s"
 gain: %.2f
 pan: 0.0
 speed: 1.0
 loopcount: 0
 """
+
+# The soundtrack is its own mixer group, because wanting the game loud and the
+# music off is the commonest thing anybody wants from a game's audio and one
+# gain cannot express it.
+GROUP = {"music": "music"}
 
 # Per-sound trim, so the mix is balanced at the source and the game never has
 # to remember that bombs are loud. Thrust is held down for minutes at a time
@@ -347,21 +605,26 @@ GAIN = {
     "bounce": 0.30, "spawn": 0.45, "prize": 0.45, "rust": 0.50,
     "charge": 0.55, "flag": 0.55,
     "thrust": 0.13, "ui_move": 0.35, "ui_go": 0.55,
+    "music": 0.70,
 }
 
 # The ones that play until they are stopped. `loopcount: 0` with looping on is
 # Defold's "forever".
-LOOPING = {"thrust"}
+LOOPING = {"thrust", "music"}
 
 
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "client/sounds"
     os.makedirs(out, exist_ok=True)
+    only = sys.argv[2:]
     for name, make in sorted(KIT.items()):
+        if only and name not in only:
+            continue
         loop = name in LOOPING
         make().write(os.path.join(out, name + ".wav"), loop=loop)
         with open(os.path.join(out, name + ".sound"), "w") as f:
-            f.write(SOUND_COMPONENT % (name, 1 if loop else 0, GAIN[name]))
+            f.write(SOUND_COMPONENT % (name, 1 if loop else 0,
+                                       GROUP.get(name, "master"), GAIN[name]))
 
 
 if __name__ == "__main__":
