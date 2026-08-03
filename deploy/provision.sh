@@ -41,6 +41,10 @@ bootstrap_down() {
 }
 die() {
 	say "FAILED: $*"
+	# The two questions asked of every failure so far, answered in the log
+	# rather than needing a console: what is running, and who has the ports.
+	echo "--- docker ps -a"; docker ps -a 2>&1
+	echo "--- listening sockets"; ss -lntp 2>&1
 	say "the full output is at /deploy/provision.log"
 	# Whatever went wrong, leave something serving the reason.
 	bootstrap_up
