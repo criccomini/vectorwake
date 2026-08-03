@@ -65,8 +65,10 @@ control without a module.
 
 A converter reads `.lvl` and writes ours. It exists so we can test our collision
 code against maps whose behaviour is known. Like the settings importer, its
-output is not content we ship: an existing zone's map belongs to that zone.
-Going the other way is not planned.
+output is not content we ship, with the one exception
+[design/identity.md](../design/identity.md) records: the three maps in the
+catalog came from the owner of this repository, who asked for them. Going the
+other way is not planned.
 
 ```sh
 make -C sim build/lvl2vw

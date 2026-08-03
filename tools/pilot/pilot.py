@@ -23,6 +23,7 @@ import websockets
 
 SO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libvwprobe.so")
 
+PROTOCOL = 2   # CLIENT_PROTOCOL in server/src/main.rs
 C2S_JOIN, C2S_INPUT, C2S_SHIP = 1, 2, 5
 (S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER, S2C_KILL, S2C_BANNER,
  S2C_ZONE, S2C_DENIED, S2C_MAP, S2C_SETTINGS) = 1, 2, 3, 4, 5, 6, 7, 9, 10
@@ -216,7 +217,11 @@ class Pilot:
             return self
         async with ws:
             z = self.zone.encode()
-            await ws.send(bytes([C2S_JOIN, self.rng.randrange(8), 1, len(z)])
+            # tag, hull, protocol, flags, zone length, then the zone and a name.
+            # The protocol byte is checked before anything else, so a harness a
+            # version behind is refused at the door and measures nothing.
+            await ws.send(bytes([C2S_JOIN, self.rng.randrange(8), PROTOCOL, 0,
+                                 len(z)])
                           + z + self.name.encode())
 
             async def drive():
