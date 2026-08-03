@@ -22,10 +22,11 @@ host is a compose service and a DNS record away.
 
 **The client is served from here because it cannot be served from anywhere
 else.** A page delivered by a third party under a Content-Security-Policy of
-`connect-src 'self'` cannot open a WebSocket to our arenas at all, and the
-published artifact is exactly that: it can only ever be the offline practice
-arena. Serving the page from the same origin as the game removes the question
-entirely.
+`connect-src 'self'` cannot open a WebSocket to our arenas at all, so a copy of
+the bundle hosted somewhere convenient is a menu listing games it cannot reach.
+It used to be a playable practice arena, which made the restriction easy to
+forget; since decision 20 there is no game without a server. Serving the page
+from the same origin as the game removes the question entirely.
 
 The bundle is built by CI and published as its own image, because building it
 needs a JDK, Defold's `bob`, and Defold's remote build server -- three things not

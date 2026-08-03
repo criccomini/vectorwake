@@ -54,10 +54,14 @@ python3 client/tools/single_file.py client/bundle/wasm-web/vectorwake <out>.html
 
 `client/dist/` is git-ignored, so a local build cannot be committed by accident.
 
-A published artifact of that file can only ever be the offline practice arena.
-Artifact pages are served under `connect-src 'self'`, which blocks every outbound
-WebSocket, so that build cannot reach a directory or an arena no matter what it is
-pointed at. Learned by pointing it at the live fleet and reading the console.
+Do not publish that file as an artifact. Artifact pages are served under
+`connect-src 'self'`, which blocks every outbound WebSocket, so the page cannot
+reach a directory or an arena no matter what it is pointed at. Learned by
+pointing it at the live fleet and reading the console. That used to leave
+something playable, because the client flew its own practice arena when it could
+not reach a server; since the offline mode went (decision 20) it leaves a menu
+listing games it cannot join. To look at a change, push and let CI publish it, or
+build locally and run a server next to it.
 
 ## Engineering rules
 

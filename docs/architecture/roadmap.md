@@ -12,15 +12,15 @@
 | M4 rating and modes | Done: damage ledgers, attribution, and the warzone flag game |
 | M4.5 duels | Built, then removed: deferred until a mode is catalog content |
 | M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities, persistence |
-| M5.5 Defold client | Done: real core as a native extension, builds for host and browser, plays offline and networked |
-| M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and server browser |
+| M5.5 Defold client | Done: real core as a native extension, builds for host and browser, predicts against a live zone |
+| M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and the games list in the menu |
 | M6 platforms | Blocked on accounts, not on code. See below |
 | M7 the fleet | Designed, not built. The directory, catalog and zone selection below |
 
 What M6 asked for that is code has landed. The bot ladder is calibrated by
 an offline tournament and seeds every zone; ratings show as tiers once a
 pilot has earned one; the client takes touch input; and a directory service
-lists live zones for a server browser built into the client.
+lists live zones, which the client's menu offers as the games you can join.
 
 What remains is not engineering. Steam needs a partner account, consoles
 need manufacturer approval, and Nakama needs somewhere to run Postgres.

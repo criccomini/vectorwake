@@ -504,33 +504,52 @@ converted map loses its look until the client is given a way to vary it.
 express, in which case the variant nibble is the place to look before adding
 a tenth class.
 
-## 20. The game has no start screen; the menu is a tree you open while flying
+## 20. One menu: the home screen and the pause screen are the same tree
 
-**Status:** accepted
+**Status:** accepted, replacing an earlier version of this decision that had
+the client land in an offline practice arena and open the menu only while
+flying
 
-A player lands in the practice arena with a default hull, a generated call
-sign and live controls. Everything the start screen used to ask is a level in
-a menu opened with escape -- one list at a time, five inputs, a stack behind
-it -- and nothing pauses while it is open.
+The page opens on the menu, at the root, with a starfield behind it. It asks
+three things, all of them optional: which hull, which call sign, which game.
+Escape opens the same tree over a live arena, where every row means what it
+meant on the way in. One list at a time, five inputs, a stack behind it, and
+nothing pauses while it is open.
 
-The start screen already drew over a running arena, so this deleted a gate
-rather than building an entry path. What it required was making a hull change
-a respawn instead of an arena rebuild (`sim_set_ship_class`), because a menu
-that throws the match away to answer a question about yourself cannot be
-opened during one.
+The single difference between the two is whether there is a game behind the
+panel. When there is not, the menu cannot be closed, because closing it would
+leave a player on an empty starfield with no way back. That is one flag,
+`menu.home`, and it is the whole of the special case.
+
+What this replaced was a client that flew its own game. Landing in a practice
+arena meant the client carried a roster of eight bots and about three hundred
+lines of AI shadowing `server/src/ai.rs`, and the two drifted: bounded sight,
+the reserve retune and the bomb-band rule were each fixed twice, once on each
+side. It also meant a second full screen, the zone browser, with its own draw
+path and its own input handling, reachable only from inside the game it
+existed to leave. Folding the browser into the tree as a level deleted that
+screen, and deleting the practice arena deleted the second copy of the AI. The
+live fleet is what practice is now: Chaos is a room full of the server's bots,
+which are the ones that get maintained.
 
 Five inputs is what a d-pad has and what a phone can draw, so the same tree
-serves keyboard, touch and -- later -- a console, without a second layout.
+serves keyboard, touch and, later, a console, without a second layout.
 
-**Cost:** the arrow keys drive the menu while it is open, so a ship coasts
-while its pilot reads. Opening the menu mid-fight is a risk rather than a
-timeout, and a player can die during it. Inside a zone the change goes through
-the server (`C2S_SHIP`) and is not predicted, so a hull arrives a frame late,
-and it is refused unless you are alive and at a full bar.
+**Cost:** no connection, no game. A build with nothing behind it now shows a
+list of games it cannot reach, where it used to be playable on its own, so a
+published artifact can no longer be a demo of anything (see `docs/
+architecture/deployment.md`). The arrow keys drive the menu while it is open,
+so a ship coasts while its pilot reads: opening it mid-fight is a risk rather
+than a timeout, and a player can die during it. A hull change inside a zone
+goes through the server (`C2S_SHIP`) and is not predicted, so it arrives a
+frame late, and it is refused unless you are alive and at a full bar.
 
-**Reconsider if:** a level needs more than a list -- a map preview, a keybind
-grid -- at which point the single-column stack stops being enough and the
-answer is a second row kind, not a second layout.
+**Reconsider if:** the game wants a single-player mode on its own terms rather
+than as a fallback for a missing server, at which point it is a game mode with
+a design, not an empty arena the client fills with a copy of the server's
+bots. Or if a level needs more than a list, a map preview or a keybind grid,
+at which point the single-column stack stops being enough and the answer is a
+second row kind, not a second layout.
 
 ## 21. A weapon is two table rows, not a kind
 

@@ -215,8 +215,7 @@ of the simulation, which the `Mode` trait cannot express: it gets a seat list,
 sets a banner, and sets a finished flag. That is a genuine addition, though the
 lag response wants a spectator state anyway.
 
-The offline page is the one thing with no clean answer. Its duel existed because
-a published artifact has nothing behind it, and rules that live in the server
-cannot run there. Either the approximation comes back in Lua, or modes become
-sandboxed WebAssembly the client can run too, which
-[decision 6](../architecture/decisions.md) already commits to for other reasons.
+The offline page was the one thing with no clean answer, and it stopped being a
+question: the client has no offline mode to bring a duel back to. Decision 20
+took it out along with the Lua copy of the AI, so a duel is a server mode or it
+is nothing, and there is one copy of its rules rather than two that drift.

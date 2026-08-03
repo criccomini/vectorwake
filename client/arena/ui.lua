@@ -65,13 +65,6 @@ local function txt(s, x, y, px, col, pivot)
     t.s, t.x, t.y, t.px, t.col, t.pivot = s, x, H - y, px, col, pivot or "left"
 end
 
--- The only way anything outside this file gets words on screen. Coordinates
--- are the stylesheet's: origin top left, y downward, and `y` is the middle of
--- the line rather than its top.
-function M.line(s, x, y, px, col, pivot)
-    txt(s, x, y, px, col, pivot)
-end
-
 -- A rectangle the pointer can land on, published in the same coordinates it
 -- was drawn in. Defined up here with the other primitives because everything
 -- that draws something clickable needs it, and it used to sit far enough down
@@ -80,12 +73,6 @@ local function hit(x, y, w, h, action, value)
     M.hits[#M.hits + 1] = {x = x, y = y, w = w, h = h,
                            action = action, value = value}
 end
-
--- Published, because the zone browser draws its own rows through this module
--- and had no way to say they were touchable. They were not: the list rendered
--- on a phone, and there was no keyboard to move a cursor with and no tap that
--- did anything, so a game you could see was a game you could not join.
-M.hit = hit
 
 -- A keycap, the way the prototype's <kbd> reads: a boxed glyph in a line of
 -- ordinary text. Returns the width it consumed.
@@ -349,7 +336,10 @@ local function scores(me, pilots)
         r.p = sim.ship_points(i)
         local p = pilots[i]
         r.name = (p and p.name) or ("ship " .. i)
-        r.ai = p and p.bot ~= nil
+        -- The roster's own flag. This used to look for a local bot object,
+        -- which the client no longer flies and the server never sends, so the
+        -- column was blank for every AI in a zone full of them.
+        r.ai = (p and p.ai) or false
     end
     for i = n + 1, #rows do rows[i] = nil end
     -- By points, because points are the score. Kills stay on the row: they
@@ -701,12 +691,7 @@ function M.hud(o)
     end
 end
 
--- --- the start screen ------------------------------------------------------
---
--- The arena behind this is the real one, stepping the real simulation, which
--- is why there is no attract mode: a player who does nothing still watches a
--- fight rather than a title card.
-
+-- --- the menu --------------------------------------------------------------
 
 -- A hull drawn small, inside its button. The silhouette is what picks a ship;
 -- the name only confirms it.
@@ -723,13 +708,15 @@ end
 
 -- The menu. One list, whatever level it is.
 --
--- A title, a breadcrumb's worth of depth, rows, and a hint at the bottom. The
--- same routine draws the hull list and the settings, which is the point of
--- having a tree rather than a screen: adding a level costs a table in
+-- A title, a breadcrumb's worth of depth, rows, and a line at the bottom. The
+-- same routine draws the hull list, the games and the settings, which is the
+-- point of having a tree rather than a screen: adding a level costs a table in
 -- menu.lua and nothing here.
 --
--- It draws over a live arena, so the backdrop is translucent rather than
--- opaque -- you can see the fight you left, and that you are still in it.
+-- It is both the home screen and the panel you open mid-fight, so the backdrop
+-- is translucent rather than opaque. Over an arena you can see the fight you
+-- left, and that you are still in it; on the way in there is a starfield
+-- behind it and the same wash makes the type readable against the stars.
 local ROW_H = 34
 local MENU_W = 460
 
@@ -748,11 +735,15 @@ function M.menu(v)
 
     txt(v.title, x + 20 * S, y + 26 * S, (M.compact and 19 or 23) * S,
         pal.FRIEND)
-    -- Always, not only below the root: a phone has no escape key, and a menu
-    -- with no visible way out is a trap.
-    txt(v.depth > 1 and "back" or "close", x + w - 20 * S, y + 26 * S, 11 * S,
-        pal.a(pal.DIM, 0.8), "right")
-    hit(x + w - 90 * S, y + 8 * S, 90 * S, 34 * S, "row", -1)
+    -- A phone has no escape key, so the way out is drawn. At the root of the
+    -- home screen there is no way out to draw: nothing is behind the panel,
+    -- and a `close` that leaves a player on an empty starfield would be a
+    -- button that breaks the game.
+    if v.closable then
+        txt(v.depth > 1 and "back" or "close", x + w - 20 * S, y + 26 * S,
+            11 * S, pal.a(pal.DIM, 0.8), "right")
+        hit(x + w - 90 * S, y + 8 * S, 90 * S, 34 * S, "row", -1)
+    end
 
     local ry0 = y + 48 * S
     for i, r in ipairs(v.rows) do
@@ -789,11 +780,19 @@ function M.menu(v)
         if r.pick then hit(x + 8 * S, top, w - 16 * S, ROW_H * S, "row", i) end
     end
 
+    -- One line under the list, and three things want it. A note is why
+    -- something did not work and outranks everything. A hint is the sentence
+    -- about whatever is under the cursor, which is how a game in the list says
+    -- what it is without a second column no phone has room for. The controls
+    -- are what is left when there is nothing more useful to say.
     local by = y + h - 16 * S
     if v.note then
         txt(v.note, x + w / 2, by, FONT * S, pal.ENEMY, "center")
+    elseif v.hint then
+        txt(v.hint, x + w / 2, by, (FONT - 1) * S, pal.a(pal.DIM, 0.95),
+            "center")
     else
-        txt((M.touching or M.compact) and "tap a row    esc to close"
+        txt((M.touching or M.compact) and "tap a row"
                 or "↑ ↓ move    enter choose    esc back",
             x + w / 2, by, 11 * S, pal.a(pal.DIM, 0.8), "center")
     end

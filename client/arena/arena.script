@@ -7,14 +7,18 @@
 -- rather than LuaJIT, so state distributed across scripts would have neither
 -- a defined order nor adequate speed on the platform that matters most.
 --
+-- Every game is a zone on a server. The client predicts its own ship and
+-- draws what arrives; it owns no roster and flies no bots. Before a zone
+-- answers there is no world at all, only a starfield with the menu over it.
+--
 -- Drawing is five mesh layers, built here and in arena/world.lua and
 -- arena/ui.lua, and uploaded once each per frame. It used to be
 -- `draw_debug3d`, which is one pixel wide, one blend mode, and compiled out
--- of release builds entirely -- a shipped bundle drew an empty arena.
+-- of release builds entirely: a shipped bundle drew an empty arena.
 
 local net = require("arena.net")
 local touch = require("arena.touch")
-local browser = require("arena.browser")
+local directory = require("arena.directory")
 local menu = require("arena.menu")
 local pal = require("arena.palette")
 local world = require("arena.world")
@@ -30,22 +34,12 @@ local MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
 local CLASS_NAMES = {"Apex", "Wedge", "Chord", "Anvil",
                      "Spire", "Cipher", "Facet", "Lattice"}
 
--- The offline roster: hull, team, spawn tile, name. Shared by the cold start
--- and by dropping out of the browser, which are the same game.
-local LAYOUT = {
-    {0, 1, 486, 486, "Kestrel"}, {3, 1, 538, 486, "Halcyon"},
-    {6, 1, 538, 538, "Vantage"}, {2, 1, 486, 538, "Ridgeline"},
-    {5, 0, 512, 478, "Sable"},   {7, 0, 478, 512, "Meridian"},
-    {1, 0, 546, 512, "Ozone"},   {4, 1, 512, 546, "Tessellate"},
-}
-
 local held = {}
 -- A tap can go down and up inside one frame, so the frame loop never sees it
 -- in `held`. Presses are latched here and consumed by whatever reads them,
 -- which is how the menu gets a keystroke that flight does not need.
 local tapped = {}
 local me = 0
-local pilots = {}
 local accum = 0
 local feed = {}
 local hurt = 0
@@ -54,16 +48,18 @@ local pickup = nil
 local charge_slot = 0
 local layers = nil
 -- The terrain window, in tiles either side of the camera, and how far the
--- camera may walk before it is rebuilt. The map is 1024 tiles square now, so
--- what gets meshed is a window rather than the map: 113 tiles across is about
--- the same work the whole old arena was, and at 56 out against a view about
--- 20 tiles wide there are two rebuilds' worth of margin beyond the screen.
+-- camera may walk before it is rebuilt. A map is 1024 tiles square, so what
+-- gets meshed is a window rather than the map: 113 tiles across is about the
+-- same work the whole old arena was, and at 56 out against a view about 20
+-- tiles wide there are two rebuilds' worth of margin beyond the screen.
 local STATIC_HALF = 56
 local STATIC_STEP = 16
 local static_tx, static_ty = nil, nil
--- Forward declared: the field sync acts on the page's own enter, and it runs
--- above the place that knows what an action means.
+-- Forward declared: leaving a zone is reached both from a menu row and from a
+-- socket that dropped, and one of those runs above the place that knows what
+-- a menu action means.
 local apply_menu
+local go_home
 
 -- HTML5 builds run Lua 5.1, which has no bitwise operators. Every bitfield in
 -- this client is a sum of distinct powers of two, so a digit test is exact.
@@ -88,9 +84,7 @@ local function bit_for(action)
             -- The mouse buttons are their own actions rather than aliases of
             -- guns and bombs. A browser synthesises a click from every touch,
             -- so while they shared a name, one tap anywhere on a phone was a
-            -- trigger pull -- and the start screen read a trigger pull as
-            -- "launch". You could not pick a hull on a phone at all: the
-            -- first thing you touched started the game.
+            -- trigger pull, and a menu row read a trigger pull as a choice.
             [hash("pointer")] = sim.BTN_FIRE,
             [hash("pointer_alt")] = sim.BTN_BOMB,
         }
@@ -110,8 +104,8 @@ end
 
 -- The slot the use key would actually spend. Resolved rather than stored,
 -- because a hull change moves which slots exist and a remembered index would
--- point at a charge this hull cannot carry -- which is a use key that
--- silently does nothing.
+-- point at a charge this hull cannot carry, which is a use key that silently
+-- does nothing.
 local function ready_slot()
     local slots = my_slots()
     for _, k in ipairs(slots) do
@@ -123,11 +117,10 @@ end
 -- The charge a pad asked for this frame, read from the latch once and held
 -- until the step has used it.
 --
--- It cannot be consumed inside `my_buttons`: that runs three times a frame --
--- once for the network, once for the simulation and once to know whether to
--- draw an engine flame -- and `net.step(my_buttons())` evaluates its argument
--- even when there is no connection to hand it to, so offline the very first
--- call swallowed the tap and the one that mattered saw nothing.
+-- It cannot be consumed inside `my_buttons`: that runs more than once a frame,
+-- for the network, for the simulation and to know whether to draw an engine
+-- flame, so the first call would swallow the tap and the one that mattered
+-- would see nothing.
 local charge_tap = nil
 
 local function my_buttons()
@@ -201,8 +194,8 @@ local function cycle_charge()
     charge_slot = slots[1]
 end
 
--- The menu and the info panels are the same kind of thing -- a slab of text
--- laid over a fight that does not pause for it -- so they are one at a time.
+-- The menu and the info panels are the same kind of thing, a slab of text
+-- laid over a fight that does not pause for it, so they are one at a time.
 -- Opening either shuts the other. Two of them at once was the exact thing the
 -- HUD pass existed to stop, arrived at from a different direction.
 local function toggle_menu()
@@ -212,275 +205,6 @@ end
 local function toggle_details()
     ui.details = not ui.details
     if ui.details then menu.close() end
-end
-
--- A bot: reads what the page can read, produces a button bitfield, and has no
--- other channel into the simulation.
-local function make_bot(id, skill)
-    return {
-        id = id, skill = skill, want = 0, timer = id * 7,
-        react = math.max(3, math.floor(38 - skill * 30)),
-        aim_err = (1 - skill) * 0.42,
-        seed = 12345 + id * 7919,
-        charge_at = 200 + id * 53,
-    }
-end
-
-local function bot_rand(b)
-    b.seed = (b.seed * 1103515245 + 12345) % 2147483648
-    return b.seed / 2147483648
-end
-
--- How far a pilot can see, in world pixels.
---
--- Sixty tiles, which is exactly the radar's reach: RADAR_TILES in
--- arena/world.lua and SPAN in arena/ui.lua. A ship is drawn within about 215
--- px of the camera and is a blip out to here; past that a player has nothing
--- on the display to react to.
---
--- The scan below had no distance test at all, on a map 16384 px across, which
--- made a bot the one pilot in the room who could see the whole of it. The
--- server's bots were bounded the same way and for the same reason; the
--- reasoning is in server/src/ai.rs.
-local SIGHT = 60 * 16
-
--- Whether the straight line between two points crosses a wall.
---
--- Walked at half a tile, which cannot step over an eight-pixel wall and is a
--- few dozen samples over the ranges anybody asks about. Doors count: they are
--- a wall whenever they are shut, and a pilot who bombs through one while it
--- happens to be open has still made a bad habit of it.
---
--- Declared up here rather than beside the one place that calls it, because a
--- Lua local is only in scope below its own declaration, which is the shape of
--- four bugs in this client already.
-local function clear_line(x0, y0, x1, y1)
-    local dx, dy = x1 - x0, y1 - y0
-    local steps = math.ceil(math.sqrt(dx * dx + dy * dy) / 8)
-    for i = 1, steps - 1 do
-        local t = i / steps
-        local cls = sim.tile(math.floor((x0 + dx * t) / 16),
-                             math.floor((y0 + dy * t) / 16))
-        if cls == sim.T_SOLID or cls == sim.T_DOOR then return false end
-    end
-    return true
-end
-
--- Whether to throw a bomb instead of the gunfire it stands in for.
---
--- Not a rate comparison. That is what stood here -- `trigger_rate` on both
--- triggers, take the better -- and on the original's numbers, which every
--- hull now carries, the gun wins everywhere and always will: 200 damage on a
--- 25 tick cooldown is 8.0 a tick against the bomb's 750 on 150, which is 5.0.
--- Measured over a full hull round robin, every ship at every rung threw zero
--- bombs. A bomb is never the better shot by that arithmetic, so the
--- arithmetic was the wrong question.
---
--- What a bomb buys is that it does not have to hit. It lands its damage over
--- a radius, so the question is range and what is in the way. Too close and
--- the blast is on the pilot who threw it; too far and it is a fifth of a bar
--- thrown across a room at somebody who will simply move; and a bomb ends on
--- the first wall it touches and puts its blast there, so the line has to be
--- open. Without that last condition the pilots allowed to bomb rated sixty
--- points below the one that was not.
---
--- Both ends of the band move with the bomb the hull is actually carrying,
--- which is how a level 3 bomb becomes a weapon you throw further rather than
--- a bigger version of the same one.
-local function bomb_now(b, dist, tx, ty)
-    local rate, cost = sim.trigger_rate(b.id, sim.TRIG_BOMB)
-    if rate <= 0 then return false end               -- no rack on this hull
-    local maxe = math.max(1, sim.ship_max_energy(b.id))
-    -- It has to leave the reserve intact, or the pilot spends the fight
-    -- recovering from having thrown one. Same reserve the trigger below uses.
-    if (sim.ship_energy(b.id) - cost) / maxe <= 0.16 + b.skill * 0.28 then
-        return false
-    end
-    local near = sim.ship_bomb_radius(b.id) + 120
-    local far = math.max(480, near + 160)
-    if dist <= near or dist >= far then return false end
-    return clear_line(sim.ship_x(b.id), sim.ship_y(b.id), tx, ty)
-end
-
-local function steer(b, dx, dy, sloppy)
-    local want = math.atan2(dx, -dy)
-    local head = (sim.ship_heading(b.id) / 65536) * math.pi * 2
-    local diff = want - head
-    if sloppy then diff = diff + (bot_rand(b) - 0.5) * b.aim_err end
-    while diff > math.pi do diff = diff - math.pi * 2 end
-    while diff < -math.pi do diff = diff + math.pi * 2 end
-    local out = 0
-    if diff > 0.05 then out = out + sim.BTN_RIGHT
-    elseif diff < -0.05 then out = out + sim.BTN_LEFT end
-    return out, math.abs(diff)
-end
-
-local function bot_think(b)
-    if sim.ship_alive(b.id) == 0 then return 0 end
-    local mx, my = sim.ship_x(b.id), sim.ship_y(b.id)
-    local team = sim.ship_team(b.id)
-
-    -- Leave a safe zone, and never press the trigger inside one: in here
-    -- that is the brake, and a bot that stops in a place nothing can shoot
-    -- into is an invulnerable ornament.
-    if sim.in_safe(b.id) then
-        local out = steer(b, 512 * 16 - mx, 512 * 16 - my, false)
-        return out + sim.BTN_THRUST
-    end
-
-    -- A loose flag outranks a fight: flags decide the round.
-    for i = 0, sim.flag_count() - 1 do
-        local fx_, fy, fteam, carried = sim.flag_at(i)
-        if fteam ~= team and not carried then
-            local dx, dy = fx_ - mx, fy - my
-            -- A flag this pilot can see is a flag they will go for. It was 420
-            -- px on the reasoning that a bot should not sprint the width of the
-            -- radar for one, which was written when a bot could see the whole
-            -- map; sight is the radar now, so 420 is a quarter of perception.
-            if dx * dx + dy * dy < SIGHT * SIGHT then
-                local out, off = steer(b, dx, dy, false)
-                if off < 0.5 then out = out + sim.BTN_THRUST end
-                return out
-            end
-        end
-    end
-
-    -- Who to go after. Nearest is the floor; a bounty is what makes one
-    -- worth crossing a room for, and killing them pays it. A bot that only
-    -- ever took the closest target would leave the mechanic decorative --
-    -- the whole point of a number over a ship is that somebody comes for it.
-    --
-    -- The weight is skill: a poor pilot fights whatever is in front of them,
-    -- a good one picks. Bounty is divided into the squared distance, so it
-    -- shortens a trip rather than overriding it outright.
-    local best, bdx, bdy, bdist2 = nil, 0, 0, 0
-    for i = 0, sim.ship_count() - 1 do
-        if i ~= b.id and sim.ship_alive(i) == 1 and sim.ship_team(i) ~= team then
-            local dx, dy = sim.ship_x(i) - mx, sim.ship_y(i) - my
-            local d2 = dx * dx + dy * dy
-            -- Only what a player could actually see. Without this the nearest
-            -- enemy meant the nearest on the map, and a bot would set off
-            -- across a thousand tiles after somebody it had no way of knowing
-            -- was there.
-            if d2 <= SIGHT * SIGHT then
-                local score = d2 / (1 + sim.ship_bounty(i) * b.skill * 0.12)
-                if best == nil or score < best then
-                    best, bdx, bdy, bdist2 = score, dx, dy, d2
-                end
-            end
-        end
-    end
-
-    -- Nothing to fight, or something worth grabbing on the way. A green is
-    -- worth bounty as well as an upgrade, so a bot doing this is also making
-    -- itself worth hunting, which is the loop working.
-    --
-    -- The radius is deliberately short. On a map a thousand tiles across
-    -- there is nearly always another green nearer than a target half a map
-    -- away, so a generous radius is a bot that hoovers its way around the
-    -- arena and never arrives anywhere. Twenty tiles is a detour; anything
-    -- more is a career.
-    if best == nil or bdist2 > 560 * 560 then
-        local px, py, pd2 = nil, nil, 320 * 320
-        for i = 0, sim.prize_count() - 1 do
-            local active, x, y = sim.prize_at(i)
-            if active then
-                local dx, dy = x - mx, y - my
-                local d2 = dx * dx + dy * dy
-                if d2 < pd2 then px, py, pd2 = dx, dy, d2 end
-            end
-        end
-        if px then
-            local out, off = steer(b, px, py, false)
-            if off < 0.5 then out = out + sim.BTN_THRUST end
-            return out
-        end
-    end
-    -- Nothing in sight, so go looking. This is the other half of bounding
-    -- sight above: it used to be no buttons at all, which went unnoticed while
-    -- a bot could see the whole map, and turned the arena into a gallery of
-    -- statues once it could not. Spawns are two hundred and fifty tiles apart
-    -- and sight is sixty.
-    --
-    -- The heading is the contested middle, where the map keeps its furniture
-    -- and therefore where anybody else looking for a fight is also going,
-    -- offset per pilot so a roster does not converge on one tile, and rerolled
-    -- on arrival so a bot that finds nobody there moves on. Same rule as the
-    -- server's `roam`, so the two rosters behave alike.
-    if best == nil then
-        local c, spread = 512 * 16, 128 * 16
-        local dx, dy = (b.roam_x or 0) - mx, (b.roam_y or 0) - my
-        if not b.roam_x or dx * dx + dy * dy < (20 * 16) * (20 * 16) then
-            b.roam_x = c + (bot_rand(b) - 0.5) * 2 * spread
-            b.roam_y = c + (bot_rand(b) - 0.5) * 2 * spread
-            dx, dy = b.roam_x - mx, b.roam_y - my
-        end
-        return steer(b, dx, dy, false) + sim.BTN_THRUST
-    end
-    best = bdist2
-
-    local dist = math.sqrt(best)
-    local out, off = steer(b, bdx, bdy, true)
-    local ideal = 130 + (1 - b.skill) * 90
-    if dist > ideal * 1.15 then out = out + sim.BTN_THRUST
-    elseif dist < ideal * 0.55 then out = out + sim.BTN_REVERSE end
-
-    -- A charge, at the range one is for. Both of the roster's are close
-    -- work: a repel to break contact, a burst to fill the space in front of
-    -- you. Spent on its own clock so a bot does not empty its pockets the
-    -- moment it gets near somebody.
-    if dist < 150 and b.timer >= b.charge_at then
-        for k = 0, sim.MAX_CHARGES - 1 do
-            if sim.ship_charge(b.id, k) > 0 then
-                b.charge_at = b.timer + 260 + math.floor(bot_rand(b) * 300)
-                return out + sim.BTN_USE + k * sim.BTN_SLOT_STEP
-            end
-        end
-    end
-
-    local e = sim.ship_energy(b.id) / math.max(1, sim.ship_max_energy(b.id))
-    if off < 0.16 and e > 0.16 + b.skill * 0.28 then
-        -- A bomb now and then, from the pilots good enough to afford one at
-        -- seventeen per cent of a bar. Its own clock, not `timer % 64`: this
-        -- runs at the bot's reaction cadence, so a modulo here only fires
-        -- when the two periods happen to coincide -- every 1728 ticks for an
-        -- odd reaction time, which is to say never.
-        --
-        -- Instead of the gun, never as well as it. The core reads a held gun
-        -- as a gun and one cooldown covers both, so adding this bit on top of
-        -- a trigger that was never released fired a bomb precisely never: a
-        -- full hull round-robin measured zero bombs thrown by anybody,
-        -- including the Anvil.
-        --
-        -- And only when the trade pays. A bomb stands in for the gunfire it
-        -- displaces rather than adding to it, which is worth three and a half
-        -- times the rate on an Anvil and a third of it on an Apex. Skill used
-        -- to be the thing that unlocked the worse weapon.
-        -- A bomb is a judgement call and the worst pilots do not make it.
-        -- No clock of its own any more: the band and the energy it costs are
-        -- what space these out, which is the same pair of limits a player
-        -- feels.
-        if b.skill >= 0.35 and bomb_now(b, dist, mx + bdx, my + bdy) then
-            return out + sim.BTN_BOMB
-        end
-        out = out + sim.BTN_FIRE
-    end
-    return out
-end
-
-local start_offline
-
--- The roster's own tile, deliberately, and not the start the map names.
---
--- The built-in map spreads sixteen starts across the field, a team to a band,
--- 256 tiles apart. That is a zone's geometry and the wrong thing for a practice
--- arena: it put the player alone in a corner with the nearest pilot five
--- thousand pixels away, which is half a minute of empty flying before anything
--- arrives -- and it did it by preferring a map start, so the roster's carefully
--- chosen tiles in the middle were never used at all. Every online zone starts
--- its pilots together in the centre room; offline now does the same.
-local function spawn_at(cls, team, _nth, tx, ty, heading)
-    return sim.spawn(cls, team, tx, ty, heading)
 end
 
 -- The terrain and the starfield never move, so they are built once per map
@@ -503,81 +227,53 @@ local function rebuild_static(tx, ty)
                        tx + STATIC_HALF, ty + STATIC_HALF)
 end
 
+-- No terrain at all, which is what the home screen wants. The static layers
+-- hold whatever map was last built, and a menu over the walls of the zone you
+-- just left reads as a game still running behind it.
+local function clear_static()
+    if not layers then return end
+    layers.bg:reset()
+    layers.bg:flush()
+    layers.bgglow:reset()
+    layers.bgglow:flush()
+    static_tx, static_ty = nil, nil
+end
 
--- Text entry on the web goes through real inputs laid over the fields, because
--- a canvas cannot hold a caret and a phone will not raise a keyboard for
--- something that was never focused. arena/ui.lua already publishes where the
--- fields are; this hands those rectangles to the page and reads back what was
--- typed. Everywhere else, the engine's own key events are the whole story.
-function init(self)
-    msg.post(".", "acquire_input_focus")
-    math.randomseed(1)
-    -- Wanted from the first frame. It will not start until the page has been
-    -- touched and the audio device is awake, which is why this is a request
-    -- the frame loop keeps making rather than a call that either works or
-    -- does not. See sfx.music_tick.
-    sfx.music(true)
-
-    layers = {
-        bg = vec.layer("#bg", 20480),
-        bgglow = vec.layer("#bgglow", 16384),
-        -- The two static layers above are uploaded once per map. These three
-        -- go up every frame, whole, however little of them is used -- so the
-        -- headroom is bandwidth spent on nothing, and these are sized against
-        -- what a heavy frame actually measures (fill 2.8k, glow 3.8k, ui 2.1k)
-        -- with room to spare rather than by an order of magnitude.
-        fill = vec.layer("#fill", 6144),
-        glow = vec.layer("#glow", 8192),
-        ui = vec.layer("#ui", 4096),
-    }
-
-    -- A directory means "let the player choose"; a pinned server means
-    -- "go here". Neither means play the local game, which is what keeps a
-    -- build with nothing behind it playable.
-    local url = sys.get_config_string("vectorwake.server", "")
-    -- A generated call sign, restored if this browser has one already. The
-    -- configuration still wins, which is how a test names its clients.
-    menu.load_identity()
-    menu.defaults(sys.get_config_string("vectorwake.name", ""),
-                  sys.get_config_string("vectorwake.directory", ""))
-    if url ~= "" then
-        -- The server owns state from here, but the core still needs its map
-        -- and settings: prediction runs collision locally between snapshots,
-        -- and a snapshot carries state, not rules.
-        sim.init(0x5eed)
-        rebuild_static()
-        menu.open = false
-        -- A zone that cannot be reached opens the menu with the reason on
-        -- it rather than leaving an arena that never fills.
-        net.connect(url, 0, sys.get_config_string("vectorwake.name", "pilot"),
-                    function(why)
-                        menu.note = why
-                        ui.details = false
-                        menu.show("play")
-                    end)
-        self.online = true
-        self.joining = 0
-        return
-    end
-
+-- Back to the menu with nothing behind it.
+--
+-- Every way out of a zone lands here: the leave row, a socket that dropped, a
+-- join that was never answered, and the first frame of the whole client. The
+-- note is deliberately not cleared, because most of the callers have just set
+-- one and it is the only thing that will say what went wrong.
+function go_home(self, at)
+    net.disconnect()
+    self.online = false
+    self.joining = nil
+    feed = {}
+    pickup = nil
+    hurt = 0
+    fx.reset()
+    -- Leaving a zone re-derives the tables from the baseline, so what a spec
+    -- id means changes on the way out of one as well as into it.
+    world.forget_specs()
+    -- An empty world. Nothing is drawn from it, but the core is what the next
+    -- connection unpacks a snapshot into, and it must not be holding the last
+    -- zone's map and settings when that happens.
     sim.init(0x5eed)
-    rebuild_static()
-    start_offline()
+    clear_static()
+    me = 0
+    ui.details = false
+    menu.home = true
+    menu.show(at)
+    directory.open(menu.directory)
 end
 
-function final(self)
-    msg.post(".", "release_input_focus")
-end
-
--- Every report the simulation made this tick, turned into light, noise and
--- feed lines. Drained per tick rather than per frame: a frame can advance the
--- simulation eight times, and the event list is replaced by each one.
--- Who a ship id belongs to. Offline that is the local roster; online it is
--- the server's, because those are other people and only it knows their
--- names. Everything that names a pilot goes through here, or the feed ends
--- up reading "ship 5 killed ship 8" in a zone full of people.
+-- Who a ship id belongs to. The server's roster, because those are other
+-- people and only it knows their names. Everything that names a pilot goes
+-- through here, or the feed ends up reading "ship 5 killed ship 8" in a zone
+-- full of people.
 local function pilot_name(i)
-    local p = net.connected and net.pilots[i] or pilots[i]
+    local p = net.pilots[i]
     return (p and p.name) or ("ship " .. i)
 end
 
@@ -590,6 +286,9 @@ local function notify(text, col)
     while #feed > 9 do table.remove(feed) end
 end
 
+-- Every report the simulation made this tick, turned into light, noise and
+-- feed lines. Drained per tick rather than per frame: a frame can advance the
+-- simulation eight times, and the event list is replaced by each one.
 local function drain_events()
     world.events(me, sfx.play)
     for i = 0, sim.event_count() - 1 do
@@ -627,151 +326,81 @@ local function drain_events()
     end
 end
 
+-- One predicted tick. The server owns the arena, so this sends buttons and
+-- replays its own ship; nothing else in the world is stepped here.
 local function step_once()
-    -- Online, the server owns everybody else and this predicts only itself.
-    if net.step(my_buttons()) then
-        drain_events()
-        return
-    end
-
-    local buttons = {}
-    buttons[me] = my_buttons()
-    for id, p in pairs(pilots) do
-        if p.bot then
-            local b = p.bot
-            b.timer = b.timer + 1
-            if b.timer % b.react == 0 then b.want = bot_think(b) end
-            buttons[id] = (sim.ship_alive(id) == 1) and b.want or 0
-        end
-    end
-    sim.step(buttons)
-    drain_events()
+    if net.step(my_buttons()) then drain_events() end
 end
 
-function start_offline(cls)
-    me = spawn_at(cls or 0, 0, 0, 512, 522, 0)
-    pilots[me] = {name = "you"}
-    for i, L in ipairs(LAYOUT) do
-        local id = spawn_at(L[1], L[2], i, L[3], L[4], (i * 8192) % 65536)
-        pilots[id] = {name = L[5], bot = make_bot(id, 0.28 + (i % 5) * 0.16)}
-    end
-    -- One flag per quadrant, forty tiles out, so all four are on the radar of
-    -- a pilot standing between them. Three hundred tiles apart read well and
-    -- made the flag game unplayable: watched on the live server for four
-    -- minutes, forty-two kills and not one flag touched, because the nearest
-    -- was two hundred tiles past what anybody can see. Four tiles apart, the
-    -- previous swing, was one scrum in one room; this is between the two.
-    for _, f in ipairs({{472, 472}, {552, 472}, {472, 552}, {552, 552}}) do
-        sim.add_flag(f[1], f[2])
-    end
-end
+-- Text entry on the web goes through real inputs laid over the fields, because
+-- a canvas cannot hold a caret and a phone will not raise a keyboard for
+-- something that was never focused. There is none left in this client, which
+-- is why nothing here talks to the page but the hand-off at the end of the
+-- first drawn frame.
+function init(self)
+    msg.post(".", "acquire_input_focus")
+    math.randomseed(1)
+    -- Wanted from the first frame. It will not start until the page has been
+    -- touched and the audio device is awake, which is why this is a request
+    -- the frame loop keeps making rather than a call that either works or
+    -- does not. See sfx.music_tick.
+    sfx.music(true)
 
--- Change what game is being played: the practice arena, a zone, or the
--- browser. This is the one thing that does tear the world down and build
--- another, which is why changing your *hull* deliberately does not go through
--- here -- that is a respawn inside the arena you are already in.
-local function start_chosen(what, cls)
-    pilots = {}
-    feed = {}
-    pickup = nil
-    hurt = 0
-    fx.reset()
-    -- Leaving a zone re-derives the tables from the baseline, so what a spec
-    -- id means changes on the way *out* of one as well as into it.
-    world.forget_specs()
-    if what == "zones" then
-        -- The one address serves both buttons: JOIN treats it as a zone,
-        -- ZONES treats it as a directory and asks what is running. An
-        -- operator hands out a single address either way.
-        menu.note = nil
-        menu.open = false
-        browser.connect(menu.directory)
-        return "browsing"
-    end
+    layers = {
+        bg = vec.layer("#bg", 20480),
+        bgglow = vec.layer("#bgglow", 16384),
+        -- The two static layers above are uploaded once per map. These three
+        -- go up every frame, whole, however little of them is used, so the
+        -- headroom is bandwidth spent on nothing, and these are sized against
+        -- what a heavy frame actually measures (fill 2.8k, glow 3.8k, ui 2.1k)
+        -- with room to spare rather than by an order of magnitude.
+        fill = vec.layer("#fill", 6144),
+        glow = vec.layer("#glow", 8192),
+        ui = vec.layer("#ui", 4096),
+    }
+
+    -- A generated call sign, restored if this browser has one already. The
+    -- configuration still wins, which is how a test names its clients.
+    menu.load_identity()
+    menu.defaults(sys.get_config_string("vectorwake.name", ""),
+                  sys.get_config_string("vectorwake.directory", ""))
+
     sim.init(0x5eed)
-    rebuild_static()
-    start_offline(cls)
-end
 
--- What the menu asked for.
---
--- The menu names an action and decides nothing; this is the only place that
--- knows what any of them mean, which is what keeps the tree a description of
--- itself rather than a second copy of the game.
-function apply_menu(self, act)
-    if act == "ship" then
-        -- A hull change is a respawn, not a rebuild: the arena, the score and
-        -- everybody else in it carry on, which is the whole reason the menu
-        -- can be opened mid-fight at all. You keep your team and your seat;
-        -- your upgrades and your place on the map are gone, the same as
-        -- dying, because a fresh hull is a fresh bar and it has to cost what
-        -- a fresh bar costs.
-        --
-        -- Alive and full, or nothing. That rule lives in the core so both
-        -- sides have exactly one copy of it; the check here is only so a
-        -- refusal comes with a reason instead of silence.
-        if sim.ship_alive(me) ~= 1 then
-            menu.note = "not while you are waiting to respawn"
-            return
-        end
-        if sim.ship_energy(me) < sim.ship_max_energy(me) then
-            menu.note = "a hull change needs a full bar"
-            return
-        end
-        if self.online then
-            -- The server owns the roster, so this asks and the next snapshot
-            -- answers. Nothing is predicted: a hull that flickered back would
-            -- be worse than one that arrives a frame late.
-            net.set_class(menu.pending)
-        else
-            sim.set_class(me, menu.pending)
-        end
-        menu.save_identity()
-        menu.close()
+    -- A pinned server means go here and do not ask, which is what a test and
+    -- an operator's own build want. Everybody else gets the menu.
+    local url = sys.get_config_string("vectorwake.server", "")
+    if url ~= "" then
+        -- The server owns state from here, but the core still needs its map
+        -- and settings: prediction runs collision locally between snapshots,
+        -- and a snapshot carries state, not rules.
+        menu.home = false
+        menu.note = "joining"
+        net.connect(url, menu.class,
+                    sys.get_config_string("vectorwake.name", "pilot"),
+                    function(why)
+                        menu.note = why
+                        go_home(self, "zones")
+                    end)
+        self.online = true
+        self.joining = 0
         return
     end
 
-    if act == "fullscreen" then
-        if html5 then
-            pcall(html5.run, "(document.fullscreenElement" ..
-                  " ? document.exitFullscreen()" ..
-                  " : document.documentElement.requestFullscreen())")
-        end
-        return
-    end
-
-    -- Leaving a zone is the same act as entering the practice arena, and
-    -- until the menu existed there was no way to do it at all short of
-    -- reloading the page.
-    if act == "practice" and self.online then
-        net.disconnect()
-        self.online = false
-    end
-
-    local outcome = start_chosen(act == "practice" and "play" or act,
-                                 menu.class)
-    self.online = outcome == "online"
-    self.browsing = outcome == "browsing"
-    if self.online then self.joining = 0 end
-    -- Joining deliberately leaves the menu up: the note under it is the only
-    -- thing that will report a zone which never answers.
-    if act == "practice" then menu.close() end
+    go_home(self)
 end
 
--- The flag tally, in the words the web prototype uses. Reporting only: the
--- core owns pickup, carry and drop, and which arrangement of flags wins a
--- round is a game mode's business, which offline there is not one of.
+function final(self)
+    msg.post(".", "release_input_focus")
+end
+
 -- Whether a ship is burning its engine this frame, which is the only thing on
 -- screen that separates a pilot accelerating from one coasting.
--- Either sign: the tail flame and the retros are drawn from the same answer,
--- so a ship backing up is as legible as one accelerating. Reverse is the
--- keyboard's Down key and the bots use it to open range; the stick has no way
--- to ask for it, which is a gap in the controls rather than in the model.
+--
+-- Only your own. Buttons are not in a snapshot, so what anybody else is doing
+-- with their engine is not something this client is told.
 local function burning(i, mine_buttons, bit)
-    if i == me then return has(mine_buttons, bit) end
-    local p = pilots[i]
-    if p and p.bot then return has(p.bot.want, bit) end
-    return false
+    return i == me and has(mine_buttons, bit)
 end
 
 function update(self, dt)
@@ -779,40 +408,39 @@ function update(self, dt)
     local density = self.density or 1
     if ww == 0 or wh == 0 then return end
 
-    if browser.open then
-        ui.begin(layers.ui, ww, wh, density, touch.used)
-        browser.draw(layers.ui, ui, ww, wh, density)
-        ui.finish()
-        layers.fill:reset() layers.fill:flush()
-        layers.glow:reset() layers.glow:flush()
-        return
-    end
-    -- Online with nothing to draw yet. Bail out of the world, but not while
-    -- the start screen is up: that is exactly the window where a join is
-    -- still pending, and returning here skipped both the screen and the
-    -- timeout that gives up on it -- so a bad address drew nothing at all.
-    if self.online and sim.ship_count() == 0 and not menu.open then return end
-
     sfx.frame()
     -- The soundtrack wants to be running from the first frame and cannot be,
     -- so it is asked for repeatedly until it is. See sfx.music_tick.
     sfx.music_tick(dt)
 
+    -- Is there a game to look at? A zone that has taken the connection but not
+    -- yet sent a snapshot has no world in it, so the menu holds the screen
+    -- until one lands, with the note under it saying what is being waited on.
+    local live = self.online and net.connected and sim.ship_count() > 0
+    menu.home = not live
+    -- Nothing behind the panel means the panel does not go away. This is the
+    -- one place that decides it; `menu.close` refuses while `home` is set.
+    if not live then menu.open = true end
+
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
     -- timestep, and Defold's physics is off entirely.
-    accum = accum + math.min(dt, 0.25)
-    local steps = 0
-    while accum >= DT and steps < MAX_CATCHUP do
-        -- Read once, before anything asks for the buttons, and cleared after
-        -- the step that spends it.
-        charge_tap = touch.fired_charge()
-        step_once()
-        charge_tap = nil
-        accum = accum - DT
-        steps = steps + 1
+    if self.online then
+        accum = accum + math.min(dt, 0.25)
+        local steps = 0
+        while accum >= DT and steps < MAX_CATCHUP do
+            -- Read once, before anything asks for the buttons, and cleared
+            -- after the step that spends it.
+            charge_tap = touch.fired_charge()
+            step_once()
+            charge_tap = nil
+            accum = accum - DT
+            steps = steps + 1
+        end
+        if steps == MAX_CATCHUP then accum = 0 end
+    else
+        accum = 0
     end
-    if steps == MAX_CATCHUP then accum = 0 end
 
     -- Escape opens the menu; inside it, escape goes back a level, and at the
     -- root that is the same as closing. One key, no modes.
@@ -830,14 +458,30 @@ function update(self, dt)
         sfx.ui("ui_move")
     end
     -- The scoreboard and your loadout, together, on one key and one chip.
-    -- Not gated on the menu being shut: asking for this *while* the menu is
-    -- up is a way of saying you wanted the other one.
+    -- Not gated on the menu being shut: asking for this while the menu is up
+    -- is a way of saying you wanted the other one. It is gated on there being
+    -- a game, because with no arena behind the menu there is nothing to show
+    -- and the toggle would be a key that does nothing.
     if tapped[hash("details")] then
         tapped[hash("details")] = nil
-        toggle_details()
-        sfx.ui("ui_move")
+        if live then
+            toggle_details()
+            sfx.ui("ui_move")
+        end
     end
+    -- The games list is polled only while it is the thing being read: how busy
+    -- each game is moves under a player looking at it, and matters not at all
+    -- while they are three levels away setting the volume or in a fight. Told
+    -- both ways round, because stopping is what makes the next look start with
+    -- a fresh ask rather than with a count from ten minutes ago.
+    if menu.open and menu.at() == "zones" then
+        directory.tick(dt)
+    else
+        directory.idle()
+    end
+
     if menu.open then
+        menu.tick()
         local act, moved = menu.step({
             left = tapped[hash("turn_left")], right = tapped[hash("turn_right")],
             up = tapped[hash("thrust")], down = tapped[hash("reverse")],
@@ -857,31 +501,32 @@ function update(self, dt)
 
     -- A zone that accepts the socket but never sends a snapshot is as broken
     -- as one that refuses it, and on the web a connection to a dead port can
-    -- hang without ever raising an error. Either way the player gets the
-    -- start screen back rather than a black arena.
-    -- Only while a join is actually in flight. This used to read `menu.open`,
-    -- which meant that in a zone the menu closed itself on the frame after it
-    -- opened -- there was no way to reach anything in it, including the ship
-    -- list this exists to make reachable. `joining` is a number while a
-    -- connection is pending and nil the rest of the time.
+    -- hang without ever raising an error. Either way the player gets the menu
+    -- back with a reason on it rather than a black arena.
     if self.online and self.joining then
         if net.connected and net.stats.snaps > 0 then
+            menu.home = false
             menu.close()
             menu.note = nil
             self.joining = nil
         else
             self.joining = self.joining + dt
             if self.joining > 10 then
-                net.disconnect()
-                self.online = false
-                self.joining = nil
                 menu.note = "no answer from the zone"
-                start_chosen("play", menu.class)
-                ui.details = false
-                menu.show("play")
+                go_home(self, "zones")
             end
         end
     end
+
+    -- Asked again, because the answer can have changed since the top of the
+    -- frame. A menu row can join a zone, leave one, or give up on a join, and
+    -- all three tear the world down mid-frame: joining calls `sim.init` and
+    -- leaves nothing to draw until the first snapshot. Carrying the old answer
+    -- down to the drawing below would read the empty core as though a game were
+    -- still in it, and rebuild terrain around tile zero on the way past.
+    live = self.online and net.connected and sim.ship_count() > 0
+    menu.home = not live
+    if not live then menu.open = true end
 
     -- Notifications expire. A feed that only ever scrolls leaves the last
     -- nine deaths on screen through a lull, which reads as a fight that is
@@ -891,20 +536,29 @@ function update(self, dt)
         if feed[i].t > ui.FEED_LIFE then table.remove(feed, i) end
     end
 
-    -- What the menu calls your hull is whatever you are flying, asked every
-    -- frame rather than remembered: in a zone the server decides, and it can
-    -- refuse a change the menu has already drawn as chosen.
-    if sim.ship_count() > 0 then menu.class = sim.ship_class(me) end
-
-    local cx, cy = sim.ship_x(me), sim.ship_y(me)
-    -- Terrain follows the camera. A map this size cannot be meshed whole, so
-    -- the window is rebuilt once the camera has walked far enough that its
-    -- edge is getting close to the screen.
-    local ctx, cty = math.floor(cx / 16), math.floor(cy / 16)
-    if not static_tx or math.abs(ctx - static_tx) >= STATIC_STEP
-       or math.abs(cty - static_ty) >= STATIC_STEP then
-        rebuild_static(ctx, cty)
+    local cx, cy
+    if live then
+        -- What the menu calls your hull is whatever you are flying, asked
+        -- every frame rather than remembered: the server decides, and it can
+        -- refuse a change the menu has already drawn as chosen.
+        menu.class = sim.ship_class(me)
+        cx, cy = sim.ship_x(me), sim.ship_y(me)
+        -- Terrain follows the camera. A map this size cannot be meshed whole,
+        -- so the window is rebuilt once the camera has walked far enough that
+        -- its edge is getting close to the screen.
+        local ctx, cty = math.floor(cx / 16), math.floor(cy / 16)
+        if not static_tx or math.abs(ctx - static_tx) >= STATIC_STEP
+           or math.abs(cty - static_ty) >= STATIC_STEP then
+            rebuild_static(ctx, cty)
+        end
+    else
+        -- Nothing to look at, so the camera drifts and the starfield moves
+        -- under the panel. A still field reads as a screenshot of a game
+        -- rather than a game waiting to be picked.
+        self.drift = (self.drift or 0) + dt * 7
+        cx, cy = 512 * 16 + self.drift, 512 * 16 + self.drift * 0.4
     end
+
     sfx.listener(cx, cy)
     fx.listener(cx, cy)
     fx.update(dt)
@@ -923,140 +577,139 @@ function update(self, dt)
     self.report = (self.report or 0) + dt
     if self.report > 5 then
         self.report = 0
-        if self.online then
-            -- Name every pilot the server says is here. In a zone the
-            -- roster is the point: it is how you know somebody else showed
-            -- up, and it is the first thing to break when they do.
+        if live then
+            -- Name every pilot the server says is here. The roster is the
+            -- point: it is how you know somebody else showed up, and it is the
+            -- first thing to break when they do.
             local who = {}
             for i = 0, sim.ship_count() - 1 do
                 local p = net.pilots[i]
                 who[#who + 1] = (p and p.name or ("?" .. i))
                     .. ((p and p.ai) and "*" or "")
             end
-            print(string.format("tick %d  ships %d  online %s  err %.2fpx  roster %s",
-                sim.tick(), sim.ship_count(), tostring(net.connected),
-                net.stats.err, table.concat(who, " ")))
+            print(string.format("tick %d  ships %d  err %.2fpx  roster %s",
+                sim.tick(), sim.ship_count(), net.stats.err,
+                table.concat(who, " ")))
         else
-            local fp, fl, fc = layers.fill:stats()
-            local gp, gl, gc = layers.glow:stats()
-            local up, ul, uc = layers.ui:stats()
-            -- The static pair is in here because it was not, and a terrain
-            -- window that outgrew its buffer would have dropped walls with
-            -- nothing saying so. `lost` is the number that matters: anything
-            -- but zero is a frame drawing less than it was asked to.
-            local bp, bl, bc = layers.bg:stats()
-            local sp, sl, sc = layers.bgglow:stats()
-            print(string.format(
-                "tick %d  ships %d  hash %d  at %.0f,%.0f  " ..
-                "peak f%d/%d g%d/%d u%d/%d bg%d/%d bgl%d/%d  lost %d",
-                sim.tick(), sim.ship_count(), sim.hash(), cx, cy,
-                fp, fc, gp, gc, up, uc, bp, bc, sp, sc,
-                fl + gl + ul + bl + sl))
+            print(string.format("menu  zone %s  games %d  %s",
+                menu.zone == "" and "-" or menu.zone,
+                #directory.rows, menu.note or directory.note or ""))
         end
     end
 
     -- --- the world -------------------------------------------------------
     local fill, glow = layers.fill, layers.glow
-    -- A zone's map replaces the built-in room, and the terrain mesh was built
-    -- once on the assumption that never happens. Rebuilt here rather than
-    -- where the message lands: this is the phase that owns the layers, and a
-    -- static buffer refilled from the middle of a frame does not survive it.
-    if net.map_epoch ~= (self.map_epoch or 0) then
-        self.map_epoch = net.map_epoch
-        rebuild_static()
-    end
-    -- Same reason, for what a weapon looks like: a zone's spec table is its
-    -- own, so a bolt here can be a bomb there, and the drawing code caches
-    -- that answer per spec id.
-    if net.settings_epoch ~= (self.settings_epoch or 0) then
-        self.settings_epoch = net.settings_epoch
-        world.forget_specs()
-    end
-
     fill:reset()
     glow:reset()
 
-    local t = sim.tick() / TICK_HZ
-    local my_team = sim.ship_team(me)
-    local mine_buttons = my_buttons()
-
-    -- Held thrust is the one sound with a duration rather than an instant, so
-    -- it is a loop the frame turns on and off rather than an event. Edges
-    -- only: playing a looping component again starts a second voice.
-    sfx.loop("thrust", sim.ship_alive(me) == 1 and not menu.open
-        and (has(mine_buttons, sim.BTN_THRUST)
-             or has(mine_buttons, sim.BTN_REVERSE)))
-
     -- Stars first, and into the per-frame layer: they move against the
-    -- camera, so they cannot live in the mesh the walls are baked into.
+    -- camera, so they cannot live in the mesh the walls are baked into. They
+    -- are the whole of the home screen's backdrop and the bottom of the
+    -- arena's, which is one routine either way.
     world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
-    world.flags(fill, glow, my_team, t)
-    -- What is on screen, grown by enough that nothing pops at the edge: a
-    -- bomb's halo is 13 px, a hull's is 26, a blast reaches further. Drawing
-    -- the rest of a thousand-tile map is not merely wasted work -- it
-    -- overflows the layer and the primitives that fall past the cap simply
-    -- vanish, which reads as hulls changing shape and energy bars blinking
-    -- empty rather than as a slow frame.
-    local cull = {x0 = cx - self.hw - 96, x1 = cx + self.hw + 96,
-                  y0 = cy - self.hh - 96, y1 = cy + self.hh + 96}
-    world.prizes(fill, glow, t, cull)
-    world.weapons(fill, glow, my_team, t, cull)
 
-    for i = 0, sim.ship_count() - 1 do
-        -- Yours is always drawn: the camera is on it, so it cannot be off
-        -- screen, and a frame that skipped it would be a frame with no ship.
-        if sim.ship_alive(i) == 1
-           and (i == me or not (sim.ship_x(i) < cull.x0 or sim.ship_x(i) > cull.x1
-                                or sim.ship_y(i) < cull.y0 or sim.ship_y(i) > cull.y1)) then
-            local col = (sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY
-            world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
-                       sim.ship_y(i), sim.ship_heading(i), col, {
-                mine = i == me,
-                thrusting = burning(i, mine_buttons, sim.BTN_THRUST),
-                reversing = burning(i, mine_buttons, sim.BTN_REVERSE),
-                flicker = (sim.tick() * 7 + i * 13) % 11 / 11,
-            })
-            -- Only the wounded carry a pip. A bar over every hull in a
-            -- nine-ship room is noise; a bar over the one that is hurt is
-            -- the single most useful thing on screen -- and its *appearing*
-            -- is itself the notice that something hit you, which is why it
-            -- is absent at full rather than merely empty.
-            --
-            -- Your own grades from team colour into the hurt colours as it
-            -- falls. That used to be the corner bar's job and the corner bar
-            -- is gone: without this a pilot at eight percent and a pilot at
-            -- ninety would be told the same thing in the same colour, and the
-            -- length of a 22-pixel bar is not a warning.
-            local frac = sim.ship_energy(i) / math.max(1, sim.ship_max_energy(i))
-            if frac < 0.995 then
-                local bar_col = col
-                if i == me then
-                    if frac < 0.2 then bar_col = pal.HURT
-                    elseif frac < 0.45 then bar_col = pal.ENEMY end
+    if live then
+        -- A zone's map replaces whatever was there, and the terrain mesh is
+        -- built on the assumption that never happens. Rebuilt here rather than
+        -- where the message lands: this is the phase that owns the layers, and
+        -- a static buffer refilled from the middle of a frame does not survive
+        -- it.
+        if net.map_epoch ~= (self.map_epoch or 0) then
+            self.map_epoch = net.map_epoch
+            rebuild_static()
+        end
+        -- Same reason, for what a weapon looks like: a zone's spec table is
+        -- its own, so a bolt here can be a bomb there, and the drawing code
+        -- caches that answer per spec id.
+        if net.settings_epoch ~= (self.settings_epoch or 0) then
+            self.settings_epoch = net.settings_epoch
+            world.forget_specs()
+        end
+
+        local t = sim.tick() / TICK_HZ
+        local my_team = sim.ship_team(me)
+        local mine_buttons = my_buttons()
+
+        -- Held thrust is the one sound with a duration rather than an instant,
+        -- so it is a loop the frame turns on and off rather than an event.
+        -- Edges only: playing a looping component again starts a second voice.
+        sfx.loop("thrust", sim.ship_alive(me) == 1 and not menu.open
+            and (has(mine_buttons, sim.BTN_THRUST)
+                 or has(mine_buttons, sim.BTN_REVERSE)))
+
+        world.flags(fill, glow, my_team, t)
+        -- What is on screen, grown by enough that nothing pops at the edge: a
+        -- bomb's halo is 13 px, a hull's is 26, a blast reaches further.
+        -- Drawing the rest of a thousand-tile map is not merely wasted work,
+        -- it overflows the layer and the primitives that fall past the cap
+        -- simply vanish, which reads as hulls changing shape and energy bars
+        -- blinking empty rather than as a slow frame.
+        local cull = {x0 = cx - self.hw - 96, x1 = cx + self.hw + 96,
+                      y0 = cy - self.hh - 96, y1 = cy + self.hh + 96}
+        world.prizes(fill, glow, t, cull)
+        world.weapons(fill, glow, my_team, t, cull)
+
+        for i = 0, sim.ship_count() - 1 do
+            -- Yours is always drawn: the camera is on it, so it cannot be off
+            -- screen, and a frame that skipped it would be a frame with no
+            -- ship.
+            if sim.ship_alive(i) == 1
+               and (i == me or not (sim.ship_x(i) < cull.x0 or sim.ship_x(i) > cull.x1
+                                    or sim.ship_y(i) < cull.y0 or sim.ship_y(i) > cull.y1)) then
+                local col = (sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY
+                world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
+                           sim.ship_y(i), sim.ship_heading(i), col, {
+                    mine = i == me,
+                    thrusting = burning(i, mine_buttons, sim.BTN_THRUST),
+                    reversing = burning(i, mine_buttons, sim.BTN_REVERSE),
+                    flicker = (sim.tick() * 7 + i * 13) % 11 / 11,
+                })
+                -- Only the wounded carry a pip. A bar over every hull in a
+                -- nine-ship room is noise; a bar over the one that is hurt is
+                -- the single most useful thing on screen, and its appearing
+                -- is itself the notice that something hit you, which is why it
+                -- is absent at full rather than merely empty.
+                --
+                -- Your own grades from team colour into the hurt colours as it
+                -- falls. That used to be the corner bar's job and the corner
+                -- bar is gone: without this a pilot at eight percent and a
+                -- pilot at ninety would be told the same thing in the same
+                -- colour, and the length of a 22-pixel bar is not a warning.
+                local frac = sim.ship_energy(i) / math.max(1, sim.ship_max_energy(i))
+                if frac < 0.995 then
+                    local bar_col = col
+                    if i == me then
+                        if frac < 0.2 then bar_col = pal.HURT
+                        elseif frac < 0.45 then bar_col = pal.ENEMY end
+                    end
+                    world.ship_bar(fill, glow, sim.ship_x(i), sim.ship_y(i), frac,
+                                   bar_col)
                 end
-                world.ship_bar(fill, glow, sim.ship_x(i), sim.ship_y(i), frac,
-                               bar_col)
             end
         end
+
+        -- Two of the eight hulls have no bomb rack, so the pad that fires one
+        -- has nothing to fire. Told every frame rather than on the hull
+        -- change, because a zone can hand you a different ship than the one
+        -- you asked for.
+        touch.has_bomb = sim.has_trigger(me, sim.TRIG_BOMB)
+        -- Which charge slots this hull carries, and how many of each are in
+        -- hand. The pads are built from this, so a hull with none draws none
+        -- and a zone that fills all four gets four.
+        touch.charges = my_slots()
+        touch.counts = {}
+        for _, k in ipairs(touch.charges) do
+            touch.counts[k] = sim.ship_charge(me, k)
+        end
+
+        -- Doors and wormholes: world geometry that moves, so it cannot live in
+        -- the static mesh the way the walls do.
+        world.draw_tiles(fill, glow, cull)
+        fx.draw(glow)
+    else
+        sfx.loop("thrust", false)
     end
 
-    -- Two of the eight hulls have no bomb rack, so the pad that fires one has
-    -- nothing to fire. Told every frame rather than on the hull change,
-    -- because a zone can hand you a different ship than the one you asked for.
-    touch.has_bomb = sim.has_trigger(me, sim.TRIG_BOMB)
-    -- Which charge slots this hull carries, and how many of each are in hand.
-    -- The pads are built from this, so a hull with none draws none and a zone
-    -- that fills all four gets four.
-    touch.charges = my_slots()
-    touch.counts = {}
-    for _, k in ipairs(touch.charges) do
-        touch.counts[k] = sim.ship_charge(me, k)
-    end
-
-    -- Doors and wormholes: world geometry that moves, so it cannot live in
-    -- the static mesh the way the walls do.
-    world.draw_tiles(fill, glow, cull)
-    fx.draw(glow)
     fill:flush()
     glow:flush()
 
@@ -1065,42 +718,145 @@ function update(self, dt)
     -- The interface stays up under the menu. Nothing is paused, so hiding the
     -- scoreboard and the radar behind a panel would be a lie about what is
     -- happening: you can be shot while reading this.
-    do
+    if live then
         ui.hud({
             me = me, class_names = CLASS_NAMES, menu_open = menu.open,
-            -- Online the roster is the server's, because those are other
-            -- people's names and only it knows them.
-            pilots = (self.online and net.connected) and net.pilots or pilots,
+            -- The server's roster, because those are other people's names and
+            -- only it knows them.
+            pilots = net.pilots,
             feed = feed, hurt = hurt, pickup = pickup,
             charges = charge_row(),
             cam_x = cx, cam_y = cy,
             half_w = self.hw, half_h = self.hh,
             -- Flags are drawn as flags now, so the banner is only for the
             -- things that are genuinely a sentence.
-            banner = self.online and net.banner or nil,
+            banner = net.banner,
             -- Short enough to share a row with the word "online": a hull
             -- change teleports you to a spawn the client never predicted, so
             -- the peak can reach three digits and the two texts collided.
-            netinfo = self.online and string.format(
-                "err %.1f / %.0f px", net.stats.err, net.stats.err_max)
-                or nil,
+            netinfo = string.format("err %.1f / %.0f px",
+                                    net.stats.err, net.stats.err_max),
         })
     end
     if menu.open then ui.menu(menu.view()) end
-    -- Not over the start screen: the stick and the pads belong to flight, and
-    -- drawn under a menu they read as buttons that do nothing.
-    if not menu.open then
+    -- Not over the menu: the stick and the pads belong to flight, and drawn
+    -- under a panel they read as buttons that do nothing.
+    if live and not menu.open then
         touch.draw(layers.ui, ww, wh, density)
     end
     ui.finish()
 
     -- The page draws its own starfield and wordmark while four megabytes of
     -- engine compile. This is the moment it can stop: not when the runtime
-    -- initialised, which is seconds earlier, but when there is an arena on
+    -- initialised, which is seconds earlier, but when there is something on
     -- screen to hand over to.
     if not self.handed_over then
         self.handed_over = true
         if html5 then pcall(html5.run, "window.vwReady && vwReady()") end
+    end
+end
+
+-- What the menu asked for.
+--
+-- The menu names an action and decides nothing; this is the only place that
+-- knows what any of them mean, which is what keeps the tree a description of
+-- itself rather than a second copy of the game.
+function apply_menu(self, act)
+    if act == "ship" then
+        -- With no game on, this is simply the hull you will arrive in.
+        if not self.online then
+            menu.class = menu.pending
+            menu.save_identity()
+            return
+        end
+
+        -- A hull change is a respawn, not a rebuild: the arena, the score and
+        -- everybody else in it carry on, which is the whole reason the menu
+        -- can be opened mid-fight at all. You keep your team and your seat;
+        -- your upgrades and your place on the map are gone, the same as
+        -- dying, because a fresh hull is a fresh bar and it has to cost what
+        -- a fresh bar costs.
+        --
+        -- Alive and full, or nothing. That rule lives in the core so both
+        -- sides have exactly one copy of it; the check here is only so a
+        -- refusal comes with a reason instead of silence.
+        if sim.ship_alive(me) ~= 1 then
+            menu.note = "not while you are waiting to respawn"
+            return
+        end
+        if sim.ship_energy(me) < sim.ship_max_energy(me) then
+            menu.note = "a hull change needs a full bar"
+            return
+        end
+        -- The server owns the roster, so this asks and the next snapshot
+        -- answers. Nothing is predicted: a hull that flickered back would be
+        -- worse than one that arrives a frame late.
+        net.set_class(menu.pending)
+        menu.save_identity()
+        menu.close()
+        return
+    end
+
+    if act == "fullscreen" then
+        if html5 then
+            pcall(html5.run, "(document.fullscreenElement" ..
+                  " ? document.exitFullscreen()" ..
+                  " : document.documentElement.requestFullscreen())")
+        end
+        return
+    end
+
+    if act == "join" then
+        local r = menu.chosen
+        if not r then return end
+        if not r.live then
+            -- The row already says nobody is running it on its right-hand
+            -- side, so this only has to not be silent: a press that produces
+            -- nothing reads as a dead screen.
+            menu.note = "nobody is running " .. r.name
+            return
+        end
+        -- Whatever we were in, we are leaving. `net.connect` drops the old
+        -- socket itself, but the world it filled is this script's to clear.
+        net.disconnect()
+        feed = {}
+        pickup = nil
+        hurt = 0
+        fx.reset()
+        world.forget_specs()
+        sim.init(0x5eed)
+        clear_static()
+        me = 0
+        directory.close()
+        ui.details = false
+        menu.zone = r.zone
+        menu.save_identity()
+        menu.note = "joining " .. r.name
+        -- The one address serves the whole join: the directory named it, and
+        -- the zone's name travels with the request so an instance that has
+        -- since changed game refuses rather than surprising anybody.
+        net.connect(r.address, menu.class, menu.name, function(why)
+            menu.note = why
+            go_home(self, "zones")
+        end, r.zone)
+        self.online = true
+        self.joining = 0
+        return
+    end
+
+    -- Leaving, and giving up on a join that has not landed. Both are the same
+    -- act: there is no game, so put the menu back with nothing behind it.
+    if act == "leave" or act == "cancel" then
+        if self.online then
+            menu.note = nil
+            go_home(self, "zones")
+            -- Made here rather than by the caller. Escape at the root of the
+            -- home screen produces this same action and does nothing with it,
+            -- and a click for a keystroke that changed nothing is how an
+            -- interface teaches a player to stop trusting its noises.
+            sfx.ui("ui_go")
+        end
+        return
     end
 end
 
@@ -1116,104 +872,15 @@ function on_message(self, message_id, message)
 end
 
 function on_input(self, action_id, action)
-    if browser.open then
-        -- Joining, and leaving. Shared by the keyboard and by a tap, because
-        -- they are the same two decisions and were not: this screen answered
-        -- to nothing but keys, so on a phone the list of games drew perfectly
-        -- and could not be used.
-        local function join()
-            local address, zone = browser.chosen()
-            if not address then
-                -- A game nobody is currently running. The row already says so
-                -- on its right-hand side, so this only has to not be silent:
-                -- a tap that produces no sound and no movement reads as a
-                -- dead screen, which is what sent this bug in. Writing a note
-                -- as well was tried and is pointless -- the directory's next
-                -- update overwrites it inside a second.
-                sfx.ui("ui_move")
-                return
-            end
-            sfx.ui("ui_go")
-            browser.close()
-            net.connect(address, menu.class, menu.name, function(why)
-                menu.note = why
-                ui.details = false
-                menu.show("play")
-            end, zone)
-            menu.note = "joining " .. (zone or address)
-            self.online = true
-            self.joining = 0
-            self.browsing = false
-        end
-        local function leave()
-            browser.close()
-            self.browsing = false
-            start_offline()
-        end
-
-        -- A tap on a row picks it, and a tap on the row already picked joins
-        -- it. Two taps rather than one, because a list of unfamiliar names is
-        -- a thing you point at before you commit to it, and a single tap that
-        -- both reads and connects gives no chance to change your mind.
-        --
-        -- `screen_x`/`screen_y` and never `x`/`y`, for the reason the start
-        -- screen's own hit test spells out: on HTML5 Defold scales x and y
-        -- into the resolution game.project asks for rather than the size the
-        -- canvas actually is, which on a phone is wrong by a factor of three.
-        local function tapped_at(x, y)
-            local px, py = x, (self.vh or 0) - y
-            for _, r in ipairs(ui.hits) do
-                if px >= r.x and px <= r.x + r.w
-                   and py >= r.y and py <= r.y + r.h then
-                    if r.action == "offline" then
-                        sfx.ui("ui_go")
-                        leave()
-                    elseif r.value == browser.selected then
-                        join()
-                    else
-                        browser.selected = r.value
-                        sfx.ui("ui_move")
-                    end
-                    return true
-                end
-            end
-            return false
-        end
-
-        if action_id == hash("touch") then
-            if action.touch then
-                touch.note_used()
-                for _, t in ipairs(action.touch) do
-                    if t.pressed
-                       and tapped_at(t.screen_x or t.x, t.screen_y or t.y) then
-                        return
-                    end
-                end
-            end
-            return
-        end
-        if action_id == hash("pointer") and action.pressed and not touch.used then
-            tapped_at(action.screen_x or action.x, action.screen_y or action.y)
-            return
-        end
-
-        if not action.pressed then return end
-        if action_id == hash("thrust") then browser.move(-1) sfx.ui("ui_move")
-        elseif action_id == hash("reverse") then browser.move(1) sfx.ui("ui_move")
-        elseif action_id == hash("select") then join()
-        elseif action_id == hash("cancel") then leave()
-        end
-        return
-    end
-    -- A press on the start screen is a press on whatever it landed on. The
-    -- interface publishes its own hit boxes in the pixel space it drew them
-    -- in, so this needs no second copy of the layout.
+    -- A press is a press on whatever it landed on. The interface publishes its
+    -- own hit boxes in the pixel space it drew them in, so this needs no
+    -- second copy of the layout.
     --
     -- `screen_x`/`screen_y`, in drawable pixels counting up from the bottom.
     -- Never `x`/`y`: on HTML5 Defold scales those into the resolution
     -- game.project asks for rather than the size the canvas actually is, so
     -- on any window that is not exactly 1280 by 800 every button was tested
-    -- against the wrong place -- and on a phone, by a factor of three.
+    -- against the wrong place, and on a phone by a factor of three.
     local function hit(x, y)
         local px, py = x, (self.vh or 0) - y
         for _, r in ipairs(ui.hits) do
@@ -1259,10 +926,10 @@ function on_input(self, action_id, action)
     -- dropped before this ever runs: the button state is polled once a frame,
     -- and a down followed by an up between two polls reads as never pressed.
     -- At 60 Hz that needs a sub-16 ms click, which a hand cannot produce, but
-    -- an automated one can -- Playwright's click() is instantaneous, and
-    -- under a software renderer the frames are long enough that every click
-    -- vanishes. A test driving this has to hold the button for ~90 ms, or it
-    -- will conclude the interface is dead when it is not.
+    -- an automated one can. Playwright's click() is instantaneous, and under a
+    -- software renderer the frames are long enough that every click vanishes.
+    -- A test driving this has to hold the button for ~90 ms, or it will
+    -- conclude the interface is dead when it is not.
     if action_id == hash("pointer") and action.pressed and not touch.used then
         if hit(action.screen_x or action.x, action.screen_y or action.y) then
             return

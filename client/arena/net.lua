@@ -25,9 +25,9 @@ local CLIENT_PROTOCOL = 1
 -- "stop trying". See the refusal table in docs/architecture/zones-and-arenas.md.
 local DENY_FULL, DENY_DRAINING, DENY_WRONG_ZONE = 1, 2, 3
 local DENY_BANNED, DENY_VERSION = 4, 5
--- True when re-browsing would plausibly get the player into the game they
--- picked. The arena browser is not built yet, so for now this only decides how
--- the reason is worded.
+-- True when picking the same game again would plausibly land somewhere with
+-- room. The refusal drops the player back on the games list either way, so
+-- this only decides how the reason is worded.
 local RETRYABLE = {
     [DENY_FULL] = true, [DENY_DRAINING] = true, [DENY_WRONG_ZONE] = true,
 }

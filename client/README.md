@@ -54,7 +54,7 @@ in `sim/`.
 | `arena/net.lua` | Connect, predict, reconcile. Decides nothing |
 | `arena/touch.lua` | Thumbstick and weapon pads; emits the same button bits |
 | `arena/menu.lua` | The menu tree and the settings it saves |
-| `arena/browser.lua` | The server browser, over the directory protocol |
+| `arena/directory.lua` | Asks a directory what games are running |
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `tools/mksounds.py` | Synthesises every sound effect from arithmetic |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
@@ -105,10 +105,10 @@ sends `C2S_SHIP`, the server applies it through the core, and the next snapshot
 brings back a different ship. Only alive and only at a full bar -- a fresh hull
 is a fresh bar, and ungated that is an escape from a fight.
 
-`PRACTICE` and `DUEL` stay offline against bots, so a page with no zone behind
-it is still a game, and either of them is also how you leave a zone.
+`LEAVE` is how you get out of one. It puts the menu back with nothing behind
+it, which is the same state the client starts in.
 
-A build can also be pointed at a zone up front, which skips the local arena:
+A build can be pointed at a zone up front, which skips the menu entirely:
 
 ```sh
 ./client/build/x86_64-linux/dmengine \
@@ -119,10 +119,10 @@ A build can also be pointed at a zone up front, which skips the local arena:
 
 `--config` overrides work for any key, which beats rebuilding to change one.
 
-A zone that cannot be reached opens the menu at `PLAY` with the reason under
-it, and gives up after ten seconds if the socket opens but nothing arrives.
-On the web a connection to a dead port can hang without ever raising an
-error, so the timeout is the only thing that catches it.
+A zone that cannot be reached puts the menu back on the games list with the
+reason under it, and gives up after ten seconds if the socket opens but
+nothing arrives. On the web a connection to a dead port can hang without ever
+raising an error, so the timeout is the only thing that catches it.
 
 One deployment rule, and it is a browser rule rather than ours: a page served
 over `https` may only open `wss`. `ws://127.0.0.1` is the exception, because
@@ -142,10 +142,12 @@ not a subtle desync.
 
 ## Finding a game
 
-`PLAY -> ZONES` opens the browser: it asks the directory what is running and
-lets the player pick. Up and down move, enter joins, escape plays offline
-instead. The address defaults to a loopback directory and is overridden per
-build.
+The page opens on the menu, and `PLAY` is the list of games: the client asks
+the configured directory what is running, at once on opening the list and every
+three seconds after that for as long as it is on screen, so players joining and
+leaving show up while somebody is choosing. Up and down move, enter joins. The
+game you played last is marked and preselected. The address defaults to the
+fleet's directory and is overridden per build.
 
 ```sh
 ./server/target/release/vectorwake-server directory 127.0.0.1:9000 zone
@@ -155,8 +157,10 @@ build.
 ```
 
 A `server` address connects straight there at startup, which is how a test
-pins a client to a zone. Without one the client plays the local game, which is
-what keeps a build with nothing behind it playable.
+pins a client to a zone. Without one the client opens on the menu and waits to
+be told which game to join. There is no local game to fall back on: with no
+directory and no zone, the client draws a starfield and a list of things it
+cannot reach.
 
 ## Driving it from a test
 
@@ -272,13 +276,19 @@ through a gui component (`ui/vwui.gui_script`) that draws a pool of text nodes
 and nothing else. The division is absolute: if it has a shape, `arena/ui.lua`
 drew it; if it has words, the gui did.
 
-## There is no start screen
+## One menu, opening and mid-game
 
-The client boots into the practice arena with a default hull, a generated call
-sign and live controls; escape opens a menu tree over the top of it, and
-nothing pauses. `client/arena/menu.lua` is the tree and the settings,
-`ui.menu` draws whatever level `menu.view()` reports, and `apply_menu` in
-`arena/arena.script` is the only place that knows what an action means.
+The client boots onto the menu over a starfield: a hull, a generated call sign,
+and the list of games a directory is running. Escape opens the same tree over a
+live arena, and nothing pauses while it is up. `client/arena/menu.lua` is the
+tree and the settings, `ui.menu` draws whatever level `menu.view()` reports,
+and `apply_menu` in `arena/arena.script` is the only place that knows what an
+action means.
+
+The single difference between the home screen and the pause screen is
+`menu.home`, which says whether there is a game behind the panel. With nothing
+behind it the menu will not close, since closing would leave a player on an
+empty starfield with no way back.
 
 Changing hull calls `sim_set_ship_class`, which is a respawn in place rather
 than an arena rebuild -- the design and its consequences are in

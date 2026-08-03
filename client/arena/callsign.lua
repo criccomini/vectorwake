@@ -20,9 +20,9 @@ local WORDS = {
     "Plume", "Quarry", "Rill", "Sextant", "Thistle", "Umber",
 }
 
--- Its own generator rather than math.random: the arena seeds that to a fixed
--- value so the bots fly the same way every run, and drawing a name from it
--- would shift every bot's behaviour with it.
+-- Its own generator rather than math.random, which the arena seeds to a fixed
+-- value. A name has to differ between two tabs opened a second apart, and
+-- anything drawn from a fixed seed is the same name every time.
 local seed = 0
 
 local function next_rand()

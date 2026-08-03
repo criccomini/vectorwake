@@ -1,47 +1,56 @@
--- The menu, which is a tree you open while you are already flying.
+-- The menu, which is the home screen and the one you open while flying.
 --
--- There is no start screen. A player arrives in the arena with a hull, a call
--- sign and live controls, and everything that used to be a decision made
--- before playing is a decision made during it. That is the whole design: the
--- fastest way into a game is not to put anything in front of it.
+-- The page opens on this, at the root, with nothing behind it: pick a hull,
+-- take a different call sign if the one you were dealt is not to your taste,
+-- and choose a game from the list the directory answers with. Escape opens the
+-- same tree over a live arena, and every row means there what it meant on the
+-- way in. One menu, learned once.
+--
+-- `home` is the only difference between the two. It says whether there is a
+-- game behind the panel, and when there is not the menu cannot be closed,
+-- because closing it would leave a player looking at an empty starfield with
+-- no way back.
 --
 -- One list on screen at a time, a breadcrumb above it, and a stack behind it.
 -- Down and up move, right or enter descends or acts, left or escape goes
 -- back, and escape at the root closes. Five inputs, which is what a d-pad
 -- has, what a phone can draw as four arrows and a button, and what a keyboard
--- already sends -- so the same tree works on all three without a second
--- layout. A two-pane menu reads better on a desktop and falls apart at 390
--- points wide.
+-- already sends, so the same tree works on all three without a second layout.
+-- A two-pane menu reads better on a desktop and falls apart at 390 points
+-- wide.
 --
 -- Selection only, still: this decides nothing and steps nothing. It reports
 -- an action and arena.script carries it out.
 
 local callsign = require("arena.callsign")
+local directory = require("arena.directory")
 
 local M = {}
 
-M.open = false
+M.open = true           -- the page opens on it
+M.home = true           -- no game behind the panel
 M.class = 0             -- the hull you are flying, kept in step with the sim
-M.pending = nil         -- the one a row just asked for
+M.pending = nil         -- the hull a row just asked for
+M.chosen = nil          -- the game a row just asked for
 M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
 M.note = nil            -- set by the arena when a connection fails
 
--- Who you are, and where the games are.
+-- Who you are, where the games are, and which one you were in last.
 --
--- Nothing here is typed. The name is generated -- a player is flying
--- immediately, a phone never has to raise a keyboard, and a console will hand
--- us the platform's own name when we get there. The directory is
--- configuration rather than input: ZONES asks it what is running and the
--- player picks from the list.
+-- Nothing here is typed. The name is generated, so a phone never has to raise
+-- a keyboard and a console will hand us the platform's own name when we get
+-- there. The directory is configuration rather than input: the zones list asks
+-- it what is running and the player picks from the answer.
 --
 -- There is deliberately no address field. A game whose front door is a text
 -- box asking for a websocket URL is a game with a text box in it, and the
--- machinery under one -- an invisible DOM input over the canvas, focus
--- handed back and forth, enter delivered to whichever of the two had the
--- caret -- was the single largest source of bugs in this client.
+-- machinery under one, an invisible DOM input over the canvas with focus
+-- handed back and forth and enter delivered to whichever of the two had the
+-- caret, was the single largest source of bugs in this client.
 M.name = "pilot"
 M.directory = "ws://127.0.0.1:9000"
+M.zone = ""
 
 -- Settings. Kept here because this is what saves them, and read by whoever
 -- owns the thing they change.
@@ -64,7 +73,7 @@ local SAVE = sys.get_save_file("vectorwake", "pilot")
 function M.save_identity()
     pcall(sys.save, SAVE, {
         name = M.name, class = M.class, volume = M.volume, music = M.music,
-        cap = M.cap,
+        cap = M.cap, zone = M.zone,
     })
 end
 
@@ -79,6 +88,9 @@ function M.load_identity()
         if type(d.volume) == "number" then M.volume = d.volume end
         if type(d.music) == "number" then M.music = d.music end
         if type(d.cap) == "number" then M.cap = d.cap end
+        -- The game you were in last, so coming back puts the cursor on it and
+        -- a returning player is one press from flying.
+        if type(d.zone) == "string" then M.zone = d.zone end
     else
         M.name = callsign.generate()
         M.save_identity()
@@ -95,7 +107,7 @@ function M.apply_settings()
     -- A browser drives the frame loop from requestAnimationFrame, so on a
     -- 120 Hz laptop the game renders twice as often as on a 60 Hz one and
     -- costs twice the battery for it. The simulation is 100 Hz either way,
-    -- so this is a picture setting, not a game one -- which is exactly why
+    -- so this is a picture setting, not a game one, which is exactly why
     -- it is the player's to make rather than ours.
     M.can_cap = pcall(sys.set_update_frequency, CAPS[M.cap][1])
 end
@@ -107,16 +119,21 @@ end
 
 -- Configuration, for a build that is pointed somewhere: a test naming its
 -- clients, or an operator running their own directory.
-function M.defaults(name, directory)
+function M.defaults(name, dir)
     if name and name ~= "" then M.name = name end
-    if directory and directory ~= "" then M.directory = directory end
+    if dir and dir ~= "" then M.directory = dir end
 end
 
 -- --- the tree ---------------------------------------------------------------
 --
 -- A row is a label, an optional detail that may be a function of the moment,
 -- and one of: `go` to descend, or `act` for the arena to carry out. A row with
--- neither is a line of text, which is what `about` is made of.
+-- neither is a line of text, which is what `about` is made of. A row may also
+-- carry a `hint`, which is a sentence about it drawn under the list while it
+-- is the row selected.
+--
+-- A node's `rows` is a table, or a function returning one when what is in the
+-- list depends on the moment.
 
 local HULLS = {
     {"Apex", "interceptor", "fastest, sharpest turn, lightest bar"},
@@ -141,30 +158,62 @@ local function hull_rows()
     return rows
 end
 
+-- The games the directory is offering, one to a row.
+--
+-- Two columns only, so what a row says is its name and how busy it is, and the
+-- sentence about what the game actually is goes under the list as the hint for
+-- whichever row is selected. Both on the row was tried: "everybody against
+-- everybody" beside "3 playing, 5 AI" is 45 characters against the 40 a phone
+-- has room for, and the count is what decides while the description is what
+-- explains.
+local function zone_rows()
+    local rows = {}
+    for i, r in ipairs(directory.rows) do
+        rows[i] = {
+            label = r.name, detail = r.count, hint = r.detail,
+            act = "join", value = i,
+            mark = function() return r.zone == M.zone end,
+        }
+    end
+    if #rows == 0 then
+        -- Never an empty panel. Whatever the directory is doing, or failing to
+        -- do, is the only thing this level has to say.
+        rows[1] = {label = "", detail = directory.note}
+    end
+    return rows
+end
+
 local NODES = {
-    root = {title = "vectorwake", rows = {
-        {label = "ship", detail = function() return HULLS[M.class + 1][1] end,
-         go = "ship"},
-        {label = "play", detail = function() return M.where or "practice" end,
-         go = "play"},
-        {label = "pilot", detail = function() return M.name end, go = "pilot"},
-        {label = "settings", go = "settings"},
-        {label = "help", go = "help"},
-        {label = "about", go = "about"},
-    }},
+    root = {title = "vectorwake", rows = function()
+        local rows = {
+            {label = "play", detail = function()
+                if M.zone ~= "" then return M.zone end
+                return "choose a game"
+            end, go = "zones"},
+            {label = "ship", detail = function() return HULLS[M.class + 1][1] end,
+             go = "ship"},
+            {label = "pilot", detail = function() return M.name end, go = "pilot"},
+            {label = "settings", go = "settings"},
+            {label = "help", go = "help"},
+            {label = "about", go = "about"},
+        }
+        -- Only with a game behind the panel, because it is the way out of one.
+        -- On the home screen there is nothing to leave, and a row that does
+        -- nothing is a row a player tries once and stops trusting.
+        if not M.home then
+            rows[#rows + 1] = {label = "leave", detail = "back to the menu",
+                               act = "leave"}
+        end
+        return rows
+    end},
 
     ship = {title = "ship", rows = hull_rows()},
 
-    play = {title = "play", rows = {
-        {label = "practice", detail = "eight AI pilots and four flags",
-         act = "practice"},
-        {label = "zones", detail = "find a game to join", act = "zones"},
-    }},
+    zones = {title = "games", rows = zone_rows},
 
     pilot = {title = "pilot", rows = {
         {label = "call sign", detail = function() return M.name end,
-         act = "reroll"},
-        {label = "", detail = "a name is drawn for you and kept between visits"},
+         act = "reroll", hint = "a name is drawn for you and kept between visits"},
     }},
 
     settings = {title = "settings", rows = {
@@ -212,12 +261,12 @@ local NODES = {
 
     about = {title = "about", rows = {
         {label = "", detail = "a top-down space game about frictionless flight"},
-        {label = "", detail = "energy is your health and your ammunition at once"},
         {label = "", detail = ""},
         {label = "", detail = "the bar over a ship is its energy, which is its"},
         {label = "", detail = "health and its ammunition at once"},
         {label = "", detail = "the number under it is its bounty: what killing"},
         {label = "", detail = "it pays, and what dying costs you"},
+        {label = "", detail = ""},
         {label = "", detail = function()
             return "build " .. (sys.get_config("project.version") or "dev")
         end},
@@ -230,13 +279,25 @@ local function node()
     return NODES[M.stack[#M.stack]]
 end
 
-local function row_index()
+local function rows_of(nd)
+    local r = nd.rows
+    if type(r) == "function" then return r() end
+    return r
+end
+
+local function row_index(rows)
     local id = M.stack[#M.stack]
-    local n = #node().rows
+    local n = #rows
     local i = M.sel[id] or 1
     if i > n then i = n elseif i < 1 then i = 1 end
     M.sel[id] = i
     return i
+end
+
+-- Which level is on screen, so the arena knows when the games list is the
+-- thing being read and can keep it fresh.
+function M.at()
+    return M.stack[#M.stack]
 end
 
 function M.toggle()
@@ -244,7 +305,7 @@ function M.toggle()
         M.close()
     else
         M.open = true
-            M.note = nil
+        M.note = nil
     end
     return M.open
 end
@@ -259,35 +320,66 @@ end
 
 -- Closing forgets where you were. A menu that reopens three levels down is a
 -- menu that answers a different question than the one you asked it: the first
--- version of this kept the stack, and pressing escape then down then enter --
--- which had meant a play row a moment earlier -- silently changed hull instead.
+-- version of this kept the stack, and pressing escape then down then enter,
+-- which had meant a play row a moment earlier, silently changed hull instead.
 function M.close()
+    -- Not while this is the only thing on screen. Escape at the root of the
+    -- home screen is already as far back as there is to go.
+    if M.home then return false end
     M.open = false
     M.stack = {"root"}
     -- The row as well as the level. Resetting only the stack left the root
     -- sitting on whatever was last chosen there, so escape-then-enter went
-    -- wherever you went last time rather than into the first row -- the same
-    -- class of surprise, one level up.
+    -- wherever you went last time rather than into the first row, the same
+    -- class of surprise one level up.
     M.sel = {}
+    return true
 end
 
 local function back()
     if #M.stack > 1 then
         table.remove(M.stack)
-        return true
+        return nil, true
     end
-    M.close()
-    return true
+    -- At the root with a game behind the panel, escape puts you back in it.
+    -- With nothing behind the panel it gives up on a join that is still in
+    -- flight, and means nothing at all when there is not one, which is why it
+    -- reports nothing moved: the arena makes the noise if it turns out there
+    -- was something to give up on.
+    if M.close() then return nil, true end
+    return "cancel", false
+end
+
+-- Put the cursor on the game you were in last, once the directory has
+-- answered. Called by the arena rather than worked out during a draw, because
+-- the list arrives on its own schedule and moving a selection out from under a
+-- player mid-frame is exactly the surprise the stack reset above exists to
+-- stop.
+local zone_synced = false
+
+function M.tick()
+    if M.at() ~= "zones" then
+        zone_synced = false
+        return
+    end
+    if zone_synced or #directory.rows == 0 then return end
+    zone_synced = true
+    if M.zone == "" then return end
+    for i, r in ipairs(directory.rows) do
+        if r.zone == M.zone then M.sel.zones = i return end
+    end
 end
 
 -- What the drawing code needs, and nothing about how it is drawn. `detail` is
 -- resolved here so ui.lua never calls back into this file mid-frame.
 function M.view()
     local nd = node()
-    local sel = row_index()
+    local rows = rows_of(nd)
+    local sel = row_index(rows)
     local out = {title = nd.title, depth = #M.stack, sel = sel,
-                 note = M.note, rows = {}}
-    for i, r in ipairs(nd.rows) do
+                 note = M.note, closable = not M.home or #M.stack > 1,
+                 rows = {}}
+    for i, r in ipairs(rows) do
         local d = r.detail
         if type(d) == "function" then d = d() end
         out.rows[i] = {
@@ -296,16 +388,21 @@ function M.view()
             mark = r.mark and r.mark() or false,
         }
     end
+    -- The sentence about whatever is under the cursor, drawn once under the
+    -- list rather than squeezed onto every row.
+    local cur = rows[sel]
+    out.hint = cur and cur.hint or nil
     return out
 end
 
 -- Activate the selected row. Returns an action for the arena, or nil.
 local function activate()
-    local nd = node()
-    local r = nd.rows[row_index()]
+    local rows = rows_of(node())
+    local r = rows[row_index(rows)]
     if not r then return nil end
     if r.go then
         M.stack[#M.stack + 1] = r.go
+        M.note = nil
         return nil
     end
     if not r.act then return nil end
@@ -313,11 +410,16 @@ local function activate()
     -- The ones this file can settle itself.
     if r.act == "ship" then
         -- A request, not a decision. The hull you are flying is whatever the
-        -- simulation says it is -- in a zone that is the server's answer, and
-        -- it can refuse -- so this reports what was asked for and lets the
-        -- arena find out. `M.class` follows the ship, never leads it.
+        -- simulation says it is, and in a zone that is the server's answer and
+        -- it can refuse, so this reports what was asked for and lets the arena
+        -- find out. `M.class` follows the ship, never leads it.
         M.pending = r.value
         return "ship"
+    elseif r.act == "join" then
+        -- Likewise a request. Which address serves this game, and whether it
+        -- answers, is the arena's business.
+        M.chosen = directory.rows[r.value]
+        return "join"
     elseif r.act == "reroll" then
         M.reroll()
         return nil
@@ -341,7 +443,7 @@ local function activate()
 end
 
 -- keys: {left, right, up, down, go, back} as booleans, already edge-detected
--- by the arena script -- a tap can go down and up inside one frame and never
+-- by the arena script: a tap can go down and up inside one frame and never
 -- appear in the key state that flight reads.
 --
 -- Returns an action name or nil, and whether anything moved, so the caller
@@ -349,16 +451,20 @@ end
 function M.step(keys)
     if not M.open then return nil, false end
 
-    if keys.back or keys.left then return nil, back() end
+    if keys.back or keys.left then return back() end
 
     local id = M.stack[#M.stack]
-    local n = #node().rows
+    -- Built once. A node's rows may be a function, and asking it three times
+    -- to move a cursor one row is three lists allocated to answer one
+    -- keystroke.
+    local rows = rows_of(node())
+    local n = #rows
     if keys.up then
-        M.sel[id] = (row_index() - 2) % n + 1
+        M.sel[id] = (row_index(rows) - 2) % n + 1
         return nil, true
     end
     if keys.down then
-        M.sel[id] = row_index() % n + 1
+        M.sel[id] = row_index(rows) % n + 1
         return nil, true
     end
     if keys.go or keys.right then return activate(), true end
@@ -369,7 +475,7 @@ end
 function M.click(index)
     if not M.open then return nil, false end
     local id = M.stack[#M.stack]
-    if index == -1 then return nil, back() end
+    if index == -1 then return back() end
     M.sel[id] = index
     return activate(), true
 end

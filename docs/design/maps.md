@@ -139,9 +139,8 @@ makes a spread map a fight rather than an empty one.
 all eight inside a 68-tile box at the centre, and that is deliberate: a public
 room with ten pilots in it wants them meeting in the first ten seconds, not
 converging over half a minute. The built-in procedural map keeps the bands,
-because that is the shape a 1024-tile map is for; the practice arena uses the
-roster's own tiles at the centre instead, which is what it was already carrying
-and had never used.
+because that is the shape a 1024-tile map is for, and a zone that wants its
+pilots together ships a map that puts them there.
 
 It has no wormhole. One reaches 220 px, fourteen tiles, and the bot ladder
 found what that does to a small room: pilots spawned eight tiles from one
@@ -168,9 +167,9 @@ is zero on purpose the tech tree was unreachable with them.
 twenty-eight tiles from a live ship: outside the first so it is a trip rather
 than a gift, inside the second so it lands on their radar. Twenty greens where
 the people are beats two hundred in a million tiles of nobody, and the count
-came back down to two dozen -- kept at two hundred the ring carpets the ground a
-pilot is standing on, which handed an offline arena multifire, bounce, proximity
-and three energy steps inside a minute.
+came back down to two dozen. Kept at two hundred the ring carpets the ground a
+pilot is standing on, which handed one arena multifire, bounce, proximity and
+three energy steps inside a minute.
 
 It also answers the bandwidth problem the count created. A snapshot carries every
 live green at eleven bytes, so 150 was 1.6 KB a snapshot and 33 KB/s at 20 Hz,
