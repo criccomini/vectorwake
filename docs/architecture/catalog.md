@@ -53,6 +53,16 @@ default_zone = "chaos"
 # ticket waiting to happen. A zone may add its own; see zone.toml.
 bans = ["griefer"]
 
+# Where accounts live, and the key every arena checks session tokens against.
+# `vectorwake-server metakey` prints both halves: the signing key goes in the
+# meta-layer's environment and this one goes here. Absent means a deployment
+# without accounts, which works: everyone flies as a guest and nothing durable
+# is written. A url without a key is refused, since no arena could check a
+# token minted by it.
+[meta]
+url = "https://play.vectorwake.net/meta"
+key = "ecfb32390297ac33057396977f67b62f9ec265564bd20377a827ad00716c8f96"
+
 [[staff]]
 name = "chris"
 capabilities = ["ban", "catalog", "kick", "drain", "pin", "reload"]
@@ -172,6 +182,8 @@ tooling validates and the directory validates again on load:
 | `max_rooms` of zero | A process that may hold no rooms cannot serve the zone |
 | Two `[[zone]]` entries with one name | Which one a client joins would depend on parse order |
 | A `[[pool]]` token that is not `sha256:` and 64 hex digits | A plaintext token in the catalog is a leaked token |
+| A `[meta]` key that is not 64 hex characters of Ed25519 verifying key | Every session token in the fleet would fail at the door |
+| A `[meta]` url with no key | No arena could check a token the meta-layer minted |
 | `teams` of zero | Every pilot needs a team; one team is a free-for-all, none is nothing |
 | `balance` naming something unimplemented | The same dead-key failure as `mode`, one field over |
 | A `version` not greater than the one being replaced | Arena servers take the highest; a rollback needs a new higher number, not a reused one |

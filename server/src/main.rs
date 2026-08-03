@@ -1596,10 +1596,15 @@ impl Zone {
     /// same slow clock the ladder save used to run on, so a zone change or a
     /// catalog update is picked up without another trigger to remember.
     fn aim_spool(&mut self) {
-        let (url, token) = (
-            self.catalog.as_ref().map(|c| c.meta_url.clone()).unwrap_or_default(),
-            std::env::var("VW_TOKEN").unwrap_or_default(),
-        );
+        // The catalog's address is the public one, because it is the one a
+        // client dials. An arena on the same host as the meta-layer should not
+        // go out through DNS, TLS and a proxy to reach a port beside it, so
+        // VW_META overrides it the same way VW_ARENAS does for the bot server.
+        let url = match std::env::var("VW_META") {
+            Ok(v) if !v.is_empty() => v,
+            _ => self.catalog.as_ref().map(|c| c.meta_url.clone()).unwrap_or_default(),
+        };
+        let token = std::env::var("VW_TOKEN").unwrap_or_default();
         let (zone, class, instance) =
             (self.zone_name.clone(), self.rating_class(), self.fleet.instance.clone());
         if let Ok(mut s) = self.spool.lock() {
