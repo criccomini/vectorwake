@@ -2058,6 +2058,41 @@ int main(void) {
         CHECK(n > 0, "a snapshot packs");
         CHECK(sim_unpack(&back, buf, n) == 0, "a snapshot unpacks");
         CHECK(sim_hash(&back) == sim_hash(&s), "the round trip is exact");
+
+        /* A message longer than this build knows how to read is refused.
+         *
+         * This is the case that reached a player. Three fields were added to the
+         * wire for repel and the browser bundle was not rebuilt, so the server
+         * wrote the new layout and the deployed client read the old one --
+         * stopping before the new fields, leaving them unread, and reporting
+         * success on a state it had misread from that point on. What the player
+         * saw was DESTROYED, permanently, on a healthy server.
+         *
+         * Appending a byte is the same shape as a field added on the far side:
+         * the reader lands short of the end. `underflow` never caught it, because
+         * that only fires on reading too far. */
+        {
+            static uint8_t longer[SIM_PACK_MAX + 8];
+            memcpy(longer, buf, (size_t)n);
+            longer[n] = 0x5a;
+            sim_state ignored;
+            CHECK(sim_unpack(&ignored, longer, n + 1) != 0,
+                  "a snapshot with bytes this build cannot read is refused");
+            CHECK(sim_unpack(&ignored, buf, n) == 0,
+                  "and the exact same bytes at the right length still unpack");
+        }
+
+        /* And the same for settings, which is the message that actually broke. */
+        {
+            static uint8_t sbuf[SIM_PACK_MAX + 8];
+            int sn = sim_settings_pack(&cfg, sbuf, SIM_PACK_MAX);
+            CHECK(sn > 0, "settings pack");
+            sim_settings other;
+            CHECK(sim_settings_unpack(&other, sbuf, sn) == 0, "settings unpack");
+            sbuf[sn] = 0x5a;
+            CHECK(sim_settings_unpack(&other, sbuf, sn + 1) != 0,
+                  "settings carrying a field this build does not know are refused");
+        }
         CHECK(memcmp(back.prizes, s.prizes, sizeof s.prizes) == 0,
               "every prize comes back at the pixel it went out on");
 

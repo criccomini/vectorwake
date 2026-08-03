@@ -47,6 +47,40 @@ jobs:
       - name: server tests
         run: cargo test --manifest-path server/Cargo.toml
 
+      # The browser bundle links the same simulation core the server does, so a
+      # core change that does not reach the bundle is two halves of one
+      # simulation disagreeing about the wire. That shipped: three fields were
+      # added to pack.c, the bundle was not rebuilt, and a player joining Chaos
+      # was shown DESTROYED on a healthy server for as long as they cared to
+      # watch. The core now refuses a message it reads short of, so the same
+      # mistake disconnects with a reason rather than lying -- but disconnecting
+      # is still broken, and this is the step that stops it being merged.
+      #
+      # Compared by commit rather than by mtime, because a fresh checkout has no
+      # useful mtimes. Equal timestamps pass, which is the good case: one commit
+      # that changes the core and rebuilds the bundle together.
+      - name: the shipped bundle is not older than the core
+        run: |
+          src=$(git log -1 --format=%ct -- sim/ client/arena/ client/ext/ \
+                                          client/main/ client/input/ || true)
+          bundle=$(git log -1 --format=%ct -- client/dist/index.html || true)
+          if [ -z "$src" ] || [ -z "$bundle" ]; then
+            echo "no history for one side; nothing to compare"; exit 0
+          fi
+          if [ "$src" -gt "$bundle" ]; then
+            echo "::error::client/dist/index.html predates the last change to the"
+            echo "::error::simulation core or client source. The bundle links the"
+            echo "::error::same core the server does, so shipping one without the"
+            echo "::error::other is a wire-format split. Rebuild and commit it:"
+            echo "::error::  JAVA_HOME=... ./client/build.sh wasm-web release bundle"
+            echo "::error::  python3 client/tools/single_file.py \\"
+            echo "::error::      client/bundle/wasm-web/vectorwake client/dist/index.html --fragment"
+            git log -1 --oneline -- sim/ client/arena/ client/ext/ client/main/ client/input/
+            git log -1 --oneline -- client/dist/index.html
+            exit 1
+          fi
+          echo "bundle is current with the core"
+
   publish:
     needs: test
     runs-on: ubuntu-latest

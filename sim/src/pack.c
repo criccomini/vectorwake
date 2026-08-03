@@ -236,7 +236,30 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         f->cooldown = (uint16_t)r16(&r);
     }
 
-    return r.underflow ? -1 : 0;
+    /* Read short is as wrong as read long.
+     *
+     * `underflow` catches a reader running past the end, which is a new build
+     * reading an old message. The other direction was silent: an old build
+     * reading a new message stops before the fields it does not know about, the
+     * trailing bytes go unread, and this returned success on a message it had
+     * misread from the first added field onward.
+     *
+     * That shipped. Three fields were added here for repel; the browser bundle
+     * was not rebuilt; the server wrote the new layout, the deployed client read
+     * the old one, and a player joining Chaos was shown DESTROYED for as long as
+     * they cared to watch -- because the garbage it unpacked said their ship was
+     * dead. The protocol number that exists to prevent this is a constant
+     * somebody has to remember to bump, and the same lapse that skips the
+     * rebuild skips the bump.
+     *
+     * Requiring the reader to land exactly on the end needs nobody to remember
+     * anything: any field added on one side and not the other changes the length
+     * and is refused. Both callers already pass an exact slice, so there are no
+     * legitimate trailing bytes to tolerate. The client turns a refusal into
+     * "the zone sent settings this client cannot read" and disconnects saying
+     * so, which is the whole difference between a bug report and a diagnosis. */
+    if (r.underflow || r.p != r.end) return -1;
+    return 0;
 }
 
 /* ---- settings ----
@@ -456,7 +479,30 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
     cfg->flag_drop_cooldown = (uint16_t)r16(&r);
     cfg->max_ships = r8(&r);
 
-    return r.underflow ? -1 : 0;
+    /* Read short is as wrong as read long.
+     *
+     * `underflow` catches a reader running past the end, which is a new build
+     * reading an old message. The other direction was silent: an old build
+     * reading a new message stops before the fields it does not know about, the
+     * trailing bytes go unread, and this returned success on a message it had
+     * misread from the first added field onward.
+     *
+     * That shipped. Three fields were added here for repel; the browser bundle
+     * was not rebuilt; the server wrote the new layout, the deployed client read
+     * the old one, and a player joining Chaos was shown DESTROYED for as long as
+     * they cared to watch -- because the garbage it unpacked said their ship was
+     * dead. The protocol number that exists to prevent this is a constant
+     * somebody has to remember to bump, and the same lapse that skips the
+     * rebuild skips the bump.
+     *
+     * Requiring the reader to land exactly on the end needs nobody to remember
+     * anything: any field added on one side and not the other changes the length
+     * and is refused. Both callers already pass an exact slice, so there are no
+     * legitimate trailing bytes to tolerate. The client turns a refusal into
+     * "the zone sent settings this client cannot read" and disconnects saying
+     * so, which is the whole difference between a bug report and a diagnosis. */
+    if (r.underflow || r.p != r.end) return -1;
+    return 0;
 }
 
 /* ---- maps ---- */
