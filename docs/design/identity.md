@@ -63,8 +63,23 @@ texture. The background never competes with a projectile for attention.
 
 **Ships.** Crisp geometric silhouettes with thin bright outlines and a darker
 fill. Each class has a distinct shape read at a glance, and each shape stays
-identifiable at radar scale. Detail is minimal by design; a ship is a silhouette
-plus a thruster.
+identifiable at radar scale.
+
+Inside that silhouette a hull is built rather than empty, in four weights of
+line: the outline, closed plates, panel lines, and a canopy that is the
+brightest cell on the ship and always forward of centre. Interior detail draws
+in a neutral instrument grey, which keeps the team read on the outline where
+this document puts it. The silhouette is lit from the hull's own nose, so an
+edge facing the way a ship is pointing draws brighter than one facing away, and
+the body fill is lit along the same axis: slate at the bow, near black at the
+stern.
+
+This replaces a rule that said detail was minimal by design and a ship was a
+silhouette plus a thruster. That was a good rule for as long as the hulls were
+six-sided and every line was the same weight, and it stopped being one the
+moment the shapes were worth looking at. What has not changed is the constraint
+underneath it: a class is identifiable by silhouette alone, and detail that
+competes with that is wrong.
 
 **Teams.** Team color drives the outline and the fill tint, and the two teams
 are separated by hue and by luminance, so the distinction survives colorblind

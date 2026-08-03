@@ -33,59 +33,280 @@ end
 
 -- Hulls, in local pixels with the nose along +y. Shape carries class and
 -- colour carries team, so neither has to carry both, and every class has to be
--- identifiable by silhouette alone at radar scale -- which means each one
--- needs a front that is visibly not its back. See docs/design/ships.md.
+-- identifiable by silhouette alone at radar scale, which means each one needs
+-- a front that is visibly not its back. See docs/design/ships.md.
 --
--- `spine` is the interior detail: line pairs that give a hull a read at close
--- range without adding a second silhouette. `jets` are where thrust comes out.
+-- `poly` is that silhouette, and it is the only part the menu's thumbnails
+-- draw. The rest is what a hull looks like once it is close enough to matter:
+-- `plates` are closed interior loops, `lines` open polylines, `canopy` the one
+-- bright cell every hull carries forward of centre, `tubes` the hardpoints a
+-- class actually fires from, `pods` its lamps and dispensers, `jets` where
+-- thrust comes out, and `dim` how brightly the whole thing draws.
 M.HULLS = {
-    -- Apex: a swept dart. Fastest and sharpest turn in the game.
-    {poly = {0,17, 5,-2, 9,-10, 0,-5, -9,-10, -5,-2},
-     spine = {0,11, 0,1}, jets = {0,-5}},
-    -- Wedge: a flat wide triangle. It reads as a platform, not a fighter.
-    {poly = {0,11, 6,2, 14,-8, 5,-5, -5,-5, -14,-8, -6,2},
-     spine = {-4,-3, 4,-3}, jets = {-6,-5, 6,-5}},
-    -- Chord: a wide shallow arc, hollow at the back.
-    {poly = {0,12, 9,8, 16,-1, 9,-3, 0,2, -9,-3, -16,-1, -9,8},
-     spine = {0,9, 0,3}, jets = {-6,-1, 6,-1}},
-    -- Anvil: a blunt hexagon. The front is a flat face, not a point: nothing
-    -- about this ship should look sharp.
-    {poly = {-7,13, 7,13, 12,4, 10,-9, -10,-9, -12,4},
-     spine = {-6,7, 6,7}, jets = {-5,-9, 5,-9}},
-    -- Spire: a tall diamond carrying a mast, which is where the turrets go.
-    {poly = {0,19, 3,9, 7,0, 3,-11, -3,-11, -7,0, -3,9},
-     spine = {0,15, 0,-7}, jets = {0,-11}},
-    -- Cipher: a thin sliver, barely there.
-    {poly = {0,18, 3,0, 2,-8, 0,-11, -2,-8, -3,0},
-     spine = {0,12, 0,-6}, jets = {0,-11}},
-    -- Facet: a compact pentagon with a real nose on it.
-    {poly = {0,13, 10,3, 7,-10, -7,-10, -10,3},
-     spine = {-4,6, 4,6}, jets = {-4,-10, 4,-10}},
-    -- Lattice: a cross. It owns terrain, and it should look like a marker
-    -- planted in it. The forward arm is longest so the shape still points.
-    {poly = {-3,15, 3,15, 3,4, 13,4, 13,-2, 3,-2, 3,-12,
-             -3,-12, -3,-2, -13,-2, -13,4, -3,4},
-     spine = {0,11, 0,-9}, jets = {0,-12}},
+    -- Apex: a dart whose wings sweep back far enough to clear its own engine
+    -- block. Fastest and sharpest turn in the game.
+    {poly = {0,21, 1.6,12, 2.6,5, 6.5,-1, 11,-9, 8.5,-11.5, 3.5,-6.5, 3,-10.5,
+             0,-11.5, -3,-10.5, -3.5,-6.5, -8.5,-11.5, -11,-9, -6.5,-1, -2.6,5,
+             -1.6,12},
+     plates = {{0,6.5, 2.2,2, 1.8,-6, 0,-8, -1.8,-6, -2.2,2}},
+     lines = {{0,19.8, 2.6,5, 6.5,-1}, {0,19.8, -2.6,5, -6.5,-1},
+              {5,0.2, 9.3,-8.2}, {-5,0.2, -9.3,-8.2}, {2.6,1.5, 6,-1.6},
+              {-2.6,1.5, -6,-1.6}},
+     canopy = {0,15.5, 1.5,10.5, 0,7.6, -1.5,10.5},
+     tubes = {{4.2, 3, 4.2, -1, 1.4}, {-4.2, 3, -4.2, -1, 1.4}},
+     pods = {{0, 20, 1.5}},
+     jets = {-1.8,-11, 1.8,-11}},
+    -- Wedge: a platform rather than a fighter. The bomb bay runs most of its
+    -- length and the tube feeding it is the brightest thing on the hull.
+    {poly = {0,14, 2.6,13, 4.6,7.5, 7.2,1.5, 15.5,-5.5, 16,-9, 9,-7.5, 8,-11,
+             3.2,-12.5, 0,-12.5, -3.2,-12.5, -8,-11, -9,-7.5, -16,-9,
+             -15.5,-5.5, -7.2,1.5, -4.6,7.5, -2.6,13},
+     plates = {{3.4,5, 3.4,-10, -3.4,-10, -3.4,5}},
+     lines = {{7.2,1.5, 15,-5.2}, {-7.2,1.5, -15,-5.2}, {11,-2.2, 11.6,-7.2},
+              {-11,-2.2, -11.6,-7.2}, {4.4,4.4, 4.4,-8}, {-4.4,4.4, -4.4,-8},
+              {-3.4,-2.5, 3.4,-2.5}},
+     canopy = {0,12.4, 1.8,10.2, 1.6,7.6, -1.6,7.6, -1.8,10.2},
+     tubes = {{0, 3.6, 0, -8.6, 3.2}},
+     jets = {-5.6,-12, 5.6,-12}},
+    -- Chord: a bow with a sensor housing at the middle of it, because what
+    -- this hull does for a team is see.
+    {poly = {0,13.5, 5.5,12, 11.5,7.5, 16.5,0.5, 18,-4, 14.5,-6, 11,-2.5,
+             6.5,1.5, 2.5,3.5, 0,3.8, -2.5,3.5, -6.5,1.5, -11,-2.5, -14.5,-6,
+             -18,-4, -16.5,0.5, -11.5,7.5, -5.5,12},
+     plates = {{0,11.5, 2.2,9.5, 2.2,6.5, 0,5, -2.2,6.5, -2.2,9.5},
+               {12.8,-0.6, 16.4,-3.4, 15,-5.6, 11.6,-2.4},
+               {-11.6,-2.4, -15,-5.6, -16.4,-3.4, -12.8,-0.6}},
+     lines = {{4,10.6, 13.2,3.2}, {-4,10.6, -13.2,3.2}, {2.5,3.5, 5.5,11.6},
+              {-2.5,3.5, -5.5,11.6}, {8,0.4, 9.6,5.6}, {-8,0.4, -9.6,5.6}},
+     canopy = {0,10.2, 1.3,8.4, 0,6.4, -1.3,8.4},
+     tubes = {{15, -2, 15, 2.6, 1.4}, {-15, -2, -15, 2.6, 1.4}},
+     pods = {{0, 8.3, 2.4}},
+     jets = {-8.5,-2.2, 8.5,-2.2}},
+    -- Anvil: nothing on it is allowed to look sharp. Two bomb tubes on a flat
+    -- bow face, an armour belt across it, four engines and no wings at all.
+    {poly = {0,15, 6.5,14.2, 11,10, 13.5,3, 13.5,-4, 11,-9.5, 6.5,-12, 0,-12,
+             -6.5,-12, -11,-9.5, -13.5,-4, -13.5,3, -11,10, -6.5,14.2},
+     plates = {{9,12.4, 11.4,8.4, -11.4,8.4, -9,12.4},
+               {0,5.4, 4.2,0, 0,-5.4, -4.2,0}},
+     lines = {{9,8, 9,-8}, {-9,8, -9,-8}, {5.6,3.2, 9,3.2}, {-5.6,3.2, -9,3.2},
+              {5.6,-3.2, 9,-3.2}, {-5.6,-3.2, -9,-3.2}, {-8,-9.6, 8,-9.6}},
+     canopy = {3.4,14, 2.6,11.4, -2.6,11.4, -3.4,14},
+     tubes = {{5.2, 9.6, 5.2, 15.2, 2.2}, {-5.2, 9.6, -5.2, 15.2, 2.2}},
+     jets = {-9,-10.6, -3.5,-12, 3.5,-12, 9,-10.6}},
+    -- Spire: the mast is the point of it. A lamp on top, docking pylons for
+    -- turrets on the flanks, and the thing a team flies toward.
+    {poly = {0,23, 1.2,17, 2.6,11, 6,2, 6.6,-4, 3.6,-11, 2.6,-13, 0,-13,
+             -2.6,-13, -3.6,-11, -6.6,-4, -6,2, -2.6,11, -1.2,17},
+     plates = {{0,9.5, 3.6,3.5, 3.2,-5, 0,-7.5, -3.2,-5, -3.6,3.5},
+               {6.2,3.5, 10.8,2.6, 11.6,-0.6, 6.6,-1.6},
+               {-6.6,-1.6, -11.6,-0.6, -10.8,2.6, -6.2,3.5}},
+     lines = {{2.6,11, 6,2}, {-2.6,11, -6,2}, {4.4,-6.4, 2,-11.4},
+              {-4.4,-6.4, -2,-11.4}, {0,22, 0,16.5}},
+     canopy = {0,15.5, 1.6,12.2, 0,10.4, -1.6,12.2},
+     pods = {{0, 22.6, 2.6}, {10.2, 1, 1.6}, {-10.2, 1, 1.6}},
+     jets = {-1.6,-12.8, 1.6,-12.8}},
+    -- Cipher: a knife. Draws dimmer than the rest of the roster on purpose,
+    -- since the class is meant to be hard to pick out of a fight.
+    {poly = {0,23, 1.7,7, 3.4,-2, 3,-9, 6.5,-12.5, 2.2,-11.5, 1.6,-13, 0,-13,
+             -1.6,-13, -2.2,-11.5, -6.5,-12.5, -3,-9, -3.4,-2, -1.7,7},
+     plates = {{0,19, 1.4,4, 0,-6, -1.4,4}},
+     lines = {{0,22.4, 3.2,-2}, {0,22.4, -3.2,-2}, {3.2,-9.4, 5.9,-12.2},
+              {-3.2,-9.4, -5.9,-12.2}},
+     canopy = {0,17.5, 0.9,14, 0,11.5, -0.9,14},
+     jets = {0,-13}, dim = 0.72},
+    -- Facet: two barrels hanging off the shoulders, out past the nose, so the
+    -- one thing worth knowing about it reads from any angle.
+    {poly = {0,15, 4.2,10.5, 8.5,6, 11.5,-2, 9.5,-10, 4.5,-13, 0,-13, -4.5,-13,
+             -9.5,-10, -11.5,-2, -8.5,6, -4.2,10.5},
+     plates = {{0,11.5, 4.6,6.4, 4,-1, -4,-1, -4.6,6.4},
+               {4.4,-4.4, 3.6,-10.4, -3.6,-10.4, -4.4,-4.4}},
+     lines = {{0,14.4, 8,6.4}, {0,14.4, -8,6.4}, {10.6,-1.6, 8.8,-9.2},
+              {-10.6,-1.6, -8.8,-9.2}, {4.6,2, 10.9,0.4}, {-4.6,2, -10.9,0.4},
+              {6.2,-4, 6.2,-10}, {-6.2,-4, -6.2,-10}},
+     canopy = {0,9.6, 2.4,6.4, 0,4.4, -2.4,6.4},
+     tubes = {{6.6, 7.2, 6.6, 13.6, 2.2}, {-6.6, 7.2, -6.6, 13.6, 2.2}},
+     jets = {-2.6,-13, 2.6,-13}},
+    -- Lattice: trussed arms rather than solid ones, which is the whole
+    -- difference between a cross and a structure somebody planted.
+    {poly = {0,17, 2.8,12.5, 2.8,5.5, 11.5,4.5, 15,1.5, 11.5,-1.5, 2.8,-2.5,
+             2.8,-11, 2,-14, 0,-14, -2,-14, -2.8,-11, -2.8,-2.5, -11.5,-1.5,
+             -15,1.5, -11.5,4.5, -2.8,5.5, -2.8,12.5},
+     plates = {{0,5, 3.2,1.5, 0,-2, -3.2,1.5}},
+     lines = {{4.5,4.2, 6,-2.2}, {-4.5,4.2, -6,-2.2}, {7.5,3.9, 9,-2},
+              {-7.5,3.9, -9,-2}, {-2.8,12, 2.8,9.6}, {2.8,9, -2.8,6.6},
+              {-2.8,-4.6, 2.8,-7}, {2.8,-7.6, -2.8,-10}},
+     canopy = {0,14.6, 1.5,12.6, 0,10.8, -1.5,12.6},
+     pods = {{13.6, 1.5, 1.7}, {-13.6, 1.5, 1.7}, {0, -13.2, 1.5}},
+     jets = {-1.8,-14, 1.8,-14}},
 }
 
--- The centroid of each hull, so a fill can fan from inside the shape. Fanning
--- from a vertex double-covers a concave hull -- the cross especially -- and
--- the overlap shows as a darker wedge through the middle of the ship.
--- `nose` is how far forward the silhouette reaches, so the retros fire from
--- in front of the hull rather than from inside it, where the body fill hides
--- them. Measured off the outline rather than named per hull, since two of the
--- eight have a flat face where the others have a point.
+-- How far from the camera a hull keeps its plates, panel lines and lamps.
+-- Past this it draws silhouette, canopy, hardpoints and engines only, which
+-- costs a quarter less and is not visible without looking for it. The reason
+-- is the glow layer's capacity, which an overflow does not report: it simply
+-- stops drawing, and whichever strokes fall past the cap that frame vanish.
+M.DETAIL_RANGE = 260
+
+-- --- baking a hull ---------------------------------------------------------
+--
+-- Everything about a hull that never changes, worked out once at load.
+
+-- Twice the signed area, whose sign is the winding.
+local function turn(p)
+    local a, n = 0, #p
+    for i = 1, n, 2 do
+        local j = (i + 1 < n) and i + 2 or 1
+        a = a + p[i] * p[j + 1] - p[j] * p[i + 1]
+    end
+    return a
+end
+
+-- Triangulate by ear clipping, into flat vertex-index triples.
+--
+-- The body fill used to fan from the centroid, which covers a hull only if the
+-- centroid can see all of it. Every hull that shipped before this was
+-- star-shaped like that, and that is exactly why none of them had a notch: the
+-- Apex's wings could not clear its engine block without the fill spilling into
+-- the gap between them. Run once, at load, so a frame pays nothing for it.
+local function triangulate(p)
+    local n = #p / 2
+    local idx = {}
+    for i = 1, n do idx[i] = (turn(p) > 0) and i or (n + 1 - i) end
+
+    local function cross(a, b, c)
+        return (p[b * 2 - 1] - p[a * 2 - 1]) * (p[c * 2] - p[a * 2])
+             - (p[b * 2] - p[a * 2]) * (p[c * 2 - 1] - p[a * 2 - 1])
+    end
+
+    -- Is vertex q inside the triangle abc? Barycentric, since an ear may not
+    -- swallow a vertex of the polygon it is being cut from.
+    local function inside(q, a, b, c)
+        local qx, qy = p[q * 2 - 1], p[q * 2]
+        local ax, ay = p[a * 2 - 1], p[a * 2]
+        local bx, by = p[b * 2 - 1], p[b * 2]
+        local cx, cy = p[c * 2 - 1], p[c * 2]
+        local d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if math.abs(d) < 1e-12 then return false end
+        local s = ((by - cy) * (qx - cx) + (cx - bx) * (qy - cy)) / d
+        local t = ((cy - ay) * (qx - cx) + (ax - cx) * (qy - cy)) / d
+        return s > 1e-9 and t > 1e-9 and (1 - s - t) > 1e-9
+    end
+
+    local out, guard = {}, 0
+    while #idx > 3 and guard < 4096 do
+        guard = guard + 1
+        local cut
+        for i = 1, #idx do
+            local a = idx[(i - 2) % #idx + 1]
+            local b = idx[i]
+            local c = idx[i % #idx + 1]
+            if cross(a, b, c) > 0 then
+                local clear = true
+                for k = 1, #idx do
+                    local q = idx[k]
+                    if q ~= a and q ~= b and q ~= c and inside(q, a, b, c) then
+                        clear = false
+                        break
+                    end
+                end
+                if clear then
+                    out[#out + 1], out[#out + 2], out[#out + 3] = a, b, c
+                    cut = i
+                    break
+                end
+            end
+        end
+        if not cut then break end
+        table.remove(idx, cut)
+    end
+    if #idx == 3 then
+        out[#out + 1], out[#out + 2], out[#out + 3] = idx[1], idx[2], idx[3]
+    end
+    return out
+end
+
 for _, h in ipairs(M.HULLS) do
-    local sx, sy, n = 0, 0, #h.poly / 2
-    local nose = h.poly[2]
-    for i = 1, #h.poly, 2 do
-        sx, sy = sx + h.poly[i], sy + h.poly[i + 1]
-        if h.poly[i + 1] > nose then nose = h.poly[i + 1] end
+    local p = h.poly
+    local n = #p / 2
+    local w = (turn(p) > 0) and 1 or -1
+
+    local sx, sy = 0, 0
+    local nose, lo, hi = p[2], p[2], p[2]
+    for i = 1, #p, 2 do
+        sx, sy = sx + p[i], sy + p[i + 1]
+        if p[i + 1] > nose then nose = p[i + 1] end
+        if p[i + 1] < lo then lo = p[i + 1] end
+        if p[i + 1] > hi then hi = p[i + 1] end
     end
     h.cx, h.cy = sx / n, sy / n
     h.nose = nose
-    h.tmp = {}
+
+    -- The outward normal of every edge, and from those, how brightly the edge
+    -- draws: a light fixed to the hull's own nose. Fixed to the world instead,
+    -- the same ship would look like a different ship depending on which way it
+    -- was pointing, and the silhouette is the entire identity system.
+    --
+    -- Two weights rather than one because the wide skirt of the bloom wants a
+    -- flatter falloff than the edge does, and a power in a draw loop on a Lua
+    -- 5.1 interpreter is not free.
+    local en = {}
+    h.wide, h.band, h.hot = {}, {}, {}
+    for v = 1, n do
+        local a, b = v, (v % n) + 1
+        local dx = p[b * 2 - 1] - p[a * 2 - 1]
+        local dy = p[b * 2] - p[a * 2]
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len < 1e-9 then len = 1 end
+        en[v * 2 - 1], en[v * 2] = dy / len * w, -dx / len * w
+        local light = 0.40 + 0.60 * (0.5 + 0.5 * en[v * 2])
+        h.wide[v], h.band[v], h.hot[v] = light ^ 0.55, light ^ 0.8, light
+    end
+
+    -- The direction the bloom leaves each vertex by: the mitre between the two
+    -- edges that meet there, clamped hard. Unclamped, a nose as sharp as the
+    -- Apex's throws a thirty-pixel spike of light off its tip.
+    h.nrm = {}
+    for v = 1, n do
+        local u = (v - 2) % n + 1
+        local mx = en[u * 2 - 1] + en[v * 2 - 1]
+        local my = en[u * 2] + en[v * 2]
+        local len = math.sqrt(mx * mx + my * my)
+        if len < 1e-6 then
+            mx, my, len = en[v * 2 - 1], en[v * 2], 1
+        end
+        mx, my = mx / len, my / len
+        local d = mx * en[v * 2 - 1] + my * en[v * 2]
+        if d < 0.35 then d = 0.35 end
+        local k = 1 / d
+        if k > 1.35 then k = 1.35 end
+        h.nrm[v * 2 - 1], h.nrm[v * 2] = mx * k, my * k
+    end
+
+    -- Where each vertex sits between stern and bow, which is what lights the
+    -- front of the body and leaves the back of it nearly black.
+    local span = (hi - lo)
+    if span < 1e-6 then span = 1 end
+    h.lit = {}
+    for v = 1, n do
+        local t = (p[v * 2] - lo) / span
+        h.lit[v] = t * t
+    end
+    -- Halfway up the hull, which is where a thumbnail has to be centred: every
+    -- one of these reaches further forward than back, so its origin is not its
+    -- middle and a row of them drawn about the origin sits low.
+    h.mid = (lo + hi) / 2
+
+    h.tris = triangulate(p)
+
+    -- Somewhere to transform into. A fresh table per part per hull per frame
+    -- is a hundred tables a frame and all of them garbage, on a collector that
+    -- runs in the same thread as the draw.
+    h.tmp, h.ntmp, h.ctmp = {}, {}, {}
+    h.ptmp, h.ltmp = {}, {}
+    for k = 1, #(h.plates or {}) do h.ptmp[k] = {} end
+    for k = 1, #(h.lines or {}) do h.ltmp[k] = {} end
 end
+
 
 -- --- the starfield ---------------------------------------------------------
 --
@@ -398,27 +619,53 @@ local function place(pts, out, x, y, ca, sa, scale)
     return out
 end
 
--- One ship. `thrusting` draws the flame, which is the only thing on screen
--- that says a pilot is accelerating rather than coasting.
+-- The same turn applied to directions rather than points, for the outward
+-- normals the bloom leaves a hull by. They rotate with it and never translate.
+local function place_dir(dirs, out, ca, sa)
+    for i = 1, #dirs, 2 do
+        local dx, dy = dirs[i], dirs[i + 1]
+        out[i] = dx * ca + dy * sa
+        out[i + 1] = dx * sa - dy * ca
+    end
+    return out
+end
+
+-- One ship.
+--
+-- Four weights of line rather than one, a body lit at the bow, and a
+-- silhouette whose every edge carries its own brightness. Everything here goes
+-- through primitives vec.lua already had, or through the two it grew for this:
+-- a segment that fades across its width, and a skirt offset from a closed
+-- outline. No shader, no texture, no second pass.
+--
+-- `thrusting` draws the flame, which is the only thing on screen that says a
+-- pilot is accelerating rather than coasting. `far` drops the detail that only
+-- reads up close; see M.DETAIL_RANGE.
 function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
     local a = heading / 65536 * TAU
     local ca, sa = math.cos(a), math.sin(a)
     local pts = place(h.poly, h.tmp, x, y, ca, sa, 1)
     local mine = opts and opts.mine
-    local dim = (opts and opts.alpha) or 1
+    local dim = ((opts and opts.alpha) or 1) * (h.dim or 1)
+    local near = not (opts and opts.far)
 
-    -- The flame first, so the hull sits on top of it.
+    -- The flame first, so the hull sits on top of it. Three parts: a bloom
+    -- sitting in the nozzle, a soft cone, and a hot core down half its length.
+    -- A single wide taper carries all its alpha at its widest and reads as a
+    -- solid orange wedge.
     if opts and opts.thrusting then
         local flick = 0.72 + (opts.flicker or 0) * 0.28
         for i = 1, #h.jets, 2 do
             local jx = x + h.jets[i] * ca + h.jets[i + 1] * sa
             local jy = y + h.jets[i] * sa - h.jets[i + 1] * ca
-            local len = 15 * flick
-            glow:seg_fade(jx, jy, jx - sa * len, jy + ca * len,
-                          6.5, 1.0, 0.85 * dim, 0, pal.THRUST)
-            glow:seg_fade(jx, jy, jx - sa * len * 0.45, jy + ca * len * 0.45,
-                          3.0, 0.8, 1.0 * dim, 0, pal.hot(pal.THRUST, 0.75, 1))
+            local len = 17 * flick
+            local mx, my = jx + sa * 1.5, jy - ca * 1.5
+            glow:halo(jx, jy, 5.4 * flick, 8, pal.a(pal.THRUST, 0.42 * dim))
+            glow:seg_fade(mx, my, jx - sa * len, jy + ca * len,
+                          5.4, 0.6, 0.34 * dim, 0, pal.THRUST)
+            glow:seg_fade(mx, my, jx - sa * len * 0.55, jy + ca * len * 0.55,
+                          2.3, 0.5, 0.95 * dim, 0, pal.hot(pal.THRUST, 0.72, 1))
         end
     end
 
@@ -441,29 +688,108 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
                       2.6, 0.75, 1.0 * dim, 0, pal.hot(pal.THRUST, 0.75, 1))
     end
 
-    -- A dark interior, tinted toward the team so a hull is never a black
-    -- hole, and opaque enough that a star behind it does not shine through.
-    local cxw = x + h.cx * ca + h.cy * sa
-    local cyw = y + h.cx * sa - h.cy * ca
-    local body = {col[1] * 0.16 + 0.02, col[2] * 0.16 + 0.03,
-                  col[3] * 0.16 + 0.05, 0.94 * dim}
-    local n = #pts
-    for i = 1, n, 2 do
-        local j = (i + 1 < n) and i + 2 or 1
-        fill:tri(cxw, cyw, pts[i], pts[i + 1], pts[j], pts[j + 1], body)
+    -- The body, in two passes. An opaque base first, dark enough to be a hole
+    -- in the starfield and tinted toward the team so it is never a black one;
+    -- then an additive wash over it that is brightest at the bow and gone at
+    -- the stern. The wash has to be additive rather than a lighter fill,
+    -- because anything the fill layer draws below full alpha lets a star
+    -- through the hull.
+    local body = {col[1] * 0.055 + 0.018, col[2] * 0.055 + 0.026,
+                  col[3] * 0.055 + 0.042, 0.95 * dim}
+    local tris, lit = h.tris, h.lit
+    for i = 1, #tris, 3 do
+        local a1, b1, c1 = tris[i], tris[i + 1], tris[i + 2]
+        fill:tri(pts[a1 * 2 - 1], pts[a1 * 2], pts[b1 * 2 - 1], pts[b1 * 2],
+                 pts[c1 * 2 - 1], pts[c1 * 2], body)
+        glow:tri_fade(pts[a1 * 2 - 1], pts[a1 * 2], lit[a1] * 0.20 * dim,
+                      pts[b1 * 2 - 1], pts[b1 * 2], lit[b1] * 0.20 * dim,
+                      pts[c1 * 2 - 1], pts[c1 * 2], lit[c1] * 0.20 * dim, col)
     end
 
-    -- Outline: three concentric strokes, widest and faintest first. That is
-    -- the whole bloom -- no post pass, no second target -- and additively it
-    -- reads as a bright edge with light spilling off it rather than as three
-    -- lines. Anything past three is invisible and costs a third of the layer.
-    glow:outline(pts, 8.0, pal.a(col, 0.055 * dim))
-    glow:outline(pts, 3.4, pal.a(col, 0.16 * dim))
-    glow:outline(pts, 1.4, pal.hot(col, mine and 0.6 or 0.3, dim))
+    -- Interior structure, under the silhouette so the outline always wins.
+    -- Drawn in a neutral instrument grey rather than in the team colour: the
+    -- team read belongs on the silhouette, and a hull whose every line is the
+    -- same colour looks cut from one sheet of neon rather than built.
+    if near then
+        if h.plates then
+            for k = 1, #h.plates do
+                local q = place(h.plates[k], h.ptmp[k], x, y, ca, sa, 1)
+                glow:fan(q, pal.a(pal.PANEL_INK, 0.035 * dim))
+                glow:outline(q, 0.85, pal.a(pal.PANEL_INK, 0.36 * dim), true)
+            end
+        end
+        if h.lines then
+            for k = 1, #h.lines do
+                local q = place(h.lines[k], h.ltmp[k], x, y, ca, sa, 1)
+                for i = 1, #q - 3, 2 do
+                    glow:seg(q[i], q[i + 1], q[i + 2], q[i + 3], 0.7,
+                             pal.a(pal.PANEL_INK, 0.26 * dim), true)
+                end
+            end
+        end
+    end
 
-    if h.spine then
-        local s = place(h.spine, {}, x, y, ca, sa, 1)
-        glow:seg(s[1], s[2], s[3], s[4], 1.1, pal.a(col, 0.45 * dim))
+    -- Hardpoints, drawn hot: where a hull's damage comes out of is worth
+    -- knowing at a glance, and it is the same element at every size, from the
+    -- Apex's wing-root guns to the Anvil's two bomb tubes.
+    if h.tubes then
+        for k = 1, #h.tubes do
+            local t = h.tubes[k]
+            local ax = x + t[1] * ca + t[2] * sa
+            local ay = y + t[1] * sa - t[2] * ca
+            local bx = x + t[3] * ca + t[4] * sa
+            local by = y + t[3] * sa - t[4] * ca
+            glow:seg_glow(ax, ay, bx, by, t[5] + 4.0, 0.09 * dim, col)
+            glow:seg(ax, ay, bx, by, t[5], pal.a(col, 0.30 * dim), true)
+            glow:seg(ax, ay, bx, by, t[5] * 0.34,
+                     pal.a(pal.hot(col, 0.55, 1), 0.9 * dim), true)
+        end
+    end
+
+    -- The silhouette: two skirts of bloom and a hot edge on top, each edge at
+    -- its own brightness. It was three concentric strokes, which beaded at
+    -- every corner and banded rather than falling off.
+    local nrm = place_dir(h.nrm, h.ntmp, ca, sa)
+    glow:glow_band(pts, nrm, 9.0, 0.105 * dim, col, h.wide)
+    glow:glow_band(pts, nrm, 3.0, 0.32 * dim, col, h.band)
+    local edge = pal.hot(col, mine and 0.62 or 0.34, 1)
+    local n = #pts
+    local e = 1
+    for i = 1, n, 2 do
+        local j = (i + 1 < n) and i + 2 or 1
+        glow:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], 1.5,
+                 pal.a(edge, h.hot[e] * dim), true)
+        e = e + 1
+    end
+
+    -- The canopy. Every hull has one, it is always the brightest closed shape
+    -- on the ship, and it is always forward of centre, so "which end is the
+    -- front" never needs a second look.
+    if h.canopy then
+        local q = place(h.canopy, h.ctmp, x, y, ca, sa, 1)
+        glow:fan(q, pal.a(pal.hot(col, 0.3, 1), 0.42 * dim))
+        glow:outline(q, 0.9, pal.a(pal.hot(col, 0.8, 1), 0.95 * dim), true)
+    end
+
+    -- Lamps, dispensers and docking cradles. Six segments, not twelve: at two
+    -- pixels across the difference is invisible, and round primitives were
+    -- costing as much as the whole silhouette.
+    if near and h.pods then
+        for k = 1, #h.pods do
+            local d = h.pods[k]
+            local lx = x + d[1] * ca + d[2] * sa
+            local ly = y + d[1] * sa - d[2] * ca
+            glow:halo(lx, ly, d[3] * 2.6, 6, pal.a(col, 0.30 * dim))
+            glow:disc(lx, ly, d[3] * 0.45, 4,
+                      pal.a(pal.hot(col, 0.8, 1), 0.8 * dim))
+        end
+    end
+
+    -- Engines lit at idle, so a coasting hull still has something running.
+    for i = 1, #h.jets, 2 do
+        local jx = x + h.jets[i] * ca + h.jets[i + 1] * sa
+        local jy = y + h.jets[i] * sa - h.jets[i + 1] * ca
+        glow:halo(jx, jy, 4.2, 6, pal.a(pal.THRUST, 0.15 * dim))
     end
 
     -- Your own ship carries a halo. In a room of nine identical outlines the
