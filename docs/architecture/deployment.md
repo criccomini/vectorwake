@@ -27,13 +27,22 @@ published artifact is exactly that: it can only ever be the offline practice
 arena. Serving the page from the same origin as the game removes the question
 entirely.
 
-The bundle is committed at `client/dist/index.html` rather than built on the
-host, because building it needs a JDK, Defold's `bob`, and Defold's remote build
-server -- three things not worth putting in a boot path that has no shell. Caddy
-compresses it on the way out, 5.2 MB down to 2.9, which matters because egress is
-the only cost this deployment has. The price is a 5 MB blob in git history per
-client release, which is why `AGENTS.md` says to commit it when shipping rather
-than when experimenting.
+The bundle is built by CI and published as its own image, because building it
+needs a JDK, Defold's `bob`, and Defold's remote build server -- three things not
+worth putting in a boot path that has no shell. A one-shot container copies it
+into a volume Caddy serves and exits.
+
+That indirection buys one thing: a client release never restarts Caddy. Recreating
+Caddy severs every WebSocket it is carrying, so baking the page into the Caddy
+image would mean a change to a menu label disconnecting everybody mid-match. The
+copy is done to a temporary name and renamed, because `mv` inside one filesystem
+is atomic and a plain `cp` over a file Caddy is streaming is a truncated bundle.
+
+It was committed to git until CI could build it, and that cost an outage rather
+than just history: a commit changed the simulation core, nobody rebuilt the
+bundle, and the deployed client read a wire the server had stopped writing. Caddy
+still compresses on the way out, 5.2 MB down to 2.9, which matters because egress
+is the only cost this deployment has.
 
 Everything runs `--network host`, so the services reach each other on loopback
 and only Caddy listens on a public port.

@@ -71,12 +71,49 @@ services:
       # Coarse provisioning progress, served over plain http by IP. The proxy
       # starts before the build so this is readable while the slow part runs.
       - ${VW_DEPLOY_LOG:-./deploy-log}:/srv/deploy:ro
-      # The browser client, committed as a built artifact because the host has
-      # no Defold toolchain and a page served from anywhere else cannot open a
-      # socket to these arenas.
-      - ../client/dist:/srv/play:ro
+      # The browser client, published into this volume by the `client` service
+      # below rather than bind-mounted from the checkout. It still has to come
+      # from this origin: a page served by a third party under
+      # `connect-src 'self'` cannot open a socket to these arenas at all.
+      - client-page:/srv/play:ro
     environment:
       VW_DOMAIN: ${VW_DOMAIN:?set VW_DOMAIN}
+
+  # The page, delivered rather than served. This image is a payload with no
+  # process: it copies the bundle into the volume Caddy is already serving and
+  # exits, so a client release never restarts Caddy -- and recreating Caddy would
+  # sever every WebSocket it is carrying, which for a change to a menu label
+  # would mean disconnecting everybody mid-match.
+  #
+  # Copy then rename, because `mv` inside one filesystem is atomic: a request
+  # arriving mid-deploy gets the old file or the new one, never half of either.
+  # A plain `cp` over a file Caddy is streaming is a truncated bundle.
+  #
+  # `restart: no` and idempotent on purpose. Compose starts it whenever it is not
+  # running, so it may run on a minute when nothing changed, and doing the same
+  # cheap thing again is the correct behaviour then.
+  client:
+    image: ${VW_CLIENT_IMAGE:-ghcr.io/criccomini/vectorwake-client:prod}
+    restart: "no"
+    # It moves files between two local paths. It has no business on a network.
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - client-page:/srv/play
+    # Named explicitly, with no shell variables in it. Compose escapes `$` as
+    # `$$` and `docker compose config` re-escapes on the way out, so a loop over
+    # `/page/*` can be verified by reading neither the file nor the rendered
+    # output -- and an unverifiable deploy step is worse than a literal one. One
+    # file, one copy. A second file would need a second line, on purpose.
+    command:
+      - /bin/sh
+      - -c
+      - cp -a /page/index.html /srv/play/.index.html.new
+        && mv -f /srv/play/.index.html.new /srv/play/index.html
+        && ls -l /srv/play/index.html
 
   directory:
     <<: *arena
@@ -119,6 +156,9 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  # What Caddy serves at /. Written by the `client` service, read by Caddy, and
+  # the reason a client release is a pull rather than a restart.
+  client-page:
   # Per arena, and the reason is the instance id: it is written on first start
   # and read on every one after, so an arena that loses this file comes back
   # looking like a different instance and the directory lists a ghost until the

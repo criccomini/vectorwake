@@ -28,33 +28,36 @@ Conventions:
 
 ## Shipping
 
-The web build is how this game is actually looked at, so a change nobody can
-play is not finished. Every time you fix a bug or add a feature -- anything
-that changes what the client does -- rebuild the browser bundle and
-re-release it:
+The web build is how this game is actually looked at, so a change nobody can play
+is not finished. **CI builds and publishes it.** Push to `main` and
+`.github/workflows/client.yml` builds the bundle and publishes
+`ghcr.io/criccomini/vectorwake-client:prod`; the host pulls it within a minute and
+a one-shot container copies it into the volume Caddy serves. Nothing to build by
+hand, nothing to commit.
+
+That is new, and it replaces an instruction to run `build.sh` and commit
+`client/dist/index.html`. Two things wrong with that: 5 MB of git history per
+release, and a step that depended on somebody remembering. Twice in one day
+somebody changed the simulation core without rebuilding, and the second time a
+player joining Chaos was shown DESTROYED on a healthy fleet -- the deployed
+client's compiled core was reading a wire the server had stopped writing. So the
+rule that used to be here, "anything that changes the simulation core counts as a
+client change, because the client links the same core to predict with", is now the
+`sim/**` path filter on that workflow rather than a sentence to remember.
+
+Build it locally when you want to look at it before pushing:
 
 ```sh
 JAVA_HOME=/path/to/jdk25 ./client/build.sh wasm-web release bundle
 python3 client/tools/single_file.py client/bundle/wasm-web/vectorwake <out>.html --fragment
 ```
 
-That file goes to two places, and they are not interchangeable:
+`client/dist/` is git-ignored, so a local build cannot be committed by accident.
 
-- `client/dist/index.html` in this repository, which the deployed host serves at
-  `https://play.vectorwake.net`. **This is the only build that can play online.**
-- The same artifact URL as before, so the link already handed out keeps working.
-
-The artifact can only ever be the offline practice arena. Artifact pages are
-served under `connect-src 'self'`, which blocks every outbound WebSocket, so that
-build cannot reach a directory or an arena no matter what it is pointed at. This
-was learned by pointing it at the live fleet and reading the console.
-
-Committing a 5 MB bundle has a cost: do it when shipping a client change, not on
-every experiment, because it lands in history each time.
-
-Do it in the same turn as the fix, not the next one. Anything that changes the
-simulation core counts as a client change, because the client links the same core
-to predict with.
+A published artifact of that file can only ever be the offline practice arena.
+Artifact pages are served under `connect-src 'self'`, which blocks every outbound
+WebSocket, so that build cannot reach a directory or an arena no matter what it is
+pointed at. Learned by pointing it at the live fleet and reading the console.
 
 ## Engineering rules
 
