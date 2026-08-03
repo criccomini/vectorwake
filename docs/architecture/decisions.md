@@ -335,6 +335,14 @@ are harder to write than bots allowed to set their own position.
 zone-authored AI becomes the dominant case, external protocol bots may matter
 more than built-in ones.
 
+**Superseded on placement by [decision
+29](#29-a-bot-is-a-client).** That reconsideration fired for a reason this
+record did not anticipate: not that zone-authored AI took over, but that the
+in-process path skipped the protocol, and the protocol is where the bugs were.
+The input-only rule survives untouched and is stronger for the move, since a
+bot behind the wire has no second channel available to it rather than merely
+declining to use one.
+
 ---
 
 ## 15. Rating is damage-weighted pairwise Elo, stored as an event log
@@ -967,14 +975,18 @@ authenticated house bot anchors the rating ladder.
 
 **Cost:** The arena builds an interest-filtered snapshot stream per bot where
 the in-process roster needed none, and that build was expensive enough to have
-been optimised once already. It gets measured before the fill target ships:
-snapshot build time per send at fifty clients is the number that decides
-whether 0.8 of `max_ships` is an affordable default. An empty deployment needs
-two processes before a room has a population, where one binary used to
-suffice, so the dev loop grows a compose entry. And the brain gains a second
-consumer, the calibration tournament, which forces it into a shared crate so
-the ladder cannot quietly rank a drifted copy; that drift has already happened
-once as a stale `ladder.json`.
+been optimised once already. Measured before shipping the fill target, on a
+64-seat room at 0.8: the arena's worst tick costs 314 microseconds of its 10
+millisecond budget, and the bot server costs 14% of a core and 15 MB for 51
+bots. So 0.8 stands. The numbers and what drives them are in
+[hosting.md](hosting.md).
+
+An empty deployment also needs two processes before a room has a population,
+where one used to do, so the dev loop grows a compose entry. It is the same
+binary under a different first argument, as the directory already was, which
+also settles where the brain lives: one program cannot drift from itself, so
+the calibration tournament and the live bots are guaranteed to be the same
+code without a crate boundary to arrange.
 
 **Reconsider if:** snapshot building at fill-target populations eats the tick
 budget and per-client interest filtering cannot be made cheaper, or a

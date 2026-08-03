@@ -186,6 +186,24 @@ services:
       - a3:/var/lib/vectorwake
     depends_on: [directory]
 
+  # The population. One process holds every bot in the deployment: it browses
+  # the directory like a player, dials whichever arenas want bots, and flies
+  # them as ordinary clients. See decision 29.
+  #
+  # No volume and no token. It keeps nothing between runs, because a bot's
+  # career lives in the arena's ratings rather than here, and it registers with
+  # nothing: it is a client, and a client needs no credential.
+  #
+  # No address of its own either, which is why it can be restarted at any time.
+  # Losing it empties the rooms of bots and does nothing else; every human in
+  # them keeps playing, and the crowd comes back within seconds of it returning.
+  bots:
+    <<: *arena
+    command: ["bots"]
+    environment:
+      VW_DIRECTORY: ws://127.0.0.1:9000
+    depends_on: [directory, a1, a2, a3]
+
 volumes:
   caddy-data:
   caddy-config:

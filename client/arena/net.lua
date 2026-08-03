@@ -13,12 +13,12 @@ local C2S_JOIN, C2S_INPUT = 1, 2
 local C2S_SHIP = 5
 local S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER = 1, 2, 3
 local S2C_KILL, S2C_BANNER, S2C_ZONE, S2C_DENIED = 4, 5, 6, 7
-local S2C_MAP, S2C_SETTINGS = 9, 10
+local S2C_MAP, S2C_SETTINGS, S2C_YIELD = 9, 10, 11
 
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 1
+local CLIENT_PROTOCOL = 2
 
 -- Why a join was refused. Three of these mean the address was fine and another
 -- instance would have taken us, which is a different thing to tell a player than
@@ -236,6 +236,12 @@ local function on_message(s)
         if RETRYABLE[M.deny_code] then
             M.denied = M.denied .. " (another server for this game may have room)"
         end
+    elseif kind == S2C_YIELD then
+        -- The zone wants this seat back. Only ever sent to a client that
+        -- declared itself a bot, so a player never sees it; handled anyway,
+        -- because a message with no branch is how the scoreboard once spent a
+        -- whole session showing the rating somebody walked in with.
+        M.denied = "the zone asked for this seat back"
     end
 end
 
@@ -280,11 +286,17 @@ function M.connect(url, class, name, on_lost, zone)
             -- good connection down with the dead one.
             if gen ~= generation then return end
             if data.event == websocket.EVENT_CONNECTED then
-                -- class, protocol, then the game we think we picked, then the
-                -- name. An empty zone means "whatever you are running", which
-                -- is what typing an address directly means.
+                -- class, protocol, flags, then the game we think we picked,
+                -- then the name. An empty zone means "whatever you are
+                -- running", which is what typing an address directly means.
+                --
+                -- Flags is zero here and always will be: its one bit says "I
+                -- am a bot", the zone takes a client at its word, and what a
+                -- declared bot gets is a label on the scoreboard, a seat
+                -- outside the human cap, and first call to give that seat up.
+                -- A player wants none of the three. See JOIN_BOT in the server.
                 local want = zone or ""
-                local msg = string.char(C2S_JOIN, class, CLIENT_PROTOCOL, #want)
+                local msg = string.char(C2S_JOIN, class, CLIENT_PROTOCOL, 0, #want)
                     .. want .. name
                 -- The callback's own handle, not the module's: this can fire
                 -- before `websocket.connect` has returned, and `conn` is only

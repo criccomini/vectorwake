@@ -214,41 +214,49 @@ Topology is not its mandate. A zone no instance serves is a deployment
 problem, visible in the admin surface; the bot server fills the rooms that
 exist and conjures none.
 
+## One binary, three programs
+
+The bot server is `vectorwake-server bots`, the same binary the arena and the
+directory are, told what to be by its first argument. A deployment is that
+image run four times with different commands.
+
+That settles a question this document was going to answer differently. The
+calibration tournament and the live bots must run identical code, because a
+ladder computed from a drifted copy ranks pilots who no longer exist, and that
+is not hypothetical: the shipped `ladder.json` once predated bounded sight and
+the reserve retune, and its 279-point spread turned out to be staleness rather
+than skill. The plan was to lift the brain into a crate both binaries depend
+on. Being one binary is the same guarantee with nothing to arrange.
+
 ## Calibration stays direct
 
 The ladder tournament in `calibrate.rs` keeps calling the brain against a bare
-`World`, no server and no socket, because it is a measuring instrument that
-wants thousands of matches at CPU speed rather than a seat in the fleet. What
-keeps the instrument honest is that it measures the code the bot server
-deploys: the `ai` module leaves the server binary for a crate both depend on.
-A copy would drift, and a ladder computed from a drifted copy ranks pilots
-that no longer exist. That is not hypothetical. The shipped `ladder.json` once
-predated bounded sight and the reserve retune, and its 279-point spread was
-staleness, not skill.
+`World`, with no server and no socket, because it is a measuring instrument
+that wants thousands of matches at CPU speed rather than a seat in the fleet.
 
-The residual gap is the wire itself. Calibration feeds the brain fresh state
-at look cadence; a live bot reads 20 Hz snapshots over loopback. The brain was
-tuned for 10 to 20 Hz looks, so the live picture is no staler than the
-measured one, but calibration measures the brain and not the path around it,
-and a wire bug will show up in play before it shows up in a tournament.
+The residual gap is the wire itself. Calibration feeds the brain fresh state at
+look cadence; a live bot reads 20 Hz snapshots and steps its own copy between
+them. The brain was tuned for 10 to 20 Hz looks, so the live picture is no
+staler than the measured one, but calibration measures the brain and not the
+path around it, and a wire bug will show up in play before it shows up in a
+tournament.
 
 ## Budget
 
-The costs moved. The bot server's own side is small: a decoded room is 79 KB
-with the 1 MB map shared per zone, the brain allocates nothing per tick, and a
-few hundred WebSocket connections are what an async runtime is for. Eighty
-bots is megabytes and a fraction of a core.
+The costs moved rather than grew. Measured on a 64-seat room at `bot_fill` 0.8,
+which is 51 bots, with the numbers in [hosting.md](hosting.md): the arena spends
+3% of its tick budget in the worst case, almost all of it building 51
+interest-filtered snapshots on the ticks that carry one, and the bot server
+spends 14% of a core and 15 MB.
 
-The real cost lands on the arena, which builds an interest-filtered snapshot
-stream per bot where the in-process roster needed none. That work was
-significant enough to have been halved once already, and it now scales with
-the bot population. It is the number that decides whether 0.8 is an affordable
-default, so it gets measured before it gets shipped: snapshot build time per
-send at fifty-plus clients, read against the 16 us a 64-ship tick costs.
+The bot server's share is the larger one and it is the price of the brain
+keeping its timing: each bot steps its own copy of the room at 100 Hz between
+snapshots. Memory stays small because the bots of one zone share one map by
+`Arc`, the same trick that keeps a room at 79 KB.
 
 Traffic is free while the bot server sits beside its arenas, since 30 KB/s per
-client is loopback. It stops being free only for a region with arenas and no
-bot server, so the deployment rule is simply to run one wherever arenas run.
+client is loopback. It stops being free for a region with arenas and no bot
+server, so the deployment rule is to run one wherever arenas run.
 
 ## Determinism and replays
 

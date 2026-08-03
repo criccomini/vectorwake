@@ -125,6 +125,10 @@ impl Rating {
         self.bots.insert(who.to_string());
     }
 
+    pub fn is_bot(&self, who: &str) -> bool {
+        self.bots.contains(who)
+    }
+
     /// How far one death may move this pilot. A bot barely moves; a human
     /// moves fast while placing and slows as their rating earns confidence.
     fn k_for(&self, who: &str) -> f64 {
