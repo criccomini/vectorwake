@@ -1,0 +1,100 @@
+name: server image
+
+# Build the one image the fleet runs, and publish it to GHCR.
+#
+# This exists to take the compiler off the game host. The host built its own
+# binary because the machine that did the first deploy had no registry
+# credential; Actions has one for free, so a deploy becomes a pull. What that
+# buys, measured on the live host: a source change went from a ten-minute
+# rebuild to about two minutes, and the box no longer needs 2 GB of RAM and 2 GB
+# of swap to survive cargo linking tokio and rustls.
+#
+# Nothing publishes that has not passed the gates. `test` runs the whole server
+# suite and the determinism check, and `publish` needs it -- and the release
+# build inside the image is its own third gate, since a warning-free debug test
+# run says nothing about whether `cargo build --release` links.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The last push to main wins. Two runs racing each other could otherwise move
+# `prod` backwards, since whichever finishes second is the tag that sticks.
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Two hundred dependencies, and none of them change between runs.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      # The determinism gate, repeated here rather than depended on across
+      # workflows. sim.yml proves the same property on three ABIs and is the
+      # real authority; this is the cheap version, thirty seconds, so that this
+      # workflow is self-contained and an image cannot be published on the
+      # strength of a golden trace nobody checked on this runner.
+      - name: simulation core, tests and golden trace
+        run: make -C sim check
+      - name: server tests
+        run: cargo test --manifest-path server/Cargo.toml
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    # A pull request builds, to prove the Dockerfile still works, and pushes
+    # nothing: `prod` is what the host follows, and a proposal must not move it.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: log in to ghcr
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: short sha
+        id: rev
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          # Two tags, doing two jobs. `sha-` is immutable and is what a running
+          # container can be traced back to; `prod` is the moving pointer the
+          # host follows, so a rollback is retagging it at an older sha and
+          # letting the host converge, rather than reverting and rebuilding.
+          tags: |
+            ${{ env.IMAGE }}:sha-${{ steps.rev.outputs.short }}
+            ${{ env.IMAGE }}:prod
+          # So a container on the host can be mapped back to a commit without
+          # asking anybody. `docker inspect` reads it straight back.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # The registry cache is what makes the Dockerfile's dependency layer
+          # worth having: without it every run recompiles all two hundred
+          # crates, which is the same ten minutes this workflow exists to
+          # delete, just moved to a different machine.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # One architecture, no attestations. The host is x86-64 and provenance
+          # would publish an image index whose extra manifest shows up as an
+          # unknown platform for no benefit we can currently use. Building arm64
+          # too is a one-line change the day a cheaper arm plan is worth it --
+          # decision 2 already guarantees the two agree on state hashes.
+          platforms: linux/amd64
+          provenance: false
