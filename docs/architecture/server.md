@@ -97,9 +97,36 @@ Positions, deaths, damage, prize pickups, flag claims, and goals are outputs of
 cheats that Subspace's `C2S_DIE` packet enabled, and it means the security
 module we do not have to write is the checksum treadmill Continuum is stuck on.
 
-Rate limiting and sanity checks stay: an input stream arriving faster than the
-tick rate or a ship change every frame gets throttled at the session layer before
-it reaches an arena.
+There is no rate limit on inbound messages, and this document used to say there
+was one. What actually bounds a client is narrower: a frame is capped at 8 KB, a
+scheduled input is clamped to a second of lead and its queue to 128 entries, and
+a ship change is refused by the core unless the pilot is alive and at a full bar,
+so sending one every frame achieves nothing. Nothing caps how *often* a client
+may speak.
+
+The reason to want a limit is that every inbound message briefly takes the lock
+on the zone, and the 100 Hz loop needs that same lock to run the game, so a
+client that floods could in principle starve the tick and slow the match for
+everybody else in the process.
+
+Measured rather than assumed, against a local arena. One connection sending
+83,750 inputs a second, about eight hundred times what a real client sends, left
+honest players at 20.1 snapshots a second against a 19.8 baseline with their
+input timing unchanged. Four connections together sending roughly 297,000 a
+second, about three thousand times normal, left them at 19.7. The per-message
+work is small enough that a third of a million of them a second does not disturb
+a loop that runs a hundred times a second.
+
+So this is deliberately not built. The margin is somewhere past three thousand
+times ordinary load, and a throttle now would be a guard on a door nobody can
+push open. Two caveats bound that claim: the test ran on loopback, where the
+flooders were probably limited by their own CPU rather than by the server, and
+four processes on one box is not a botnet.
+
+**Build it when** a room's tick time or snapshot cadence degrades under something
+other than player count. That is the symptom, it is already visible in the
+`STATUS` metrics an arena pushes, and the fix is a token bucket per connection in
+the read loop rather than anything structural.
 
 ## Lag response
 
