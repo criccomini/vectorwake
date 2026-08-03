@@ -146,6 +146,62 @@ is in fact running. The check reports the reason now (`UnknownIssuer` for exactl
 this case), because that symptom is otherwise indistinguishable from four other
 causes.
 
+## Security posture
+
+What a stranger can reach, what each layer is for, and the risks that are
+accepted rather than closed. Checked against the live host from outside, not
+asserted from the config.
+
+**Reachable from the internet: 22, 80, 443. Nothing else.** The directory,
+arenas and admin surface bind loopback; ufw and the Vultr firewall both filter
+on top of that. Two of those layers are redundant on purpose, because the first
+deploy was lost to believing one of them was the whole story.
+
+**What an unauthenticated stranger can do** is speak the client protocol to
+Caddy. That surface is bounded: incoming WebSocket frames are capped at 8 KB on
+the game port and 64 KB on the registration port (the library default is 64 MiB,
+buffered in full), the per-connection outbound queue is bounded, and a call sign
+is reduced to printable ASCII and 24 characters before it can reach a roster,
+the kill feed, the logs, or the ratings file. A newline in a name is a forged
+log line; the sanitizer is what stands in front of that.
+
+**Containers run with every capability dropped** and `no-new-privileges`, except
+Caddy, which keeps exactly `NET_BIND_SERVICE` for ports 80 and 443. The point is
+the C simulation core: it parses operator content, not player bytes, but it is
+the one memory-unsafe thing in the stack, and a host-network container with
+root's default capabilities would make a bug in it a bug on the host.
+
+**Secrets.** The pool token and admin token live in `deploy/.env` (0600, root)
+and the read-only deploy key in `/root/.ssh` (0600). They arrive via instance
+user-data, which anything on the box can read back from the metadata service --
+so after provisioning succeeds, user-data is overwritten with a stub through the
+API. The tokens on disk are the box's own credentials; the scrub is what keeps
+them from being readable by any unprivileged process that can open a socket to
+169.254.169.254. Rotation is: new token, new digest in the catalog, redeploy.
+
+**Accepted, with reasons:**
+
+- *SSH on 22 with root password auth.* The Vultr console needs no SSH, but the
+  admin surface is reached by SSH tunnel, and disabling password auth with no
+  key installed locks the operator out. Vultr's generated root passwords are
+  long and random, so brute force is impractical rather than impossible. The
+  right fix is an operator SSH key and `PasswordAuthentication no`, which needs
+  a key we do not hold.
+- *Verification is a blind dial.* A token-holding operator can point their
+  claimed address at anything, and the directory will connect to it and send a
+  status request. It follows no redirects, discloses nothing, and the caller
+  learns only verified-or-not, so the worst case is a GET-shaped knock on a
+  door the operator names. Restricting targets would break the local overlay
+  and buys little against a party the token table already trusts.
+- *Names are not identity.* Anyone can join as any name, including a staff
+  name. Capabilities are checked against the admin token and the catalog's
+  staff table, never against an in-game name, so impersonation grants nothing;
+  it is still impersonation, and it ends when identity lands (decision 11).
+- *The deploy log is public.* `/deploy` on plain HTTP serves provisioning
+  progress and the build log to anyone. It is written to hold no secrets --
+  checked, not assumed -- because a box that cannot report its own failure gets
+  debugged by guessing.
+
 ## What is deliberately not here
 
 No Kubernetes: zone selection is the scheduler, so nothing needs placing. No

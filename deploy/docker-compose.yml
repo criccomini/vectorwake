@@ -22,12 +22,30 @@ x-arena: &arena
   # surface's `restart` verb work: the process exits 0 and the platform brings
   # it back, which is the honest implementation of a restart button.
   restart: unless-stopped
+  # Least privilege, because these processes parse bytes from strangers. They
+  # bind unprivileged ports, write nothing but their own volume, and never
+  # escalate, so every capability is dropped and setuid is off the table. What
+  # this bounds is the blast radius of a bug in the one C library in the stack:
+  # a compromised arena on a host-network container is otherwise a process on
+  # the host with root's capabilities.
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
 
 services:
   caddy:
     image: caddy:2-alpine
     network_mode: host
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Caddy is the one thing here that binds privileged ports, so it keeps
+    # exactly that capability and nothing else.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Certificates and ACME account keys. Losing this volume means asking

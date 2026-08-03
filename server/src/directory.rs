@@ -643,7 +643,22 @@ pub async fn run() {
             // A bearer token over cleartext is a token given away. Loopback is
             // the exception, because that is development and it has no path.
             let cleartext_remote = tls.is_none() && !peer.ip().is_loopback();
-            let Ok(ws) = tokio_tungstenite::accept_async(stream).await else { return };
+            // Everything an arena sends up this socket is small: a REGISTER, a
+            // STATUS, an INTENT, an ACK, none past a kilobyte. The library
+            // default buffers frames up to 64 MiB each, and this port is dialed
+            // by strangers before any token is checked, so the cap is what
+            // bounds what an unauthenticated peer can make this process hold.
+            // The big payloads -- catalogs, views -- travel the other way and
+            // are not limited by this.
+            let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
+                max_message_size: Some(64 * 1024),
+                max_frame_size: Some(64 * 1024),
+                ..Default::default()
+            };
+            let Ok(ws) = tokio_tungstenite::accept_async_with_config(stream, Some(cfg)).await
+            else {
+                return;
+            };
             if cleartext_remote {
                 let (mut sink, _) = ws.split();
                 let _ = sink

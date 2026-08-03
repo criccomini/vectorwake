@@ -60,6 +60,10 @@ const C2S_SHIP: u8 = 5;
 /// programs. Bump when a message's layout changes, so a stale build is told its
 /// build is stale rather than left to misparse a snapshot.
 const CLIENT_PROTOCOL: u8 = 1;
+/// The biggest message a client may send. The largest legitimate one is a join:
+/// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
+/// magnitude of headroom.
+const C2S_MAX: usize = 8 * 1024;
 /// Asked by the directory, and by any client that wants to know what a zone
 /// is before committing to it. Answerable without joining.
 const C2S_STATUS: u8 = directory::STATUS_REQUEST;
@@ -1277,6 +1281,43 @@ impl Zone {
 /// so it moves slowly against humans, each bot seeded from the calibrated
 /// prior, and the anchor pinned last so nothing can overwrite the fixed
 /// point the rest of the ladder is measured against.
+/// A call sign as the rest of the system may hold it.
+///
+/// The wire hands us arbitrary bytes, and a name travels further than anywhere
+/// else a client can reach: into every other player's roster, into the kill
+/// feed and so into the logs, into the ratings map and so onto disk, and into
+/// the argument of an operator's kick. So it is printable ASCII, single-spaced,
+/// and at most 24 characters -- which is also the roster wire format's cap, so
+/// what is stored is what everyone sees. Control characters would otherwise
+/// ride into the logs (a newline forges a log line), and a 64 MB name is a
+/// memory bill somebody else pays.
+fn sanitize_name(raw: &str) -> String {
+    let mut out = String::with_capacity(24);
+    let mut pending_space = false;
+    for c in raw.chars() {
+        if c == ' ' || c.is_whitespace() {
+            pending_space = !out.is_empty();
+            continue;
+        }
+        if !c.is_ascii_graphic() {
+            continue;
+        }
+        if pending_space {
+            out.push(' ');
+            pending_space = false;
+        }
+        out.push(c);
+        if out.len() >= 24 {
+            break;
+        }
+    }
+    if out.is_empty() {
+        "pilot".into()
+    } else {
+        out
+    }
+}
+
 fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64>) {
     for e in ai::roster() {
         r.mark_bot(e.name);
@@ -1693,7 +1734,17 @@ async fn main() {
                 },
                 None => Box::new(stream),
             };
-            let ws = match tokio_tungstenite::accept_async(stream).await {
+            // Incoming frames are capped far below the library default of
+            // 64 MiB, which is buffered in full per frame. Nothing a client
+            // legitimately sends is bigger than a join -- a tag, a few bytes,
+            // a zone name and a call sign -- so a stranger on an open port
+            // gets to cost this process kilobytes, not gigabytes.
+            let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
+                max_message_size: Some(C2S_MAX),
+                max_frame_size: Some(C2S_MAX),
+                ..Default::default()
+            };
+            let ws = match tokio_tungstenite::accept_async_with_config(stream, Some(cfg)).await {
                 Ok(w) => w,
                 Err(_) => return,
             };
@@ -1741,10 +1792,9 @@ async fn main() {
                             data.get(4..4 + zlen).unwrap_or_default(),
                         )
                         .to_string();
-                        let name =
-                            String::from_utf8_lossy(data.get(4 + zlen..).unwrap_or_default())
-                                .to_string();
-                        let name = if name.is_empty() { "pilot".into() } else { name };
+                        let name = sanitize_name(&String::from_utf8_lossy(
+                            data.get(4 + zlen..).unwrap_or_default(),
+                        ));
                         let mut z = zone.lock().await;
 
                         // A refusal has to say which of five things went wrong,
@@ -2140,6 +2190,44 @@ mod tests {
                    "and an operator can see which connection is drowning");
         // Still in the room, still simulated: falling behind is not an eviction.
         assert!(z.rooms[0].players.contains_key(&id));
+    }
+
+    #[test]
+    fn a_name_is_printable_bounded_and_never_empty() {
+        // The wire hands us arbitrary bytes and a name travels further than
+        // anything else a client controls: rosters, logs, the ratings file,
+        // an operator's kick argument.
+        assert_eq!(sanitize_name("Kestrel"), "Kestrel", "a normal name is untouched");
+        assert_eq!(sanitize_name("two  words"), "two words");
+        assert_eq!(sanitize_name("  padded\t"), "padded");
+        assert_eq!(
+            sanitize_name("evil\nname"),
+            "evil name",
+            "a newline would forge a log line; it becomes a space"
+        );
+        // The ESC byte is what arms a terminal escape sequence; with it gone
+        // the "[2J" left behind is inert text, which is the property that
+        // matters when a name is printed into a log.
+        assert_eq!(sanitize_name("a\u{1b}[2Jb\u{0}c"), "a[2Jbc");
+        assert_eq!(sanitize_name("").as_str(), "pilot");
+        assert_eq!(sanitize_name("\u{200b}\u{202e}").as_str(), "pilot",
+                   "invisible unicode cannot be a whole name");
+        let huge = "x".repeat(10_000_000);
+        assert_eq!(sanitize_name(&huge).len(), 24, "10 MB of name stores 24 bytes");
+        // The cap matches the roster wire format, so what is stored is what
+        // every other player is shown.
+        assert_eq!(sanitize_name(&huge).len(), 24usize.min(24));
+    }
+
+    #[test]
+    fn a_hostile_name_lands_sanitized_in_the_room() {
+        let mut z = serving(1, 4, 8);
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let cap = z.max_players();
+        let id = z.rooms[0]
+            .join(sanitize_name("bad\r\nguy\u{7f}"), 0, cap, tx)
+            .expect("a seat");
+        assert_eq!(z.rooms[0].players[&id].name, "bad guy");
     }
 
     #[test]
