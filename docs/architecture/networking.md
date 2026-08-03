@@ -32,6 +32,16 @@ settings, map metadata, score updates, kill notifications. On UDP they get
 sequence numbers, acknowledgements, and retransmission with backoff. On
 WebSocket they ride the socket's own guarantees.
 
+That guarantee is narrower than it sounds. TCP delivers what the server hands it,
+and the server hands messages to a bounded per-connection queue, forty deep,
+where every enqueue is a `try_send` whose failure is discarded. Right for a
+snapshot, which is worthless a tick later. Wrong for anything a client cannot get
+a second time. The roster was sent once on join and after that only when somebody
+arrived or left, so one full queue cost a player every name in the room for the
+rest of the session: a scoreboard of ship numbers, and a kill feed reading "ship
+5 killed ship 8". It repeats every two seconds now. Anything else that has to
+arrive and is not on a clock has the same hole in it.
+
 Subspace's design put reliability at the same layer, with `0x00 03` reliable
 messages and `0x00 04` acks wrapping ordinary game packets, and clustered
 several small packets into one datagram with `0x00 0E`. Both ideas survive here.

@@ -98,24 +98,35 @@ function M.tier(rating, games)
     return "Drift"
 end
 
+-- Built up beside the live roster and swapped in whole, rather than cleared and
+-- refilled in place. Clearing first meant a message that ran out halfway left
+-- the board holding however far it got, which was usually nothing, and since the
+-- roster arrived once and never again that was the roster for the rest of the
+-- session: a scoreboard of "ship 5" with real kills beside it. Keeping the last
+-- good one beats keeping part of a bad one.
 local function on_roster(s)
     local n = string.byte(s, 2)
+    if not n then return end
     local o = 3
-    M.pilots = {}
+    local pilots, ratings = {}, {}
     for _ = 1, n do
+        local len = string.byte(s, o + 5)
+        -- Six bytes of header, then the name. `string.byte` answers nil past the
+        -- end and the arithmetic on it raises, and an error here surfaces inside
+        -- a websocket callback where nobody is looking.
+        if not len or #s < o + 5 + len then return end
         local ship = string.byte(s, o)
         local is_ai = string.byte(s, o + 1) == 1
         local rating = i16(string.byte(s, o + 2), string.byte(s, o + 3))
         local games = string.byte(s, o + 4)
-        local len = string.byte(s, o + 5)
-        local name = string.sub(s, o + 6, o + 5 + len)
-        o = o + 6 + len
-        M.pilots[ship] = {
-            name = name, ai = is_ai,
+        pilots[ship] = {
+            name = string.sub(s, o + 6, o + 5 + len), ai = is_ai,
             games = games, tier = M.tier(rating, games),
         }
-        M.ratings[ship] = rating
+        ratings[ship] = rating
+        o = o + 6 + len
     end
+    M.pilots, M.ratings = pilots, ratings
 end
 
 -- A death, with both pilots' rating after the exchange and how many people

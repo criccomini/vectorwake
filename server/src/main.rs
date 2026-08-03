@@ -982,8 +982,9 @@ impl Arena {
         }
     }
 
-    /// Names and AI labels, sent when the roster changes. Bots are always
-    /// labeled: a player deserves to know who they are fighting.
+    /// Names and AI labels, sent on every join and leave and then every two
+    /// seconds regardless. Bots are always labeled: a player deserves to know
+    /// who they are fighting.
     fn roster_msg(&self) -> Vec<u8> {
         let mut m = vec![S2C_ROSTER];
         m.push(self.names.len() as u8);
@@ -1015,6 +1016,9 @@ impl Arena {
         }
     }
 
+    /// Called on every change, and on a two-second clock from the tick loop so a
+    /// client whose queue was full gets another one. `try_send` is why it needs
+    /// the clock.
     fn broadcast_roster(&self) {
         let m = self.roster_msg();
         for p in self.players.values() {
@@ -1845,12 +1849,29 @@ async fn main() {
                 // and 1.6 for two, a hundred duel rooms is a sixth of a core, so
                 // there is nothing here a pool would buy.
                 let snap = n % SNAPSHOT_EVERY == 0;
+                // The roster, on a slow clock rather than only when it changes.
+                //
+                // Every name a client shows comes from that one message, and
+                // `try_send` drops it without a word when a client's queue is
+                // full. Sent only on join and on somebody arriving or leaving,
+                // one lost roster meant a whole session with a scoreboard of ship
+                // numbers and a kill feed reading "ship 5 killed ship 8".
+                // Somebody watched that happen in War, and only a page refresh
+                // cleared it, because nothing was ever going to send it again.
+                //
+                // The message is about 125 bytes, so a player taking 20 Hz
+                // snapshots at 30 KB/s pays two thousandths of that for a roster
+                // that repairs itself.
+                let roster = n % 200 == 0;
                 let t0 = std::time::Instant::now();
                 for a in z.rooms.iter_mut() {
                     a.tick();
                     if snap {
                         a.broadcast_snapshot(&mut buf);
                         a.broadcast_banner();
+                    }
+                    if roster {
+                        a.broadcast_roster();
                     }
                 }
                 z.tick_us = t0.elapsed().as_micros() as u32;
@@ -2500,6 +2521,51 @@ mod tests {
             .map(|s| s.team)
             .collect();
         assert_eq!(sides.len(), 2, "two sides, whatever the roster says");
+    }
+
+    #[test]
+    fn the_roster_wire_reads_back_exactly() {
+        // Every name anybody sees comes from this one message, and the client
+        // walks it with a cursor: a field added here and not there shifts each
+        // name after it into gibberish, which a client cannot tell from a room
+        // genuinely full of strangers. A reader that stopped short is what once
+        // showed a live player DESTROYED forever.
+        //
+        // So this parses the bytes the way client/arena/net.lua does, from the
+        // outside, and insists on landing exactly on the end. Same rule as
+        // sim_unpack, for the same reason: stopping short is both wrong and
+        // silent.
+        let mut z = serving(1, 9, 16);
+        seat(&mut z, 0, 1);
+        let a = &z.rooms[0];
+
+        let m = a.roster_msg();
+        assert_eq!(m[0], S2C_ROSTER);
+        let n = m[1] as usize;
+        assert_eq!(n, a.names.len(), "the count has to match what follows it");
+        assert!(n >= 2, "the bot roster and the player we seated");
+
+        let mut o = 2;
+        let mut read: HashMap<u8, (String, bool)> = HashMap::new();
+        for _ in 0..n {
+            assert!(o + 6 <= m.len(), "an entry header ran off the end");
+            let ship = m[o];
+            let is_ai = m[o + 1] == 1;
+            let _rating = i16::from_le_bytes([m[o + 2], m[o + 3]]);
+            let _games = m[o + 4];
+            let len = m[o + 5] as usize;
+            assert!(o + 6 + len <= m.len(), "a name ran off the end");
+            let name = String::from_utf8(m[o + 6..o + 6 + len].to_vec())
+                .expect("names are sanitised to printable ascii before they get here");
+            o += 6 + len;
+            assert!(read.insert(ship, (name, is_ai)).is_none(), "ship {ship} twice");
+        }
+        assert_eq!(o, m.len(), "the reader has to land on the end, not near it");
+        assert_eq!(read, a.names, "every name, and whether it is a bot");
+        assert!(
+            read.values().any(|(name, ai)| name == "p0-0" && !*ai),
+            "the human we seated is in it, and not labelled a bot"
+        );
     }
 
     #[test]
