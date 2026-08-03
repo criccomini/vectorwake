@@ -222,7 +222,6 @@ local function make_bot(id, skill)
         react = math.max(3, math.floor(38 - skill * 30)),
         aim_err = (1 - skill) * 0.42,
         seed = 12345 + id * 7919,
-        bomb_at = 120 + id * 37,
         charge_at = 200 + id * 53,
     }
 end
@@ -232,23 +231,75 @@ local function bot_rand(b)
     return b.seed / 2147483648
 end
 
--- Whether a bomb is the better shot for this hull to take right now: a rack,
--- the energy the shot costs, and a better rate of damage than the gun it
--- would stand in for.
+-- How far a pilot can see, in world pixels.
 --
--- `trigger_rate` is what each trigger is worth per tick of the cooldown it
--- imposes, which is the comparison that matters because one cooldown covers
--- both. The core owns that arithmetic so the two bots cannot come to
--- different conclusions about the same weapon.
+-- Sixty tiles, which is exactly the radar's reach: RADAR_TILES in
+-- arena/world.lua and SPAN in arena/ui.lua. A ship is drawn within about 215
+-- px of the camera and is a blip out to here; past that a player has nothing
+-- on the display to react to.
+--
+-- The scan below had no distance test at all, on a map 16384 px across, which
+-- made a bot the one pilot in the room who could see the whole of it. The
+-- server's bots were bounded the same way and for the same reason; the
+-- reasoning is in server/src/ai.rs.
+local SIGHT = 60 * 16
+
+-- Whether the straight line between two points crosses a wall.
+--
+-- Walked at half a tile, which cannot step over an eight-pixel wall and is a
+-- few dozen samples over the ranges anybody asks about. Doors count: they are
+-- a wall whenever they are shut, and a pilot who bombs through one while it
+-- happens to be open has still made a bad habit of it.
 --
 -- Declared up here rather than beside the one place that calls it, because a
 -- Lua local is only in scope below its own declaration, which is the shape of
 -- four bugs in this client already.
-local function pays_to_bomb(id)
-    local bomb, cost = sim.trigger_rate(id, sim.TRIG_BOMB)
-    if bomb <= 0 then return false end               -- no rack on this hull
-    if sim.ship_energy(id) <= cost then return false end
-    return bomb > sim.trigger_rate(id, sim.TRIG_GUN)
+local function clear_line(x0, y0, x1, y1)
+    local dx, dy = x1 - x0, y1 - y0
+    local steps = math.ceil(math.sqrt(dx * dx + dy * dy) / 8)
+    for i = 1, steps - 1 do
+        local t = i / steps
+        local cls = sim.tile(math.floor((x0 + dx * t) / 16),
+                             math.floor((y0 + dy * t) / 16))
+        if cls == sim.T_SOLID or cls == sim.T_DOOR then return false end
+    end
+    return true
+end
+
+-- Whether to throw a bomb instead of the gunfire it stands in for.
+--
+-- Not a rate comparison. That is what stood here -- `trigger_rate` on both
+-- triggers, take the better -- and on the original's numbers, which every
+-- hull now carries, the gun wins everywhere and always will: 200 damage on a
+-- 25 tick cooldown is 8.0 a tick against the bomb's 750 on 150, which is 5.0.
+-- Measured over a full hull round robin, every ship at every rung threw zero
+-- bombs. A bomb is never the better shot by that arithmetic, so the
+-- arithmetic was the wrong question.
+--
+-- What a bomb buys is that it does not have to hit. It lands its damage over
+-- a radius, so the question is range and what is in the way. Too close and
+-- the blast is on the pilot who threw it; too far and it is a fifth of a bar
+-- thrown across a room at somebody who will simply move; and a bomb ends on
+-- the first wall it touches and puts its blast there, so the line has to be
+-- open. Without that last condition the pilots allowed to bomb rated sixty
+-- points below the one that was not.
+--
+-- Both ends of the band move with the bomb the hull is actually carrying,
+-- which is how a level 3 bomb becomes a weapon you throw further rather than
+-- a bigger version of the same one.
+local function bomb_now(b, dist, tx, ty)
+    local rate, cost = sim.trigger_rate(b.id, sim.TRIG_BOMB)
+    if rate <= 0 then return false end               -- no rack on this hull
+    local maxe = math.max(1, sim.ship_max_energy(b.id))
+    -- It has to leave the reserve intact, or the pilot spends the fight
+    -- recovering from having thrown one. Same reserve the trigger below uses.
+    if (sim.ship_energy(b.id) - cost) / maxe <= 0.16 + b.skill * 0.28 then
+        return false
+    end
+    local near = sim.ship_bomb_radius(b.id) + 120
+    local far = math.max(480, near + 160)
+    if dist <= near or dist >= far then return false end
+    return clear_line(sim.ship_x(b.id), sim.ship_y(b.id), tx, ty)
 end
 
 local function steer(b, dx, dy, sloppy)
@@ -303,9 +354,15 @@ local function bot_think(b)
         if i ~= b.id and sim.ship_alive(i) == 1 and sim.ship_team(i) ~= team then
             local dx, dy = sim.ship_x(i) - mx, sim.ship_y(i) - my
             local d2 = dx * dx + dy * dy
-            local score = d2 / (1 + sim.ship_bounty(i) * b.skill * 0.12)
-            if best == nil or score < best then
-                best, bdx, bdy, bdist2 = score, dx, dy, d2
+            -- Only what a player could actually see. Without this the nearest
+            -- enemy meant the nearest on the map, and a bot would set off
+            -- across a thousand tiles after somebody it had no way of knowing
+            -- was there.
+            if d2 <= SIGHT * SIGHT then
+                local score = d2 / (1 + sim.ship_bounty(i) * b.skill * 0.12)
+                if best == nil or score < best then
+                    best, bdx, bdy, bdist2 = score, dx, dy, d2
+                end
             end
         end
     end
@@ -335,7 +392,27 @@ local function bot_think(b)
             return out
         end
     end
-    if best == nil then return 0 end
+    -- Nothing in sight, so go looking. This is the other half of bounding
+    -- sight above: it used to be no buttons at all, which went unnoticed while
+    -- a bot could see the whole map, and turned the arena into a gallery of
+    -- statues once it could not. Spawns are two hundred and fifty tiles apart
+    -- and sight is sixty.
+    --
+    -- The heading is the contested middle, where the map keeps its furniture
+    -- and therefore where anybody else looking for a fight is also going,
+    -- offset per pilot so a roster does not converge on one tile, and rerolled
+    -- on arrival so a bot that finds nobody there moves on. Same rule as the
+    -- server's `roam`, so the two rosters behave alike.
+    if best == nil then
+        local c, spread = 512 * 16, 128 * 16
+        local dx, dy = (b.roam_x or 0) - mx, (b.roam_y or 0) - my
+        if not b.roam_x or dx * dx + dy * dy < (20 * 16) * (20 * 16) then
+            b.roam_x = c + (bot_rand(b) - 0.5) * 2 * spread
+            b.roam_y = c + (bot_rand(b) - 0.5) * 2 * spread
+            dx, dy = b.roam_x - mx, b.roam_y - my
+        end
+        return steer(b, dx, dy, false) + sim.BTN_THRUST
+    end
     best = bdist2
 
     local dist = math.sqrt(best)
@@ -375,9 +452,11 @@ local function bot_think(b)
         -- displaces rather than adding to it, which is worth three and a half
         -- times the rate on an Anvil and a third of it on an Apex. Skill used
         -- to be the thing that unlocked the worse weapon.
-        if dist < 320 and b.skill > 0.5 and b.timer >= b.bomb_at
-           and pays_to_bomb(b.id) then
-            b.bomb_at = b.timer + 200 + math.floor(bot_rand(b) * 220)
+        -- A bomb is a judgement call and the worst pilots do not make it.
+        -- No clock of its own any more: the band and the energy it costs are
+        -- what space these out, which is the same pair of limits a player
+        -- feels.
+        if b.skill >= 0.35 and bomb_now(b, dist, mx + bdx, my + bdy) then
             return out + sim.BTN_BOMB
         end
         out = out + sim.BTN_FIRE
