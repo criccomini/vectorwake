@@ -21,9 +21,29 @@ say() {
 	printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*" >>"$LOG/status"
 	echo "=== $*"
 }
+
+# The log is served by a python one-liner until Caddy takes the port. Both of
+# these exist because the first version killed the bootstrap server and then
+# started Caddy: when Caddy did not come up, the box went silent at exactly the
+# moment it had something to say, and the only way to read the reason was a VNC
+# console. A host that cannot report its own failure is a host you debug by
+# guessing.
+bootstrap_up() {
+	[ -f /tmp/bootstrap-http.pid ] && kill -0 "$(cat /tmp/bootstrap-http.pid)" 2>/dev/null && return
+	( cd "$DIR" && nohup python3 -m http.server 80 --bind 0.0.0.0 >/dev/null 2>&1 &
+	  echo $! >/tmp/bootstrap-http.pid )
+	sleep 1
+}
+bootstrap_down() {
+	[ -f /tmp/bootstrap-http.pid ] && kill "$(cat /tmp/bootstrap-http.pid)" 2>/dev/null
+	rm -f /tmp/bootstrap-http.pid
+	sleep 1
+}
 die() {
 	say "FAILED: $*"
 	say "the full output is at /deploy/provision.log"
+	# Whatever went wrong, leave something serving the reason.
+	bootstrap_up
 	exit 1
 }
 
@@ -32,9 +52,7 @@ die() {
 # since the steps most likely to break are the ones that need all three. Caddy
 # replaces it on the same port once there is something to reverse-proxy.
 say "provisioning started; serving this log on port 80"
-( cd "$DIR" && nohup python3 -m http.server 80 --bind 0.0.0.0 >/dev/null 2>&1 &
-  echo $! >/tmp/bootstrap-http.pid )
-sleep 1
+bootstrap_up
 
 # Swap before the build. cargo linking tokio and rustls is the peak memory of
 # this host's life by a wide margin, and a linker killed by the OOM reaper is
@@ -80,10 +98,24 @@ EOF
 # The proxy before the game, so the log stays readable across the slow part and
 # port 80 answers ACME the moment DNS points here.
 say "starting the proxy"
-kill "$(cat /tmp/bootstrap-http.pid)" 2>/dev/null
-sleep 1
 cd /opt/vectorwake/deploy || die "no deploy directory in the clone"
+bootstrap_down
 docker compose --env-file .env up -d caddy || die "caddy would not start"
+# Started is not listening. Caddy exiting on a bad config leaves the port dead
+# and, with the bootstrap server gone, the box mute -- so this is checked rather
+# than assumed, and the fallback is to hand the port back to python and say so.
+i=0
+while [ $i -lt 20 ]; do
+	curl -fsS -o /dev/null http://127.0.0.1/deploy/status 2>/dev/null && break
+	i=$((i + 1))
+	sleep 2
+done
+if [ $i -ge 20 ]; then
+	say "caddy started but nothing answers on port 80; its log follows"
+	docker compose --env-file .env logs --no-color caddy 2>&1 | tail -40
+	die "caddy is not serving"
+fi
+say "proxy is answering on port 80"
 
 say "building the server; about ten minutes on one core"
 docker compose --env-file .env up -d --build || die "build; see provision.log"
