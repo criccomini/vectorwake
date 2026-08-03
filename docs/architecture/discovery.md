@@ -90,6 +90,23 @@ arena holds several secrets, and its config file is exactly what an operator
 pastes into a bug report. `token = "env:VW_TOKEN_MAIN"` or a `token_file` path
 costs a few lines and makes the config safe to hand around.
 
+**A refusal is an answer, not an outage.** An arena that cannot reach a
+directory retries within five seconds, because its game is running and unlisted
+and waiting costs players. An arena that was *refused* backs off to a minute:
+the directory has answered the question, and asking again at outage pace is a
+credential-stuffing loop pointed at your own front door. It keeps trying at all
+because a token can be added to a catalog while an arena is running.
+
+That distinction was learned rather than designed. A rejection was queued to the
+socket and the writer aborted in the same breath, so the frame never left; the
+arena saw a clean close, treated it as a disconnect, reset its backoff and came
+straight back -- once a second, forever, with a token that would never work. And
+neither side said so: the directory logged nothing and the arena logged
+"disconnected". Every refusal is now named in the directory's own log, and the
+delivery is drained rather than aborted. The identical mistake on the client's
+join path had already been fixed and was not generalised, which is exactly why
+it was still here.
+
 **Newest registration for a token wins**, and the older socket is dropped. A
 half-open TCP connection outliving a restart is ordinary, and locking an arena
 out of its own pool because of one would be a self-inflicted outage.

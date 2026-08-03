@@ -342,9 +342,12 @@ async fn serve_registration(
     let writer = tokio::spawn(async move {
         while let Some(m) = rx.recv().await {
             if sink.send(Message::Binary(m)).await.is_err() {
-                break;
+                return;
             }
         }
+        // A close once the queue is done, so a rejected peer sees a closed
+        // socket rather than a dropped one.
+        let _ = sink.close().await;
     });
 
     // Nothing is registered until a REGISTER arrives and is accepted.
@@ -357,7 +360,15 @@ async fn serve_registration(
                 let Some(r) = fleet::parse::<fleet::Register>(&data, fleet::A2D_REGISTER) else {
                     continue;
                 };
+                // Said out loud, not just sent. A refusal the operator cannot
+                // see is a support ticket: the arena knows only that it was
+                // turned away, and until this existed neither side named a
+                // wrong token at all.
                 let reject = |reason: &str, detail: &str| {
+                    println!(
+                        "refused a registration for {:?} from {:?}: {reason} {detail}",
+                        r.instance, r.address
+                    );
                     fleet::frame(
                         fleet::D2A_REJECTED,
                         &fleet::Rejected {
@@ -537,7 +548,23 @@ async fn serve_registration(
             println!("{id} disconnected");
         }
     }
-    writer.abort();
+    // Let the writer drain before it goes. Every rejection above is queued and
+    // then the loop breaks immediately, so aborting here threw away the frame
+    // that says why -- and an arena that is told nothing reads a rejection as a
+    // clean disconnect, resets its backoff, and comes straight back. A wrong
+    // token produced a silent one-per-second reconnect loop against this
+    // directory, forever, with neither side ever naming the cause.
+    //
+    // The identical mistake on the client side is fixed in main.rs. It was not
+    // generalised at the time, which is the whole reason it was still here.
+    let mut writer = writer;
+    drop(tx);
+    if tokio::time::timeout(std::time::Duration::from_secs(2), &mut writer)
+        .await
+        .is_err()
+    {
+        writer.abort();
+    }
 }
 
 /// Push the view to every registered arena, on change and on a heartbeat. This

@@ -180,6 +180,28 @@ fn capped(o: &fleet::Observed) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_refusal_backs_off_far_slower_than_an_outage() {
+        // A directory that is down owes its arenas a fast reconnect: the game is
+        // running and unlisted, so waiting costs players. A directory that said
+        // unknown_token has answered, and asking again at that pace is a
+        // credential-stuffing loop pointed at your own front door. One arena
+        // with a stale token did exactly that, once a second, because the
+        // rejection never arrived -- it was queued and the writer aborted -- so
+        // the arena read a refusal as a clean disconnect and reset its backoff.
+        let outage: Result<(), String> = Err("IO error: Connection refused".into());
+        let refused: Result<(), String> = Err("rejected: unknown_token ".into());
+        let clean: Result<(), String> = Ok(());
+        assert_eq!(retry_ceiling_ms(&outage), RETRY_MAX_MS);
+        assert_eq!(retry_ceiling_ms(&clean), RETRY_MAX_MS);
+        assert_eq!(retry_ceiling_ms(&refused), REFUSED_MAX_MS);
+        assert!(REFUSED_MAX_MS >= RETRY_MAX_MS * 10,
+                "a refusal should not be retried at anything like outage pace");
+        // Still retried at all: a token can be added to a catalog while an
+        // arena is running, so this must not become "give up".
+        assert!(REFUSED_MAX_MS < 10 * 60 * 1000);
+    }
+
     fn cat(names: &[&str]) -> fleet::WireCatalog {
         fleet::WireCatalog {
             version: 1,
@@ -498,7 +520,15 @@ pub async fn register_with(
     let mut backoff_ms = RETRY_MIN_MS;
     let mut quiet = false;
     loop {
-        match run_one(&url, &token, &zone).await {
+        let outcome = run_one(&url, &token, &zone).await;
+        // A refused credential is not a transient failure, and retrying it at
+        // the pace of one is how an arena turns a typo into a flood of
+        // authentication attempts against a directory that will never say yes.
+        // So a rejection backs off to its own, far slower ceiling, and keeps
+        // trying only because a token can be added to a catalog while an arena
+        // is running.
+        let ceiling = retry_ceiling_ms(&outcome);
+        match outcome {
             Ok(()) => {
                 println!("directory {url}: disconnected");
                 backoff_ms = RETRY_MIN_MS;
@@ -510,7 +540,7 @@ pub async fn register_with(
                 // lines, and the one that matters is the first.
                 if !quiet {
                     println!("directory {url}: {e}");
-                    println!("  retrying every {}s until it answers", RETRY_MAX_MS / 1000);
+                    println!("  retrying every {}s until it answers", ceiling / 1000);
                     quiet = true;
                 }
             }
@@ -524,7 +554,7 @@ pub async fn register_with(
             z.fleet.accepted_by.retain(|u| u != &url);
         }
         tokio::time::sleep(std::time::Duration::from_millis(backoff_ms + jitter)).await;
-        backoff_ms = (backoff_ms * 2).min(RETRY_MAX_MS);
+        backoff_ms = (backoff_ms * 2).min(ceiling);
     }
 }
 
@@ -538,6 +568,25 @@ pub async fn register_with(
 /// against that.
 const RETRY_MIN_MS: u64 = 1_000;
 const RETRY_MAX_MS: u64 = 5_000;
+
+/// The ceiling after a *refusal*, as opposed to a failure to connect.
+///
+/// A directory that is down will come back and owes its arenas a fast reconnect.
+/// A directory that said "unknown_token" has answered the question, and asking
+/// again every five seconds is a credential-stuffing loop pointed at your own
+/// front door -- one arena with a stale token did exactly that, once a second,
+/// because a rejection that never arrived looked like a clean disconnect and
+/// reset the backoff. Still retried at all, because an operator can add a token
+/// to a catalog while the arena is running, and a minute is soon enough for that.
+const REFUSED_MAX_MS: u64 = 60_000;
+
+/// Which ceiling this outcome earns. A refusal is an answer, not an outage.
+fn retry_ceiling_ms(outcome: &Result<(), String>) -> u64 {
+    match outcome {
+        Err(e) if e.starts_with("rejected:") => REFUSED_MAX_MS,
+        _ => RETRY_MAX_MS,
+    }
+}
 
 async fn run_one(
     url: &str,
