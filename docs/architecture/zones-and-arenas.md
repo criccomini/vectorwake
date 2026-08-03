@@ -334,6 +334,17 @@ balance = "smaller"    # smaller | random | none
 private_teams = false  # whether players may form their own, ASSS's private freqs
 ```
 
+**A free-for-all is no teams, not one team.** `teams = 1` reads as "everybody on
+side zero", and side zero was what it did: every hostility test in the stack asks
+whether two teams differ, so a weapon skipped every ship, a kill paid no points
+and no bounty, a repel pushed nobody, and a bot did not so much as look at
+anybody. Chaos shipped that way and ran for a day with combat switched off --
+nine pilots holding perfectly still, because there was nothing any of them could
+see or shoot. A pilot's seat is their side in a one-team zone, which fits because
+ship indices stop at 254 and 255 is `TEAM_NONE`, and it needs no rule of its own
+in the core or in the client: the client already draws anybody not on your side
+as hostile, so a free-for-all colours itself.
+
 `balance = "smaller"` is ASSS's default behaviour and the right one to ship:
 `Team:MaxTeamDifference` defaults to 1 there, so the balancer tolerates almost
 nothing. Private teams are off until there is a reason, because the original's

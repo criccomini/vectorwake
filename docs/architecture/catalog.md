@@ -117,8 +117,10 @@ fill_target = 20
 max_rooms = 1
 
 # Teams. The mode decides who goes where; this is the shape it works within.
-# 1 is a free-for-all. "smaller" is ASSS's behaviour, whose MaxTeamDifference
-# defaults to 1, so the balancer tolerates almost nothing.
+# 1 is a free-for-all, which the arena implements as a side per seat rather than
+# one side for everybody -- see zones-and-arenas.md, since the difference is a
+# zone with no combat in it. "smaller" is ASSS's behaviour, whose
+# MaxTeamDifference defaults to 1, so the balancer tolerates almost nothing.
 teams = 2
 balance = "smaller"        # smaller | random | none
 private_teams = false     # the original's private freqs, off until wanted

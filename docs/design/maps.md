@@ -109,16 +109,23 @@ again, with a lot of unused address space around it.
 So: each side gets a home band, team 1 across the north and team 0 across the
 south, **eight starts apiece 256 tiles apart**, from (180,180) to (948,884).
 Flags sit one per quadrant, three hundred tiles apart -- they used to be four
-tiles apart in the middle, which made the flag game a scrum in one room. And
-the green field covers the whole map.
+tiles apart in the middle, which made the flag game a scrum in one room.
 
 Crossing takes about thirty seconds at a hull's top speed, which is a journey
-rather than a walk. The bots fly it: their targeting has no range limit, only
-a preference for what is close and expensive, and the green detour they take
-on the way is capped at twenty tiles for exactly this reason -- on a map with
-greens everywhere there is always another one nearer than a target half a map
-away, so a generous detour radius is a bot that hoovers its way around the
-arena and never arrives.
+rather than a walk. The bots fly it, but not for the reason first written here:
+that reason was "their targeting has no range limit," and bounding perception to
+the radar's sixty tiles removed it without anybody noticing the map depended on
+it. Starts 256 tiles apart and sight of 60 is every pilot alone, and a pilot who
+could see nobody used to sit still. They rally to the middle now, which is what
+makes a spread map a fight rather than an empty one.
+
+**Two zones ship their own maps with the starts together.** Chaos and War put
+all eight inside a 68-tile box at the centre, and that is deliberate: a public
+room with ten pilots in it wants them meeting in the first ten seconds, not
+converging over half a minute. The built-in procedural map keeps the bands,
+because that is the shape a 1024-tile map is for; the practice arena uses the
+roster's own tiles at the centre instead, which is what it was already carrying
+and had never used.
 
 It has no wormhole. One reaches 220 px, fourteen tiles, and the bot ladder
 found what that does to a small room: pilots spawned eight tiles from one
@@ -129,17 +136,31 @@ to put it is a map-editor decision rather than a C-file one.
 **Two things had to scale with the map rather than sit in it.** The client
 meshes terrain in a 113-tile window around the camera and rebuilds it when the
 camera has walked 16 tiles, because a million tile queries per map load is not
-a thing a browser does. And the green field went from 20 prizes over 80 tiles
-to 200 over 1024, which meant raising `SIM_MAX_PRIZES` to 255 -- the wire's
-own ceiling, since a snapshot writes a u8 index and a u8 count. Steady state
-is about 150 alive.
+a thing a browser does. And the greens had to stop being placed by area.
 
-That costs bandwidth: a snapshot carries every live green at eleven bytes, so
-150 is 1.6 KB a snapshot and about 33 KB/s at the 20 Hz rate, for greens most
-of which are nowhere near the player reading them. The way out, when it
-matters, is sending a client only what is near it. That is interest
-management, it is a feature rather than a number, and it is the same answer
-for every other thing a 1024-tile map has too many of.
+The first answer was to scale the count: 20 prizes over 80 tiles became 200 over
+1024, which meant raising `SIM_MAX_PRIZES` to 255, the wire's own ceiling, since
+a snapshot writes a u8 index and a u8 count. It did not work, and it could not
+have. Two hundred greens over a million tiles is one per five thousand, against
+a pilot who sees sixty tiles: measured against the live arena, a mean of two
+inside the whole 256-tile interest radius and none at all within sight for the
+length of a session. A player put it as "war zone seems to have no greens."
+Neither zone had any, in the only sense that matters, and since `spawn_prizes`
+is zero on purpose the tech tree was unreachable with them.
+
+**A green appears near a pilot, not somewhere on the map.** In a ring six to
+twenty-eight tiles from a live ship: outside the first so it is a trip rather
+than a gift, inside the second so it lands on their radar. Twenty greens where
+the people are beats two hundred in a million tiles of nobody, and the count
+came back down to two dozen -- kept at two hundred the ring carpets the ground a
+pilot is standing on, which handed an offline arena multifire, bounce, proximity
+and three energy steps inside a minute.
+
+It also answers the bandwidth problem the count created. A snapshot carries every
+live green at eleven bytes, so 150 was 1.6 KB a snapshot and 33 KB/s at 20 Hz,
+almost all of it greens nowhere near the player reading them. Interest management
+came in and cut what is sent to a 256-tile circle; placing greens where the
+pilots are means what is sent is also what is worth sending.
 
 The duel arena has neither. A duel is decided by two pilots, and a room that
 size with somewhere invulnerable in it is not a duel. The ladder found that

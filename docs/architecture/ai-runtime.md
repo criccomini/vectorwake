@@ -44,6 +44,17 @@ Perception refreshes at 10 to 20 Hz rather than every tick, and each bot's
 refresh is offset so the cost spreads across ticks. Between refreshes the bot
 works from a slightly stale picture, which is both cheaper and more human.
 
+It reaches sixty tiles, which is the radar's own reach. That bound arrived after
+the map did, and it exposed something the unbounded version had been hiding: a
+pilot who could see nobody produced no input at all and stopped where it stood.
+On a map 1024 tiles across with starts 256 tiles apart, "nobody in sight" is the
+ordinary state of a fresh room, so the arena came up as a gallery of statues --
+which is what a player reported, in those words. A pilot with nothing in sight
+now heads for the contested middle, offset per pilot and re-rolled on arrival,
+because that is where the map keeps its furniture and therefore where anybody
+else looking for a fight is also going. Measured on the ladder: 539 kills over
+168 bouts without a rally, 2634 with one.
+
 Reaction time is modeled as a queue: a stimulus entering perception is not
 visible to the decision layer until its personality's reaction delay has elapsed.
 This is why a weak bot is slow to respond rather than artificially inaccurate,
