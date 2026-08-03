@@ -967,6 +967,114 @@ int main(void) {
     }
 
     {
+        /* The three numbers a repel is, and it is all three of them.
+         *
+         * RepelDistance is the half-width of a *square*, not the radius of a
+         * circle: the original tests a point against a box, so the corners
+         * reach about 724 px where the sides reach 512. RepelSpeed is a speed
+         * and not an impulse -- a shoved hull is set to exactly that, from
+         * anywhere inside the box, with no falloff and no memory of what it
+         * was doing. And RepelTime is how long it may fly at it, because that
+         * speed is deliberately faster than any hull and its own ceiling
+         * would otherwise take the shove back on the very next tick.
+         */
+        sim_settings w = cfg;
+        sim_weapon_spec sp;
+        memset(&sp, 0, sizeof sp);
+        sp.speed = 0;
+        sp.life = 1;
+        sp.on_wall = SIM_WALL_PASS;
+        sp.expire_ends = 1;
+        sp.blast = 512 * 256;
+        sp.push = sim_units_speed(5000);
+        sp.push_time = 225;
+        sp.splinter = SIM_NO_PATTERN;
+        sim_fire_pattern fp;
+        memset(&fp, 0, sizeof fp);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        fp.count = 1;
+        fp.delay = 25;
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
+
+        /* Flat, not falling off. One victim almost on top of the repel and
+         * one almost at the rim leave at the same speed.
+         *
+         * Speed, not the x component: the charge leaves the muzzle rather
+         * than the hull's centre, so two victims level with the firer are on
+         * slightly different bearings from it, and the whole point of this is
+         * that the magnitude does not care. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8192 + 40, 8192, 0, &w);
+        sim_spawn(&s, APEX, 2, 8192 + 500, 8192, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 3);
+        int64_t near2 = (int64_t)s.ships[1].vx * s.ships[1].vx
+                      + (int64_t)s.ships[1].vy * s.ships[1].vy;
+        int64_t far2 = (int64_t)s.ships[2].vx * s.ships[2].vx
+                     + (int64_t)s.ships[2].vy * s.ships[2].vy;
+        int64_t want = (int64_t)sim_units_speed(5000) * sim_units_speed(5000);
+        /* Within a per-cent, which is integer division rounding and nothing
+         * else: the direction is a unit vector made with one divide. */
+        CHECK(near2 > want * 98 / 100 && near2 < want * 102 / 100,
+              "a repel sets the speed of a hull beside it to RepelSpeed");
+        CHECK(far2 > want * 98 / 100 && far2 < want * 102 / 100,
+              "and shoves the far edge exactly as hard as the middle");
+
+        /* Square, not circular. A ship out at 400 px on both axes is 566 px
+         * away and well outside a 512 px circle, and inside the box. */
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8192 + 400, 8192 + 400, 0, &w);
+        sim_spawn(&s, APEX, 2, 8192 + 600, 8192, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 3);
+        CHECK(s.ships[1].vx > 0 && s.ships[1].vy > 0,
+              "the corner of the box is inside the repel");
+        CHECK(s.ships[2].vx == 0 && s.ships[2].vy == 0,
+              "and past the side of it is outside");
+
+        /* The window. The shove is held while it lasts and taken back when it
+         * shuts, which is what a hull's own ceiling does to anything faster
+         * than itself. */
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8192 + 200, 8192, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 3);
+        int32_t hull = sim_eff_speed(&w.classes[APEX], &s.ships[1]);
+        CHECK(s.ships[1].vx > hull, "a repel outruns the hull it shoved");
+        step_n(&s, &w, 0, 0, 200);
+        CHECK(s.ships[1].vx > hull, "and is still doing it two seconds later");
+        step_n(&s, &w, 0, 0, 40);
+        CHECK(s.ships[1].vx <= hull,
+              "and is back inside the hull's own ceiling once the window shuts");
+
+        /* A round is moved the same way, and its clock starts again: a bomb
+         * batted back the way it came has the whole of its life to make the
+         * trip. The repel is on the Apex's trigger in these settings, so the
+         * enemy is a different hull and keeps an ordinary gun.  */
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, 1, 1, 8192 + 200, 8192, 49152, &w);   /* facing west */
+        step_n(&s, &w, 0, SIM_BTN_FIRE, 1);
+        step_n(&s, &w, 0, 0, 20);
+        CHECK(s.weapon_count == 1, "the enemy round is in the air");
+        int32_t before = s.weapons[0].vx;
+        uint16_t life = s.weapons[0].life;
+        uint8_t bullet = s.weapons[0].spec;
+        CHECK(before < 0, "and travelling toward the repel");
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 3);
+        CHECK(s.weapon_count >= 1, "and survived being repelled");
+        CHECK(s.weapons[0].vx > 0, "a repel turns an enemy round around");
+        CHECK(s.weapons[0].life > life,
+              "and gives it its whole life again to make the trip");
+        /* Its own full alive time, less the couple of ticks spent getting
+           here, rather than whatever was left of the old clock. */
+        CHECK(s.weapons[0].life >= w.specs[bullet].life - 3,
+              "which is the round's own alive time, not what was left of it");
+        w.map = m;
+    }
+
+    {
         /* Hostile only, ships and rounds alike.
          *
          * A repel in the original moves enemies and enemy fire and leaves

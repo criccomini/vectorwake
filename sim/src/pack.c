@@ -75,6 +75,8 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w16(&w, sh->heading);
         w32(&w, (uint32_t)sh->energy);
         w16(&w, sh->fire_cooldown);
+        w16(&w, sh->repel);
+        w32(&w, (uint32_t)sh->repel_speed);
         w16(&w, sh->respawn_at);
         w32(&w, (uint32_t)sh->spawn_x);
         w32(&w, (uint32_t)sh->spawn_y);
@@ -169,6 +171,8 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         sh->heading = (uint16_t)r16(&r);
         sh->energy = (int32_t)r32(&r);
         sh->fire_cooldown = (uint16_t)r16(&r);
+        sh->repel = (uint16_t)r16(&r);
+        sh->repel_speed = (int32_t)r32(&r);
         sh->respawn_at = (uint16_t)r16(&r);
         sh->spawn_x = (int32_t)r32(&r);
         sh->spawn_y = (int32_t)r32(&r);
@@ -250,7 +254,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-#define CFG_VERSION 9
+#define CFG_VERSION 10
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -300,6 +304,7 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w32(&w, (uint32_t)sp->damage);
         w32(&w, (uint32_t)sp->blast);
         w32(&w, (uint32_t)sp->push);
+        w16(&w, sp->push_time);
         w16(&w, sp->stall);
     }
 
@@ -404,6 +409,7 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         sp->damage = (int32_t)r32(&r);
         sp->blast = (int32_t)r32(&r);
         sp->push = (int32_t)r32(&r);
+        sp->push_time = (uint16_t)r16(&r);
         sp->stall = (uint16_t)r16(&r);
     }
 

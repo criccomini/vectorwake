@@ -217,9 +217,14 @@ pub struct WeaponConfig {
     pub damage: Option<i32>,
     /// Px of blast, falling off to nothing at the rim. 0 lands on one hull.
     pub blast: Option<i32>,
-    /// Px/s/10 shoved outward at the centre. Damage is optional; this is
-    /// the whole of a repel.
+    /// Px/s/10 everything hostile inside the reach is set to. Not an impulse
+    /// and not distance-scaled: the far edge is shoved as hard as the middle.
+    /// Damage is optional; this is the whole of a repel.
     pub push: Option<i32>,
+    /// Ticks a shoved ship may fly at that speed before its own ceiling takes
+    /// over. Without it the shove is undone on the next tick, since `push` is
+    /// meant to be faster than any hull.
+    pub push_time: Option<u16>,
     /// Ticks of suppressed recharge on whoever it reaches.
     pub stall: Option<u16>,
     // What one pull of the trigger makes.

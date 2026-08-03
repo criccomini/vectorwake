@@ -16,6 +16,16 @@ static void heading_dir(uint16_t heading, int32_t *dx, int32_t *dy) {
     *dy = -sim_sintab[(i + 1024) & 4095]; /* cos(t) = sin(t + quarter) */
 }
 
+/* A repel reaches over a square rather than a circle: the original tests a
+ * point against a box of RepelDistance on each side, so the corners reach
+ * about 724 px where the sides reach 512. Kept because it is what the game
+ * does, not because it is tidier. */
+static int in_box(int64_t dx, int64_t dy, int64_t half) {
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    return dx <= half && dy <= half;
+}
+
 static int64_t isqrt64(int64_t v) {
     int64_t lo = 0, hi = 3037000499LL;
     if (v < 2) return v < 0 ? 0 : v;
@@ -477,6 +487,8 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         /* Dying costs you everything: stats, rungs, add-ons and the bounty
          * killing earned you. What you are carrying is what you have
          * survived with -- but the points already paid to you are yours. */
+        v->repel = 0;
+        v->repel_speed = 0;
         memset(v->up, 0, sizeof v->up);
         memset(v->level, 0, sizeof v->level);
         memset(v->mods, 0, sizeof v->mods);
@@ -573,24 +585,30 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
                  * than damage because the zone is where you stop. */
                 if (sim_in_safe(cfg->map, sh->x, sh->y)) continue;
                 int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
-                int64_t d2 = ddx * ddx + ddy * ddy;
-                if (d2 > rad * rad) continue;
-                int64_t d = isqrt64(d2);
+                if (!in_box(ddx, ddy, rad)) continue;
+                int64_t d = isqrt64(ddx * ddx + ddy * ddy);
                 if (d == 0) continue;      /* dead centre has no direction */
-                int64_t k = (int64_t)spec->push * (rad - d) / rad;
-                sh->vx += (int32_t)(ddx * k / d);
-                sh->vy += (int32_t)(ddy * k / d);
+                sh->vx = (int32_t)(ddx * spec->push / d);
+                sh->vy = (int32_t)(ddy * spec->push / d);
+                sh->repel = spec->push_time;
+                sh->repel_speed = spec->push;
             }
             for (uint16_t i = 0; i < s->weapon_count; i++) {
                 sim_weapon *o = &s->weapons[i];
                 if (o->team == w->team) continue;
+                /* A repel does not move another repel. Otherwise two let off
+                 * near each other throw one another around, which is a thing
+                 * the original explicitly excludes. */
+                if (cfg->specs[o->spec].push > 0) continue;
                 int64_t ddx = (int64_t)o->x - w->x, ddy = (int64_t)o->y - w->y;
-                int64_t d2 = ddx * ddx + ddy * ddy;
-                if (d2 > rad * rad || d2 == 0) continue;
-                int64_t d = isqrt64(d2);
-                int64_t k = (int64_t)spec->push * (rad - d) / rad;
-                o->vx += (int32_t)(ddx * k / d);
-                o->vy += (int32_t)(ddy * k / d);
+                if (!in_box(ddx, ddy, rad)) continue;
+                int64_t d = isqrt64(ddx * ddx + ddy * ddy);
+                if (d == 0) continue;
+                o->vx = (int32_t)(ddx * spec->push / d);
+                o->vy = (int32_t)(ddy * spec->push / d);
+                /* And its clock starts again. A bomb batted back the way it
+                 * came has the whole of its life to make the trip. */
+                o->life = cfg->specs[o->spec].life;
             }
         }
     }
@@ -1213,10 +1231,20 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             sh->vy += (int32_t)(dy * strength / d);
         }
 
-        /* 4. Clamp to top speed. No drag term anywhere. */
+        /* 4. Clamp to top speed. No drag term anywhere.
+         *
+         * A repel lifts the ceiling rather than holding a velocity: for
+         * RepelTime the hull may fly at the repel's own speed, and when the
+         * window shuts the clamp takes back whatever is left of it. That is
+         * the whole mechanism -- the shove itself is one assignment, and this
+         * is what stops the next tick undoing it, since a repel is
+         * deliberately faster than any hull. A pilot can still steer and
+         * thrust throughout; they simply cannot exceed the ceiling. */
+        if (sh->repel > 0) sh->repel--;
         {
             int64_t mag2 = (int64_t)sh->vx * sh->vx + (int64_t)sh->vy * sh->vy;
             int64_t max = e_speed;
+            if (sh->repel > 0 && sh->repel_speed > max) max = sh->repel_speed;
             if (mag2 > max * max) {
                 int64_t mag = isqrt64(mag2);
                 sh->vx = (int32_t)((int64_t)sh->vx * max / mag);

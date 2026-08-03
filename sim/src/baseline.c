@@ -349,17 +349,20 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     {
         sim_weapon_spec rp;
         memset(&rp, 0, sizeof rp);
-        /* RepelDistance=512 and RepelSpeed=5000, straight across. RepelTime
-         * is the one number here with nowhere to go: its help calls it the
-         * time a player stays affected, which is a status the core does not
-         * have, so the shove lands as a single impulse instead of over two
-         * and a quarter seconds. */
+        /* RepelDistance=512, RepelSpeed=5000 and RepelTime=225, all three
+         * of them now. The reach is a square of that half-width rather than
+         * a circle, the shove sets a ship's velocity to exactly that speed
+         * anywhere inside it rather than falling off with range, and the
+         * time is how long the shoved hull may fly at it before its own
+         * ceiling takes over again -- which matters because 5000 is half
+         * again the fastest hull in the game. */
         rp.speed = 0;
         rp.life = 1;
         rp.on_wall = SIM_WALL_PASS;
         rp.expire_ends = 1;
         rp.blast = 512 * 256;
         rp.push = sim_units_speed(5000);
+        rp.push_time = 225;
         rp.splinter = SIM_NO_PATTERN;
         sim_fire_pattern rf;
         memset(&rf, 0, sizeof rf);

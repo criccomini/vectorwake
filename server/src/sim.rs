@@ -73,6 +73,8 @@ pub struct sim_weapon_spec {
     pub damage: i32,
     pub blast: i32,
     pub push: i32,
+    /// Ticks a shoved hull keeps the repel's speed ceiling. RepelTime.
+    pub push_time: u16,
     pub stall: u16,
 }
 
@@ -182,6 +184,9 @@ pub struct sim_ship {
     pub fire_cooldown: u16,
     /// Ticks of suppressed recharge: what a stall round leaves behind.
     pub stall: u16,
+    /// A shove in progress: ticks left, and the ceiling it lifts this hull to.
+    pub repel: u16,
+    pub repel_speed: i32,
     pub respawn_at: u16,
     pub spawn_x: i32,
     pub spawn_y: i32,

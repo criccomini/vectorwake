@@ -155,7 +155,7 @@ charges = [3, 3]
 #
 #   speed life on_wall bounces      how it flies (end, bounce, pass)
 #   trigger expire_ends splinter    what counts as arriving somewhere
-#   damage blast push stall         what happens there
+#   damage blast push push_time stall    what happens there
 #   count spread energy delay recoil    what one pull of the trigger makes
 #
 # Three examples, all off. Uncomment one and save; the zone re-reads it and
@@ -200,10 +200,15 @@ charges = [3, 3]
 #   delay = 300
 #
 # The zone's own repel is charge-1, straight off the original's numbers:
-# RepelDistance 512 and RepelSpeed 5000. Tightening it is one block.
+# RepelDistance 512, RepelSpeed 5000 and RepelTime 225. The reach is a square
+# of that half-width, the shove sets a hostile ship's speed to exactly that
+# from anywhere inside it rather than falling off with range, and the time is
+# how long it may fly at it before its own ceiling takes over -- which is the
+# part that makes a repel a repel, since 5000 is half again the fastest hull.
 #   [[arena.weapons]]
 #   name = "charge-1"
 #   blast = 300
+#   push_time = 100
 #
 # A third charge, in a slot the baseline leaves empty. Naming it makes the
 # weapon and fills the slot; give it a prize weight or no green will ever be

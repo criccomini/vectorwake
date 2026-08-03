@@ -50,6 +50,7 @@ sim_fire_pattern              sim_weapon_spec
                                   damage       energy at the centre
                                   blast        px of falloff; 0 lands on one hull
                                   push         px/tick shoved outward
+                                  push_time    ticks the shove outruns a hull
                                   stall        ticks of suppressed recharge
 ```
 
@@ -129,8 +130,19 @@ the ship, a mine dropped at speed is a mine that drifts.
 **Shrapnel.** A bomb whose `splinter` is a burst of short-lived fragments.
 
 **Repel.** `speed: 0`, `life: 1`, `expire_ends: 1`, `on_wall: pass`, a large
-`blast` radius, `push`, and *no damage at all*. It shoves ships and incoming
-projectiles away from you and hurts nobody, which is exactly what a repel is.
+`blast` radius, `push`, `push_time`, and *no damage at all*. It shoves ships and
+incoming projectiles away from you and hurts nobody, which is exactly what a
+repel is.
+
+`push` is a *speed*, not an impulse: everything hostile inside the reach is set
+to exactly that, whatever it was doing and however close it was standing. There
+is no falloff, and the reach is a square rather than a circle -- the corners
+get about 724 px where the sides get 512, which is what the original tests and
+so is what we test. `push_time` is why a repel works at all: the speed is
+deliberately faster than any hull can fly, so without a window during which the
+shoved ship keeps that ceiling instead of its own, its clamp takes the whole
+shove back on the very next tick. A repelled round has its clock restarted too,
+so a bomb batted back the way it came has its whole life to make the trip.
 
 **Stall round.** `damage: 0`, `stall: 200`. Two seconds where your bar simply
 stops refilling. In a game where energy is the health and the ammunition, that
@@ -233,7 +245,7 @@ Six add-ons, two bits each, two triggers: four bytes on the pilot.
 | prox | `trigger` |
 | shrapnel | `splinter`, to the zone's fragment pattern for that rung |
 | freeze | `stall` |
-| repel | `push`, and a fuse if the weapon had no reach |
+| repel | `push` and `push_time`, and a fuse if the weapon had no reach |
 
 `repel` is the one that shows the model paying off. It is the same `push` field
 whether it is bolted onto your bomb or fired on its own as a charge: an add-on

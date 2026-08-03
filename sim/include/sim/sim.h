@@ -267,7 +267,12 @@ typedef struct {
     /* ending */
     int32_t damage;       /* Q10 energy at the centre */
     int32_t blast;        /* Q8 px; 0 means the damage lands on one hull */
-    int32_t push;         /* Q16 px/tick shoved outward at the centre */
+    int32_t push;         /* Q16 px/tick a ship is shoved outward at */
+    /* How long a shoved ship keeps a speed ceiling of `push` rather than its
+     * hull's own. RepelTime, and the half of a repel that makes it a repel:
+     * without it the clamp takes the shove back on the very next tick, since
+     * `push` is deliberately faster than any hull can fly. */
+    uint16_t push_time;
     uint16_t stall;       /* ticks of suppressed recharge on whoever it hits */
 } sim_weapon_spec;
 
@@ -438,6 +443,10 @@ typedef struct {
     int32_t energy;        /* Q10 */
     uint16_t fire_cooldown;
     uint16_t stall;   /* ticks of suppressed recharge; what a stall round does */
+    /* A shove in progress: ticks left of it, and the speed ceiling it lifts
+     * this hull to while they last. */
+    uint16_t repel;
+    int32_t repel_speed;
     uint16_t respawn_at;    /* ticks remaining while dead */
     int32_t spawn_x, spawn_y;
     uint16_t kills, deaths;

@@ -504,6 +504,7 @@ impl Arena {
             if let Some(v) = w.push { sp.push = sim::sim_units_speed(v); }
             if let Some(v) = w.damage { sp.damage = sim::sim_units_energy(v); }
         }
+        if let Some(v) = w.push_time { sp.push_time = v; }
         if let Some(v) = w.life { sp.life = v; }
         if let Some(v) = w.bounces { sp.bounces = v; }
         if let Some(v) = w.trigger { sp.trigger = v * 256; }
