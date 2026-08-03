@@ -167,6 +167,34 @@ of prediction error across the change.
 The packing cost is under two microseconds, so doing it per player rather than
 once for everybody is thirty microseconds of a fifty millisecond period.
 
+### What prediction actually costs, measured against the deployed server
+
+Six clients flown at the live fleet by `tools/pilot`, which decodes snapshots
+through the core rather than a second implementation of the wire format:
+
+```
+                    snapshots   egress      predict error (px)
+War, 6 pilots       20.0/s      24.5 KB/s   worst 0.50, mean 0.12-0.30
+Chaos, 4 pilots     20.0/s      16.7 KB/s   worst 0.50, mean 0.27-0.32
+```
+
+0.50 px is a hard ceiling rather than an average: every pilot in every run hits
+exactly it and none exceeds it, which is what fixed-point rounding looks like
+when the two sides agree. Chaos is cheaper per client than War because it has no
+flags to carry.
+
+Death is the only thing that diverges, and it is not a prediction failure: a
+respawn teleports the ship, so comparing a still-flying prediction against a
+fresh spawn point measures the teleport. Those samples are counted separately,
+and they appear if and only if a pilot died -- two per death, the death tick and
+the respawn tick, at 38 to 69 px. Accepting them is the client's stated
+contract.
+
+Worth saying why this is measured with real clients rather than asserted: the
+signed overflow fixed in the recharge clamp was invisible to every other check
+in the deployment. The arena was serving, registered and verified, the browse
+reply was correct, and the energy bar read INT32_MIN.
+
 ### Load time is the host's job, and it is already doing it
 
 Worth writing down so nobody optimizes it twice. The published browser build is
