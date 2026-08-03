@@ -51,7 +51,7 @@ server/
     ai/               controllers, perception, navigation, population director
     rating/           damage ledgers, rated events, Elo
     modules/          wasm host, adviser dispatch
-    persist/          rated-event batching and handoff; no local database
+    spool/            rated events, batched to the meta-layer; no local database
   tests/
 ```
 
@@ -64,11 +64,13 @@ template resolution and the unload grace period that used to be described here
 are all gone with [decision 23](decisions.md); capacity is many processes and the
 container platform schedules them.
 
-A tick is: drain the input queue, let AI controllers add their inputs, call
-`sim_step`, hand the resulting events to modules, to the rating layer, and to the
-snapshot builder, then enqueue any persistence writes. At 100 Hz that is a 10 ms
-budget, and a 40-player arena should use a small fraction of it, with under 1 ms
-going to AI per [ai-runtime.md](ai-runtime.md). Measured tick cost is in memory
+A tick is: drain the input queue, call `sim_step`, hand the resulting events to
+modules, to the rating layer, and to the snapshot builder, then enqueue any
+persistence writes. At 100 Hz that is a 10 ms budget, and a 40-player arena
+should use a small fraction of it. Bot inputs arrive in the same queue as
+everyone else's, from the bot server, per [ai-runtime.md](ai-runtime.md) and
+[decision 29](decisions.md#29-a-bot-is-a-client); what bots cost this process
+is snapshot streams, not AI time. Measured tick cost is in memory
 #75: 64 ships ran at 205 microseconds before the weapon-spec cache took a third
 off that.
 
@@ -180,7 +182,7 @@ So the split is:
 | Nowhere; dies with the room | Positions, energy, upgrades, the round in progress, flags held |
 | The meta-layer's Postgres | Identity, ratings, the rated event log, career records |
 | The catalog, in git | Bans, staff and capabilities, every zone's settings |
-| An arena's local disk | Its instance id, and nothing else |
+| An arena's local disk | Its instance id, and a spool of rated events awaiting handoff |
 
 The rated event log is the case that decides the shape. Rating is computed from
 events rather than stored as a number, per
@@ -189,17 +191,16 @@ that must outlive both the room and the process. An arena server therefore
 *emits* rated events rather than owning them: it batches them and hands them off,
 and a tick never waits on the network any more than it used to wait on a disk.
 
-Handing off to what is the open question. The candidates are the directory, which
-would make a directory stateful and cost us the property that its replicas need
-no shared storage, or the meta-layer directly, which is one more thing an arena
-must reach and authenticate to. The second is more likely right for exactly the
-reason the first is tempting: the directory is the piece we most want to be able
-to lose.
+The handoff target is settled: the meta-layer, per
+[meta-layer.md](meta-layer.md) and
+[decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list).
+The directory was the other candidate and lost for exactly the reason it was
+tempting: it is the piece we most want to be able to lose, and the event log is
+the piece we can least afford to.
 
-Until that is settled, `persist.rs` writing `ratings.json` beside the process is
-the honest interim, and its own header says so. It is correct for one process
-serving one zone and wrong the moment two instances of the same zone both hold
-opinions about a pilot's rating.
+`persist.rs` writing `ratings.json` beside the process was the interim, and it
+is gone. It was correct for one process serving one zone and wrong the moment
+two instances of the same zone both held opinions about a pilot's rating.
 
 ASSS's score intervals, forever and per-reset and per-game, are still the model
 worth copying when this lands, because they are what tournament and league play
@@ -207,11 +208,14 @@ needs. They belong in the meta-layer's schema rather than in an arena.
 
 ## Identity
 
-A zone runs standalone with local accounts, which is the `auth_file` case in
-ASSS. It may also point at a shared identity service, which is what the original
-billing server was, so that a name means the same person across zones. The
-protocol treats identity as a token the session layer validates, so which
+Identity is an account at the meta-layer, minted silently on first contact and
+carried as a signed session token the arena validates offline, so which
 authority issued it stays out of the arena code.
+[design/accounts.md](../design/accounts.md) is the model and
+[meta-layer.md](meta-layer.md) the machinery. A deployment can still run with
+no meta-layer at all, which is ASSS's `auth_file` case reduced to its honest
+core: everyone flies as an unknown guest, nothing is rated, and nothing durable
+is written.
 
 ## Operations
 

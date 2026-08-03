@@ -222,9 +222,9 @@ picks a game rather than a server:
     {"name": "chaos", "description": "...", "players": 41, "bots": 6,
      "instances": [
        {"address": "wss://a3.us-east.example:9010", "region": "us-east",
-        "players": 22, "full": false},
+        "players": 22, "bots": 4, "full": false},
        {"address": "wss://a7.eu-west.example:9010", "region": "eu-west",
-        "players": 19, "full": false}
+        "players": 19, "bots": 2, "full": false}
      ]},
     {"name": "duel", "description": "...", "players": 4, "bots": 0,
      "instances": [...]}
@@ -233,9 +233,13 @@ picks a game rather than a server:
 ```
 
 Per-zone totals so the list can be drawn without arithmetic, and the instances
-underneath so the client can choose. `full` is the directory's summary of whether
-a join would be refused, which saves a client a round trip it would otherwise
-spend learning the same thing.
+underneath so the client can choose. `players` counts humans everywhere in this
+reply and declared bots are counted beside them, never inside; the split is per
+instance because the bot server's fill arithmetic keys on it, reading this same
+reply to decide where bots are owed, per [ai-runtime.md](ai-runtime.md). `full`
+is the directory's summary of whether a join would be refused, which saves a
+client a round trip it would otherwise spend learning the same thing; a room
+holding a droppable bot is not full, since a human join evicts one.
 
 The instance list is ordered so that taking its head is the right default: full
 instances go last, and the rest are fullest first. Both halves matter and the

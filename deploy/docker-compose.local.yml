@@ -45,3 +45,30 @@ services:
   a3:
     <<: *build
     extra_hosts: *names
+  bots:
+    <<: *build
+    extra_hosts: *names
+  meta:
+    <<: *build
+    extra_hosts: *names
+    # A database to develop against. On a host this is bought rather than run,
+    # per decision 27, because it is the one thing here whose loss cannot be
+    # repaired by rebuilding. On a laptop it is a container that can be thrown
+    # away, which is the opposite requirement.
+    environment:
+      VW_META_DATABASE: postgres://vectorwake:vectorwake@127.0.0.1:5432/vectorwake
+    depends_on: [db]
+
+  db:
+    image: postgres:16-alpine
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vectorwake
+      POSTGRES_PASSWORD: vectorwake
+      POSTGRES_DB: vectorwake
+    volumes:
+      - db:/var/lib/postgresql/data
+
+volumes:
+  db:

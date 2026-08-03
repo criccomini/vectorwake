@@ -3,11 +3,20 @@
 description = "two teams, four flags"
 
 mode = "warzone"
+# Converted from a `.lvl` by `sim/tools/lvl2vw`. The four flags sit forty tiles
+# out from the middle wherever the map came from, so what this one had to have
+# was open ground there, reachable from the starts the converter picked. It
+# does: a local room of bots took three rounds in two minutes.
 map = "war.vwmap"
 
 max_ships = 64
 max_players = 32
 fill_target = 16
+
+# Four seats in five held by AI, so a pilot arriving on a quiet night finds a
+# flag game in progress rather than an empty map. The bot server keeps it there
+# and stands one down for every human who joins.
+bot_fill = 0.8
 max_rooms = 1
 
 teams = 2

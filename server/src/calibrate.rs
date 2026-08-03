@@ -160,9 +160,9 @@ mod tests {
     #[ignore = "skill does not decide a duel yet; see the numbers above"]
     fn skill_decides_a_match_between_equal_hulls() {
         let roster = vec![
-            ai::RosterEntry { name: "low", class: 0, tile_x: 505, tile_y: 522, skill: 0.15 },
-            ai::RosterEntry { name: "mid", class: 0, tile_x: 519, tile_y: 502, skill: 0.50 },
-            ai::RosterEntry { name: "high", class: 0, tile_x: 519, tile_y: 502, skill: 0.95 },
+            ai::RosterEntry { name: "low".into(), class: 0, skill: 0.15 },
+            ai::RosterEntry { name: "mid".into(), class: 0, skill: 0.50 },
+            ai::RosterEntry { name: "high".into(), class: 0, skill: 0.95 },
         ];
         let r = run_roster(&roster, 60, false);
         let (lo, hi) = (r.rating_of("low"), r.rating_of("high"));
@@ -177,9 +177,9 @@ mod tests {
     #[test]
     fn a_calibration_run_rates_everybody_near_the_anchor() {
         let roster = vec![
-            ai::RosterEntry { name: "low", class: 0, tile_x: 505, tile_y: 522, skill: 0.15 },
-            ai::RosterEntry { name: "mid", class: 0, tile_x: 519, tile_y: 502, skill: 0.50 },
-            ai::RosterEntry { name: "high", class: 0, tile_x: 519, tile_y: 502, skill: 0.95 },
+            ai::RosterEntry { name: "low".into(), class: 0, skill: 0.15 },
+            ai::RosterEntry { name: "mid".into(), class: 0, skill: 0.50 },
+            ai::RosterEntry { name: "high".into(), class: 0, skill: 0.95 },
         ];
         let r = run_roster(&roster, 8, false);
         for name in ["low", "mid", "high"] {
@@ -203,7 +203,7 @@ mod tests {
         let r = run(1, false);
         for e in ai::roster() {
             assert!(
-                r.games_of(e.name) > 0,
+                r.games_of(&e.name) > 0,
                 "{} sat out the tournament",
                 e.name
             );

@@ -3,6 +3,9 @@
 description = "everybody against everybody"
 
 mode = "arena"
+# Converted from a `.lvl` by `sim/tools/lvl2vw`. A free-for-all wants structure
+# everywhere rather than one arena in the middle, which is what this map is:
+# rooms and corridors across the whole thousand tiles, and two wormholes.
 map = "chaos.vwmap"
 
 max_ships = 64
@@ -11,6 +14,9 @@ max_players = 32
 # Absent this would be 15, which is what the original's DesiredPlaying defaults
 # to. A free-for-all reads well a little fuller than a flag game.
 fill_target = 20
+
+# A brawl wants a crowd, and this is the zone somebody lands in first.
+bot_fill = 0.8
 
 # One room to a process: sixty-four players should not lose their game to
 # somebody else's crash.

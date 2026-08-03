@@ -63,11 +63,29 @@ arbitrary set of tiles with rules attached, such as no antiwarp, no weapons, no
 flag drops, or an automatic warp on entry. They give a map author mechanical
 control without a module.
 
-A converter reads `.lvl`, including the extended format with its embedded region
-data, and writes ours. It exists so we can test our collision and region code
-against maps whose behavior is known. Like the settings importer, its output is
-not content we ship: an existing zone's map belongs to that zone. Going the
+A converter reads `.lvl` and writes ours. It exists so we can test our collision
+code against maps whose behaviour is known. Like the settings importer, its
+output is not content we ship, with the one exception
+[design/identity.md](../design/identity.md) records: the three maps in the
+catalog came from the owner of this repository, who asked for them. Going the
 other way is not planned.
+
+```sh
+make -C sim build/lvl2vw
+sim/build/lvl2vw somemap.lvl catalog/zones/somezone/somezone.vwmap [starts]
+```
+
+It is `sim/tools/lvl2vw.c`, and it reads the plain tile records only.
+[research/lvl-format.md](../research/lvl-format.md) has the format it walks and
+the type numbers it translates. The eLVL metadata section is reported and
+skipped: none of the maps we have carry any, and regions are not something the
+core does yet.
+
+Two things the input cannot supply. A `.lvl` has no starts, because the
+original kept spawn regions in `arena.conf`, so the converter derives them from
+open ground and splits them north and south into two home ends. And the tileset
+is dropped, because a tile here is its behaviour: the 160 wall pictures become
+one class, and what a wall looks like is the client's business.
 
 Editing happens in Tiled, which Defold already integrates with, plus a small
 plugin for region attributes. Building our own map editor is a trap; the
@@ -113,6 +131,12 @@ core (`sim_settings_pack`, `sim_map_pack`) -- about 1.2 KB and a few hundred
 bytes respectively, which is small enough that content-addressing them would
 be machinery for nothing. Overlays and tilesets are the part that will need
 the scheme below.
+
+A map's size is really a property of how detailed it is, and the built-in rooms
+are not detailed. The run-length encoding gives up when structure is everywhere:
+the five converted Subspace maps pack to between 63 and 84 KB, which is still
+one transfer at join and not worth a cache, but it is two orders of magnitude
+off the figure above.
 
 Content is content-addressed and cached. The server sends hashes, the client
 requests only what it lacks, and everything is served over HTTP rather than

@@ -29,8 +29,11 @@ pub struct ZoneDef {
     /// Humans of those seats.
     pub max_players: Option<usize>,
     /// The concentration rule: another room or instance opens only when every
-    /// live one is at or above this.
+    /// live one is at or above this. Counts humans; see `Zone::fill_target`.
     pub fill_target: Option<usize>,
+    /// How full the bot server keeps this zone's rooms, as a share of
+    /// `max_ships`. Zero is a zone with no bots.
+    pub bot_fill: Option<f32>,
     /// The most simulations one process may hold for this zone. A ceiling, not
     /// a count: rooms appear on demand and are reclaimed when they empty.
     pub max_rooms: Option<usize>,
@@ -38,6 +41,12 @@ pub struct ZoneDef {
     pub teams: Option<u8>,
     /// smaller | random | none.
     pub balance: String,
+    /// `any`, the default, or `claimed` for a zone that wants a field it can
+    /// vouch for. A ladder arena may reasonably care that everybody in it has
+    /// chosen to be the same person tomorrow; a public room reasonably does
+    /// not, since the cost of caring is a newcomer turned away in the second
+    /// they arrived.
+    pub admission: String,
     pub private_teams: bool,
     pub arena: crate::config::ArenaConfig,
     /// The text this was parsed from, kept so a directory can hand the zone to
@@ -56,9 +65,11 @@ impl Default for ZoneDef {
             max_ships: None,
             max_players: None,
             fill_target: None,
+            bot_fill: None,
             max_rooms: None,
             teams: None,
             balance: "smaller".into(),
+            admission: "any".into(),
             private_teams: false,
             arena: crate::config::ArenaConfig::default(),
             raw: String::new(),
@@ -68,6 +79,9 @@ impl Default for ZoneDef {
 
 /// See `ZoneDef::fill_target`.
 pub const DEFAULT_FILL_TARGET: usize = 15;
+/// See `ZoneDef::bot_fill`. Four seats in five, which leaves a fifth of the
+/// room as headroom so an arriving human almost never has to evict anybody.
+pub const DEFAULT_BOT_FILL: f32 = 0.8;
 
 impl ZoneDef {
     /// Fifteen, which is `General:DesiredPlaying`'s default in ASSS and the
@@ -76,6 +90,12 @@ impl ZoneDef {
     /// would fail its own validation.
     pub fn fill_target(&self) -> usize {
         self.fill_target.unwrap_or(DEFAULT_FILL_TARGET)
+    }
+    /// A share of the room, not a count, because the count that matters is the
+    /// room's own size and a zone that widens its room wants the crowd to widen
+    /// with it.
+    pub fn bot_fill(&self) -> f32 {
+        self.bot_fill.unwrap_or(DEFAULT_BOT_FILL).clamp(0.0, 1.0)
     }
     pub fn max_rooms(&self) -> usize {
         self.max_rooms.unwrap_or(1).max(1)
@@ -116,6 +136,26 @@ struct ZoneRef {
     dir: String,
 }
 
+/// Where accounts live, and the key that proves a session token came from
+/// there. This is the one thing in the catalog an arena needs but no operator
+/// authored: `vectorwake-server metakey` prints both halves, the secret one
+/// goes in the meta-layer's environment and this one goes here.
+///
+/// It rides the catalog because the catalog is already the versioned artifact
+/// every arena receives whole, which makes rotating the key a publish rather
+/// than a new distribution channel.
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(deny_unknown_fields)]
+pub struct MetaDef {
+    /// Where a client logs in. Arenas never call it.
+    #[serde(default)]
+    pub url: String,
+    /// 64 hex characters of Ed25519 verifying key. Public by nature: it can
+    /// check a signature and cannot make one.
+    #[serde(default)]
+    pub key: String,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default, deny_unknown_fields)]
 struct Head {
@@ -127,6 +167,7 @@ struct Head {
     staff: Vec<StaffDef>,
     pool: Vec<PoolDef>,
     zone: Vec<ZoneRef>,
+    meta: MetaDef,
 }
 
 impl Default for Head {
@@ -140,6 +181,7 @@ impl Default for Head {
             staff: Vec::new(),
             pool: Vec::new(),
             zone: Vec::new(),
+            meta: MetaDef::default(),
         }
     }
 }
@@ -155,6 +197,9 @@ pub struct Catalog {
     pub bans: Vec<String>,
     pub staff: Vec<StaffDef>,
     pub pools: Vec<PoolDef>,
+    /// Empty when a deployment runs without accounts, which is a supported
+    /// arrangement: everyone flies as a guest and nothing durable is written.
+    pub meta: MetaDef,
     pub order: Vec<String>,
     pub zones: HashMap<String, ZoneDef>,
     /// Where each zone's files live, for resolving its map.
@@ -236,6 +281,21 @@ pub fn load(dir: impl AsRef<Path>) -> Result<Catalog, String> {
             return Err("a pool needs a name; it is what an arena is told it is".into());
         }
     }
+    // A key that is present and wrong is worse than one that is absent: absent
+    // means a deployment without accounts, which works, and wrong means every
+    // token in the fleet fails to verify at the door.
+    if !head.meta.key.is_empty()
+        && crate::token::verifying_key_from_hex(&head.meta.key).is_none()
+    {
+        return Err("[meta] key must be 64 hex characters of Ed25519 verifying key; \
+                    'vectorwake-server metakey' prints one"
+            .into());
+    }
+    if head.meta.key.is_empty() && !head.meta.url.is_empty() {
+        return Err("[meta] url is set without a key, so no arena could check a \
+                    token minted by it"
+            .into());
+    }
 
     let mut cat = Catalog {
         version: head.version,
@@ -245,6 +305,7 @@ pub fn load(dir: impl AsRef<Path>) -> Result<Catalog, String> {
         bans: head.bans,
         staff: head.staff,
         pools: head.pool,
+        meta: head.meta,
         ..Default::default()
     };
 
@@ -289,6 +350,14 @@ pub fn load(dir: impl AsRef<Path>) -> Result<Catalog, String> {
 }
 
 fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
+    // The same dead-key failure as `mode`, one field over: a value nobody
+    // implements has to be refused rather than quietly read as the default.
+    if !matches!(z.admission.as_str(), "any" | "claimed") {
+        return Err(format!(
+            "zone {name:?}: admission {:?} is not \"any\" or \"claimed\"",
+            z.admission
+        ));
+    }
     // A mode that falls back silently is how `arena.mode` became a dead key.
     if !crate::modes::exists(&z.mode) {
         return Err(format!(
@@ -338,6 +407,14 @@ fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
             z.fill_target.unwrap_or(DEFAULT_FILL_TARGET),
             z.max_players()
         ));
+    }
+    if let Some(f) = z.bot_fill {
+        if !(0.0..=1.0).contains(&f) {
+            return Err(format!(
+                "zone {name:?}: bot_fill {f} is a share of max_ships, so it \
+                 belongs between 0 and 1"
+            ));
+        }
     }
     Ok(())
 }
@@ -614,9 +691,9 @@ pub fn run_check() {
                 let map = c.map_bytes(name).map(|b| b.len()).unwrap_or(0);
                 println!(
                     "  zone {name:<10} mode {:<8} {} ships / {} players, fill {}, \
-                     {} room(s), {} team(s), map {map} B",
+                     bots {:.0}%, {} room(s), {} team(s), map {map} B",
                     z.mode, z.max_ships.unwrap_or(64), z.max_players(),
-                    z.fill_target(), z.max_rooms(), z.teams()
+                    z.fill_target(), z.bot_fill() * 100.0, z.max_rooms(), z.teams()
                 );
             }
             println!("  default {:?}", c.fallback_zone().unwrap_or_default());

@@ -69,7 +69,7 @@ services:
       # recreates the container. This label lists what the file routes, so
       # adding a route means changing it, and changing it is what makes compose
       # act. Keep it in step with the Caddyfile.
-      vw.routes: dir a1 a2 a3
+      vw.routes: dir meta a1 a2 a3
     security_opt:
       - no-new-privileges:true
     # Caddy is the one thing here that binds privileged ports, so it keeps
@@ -147,6 +147,35 @@ services:
       VW_ADMIN_LISTEN: 127.0.0.1:9100
       VW_ADMIN_TOKEN: ${VW_ADMIN_TOKEN:?set VW_ADMIN_TOKEN}
 
+  # Accounts, ratings, and the rated event log. The one process here with a
+  # database behind it, and the one every other process is built to survive the
+  # loss of: arenas verify session tokens against a key the catalog carries, so
+  # nothing on the join path calls this.
+  #
+  # `on-failure` rather than `unless-stopped`, alone in this file. A deployment
+  # without accounts is a supported arrangement, and it is expressed by leaving
+  # VW_META_DATABASE unset: the process says so and exits zero, and that is a
+  # decision rather than a crash. A real crash exits non-zero and comes back.
+  #
+  # The database is bought rather than run, per decision 27. It is the only
+  # thing in this system whose loss cannot be repaired by rebuilding, and a
+  # container on a bind mount would quietly make this host unlosable.
+  meta:
+    <<: *arena
+    restart: on-failure
+    command: ["meta", "/catalog"]
+    environment:
+      VW_META_LISTEN: 127.0.0.1:9400
+      # Empty means no accounts. See above.
+      VW_META_DATABASE: ${VW_META_DATABASE:-}
+      # 64 hex characters from `vectorwake-server metakey`, whose other half
+      # goes in the catalog's [meta] block. Losing this invalidates every live
+      # session and nothing else: minting a new one and publishing the new
+      # verifying key costs everybody one login.
+      VW_META_KEY: ${VW_META_KEY:-}
+      # Fleet bans are applied here, because this is where tokens are minted.
+      VW_ADMIN_TOKEN: ${VW_ADMIN_TOKEN:?set VW_ADMIN_TOKEN}
+
   a1:
     <<: *arena
     command: ["127.0.0.1:9001", "/var/lib/vectorwake"]
@@ -158,6 +187,9 @@ services:
       # One hostname, a path per arena: see the Caddyfile for why.
       VW_ADDRESS: wss://play.${VW_DOMAIN}/a1
       VW_REGION: ${VW_REGION:-local}
+      # Where rated events go. Loopback rather than the catalog's public
+      # address, which is for clients.
+      VW_META: http://127.0.0.1:9400
     volumes:
       - a1:/var/lib/vectorwake
     depends_on: [directory]
@@ -170,6 +202,7 @@ services:
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
       VW_ADDRESS: wss://play.${VW_DOMAIN}/a2
       VW_REGION: ${VW_REGION:-local}
+      VW_META: http://127.0.0.1:9400
     volumes:
       - a2:/var/lib/vectorwake
     depends_on: [directory]
@@ -182,9 +215,48 @@ services:
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
       VW_ADDRESS: wss://play.${VW_DOMAIN}/a3
       VW_REGION: ${VW_REGION:-local}
+      VW_META: http://127.0.0.1:9400
     volumes:
       - a3:/var/lib/vectorwake
     depends_on: [directory]
+
+  # The population. One process flies every bot on this host: it asks each arena
+  # how many it wants and opens that many connections, each an ordinary client
+  # that decodes snapshots through the simulation core. See decision 29.
+  #
+  # Named directly rather than browsed, which is the one place this service
+  # departs from the design in ai-runtime.md, and the reason is the addresses a
+  # browse would return. An arena advertises `wss://play.<domain>/aN`, because
+  # that is what a player must dial, so a bot server acting on a browse reply
+  # would take every one of its connections out through DNS, TLS and Caddy to
+  # come back to a port on the same machine. That is 150 proxied sockets and two
+  # TLS stacks for traffic that never leaves the box.
+  #
+  # These are the same three arenas this file already declares, so it is not a
+  # second source of truth about what is running; and asking an arena directly
+  # is a better question anyway, since `bots_wanted` is the arena's own answer
+  # whatever zone it happens to have taken. A second host runs its own copy of
+  # this service against its own arenas, which is the deployment rule either way.
+  #
+  # No volume. It keeps nothing between runs, because a bot's career lives in
+  # its account now rather than here.
+  #
+  # It does hold the pool token, which is new: a house bot claims an account
+  # with it, one per roster individual, and flies on a real session token. That
+  # is what lets one of them anchor the rating ladder and what tells a player
+  # which bots are the fleet's own rather than somebody else's.
+  #
+  # No address of its own either, which is why it can be restarted at any time.
+  # Losing it empties the rooms of bots and does nothing else; every human in
+  # them keeps playing, and the crowd comes back within seconds of it returning.
+  bots:
+    <<: *arena
+    command: ["bots"]
+    environment:
+      VW_ARENAS: ws://127.0.0.1:9001,ws://127.0.0.1:9002,ws://127.0.0.1:9003
+      VW_META: http://127.0.0.1:9400
+      VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
+    depends_on: [directory, a1, a2, a3, meta]
 
 volumes:
   caddy-data:

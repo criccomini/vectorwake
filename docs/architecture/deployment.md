@@ -283,7 +283,7 @@ them from being readable by any unprivileged process that can open a socket to
 ## What is deliberately not here
 
 No Kubernetes: zone selection is the scheduler, so nothing needs placing. No
-Nakama and no Postgres, because the first deployment has no accounts and ratings
+meta-layer and no Postgres, because the first deployment has no accounts and ratings
 still sit on the arena's own disk, which [roadmap.md](roadmap.md) M7.7 is what
 changes. No monitoring beyond the metrics in `STATUS` and what the admin page
 draws from them, and in particular nothing that plays the game -- every bug found

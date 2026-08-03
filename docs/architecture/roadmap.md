@@ -11,10 +11,10 @@
 | M3.5 AI opponents | Done server-side: input-only bots, labeled, taking and yielding seats |
 | M4 rating and modes | Done: damage ledgers, attribution, and the warzone flag game |
 | M4.5 duels | Built, then removed: deferred until a mode is catalog content |
-| M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities, persistence |
+| M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities |
 | M5.5 Defold client | Done: real core as a native extension, builds for host and browser, predicts against a live zone |
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and the games list in the menu |
-| M6 platforms | Blocked on accounts, not on code. See below |
+| M6 platforms | Accounts built. Steam and consoles still wait on credentials |
 | M7 the fleet | Designed, not built. The directory, catalog and zone selection below |
 
 What M6 asked for that is code has landed. The bot ladder is calibrated by
@@ -22,11 +22,20 @@ an offline tournament and seeds every zone; ratings show as tiers once a
 pilot has earned one; the client takes touch input; and a directory service
 lists live zones, which the client's menu offers as the games you can join.
 
-What remains is not engineering. Steam needs a partner account, consoles
-need manufacturer approval, and Nakama needs somewhere to run Postgres.
-Nakama would replace `persist.rs` -- storing and ranking a number -- and not
-`rating.rs`, because damage-weighted attribution across several attackers is
-specific to this game and no general backend has an opinion about it.
+The meta-layer is built: `vectorwake-server meta` over Postgres, holding
+accounts, credentials, names, ratings and the rated event log, per
+[decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list),
+[design/accounts.md](../design/accounts.md) and [meta-layer.md](meta-layer.md).
+A client mints a guest on first contact and never signs up; arenas verify a
+signed session token against a key the catalog carries; house bots hold
+accounts and one of them anchors the ladder. `persist.rs` and `ratings.json`
+are gone with it. `rating.rs` stayed, because damage-weighted attribution
+across several attackers is specific to this game and no general backend has
+an opinion about it.
+
+What remains of M6 is credentials rather than code: Steam needs a partner
+account and consoles need manufacturer approval, and each brings its own
+claim method with it.
 
 The Defold client is the only client. A hand-written web prototype came first
 and proved the networking contract, and it is gone: it stopped compiling when
@@ -34,10 +43,6 @@ tiles became typed classes, nothing built it, and nothing noticed for as long
 as this history goes back. Its palette and panel geometry live on in
 `client/arena/palette.lua` and `client/arena/ui.lua`, which is the part of it
 worth keeping.
-
-M6 needs a Steam partner account, console manufacturer approval, and a
-Postgres deployment for Nakama. Those are credentials and decisions rather
-than engineering, so the milestone waits on somebody making them.
 
 The rest of this document is the original plan, kept as written.
 
@@ -158,16 +163,17 @@ written guide, and hosts a game we did not design.
 
 Steam release through `extension-steam`, with Steam identity feeding the account
 system. A touch control prototype that decides whether mobile is a playing
-client or a spectating one. Nakama adopted for identity, friends, parties,
-leaderboards, and the zone directory, per
-[decision 11](decisions.md).
+client or a spectating one. The meta-layer built for accounts and ratings, per
+[decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list)
+and [design/accounts.md](../design/accounts.md), with friends and parties
+deferred until somebody wants them.
 
 Ratings become visible here, computed from the event log M4 has been filling and
 anchored by bot personalities calibrated in offline tournaments, per
 [design/rating.md](../design/rating.md).
 
-Done when a player's name, friends, and rank follow them across zones, and when
-the Steam build and the web build share an account.
+Done when a player's name and rank follow them across zones, and when the
+Steam build and the web build share an account.
 
 Consoles come after this, if at all, and only once
 [platforms.md](platforms.md)'s moderation question has an answer.
@@ -187,10 +193,11 @@ beside it.
 **M7.1 through M7.6 are built.** A directory serves a catalog, arena servers
 register and choose their own zone, rooms open and close on demand, the client
 lists games rather than machines, and an operator can see and steer the fleet
-from a page. What remains of M7 is 7.7, durable state leaving the arena, which
-is a prerequisite for a second instance of a zone rather than a nicety. The
-descriptions below are kept because each one states its own done condition, and
-those are the claims that were checked.
+from a page, and the bots fly as clients rather than inside the tick. What
+remains of M7 is 7.7, durable state leaving the arena, which is a prerequisite
+for a second instance of a zone rather than a nicety. The descriptions below
+are kept because each one states its own done condition, and those are the
+claims that were checked.
 
 **M7.1, the catalog as a file.** Parse `catalog.toml` and `zones/<name>/zone.toml`
 with the validation table from [catalog.md](catalog.md), and make a zone server
@@ -249,14 +256,39 @@ of claim worth writing down once rather than re-deriving:
   was a small-room test zone instead; the shape of the test is the same and the
   ladder does not know what a zone is for.
 
-**M7.7, durable state leaves the arena.** Deferred, but not indefinitely, and the
-deadline is structural rather than chosen: `ratings.json` beside the process is
-correct while one instance serves a zone and wrong the moment two do. So this has
-to land before the fill ladder's fourth rung ever fires in anger, which makes it
-a prerequisite for a second instance of any zone rather than a milestone free to
-slip. Rated events batched and handed off, and the open question in
-[server.md](server.md) closed. Done when two instances of one zone can both rate
-the same pilot without disagreeing.
+**M7.7, durable state leaves the arena. Built.** `ratings.json` beside the
+process was correct while one instance served a zone and wrong the moment two
+did, which made this a prerequisite for a second instance of any zone rather
+than a milestone free to slip. An arena now spools rated events to its disk and
+drains them to the meta-layer, which appends each to the log and applies its
+delta to the projection. Two instances of one zone rate the same pilot without
+disagreeing, because addition commutes and neither of them holds an opinion
+worth reconciling. The arena keeps its debt while the service is down and
+drains it when the service returns.
+
+**M7.8, bots leave the arena process. Built.** A bot server joins the
+deployment as a fourth use of the same binary: one process flying the roster as
+declared clients, filling every listed room to its zone's `bot_fill` and
+standing bots down one for one as humans arrive, per [decision
+29](decisions.md#29-a-bot-is-a-client). The arena keeps only the seat policy,
+which is that declared bots sit outside `max_players` and the newest is dropped
+when a full room must seat a human.
+
+What the done conditions produced, run against a directory, one arena and one
+bot server on loopback:
+
+- A cold arena reached 51 bots in a 64-seat Chaos room in seven seconds, eight
+  connections a second, and they fought: 388 kills in the first few minutes.
+- Three humans joining took the target from 51 to 48 and three bots stood down,
+  each waiting for its own death or an empty horizon first. The humans left and
+  the room came back to 51.
+- The cost is in [hosting.md](hosting.md). 3% of the arena's tick budget at the
+  worst, 14% of a core for the bot server, so `bot_fill` stays at 0.8.
+
+Two things came out of building it. The arena frees a seat the moment a client
+closes, which the population loop depends on and which nothing had measured;
+and the roster had to grow past nine, because a 64-seat room asks for
+fifty-one, so the calibrated nine are followed by generated individuals.
 
 Duels return after M7.1 and M7.5, because they need a mode to be a catalog row
 and rooms on demand in a process. They also need spectating, since a queue is

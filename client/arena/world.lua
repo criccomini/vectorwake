@@ -33,59 +33,280 @@ end
 
 -- Hulls, in local pixels with the nose along +y. Shape carries class and
 -- colour carries team, so neither has to carry both, and every class has to be
--- identifiable by silhouette alone at radar scale -- which means each one
--- needs a front that is visibly not its back. See docs/design/ships.md.
+-- identifiable by silhouette alone at radar scale, which means each one needs
+-- a front that is visibly not its back. See docs/design/ships.md.
 --
--- `spine` is the interior detail: line pairs that give a hull a read at close
--- range without adding a second silhouette. `jets` are where thrust comes out.
+-- `poly` is that silhouette, and it is the only part the menu's thumbnails
+-- draw. The rest is what a hull looks like once it is close enough to matter:
+-- `plates` are closed interior loops, `lines` open polylines, `canopy` the one
+-- bright cell every hull carries forward of centre, `tubes` the hardpoints a
+-- class actually fires from, `pods` its lamps and dispensers, `jets` where
+-- thrust comes out, and `dim` how brightly the whole thing draws.
 M.HULLS = {
-    -- Apex: a swept dart. Fastest and sharpest turn in the game.
-    {poly = {0,17, 5,-2, 9,-10, 0,-5, -9,-10, -5,-2},
-     spine = {0,11, 0,1}, jets = {0,-5}},
-    -- Wedge: a flat wide triangle. It reads as a platform, not a fighter.
-    {poly = {0,11, 6,2, 14,-8, 5,-5, -5,-5, -14,-8, -6,2},
-     spine = {-4,-3, 4,-3}, jets = {-6,-5, 6,-5}},
-    -- Chord: a wide shallow arc, hollow at the back.
-    {poly = {0,12, 9,8, 16,-1, 9,-3, 0,2, -9,-3, -16,-1, -9,8},
-     spine = {0,9, 0,3}, jets = {-6,-1, 6,-1}},
-    -- Anvil: a blunt hexagon. The front is a flat face, not a point: nothing
-    -- about this ship should look sharp.
-    {poly = {-7,13, 7,13, 12,4, 10,-9, -10,-9, -12,4},
-     spine = {-6,7, 6,7}, jets = {-5,-9, 5,-9}},
-    -- Spire: a tall diamond carrying a mast, which is where the turrets go.
-    {poly = {0,19, 3,9, 7,0, 3,-11, -3,-11, -7,0, -3,9},
-     spine = {0,15, 0,-7}, jets = {0,-11}},
-    -- Cipher: a thin sliver, barely there.
-    {poly = {0,18, 3,0, 2,-8, 0,-11, -2,-8, -3,0},
-     spine = {0,12, 0,-6}, jets = {0,-11}},
-    -- Facet: a compact pentagon with a real nose on it.
-    {poly = {0,13, 10,3, 7,-10, -7,-10, -10,3},
-     spine = {-4,6, 4,6}, jets = {-4,-10, 4,-10}},
-    -- Lattice: a cross. It owns terrain, and it should look like a marker
-    -- planted in it. The forward arm is longest so the shape still points.
-    {poly = {-3,15, 3,15, 3,4, 13,4, 13,-2, 3,-2, 3,-12,
-             -3,-12, -3,-2, -13,-2, -13,4, -3,4},
-     spine = {0,11, 0,-9}, jets = {0,-12}},
+    -- Apex: a dart whose wings sweep back far enough to clear its own engine
+    -- block. Fastest and sharpest turn in the game.
+    {poly = {0,21, 1.6,12, 2.6,5, 6.5,-1, 11,-9, 8.5,-11.5, 3.5,-6.5, 3,-10.5,
+             0,-11.5, -3,-10.5, -3.5,-6.5, -8.5,-11.5, -11,-9, -6.5,-1, -2.6,5,
+             -1.6,12},
+     plates = {{0,6.5, 2.2,2, 1.8,-6, 0,-8, -1.8,-6, -2.2,2}},
+     lines = {{0,19.8, 2.6,5, 6.5,-1}, {0,19.8, -2.6,5, -6.5,-1},
+              {5,0.2, 9.3,-8.2}, {-5,0.2, -9.3,-8.2}, {2.6,1.5, 6,-1.6},
+              {-2.6,1.5, -6,-1.6}},
+     canopy = {0,15.5, 1.5,10.5, 0,7.6, -1.5,10.5},
+     tubes = {{4.2, 3, 4.2, -1, 1.4}, {-4.2, 3, -4.2, -1, 1.4}},
+     pods = {{0, 20, 1.5}},
+     jets = {-1.8,-11, 1.8,-11}},
+    -- Wedge: a platform rather than a fighter. The bomb bay runs most of its
+    -- length and the tube feeding it is the brightest thing on the hull.
+    {poly = {0,14, 2.6,13, 4.6,7.5, 7.2,1.5, 15.5,-5.5, 16,-9, 9,-7.5, 8,-11,
+             3.2,-12.5, 0,-12.5, -3.2,-12.5, -8,-11, -9,-7.5, -16,-9,
+             -15.5,-5.5, -7.2,1.5, -4.6,7.5, -2.6,13},
+     plates = {{3.4,5, 3.4,-10, -3.4,-10, -3.4,5}},
+     lines = {{7.2,1.5, 15,-5.2}, {-7.2,1.5, -15,-5.2}, {11,-2.2, 11.6,-7.2},
+              {-11,-2.2, -11.6,-7.2}, {4.4,4.4, 4.4,-8}, {-4.4,4.4, -4.4,-8},
+              {-3.4,-2.5, 3.4,-2.5}},
+     canopy = {0,12.4, 1.8,10.2, 1.6,7.6, -1.6,7.6, -1.8,10.2},
+     tubes = {{0, 3.6, 0, -8.6, 3.2}},
+     jets = {-5.6,-12, 5.6,-12}},
+    -- Chord: a bow with a sensor housing at the middle of it, because what
+    -- this hull does for a team is see.
+    {poly = {0,13.5, 5.5,12, 11.5,7.5, 16.5,0.5, 18,-4, 14.5,-6, 11,-2.5,
+             6.5,1.5, 2.5,3.5, 0,3.8, -2.5,3.5, -6.5,1.5, -11,-2.5, -14.5,-6,
+             -18,-4, -16.5,0.5, -11.5,7.5, -5.5,12},
+     plates = {{0,11.5, 2.2,9.5, 2.2,6.5, 0,5, -2.2,6.5, -2.2,9.5},
+               {12.8,-0.6, 16.4,-3.4, 15,-5.6, 11.6,-2.4},
+               {-11.6,-2.4, -15,-5.6, -16.4,-3.4, -12.8,-0.6}},
+     lines = {{4,10.6, 13.2,3.2}, {-4,10.6, -13.2,3.2}, {2.5,3.5, 5.5,11.6},
+              {-2.5,3.5, -5.5,11.6}, {8,0.4, 9.6,5.6}, {-8,0.4, -9.6,5.6}},
+     canopy = {0,10.2, 1.3,8.4, 0,6.4, -1.3,8.4},
+     tubes = {{15, -2, 15, 2.6, 1.4}, {-15, -2, -15, 2.6, 1.4}},
+     pods = {{0, 8.3, 2.4}},
+     jets = {-8.5,-2.2, 8.5,-2.2}},
+    -- Anvil: nothing on it is allowed to look sharp. Two bomb tubes on a flat
+    -- bow face, an armour belt across it, four engines and no wings at all.
+    {poly = {0,15, 6.5,14.2, 11,10, 13.5,3, 13.5,-4, 11,-9.5, 6.5,-12, 0,-12,
+             -6.5,-12, -11,-9.5, -13.5,-4, -13.5,3, -11,10, -6.5,14.2},
+     plates = {{9,12.4, 11.4,8.4, -11.4,8.4, -9,12.4},
+               {0,5.4, 4.2,0, 0,-5.4, -4.2,0}},
+     lines = {{9,8, 9,-8}, {-9,8, -9,-8}, {5.6,3.2, 9,3.2}, {-5.6,3.2, -9,3.2},
+              {5.6,-3.2, 9,-3.2}, {-5.6,-3.2, -9,-3.2}, {-8,-9.6, 8,-9.6}},
+     canopy = {3.4,14, 2.6,11.4, -2.6,11.4, -3.4,14},
+     tubes = {{5.2, 9.6, 5.2, 15.2, 2.2}, {-5.2, 9.6, -5.2, 15.2, 2.2}},
+     jets = {-9,-10.6, -3.5,-12, 3.5,-12, 9,-10.6}},
+    -- Spire: the mast is the point of it. A lamp on top, docking pylons for
+    -- turrets on the flanks, and the thing a team flies toward.
+    {poly = {0,23, 1.2,17, 2.6,11, 6,2, 6.6,-4, 3.6,-11, 2.6,-13, 0,-13,
+             -2.6,-13, -3.6,-11, -6.6,-4, -6,2, -2.6,11, -1.2,17},
+     plates = {{0,9.5, 3.6,3.5, 3.2,-5, 0,-7.5, -3.2,-5, -3.6,3.5},
+               {6.2,3.5, 10.8,2.6, 11.6,-0.6, 6.6,-1.6},
+               {-6.6,-1.6, -11.6,-0.6, -10.8,2.6, -6.2,3.5}},
+     lines = {{2.6,11, 6,2}, {-2.6,11, -6,2}, {4.4,-6.4, 2,-11.4},
+              {-4.4,-6.4, -2,-11.4}, {0,22, 0,16.5}},
+     canopy = {0,15.5, 1.6,12.2, 0,10.4, -1.6,12.2},
+     pods = {{0, 22.6, 2.6}, {10.2, 1, 1.6}, {-10.2, 1, 1.6}},
+     jets = {-1.6,-12.8, 1.6,-12.8}},
+    -- Cipher: a knife. Draws dimmer than the rest of the roster on purpose,
+    -- since the class is meant to be hard to pick out of a fight.
+    {poly = {0,23, 1.7,7, 3.4,-2, 3,-9, 6.5,-12.5, 2.2,-11.5, 1.6,-13, 0,-13,
+             -1.6,-13, -2.2,-11.5, -6.5,-12.5, -3,-9, -3.4,-2, -1.7,7},
+     plates = {{0,19, 1.4,4, 0,-6, -1.4,4}},
+     lines = {{0,22.4, 3.2,-2}, {0,22.4, -3.2,-2}, {3.2,-9.4, 5.9,-12.2},
+              {-3.2,-9.4, -5.9,-12.2}},
+     canopy = {0,17.5, 0.9,14, 0,11.5, -0.9,14},
+     jets = {0,-13}, dim = 0.72},
+    -- Facet: two barrels hanging off the shoulders, out past the nose, so the
+    -- one thing worth knowing about it reads from any angle.
+    {poly = {0,15, 4.2,10.5, 8.5,6, 11.5,-2, 9.5,-10, 4.5,-13, 0,-13, -4.5,-13,
+             -9.5,-10, -11.5,-2, -8.5,6, -4.2,10.5},
+     plates = {{0,11.5, 4.6,6.4, 4,-1, -4,-1, -4.6,6.4},
+               {4.4,-4.4, 3.6,-10.4, -3.6,-10.4, -4.4,-4.4}},
+     lines = {{0,14.4, 8,6.4}, {0,14.4, -8,6.4}, {10.6,-1.6, 8.8,-9.2},
+              {-10.6,-1.6, -8.8,-9.2}, {4.6,2, 10.9,0.4}, {-4.6,2, -10.9,0.4},
+              {6.2,-4, 6.2,-10}, {-6.2,-4, -6.2,-10}},
+     canopy = {0,9.6, 2.4,6.4, 0,4.4, -2.4,6.4},
+     tubes = {{6.6, 7.2, 6.6, 13.6, 2.2}, {-6.6, 7.2, -6.6, 13.6, 2.2}},
+     jets = {-2.6,-13, 2.6,-13}},
+    -- Lattice: trussed arms rather than solid ones, which is the whole
+    -- difference between a cross and a structure somebody planted.
+    {poly = {0,17, 2.8,12.5, 2.8,5.5, 11.5,4.5, 15,1.5, 11.5,-1.5, 2.8,-2.5,
+             2.8,-11, 2,-14, 0,-14, -2,-14, -2.8,-11, -2.8,-2.5, -11.5,-1.5,
+             -15,1.5, -11.5,4.5, -2.8,5.5, -2.8,12.5},
+     plates = {{0,5, 3.2,1.5, 0,-2, -3.2,1.5}},
+     lines = {{4.5,4.2, 6,-2.2}, {-4.5,4.2, -6,-2.2}, {7.5,3.9, 9,-2},
+              {-7.5,3.9, -9,-2}, {-2.8,12, 2.8,9.6}, {2.8,9, -2.8,6.6},
+              {-2.8,-4.6, 2.8,-7}, {2.8,-7.6, -2.8,-10}},
+     canopy = {0,14.6, 1.5,12.6, 0,10.8, -1.5,12.6},
+     pods = {{13.6, 1.5, 1.7}, {-13.6, 1.5, 1.7}, {0, -13.2, 1.5}},
+     jets = {-1.8,-14, 1.8,-14}},
 }
 
--- The centroid of each hull, so a fill can fan from inside the shape. Fanning
--- from a vertex double-covers a concave hull -- the cross especially -- and
--- the overlap shows as a darker wedge through the middle of the ship.
--- `nose` is how far forward the silhouette reaches, so the retros fire from
--- in front of the hull rather than from inside it, where the body fill hides
--- them. Measured off the outline rather than named per hull, since two of the
--- eight have a flat face where the others have a point.
+-- How far from the camera a hull keeps its plates, panel lines and lamps.
+-- Past this it draws silhouette, canopy, hardpoints and engines only, which
+-- costs a quarter less and is not visible without looking for it. The reason
+-- is the glow layer's capacity, which an overflow does not report: it simply
+-- stops drawing, and whichever strokes fall past the cap that frame vanish.
+M.DETAIL_RANGE = 260
+
+-- --- baking a hull ---------------------------------------------------------
+--
+-- Everything about a hull that never changes, worked out once at load.
+
+-- Twice the signed area, whose sign is the winding.
+local function turn(p)
+    local a, n = 0, #p
+    for i = 1, n, 2 do
+        local j = (i + 1 < n) and i + 2 or 1
+        a = a + p[i] * p[j + 1] - p[j] * p[i + 1]
+    end
+    return a
+end
+
+-- Triangulate by ear clipping, into flat vertex-index triples.
+--
+-- The body fill used to fan from the centroid, which covers a hull only if the
+-- centroid can see all of it. Every hull that shipped before this was
+-- star-shaped like that, and that is exactly why none of them had a notch: the
+-- Apex's wings could not clear its engine block without the fill spilling into
+-- the gap between them. Run once, at load, so a frame pays nothing for it.
+local function triangulate(p)
+    local n = #p / 2
+    local idx = {}
+    for i = 1, n do idx[i] = (turn(p) > 0) and i or (n + 1 - i) end
+
+    local function cross(a, b, c)
+        return (p[b * 2 - 1] - p[a * 2 - 1]) * (p[c * 2] - p[a * 2])
+             - (p[b * 2] - p[a * 2]) * (p[c * 2 - 1] - p[a * 2 - 1])
+    end
+
+    -- Is vertex q inside the triangle abc? Barycentric, since an ear may not
+    -- swallow a vertex of the polygon it is being cut from.
+    local function inside(q, a, b, c)
+        local qx, qy = p[q * 2 - 1], p[q * 2]
+        local ax, ay = p[a * 2 - 1], p[a * 2]
+        local bx, by = p[b * 2 - 1], p[b * 2]
+        local cx, cy = p[c * 2 - 1], p[c * 2]
+        local d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if math.abs(d) < 1e-12 then return false end
+        local s = ((by - cy) * (qx - cx) + (cx - bx) * (qy - cy)) / d
+        local t = ((cy - ay) * (qx - cx) + (ax - cx) * (qy - cy)) / d
+        return s > 1e-9 and t > 1e-9 and (1 - s - t) > 1e-9
+    end
+
+    local out, guard = {}, 0
+    while #idx > 3 and guard < 4096 do
+        guard = guard + 1
+        local cut
+        for i = 1, #idx do
+            local a = idx[(i - 2) % #idx + 1]
+            local b = idx[i]
+            local c = idx[i % #idx + 1]
+            if cross(a, b, c) > 0 then
+                local clear = true
+                for k = 1, #idx do
+                    local q = idx[k]
+                    if q ~= a and q ~= b and q ~= c and inside(q, a, b, c) then
+                        clear = false
+                        break
+                    end
+                end
+                if clear then
+                    out[#out + 1], out[#out + 2], out[#out + 3] = a, b, c
+                    cut = i
+                    break
+                end
+            end
+        end
+        if not cut then break end
+        table.remove(idx, cut)
+    end
+    if #idx == 3 then
+        out[#out + 1], out[#out + 2], out[#out + 3] = idx[1], idx[2], idx[3]
+    end
+    return out
+end
+
 for _, h in ipairs(M.HULLS) do
-    local sx, sy, n = 0, 0, #h.poly / 2
-    local nose = h.poly[2]
-    for i = 1, #h.poly, 2 do
-        sx, sy = sx + h.poly[i], sy + h.poly[i + 1]
-        if h.poly[i + 1] > nose then nose = h.poly[i + 1] end
+    local p = h.poly
+    local n = #p / 2
+    local w = (turn(p) > 0) and 1 or -1
+
+    local sx, sy = 0, 0
+    local nose, lo, hi = p[2], p[2], p[2]
+    for i = 1, #p, 2 do
+        sx, sy = sx + p[i], sy + p[i + 1]
+        if p[i + 1] > nose then nose = p[i + 1] end
+        if p[i + 1] < lo then lo = p[i + 1] end
+        if p[i + 1] > hi then hi = p[i + 1] end
     end
     h.cx, h.cy = sx / n, sy / n
     h.nose = nose
-    h.tmp = {}
+
+    -- The outward normal of every edge, and from those, how brightly the edge
+    -- draws: a light fixed to the hull's own nose. Fixed to the world instead,
+    -- the same ship would look like a different ship depending on which way it
+    -- was pointing, and the silhouette is the entire identity system.
+    --
+    -- Two weights rather than one because the wide skirt of the bloom wants a
+    -- flatter falloff than the edge does, and a power in a draw loop on a Lua
+    -- 5.1 interpreter is not free.
+    local en = {}
+    h.wide, h.band, h.hot = {}, {}, {}
+    for v = 1, n do
+        local a, b = v, (v % n) + 1
+        local dx = p[b * 2 - 1] - p[a * 2 - 1]
+        local dy = p[b * 2] - p[a * 2]
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len < 1e-9 then len = 1 end
+        en[v * 2 - 1], en[v * 2] = dy / len * w, -dx / len * w
+        local light = 0.40 + 0.60 * (0.5 + 0.5 * en[v * 2])
+        h.wide[v], h.band[v], h.hot[v] = light ^ 0.55, light ^ 0.8, light
+    end
+
+    -- The direction the bloom leaves each vertex by: the mitre between the two
+    -- edges that meet there, clamped hard. Unclamped, a nose as sharp as the
+    -- Apex's throws a thirty-pixel spike of light off its tip.
+    h.nrm = {}
+    for v = 1, n do
+        local u = (v - 2) % n + 1
+        local mx = en[u * 2 - 1] + en[v * 2 - 1]
+        local my = en[u * 2] + en[v * 2]
+        local len = math.sqrt(mx * mx + my * my)
+        if len < 1e-6 then
+            mx, my, len = en[v * 2 - 1], en[v * 2], 1
+        end
+        mx, my = mx / len, my / len
+        local d = mx * en[v * 2 - 1] + my * en[v * 2]
+        if d < 0.35 then d = 0.35 end
+        local k = 1 / d
+        if k > 1.35 then k = 1.35 end
+        h.nrm[v * 2 - 1], h.nrm[v * 2] = mx * k, my * k
+    end
+
+    -- Where each vertex sits between stern and bow, which is what lights the
+    -- front of the body and leaves the back of it nearly black.
+    local span = (hi - lo)
+    if span < 1e-6 then span = 1 end
+    h.lit = {}
+    for v = 1, n do
+        local t = (p[v * 2] - lo) / span
+        h.lit[v] = t * t
+    end
+    -- Halfway up the hull, which is where a thumbnail has to be centred: every
+    -- one of these reaches further forward than back, so its origin is not its
+    -- middle and a row of them drawn about the origin sits low.
+    h.mid = (lo + hi) / 2
+
+    h.tris = triangulate(p)
+
+    -- Somewhere to transform into. A fresh table per part per hull per frame
+    -- is a hundred tables a frame and all of them garbage, on a collector that
+    -- runs in the same thread as the draw.
+    h.tmp, h.ntmp, h.ctmp = {}, {}, {}
+    h.ptmp, h.ltmp = {}, {}
+    for k = 1, #(h.plates or {}) do h.ptmp[k] = {} end
+    for k = 1, #(h.lines or {}) do h.ltmp[k] = {} end
 end
+
 
 -- --- the starfield ---------------------------------------------------------
 --
@@ -196,36 +417,502 @@ M.radar_doors = {}
 -- simulation it was drawing. The tiles do not move, so the search is a
 -- property of the map and belongs where the walls are built.
 M.moving_tiles = {}
+-- Scenery above the ships, which is not moving geometry but is drawn on the
+-- same pass, for the same reason: the static mesh is under everything.
+M.over_tiles = {}
 
 local function index_moving(x0, y0, x1, y1)
-    local out = {}
+    local out, over = {}, {}
     for ty = y0, y1 do
         for tx = x0, x1 do
             local cls, variant = sim.tile(tx, ty)
             if cls == sim.T_DOOR or cls == sim.T_WORMHOLE then
                 out[#out + 1] = {tx = tx, ty = ty, cls = cls, variant = variant}
+            elseif cls == sim.T_OVER then
+                over[#over + 1] = {tx = tx, ty = ty, variant = variant}
             end
         end
     end
     M.moving_tiles = out
+    M.over_tiles = over
 end
 
--- Made once, not per tile per frame: these are constants wearing a function's
--- clothes, and allocating them in a draw loop is what a garbage collector
--- notices first.
-local DOOR_GHOST = pal.a(pal.WALL_EDGE, 0.30)
-local DOOR_LIT = pal.a(pal.ENEMY, 0.75)
-local HOLE_RING = {pal.a(pal.BOMB, 0.34), pal.a(pal.BOMB, 0.17),
-                   pal.a(pal.BOMB, 0.34 / 3)}
-
--- Terrain inside a tile window, rebuilt when the camera leaves it.
+-- --- terrain ---------------------------------------------------------------
 --
--- This used to take the whole map's bounds, because the whole map was
--- eighty-four tiles square and meshing it was seven thousand tile queries
--- once. The arena is 1024 tiles now -- a million queries and a wall mesh
--- nothing would draw at speed -- so what gets built is a window around the
--- camera, and arena.script rebuilds it when the camera has walked far enough
--- to see the edge of one.
+-- The map, in the language the hulls use: a dark body that is a hole in the
+-- starfield, edges lit with falloff rather than banded, structure in a neutral
+-- instrument grey, and colour kept for the things that mean something.
+--
+-- All of it is built once into the static layers when the camera leaves its
+-- window, so detail here is close to free. Only the doors and the wells are
+-- drawn per frame, and they are drawn per frame because they move.
+
+-- What a solid tile's variant says it is. Ordinary wall and border are drawn
+-- as one mass; the rest are objects that happen to be solid, and each names
+-- its own top-left corner, so a six-tile station is drawn once rather than
+-- thirty-six times. See sim/tools/lvl2vw.c, which writes these.
+local V_BORDER = 1
+local V_ROCK_A, V_ROCK_B = 2, 3
+local V_ROCK_BIG, V_ROCK_BODY = 4, 5
+local V_STATION, V_STATION_BODY = 6, 7
+
+local function key(tx, ty) return ty * 1024 + tx end
+
+-- Maximal straight runs of exposed face, along one side of a set of tiles.
+--
+-- Drawing a face per tile lays a segment against its neighbour at every tile
+-- boundary, and additively that is a bright bead every sixteen pixels along an
+-- otherwise straight wall. It is the same double-cover the hulls had at their
+-- corners, and merging is both the fix and the cheaper path.
+local function runs(set, cells, side, emit)
+    local ax, ay = 0, 0                 -- toward the neighbour being tested
+    local px, py = 0, 0                 -- toward the previous tile in a run
+    if side == "n" then ax, ay, px, py = 0, -1, -1, 0
+    elseif side == "s" then ax, ay, px, py = 0, 1, -1, 0
+    elseif side == "w" then ax, ay, px, py = -1, 0, 0, -1
+    else ax, ay, px, py = 1, 0, 0, -1 end
+    for i = 1, #cells, 2 do
+        local tx, ty = cells[i], cells[i + 1]
+        if not set[key(tx + ax, ty + ay)] then
+            -- Only the first tile of a run draws it, and it walks to the end.
+            local prev = set[key(tx + px, ty + py)]
+            if not prev or set[key(tx + px + ax, ty + py + ay)] then
+                local ex, ey = tx, ty
+                while set[key(ex - px, ey - py)]
+                      and not set[key(ex - px + ax, ey - py + ay)] do
+                    ex, ey = ex - px, ey - py
+                end
+                emit(tx, ty, ex, ey)
+            end
+        end
+    end
+end
+
+-- Where a run's face lies, in world pixels, and which way is out of it.
+local function face_line(side, tx, ty, ex, ey)
+    if side == "n" then
+        return tx * TILE, ty * TILE, (ex + 1) * TILE, ey * TILE, 0, -1
+    elseif side == "s" then
+        return tx * TILE, (ty + 1) * TILE, (ex + 1) * TILE, (ey + 1) * TILE,
+               0, 1
+    elseif side == "w" then
+        return tx * TILE, ty * TILE, ex * TILE, (ey + 1) * TILE, -1, 0
+    end
+    return (tx + 1) * TILE, ty * TILE, (ex + 1) * TILE, (ey + 1) * TILE, 1, 0
+end
+
+local SIDES = {"n", "s", "w", "e"}
+
+-- A block of wall, drawn as one thing rather than as tiles.
+local function wall_mass(bg, glow, set, cells, border)
+    local lit = pal.WALL_EDGE
+    local hotline = pal.a(pal.hot(lit, 0.28, 1), 0.9)
+    local bevel = pal.a(lit, 0.26)
+    local tick = pal.a(lit, 0.42)
+    local edge2 = pal.a(lit, 0.5)
+    local inner = pal.a(pal.WALL_LIT, 1)
+    local outer = pal.a(lit, 1)
+
+    for i = 1, #cells, 2 do
+        bg:rect(cells[i] * TILE, cells[i + 1] * TILE, TILE, TILE, pal.WALL)
+    end
+
+    -- Structure inside a mass, so a big block is not a void. Only where every
+    -- neighbour is solid, and only on a three-tile pitch: bordering every tile
+    -- turns a wall into graph paper, which this client has already done once.
+    if not border then
+        local seam = pal.a(lit, 0.18)
+        for i = 1, #cells, 2 do
+            local tx, ty = cells[i], cells[i + 1]
+            if set[key(tx, ty - 1)] and set[key(tx, ty + 1)]
+               and set[key(tx - 1, ty)] and set[key(tx + 1, ty)] then
+                local x, y = tx * TILE, ty * TILE
+                if tx % 3 == 0 then glow:seg(x, y, x, y + TILE, 0.7, seam) end
+                if ty % 3 == 0 then glow:seg(x, y, x + TILE, y, 0.7, seam) end
+            end
+        end
+    end
+
+    for s = 1, #SIDES do
+        local side = SIDES[s]
+        runs(set, cells, side, function(tx, ty, ex, ey)
+            local px, py, qx, qy, ox, oy = face_line(side, tx, ty, ex, ey)
+            local long = (tx ~= ex) or (ty ~= ey)
+            -- The light the face throws back into the wall, and out of it. A
+            -- body that is one flat slate all the way through has no thickness
+            -- in it; lit at the rim and near black at the core, it has.
+            --
+            -- A one-tile face gets the outward light and the line and nothing
+            -- else. Sixteen pixels is too short to read a gradient along, and
+            -- a map that is mostly single tiles is the one shape that can
+            -- overflow the layer: four full-dress faces and four chamfers
+            -- apiece, times everything on screen.
+            if long then
+                glow:skirt(px, py, qx, qy, -ox * 11, -oy * 11, 0.17, inner)
+            end
+            glow:skirt(px, py, qx, qy, ox * 6, oy * 6, 0.13, outer)
+            glow:seg(px, py, qx, qy, 1.4, hotline)
+            if border then
+                -- The map's own edge, said twice, with a tick every ten
+                -- pixels: a boundary that is never going to open.
+                glow:seg(px - ox * 3, py - oy * 3, qx - ox * 3, qy - oy * 3,
+                         0.8, edge2)
+                local len = math.abs(qx - px) + math.abs(qy - py)
+                local n = math.max(1, math.floor(len / 32))
+                local ux, uy = (qx - px) / n, (qy - py) / n
+                for k = 1, n - 1 do
+                    local mx, my = px + ux * k, py + uy * k
+                    glow:seg(mx, my, mx - ox * 3, my - oy * 3, 0.7, tick)
+                end
+            elseif long then
+                glow:seg(px - ox * 3.5, py - oy * 3.5,
+                         qx - ox * 3.5, qy - oy * 3.5, 0.7, bevel)
+            end
+        end)
+    end
+
+    -- A chamfer at the mass's convex corners. Four pixels of diagonal is the
+    -- difference between a stack of tiles and something that was built.
+    local corner = pal.a(pal.hot(lit, 0.35, 1), 0.55)
+    for i = 1, #cells, 2 do
+        local tx, ty = cells[i], cells[i + 1]
+        local x, y = tx * TILE, ty * TILE
+        local n = not set[key(tx, ty - 1)]
+        local s = not set[key(tx, ty + 1)]
+        local w = not set[key(tx - 1, ty)]
+        local e = not set[key(tx + 1, ty)]
+        if n and w then glow:seg(x + 4, y, x, y + 4, 1.1, corner) end
+        if n and e then
+            glow:seg(x + TILE - 4, y, x + TILE, y + 4, 1.1, corner)
+        end
+        if s and e then
+            glow:seg(x + TILE - 4, y + TILE, x + TILE, y + TILE - 4, 1.1,
+                     corner)
+        end
+        if s and w then
+            glow:seg(x + 4, y + TILE, x, y + TILE - 4, 1.1, corner)
+        end
+    end
+end
+
+-- A safe zone: a marked floor rather than a coloured patch. A wash, a hatch
+-- that stays inside its own tiles, and a dashed rim along the outside faces.
+local function safe_zone(bg, glow, set, cells)
+    local wash = pal.a(pal.FRIEND, 0.05)
+    local hatch = pal.a(pal.FRIEND, 0.09)
+    local dash = pal.a(pal.FRIEND, 0.55)
+    local spill = pal.a(pal.FRIEND, 1)
+    for i = 1, #cells, 2 do
+        local tx, ty = cells[i], cells[i + 1]
+        local x, y = tx * TILE, ty * TILE
+        bg:rect(x, y, TILE, TILE, wash)
+        -- Corner to corner, so a diagonal never leaves the tile it belongs
+        -- to. A hatch that runs past its own edge is a hatch with no edge.
+        glow:seg(x, y + TILE, x + TILE, y, 0.7, hatch)
+        glow:seg(x, y + TILE / 2, x + TILE / 2, y, 0.7, hatch)
+        glow:seg(x + TILE / 2, y + TILE, x + TILE, y + TILE / 2, 0.7, hatch)
+    end
+    for s = 1, #SIDES do
+        local side = SIDES[s]
+        runs(set, cells, side, function(tx, ty, ex, ey)
+            local px, py, qx, qy, ox, oy = face_line(side, tx, ty, ex, ey)
+            local len = math.sqrt((qx - px) * (qx - px) + (qy - py) * (qy - py))
+            local ux, uy = (qx - px) / len, (qy - py) / len
+            local k = 0
+            while k < len - 0.5 do
+                local e = math.min(k + 5.5, len)
+                glow:seg(px + ux * k, py + uy * k, px + ux * e, py + uy * e,
+                         1.2, dash)
+                k = k + 9
+            end
+            glow:skirt(px, py, qx, qy, ox * 5, oy * 5, 0.09, spill)
+        end)
+    end
+end
+
+-- Rock. Faceted and grey on purpose: a hull is smooth, lit and coloured, and
+-- at a glance across a room that is the whole difference between the two.
+local function rock(bg, glow, cx, cy, r, seed, sides, craters)
+    local rs = seed
+    local function rnd()
+        rs = (rs * 48271) % 2147483647
+        return rs / 2147483647
+    end
+    local pts, nrm = {}, {}
+    for i = 0, sides - 1 do
+        local a = i / sides * TAU + (rnd() - 0.5) * 0.42
+        local rr = r * (0.64 + rnd() * 0.46)
+        pts[i * 2 + 1] = cx + math.cos(a) * rr
+        pts[i * 2 + 2] = cy + math.sin(a) * rr
+        nrm[i * 2 + 1] = math.cos(a)
+        nrm[i * 2 + 2] = math.sin(a)
+    end
+    -- Fanned from the centre, not from a vertex: the outline is star-shaped
+    -- about its own centre and nothing else, and a vertex fan on a shape with
+    -- one notch in it paints outside the rock.
+    local body = pal.a(pal.ROCK, 1)
+    for i = 0, sides - 1 do
+        local j = (i + 1) % sides
+        bg:tri(cx, cy, pts[i * 2 + 1], pts[i * 2 + 2],
+               pts[j * 2 + 1], pts[j * 2 + 2], body)
+    end
+    glow:glow_band(pts, nrm, 5, 0.12, pal.a(pal.ROCK_EDGE, 1))
+    glow:outline(pts, 1.2, pal.a(pal.hot(pal.ROCK_EDGE, 0.15, 1), 0.8), true)
+    local facet = pal.a(pal.ROCK_EDGE, 0.22)
+    local step = math.max(2, math.floor(sides / 3))
+    for i = 0, sides - 1, step do
+        local j = (i + math.floor(sides / 2)) % sides
+        glow:seg(pts[i * 2 + 1], pts[i * 2 + 2],
+                 (pts[i * 2 + 1] + pts[j * 2 + 1] + cx) / 3,
+                 (pts[i * 2 + 2] + pts[j * 2 + 2] + cy) / 3, 0.7, facet)
+    end
+    -- Half a crater rim, lit from the same side every time, so a field of them
+    -- reads as one field rather than a scatter of unrelated marks.
+    local rim = pal.a(pal.ROCK_EDGE, 0.38)
+    for _ = 1, craters do
+        local a, d = rnd() * TAU, (0.25 + rnd() * 0.35) * r
+        local px, py = cx + math.cos(a) * d, cy + math.sin(a) * d
+        glow:arc(px, py, r * (0.16 + rnd() * 0.12), -2.5, -0.4, 0.8, 6, rim)
+    end
+end
+
+-- Six tiles square, and the one piece of terrain with room to spend: a
+-- hexagonal core on four docking arms, windows, and a lit heart.
+local function station(bg, glow, tx, ty)
+    local cx, cy = (tx + 3) * TILE, (ty + 3) * TILE
+    local R = 40
+    local hex, hexn, inner = {}, {}, {}
+    for i = 0, 5 do
+        local a = i / 6 * TAU
+        hex[i * 2 + 1] = cx + math.cos(a) * R
+        hex[i * 2 + 2] = cy + math.sin(a) * R
+        hexn[i * 2 + 1] = math.cos(a)
+        hexn[i * 2 + 2] = math.sin(a)
+        inner[i * 2 + 1] = cx + math.cos(a) * (R - 7)
+        inner[i * 2 + 2] = cy + math.sin(a) * (R - 7)
+    end
+    local edge = pal.a(pal.WALL_EDGE, 0.75)
+    local lit = pal.a(pal.hot(pal.WALL_EDGE, 0.5, 1), 0.85)
+    for i = 0, 3 do
+        local a = i / 4 * TAU + TAU / 8
+        local ca, sa = math.cos(a), math.sin(a)
+        local nx, ny = -sa, ca
+        local arm = {cx + ca * 22 + nx * 7, cy + sa * 22 + ny * 7,
+                     cx + ca * 46 + nx * 5, cy + sa * 46 + ny * 5,
+                     cx + ca * 46 - nx * 5, cy + sa * 46 - ny * 5,
+                     cx + ca * 22 - nx * 7, cy + sa * 22 - ny * 7}
+        bg:fan(arm, pal.WALL)
+        glow:outline(arm, 1.1, edge, true)
+        glow:seg(cx + ca * 44 + nx * 6, cy + sa * 44 + ny * 6,
+                 cx + ca * 44 - nx * 6, cy + sa * 44 - ny * 6, 2.2, lit)
+    end
+    bg:fan(hex, pal.WALL)
+    glow:glow_band(hex, hexn, 9, 0.10, pal.a(pal.WALL_LIT, 1))
+    glow:glow_band(hex, hexn, 3, 0.22, pal.a(pal.WALL_LIT, 1))
+    glow:outline(hex, 1.5, pal.a(pal.hot(pal.WALL_EDGE, 0.5, 1), 1), true)
+    local ink = pal.a(pal.PANEL_INK, 0.28)
+    glow:outline(inner, 0.8, ink, true)
+    for i = 0, 5 do
+        glow:seg(hex[i * 2 + 1], hex[i * 2 + 2],
+                 inner[i * 2 + 1], inner[i * 2 + 2], 0.7, ink)
+    end
+    local win = pal.a(pal.FRIEND, 0.5)
+    for _, i in ipairs({0, 2, 4}) do
+        local j = (i + 1) % 6
+        for k = 1, 4 do
+            local t = k / 5
+            glow:disc(inner[i * 2 + 1] + (inner[j * 2 + 1] - inner[i * 2 + 1]) * t,
+                      inner[i * 2 + 2] + (inner[j * 2 + 2] - inner[i * 2 + 2]) * t,
+                      1.1, 6, win)
+        end
+    end
+    glow:ring(cx, cy, 11, 1.2, 16, pal.a(pal.PANEL_INK, 0.5))
+    glow:halo(cx, cy, 16, 10, pal.a(pal.FRIEND, 0.22))
+    glow:disc(cx, cy, 3.2, 8, pal.a(pal.hot(pal.FRIEND, 0.5, 1), 0.8))
+end
+
+-- Floor markings, beneath the ships and in instrument grey, so decoration is
+-- never mistaken for something a ship can hit.
+local function under_mark(glow, tx, ty, kind)
+    local x, y = tx * TILE, ty * TILE
+    local a = pal.a(pal.PANEL_INK, 0.24)
+    local b = pal.a(pal.PANEL_INK, 0.3)
+    kind = kind % 6
+    if kind == 0 then
+        glow:outline({x + 2, y + 2, x + 14, y + 2, x + 14, y + 14,
+                      x + 2, y + 14}, 0.7, a, true)
+        glow:disc(x + 4.5, y + 4.5, 0.8, 4, b)
+        glow:disc(x + 11.5, y + 4.5, 0.8, 4, b)
+        glow:disc(x + 4.5, y + 11.5, 0.8, 4, b)
+        glow:disc(x + 11.5, y + 11.5, 0.8, 4, b)
+    elseif kind == 1 then
+        local chev = pal.a(pal.PANEL_INK, 0.19)
+        for k = -1, 2 do
+            glow:seg(x + k * 6, y + 14, x + k * 6 + 7, y + 2, 1.6, chev)
+        end
+    elseif kind == 2 then
+        for k = 0, 3 do
+            glow:seg(x + 3, y + 3 + k * 3.2, x + 13, y + 3 + k * 3.2, 0.9, a)
+        end
+    elseif kind == 3 then
+        glow:ring(x + 8, y + 8, 5.4, 0.8, 12, a)
+        glow:ring(x + 8, y + 8, 2.2, 0.8, 8, a)
+    elseif kind == 4 then
+        glow:seg(x, y + 5, x + TILE, y + 5, 0.8, a)
+        glow:seg(x, y + 11, x + TILE, y + 11, 0.8,
+                 pal.a(pal.PANEL_INK, 0.17))
+        local rung = pal.a(pal.PANEL_INK, 0.12)
+        for k = 1, 3 do
+            glow:seg(x + k * 4, y + 4, x + k * 4, y + 12, 0.6, rung)
+        end
+    else
+        glow:outline({x + 4, y + 3, x + 12, y + 3, x + 13, y + 8,
+                      x + 12, y + 13, x + 4, y + 13, x + 3, y + 8},
+                     0.8, a, true)
+        glow:seg(x + 6, y + 8, x + 10, y + 8, 0.7, b)
+    end
+end
+
+-- A stand to plant a flag in, and a place a side arrives at. Both are marks on
+-- the ground rather than obstacles, and both are read while flying past.
+local function turf_stand(glow, tx, ty)
+    local x, y = tx * TILE + TILE / 2, ty * TILE + TILE / 2
+    local pts, nrm = {}, {}
+    for i = 0, 7 do
+        local a = i / 8 * TAU + TAU / 16
+        pts[i * 2 + 1] = x + math.cos(a) * 5.6
+        pts[i * 2 + 2] = y + math.sin(a) * 5.6
+        nrm[i * 2 + 1] = math.cos(a)
+        nrm[i * 2 + 2] = math.sin(a)
+    end
+    glow:glow_band(pts, nrm, 4, 0.14, pal.a(pal.INK, 1))
+    glow:outline(pts, 1.2, pal.a(pal.INK, 0.55), true)
+    glow:seg(x, y + 2.2, x, y - 2.2, 1.6, pal.a(pal.INK, 0.85))
+    glow:disc(x, y - 2.6, 1.3, 6, pal.a(pal.WHITE, 0.85))
+end
+
+local function spawn_mark(glow, tx, ty, team, my_team)
+    local x, y = tx * TILE + TILE / 2, ty * TILE + TILE / 2
+    local col = (team == my_team) and pal.FRIEND or pal.ENEMY
+    -- Two rings and nothing else. It carried an arrow out of a cradle before,
+    -- which meant nothing in a game with no up: a ship arrives pointing
+    -- wherever the mode says. Dimmer than it was, too. This is a mark on the
+    -- ground, not something anybody flies into.
+    glow:ring(x, y, 7, 1.0, 16, pal.a(col, 0.22))
+    glow:ring(x, y, 4.2, 1.0, 12, pal.a(col, 0.38))
+end
+
+-- A mouth to put something into: three sides and a net, open to the field.
+local function goal_mouth(glow, tx, ty, team, my_team)
+    local col = (team == my_team) and pal.FRIEND or pal.ENEMY
+    local x, y = tx * TILE, ty * TILE
+    local net = pal.a(col, 0.26)
+    for k = 1, 3 do
+        glow:seg(x + 2, y + 2 + k * 3, x + TILE - 2, y + 2 + k * 3, 0.6, net)
+        glow:seg(x + 2 + k * 3, y + 2, x + 2 + k * 3, y + TILE - 2, 0.6, net)
+    end
+    local frame = pal.a(pal.hot(col, 0.4, 1), 0.9)
+    local halo = pal.a(col, 1)
+    local sides = {{x + 2, y + TILE - 2, x + 2, y + 2},
+                   {x + 2, y + 2, x + TILE - 2, y + 2},
+                   {x + TILE - 2, y + 2, x + TILE - 2, y + TILE - 2}}
+    for i = 1, 3 do
+        local s = sides[i]
+        glow:seg_glow(s[1], s[2], s[3], s[4], 4, 0.10, halo)
+        glow:seg(s[1], s[2], s[3], s[4], 1.4, frame, true)
+    end
+end
+
+-- Everything static, in one pass over the window.
+local function build_terrain(bg, glow, x0, y0, x1, y1)
+    local wall_set, wall_cells = {}, {}
+    local bord_cells = {}
+    local safe_set, safe_cells = {}, {}
+    local rocks, stations, unders = {}, {}, {}
+    local turfs, spawns, goals = {}, {}, {}
+    local my_team = M.my_team or 0
+
+    for ty = y0, y1 do
+        for tx = x0, x1 do
+            local cls, var = sim.tile(tx, ty)
+            if cls == sim.T_SOLID then
+                if var == V_BORDER then
+                    wall_set[key(tx, ty)] = true
+                    bord_cells[#bord_cells + 1] = tx
+                    bord_cells[#bord_cells + 1] = ty
+                elseif var == V_ROCK_A or var == V_ROCK_B then
+                    rocks[#rocks + 1] = tx
+                    rocks[#rocks + 1] = ty
+                    rocks[#rocks + 1] = var
+                elseif var == V_ROCK_BIG then
+                    rocks[#rocks + 1] = tx
+                    rocks[#rocks + 1] = ty
+                    rocks[#rocks + 1] = var
+                elseif var == V_STATION then
+                    stations[#stations + 1] = tx
+                    stations[#stations + 1] = ty
+                elseif var ~= V_ROCK_BODY and var ~= V_STATION_BODY then
+                    wall_set[key(tx, ty)] = true
+                    wall_cells[#wall_cells + 1] = tx
+                    wall_cells[#wall_cells + 1] = ty
+                end
+            elseif cls == sim.T_SAFE then
+                safe_set[key(tx, ty)] = true
+                safe_cells[#safe_cells + 1] = tx
+                safe_cells[#safe_cells + 1] = ty
+            elseif cls == sim.T_UNDER then
+                unders[#unders + 1] = tx
+                unders[#unders + 1] = ty
+                unders[#unders + 1] = var
+            elseif cls == sim.T_TURF then
+                turfs[#turfs + 1] = tx
+                turfs[#turfs + 1] = ty
+            elseif cls == sim.T_SPAWN then
+                spawns[#spawns + 1] = tx
+                spawns[#spawns + 1] = ty
+                spawns[#spawns + 1] = var
+            elseif cls == sim.T_GOAL then
+                goals[#goals + 1] = tx
+                goals[#goals + 1] = ty
+                goals[#goals + 1] = var
+            end
+        end
+    end
+
+    -- Border tiles are in the wall set, so the two masses agree about which
+    -- faces are exposed and neither draws an edge into the other.
+    wall_mass(bg, glow, wall_set, wall_cells, false)
+    wall_mass(bg, glow, wall_set, bord_cells, true)
+    safe_zone(bg, glow, safe_set, safe_cells)
+
+    for i = 1, #unders, 3 do
+        under_mark(glow, unders[i], unders[i + 1], unders[i + 2])
+    end
+    for i = 1, #rocks, 3 do
+        local tx, ty, var = rocks[i], rocks[i + 1], rocks[i + 2]
+        if var == V_ROCK_BIG then
+            rock(bg, glow, (tx + 1) * TILE, (ty + 1) * TILE, 14.5,
+                 60413 + tx * 7 + ty * 13, 11, 2)
+        else
+            rock(bg, glow, (tx + 0.5) * TILE, (ty + 0.5) * TILE, 7,
+                 (var == V_ROCK_B and 977 or 12345) + tx * 31 + ty * 17,
+                 var == V_ROCK_B and 7 or 8, 1)
+        end
+    end
+    for i = 1, #stations, 2 do
+        station(bg, glow, stations[i], stations[i + 1])
+    end
+    for i = 1, #turfs, 2 do
+        turf_stand(glow, turfs[i], turfs[i + 1])
+    end
+    for i = 1, #spawns, 3 do
+        spawn_mark(glow, spawns[i], spawns[i + 1], spawns[i + 2], my_team)
+    end
+    for i = 1, #goals, 3 do
+        goal_mouth(glow, goals[i], goals[i + 1], goals[i + 2], my_team)
+    end
+end
+
 -- How much further than the mesh window the radar has to be sampled.
 --
 -- The radar reaches `RADAR_TILES` from the camera, and the mesh window is
@@ -289,97 +976,200 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
     M.radar_safe = rs
     M.radar_doors = rd
 
-    -- Wall bodies, and a lit edge only on the faces that touch open space.
-    -- Drawing every tile's border outlines the grid inside a solid block,
-    -- which turns a wall into graph paper. The edge gets the same two-stroke
-    -- treatment a hull does, so terrain glows rather than being merely
-    -- outlined -- and since it is built once, the second stroke is free.
-    local edge = pal.a(pal.WALL_EDGE, 1)
-    local spill = pal.a(pal.WALL_EDGE, 0.16)
-    local function face(x1, y1, x2, y2)
-        glow:seg(x1, y1, x2, y2, 7, spill)
-        glow:seg(x1, y1, x2, y2, 1.6, edge)
-    end
-    for ty = y0, y1 do
-        for tx = x0, x1 do
-            if sim.solid(tx, ty) then
-                local x, y = tx * TILE, ty * TILE
-                bg:rect(x, y, TILE, TILE, pal.WALL)
-                if not sim.solid(tx, ty - 1) then face(x, y, x + TILE, y) end
-                if not sim.solid(tx, ty + 1) then
-                    face(x, y + TILE, x + TILE, y + TILE)
-                end
-                if not sim.solid(tx - 1, ty) then face(x, y, x, y + TILE) end
-                if not sim.solid(tx + 1, ty) then
-                    face(x + TILE, y, x + TILE, y + TILE)
-                end
-            end
-        end
-    end
-
-    -- Safe zones. Static, because they never move -- a hatched floor and a
-    -- lit border, so it reads as a place rather than as a coloured patch.
-    local safe_fill = pal.a(pal.FRIEND, 0.07)
-    local safe_edge = pal.a(pal.FRIEND, 0.55)
-    for ty = y0, y1 do
-        for tx = x0, x1 do
-            if sim.tile(tx, ty) == sim.T_SAFE then
-                local x, y = tx * TILE, ty * TILE
-                bg:rect(x, y, TILE, TILE, safe_fill)
-                -- Only the outside faces, or the interior turns to graph
-                -- paper the way the walls did.
-                if sim.tile(tx, ty - 1) ~= sim.T_SAFE then
-                    glow:seg(x, y, x + TILE, y, 1.2, safe_edge)
-                end
-                if sim.tile(tx, ty + 1) ~= sim.T_SAFE then
-                    glow:seg(x, y + TILE, x + TILE, y + TILE, 1.2, safe_edge)
-                end
-                if sim.tile(tx - 1, ty) ~= sim.T_SAFE then
-                    glow:seg(x, y, x, y + TILE, 1.2, safe_edge)
-                end
-                if sim.tile(tx + 1, ty) ~= sim.T_SAFE then
-                    glow:seg(x + TILE, y, x + TILE, y + TILE, 1.2, safe_edge)
-                end
-            end
-        end
-    end
+    build_terrain(bg, glow, x0, y0, x1, y1)
 
     bg:flush()
     glow:flush()
 end
 
+-- Made once, not per frame: these are constants wearing a function's clothes,
+-- and allocating them in a draw loop is what a collector notices first.
+local DOOR_LIT = pal.hot(pal.WALL_EDGE, 0.5, 1)
+local DOOR_SEAM = pal.a(pal.hot(pal.WALL_EDGE, 0.8, 1), 0.95)
+local DOOR_SLAT = pal.a(DOOR_LIT, 0.34)
+local DOOR_POST_SHUT = pal.a(DOOR_LIT, 0.9)
+local DOOR_POST_OPEN = pal.a(DOOR_LIT, 0.45)
+local DOOR_TICK_SHUT = pal.a(DOOR_LIT, 0.85)
+local DOOR_TICK_OPEN = pal.a(DOOR_LIT, 0.4)
+local DOOR_MARK = pal.a(DOOR_LIT, 0.5)
+local DOOR_SILL = pal.a(DOOR_LIT, 0.16)
+local HOLE_RING = {pal.a(pal.HOLE, 0.34), pal.a(pal.HOLE, 0.22),
+                   pal.a(pal.HOLE, 0.15), pal.a(pal.HOLE, 0.10)}
+local HOLE_ARM = {}
+for k = 1, 5 do HOLE_ARM[k] = pal.a(pal.HOLE, 0.34 - (k - 1) * 0.05) end
+
+-- One door, however many tiles it spans.
+--
+-- Colour is not available here: it belongs to teams and to weapon classes, and
+-- a door that borrows either is a door somebody misreads under fire. So a door
+-- is a shape and a motion, and which of the four clocks it is on is a count of
+-- ticks on its posts.
+--
+-- A run is framed once. Framed per tile, a four-tile gateway reads as four
+-- separate shutters, which is four wrong answers to "can I fit through that".
+local function door_run(fill, glow, x0, y0, x1, y1, vertical, group, shut)
+    if shut then
+        fill:rect(x0, y0, x1 - x0, y1 - y0, pal.WALL)
+        -- Ribs every two tiles. Pitched off the door's thickness instead,
+        -- a fifteen-tile gateway gets sixty of them and reads as a comb.
+        local span = vertical and (y1 - y0) or (x1 - x0)
+        local n = math.max(2, math.floor(span / 32))
+        for k = 1, n - 1 do
+            local t = k / n
+            if vertical then
+                glow:seg(x0, y0 + span * t, x1, y0 + span * t, 0.8, DOOR_SLAT)
+            else
+                glow:seg(x0 + span * t, y0, x0 + span * t, y1, 0.8, DOOR_SLAT)
+            end
+        end
+        local ax, ay, bx, by
+        if vertical then
+            ax, ay, bx, by = x0, (y0 + y1) / 2, x1, (y0 + y1) / 2
+        else
+            ax, ay, bx, by = (x0 + x1) / 2, y0, (x0 + x1) / 2, y1
+        end
+        glow:seg_glow(ax, ay, bx, by, 5, 0.11, pal.a(DOOR_LIT, 1))
+        glow:seg(ax, ay, bx, by, 1.0, DOOR_SEAM)
+    else
+        -- Open, the gap is marked: brackets reaching in from the posts and a
+        -- faint line across the threshold. Posts alone are a doorway a pilot
+        -- cannot see until it shuts on them.
+        if vertical then
+            glow:seg(x0, y0, x0 + 4, y0, 1.0, DOOR_MARK, true)
+            glow:seg(x1 - 4, y0, x1, y0, 1.0, DOOR_MARK, true)
+            glow:seg(x0, y1, x0 + 4, y1, 1.0, DOOR_MARK, true)
+            glow:seg(x1 - 4, y1, x1, y1, 1.0, DOOR_MARK, true)
+            glow:seg(x0, (y0 + y1) / 2, x1, (y0 + y1) / 2, 0.7, DOOR_SILL)
+        else
+            glow:seg(x0, y0, x0, y0 + 4, 1.0, DOOR_MARK, true)
+            glow:seg(x0, y1 - 4, x0, y1, 1.0, DOOR_MARK, true)
+            glow:seg(x1, y0, x1, y0 + 4, 1.0, DOOR_MARK, true)
+            glow:seg(x1, y1 - 4, x1, y1, 1.0, DOOR_MARK, true)
+            glow:seg((x0 + x1) / 2, y0, (x0 + x1) / 2, y1, 0.7, DOOR_SILL)
+        end
+    end
+
+    local post = shut and DOOR_POST_SHUT or DOOR_POST_OPEN
+    local tick = shut and DOOR_TICK_SHUT or DOOR_TICK_OPEN
+    local n = (group % 4) + 1
+    for side = 0, 1 do
+        local ax, ay, bx, by, ux, uy, nx, ny
+        if vertical then
+            ax, ay = (side == 0) and x0 or x1, y0
+            bx, by = ax, y1
+            ux, uy = 0, 1
+            nx, ny = (side == 0) and 1 or -1, 0
+        else
+            ax, ay = x0, (side == 0) and y0 or y1
+            bx, by = x1, ay
+            ux, uy = 1, 0
+            nx, ny = 0, (side == 0) and 1 or -1
+        end
+        glow:seg(ax, ay, bx, by, 1.3, post)
+        local len = math.abs(bx - ax) + math.abs(by - ay)
+        local mid = len / 2 - (n - 1) * 1.5
+        for k = 0, n - 1 do
+            local t = mid + k * 3
+            glow:seg(ax + ux * t, ay + uy * t,
+                     ax + ux * t + nx * 2.4, ay + uy * t + ny * 2.4, 0.9, tick)
+        end
+    end
+end
+
 -- Doors and the tiles that mark a place rather than block one. These cannot
 -- go in the static mesh: a door is a wall on a clock, and a wall nobody can
 -- see is the worst thing in the game.
-function M.draw_tiles(fill, glow, cull)
+function M.draw_tiles(fill, glow, now, cull)
     local list = M.moving_tiles
+    local seen = {}
     for n = 1, #list do
         local t = list[n]
-        -- The index behind this spans the radar's reach rather than the
-        -- screen's, because the radar draws doors too. So the world draw has
-        -- to cull, or a map with doors all over it would put every one of
-        -- them into the frame's buffers.
         local wx, wy = t.tx * TILE, t.ty * TILE
         if outside(cull, wx, wy) then
             -- off screen
         elseif t.cls == sim.T_DOOR then
-            local x, y = t.tx * TILE, t.ty * TILE
-            if sim.door_open(t.variant) then
-                -- Open: the frame stays, so a pilot can see where it will be
-                -- when it shuts, and time the crossing.
-                glow:seg(x, y, x, y + TILE, 1.0, DOOR_GHOST)
-                glow:seg(x + TILE, y, x + TILE, y + TILE, 1.0, DOOR_GHOST)
-            else
-                fill:rect(x, y, TILE, TILE, pal.WALL)
-                glow:seg(x, y, x + TILE, y, 1.4, DOOR_LIT)
-                glow:seg(x, y + TILE, x + TILE, y + TILE, 1.4, DOOR_LIT)
+            -- A door tile that continues one already drawn this frame is part
+            -- of it, not another door.
+            if not seen[t.ty * 1024 + t.tx] then
+                local group = t.variant % 4
+                -- Which way the run goes is read off the tiles, not off the
+                -- variant. The format's 162-165 and 166-169 name how a door
+                -- was drawn in the original's tileset, and a map is free to
+                -- lay either of them out along either axis: the reference map
+                -- lays its "vertical" doors in a row. Asking the neighbours is
+                -- the only answer that is right for both.
+                local function same(px, py)
+                    local cls, var = sim.tile(px, py)
+                    return cls == sim.T_DOOR and var == t.variant
+                end
+                local across = same(t.tx + 1, t.ty) or same(t.tx - 1, t.ty)
+                local dx, dy = across and 1 or 0, across and 0 or 1
+                local ex, ey = t.tx, t.ty
+                while same(ex + dx, ey + dy) do
+                    ex, ey = ex + dx, ey + dy
+                    seen[ey * 1024 + ex] = true
+                end
+                -- A run of tiles across the screen is a door that slides up
+                -- and down, so its slats lie along the run and its posts cap
+                -- the ends.
+                door_run(fill, glow, wx, wy, (ex + 1) * TILE, (ey + 1) * TILE,
+                         not across, group, not sim.door_open(t.variant))
             end
         else
-            local cx, cy = t.tx * TILE + TILE / 2, t.ty * TILE + TILE / 2
-            -- Three rings falling off outward, which is what the pull does:
-            -- something to read the reach of before entering it.
-            for r = 1, 3 do
-                glow:ring(cx, cy, r * 9, 1.0, 18, HOLE_RING[r])
+            -- A well, and a hole rather than a wall: you fly into it. A dark
+            -- eye, rings that tighten inward, and arms that turn, so its reach
+            -- can be read before entering it.
+            local cx = t.tx * TILE + TILE / 2
+            local cy = t.ty * TILE + TILE / 2
+            local spin = now * 0.35
+            fill:disc(cx, cy, 7, 10, pal.a(pal.BG, 1))
+            glow:ring(cx, cy, 36, 1.1, 20, HOLE_RING[1])
+            glow:ring(cx, cy, 27, 1.1, 18, HOLE_RING[2])
+            glow:ring(cx, cy, 19, 1.1, 14, HOLE_RING[3])
+            glow:ring(cx, cy, 12, 1.1, 12, HOLE_RING[4])
+            for i = 0, 3 do
+                local a0 = i * TAU / 4 + spin
+                for k = 1, 5 do
+                    glow:arc(cx, cy, 10 + (k - 1) * 5.5,
+                             a0 + (k - 1) * 0.30, a0 + (k - 1) * 0.30 + 0.5,
+                             1.3, 3, HOLE_ARM[k])
+                end
+            end
+            glow:halo(cx, cy, 15, 10, pal.a(pal.HOLE, 0.30))
+            glow:ring(cx, cy, 7, 1.4, 12, pal.a(pal.hot(pal.HOLE, 0.4, 1), 0.9))
+        end
+    end
+end
+
+-- Scenery that belongs above the ships, drawn after them for that reason. It
+-- is the one thing on the map defined by what it is drawn over, so it cannot
+-- ride in the static mesh, which is under everything.
+function M.draw_over(glow, cull)
+    local list = M.over_tiles
+    for n = 1, #list do
+        local t = list[n]
+        local x, y = t.tx * TILE, t.ty * TILE
+        if not outside(cull, x, y) then
+            local a = pal.a(pal.PANEL_INK, 0.34)
+            local kind = t.variant % 3
+            if kind == 0 then
+                glow:seg(x, y + 5, x + TILE, y + 5, 1.1, a)
+                glow:seg(x, y + 11, x + TILE, y + 11, 1.1, a)
+                for k = 0, 3 do
+                    glow:seg(x + k * 4, y + 5, x + (k + 1) * 4, y + 11, 0.7,
+                             pal.a(pal.PANEL_INK, 0.22))
+                end
+            elseif kind == 1 then
+                glow:seg(x + 5, y, x + 5, y + TILE, 2.4,
+                         pal.a(pal.PANEL_INK, 0.16))
+                glow:seg(x + 5, y, x + 5, y + TILE, 0.8, a)
+                glow:seg(x + 11, y, x + 11, y + TILE, 1.6,
+                         pal.a(pal.PANEL_INK, 0.13))
+            else
+                glow:seg(x, y + 4, x + 12, y + 4, 1.0, a)
+                glow:seg(x + 12, y + 4, x + 12, y + TILE, 1.0, a)
+                glow:seg(x + 2, y + 4, x + 12, y + 14, 0.7,
+                         pal.a(pal.PANEL_INK, 0.20))
             end
         end
     end
@@ -398,27 +1188,53 @@ local function place(pts, out, x, y, ca, sa, scale)
     return out
 end
 
--- One ship. `thrusting` draws the flame, which is the only thing on screen
--- that says a pilot is accelerating rather than coasting.
+-- The same turn applied to directions rather than points, for the outward
+-- normals the bloom leaves a hull by. They rotate with it and never translate.
+local function place_dir(dirs, out, ca, sa)
+    for i = 1, #dirs, 2 do
+        local dx, dy = dirs[i], dirs[i + 1]
+        out[i] = dx * ca + dy * sa
+        out[i + 1] = dx * sa - dy * ca
+    end
+    return out
+end
+
+-- One ship.
+--
+-- Four weights of line rather than one, a body lit at the bow, and a
+-- silhouette whose every edge carries its own brightness. Everything here goes
+-- through primitives vec.lua already had, or through the two it grew for this:
+-- a segment that fades across its width, and a skirt offset from a closed
+-- outline. No shader, no texture, no second pass.
+--
+-- `thrusting` draws the flame, which is the only thing on screen that says a
+-- pilot is accelerating rather than coasting. `far` drops the detail that only
+-- reads up close; see M.DETAIL_RANGE.
 function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
     local a = heading / 65536 * TAU
     local ca, sa = math.cos(a), math.sin(a)
     local pts = place(h.poly, h.tmp, x, y, ca, sa, 1)
     local mine = opts and opts.mine
-    local dim = (opts and opts.alpha) or 1
+    local dim = ((opts and opts.alpha) or 1) * (h.dim or 1)
+    local near = not (opts and opts.far)
 
-    -- The flame first, so the hull sits on top of it.
+    -- The flame first, so the hull sits on top of it. Three parts: a bloom
+    -- sitting in the nozzle, a soft cone, and a hot core down half its length.
+    -- A single wide taper carries all its alpha at its widest and reads as a
+    -- solid orange wedge.
     if opts and opts.thrusting then
         local flick = 0.72 + (opts.flicker or 0) * 0.28
         for i = 1, #h.jets, 2 do
             local jx = x + h.jets[i] * ca + h.jets[i + 1] * sa
             local jy = y + h.jets[i] * sa - h.jets[i + 1] * ca
-            local len = 15 * flick
-            glow:seg_fade(jx, jy, jx - sa * len, jy + ca * len,
-                          6.5, 1.0, 0.85 * dim, 0, pal.THRUST)
-            glow:seg_fade(jx, jy, jx - sa * len * 0.45, jy + ca * len * 0.45,
-                          3.0, 0.8, 1.0 * dim, 0, pal.hot(pal.THRUST, 0.75, 1))
+            local len = 17 * flick
+            local mx, my = jx + sa * 1.5, jy - ca * 1.5
+            glow:halo(jx, jy, 5.4 * flick, 8, pal.a(pal.THRUST, 0.42 * dim))
+            glow:seg_fade(mx, my, jx - sa * len, jy + ca * len,
+                          5.4, 0.6, 0.34 * dim, 0, pal.THRUST)
+            glow:seg_fade(mx, my, jx - sa * len * 0.55, jy + ca * len * 0.55,
+                          2.3, 0.5, 0.95 * dim, 0, pal.hot(pal.THRUST, 0.72, 1))
         end
     end
 
@@ -441,29 +1257,108 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
                       2.6, 0.75, 1.0 * dim, 0, pal.hot(pal.THRUST, 0.75, 1))
     end
 
-    -- A dark interior, tinted toward the team so a hull is never a black
-    -- hole, and opaque enough that a star behind it does not shine through.
-    local cxw = x + h.cx * ca + h.cy * sa
-    local cyw = y + h.cx * sa - h.cy * ca
-    local body = {col[1] * 0.16 + 0.02, col[2] * 0.16 + 0.03,
-                  col[3] * 0.16 + 0.05, 0.94 * dim}
-    local n = #pts
-    for i = 1, n, 2 do
-        local j = (i + 1 < n) and i + 2 or 1
-        fill:tri(cxw, cyw, pts[i], pts[i + 1], pts[j], pts[j + 1], body)
+    -- The body, in two passes. An opaque base first, dark enough to be a hole
+    -- in the starfield and tinted toward the team so it is never a black one;
+    -- then an additive wash over it that is brightest at the bow and gone at
+    -- the stern. The wash has to be additive rather than a lighter fill,
+    -- because anything the fill layer draws below full alpha lets a star
+    -- through the hull.
+    local body = {col[1] * 0.055 + 0.018, col[2] * 0.055 + 0.026,
+                  col[3] * 0.055 + 0.042, 0.95 * dim}
+    local tris, lit = h.tris, h.lit
+    for i = 1, #tris, 3 do
+        local a1, b1, c1 = tris[i], tris[i + 1], tris[i + 2]
+        fill:tri(pts[a1 * 2 - 1], pts[a1 * 2], pts[b1 * 2 - 1], pts[b1 * 2],
+                 pts[c1 * 2 - 1], pts[c1 * 2], body)
+        glow:tri_fade(pts[a1 * 2 - 1], pts[a1 * 2], lit[a1] * 0.20 * dim,
+                      pts[b1 * 2 - 1], pts[b1 * 2], lit[b1] * 0.20 * dim,
+                      pts[c1 * 2 - 1], pts[c1 * 2], lit[c1] * 0.20 * dim, col)
     end
 
-    -- Outline: three concentric strokes, widest and faintest first. That is
-    -- the whole bloom -- no post pass, no second target -- and additively it
-    -- reads as a bright edge with light spilling off it rather than as three
-    -- lines. Anything past three is invisible and costs a third of the layer.
-    glow:outline(pts, 8.0, pal.a(col, 0.055 * dim))
-    glow:outline(pts, 3.4, pal.a(col, 0.16 * dim))
-    glow:outline(pts, 1.4, pal.hot(col, mine and 0.6 or 0.3, dim))
+    -- Interior structure, under the silhouette so the outline always wins.
+    -- Drawn in a neutral instrument grey rather than in the team colour: the
+    -- team read belongs on the silhouette, and a hull whose every line is the
+    -- same colour looks cut from one sheet of neon rather than built.
+    if near then
+        if h.plates then
+            for k = 1, #h.plates do
+                local q = place(h.plates[k], h.ptmp[k], x, y, ca, sa, 1)
+                glow:fan(q, pal.a(pal.PANEL_INK, 0.035 * dim))
+                glow:outline(q, 0.85, pal.a(pal.PANEL_INK, 0.36 * dim), true)
+            end
+        end
+        if h.lines then
+            for k = 1, #h.lines do
+                local q = place(h.lines[k], h.ltmp[k], x, y, ca, sa, 1)
+                for i = 1, #q - 3, 2 do
+                    glow:seg(q[i], q[i + 1], q[i + 2], q[i + 3], 0.7,
+                             pal.a(pal.PANEL_INK, 0.26 * dim), true)
+                end
+            end
+        end
+    end
 
-    if h.spine then
-        local s = place(h.spine, {}, x, y, ca, sa, 1)
-        glow:seg(s[1], s[2], s[3], s[4], 1.1, pal.a(col, 0.45 * dim))
+    -- Hardpoints, drawn hot: where a hull's damage comes out of is worth
+    -- knowing at a glance, and it is the same element at every size, from the
+    -- Apex's wing-root guns to the Anvil's two bomb tubes.
+    if h.tubes then
+        for k = 1, #h.tubes do
+            local t = h.tubes[k]
+            local ax = x + t[1] * ca + t[2] * sa
+            local ay = y + t[1] * sa - t[2] * ca
+            local bx = x + t[3] * ca + t[4] * sa
+            local by = y + t[3] * sa - t[4] * ca
+            glow:seg_glow(ax, ay, bx, by, t[5] + 4.0, 0.09 * dim, col)
+            glow:seg(ax, ay, bx, by, t[5], pal.a(col, 0.30 * dim), true)
+            glow:seg(ax, ay, bx, by, t[5] * 0.34,
+                     pal.a(pal.hot(col, 0.55, 1), 0.9 * dim), true)
+        end
+    end
+
+    -- The silhouette: two skirts of bloom and a hot edge on top, each edge at
+    -- its own brightness. It was three concentric strokes, which beaded at
+    -- every corner and banded rather than falling off.
+    local nrm = place_dir(h.nrm, h.ntmp, ca, sa)
+    glow:glow_band(pts, nrm, 9.0, 0.105 * dim, col, h.wide)
+    glow:glow_band(pts, nrm, 3.0, 0.32 * dim, col, h.band)
+    local edge = pal.hot(col, mine and 0.62 or 0.34, 1)
+    local n = #pts
+    local e = 1
+    for i = 1, n, 2 do
+        local j = (i + 1 < n) and i + 2 or 1
+        glow:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], 1.5,
+                 pal.a(edge, h.hot[e] * dim), true)
+        e = e + 1
+    end
+
+    -- The canopy. Every hull has one, it is always the brightest closed shape
+    -- on the ship, and it is always forward of centre, so "which end is the
+    -- front" never needs a second look.
+    if h.canopy then
+        local q = place(h.canopy, h.ctmp, x, y, ca, sa, 1)
+        glow:fan(q, pal.a(pal.hot(col, 0.3, 1), 0.42 * dim))
+        glow:outline(q, 0.9, pal.a(pal.hot(col, 0.8, 1), 0.95 * dim), true)
+    end
+
+    -- Lamps, dispensers and docking cradles. Six segments, not twelve: at two
+    -- pixels across the difference is invisible, and round primitives were
+    -- costing as much as the whole silhouette.
+    if near and h.pods then
+        for k = 1, #h.pods do
+            local d = h.pods[k]
+            local lx = x + d[1] * ca + d[2] * sa
+            local ly = y + d[1] * sa - d[2] * ca
+            glow:halo(lx, ly, d[3] * 2.6, 6, pal.a(col, 0.30 * dim))
+            glow:disc(lx, ly, d[3] * 0.45, 4,
+                      pal.a(pal.hot(col, 0.8, 1), 0.8 * dim))
+        end
+    end
+
+    -- Engines lit at idle, so a coasting hull still has something running.
+    for i = 1, #h.jets, 2 do
+        local jx = x + h.jets[i] * ca + h.jets[i + 1] * sa
+        local jy = y + h.jets[i] * sa - h.jets[i + 1] * ca
+        glow:halo(jx, jy, 4.2, 6, pal.a(pal.THRUST, 0.15 * dim))
     end
 
     -- Your own ship carries a halo. In a room of nine identical outlines the
@@ -624,7 +1519,13 @@ function M.events(me, sfx)
             fx.cone(x + math.sin(ang) * 10, y - math.cos(ang) * 10, ang,
                     bomb and 0.9 or 0.35, bomb and 7 or 3,
                     bomb and 120 or 190, 0.14, bomb and 2.2 or 1.4, col)
-            sfx(bomb and "bomb" or "gun", x, y)
+            -- Which rung fired it. Read off the ship rather than off the
+            -- weapon, because a spec carries what it does and not the rung it
+            -- came from, and this is the tick that fired so the two cannot
+            -- have drifted apart yet. Clamping to what the kit actually holds
+            -- is sfx's job, not this one's.
+            local trig = bomb and sim.TRIG_BOMB or sim.TRIG_GUN
+            sfx(bomb and "bomb" or "gun", x, y, sim.ship_level(a, trig))
         elseif ty == sim.EV_EXPIRE then
             local x = math.floor(v / 16384)
             local y = v % 16384
@@ -663,6 +1564,15 @@ function M.events(me, sfx)
             fx.wave(x, y, 46, 5, 0.4, 4, pal.a(pal.FRIEND, 0.9))
             sfx("spawn", x, y)
         elseif ty == sim.EV_BOUNCE then
+            -- A ship off a wall, and only a ship. A weapon coming off one is
+            -- SIM_EV_RICOCHET and is deliberately not handled: a bouncing
+            -- bullet is silent, decided rather than overlooked.
+            --
+            -- The two used to share this event, and reading one as the other
+            -- is what made a ricochet thump: v is an impact here and a packed
+            -- position there, and a position clears this gate almost always,
+            -- so every bounce anywhere on the map put a wall hit on the
+            -- shooter's own hull.
             local x, y = sim.ship_x(a), sim.ship_y(a)
             if v > 40000 then
                 fx.burst(x, y, 3, 70, 0.2, 1.2, pal.a(pal.WALL_EDGE, 1))

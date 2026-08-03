@@ -10,16 +10,19 @@
 
 mod ai;
 mod admin;
+mod bots;
 mod calibrate;
 mod catalog;
 mod config;
 mod directory;
 mod fleet;
+mod meta;
 mod modes;
-mod persist;
 mod rating;
 mod select;
 mod sim;
+mod spool;
+mod token;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -44,22 +47,33 @@ const PRIZE_INTEREST: i32 = 256 * 16 * 256;
 const DEFAULT_MAX_PLAYERS: usize = 16;
 
 // Client to server
-/// `[C2S_JOIN, class, protocol, zone_len] zone name`
+/// `[C2S_JOIN, class, protocol, flags, zone_len, name_len] zone name token`
 ///
 /// The zone is what the player picked out of a browse list, and it is checked
 /// rather than assumed: an instance is free to change zone the moment its last
 /// player leaves, so a client can arrive at an address that no longer serves the
 /// game it chose. Empty means "whatever you are running", which is what somebody
-/// typing an address directly means. The name runs to the end of the message, so
-/// it is last and needs no length.
+/// typing an address directly means.
+///
+/// The token is a session token from the meta-layer, and it runs to the end of
+/// the message because it is the only variable-length field left without a
+/// length. It may be empty: a client that has never reached the meta-layer, or
+/// reached it while it was down, still flies. It just flies as a guest whose
+/// name this room believes and whose rating goes nowhere.
 const C2S_JOIN: u8 = 1;
 const C2S_INPUT: u8 = 2;
 const C2S_SHIP: u8 = 5;
+/// This client is a bot and says so. Everything that follows from the
+/// declaration is in the arena's favour, which is why a well-behaved bot sets
+/// it: a declared bot is labeled in the roster, sits outside the human cap, and
+/// is asked to leave before a human is ever refused a seat. Anybody may set it.
+/// See docs/architecture/ai-runtime.md.
+const JOIN_BOT: u8 = 1;
 /// The client wire, which versions separately from the arena-to-directory one in
 /// `fleet.rs`: they change for different reasons and are spoken by different
 /// programs. Bump when a message's layout changes, so a stale build is told its
 /// build is stale rather than left to misparse a snapshot.
-const CLIENT_PROTOCOL: u8 = 1;
+const CLIENT_PROTOCOL: u8 = 3;
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
 /// magnitude of headroom.
@@ -93,6 +107,14 @@ const S2C_MAP: u8 = 9;
 /// reloads the zone file. A client that predicts on its own compiled
 /// defaults is predicting a different game the moment a zone tunes anything.
 const S2C_SETTINGS: u8 = 10;
+/// Your seat is wanted. Sent to a declared bot when a human needs the room it
+/// is standing in, and to every bot when the instance starts draining.
+///
+/// The seat is already gone by the time this arrives: it is a courtesy, not a
+/// request, so that a bot leaves cleanly rather than being deduced from a
+/// simulation it is no longer in. A client that ignores it holds a socket and
+/// nothing else.
+const S2C_YIELD: u8 = 11;
 
 struct Player {
     ship: u8,
@@ -114,6 +136,12 @@ struct Player {
     /// measure how late its inputs are arriving.
     last_input_tick: u32,
     name: String,
+    /// What this pilot's rating movement is filed under. See `Seat::rid`.
+    rid: rating::Id,
+    /// Whether this client declared itself a bot at join. It decides three
+    /// things and nothing else: the roster label, whether the seat counts
+    /// against the human cap, and whether the seat can be taken away.
+    bot: bool,
     tx: mpsc::Sender<Message>,
 }
 
@@ -224,11 +252,76 @@ fn ingest_damage(
     deaths
 }
 
+/// Who is in a seat. This was a name and a bot flag while those were the only
+/// two things a room knew about a pilot. Accounts add two more: what the
+/// roster is allowed to say they are, and what their rating belongs to.
+#[derive(Clone, Debug, PartialEq)]
+struct Seat {
+    name: String,
+    /// Declared at join. Still decides the human cap and eviction, as before.
+    bot: bool,
+    /// `token::Label` as a byte, derived from the account rather than asserted
+    /// by the client, and sent to every other pilot in the room.
+    label: u8,
+    /// Who the rating movement belongs to. An account id where there is one,
+    /// and the call sign where there is not, which is what a pilot flying
+    /// against a deployment with no meta-layer gets.
+    rid: rating::Id,
+    /// Present only with a verified token. No account means nothing durable is
+    /// written for this pilot: they are rated inside the room and forgotten
+    /// when it ends.
+    account: Option<u64>,
+    /// What the token said this pilot's rating was, per class, at the moment
+    /// it was minted. This is how a career crosses zones without an arena
+    /// asking anybody anything.
+    carried: Option<Vec<token::ClassRating>>,
+}
+
+impl Seat {
+    /// A pilot with no account. This is what a deployment running without a
+    /// meta-layer produces for everybody, and what a test wants when the thing
+    /// under test is seats rather than identity.
+    fn guest(name: impl Into<String>, bot: bool) -> Seat {
+        let name = name.into();
+        Seat {
+            rid: name.clone(),
+            name,
+            bot,
+            label: if bot {
+                token::Label::ThirdPartyBot.to_byte()
+            } else {
+                token::Label::Unknown.to_byte()
+            },
+            account: None,
+            carried: None,
+        }
+    }
+}
+
+/// The rating id for an account. Prefixed so it can never collide with a call
+/// sign, which is the other thing that lands in this namespace.
+fn account_rid(account: u64) -> String {
+    format!("a{account}")
+}
+
 struct Arena {
     world: sim::World,
+    /// Everybody connected, humans and bots alike. There is no separate bot
+    /// list: a bot is a client, so it is a row here with a flag on it, and
+    /// nothing in the tick can tell the two apart.
     players: HashMap<u64, Player>,
-    bots: Vec<ai::Bot>,
-    names: HashMap<u8, (String, bool)>, // ship -> (name, is_ai)
+    names: HashMap<u8, Seat>,
+    /// Where rated events go on their way out of this process. Shared with
+    /// every other room here, because the spool is a property of the process
+    /// and its disk rather than of a room.
+    spool: std::sync::Arc<std::sync::Mutex<spool::Spool>>,
+    /// Rating id to account, for the pilots in this room that have one.
+    ///
+    /// It outlives the seat on purpose. A pilot who leaves can still appear as
+    /// a contributor to somebody else's death a moment later, since leaving
+    /// clears their own ledger and not their credit in anybody else's, and an
+    /// event that loses that contributor loses the rating with it.
+    accounts: HashMap<rating::Id, u64>,
     next_id: u64,
     rating: rating::Rating,
     mode: Box<dyn modes::Mode>,
@@ -240,11 +333,10 @@ struct Arena {
     /// as "what game is this".
     teams: u8,
     balance: String,
-    /// How many bots this arena is supposed to have, fixed when it was built.
-    /// `leave` needs it: handing every departing player's ship to a fresh bot
-    /// grew the roster past its configured size, because a join only consumes a
-    /// bot when one is there to consume.
-    bot_target: usize,
+    /// The share of this room's seats the bot server is asked to keep filled.
+    /// The arena does not fill anything itself; it publishes the count it would
+    /// like and the bot server supplies it, per decision 29.
+    bot_fill: f32,
 }
 
 impl Arena {
@@ -680,7 +772,6 @@ impl Arena {
     fn with_world(world: sim::World) -> Self {
         let mut a = Arena::with_world_bare(world);
         a.mode = Box::new(modes::Warzone::new(4, a.teams));
-        a.fill_bots();
         a.add_default_flags();
         a
     }
@@ -691,8 +782,12 @@ impl Arena {
         Arena {
             world,
             players: HashMap::new(),
-            bots: Vec::new(),
             names: HashMap::new(),
+            accounts: HashMap::new(),
+            // Replaced by the process's own the moment a Zone takes ownership
+            // of this room. A room built and never handed one writes nothing,
+            // which is the right answer for a room in a test.
+            spool: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::new("/nonexistent"))),
             next_id: 1,
             rating: rating::Rating::new(),
             mode: Box::new(modes::FreeForAll),
@@ -700,44 +795,35 @@ impl Arena {
             finished: false,
             teams: 2,
             balance: "smaller".into(),
-            bot_target: 0,
+            bot_fill: catalog::DEFAULT_BOT_FILL,
         }
     }
 
-    /// The population director in miniature: fill the room with AI so a player
-    /// arriving alone still finds a game. Bots leave as humans arrive, per
-    /// docs/design/ai-players.md.
-    fn fill_bots(&mut self) {
-        let roster = ai::roster();
-        // Whatever actually fits is the target, since a narrow room takes fewer
-        // than the roster lists.
-        for (i, r) in roster.iter().enumerate() {
-            // The map's own start wins over the roster's tile: a zone pointed at
-            // a new map should not need its roster rewritten to match that map's
-            // walls. Headings spread around the circle, and the multiply has to
-            // happen wider than u16 or the ninth pilot overflows it.
-            let heading = ((i as u32 * 8192) % 65536) as u16;
-            // Team 0 for the spawn, so placement uses the map's shared starts
-            // rather than looking for a start marked for team nineteen. Which
-            // side they actually fly for is settled below, once the seat exists.
-            let ship = self
-                .world
-                .spawn_on_map(r.class, 0, i as u32, r.tile_x, r.tile_y, heading);
-            if ship >= 0 {
-                // The zone's balancer, exactly as for a joining human, rather
-                // than the side written on the roster entry. The roster lists six
-                // pilots on one side and three on the other, which in a two-team
-                // zone was a six-against-three flag game: team 1 took every round
-                // of War, ten in a row, because the other side never had the
-                // numbers to flip a flag back. A balanced roster is what the
-                // `balance` key already promised and only joining players got.
-                let side = self.pick_team(ship as u8);
-                self.world.state.ships[ship as usize].team = side;
-                self.bots.push(ai::Bot::new(ship as u8, r.skill));
-                self.names.insert(ship as u8, (r.name.to_string(), true));
-            }
-        }
-        self.bot_target = self.bots.len();
+    /// Humans in this room. What the player cap, the fill target and the drain
+    /// all mean, and none of them mean bots: a room held at four fifths by the
+    /// bot server would otherwise read as permanently full, never scale out,
+    /// and never finish draining.
+    fn humans(&self) -> usize {
+        self.players.values().filter(|p| !p.bot).count()
+    }
+
+    fn bot_count(&self) -> usize {
+        self.players.values().filter(|p| p.bot).count()
+    }
+
+    /// How many bots this room would like, and how many more it is short.
+    ///
+    /// The target is a share of the room rather than of what is free, so bots
+    /// give way one for one as people arrive: 51 of 64 seats, then 50 once
+    /// somebody joins, then 49. The thirteen seats that are never asked for are
+    /// the headroom that keeps an arrival from waiting on a departure.
+    fn bot_target(&self) -> usize {
+        let seats = unsafe { sim::sim_eff_max_ships(&*self.world.cfg) } as usize;
+        (seats as f32 * self.bot_fill).round() as usize
+    }
+
+    fn bots_wanted(&self) -> usize {
+        self.bot_target().saturating_sub(self.humans())
     }
 
     /// One flag per quadrant, forty tiles out from the middle, so all four are
@@ -766,26 +852,40 @@ impl Arena {
     /// key in the file was read by nobody. It bounds humans; the room's own size
     /// is `arena.max_ships` and the two are different questions, since a wide
     /// room with a small player cap is a zone that wants mostly bots.
-    fn join(&mut self, name: String, class: u8, max_players: usize,
+    fn join(&mut self, seat: Seat, class: u8, max_players: usize,
             tx: mpsc::Sender<Message>) -> Option<u64> {
-        if self.players.len() >= max_players {
+        let name = seat.name.clone();
+        let bot = seat.bot;
+        // The cap is on people. A declared bot passes it by, which is the whole
+        // of what the declaration buys the arena: a zone can hold a wide room
+        // mostly full of AI and still admit every human its operator allowed.
+        if !bot && self.humans() >= max_players {
             return None;
         }
-        // Take a bot's slot if one is available, so the arena size stays put.
-        let ship = if let Some(bot) = self.bots.pop() {
-            self.world.state.ships[bot.ship as usize].kills = 0;
-            self.world.state.ships[bot.ship as usize].deaths = 0;
-            bot.ship
-        } else {
-            // A joining pilot takes the next start in the map's rotation, so
-            // arrivals spread across them instead of landing on each other.
-            let nth = self.world.state.ship_count as u32;
-            let s = self.world.spawn_on_map(class.min(7), 0, nth, 512, 522, 0);
-            if s < 0 {
-                return None;
+        // A joining pilot takes the next start in the map's rotation, so
+        // arrivals spread across them instead of landing on each other.
+        let nth = self.world.state.ship_count as u32;
+        let mut ship = self.world.spawn_on_map(class.min(7), 0, nth, 512, 522, 0);
+        if ship < 0 && !bot {
+            // Every seat taken and a human at the door. The bot server leaves a
+            // fifth of the room empty precisely so this does not happen, but a
+            // burst of joins can outrun it: the target is recomputed on a
+            // browse, and eight people can arrive between two of those. So the
+            // room makes its own space, newest bot first.
+            //
+            // Refusing here instead would be the arena telling a player that a
+            // room full of AI has no space for them, which is the one refusal
+            // this design must never produce.
+            if let Some(freed) = self.evict_bot() {
+                ship = freed as i32;
             }
-            s as u8
-        };
+        }
+        if ship < 0 {
+            return None;
+        }
+        let ship = ship as u8;
+        self.world.state.ships[ship as usize].kills = 0;
+        self.world.state.ships[ship as usize].deaths = 0;
 
         // Which team is the zone's question and the mode's answer, never the
         // client's. `smaller` is ASSS's behaviour, whose MaxTeamDifference
@@ -846,7 +946,24 @@ impl Arena {
 
         let id = self.next_id;
         self.next_id += 1;
-        self.names.insert(ship, (name.clone(), false));
+        // A bot's rating moves slowly, so a human who kills one moves further
+        // than it does. The room learns which pilots those are from what they
+        // declared, rather than from a roster it holds a copy of: a bot the bot
+        // server generated is as much a bot as one the tournament calibrated.
+        if bot {
+            self.rating.mark_bot(&seat.rid);
+        }
+        // The pinned reference personality, by account rather than by name once
+        // it has one. It is the fixed point every other rating in the fleet is
+        // measured against, so it is set wherever it sits.
+        if seat.name == ai::ANCHOR && seat.bot {
+            self.rating.set_anchor(&seat.rid, ai::ANCHOR_RATING);
+        }
+        let rid = seat.rid.clone();
+        if let Some(a) = seat.account {
+            self.accounts.insert(rid.clone(), a);
+        }
+        self.names.insert(ship, seat);
         self.players.insert(
             id,
             Player {
@@ -855,10 +972,60 @@ impl Arena {
                 pending: Default::default(),
                 last_input_tick: 0,
                 name,
+                rid,
+                bot,
                 tx,
             },
         );
         Some(id)
+    }
+
+    /// Ask the newest bot to leave and hand back its seat.
+    ///
+    /// Newest rather than any, because a bot that has been in the room a while
+    /// is in the middle of something and the one that arrived a moment ago is
+    /// not. This is the arena's half of yielding: the graceful half, choosing
+    /// the moment after a death and staying out of a fight, belongs to the bot
+    /// server, which is watching the same room and is not under time pressure.
+    /// This one is, so it takes the cheapest bot it has.
+    fn evict_bot(&mut self) -> Option<u8> {
+        let (id, ship) = self
+            .players
+            .iter()
+            .filter(|(_, p)| p.bot)
+            .max_by_key(|(id, _)| **id)
+            .map(|(id, p)| (*id, p.ship))?;
+        // Told, then removed. The message is a courtesy that lets a bot close
+        // its own socket rather than work out from an empty simulation that it
+        // is gone; the seat is taken either way.
+        if let Some(p) = self.players.get(&id) {
+            println!("seat {ship} taken back from {} for an arriving pilot", p.name);
+            let _ = p.tx.try_send(Message::Binary(vec![S2C_YIELD]));
+        }
+        self.leave(id);
+        Some(ship)
+    }
+
+    /// Every bot out, which is how a drain finishes. Bots would otherwise hold
+    /// a draining instance at four fifths full for ever, and `total_players`
+    /// would never reach zero.
+    fn evict_all_bots(&mut self) -> usize {
+        let ids: Vec<u64> = self
+            .players
+            .iter()
+            .filter(|(_, p)| p.bot)
+            .map(|(id, _)| *id)
+            .collect();
+        if !ids.is_empty() {
+            println!("sending {} bot(s) home", ids.len());
+        }
+        for id in &ids {
+            if let Some(p) = self.players.get(id) {
+                let _ = p.tx.try_send(Message::Binary(vec![S2C_YIELD]));
+            }
+            self.leave(*id);
+        }
+        ids.len()
     }
 
     /// Where an arrival goes. One team is a free-for-all and there is nothing to
@@ -916,27 +1083,20 @@ impl Arena {
         }
     }
 
+    /// A pilot goes, and their seat is retired rather than handed on.
+    ///
+    /// Handing it to a fresh bot is what this used to do, and it was the
+    /// in-process director's last reflex: the room refilled itself. It cannot
+    /// now, and should not, because filling is the bot server's job and it is
+    /// watching. The slot is reusable either way, since the core gives an
+    /// inactive one to the next arrival rather than only ever appending.
     fn leave(&mut self, id: u64) {
         if let Some(p) = self.players.remove(&id) {
-            self.rating.forget(&p.name);
-            // Hand the ship to a bot only while the roster is short of the size
-            // this arena was built with. It used to be unconditional, and a join
-            // only takes a bot when one is there to take -- so every player who
-            // spawned into a fresh slot left a bot behind them that nobody had
-            // removed. A live arena configured for nine bots reached sixteen in
-            // two minutes of ordinary joining and leaving, on its way to
-            // simulating and broadcasting sixty-four.
-            if self.bots.len() < self.bot_target {
-                self.bots.push(ai::Bot::new(p.ship, 0.5));
-                self.names.insert(p.ship, (ai::name_for(p.ship), true));
-            } else {
-                // Retire it. The slot is reusable: the core hands an inactive
-                // one to the next arrival rather than only ever appending.
-                let sh = &mut self.world.state.ships[p.ship as usize];
-                sh.active = 0;
-                sh.alive = 0;
-                self.names.remove(&p.ship);
-            }
+            self.rating.forget(&p.rid);
+            let sh = &mut self.world.state.ships[p.ship as usize];
+            sh.active = 0;
+            sh.alive = 0;
+            self.names.remove(&p.ship);
         }
     }
 
@@ -946,21 +1106,14 @@ impl Arena {
         // input has to name to be applied here. `world.tick()` is the last one
         // completed, so the step below produces the one after it.
         let now = self.world.state.tick + 1;
+        // One loop, because there is one kind of pilot. Bots used to be thought
+        // for here, between the queue and the step, reading the world directly;
+        // their inputs now arrive on sockets like everybody else's and this
+        // function cannot tell which is which.
         for p in self.players.values_mut() {
             inputs.push(sim::sim_input {
                 ship: p.ship,
                 buttons: p.buttons_at(now),
-            });
-        }
-        for b in &mut self.bots {
-            // A look around only when this pilot is due one, so perception
-            // costs ten to twenty hertz rather than a hundred and the bots do
-            // not all pay for it on the same tick.
-            let fresh = b.looks_due().then(|| ai::scan(&self.world, b.ship));
-            let buttons = b.think(&ai::own(&self.world, b.ship), fresh);
-            inputs.push(sim::sim_input {
-                ship: b.ship,
-                buttons,
             });
         }
         self.world.step(&inputs);
@@ -969,7 +1122,7 @@ impl Arena {
         let seats: Vec<(u8, bool)> = self
             .names
             .iter()
-            .map(|(s, (_, ai))| (*s, *ai))
+            .map(|(s, seat)| (*s, seat.bot))
             .collect();
         let mut ctx = modes::ModeCtx {
             world: &mut self.world,
@@ -989,15 +1142,20 @@ impl Arena {
     fn score_events(&mut self) {
         let tick = self.world.state.tick;
         let names = self.names.clone();
+        // A seat with no name is a seat nobody is sitting in, which is what a
+        // ship that died on the tick its owner disconnected looks like. It used
+        // to fall back to the roster name for that index, which was right while
+        // seats and roster entries were the same list and is a fabrication now
+        // that a name arrives with its pilot.
         let name_of = move |ship: u8| {
             names
                 .get(&ship)
-                .map(|(n, _)| n.clone())
-                .unwrap_or_else(|| ai::name_for(ship))
+                .map(|k| k.rid.clone())
+                .unwrap_or_else(|| format!("ship{ship}"))
         };
         let deaths = ingest_damage(&self.world, &mut self.rating, &name_of);
         for (victim, killer) in deaths.iter().copied() {
-            let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, (_, a))| (*s, *a)).collect();
+            let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, k)| (*s, k.bot)).collect();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
                 seats: &seats,
@@ -1011,9 +1169,18 @@ impl Arena {
             }
         }
         for (victim, killer) in deaths {
-            let vname = self.name_of(victim);
-            let kname = self.name_of(killer);
+            // Rating is filed under the pilot's id, which is their account
+            // where they have one. The display name is a different question
+            // and is answered separately below.
+            let vname = self.rid_of(victim);
+            let kname = self.rid_of(killer);
             let rated = self.rating.death(tick, &vname);
+            // On its way out of this process, if the participants have
+            // accounts to file it against. Appending to the spool is a
+            // buffered write to a local file, so a tick never waits on it.
+            if let Some(r) = rated.as_ref() {
+                self.hand_off(r);
+            }
             let mut m = vec![S2C_KILL];
             m.push(victim);
             m.push(killer);
@@ -1028,15 +1195,67 @@ impl Arena {
             }
             let assists = rated.as_ref().map_or(0, |r| r.credits.len());
             if assists > 1 {
-                println!("tick {tick}: {kname} killed {vname} with {assists} contributors");
+                println!(
+                    "tick {tick}: {} killed {} with {assists} contributors",
+                    self.name_of(killer),
+                    self.name_of(victim)
+                );
             }
+        }
+    }
+
+    /// A rated death, addressed to the meta-layer.
+    ///
+    /// Only participants with accounts travel. A guest is rated inside the
+    /// room and forgotten when it ends, which is what having no account means,
+    /// so sending them would be reporting a pilot nobody can look up. An event
+    /// where nobody at all has an account is not sent.
+    fn hand_off(&mut self, r: &rating::RatedEvent) {
+        let Some(&victim) = self.accounts.get(&r.victim) else {
+            // The victim carries the negative half of the exchange. Without
+            // them there is no event, only unbalanced credit.
+            return;
+        };
+        let credits: Vec<spool::Credit> = r
+            .credits
+            .iter()
+            .filter_map(|(who, w, before, after)| {
+                Some(spool::Credit {
+                    account: *self.accounts.get(who)?,
+                    weight: *w,
+                    before: *before,
+                    after: *after,
+                })
+            })
+            .collect();
+        if credits.is_empty() {
+            return;
+        }
+        let ev = spool::Event {
+            tick: r.tick,
+            victim,
+            victim_kind: u8::from(self.rating.is_bot(&r.victim)),
+            victim_before: r.victim_before,
+            victim_after: r.victim_after,
+            credits,
+        };
+        if let Ok(mut s) = self.spool.lock() {
+            s.push(ev);
         }
     }
 
     fn name_of(&self, ship: u8) -> String {
         self.names
             .get(&ship)
-            .map(|(n, _)| n.clone())
+            .map(|k| k.name.clone())
+            .unwrap_or_else(|| format!("ship{ship}"))
+    }
+
+    /// What a seat's rating is filed under, which is not what it is called.
+    fn rid_of(&self, ship: u8) -> String {
+        self.names
+            .get(&ship)
+            .map(|k| k.rid.clone())
             .unwrap_or_else(|| format!("ship{ship}"))
     }
 
@@ -1073,22 +1292,27 @@ impl Arena {
         }
     }
 
-    /// Names and AI labels, sent on every join and leave and then every two
-    /// seconds regardless. Bots are always labeled: a player deserves to know
-    /// who they are fighting.
+    /// Names and labels, sent on every join and leave and then every two
+    /// seconds regardless. A player deserves to know who they are fighting, so
+    /// the label rides here: human, house bot, third-party bot, or unknown.
+    ///
+    /// It used to be one bit for "this is AI". Three values were not enough
+    /// once bots could be somebody else's and a pilot could be a guest we
+    /// genuinely cannot vouch for, and guessing on a player's behalf is the
+    /// one thing this field must not do.
     fn roster_msg(&self) -> Vec<u8> {
         let mut m = vec![S2C_ROSTER];
         m.push(self.names.len() as u8);
-        for (ship, (name, is_ai)) in &self.names {
+        for (ship, seat) in &self.names {
             m.push(*ship);
-            m.push(if *is_ai { 1 } else { 0 });
-            m.extend_from_slice(&(self.rating.rating_of(name).round() as i16).to_le_bytes());
+            m.push(seat.label);
+            m.extend_from_slice(&(self.rating.rating_of(&seat.rid).round() as i16).to_le_bytes());
             // Rated deaths so far. The client derives the tier from the
             // rating itself, but it cannot know from a number alone whether
             // that number has been earned yet, and an unearned rating should
             // not be shown as if it had been.
-            m.push(self.rating.games_of(name).min(255) as u8);
-            let bytes = name.as_bytes();
+            m.push(self.rating.games_of(&seat.rid).min(255) as u8);
+            let bytes = seat.name.as_bytes();
             let len = bytes.len().min(24) as u8;
             m.push(len);
             m.extend_from_slice(&bytes[..len as usize]);
@@ -1130,7 +1354,9 @@ struct Zone {
     /// docs/architecture/zones-and-arenas.md.
     rooms: Vec<Arena>,
     cfg: config::ConfigWatcher,
-    store: persist::Store,
+    /// Rated events on their way to the meta-layer. One per process, shared
+    /// with every room, and inert on a deployment without accounts.
+    spool: std::sync::Arc<std::sync::Mutex<spool::Spool>>,
     /// The zone this process is serving, empty when it is running the built-in
     /// room because no catalog reached it.
     zone_name: String,
@@ -1164,7 +1390,11 @@ impl Zone {
     /// room two, a kick could not reach them, and their ratings were never
     /// saved. Anything asking about the process asks about all of its rooms.
     fn total_players(&self) -> usize {
-        self.rooms.iter().map(|r| r.players.len()).sum()
+        self.rooms.iter().map(|r| r.humans()).sum()
+    }
+
+    fn total_bots(&self) -> usize {
+        self.rooms.iter().map(|r| r.bot_count()).sum()
     }
 
     /// Where the next arrival goes, per the fill ladder. Rung one is the fullest
@@ -1172,6 +1402,10 @@ impl Zone {
     /// coordination. Rung two is a new room here, when every room is at the
     /// zone's fill target and we are below `max_rooms`: 79 KB and a shared map,
     /// which is why it comes before anything involving another process.
+    ///
+    /// Fullest counts people, as the cap and the target do. Counting bots would
+    /// put every room at target from the moment the bot server found it, so a
+    /// zone would open its second room for its second player.
     ///
     /// `None` means this instance is out of room, and the client should try the
     /// next address the directory gave it.
@@ -1184,13 +1418,13 @@ impl Zone {
             .rooms
             .iter()
             .enumerate()
-            .filter(|(_, r)| r.players.len() < cap)
-            .max_by_key(|(_, r)| r.players.len())
+            .filter(|(_, r)| r.humans() < cap)
+            .max_by_key(|(_, r)| r.humans())
             .map(|(i, _)| i);
 
         // Only grow when every room has reached the target. A room holding six of
         // twenty wants the next six players, not a sibling.
-        let all_at_target = self.rooms.iter().all(|r| r.players.len() >= target);
+        let all_at_target = self.rooms.iter().all(|r| r.humans() >= target);
         if let Some(i) = best {
             if !all_at_target || self.rooms.len() >= self.max_rooms() {
                 return Some(i);
@@ -1210,6 +1444,36 @@ impl Zone {
         best
     }
 
+    /// Where an arriving bot goes: the room shortest of the ones it wants, and
+    /// nowhere at all when every room has what it asked for.
+    ///
+    /// A separate question from `room_for_join`, and it has to be. Rooms open
+    /// because people arrive, so a bot must never grow one; and "fullest room"
+    /// is the wrong answer for a bot, since it would stack every bot into room
+    /// one and leave a room opened for players with nobody in it to fight.
+    fn room_for_bot(&self) -> Option<usize> {
+        if self.draining {
+            return None;
+        }
+        self.rooms
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (i, r.bots_wanted().saturating_sub(r.bot_count())))
+            .filter(|(_, short)| *short > 0)
+            .max_by_key(|(_, short)| *short)
+            .map(|(i, _)| i)
+    }
+
+    /// What this process would like the bot server to supply, across every room.
+    /// Zero while draining, which is what lets a drain finish rather than being
+    /// topped up for ever by the thing that is supposed to be leaving.
+    fn bots_wanted(&self) -> usize {
+        if self.draining {
+            return 0;
+        }
+        self.rooms.iter().map(|r| r.bots_wanted()).sum()
+    }
+
     /// Another simulation of the same zone, sharing the map bytes. Bounded by
     /// `max_rooms`, which bounds both memory and the blast radius of this process
     /// dying, since rooms in a process share its fate.
@@ -1220,6 +1484,7 @@ impl Zone {
         // share one copy; without this the ceiling would be a memory limit
         // instead of a blast-radius one.
         let mut fresh = Self::build_room(&z, Some(&self.rooms[0].world))?;
+        fresh.spool = self.spool.clone();
         prime_ratings(&mut fresh.rating, &self.ladder);
         self.rooms.push(fresh);
         let n = self.rooms.len();
@@ -1227,46 +1492,146 @@ impl Zone {
         Ok(n - 1)
     }
 
+    /// Who is at the door, and what this room is allowed to say about them.
+    ///
+    /// A token is checked against the catalog's key and nothing else, so this
+    /// answers without a network call and keeps answering while the meta-layer
+    /// is down. What a pilot gets for arriving without one is a seat: they fly
+    /// as an unknown guest under the name they gave, and nothing durable is
+    /// written for them.
+    fn identify(&self, presented: &str, fallback_name: &str, declared_bot: bool)
+        -> Result<Seat, String>
+    {
+        let guest = |name: &str| Seat {
+            name: name.to_string(),
+            bot: declared_bot,
+            // A declared bot with no account is somebody else's bot, which is
+            // exactly what the third-party label means. Without an account it
+            // anchors nothing and earns nothing, which is the whole difference
+            // between a declaration and a credential.
+            label: if declared_bot {
+                token::Label::ThirdPartyBot.to_byte()
+            } else {
+                token::Label::Unknown.to_byte()
+            },
+            rid: name.to_string(),
+            account: None,
+            carried: None,
+        };
+        let key = self
+            .catalog
+            .as_ref()
+            .map(|c| c.meta_key.as_str())
+            .unwrap_or_default();
+        if presented.is_empty() || key.is_empty() {
+            return Ok(guest(fallback_name));
+        }
+        let Some(vk) = token::verifying_key_from_hex(key) else {
+            // A catalog with an unreadable key is an operator error, and
+            // refusing every pilot over it would take the zone down. Say it
+            // once per join and let people fly as guests.
+            println!("catalog holds a meta key that is not a key; pilots fly as guests");
+            return Ok(guest(fallback_name));
+        };
+        let claims = match token::verify(&vk, presented, token::now_secs()) {
+            Ok(c) => c,
+            Err(token::Bad::Expired) => return Err("your session expired; log in again".into()),
+            Err(token::Bad::Version) => {
+                return Err("your client and this fleet disagree about token format".into())
+            }
+            Err(_) => return Err("that session token is not one of ours".into()),
+        };
+        // The declaration and the account have to agree. A bot account that
+        // did not declare would be labeled honestly and still sit in a human
+        // seat, and a human account that declared would take a bot's exemption
+        // from the cap. Neither is a thing to allow quietly.
+        if claims.kind.is_bot() != declared_bot {
+            return Err(if declared_bot {
+                "this account is not a bot account; register the bot first".into()
+            } else {
+                "a bot account has to declare itself a bot".into()
+            });
+        }
+        Ok(Seat {
+            name: claims.name.clone(),
+            bot: declared_bot,
+            label: claims.label().to_byte(),
+            rid: account_rid(claims.account),
+            account: Some(claims.account),
+            carried: Some(claims.ratings),
+        })
+    }
+
     /// A returning pilot's record, into the room they are actually joining.
     ///
     /// The number and its game count move together, always. A rating restored
     /// without its count is a number with no confidence attached: the pilot
     /// reads as still placing, and the next death moves them by a newcomer's K,
-    /// which is four times as far as their record says it should. The count was
-    /// not saved at all until it was noticed that every deploy un-settled
-    /// everybody who had earned a rating.
-    fn restore_pilot(&mut self, room: usize, name: &str) {
-        let Some(saved) = self.store.rating(name) else {
+    /// which is four times as far as their record says it should.
+    ///
+    /// The record comes from the token, which is the meta-layer's answer and
+    /// therefore the same in every room of the fleet. A pilot without one
+    /// arrives unrated, which is what having no account means.
+    fn restore_pilot(&mut self, room: usize, seat: &Seat) {
+        let class = self.rating_class();
+        let Some((saved, played)) = self.token_rating(seat, &class) else {
             return;
         };
-        let played = self.store.games(name);
         if let Some(a) = self.rooms.get_mut(room) {
-            a.rating.score.insert(name.to_string(), saved);
-            a.rating.games.insert(name.to_string(), played);
+            a.rating.score.insert(seat.rid.clone(), saved);
+            a.rating.games.insert(seat.rid.clone(), played);
         }
     }
 
-    /// Every room's ladder to disk. A human is in exactly one room at a time so
-    /// their score saves cleanly; a bot name appears in all of them and the last
-    /// room wins, which costs nothing because bots are re-seeded from the
-    /// calibrated ladder whenever a room is built.
-    fn save_ladder(&mut self) {
-        let rows: Vec<(String, f64, u32)> = self
-            .rooms
-            .iter()
-            .flat_map(|r| {
-                r.rating
-                    .score
-                    .iter()
-                    .map(|(k, v)| (k.clone(), *v, r.rating.games_of(k)))
-            })
-            .collect();
-        for (name, score, played) in rows {
-            self.store.set_rating(&name, score);
-            self.store.set_games(&name, played);
+    /// The rating a token carried for this zone's class, if it carried one.
+    /// A pilot who has never played this class arrives unrated and places,
+    /// which is what a first game in a new class is supposed to be.
+    fn token_rating(&self, seat: &Seat, class: &str) -> Option<(f64, u32)> {
+        let r = seat.carried.as_ref()?.iter().find(|r| r.class == class)?;
+        Some((r.rating, r.games))
+    }
+
+    /// Tell the spool where to send, which cannot be known until a catalog
+    /// has arrived: the meta-layer's address travels with it. Called on the
+    /// same slow clock the ladder save used to run on, so a zone change or a
+    /// catalog update is picked up without another trigger to remember.
+    fn aim_spool(&mut self) {
+        // The catalog's address is the public one, because it is the one a
+        // client dials. An arena on the same host as the meta-layer should not
+        // go out through DNS, TLS and a proxy to reach a port beside it, so
+        // VW_META overrides it the same way VW_ARENAS does for the bot server.
+        let url = match std::env::var("VW_META") {
+            Ok(v) if !v.is_empty() => v,
+            _ => self.catalog.as_ref().map(|c| c.meta_url.clone()).unwrap_or_default(),
+        };
+        let token = std::env::var("VW_TOKEN").unwrap_or_default();
+        let (zone, class, instance) =
+            (self.zone_name.clone(), self.rating_class(), self.fleet.instance.clone());
+        if let Ok(mut s) = self.spool.lock() {
+            s.aim(&url, &token, &zone, &class, &instance);
         }
-        if let Err(e) = self.store.flush() {
-            println!("could not save ratings: {e}");
+    }
+
+    /// Whether this zone admits only pilots who have claimed their account.
+    fn wants_claimed(&self) -> bool {
+        self.wire_zone().map(|z| z.admission == "claimed").unwrap_or(false)
+    }
+
+    /// The class this zone rates into. One number per kind of game, per
+    /// docs/design/rating.md: a warzone and a duel ladder measure different
+    /// skills and one number for both is a number about nothing.
+    /// The zone definition is the authority, not the local config file: a
+    /// catalog-served arena takes its mode from the zone it was handed, and
+    /// the file underneath it is whatever the image happened to ship.
+    fn rating_class(&self) -> String {
+        let m = self
+            .wire_zone()
+            .map(|z| z.mode.clone())
+            .unwrap_or_else(|| self.cfg.current.arena.mode.clone());
+        if m.is_empty() {
+            meta::DEFAULT_CLASS.to_string()
+        } else {
+            m
         }
     }
 
@@ -1314,7 +1679,7 @@ impl Zone {
         arena.mode = modes::build(&z.mode, def.arena.flags, z.teams);
         arena.teams = z.teams.max(1);
         arena.balance = def.balance.clone();
-        arena.fill_bots();
+        arena.bot_fill = def.bot_fill();
         if z.mode == "warzone" {
             arena.add_default_flags();
         }
@@ -1410,13 +1775,30 @@ impl Zone {
         println!("selection: announced intent to serve {zone:?} to {sent} directory(s)");
     }
 
+    /// Stop taking joins and send every bot home, which is what makes a drain
+    /// finish. A draining instance publishes `bots_wanted` of zero as well, so
+    /// the bot server does not put back what this just let go; the eviction is
+    /// belt to that braces, and the fast half, since it does not wait for a
+    /// browse.
+    fn begin_drain(&mut self) -> usize {
+        self.draining = true;
+        let gone: usize = self.rooms.iter_mut().map(|r| r.evict_all_bots()).sum();
+        if gone > 0 {
+            for r in self.rooms.iter() {
+                r.broadcast_roster();
+            }
+        }
+        gone
+    }
+
     /// An operator verb from a directory. `unknown_verb` is what lets a
     /// directory be newer than an arena without either pretending.
     fn run_command(&mut self, c: &fleet::Command) -> (&'static str, String) {
         match c.verb.as_str() {
             "drain" => {
-                self.draining = true;
-                ("done", format!("draining {} player(s)", self.total_players()))
+                let bots = self.begin_drain();
+                ("done", format!("draining {} player(s), {bots} bot(s) sent home",
+                                 self.total_players()))
             }
             "pin" => {
                 if self.catalog.as_ref().and_then(|k| k.zone(&c.args)).is_none() {
@@ -1430,7 +1812,7 @@ impl Zone {
                             return ("refused", e);
                         }
                     } else {
-                        self.draining = true;
+                        self.begin_drain();
                         return ("done", "pinned; draining before the switch".into());
                     }
                 }
@@ -1513,7 +1895,16 @@ impl Zone {
         // From the bytes, not from a sibling: this is a change of zone, so the
         // map the running rooms hold is the wrong map.
         let mut arena = Self::build_room(z, None)?;
+        arena.spool = self.spool.clone();
         prime_ratings(&mut arena.rating, &self.ladder);
+        // Tell the bots before the room they are in stops existing. Rule 1 means
+        // no human is here to tell, but bots are: an instance with only bots in
+        // it reads as empty and is free to change zone, and a bot whose room was
+        // replaced underneath it would sit on a socket that had gone quiet until
+        // its own timeout rather than reconnecting into the new game.
+        for r in self.rooms.iter_mut() {
+            r.evict_all_bots();
+        }
         // A change of zone replaces every room: they all served the old game.
         self.rooms = vec![arena];
         self.zone_name = z.name.clone();
@@ -1567,11 +1958,18 @@ fn sanitize_name(raw: &str) -> String {
     }
 }
 
+/// Seed a room's ladder with what the offline tournament measured.
+///
+/// Only the calibrated nine, because they are the only pilots it measured. The
+/// bot server draws from a much longer roster than that, and the rest arrive
+/// unrated and earn their number in play, which is what a new individual is
+/// supposed to do. Who is a bot at all is no longer decided here either: it is
+/// whoever said so at join, and `Arena::join` marks them.
 fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64>) {
-    for e in ai::roster() {
-        r.mark_bot(e.name);
-        if let Some(&v) = ladder.get(e.name) {
-            r.score.insert(e.name.to_string(), v);
+    for (name, _, _) in ai::CALIBRATED {
+        r.mark_bot(name);
+        if let Some(&v) = ladder.get(name) {
+            r.score.insert(name.to_string(), v);
         }
     }
     r.set_anchor(ai::ANCHOR, ai::ANCHOR_RATING);
@@ -1590,6 +1988,28 @@ fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64>) {
 /// ladder seeds every zone.
 const LADDER: &str = include_str!("../../zone/ladder.json");
 
+/// What the offline tournament measured for one calibrated individual.
+///
+/// The meta-layer seeds a house bot's account from this the first time it is
+/// claimed, which is where the calibrated ladder now enters the fleet. It used
+/// to enter by priming every room, and that stopped reaching accounted bots the
+/// moment their rating started being filed under an account rather than a name:
+/// a room primes what it knows, and it no longer knows them by name.
+pub fn calibrated_rating(name: &str) -> Option<f64> {
+    if name == ai::ANCHOR {
+        // The pinned reference personality. It is a definition rather than a
+        // measurement, so it does not depend on a calibration run having
+        // happened.
+        return Some(ai::ANCHOR_RATING);
+    }
+    if !ai::CALIBRATED.iter().any(|(n, _, _)| *n == name) {
+        return None;
+    }
+    serde_json::from_str::<HashMap<String, f64>>(LADDER)
+        .ok()
+        .and_then(|m| m.get(name).copied())
+}
+
 /// Read the ladder a calibration run wrote, falling back to the compiled one.
 /// A missing file is the normal case and not a warning: it means nobody has
 /// calibrated since this build.
@@ -1602,14 +2022,15 @@ fn load_ladder(dir: &str) -> HashMap<String, f64> {
 }
 
 impl Zone {
-    fn new(cfg: config::ConfigWatcher, store: persist::Store,
+    fn new(cfg: config::ConfigWatcher, spool: std::sync::Arc<std::sync::Mutex<spool::Spool>>,
            ladder: HashMap<String, f64>) -> Self {
         let mut arena = Arena::new_from(&cfg.current);
+        arena.spool = spool.clone();
         prime_ratings(&mut arena.rating, &ladder);
         Zone {
             rooms: vec![arena],
             cfg,
-            store,
+            spool,
             zone_name: String::new(),
             catalog: None,
             tick_us: 0,
@@ -1652,14 +2073,15 @@ impl Zone {
         fleet::Status {
             zone,
             players: self.total_players() as u32,
-            bots: self.rooms.iter().map(|r| r.bots.len()).sum::<usize>() as u32,
+            bots: self.total_bots() as u32,
+            bots_wanted: self.bots_wanted() as u32,
             rooms: self.rooms.len() as u32,
             max_rooms: self.max_rooms() as u32,
             // This instance's own answer to "am I out of room", so the rule lives
             // in one place rather than being recomputed by every reader. Capped
             // means every room is at the target *and* there is no headroom to
             // open another, which is the fill ladder's second rung exhausted.
-            capped: self.rooms.iter().all(|r| r.players.len() >= target)
+            capped: self.rooms.iter().all(|r| r.humans() >= target)
                 && self.rooms.len() >= self.max_rooms(),
             metrics: fleet::Metrics {
                 tick_us: self.tick_us,
@@ -1841,6 +2263,29 @@ async fn main() {
         run_calibration();
         return;
     }
+    // The meta-layer: accounts, ratings, and the rated event log. The one
+    // process in the fleet with a database behind it, and the one every other
+    // process is designed to survive the loss of.
+    if std::env::args().nth(1).as_deref() == Some("meta") {
+        meta::run().await;
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("metakey") {
+        meta::run_keygen();
+        return;
+    }
+    // The bot server. Same binary as the arena and the directory, and a
+    // separate process for the same reason they are: one image, run with
+    // different first arguments, is what a deployment of this thing is.
+    //
+    // It also settles what "a crate both depend on" was going to mean. The
+    // calibration tournament and the live bots have to run identical code or
+    // the ladder rates pilots that do not exist, and being one program makes
+    // that structural rather than a rule about dependencies.
+    if std::env::args().nth(1).as_deref() == Some("bots") {
+        bots::run().await;
+        return;
+    }
     let addr_arg = std::env::args().nth(1);
 
     let dir = std::env::args().nth(2).unwrap_or_else(|| ".".into());
@@ -1848,7 +2293,10 @@ async fn main() {
     if let Some(e) = err {
         println!("no usable zone.toml ({e}); running on the built-in defaults");
     }
-    let store = persist::Store::open(format!("{dir}/ratings.json"));
+    // The one thing an arena's disk holds besides its instance id: rated
+    // events waiting for the meta-layer.
+    let spool = std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::new(&dir)));
+    tokio::spawn(spool::drain_loop(spool.clone()));
     let ladder = load_ladder(&dir);
     let local = std::path::Path::new(&dir).join("ladder.json").exists();
     println!(
@@ -1867,7 +2315,7 @@ async fn main() {
         watcher.current.tls_cert.clone(),
         watcher.current.tls_key.clone(),
     );
-    let zone = Arc::new(Mutex::new(Zone::new(watcher, store, ladder)));
+    let zone = Arc::new(Mutex::new(Zone::new(watcher, spool, ladder)));
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind failed");
@@ -1933,7 +2381,7 @@ async fn main() {
                     z.reload();
                 }
                 if n % 3000 == 0 {
-                    z.save_ladder();
+                    z.aim_spool();
                 }
                 // Every room, in order. The process holds one arena per room and
                 // ticks them all on this thread: at 16 us for sixty-four ships
@@ -2079,14 +2527,21 @@ async fn main() {
                     C2S_JOIN if seat.is_none() => {
                         let class = data.get(1).copied().unwrap_or(0);
                         let proto = data.get(2).copied().unwrap_or(0);
-                        let zlen = data.get(3).copied().unwrap_or(0) as usize;
+                        let flags = data.get(3).copied().unwrap_or(0);
+                        let is_bot = flags & JOIN_BOT != 0;
+                        let zlen = data.get(4).copied().unwrap_or(0) as usize;
+                        let nlen = data.get(5).copied().unwrap_or(0) as usize;
                         let want = String::from_utf8_lossy(
-                            data.get(4..4 + zlen).unwrap_or_default(),
+                            data.get(6..6 + zlen).unwrap_or_default(),
                         )
                         .to_string();
-                        let name = sanitize_name(&String::from_utf8_lossy(
-                            data.get(4 + zlen..).unwrap_or_default(),
+                        let claimed_name = sanitize_name(&String::from_utf8_lossy(
+                            data.get(6 + zlen..6 + zlen + nlen).unwrap_or_default(),
                         ));
+                        let presented = String::from_utf8_lossy(
+                            data.get(6 + zlen + nlen..).unwrap_or_default(),
+                        )
+                        .to_string();
                         let mut z = zone.lock().await;
 
                         // A refusal has to say which of five things went wrong,
@@ -2121,6 +2576,33 @@ async fn main() {
                             )));
                             break;
                         }
+                        // Who this is. A signature and a clock, checked here,
+                        // against a key that arrived with the catalog: no
+                        // call to the meta-layer, which is what lets it be
+                        // down without shutting the door.
+                        let seat_of = match z.identify(&presented, &claimed_name, is_bot) {
+                            Ok(s) => s,
+                            Err(why) => {
+                                let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, &why)));
+                                break;
+                            }
+                        };
+                        // A zone that wants a field it can vouch for. The
+                        // default is `any`, because turning a newcomer away in
+                        // the second they arrived is the cost of caring and
+                        // most rooms should not pay it.
+                        if z.wants_claimed() && seat_of.label == token::Label::Unknown.to_byte() {
+                            let _ = tx.try_send(Message::Binary(deny(
+                                DENY_BANNED,
+                                "this zone is for claimed pilots; keep your pilot in the menu first",
+                            )));
+                            break;
+                        }
+                        let name = seat_of.name.clone();
+                        // A per-zone ban, checked against the name the token
+                        // carries. The fleet ban never reaches this door: the
+                        // meta-layer refuses a banned account its token, so a
+                        // banned pilot arrives holding nothing.
                         if z.is_banned(&name) {
                             let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, "you are banned here")));
                             break;
@@ -2134,22 +2616,30 @@ async fn main() {
                         }
                         let _ = tx.try_send(Message::Binary(z.zone_msg()));
                         let cap = z.max_players();
+                        // A bot goes where a bot is short, and nowhere when every
+                        // room has the population it asked for. It never opens a
+                        // room: rooms exist because people arrived.
+                        let room = if is_bot { z.room_for_bot() } else { z.room_for_join() };
                         // The fill ladder: fullest room below cap, else a new room
                         // here if the zone allows one, else this instance is out
                         // of room and the client should try the next address.
-                        let Some(idx) = z.room_for_join() else {
+                        let Some(idx) = room else {
                             let _ = tx.try_send(Message::Binary(deny(
                                 DENY_FULL,
-                                "no room here; try another instance of this zone",
+                                if is_bot {
+                                    "this instance wants no more bots"
+                                } else {
+                                    "no room here; try another instance of this zone"
+                                },
                             )));
                             break;
                         };
                         // Into the room they are actually joining. Rooms keep their
                         // own ladders, so putting a returning player's rating in
                         // room zero would leave them unrated wherever they landed.
-                        z.restore_pilot(idx, &name);
+                        z.restore_pilot(idx, &seat_of);
                         let a = &mut z.rooms[idx];
-                        if let Some(new_id) = a.join(name, class, cap, tx.clone()) {
+                        if let Some(new_id) = a.join(seat_of, class, cap, tx.clone()) {
                             seat = Some((idx, new_id));
                             let ship = a.players[&new_id].ship;
                             let mut m = vec![S2C_MAP];
@@ -2282,6 +2772,8 @@ mod tests {
             pending: Default::default(),
             last_input_tick: 0,
             name: "probe".into(),
+            rid: "probe".into(),
+            bot: false,
             tx,
         }
     }
@@ -2394,8 +2886,8 @@ mod tests {
     fn the_compiled_ladder_covers_the_roster() {
         let ladder: HashMap<String, f64> =
             serde_json::from_str(LADDER).expect("the compiled ladder parses");
-        for e in ai::roster() {
-            assert!(ladder.contains_key(e.name), "{} has no calibrated rating", e.name);
+        for (name, _, _) in ai::CALIBRATED {
+            assert!(ladder.contains_key(name), "{name} has no calibrated rating");
         }
         assert_eq!(
             ladder.get(ai::ANCHOR).copied(),
@@ -2424,7 +2916,7 @@ mod tests {
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = Zone::new(
             cfg,
-            persist::Store::open("/nonexistent/state.json"),
+            test_spool(),
             ladder,
         );
         let def = wire_zone(4, 2, 8);
@@ -2463,6 +2955,8 @@ mod tests {
             max_rooms: rooms,
             teams: 1,
             balance: "smaller".into(),
+            admission: "any".into(),
+            bot_fill: 0.0,
             map_b64: fleet::b64(&sim::World::new(1).packed_map()),
             // A zone's name lives in the catalog that references it, never in the
             // zone's own file, so there is one place a name can be.
@@ -2470,12 +2964,163 @@ mod tests {
         }
     }
 
+    // ---- identity ----------------------------------------------------------
+
+    /// A fixed key for both halves of the exchange, so a failure here is a
+    /// failure rather than a coin flip.
+    fn meta_key() -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(&[3u8; 32])
+    }
+
+    /// A zone whose catalog carries the meta-layer's verifying key, which is
+    /// the whole of what an arena needs to know who anybody is.
+    fn serving_with_accounts() -> Zone {
+        let mut z = serving(1, 6, 16);
+        if let Some(c) = z.catalog.as_mut() {
+            c.meta_key = token::to_hex(meta_key().verifying_key().as_bytes());
+        }
+        z
+    }
+
+    fn a_token(kind: token::Kind, claimed: bool, name: &str, ratings: Vec<token::ClassRating>)
+        -> String
+    {
+        a_token_for(4242, kind, claimed, name, ratings)
+    }
+
+    fn a_token_for(account: u64, kind: token::Kind, claimed: bool, name: &str,
+                   ratings: Vec<token::ClassRating>) -> String {
+        token::mint(&meta_key(), &token::Claims {
+            account,
+            kind,
+            claimed,
+            name: name.into(),
+            expires: token::now_secs() + 600,
+            ratings,
+        })
+    }
+
+    #[test]
+    fn a_signed_token_names_the_pilot_and_their_account() {
+        let z = serving_with_accounts();
+        let t = a_token(token::Kind::Human, true, "Vesper 47", vec![]);
+        let seat = z.identify(&t, "whatever the client typed", false).expect("verifies");
+        // The name comes from the token, not from the client. A pilot cannot
+        // wear somebody else's call sign by asking to.
+        assert_eq!(seat.name, "Vesper 47");
+        assert_eq!(seat.account, Some(4242));
+        assert_eq!(seat.rid, "a4242");
+        assert_eq!(seat.label, token::Label::Human.to_byte());
+    }
+
+    #[test]
+    fn a_guest_is_unknown_rather_than_human() {
+        let z = serving_with_accounts();
+        let t = a_token(token::Kind::Human, false, "Talon 3", vec![]);
+        let seat = z.identify(&t, "", false).expect("verifies");
+        assert_eq!(seat.label, token::Label::Unknown.to_byte(),
+                   "an unclaimed account is somebody we cannot vouch for");
+        assert_eq!(seat.account, Some(4242), "which does not make them anonymous");
+    }
+
+    #[test]
+    fn a_house_bot_and_a_third_party_bot_are_told_apart() {
+        let z = serving_with_accounts();
+        let house = z
+            .identify(&a_token(token::Kind::HouseBot, true, "Nine", vec![]), "", true)
+            .expect("verifies");
+        assert_eq!(house.label, token::Label::HouseBot.to_byte());
+        let theirs = z
+            .identify(&a_token(token::Kind::ThirdPartyBot, true, "Someone", vec![]), "", true)
+            .expect("verifies");
+        assert_eq!(theirs.label, token::Label::ThirdPartyBot.to_byte());
+        // And a bot flying with no account at all is somebody else's by
+        // definition, since ours all have one.
+        let undeclared = z.identify("", "Anon", true).expect("no token is still a seat");
+        assert_eq!(undeclared.label, token::Label::ThirdPartyBot.to_byte());
+        assert_eq!(undeclared.account, None);
+    }
+
+    #[test]
+    fn a_declaration_that_disagrees_with_the_account_is_refused() {
+        let z = serving_with_accounts();
+        // A bot account that stayed quiet would sit in a human seat wearing a
+        // human's label, which is the one thing the declaration exists to stop.
+        let quiet_bot = a_token(token::Kind::HouseBot, true, "Nine", vec![]);
+        assert!(z.identify(&quiet_bot, "", false).is_err());
+        // And a human account claiming the bot exemption takes a seat that the
+        // cap was supposed to protect.
+        let loud_human = a_token(token::Kind::Human, true, "Vesper 47", vec![]);
+        assert!(z.identify(&loud_human, "", true).is_err());
+    }
+
+    #[test]
+    fn a_forged_or_expired_token_does_not_get_in() {
+        let z = serving_with_accounts();
+        let other = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
+        let forged = token::mint(&other, &token::Claims {
+            account: 1, kind: token::Kind::Human, claimed: true,
+            name: "Impostor".into(), expires: token::now_secs() + 600, ratings: vec![],
+        });
+        assert!(z.identify(&forged, "", false).is_err(), "another key is not our key");
+
+        let stale = token::mint(&meta_key(), &token::Claims {
+            account: 1, kind: token::Kind::Human, claimed: true,
+            name: "Yesterday".into(), expires: token::now_secs() - 1, ratings: vec![],
+        });
+        let why = z.identify(&stale, "", false).expect_err("expired");
+        assert!(why.contains("log in again"), "an expired token is a login, not an accusation");
+    }
+
+    #[test]
+    fn without_a_meta_layer_everybody_flies_as_a_guest() {
+        // The supported no-accounts arrangement, and also what an outage looks
+        // like from inside a room: play continues, nothing durable is written.
+        let z = serving(1, 6, 16);
+        let t = a_token(token::Kind::Human, true, "Vesper 47", vec![]);
+        let seat = z.identify(&t, "Local Name", false).expect("a seat regardless");
+        assert_eq!(seat.account, None, "no key in the catalog, so no token is read");
+        assert_eq!(seat.name, "Local Name");
+        assert_eq!(seat.label, token::Label::Unknown.to_byte());
+    }
+
+    #[test]
+    fn a_carried_rating_seeds_the_room_and_a_new_class_does_not() {
+        let mut z = serving_with_accounts();
+        let t = a_token(token::Kind::Human, true, "Veteran", vec![
+            token::ClassRating { class: "arena".into(), rating: 1640.0, games: 40 },
+            token::ClassRating { class: "hockey".into(), rating: 1000.0, games: 5 },
+        ]);
+        let seat = z.identify(&t, "", false).expect("verifies");
+        let rid = seat.rid.clone();
+        z.restore_pilot(0, &seat);
+        // The zone's mode is the class, and this one is an arena.
+        assert_eq!(z.rating_class(), "arena");
+        assert_eq!(z.rooms[0].rating.rating_of(&rid), 1640.0);
+        assert_eq!(z.rooms[0].rating.games_of(&rid), 40, "a rating without its count places again");
+
+        // A pilot who has never played this zone's class arrives unrated,
+        // which is what a first game in a new class is supposed to be.
+        let fresh = a_token_for(99, token::Kind::Human, true, "Newcomer", vec![
+            token::ClassRating { class: "hockey".into(), rating: 1900.0, games: 99 },
+        ]);
+        let fresh = z.identify(&fresh, "", false).expect("verifies");
+        z.restore_pilot(0, &fresh);
+        assert_eq!(z.rooms[0].rating.games_of(&fresh.rid), 0);
+    }
+
+    /// A spool aimed nowhere, which is what a room that is not handing off
+    /// anywhere holds. Writes nothing, because it is not armed.
+    fn test_spool() -> std::sync::Arc<std::sync::Mutex<spool::Spool>> {
+        std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::new("/nonexistent")))
+    }
+
     /// A zone process already serving that definition. No config file and no
     /// store file: both read defaults when the path is absent, which is what a
     /// catalog-served arena runs on anyway.
     fn serving(rooms: u32, target: u32, cap: u32) -> Zone {
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         let def = wire_zone(rooms, target, cap);
         z.catalog = Some(fleet::WireCatalog {
@@ -2497,8 +3142,221 @@ mod tests {
         for i in 0..n {
             let (tx, _rx) = mpsc::channel(OUT_QUEUE);
             z.rooms[room]
-                .join(format!("p{room}-{i}"), 0, cap, tx)
+                .join(Seat::guest(format!("p{room}-{i}"), false), 0, cap, tx)
                 .expect("a seat below the cap");
+        }
+    }
+
+    /// The same, for bots, and it is the same call: a bot joins through the
+    /// front door now, so a test that wants a populated room does what the bot
+    /// server does rather than reaching into the arena to plant one.
+    ///
+    /// Returns the ship each took, since a bot's seat is chosen by the arena.
+    fn seat_bots(a: &mut Arena, n: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        for i in 0..n {
+            let (tx, rx) = mpsc::channel(OUT_QUEUE);
+            // Held, because a bot that is evicted is sent a yield and a closed
+            // receiver would make that send fail silently in a test that is
+            // about to check it happened.
+            std::mem::forget(rx);
+            let e = ai::individual(i);
+            let id = a
+                .join(Seat::guest(e.name.clone(), true), e.class, 0, tx)
+                .expect("a seat for a bot");
+            out.push(a.players[&id].ship);
+        }
+        out
+    }
+
+    // ---- bots as clients ---------------------------------------------------
+
+    #[test]
+    fn a_bot_does_not_use_up_a_human_seat() {
+        // The declaration's whole point. `max_players` bounds people, and a zone
+        // that holds a wide room mostly full of AI has to keep admitting every
+        // human its operator allowed: an arena that counted bots against the cap
+        // would refuse the second player to a room with sixty-two free seats.
+        let mut z = serving(1, 4, 4);
+        seat_bots(&mut z.rooms[0], 20);
+        assert_eq!(z.rooms[0].humans(), 0, "twenty bots are nobody");
+        assert_eq!(z.rooms[0].bot_count(), 20);
+
+        for i in 0..4 {
+            let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+            assert!(
+                z.rooms[0].join(Seat::guest(format!("h{i}"), false), 0, 4, tx).is_some(),
+                "human {i} was refused a seat a bot was not holding"
+            );
+        }
+        // And the cap is still a cap.
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        assert!(z.rooms[0].join(Seat::guest("overflow", false), 0, 4, tx).is_none());
+    }
+
+    #[test]
+    fn a_room_full_of_bots_still_has_room_for_a_person() {
+        // The backstop under the bot server's headroom. It leaves a fifth of the
+        // room empty so this never fires, and a burst of joins between two
+        // browses can outrun that: the arena has to make its own space rather
+        // than tell a player that a room full of AI is full.
+        let mut z = serving(1, 4, 32);
+        let seats = z.rooms[0].world.cfg.max_ships as usize;
+        let seated = seat_bots(&mut z.rooms[0], seats);
+        assert_eq!(seated.len(), seats, "every seat taken by a bot");
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = z.rooms[0]
+            .join(Seat::guest("latecomer", false), 0, 32, tx)
+            .expect("a room of bots is not full");
+        assert_eq!(z.rooms[0].humans(), 1);
+        assert_eq!(z.rooms[0].bot_count(), seats - 1, "exactly one bot gave way");
+        // The newest, because a bot that has been in the room a while is in the
+        // middle of something and the one that arrived a moment ago is not.
+        assert_eq!(
+            z.rooms[0].players[&id].ship,
+            *seated.last().unwrap(),
+            "the seat taken is the newest bot's"
+        );
+    }
+
+    #[test]
+    fn bots_yield_one_for_one_and_never_below_zero() {
+        // What a player actually sees: a room held at four fifths, and their
+        // arrival costing the room one bot rather than emptying it or changing
+        // nothing. 64 seats at 0.8 is 51, so one human means 50 bots wanted.
+        let mut z = serving(1, 4, 32);
+        z.rooms[0].bot_fill = 0.8;
+        assert_eq!(z.rooms[0].bot_target(), 51);
+        assert_eq!(z.rooms[0].bots_wanted(), 51);
+
+        for i in 0..3 {
+            let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+            z.rooms[0].join(Seat::guest(format!("h{i}"), false), 0, 32, tx).expect("a seat");
+            assert_eq!(z.rooms[0].bots_wanted(), 51 - (i + 1),
+                       "one human in is one bot out");
+        }
+
+        // Past the target the answer is zero rather than a negative number
+        // wrapping into an enormous one, which is what `saturating_sub` is for.
+        for i in 3..32 {
+            let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+            z.rooms[0].join(Seat::guest(format!("h{i}"), false), 0, 32, tx).expect("a seat");
+        }
+        assert_eq!(z.rooms[0].humans(), 32);
+        assert_eq!(z.rooms[0].bots_wanted(), 19);
+
+        // A zone that wants no bots says so, and is believed.
+        z.rooms[0].bot_fill = 0.0;
+        assert_eq!(z.rooms[0].bots_wanted(), 0);
+    }
+
+    #[test]
+    fn bots_do_not_hold_a_room_open_against_the_fill_ladder() {
+        // Every count that decides anything is a count of people. A room the bot
+        // server holds at four fifths would otherwise read as permanently at
+        // target, so the zone would open its second room for its second player
+        // and scatter the population the ladder exists to concentrate.
+        let mut z = serving(2, 4, 16);
+        seat_bots(&mut z.rooms[0], 30);
+        assert_eq!(z.room_for_join(), Some(0), "a room of bots wants people");
+        assert_eq!(z.rooms.len(), 1, "and did not grow a sibling to hold them");
+        assert!(!z.status().capped, "nor does it report itself out of room");
+
+        seat(&mut z, 0, 4);
+        assert_eq!(z.room_for_join(), Some(1), "four people is the target");
+    }
+
+    #[test]
+    fn draining_sends_the_bots_home() {
+        // Bots would otherwise hold a draining instance at four fifths for ever:
+        // `total_players` never reaches zero, the drain never completes, and the
+        // instance never gets to choose another zone. Two things stop that, and
+        // this is the fast one; the other is publishing a want of zero so the
+        // bot server does not put back what this let go.
+        let mut z = serving(1, 4, 16);
+        seat_bots(&mut z.rooms[0], 12);
+        seat(&mut z, 0, 2);
+        assert_eq!(z.bots_wanted(), z.rooms[0].bot_target() - 2);
+
+        let gone = z.begin_drain();
+        assert_eq!(gone, 12, "every bot was told");
+        assert_eq!(z.total_bots(), 0);
+        assert_eq!(z.bots_wanted(), 0, "and none are asked for while draining");
+        assert_eq!(z.total_players(), 2, "the people are left alone");
+        assert_eq!(z.room_for_bot(), None, "a draining room takes no bots");
+    }
+
+    #[test]
+    fn a_bot_goes_to_the_room_that_is_shortest_of_them() {
+        // The other half of "a bot is not a player". An arrival goes to the
+        // fullest room, which concentrates people; a bot going there would stack
+        // the whole population into room one and leave a room opened for players
+        // with nobody in it to fight.
+        let mut z = serving(2, 1, 16);
+        seat(&mut z, 0, 1);
+        z.room_for_join().expect("a second room opens");
+        assert_eq!(z.rooms.len(), 2);
+
+        seat_bots(&mut z.rooms[0], 40);
+        assert_eq!(z.room_for_bot(), Some(1), "the empty room is the short one");
+
+        // And a bot never opens a room of its own: rooms exist because people
+        // arrived. Fill both to target and the answer is nobody wants one.
+        let target = z.rooms[0].bot_target();
+        seat_bots(&mut z.rooms[1], target);
+        seat_bots(&mut z.rooms[0], target - 40);
+        assert_eq!(z.room_for_bot(), None);
+        assert_eq!(z.rooms.len(), 2, "and no third room was built to hold bots");
+    }
+
+    #[test]
+    fn a_declared_bot_is_labelled_and_rated_as_one() {
+        // Players deserve to know who they are fighting, and a rating system
+        // that quietly mixes bots into your record is one nobody will trust.
+        // Both come from what the client declared rather than from a roster the
+        // arena holds a copy of, because the bot server draws from a much longer
+        // list than the nine the tournament calibrated.
+        let mut z = serving(1, 4, 16);
+        let ship = seat_bots(&mut z.rooms[0], 1)[0];
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0].join(Seat::guest("Person", false), 0, 16, tx).expect("a seat");
+
+        let a = &z.rooms[0];
+        assert_eq!(a.names[&ship].bot, true, "the bot says so on the scoreboard");
+        let human = a.names.iter().find(|(_, k)| k.name == "Person").unwrap();
+        assert_eq!(human.1.bot, false);
+        // A generated pilot is as much a bot as a calibrated one. `Aperture` is
+        // the tenth individual, so it is past the nine in the ladder.
+        let tenth = ai::individual(9);
+        assert!(!ai::CALIBRATED.iter().any(|(n, _, _)| *n == tenth.name));
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0].join(Seat::guest(tenth.name.clone(), true), 0, 16, tx).expect("a seat");
+        // Marked, which is what holds its K down so a human who kills it moves
+        // further than it does.
+        assert!(z.rooms[0].rating.is_bot(&tenth.name),
+                "{} rates as a human", tenth.name);
+        assert!(!z.rooms[0].rating.is_bot("Person"));
+    }
+
+    #[test]
+    fn every_individual_the_bot_server_can_fly_is_its_own_pilot() {
+        // One individual, one place, which is what makes a bot's rating the
+        // record of one career rather than an average over clones. The bot
+        // server allocates names from this list and a repeat would put two
+        // pilots on one row.
+        let mut seen = std::collections::HashSet::new();
+        for n in 0..300 {
+            let e = ai::individual(n);
+            assert!(seen.insert(e.name.clone()), "individual {n} repeats a name");
+            assert!(e.class < 8, "{} flies a hull that does not exist", e.name);
+            assert!(e.skill > 0.0 && e.skill <= 1.0, "{} has no skill", e.name);
+            assert_eq!(e.name, sanitize_name(&e.name), "{} needs sanitising", e.name);
+        }
+        // The calibrated nine come first, because they are the pilots whose
+        // ratings mean anything.
+        for (i, (name, _, _)) in ai::CALIBRATED.iter().enumerate() {
+            assert_eq!(&ai::individual(i).name, name);
         }
     }
 
@@ -2513,9 +3371,16 @@ mod tests {
         def.mode = "warzone".into();
         def.zone_toml = "description = \"war\"\n[arena]\nflags = 4\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         z.serve_zone(&def).expect("a room");
+        // The bot server would put these here. A round needs a population and
+        // this test is about how long one takes, so it seats its own rather
+        // than standing up a directory to be told the same number.
+        let mut brains: Vec<ai::Bot> = Vec::new();
+        for (i, ship) in seat_bots(&mut z.rooms[0], 12).into_iter().enumerate() {
+            brains.push(ai::Bot::new(ship, ai::individual(i).skill));
+        }
         let sides: Vec<u8> = z.rooms[0].world.state.ships.iter()
             .filter(|s| s.active != 0).map(|s| s.team).collect();
         let a = sides.iter().filter(|t| **t == 0).count();
@@ -2528,6 +3393,16 @@ mod tests {
         let mut at = 0u32;
         let mut rounds = Vec::new();
         for n in 0..60_000u32 {
+            // The buttons the bot server would have sent, put straight on the
+            // players. Over a socket this is the same bytes and one more hop.
+            for b in brains.iter_mut() {
+                let ship = b.ship;
+                let fresh = b.looks_due().then(|| ai::scan(&z.rooms[0].world, ship));
+                let buttons = b.think(&ai::own(&z.rooms[0].world, ship), fresh);
+                if let Some(p) = z.rooms[0].players.values_mut().find(|p| p.ship == ship) {
+                    p.buttons = buttons;
+                }
+            }
             z.rooms[0].tick();
             let m = z.rooms[0].banner.clone();
             if let Some(rest) = m.strip_prefix("team ") {
@@ -2593,6 +3468,7 @@ mod tests {
         // player flew around an arena that could not fight back.
         let mut z = serving(1, 6, 16);
         assert!(z.rooms[0].free_for_all(), "the fixture is a one-team zone");
+        let seats = seat_bots(&mut z.rooms[0], 4);
 
         let a = &z.rooms[0];
         let mut sides = std::collections::HashSet::new();
@@ -2611,7 +3487,7 @@ mod tests {
         // pilot with a teammate in front of them sees nobody, plans nothing,
         // and holds still. Put two together rather than trusting the map's
         // starts, so this measures the rule and not the geometry.
-        let (a, b) = (a.bots[0].ship, a.bots[1].ship);
+        let (a, b) = (seats[0], seats[1]);
         let room = &mut z.rooms[0];
         room.world.state.ships[b as usize].x = room.world.state.ships[a as usize].x + 40 * 256;
         room.world.state.ships[b as usize].y = room.world.state.ships[a as usize].y;
@@ -2621,7 +3497,7 @@ mod tests {
         // And a joining human is their own side too, not folded in with the
         // pilot whose seat they took.
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0].join("human".into(), 0, 16, tx).expect("a seat");
+        let id = z.rooms[0].join(Seat::guest("human", false), 0, 16, tx).expect("a seat");
         let ship = z.rooms[0].players[&id].ship;
         let mine = z.rooms[0].world.state.ships[ship as usize].team;
         for (i, s) in z.rooms[0].world.state.ships.iter().enumerate() {
@@ -2639,15 +3515,10 @@ mod tests {
         // stayed there for as long as the room was up.
         let mut z = serving(1, 6, 16);
         let a = &mut z.rooms[0];
-        // Alone: retire everybody but one pilot, so there is provably nothing
-        // for them to see.
-        let keep = a.bots[0].ship;
-        for i in 0..a.world.state.ship_count as usize {
-            if i as u8 != keep {
-                a.world.state.ships[i].active = 0;
-            }
-        }
-        let mut bot = a.bots.remove(0);
+        // Alone: one pilot and nobody else, so there is provably nothing for
+        // them to see.
+        let keep = seat_bots(a, 1)[0];
+        let mut bot = ai::Bot::new(keep, 0.5);
         let mut moved = false;
         for _ in 0..400 {
             let fresh = bot.looks_due().then(|| ai::scan(&a.world, keep));
@@ -2759,12 +3630,12 @@ mod tests {
         let mut def = wire_zone(1, 6, 16);
         def.zone_toml = "description = \"no kit\"\n[arena]\nspawn_prizes = 0\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         z.serve_zone(&def).expect("a room");
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0].join("first".into(), 0, 16, tx).expect("a seat");
+        let id = z.rooms[0].join(Seat::guest("first", false), 0, 16, tx).expect("a seat");
         let ship = z.rooms[0].players[&id].ship;
         {
             let sh = &mut z.rooms[0].world.state.ships[ship as usize];
@@ -2781,7 +3652,7 @@ mod tests {
         z.rooms[0].leave(id);
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id2 = z.rooms[0].join("second".into(), 0, 16, tx).expect("a seat");
+        let id2 = z.rooms[0].join(Seat::guest("second", false), 0, 16, tx).expect("a seat");
         let ship2 = z.rooms[0].players[&id2].ship;
         assert_eq!(ship2, ship, "the vacated seat is the one handed back");
 
@@ -2810,12 +3681,12 @@ mod tests {
         def.zone_toml = "description = \"a zone with a kit\"\n\
                          [arena]\nspawn_prizes = 30\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         z.serve_zone(&def).expect("a room");
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0].join("arrival".into(), 0, 16, tx).expect("a seat");
+        let id = z.rooms[0].join(Seat::guest("arrival", false), 0, 16, tx).expect("a seat");
         let ship = z.rooms[0].players[&id].ship as usize;
         let sh = z.rooms[0].world.state.ships[ship];
         // One green is one bounty, whatever it turned out to be, so thirty
@@ -2832,11 +3703,11 @@ mod tests {
         let mut bare = wire_zone(1, 6, 16);
         bare.zone_toml = "description = \"bare\"\n[arena]\nspawn_prizes = 0\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z2 = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z2 = Zone::new(cfg, test_spool(),
                                HashMap::new());
         z2.serve_zone(&bare).expect("a room");
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z2.rooms[0].join("arrival".into(), 0, 16, tx).expect("a seat");
+        let id = z2.rooms[0].join(Seat::guest("arrival", false), 0, 16, tx).expect("a seat");
         let ship = z2.rooms[0].players[&id].ship as usize;
         assert_eq!(z2.rooms[0].world.state.ships[ship].up, [0; sim::UP_COUNT],
                    "and a zone with no kit hands out no kit");
@@ -2850,10 +3721,11 @@ mod tests {
         def.teams = 2;
         def.mode = "warzone".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         z.serve_zone(&def).expect("a room");
         assert!(!z.rooms[0].free_for_all());
+        seat_bots(&mut z.rooms[0], 6);
         let sides: std::collections::HashSet<u8> = z.rooms[0]
             .world
             .state
@@ -2878,6 +3750,7 @@ mod tests {
         // sim_unpack, for the same reason: stopping short is both wrong and
         // silent.
         let mut z = serving(1, 9, 16);
+        seat_bots(&mut z.rooms[0], 3);
         seat(&mut z, 0, 1);
         let a = &z.rooms[0];
 
@@ -2885,14 +3758,14 @@ mod tests {
         assert_eq!(m[0], S2C_ROSTER);
         let n = m[1] as usize;
         assert_eq!(n, a.names.len(), "the count has to match what follows it");
-        assert!(n >= 2, "the bot roster and the player we seated");
+        assert!(n >= 2, "the bots and the player we seated");
 
         let mut o = 2;
-        let mut read: HashMap<u8, (String, bool)> = HashMap::new();
+        let mut read: HashMap<u8, (String, u8)> = HashMap::new();
         for _ in 0..n {
             assert!(o + 6 <= m.len(), "an entry header ran off the end");
             let ship = m[o];
-            let is_ai = m[o + 1] == 1;
+            let label = m[o + 1];
             let _rating = i16::from_le_bytes([m[o + 2], m[o + 3]]);
             let _games = m[o + 4];
             let len = m[o + 5] as usize;
@@ -2900,44 +3773,139 @@ mod tests {
             let name = String::from_utf8(m[o + 6..o + 6 + len].to_vec())
                 .expect("names are sanitised to printable ascii before they get here");
             o += 6 + len;
-            assert!(read.insert(ship, (name, is_ai)).is_none(), "ship {ship} twice");
+            assert!(read.insert(ship, (name, label)).is_none(), "ship {ship} twice");
         }
         assert_eq!(o, m.len(), "the reader has to land on the end, not near it");
-        assert_eq!(read, a.names, "every name, and whether it is a bot");
+        let want: HashMap<u8, (String, u8)> = a
+            .names
+            .iter()
+            .map(|(s, k)| (*s, (k.name.clone(), k.label)))
+            .collect();
+        assert_eq!(read, want, "every name, and what each seat is");
         assert!(
-            read.values().any(|(name, ai)| name == "p0-0" && !*ai),
+            read.values()
+                .any(|(name, l)| name == "p0-0" && *l == token::Label::Unknown.to_byte()),
             "the human we seated is in it, and not labelled a bot"
+        );
+        assert!(
+            read.values().any(|(_, l)| *l == token::Label::ThirdPartyBot.to_byte()),
+            "a bot that declared itself without an account is somebody else's"
         );
     }
 
     #[test]
-    fn a_settled_pilot_is_still_settled_after_a_restart() {
-        // The bug this covers: the file held the rating and not the game count,
-        // so a pilot with forty rated deaths came back reading as placing, and
-        // their next death moved them by a newcomer's K.
-        let path = std::env::temp_dir()
-            .join(format!("vw-ladder-{}.json", std::process::id()));
-        let _ = std::fs::remove_file(&path);
+    fn a_ladder_zone_can_ask_for_claimed_pilots() {
+        let mut z = serving_with_accounts();
+        assert!(!z.wants_claimed(), "a public room admits anybody, which is the default");
+        if let Some(c) = z.catalog.as_mut() {
+            c.zones[0].admission = "claimed".into();
+        }
+        let def = z.catalog.as_ref().unwrap().zones[0].clone();
+        z.serve_zone(&def).expect("a room");
+        assert!(z.wants_claimed());
+        // The bar is on the label, so it is on the account rather than on
+        // anything the client said about itself.
+        let guest = z
+            .identify(&a_token(token::Kind::Human, false, "Talon 3", vec![]), "", false)
+            .expect("verifies");
+        assert_eq!(guest.label, token::Label::Unknown.to_byte());
+        let claimed = z
+            .identify(&a_token(token::Kind::Human, true, "Vesper 47", vec![]), "", false)
+            .expect("verifies");
+        assert_eq!(claimed.label, token::Label::Human.to_byte());
+    }
+
+    #[test]
+    fn the_calibrated_ladder_seeds_an_account_and_pins_the_anchor() {
+        // Where the offline tournament's work now enters the fleet. A room
+        // primes by name and stopped reaching bots the moment their rating
+        // moved to an account, so this is the path that has to keep working.
+        assert_eq!(
+            calibrated_rating(ai::ANCHOR),
+            Some(ai::ANCHOR_RATING),
+            "the anchor is a definition, not a measurement"
+        );
+        for (name, _, _) in ai::CALIBRATED {
+            assert!(
+                calibrated_rating(name).is_some(),
+                "{name} was calibrated and has to arrive with its number"
+            );
+        }
+        // The roster is longer than the calibrated nine, and the rest earn
+        // their number in play.
+        let tenth = ai::individual(9);
+        assert!(calibrated_rating(&tenth.name).is_none());
+    }
+
+    #[test]
+    fn a_settled_pilot_is_still_settled_in_a_fresh_process() {
+        // The bug this covers outlived the file it was found in: a rating
+        // restored without its game count reads as placing, and the pilot's
+        // next death moves them by a newcomer's K. The record now arrives in
+        // the token rather than from a file beside the process, so the same
+        // property is asserted against the thing that carries it.
+        let mut z = serving_with_accounts();
+        let t = a_token_for(77, token::Kind::Human, true, "Veteran", vec![
+            token::ClassRating { class: "arena".into(), rating: 1640.0, games: 40 },
+        ]);
+        let seat = z.identify(&t, "", false).expect("verifies");
+        let rid = seat.rid.clone();
+        assert_eq!(z.rooms[0].rating.games_of(&rid), 0, "not until they join");
+        z.restore_pilot(0, &seat);
+        assert_eq!(z.rooms[0].rating.rating_of(&rid), 1640.0);
+        assert_eq!(z.rooms[0].rating.games_of(&rid), 40);
+        assert!(z.rooms[0].rating.tier_of(&rid).is_some(),
+                "a settled pilot is shown a tier, not 'placing'");
+    }
+
+    #[test]
+    fn a_rated_death_between_accounts_is_handed_off() {
+        let d = std::env::temp_dir().join(format!("vw-handoff-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let mut sp = spool::Spool::new(d.to_str().unwrap());
+        sp.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
+        let sp = std::sync::Arc::new(std::sync::Mutex::new(sp));
 
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open(&path), HashMap::new());
-        let def = wire_zone(1, 6, 16);
-        z.serve_zone(&def).expect("a room");
-        z.rooms[0].rating.score.insert("veteran".into(), 1640.0);
-        z.rooms[0].rating.games.insert("veteran".into(), 40);
-        z.save_ladder();
+        let mut z = Zone::new(cfg, sp.clone(), HashMap::new());
+        z.serve_zone(&wire_zone(1, 6, 16)).expect("a room");
+        let a = &mut z.rooms[0];
+        a.accounts.insert("a1".into(), 1);
+        a.accounts.insert("a2".into(), 2);
 
-        // A new process, reading what the last one wrote.
-        let (cfg2, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z2 = Zone::new(cfg2, persist::Store::open(&path), HashMap::new());
-        z2.serve_zone(&def).expect("a room");
-        assert_eq!(z2.rooms[0].rating.games_of("veteran"), 0, "not until they join");
-        z2.restore_pilot(0, "veteran");
-        assert_eq!(z2.rooms[0].rating.rating_of("veteran"), 1640.0);
-        assert_eq!(z2.rooms[0].rating.games_of("veteran"), 40);
-        assert!(z2.rooms[0].rating.tier_of("veteran").is_some(),
-                "a settled pilot is shown a tier, not 'placing'");
-        let _ = std::fs::remove_file(&path);
+        a.hand_off(&rating::RatedEvent {
+            tick: 100,
+            victim: "a2".into(),
+            victim_before: 1200.0,
+            victim_after: 1184.0,
+            credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
+        });
+        {
+            let s = sp.lock().unwrap();
+            assert_eq!(s.len(), 1, "both had accounts, so the event travels");
+        }
+
+        // A guest contributes nothing durable, because there is nobody to file
+        // it against. The event is dropped rather than sent half-formed.
+        a.hand_off(&rating::RatedEvent {
+            tick: 200,
+            victim: "a2".into(),
+            victim_before: 1184.0,
+            victim_after: 1170.0,
+            credits: vec![("some guest".into(), 1.0, 1200.0, 1214.0)],
+        });
+        // And a guest victim is not an event at all: the negative half of the
+        // exchange has nowhere to land.
+        a.hand_off(&rating::RatedEvent {
+            tick: 300,
+            victim: "another guest".into(),
+            victim_before: 1200.0,
+            victim_after: 1184.0,
+            credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
+        });
+        assert_eq!(sp.lock().unwrap().len(), 1, "neither half-formed event travelled");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -3012,11 +3980,8 @@ mod tests {
         assert_eq!(i, 1);
         assert_eq!(z.rooms[0].world.cfg.max_ships, z.rooms[1].world.cfg.max_ships);
         assert_eq!(z.rooms[0].teams, z.rooms[1].teams);
-        // A joining pilot takes a bot's slot, so the roster is one shorter where
-        // somebody sat down. Bots plus players is what stays equal.
-        assert_eq!(z.rooms[0].bots.len() + z.rooms[0].players.len(),
-                   z.rooms[1].bots.len() + z.rooms[1].players.len(),
-                   "including the roster of bots");
+        assert_eq!(z.rooms[0].bot_fill, z.rooms[1].bot_fill,
+                   "including how full of bots each is meant to be");
         assert_eq!(z.rooms[0].world.packed_map(), z.rooms[1].world.packed_map());
         // The same tiles, not a copy of them. A megabyte per room would make
         // `max_rooms` a memory limit rather than the blast-radius limit it is
@@ -3085,7 +4050,7 @@ mod tests {
         // a whole state pack, so dropping one is correct: the next supersedes it.
         let mut z = serving(1, 2, 4);
         let (tx, rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0].join("stalled".into(), 0, 4, tx).expect("a seat");
+        let id = z.rooms[0].join(Seat::guest("stalled", false), 0, 4, tx).expect("a seat");
         let mut buf = vec![0u8; sim::PACK_MAX];
         for _ in 0..OUT_QUEUE * 10 {
             z.rooms[0].tick();
@@ -3103,26 +4068,27 @@ mod tests {
         // The leak this pins was found by joining and leaving a live arena for
         // two minutes: a zone configured for nine bots reached sixteen, on its
         // way to sixty-four. `leave` handed every departing player's ship to a
-        // fresh bot, while `join` only takes a bot when one is there to take --
-        // so each player who spawned into a new slot left a bot behind them.
+        // fresh bot, while `join` only took a bot when one was there to take, so
+        // each player who spawned into a new slot left a bot behind them.
         //
         // Nothing reported it. Status was green, the arena was serving, and the
         // only outward sign was a browse list advertising more AI every hour and
-        // a tick cost quietly climbing.
+        // a tick cost quietly climbing. The backfill went with the in-process
+        // roster and cannot come back; what stays worth pinning is that seats
+        // are reused, since a room growing a slot per arrival reaches
+        // `max_ships` and starts refusing people who could have had the seat
+        // that just went cold.
         let mut z = serving(1, 4, 32);
-        let bots0 = z.rooms[0].bots.len();
+        let bots0 = 9;
+        seat_bots(&mut z.rooms[0], bots0);
         let ships0 = z.rooms[0].world.state.ship_count;
-        assert!(bots0 > 0, "the fixture has a roster to lose");
-        assert_eq!(z.rooms[0].bot_target, bots0);
 
-        // More players at once than there are bots, so some must spawn into
-        // fresh slots -- which is the only case that leaked.
         for _round in 0..6 {
             let mut seated = Vec::new();
             let cap = z.max_players();
             for i in 0..(bots0 + 5) {
                 let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-                if let Some(id) = z.rooms[0].join(format!("churn{i}"), 0, cap, tx) {
+                if let Some(id) = z.rooms[0].join(Seat::guest(format!("churn{i}"), false), 0, cap, tx) {
                     seated.push(id);
                 }
             }
@@ -3131,9 +4097,9 @@ mod tests {
             }
         }
 
-        assert_eq!(z.rooms[0].bots.len(), bots0,
-                   "the roster came back to the size it was built with");
-        assert_eq!(z.rooms[0].players.len(), 0);
+        assert_eq!(z.rooms[0].bot_count(), bots0,
+                   "the bots that were here stayed, and nobody made more");
+        assert_eq!(z.rooms[0].humans(), 0);
         // The count is a high-water mark and may have risen once to hold the
         // extra concurrent players, but it must not climb every round: the core
         // hands an inactive slot to the next arrival.
@@ -3179,7 +4145,7 @@ mod tests {
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
         let cap = z.max_players();
         let id = z.rooms[0]
-            .join(sanitize_name("bad\r\nguy\u{7f}"), 0, cap, tx)
+            .join(Seat::guest(sanitize_name("bad\r\nguy\u{7f}"), false), 0, cap, tx)
             .expect("a seat");
         assert_eq!(z.rooms[0].players[&id].name, "bad guy");
     }

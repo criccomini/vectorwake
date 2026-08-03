@@ -16,6 +16,8 @@
 -- reached has to say so in words a player can act on rather than leaving an
 -- empty list that looks like a fleet with nothing running on it.
 
+local account = require("arena.account")
+
 local M = {}
 
 local C2S_STATUS = 4
@@ -28,6 +30,9 @@ local REFRESH = 3
 
 M.rows = {}
 M.note = "looking for games"
+-- Set by the caller before the list is opened. Used once, on first contact
+-- with a meta-layer, to name a brand new account.
+M.pilot_name = ""
 
 local conn = nil
 local address = nil
@@ -42,6 +47,11 @@ local function on_message(s)
     if not ok or type(reply) ~= "table" or type(reply.zones) ~= "table" then
         M.note = "the directory sent something unreadable"
         return
+    end
+    -- Where accounts live, if this deployment has any. It rides the games list
+    -- because the list is what a client asks for before it needs an identity.
+    if type(reply.meta) == "string" then
+        account.aim(reply.meta, M.pilot_name or "")
     end
     local rows = {}
     for _, z in ipairs(reply.zones) do

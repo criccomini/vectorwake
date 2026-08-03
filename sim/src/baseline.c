@@ -481,7 +481,41 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
 
 /* ---- maps ---- */
 
+/* Close the world.
+ *
+ * `sim_tile_at` already answers solid for anything outside the square, so this
+ * looks redundant and is not. That answer only reaches the collision test for
+ * tiles the ship's box actually covers, and a hull at full speed crosses more
+ * than a tile in a tick: two tiles of wall is thin enough that the axis-by-axis
+ * resolution has nothing to push it back out of, and the ship is through. Four
+ * is what the reference arena has always used for the same reason, and this is
+ * that fill, moved to where every map gets it.
+ *
+ * It is not in the map file. Every map wants it, so a map that had to carry it
+ * is a map that can get it wrong, and none of the converted ones brought a
+ * boundary of their own: a `.lvl` is drawn against a client that stops a ship
+ * at the edge whatever the tiles say.
+ *
+ * The variant marks it as a boundary rather than a wall, which is what the
+ * renderer draws its edge treatment from. Nothing else in the core reads it. */
+#define BORDER_TILES 4
+#define VARIANT_BORDER 1
+
+static void enclose(sim_map *m) {
+    const int LAST = SIM_MAP_TILES - 1;
+    uint8_t t = SIM_TILE(SIM_TILE_SOLID, VARIANT_BORDER);
+    for (int i = 0; i < BORDER_TILES; i++) {
+        for (int k = 0; k <= LAST; k++) {
+            m->tile[(size_t)i * SIM_MAP_TILES + (size_t)k] = t;
+            m->tile[(size_t)(LAST - i) * SIM_MAP_TILES + (size_t)k] = t;
+            m->tile[(size_t)k * SIM_MAP_TILES + (size_t)i] = t;
+            m->tile[(size_t)k * SIM_MAP_TILES + (size_t)(LAST - i)] = t;
+        }
+    }
+}
+
 void sim_map_index(sim_map *m) {
+    enclose(m);
     m->feature_count = 0;
     for (int ty = 0; ty < SIM_MAP_TILES; ty++) {
         for (int tx = 0; tx < SIM_MAP_TILES; tx++) {
@@ -572,17 +606,10 @@ static uint32_t cell_hash(uint32_t cx, uint32_t cy) {
  * a shot. A map this size can hold one now; placing it is a map-editor
  * decision rather than a C-file one. */
 void sim_map_arena(sim_map *m) {
-    const int LAST = SIM_MAP_TILES - 1;
-    const int EDGE = 4;
     memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
 
-    /* The boundary. Four tiles thick, because two is thin enough that a hull
-     * at full speed can cross it inside one tick's move and the axis-by-axis
-     * collision has nothing to push it back out of. */
-    fill(m, 0, 0, LAST, EDGE, SIM_TILE_SOLID);
-    fill(m, 0, LAST - EDGE, LAST, LAST, SIM_TILE_SOLID);
-    fill(m, 0, 0, EDGE, LAST, SIM_TILE_SOLID);
-    fill(m, LAST - EDGE, 0, LAST, LAST, SIM_TILE_SOLID);
+    /* The boundary is not built here any more. `sim_map_index` closes every
+     * map, this one included, with the same four tiles this used to fill. */
 
     const int CELL = 64;
 

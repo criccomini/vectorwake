@@ -56,6 +56,12 @@ play.{$VW_DOMAIN} {
 		reverse_proxy 127.0.0.1:9000
 	}
 
+	# Where a client signs in. Arenas do not come through here: they reach the
+	# meta-layer on loopback, the same way they reach the directory.
+	handle_path /meta* {
+		reverse_proxy 127.0.0.1:9400
+	}
+
 	handle_path /a1* {
 		reverse_proxy 127.0.0.1:9001
 	}

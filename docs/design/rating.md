@@ -153,6 +153,12 @@ the thousand quiet things good players do. That is a real gap, and the plan is
 objective-based rated events later rather than pretending kills are the whole
 game.
 
+What a player sees is a tier rather than a number, and nothing at all until
+they are out of provisional. The bands live in `server/src/rating.rs`, from
+Drift to Wake. This began as an open question below and the shipped answer has
+held: a number invites anxiety over ten-point noise, and a coarse band moves
+only when something real has changed.
+
 ## Storage
 
 Every rated event is stored with its inputs: participants, weights, ratings
@@ -162,15 +168,20 @@ that log, not the source of truth.
 This costs a little disk and buys the ability to change the model. When we
 replace Elo with something better, we recompute history rather than resetting
 everybody, and we can test a proposed model against real data before shipping it.
+The same log read along its time axis is a career, which is how a profile draws
+rating over time without any storage of its own, per [accounts.md](accounts.md).
 
 ## Where it runs
 
 The arena emits kill events with attribution weights. The rating layer consumes
 them outside the simulation, since rating is not a game rule and the sim core
-does not know it exists. Before the meta-layer exists, the zone server computes
-and stores ratings in SQLite. After it exists, ratings move to the meta-layer so
-they follow a player across zones, per
-[decision 11](../architecture/decisions.md).
+does not know it exists. The arena keeps a running ledger for what it shows
+mid-session and batches the rated events to the meta-layer, whose projection of
+them is the authoritative number, per
+[meta-layer.md](../architecture/meta-layer.md) and
+[decision 30](../architecture/decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list).
+Events and ratings are keyed by account id, per [accounts.md](accounts.md),
+which is what lets one career span every zone.
 
 ## Model choice
 
@@ -190,9 +201,9 @@ optional.
 
 ## Open questions
 
-Whether players see a number, a tier, or nothing until they are out of
-provisional. Visible numbers create anxiety and also motivation, and the
-right answer probably differs between a ladder arena and a public one.
+Whether a ladder arena should show the number behind the tier. Tiers shipped
+as the general answer, and a dedicated competitive arena is the one place
+where the anxiety a raw number creates might be the point.
 
 How to rate the objective game without letting a player farm rating by taking
 uncontested flags in an empty arena.

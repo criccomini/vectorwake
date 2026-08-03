@@ -33,6 +33,9 @@ $(B)/replay: tools/replay.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
 $(B)/mapdump: tools/mapdump.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
+$(B)/lvl2vw: tools/lvl2vw.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
+	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
+
 $(B)/test_sim: tests/test_sim.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
@@ -53,11 +56,12 @@ test: $(B)/test_sim
 golden: $(B)/replay
 	$(B)/replay tests/trace_basic.txt > tests/golden.txt
 
-check: $(B)/test_sim $(B)/replay
+check: $(B)/test_sim $(B)/replay $(B)/lvl2vw
 	$(B)/test_sim
 	$(B)/replay tests/trace_basic.txt > $(B)/out.txt
 	cmp tests/golden.txt $(B)/out.txt
 	@echo determinism check passed
+	$(B)/lvl2vw --selftest
 
 # Undefined behaviour is a determinism bug in this core specifically.
 #

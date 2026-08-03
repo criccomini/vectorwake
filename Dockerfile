@@ -55,7 +55,8 @@ COPY --from=build /src/server/target/release/vectorwake-server /usr/local/bin/
 # author, so a catalog change is a new image and a restart, which is what
 # "authorship, not runtime" means in practice. See docs/architecture/catalog.md.
 COPY catalog /catalog
-# Where an arena keeps its instance id and its ratings. A volume goes here, so
-# a restart is the same instance rather than a new one.
+# Where an arena keeps its instance id, and the rated events it has not handed
+# off yet. A volume goes here, so a restart is the same instance rather than a
+# new one and a debt to the meta-layer survives it.
 WORKDIR /var/lib/vectorwake
 ENTRYPOINT ["vectorwake-server"]

@@ -78,6 +78,13 @@ pub struct Browse {
     pub name: String,
     pub description: String,
     pub catalog_version: u32,
+    /// Where a client logs in, empty on a deployment without accounts. It
+    /// travels with the games list because that is the one thing a client asks
+    /// for before it needs an identity, which saves it a second address to be
+    /// configured with and keeps the account system a property of the
+    /// deployment rather than of the build.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub meta: String,
     pub zones: Vec<BrowseZone>,
 }
 
@@ -96,8 +103,15 @@ pub struct BrowseInstance {
     pub region: String,
     pub players: u32,
     pub bots: u32,
+    /// What the instance says it wants across all its rooms. This is what the
+    /// bot server acts on, and it is the instance's own number rather than
+    /// anything the directory computes: a zone's `bot_fill` is a share of a room
+    /// size the directory would otherwise have to look up per instance.
+    #[serde(default)]
+    pub bots_wanted: u32,
     /// The directory's summary of whether a join would be refused, which saves a
     /// client the round trip it would otherwise spend learning the same thing.
+    /// Counts humans, so a room holding bots a human would displace is not full.
     pub full: bool,
 }
 
@@ -128,6 +142,8 @@ impl Directory {
                     capabilities: s.capabilities.clone(),
                 })
                 .collect(),
+            meta_key: c.meta.key.clone(),
+            meta_url: c.meta.url.clone(),
             zones: c
                 .order
                 .iter()
@@ -140,9 +156,11 @@ impl Directory {
                         max_ships: z.max_ships.unwrap_or(64),
                         max_players: z.max_players() as u32,
                         fill_target: z.fill_target() as u32,
+                        bot_fill: z.bot_fill(),
                         max_rooms: z.max_rooms() as u32,
                         teams: z.teams(),
                         balance: z.balance.clone(),
+                        admission: z.admission.clone(),
                         map_b64: c.map_bytes(n).map(|b| fleet::b64(&b)).unwrap_or_default(),
                         zone_toml: z.raw.clone(),
                     })
@@ -175,6 +193,7 @@ impl Directory {
                     region: r.region.clone(),
                     players: r.status.players,
                     bots: r.status.bots,
+                    bots_wanted: r.status.bots_wanted,
                     rooms: r.status.rooms,
                     max_rooms: r.status.max_rooms,
                     capped: r.status.capped,
@@ -190,6 +209,7 @@ impl Directory {
     }
 
     pub fn browse(&self) -> Browse {
+        let meta = self.catalog.meta.url.clone();
         let mut zones: Vec<BrowseZone> = self
             .catalog
             .order
@@ -226,6 +246,7 @@ impl Directory {
                     region: r.region.clone(),
                     players: r.status.players,
                     bots: r.status.bots,
+                    bots_wanted: r.status.bots_wanted,
                     // Full means no seat and no headroom to make one.
                     full: r.status.players >= cap
                         && r.status.rooms >= r.status.max_rooms.max(1),
@@ -245,6 +266,7 @@ impl Directory {
             name: self.catalog.name.clone(),
             description: self.catalog.description.clone(),
             catalog_version: self.catalog.version,
+            meta,
             zones,
         }
     }

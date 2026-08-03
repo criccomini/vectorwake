@@ -42,8 +42,22 @@ M.RADAR_DOOR= rgb(0x7a4a2a)
 M.BTN_BG    = rgb(0x0a0f18)
 M.BTN_SEL   = rgb(0x0d1826)
 
-M.WALL      = rgb(0x0d1726)
+-- A wall's body is darker than it looks, because the light near an open face
+-- brings it back up. One flat slate all the way through has no thickness in
+-- it; near black at the core and lit at the rim, it does, and it is the same
+-- idea as a hull lit at the bow.
+M.WALL      = rgb(0x080d16)
 M.WALL_EDGE = rgb(0x22344f)
+M.WALL_LIT  = rgb(0x5b82b8)
+
+-- Rock is warmer and greyer than anything built, so an asteroid field never
+-- reads as architecture and a big one is never mistaken for an Anvil.
+M.ROCK      = rgb(0x14131a)
+M.ROCK_EDGE = rgb(0x8a8794)
+
+-- A gravity well gets a band nothing else uses. Pink belongs to the bomb and
+-- orange to a team; a wormhole wearing either is a wormhole people shoot at.
+M.HOLE      = rgb(0xa06bff)
 -- Three depths of star. The old pair were #1b2740 and #121b2e on a #05070c
 -- field, which is a dark slate on a darker one: present in the buffer,
 -- invisible on the screen, and reported as a missing starfield. The near
@@ -54,6 +68,13 @@ M.STAR_FAR  = rgb(0x2a3a58)
 
 M.THRUST    = rgb(0xffbe78)
 M.HURT      = rgb(0xff505a)
+
+-- A hull's interior structure: plates, panel lines, the truss inside a
+-- Lattice's arms. Neutral on purpose and the same on both teams, so the team
+-- read stays on the silhouette where identity.md puts it. Drawn in the team
+-- colour instead, a ship looks cut from a single sheet of neon rather than
+-- built out of parts.
+M.PANEL_INK = rgb(0x9fb6d4)
 
 -- The five stats, in the order the core defines them.
 M.UPGRADES = {

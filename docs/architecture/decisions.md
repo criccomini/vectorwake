@@ -262,6 +262,13 @@ offers implements it. Identity, friends, parties, leaderboards and tournaments
 are unchanged, and keeping identity *out* of the directory process is now
 load-bearing: it is what lets directory replicas stay independent.
 
+**Superseded in part by [decision 30](#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list):**
+identity, accounts and ratings follow the directory off Nakama's list, and the
+meta-layer is our own service. What survives of this record is its title:
+nothing meta ever touches the arena tick. Friends, parties and tournaments
+stay deferred, and Nakama remains a candidate for them as a social layer fed
+by our identity rather than the owner of it.
+
 ---
 
 ## 12. Inspired by, not a clone
@@ -334,6 +341,14 @@ are harder to write than bots allowed to set their own position.
 **Reconsider if:** never for the input-only rule. The placement is softer: if
 zone-authored AI becomes the dominant case, external protocol bots may matter
 more than built-in ones.
+
+**Superseded on placement by [decision
+29](#29-a-bot-is-a-client).** That reconsideration fired for a reason this
+record did not anticipate: not that zone-authored AI took over, but that the
+in-process path skipped the protocol, and the protocol is where the bugs were.
+The input-only rule survives untouched and is stronger for the move, since a
+bot behind the wire has no second channel available to it rather than merely
+declining to use one.
 
 ---
 
@@ -950,3 +965,142 @@ wants. That is a different feature from chat and it would get its own record.
 11](#11-nakama-for-the-meta-layer-never-for-the-arena-tick) no longer wants
 Nakama's chat. The client's `chat.gui` and the server's chat throttling, module
 `send chat` hook, and reliable-message chat class all come out or never go in.
+
+---
+
+## 29. A bot is a client
+
+**Status:** proposed
+
+The house AI moves out of the arena server into a bot server: one process per
+deployment that flies many bots, each a WebSocket connection decoding
+snapshots through the sim core and sending the same input messages a human
+client sends. The arena keeps no bot code, only a seat policy: a bot declares
+itself in `C2S_JOIN`, is labeled in the roster, takes no seat under
+`max_players`, and is dropped first when a full room must seat a human.
+
+[ai-runtime.md](ai-runtime.md) placed bots inside the arena tick for cost, and
+the cost it named was sockets, encoding and round trips that a same-host
+deployment does not pay: the fleet is containers on one box, so bot traffic is
+loopback. What in-process bots actually cost was coverage. This deployment's
+real bugs lived on the protocol path, which the resident population never
+touched: the pong stranded on the wrong half of a split stream, found by a
+harness because browsers never ping; the recharge overflow at `INT32_MIN`,
+seen only by a client decoding snapshots. In-process bots also made "bots
+cannot cheat" a code-review property, and their scan read true server state,
+which would have seen through cloak the day cloak existed. Behind the protocol
+the guarantee is structural: a bot has nothing to read but the filtered
+snapshot the server chose to send.
+
+It is also one bot system instead of two. The old design kept an in-process
+path for filler AI and promised a protocol path for third parties. Now the
+third-party path is the only path, kept working by the fact that our own
+roster has no other way in. The JOIN declaration plus a fleet credential
+separates trust: anyone may declare a bot and be labeled, and only an
+authenticated house bot anchors the rating ladder.
+
+**Cost:** The arena builds an interest-filtered snapshot stream per bot where
+the in-process roster needed none, and that build was expensive enough to have
+been optimised once already. Measured before shipping the fill target, on a
+64-seat room at 0.8: the arena's worst tick costs 314 microseconds of its 10
+millisecond budget, and the bot server costs 14% of a core and 15 MB for 51
+bots. So 0.8 stands. The numbers and what drives them are in
+[hosting.md](hosting.md).
+
+An empty deployment also needs two processes before a room has a population,
+where one used to do, so the dev loop grows a compose entry. It is the same
+binary under a different first argument, as the directory already was, which
+also settles where the brain lives: one program cannot drift from itself, so
+the calibration tournament and the live bots are guaranteed to be the same
+code without a crate boundary to arrange.
+
+**Reconsider if:** snapshot building at fill-target populations eats the tick
+budget and per-client interest filtering cannot be made cheaper, or a
+multi-region fleet makes a bot server per region more operational surface than
+an in-process director was.
+
+---
+
+## 30. The meta-layer is ours, and identity leaves Nakama's list
+
+**Status:** proposed
+
+[Decision 11](#11-nakama-for-the-meta-layer-never-for-the-arena-tick) adopted
+Nakama for everything durable outside the arena tick. That list has been
+shrinking ever since: the directory left with
+[decision 25](#25-an-arena-server-chooses-which-zone-it-serves), chat with
+[decision 28](#28-no-chat), and friends, parties and tournaments are wanted by
+nobody yet. What remains that we need now is identity, and our identity has
+shapes Nakama does not: accounts minted silently on first contact, bot
+accounts with owners, a human, bot, or unknown label derived from credential
+shape, session tokens carrying rating claims that arenas verify offline, and a
+rating that is a projection of an event log no general backend has an opinion
+about.
+
+Meanwhile the cost argument collapsed. Decision 27 priced Nakama at roughly
+$20 a month and observed that nearly all of it is Postgres, and this design
+buys that Postgres anyway. On top of a database we still had to schema
+ourselves, Nakama would add an authentication layer, and the authentication we
+actually want, bearer secrets, account keys, platform identities later, is
+small.
+
+So the meta-layer is `vectorwake-server meta`: a fourth subcommand of the one
+binary, on managed Postgres, holding accounts, credentials, names, the rated
+event log, the rating projection, and fleet bans. It issues signed session
+tokens that arenas verify with a key distributed in the catalog, it refuses
+tokens to banned accounts, and it ingests the rated event batches that arenas
+submit under their pool credential. [meta-layer.md](meta-layer.md) is the
+design, and [design/accounts.md](../design/accounts.md) is the account model.
+
+This also closes the handoff question in [server.md](server.md): rated events
+go to the meta-layer rather than the directory, because the directory is the
+piece we most want to be able to lose and the event log is the piece we can
+least afford to.
+
+**Cost:** Authentication becomes our security surface: token signing, secret
+storage, and every sharp edge auth code has. And a second stateful service to
+operate, though its state is the database we were buying regardless. What it
+deliberately does not cost is external infrastructure: claiming runs on
+account keys and link codes, so there is no mail sender and no OAuth
+registration, and vectorwake.net's mail-free DNS stands.
+
+**Reconsider if:** friends, parties or tournaments become real wants, where
+Nakama re-enters as a social layer fed by this identity rather than the owner
+of it. Or if authentication outgrows a small service, with passkeys, SSO, or
+console certification requirements, at which point the thing to buy is an
+identity provider rather than a game backend.
+
+---
+
+## 31. Every pilot is an account, and bots hold them too
+
+**Status:** proposed
+
+First contact mints a guest account and the client keeps its secret, so play
+never waits on a signup and rating accrues from the first death. Claiming
+attaches an account key, a generated secret the player keeps, or a platform
+identity where the platform forces one, several to one account, and there are
+no passwords anywhere. Names come from the call sign generator only, and a
+claimed account's name is reserved fleet-wide.
+
+Every seat wears one of three labels, derived from account shape rather than
+asserted by the client. A bot account is a bot, house or third-party. A
+claimed human account is human. A guest is unknown, because the server cannot
+know and refuses to guess. Third-party bot accounts hang under a claimed owner
+who answers for them, and a join whose declaration disagrees with its account
+kind is refused.
+
+Fleet bans mark the account and are enforced at token issuance, per
+[decision 30](#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list).
+The full design is [design/accounts.md](../design/accounts.md).
+
+**Cost:** Honest newcomers wear the same unknown label as anyone hiding a bot,
+until they claim. Guest rows accumulate at one per drive-by page load.
+Smurfing is free by construction, bounded by placement convergence rather than
+prevented. And the roster message grows a label field every client must
+render.
+
+**Reconsider if:** playtests read unknown as an accusation rather than a plain
+fact, in which case the label needs softer words rather than different
+mechanics. Or if unclaimed churn makes ratings in the low tiers meaningless,
+at which point rated play may need an `admission` bar of `claimed` by default.

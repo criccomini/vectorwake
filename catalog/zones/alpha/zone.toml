@@ -31,8 +31,10 @@ description = "two teams, six a side"
 # No flag game, no ball and no crown, which leaves kills.
 mode = "arena"
 
-# The room Chaos and War ship, byte for byte. Twelve pilots spread over a
-# thousand tiles are twelve pilots who never meet.
+# The zone's own map, converted from the `.lvl` that came with the settings
+# file above by `sim/tools/lvl2vw`. Twelve pilots spread over a thousand tiles
+# are twelve pilots who never meet, and this one puts its structure in reach of
+# the starts the converter picked.
 map = "alpha.vwmap"
 
 # [Team] MaxPerTeam=6 across DesiredTeams=2.
@@ -42,6 +44,10 @@ max_players = 12
 max_ships = 24
 # The room is full at its human cap, so that is when the next one opens.
 fill_target = 12
+
+# Six a side is the game, so the room is held at twenty of its twenty-four
+# seats and the four spare are what an arriving pair drop into.
+bot_fill = 0.8
 # Rooms are how a twelve-player zone holds more than twelve people. Chaos and
 # War keep one apiece because each is a single large room; four of these cost
 # less than one of those.
@@ -335,8 +341,9 @@ bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }
 #
 # Bomb detail with no model: BombExplodeDelay, BombSafety and JitterTime.
 # Gravity and GravityTopSpeed, with Wormhole:GravityBombs and SwitchTime, since
-# a wormhole here is a map feature with its own two settings and this map has
-# none.
+# a wormhole here is a map feature with its own two settings. This map has one,
+# and since this file sets neither `wormhole_pull` nor `wormhole_range` it pulls
+# at the baseline's strength.
 #
 # Prize detail with no model: MultiPrizeCount, PrizeHideCount as a batch rather
 # than a rate, DeathPrizeTime, EngineShutdownTime, and MinimumVirtual with

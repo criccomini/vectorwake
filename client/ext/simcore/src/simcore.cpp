@@ -24,6 +24,9 @@
 void VwBufInit(lua_State* L);
 void VwBufFinal();
 
+// The sound kit, same arrangement, in vwsfx.cpp over sfx.c.
+void VwSfxInit(lua_State* L);
+
 namespace {
 
 // Static storage. The core allocates nothing, so the extension does not
@@ -551,6 +554,7 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_TILE_OVER);     lua_setfield(L, -2, "T_OVER");
     lua_pushnumber(L, SIM_TILE_UNDER);    lua_setfield(L, -2, "T_UNDER");
     lua_pushnumber(L, SIM_TILE_TURF);     lua_setfield(L, -2, "T_TURF");
+    lua_pushnumber(L, SIM_TILE_SPAWN);    lua_setfield(L, -2, "T_SPAWN");
 
     // Event and weapon kinds, so the client never hard-codes an enum the
     // core is free to renumber.
@@ -592,6 +596,7 @@ dmExtension::Result AppInitialize(dmExtension::AppParams* params) {
 dmExtension::Result Initialize(dmExtension::Params* params) {
     LuaInit(params->m_L);
     VwBufInit(params->m_L);
+    VwSfxInit(params->m_L);
     return dmExtension::RESULT_OK;
 }
 

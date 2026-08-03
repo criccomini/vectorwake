@@ -22,17 +22,15 @@ them, per [zones-and-arenas.md](zones-and-arenas.md).
 logic, and anything a zone author wants to add. They receive events and may
 answer questions the server asks, in the shape of ASSS's adviser pattern.
 
-**AI players** (`server/ai/`). Bots that fill an arena when humans are scarce
-and leave as humans arrive. They run in the arena's tick and emit the same input
-commands a network client does, so they cannot cheat. See
-[ai-runtime.md](ai-runtime.md) and
-[design/ai-players.md](../design/ai-players.md).
-
-**External bots.** Programs that connect over the same protocol as players, with
-elevated rights granted by capability. Reading Subspace taught us that most
-zone identity lives in bots, so they are a supported interface rather than a
-side effect. Distinct from AI players: these are tooling and league logic, not
-opponents.
+**Bot server** (one per deployment). Flies the AI roster as ordinary clients:
+one process, many WebSocket connections, each bot decoding the arena's
+snapshots through the sim core and sending the same input messages a human
+sends. It fills rooms to each zone's `bot_fill` and stands bots down as humans
+arrive. There is no other kind of bot: third-party bots use the same protocol
+and the same JOIN declaration, with a fleet credential setting the house
+roster apart where trust matters. See [ai-runtime.md](ai-runtime.md),
+[design/ai-players.md](../design/ai-players.md), and
+[decision 29](decisions.md#29-a-bot-is-a-client).
 
 **Directory** (`server/`, same binary, `directory` subcommand). The front door for
 many zones: it holds every zone's configuration and the token table, accepts arena
@@ -100,6 +98,8 @@ flowchart TB
     W["Web client (WASM)"] -- browse --> D1
     W -- play --> NET
     N["Native client"] -- UDP --> NET
+    B["Bot server"] -- browse --> D1
+    B -- "play, one socket per bot" --> NET
 ```
 
 Settings, map and simulation are per process, and none of them are durable. The
@@ -149,5 +149,5 @@ position for nearby players sent more often than for distant ones. See
 | Lag actions | Server, between transport and arena |
 | Client-authoritative death | Deleted. The arena decides |
 | `.lvl` maps | Imported to our map format, rendered through Defold tilemaps |
-| Bots | Two kinds: in-process AI opponents, and protocol clients with capability grants |
+| Bots | Declared clients on the ordinary protocol; the house roster flies from the bot server |
 | Nothing equivalent | Skill rating, computed from arena events outside the simulation |

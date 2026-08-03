@@ -116,9 +116,20 @@ typedef struct {
     sim_feature features[SIM_MAX_FEATURES];
 } sim_map;
 
-/* Walk the tiles once and collect the ones rules need to find: wormholes to
- * pull from, goals to score in, turf to stand a flag on. Call after building
- * or loading a map, before stepping it. */
+/* Make a map ready to play, which is two things.
+ *
+ * It closes the world: four tiles of boundary around the square, whatever the
+ * map said was there. Every map wants one, so a map that had to carry its own
+ * is a map that can be missing it, and a converted one always is. Four tiles
+ * and not one, because a hull at full speed crosses more than a tile in a tick
+ * and axis-by-axis collision cannot push it back out of a wall it has already
+ * passed through.
+ *
+ * Then it walks the tiles once and collects the ones rules need to find:
+ * wormholes to pull from, goals to score in, turf to stand a flag on.
+ *
+ * Call after building or loading a map, before stepping it. `sim_map_unpack`
+ * and the reference maps below already do. */
 void sim_map_index(sim_map *m);
 
 /* The reference arenas, in the core so the client and the server cannot hold
@@ -539,7 +550,9 @@ typedef struct {
 
 typedef enum {
     SIM_EV_FIRE = 1,
-    SIM_EV_BOUNCE,   /* a: ship, b: unused */
+    /* A ship hit a wall hard enough to be worth reporting. The impact is the
+     * speed the wall took out of it, before the wall gave any back. */
+    SIM_EV_BOUNCE,   /* a: ship, b: unused, v: impact speed Q16 */
     SIM_EV_HIT,      /* a: victim, b: attacker, v: damage Q10 */
     /* a: victim, b: killer (255 = none), v: points the kill paid, which is
      * the victim's bounty plus what their flags were worth. */
@@ -557,7 +570,17 @@ typedef enum {
     SIM_EV_FLAG_TAKE,/* a: ship, b: flag index */
     SIM_EV_FLAG_DROP,/* a: flag index, b: team that keeps it */
     SIM_EV_GOAL,     /* a: ship, b: the goal's variant */
-    SIM_EV_WARP      /* a: ship caught by a closing door, sent home */
+    SIM_EV_WARP,     /* a: ship caught by a closing door, sent home */
+    /* A weapon came off a wall instead of ending on it. Its own event rather
+     * than a ship's bounce, which is what it used to be: the two carry
+     * different things in v, one an impact and the other a position, and a
+     * caller reading a position as an impact cannot tell it is doing so. It
+     * cost a bouncing bullet a wall thump at the shooter's hull, once per
+     * ricochet, anywhere on the map.
+     *
+     * Appended rather than slotted next to SIM_EV_BOUNCE where it belongs,
+     * because the numbers are mirrored by hand in server/src/sim.rs. */
+    SIM_EV_RICOCHET  /* a: owner, b: weapon type, v: packed position */
 } sim_event_type;
 
 typedef struct {

@@ -1,7 +1,7 @@
-sound: "/sounds/bomb.wav"
+sound: "/sounds/gun2.wav"
 looping: 0
 group: "master"
-gain: 0.55
+gain: 0.36
 pan: 0.0
 speed: 1.0
 loopcount: 0

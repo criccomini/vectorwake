@@ -70,6 +70,7 @@ social unity that grouping implied is already gone with
 | Catalog | Every zone's map, mode, settings and fill target. Bans and staff. Versioned. | Anything about a running arena server |
 | Directory | Token table, its own observations, browse answers | Which zone anybody serves, player state, durable records |
 | Arena server | One simulation, its choice of zone, its players | The catalog, other arena servers |
+| Bot server | The bot population: which bots fly, where, and when they stand down | Seats, admission, anything authoritative |
 | Client | Which directory to ask, which arena server to join | Nothing authoritative, as before |
 
 ## The arena server lifecycle
@@ -307,13 +308,17 @@ otherwise does not exist.
 The sequence is four questions, and each has an answer that belongs to a different
 layer:
 
-1. **Is this pilot allowed in?** The catalog's bans, checked by the arena server
-   against the name the client presents. Deployment-wide, per
-   [catalog.md](catalog.md).
+1. **Is this pilot allowed in?** A fleet ban never reaches this door: the
+   meta-layer refuses a banned account its session token, per
+   [meta-layer.md](meta-layer.md), so the arena checks the token's signature
+   and the catalog's per-zone bans, and nothing else.
 2. **Is there a seat?** A room holds `max_ships` ships and admits `max_players`
-   humans. A joining pilot takes a bot's seat if one is free, which keeps the room
-   the same size and is what the code already does. Otherwise it spawns a new
-   ship, and if neither is possible the join is refused.
+   humans; a declared bot takes a ship but never one of the human seats, per
+   [decision 29](decisions.md#29-a-bot-is-a-client). A room with every ship taken
+   and a declared bot aboard is not full: the arena drops the newest declared bot
+   and seats the arrival, which is the backstop under the bot server's own habit
+   of leaving a share of the room unfilled. A join is refused for space only by a
+   room genuinely full of people.
 3. **Which team?** The mode decides, and the catalog gives it a number to work
    with. Warzone wants balance, so it puts the arrival on the smaller side. Free
    for all wants none, so everyone shares a team and friendly fire is off by being

@@ -13,18 +13,18 @@ tick 6000 hash 666b741d642122d9
 tick 6500 hash 9a815b95a436b4cb
 tick 7000 hash b8f770c2b2380388
 tick 7500 hash 0d2969aea9459711
-tick 8000 hash 6b3303d21be9f1ef
-tick 8500 hash 1ab34a7fe136719c
-tick 9000 hash 3013dcf835757a5f
-tick 9500 hash 8916ed30f244b1d4
-tick 10000 hash e8bc95aacfd5e047
-tick 10500 hash f129f25b200c30dc
-tick 11000 hash d07292ad32af1761
-tick 11500 hash 0a8f428b605dc93f
-tick 12000 hash 4adb7b8b074bab27
-tick 12500 hash 86c5983ca3dfc0ef
-tick 13000 hash 07c3f365bd6f09b7
-tick 13500 hash 835c397a250b2e43
-tick 14000 hash 8dde1f05bbfba509
-tick 14500 hash eb66f493fa6ae1c8
-final tick 14720 hash e9e957529aa1fc34 fires 105 hits 31 deaths 7 bounces 4
+tick 8000 hash 2ee68b2ab8c48984
+tick 8500 hash 1cbcc9e94492b2fc
+tick 9000 hash a2604580df05cbdc
+tick 9500 hash 85ceae8c76d8572a
+tick 10000 hash f3fb3ea60f19b32f
+tick 10500 hash ce836ec6ca4da38a
+tick 11000 hash 8b7afa9af6f87be2
+tick 11500 hash fc81bb613cc2967b
+tick 12000 hash 3f6c49ba7ea66939
+tick 12500 hash e93dd875769ec713
+tick 13000 hash b5e39e7a44c0f9a2
+tick 13500 hash 51a0d9f65e24f236
+tick 14000 hash 53bc8338ca72b71c
+tick 14500 hash 950c26b14f2eb8a0
+final tick 14720 hash fefb3f9999428b12 fires 105 hits 31 deaths 7 bounces 4
