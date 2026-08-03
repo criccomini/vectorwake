@@ -26,13 +26,19 @@ pub const BTN_REVERSE: u16 = 8;
 pub const BTN_FIRE: u16 = 16;
 pub const BTN_BOMB: u16 = 32;
 
+// Mirrored by hand from sim_event_type in sim/include/sim/sim.h, so the order
+// there is the order here and a new one goes on the end.
+//
+// These two were 7 and 8, which are SIM_EV_PRIZE and SIM_EV_CHARGE. Nothing
+// had matched on them yet, so the mismatch was silent and would have stayed
+// silent right up until a flag handler quietly ran on prize pickups.
 pub const EV_FIRE: u8 = 1;
 pub const EV_BOUNCE: u8 = 2;
 pub const EV_HIT: u8 = 3;
 pub const EV_DEATH: u8 = 4;
 pub const EV_SPAWN: u8 = 5;
-pub const EV_FLAG_TAKE: u8 = 7;
-pub const EV_FLAG_DROP: u8 = 8;
+pub const EV_FLAG_TAKE: u8 = 9;
+pub const EV_FLAG_DROP: u8 = 10;
 
 pub const MAX_FEATURES: usize = 256;
 pub const MAP_PACK_MAX: usize = MAP_TILES * MAP_TILES * 3 / 2 + 32;
