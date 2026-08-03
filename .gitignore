@@ -28,3 +28,6 @@ sandbox-ca.crt
 # The generator is run by hand; its bytecode cache is not ours to keep.
 client/tools/__pycache__/
 tools/pilot/libvwprobe.so
+
+# The identity a running arena writes for itself, per host, not per repo.
+zone/instance-id

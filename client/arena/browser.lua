@@ -107,21 +107,28 @@ function M.draw(u, ui, w, h, s)
 
     u:rect(0, 0, w, h, pal.rgb(0x030509, 0.95))
 
-    local x = math.max(40 * s, (w - 720 * s) / 2)
+    -- Laid out against the width there actually is. The row was a flat 640
+    -- units wide and the margin assumed a 720-unit panel would fit, which on
+    -- a phone is half again wider than the screen: the player count ran off
+    -- the right edge and so did the end of every hint line.
+    local x = math.max(24 * s, (w - 720 * s) / 2)
+    local rw = math.min(640 * s, w - 2 * x)
     local y = 90 * s
     ui.line("v e c t o r w a k e", x, y, 30 * s, pal.FRIEND)
     ui.line("choose a game", x, y + 36 * s, 13 * s, pal.INK)
-    ui.line("↑ ↓ move    enter joins    esc plays offline",
-            x, y + 56 * s, 13 * s, pal.DIM)
+    -- Two short lines rather than one long one, for the same reason.
+    ui.line("tap a game, tap it again to join", x, y + 56 * s, 13 * s, pal.DIM)
+    ui.line("or ↑ ↓ and enter, esc plays offline",
+            x, y + 74 * s, 13 * s, pal.DIM)
 
-    y = y + 96 * s
+    y = y + 114 * s
     if M.note ~= "" then
         ui.line(M.note, x, y, 13 * s, pal.DIM)
         y = y + 26 * s
     end
     for i, r in ipairs(M.rows) do
         local on = i == M.selected
-        local rw, rh = 640 * s, 30 * s
+        local rh = 30 * s
         u:rect(x, h - y - rh, rw, rh, on and pal.BTN_SEL or pal.BTN_BG)
         u:frame(x, h - y - rh, rw, rh, s, on and pal.FRIEND or pal.BORDER)
         ui.line((on and "▸ " or "  ") .. r.name, x + 12 * s, y + rh / 2,
@@ -130,10 +137,30 @@ function M.draw(u, ui, w, h, s)
         -- player picks a game, and which machine serves it is the directory's
         -- business. It used to be drawn on the right, where a description long
         -- enough to be useful ran straight into it.
-        ui.line(r.detail, x + 160 * s, y + rh / 2, 13 * s, pal.DIM)
+        -- The columns are shares of the row rather than fixed offsets, so a
+        -- narrow screen squeezes them instead of pushing them off it. Below
+        -- three columns' worth of room the description goes rather than
+        -- overlapping the count, because which game it is and whether anybody
+        -- is in it are the decision, and what it is like is a nicety.
+        if rw / s >= 520 then
+            ui.line(r.detail, x + rw * 0.30, y + rh / 2, 13 * s, pal.DIM)
+        end
         ui.line(r.count, x + rw - 12 * s, y + rh / 2, 13 * s, pal.DIM, "right")
+        -- A row is a button. Published in the space it was drawn in, the way
+        -- the menu's rows are, so the input layer needs no second copy of this
+        -- layout. Dead rows publish too: tapping a game nobody is running
+        -- should select it and say so rather than doing nothing at all.
+        ui.hit(x, y, rw, rh, "zone", i)
         y = y + rh + 6 * s
     end
+
+    -- And a way out, because a phone has no escape key. Same reasoning as the
+    -- menu's own close button, which exists for exactly this.
+    local bw, bh = 200 * s, 34 * s
+    u:rect(x, h - y - bh, bw, bh, pal.BTN_BG)
+    u:frame(x, h - y - bh, bw, bh, s, pal.BORDER)
+    ui.line("play offline", x + bw / 2, y + bh / 2, 13 * s, pal.DIM, "center")
+    ui.hit(x, y, bw, bh, "offline")
 end
 
 return M

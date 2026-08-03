@@ -81,6 +81,12 @@ local function hit(x, y, w, h, action, value)
                            action = action, value = value}
 end
 
+-- Published, because the zone browser draws its own rows through this module
+-- and had no way to say they were touchable. They were not: the list rendered
+-- on a phone, and there was no keyboard to move a cursor with and no tap that
+-- did anything, so a game you could see was a game you could not join.
+M.hit = hit
+
 -- A keycap, the way the prototype's <kbd> reads: a boxed glyph in a line of
 -- ordinary text. Returns the width it consumed.
 local function kbd(x, y, label, h)
