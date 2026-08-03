@@ -550,6 +550,52 @@ int main(void) {
         free(src); free(dst); free(pit); free(buf);
     }
 
+    /* Every map is closed, whatever the map says. */
+    {
+        const int LAST = SIM_MAP_TILES - 1;
+        sim_map *open = malloc(sizeof *open);
+        memset(open->tile, SIM_TILE_EMPTY, sizeof open->tile);
+        sim_map_index(open);
+
+        CHECK(SIM_TILE_CLASS(sim_tile_at(open, 0, 512)) == SIM_TILE_SOLID
+                  && SIM_TILE_CLASS(sim_tile_at(open, LAST, 512))
+                         == SIM_TILE_SOLID
+                  && SIM_TILE_CLASS(sim_tile_at(open, 512, 0)) == SIM_TILE_SOLID
+                  && SIM_TILE_CLASS(sim_tile_at(open, 512, LAST))
+                         == SIM_TILE_SOLID,
+              "a map with no walls of its own is still closed on four sides");
+        CHECK(SIM_TILE_CLASS(sim_tile_at(open, 3, 512)) == SIM_TILE_SOLID,
+              "the boundary is four tiles thick");
+        CHECK(sim_tile_at(open, 4, 512) == SIM_TILE_EMPTY,
+              "and no thicker, so the map keeps the rest of its ground");
+        CHECK(SIM_TILE_VARIANT(sim_tile_at(open, 0, 512)) == 1,
+              "and says it is a boundary rather than a wall");
+
+        /* Which is the whole reason it is four and not one. A hull crosses
+         * more than a tile in a tick at speed, and the collision resolves one
+         * axis at a time against the tiles it lands on: through a thin wall,
+         * there is nothing left to push it back out of. */
+        sim_settings edge = cfg;
+        edge.map = open;
+        sim_state s;
+        sim_init(&s, 5);
+        sim_spawn(&s, APEX, 0, 40 * 16, 512 * 16, 49152, &edge);
+        s.ships[0].vx = -edge.classes[APEX].max_speed * 4;
+        step_n(&s, &edge, SIM_BTN_THRUST, 0, 400);
+        CHECK(s.ships[0].x > 4 * 16 * 256,
+              "a hull thrown at the edge faster than it can fly stays inside");
+
+        /* And a map that arrives over the wire is closed on arrival, not only
+         * one that was built here. */
+        uint8_t *ob = malloc(SIM_MAP_PACK_MAX);
+        int on = sim_map_pack(open, ob, SIM_MAP_PACK_MAX);
+        sim_map *back = malloc(sizeof *back);
+        CHECK(sim_map_unpack(back, ob, on) == 0, "a closed map packs and unpacks");
+        CHECK(SIM_TILE_CLASS(sim_tile_at(back, 0, 512)) == SIM_TILE_SOLID,
+              "and is still closed at the far end");
+        free(ob); free(back); free(open);
+    }
+
     /* The room size is the zone's, and the array bound is only the ceiling. */
     {
         sim_settings small = cfg;
@@ -794,8 +840,9 @@ int main(void) {
 
         sim_state s;
         sim_init(&s, 1);
-        /* Two tiles from the top wall, facing it. */
-        sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
+        /* Two tiles clear of the top wall, facing it. The boundary is four
+         * tiles thick, so "clear of it" starts at 64 px. */
+        sim_spawn(&s, APEX, 0, 8192, 96, 0, &w);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1, "fired");
         int32_t up = s.weapons[0].vy;
@@ -1573,9 +1620,10 @@ int main(void) {
             sim_mod_set(0, SIM_MOD_BOUNCE, 1);
         sim_state s;
         sim_init(&s, 1);
-        /* Two tiles under the wall: a round travels 2 px a tick, so a
-         * distant wall would outlast the flight. */
-        sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
+        /* Two tiles under the wall, which is four tiles thick and so ends at
+         * 64 px: a round travels 2 px a tick, and a distant wall would outlast
+         * the flight. */
+        sim_spawn(&s, APEX, 0, 8192, 96, 0, &w);
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_BOUNCE, 1);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1, "fired");
@@ -2023,6 +2071,58 @@ int main(void) {
         step_n(&s, &cfg, SIM_BTN_THRUST, 0, 600);
         ev_counts c = step_counting(&s, &cfg, SIM_BTN_THRUST, 0, 200);
         CHECK(c.bounces < 20, "grinding on a wall does not spam impacts");
+    }
+
+    /* A weapon coming off a wall is a ricochet and not a ship's bounce.
+     *
+     * They shared SIM_EV_BOUNCE once, and the two carry different things in
+     * v: an impact speed for a ship, a packed position for a weapon. Nothing
+     * in the event says which, so a reader that assumed impact got a position
+     * and could not tell. The client's was drawing and sounding every one of
+     * its own ricochets on its own hull. */
+    {
+        sim_state s;
+        sim_init(&s, 5);
+        /* Well clear of every wall but the one it is aimed at, and told to
+         * hold still, so the only thing that can reach a wall is the bullet. */
+        sim_spawn(&s, APEX, 0, 8192, 400, 0, &cfg);
+        s.ships[0].mods[SIM_TRIG_GUN] =
+            sim_mod_set(s.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_BOUNCE, 1);
+
+        sim_state tmp;
+        sim_events ev;
+        int ricochets = 0, bounces = 0;
+        int32_t where = 0;
+        uint8_t owner = 255;
+        for (int i = 0; i < 500; i++) {
+            sim_input in = {0, (uint16_t)(i == 0 ? SIM_BTN_FIRE : 0)};
+            sim_step(&tmp, &s, &in, 1, &cfg, &ev);
+            s = tmp;
+            for (uint16_t e = 0; e < ev.count; e++) {
+                if (ev.e[e].type == SIM_EV_BOUNCE) bounces++;
+                if (ev.e[e].type == SIM_EV_RICOCHET) {
+                    ricochets++;
+                    where = ev.e[e].v;
+                    owner = ev.e[e].a;
+                }
+            }
+        }
+        CHECK(ricochets > 0, "a bouncing bullet reports a ricochet");
+        CHECK(bounces == 0, "and not a ship's bounce, with no ship near a wall");
+        if (ricochets > 0) {
+            /* Packed (x << 14) | y in whole pixels, which is what makes it
+             * unusable as an impact: near enough any position clears any
+             * threshold a caller would put on one. */
+            int32_t px = where >> 14, py = where & 16383;
+            CHECK(owner == 0, "the ricochet names the ship that fired it");
+            /* The boundary every map is closed with is four tiles thick, so
+             * the face a shot comes off is at 64 px and not at the top of the
+             * world. */
+            CHECK(py >= 16 * 4 && py <= 16 * 5,
+                  "the ricochet is at the wall it hit");
+            CHECK(px > 8192 - 64 && px < 8192 + 64,
+                  "and under the ship that fired straight up");
+        }
     }
 
     /* A snapshot round trip reproduces the state exactly. This is what lets

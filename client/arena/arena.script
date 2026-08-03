@@ -176,7 +176,13 @@ local function charge_row()
         local c = pal.CHARGES[k + 1]
         out[#out + 1] = {
             short = c and c.short or "C",
+            -- The full word, because the corner stack has room for it and
+            -- "RPL" is three letters nobody has been taught.
+            name = c and c.name or "charge",
             count = sim.ship_charge(me, k),
+            -- How many this hull can hold, so the row can draw the empties
+            -- as well as the full ones.
+            max = sim.charge_max(me, k),
             ready = (k == ready_slot()),
         }
     end
@@ -224,6 +230,10 @@ local function rebuild_static(tx, ty)
         end
     end
     static_tx, static_ty = tx, ty
+    -- Spawns and goals are drawn in the colour of whoever owns them, and the
+    -- terrain is built long before the frame that draws a ship, so the team
+    -- goes in here rather than being passed down every call.
+    world.my_team = (sim.ship_count() > 0) and sim.ship_team(me) or 0
     world.build_static(layers.bg, layers.bgglow,
                        tx - STATIC_HALF, ty - STATIC_HALF,
                        tx + STATIC_HALF, ty + STATIC_HALF)
@@ -345,6 +355,9 @@ end
 function init(self)
     msg.post(".", "acquire_input_focus")
     math.randomseed(1)
+    -- Before anything can ask for a sound. The components start out pointed at
+    -- silence and this is what puts audio behind them.
+    sfx.init()
     -- Wanted from the first frame. It will not start until the page has been
     -- touched and the audio device is awake, which is why this is a request
     -- the frame loop keeps making rather than a call that either works or
@@ -352,8 +365,13 @@ function init(self)
     sfx.music(true)
 
     layers = {
-        bg = vec.layer("#bg", 20480),
-        bgglow = vec.layer("#bgglow", 16384),
+        -- The static layers are built when the camera leaves its window and
+        -- uploaded once, not per frame, so their capacity costs memory rather
+        -- than bandwidth. Terrain that draws its faces as runs, its corners as
+        -- chamfers and its objects as objects wants more room than an outline
+        -- per tile did, and it is the cheapest place in the client to buy it.
+        bg = vec.layer("#bg", 32768),
+        bgglow = vec.layer("#bgglow", 49152),
         -- The two static layers above are uploaded once per map. These three
         -- go up every frame, whole, however little of them is used, so the
         -- headroom is bandwidth spent on nothing, and these are sized against
@@ -711,6 +729,9 @@ function update(self, dt)
             end
         end
 
+        -- Scenery that belongs above the ships, now that they are drawn.
+        world.draw_over(glow, cull)
+
         -- Two of the eight hulls have no bomb rack, so the pad that fires one
         -- has nothing to fire. Told every frame rather than on the hull
         -- change, because a zone can hand you a different ship than the one
@@ -727,7 +748,7 @@ function update(self, dt)
 
         -- Doors and wormholes: world geometry that moves, so it cannot live in
         -- the static mesh the way the walls do.
-        world.draw_tiles(fill, glow, cull)
+        world.draw_tiles(fill, glow, t, cull)
         fx.draw(glow)
     else
         sfx.loop("thrust", false)
@@ -754,11 +775,11 @@ function update(self, dt)
             -- Flags are drawn as flags now, so the banner is only for the
             -- things that are genuinely a sentence.
             banner = net.banner,
-            -- Short enough to share a row with the word "online": a hull
-            -- change teleports you to a spawn the client never predicted, so
-            -- the peak can reach three digits and the two texts collided.
-            netinfo = string.format("err %.1f / %.0f px",
-                                    net.stats.err, net.stats.err_max),
+            -- The round trip, in ticks of a centisecond, which the readout
+            -- above the dial turns into four bars. The prediction error that
+            -- used to be printed here was this client debugging itself on a
+            -- player's screen.
+            lag = net.stats.lag,
         })
     end
     if menu.open then ui.menu(menu.view()) end

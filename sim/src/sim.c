@@ -1432,7 +1432,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     w->vy = -w->vy;
                     w->y = py;
                 }
-                emit(ev, SIM_EV_BOUNCE, w->owner, w->spec,
+                emit(ev, SIM_EV_RICOCHET, w->owner, w->spec,
                      pack_pos(w->x, w->y));
             } else {
                 /* End on the near side of the wall rather than a step inside

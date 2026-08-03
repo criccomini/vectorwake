@@ -30,6 +30,25 @@ The byte is class in the low nibble and a variant in the high one. Doors use
 the variant as a channel, so a map can open one set while another shuts;
 goals use it as the team that scores there.
 
+## The edge of the world is not a map's to draw
+
+Every map is closed on four sides by a boundary four tiles thick, painted by
+`sim_map_index` when a map is built or arrives, whatever the file said was
+there. A map author does not draw one and cannot leave one out.
+
+Four tiles rather than one, and a wall rather than a rule about coordinates,
+because a hull at full speed crosses more than a tile in a tick. Collision
+resolves one axis at a time against the tiles a ship lands on, so a thin wall
+is one it can already be through by the time anything looks, with nothing left
+to push it back out of.
+
+It is not in the map file. Every map wants it, so a map that had to carry it is
+a map that can be missing it, and every map converted from a `.lvl` was: the
+original's client stops a ship at the edge whatever the tiles say, so its maps
+never needed to say. The variant marks the ring as a boundary rather than a
+wall, which is the one thing the renderer reads it for, and it draws that edge
+as a line that is never going to open.
+
 ## Safe zones are load-bearing
 
 Flight is frictionless: momentum never bleeds off, and there is no brake

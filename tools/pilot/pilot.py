@@ -23,6 +23,7 @@ import websockets
 
 SO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libvwprobe.so")
 
+PROTOCOL = 2   # CLIENT_PROTOCOL in server/src/main.rs
 C2S_JOIN, C2S_INPUT, C2S_SHIP = 1, 2, 5
 # The client wire's version, checked by the zone before it reads anything else
 # in a join. Bumped when the join or the roster changes shape.
@@ -220,7 +221,7 @@ class Pilot:
         async with ws:
             z = self.zone.encode()
             n = self.name.encode()
-            # class, protocol, flags, then the lengths of the zone and the
+            # tag, hull, protocol, flags, then the lengths of the zone and the
             # name. The session token runs to the end and is empty here: a
             # pilot with no token is seated as an unknown guest, which is
             # exactly what this harness wants to be.
