@@ -29,6 +29,12 @@ M.key = ""
 M.link_code = ""
 
 local secret = ""
+-- One request of each kind in flight at a time. The games list re-asks the
+-- directory every few seconds and every reply carries the meta-layer's
+-- address, so without this the second reply starts a second account before the
+-- first one has answered, and a session leaves an orphan behind it.
+local minting = false
+local signing_in = false
 local SAVE = sys.get_save_file("vectorwake", "account")
 -- A token is good for fifteen minutes. Refreshing at ten leaves a wide margin
 -- for a slow reply and for a player who sat in the menu.
@@ -77,7 +83,10 @@ end
 -- A session, from whatever this client already holds. Called on the frame the
 -- meta-layer's address becomes known and every ten minutes after.
 local function login()
+    if signing_in then return end
+    signing_in = true
     post("/v1/login", {secret = secret}, function(r, err)
+        signing_in = false
         if not r then
             -- A refused secret means the account behind it is gone or banned,
             -- and either way this client cannot use it again. Anything else is
@@ -97,7 +106,10 @@ end
 -- First contact. The generated call sign travels with it, so the word list
 -- lives in one place in this codebase rather than two that drift.
 local function make_guest(name)
+    if minting then return end
+    minting = true
     post("/v1/guest", {name = name}, function(r, err)
+        minting = false
         if not r then
             M.note = err or "cannot reach the meta-layer"
             return

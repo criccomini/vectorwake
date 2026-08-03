@@ -232,12 +232,12 @@ local NODES = {
         -- still on screen waiting to be written down.
         if account.key ~= "" then
             rows[#rows + 1] = {label = "your key", detail = account.key,
-                hint = "write this down now; it is the only way back in and it is not shown again"}
+                hint = "write it down: this is the only way back in"}
             rows[#rows + 1] = {label = "done", act = "key_seen",
                 hint = "clears the key from this screen"}
         elseif account.base ~= "" and not account.claimed then
             rows[#rows + 1] = {label = "keep this pilot", act = "claim",
-                hint = "gives you a key that brings this rating back on another device"}
+                hint = "a key that brings this pilot back elsewhere"}
         end
         if account.claimed and account.key == "" then
             if account.link_code ~= "" then
