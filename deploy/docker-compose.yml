@@ -1,9 +1,13 @@
-# One host: a directory, two arena servers, and Caddy in front of all of it.
+# One host: a directory, three arena servers, and Caddy in front of all of it.
 #
-# Two arenas rather than one because that is what makes zone selection real
-# rather than asserted. They read the same catalog and choose between themselves,
-# so a fresh host comes up with one serving Chaos and the other War without
-# anybody assigning either.
+# More than one arena because that is what makes zone selection real rather than
+# asserted. They read the same catalog and choose between themselves, so a fresh
+# host comes up serving Chaos, War and Alpha without anybody assigning any of
+# them.
+#
+# One per zone in the catalog, and that is the rule to keep: an arena picks a
+# zone nobody is serving and then stays with it, so a fourth zone with three
+# arenas is a zone in the browse list that no process ever takes.
 #
 # Host networking throughout, per docs/architecture/hosting.md: bridge mode
 # publishes through NAT and a userland proxy, which hides the player's source
@@ -59,6 +63,13 @@ services:
     # the certificates are on a block volume rather than in its container.
     labels:
       vw.page-source: image
+      # The same trick again, for the same reason. Caddy reads its file once at
+      # start and the file arrives through a bind mount, so editing it moves
+      # nothing compose can see and a new route stays dark until something else
+      # recreates the container. This label lists what the file routes, so
+      # adding a route means changing it, and changing it is what makes compose
+      # act. Keep it in step with the Caddyfile.
+      vw.routes: dir a1 a2 a3
     security_opt:
       - no-new-privileges:true
     # Caddy is the one thing here that binds privileged ports, so it keeps
@@ -163,6 +174,18 @@ services:
       - a2:/var/lib/vectorwake
     depends_on: [directory]
 
+  a3:
+    <<: *arena
+    command: ["127.0.0.1:9003", "/var/lib/vectorwake"]
+    environment:
+      VW_DIRECTORY: ws://127.0.0.1:9000
+      VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
+      VW_ADDRESS: wss://play.${VW_DOMAIN}/a3
+      VW_REGION: ${VW_REGION:-local}
+    volumes:
+      - a3:/var/lib/vectorwake
+    depends_on: [directory]
+
 volumes:
   caddy-data:
   caddy-config:
@@ -175,3 +198,4 @@ volumes:
   # old registration is reaped.
   a1:
   a2:
+  a3:

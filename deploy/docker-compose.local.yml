@@ -42,3 +42,6 @@ services:
   a2:
     <<: *build
     extra_hosts: *names
+  a3:
+    <<: *build
+    extra_hosts: *names

@@ -3072,6 +3072,24 @@ mod tests {
         assert_eq!(w.cfg.rust_chance, 10, "and rust keeps its default");
     }
 
+    /// Every zone the shipped catalog offers, applied to a fresh room.
+    ///
+    /// A weapon or a hull a zone file names and the core does not is a warning
+    /// on a running server and nothing else, so the zone goes live with part of
+    /// its tuning silently missing. The catalog is the deployment, and these
+    /// three files are the only ones anybody actually plays.
+    #[test]
+    fn every_shipped_zone_applies_with_nothing_left_over() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog");
+        let cat = catalog::load(dir).expect("the catalog we ship loads");
+        assert!(cat.order.len() >= 3, "chaos, war and alpha at least");
+        for name in &cat.order {
+            let mut w = sim::World::new(1);
+            let warn = Arena::apply_config(&mut w, &cat.zone(name).unwrap().arena);
+            assert!(warn.is_empty(), "zone {name}: {warn:?}");
+        }
+    }
+
     #[test]
     fn a_zone_prices_a_kill() {
         let (w, warn) = tuned(r#"

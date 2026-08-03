@@ -5,7 +5,7 @@
 # whole of the conflict resolution and a rollback needs a new higher number
 # rather than a reused one.
 
-version = 1
+version = 2
 name = "vectorwake"
 description = "the reference deployment"
 
@@ -37,3 +37,6 @@ name = "chaos"
 
 [[zone]]
 name = "war"
+
+[[zone]]
+name = "alpha"

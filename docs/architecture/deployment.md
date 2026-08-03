@@ -79,10 +79,16 @@ recreates only what changed, so a server-image change does not restart Caddy and
 therefore cannot disturb TLS. Reinstall is for changing the provisioning script
 itself, and each one costs a certificate.
 
-**Two arena servers, not one.** A single arena would never make zone selection
-do anything: with two, a fresh host comes up with one serving Chaos and the other
-War, chosen between themselves against the same catalog. That is the design
+**One arena server per zone, and never fewer.** A single arena would make zone
+selection do nothing: with three, a fresh host comes up serving Chaos, War and
+Alpha, chosen between themselves against the same catalog. That is the design
 running rather than being asserted, and it costs nothing on a host this size.
+
+Fewer arenas than zones is the failure worth naming, because it looks like
+nothing. An arena takes a zone nobody is serving and then stays with it, so the
+zone that misses out is listed in the browse reply, joinable in the client, and
+served by no process at all. Adding a zone to the catalog means adding an arena
+beside it.
 
 ## What choosing Caddy decided for us
 
