@@ -44,7 +44,7 @@ struct Reg {
     seen_ms: u64,
     intent: String,
     intent_until_ms: u64,
-    tx: mpsc::UnboundedSender<Vec<u8>>,
+    tx: mpsc::UnboundedSender<Message>,
 }
 
 pub struct Directory {
@@ -272,7 +272,7 @@ impl Directory {
             },
         );
         let sent = match self.regs.get(instance) {
-            Some(r) => r.tx.send(msg).is_ok(),
+            Some(r) => r.tx.send(Message::Binary(msg)).is_ok(),
             None => false,
         };
         self.note(AuditRow {
@@ -338,10 +338,10 @@ async fn serve_registration(
     ws: tokio_tungstenite::WebSocketStream<Box<dyn crate::Conn>>,
 ) {
     let (mut sink, mut source) = ws.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     let writer = tokio::spawn(async move {
         while let Some(m) = rx.recv().await {
-            if sink.send(Message::Binary(m)).await.is_err() {
+            if sink.send(m).await.is_err() {
                 return;
             }
         }
@@ -354,6 +354,14 @@ async fn serve_registration(
     let mut instance: Option<String> = None;
 
     while let Some(Ok(msg)) = source.next().await {
+        // Answer the keepalive here too, for the same reason as the game port:
+        // the pong tungstenite queues goes on the sink half, which this task
+        // does not hold. An operator running an arena on a client library that
+        // pings would be dropped mid-registration and never learn why.
+        if let Message::Ping(p) = msg {
+            let _ = tx.send(Message::Pong(p));
+            continue;
+        }
         let Message::Binary(data) = msg else { continue };
         match fleet::tag_of(&data) {
             Some(fleet::A2D_REGISTER) => {
@@ -378,14 +386,14 @@ async fn serve_registration(
                     )
                 };
                 if r.version != fleet::PROTOCOL {
-                    let _ = tx.send(reject(
+                    let _ = tx.send(Message::Binary(reject(
                         "version_unsupported",
                         &format!("this directory speaks {}", fleet::PROTOCOL),
-                    ));
+                    )));
                     break;
                 }
                 if r.instance.is_empty() || r.address.is_empty() {
-                    let _ = tx.send(reject("bad_address", "instance and address are required"));
+                    let _ = tx.send(Message::Binary(reject("bad_address", "instance and address are required")));
                     break;
                 }
                 let (pool, cap, region_default) = {
@@ -396,7 +404,7 @@ async fn serve_registration(
                     }
                 };
                 if pool.is_empty() {
-                    let _ = tx.send(reject("unknown_token", ""));
+                    let _ = tx.send(Message::Binary(reject("unknown_token", "")));
                     break;
                 }
                 {
@@ -410,10 +418,10 @@ async fn serve_registration(
                         .filter(|x| x.pool == pool && x.instance != r.instance)
                         .count();
                     if cap > 0 && held >= cap {
-                        let _ = tx.send(reject(
+                        let _ = tx.send(Message::Binary(reject(
                             "pool_full",
                             &format!("pool {pool:?} is at its {cap} instance cap"),
-                        ));
+                        )));
                         break;
                     }
                     let region = if r.region.is_empty() { region_default } else { r.region.clone() };
@@ -441,7 +449,7 @@ async fn serve_registration(
                         catalog: d.wire_catalog(),
                         verified: false,
                     };
-                    let _ = tx.send(fleet::frame(fleet::D2A_ACCEPTED, &accepted));
+                    let _ = tx.send(Message::Binary(fleet::frame(fleet::D2A_ACCEPTED, &accepted)));
                 }
                 println!(
                     "registered {} at {} (pool {pool:?}, willing {:?})",
@@ -535,7 +543,7 @@ async fn serve_registration(
                 m.extend_from_slice(
                     serde_json::to_string(&d.browse()).unwrap_or_default().as_bytes(),
                 );
-                let _ = tx.send(m);
+                let _ = tx.send(Message::Binary(m));
             }
             _ => {}
         }
@@ -599,7 +607,7 @@ async fn push_views(dir: Arc<Mutex<Directory>>) {
                 m
             };
             for r in d.regs.values() {
-                let _ = r.tx.send(msg.clone());
+                let _ = r.tx.send(Message::Binary(msg.clone()));
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(fleet::HEARTBEAT_MS / 2)).await;

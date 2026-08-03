@@ -14,6 +14,23 @@ RUN apt-get update \
 WORKDIR /src
 # Both trees, and in this shape: server/build.rs reaches ../sim, so the build
 # context has to be the repository root rather than server/.
+#
+# The dependencies are compiled from the manifests alone, against a stub main,
+# before any of our own source arrives. Two hundred crates take about five
+# minutes on one core and depend on nothing but Cargo.toml and Cargo.lock, so
+# building them in the same layer as the source meant every one-line fix
+# recompiled all of them: measured, a fifty-second deploy became ten minutes,
+# which is a tax on exactly the small fixes that should be cheapest to ship.
+#
+# The stub layer needs neither tree: cargo detects a build script by the file
+# existing, and server/build.rs is not copied yet, so nothing reaches for ../sim
+# and `cc` is not built either. Both arrive together afterwards, which is what
+# makes a change to the simulation core as cheap to deploy as a change to the
+# server.
+COPY server/Cargo.toml server/Cargo.lock ./server/
+RUN mkdir -p server/src && echo 'fn main() {}' > server/src/main.rs \
+ && cargo build --release --manifest-path server/Cargo.toml \
+ && rm -rf server/src
 COPY sim ./sim
 COPY server ./server
 RUN cargo build --release --manifest-path server/Cargo.toml

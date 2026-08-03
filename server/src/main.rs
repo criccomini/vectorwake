@@ -101,7 +101,7 @@ struct Player {
     /// it knows how far its prediction has been confirmed.
     last_input_tick: u32,
     name: String,
-    tx: mpsc::Sender<Vec<u8>>,
+    tx: mpsc::Sender<Message>,
 }
 
 /// Messages a client may fall behind by before the arena stops queueing for it.
@@ -670,7 +670,7 @@ impl Arena {
     /// is `arena.max_ships` and the two are different questions, since a wide
     /// room with a small player cap is a zone that wants mostly bots.
     fn join(&mut self, name: String, class: u8, max_players: usize,
-            tx: mpsc::Sender<Vec<u8>>) -> Option<u64> {
+            tx: mpsc::Sender<Message>) -> Option<u64> {
         if self.players.len() >= max_players {
             return None;
         }
@@ -885,7 +885,7 @@ impl Arena {
             m.extend_from_slice(&kr.to_le_bytes());
             m.push(rated.as_ref().map_or(0, |r| r.credits.len() as u8));
             for p in self.players.values() {
-                let _ = p.tx.try_send(m.clone());
+                let _ = p.tx.try_send(Message::Binary(m.clone()));
             }
             let assists = rated.as_ref().map_or(0, |r| r.credits.len());
             if assists > 1 {
@@ -905,7 +905,7 @@ impl Arena {
         let mut m = vec![S2C_BANNER];
         m.extend_from_slice(self.banner.as_bytes());
         for p in self.players.values() {
-            let _ = p.tx.try_send(m.clone());
+            let _ = p.tx.try_send(Message::Binary(m.clone()));
         }
     }
 
@@ -930,7 +930,7 @@ impl Arena {
             msg.push(p.ship);
             msg.extend_from_slice(&p.last_input_tick.to_le_bytes());
             msg.extend_from_slice(&buf[..n as usize]);
-            let _ = p.tx.try_send(msg);
+            let _ = p.tx.try_send(Message::Binary(msg));
         }
     }
 
@@ -963,14 +963,14 @@ impl Arena {
         let mut m = vec![S2C_SETTINGS];
         m.extend_from_slice(&self.world.packed_settings());
         for p in self.players.values() {
-            let _ = p.tx.try_send(m.clone());
+            let _ = p.tx.try_send(Message::Binary(m.clone()));
         }
     }
 
     fn broadcast_roster(&self) {
         let m = self.roster_msg();
         for p in self.players.values() {
-            let _ = p.tx.try_send(m.clone());
+            let _ = p.tx.try_send(Message::Binary(m.clone()));
         }
     }
 }
@@ -1836,11 +1836,11 @@ async fn main() {
                 Err(_) => return,
             };
             let (mut sink, mut source) = ws.split();
-            let (tx, mut rx) = mpsc::channel::<Vec<u8>>(OUT_QUEUE);
+            let (tx, mut rx) = mpsc::channel::<Message>(OUT_QUEUE);
 
             let writer = tokio::spawn(async move {
                 while let Some(msg) = rx.recv().await {
-                    if sink.send(Message::Binary(msg)).await.is_err() {
+                    if sink.send(msg).await.is_err() {
                         return;
                     }
                 }
@@ -1853,10 +1853,32 @@ async fn main() {
             // This connection's id in the arena, once it has joined.
             // Which room, and which id within it.
             let mut seat: Option<(usize, u64)> = None;
-            while let Some(Ok(msg)) = source.next().await {
+            // A connection that says nothing for this long is gone. A joined
+            // client sends its buttons every frame whatever the player is doing,
+            // even sitting in the menu, so silence is not idleness. Without this
+            // a peer whose network vanished without an RST keeps its seat until
+            // the kernel gives up on the socket, which on a full arena is a seat
+            // nobody can have.
+            let quiet = std::time::Duration::from_secs(75);
+            loop {
+                let msg = match tokio::time::timeout(quiet, source.next()).await {
+                    Ok(Some(Ok(m))) => m,
+                    Ok(_) => break,
+                    Err(_) => break,
+                };
                 let data = match msg {
                     Message::Binary(b) => b,
                     Message::Close(_) => break,
+                    // Answer the keepalive. Splitting the stream is what made
+                    // this necessary: tungstenite queues a pong on the sink half,
+                    // which this task does not hold and nothing else flushes, so
+                    // a ping went unanswered forever. Browsers never ping, which
+                    // is why it took a harness to find -- and why every non-browser
+                    // client was dropped at its own ping timeout, forty seconds in.
+                    Message::Ping(p) => {
+                        let _ = tx.try_send(Message::Pong(p));
+                        continue;
+                    }
                     _ => continue,
                 };
                 if data.is_empty() {
@@ -1869,7 +1891,7 @@ async fn main() {
                         let z = zone.lock().await;
                         let mut m = vec![S2C_STATUS];
                         m.extend_from_slice(z.status_json().as_bytes());
-                        let _ = tx.try_send(m);
+                        let _ = tx.try_send(Message::Binary(m));
                     }
                     C2S_JOIN if seat.is_none() => {
                         let class = data.get(1).copied().unwrap_or(0);
@@ -1895,10 +1917,10 @@ async fn main() {
                         if proto != CLIENT_PROTOCOL {
                             // Before anything else: a client that misparses this
                             // wire would misread every refusal below it too.
-                            let _ = tx.try_send(deny(
+                            let _ = tx.try_send(Message::Binary(deny(
                                 DENY_VERSION,
                                 &format!("this zone speaks protocol {CLIENT_PROTOCOL}"),
-                            ));
+                            )));
                             break;
                         }
                         // A player picked a game, not an address. This instance may
@@ -1907,36 +1929,36 @@ async fn main() {
                         // address still answers is worse than telling them to
                         // re-browse.
                         if !want.is_empty() && want != z.zone_name {
-                            let _ = tx.try_send(deny(
+                            let _ = tx.try_send(Message::Binary(deny(
                                 DENY_WRONG_ZONE,
                                 &format!(
                                     "this instance serves {:?} now; re-browse",
                                     z.zone_name
                                 ),
-                            ));
+                            )));
                             break;
                         }
                         if z.is_banned(&name) {
-                            let _ = tx.try_send(deny(DENY_BANNED, "you are banned here"));
+                            let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, "you are banned here")));
                             break;
                         }
                         if z.draining {
-                            let _ = tx.try_send(deny(
+                            let _ = tx.try_send(Message::Binary(deny(
                                 DENY_DRAINING,
                                 "this arena is draining; try another instance",
-                            ));
+                            )));
                             break;
                         }
-                        let _ = tx.try_send(z.zone_msg());
+                        let _ = tx.try_send(Message::Binary(z.zone_msg()));
                         let cap = z.max_players();
                         // The fill ladder: fullest room below cap, else a new room
                         // here if the zone allows one, else this instance is out
                         // of room and the client should try the next address.
                         let Some(idx) = z.room_for_join() else {
-                            let _ = tx.try_send(deny(
+                            let _ = tx.try_send(Message::Binary(deny(
                                 DENY_FULL,
                                 "no room here; try another instance of this zone",
-                            ));
+                            )));
                             break;
                         };
                         // Into the room they are actually joining. Rooms keep their
@@ -1949,16 +1971,16 @@ async fn main() {
                             let ship = a.players[&new_id].ship;
                             let mut m = vec![S2C_MAP];
                             m.extend_from_slice(&a.world.packed_map());
-                            let _ = tx.try_send(m);
+                            let _ = tx.try_send(Message::Binary(m));
                             let mut c = vec![S2C_SETTINGS];
                             c.extend_from_slice(&a.world.packed_settings());
-                            let _ = tx.try_send(c);
+                            let _ = tx.try_send(Message::Binary(c));
                             let mut w = vec![S2C_WELCOME, ship];
                             w.extend_from_slice(&a.world.state.tick.to_le_bytes());
-                            let _ = tx.try_send(w);
+                            let _ = tx.try_send(Message::Binary(w));
                             a.broadcast_roster();
                         } else {
-                            let _ = tx.try_send(deny(DENY_FULL, "no seat in that room"));
+                            let _ = tx.try_send(Message::Binary(deny(DENY_FULL, "no seat in that room")));
                         }
                         // A join changes the count a directory reports, and a
                         // stale count is a directory routing players to the wrong
