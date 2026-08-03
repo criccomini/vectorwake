@@ -12,21 +12,19 @@ host is a compose service and a DNS record away.
 ## The shape
 
 ```
-                     443 (wss)                    loopback
-  player ───────────────────────► Caddy ──────────────────────► directory :9000
-                                    │                           arena a1 :9001
-  play.vectorwake.net ──────────────┤                           arena a2 :9002
-  directory.vectorwake.net ─────────┤                           admin    :9100
-  a1.vectorwake.net ────────────────┤                              (no route in)
-  a2.vectorwake.net ────────────────┘
-                                    └───────────────► client/dist/, on disk
+  play.vectorwake.net, 443             loopback
+      /      ──────────────────────►  client/dist/, on disk
+      /dir   ──────────────────────►  directory :9000
+      /a1    ──────────────────────►  arena     :9001
+      /a2    ──────────────────────►  arena     :9002
+      (none) ──────────────────────►  admin     :9100   no route in, by design
 ```
 
 **The client is served from here because it cannot be served from anywhere
 else.** A page delivered by a third party under a Content-Security-Policy of
 `connect-src 'self'` cannot open a WebSocket to our arenas at all, and the
 published artifact is exactly that: it can only ever be the offline practice
-arena. Serving the page from the same domain as the game removes the question
+arena. Serving the page from the same origin as the game removes the question
 entirely.
 
 The bundle is committed at `client/dist/index.html` rather than built on the
@@ -76,14 +74,14 @@ closes that and costs nothing, since Caddy is on the same host.
 
 **The ephemeral-port plan is not needed yet.** [hosting.md](hosting.md) wants an
 arena to bind port zero and report what it got, so that scaling needs no
-per-replica configuration. With hostname routing and a fixed port per arena that
-problem does not arise, and the code cannot do it anyway: the advertised address
+per-replica configuration. With a fixed port and a path per arena that problem
+does not arise, and the code cannot do it anyway: the advertised address
 is the string the process was given, so `:0` would advertise port zero. The gap
 stays open, and it becomes real the first time one host runs more arenas than
 anybody wants to name.
 
 **The arena needs no certificate.** It serves cleartext on loopback and Caddy is
-the wss endpoint, so `VW_ADDRESS` advertises `wss://a1.vectorwake.net` for a
+the wss endpoint, so `VW_ADDRESS` advertises `wss://play.vectorwake.net/a1` for a
 process that has never seen a private key.
 
 ## The admin surface is not routed
@@ -120,9 +118,9 @@ seconds and answers on the raw IP over plain http for the ten minutes the build
 takes:
 
 ```
-http://<ip>/deploy/status      coarse progress, one line per step
-http://<ip>/deploy/build.log   the build, if it failed
-https://directory.vectorwake.net/health   the chain up to Caddy, once DNS is live
+http://<ip>/deploy/status       coarse progress, one line per step
+http://<ip>/deploy/update.log   what the updater did, after provisioning
+https://play.vectorwake.net/health   Caddy, and only Caddy, once DNS is live
 ```
 
 That window, before DNS has propagated and a certificate exists, is exactly when
@@ -133,6 +131,12 @@ written there, because anyone can read it.
 upgrade, which plenty of networks and proxies decline to carry, and "cannot
 connect" is a useless symptom when the cause could be DNS, the certificate,
 Caddy, the firewall, or the game.
+
+It answers `caddy up; this says nothing about the game`, at length and on
+purpose. It used to answer `ok`, which is indistinguishable from "the service is
+up" -- it answered 200 throughout a reinstall with no game running at all, and
+its own author read it as healthy an hour after writing it. A health endpoint that
+can only see the proxy should say so in the body.
 
 ## DNS
 
