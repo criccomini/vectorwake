@@ -24,7 +24,9 @@ deploy/.env
 deploy/deploy-log/
 sandbox-ca.crt
 
-# The generator is run by hand; its bytecode cache is not ours to keep.
+# Built by hand when somebody wants to hear the kit outside the game.
+client/tools/sfxdump
+# Whatever the tools next to it leave behind.
 client/tools/__pycache__/
 tools/pilot/libvwprobe.so
 
