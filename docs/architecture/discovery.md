@@ -7,25 +7,24 @@ trust model.
 
 ## Push, not poll
 
-Today a directory reads a hand-written list of addresses from `directory.toml`
-and polls each one every ten seconds. Adding a zone means editing that file and
-restarting the directory, because `Directory::load` runs once before the accept
-loop and never again.
-
-Arena servers register instead. Each connects to every directory it knows,
-presents a credential, and holds the socket open. The entry lives as long as the
-connection, which buys three things the poll cannot: a listing appears the
+Arena servers register. Each connects to every directory it knows, presents a
+credential, and holds the socket open. The entry lives as long as the
+connection, which buys three things a poll cannot: a listing appears the
 moment an arena is ready, player counts arrive when they change rather than up to
 ten seconds late, and an arena that dies is delisted immediately instead of
 lingering as a row that nobody can join.
+
+The first directory read a hand-written list of addresses out of
+`directory.toml` and polled each one on a timer, so adding a zone meant editing
+a file and restarting the process. That file is gone.
 
 Registration state is therefore a held socket and a local file, and never a
 database. That is what lets a deployment run several directories with no shared
 storage and no agreement between them.
 
 A registered-but-disconnected arena is dropped rather than shown as down. The
-"not answering" row in today's code is an artifact of the poll model, and a
-restart blinking out of the list for three seconds costs a player nothing.
+"not answering" row belonged to the poll model, and a restart blinking out of
+the list for three seconds costs a player nothing.
 
 ## The poll survives as verification
 

@@ -54,12 +54,18 @@ is not built.
 
 ## The zone directory
 
-A player has to find a game before joining one. `directory.toml` lists zone
-addresses; the directory polls each on a timer and serves the answers.
+A player has to find a game before joining one. A directory holds the catalog
+and the token table, takes registrations from arena servers, verifies the
+address each one claims, and answers browse requests.
 
 ```sh
-vectorwake-server directory 127.0.0.1:9000 zone
+vectorwake-server directory 127.0.0.1:9000 ../catalog
 ```
+
+The second argument is a catalog directory holding `catalog.toml`. Arena
+servers reach it with `VW_DIRECTORY` and a `VW_TOKEN` from one of its pool
+rows; there is no list of addresses to maintain, because a listing is a held
+socket. See docs/architecture/discovery.md for the wire format.
 
 It speaks the same WebSocket protocol the zones do, so a client already able
 to talk to a zone needs no second transport, and a zone needs no HTTP
@@ -68,8 +74,7 @@ browsing costs nobody a seat.
 
 A directory is authoritative over nothing and holds no state worth losing. If
 it is down, a player who knows an address still connects straight to it, and
-a listed zone that stops answering is shown as down rather than hidden --
-that is information a player wants.
+every arena already running keeps running.
 
 ## Calibrating the bot ladder
 

@@ -95,10 +95,10 @@ Run one:
 ./server/target/release/vectorwake-server 0.0.0.0:9040 zone
 ```
 
-List it in a directory's `directory.toml`, point the client at that directory,
-and players pick it from `PLAY -> ZONES`. They appear in each other's rosters,
-kill feeds, and radar, because online every name comes from the server's roster
-rather than from the local one.
+Give it a `VW_DIRECTORY` and a `VW_TOKEN` so it registers, point the client at
+that directory, and players pick it from `PLAY -> ZONES`. They appear in each
+other's rosters, kill feeds, and radar, because online every name comes from
+the server's roster rather than from the local one.
 
 In a zone a player can change hull from `SHIP` without leaving: the client
 sends `C2S_SHIP`, the server applies it through the core, and the next snapshot
