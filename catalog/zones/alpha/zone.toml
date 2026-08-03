@@ -81,9 +81,17 @@ prize_life = 6000
 # [Prize] PrizeNegativeFactor=300, one green in three hundred, against the
 # thousand this key counts in.
 rust = 3
-# Nothing in that file hands a ship anything at spawn. Pilots start plain and
-# every upgrade in the zone is one somebody flew to.
-spawn_prizes = 0
+# Thirty greens in hand the moment a ship spawns. This one is criccomini's call
+# rather than the file's, and it is worth saying why the file cannot decide it.
+#
+# Its ships start bare: InitialGuns=1, InitialBombs=0 and every charge at zero,
+# which is what a fresh hull here already is. The one thing they do start with
+# is InitialBounty=50, and bounty in this core is a sum over what a pilot holds
+# rather than a number of its own, so there is no way to be worth fifty while
+# carrying nothing. Greens are the only lever, and one green is one bounty:
+# thirty of them measures 29.5 at spawn, fifty measures 49.4 and hands over
+# every stat, ladder and add-on at once, which leaves nothing to fly for.
+spawn_prizes = 30
 
 # [Kill] BountyIncreaseForKill=6, twice what our own zones pay, so a streak in
 # here is visible from further away.
@@ -317,9 +325,13 @@ bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }
 # Turrets, so TurretLimit, the two attach penalties and AttachBounty. Soccer
 # and King, both switched off in that file anyway.
 #
-# A hull that starts partway up a ladder: InitialGuns=2 on the Terrier and
-# InitialBombs=1 on the Leviathan and the Weasel. Everyone here starts on rung
-# one, and there is no key for anything else.
+# InitialBounty=50, for the reason spelled out at spawn_prizes above: bounty is
+# derived from holdings here, so a number of its own has nowhere to live.
+#
+# A hull that starts on a different rung: InitialGuns=2 on the Terrier, and
+# InitialBombs=1 on the Leviathan and the Weasel against 0 on the other five.
+# Everyone here starts on rung one of both triggers, so this zone is a little
+# freer with bombs than that file is, and there is no key to narrow it.
 #
 # Bomb detail with no model: BombExplodeDelay, BombSafety and JitterTime.
 # Gravity and GravityTopSpeed, with Wormhole:GravityBombs and SwitchTime, since
