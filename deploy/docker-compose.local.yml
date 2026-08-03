@@ -45,3 +45,6 @@ services:
   a3:
     <<: *build
     extra_hosts: *names
+  bots:
+    <<: *build
+    extra_hosts: *names

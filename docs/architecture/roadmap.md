@@ -187,10 +187,11 @@ beside it.
 **M7.1 through M7.6 are built.** A directory serves a catalog, arena servers
 register and choose their own zone, rooms open and close on demand, the client
 lists games rather than machines, and an operator can see and steer the fleet
-from a page. What remains of M7 is 7.7, durable state leaving the arena, which
-is a prerequisite for a second instance of a zone rather than a nicety. The
-descriptions below are kept because each one states its own done condition, and
-those are the claims that were checked.
+from a page, and the bots fly as clients rather than inside the tick. What
+remains of M7 is 7.7, durable state leaving the arena, which is a prerequisite
+for a second instance of a zone rather than a nicety. The descriptions below
+are kept because each one states its own done condition, and those are the
+claims that were checked.
 
 **M7.1, the catalog as a file.** Parse `catalog.toml` and `zones/<name>/zone.toml`
 with the validation table from [catalog.md](catalog.md), and make a zone server
@@ -257,6 +258,30 @@ a prerequisite for a second instance of any zone rather than a milestone free to
 slip. Rated events batched and handed off, and the open question in
 [server.md](server.md) closed. Done when two instances of one zone can both rate
 the same pilot without disagreeing.
+
+**M7.8, bots leave the arena process. Built.** A bot server joins the
+deployment as a fourth use of the same binary: one process flying the roster as
+declared clients, filling every listed room to its zone's `bot_fill` and
+standing bots down one for one as humans arrive, per [decision
+29](decisions.md#29-a-bot-is-a-client). The arena keeps only the seat policy,
+which is that declared bots sit outside `max_players` and the newest is dropped
+when a full room must seat a human.
+
+What the done conditions produced, run against a directory, one arena and one
+bot server on loopback:
+
+- A cold arena reached 51 bots in a 64-seat Chaos room in seven seconds, eight
+  connections a second, and they fought: 388 kills in the first few minutes.
+- Three humans joining took the target from 51 to 48 and three bots stood down,
+  each waiting for its own death or an empty horizon first. The humans left and
+  the room came back to 51.
+- The cost is in [hosting.md](hosting.md). 3% of the arena's tick budget at the
+  worst, 14% of a core for the bot server, so `bot_fill` stays at 0.8.
+
+Two things came out of building it. The arena frees a seat the moment a client
+closes, which the population loop depends on and which nothing had measured;
+and the roster had to grow past nine, because a 64-seat room asks for
+fifty-one, so the calibrated nine are followed by generated individuals.
 
 Duels return after M7.1 and M7.5, because they need a mode to be a catalog row
 and rooms on demand in a process. They also need spectating, since a queue is

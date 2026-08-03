@@ -73,8 +73,16 @@ pub struct Metrics {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Status {
     pub zone: String,
+    /// Humans. Declared bots are counted beside them and never inside, because
+    /// every rule that reads this one, the fill target, the player cap and the
+    /// drain, is a rule about people.
     pub players: u32,
     pub bots: u32,
+    /// How many bots this instance would like to have across all its rooms, so
+    /// the bot server does no arithmetic about a zone it never reads the
+    /// configuration of. Zero while draining, which is what lets a drain finish.
+    #[serde(default)]
+    pub bots_wanted: u32,
     /// Rooms this process currently holds for its zone, and the cap from the
     /// catalog. Both, because the fill ladder needs to know about headroom and
     /// not only about occupancy.
@@ -135,6 +143,8 @@ pub struct Observed {
     pub region: String,
     pub players: u32,
     pub bots: u32,
+    #[serde(default)]
+    pub bots_wanted: u32,
     pub rooms: u32,
     pub max_rooms: u32,
     pub capped: bool,
@@ -197,6 +207,11 @@ pub struct WireZone {
     pub max_ships: u8,
     pub max_players: u32,
     pub fill_target: u32,
+    /// A share of `max_ships`, which is how full the bot server holds a room of
+    /// this zone. The arena turns it into a count and reports that, so nothing
+    /// downstream has to know the room's size.
+    #[serde(default)]
+    pub bot_fill: f32,
     pub max_rooms: u32,
     pub teams: u8,
     pub balance: String,

@@ -8,31 +8,87 @@
 use crate::sim::{self, World};
 
 /// A standing pilot. No side: which one they fly for is the zone's business,
-/// decided by its own balancer when the room is built. It used to be written
-/// here, six against three, and a two-team zone honoured it -- so War ran
-/// six-against-three and one side took every round.
+/// decided by its own balancer when they join. It used to be written here, six
+/// against three, and a two-team zone honoured it, so War ran six against three
+/// and one side took every round.
+///
+/// No start position either. A roster entry used to carry the tile its pilot
+/// was placed on, which made sense while the arena seated its own bots at build
+/// time; a bot joins through the front door now and takes the next start in the
+/// map's rotation exactly as a player does.
+#[derive(Clone)]
 pub struct RosterEntry {
-    pub name: &'static str,
+    pub name: String,
     pub class: u8,
-    pub tile_x: i32,
-    pub tile_y: i32,
     pub skill: f32,
 }
+
+/// The calibrated roster. These nine have careers: `zone/ladder.json` holds a
+/// rating for each, earned in the offline tournament, and every other pilot in a
+/// zone floats against the one pinned among them.
+pub const CALIBRATED: [(&str, u8, f32); 9] = [
+    ("Kestrel", 0, 0.30),
+    ("Halcyon", 3, 0.46),
+    ("Vantage", 6, 0.62),
+    ("Ridgeline", 2, 0.78),
+    ("Sable", 5, 0.90),
+    ("Meridian", 7, 0.38),
+    ("Ozone", 1, 0.54),
+    ("Tessellate", 4, 0.70),
+    ("Cirrus", 2, 0.44),
+];
+
+/// Names for the pilots beyond the calibrated nine. Same register, no overlap
+/// with them and none with the call signs the client hands players in
+/// `client/arena/callsign.lua`, so a scoreboard never leaves you wondering
+/// which of the three a name came from.
+const FILL_NAMES: [&str; 39] = [
+    "Aperture", "Bellwether", "Carrack", "Downdraft", "Escarpment", "Foxglove",
+    "Gantry", "Hollow", "Isobar", "Jackstay", "Keelson", "Longshore",
+    "Mackerel", "Nightjar", "Oxbow", "Palisade", "Quicksilver", "Ravine",
+    "Saltmarsh", "Tideline", "Undertow", "Vellum", "Windrow", "Xenolith",
+    "Yardarm", "Zenith", "Alluvium", "Bracken", "Coppice", "Dunelight",
+    "Estuary", "Fernbrake", "Glasswort", "Headland", "Inlet", "Junco",
+    "Kittiwake", "Limestone", "Moraine",
+];
 
 /// The zone's standing roster. Long-lived individuals rather than template
 /// spawns: each keeps its name, its hull, and its skill.
 pub fn roster() -> Vec<RosterEntry> {
-    vec![
-        RosterEntry { name: "Kestrel",    class: 0, tile_x: 486, tile_y: 486, skill: 0.30 },
-        RosterEntry { name: "Halcyon",    class: 3, tile_x: 538, tile_y: 486, skill: 0.46 },
-        RosterEntry { name: "Vantage",    class: 6, tile_x: 538, tile_y: 538, skill: 0.62 },
-        RosterEntry { name: "Ridgeline",  class: 2, tile_x: 486, tile_y: 538, skill: 0.78 },
-        RosterEntry { name: "Sable",      class: 5, tile_x: 512, tile_y: 478, skill: 0.90 },
-        RosterEntry { name: "Meridian",   class: 7, tile_x: 478, tile_y: 512, skill: 0.38 },
-        RosterEntry { name: "Ozone",      class: 1, tile_x: 546, tile_y: 512, skill: 0.54 },
-        RosterEntry { name: "Tessellate", class: 4, tile_x: 512, tile_y: 546, skill: 0.70 },
-        RosterEntry { name: "Cirrus",     class: 2, tile_x: 500, tile_y: 546, skill: 0.44 },
-    ]
+    CALIBRATED
+        .iter()
+        .map(|&(name, class, skill)| RosterEntry { name: name.into(), class, skill })
+        .collect()
+}
+
+/// The nth individual the bot server can put in a room, counting from zero.
+///
+/// The calibrated nine come first, because a room wants the pilots whose
+/// ratings mean something. After them the roster is generated, which it has to
+/// be: a 64-seat room asks for fifty-one bots and hand-authoring fifty-one
+/// careers to fill one room is work with no reader. Deterministic, so pilot 30
+/// is the same pilot with the same hull and the same skill every time this
+/// process starts, which is what makes an individual an individual.
+///
+/// Skill spreads over the same range the calibrated nine cover, and hull walks
+/// the roster, so a generated crowd is as mixed as an authored one. A name that
+/// runs out of list takes a numeral, which is what the client does for a player.
+pub fn individual(n: usize) -> RosterEntry {
+    if let Some(&(name, class, skill)) = CALIBRATED.get(n) {
+        return RosterEntry { name: name.into(), class, skill };
+    }
+    let i = n - CALIBRATED.len();
+    let word = FILL_NAMES[i % FILL_NAMES.len()];
+    let lap = i / FILL_NAMES.len();
+    let name = if lap == 0 { word.to_string() } else { format!("{word} {}", lap + 1) };
+    // A hash of the index rather than a counter, so neighbours in the list are
+    // not neighbours in skill and a room filled in order is not a ladder.
+    let h = (i as u32).wrapping_mul(2654435761) ^ 0x9e3779b9;
+    RosterEntry {
+        name,
+        class: (h >> 11) as u8 % 8,
+        skill: 0.30 + (h % 61) as f32 / 100.0,
+    }
 }
 
 /// The pinned reference. Its rating is fixed by definition and never earned,
@@ -52,13 +108,6 @@ pub const CLASS_NAMES: [&str; 8] = [
 
 pub fn class_index(name: &str) -> Option<usize> {
     CLASS_NAMES.iter().position(|n| n.eq_ignore_ascii_case(name))
-}
-
-pub fn name_for(ship: u8) -> String {
-    roster()
-        .get(ship as usize)
-        .map(|r| r.name.to_string())
-        .unwrap_or_else(|| format!("pilot{ship}"))
 }
 
 /// How far a pilot can see, in world pixels.
@@ -329,11 +378,19 @@ impl Bot {
         self.timer = seed % 64;
     }
 
-    /// Whether this pilot is due a look this tick. The arena asks, and only
+    /// Whether this pilot is due a look this tick. The caller asks, and only
     /// then pays for a `scan`; the offset in `timer` spreads that cost across
     /// ticks rather than landing every bot on the same one.
     pub fn looks_due(&self) -> bool {
         self.timer % self.look_every == 0
+    }
+
+    /// Nobody in sight and no flag to run. Asked by the bot server when this
+    /// pilot has been told to stand down, because leaving is a thing a player
+    /// does between fights: a bot that vanished mid-duel would be a bug the
+    /// person it was fighting could see.
+    pub fn horizon_clear(&self) -> bool {
+        self.seen.foe.is_none() && self.seen.flag.is_none()
     }
 
     fn rand(&mut self) -> f32 {

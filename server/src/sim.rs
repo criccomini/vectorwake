@@ -342,7 +342,14 @@ extern "C" {
     pub fn sim_take_prize(sh: *mut sim_ship, cfg: *const sim_settings, rng: *mut u32,
                           delta: *mut c_int) -> u8;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
+    /// The other end of a snapshot. Only a client needs this, and the bot
+    /// server is a client: it learns the room the way a browser does rather
+    /// than by reading the arena's memory, which is what makes "a bot knows no
+    /// more than a player" a property of the transport.
+    pub fn sim_unpack(s: *mut sim_state, inp: *const u8, len: c_int) -> c_int;
     pub fn sim_settings_pack(cfg: *const sim_settings, out: *mut u8, cap: c_int) -> c_int;
+    /// Leaves `cfg->map` alone: geometry travels as a map and arrives first.
+    pub fn sim_settings_unpack(cfg: *mut sim_settings, inp: *const u8, len: c_int) -> c_int;
     pub fn sim_add_spec(cfg: *mut sim_settings, spec: *const sim_weapon_spec) -> c_int;
     pub fn sim_add_pattern(cfg: *mut sim_settings, p: *const sim_fire_pattern) -> c_int;
     pub fn sim_add_flag(s: *mut sim_state, x_px: i32, y_px: i32) -> c_int;
@@ -602,6 +609,31 @@ impl World {
         }
     }
 
+    /// Take a snapshot the server sent. Replaces the state outright, so
+    /// whatever this world had predicted since the last one is discarded
+    /// rather than reconciled: a bot flies on the arena's answer.
+    pub fn apply_snapshot(&mut self, bytes: &[u8]) -> bool {
+        unsafe {
+            sim_unpack(&mut *self.state, bytes.as_ptr(), bytes.len() as c_int) == 0
+        }
+    }
+
+    /// Take the tuning the zone sent. The map is untouched, which is why it has
+    /// to have arrived first.
+    pub fn apply_settings(&mut self, bytes: &[u8]) -> bool {
+        unsafe {
+            sim_settings_unpack(&mut *self.cfg, bytes.as_ptr(), bytes.len() as c_int) == 0
+        }
+    }
+
+    /// A fresh simulation on geometry somebody else already unpacked. The bot
+    /// server holds one map per zone and hands it to every bot flying there,
+    /// which is the same Arc the arena uses to keep a room at 79 KB instead of
+    /// 1.1 MB: fifty bots in one zone cost one map between them.
+    pub fn on_shared_map(seed: u32, map: std::sync::Arc<sim_map>) -> Self {
+        Self::on_map(seed, map)
+    }
+
     pub fn add_flag(&mut self, tile_x: i32, tile_y: i32) -> i32 {
         unsafe { sim_add_flag(&mut *self.state, tile_x * TILE_PX, tile_y * TILE_PX) }
     }
@@ -631,6 +663,19 @@ impl World {
             unsafe { sim_take_prize(sh, &*self.cfg, rng, std::ptr::null_mut()) };
         }
     }
+}
+
+/// Geometry from the bytes a zone sends at join, with nothing else attached.
+///
+/// `World::from_packed` does this and builds a simulation around it. A client
+/// with many pilots in one room wants the geometry once and a simulation each,
+/// so the two halves are separable here.
+pub fn unpack_map(bytes: &[u8]) -> Option<std::sync::Arc<sim_map>> {
+    let mut map: Box<sim_map> = zeroed_box();
+    let ok = unsafe {
+        sim_map_unpack(&mut *map as *mut sim_map, bytes.as_ptr(), bytes.len() as i32)
+    };
+    (ok == 0).then(|| std::sync::Arc::from(map))
 }
 
 /// The same arena the single-player client builds, so a player sees the same

@@ -29,8 +29,11 @@ pub struct ZoneDef {
     /// Humans of those seats.
     pub max_players: Option<usize>,
     /// The concentration rule: another room or instance opens only when every
-    /// live one is at or above this.
+    /// live one is at or above this. Counts humans; see `Zone::fill_target`.
     pub fill_target: Option<usize>,
+    /// How full the bot server keeps this zone's rooms, as a share of
+    /// `max_ships`. Zero is a zone with no bots.
+    pub bot_fill: Option<f32>,
     /// The most simulations one process may hold for this zone. A ceiling, not
     /// a count: rooms appear on demand and are reclaimed when they empty.
     pub max_rooms: Option<usize>,
@@ -56,6 +59,7 @@ impl Default for ZoneDef {
             max_ships: None,
             max_players: None,
             fill_target: None,
+            bot_fill: None,
             max_rooms: None,
             teams: None,
             balance: "smaller".into(),
@@ -68,6 +72,9 @@ impl Default for ZoneDef {
 
 /// See `ZoneDef::fill_target`.
 pub const DEFAULT_FILL_TARGET: usize = 15;
+/// See `ZoneDef::bot_fill`. Four seats in five, which leaves a fifth of the
+/// room as headroom so an arriving human almost never has to evict anybody.
+pub const DEFAULT_BOT_FILL: f32 = 0.8;
 
 impl ZoneDef {
     /// Fifteen, which is `General:DesiredPlaying`'s default in ASSS and the
@@ -76,6 +83,12 @@ impl ZoneDef {
     /// would fail its own validation.
     pub fn fill_target(&self) -> usize {
         self.fill_target.unwrap_or(DEFAULT_FILL_TARGET)
+    }
+    /// A share of the room, not a count, because the count that matters is the
+    /// room's own size and a zone that widens its room wants the crowd to widen
+    /// with it.
+    pub fn bot_fill(&self) -> f32 {
+        self.bot_fill.unwrap_or(DEFAULT_BOT_FILL).clamp(0.0, 1.0)
     }
     pub fn max_rooms(&self) -> usize {
         self.max_rooms.unwrap_or(1).max(1)
@@ -338,6 +351,14 @@ fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
             z.fill_target.unwrap_or(DEFAULT_FILL_TARGET),
             z.max_players()
         ));
+    }
+    if let Some(f) = z.bot_fill {
+        if !(0.0..=1.0).contains(&f) {
+            return Err(format!(
+                "zone {name:?}: bot_fill {f} is a share of max_ships, so it \
+                 belongs between 0 and 1"
+            ));
+        }
     }
     Ok(())
 }
@@ -614,9 +635,9 @@ pub fn run_check() {
                 let map = c.map_bytes(name).map(|b| b.len()).unwrap_or(0);
                 println!(
                     "  zone {name:<10} mode {:<8} {} ships / {} players, fill {}, \
-                     {} room(s), {} team(s), map {map} B",
+                     bots {:.0}%, {} room(s), {} team(s), map {map} B",
                     z.mode, z.max_ships.unwrap_or(64), z.max_players(),
-                    z.fill_target(), z.max_rooms(), z.teams()
+                    z.fill_target(), z.bot_fill() * 100.0, z.max_rooms(), z.teams()
                 );
             }
             println!("  default {:?}", c.fallback_zone().unwrap_or_default());

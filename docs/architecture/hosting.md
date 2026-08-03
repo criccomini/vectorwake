@@ -69,6 +69,41 @@ them**, which [decision 23](decisions.md) did not allow for. See the amendment
 there: `max_rooms` is a property of the zone, because a 64-player War room wants
 its own blast radius while a two-player duel wants to share.
 
+## What a room full of bots costs
+
+[Decision 29](decisions.md#29-a-bot-is-a-client) moved the AI out of the arena
+and onto sockets, which trades AI time inside the tick for a snapshot stream per
+bot. The trade was recorded owing a measurement, since snapshot building is the
+one cost that now scales with the population and it had been optimised once
+already. Measured on a Chaos room at its shipped `bot_fill` of 0.8, which is 51
+bots in 64 seats, with the arena and the bot server on one host:
+
+```
+arena, 51 bots     17.7 MB RSS   3.0% of a core
+  tick + broadcast   36 us median, 216 us p90, 314 us worst
+  of the 10 ms tick budget                      3.1% worst case
+bot server, 51 bots 14.9 MB RSS  14.3% of a core
+directory            6.4 MB RSS   0.0%
+```
+
+The median is a tick with no snapshot in it and the p90 is a tick with 51
+interest-filtered packs, which is where the cost went and it is affordable: four
+fifths of a full room costs the arena three percent of its budget. So 0.8 stands
+as the default rather than being something to tune down.
+
+The bot server's own share is the larger one and it is the price of the brain
+keeping its timing. Each bot steps its own copy of the room at 100 Hz between
+snapshots, because reaction delay and look cadence are counted in ticks and a
+brain fed a 20 Hz picture would have five times the reaction time it was
+calibrated with. Fifty-one worlds at 16 us a step is most of that 14%. Memory is
+nothing, because the bots of one zone share one map by `Arc` exactly as the rooms
+of one zone do.
+
+Egress is the number that would have hurt and it is zero here: bot traffic is
+loopback while the bot server sits beside its arenas, which is the deployment
+rule. A region with arenas and no bot server would pay 30 KB/s a bot in real
+bandwidth, which is why there is no such region.
+
 ## The bill is egress
 
 Compute rounds to nothing. The measured snapshot rate is about 30 KB/s per

@@ -42,6 +42,10 @@ max_players = 12
 max_ships = 24
 # The room is full at its human cap, so that is when the next one opens.
 fill_target = 12
+
+# Six a side is the game, so the room is held at twenty of its twenty-four
+# seats and the four spare are what an arriving pair drop into.
+bot_fill = 0.8
 # Rooms are how a twelve-player zone holds more than twelve people. Chaos and
 # War keep one apiece because each is a single large room; four of these cost
 # less than one of those.

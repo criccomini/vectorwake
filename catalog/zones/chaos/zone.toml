@@ -12,6 +12,9 @@ max_players = 32
 # to. A free-for-all reads well a little fuller than a flag game.
 fill_target = 20
 
+# A brawl wants a crowd, and this is the zone somebody lands in first.
+bot_fill = 0.8
+
 # One room to a process: sixty-four players should not lose their game to
 # somebody else's crash.
 max_rooms = 1

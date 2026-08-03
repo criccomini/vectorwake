@@ -100,12 +100,21 @@ max_ships = 64
 # somewhere to sit.
 max_players = 32
 
+# How full the bot server keeps this zone's rooms: bots fill to this share of
+# max_ships and stand down one for one as others arrive. The unfilled remainder
+# is headroom, so a human join rarely has to evict anybody. Absent it is 0.8,
+# and zero is a zone with no bots. See ai-runtime.md and decision 29.
+bot_fill = 0.8
+
 # The concentration rule: another room or instance opens only when every live one
 # is at or above this, so it is the number that decides whether a population
 # concentrates or scatters. Absent it is 15, which is General:DesiredPlaying's
 # default in ASSS and what thirty years of the original settled on for a public
 # room. It must not exceed max_players, or the rule can never fire and the zone
-# can never grow -- which is a validation error, not a warning.
+# can never grow, which is a validation error rather than a warning. It counts
+# humans only: bots hold every room at bot_fill regardless, and a rule that
+# counted them would read every botted room as ready to scale and grow the
+# fleet without end.
 fill_target = 20
 
 # The most simulations one process may hold for this zone. Rooms are created on
@@ -159,6 +168,7 @@ tooling validates and the directory validates again on load:
 | `mode` naming something the server has no constructor for | Silently falling back to warzone is how `arena.mode` came to be a dead key |
 | `max_ships` above 255 | The wire cannot address it; clamping quietly hides an operator's mistake |
 | `fill_target` above `max_players` | The rule would never fire and the zone would never scale out |
+| `bot_fill` outside 0 to 1 | It is a share of `max_ships`; above one the target is unreachable, below zero it means nothing |
 | `max_rooms` of zero | A process that may hold no rooms cannot serve the zone |
 | Two `[[zone]]` entries with one name | Which one a client joins would depend on parse order |
 | A `[[pool]]` token that is not `sha256:` and 64 hex digits | A plaintext token in the catalog is a leaked token |

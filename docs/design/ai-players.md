@@ -12,11 +12,15 @@ generator for testing, and the calibration anchor for the rating system in
 ## Principles
 
 **Bots play by the same rules.** A bot emits the same input command as a human
-client, every tick, through the same interface, and sees only what the server
+client, every tick, over the same protocol, and sees only what the server
 would have sent to a human in its position. It cannot see through walls, cannot
 see a cloaked ship it has no business seeing, cannot turn faster than its ship's
 rotation rate, and cannot fire faster than the settings allow. Difficulty is
 imperfection added, never permission granted.
+
+Since [decision 29](../architecture/decisions.md#29-a-bot-is-a-client) this is
+transport rather than aspiration: a bot is a WebSocket client that decodes the
+same snapshots and sends the same messages, so the wire enforces the rule.
 
 This is a design commitment with a pleasant side effect: if a bot can play well
 under those rules, the input model is rich enough for humans. If it cannot, the
@@ -25,7 +29,10 @@ problem is probably our controls.
 **Bots are labeled.** The player list, the kill feed, and the profile all say
 which players are AI. Two reasons. Players deserve to know who they are fighting,
 and a rating system that quietly mixes bots into your record without telling you
-is a system nobody will trust.
+is a system nobody will trust. The label is the bot's own declaration at join,
+carried in the roster to every client; a fleet credential additionally marks the
+house roster apart from visiting bots where trust matters, such as anchoring the
+rating scale.
 
 **Bots leave gracefully.** They do not blink out when a human joins. They fly to
 spectator and then leave the arena the way a player does, preferring the moment
@@ -110,11 +117,18 @@ life the label contradicts. Recognition never becomes deception.
 
 ## The population director
 
-Each arena runs a director that decides how many bots exist and which ones.
+The director decides how many bots exist and which ones. It is a deployment
+service rather than a per-arena loop: it runs in the bot server, which watches
+the directory's browse reply and flies bots into rooms as ordinary declared
+clients. [ai-runtime.md](../architecture/ai-runtime.md) has the mechanics.
 
-**Fill to a target.** The arena configures a target number of playing pilots and
-a target per team, in the same spirit as the original's `DesiredPlaying`. The
-director fills the gap with bots.
+**Fill to a target.** Every zone names how full its rooms should feel:
+`bot_fill`, a share of the room's `max_ships`, 0.8 unless the zone says
+otherwise. Bots make up the difference between that target and everybody else
+present. A 64-seat room alone in the night holds 51 bots, one human joining
+tips it over target and a bot stands down, and a room with humans past the
+target holds no bots at all. The unfilled remainder is headroom, so a human
+join never waits on a bot leaving.
 
 **Match the room.** Bots are chosen with ratings near the humans present, so a
 first-time player is not fed to experts and a strong player is not handed
@@ -129,7 +143,10 @@ the target is the job.
 
 **Yield to humans.** When a human joins, a bot is marked for removal and leaves
 under the graceful rules above. Bots never outnumber humans on the opposing team
-by more than the configured ratio once a room is populated.
+by more than the configured ratio once a room is populated. The arena backstops
+the race a burst of joins can win: a join that would otherwise be refused for
+space drops the newest declared bot and seats the human, so the headroom is a
+courtesy rather than a load-bearing assumption.
 
 **Resist churn.** A bot lives at least thirty seconds. After a removal, no bot is
 added for a minute. A player joining and leaving repeatedly should not make the
@@ -138,9 +155,9 @@ roster flicker.
 **Balance before asking humans to.** If teams are uneven, bots switch sides
 first. Nobody enjoys being told to change teams.
 
-**Keep a floor.** Off-peak, the director keeps enough bots that an arriving
-player finds a game in progress rather than an empty map. Whether the floor is
-zero in a zone with real population is a per-zone setting.
+**The floor is the target.** Off-peak a room simply sits at `bot_fill`, so an
+arriving player finds a game in progress rather than an empty map. A zone that
+wants no bots sets it to zero.
 
 ## Rating
 
