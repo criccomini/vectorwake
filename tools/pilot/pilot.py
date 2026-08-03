@@ -7,7 +7,14 @@ simulation core itself -- so what is being verified is that ships move, energy
 drains and recharges, weapons appear, kills land, and the numbers the server
 sends are numbers the core accepts.
 
-  pilot.py wss://a1.vectorwake.net war 4 30
+  pilot.py wss://directory.vectorwake.net war 4 30   # browse, then join
+  pilot.py --direct ws://127.0.0.1:9001 "" 2 20      # dial one arena, no browse
+
+Browsing rather than taking an address is not incidental. Which instance serves
+which zone is decided by the instances themselves and differs between deploys,
+so a harness with an address baked in tests whichever zone happens to be there
+-- and gets a wrong-zone refusal for its trouble, which is the server being
+right and the test being wrong.
 """
 import asyncio, ctypes, os, random, struct, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -225,8 +232,35 @@ class Pilot:
                 f"(worst {self.pred['worst_corr']:.1f}px)")
 
 
+async def resolve(directory, zone):
+    """Ask the directory where this zone is, exactly as a client does."""
+    async with websockets.connect(directory, max_size=None, open_timeout=25) as ws:
+        await ws.send(bytes([4]))                      # C2S_STATUS
+        for _ in range(20):
+            m = await asyncio.wait_for(ws.recv(), timeout=10)
+            if isinstance(m, bytes) and m and m[0] == 8:
+                import json
+                for z in json.loads(m[1:])["zones"]:
+                    if z["name"] == zone:
+                        if not z["instances"]:
+                            raise SystemExit(f"nobody is running {zone!r}")
+                        # The head of the list: the directory has already put the
+                        # fullest instance with room there.
+                        return z["instances"][0]["address"]
+                raise SystemExit(f"no zone {zone!r} in the browse reply")
+    raise SystemExit("the directory never answered")
+
+
 async def main():
-    url, zone, count, seconds = sys.argv[1], sys.argv[2], int(sys.argv[3]), float(sys.argv[4])
+    args = sys.argv[1:]
+    direct = False
+    if args and args[0] == "--direct":
+        direct, args = True, args[1:]
+    url, zone, count, seconds = args[0], args[1], int(args[2]), float(args[3])
+    if not direct:
+        arena = await resolve(url, zone)
+        print(f"=== directory {url} says {zone!r} is at {arena}")
+        url = arena
     pilots = [Pilot(url, zone, f"probe{i:02d}", seconds, 1000 + i) for i in range(count)]
     done = await asyncio.gather(*(p.fly() for p in pilots), return_exceptions=True)
     print(f"=== {count} pilots, {seconds:.0f}s, {url} zone={zone}")

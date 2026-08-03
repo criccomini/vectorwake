@@ -9,8 +9,14 @@ recharges, weapons appear, kills land, and that a locally predicted tick agrees
 with the server's next snapshot.
 
     make
-    python3 pilot.py wss://a1.vectorwake.net war 4 30      # url zone pilots seconds
-    python3 pilot.py ws://127.0.0.1:9001 "" 2 20           # empty zone: whatever it serves
+    python3 pilot.py wss://directory.vectorwake.net war 4 30   # directory zone pilots seconds
+    python3 pilot.py --direct ws://127.0.0.1:9001 "" 2 20      # one arena, no browse
+
+It browses first, like a client does. Which instance serves which zone is
+decided by the instances themselves and differs between deploys, so an address
+baked into a test joins whichever zone happens to be there and earns a wrong-zone
+refusal -- the server being right and the test being wrong. That is how this
+harness first learned that refusal works in production.
 
 Needs `pip install websockets`.
 
