@@ -120,6 +120,22 @@ offline tournament measured. The pinned anchor is the case that matters most:
 everything else in the fleet is measured against it, so it has to be at its
 rating from the first tick rather than climb to it.
 
+## Turning it on over a running fleet
+
+Two things do not happen by themselves, and both were found by turning it on.
+
+The bot server claims a bot's account when that bot joins, so bots already
+flying when the meta-layer arrives keep flying without one. Restart it and the
+whole population reconnects with accounts and the calibrated ladder behind
+them, the anchor included. Left alone it resolves only as bots are evicted and
+refilled around arriving players, which in a quiet room is never.
+
+Until that happens the ladder does not move at all, and the reason looks like a
+fault but is the rule working: a death with an accounted victim and no
+accounted killer is dropped rather than sent, because there is nobody to credit
+and the alternative is letting anybody farm a real pilot's rating down from a
+throwaway account.
+
 ## When it is down
 
 The meta-layer is allowed to be down, and the fleet's job is to make that
