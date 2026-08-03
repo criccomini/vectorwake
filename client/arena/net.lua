@@ -153,9 +153,17 @@ local function on_snapshot(s)
     if sim.apply_snapshot(body) ~= 0 then return end
 
     -- Replay the inputs the server had not applied when it sent this.
+    --
+    -- Bounded, because the length of this walk is the difference between two
+    -- clocks and nothing checks that they belong to the same zone. Clearing
+    -- the log on connect is what makes that true; this is the belt for it. A
+    -- second of prediction is already far more than a playable connection
+    -- ever needs, and anything past it is a bug rather than latency.
     local from = sim.tick()
+    local last = predicted_tick
+    if last > from + 100 then last = from + 100 end
     local steps = 0
-    for t = from + 1, predicted_tick do
+    for t = from + 1, last do
         sim.replay(M.me, input_log[t] or 0)
         steps = steps + 1
     end
@@ -242,6 +250,15 @@ function M.connect(url, class, name, on_lost, zone)
     M.me = 0
     M.zone = ""
     M.banner = ""
+    -- And its rollback state is worse than useless here, because tick numbers
+    -- are per zone. Two arenas that have been up for different lengths of
+    -- time are at different ticks, so a log kept across the move is a pile of
+    -- inputs filed under a stranger's clock. The replay below walks from the
+    -- snapshot's tick up to whatever this said, and against a zone that
+    -- happens to be younger that is thousands of extra steps every snapshot,
+    -- which a player reads as their ship moving at several times its speed.
+    input_log = {}
+    predicted_tick = 0
     on_lost_cb = on_lost
 
     local ok, err = pcall(function()
