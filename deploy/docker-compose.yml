@@ -47,6 +47,18 @@ services:
     image: caddy:2-alpine
     network_mode: host
     restart: unless-stopped
+    # Where the page comes from, as a label, because it is the one thing about
+    # this service that has changed twice today and both times the symptom was a
+    # 404 nobody could attribute.
+    #
+    # It also forces a recreate. Changing only the volume source, from a named
+    # volume back to this bind mount, left compose reporting "Running" and
+    # keeping a container still holding the empty volume -- so the page stayed
+    # 404 through two converges. A label is part of the service config, so it
+    # moves the config hash and compose acts. Recreating Caddy is safe now that
+    # the certificates are on a block volume rather than in its container.
+    labels:
+      vw.page-source: checkout
     security_opt:
       - no-new-privileges:true
     # Caddy is the one thing here that binds privileged ports, so it keeps
@@ -71,8 +83,7 @@ services:
       # Coarse provisioning progress, served over plain http by IP. The proxy
       # starts before the build so this is readable while the slow part runs.
       - ${VW_DEPLOY_LOG:-./deploy-log}:/srv/deploy:ro
-      # The browser client. Bind-mounted from the checkout while the CI-built
-      # client image is not yet working; see the `client` service below.
+      # The browser client, bind-mounted from the checkout.
       - ../client/dist:/srv/play:ro
     environment:
       VW_DOMAIN: ${VW_DOMAIN:?set VW_DOMAIN}
