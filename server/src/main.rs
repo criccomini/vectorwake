@@ -712,12 +712,42 @@ impl Arena {
         // client's. `smaller` is ASSS's behaviour, whose MaxTeamDifference
         // defaults to 1, so the balancer tolerates almost nothing.
         let team = self.pick_team(ship);
+        // Where a fresh pilot starts, worked out before anything about them is
+        // set: a seat is furniture, and its last occupant does not come with
+        // it.
+        let nth = self.world.state.ship_count as u32;
+        let (sx, sy) = self.world.map_spawn(team, nth).unwrap_or((512, 522));
         {
             let sh = &mut self.world.state.ships[ship as usize];
             sh.cls = class.min(7);
             sh.team = team;
             sh.alive = 1;
+            // Everything a pilot carries, cleared. This was `up` alone, so a
+            // seat handed on kept the last occupant's weapon levels, add-ons,
+            // charges, earned bounty and score. Leaving and rejoining is the
+            // case that shows it: seats come back in the order they were
+            // vacated, so a player is handed their own and the zone reads as
+            // having saved their game.
             sh.up = [0; sim::UP_COUNT];
+            sh.level = [0; sim::TRIG_COUNT];
+            sh.mods = [0; sim::TRIG_COUNT];
+            sh.charge = [0; sim::MAX_CHARGES];
+            sh.earned = 0;
+            sh.points = 0;
+            sh.stall = 0;
+            sh.repel = 0;
+            sh.repel_speed = 0;
+            sh.fire_cooldown = 0;
+            sh.respawn_at = 0;
+            // And where they are, which is the same bug wearing its most
+            // obvious face: a pilot who rejoined appeared exactly where they
+            // had left off.
+            sh.x = sx * sim::TILE_PX * 256;
+            sh.y = sy * sim::TILE_PX * 256;
+            sh.vx = 0;
+            sh.vy = 0;
+            sh.spawn_x = sh.x;
+            sh.spawn_y = sh.y;
         }
         // A full bar, asked for as the number it is, and after the class is set
         // because the ceiling depends on it. This used to be i32::MAX with a
@@ -2316,6 +2346,54 @@ mod tests {
             }
         }
         assert!(moved, "a pilot with nobody in sight sat still instead of looking");
+    }
+
+    /// A seat is furniture, and its last occupant does not come with it.
+    ///
+    /// Joining cleared the stat upgrades and nothing else, so a pilot handed a
+    /// used seat inherited its weapon levels, add-ons, charges, earned bounty,
+    /// score and position. Leaving and rejoining is the case that makes it
+    /// plain: seats come back in the order they were vacated, so a player is
+    /// handed their own and the zone reads as having saved their game.
+    #[test]
+    fn a_joining_pilot_does_not_inherit_the_seat() {
+        let def = wire_zone(1, 6, 16);
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+                              HashMap::new());
+        z.serve_zone(&def).expect("a room");
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = z.rooms[0].join("first".into(), 0, 16, tx).expect("a seat");
+        let ship = z.rooms[0].players[&id].ship;
+        {
+            let sh = &mut z.rooms[0].world.state.ships[ship as usize];
+            sh.level = [2; sim::TRIG_COUNT];
+            sh.mods = [0x15; sim::TRIG_COUNT];
+            sh.charge = [3; sim::MAX_CHARGES];
+            sh.up = [4; sim::UP_COUNT];
+            sh.earned = 250;
+            sh.points = 9000;
+            sh.x += 400 * 256;
+            sh.vx = 12345;
+        }
+        let flown_to = z.rooms[0].world.state.ships[ship as usize].x;
+        z.rooms[0].leave(id);
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id2 = z.rooms[0].join("second".into(), 0, 16, tx).expect("a seat");
+        let ship2 = z.rooms[0].players[&id2].ship;
+        assert_eq!(ship2, ship, "the vacated seat is the one handed back");
+
+        let sh = z.rooms[0].world.state.ships[ship2 as usize];
+        assert_eq!(sh.level, [0; sim::TRIG_COUNT], "weapon levels are not inherited");
+        assert_eq!(sh.mods, [0; sim::TRIG_COUNT], "nor add-ons");
+        assert_eq!(sh.charge, [0; sim::MAX_CHARGES], "nor charges");
+        assert_eq!(sh.up, [0; sim::UP_COUNT], "nor stat upgrades");
+        assert_eq!(sh.earned, 0, "nor bounty somebody else earned");
+        assert_eq!(sh.points, 0, "nor their score");
+        assert_eq!(sh.vx, 0, "and it arrives at rest");
+        assert_ne!(sh.x, flown_to, "at a start, not where the last one left off");
     }
 
     #[test]
