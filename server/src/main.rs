@@ -1053,6 +1053,11 @@ struct Zone {
     /// directories pushed, what it has announced. Empty and harmless when no
     /// directory was ever configured.
     fleet: select::Fleet,
+    /// Calibrated bot ratings, held here because every room needs them and a
+    /// room is opened long after startup. Read once; the two places that build
+    /// a room used to go back to the disk for it and named a path relative to
+    /// the working directory, which on the fleet is not where it lives.
+    ladder: HashMap<String, f64>,
 }
 
 impl Zone {
@@ -1120,7 +1125,7 @@ impl Zone {
         // share one copy; without this the ceiling would be a memory limit
         // instead of a blast-radius one.
         let mut fresh = Self::build_room(&z, Some(&self.rooms[0].world))?;
-        prime_ratings(&mut fresh.rating, &load_ladder("zone"));
+        prime_ratings(&mut fresh.rating, &self.ladder);
         self.rooms.push(fresh);
         let n = self.rooms.len();
         println!("opened room {n} of {} for zone {:?}", self.max_rooms(), z.name);
@@ -1413,7 +1418,7 @@ impl Zone {
         // From the bytes, not from a sibling: this is a change of zone, so the
         // map the running rooms hold is the wrong map.
         let mut arena = Self::build_room(z, None)?;
-        prime_ratings(&mut arena.rating, &load_ladder("zone"));
+        prime_ratings(&mut arena.rating, &self.ladder);
         // A change of zone replaces every room: they all served the old game.
         self.rooms = vec![arena];
         self.zone_name = z.name.clone();
@@ -1477,12 +1482,28 @@ fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64>) {
     r.set_anchor(ai::ANCHOR, ai::ANCHOR_RATING);
 }
 
-/// Read the ladder a calibration run wrote. A missing file is normal.
+/// The calibrated ladder, compiled in.
+///
+/// It is a property of the roster in `ai.rs` rather than of any one zone: the
+/// same nine pilots fly in every room this binary serves, so their ratings
+/// travel with the binary the way `sim/tests/golden.txt` travels with the core.
+/// Regenerate with `calibrate`, which writes the file, and commit it.
+///
+/// Shipping it as a file is what did not work. The fleet runs the arena with a
+/// data volume as its directory and the image never put a ladder in it, so every
+/// room on the live server started its bots level while two documents said the
+/// ladder seeds every zone.
+const LADDER: &str = include_str!("../../zone/ladder.json");
+
+/// Read the ladder a calibration run wrote, falling back to the compiled one.
+/// A missing file is the normal case and not a warning: it means nobody has
+/// calibrated since this build.
 fn load_ladder(dir: &str) -> HashMap<String, f64> {
     std::fs::read_to_string(format!("{dir}/ladder.json"))
         .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default()
+        .and_then(|t| serde_json::from_str::<HashMap<String, f64>>(&t).ok())
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| serde_json::from_str(LADDER).unwrap_or_default())
 }
 
 impl Zone {
@@ -1500,6 +1521,7 @@ impl Zone {
             pinned: None,
             draining: false,
             fleet: select::Fleet::default(),
+            ladder,
         }
     }
 
@@ -1733,11 +1755,12 @@ async fn main() {
     }
     let store = persist::Store::open(format!("{dir}/ratings.json"));
     let ladder = load_ladder(&dir);
-    if ladder.is_empty() {
-        println!("no ladder.json; bots start level. Run `calibrate` to seed one");
-    } else {
-        println!("seeded {} bot ratings from ladder.json", ladder.len());
-    }
+    let local = std::path::Path::new(&dir).join("ladder.json").exists();
+    println!(
+        "seeded {} bot ratings from {}",
+        ladder.len(),
+        if local { "ladder.json" } else { "the compiled ladder" }
+    );
     println!("zone \"{}\": {}", watcher.current.name, watcher.current.description);
     // The command line wins over the zone file, so an operator can move a
     // zone to another port without editing its configuration.
@@ -2129,6 +2152,66 @@ mod tests {
     fn gun(w: &sim::World, cls: usize) -> (sim::sim_fire_pattern, sim::sim_weapon_spec) {
         let p = w.cfg.patterns[w.cfg.classes[cls].trigger[0][0] as usize];
         (p, w.cfg.specs[p.spec as usize])
+    }
+
+    /// The compiled ladder has to name the roster this binary actually flies,
+    /// or it seeds nothing and every bot starts level. That is not a crash and
+    /// not a log line; it is a room that plays slightly wrong, which is why it
+    /// ran on the live fleet unnoticed while the path was pointing into a
+    /// directory the image never created.
+    #[test]
+    fn the_compiled_ladder_covers_the_roster() {
+        let ladder: HashMap<String, f64> =
+            serde_json::from_str(LADDER).expect("the compiled ladder parses");
+        for e in ai::roster() {
+            assert!(ladder.contains_key(e.name), "{} has no calibrated rating", e.name);
+        }
+        assert_eq!(
+            ladder.get(ai::ANCHOR).copied(),
+            Some(ai::ANCHOR_RATING),
+            "the anchor is fixed by definition, so the ladder has to agree with it"
+        );
+    }
+
+    /// And it has to reach a room, including one opened long after startup.
+    /// `open_room` and `serve_zone` each went back to the disk for it and named
+    /// a path relative to the working directory, so on the fleet they found
+    /// nothing and primed nothing. The ladder is held on the zone now, and the
+    /// second room is the one that proves it.
+    #[test]
+    fn a_room_opened_later_carries_the_ladder() {
+        // A ladder with a value the compiled one cannot produce, so this test
+        // can tell "read the ladder this process was given" apart from "read
+        // some ladder". With the path hardcoded, the second room fell back to
+        // the compiled numbers and the assertion below caught it.
+        let dir = std::env::temp_dir().join("vw-ladder-test");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::write(dir.join("ladder.json"), r#"{"Kestrel": 1777.5}"#).expect("write");
+        let ladder = load_ladder(dir.to_str().unwrap());
+        assert_eq!(ladder.get("Kestrel").copied(), Some(1777.5), "the file wins");
+
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = Zone::new(
+            cfg,
+            persist::Store::open("/nonexistent/state.json"),
+            ladder,
+        );
+        let def = wire_zone(4, 2, 8);
+        z.catalog = Some(fleet::WireCatalog {
+            version: 1,
+            name: "test".into(),
+            default_zone: "testzone".into(),
+            zones: vec![def.clone()],
+            ..Default::default()
+        });
+        z.serve_zone(&def).expect("a room");
+        let room = z.open_room().expect("a second room");
+        let seeded = z.rooms[room].rating.score.get("Kestrel").copied().unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            seeded, 1777.5,
+            "the second room did not get the ladder this process was given"
+        );
     }
 
     // ---- rooms on demand ---------------------------------------------------
