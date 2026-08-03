@@ -229,15 +229,18 @@ match wondering why it keeps hitting nothing. The original checksummed its
 maps too; this just refuses to play rather than reporting a mismatch and
 carrying on.
 
+`mapdump` writes one of the built-in rooms out as a file, which is where the
+shipped maps came from:
+
 ```sh
 make -C sim build/mapdump
-./sim/build/mapdump arena zone/maps/arena.vwmap
+./sim/build/mapdump arena catalog/zones/chaos/chaos.vwmap
 ```
 
-A zone names one in `zone.toml`:
+A zone names one in its own `zone.toml`, relative to the zone's directory:
 
 ```toml
-map = "maps/arena.vwmap"
+map = "chaos.vwmap"
 ```
 
 Empty runs the built-in arena, so a zone with no map is still a zone. A map
