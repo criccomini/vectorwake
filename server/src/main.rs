@@ -637,18 +637,22 @@ impl Arena {
             // walls. Headings spread around the circle, and the multiply has to
             // happen wider than u16 or the ninth pilot overflows it.
             let heading = ((i as u32 * 8192) % 65536) as u16;
-            // The roster's own team, folded into what the zone allows. A
-            // free-for-all is settled after the spawn instead, so that placement
-            // still uses the map's shared starts rather than looking for a start
-            // marked for team nineteen.
-            let team = if self.free_for_all() { 0 } else { r.team % self.teams };
+            // Team 0 for the spawn, so placement uses the map's shared starts
+            // rather than looking for a start marked for team nineteen. Which
+            // side they actually fly for is settled below, once the seat exists.
             let ship = self
                 .world
-                .spawn_on_map(r.class, team, i as u32, r.tile_x, r.tile_y, heading);
+                .spawn_on_map(r.class, 0, i as u32, r.tile_x, r.tile_y, heading);
             if ship >= 0 {
-                if self.free_for_all() {
-                    self.world.state.ships[ship as usize].team = ship as u8;
-                }
+                // The zone's balancer, exactly as for a joining human, rather
+                // than the side written on the roster entry. The roster lists six
+                // pilots on one side and three on the other, which in a two-team
+                // zone was a six-against-three flag game: team 1 took every round
+                // of War, ten in a row, because the other side never had the
+                // numbers to flip a flag back. A balanced roster is what the
+                // `balance` key already promised and only joining players got.
+                let side = self.pick_team(ship as u8);
+                self.world.state.ships[ship as usize].team = side;
                 self.bots.push(ai::Bot::new(ship as u8, r.skill));
                 self.names.insert(ship as u8, (r.name.to_string(), true));
             }
@@ -2150,6 +2154,49 @@ mod tests {
             z.rooms[room]
                 .join(format!("p{room}-{i}"), 0, cap, tx)
                 .expect("a seat below the cap");
+        }
+    }
+
+    /// How long a War round takes and who wins it, with the shipped roster
+    /// flying. Measurement rather than assertion, so it is ignored by default:
+    /// `cargo test round_pace -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn round_pace() {
+        let mut def = wire_zone(1, 16, 32);
+        def.teams = 2;
+        def.mode = "warzone".into();
+        def.zone_toml = "description = \"war\"\n[arena]\nflags = 4\n".into();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+                              HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        let sides: Vec<u8> = z.rooms[0].world.state.ships.iter()
+            .filter(|s| s.active != 0).map(|s| s.team).collect();
+        let a = sides.iter().filter(|t| **t == 0).count();
+        println!("roster sides: {a} against {}", sides.len() - a);
+
+        // Ten minutes of arena time. Counted by the round number in the
+        // banner, not by the banner: a win holds its message for the whole
+        // five-second reset, so matching the string counts one round many times.
+        let mut seen = std::collections::HashSet::new();
+        let mut at = 0u32;
+        let mut rounds = Vec::new();
+        for n in 0..60_000u32 {
+            z.rooms[0].tick();
+            let m = z.rooms[0].banner.clone();
+            if let Some(rest) = m.strip_prefix("team ") {
+                if let Some(num) = rest.split("wins round ").nth(1) {
+                    if seen.insert(num.to_string()) {
+                        rounds.push((m.clone(), (n - at) as f64 / 100.0));
+                        at = n;
+                    }
+                }
+            }
+        }
+        println!("{} rounds in 600 s of arena time", rounds.len());
+        for (who, secs) in rounds.iter().take(12) {
+            println!("  {secs:6.1}s  {who}");
         }
     }
 

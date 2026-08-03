@@ -7,10 +7,13 @@
 
 use crate::sim::{self, World};
 
+/// A standing pilot. No side: which one they fly for is the zone's business,
+/// decided by its own balancer when the room is built. It used to be written
+/// here, six against three, and a two-team zone honoured it -- so War ran
+/// six-against-three and one side took every round.
 pub struct RosterEntry {
     pub name: &'static str,
     pub class: u8,
-    pub team: u8,
     pub tile_x: i32,
     pub tile_y: i32,
     pub skill: f32,
@@ -20,15 +23,15 @@ pub struct RosterEntry {
 /// spawns: each keeps its name, its hull, and its skill.
 pub fn roster() -> Vec<RosterEntry> {
     vec![
-        RosterEntry { name: "Kestrel",    class: 0, team: 1, tile_x: 486, tile_y: 486, skill: 0.30 },
-        RosterEntry { name: "Halcyon",    class: 3, team: 1, tile_x: 538, tile_y: 486, skill: 0.46 },
-        RosterEntry { name: "Vantage",    class: 6, team: 1, tile_x: 538, tile_y: 538, skill: 0.62 },
-        RosterEntry { name: "Ridgeline",  class: 2, team: 1, tile_x: 486, tile_y: 538, skill: 0.78 },
-        RosterEntry { name: "Sable",      class: 5, team: 1, tile_x: 512, tile_y: 478, skill: 0.90 },
-        RosterEntry { name: "Meridian",   class: 7, team: 1, tile_x: 478, tile_y: 512, skill: 0.38 },
-        RosterEntry { name: "Ozone",      class: 1, team: 0, tile_x: 546, tile_y: 512, skill: 0.54 },
-        RosterEntry { name: "Tessellate", class: 4, team: 0, tile_x: 512, tile_y: 546, skill: 0.70 },
-        RosterEntry { name: "Cirrus",     class: 2, team: 0, tile_x: 500, tile_y: 546, skill: 0.44 },
+        RosterEntry { name: "Kestrel",    class: 0, tile_x: 486, tile_y: 486, skill: 0.30 },
+        RosterEntry { name: "Halcyon",    class: 3, tile_x: 538, tile_y: 486, skill: 0.46 },
+        RosterEntry { name: "Vantage",    class: 6, tile_x: 538, tile_y: 538, skill: 0.62 },
+        RosterEntry { name: "Ridgeline",  class: 2, tile_x: 486, tile_y: 538, skill: 0.78 },
+        RosterEntry { name: "Sable",      class: 5, tile_x: 512, tile_y: 478, skill: 0.90 },
+        RosterEntry { name: "Meridian",   class: 7, tile_x: 478, tile_y: 512, skill: 0.38 },
+        RosterEntry { name: "Ozone",      class: 1, tile_x: 546, tile_y: 512, skill: 0.54 },
+        RosterEntry { name: "Tessellate", class: 4, tile_x: 512, tile_y: 546, skill: 0.70 },
+        RosterEntry { name: "Cirrus",     class: 2, tile_x: 500, tile_y: 546, skill: 0.44 },
     ]
 }
 

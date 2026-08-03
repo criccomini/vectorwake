@@ -78,6 +78,15 @@ pub struct Warzone {
     pub round: u16,
     pub wins: Vec<u16>,
     hold: Option<(u8, u32)>,   // team and the tick they completed the set
+    /// Where each flag belongs, learned on the first tick and put back on a
+    /// reset. Flags travel: the core moves one with whoever is carrying it and
+    /// drops it where they die, so a round that reset only their ownership left
+    /// them lying wherever the winning side had gathered them. Measured: the
+    /// first round took fifty seconds and every round after it took exactly
+    /// seven, which is the reset delay plus the hold -- the winners were standing
+    /// on all four when they went neutral. The comment on this reset already
+    /// promised they went back where they started.
+    homes: Vec<(i32, i32)>,
     hold_ticks: u32,
     reset_at: Option<u32>,
     clock: u32,
@@ -91,7 +100,8 @@ impl Warzone {
             round: 1,
             wins: vec![0; teams as usize],
             hold: None,
-            hold_ticks: 200, // two seconds holding the full set to win
+            homes: Vec::new(),
+            hold_ticks: 1_000, // ten seconds holding the full set to win
             reset_at: None,
             clock: 0,
         }
@@ -101,16 +111,26 @@ impl Warzone {
 impl Mode for Warzone {
     fn tick(&mut self, ctx: &mut ModeCtx) {
         self.clock += 1;
+        if self.homes.is_empty() {
+            self.homes = (0..ctx.world.state.flag_count as usize)
+                .map(|i| (ctx.world.state.flags[i].x, ctx.world.state.flags[i].y))
+                .collect();
+        }
 
         if let Some(at) = self.reset_at {
             let left = at.saturating_sub(self.clock);
             if left == 0 {
                 // New round: every flag neutral and back where it started.
                 for i in 0..ctx.world.state.flag_count as usize {
+                    let home = self.homes.get(i).copied();
                     let f = &mut ctx.world.state.flags[i];
                     f.team = sim::TEAM_NONE;
                     f.carried = 0;
                     f.cooldown = 0;
+                    if let Some((x, y)) = home {
+                        f.x = x;
+                        f.y = y;
+                    }
                 }
                 self.reset_at = None;
                 self.hold = None;
@@ -203,7 +223,7 @@ mod warzone_tests {
         // The set has to be held, not merely touched.
         m.tick(&mut ctx(&mut w));
         assert_eq!(m.wins[1], 0, "the set must be held, not just completed");
-        for _ in 0..250 {
+        for _ in 0..1_100 {
             m.tick(&mut ctx(&mut w));
         }
         assert_eq!(m.wins[1], 1, "holding the set for the timer wins");
@@ -220,10 +240,43 @@ mod warzone_tests {
             m.tick(&mut ctx(&mut w));
         }
         w.state.flags[2].team = 1;           // stolen back
-        for _ in 0..250 {
+        for _ in 0..1_100 {
             m.tick(&mut ctx(&mut w));
         }
         assert_eq!(m.wins[0], 0, "the countdown restarts when the set breaks");
+    }
+
+    #[test]
+    fn a_reset_puts_the_flags_back_where_they_were() {
+        // Ownership alone is not a reset. Flags travel with whoever carries them,
+        // so a round that only neutralised them left them lying wherever the
+        // winning side had gathered them -- and the winners were standing on all
+        // four when the next round began. Measured before: the first round took
+        // fifty seconds and every one after it took exactly seven, the reset
+        // delay plus the hold. After: 58, 118, 241, 179 seconds, won by both
+        // sides.
+        let mut w = arena_with_flags(2);
+        let mut m = Warzone::new(2, 2);
+        m.tick(&mut ctx(&mut w));            // learns where they belong
+        let home: Vec<(i32, i32)> = (0..2).map(|i| {
+            (w.state.flags[i].x, w.state.flags[i].y)
+        }).collect();
+
+        // Carried across the map and held to a win.
+        for i in 0..2 {
+            w.state.flags[i].team = 1;
+            w.state.flags[i].x += 300 * 16 * 256;
+            w.state.flags[i].y += 120 * 16 * 256;
+        }
+        for _ in 0..1_800 {
+            m.tick(&mut ctx(&mut w));
+        }
+        assert_eq!(m.round, 2, "the round ended");
+        for i in 0..2 {
+            assert_eq!((w.state.flags[i].x, w.state.flags[i].y), home[i],
+                       "flag {i} did not go home");
+            assert_eq!(w.state.flags[i].team, sim::TEAM_NONE);
+        }
     }
 
     #[test]
@@ -237,7 +290,7 @@ mod warzone_tests {
         for i in 0..2 {
             w.state.flags[i].team = 5;
         }
-        for _ in 0..250 {
+        for _ in 0..1_100 {
             m.tick(&mut ctx(&mut w));
         }
         assert_eq!(m.wins[5], 1, "side five holding the set wins");
@@ -251,7 +304,7 @@ mod warzone_tests {
         for i in 0..2 {
             w.state.flags[i].team = 1;
         }
-        for _ in 0..900 {
+        for _ in 0..1_800 {
             m.tick(&mut ctx(&mut w));
         }
         assert_eq!(m.round, 2, "a new round starts");
