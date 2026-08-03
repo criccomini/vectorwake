@@ -1232,16 +1232,27 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
 
         /* 6. Recharge, after firing, so a shot costs a full tick of energy --
          * unless something stalled it, in which case the bar simply sits
-         * where it is until the stall runs out. */
+         * where it is until the stall runs out.
+         *
+         * The addition is guarded and done wide. Adding first and clamping
+         * afterwards overflows for any ship already above the cap, and signed
+         * overflow is undefined behaviour: the wrapped result was a huge
+         * negative bar, which the clamp then let through because it only ever
+         * looked for too much. A spawning ship really did arrive at INT32_MAX
+         * -- the server set that, meaning "full" -- and left the tick at
+         * INT32_MIN, one hit from dead.
+         *
+         * Worth more than the symptom: this core's whole contract is that every
+         * platform steps it identically, and undefined behaviour is exactly the
+         * thing a compiler is free to render differently. No input may reach it. */
+        int32_t cap = sim_eff_max_energy(cls, sh);
         if (sh->stall > 0) {
             sh->stall--;
-        } else {
-            sh->energy += sim_eff_recharge(cls, sh);
+        } else if (sh->energy < cap) {
+            int64_t charged = (int64_t)sh->energy + sim_eff_recharge(cls, sh);
+            sh->energy = charged > cap ? cap : (int32_t)charged;
         }
-        {
-            int32_t cap = sim_eff_max_energy(cls, sh);
-            if (sh->energy > cap) sh->energy = cap;
-        }
+        if (sh->energy > cap) sh->energy = cap;
     }
 
     update_prizes(next, cfg, ev);

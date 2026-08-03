@@ -1,4 +1,5 @@
 /* Unit tests for the sim core. Exit 0 on pass, 1 on first failure. */
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2037,6 +2038,31 @@ int main(void) {
         step_n(&s, &cfg, SIM_BTN_FIRE | SIM_BTN_RIGHT, SIM_BTN_THRUST, 250);
         CHECK(sim_hash(&s) == future, "replay after rollback reproduces state");
         (void)tmp;
+    }
+
+    /* A bar above the ceiling comes down to it, rather than wrapping past
+     * zero. Adding a tick of recharge before clamping is signed overflow, and
+     * the wrapped result was a hugely negative bar the clamp ignored because it
+     * only ever looked for too much energy. A live server really produced this:
+     * it set INT32_MAX to mean "full", and joining ships spent their first tick
+     * at INT32_MIN, one hit from dead. Undefined behaviour is also the one thing
+     * that could make this core step differently on different platforms, which
+     * is the property everything else here depends on. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        int32_t cap = sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]);
+        for (int32_t start = 0; start < 3; start++) {
+            /* INT32_MAX, one below it, and exactly the cap. */
+            s.ships[0].energy = start == 0 ? INT32_MAX
+                              : start == 1 ? INT32_MAX - 1 : cap;
+            s.ships[0].alive = 1;
+            step_n(&s, &cfg, 0, 0, 1);
+            CHECK(s.ships[0].energy == cap,
+                  "an over-full bar settles at the ceiling");
+            CHECK(s.ships[0].energy > 0, "and never wraps negative");
+        }
     }
 
     free(m);

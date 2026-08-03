@@ -680,12 +680,21 @@ impl Arena {
         // client's. `smaller` is ASSS's behaviour, whose MaxTeamDifference
         // defaults to 1, so the balancer tolerates almost nothing.
         let team = self.pick_team(ship);
-        let sh = &mut self.world.state.ships[ship as usize];
-        sh.cls = class.min(7);
-        sh.team = team;
-        sh.alive = 1;
-        sh.up = [0; sim::UP_COUNT];
-        sh.energy = i32::MAX; // clamped to the effective maximum next tick
+        {
+            let sh = &mut self.world.state.ships[ship as usize];
+            sh.cls = class.min(7);
+            sh.team = team;
+            sh.alive = 1;
+            sh.up = [0; sim::UP_COUNT];
+        }
+        // A full bar, asked for as the number it is, and after the class is set
+        // because the ceiling depends on it. This used to be i32::MAX with a
+        // comment saying the core would clamp it; the core clamped it by adding
+        // a tick of recharge first, which overflowed, so a joining ship spent
+        // its first tick at INT32_MIN energy and one hit from dead. The core no
+        // longer allows that, and this no longer asks for it.
+        let full = self.world.eff_max_energy(ship as usize);
+        self.world.state.ships[ship as usize].energy = full;
 
         let id = self.next_id;
         self.next_id += 1;

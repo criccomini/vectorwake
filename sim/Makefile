@@ -59,6 +59,34 @@ check: $(B)/test_sim $(B)/replay
 	cmp tests/golden.txt $(B)/out.txt
 	@echo determinism check passed
 
+# Undefined behaviour is a determinism bug in this core specifically.
+#
+# Everything else here checks that one platform agrees with a committed hash.
+# UB is the thing that can make two platforms disagree while both look right
+# locally: the compiler is entitled to render it differently at a different
+# optimisation level, let alone a different target. So this is not a
+# nice-to-have alongside `check`, it is the same property from the other side.
+#
+# It earned its place: a signed overflow in the recharge clamp shipped to a live
+# server and was found by watching a real client's energy bar read INT32_MIN.
+# This target reproduces that class of fault in under a second.
+#
+# -fno-sanitize-recover makes the first finding fatal, so a runtime error cannot
+# scroll past in a green build.
+ubsan: | $(B)
+	$(CC) $(BASE) -O1 -g -fsanitize=undefined,signed-integer-overflow \
+	  -fno-sanitize-recover=all \
+	  tests/test_sim.c src/sim.c src/baseline.c src/pack.c $(LDFLAGS) -lm \
+	  -o $(B)/test_sim_ubsan
+	$(B)/test_sim_ubsan
+	$(CC) $(BASE) -O1 -g -fsanitize=undefined,signed-integer-overflow \
+	  -fno-sanitize-recover=all \
+	  tools/replay.c src/sim.c src/baseline.c src/pack.c $(LDFLAGS) -lm \
+	  -o $(B)/replay_ubsan
+	$(B)/replay_ubsan tests/trace_basic.txt > $(B)/out-ubsan.txt
+	cmp tests/golden.txt $(B)/out-ubsan.txt
+	@echo no undefined behaviour, and the same hashes under a sanitizer
+
 # WebAssembly build of the harness (requires emsdk). NODERAWFS lets node
 # read the trace file directly.
 wasm:
@@ -74,4 +102,4 @@ check-wasm: wasm
 clean:
 	rm -rf $(B)
 
-.PHONY: all test golden check wasm check-wasm sintab clean
+.PHONY: all test golden check ubsan wasm check-wasm sintab clean
