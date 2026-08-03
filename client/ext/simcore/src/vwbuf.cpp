@@ -107,6 +107,27 @@ int Attach(lua_State* L) {
     if (!Resolve(v)) {
         return luaL_error(L, "vwbuf: need float3 position and float4 color");
     }
+    // Start the layer empty, because nothing else ever will.
+    //
+    // The whole buffer is uploaded and drawn every frame, and Finish only
+    // erases back to the busiest frame so far, so every vertex past the
+    // all-time peak is drawn exactly as buffer.create left it. That was fine
+    // for as long as it left zeroes, and buffer.create does not: it mallocs,
+    // and malloc hands back whatever was in that memory before.
+    //
+    // It behaved as though it zeroed for as long as layers were the first
+    // large thing the client allocated, because the block then came off
+    // never-touched wasm heap, which is zero by definition. Sound generation
+    // moved ahead of it at boot and freed the wav data it had synthesised,
+    // and the layers got that memory back: 914892 of the background layer's
+    // 917504 bytes arrived nonzero. Read as vertex positions and colours, and
+    // summed by the additive passes, that is a white screen.
+    void* bytes = 0;
+    uint32_t size = 0;
+    if (dmBuffer::GetBytes(v->buf, &bytes, &size) != dmBuffer::RESULT_OK) {
+        return luaL_error(L, "vwbuf: cannot read the buffer back");
+    }
+    memset(bytes, 0, size);
     lua_pushnumber(L, g_layer_count);
     g_layer_count++;
     return 1;
@@ -224,6 +245,10 @@ int Rect(lua_State* L) {
 
 // Degenerate whatever a busier frame left behind. Three corners on the same
 // point cover no pixels, which is cheaper than resizing the buffer to fit.
+//
+// Only back to the busiest frame so far. Everything past that has never been
+// written and still holds the zeroes Attach wrote, which is why Attach writes
+// them.
 int Finish(lua_State* L) {
     VwLayer* v = Layer(L, 1);
     for (uint32_t i = v->n; i < v->high; i++) {
