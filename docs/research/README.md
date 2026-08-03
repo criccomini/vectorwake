@@ -10,6 +10,7 @@ learned, written so a new contributor does not have to repeat the reading.
 | [the-game.md](the-game.md) | History of Subspace and Continuum, ships, game modes, how a zone is organized |
 | [asss-server.md](asss-server.md) | The ASSS server: modules, capabilities, arenas, lag control, configuration model |
 | [protocol-and-simulation.md](protocol-and-simulation.md) | Wire protocol, units, physics, the client-authoritative trust model |
+| [lvl-format.md](lvl-format.md) | The `.lvl` map format, byte for byte, and the tile types our converter reads |
 | [prior-art.md](prior-art.md) | Subspace Infinity, nullspace, Subspace Server .NET, tooling, and what each proves |
 | [implications.md](implications.md) | What we take, what we drop, open questions for vectorwake |
 
