@@ -58,6 +58,27 @@ static uint32_t rd32(const uint8_t *p) {
            | ((uint32_t)p[3] << 24);
 }
 
+/* A solid tile's variant says what kind of solid it is. Every one of them
+ * stops a ship in exactly the same way -- the core masks the class off and
+ * never looks at the variant -- so this costs nothing in the simulation and
+ * buys the renderer the difference between a wall, the map's own edge, and a
+ * rock somebody put there.
+ *
+ * The objects name their own top-left corner, so a six-tile station is drawn
+ * once rather than thirty-six times. The body tiles are still solid; they are
+ * simply not the tile that carries the picture. */
+#define V_WALL 0
+#define V_BORDER 1
+#define V_ROCK_A 2
+#define V_ROCK_B 3
+#define V_ROCK_BIG 4
+#define V_ROCK_BODY 5
+#define V_STATION 6
+#define V_STATION_BODY 7
+
+/* Twenty is the border in every tileset the original shipped. */
+#define LVL_BORDER 20
+
 /* What one lvl type becomes, for the types that map to a single tile.
  *
  * Solidity follows Continuum rather than the tileset: a flag stand, a goal and
@@ -66,6 +87,7 @@ static uint32_t rd32(const uint8_t *p) {
 static uint8_t translate(unsigned type, int *undefined) {
     *undefined = 0;
     if (type == 0) return SIM_TILE_EMPTY;
+    if (type == LVL_BORDER) return SIM_TILE(SIM_TILE_SOLID, V_BORDER);
     if (type <= 161) return SIM_TILE_SOLID;
     /* The eight door tiles become eight channels. The core spaces a variant's
      * phase an eighth of the cycle apart, which is what the original did with
@@ -120,14 +142,28 @@ static void read_tiles(sim_map *m, const uint8_t *p, size_t len, report *rp) {
         int size = 1;
         if (type == LVL_ASTEROID_BIG) size = 2;
         else if (type == LVL_STATION) size = 6;
+        /* Rock and the station are solid like a wall and drawn like neither,
+         * so the variant carries which they are and which tile of them is the
+         * corner the picture hangs from. */
         int undefined = 0;
-        uint8_t t = (type == LVL_ASTEROID_SMALL || type == LVL_ASTEROID_SMALL2
-                     || type == LVL_ASTEROID_BIG || type == LVL_STATION)
-                        ? SIM_TILE_SOLID
-                        : translate(type, &undefined);
+        uint8_t t, body;
+        if (type == LVL_ASTEROID_SMALL) {
+            t = body = SIM_TILE(SIM_TILE_SOLID, V_ROCK_A);
+        } else if (type == LVL_ASTEROID_SMALL2) {
+            t = body = SIM_TILE(SIM_TILE_SOLID, V_ROCK_B);
+        } else if (type == LVL_ASTEROID_BIG) {
+            t = SIM_TILE(SIM_TILE_SOLID, V_ROCK_BIG);
+            body = SIM_TILE(SIM_TILE_SOLID, V_ROCK_BODY);
+        } else if (type == LVL_STATION) {
+            t = SIM_TILE(SIM_TILE_SOLID, V_STATION);
+            body = SIM_TILE(SIM_TILE_SOLID, V_STATION_BODY);
+        } else {
+            t = body = translate(type, &undefined);
+        }
         rp->undefined += (uint32_t)undefined;
         for (int dy = 0; dy < size; dy++)
-            for (int dx = 0; dx < size; dx++) paint(m, x + dx, y + dy, t);
+            for (int dx = 0; dx < size; dx++)
+                paint(m, x + dx, y + dy, (dx == 0 && dy == 0) ? t : body);
     }
 }
 
@@ -427,6 +463,7 @@ static int selftest(void) {
     int i = 0;
     put(file, i++, 10, 10, 1);              /* ordinary wall */
     put(file, i++, 11, 10, 161);            /* last of the wall range */
+    put(file, i++, 9, 11, LVL_BORDER);      /* the map edge */
     put(file, i++, 12, 10, 162);            /* first door, channel 0 */
     put(file, i++, 13, 10, 169);            /* last door, channel 7 */
     put(file, i++, 14, 10, 170);            /* turf */
@@ -454,6 +491,8 @@ static int selftest(void) {
     expect(rp.offmap == 1, "off-map record counted");
     expect(rp.undefined == 1, "undefined type counted");
     expect(at(m, 10, 10) == SIM_TILE_SOLID, "wall");
+    expect(at(m, 9, 11) == SIM_TILE(SIM_TILE_SOLID, V_BORDER),
+           "the border is a wall that knows it");
     expect(at(m, 11, 10) == SIM_TILE_SOLID, "tile 161 is a wall");
     expect(at(m, 12, 10) == SIM_TILE(SIM_TILE_DOOR, 0), "first door channel");
     expect(at(m, 13, 10) == SIM_TILE(SIM_TILE_DOOR, 7), "last door channel");
@@ -463,15 +502,25 @@ static int selftest(void) {
     expect(at(m, 17, 10) == SIM_TILE_OVER, "over");
     expect(at(m, 18, 10) == SIM_TILE_UNDER, "under");
     expect(at(m, 19, 10) == SIM_TILE_SOLID, "undefined type is solid");
-    expect(at(m, 20, 20) == SIM_TILE_SOLID && at(m, 21, 21) == SIM_TILE_SOLID
+    /* Every tile of an object is solid; only its corner carries the picture,
+     * which is what keeps a six-tile station from being drawn thirty-six
+     * times. */
+    expect(at(m, 20, 20) == SIM_TILE(SIM_TILE_SOLID, V_ROCK_BIG)
+               && at(m, 21, 21) == SIM_TILE(SIM_TILE_SOLID, V_ROCK_BODY)
                && at(m, 22, 22) == SIM_TILE_EMPTY,
-           "big asteroid is 2x2");
-    expect(at(m, 35, 35) == SIM_TILE_SOLID && at(m, 36, 36) == SIM_TILE_EMPTY,
-           "station is 6x6");
+           "big asteroid is 2x2, cornered");
+    expect(at(m, 30, 30) == SIM_TILE(SIM_TILE_SOLID, V_STATION)
+               && at(m, 35, 35) == SIM_TILE(SIM_TILE_SOLID, V_STATION_BODY)
+               && at(m, 36, 36) == SIM_TILE_EMPTY,
+           "station is 6x6, cornered");
+    expect(SIM_TILE_CLASS(at(m, 21, 21)) == SIM_TILE_SOLID
+               && SIM_TILE_CLASS(at(m, 35, 35)) == SIM_TILE_SOLID,
+           "an object's body is still a wall to fly into");
     expect(at(m, 42, 42) == SIM_TILE_WORMHOLE, "wormhole centre");
     expect(at(m, 40, 40) == SIM_TILE_EMPTY && at(m, 44, 44) == SIM_TILE_EMPTY,
            "wormhole rim is open");
-    expect(at(m, 50, 50) == SIM_TILE_SOLID, "small asteroid");
+    expect(at(m, 50, 50) == SIM_TILE(SIM_TILE_SOLID, V_ROCK_A),
+           "small asteroid");
     expect(at(m, 60, 60) == SIM_TILE_EMPTY, "a later record wins");
 
     /* Starts: asked for four, evenly split, and none of them in a wall. */

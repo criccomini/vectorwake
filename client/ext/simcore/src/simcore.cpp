@@ -551,6 +551,7 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_TILE_OVER);     lua_setfield(L, -2, "T_OVER");
     lua_pushnumber(L, SIM_TILE_UNDER);    lua_setfield(L, -2, "T_UNDER");
     lua_pushnumber(L, SIM_TILE_TURF);     lua_setfield(L, -2, "T_TURF");
+    lua_pushnumber(L, SIM_TILE_SPAWN);    lua_setfield(L, -2, "T_SPAWN");
 
     // Event and weapon kinds, so the client never hard-codes an enum the
     // core is free to renumber.

@@ -141,6 +141,14 @@ function Layer:seg_glow(x1, y1, x2, y2, width, a, col)
     self:tri_fade(x1, y1, a, x2 - nx, y2 - ny, 0, x1 - nx, y1 - ny, 0, col)
 end
 
+-- A skirt hanging off one side of a segment: full alpha on the line, nothing
+-- at `dx, dy` away from it. What a wall face throws, in both directions, and
+-- the open-ended cousin of glow_band.
+function Layer:skirt(x1, y1, x2, y2, dx, dy, a, col)
+    self:tri_fade(x1, y1, a, x2, y2, a, x2 + dx, y2 + dy, 0, col)
+    self:tri_fade(x1, y1, a, x2 + dx, y2 + dy, 0, x1 + dx, y1 + dy, 0, col)
+end
+
 -- A segment that fades along its length: the trail behind a bolt, the taper
 -- of a thruster flame.
 function Layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2, col)
@@ -190,6 +198,20 @@ function Layer:halo(x, y, r, segs, col)
         self:tri_fade(x, y, 1,
                       x + u[i * 2 + 1] * r, y + u[i * 2 + 2] * r, 0,
                       x + u[i * 2 + 3] * r, y + u[i * 2 + 4] * r, 0, col)
+    end
+end
+
+-- Part of a ring, from a0 to a1. A crater's rim and a spawn pad's bracket are
+-- both this, and neither wants the whole circle.
+function Layer:arc(x, y, r, a0, a1, width, segs, col)
+    local ri, ro = r - width * 0.5, r + width * 0.5
+    local step = (a1 - a0) / segs
+    for i = 0, segs - 1 do
+        local b0, b1 = a0 + step * i, a0 + step * (i + 1)
+        local c0, s0 = math.cos(b0), math.sin(b0)
+        local c1, s1 = math.cos(b1), math.sin(b1)
+        self:quad(x + c0 * ri, y + s0 * ri, x + c1 * ri, y + s1 * ri,
+                  x + c1 * ro, y + s1 * ro, x + c0 * ro, y + s0 * ro, col)
     end
 end
 
