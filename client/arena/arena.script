@@ -466,12 +466,17 @@ end
 
 local start_offline
 
--- A start the map names, if it names one. The roster's own tile is the
--- fallback, exactly as on the server: a map that carries its starts can be
--- dropped in without the roster knowing anything about its walls.
-local function spawn_at(cls, team, nth, tx, ty, heading)
-    local mx, my = sim.map_spawn(team, nth)
-    return sim.spawn(cls, team, mx or tx, my or ty, heading)
+-- The roster's own tile, deliberately, and not the start the map names.
+--
+-- The built-in map spreads sixteen starts across the field, a team to a band,
+-- 256 tiles apart. That is a zone's geometry and the wrong thing for a practice
+-- arena: it put the player alone in a corner with the nearest pilot five
+-- thousand pixels away, which is half a minute of empty flying before anything
+-- arrives -- and it did it by preferring a map start, so the roster's carefully
+-- chosen tiles in the middle were never used at all. Every online zone starts
+-- its pilots together in the centre room; offline now does the same.
+local function spawn_at(cls, team, _nth, tx, ty, heading)
+    return sim.spawn(cls, team, tx, ty, heading)
 end
 
 -- The terrain and the starfield never move, so they are built once per map

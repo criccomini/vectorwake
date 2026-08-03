@@ -32,6 +32,15 @@ fn bout(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: 
     // alternated, one seed. The ladder has to rank pilots, so it holds the
     // loadout still the same way it holds the hull still.
     world.cfg.spawn_prizes = 0;
+    // And none on the floor either, for the same reason and by the same
+    // argument. This was true by accident until greens learned to appear near a
+    // pilot: they had been placed uniformly over a map 1024 tiles across, so a
+    // forty-tile pit almost never saw one, and the ladder has been ranking
+    // pilots in an empty room without ever saying so. Said now. With greens
+    // reachable the pit turns into a scavenger hunt and matches end with nobody
+    // having shot anybody, which is a fact about the prize economy rather than
+    // about who can fly.
+    world.cfg.prize_max = 0;
 
     // Alternate which pilot starts on which side, so a positional advantage
     // in the pit cannot accumulate into a rating.

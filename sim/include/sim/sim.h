@@ -33,10 +33,19 @@ extern "C" {
 #define SIM_MAX_SHIPS 255
 #define SIM_MAX_WEAPONS 1024
 /* Greens alive at once. The snapshot writes a u8 index and a u8 count, so
- * 255 is the wire's ceiling and not an arbitrary one. A full-size map needs
- * most of it: sixty greens over a thousand tiles square is one per seventeen
- * thousand tiles, which a pilot can fly past for minutes without meeting. */
+ * 255 is the wire's ceiling and not an arbitrary one. */
 #define SIM_MAX_PRIZES 255
+
+/* Where a green appears, in tiles from a live pilot: outside the first so it is
+ * a trip rather than a gift, inside the second so it lands on their radar,
+ * whose reach is thirty tiles either way.
+ *
+ * Raising `prize_max` is not the alternative it looks like. Placed uniformly, a
+ * thousand-tile map needs thousands of greens before one is reliably inside the
+ * sixty tiles a pilot can see, and the wire ceiling is 255. Placing them where
+ * the people are costs no extra state at all. */
+#define SIM_PRIZE_NEAR_LO 6
+#define SIM_PRIZE_NEAR_HI 28
 #define SIM_MAX_FLAGS 16
 #define SIM_TEAM_NONE 255
 #define SIM_MAX_EVENTS 256

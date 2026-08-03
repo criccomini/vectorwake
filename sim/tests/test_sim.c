@@ -1365,6 +1365,45 @@ int main(void) {
     }
 
     {
+        /* Greens appear where somebody can find them.
+         *
+         * A map 1024 tiles across holding twenty greens, placed uniformly, is a
+         * map with no greens in it: a pilot sees sixty tiles, so the odds of one
+         * being in reach are about one in fifty. That shipped, and a player
+         * reported a zone with none at all -- which also means an unreachable
+         * tech tree, since spawn_prizes is zero and greens are the only way in. */
+        sim_settings w = cfg;
+        sim_state s;
+        sim_init(&s, 17);
+        sim_spawn(&s, APEX, 0, 512 * SIM_TILE_PX, 512 * SIM_TILE_PX, 0, &w);
+        step_n(&s, &w, 0, 0, w.prize_delay * (w.prize_max + 2));
+
+        int live = 0, worst = 0;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+            if (!s.prizes[i].active) continue;
+            live++;
+            int32_t dx = (s.prizes[i].x - s.ships[0].x) / (SIM_TILE_PX * 256);
+            int32_t dy = (s.prizes[i].y - s.ships[0].y) / (SIM_TILE_PX * 256);
+            int d = (int)(dx * dx + dy * dy);
+            if (d > worst) worst = d;
+        }
+        CHECK(live > 1, "greens appear at all");
+        /* The ship does not move here, so every green must be inside the ring
+         * it was placed in -- with a tile of slack for the truncating divide. */
+        CHECK(worst <= (SIM_PRIZE_NEAR_HI + 1) * (SIM_PRIZE_NEAR_HI + 1) * 2,
+              "and every one of them is within reach of the pilot they spawned by");
+
+        /* Nobody alive is the fallback, and it must still put greens out: a
+         * room between rounds comes back up with a field on it. */
+        sim_state e;
+        sim_init(&e, 19);
+        step_n(&e, &w, 0, 0, w.prize_delay * 4);
+        int empty_live = 0;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++) empty_live += e.prizes[i].active;
+        CHECK(empty_live > 0, "an empty room still grows a prize field");
+    }
+
+    {
         /* Multifire composes onto whatever rung the trigger is on, and it is
          * the one add-on that changes what pulling the trigger costs. The
          * original charged 20 energy for a bullet and 30 for multifire, and
@@ -1446,16 +1485,31 @@ int main(void) {
          * fragments do not inherit it: a shell that broke into eight would
          * otherwise have each of those break into eight again. */
         const int WEDGE = 1;
+        /* No prize field. Greens appear near a pilot now, so leaving one
+         * running under a test about one add-on lets a green hand the shooter
+         * another one, and spends draws from the rng that the scatter angles
+         * come out of. Two ways for this to fail for a reason that is not
+         * shrapnel. */
+        sim_settings w = cfg;
+        w.prize_max = 0;
         sim_state s;
         sim_init(&s, 1);
         /* Broken on a ship out in the open rather than against a wall.
          * Fragments scatter now, and a shell that ends on a wall throws half
          * of them straight back into it, so the count a tick later says more
          * about which way one seed threw them than about splitting. */
-        sim_spawn(&s, WEDGE, 0, 8192, 300, 0, &cfg);
-        sim_spawn(&s, WEDGE, 1, 8192, 150, 0, &cfg);   /* short of the wall */
-        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 1);
-        step_n(&s, &cfg, SIM_BTN_BOMB, 0, 1);
+        sim_spawn(&s, WEDGE, 0, 8192, 300, 0, &w);
+        sim_spawn(&s, WEDGE, 1, 8192, 150, 0, &w);   /* short of the wall */
+        /* The top rung, eight fragments, which is both the case the sentence
+         * above is about and the only rung with anything to look at. A shell
+         * breaks at the point of impact, which is inside the hull it hit, and a
+         * fragment thrown into that hull dies in the tick it was born; at rungs
+         * one and two all of them do, so whether any survives is down to which
+         * way one seed threw two of them. This test passed on that luck for as
+         * long as the seed held, and reported shrapnel broken the day an
+         * unrelated change spent a different number of draws. */
+        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 3);
+        step_n(&s, &w, SIM_BTN_BOMB, 0, 1);
         CHECK(s.weapon_count == 1, "one bomb away");
         /* Counted by the shot it fires rather than by what is in the air a
          * tick later. Fragments come into being at the point of impact, which
@@ -1466,7 +1520,7 @@ int main(void) {
         int seen = 0, carried = 0;
         ev_counts ec = {0, 0, 0, 0, 0, 0, 0};
         for (int t = 0; t < 200; t++) {
-            ev_counts one = step_counting(&s, &cfg, 0, 0, 1);
+            ev_counts one = step_counting(&s, &w, 0, 0, 1);
             ec.fires += one.fires;
             for (uint16_t i = 0; i < s.weapon_count; i++)
                 if (s.weapons[i].depth > 0) {
@@ -1870,7 +1924,17 @@ int main(void) {
         sim_init(&s, 11);
         sim_spawn(&s, APEX, 0, 8000, 8000, 900, &cfg);
         sim_spawn(&s, ANVIL, 1, 8000, 7800, 32768, &cfg);
-        step_counting(&s, &cfg, SIM_BTN_THRUST | SIM_BTN_FIRE, SIM_BTN_BOMB, 900);
+        /* A third pilot, four hundred tiles away and left alone. Greens appear
+         * near a live ship, so a field with everybody in one place is a field
+         * in one place -- and the interest-radius check below needs prizes on
+         * both sides of the radius to be checking anything. Somebody off on
+         * their own is also the ordinary case on a map this size. */
+        sim_spawn(&s, APEX, 1, 8000 + 400 * SIM_TILE_PX, 8000, 0, &cfg);
+        /* Long enough for the field to fill: one green a second to a field of
+         * two dozen, so a few hundred ticks would be checking the round trip
+         * against three of them. */
+        step_counting(&s, &cfg, SIM_BTN_THRUST | SIM_BTN_FIRE, SIM_BTN_BOMB,
+                      cfg.prize_delay * (cfg.prize_max + 4));
 
         /* With a prize field on it, because prizes are most of a snapshot
          * and their position is the one thing on the wire that is not stored
@@ -1879,7 +1943,7 @@ int main(void) {
          * nothing about the part most likely to be wrong. */
         int live = 0;
         for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
-        CHECK(live > 20, "the state under test carries a prize field");
+        CHECK(live > 10, "the state under test carries a prize field");
 
         static uint8_t buf[SIM_PACK_MAX];
         int n = sim_pack(&s, buf, sizeof buf);

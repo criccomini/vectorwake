@@ -161,8 +161,19 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->bounce = 10;
     cfg->friction = 14;
     cfg->respawn_delay = 300; /* 3 s */
-    cfg->prize_delay = 20;    /* five a second until the map is full */
-    cfg->prize_max = 200;
+    /* Two hundred greens at five a second was the number for placing them
+     * uniformly over a map a thousand tiles across, where two hundred is one
+     * green per five thousand tiles and a pilot sweeping the field meets one
+     * every few minutes. Greens appear near a pilot now, so the same numbers
+     * carpet the ground they are standing on: an offline arena reached
+     * multifire, bounce, proximity and three of five energy steps inside a
+     * minute, which is the whole tech tree handed over for flying in a circle.
+     *
+     * One a second to a field of two dozen is what the shipped zones already
+     * ask for. Shared among a roster it is a green each every ten seconds or
+     * so: worth turning for, not worth ignoring. */
+    cfg->prize_delay = 100;
+    cfg->prize_max = 24;
     cfg->prize_life = 3000;   /* 30 s */
     cfg->prize_radius = 16 * 256; /* generous: chasing a green should not be fiddly */
     cfg->flag_radius = 18 * 256;

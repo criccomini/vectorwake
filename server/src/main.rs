@@ -3010,7 +3010,7 @@ mod tests {
         // Left out, each is the core's own.
         let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
         assert_eq!(w.cfg.bounce, 10);
-        assert_eq!(w.cfg.prize_max, 200);
+        assert_eq!(w.cfg.prize_max, 24);
         assert_eq!(w.cfg.door_period, 600);
         assert_eq!(w.cfg.prize_life, 3000);
         assert_eq!(w.cfg.flag_radius, 18 * 256);

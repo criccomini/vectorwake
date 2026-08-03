@@ -936,6 +936,26 @@ uint8_t sim_take_prize(sim_ship *sh, const sim_settings *cfg, uint32_t *rng,
     return type;
 }
 
+/* A green appears near somebody, not somewhere.
+ *
+ * Uniform placement over the whole map was right when the arena was one room.
+ * The map is 1024 tiles across now and `prize_max` is twenty, which is one
+ * green per fifty thousand tiles: a pilot who can see sixty tiles finds one
+ * about never. Measured against the live arena, two greens inside the entire
+ * 256-tile interest radius, and a player reported a zone with none in it at
+ * all. Since `spawn_prizes` is zero on purpose -- greens are the only way into
+ * the tech tree, and handing them out at spawn flattens the skill gap -- an
+ * unfindable green is an unreachable tech tree.
+ *
+ * So the ring is around a live pilot: outside NEAR_LO so a green is a trip
+ * rather than a gift, inside NEAR_HI so it lands on their radar, whose reach is
+ * thirty tiles either way. Twenty greens where the people are beats twenty
+ * greens in a million tiles of nobody, and it needs no extra state, no larger
+ * snapshot, and no per-zone tuning.
+ *
+ * With nobody alive it falls back to the old uniform band, because a room
+ * between rounds should still have greens on the map when the lights come up.
+ */
 static void spawn_prize(sim_state *s, const sim_settings *cfg) {
     if (cfg->prize_hi <= cfg->prize_lo) return;
     int slot = -1;
@@ -943,12 +963,38 @@ static void spawn_prize(sim_state *s, const sim_settings *cfg) {
         if (!s->prizes[i].active) { slot = i; break; }
     if (slot < 0) return;
 
+    /* Whose neighbourhood. Chosen from the rng rather than by scanning from
+     * zero, so greens do not all pile up around whoever holds the first seat. */
+    int host = -1;
+    if (s->ship_count > 0) {
+        s->rng = xorshift32(s->rng);
+        int start = (int)(s->rng % (uint32_t)s->ship_count);
+        for (int k = 0; k < s->ship_count; k++) {
+            int i = (start + k) % s->ship_count;
+            if (s->ships[i].active && s->ships[i].alive) { host = i; break; }
+        }
+    }
+
     int32_t span = cfg->prize_hi - cfg->prize_lo;
     for (int attempt = 0; attempt < 24; attempt++) {
-        s->rng = xorshift32(s->rng);
-        int32_t tx = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
-        s->rng = xorshift32(s->rng);
-        int32_t ty = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
+        int32_t tx, ty;
+        if (host >= 0) {
+            const int32_t R = SIM_PRIZE_NEAR_HI;
+            s->rng = xorshift32(s->rng);
+            int32_t ox = (int32_t)(s->rng % (uint32_t)(2 * R + 1)) - R;
+            s->rng = xorshift32(s->rng);
+            int32_t oy = (int32_t)(s->rng % (uint32_t)(2 * R + 1)) - R;
+            if (ox * ox + oy * oy < SIM_PRIZE_NEAR_LO * SIM_PRIZE_NEAR_LO) continue;
+            tx = s->ships[host].x / (SIM_TILE_PX * 256) + ox;
+            ty = s->ships[host].y / (SIM_TILE_PX * 256) + oy;
+            if (tx < cfg->prize_lo || tx > cfg->prize_hi) continue;
+            if (ty < cfg->prize_lo || ty > cfg->prize_hi) continue;
+        } else {
+            s->rng = xorshift32(s->rng);
+            tx = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
+            s->rng = xorshift32(s->rng);
+            ty = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
+        }
         if (solid(cfg->map, cfg, s->tick, tx, ty)) continue;
         if (SIM_TILE_CLASS(sim_tile_at(cfg->map, tx, ty)) == SIM_TILE_SAFE)
             continue;
