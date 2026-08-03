@@ -139,6 +139,20 @@ impl Player {
     /// docs/architecture/networking.md rules out, and a client with no lead at
     /// all keeps working exactly as it did.
     fn schedule(&mut self, tick: u32, buttons: u16, now: u32) {
+        // Clamp before recording. `last_input_tick` is echoed back so a client
+        // can measure how late its inputs are arriving, so it has to be a tick
+        // this arena agreed to: a client stamping u32::MAX would otherwise pin
+        // its own echo at u32::MAX forever and steer its clock off the readout.
+        // That only ever hurts the client that did it, which is exactly why it
+        // would have been found late and by somebody confused.
+        //
+        // Saturating, because `now` is a tick counter and a room that has been
+        // up for 497 days reaches u32::MAX. A plain add there panics in debug
+        // and wraps in release, and a wrapped ceiling clamps every input to a
+        // tick in the distant past. This project has already shipped one
+        // overflow that release builds swallowed and debug builds refused to
+        // start on.
+        let tick = tick.min(now.saturating_add(INPUT_LEAD_MAX));
         self.last_input_tick = self.last_input_tick.max(tick);
         if tick <= now {
             self.buttons = buttons;
@@ -148,7 +162,6 @@ impl Player {
         // the order is the map's rather than the arrival order's. That matters
         // because the clamp above can lower a tick, and a queue that assumed
         // arrival order would then hand out inputs out of sequence.
-        let tick = tick.min(now + INPUT_LEAD_MAX);
         self.pending.insert(tick, buttons);
         while self.pending.len() > INPUT_QUEUE_MAX {
             let oldest = *self.pending.keys().next().expect("non-empty");
@@ -2336,6 +2349,30 @@ mod tests {
             100 + INPUT_LEAD_MAX,
             "an input a minute ahead should land at the ceiling"
         );
+    }
+
+    /// The echoed tick is what the arena accepted, not what was asked for. A
+    /// client steers its clock off this number, so a clamped input that
+    /// reported its unclamped tick would tell the client its inputs were
+    /// arriving impossibly early and drive the lead to zero.
+    #[test]
+    fn the_echoed_tick_is_the_one_that_was_accepted() {
+        let mut p = a_player();
+        p.schedule(u32::MAX, sim::BTN_FIRE, 100);
+        assert_eq!(p.last_input_tick, 100 + INPUT_LEAD_MAX);
+    }
+
+    /// A room that has been up for 497 days is at u32::MAX. The ceiling has to
+    /// saturate there rather than wrap: a wrapped ceiling clamps every input to
+    /// a tick in the distant past, which `buttons_at` then drains immediately,
+    /// so every client in the room would go rigid at once.
+    #[test]
+    fn the_lead_ceiling_saturates_at_the_end_of_the_clock() {
+        let mut p = a_player();
+        let now = u32::MAX - 10;
+        p.schedule(u32::MAX, sim::BTN_FIRE, now);
+        assert_eq!(p.buttons_at(now), 0, "not before its tick");
+        assert_eq!(p.buttons_at(u32::MAX), sim::BTN_FIRE, "and not lost either");
     }
 
     /// And a client that floods cannot grow the arena's memory with it.
