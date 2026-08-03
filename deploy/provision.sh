@@ -106,6 +106,47 @@ say "installing docker"
 curl -fsSL https://get.docker.com | sh || die "docker install"
 systemctl enable --now docker || die "docker would not start"
 
+# Caddy's certificates go on a block volume, not on the instance disk, because
+# the instance disk is the thing a reinstall takes away. That is not a
+# hypothetical: six reinstalls in one day re-requested the same names six times,
+# Let's Encrypt allows five a week, and the game went dark while every check
+# stayed green. A volume is a separate resource -- a reinstall does not touch it,
+# and it can be detached and handed to a replacement instance.
+#
+# Formatted only on first use. `blkid` says nothing about a raw device and names
+# a filesystem on a used one, which is the whole test.
+CERT_DIR=/var/lib/caddy-data
+CERT_DEV=/dev/disk/by-id/virtio-__CERT_MOUNT_ID__
+[ -b "$CERT_DEV" ] || CERT_DEV=/dev/vdb
+say "certificate volume: $CERT_DEV"
+[ -b "$CERT_DEV" ] || die "no certificate volume attached; nothing at $CERT_DEV"
+if ! blkid "$CERT_DEV" >/dev/null 2>&1; then
+	say "formatting the certificate volume; this is its first use"
+	mkfs.ext4 -q -L vwcerts "$CERT_DEV" || die "could not format $CERT_DEV"
+fi
+mkdir -p "$CERT_DIR"
+grep -q " $CERT_DIR " /etc/fstab \
+	|| echo "$CERT_DEV $CERT_DIR ext4 defaults,nofail 0 2" >>/etc/fstab
+mountpoint -q "$CERT_DIR" || mount "$CERT_DEV" "$CERT_DIR" \
+	|| die "could not mount the certificate volume"
+
+# Refusing to continue is the point. The alternative is Caddy starting on an
+# empty directory on the instance disk, which works, serves fine, and quietly
+# spends one of five weekly issuances every time it happens -- which is precisely
+# how the certificates were lost. A hard stop here is loud, is diagnosable
+# because the bootstrap server is still serving this log, and costs nothing
+# scarce. One API call fixes it.
+mountpoint -q "$CERT_DIR" || die "$CERT_DIR is not a mount; refusing to issue onto the instance disk"
+say "certificates will persist at $CERT_DIR"
+
+# And the same guard at runtime rather than only at first boot: Docker will not
+# start unless the mount is there, so a reboot with the volume detached cannot
+# hand Caddy an empty certificate store.
+mkdir -p /etc/systemd/system/docker.service.d
+printf '[Unit]\nRequiresMountsFor=%s\n' "$CERT_DIR" \
+	>/etc/systemd/system/docker.service.d/vw-certs.conf
+systemctl daemon-reload
+
 # The repository is private, so the host authenticates with a read-only deploy
 # key scoped to it. accept-new rather than a pinned host key: pinning a
 # fingerprint this script cannot itself verify trades a real failure mode for a
@@ -127,6 +168,7 @@ cat >/opt/vectorwake/deploy/.env <<EOF
 VW_DOMAIN=vectorwake.net
 VW_REGION=ewr
 VW_DEPLOY_LOG=$LOG
+VW_CERT_DIR=$CERT_DIR
 VW_POOL_TOKEN=__POOL_TOKEN__
 VW_ADMIN_TOKEN=__ADMIN_TOKEN__
 EOF

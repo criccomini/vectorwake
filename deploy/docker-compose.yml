@@ -57,9 +57,16 @@ services:
       - NET_BIND_SERVICE
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # Certificates and ACME account keys. Losing this volume means asking
-      # Let's Encrypt for everything again, which is rate limited.
-      - caddy-data:/data
+      # Certificates and ACME account keys. Losing these means asking Let's
+      # Encrypt for everything again, which is rate limited to five a week per
+      # name -- and losing them is not hypothetical, it is what took the game
+      # dark for an afternoon.
+      #
+      # So on a host this is a block volume, a resource a reinstall cannot take
+      # away, and VW_CERT_DIR names its mount point. Compose reads a value
+      # starting with a slash as a bind mount and anything else as a named
+      # volume, so the default keeps a laptop on the throwaway volume it wants.
+      - ${VW_CERT_DIR:-caddy-data}:/data
       - caddy-config:/config
       # Coarse provisioning progress, served over plain http by IP. The proxy
       # starts before the build so this is readable while the slow part runs.
