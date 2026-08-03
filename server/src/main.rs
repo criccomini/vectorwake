@@ -749,8 +749,15 @@ impl Arena {
             sh.spawn_x = sh.x;
             sh.spawn_y = sh.y;
         }
-        // A full bar, asked for as the number it is, and after the class is set
-        // because the ceiling depends on it. This used to be i32::MAX with a
+        // And then the zone's opening greens, because the clear above took away
+        // everything including what a spawn would have handed out. The core
+        // outfits a ship it spawns; a seat inherited from a departing bot is
+        // not a spawn, so this asks. Without it a zone with a spawn kit gave
+        // one to its bots and to anybody who had died once, and nothing at all
+        // to a pilot who had just arrived.
+        self.world.outfit(ship as usize);
+        // A full bar, asked for as the number it is, and after the class and
+        // the greens are set, because the ceiling depends on both. This used to be i32::MAX with a
         // comment saying the core would clamp it; the core clamped it by adding
         // a tick of recharge first, which overflowed, so a joining ship spent
         // its first tick at INT32_MIN energy and one hit from dead. The core no
@@ -2461,7 +2468,13 @@ mod tests {
     /// handed their own and the zone reads as having saved their game.
     #[test]
     fn a_joining_pilot_does_not_inherit_the_seat() {
-        let def = wire_zone(1, 6, 16);
+        // No spawn kit, so every number below can be asserted at zero. A zone
+        // that hands one out puts real upgrades on the arriving ship, and a
+        // rolled level of two is indistinguishable from an inherited one, which
+        // would make this test about the kit instead of about the seat. The kit
+        // has a test of its own.
+        let mut def = wire_zone(1, 6, 16);
+        def.zone_toml = "description = \"no kit\"\n[arena]\nspawn_prizes = 0\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
                               HashMap::new());
@@ -2498,6 +2511,52 @@ mod tests {
         assert_eq!(sh.points, 0, "nor their score");
         assert_eq!(sh.vx, 0, "and it arrives at rest");
         assert_ne!(sh.x, flown_to, "at a start, not where the last one left off");
+    }
+
+    /// The other half of not inheriting a seat: what the arriving pilot gets
+    /// instead.
+    ///
+    /// Clearing the seat was the whole of `join` for a while, which is right
+    /// for a zone that starts everybody plain and wrong for one that does not.
+    /// A zone handing out thirty greens gave them to its bots and to anybody
+    /// who had died once, and nothing at all to somebody who had just walked
+    /// in, so a fresh arrival was the poorest ship in the room.
+    #[test]
+    fn an_arriving_pilot_gets_the_zones_spawn_kit() {
+        let mut def = wire_zone(1, 6, 16);
+        def.zone_toml = "description = \"a zone with a kit\"\n\
+                         [arena]\nspawn_prizes = 30\n".into();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+                              HashMap::new());
+        z.serve_zone(&def).expect("a room");
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = z.rooms[0].join("arrival".into(), 0, 16, tx).expect("a seat");
+        let ship = z.rooms[0].players[&id].ship as usize;
+        let sh = z.rooms[0].world.state.ships[ship];
+        // One green is one bounty, whatever it turned out to be, so thirty
+        // rolls is a bounty near thirty. Near rather than exactly: rust takes
+        // one back now and then, which is the zone's own setting doing its job.
+        let bounty = unsafe { sim::sim_bounty(&sh) };
+        assert!(bounty > 20, "an arrival carries the kit, not nothing: {bounty}");
+        // And the bar is full of the energy those greens just bought, rather
+        // than of the ceiling the ship had before them.
+        let full = z.rooms[0].world.eff_max_energy(ship);
+        assert_eq!(sh.energy, full, "the bar is filled after the kit lands");
+
+        // A zone that hands out nothing still starts pilots plain.
+        let mut bare = wire_zone(1, 6, 16);
+        bare.zone_toml = "description = \"bare\"\n[arena]\nspawn_prizes = 0\n".into();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z2 = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+                               HashMap::new());
+        z2.serve_zone(&bare).expect("a room");
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = z2.rooms[0].join("arrival".into(), 0, 16, tx).expect("a seat");
+        let ship = z2.rooms[0].players[&id].ship as usize;
+        assert_eq!(z2.rooms[0].world.state.ships[ship].up, [0; sim::UP_COUNT],
+                   "and a zone with no kit hands out no kit");
     }
 
     #[test]

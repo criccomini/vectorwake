@@ -339,6 +339,8 @@ extern "C" {
     pub fn sim_map_arena(map: *mut sim_map);
     pub fn sim_map_pit(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
+    pub fn sim_take_prize(sh: *mut sim_ship, cfg: *const sim_settings, rng: *mut u32,
+                          delta: *mut c_int) -> u8;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
     pub fn sim_settings_pack(cfg: *const sim_settings, out: *mut u8, cap: c_int) -> c_int;
     pub fn sim_add_spec(cfg: *mut sim_settings, spec: *const sim_weapon_spec) -> c_int;
@@ -611,6 +613,23 @@ impl World {
     pub fn eff_max_energy(&self, ship: usize) -> i32 {
         let cls = self.state.ships[ship].cls as usize;
         unsafe { sim_eff_max_energy(&self.cfg.classes[cls], &self.state.ships[ship]) }
+    }
+
+    /// Hand a ship the zone's opening greens: the same roll, off the same
+    /// generator, that the core runs for a ship it spawns itself.
+    ///
+    /// A joining pilot needs this asked for explicitly. The core outfits what
+    /// it spawns, but a seat handed on by a departing bot is not a spawn, and
+    /// `join` clears what the last occupant held so nobody inherits a game in
+    /// progress. Clearing without re-outfitting is what left an arriving pilot
+    /// plain in a zone whose spawn kit is not empty, until their first death
+    /// respawned them properly.
+    pub fn outfit(&mut self, ship: usize) {
+        for _ in 0..self.cfg.spawn_prizes {
+            let sh: *mut sim_ship = &mut self.state.ships[ship];
+            let rng: *mut u32 = &mut self.state.rng;
+            unsafe { sim_take_prize(sh, &*self.cfg, rng, std::ptr::null_mut()) };
+        }
     }
 }
 
