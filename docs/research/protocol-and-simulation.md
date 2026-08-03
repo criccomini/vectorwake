@@ -217,3 +217,5 @@ header's size field to find the tile data still work.
 Maps are downloaded from the server, optionally compressed (`0x2A`), and
 checksummed. LVZ files carry the visual overlays (objects, animations) that
 Continuum added, toggled at runtime with `0x35` and `0x36`.
+
+[lvl-format.md](lvl-format.md) has the byte layout and the tile types.
