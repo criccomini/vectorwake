@@ -39,7 +39,7 @@ itself, so the server and the client cannot disagree about the format.
 | Direction | Byte 0 | Payload |
 |---|---|---|
 | C2S | 1 | join: class, name |
-| C2S | 2 | input: buttons u16, tick u32 |
+| C2S | 2 | input: buttons u16, tick u32 (the tick it applies to, and honoured) |
 | S2C | 1 | welcome: your ship id, tick |
 | S2C | 2 | snapshot: your ship, acked input tick, packed state |
 | S2C | 3 | roster: ship, is-ai flag, name |

@@ -40,7 +40,24 @@ M.denied = nil
 M.lost = nil
 M.pilots = {}
 M.ratings = {}
-M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
+M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0}
+
+-- Where this client's clock wants to sit, measured in ticks of input lag: how
+-- long after we stamp an input the server is still to reach that tick.
+--
+-- Negative is the goal. An input that arrives before the tick it belongs to
+-- waits in the server's queue and is applied on the same tick we applied it,
+-- so both ends agree and there is nothing to correct. Positive means the
+-- server ran that tick without us and used whatever we were holding before,
+-- which for an acceleration costs a fraction of a pixel and for the safe-zone
+-- brake costs a tick of speed every tick it is late.
+--
+-- Two ticks of margin, with a dead band three wide so a clock that is
+-- comfortably early is left alone rather than trimmed every snapshot. The
+-- ceiling is what a pathological link is allowed to cost everybody else: the
+-- further ahead we run, the longer remote ships coast between snapshots.
+local LAG_TARGET, LAG_SLACK, LEAD_MAX = -2, 3, 40
+
 -- Set when a map arrives, so the arena knows to rebuild terrain it had
 -- already decided was static.
 M.map_epoch = 0
@@ -158,6 +175,12 @@ end
 local function on_snapshot(s)
     -- header: type, our ship, acked input tick
     local body = string.sub(s, 7)
+    -- The newest input tick the server has received from us. It rode in this
+    -- header from the beginning and was skipped over for as long; it is what
+    -- says whether our clock is running early enough for an input to reach the
+    -- tick it was stamped for.
+    local acked = u32(string.byte(s, 3), string.byte(s, 4),
+                      string.byte(s, 5), string.byte(s, 6))
     M.stats.snaps = M.stats.snaps + 1
 
     local px, py = sim.ship_x(M.me), sim.ship_y(M.me)
@@ -171,6 +194,31 @@ local function on_snapshot(s)
     -- second of prediction is already far more than a playable connection
     -- ever needs, and anything past it is a bug rather than latency.
     local from = sim.tick()
+
+    -- Steer the clock, one tick per snapshot.
+    --
+    -- Twenty a second, so a cold start settles in under a second, and small
+    -- enough that the clock never jumps. A jump would be its own correction,
+    -- which is the thing this exists to remove.
+    --
+    -- Moving the clock is done by moving the target of the replay below rather
+    -- than by stepping anything here: raise it and the walk runs an extra tick,
+    -- lower it and it runs one fewer. A tick added past the end of the log
+    -- inherits the buttons we were already holding, because a key held through
+    -- the gap is what actually happened; filling it with zero would insert a
+    -- phantom frame of hands-off flying that the server never saw.
+    if acked > 1 then
+        local lag = from - acked
+        M.stats.lag = lag
+        if lag > LAG_TARGET and predicted_tick - from < LEAD_MAX then
+            predicted_tick = predicted_tick + 1
+            input_log[predicted_tick] = input_log[predicted_tick - 1] or 0
+        elseif lag < LAG_TARGET - LAG_SLACK and predicted_tick > from then
+            predicted_tick = predicted_tick - 1
+        end
+        M.stats.lead = predicted_tick - from
+    end
+
     local last = predicted_tick
     if last > from + 100 then last = from + 100 end
     local steps = 0
@@ -270,6 +318,10 @@ function M.connect(url, class, name, on_lost, zone)
     -- which a player reads as their ship moving at several times its speed.
     input_log = {}
     predicted_tick = 0
+    -- The clock offset is per zone for the same reason the log is, and it is
+    -- earned rather than remembered: a new arena's latency is its own, so the
+    -- lead starts at nothing and climbs into place over the first second.
+    M.stats.lag, M.stats.lead = 0, 0
     on_lost_cb = on_lost
 
     local ok, err = pcall(function()
