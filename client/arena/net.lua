@@ -51,6 +51,15 @@ M.settings_epoch = 0
 local conn = nil
 local on_lost_cb = nil
 local input_log = {}
+-- Which connection this module is listening to.
+--
+-- One set of state serves whatever is live, and a socket that has been left
+-- can still deliver events, so every callback checks its generation against
+-- this before touching anything. Leaving one out is what let a player who
+-- hopped from one zone to another end up in both: the old socket kept
+-- arriving with snapshots of the old arena, the new one arrived with the new,
+-- and the client drew whichever had spoken most recently.
+local generation = 0
 
 -- Reported once, with a reason fit to print, and the connection is over. This
 -- lives out here rather than inside `connect` because the decoders need it
@@ -216,16 +225,32 @@ end
 -- happened" is the one thing the client must never say. `on_lost` is called
 -- once, with a reason fit to print.
 function M.connect(url, class, name, on_lost, zone)
+    -- Whatever we were in, we are leaving. This module holds one arena's
+    -- worth of state and the core holds one arena, so a second connection is
+    -- not a second game, it is two servers writing over each other.
+    M.disconnect()
+    local gen = generation
+
     M.denied = nil
     M.deny_code = 0
     M.pilots = {}
     M.ratings = {}
     M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
     M.lost = nil
+    -- The zone we came from should not have its name or its banner still on
+    -- screen while the next one is being reached.
+    M.me = 0
+    M.zone = ""
+    M.banner = ""
     on_lost_cb = on_lost
 
     local ok, err = pcall(function()
         conn = websocket.connect(url, {}, function(self, cid, data)
+            -- A socket we have already left. Closing one buys no promise of
+            -- silence, and its parting message would otherwise be read as the
+            -- live connection dropping, which clears `conn` and takes the
+            -- good connection down with the dead one.
+            if gen ~= generation then return end
             if data.event == websocket.EVENT_CONNECTED then
                 -- class, protocol, then the game we think we picked, then the
                 -- name. An empty zone means "whatever you are running", which
@@ -233,7 +258,17 @@ function M.connect(url, class, name, on_lost, zone)
                 local want = zone or ""
                 local msg = string.char(C2S_JOIN, class, CLIENT_PROTOCOL, #want)
                     .. want .. name
-                websocket.send(conn, msg, {type = websocket.DATA_TYPE_BINARY})
+                -- The callback's own handle, not the module's: this can fire
+                -- before `websocket.connect` has returned, and `conn` is only
+                -- assigned afterwards.
+                --
+                -- Guarded, because a socket can be closing by the time its own
+                -- connect event is delivered, and the extension raises on a
+                -- send to one that is. The disconnect that follows carries the
+                -- reason a player should see; a Lua error here would take the
+                -- frame loop instead.
+                pcall(websocket.send, cid, msg,
+                      {type = websocket.DATA_TYPE_BINARY})
             elseif data.event == websocket.EVENT_MESSAGE then
                 on_message(data.message)
             elseif data.event == websocket.EVENT_DISCONNECTED then
@@ -285,7 +320,10 @@ function M.step(buttons)
 end
 
 function M.disconnect()
-    if conn then websocket.disconnect(conn) end
+    -- Bumped whether or not there was a socket, so that anything still in
+    -- flight from the last one is stale from here on.
+    generation = generation + 1
+    if conn then pcall(websocket.disconnect, conn) end
     conn = nil
     M.connected = false
 end
