@@ -62,6 +62,28 @@ to predict with.
 - Choose the simplest implementation that fully meets the current requirements.
 - Prefer established, well-maintained libraries over custom implementations.
 
+## Writing
+
+Everything you write goes through the `humanizer` skill: commit messages, pull
+request bodies, documents under `docs/`, the README, code comments, and replies
+in chat. Prose is prose wherever it lands, so run it as the last step before
+text leaves your hands rather than as an optional pass at the end.
+
+The skill is vendored in `.claude/skills/humanizer/`, and `SOURCE.md` beside it
+records the upstream version and commit so a future update knows what is local
+and what is not. Do not edit the vendored copy. Preferences that are ours
+belong here instead, where they sit next to the rest of the house style.
+
+One consequence is worth stating, because it contradicts a habit visible
+throughout this repository. Section 14 bans em dashes and the spaced double
+hyphen that stands in for one. There are about a thousand of the latter here,
+mostly in C comments and commit messages, and they are the same tell wearing a
+hat. New prose does not use them. Existing lines get fixed when you are editing
+them for another reason, never in a sweep of their own.
+
+`deslop` is installed too and covers much of the same ground. Humanizer is the
+one to run.
+
 ## Memory
 
 Your memory is OptMem:
