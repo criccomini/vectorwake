@@ -909,6 +909,7 @@ impl Arena {
         // its own socket rather than work out from an empty simulation that it
         // is gone; the seat is taken either way.
         if let Some(p) = self.players.get(&id) {
+            println!("seat {ship} taken back from {} for an arriving pilot", p.name);
             let _ = p.tx.try_send(Message::Binary(vec![S2C_YIELD]));
         }
         self.leave(id);
@@ -925,6 +926,9 @@ impl Arena {
             .filter(|(_, p)| p.bot)
             .map(|(id, _)| *id)
             .collect();
+        if !ids.is_empty() {
+            println!("sending {} bot(s) home", ids.len());
+        }
         for id in &ids {
             if let Some(p) = self.players.get(id) {
                 let _ = p.tx.try_send(Message::Binary(vec![S2C_YIELD]));

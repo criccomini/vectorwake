@@ -186,9 +186,23 @@ services:
       - a3:/var/lib/vectorwake
     depends_on: [directory]
 
-  # The population. One process holds every bot in the deployment: it browses
-  # the directory like a player, dials whichever arenas want bots, and flies
-  # them as ordinary clients. See decision 29.
+  # The population. One process flies every bot on this host: it asks each arena
+  # how many it wants and opens that many connections, each an ordinary client
+  # that decodes snapshots through the simulation core. See decision 29.
+  #
+  # Named directly rather than browsed, which is the one place this service
+  # departs from the design in ai-runtime.md, and the reason is the addresses a
+  # browse would return. An arena advertises `wss://play.<domain>/aN`, because
+  # that is what a player must dial, so a bot server acting on a browse reply
+  # would take every one of its connections out through DNS, TLS and Caddy to
+  # come back to a port on the same machine. That is 150 proxied sockets and two
+  # TLS stacks for traffic that never leaves the box.
+  #
+  # These are the same three arenas this file already declares, so it is not a
+  # second source of truth about what is running; and asking an arena directly
+  # is a better question anyway, since `bots_wanted` is the arena's own answer
+  # whatever zone it happens to have taken. A second host runs its own copy of
+  # this service against its own arenas, which is the deployment rule either way.
   #
   # No volume and no token. It keeps nothing between runs, because a bot's
   # career lives in the arena's ratings rather than here, and it registers with
@@ -201,7 +215,7 @@ services:
     <<: *arena
     command: ["bots"]
     environment:
-      VW_DIRECTORY: ws://127.0.0.1:9000
+      VW_ARENAS: ws://127.0.0.1:9001,ws://127.0.0.1:9002,ws://127.0.0.1:9003
     depends_on: [directory, a1, a2, a3]
 
 volumes:

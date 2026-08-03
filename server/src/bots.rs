@@ -51,6 +51,11 @@ const YIELD_GRACE_MS: u64 = 10_000;
 /// hundred missed snapshots, so this only ever fires on a connection that is
 /// actually gone.
 const QUIET_MS: u64 = 10_000;
+/// Consecutive cycles an arena may fail to answer before its bots are called
+/// home. Five seconds of silence from a process on the same host is gone; one
+/// second of it is a busy moment, and treating that as gone would empty a room
+/// and refill it for no reason anybody could see.
+const GONE_AFTER: u32 = 5;
 
 /// Geometry, shared by every bot that was sent the same map.
 ///
@@ -103,6 +108,8 @@ struct Instance {
     /// When this instance last let a bot go, so it does not immediately take
     /// another one back.
     released_ms: u64,
+    /// Consecutive cycles it has failed to answer. See `GONE_AFTER`.
+    misses: u32,
 }
 
 pub async fn run() {
@@ -147,26 +154,47 @@ pub async fn run() {
             });
         }
 
+        // Asked all at once rather than one after another, which is not a
+        // throughput question: a single unreachable address would otherwise
+        // stall the whole loop for its dial timeout, so one arena restarting
+        // stops the population being tended anywhere. Measured before it was
+        // fixed: two dead addresses in the list turned a one second cycle into
+        // a ten second one.
         let mut want: HashMap<String, u32> = HashMap::new();
-        for url in &dirs {
-            for (addr, n) in browse(url).await {
-                // The most any directory says, because a directory relays only
-                // what it observed itself and one may have heard more recently
-                // than another.
-                let e = want.entry(addr).or_insert(0);
-                *e = (*e).max(n);
-            }
+        let asked = futures_util::future::join_all(
+            dirs.iter().map(|u| browse(u))
+        ).await;
+        for (addr, n) in asked.into_iter().flatten() {
+            // The most any directory says, because a directory relays only what
+            // it observed itself and one may have heard more recently than
+            // another.
+            let e = want.entry(addr).or_insert(0);
+            *e = (*e).max(n);
         }
-        for addr in &direct {
-            if let Some(n) = ask(addr).await {
-                want.insert(addr.clone(), n);
+        let asked = futures_util::future::join_all(
+            direct.iter().map(|a| async move { (a.clone(), ask(a).await) })
+        ).await;
+        for (addr, n) in asked {
+            if let Some(n) = n {
+                want.insert(addr, n);
             }
         }
 
-        // An arena that has dropped off the list wants nothing. Its bots are
-        // told so rather than left flying at a game nobody can see.
-        for addr in fleet.keys().cloned().collect::<Vec<_>>() {
-            want.entry(addr).or_insert(0);
+        // An arena that has dropped off the list wants nothing, and its bots are
+        // told so rather than left flying at a game nobody can see. But not on
+        // the first miss: a browse that times out or an arena that is a moment
+        // slow to answer would otherwise read as "wants zero bots", empty a room
+        // of fifty-one, and then refill it a cooldown later. A room's population
+        // must not depend on every status query succeeding.
+        for (addr, inst) in fleet.iter_mut() {
+            if want.contains_key(addr) {
+                inst.misses = 0;
+            } else {
+                inst.misses += 1;
+                if inst.misses >= GONE_AFTER {
+                    want.insert(addr.clone(), 0);
+                }
+            }
         }
 
         for (addr, n) in want {
@@ -197,8 +225,7 @@ pub async fn run() {
                         task,
                     });
                 }
-                println!("{addr}: {have} bots, wants {n}; sent {add} (last release {} ms ago)",
-                         now.saturating_sub(inst.released_ms));
+                println!("{addr}: {have} bots, wants {n}; sent {add}");
             } else if have > n {
                 // Oldest first among those old enough to go, so a bot that has
                 // just arrived is not immediately turned around.
@@ -269,13 +296,13 @@ async fn ask(addr: &str) -> Option<u32> {
 /// and neither is worth a held connection: this runs once a second and a
 /// directory that is down should cost a failed dial rather than a stuck task.
 async fn request(url: &str, ask: u8, expect: u8) -> Option<String> {
-    let dial = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        tokio_tungstenite::connect_async(url),
-    );
+    // Short, because this runs on a one second cycle and everything it dials is
+    // a process that either answers immediately or is not there. A long dial
+    // timeout here would let a dead address hold a cycle open past the next one.
+    let deadline = std::time::Duration::from_secs(2);
+    let dial = tokio::time::timeout(deadline, tokio_tungstenite::connect_async(url));
     let (mut ws, _) = dial.await.ok()?.ok()?;
     ws.send(Message::Binary(vec![ask])).await.ok()?;
-    let deadline = std::time::Duration::from_secs(5);
     loop {
         let msg = tokio::time::timeout(deadline, ws.next()).await.ok()??.ok()?;
         if let Message::Binary(b) = msg {
@@ -344,7 +371,7 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, yielding: Arc<
                     break;
                 };
                 heard = std::time::Instant::now();
-                if data.len() < 2 {
+                if data.is_empty() {
                     continue;
                 }
                 match data.first().copied() {
@@ -376,7 +403,11 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, yielding: Arc<
                         }
                     }
                     Some(crate::S2C_YIELD) => break,
-                    Some(crate::S2C_DENIED) => break,
+                    Some(crate::S2C_DENIED) => {
+                        println!("{addr} refused {}: {}", who.name,
+                                 String::from_utf8_lossy(&data[2.min(data.len())..]));
+                        break;
+                    }
                     _ => {}
                 }
             }
