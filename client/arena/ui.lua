@@ -694,16 +694,21 @@ end
 -- --- the menu --------------------------------------------------------------
 
 -- A hull drawn small, inside its button. The silhouette is what picks a ship;
--- the name only confirms it.
+-- the name only confirms it. The canopy comes along because at this size it is
+-- the only thing that says which end is the front.
 local function thumb(cx, cy, cls, col, scale)
     local h = world.HULLS[cls + 1]
     if not h then return end
-    local pts = {}
-    for i = 1, #h.poly, 2 do
-        pts[i] = cx + h.poly[i] * scale
-        pts[i + 1] = ry(cy - h.poly[i + 1] * scale)
+    local function trace(src, width, c)
+        local pts = {}
+        for i = 1, #src, 2 do
+            pts[i] = cx + src[i] * scale
+            pts[i + 1] = ry(cy - (src[i + 1] - h.mid) * scale)
+        end
+        u:outline(pts, width, c, true)
     end
-    u:outline(pts, 1.4 * S, col)
+    trace(h.poly, 1.4 * S, col)
+    if h.canopy then trace(h.canopy, 1.0 * S, pal.a(col, 0.55)) end
 end
 
 -- The menu. One list, whatever level it is.

@@ -12,14 +12,14 @@ at radar scale, which is where most ship names actually get used.
 
 | Class | Role | Reads as |
 |---|---|---|
-| **Apex** | Interceptor | A narrow chevron. Fastest and sharpest turn in the game |
-| **Wedge** | Bomber | A flat triangle. Fires bombs on a flat, fast trajectory |
-| **Chord** | Skirmisher | A wide shallow arc. Sustained fire and detection |
-| **Anvil** | Heavy | A blunt hexagon. Slow, enormous energy, level 3 bombs |
-| **Spire** | Support | A tall diamond with a mast. Carries turrets, best recharge |
-| **Cipher** | Stealth | A thin sliver. Cloak, stealth, and the highest burst damage |
-| **Facet** | Brawler | A compact pentagon. Spread guns, lethal inside two tiles |
-| **Lattice** | Denial | A cross. Mines, bricks, and repels. Owns terrain |
+| **Apex** | Interceptor | A swept dart, wings back far enough to clear its own engines. Fastest and sharpest turn in the game |
+| **Wedge** | Bomber | A wide delta with a lit bomb bay down the spine. Fires bombs on a flat, fast trajectory |
+| **Chord** | Skirmisher | A shallow bow with a sensor housing at the middle. Sustained fire and detection |
+| **Anvil** | Heavy | A blunt slab with two tubes on a flat bow face. Slow, enormous energy, level 3 bombs |
+| **Spire** | Support | A tall diamond, a lamp on the mast, pylons on the flanks. Carries turrets, best recharge |
+| **Cipher** | Stealth | A knife, and the only hull that draws dim. Cloak, stealth, and the highest burst damage |
+| **Facet** | Brawler | A squat pentagon with two barrels out past the nose. Spread guns, lethal inside two tiles |
+| **Lattice** | Denial | A trussed cross with dispensers at the arm tips. Mines, bricks, and repels. Owns terrain |
 
 ## Standard settings
 
@@ -104,6 +104,13 @@ loses to a class should be able to name the counter.
 
 Every class is identifiable by silhouette alone at radar scale. Shape carries
 class and color carries team, per [identity.md](identity.md).
+
+A hull's detail earns its place by saying something the silhouette cannot. The
+canopy says which end is the front. A hardpoint is drawn where the class
+actually fires from, so the Facet's double barrels and the Anvil's two bomb
+tubes are visible facts rather than table entries. Panel lines say a ship is
+built out of parts. Anything that is decoration alone belongs on a hull that
+needs one of those three things instead.
 
 Specials are role-defining rather than universal. Cloak belongs to Cipher, and a
 zone that hands cloak to everything has made a different game, which is allowed

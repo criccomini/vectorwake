@@ -103,13 +103,42 @@ function Layer:frame(x, y, w, h, t, col)
 end
 
 -- A thick line segment. Width is total, centred on the line.
-function Layer:seg(x1, y1, x2, y2, width, col)
+--
+-- `cap` extends both ends by half the width. Corners are not mitred here, so
+-- an outline leaves a notch at every vertex where two quads meet at an angle;
+-- a capped segment closes it. The quad is the same quad, only longer, so the
+-- fix costs nothing.
+function Layer:seg(x1, y1, x2, y2, width, col, cap)
     local dx, dy = x2 - x1, y2 - y1
     local len = math.sqrt(dx * dx + dy * dy)
     if len < 1e-6 then return end
     local nx, ny = -dy / len * width * 0.5, dx / len * width * 0.5
+    if cap then
+        local ex, ey = dx / len * width * 0.5, dy / len * width * 0.5
+        x1, y1, x2, y2 = x1 - ex, y1 - ey, x2 + ex, y2 + ey
+    end
     self:quad(x1 + nx, y1 + ny, x2 + nx, y2 + ny,
               x2 - nx, y2 - ny, x1 - nx, y1 - ny, col)
+end
+
+-- A segment that fades across its width rather than along its length: full
+-- alpha on the line itself, nothing at either edge.
+--
+-- What every wide stroke of a bloom wants. A flat quad at five percent alpha
+-- reads as a band with a hard edge rather than as light coming off something,
+-- which is the whole difference between a glow and a halo drawn as a box.
+function Layer:seg_glow(x1, y1, x2, y2, width, a, col)
+    local dx, dy = x2 - x1, y2 - y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len < 1e-6 then return end
+    local h = width * 0.5
+    local nx, ny = -dy / len * h, dx / len * h
+    local ex, ey = dx / len * h, dy / len * h
+    x1, y1, x2, y2 = x1 - ex, y1 - ey, x2 + ex, y2 + ey
+    self:tri_fade(x1, y1, a, x2, y2, a, x2 + nx, y2 + ny, 0, col)
+    self:tri_fade(x1, y1, a, x2 + nx, y2 + ny, 0, x1 + nx, y1 + ny, 0, col)
+    self:tri_fade(x1, y1, a, x2, y2, a, x2 - nx, y2 - ny, 0, col)
+    self:tri_fade(x1, y1, a, x2 - nx, y2 - ny, 0, x1 - nx, y1 - ny, 0, col)
 end
 
 -- A segment that fades along its length: the trail behind a bolt, the taper
@@ -199,12 +228,41 @@ end
 
 -- A closed outline through a flat {x1,y1,x2,y2,...} list, already transformed
 -- by the caller. Corners are not mitred: at these widths the overdraw of
--- overlapping quads is invisible and mitring costs more than it buys.
-function Layer:outline(pts, width, col)
+-- overlapping quads is invisible and mitring costs more than it buys. `cap`
+-- squares off both ends of every segment, which closes the notch that overdraw
+-- leaves behind at an angled corner.
+function Layer:outline(pts, width, col, cap)
     local n = #pts
     for i = 1, n, 2 do
         local j = (i + 1 < n) and i + 2 or 1
-        self:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], width, col)
+        self:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], width, col, cap)
+    end
+end
+
+-- The bloom around a closed shape, as one skirt running from the outline out
+-- to an offset copy of it: full alpha on the edge, nothing at the rim. `nrm`
+-- is the outward direction at each vertex, in the same flat layout as `pts`
+-- and already turned by the caller; `w` is an optional per-edge weight.
+--
+-- Stroking each edge separately instead, which is what `outline` does, lays
+-- two overlapping quads over every corner. Additively that is a bright lozenge
+-- at each vertex rather than an even haze, and it is why the old three-stroke
+-- bloom looked beaded on anything sharp. One skirt is the same vertex count
+-- with no overlap in it at all.
+function Layer:glow_band(pts, nrm, offset, a, col, w)
+    local n = #pts
+    local e = 1
+    for i = 1, n, 2 do
+        local j = (i + 1 < n) and i + 2 or 1
+        local k = w and a * w[e] or a
+        local ax = pts[i] + nrm[i] * offset
+        local ay = pts[i + 1] + nrm[i + 1] * offset
+        local bx = pts[j] + nrm[j] * offset
+        local by = pts[j + 1] + nrm[j + 1] * offset
+        self:tri_fade(pts[i], pts[i + 1], k, pts[j], pts[j + 1], k, bx, by, 0,
+                      col)
+        self:tri_fade(pts[i], pts[i + 1], k, bx, by, 0, ax, ay, 0, col)
+        e = e + 1
     end
 end
 

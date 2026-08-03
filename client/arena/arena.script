@@ -30,6 +30,7 @@ local vec = require("render.vec")
 local TICK_HZ = 100
 local DT = 1 / TICK_HZ
 local MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
+local DETAIL_R2 = world.DETAIL_RANGE * world.DETAIL_RANGE
 
 local CLASS_NAMES = {"Apex", "Wedge", "Chord", "Anvil",
                      "Spire", "Cipher", "Facet", "Lattice"}
@@ -355,7 +356,11 @@ function init(self)
         -- what a heavy frame actually measures (fill 2.8k, glow 3.8k, ui 2.1k)
         -- with room to spare rather than by an order of magnitude.
         fill = vec.layer("#fill", 6144),
-        glow = vec.layer("#glow", 8192),
+        -- Raised from 8192 with the detailed hulls. A hull costs up to 780
+        -- vertices where the old outline and spine cost 134, so the old
+        -- ceiling held ten of them and their fire, and an overflow does not
+        -- report itself: the strokes past the cap simply stop being drawn.
+        glow = vec.layer("#glow", 16384),
         ui = vec.layer("#ui", 4096),
     }
 
@@ -657,9 +662,17 @@ function update(self, dt)
                and (i == me or not (sim.ship_x(i) < cull.x0 or sim.ship_x(i) > cull.x1
                                     or sim.ship_y(i) < cull.y0 or sim.ship_y(i) > cull.y1)) then
                 local col = (sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY
+                -- Plates, panel lines and lamps only within the fight you are
+                -- actually in. A hull draws the same size wherever it is on
+                -- screen, so this is not a level of detail in the usual sense;
+                -- it is a cap on what a dogpile can ask of the glow layer,
+                -- which does not report an overflow, it just stops drawing.
+                local dx = sim.ship_x(i) - cx
+                local dy = sim.ship_y(i) - cy
                 world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
                            sim.ship_y(i), sim.ship_heading(i), col, {
                     mine = i == me,
+                    far = dx * dx + dy * dy > DETAIL_R2,
                     thrusting = burning(i, mine_buttons, sim.BTN_THRUST),
                     reversing = burning(i, mine_buttons, sim.BTN_REVERSE),
                     flicker = (sim.tick() * 7 + i * 13) % 11 / 11,
