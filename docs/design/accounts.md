@@ -27,11 +27,30 @@ account, and the rating with it.
 
 ## Claiming
 
-Claiming turns a guest into a durable identity by attaching a way back in. The
-first method is an email address and a magic link. There are no passwords
-anywhere in this design, because a password table is a liability we can simply
-decline to own. Steam identity joins when the Steam build does, and console
-identity with the console builds, per [platforms.md](../architecture/platforms.md).
+Claiming turns a guest into a durable identity by attaching a way back in, and
+each platform supplies its own: Steam identity when the Steam build lands, and
+console identity with the console builds, per
+[platforms.md](../architecture/platforms.md). The web forces nothing, so on the
+web the way back in is the account key. A claim method is added only when a
+platform forces one, which is the rule that keeps this list at three.
+
+The account key is the guest secret made portable: a generated high-entropy
+key, shown once in a form a password manager or a paper note can hold, and
+stored only as a hash, the same idiom the fleet already uses for pool tokens in
+[discovery.md](../architecture/discovery.md). Logging in on a new device is
+typing it. There are still no passwords anywhere in this design, because the
+three things that make a password table a liability are absent: nobody chose
+this key, it exists nowhere else to be reused, and there is no reset flow.
+Losing it is the sentence a guest already lives under, said about a much
+smaller risk.
+
+Most players should never type the key at all. A logged-in session can display
+a short-lived six-digit link code, a new device types the code, and both then
+hold the account, so a phone and a desktop each keep the other alive. The same
+flow carries the account across platforms, a web session into the Steam build,
+and it is the shape console activation screens have taught everyone already.
+The key in the password manager is the backstop, not the routine.
+
 Several methods can attach to one account, which is what lets the web build and
 the Steam build be the same pilot, as the roadmap has wanted since M6 was
 written.
@@ -70,10 +89,10 @@ rating ladder and seed from the calibration tournament. A third-party bot is
 declared honestly but runs code we have never seen, so it anchors nothing.
 
 **Human** means the account is claimed. A claim does not prove a heartbeat and
-does not try to. What it proves is that the account is attached to something
-durable enough for a ban to mean something, and that the owner chose to wear a
-name rather than stay anonymous. Flying an undeclared bot on a claimed account
-is the offense the ban system exists for.
+does not try to. What it proves is that the pilot chose to be the same person
+tomorrow, wearing a reserved name, which is what a career and a ban both need
+before they mean anything. Flying an undeclared bot on a claimed account is
+the offense the ban system exists for.
 
 **Unknown** means a guest. The server genuinely does not know what is flying
 the seat, and the label says so rather than guessing. Most unknowns are humans
@@ -96,7 +115,9 @@ owner is the accountable party: a misbehaving bot is its owner's ban. The join
 declaration and the account kind are the same fact stated twice, and the arena
 refuses a join where they disagree, so a bot cannot pass as a person by staying
 quiet. Guests cannot own bots, because an owner who can evaporate by clearing
-local storage is not accountable for anything.
+local storage is not accountable for anything. If a key-claimed owner proves
+nearly as easy to shed, the bar for bot ownership rises to a platform
+identity, since a Steam ban is the one consequence that genuinely sticks.
 
 ## Rank over time
 
@@ -139,3 +160,7 @@ Recovery for guests. There is none by design, and the claim prompt should say
 so plainly. Whether that one sentence is enough warning, or whether losing a
 Wake-tier rating to a cleared cache becomes the complaint that forces a second
 look, is a question only live players can answer.
+
+Whether typing a key is friction enough to lose claims. Passkeys are the
+fallback if it tests badly: the web platform's own credential, still no third
+party, at the cost of a WebAuthn ceremony bridged through the browser wrapper.

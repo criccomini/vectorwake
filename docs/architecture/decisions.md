@@ -1041,7 +1041,7 @@ Meanwhile the cost argument collapsed. Decision 27 priced Nakama at roughly
 $20 a month and observed that nearly all of it is Postgres, and this design
 buys that Postgres anyway. On top of a database we still had to schema
 ourselves, Nakama would add an authentication layer, and the authentication we
-actually want, bearer secrets, magic links, platform identities later, is
+actually want, bearer secrets, account keys, platform identities later, is
 small.
 
 So the meta-layer is `vectorwake-server meta`: a fourth subcommand of the one
@@ -1058,10 +1058,11 @@ piece we most want to be able to lose and the event log is the piece we can
 least afford to.
 
 **Cost:** Authentication becomes our security surface: token signing, secret
-storage, magic-link delivery, and every sharp edge auth code has. A second
-stateful service to operate, though its state is the database we were buying
-regardless. And email infrastructure, which vectorwake.net's deliberately
-mail-free DNS has to be loosened to allow.
+storage, and every sharp edge auth code has. And a second stateful service to
+operate, though its state is the database we were buying regardless. What it
+deliberately does not cost is external infrastructure: claiming runs on
+account keys and link codes, so there is no mail sender and no OAuth
+registration, and vectorwake.net's mail-free DNS stands.
 
 **Reconsider if:** friends, parties or tournaments become real wants, where
 Nakama re-enters as a social layer fed by this identity rather than the owner
@@ -1077,9 +1078,10 @@ identity provider rather than a game backend.
 
 First contact mints a guest account and the client keeps its secret, so play
 never waits on a signup and rating accrues from the first death. Claiming
-attaches an email magic link or a platform identity, several to one account,
-and there are no passwords anywhere. Names come from the call sign generator
-only, and a claimed account's name is reserved fleet-wide.
+attaches an account key, a generated secret the player keeps, or a platform
+identity where the platform forces one, several to one account, and there are
+no passwords anywhere. Names come from the call sign generator only, and a
+claimed account's name is reserved fleet-wide.
 
 Every seat wears one of three labels, derived from account shape rather than
 asserted by the client. A bot account is a bot, house or third-party. A

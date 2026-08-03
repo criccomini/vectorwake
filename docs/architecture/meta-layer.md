@@ -17,7 +17,7 @@ records why this is our own service rather than Nakama.
 | Table | Contents |
 |---|---|
 | accounts | id, kind (`human`, `house_bot`, `third_party_bot`), created, standing, and the owner id when the kind is a third-party bot |
-| credentials | account, method (`secret`, `email`, `steam`, more later), identifier. A human account whose only credential is its secret is a guest |
+| credentials | account, method (`secret`, `key`, `steam`, more later), identifier or hash. A human account whose only credential is its secret is a guest |
 | names | account, call sign, whether it is reserved |
 | rated_events | the log [rating.md](../design/rating.md) specifies: participants, weights, ratings before and after, arena, mode class, opponent kind, timestamp |
 | ratings | account, mode class, rating, games. A projection, rebuildable from `rated_events` at any time |
@@ -45,6 +45,12 @@ key rotation is a catalog publish.
 Fleet bans are enforced here and only here. A banned account is refused a
 token, which is why no arena carries a fleet ban list and why a ban takes
 effect within one token lifetime.
+
+Device linking rides the same door. A logged-in session asks for a link code,
+short-lived and single-use; the new device redeems the code and holds the
+account secret from then on. Claiming by account key is the same exchange with
+a hash check in place of the code, per
+[accounts.md](../design/accounts.md).
 
 ## Rated events leave the arena
 
@@ -88,11 +94,13 @@ any design this repository has ever had.
 
 One more container beside the directory on the existing host, and the managed
 Postgres in the same region. The account secret is a random 256-bit bearer
-value, minted by the service and carried only over TLS. Claiming adds the one
-new external dependency, an email sender for magic links, and the DNS for
-vectorwake.net is currently locked down to send and receive no mail at all, so
-loosening that deliberately is part of the work rather than a surprise after
-it.
+value, minted by the service and carried only over TLS, and the account key is
+the same thing in a shape a person can keep, stored hashed like every other
+credential in the fleet. There is no external dependency at all: no mail
+sender, no OAuth registration, nothing to sign up for. The service also holds
+no personal data, no email addresses, and no names beyond generated call
+signs, so a breach would disclose a ladder rather than anybody's identity, and
+vectorwake.net's mail-free DNS stays exactly as the security pass left it.
 
 ## What it does not do
 
