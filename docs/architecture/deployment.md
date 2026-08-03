@@ -40,10 +40,25 @@ than when experimenting.
 Everything runs `--network host`, so the services reach each other on loopback
 and only Caddy listens on a public port.
 
-**Routing is by hostname on 443, not a port per arena.** One port is one thing to
-open, and nothing between a player and the game objects to it. Adding an arena is
-a name and a compose service rather than a port negotiation, and Caddy issues a
-certificate per name without being told to.
+**One hostname, paths underneath.** `play.vectorwake.net` serves the client at
+`/`, the directory at `/dir`, and an arena at `/a1` and `/a2`. One port is one
+thing to open and nothing between a player and the game objects to it, and adding
+an arena is a path rather than a DNS record.
+
+This started as a name per service, which reads better and cost an outage. Caddy
+fetches a certificate per name without being told to, a reinstall wipes the volume
+holding them, and deploying by reinstall wiped it six times in one day. Let's
+Encrypt allows five certificates a week for the same name, so three of the four
+ran out and the game went dark -- while the static client kept serving, because
+its name was new enough to still have a certificate, and `/health` kept
+answering 200 because Caddy was fine. One name means one certificate to lose.
+
+**Deploys are a git push, not a reinstall.** A timer on the host pulls `main`
+every minute and runs `docker compose up -d --build` only when the revision
+actually moved. That is what makes the paragraph above safe rather than merely
+survived: a pull touches the checkout and the containers and nothing else, so
+certificates, ACME account keys and arena instance ids all persist. Reinstall is
+for changing the provisioning script itself, and each one costs a certificate.
 
 **Two arena servers, not one.** A single arena would never make zone selection
 do anything: with two, a fresh host comes up with one serving Chaos and the other

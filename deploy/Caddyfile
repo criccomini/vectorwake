@@ -1,35 +1,31 @@
-# TLS and routing for one host.
+# TLS, the client, and routing for one host, under one hostname.
 #
-# A page served over https may only open a wss socket, so every address a player
-# dials needs a certificate. Caddy gets one per name automatically over HTTP-01,
-# which needs nothing but port 80 reachable and the A records pointing here: no
-# DNS credentials, no renewal cron, no certificate in the arena's config.
+# One name, paths underneath, rather than a name per service. That is not a
+# stylistic choice; it was bought with an outage.
 #
-# Routing is by hostname on 443 rather than a port per arena. One port means
-# nothing to open in a firewall and nothing for a corporate proxy to object to,
-# and it means adding an arena is a name and a compose service rather than a
-# port negotiation.
+# The first design gave each service its own hostname so Caddy would fetch a
+# certificate per name without being told to. It does, and that is the problem: a
+# reinstall wipes the volume holding them, deploying by reinstall wiped it six
+# times in a day, and Let's Encrypt allows five certificates per week for the
+# same name. Three of the four names ran out and the game went dark while the
+# host looked perfectly healthy -- the static client still served, because it was
+# the one name new enough to still have a certificate.
+#
+# So: one certificate to lose instead of four, and adding an arena is a path
+# rather than a DNS record and a fresh trip to a rate limiter. Deploys no longer
+# wipe anything either (see provision.sh and the updater timer), but the number
+# of certificates a mistake can burn is now one, and that is the part that does
+# not depend on remembering.
 #
 # {$VW_DOMAIN} lets the same file serve a real deployment and a local one:
-# `VW_DOMAIN=localhost` gives directory.localhost and a1.localhost, which Caddy
-# signs with its own internal CA and which browsers resolve to loopback without
-# a hosts entry.
-
-# No global block, and specifically no ACME email. Let's Encrypt stopped
-# requiring one, the only thing it buys is expiry warnings, and Caddy renews on
-# its own -- so the mail would be about a failure mode that is already handled.
-# An empty `email` directive is a parse error rather than an omission, which is
-# how a blank variable took the whole proxy down in a restart loop.
+# VW_DOMAIN=localhost gives play.localhost, which Caddy signs with its own
+# internal CA and browsers resolve to loopback.
 
 # Reachable by raw IP over plain http, which is the only thing that works before
 # DNS has propagated and a certificate exists. That window is exactly when a
-# fresh host is least diagnosable, and it is where a first deploy goes wrong, so
-# provisioning writes coarse progress here and Caddy comes up before the build
-# rather than after it. Nothing secret is written: anyone can read this.
-#
-# It shadows the http-to-https redirect Caddy would otherwise generate for the
-# named sites below, so http://directory.<domain> answers "vectorwake" instead of
-# redirecting. Harmless, because a game client dials wss directly.
+# fresh host is least diagnosable, so provisioning writes coarse progress here
+# and Caddy comes up before the build rather than after it. Nothing secret is
+# written: anyone can read this.
 http:// {
 	handle_path /deploy* {
 		root * /srv/deploy
@@ -40,45 +36,51 @@ http:// {
 	}
 }
 
-# What a player's client asks for the list of games. Also the socket arena
-# servers register over, but they reach it on loopback and never through here.
-directory.{$VW_DOMAIN} {
+play.{$VW_DOMAIN} {
 	# Plain HTTP, so the chain up to Caddy can be checked with curl from
 	# anywhere. Everything else here is a WebSocket upgrade, which plenty of
-	# networks and proxies will not carry, and "cannot connect" is a useless
-	# symptom when it could be DNS, the certificate, Caddy, or the game.
+	# networks decline to carry, and "cannot connect" is a useless symptom when
+	# the cause could be DNS, the certificate, Caddy, or the game.
+	#
+	# It says what it can see and no more. This used to answer a bare "ok",
+	# which reads as "the service is up" and means only "Caddy is up" -- it
+	# answered 200 throughout a reinstall with no game running at all, and
+	# fooled its own author.
 	handle /health {
-		respond "ok" 200
+		respond "caddy up; this says nothing about the game" 200
 	}
-	reverse_proxy 127.0.0.1:9000
-}
 
-# The game itself, served from the same domain as the arenas it connects to.
-#
-# It has to be served from here rather than anywhere else. A page delivered by a
-# third party under a Content-Security-Policy of `connect-src 'self'` cannot open
-# a socket to our arenas at all -- the artifact build is exactly that, so it can
-# only ever be the offline practice arena. Same domain, no such problem.
-#
-# Compressed, because the bundle is 5 MB of mostly base64-encoded wasm that gzips
-# to 2.4, and egress is the one cost this deployment actually pays.
-play.{$VW_DOMAIN} {
-	encode zstd gzip
-	root * /srv/play
-	file_server
-}
+	# What a player browses, and what the arenas register over -- though they
+	# reach the directory on loopback and never through here.
+	handle_path /dir* {
+		reverse_proxy 127.0.0.1:9000
+	}
 
-a1.{$VW_DOMAIN} {
-	reverse_proxy 127.0.0.1:9001
-}
+	handle_path /a1* {
+		reverse_proxy 127.0.0.1:9001
+	}
 
-a2.{$VW_DOMAIN} {
-	reverse_proxy 127.0.0.1:9002
+	handle_path /a2* {
+		reverse_proxy 127.0.0.1:9002
+	}
+
+	# The game itself. It has to come from this origin: a page delivered by a
+	# third party under `connect-src 'self'` cannot open a socket to these
+	# arenas at all, which is why the published artifact can only ever be the
+	# offline practice arena.
+	#
+	# Compressed, because the bundle is 5 MB of mostly base64-encoded wasm that
+	# gzips to 2.9, and egress is the one cost this deployment has.
+	handle {
+		encode zstd gzip
+		root * /srv/play
+		file_server
+	}
 }
 
 # Deliberately absent: the admin surface. docs/architecture/admin.md says a
-# secret in a file is not enough to put it on the public internet, and the read
-# view needs no token at all, so it would hand a stranger the fleet. It listens
-# on loopback and is reached through an ssh tunnel:
+# secret in a file is not enough to put it on the public internet, and its read
+# view needs no token at all, so a route to it would hand a stranger the fleet.
+# It listens on loopback and is reached through an ssh tunnel:
 #
 #   ssh -L 9100:127.0.0.1:9100 root@<host>   then http://127.0.0.1:9100

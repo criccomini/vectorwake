@@ -18,10 +18,7 @@
 services:
   caddy:
     extra_hosts: &names
-      - "directory.${VW_DOMAIN}:127.0.0.1"
       - "play.${VW_DOMAIN}:127.0.0.1"
-      - "a1.${VW_DOMAIN}:127.0.0.1"
-      - "a2.${VW_DOMAIN}:127.0.0.1"
   directory:
     extra_hosts: *names
   a1:

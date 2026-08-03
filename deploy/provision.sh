@@ -154,4 +154,63 @@ docker compose --env-file .env up -d --build || die "build; see provision.log"
 
 say "up:"
 docker compose --env-file .env ps --format '{{.Service}} {{.State}}' >>"$LOG/status"
-say "certificates arrive once vectorwake.net delegates to Vultr; Caddy retries on its own"
+
+# From here on, deploying is a git push and this box pulls it. That is not a
+# convenience; it is what stops the certificates being destroyed.
+#
+# Reinstall was the only lever available before, and a reinstall wipes the disk,
+# including the volume Caddy keeps its certificates in. Six deploys in a day
+# re-requested the same names six times, Let's Encrypt allows five a week, and
+# three of four names ran out -- the game went dark while every check stayed
+# green. A pull touches nothing but the checkout and the containers.
+say "installing the updater; deploys are a git push from now on"
+cat >/usr/local/bin/vw-update <<'UPD'
+#!/bin/sh
+# Pull main and rebuild only if something actually changed. Quiet when idle.
+set -u
+cd /opt/vectorwake || exit 0
+before=$(git rev-parse HEAD)
+GIT_SSH_COMMAND='ssh -i /root/.ssh/vw_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new' \
+	git fetch --quiet origin main || exit 0
+after=$(git rev-parse origin/main)
+[ "$before" = "$after" ] && exit 0
+logger -t vw-update "updating $before -> $after"
+git reset --hard origin/main >/dev/null 2>&1 || exit 1
+cd deploy || exit 1
+# No --force-recreate: Caddy is only restarted if its own config or image
+# changed, so a server-only change does not disturb TLS or the certificates.
+docker compose --env-file .env up -d --build >>/var/lib/vw-deploy/deploy/update.log 2>&1
+logger -t vw-update "updated to $after"
+printf '%s  updated to %s\n' "$(date -u +%H:%M:%SZ)" "$after" >>/var/lib/vw-deploy/deploy/status
+UPD
+chmod +x /usr/local/bin/vw-update
+
+cat >/etc/systemd/system/vw-update.service <<'SVC'
+[Unit]
+Description=Pull vectorwake and redeploy if main moved
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vw-update
+SVC
+
+cat >/etc/systemd/system/vw-update.timer <<'TMR'
+[Unit]
+Description=Check for a new vectorwake every minute
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=15s
+[Install]
+WantedBy=timers.target
+TMR
+systemctl daemon-reload
+systemctl enable --now vw-update.timer || say "WARNING: the updater timer did not start"
+
+# Said last, and only what is true. This used to claim certificates were still
+# waiting on DNS delegation, which stopped being true after the first deploy and
+# read as a warning forever after.
+if curl -fsS -o /dev/null --max-time 10 "https://play.vectorwake.net/health" 2>/dev/null; then
+	say "provisioning finished; https is answering"
+else
+	say "provisioning finished; https not answering yet, Caddy retries on its own"
+fi

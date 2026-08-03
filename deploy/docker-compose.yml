@@ -81,7 +81,8 @@ services:
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
       # What the directory hands players, which is not what this process binds:
       # it serves cleartext on loopback and Caddy is the wss endpoint.
-      VW_ADDRESS: wss://a1.${VW_DOMAIN}
+      # One hostname, a path per arena: see the Caddyfile for why.
+      VW_ADDRESS: wss://play.${VW_DOMAIN}/a1
       VW_REGION: ${VW_REGION:-local}
     volumes:
       - a1:/var/lib/vectorwake
@@ -93,7 +94,7 @@ services:
     environment:
       VW_DIRECTORY: ws://127.0.0.1:9000
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
-      VW_ADDRESS: wss://a2.${VW_DOMAIN}
+      VW_ADDRESS: wss://play.${VW_DOMAIN}/a2
       VW_REGION: ${VW_REGION:-local}
     volumes:
       - a2:/var/lib/vectorwake
