@@ -469,11 +469,12 @@ also answers that document's open question about process isolation in the
 direction that needs no code: a wedged arena server takes down only itself, and
 the supervisor that restarts it is whatever already restarts containers.
 
-It also deletes four keys that `zone.toml` currently parses and nothing reads:
-`arena.mode` and `arena.flags`, which lose to a hardcoded `Warzone::new(4)`;
-`max_players`, which loses to a `const`; and `[[bots]]`, which loses to the
-roster in `ai.rs`. Under the catalog those become part of a zone's definition,
-read because they are the only source of the answer.
+It also settled four keys that `zone.toml` parsed while nothing read them.
+`arena.mode` and `arena.flags` lost to a hardcoded `Warzone::new(4)` and
+`max_players` lost to a `const`; all three are now part of a zone's definition
+in the catalog, read because they are the only source of the answer. `[[bots]]`
+lost to the roster in `ai.rs` and is simply gone, along with `[[staff]]`, whose
+table belongs to the deployment rather than to one game.
 
 ## Costs
 

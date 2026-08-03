@@ -309,8 +309,8 @@ charges = [3, 3]
 # And rust, which is a key on [arena] rather than a weight -- see the top of
 # that section.
 
-# Authority is a set of named powers rather than a rank, the way ASSS did it.
-[[staff]]
-name = "chris"
-capabilities = ["ban", "setmode", "reload"]
+# Staff and their capabilities are not here. Authority is still a set of named
+# powers rather than a rank, the way ASSS did it, but it belongs to the
+# deployment rather than to one game: the table lives in catalog.toml and the
+# admin surface checks against it. See docs/architecture/catalog.md.
 

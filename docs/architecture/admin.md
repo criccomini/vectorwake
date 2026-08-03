@@ -75,9 +75,10 @@ directory that sent it and the arena that ran it, and show the log in the UI.
 
 ## Capabilities
 
-This is finally a caller for `has_capability`, which sits in `config.rs` with
-tests, a `[[staff]]` block in `zone.toml`, and nothing invoking it, because there
-has never been a command channel to gate.
+This is what finally calls `has_capability`. It sat in `config.rs` for months
+with tests, a `[[staff]]` block in `zone.toml`, and nothing invoking it, because
+there was no command channel to gate. The live copy is `catalog.rs`'s, checked by
+`admin.rs` against the catalog's staff table; the `zone.toml` half is gone.
 
 Keep ASSS's model, which [the research notes](../research/asss-server.md) argue
 for at length: named powers rather than ranks. `ban`, `setmode`, `reload`,

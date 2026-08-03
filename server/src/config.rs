@@ -29,9 +29,7 @@ pub struct ZoneConfig {
     pub tls_key: String,
     pub max_players: usize,
     pub arena: ArenaConfig,
-    pub staff: Vec<Staff>,
     pub bans: Vec<String>,
-    pub bots: Vec<BotConfig>,
 }
 
 /// The two keys under `[arena]` that are the arena's own rather than the
@@ -239,26 +237,6 @@ pub struct WeaponConfig {
     pub recoil: Option<i32>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
-#[serde(default, deny_unknown_fields)]
-pub struct Staff {
-    pub name: String,
-    /// Capability names, per docs/research/asss-server.md: authority is a
-    /// set of powers rather than a rank.
-    pub capabilities: Vec<String>,
-}
-
-#[derive(Deserialize, Clone, Debug)]
-#[serde(default, deny_unknown_fields)]
-pub struct BotConfig {
-    pub name: String,
-    pub class: u8,
-    pub team: u8,
-    pub skill: f32,
-    pub x: i32,
-    pub y: i32,
-}
-
 impl Default for ZoneConfig {
     fn default() -> Self {
         ZoneConfig {
@@ -275,34 +253,14 @@ impl Default for ZoneConfig {
             arena: ArenaConfig {
                 mode: default_mode(), flags: default_flags(), ..Default::default()
             },
-            staff: Vec::new(),
             bans: Vec::new(),
-            bots: Vec::new(),
         }
-    }
-}
-
-impl Default for Staff {
-    fn default() -> Self {
-        Staff { name: String::new(), capabilities: Vec::new() }
-    }
-}
-
-impl Default for BotConfig {
-    fn default() -> Self {
-        BotConfig { name: String::new(), class: 0, team: 1, skill: 0.5, x: 512, y: 512 }
     }
 }
 
 impl ZoneConfig {
     pub fn is_banned(&self, name: &str) -> bool {
         self.bans.iter().any(|b| b.eq_ignore_ascii_case(name))
-    }
-
-    pub fn has_capability(&self, name: &str, cap: &str) -> bool {
-        self.staff
-            .iter()
-            .any(|s| s.name.eq_ignore_ascii_case(name) && s.capabilities.iter().any(|c| c == cap))
     }
 }
 
@@ -368,15 +326,6 @@ bounce = 12
 [[arena.ships]]
 name = "Apex"
 speed = 5200
-
-[[staff]]
-name = "chris"
-capabilities = ["ban", "setmode"]
-
-[[bots]]
-name = "Kestrel"
-class = 0
-skill = 0.4
 "#;
 
     #[test]
@@ -386,7 +335,6 @@ skill = 0.4
         assert_eq!(c.arena.flags, 3);
         assert_eq!(c.arena.bounce, Some(12));
         assert_eq!(c.arena.ships[0].speed, Some(5200));
-        assert_eq!(c.bots[0].name, "Kestrel");
     }
 
     #[test]
@@ -412,13 +360,13 @@ skill = 0.4
     #[test]
     fn a_key_in_the_wrong_table_is_an_error_not_a_shrug() {
         // TOML puts a bare key into the most recent table, so a `bans` line
-        // written below [[staff]] becomes staff.bans. Silently ignoring it
-        // would leave an operator convinced they had banned somebody.
+        // written below [[arena.ships]] becomes a field of that ship. Silently
+        // ignoring it would leave an operator convinced they had banned
+        // somebody.
         let misplaced = r#"
 name = "z"
-[[staff]]
-name = "chris"
-capabilities = []
+[[arena.ships]]
+name = "Apex"
 bans = ["griefer"]
 "#;
         assert!(toml::from_str::<ZoneConfig>(misplaced).is_err(),
@@ -437,12 +385,9 @@ bans = ["griefer"]
     }
 
     #[test]
-    fn bans_and_capabilities_are_names_not_ranks() {
+    fn bans_are_names_and_ignore_case() {
         let c: ZoneConfig = toml::from_str(SAMPLE).unwrap();
         assert!(c.is_banned("GRIEFER"), "bans ignore case");
         assert!(!c.is_banned("chris"));
-        assert!(c.has_capability("chris", "ban"));
-        assert!(!c.has_capability("chris", "shutdown"), "capabilities are explicit");
-        assert!(!c.has_capability("nobody", "ban"));
     }
 }
