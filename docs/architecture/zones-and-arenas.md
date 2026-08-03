@@ -308,9 +308,10 @@ otherwise does not exist.
 The sequence is four questions, and each has an answer that belongs to a different
 layer:
 
-1. **Is this pilot allowed in?** The catalog's bans, checked by the arena server
-   against the name the client presents. Deployment-wide, per
-   [catalog.md](catalog.md).
+1. **Is this pilot allowed in?** A fleet ban never reaches this door: the
+   meta-layer refuses a banned account its session token, per
+   [meta-layer.md](meta-layer.md), so the arena checks the token's signature
+   and the catalog's per-zone bans, and nothing else.
 2. **Is there a seat?** A room holds `max_ships` ships and admits `max_players`
    humans; a declared bot takes a ship but never one of the human seats, per
    [decision 29](decisions.md#29-a-bot-is-a-client). A room with every ship taken

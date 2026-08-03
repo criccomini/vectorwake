@@ -211,6 +211,8 @@ and the single-author property is what lets it be a file in git.
 
 It also holds no identity. Accounts, ratings, friends and the durable record of
 who played what belong to the meta-layer per
-[decision 11](decisions.md#11-nakama-for-the-meta-layer-never-for-the-arena-tick),
+[decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list),
 and keeping them out of both the catalog and the directory is what lets a
-directory be a process you can lose.
+directory be a process you can lose. What the catalog does carry is the
+meta-layer's token-verifying key, since it is already the versioned artifact
+every arena receives whole, which makes key rotation a publish.

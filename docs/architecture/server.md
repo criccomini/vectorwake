@@ -182,7 +182,7 @@ So the split is:
 | Nowhere; dies with the room | Positions, energy, upgrades, the round in progress, flags held |
 | The meta-layer's Postgres | Identity, ratings, the rated event log, career records |
 | The catalog, in git | Bans, staff and capabilities, every zone's settings |
-| An arena's local disk | Its instance id, and nothing else |
+| An arena's local disk | Its instance id, and a spool of rated events awaiting handoff |
 
 The rated event log is the case that decides the shape. Rating is computed from
 events rather than stored as a number, per
@@ -191,17 +191,17 @@ that must outlive both the room and the process. An arena server therefore
 *emits* rated events rather than owning them: it batches them and hands them off,
 and a tick never waits on the network any more than it used to wait on a disk.
 
-Handing off to what is the open question. The candidates are the directory, which
-would make a directory stateful and cost us the property that its replicas need
-no shared storage, or the meta-layer directly, which is one more thing an arena
-must reach and authenticate to. The second is more likely right for exactly the
-reason the first is tempting: the directory is the piece we most want to be able
-to lose.
+The handoff target is settled: the meta-layer, per
+[meta-layer.md](meta-layer.md) and
+[decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list).
+The directory was the other candidate and lost for exactly the reason it was
+tempting: it is the piece we most want to be able to lose, and the event log is
+the piece we can least afford to.
 
-Until that is settled, `persist.rs` writing `ratings.json` beside the process is
-the honest interim, and its own header says so. It is correct for one process
-serving one zone and wrong the moment two instances of the same zone both hold
-opinions about a pilot's rating.
+Until that service exists, `persist.rs` writing `ratings.json` beside the
+process is the honest interim, and its own header says so. It is correct for
+one process serving one zone and wrong the moment two instances of the same
+zone both hold opinions about a pilot's rating.
 
 ASSS's score intervals, forever and per-reset and per-game, are still the model
 worth copying when this lands, because they are what tournament and league play
@@ -209,11 +209,14 @@ needs. They belong in the meta-layer's schema rather than in an arena.
 
 ## Identity
 
-A zone runs standalone with local accounts, which is the `auth_file` case in
-ASSS. It may also point at a shared identity service, which is what the original
-billing server was, so that a name means the same person across zones. The
-protocol treats identity as a token the session layer validates, so which
+Identity is an account at the meta-layer, minted silently on first contact and
+carried as a signed session token the arena validates offline, so which
 authority issued it stays out of the arena code.
+[design/accounts.md](../design/accounts.md) is the model and
+[meta-layer.md](meta-layer.md) the machinery. A deployment can still run with
+no meta-layer at all, which is ASSS's `auth_file` case reduced to its honest
+core: everyone flies as an unknown guest, nothing is rated, and nothing durable
+is written.
 
 ## Operations
 

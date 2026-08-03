@@ -14,6 +14,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [duel-mode.md](duel-mode.md) | One on one against a rating-matched human or bot: format, queue, rating, replays |
 | [bounty.md](bounty.md) | What you are worth and what you have been paid: bounty derived from what you carry, points paid as the victim's bounty |
 | [rating.md](rating.md) | Skill rating across humans and AI, and how credit for a kill is split among everyone who caused it |
+| [accounts.md](accounts.md) | Guest-first accounts, claiming, generated names, the human/bot/unknown label, and bots as account holders |
 
 ## The one-line version
 

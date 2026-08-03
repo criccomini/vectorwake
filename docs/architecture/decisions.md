@@ -262,6 +262,13 @@ offers implements it. Identity, friends, parties, leaderboards and tournaments
 are unchanged, and keeping identity *out* of the directory process is now
 load-bearing: it is what lets directory replicas stay independent.
 
+**Superseded in part by [decision 30](#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list):**
+identity, accounts and ratings follow the directory off Nakama's list, and the
+meta-layer is our own service. What survives of this record is its title:
+nothing meta ever touches the arena tick. Friends, parties and tournaments
+stay deferred, and Nakama remains a candidate for them as a social layer fed
+by our identity rather than the owner of it.
+
 ---
 
 ## 12. Inspired by, not a clone
@@ -1011,3 +1018,87 @@ code without a crate boundary to arrange.
 budget and per-client interest filtering cannot be made cheaper, or a
 multi-region fleet makes a bot server per region more operational surface than
 an in-process director was.
+
+---
+
+## 30. The meta-layer is ours, and identity leaves Nakama's list
+
+**Status:** proposed
+
+[Decision 11](#11-nakama-for-the-meta-layer-never-for-the-arena-tick) adopted
+Nakama for everything durable outside the arena tick. That list has been
+shrinking ever since: the directory left with
+[decision 25](#25-an-arena-server-chooses-which-zone-it-serves), chat with
+[decision 28](#28-no-chat), and friends, parties and tournaments are wanted by
+nobody yet. What remains that we need now is identity, and our identity has
+shapes Nakama does not: accounts minted silently on first contact, bot
+accounts with owners, a human, bot, or unknown label derived from credential
+shape, session tokens carrying rating claims that arenas verify offline, and a
+rating that is a projection of an event log no general backend has an opinion
+about.
+
+Meanwhile the cost argument collapsed. Decision 27 priced Nakama at roughly
+$20 a month and observed that nearly all of it is Postgres, and this design
+buys that Postgres anyway. On top of a database we still had to schema
+ourselves, Nakama would add an authentication layer, and the authentication we
+actually want, bearer secrets, magic links, platform identities later, is
+small.
+
+So the meta-layer is `vectorwake-server meta`: a fourth subcommand of the one
+binary, on managed Postgres, holding accounts, credentials, names, the rated
+event log, the rating projection, and fleet bans. It issues signed session
+tokens that arenas verify with a key distributed in the catalog, it refuses
+tokens to banned accounts, and it ingests the rated event batches that arenas
+submit under their pool credential. [meta-layer.md](meta-layer.md) is the
+design, and [design/accounts.md](../design/accounts.md) is the account model.
+
+This also closes the handoff question in [server.md](server.md): rated events
+go to the meta-layer rather than the directory, because the directory is the
+piece we most want to be able to lose and the event log is the piece we can
+least afford to.
+
+**Cost:** Authentication becomes our security surface: token signing, secret
+storage, magic-link delivery, and every sharp edge auth code has. A second
+stateful service to operate, though its state is the database we were buying
+regardless. And email infrastructure, which vectorwake.net's deliberately
+mail-free DNS has to be loosened to allow.
+
+**Reconsider if:** friends, parties or tournaments become real wants, where
+Nakama re-enters as a social layer fed by this identity rather than the owner
+of it. Or if authentication outgrows a small service, with passkeys, SSO, or
+console certification requirements, at which point the thing to buy is an
+identity provider rather than a game backend.
+
+---
+
+## 31. Every pilot is an account, and bots hold them too
+
+**Status:** proposed
+
+First contact mints a guest account and the client keeps its secret, so play
+never waits on a signup and rating accrues from the first death. Claiming
+attaches an email magic link or a platform identity, several to one account,
+and there are no passwords anywhere. Names come from the call sign generator
+only, and a claimed account's name is reserved fleet-wide.
+
+Every seat wears one of three labels, derived from account shape rather than
+asserted by the client. A bot account is a bot, house or third-party. A
+claimed human account is human. A guest is unknown, because the server cannot
+know and refuses to guess. Third-party bot accounts hang under a claimed owner
+who answers for them, and a join whose declaration disagrees with its account
+kind is refused.
+
+Fleet bans mark the account and are enforced at token issuance, per
+[decision 30](#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list).
+The full design is [design/accounts.md](../design/accounts.md).
+
+**Cost:** Honest newcomers wear the same unknown label as anyone hiding a bot,
+until they claim. Guest rows accumulate at one per drive-by page load.
+Smurfing is free by construction, bounded by placement convergence rather than
+prevented. And the roster message grows a label field every client must
+render.
+
+**Reconsider if:** playtests read unknown as an accusation rather than a plain
+fact, in which case the label needs softer words rather than different
+mechanics. Or if unclaimed churn makes ratings in the low tiers meaningless,
+at which point rated play may need an `admission` bar of `claimed` by default.

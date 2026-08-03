@@ -148,8 +148,9 @@ same one and is paired with whoever else is waiting there, which needs no
 matchmaker anywhere else in the system. The client already picks the fullest
 instance below its cap, so waiting players collect in one room by default. The
 limit is honest: pairing is only as good as one room's queue. A queue that spans
-a whole deployment belongs to the meta-layer matchmaker in
-[decision 11](../architecture/decisions.md), not to a directory.
+a whole deployment belongs to a meta-layer matchmaker, per
+[decision 30](../architecture/decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list),
+not to a directory.
 
 The module still owns the rules: round state, spawns, the countdown, weapon
 lockout during warmup, the win condition, and the forfeit timer. It uses the same

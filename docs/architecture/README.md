@@ -26,7 +26,8 @@ which of the two it is, and where a decision is still open it says so.
 | [catalog.md](catalog.md) | The one artifact with an author: every zone, credential and ban, and what validation rejects |
 | [discovery.md](discovery.md) | Registration, credentials, verification, the wire format, how a client finds a game |
 | [admin.md](admin.md) | The operator web UI: what it observes, what it edits, what it may command |
-| [hosting.md](hosting.md) | What a room costs, why the bill is egress, the provider choice, Docker, Nakama's database |
+| [meta-layer.md](meta-layer.md) | Accounts, session tokens, the rated event log, and the one service allowed a database |
+| [hosting.md](hosting.md) | What a room costs, why the bill is egress, the provider choice, Docker, the meta-layer's database |
 | [deployment.md](deployment.md) | The arrangement on a real host: Caddy, hostname routing, provisioning with nobody logged in |
 | [networking.md](networking.md) | Transports, packet model, snapshots and inputs, lag response, anti-cheat |
 | [ai-runtime.md](ai-runtime.md) | Where bots run, how they perceive and fly, and why they cannot cheat |

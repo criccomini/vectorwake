@@ -123,9 +123,9 @@ belongs in the architecture documents at all.
 
 ## What we chose
 
-**Vultr, for everything.** Arena servers, directories, Nakama, and managed
-Postgres, all as Docker containers on plain instances, with the database as a
-managed service. See [decision 27](decisions.md).
+**Vultr, for everything.** Arena servers, directories, the meta-layer, and
+managed Postgres, all as Docker containers on plain instances, with the
+database as a managed service. See [decision 27](decisions.md).
 
 | | Regions | Egress | Managed Postgres | Ops |
 |---|---|---|---|---|
@@ -206,7 +206,7 @@ OVHcloud is a European and North American answer only.
 
 Everything ships as a container, and with the database managed there is nothing
 left on a disk we own that needs backing up. Arena servers, directories and
-Nakama are all stateless; the database is a connection string.
+the meta-layer are all stateless; the database is a connection string.
 
 **Host networking, not bridge.** Docker's default publishes ports through NAT
 and a userland proxy, which adds latency, hides the client's source address, and
@@ -234,12 +234,12 @@ binary linking the C core, which lands in the low tens of megabytes on a
 distroless or Alpine base, and small images are what make a deploy to a dozen
 regions unremarkable.
 
-## Nakama and the database
+## The meta-layer and the database
 
-Nakama needs PostgreSQL or CockroachDB and ships official compose files for
-both; Postgres is the pick, since CockroachDB only earns its complexity across
-regions and the meta-layer's traffic does not justify it. It exposes 7349 for
-gRPC, 7350 for REST and WebSocket, and 7351 for its console.
+The meta-layer is our own service per
+[decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list),
+and it is the one piece of the stack that needs PostgreSQL. Plain Postgres,
+because its traffic is logins and rated event batches, which stresses nothing.
 
 Buy the database rather than running it. Arena servers and directories hold
 nothing, so losing one costs capacity and nothing else; an identity and rating
@@ -248,27 +248,28 @@ rebuilding, because it is not derived from anything. Running it in a container o
 a bind mount would quietly turn one instance into a machine we can never lose,
 which is the exact property the rest of the design works to avoid.
 
-Put the database in the same region as the Nakama container. Nakama talks to it
-constantly and is sensitive to that latency in a way that players are not, and
+Put the database in the same region as the meta-layer's container. The service
+talks to it constantly and is sensitive to that latency in a way that players are not, and
 keeping both inside one provider's network keeps the chatter off the public
 internet. Managed Postgres being available in all 33 Vultr regions is what makes
 that free to arrange.
 
-One caution on operations: Nakama runs schema migrations on startup, against a
-database holding every account. That is the highest-risk moment in this stack,
-and it deserves a restore-tested backup and a rehearsal on a copy before a
-version bump reaches production.
+One caution on operations: a schema migration runs against a database holding
+every account. That is the highest-risk moment in this stack, and it deserves
+a restore-tested backup and a rehearsal on a copy before it reaches
+production.
 
 Note the cost shape, because it is counterintuitive. The arena fleet for 200
-players is a few dollars a month. A small instance for Nakama plus managed
-Postgres is roughly $20. **The meta-layer costs several times the entire
-game-serving fleet, and nearly all of it is the database.** That puts a number on
-[decision 11](decisions.md)'s warning that an unused dependency is a tax:
-adopting Nakama before friends and leaderboards are wanted roughly quadruples the
-bill.
+players is a few dollars a month. The meta-layer itself is the same binary in
+one more container on a box already paid for, so what adopting it adds is the
+managed database, roughly $15 a month. **The database costs several times the
+entire game-serving fleet.** That is less than the $20 or so
+[decision 27](decisions.md) priced when the plan was Nakama, and the warning
+attached to that number still holds: it is a tax worth paying only once there
+are accounts to put in it.
 
-And keep decision 11's other rule literal. An arena server never makes a blocking
-call to Nakama inside a tick.
+And keep decision 11's surviving rule literal. An arena server never makes a
+blocking call to the meta-layer inside a tick.
 
 ## The shape of a deployment
 

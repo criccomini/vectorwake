@@ -14,7 +14,7 @@
 | M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities, persistence |
 | M5.5 Defold client | Done: real core as a native extension, builds for host and browser, predicts against a live zone |
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and the games list in the menu |
-| M6 platforms | Blocked on accounts, not on code. See below |
+| M6 platforms | Accounts designed, not built. Steam and consoles still wait on credentials |
 | M7 the fleet | Designed, not built. The directory, catalog and zone selection below |
 
 What M6 asked for that is code has landed. The bot ladder is calibrated by
@@ -22,9 +22,12 @@ an offline tournament and seeds every zone; ratings show as tiers once a
 pilot has earned one; the client takes touch input; and a directory service
 lists live zones, which the client's menu offers as the games you can join.
 
-What remains is not engineering. Steam needs a partner account, consoles
-need manufacturer approval, and Nakama needs somewhere to run Postgres.
-Nakama would replace `persist.rs` -- storing and ranking a number -- and not
+What remains is partly ours again. Steam still needs a partner account and
+consoles still need manufacturer approval, but identity stopped waiting on
+Nakama: [decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list)
+makes the meta-layer our own service on bought Postgres, designed in
+[design/accounts.md](../design/accounts.md) and [meta-layer.md](meta-layer.md).
+It replaces `persist.rs`, which stores and ranks a number, and not
 `rating.rs`, because damage-weighted attribution across several attackers is
 specific to this game and no general backend has an opinion about it.
 
@@ -35,9 +38,9 @@ as this history goes back. Its palette and panel geometry live on in
 `client/arena/palette.lua` and `client/arena/ui.lua`, which is the part of it
 worth keeping.
 
-M6 needs a Steam partner account, console manufacturer approval, and a
-Postgres deployment for Nakama. Those are credentials and decisions rather
-than engineering, so the milestone waits on somebody making them.
+M6 needs a Steam partner account, console manufacturer approval, and the
+meta-layer built. The first two are credentials the milestone waits on;
+the third is engineering again, designed and ready to write.
 
 The rest of this document is the original plan, kept as written.
 
@@ -158,16 +161,17 @@ written guide, and hosts a game we did not design.
 
 Steam release through `extension-steam`, with Steam identity feeding the account
 system. A touch control prototype that decides whether mobile is a playing
-client or a spectating one. Nakama adopted for identity, friends, parties,
-leaderboards, and the zone directory, per
-[decision 11](decisions.md).
+client or a spectating one. The meta-layer built for accounts and ratings, per
+[decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list)
+and [design/accounts.md](../design/accounts.md), with friends and parties
+deferred until somebody wants them.
 
 Ratings become visible here, computed from the event log M4 has been filling and
 anchored by bot personalities calibrated in offline tournaments, per
 [design/rating.md](../design/rating.md).
 
-Done when a player's name, friends, and rank follow them across zones, and when
-the Steam build and the web build share an account.
+Done when a player's name and rank follow them across zones, and when the
+Steam build and the web build share an account.
 
 Consoles come after this, if at all, and only once
 [platforms.md](platforms.md)'s moderation question has an answer.
@@ -255,9 +259,10 @@ deadline is structural rather than chosen: `ratings.json` beside the process is
 correct while one instance serves a zone and wrong the moment two do. So this has
 to land before the fill ladder's fourth rung ever fires in anger, which makes it
 a prerequisite for a second instance of any zone rather than a milestone free to
-slip. Rated events batched and handed off, and the open question in
-[server.md](server.md) closed. Done when two instances of one zone can both rate
-the same pilot without disagreeing.
+slip. Rated events batch to the meta-layer, per
+[meta-layer.md](meta-layer.md), which closes on paper the question
+[server.md](server.md) used to leave open. Done when two instances of one zone
+can both rate the same pilot without disagreeing.
 
 **M7.8, bots leave the arena process. Built.** A bot server joins the
 deployment as a fourth use of the same binary: one process flying the roster as
