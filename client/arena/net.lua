@@ -109,6 +109,32 @@ local function on_roster(s)
     end
 end
 
+-- A death, with both pilots' rating after the exchange and how many people
+-- contributed to it. The zone works this out and sends it on every death, and
+-- this client used to have no branch for the message at all: ratings arrived
+-- only with a roster, which is sent when somebody joins or leaves, so a pilot
+-- fighting for ten minutes was shown the number they had when they walked in.
+--
+-- The feed itself is drawn from local simulation events rather than from here,
+-- because the client is already stepping the same core and knows who died.
+local function on_kill(s)
+    local victim, killer = string.byte(s, 2), string.byte(s, 3)
+    local vr = i16(string.byte(s, 4), string.byte(s, 5))
+    local kr = i16(string.byte(s, 6), string.byte(s, 7))
+    M.ratings[victim] = vr
+    M.ratings[killer] = kr
+    -- A rated death is a game played, which is what decides whether the number
+    -- is shown at all. Counting it here stops a pilot reading "placing" for a
+    -- whole session after their tenth.
+    for _, ship in ipairs({victim, killer}) do
+        local p = M.pilots[ship]
+        if p then
+            p.games = (p.games or 0) + 1
+            p.tier = M.tier(M.ratings[ship], p.games)
+        end
+    end
+end
+
 local function on_snapshot(s)
     -- header: type, our ship, acked input tick
     local body = string.sub(s, 7)
@@ -166,6 +192,8 @@ local function on_message(s)
         M.connected = true
     elseif kind == S2C_SNAPSHOT then
         on_snapshot(s)
+    elseif kind == S2C_KILL then
+        on_kill(s)
     elseif kind == S2C_ROSTER then
         on_roster(s)
     elseif kind == S2C_BANNER then
