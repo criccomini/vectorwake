@@ -7,8 +7,9 @@ simulation core itself -- so what is being verified is that ships move, energy
 drains and recharges, weapons appear, kills land, and the numbers the server
 sends are numbers the core accepts.
 
-  pilot.py wss://directory.vectorwake.net war 4 30   # browse, then join
+  pilot.py wss://play.vectorwake.net/dir war 4 30    # browse, then join
   pilot.py --direct ws://127.0.0.1:9001 "" 2 20      # dial one arena, no browse
+  pilot.py --direct --adapt ws://127.0.0.1:9001 "" 3 15   # steer the input clock
 
 Browsing rather than taking an address is not incidental. Which instance serves
 which zone is decided by the instances themselves and differs between deploys,
@@ -27,6 +28,13 @@ C2S_JOIN, C2S_INPUT, C2S_SHIP = 1, 2, 5
  S2C_ZONE, S2C_DENIED, S2C_MAP, S2C_SETTINGS) = 1, 2, 3, 4, 5, 6, 7, 9, 10
 
 BTN_LEFT, BTN_RIGHT, BTN_THRUST, BTN_REVERSE, BTN_FIRE, BTN_BOMB = 1, 2, 4, 8, 16, 32
+
+# Where the clock wants to sit, in ticks of input lag. Negative is an input that
+# reaches the server before the tick it belongs to, which is the point; two ticks
+# of margin absorbs ordinary jitter without running so far ahead that remote
+# ships have to coast for it. The slack is the width of the dead band, so a clock
+# that is comfortably early is left alone rather than trimmed every snapshot.
+LAG_TARGET, LAG_SLACK, LEAD_MAX = -2, 3, 40
 
 
 def lib():
@@ -48,7 +56,7 @@ def lib():
 
 
 class Pilot:
-    def __init__(self, url, zone, name, seconds, seed):
+    def __init__(self, url, zone, name, seconds, seed, lead=0, adapt=False):
         self.url, self.zone, self.name, self.seconds = url, zone, name, seconds
         self.rng = random.Random(seed)
         self.L = lib()
@@ -61,6 +69,24 @@ class Pilot:
         self.seen = dict(moved=False, fired=False, energy_lo=None, energy_hi=None,
                          ships=0, flags=0, my_kills=0, my_deaths=0)
         self.pred = dict(checks=0, worst=0, sum=0, corrections=0, worst_corr=0)
+        # How many ticks after a client stamps an input the server is actually
+        # running it. Both numbers are already on the wire: a snapshot carries
+        # the server's own tick in its packed state and, in its header, the
+        # highest input tick it has received from this client.
+        #
+        # This is the root cause of every timing artifact, so it is worth a
+        # number of its own rather than being inferred from position error. A
+        # held key that starts late costs sub-pixel accuracy, because thrust is
+        # an acceleration; anything that sets velocity outright, which in this
+        # game is the safe-zone brake, costs speed times this.
+        self.lag = dict(n=0, sum=0, worst=0, best=None)
+        # The server's clock as last seen, and when that was, which together
+        # give `est_tick` its estimate of where the server is now.
+        self.srv_tick = None
+        self.srv_at = 0.0
+        self.lead = lead
+        self.adapt = adapt
+        self.lead_seen = dict(lo=lead, hi=lead)
         self.first_snap_at = None
         self.last_snap_at = None
         self.map_fp = None
@@ -88,10 +114,65 @@ class Pilot:
                       self.L.vw_alive(self.c, self.me),
                       self.L.vw_deaths(self.c, self.me))
 
+    def est_tick(self):
+        """Which server tick the input being sent now belongs to.
+
+        The last snapshot said what tick the server was on when it packed it,
+        and the simulation runs at a fixed 100 Hz, so the wall clock since then
+        is the rest of the estimate. `lead` is how far ahead of that to aim: at
+        zero the input is stamped for a tick the server has already run by the
+        time it arrives, which is where this started.
+        """
+        if self.srv_tick is None:
+            return 1
+        elapsed = int((time.monotonic() - self.srv_at) * 100)
+        return max(1, self.srv_tick + elapsed + 1 + self.lead)
+
+    def note_input_lag(self, acked):
+        """Ticks between stamping an input and the server running it.
+
+        `acked` is the newest input tick this client sent that the server has
+        seen; `vw_tick` after applying the snapshot is the tick the server was
+        on when it packed it. The gap is the round trip expressed in the only
+        unit that matters to the simulation.
+        """
+        # Not until the clock estimate has settled. The first inputs go out
+        # stamped 1, before any snapshot has said what tick the server is on,
+        # and counting those measures the join rather than the scheduling.
+        if acked <= 1 or self.me is None or self.n["snaps"] < 10:
+            return
+        gap = self.srv_tick - acked
+        # A client whose clock leads the server's reports a negative gap, which
+        # is the input arriving before the tick it belongs to. That is the goal
+        # state rather than an error, so it is recorded rather than clamped.
+        self.lag["n"] += 1
+        self.lag["sum"] += gap
+        self.lag["worst"] = max(self.lag["worst"], gap)
+        self.lag["best"] = gap if self.lag["best"] is None else min(self.lag["best"], gap)
+
+        # The control law the client uses, run here first so it can be watched
+        # converging against a real socket before it goes into Lua nobody can
+        # unit test. One tick per snapshot, which is twenty a second: fast
+        # enough to settle in under a second from a cold start, slow enough that
+        # the clock never jumps, and a jump is itself a correction.
+        if self.adapt:
+            if gap > LAG_TARGET:
+                self.lead += 1
+            elif gap < LAG_TARGET - LAG_SLACK:
+                self.lead -= 1
+            self.lead = max(0, min(self.lead, LEAD_MAX))
+            self.lead_seen["lo"] = min(self.lead_seen["lo"], self.lead)
+            self.lead_seen["hi"] = max(self.lead_seen["hi"], self.lead)
+
     def note_snapshot(self, payload):
         if self.L.vw_apply(self.c, payload, len(payload)) != 0:
             self.n["bad"] += 1
             return
+        # The server's clock, straight out of the state it just sent, and the
+        # moment it landed here. Everything this harness says about timing is
+        # measured from this pair.
+        self.srv_tick = self.L.vw_tick(self.c)
+        self.srv_at = time.monotonic()
         if getattr(self, "_pred", None) is not None and self.me is not None:
             px, py, palive, pdeaths = self._pred
             ax, ay = self.L.vw_x(self.c, self.me), self.L.vw_y(self.c, self.me)
@@ -142,16 +223,23 @@ class Pilot:
                 # Real flight: hold a turn for a while, thrust, and fire in
                 # bursts. Held rather than tapped, because the server samples
                 # buttons once a tick.
-                t, turn, fire = 0, BTN_LEFT, False
+                #
+                # The tick stamped on an input is the client's estimate of which
+                # server tick it belongs to, which is what the real client sends
+                # and what makes `input_lag` mean anything. It used to be a bare
+                # counter from one, so the server echoed back a number with no
+                # relation to its own clock and the harness could not have
+                # noticed a scheduling problem if it tried.
+                n, turn, fire = 0, BTN_LEFT, False
                 while True:
-                    t += 1
-                    if t % 20 == 0:
+                    n += 1
+                    if n % 20 == 0:
                         turn = self.rng.choice([BTN_LEFT, BTN_RIGHT, 0])
-                    if t % 12 == 0:
+                    if n % 12 == 0:
                         fire = not fire
                     b = turn | BTN_THRUST | (BTN_FIRE if fire else 0)
                     try:
-                        await ws.send(struct.pack("<BHI", C2S_INPUT, b, t))
+                        await ws.send(struct.pack("<BHI", C2S_INPUT, b, self.est_tick()))
                         self.last_buttons = b
                     except Exception:
                         return
@@ -195,7 +283,9 @@ class Pilot:
                         if self.n["snaps"] > 2:
                             self.predict_error(getattr(self, "last_buttons", 0))
                         self.n["bytes"] += len(m)
+                        acked = struct.unpack("<I", body[1:5])[0]
                         self.note_snapshot(body[5:])   # ship, then last_input u32
+                        self.note_input_lag(acked)
                     elif tag == S2C_ROSTER:
                         self.n["roster"] += 1
                     elif tag == S2C_KILL:
@@ -229,7 +319,13 @@ class Pilot:
                 f"{(self.pred['sum']/self.pred['checks'] if self.pred['checks'] else 0):.2f}"
                 f" over {self.pred['checks']}"
                 f" corrections={self.pred['corrections']}"
-                f"(worst {self.pred['worst_corr']:.1f}px)")
+                f"(worst {self.pred['worst_corr']:.1f}px)"
+                f" input_lag(mean/best/worst ticks)="
+                f"{(self.lag['sum']/self.lag['n'] if self.lag['n'] else 0):.1f}/"
+                f"{self.lag['best'] if self.lag['best'] is not None else 0}/"
+                f"{self.lag['worst']}"
+                f" lead={self.lead}"
+                f"({self.lead_seen['lo']}..{self.lead_seen['hi']})")
 
 
 async def resolve(directory, zone):
@@ -253,17 +349,28 @@ async def resolve(directory, zone):
 
 async def main():
     args = sys.argv[1:]
-    direct = False
+    direct, lead = False, 0
     if args and args[0] == "--direct":
         direct, args = True, args[1:]
+    # Ticks to stamp inputs ahead of the estimated server clock. Zero is a
+    # client that aims at where the server already was, which is what the game
+    # shipped with; a few ticks is what it takes for an input to arrive before
+    # the tick it belongs to.
+    if args and args[0] == "--lead":
+        lead, args = int(args[1]), args[2:]
+    adapt = False
+    if args and args[0] == "--adapt":
+        adapt, args = True, args[1:]
     url, zone, count, seconds = args[0], args[1], int(args[2]), float(args[3])
     if not direct:
         arena = await resolve(url, zone)
         print(f"=== directory {url} says {zone!r} is at {arena}")
         url = arena
-    pilots = [Pilot(url, zone, f"probe{i:02d}", seconds, 1000 + i) for i in range(count)]
+    pilots = [Pilot(url, zone, f"probe{i:02d}", seconds, 1000 + i, lead, adapt)
+              for i in range(count)]
     done = await asyncio.gather(*(p.fly() for p in pilots), return_exceptions=True)
-    print(f"=== {count} pilots, {seconds:.0f}s, {url} zone={zone}")
+    print(f"=== {count} pilots, {seconds:.0f}s, {url} zone={zone} "
+          f"lead={lead}{' adaptive' if adapt else ''}")
     for d in done:
         print(d.report() if isinstance(d, Pilot) else f"  harness error: {d!r}")
 

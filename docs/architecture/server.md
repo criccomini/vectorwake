@@ -80,10 +80,17 @@ per match, per the amendment to [decision 16](decisions.md). See
 
 ## Authority and validation
 
-Inputs are the only thing a client may assert. An input command carries a tick,
-a sequence number, a button bitfield, and the aim heading. The server clamps the
-tick to a window around its own clock, rejects duplicates, and feeds the rest to
-the simulation.
+Inputs are the only thing a client may assert. An input command carries a button
+bitfield and the tick it applies to, and nothing else: there is no aim field,
+per [decision 17](decisions.md), and no sequence number, because the tick
+already orders and deduplicates.
+
+The server honours that tick. An input for a tick it has not reached waits in a
+bounded per-player queue, a repeat for a tick already queued replaces it, and a
+lead beyond a second is clamped rather than refused, since a drifted clock is a
+client to correct and not one to disconnect. An input for a tick already
+simulated applies immediately, which is what the server did with every input
+before scheduling existed and is still right for a client running no lead.
 
 Positions, deaths, damage, prize pickups, flag claims, and goals are outputs of
 `sim_step` and cannot be asserted by a client. This deletes the entire class of

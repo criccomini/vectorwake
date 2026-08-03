@@ -56,11 +56,22 @@ every other tick or so:
 
 ```
 input_command {
+  u16 buttons         // thrust, reverse, left, right, fire, bomb, use, slot
   u32 tick            // the tick this input applies to
-  u16 seq             // monotonic, for ack and dedup
-  u16 buttons         // thrust, reverse, left, right, fire, bomb, specials
 }
 ```
+
+The tick is honoured rather than advisory, and that distinction is the whole of
+the input path. An input naming a tick the arena has not reached waits in a
+per-player queue until it does, so a client whose clock runs ahead of the
+server's applies the same buttons on the same tick number the server will. One
+naming a tick already simulated takes effect immediately instead, because the
+server must not rewind a room to accommodate one late packet.
+
+A tick with nothing scheduled reuses whatever that pilot was already holding.
+That is the right default rather than a fallback of convenience: a held key is
+the ordinary case, so a lost input reads as a continued hold instead of a
+stutter.
 
 There is no aim field. Aiming is the nose, per
 [decision 17](decisions.md), so rotation buttons are the whole steering
@@ -241,11 +252,34 @@ The response is the four-metric, four-threshold model described in
 [server.md](server.md). It stays in the server rather than in the simulation,
 because it is policy and policy is configuration.
 
-Clock sync is explicit. The client estimates the server's tick from exchanged
-timestamps and runs its prediction slightly ahead so that its input for tick T
-arrives before the server simulates T. That lead adjusts with measured latency
-and is the client's only latency compensation. We are not doing lag compensation
-by rewinding the server, and the reason is in the next section.
+Clock sync is explicit, and it needs no timestamps. Every snapshot header
+already carries the newest input tick the server has received from that client,
+so the gap between it and the tick the snapshot was packed on *is* the round
+trip, measured in the only unit the simulation cares about. A positive gap means
+inputs are arriving after the ticks they name.
+
+The client steers on that number: one tick of lead added or given back per
+snapshot, twenty times a second, aiming to sit about two ticks early with a dead
+band so a clock that is comfortably ahead is left alone. From a cold start it
+settles in under a second, and it never jumps, because a jump is itself the
+correction this exists to remove.
+
+Measured against a local arena, three pilots for fifteen seconds. Without a
+lead, inputs ran a mean of 2.7 ticks late and never once arrived early. With the
+loop, a mean of 3.4 ticks early, settling at a lead of six to eight; the only
+late inputs are in the first second while it converges. That is on loopback,
+where the whole figure is send cadence and snapshot timing rather than distance,
+so a real link starts further behind and the loop simply settles further ahead.
+
+The cost of running ahead is paid by everyone else on your screen. Remote ships
+have no inputs to predict from and coast on their last known velocity between
+snapshots, so a larger lead means a longer coast. Frictionless flight makes
+coasting an unusually good predictor, which is why the cost is mild, but it is
+the reason the lead is the smallest number that works rather than a comfortable
+margin.
+
+That lead is the client's only latency compensation. We are not doing lag
+compensation by rewinding the server, and the reason is in the next section.
 
 ## Anti-cheat, and what we are not doing
 

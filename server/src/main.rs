@@ -96,12 +96,78 @@ const S2C_SETTINGS: u8 = 10;
 
 struct Player {
     ship: u8,
+    /// What this pilot is currently holding down, which is what a tick with no
+    /// scheduled input uses. A held key is the common case, so a lost packet
+    /// reads as a continued hold rather than a stutter.
     buttons: u16,
+    /// Inputs stamped for ticks this arena has not reached yet, oldest first.
+    ///
+    /// A client that runs its clock ahead of ours sends an input before the
+    /// tick it belongs to, and this is where it waits. Both ends then apply the
+    /// same buttons on the same tick number, which is the whole point: the
+    /// alternative, taking each packet as the current state on arrival, means
+    /// the pilot brakes several ticks before the server does and sees itself
+    /// corrected back into motion.
+    pending: std::collections::BTreeMap<u32, u16>,
     /// Highest input tick this client has sent, echoed back in snapshots so
-    /// it knows how far its prediction has been confirmed.
+    /// it knows how far its prediction has been confirmed, and so it can
+    /// measure how late its inputs are arriving.
     last_input_tick: u32,
     name: String,
     tx: mpsc::Sender<Message>,
+}
+
+/// How far ahead of the arena's own tick a scheduled input may be stamped.
+///
+/// A second at 100 Hz, which is far more lead than a playable connection needs
+/// and short enough that a client cannot queue up a minute of flying. Anything
+/// past it is clamped rather than refused, because a clock that has drifted is
+/// a client to correct, not one to disconnect.
+const INPUT_LEAD_MAX: u32 = 100;
+
+/// Scheduled inputs held per player. At one input per tick and a lead well
+/// under the cap this is never near full; it exists so a client that floods
+/// cannot grow the arena's memory.
+const INPUT_QUEUE_MAX: usize = 128;
+
+impl Player {
+    /// File an input for the tick it names.
+    ///
+    /// An input for a tick already simulated is applied now instead. That is
+    /// the old behaviour and the right fallback: the server must not rewind the
+    /// room to honour one late packet, which is the lag compensation
+    /// docs/architecture/networking.md rules out, and a client with no lead at
+    /// all keeps working exactly as it did.
+    fn schedule(&mut self, tick: u32, buttons: u16, now: u32) {
+        self.last_input_tick = self.last_input_tick.max(tick);
+        if tick <= now {
+            self.buttons = buttons;
+            return;
+        }
+        // Keyed by tick, so a repeat of one already spoken for replaces it and
+        // the order is the map's rather than the arrival order's. That matters
+        // because the clamp above can lower a tick, and a queue that assumed
+        // arrival order would then hand out inputs out of sequence.
+        let tick = tick.min(now + INPUT_LEAD_MAX);
+        self.pending.insert(tick, buttons);
+        while self.pending.len() > INPUT_QUEUE_MAX {
+            let oldest = *self.pending.keys().next().expect("non-empty");
+            self.pending.remove(&oldest);
+        }
+    }
+
+    /// What this pilot is holding on `now`: the newest input scheduled for this
+    /// tick or any before it, and otherwise whatever they were already holding.
+    fn buttons_at(&mut self, now: u32) -> u16 {
+        while let Some((&t, &b)) = self.pending.iter().next() {
+            if t > now {
+                break;
+            }
+            self.buttons = b;
+            self.pending.remove(&t);
+        }
+        self.buttons
+    }
 }
 
 /// Messages a client may fall behind by before the arena stops queueing for it.
@@ -773,6 +839,7 @@ impl Arena {
             Player {
                 ship,
                 buttons: 0,
+                pending: Default::default(),
                 last_input_tick: 0,
                 name,
                 tx,
@@ -862,10 +929,14 @@ impl Arena {
 
     fn tick(&mut self) {
         let mut inputs: Vec<sim::sim_input> = Vec::with_capacity(32);
-        for p in self.players.values() {
+        // The tick this room is about to run, which is the tick a scheduled
+        // input has to name to be applied here. `world.tick()` is the last one
+        // completed, so the step below produces the one after it.
+        let now = self.world.state.tick + 1;
+        for p in self.players.values_mut() {
             inputs.push(sim::sim_input {
                 ship: p.ship,
-                buttons: p.buttons,
+                buttons: p.buttons_at(now),
             });
         }
         for b in &mut self.bots {
@@ -2107,21 +2178,24 @@ async fn main() {
                         }
                     }
                     C2S_INPUT => {
-                        // buttons: u16, tick: u32. The tick is advisory: the
-                        // server applies inputs when it receives them and
-                        // echoes the number back so the client can reconcile.
+                        // buttons: u16, tick: u32. The tick says which tick this
+                        // input belongs to, and it is honoured: an input for a
+                        // tick this room has not reached waits for it, so a
+                        // client whose clock leads ours applies the same buttons
+                        // on the same tick number we do. One that arrives late
+                        // takes effect now, which is what the server did with
+                        // every input before this and is still the right answer
+                        // for a client with no lead.
                         if data.len() >= 7 {
                             if let Some((room, pid)) = seat {
                                 let buttons = u16::from_le_bytes([data[1], data[2]]);
                                 let t = u32::from_le_bytes([data[3], data[4], data[5], data[6]]);
                                 let mut z = zone.lock().await;
-                                if let Some(p) = z
-                                    .rooms
-                                    .get_mut(room)
-                                    .and_then(|a| a.players.get_mut(&pid))
-                                {
-                                    p.buttons = buttons;
-                                    p.last_input_tick = t;
+                                if let Some(a) = z.rooms.get_mut(room) {
+                                    let now = a.world.state.tick + 1;
+                                    if let Some(p) = a.players.get_mut(&pid) {
+                                        p.schedule(t, buttons, now);
+                                    }
                                 }
                             }
                         }
@@ -2180,6 +2254,98 @@ mod tests {
     fn gun(w: &sim::World, cls: usize) -> (sim::sim_fire_pattern, sim::sim_weapon_spec) {
         let p = w.cfg.patterns[w.cfg.classes[cls].trigger[0][0] as usize];
         (p, w.cfg.specs[p.spec as usize])
+    }
+
+    // ---- input scheduling --------------------------------------------------
+
+    fn a_player() -> Player {
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        // Held so the sender does not see a closed channel, though nothing here
+        // sends: these tests are about which tick a button lands on.
+        std::mem::forget(rx);
+        Player {
+            ship: 0,
+            buttons: 0,
+            pending: Default::default(),
+            last_input_tick: 0,
+            name: "probe".into(),
+            tx,
+        }
+    }
+
+    /// The point of the whole exercise. A client running its clock ahead sends
+    /// an input before the tick it belongs to, and it has to wait there rather
+    /// than taking effect on arrival, or the two ends brake on different ticks.
+    #[test]
+    fn an_input_waits_for_the_tick_it_names() {
+        let mut p = a_player();
+        p.schedule(105, sim::BTN_FIRE, 100);
+        for t in 100..105 {
+            assert_eq!(p.buttons_at(t), 0, "fire took effect early, on tick {t}");
+        }
+        assert_eq!(p.buttons_at(105), sim::BTN_FIRE, "fire missed its own tick");
+        // And stays held afterwards, because a key held down is the common case
+        // and a tick with nothing scheduled must not read as hands off.
+        assert_eq!(p.buttons_at(106), sim::BTN_FIRE);
+        assert_eq!(p.buttons_at(140), sim::BTN_FIRE);
+    }
+
+    /// A client with no lead, which is every client until one ships with it.
+    /// Its inputs name ticks that have already run, and the honest answer is to
+    /// apply them now: the server must not rewind the room for one late packet.
+    #[test]
+    fn an_input_that_arrives_late_applies_now() {
+        let mut p = a_player();
+        p.schedule(90, sim::BTN_THRUST, 100);
+        assert_eq!(p.buttons_at(100), sim::BTN_THRUST);
+        assert!(p.pending.is_empty(), "a late input has nothing to wait for");
+    }
+
+    /// Ticks arrive in order on this transport, but the clamp can lower one, so
+    /// the queue is keyed by tick rather than by arrival. Out of order in, in
+    /// order out.
+    #[test]
+    fn scheduled_inputs_come_out_in_tick_order() {
+        let mut p = a_player();
+        p.schedule(112, sim::BTN_FIRE, 100);
+        p.schedule(105, sim::BTN_THRUST, 100);
+        assert_eq!(p.buttons_at(105), sim::BTN_THRUST);
+        assert_eq!(p.buttons_at(111), sim::BTN_THRUST);
+        assert_eq!(p.buttons_at(112), sim::BTN_FIRE);
+    }
+
+    /// A repeat for a tick already spoken for is the client correcting itself
+    /// inside the window, so the newer one is what it meant.
+    #[test]
+    fn the_newest_input_for_a_tick_wins() {
+        let mut p = a_player();
+        p.schedule(105, sim::BTN_FIRE, 100);
+        p.schedule(105, sim::BTN_THRUST, 100);
+        assert_eq!(p.buttons_at(105), sim::BTN_THRUST);
+    }
+
+    /// A clock that has drifted is a client to correct, not one to disconnect,
+    /// so an absurd lead is clamped rather than refused. Without this a client
+    /// could queue a minute of flying and then stop sending.
+    #[test]
+    fn a_wild_lead_is_clamped_rather_than_honoured() {
+        let mut p = a_player();
+        p.schedule(100_000, sim::BTN_FIRE, 100);
+        assert_eq!(
+            *p.pending.keys().next().unwrap(),
+            100 + INPUT_LEAD_MAX,
+            "an input a minute ahead should land at the ceiling"
+        );
+    }
+
+    /// And a client that floods cannot grow the arena's memory with it.
+    #[test]
+    fn the_input_queue_is_bounded() {
+        let mut p = a_player();
+        for t in 1..=(INPUT_QUEUE_MAX as u32 * 3) {
+            p.schedule(100 + t, sim::BTN_FIRE, 100);
+        }
+        assert!(p.pending.len() <= INPUT_QUEUE_MAX, "queue grew to {}", p.pending.len());
     }
 
     /// The compiled ladder has to name the roster this binary actually flies,
