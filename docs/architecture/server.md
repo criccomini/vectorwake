@@ -64,11 +64,13 @@ template resolution and the unload grace period that used to be described here
 are all gone with [decision 23](decisions.md); capacity is many processes and the
 container platform schedules them.
 
-A tick is: drain the input queue, let AI controllers add their inputs, call
-`sim_step`, hand the resulting events to modules, to the rating layer, and to the
-snapshot builder, then enqueue any persistence writes. At 100 Hz that is a 10 ms
-budget, and a 40-player arena should use a small fraction of it, with under 1 ms
-going to AI per [ai-runtime.md](ai-runtime.md). Measured tick cost is in memory
+A tick is: drain the input queue, call `sim_step`, hand the resulting events to
+modules, to the rating layer, and to the snapshot builder, then enqueue any
+persistence writes. At 100 Hz that is a 10 ms budget, and a 40-player arena
+should use a small fraction of it. Bot inputs arrive in the same queue as
+everyone else's, from the bot server, per [ai-runtime.md](ai-runtime.md) and
+[decision 29](decisions.md#29-a-bot-is-a-client); what bots cost this process
+is snapshot streams, not AI time. Measured tick cost is in memory
 #75: 64 ships ran at 205 microseconds before the weapon-spec cache took a third
 off that.
 

@@ -1,24 +1,72 @@
 # AI runtime
 
 How the bots described in [design/ai-players.md](../design/ai-players.md)
-actually run. The design constraint that shapes everything here: a bot produces
-inputs and nothing else.
+actually run. The design constraint that shapes everything here survives every
+other change in this document: a bot produces inputs and nothing else.
 
 ## Placement
 
-Bots run inside the zone server process, in the arena's own tick, after the
-snapshot builder has produced visibility and before `sim_step`. They are not a
-separate process and they are not inside the sim core.
+Bots run in the bot server, a separate process that connects to arenas over
+WebSocket exactly as the Defold client does. One bot server flies a whole
+deployment's roster: each bot is one connection, one world decoded from the
+snapshots the arena sends, and one brain emitting input messages. The arena
+server keeps no bot code at all.
 
-Not separate, because an in-process bot costs no sockets, no encoding, and no
-round trip, and forty of them per arena would otherwise triple our own traffic.
+This reverses the placement this document used to argue for. Bots ran inside
+the arena's own tick, reading the `World` directly and injecting inputs
+without a socket, because in-process bots cost no encoding and no round trip,
+and forty per arena would otherwise have tripled our own traffic. That
+arithmetic was written before the fleet existed. The deployment is containers
+on one host, a bot server beside the arenas pays loopback prices for its
+bandwidth, and the encoding cost shrank from an argument into a line item (see
+the budget below).
 
-Not inside the sim core, because the core stays deterministic, allocation-free,
-and portable, and a behavior layer wants hash maps, floats, and pathfinding
-scratch space. Keeping AI out of the core also means the client's copy of the
-core carries no AI code, which matters for the web bundle.
+Three things were bought by the reversal.
+
+The protocol gets exercised by its own population. The serious bugs this
+deployment has shipped lived on the wire path, and the in-process bots never
+touched it: the pong stranded on the wrong half of a split stream, which no
+browser ever noticed and which dropped every other kind of client at forty
+seconds; the recharge overflow that reached `INT32_MIN` and that only a
+harness decoding snapshots ever saw; the prediction divergence caused by a
+setting changing without travelling, visible on no other check. Bots that are
+clients walk that path all day in every arena and fail loudly the moment it
+breaks.
+
+"A bot knows no more than a player" stops being discipline and becomes
+structure. In-process, the property was `impl Bot` taking no `&World`, which a
+refactor could quietly lose, and the scan feeding it read true server state:
+those bots would have seen through cloak on the day cloak existed. A bot
+behind the protocol receives the visibility-filtered snapshot a human at its
+position would receive, because there is nothing else on the socket.
+
+There is one bot system instead of two. The previous design kept an in-process
+path for filler AI and promised a protocol path for third parties. Now the
+protocol path is the only path and the house roster is its proof of life: if
+our own bots cannot live on it, nobody's can.
+
+An outage of the bot server empties rooms of bots and does nothing else.
+Arenas keep serving, humans keep playing, and the population returns when the
+process does. That is the same bargain the directory already makes.
+
+## A bot is a declared client
+
+`C2S_JOIN` carries a bot declaration. A declared bot is labeled in the roster
+the wire already sends, takes a ship but no seat under `max_players`, which
+bounds humans, and is the first thing dropped when a full room must seat an
+arriving human. Any client may declare, and a well-behaved bot is one that
+does.
+
+House bots also authenticate, presenting a credential from the same table that
+authorises arena pools (see [discovery.md](discovery.md)). The split is where
+trust lands: anyone's declared bot is welcome, labeled, and rated like any
+pilot, but only a house bot's career anchors the rating ladder, because the
+anchor is the scale's fixed point and an impostor wearing its name would bend
+every rating in the zone.
 
 ## The interface
+
+The brain's contract does not change:
 
 ```rust
 trait Controller {
@@ -26,39 +74,43 @@ trait Controller {
 }
 ```
 
-`InputCommand` is byte-identical to what arrives from a network client. The arena
-does not know which players are bots when it applies inputs, and cannot be made
-to care.
-
-This is the enforcement mechanism for "bots cannot cheat." There is no second
-channel into the simulation, so a bot with a bug is a bot that plays badly rather
-than a bot that teleports.
+`InputCommand` travels as `C2S_INPUT`, byte-identical to a human client's,
+because it is a client's. The arena applies inputs without knowing which
+connections declared themselves bots; the declaration matters at the door, for
+seats and labels and eviction, and never inside the tick. There is no second
+channel into the simulation, so a bot with a bug is a bot that plays badly
+rather than a bot that teleports. That used to be a promise kept by code
+review. It is now kept by the protocol.
 
 ## Perception
 
-A bot's view comes from the same visibility filter that builds snapshots for
-human clients. If a cloaked ship would not be in a human's snapshot at that
-position, it is not in the bot's perception either.
+A bot decodes snapshots through the simulation core, the way the client and
+`tools/pilot` do: map and settings arrive at join, snapshots at 20 Hz, and the
+bot server unpacks them into a world the brain reads through the same `own`
+and `scan` the calibration harness uses. Whatever visibility filter the server
+applied before sending is the filter the bot sees through.
 
-Perception refreshes at 10 to 20 Hz rather than every tick, and each bot's
-refresh is offset so the cost spreads across ticks. Between refreshes the bot
-works from a slightly stale picture, which is both cheaper and more human.
+No prediction. Bots look at 10 to 20 Hz and work from a stale picture between
+looks, which is both cheaper and more human, so a 20 Hz snapshot stream over
+loopback is fresher than the cadence the brain was tuned against. The bot
+server holds the latest decoded state and lets each brain look on its own
+schedule, offset per bot so the cost spreads.
 
-It reaches sixty tiles, which is the radar's own reach. That bound arrived after
-the map did, and it exposed something the unbounded version had been hiding: a
-pilot who could see nobody produced no input at all and stopped where it stood.
-On a map 1024 tiles across with starts 256 tiles apart, "nobody in sight" is the
-ordinary state of a fresh room, so the arena came up as a gallery of statues --
-which is what a player reported, in those words. A pilot with nothing in sight
-now heads for the contested middle, offset per pilot and re-rolled on arrival,
-because that is where the map keeps its furniture and therefore where anybody
-else looking for a fight is also going. Measured on the ladder: 539 kills over
-168 bouts without a rally, 2634 with one.
+Sight reaches sixty tiles, the radar's own reach. That bound arrived after the
+map did, and it exposed something the unbounded version had been hiding: a
+pilot who could see nobody produced no input at all and stopped where it
+stood. On a map 1024 tiles across with starts 256 tiles apart, "nobody in
+sight" is the ordinary state of a fresh room, so the arena came up as a
+gallery of statues, which is what a player reported, in those words. A pilot
+with nothing in sight now heads for the contested middle, offset per pilot and
+re-rolled on arrival, because that is where the map keeps its furniture and
+therefore where anybody else looking for a fight is also going. Measured on
+the ladder: 539 kills over 168 bouts without a rally, 2634 with one.
 
 Reaction time is modeled as a queue: a stimulus entering perception is not
-visible to the decision layer until its personality's reaction delay has elapsed.
-This is why a weak bot is slow to respond rather than artificially inaccurate,
-and it produces mistakes that look like the mistakes people make.
+visible to the decision layer until its personality's reaction delay has
+elapsed. This is why a weak bot is slow to respond rather than artificially
+inaccurate, and it produces mistakes that look like the mistakes people make.
 
 ## Deciding
 
@@ -115,15 +167,10 @@ rotation and thrust that reduce the error while accounting for current momentum
 and stopping distance. Braking distance is `v² / 2a` from the ship's own thrust
 setting, so a heavy ship starts slowing earlier, exactly as a human learns to.
 
-Wall avoidance uses the sim core's collision sweep rather than a second copy of
-the physics. The core exposes read-only queries for this:
-
-```c
-bool sim_sweep_blocked(const sim_state*, sim_vec from, sim_vec to, int radius);
-int  sim_ticks_to_wall(const sim_state*, uint16_t ship_id, int max_ticks);
-```
-
-If the AI ever needs to know how the world moves, it asks the world.
+Wall avoidance works from the map the bot was sent at join, walked the same way
+the brain's line-of-sight test walks it. The bot holds no second copy of the
+physics; if it needs to know how the world moves, it reads the world it
+decoded.
 
 ## Aiming
 
@@ -137,55 +184,102 @@ Bombs need arc and timing rather than a lead point, mines need placement rules
 tied to chokepoints from the coarse grid, and bursts are a panic button with a
 threshold.
 
+## The population director
+
+The policy the bot server runs. [design/ai-players.md](../design/ai-players.md)
+names its principles; this is the loop.
+
+The bot server browses a directory as a client does and reads the reply it
+already gets, which carries `players` and `bots` per zone and per instance. For
+every listed instance it holds each room at the zone's fill: `bot_fill` in the
+catalog, a share of `max_ships`, defaulting to 0.8. Bots make up the
+difference between the target and everyone else present. An empty 64-seat room
+gets 51 bots, the first human tips the room over target and one bot stands
+down, and a room with humans past the target holds no bots at all.
+
+The unfilled fifth of the room is what lets this loop run relaxed. A join
+burst can eat the whole margin before the bot server reacts, and the arena
+covers that race itself: a join that would otherwise be refused for space
+drops the newest declared bot and seats the human, which is the same
+seat-stealing the in-process director performed, moved behind a disconnect. A
+human is refused for space only by a room genuinely full of people.
+
+Which bot leaves is the bot server's decision, under the graceful rules of the
+design doc: prefer the moment after a death, prefer bots far from any human,
+never mid-fight and never carrying a flag. The churn guards hold too: a bot
+lives at least thirty seconds and a removal is not refilled for a minute, so a
+player joining and leaving repeatedly does not make the roster flicker.
+
+Topology is not its mandate. A zone no instance serves is a deployment
+problem, visible in the admin surface; the bot server fills the rooms that
+exist and conjures none.
+
+## Calibration stays direct
+
+The ladder tournament in `calibrate.rs` keeps calling the brain against a bare
+`World`, no server and no socket, because it is a measuring instrument that
+wants thousands of matches at CPU speed rather than a seat in the fleet. What
+keeps the instrument honest is that it measures the code the bot server
+deploys: the `ai` module leaves the server binary for a crate both depend on.
+A copy would drift, and a ladder computed from a drifted copy ranks pilots
+that no longer exist. That is not hypothetical. The shipped `ladder.json` once
+predated bounded sight and the reserve retune, and its 279-point spread was
+staleness, not skill.
+
+The residual gap is the wire itself. Calibration feeds the brain fresh state
+at look cadence; a live bot reads 20 Hz snapshots over loopback. The brain was
+tuned for 10 to 20 Hz looks, so the live picture is no staler than the
+measured one, but calibration measures the brain and not the path around it,
+and a wire bug will show up in play before it shows up in a tournament.
+
 ## Budget
 
-Forty bots must fit comfortably inside the arena's 10 ms tick alongside the
-simulation. The target is under 1 ms total for all bots in an arena.
+The costs moved. The bot server's own side is small: a decoded room is 79 KB
+with the 1 MB map shared per zone, the brain allocates nothing per tick, and a
+few hundred WebSocket connections are what an async runtime is for. Eighty
+bots is megabytes and a fraction of a core.
 
-It is reached by staggering: bots are bucketed so that on any given tick only a
-fraction refresh perception and only a fraction re-plan. Route queries are cached
-and shared. Nothing in the AI allocates during a tick.
+The real cost lands on the arena, which builds an interest-filtered snapshot
+stream per bot where the in-process roster needed none. That work was
+significant enough to have been halved once already, and it now scales with
+the bot population. It is the number that decides whether 0.8 is an affordable
+default, so it gets measured before it gets shipped: snapshot build time per
+send at fifty-plus clients, read against the 16 us a 64-ship tick costs.
+
+Traffic is free while the bot server sits beside its arenas, since 30 KB/s per
+client is loopback. It stops being free only for a region with arenas and no
+bot server, so the deployment rule is simply to run one wherever arenas run.
 
 ## Determinism and replays
 
-Bot inputs are written to the arena's input log exactly like human inputs. A
-replay therefore reproduces a match without the AI running at all, and without
-requiring the AI to be deterministic.
-
-That is worth stating plainly because it buys real freedom: the behavior layer
-can use floats, hash iteration order, and wall-clock timing without endangering
-the property that makes the whole architecture work.
+Bot inputs arrive on the same sockets and are written to the arena's input log
+exactly like human inputs, which they are. A replay reproduces a match without
+any AI running, and without requiring the AI to be deterministic: the behavior
+layer can use floats, hash iteration order, and wall-clock timing without
+endangering the property that makes the whole architecture work.
 
 ## Zone-authored bots
 
-A zone declares its roster shape in configuration: the archetype mix, the skill
-distribution, and the roster size. The server generates the individuals from
-that shape and persists them, with their ratings, careers, and schedules, in the
-zone database alongside scores. That covers most needs without code.
+A zone declares its roster shape in configuration: the archetype mix, the
+skill distribution, and the roster size. The bot server generates the
+individuals from that shape and persists them, with their ratings, careers,
+and schedules. That covers most needs without code.
 
-A zone that wants its own behavior ships a module implementing `Controller`,
-sandboxed under the same rules and fuel limits as any other zone module, per
-[server.md](server.md). A misbehaving AI module loses its turn and its bot flies
-straight, which is embarrassing rather than fatal.
-
-## External bots
-
-The protocol path stays open. Tooling, league referees, and experimental AI
-connect as ordinary clients with capability grants, exactly as the original's bot
-ecosystem did. They are subject to the same rule as everything else: inputs only.
-
-The in-process path exists because filler AI is a server feature with tight cost
-constraints. It is not a replacement for the bot protocol, and both will exist.
+A zone that wants its own behavior ships a module the bot server runs
+sandboxed, where a misbehaving controller loses its turn and its bot flies
+straight, which is embarrassing rather than fatal. None of it touches the
+arena anymore, which is the improvement: custom AI used to be a tenant of the
+server's tick and is now a tenant of a process whose whole job is bots.
 
 ## Testing
 
-Bots are the load generator. The soak test in
-[simulation-core.md](simulation-core.md) is forty bots for an hour with state
-hash comparison, which exercises the simulation, the snapshot builder, the
-persistence path, and the AI at once.
+Bots stay the load generator, and they become the wire's canary: a soak test
+is the bot server pointed at a real arena, and every hour of fill is an hour
+of protocol exercise on the path players use. `tools/pilot` keeps its separate
+job of measuring prediction agreement, since bots do not predict.
 
-Bot-versus-bot tournaments calibrate the rating ladder before humans arrive, as
-described in [design/rating.md](../design/rating.md).
+Bot-versus-bot tournaments calibrate the rating ladder before humans arrive,
+as described in [design/rating.md](../design/rating.md).
 
 ## Open questions
 
@@ -196,5 +290,5 @@ who learn a map over months, and some of them are cruel.
 Whether perception at 10 Hz is too generous or too stingy. It is a difficulty
 parameter as much as a performance one.
 
-How expensive a WASM-sandboxed controller is per bot per decision, and therefore
-whether zone-authored AI can run at the same density as built-in AI.
+How expensive a sandboxed zone-authored controller is per bot per decision,
+now inside the bot server's budget rather than the arena's.

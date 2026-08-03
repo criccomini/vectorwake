@@ -931,3 +931,52 @@ wants. That is a different feature from chat and it would get its own record.
 11](#11-nakama-for-the-meta-layer-never-for-the-arena-tick) no longer wants
 Nakama's chat. The client's `chat.gui` and the server's chat throttling, module
 `send chat` hook, and reliable-message chat class all come out or never go in.
+
+---
+
+## 29. A bot is a client
+
+**Status:** proposed
+
+The house AI moves out of the arena server into a bot server: one process per
+deployment that flies many bots, each a WebSocket connection decoding
+snapshots through the sim core and sending the same input messages a human
+client sends. The arena keeps no bot code, only a seat policy: a bot declares
+itself in `C2S_JOIN`, is labeled in the roster, takes no seat under
+`max_players`, and is dropped first when a full room must seat a human.
+
+[ai-runtime.md](ai-runtime.md) placed bots inside the arena tick for cost, and
+the cost it named was sockets, encoding and round trips that a same-host
+deployment does not pay: the fleet is containers on one box, so bot traffic is
+loopback. What in-process bots actually cost was coverage. This deployment's
+real bugs lived on the protocol path, which the resident population never
+touched: the pong stranded on the wrong half of a split stream, found by a
+harness because browsers never ping; the recharge overflow at `INT32_MIN`,
+seen only by a client decoding snapshots. In-process bots also made "bots
+cannot cheat" a code-review property, and their scan read true server state,
+which would have seen through cloak the day cloak existed. Behind the protocol
+the guarantee is structural: a bot has nothing to read but the filtered
+snapshot the server chose to send.
+
+It is also one bot system instead of two. The old design kept an in-process
+path for filler AI and promised a protocol path for third parties. Now the
+third-party path is the only path, kept working by the fact that our own
+roster has no other way in. The JOIN declaration plus a fleet credential
+separates trust: anyone may declare a bot and be labeled, and only an
+authenticated house bot anchors the rating ladder.
+
+**Cost:** The arena builds an interest-filtered snapshot stream per bot where
+the in-process roster needed none, and that build was expensive enough to have
+been optimised once already. It gets measured before the fill target ships:
+snapshot build time per send at fifty clients is the number that decides
+whether 0.8 of `max_ships` is an affordable default. An empty deployment needs
+two processes before a room has a population, where one binary used to
+suffice, so the dev loop grows a compose entry. And the brain gains a second
+consumer, the calibration tournament, which forces it into a shared crate so
+the ladder cannot quietly rank a drifted copy; that drift has already happened
+once as a stale `ladder.json`.
+
+**Reconsider if:** snapshot building at fill-target populations eats the tick
+budget and per-client interest filtering cannot be made cheaper, or a
+multi-region fleet makes a bot server per region more operational surface than
+an in-process director was.
