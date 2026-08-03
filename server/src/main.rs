@@ -161,6 +161,11 @@ struct Arena {
     /// as "what game is this".
     teams: u8,
     balance: String,
+    /// How many bots this arena is supposed to have, fixed when it was built.
+    /// `leave` needs it: handing every departing player's ship to a fresh bot
+    /// grew the roster past its configured size, because a join only consumes a
+    /// bot when one is there to consume.
+    bot_target: usize,
 }
 
 impl Arena {
@@ -615,6 +620,7 @@ impl Arena {
             finished: false,
             teams: 2,
             balance: "smaller".into(),
+            bot_target: 0,
         }
     }
 
@@ -623,6 +629,8 @@ impl Arena {
     /// docs/design/ai-players.md.
     fn fill_bots(&mut self) {
         let roster = ai::roster();
+        // Whatever actually fits is the target, since a narrow room takes fewer
+        // than the roster lists.
         for (i, r) in roster.iter().enumerate() {
             // The map's own start wins over the roster's tile: a zone pointed at
             // a new map should not need its roster rewritten to match that map's
@@ -640,6 +648,7 @@ impl Arena {
                 self.names.insert(ship as u8, (r.name.to_string(), true));
             }
         }
+        self.bot_target = self.bots.len();
     }
 
     /// One flag per quadrant, three hundred tiles apart, on the clear cell
@@ -753,10 +762,24 @@ impl Arena {
     fn leave(&mut self, id: u64) {
         if let Some(p) = self.players.remove(&id) {
             self.rating.forget(&p.name);
-            // Hand the ship back to a bot rather than leaving a corpse.
-            self.bots.push(ai::Bot::new(p.ship, 0.5));
-            self.names
-                .insert(p.ship, (ai::name_for(p.ship), true));
+            // Hand the ship to a bot only while the roster is short of the size
+            // this arena was built with. It used to be unconditional, and a join
+            // only takes a bot when one is there to take -- so every player who
+            // spawned into a fresh slot left a bot behind them that nobody had
+            // removed. A live arena configured for nine bots reached sixteen in
+            // two minutes of ordinary joining and leaving, on its way to
+            // simulating and broadcasting sixty-four.
+            if self.bots.len() < self.bot_target {
+                self.bots.push(ai::Bot::new(p.ship, 0.5));
+                self.names.insert(p.ship, (ai::name_for(p.ship), true));
+            } else {
+                // Retire it. The slot is reusable: the core hands an inactive
+                // one to the next arrival rather than only ever appending.
+                let sh = &mut self.world.state.ships[p.ship as usize];
+                sh.active = 0;
+                sh.alive = 0;
+                self.names.remove(&p.ship);
+            }
         }
     }
 
@@ -2199,6 +2222,54 @@ mod tests {
                    "and an operator can see which connection is drowning");
         // Still in the room, still simulated: falling behind is not an eviction.
         assert!(z.rooms[0].players.contains_key(&id));
+    }
+
+    #[test]
+    fn churn_does_not_grow_the_roster_or_the_ship_count() {
+        // The leak this pins was found by joining and leaving a live arena for
+        // two minutes: a zone configured for nine bots reached sixteen, on its
+        // way to sixty-four. `leave` handed every departing player's ship to a
+        // fresh bot, while `join` only takes a bot when one is there to take --
+        // so each player who spawned into a new slot left a bot behind them.
+        //
+        // Nothing reported it. Status was green, the arena was serving, and the
+        // only outward sign was a browse list advertising more AI every hour and
+        // a tick cost quietly climbing.
+        let mut z = serving(1, 4, 32);
+        let bots0 = z.rooms[0].bots.len();
+        let ships0 = z.rooms[0].world.state.ship_count;
+        assert!(bots0 > 0, "the fixture has a roster to lose");
+        assert_eq!(z.rooms[0].bot_target, bots0);
+
+        // More players at once than there are bots, so some must spawn into
+        // fresh slots -- which is the only case that leaked.
+        for _round in 0..6 {
+            let mut seated = Vec::new();
+            let cap = z.max_players();
+            for i in 0..(bots0 + 5) {
+                let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+                if let Some(id) = z.rooms[0].join(format!("churn{i}"), 0, cap, tx) {
+                    seated.push(id);
+                }
+            }
+            for id in seated {
+                z.rooms[0].leave(id);
+            }
+        }
+
+        assert_eq!(z.rooms[0].bots.len(), bots0,
+                   "the roster came back to the size it was built with");
+        assert_eq!(z.rooms[0].players.len(), 0);
+        // The count is a high-water mark and may have risen once to hold the
+        // extra concurrent players, but it must not climb every round: the core
+        // hands an inactive slot to the next arrival.
+        let ships1 = z.rooms[0].world.state.ship_count;
+        assert!(u16::from(ships1) <= u16::from(ships0) + (bots0 + 5) as u16,
+                "ship_count {ships1} grew past one peak from {ships0}");
+        let active = (0..ships1 as usize)
+            .filter(|&i| z.rooms[0].world.state.ships[i].active != 0)
+            .count();
+        assert_eq!(active, bots0, "only the bots are left flying");
     }
 
     #[test]

@@ -199,8 +199,20 @@ uint32_t sim_sizeof_ship(void) { return (uint32_t)sizeof(sim_ship); }
 
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg) {
-    if (s->ship_count >= sim_eff_max_ships(cfg)) return -1;
-    int i = s->ship_count++;
+    /* An inactive slot before a new one. Without this the count only ever rose:
+     * a room's capacity to seat a *new* ship was its lifetime arrivals rather
+     * than its concurrent ones, so a busy arena eventually refused a tenth
+     * player in a room built for thirty-two, and until it did, it paid to
+     * simulate and to broadcast every ship anyone had ever occupied. The count
+     * stays a high-water mark, which is what bounds every loop and the hash. */
+    int i = -1;
+    for (int k = 0; k < s->ship_count; k++) {
+        if (!s->ships[k].active) { i = k; break; }
+    }
+    if (i < 0) {
+        if (s->ship_count >= sim_eff_max_ships(cfg)) return -1;
+        i = s->ship_count++;
+    }
     sim_ship *sh = &s->ships[i];
     memset(sh, 0, sizeof *sh);
     sh->active = 1;
