@@ -116,9 +116,20 @@ typedef struct {
     sim_feature features[SIM_MAX_FEATURES];
 } sim_map;
 
-/* Walk the tiles once and collect the ones rules need to find: wormholes to
- * pull from, goals to score in, turf to stand a flag on. Call after building
- * or loading a map, before stepping it. */
+/* Make a map ready to play, which is two things.
+ *
+ * It closes the world: four tiles of boundary around the square, whatever the
+ * map said was there. Every map wants one, so a map that had to carry its own
+ * is a map that can be missing it, and a converted one always is. Four tiles
+ * and not one, because a hull at full speed crosses more than a tile in a tick
+ * and axis-by-axis collision cannot push it back out of a wall it has already
+ * passed through.
+ *
+ * Then it walks the tiles once and collects the ones rules need to find:
+ * wormholes to pull from, goals to score in, turf to stand a flag on.
+ *
+ * Call after building or loading a map, before stepping it. `sim_map_unpack`
+ * and the reference maps below already do. */
 void sim_map_index(sim_map *m);
 
 /* The reference arenas, in the core so the client and the server cannot hold

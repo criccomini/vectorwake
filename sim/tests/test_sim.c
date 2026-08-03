@@ -550,6 +550,52 @@ int main(void) {
         free(src); free(dst); free(pit); free(buf);
     }
 
+    /* Every map is closed, whatever the map says. */
+    {
+        const int LAST = SIM_MAP_TILES - 1;
+        sim_map *open = malloc(sizeof *open);
+        memset(open->tile, SIM_TILE_EMPTY, sizeof open->tile);
+        sim_map_index(open);
+
+        CHECK(SIM_TILE_CLASS(sim_tile_at(open, 0, 512)) == SIM_TILE_SOLID
+                  && SIM_TILE_CLASS(sim_tile_at(open, LAST, 512))
+                         == SIM_TILE_SOLID
+                  && SIM_TILE_CLASS(sim_tile_at(open, 512, 0)) == SIM_TILE_SOLID
+                  && SIM_TILE_CLASS(sim_tile_at(open, 512, LAST))
+                         == SIM_TILE_SOLID,
+              "a map with no walls of its own is still closed on four sides");
+        CHECK(SIM_TILE_CLASS(sim_tile_at(open, 3, 512)) == SIM_TILE_SOLID,
+              "the boundary is four tiles thick");
+        CHECK(sim_tile_at(open, 4, 512) == SIM_TILE_EMPTY,
+              "and no thicker, so the map keeps the rest of its ground");
+        CHECK(SIM_TILE_VARIANT(sim_tile_at(open, 0, 512)) == 1,
+              "and says it is a boundary rather than a wall");
+
+        /* Which is the whole reason it is four and not one. A hull crosses
+         * more than a tile in a tick at speed, and the collision resolves one
+         * axis at a time against the tiles it lands on: through a thin wall,
+         * there is nothing left to push it back out of. */
+        sim_settings edge = cfg;
+        edge.map = open;
+        sim_state s;
+        sim_init(&s, 5);
+        sim_spawn(&s, APEX, 0, 40 * 16, 512 * 16, 49152, &edge);
+        s.ships[0].vx = -edge.classes[APEX].max_speed * 4;
+        step_n(&s, &edge, SIM_BTN_THRUST, 0, 400);
+        CHECK(s.ships[0].x > 4 * 16 * 256,
+              "a hull thrown at the edge faster than it can fly stays inside");
+
+        /* And a map that arrives over the wire is closed on arrival, not only
+         * one that was built here. */
+        uint8_t *ob = malloc(SIM_MAP_PACK_MAX);
+        int on = sim_map_pack(open, ob, SIM_MAP_PACK_MAX);
+        sim_map *back = malloc(sizeof *back);
+        CHECK(sim_map_unpack(back, ob, on) == 0, "a closed map packs and unpacks");
+        CHECK(SIM_TILE_CLASS(sim_tile_at(back, 0, 512)) == SIM_TILE_SOLID,
+              "and is still closed at the far end");
+        free(ob); free(back); free(open);
+    }
+
     /* The room size is the zone's, and the array bound is only the ceiling. */
     {
         sim_settings small = cfg;
@@ -794,8 +840,9 @@ int main(void) {
 
         sim_state s;
         sim_init(&s, 1);
-        /* Two tiles from the top wall, facing it. */
-        sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
+        /* Two tiles clear of the top wall, facing it. The boundary is four
+         * tiles thick, so "clear of it" starts at 64 px. */
+        sim_spawn(&s, APEX, 0, 8192, 96, 0, &w);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1, "fired");
         int32_t up = s.weapons[0].vy;
@@ -1573,9 +1620,10 @@ int main(void) {
             sim_mod_set(0, SIM_MOD_BOUNCE, 1);
         sim_state s;
         sim_init(&s, 1);
-        /* Two tiles under the wall: a round travels 2 px a tick, so a
-         * distant wall would outlast the flight. */
-        sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
+        /* Two tiles under the wall, which is four tiles thick and so ends at
+         * 64 px: a round travels 2 px a tick, and a distant wall would outlast
+         * the flight. */
+        sim_spawn(&s, APEX, 0, 8192, 96, 0, &w);
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_BOUNCE, 1);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1, "fired");
