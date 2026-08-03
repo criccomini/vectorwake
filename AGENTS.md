@@ -81,9 +81,6 @@ mostly in C comments and commit messages, and they are the same tell wearing a
 hat. New prose does not use them. Existing lines get fixed when you are editing
 them for another reason, never in a sweep of their own.
 
-`deslop` is installed too and covers much of the same ground. Humanizer is the
-one to run.
-
 ## Memory
 
 Your memory is OptMem:
