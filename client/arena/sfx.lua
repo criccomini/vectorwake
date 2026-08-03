@@ -32,6 +32,10 @@ local function rnd()
     return seed / 2147483648
 end
 
+-- The highest variant each family of sounds has, learned from the kit rather
+-- than written down here, so adding a rung to sfx.c is the only edit it takes.
+local top = {}
+
 -- Render the kit and hand it to the engine, once, before anything can play.
 --
 -- Called from the script that owns the sound components, because `#gun`
@@ -51,6 +55,11 @@ function M.init()
     local t0 = os.clock()
     local n, bytes = 0, 0
     for _, name in ipairs(vwsfx.names()) do
+        local fam, idx = name:match("^(.-)(%d+)$")
+        if fam then
+            idx = tonumber(idx)
+            if idx > (top[fam] or -1) then top[fam] = idx end
+        end
         local wav = vwsfx.render(name)
         if not wav then
             print("SOUND: no sound named '" .. name .. "'")
@@ -86,10 +95,30 @@ end
 -- A world sound. Quiet things far away are dropped outright rather than
 -- played at a gain nobody can hear, which is what keeps the voice count down
 -- in a busy arena.
-function M.play(name, x, y)
+--
+-- `variant` names one of a family of components, which is how the weapon
+-- ladders sound different rung by rung: `gun` plus rung 2 is the component
+-- `gun2`. The budget stays keyed on the family, because four rungs of the
+-- same gun are still guns and three of them a frame is still the ceiling.
+--
+-- A rung past the end of a family gets the top of it rather than silence. The
+-- simulation's ladder can be longer than the kit is, and a weapon that stops
+-- making a sound at rung five would be a strange way to find that out.
+function M.play(name, x, y, variant)
     local n = (spent[name] or 0) + 1
     if n > (BUDGET[name] or DEFAULT_BUDGET) then return end
     spent[name] = n
+
+    if variant then
+        local hi = top[name]
+        if not hi then
+            variant = nil
+        elseif variant > hi then
+            variant = hi
+        elseif variant < 0 then
+            variant = 0
+        end
+    end
 
     local gain, pan = 1, 0
     if x then
@@ -103,7 +132,7 @@ function M.play(name, x, y)
         if pan > 1 then pan = 1 elseif pan < -1 then pan = -1 end
     end
 
-    M.fire(name, {
+    M.fire(variant and (name .. variant) or name, {
         gain = gain,
         pan = pan,
         speed = 0.93 + rnd() * 0.14,

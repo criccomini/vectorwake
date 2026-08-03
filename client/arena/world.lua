@@ -1519,7 +1519,13 @@ function M.events(me, sfx)
             fx.cone(x + math.sin(ang) * 10, y - math.cos(ang) * 10, ang,
                     bomb and 0.9 or 0.35, bomb and 7 or 3,
                     bomb and 120 or 190, 0.14, bomb and 2.2 or 1.4, col)
-            sfx(bomb and "bomb" or "gun", x, y)
+            -- Which rung fired it. Read off the ship rather than off the
+            -- weapon, because a spec carries what it does and not the rung it
+            -- came from, and this is the tick that fired so the two cannot
+            -- have drifted apart yet. Clamping to what the kit actually holds
+            -- is sfx's job, not this one's.
+            local trig = bomb and sim.TRIG_BOMB or sim.TRIG_GUN
+            sfx(bomb and "bomb" or "gun", x, y, sim.ship_level(a, trig))
         elseif ty == sim.EV_EXPIRE then
             local x = math.floor(v / 16384)
             local y = v % 16384

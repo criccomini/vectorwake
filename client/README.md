@@ -58,6 +58,7 @@ in `sim/`.
 | `arena/directory.lua` | Asks a directory what games are running |
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `tools/sfxdump.c` | Writes the kit out as wav files, for listening to |
+| `tests/sfx_test.lua` | Which sound each weapon rung reaches |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
 | `arena/world.lua` | Ships, weapons, flags, prizes, terrain, in triangles |
 | `arena/ui.lua` | The HUD and the menu, laid out like the web prototype |
@@ -312,6 +313,22 @@ needs its own resource per component to write into, so there is one placeholder
 per sound, named after the component that claims it. The `.sound` files beside
 them are real: gain, mixer group and looping live there and are maintained by
 hand.
+
+The gun and the bomb have one sound per rung of their ladder, `gun0` to `gun3`
+and `bomb0` to `bomb3`, picked by `sfx.play` from the rung the firing ship is
+on. A rung is the same weapon harder rather than a different weapon, which is
+what the panel says and what the core does, so the rungs share their character
+and differ in weight. Since every buffer is normalised to one peak, the buffer
+decides timbre only and the loudness climb lives in the `.sound` gains. A rung
+past the end of a family plays the top of it, and the ceiling is read off the
+kit rather than written down, so adding `gun4` to `sfx.c` and wiring a
+component for it is the whole change.
+
+`lua5.1 client/tests/sfx_test.lua` checks which component each rung reaches and
+that every sound the kit renders has a component behind it. It runs under plain
+Lua 5.1 with the engine stubbed, because the path it covers needs an arena, an
+opponent and a climbed tech tree to reach in a browser, where a wrong component
+id sounds like nothing rather than like a failure.
 
 Rendering costs 259 ms in a debug wasm build, seven eighths of it the
 soundtrack, and it is spent in `init` rather than spread over frames because

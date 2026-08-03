@@ -271,20 +271,60 @@ static void v_normalise(voice *v) {
 // --- the kit ---------------------------------------------------------------
 
 // A bolt leaving the rail: bright, over before it registers.
-static void k_gun(voice *v) {
+//
+// One per rung of the gun ladder. A rung is the same weapon harder, which is
+// the panel's own wording and the mechanic's: every rung fires one bolt at the
+// same speed on the same delay, and all a level buys is flat damage. So the
+// square and the sine that give a bolt its character do not move at all
+// between rungs. What climbs is weight, a body layer that is not there at the
+// first rung, and a little more drive.
+//
+// The body sits in the low mids rather than under them. Real sub on a sound
+// this short is a thud with no time to develop, and it is the 200 to 800 hertz
+// band that makes a bolt read as heavy: measured across the four rungs, that
+// band carries 0.9, 2.0, 4.4 and 6.8 per cent of the energy, roughly a
+// doubling a rung.
+//
+// Loudness cannot come from here. Every buffer is normalised to the same peak
+// before it is written, so this decides timbre and nothing else; the rungs get
+// louder through the gain in their .sound files.
+static void gun_at(voice *v, int lvl) {
     v_square(v, 1750, 460, 0.55, 0.32, 0.45);
     v_sine(v, 2400, 700, 0.30, 0.4);
-    v_noise(v, 0.16, 7000, 900, 2.0, 11);
-    v_drive(v, 1.6);
+    if (lvl > 0) v_sine(v, 430 - 50 * lvl, 140, 0.16 + 0.11 * lvl, 0.55);
+    v_noise(v, 0.16 + 0.02 * lvl, 7000, 900, 2.0, 11);
+    v_drive(v, 1.6 + 0.18 * lvl);
 }
 
+static void k_gun0(voice *v) { gun_at(v, 0); }
+static void k_gun1(voice *v) { gun_at(v, 1); }
+static void k_gun2(voice *v) { gun_at(v, 2); }
+static void k_gun3(voice *v) { gun_at(v, 3); }
+
 // Heavier and slower than a gun, so the ear knows which one fired.
-static void k_bomb(voice *v) {
-    v_saw(v, 280, 78, 0.5, 0.6);
-    v_sine(v, 160, 46, 0.42, 0.7);
-    v_noise(v, 0.22, 2600, 260, 2.0, 23);
-    v_drive(v, 1.9);
+//
+// One per rung, and the rungs mean something different here. A bomb level
+// leaves the shell alone and buys blast radius, doubling and tripling it, and
+// it costs more energy to fire. So this is the sound of a heavier charge
+// leaving the tube rather than of a different weapon: the same fall, pitched
+// down, with more of the sub under it.
+//
+// The explosion does not follow yet, which is the odd half of this. What a
+// bomb level actually buys is audible when the bomb goes off, and the blast
+// sound cannot tell the rungs apart, because a shell in flight carries a spec
+// rather than the rung it came from.
+static void bomb_at(voice *v, int lvl) {
+    v_saw(v, 280 - 26 * lvl, 78 - 6 * lvl, 0.5, 0.6);
+    v_sine(v, 160 - 16 * lvl, 46 - 4 * lvl, 0.42 + 0.03 * lvl, 0.7);
+    if (lvl > 0) v_sine(v, 90 - 8 * lvl, 34, 0.12 + 0.06 * lvl, 0.6);
+    v_noise(v, 0.22 + 0.02 * lvl, 2600, 260, 2.0, 23);
+    v_drive(v, 1.9 + 0.15 * lvl);
 }
+
+static void k_bomb0(voice *v) { bomb_at(v, 0); }
+static void k_bomb1(voice *v) { bomb_at(v, 1); }
+static void k_bomb2(voice *v) { bomb_at(v, 2); }
+static void k_bomb3(voice *v) { bomb_at(v, 3); }
 
 // A bomb going off: noise for the air, a falling sine for the body.
 static void k_blast(voice *v) {
@@ -728,9 +768,18 @@ typedef struct {
     void (*make)(voice *);
 } entry;
 
+// A few more milliseconds per rung, and only a few: the delay between shots
+// does not change with the ladder, so a sound that grew with the rung would
+// start overlapping its own repeat at the top of it.
 static const entry KIT[] = {
-    {"gun",     0.085, 0, k_gun},
-    {"bomb",    0.24,  0, k_bomb},
+    {"gun0",    0.085, 0, k_gun0},
+    {"gun1",    0.092, 0, k_gun1},
+    {"gun2",    0.099, 0, k_gun2},
+    {"gun3",    0.106, 0, k_gun3},
+    {"bomb0",   0.24,  0, k_bomb0},
+    {"bomb1",   0.26,  0, k_bomb1},
+    {"bomb2",   0.28,  0, k_bomb2},
+    {"bomb3",   0.30,  0, k_bomb3},
     {"blast",   0.55,  0, k_blast},
     {"death",   0.95,  0, k_death},
     {"hit",     0.07,  0, k_hit},
@@ -749,7 +798,9 @@ static const entry KIT[] = {
 #define KIT_COUNT ((int)(sizeof(KIT) / sizeof(KIT[0])))
 
 const char *const sfx_names[] = {
-    "gun", "bomb", "blast", "death", "hit", "bounce", "spawn", "prize",
+    "gun0", "gun1", "gun2", "gun3",
+    "bomb0", "bomb1", "bomb2", "bomb3",
+    "blast", "death", "hit", "bounce", "spawn", "prize",
     "rust", "charge", "flag", "thrust", "ui_move", "ui_go", "music", NULL,
 };
 
