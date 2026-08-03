@@ -55,6 +55,10 @@ services:
       # Coarse provisioning progress, served over plain http by IP. The proxy
       # starts before the build so this is readable while the slow part runs.
       - ${VW_DEPLOY_LOG:-./deploy-log}:/srv/deploy:ro
+      # The browser client, committed as a built artifact because the host has
+      # no Defold toolchain and a page served from anywhere else cannot open a
+      # socket to these arenas.
+      - ../client/dist:/srv/play:ro
     environment:
       VW_DOMAIN: ${VW_DOMAIN:?set VW_DOMAIN}
 

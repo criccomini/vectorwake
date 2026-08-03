@@ -15,10 +15,27 @@ host is a compose service and a DNS record away.
                      443 (wss)                    loopback
   player ───────────────────────► Caddy ──────────────────────► directory :9000
                                     │                           arena a1 :9001
-  directory.vectorwake.net ─────────┤                           arena a2 :9002
-  a1.vectorwake.net ────────────────┤                           admin    :9100
-  a2.vectorwake.net ────────────────┘                              (no route in)
+  play.vectorwake.net ──────────────┤                           arena a2 :9002
+  directory.vectorwake.net ─────────┤                           admin    :9100
+  a1.vectorwake.net ────────────────┤                              (no route in)
+  a2.vectorwake.net ────────────────┘
+                                    └───────────────► client/dist/, on disk
 ```
+
+**The client is served from here because it cannot be served from anywhere
+else.** A page delivered by a third party under a Content-Security-Policy of
+`connect-src 'self'` cannot open a WebSocket to our arenas at all, and the
+published artifact is exactly that: it can only ever be the offline practice
+arena. Serving the page from the same domain as the game removes the question
+entirely.
+
+The bundle is committed at `client/dist/index.html` rather than built on the
+host, because building it needs a JDK, Defold's `bob`, and Defold's remote build
+server -- three things not worth putting in a boot path that has no shell. Caddy
+compresses it on the way out, 5.2 MB down to 2.9, which matters because egress is
+the only cost this deployment has. The price is a 5 MB blob in git history per
+client release, which is why `AGENTS.md` says to commit it when shipping rather
+than when experimenting.
 
 Everything runs `--network host`, so the services reach each other on loopback
 and only Caddy listens on a public port.

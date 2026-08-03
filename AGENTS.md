@@ -38,8 +38,23 @@ JAVA_HOME=/path/to/jdk25 ./client/build.sh wasm-web release bundle
 python3 client/tools/single_file.py client/bundle/wasm-web/vectorwake <out>.html --fragment
 ```
 
-Then publish that file to the same artifact URL, so the link already handed
-out keeps working. Do it in the same turn as the fix, not the next one.
+That file goes to two places, and they are not interchangeable:
+
+- `client/dist/index.html` in this repository, which the deployed host serves at
+  `https://play.vectorwake.net`. **This is the only build that can play online.**
+- The same artifact URL as before, so the link already handed out keeps working.
+
+The artifact can only ever be the offline practice arena. Artifact pages are
+served under `connect-src 'self'`, which blocks every outbound WebSocket, so that
+build cannot reach a directory or an arena no matter what it is pointed at. This
+was learned by pointing it at the live fleet and reading the console.
+
+Committing a 5 MB bundle has a cost: do it when shipping a client change, not on
+every experiment, because it lands in history each time.
+
+Do it in the same turn as the fix, not the next one. Anything that changes the
+simulation core counts as a client change, because the client links the same core
+to predict with.
 
 ## Engineering rules
 

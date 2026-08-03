@@ -53,6 +53,21 @@ directory.{$VW_DOMAIN} {
 	reverse_proxy 127.0.0.1:9000
 }
 
+# The game itself, served from the same domain as the arenas it connects to.
+#
+# It has to be served from here rather than anywhere else. A page delivered by a
+# third party under a Content-Security-Policy of `connect-src 'self'` cannot open
+# a socket to our arenas at all -- the artifact build is exactly that, so it can
+# only ever be the offline practice arena. Same domain, no such problem.
+#
+# Compressed, because the bundle is 5 MB of mostly base64-encoded wasm that gzips
+# to 2.4, and egress is the one cost this deployment actually pays.
+play.{$VW_DOMAIN} {
+	encode zstd gzip
+	root * /srv/play
+	file_server
+}
+
 a1.{$VW_DOMAIN} {
 	reverse_proxy 127.0.0.1:9001
 }
