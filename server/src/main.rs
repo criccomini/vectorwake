@@ -792,7 +792,11 @@ impl Arena {
             });
         }
         for b in &mut self.bots {
-            let buttons = b.think(&self.world);
+            // A look around only when this pilot is due one, so perception
+            // costs ten to twenty hertz rather than a hundred and the bots do
+            // not all pay for it on the same tick.
+            let fresh = b.looks_due().then(|| ai::scan(&self.world, b.ship));
+            let buttons = b.think(&ai::own(&self.world, b.ship), fresh);
             inputs.push(sim::sim_input {
                 ship: b.ship,
                 buttons,
