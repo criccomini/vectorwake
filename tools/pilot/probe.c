@@ -83,3 +83,8 @@ unsigned int vw_map_fingerprint(vw *c) {
         if (c->map.tile[i]) n++;
     return n;
 }
+int vw_prize_count(vw *c) {
+    int n = 0;
+    for (int i = 0; i < SIM_MAX_PRIZES; i++) if (c->cur.prizes[i].active) n++;
+    return n;
+}

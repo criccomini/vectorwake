@@ -247,6 +247,9 @@ pub struct Bot {
     /// the pilot's reaction cadence.
     aim: (f32, f32),
     dist: f32,
+    /// Where this pilot is heading when there is nothing to fight. Zero means
+    /// "pick somewhere", which is also the starting state.
+    roam: (f32, f32),
 }
 
 impl Bot {
@@ -268,6 +271,7 @@ impl Bot {
             seen_at: 0,
             aim: (0.0, 0.0),
             dist: 0.0,
+            roam: (0.0, 0.0),
         }
     }
 
@@ -438,7 +442,7 @@ impl Bot {
 
         let Some(foe) = self.seen.foe else {
             self.aim = (0.0, 0.0);
-            return 0;
+            return self.roam(o);
         };
         // Where they were when last looked at, carried forward by how long
         // ago that was. A pilot tracks a target rather than photographing it,
@@ -478,6 +482,33 @@ impl Bot {
             }
         }
         out
+    }
+
+    /// Where a pilot goes when they can see nothing worth going to.
+    ///
+    /// This used to be no buttons at all, which reads as a bug and is one: a
+    /// bot that lost sight of its target stopped dead and stayed there. It went
+    /// unnoticed while sight was unlimited, because there was always something
+    /// to chase; bounding perception to the radar's sixty tiles made "nothing
+    /// in sight" the ordinary case on a map a thousand tiles across, and turned
+    /// an arena into a gallery of statues.
+    ///
+    /// The heading is the contested middle, which is where the maps put their
+    /// furniture and therefore where anybody else looking for a fight is also
+    /// going, offset per pilot so a roster does not converge on one tile. A new
+    /// one is rolled on arrival, so a bot that finds nobody there moves on.
+    fn roam(&mut self, o: &Own) -> u16 {
+        let arrived = {
+            let (dx, dy) = (self.roam.0 - o.x, self.roam.1 - o.y);
+            dx * dx + dy * dy < (20.0 * 16.0) * (20.0 * 16.0)
+        };
+        if self.roam == (0.0, 0.0) || arrived {
+            let c = (sim::MAP_TILES as f32 / 2.0) * 16.0;
+            let spread = (sim::MAP_TILES as f32 / 8.0) * 16.0;
+            let (rx, ry) = (self.rand(), self.rand());
+            self.roam = (c + (rx - 0.5) * 2.0 * spread, c + (ry - 0.5) * 2.0 * spread);
+        }
+        self.steer(o, self.roam.0 - o.x, self.roam.1 - o.y, false) | sim::BTN_THRUST
     }
 
     fn aim_diff(&self, o: &Own, dx: f32, dy: f32) -> f32 {

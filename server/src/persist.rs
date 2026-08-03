@@ -12,13 +12,20 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Every field defaults. A missing key must cost the file its key and nothing
+/// else: without this, adding `games` would have made every record already on
+/// disk fail to parse, and `open` treats an unparseable record as an empty one,
+/// so the first deploy after the change would have quietly wiped the ladder.
 #[derive(Serialize, Deserialize, Default, Clone)]
+#[serde(default)]
 pub struct Record {
     pub ratings: HashMap<String, f64>,
-    /// Kills, deaths, and rounds won, kept for the profile rather than for
-    /// the ladder: rating is computed from events, not from these.
-    pub kills: HashMap<String, u32>,
-    pub deaths: HashMap<String, u32>,
+    /// Rated deaths behind each rating. A rating without its game count is a
+    /// number with no confidence attached: the pilot reads as still placing,
+    /// and their K goes back to a newcomer's, so the next death moves them
+    /// four times as far as it should. This file used to hold the number and
+    /// not the count, which meant every deploy un-settled everybody.
+    pub games: HashMap<String, u32>,
 }
 
 pub struct Store {
@@ -46,14 +53,20 @@ impl Store {
         self.dirty = true;
     }
 
-    pub fn add_kill(&mut self, who: &str) {
-        *self.record.kills.entry(who.to_string()).or_insert(0) += 1;
-        self.dirty = true;
+    pub fn games(&self, who: &str) -> u32 {
+        self.record.games.get(who).copied().unwrap_or(0)
     }
 
-    pub fn add_death(&mut self, who: &str) {
-        *self.record.deaths.entry(who.to_string()).or_insert(0) += 1;
-        self.dirty = true;
+    /// The count is monotone, so a room that saw fewer deaths than the record
+    /// already holds cannot lower it. Two rooms of the same process both write
+    /// here, and the same name in two rooms is a bot's, whose count is whatever
+    /// that room has fought.
+    pub fn set_games(&mut self, who: &str, value: u32) {
+        let e = self.record.games.entry(who.to_string()).or_insert(0);
+        if value > *e {
+            *e = value;
+            self.dirty = true;
+        }
     }
 
     /// Write through a temporary file so a crash mid-write cannot leave a
@@ -86,12 +99,23 @@ mod tests {
         {
             let mut s = Store::open(&p);
             s.set_rating("chris", 1337.5);
-            s.add_kill("chris");
+            s.set_games("chris", 40);
             s.flush().unwrap();
         }
         let s2 = Store::open(&p);
         assert_eq!(s2.rating("chris"), Some(1337.5));
-        assert_eq!(s2.record.kills.get("chris"), Some(&1));
+        assert_eq!(s2.games("chris"), 40, "a rating without its game count is unearned");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn a_game_count_never_goes_backwards() {
+        let p = temp("games");
+        let _ = std::fs::remove_file(&p);
+        let mut s = Store::open(&p);
+        s.set_games("chris", 40);
+        s.set_games("chris", 3);
+        assert_eq!(s.games("chris"), 40, "a quieter room must not un-settle a pilot");
         let _ = std::fs::remove_file(&p);
     }
 

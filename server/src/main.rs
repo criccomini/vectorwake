@@ -637,13 +637,18 @@ impl Arena {
             // walls. Headings spread around the circle, and the multiply has to
             // happen wider than u16 or the ninth pilot overflows it.
             let heading = ((i as u32 * 8192) % 65536) as u16;
-            // A one-team zone puts everybody on the same side; otherwise the
-            // roster's own team is folded into what the zone allows.
-            let team = if self.teams <= 1 { 0 } else { r.team % self.teams };
+            // The roster's own team, folded into what the zone allows. A
+            // free-for-all is settled after the spawn instead, so that placement
+            // still uses the map's shared starts rather than looking for a start
+            // marked for team nineteen.
+            let team = if self.free_for_all() { 0 } else { r.team % self.teams };
             let ship = self
                 .world
                 .spawn_on_map(r.class, team, i as u32, r.tile_x, r.tile_y, heading);
             if ship >= 0 {
+                if self.free_for_all() {
+                    self.world.state.ships[ship as usize].team = ship as u8;
+                }
                 self.bots.push(ai::Bot::new(ship as u8, r.skill));
                 self.names.insert(ship as u8, (r.name.to_string(), true));
             }
@@ -725,9 +730,26 @@ impl Arena {
     /// decide; otherwise `smaller` counts live ships per team and takes the
     /// thinnest, `random` spreads without counting, and `none` leaves everybody
     /// on team zero.
+    /// A free-for-all is not one team. It is no teams: every pilot their own
+    /// side.
+    ///
+    /// Every hostility test in this stack, in the core and in the bots alike,
+    /// asks whether two teams differ. A weapon skips a ship on its own team, a
+    /// kill on a teammate pays no points and no bounty, a repel does not push
+    /// one, and a bot does not so much as look at one. So putting everybody on
+    /// side zero did not mean everybody in, it meant combat off: Chaos ran with
+    /// no damage, no kills and nine pilots with nothing to shoot at, sitting
+    /// perfectly still, while War two doors down played fine.
+    ///
+    /// A pilot's seat is their side. Ship indices stop at 254 and 255 is
+    /// `TEAM_NONE`, so there is room for every seat to be its own team.
+    fn free_for_all(&self) -> bool {
+        self.teams <= 1
+    }
+
     fn pick_team(&self, joining: u8) -> u8 {
-        if self.teams <= 1 {
-            return 0;
+        if self.free_for_all() {
+            return joining;
         }
         match self.balance.as_str() {
             "none" => 0,
@@ -1055,6 +1077,49 @@ impl Zone {
         let n = self.rooms.len();
         println!("opened room {n} of {} for zone {:?}", self.max_rooms(), z.name);
         Ok(n - 1)
+    }
+
+    /// A returning pilot's record, into the room they are actually joining.
+    ///
+    /// The number and its game count move together, always. A rating restored
+    /// without its count is a number with no confidence attached: the pilot
+    /// reads as still placing, and the next death moves them by a newcomer's K,
+    /// which is four times as far as their record says it should. The count was
+    /// not saved at all until it was noticed that every deploy un-settled
+    /// everybody who had earned a rating.
+    fn restore_pilot(&mut self, room: usize, name: &str) {
+        let Some(saved) = self.store.rating(name) else {
+            return;
+        };
+        let played = self.store.games(name);
+        if let Some(a) = self.rooms.get_mut(room) {
+            a.rating.score.insert(name.to_string(), saved);
+            a.rating.games.insert(name.to_string(), played);
+        }
+    }
+
+    /// Every room's ladder to disk. A human is in exactly one room at a time so
+    /// their score saves cleanly; a bot name appears in all of them and the last
+    /// room wins, which costs nothing because bots are re-seeded from the
+    /// calibrated ladder whenever a room is built.
+    fn save_ladder(&mut self) {
+        let rows: Vec<(String, f64, u32)> = self
+            .rooms
+            .iter()
+            .flat_map(|r| {
+                r.rating
+                    .score
+                    .iter()
+                    .map(|(k, v)| (k.clone(), *v, r.rating.games_of(k)))
+            })
+            .collect();
+        for (name, score, played) in rows {
+            self.store.set_rating(&name, score);
+            self.store.set_games(&name, played);
+        }
+        if let Err(e) = self.store.flush() {
+            println!("could not save ratings: {e}");
+        }
     }
 
     /// Give back rooms nobody is in, keeping the first. A process shrinks as
@@ -1702,21 +1767,7 @@ async fn main() {
                     z.reload();
                 }
                 if n % 3000 == 0 {
-                    // Every room. A human is in exactly one at a time, so their
-                    // score saves cleanly; a bot name appears in all of them and
-                    // the last room wins, which costs nothing because bots are
-                    // re-seeded from the calibrated ladder whenever a room is built.
-                    let ratings: Vec<(String, f64)> = z
-                        .rooms
-                        .iter()
-                        .flat_map(|r| r.rating.score.iter().map(|(k, v)| (k.clone(), *v)))
-                        .collect();
-                    for (k, v) in ratings {
-                        z.store.set_rating(&k, v);
-                    }
-                    if let Err(e) = z.store.flush() {
-                        println!("could not save ratings: {e}");
-                    }
+                    z.save_ladder();
                 }
                 // Every room, in order. The process holds one arena per room and
                 // ticks them all on this thread: at 16 us for sixty-four ships
@@ -1891,11 +1942,8 @@ async fn main() {
                         // Into the room they are actually joining. Rooms keep their
                         // own ladders, so putting a returning player's rating in
                         // room zero would leave them unrated wherever they landed.
-                        let saved = z.store.rating(&name);
+                        z.restore_pilot(idx, &name);
                         let a = &mut z.rooms[idx];
-                        if let Some(saved) = saved {
-                            a.rating.score.insert(name.clone(), saved);
-                        }
                         if let Some(new_id) = a.join(name, class, cap, tx.clone()) {
                             seat = Some((idx, new_id));
                             let ship = a.players[&new_id].ship;
@@ -2068,6 +2116,137 @@ mod tests {
                 .join(format!("p{room}-{i}"), 0, cap, tx)
                 .expect("a seat below the cap");
         }
+    }
+
+    #[test]
+    fn a_free_for_all_has_enemies_in_it() {
+        // Chaos ran for a day with nothing able to hit anything. `teams = 1` put
+        // every pilot on side zero, and every hostility test in the stack is
+        // whether two sides differ: no weapon could reach a ship, no kill paid,
+        // and no bot could see a target, so nine of them sat still while a
+        // player flew around an arena that could not fight back.
+        let mut z = serving(1, 6, 16);
+        assert!(z.rooms[0].free_for_all(), "the fixture is a one-team zone");
+
+        let a = &z.rooms[0];
+        let mut sides = std::collections::HashSet::new();
+        let mut ships = 0;
+        for (i, s) in a.world.state.ships.iter().enumerate() {
+            if s.active == 0 {
+                continue;
+            }
+            ships += 1;
+            assert!(sides.insert(s.team), "ship {i} shares a side with somebody");
+            assert_ne!(s.team, sim::TEAM_NONE, "a pilot is never nobody's side");
+        }
+        assert!(ships >= 2, "a roster to fight over");
+
+        // And the bots' own perception, which is where the symptom was: a
+        // pilot with a teammate in front of them sees nobody, plans nothing,
+        // and holds still. Put two together rather than trusting the map's
+        // starts, so this measures the rule and not the geometry.
+        let (a, b) = (a.bots[0].ship, a.bots[1].ship);
+        let room = &mut z.rooms[0];
+        room.world.state.ships[b as usize].x = room.world.state.ships[a as usize].x + 40 * 256;
+        room.world.state.ships[b as usize].y = room.world.state.ships[a as usize].y;
+        assert!(ai::scan(&room.world, a).foe.is_some(), "nobody to fight");
+        assert!(ai::scan(&room.world, b).foe.is_some(), "and not one-sided");
+
+        // And a joining human is their own side too, not folded in with the
+        // pilot whose seat they took.
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = z.rooms[0].join("human".into(), 0, 16, tx).expect("a seat");
+        let ship = z.rooms[0].players[&id].ship;
+        let mine = z.rooms[0].world.state.ships[ship as usize].team;
+        for (i, s) in z.rooms[0].world.state.ships.iter().enumerate() {
+            if s.active == 0 || i as u8 == ship {
+                continue;
+            }
+            assert_ne!(s.team, mine, "the human shares a side with ship {i}");
+        }
+    }
+
+    #[test]
+    fn a_pilot_who_can_see_nobody_goes_looking() {
+        // The other reason the arena was full of statues. A bot with nothing in
+        // sight returned no buttons at all, so it stopped where it stood and
+        // stayed there for as long as the room was up.
+        let mut z = serving(1, 6, 16);
+        let a = &mut z.rooms[0];
+        // Alone: retire everybody but one pilot, so there is provably nothing
+        // for them to see.
+        let keep = a.bots[0].ship;
+        for i in 0..a.world.state.ship_count as usize {
+            if i as u8 != keep {
+                a.world.state.ships[i].active = 0;
+            }
+        }
+        let mut bot = a.bots.remove(0);
+        let mut moved = false;
+        for _ in 0..400 {
+            let fresh = bot.looks_due().then(|| ai::scan(&a.world, keep));
+            let buttons = bot.think(&ai::own(&a.world, keep), fresh);
+            a.world.step(&[sim::sim_input { ship: keep, buttons }]);
+            let sh = &a.world.state.ships[keep as usize];
+            if sh.vx != 0 || sh.vy != 0 {
+                moved = true;
+                break;
+            }
+        }
+        assert!(moved, "a pilot with nobody in sight sat still instead of looking");
+    }
+
+    #[test]
+    fn a_two_team_zone_still_has_two_teams() {
+        // The other half of the same rule: a warzone must not become a
+        // free-for-all with two flags in it.
+        let mut def = wire_zone(1, 6, 16);
+        def.teams = 2;
+        def.mode = "warzone".into();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+                              HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        assert!(!z.rooms[0].free_for_all());
+        let sides: std::collections::HashSet<u8> = z.rooms[0]
+            .world
+            .state
+            .ships
+            .iter()
+            .filter(|s| s.active != 0)
+            .map(|s| s.team)
+            .collect();
+        assert_eq!(sides.len(), 2, "two sides, whatever the roster says");
+    }
+
+    #[test]
+    fn a_settled_pilot_is_still_settled_after_a_restart() {
+        // The bug this covers: the file held the rating and not the game count,
+        // so a pilot with forty rated deaths came back reading as placing, and
+        // their next death moved them by a newcomer's K.
+        let path = std::env::temp_dir()
+            .join(format!("vw-ladder-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = Zone::new(cfg, persist::Store::open(&path), HashMap::new());
+        let def = wire_zone(1, 6, 16);
+        z.serve_zone(&def).expect("a room");
+        z.rooms[0].rating.score.insert("veteran".into(), 1640.0);
+        z.rooms[0].rating.games.insert("veteran".into(), 40);
+        z.save_ladder();
+
+        // A new process, reading what the last one wrote.
+        let (cfg2, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z2 = Zone::new(cfg2, persist::Store::open(&path), HashMap::new());
+        z2.serve_zone(&def).expect("a room");
+        assert_eq!(z2.rooms[0].rating.games_of("veteran"), 0, "not until they join");
+        z2.restore_pilot(0, "veteran");
+        assert_eq!(z2.rooms[0].rating.rating_of("veteran"), 1640.0);
+        assert_eq!(z2.rooms[0].rating.games_of("veteran"), 40);
+        assert!(z2.rooms[0].rating.tier_of("veteran").is_some(),
+                "a settled pilot is shown a tier, not 'placing'");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
