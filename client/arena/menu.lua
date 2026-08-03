@@ -46,17 +46,25 @@ M.directory = "ws://127.0.0.1:9000"
 -- Settings. Kept here because this is what saves them, and read by whoever
 -- owns the thing they change.
 M.volume = 3            -- index into VOLUMES
+M.music = 3             -- index into MUSICS
 M.cap = 1               -- index into CAPS
 M.can_cap = false       -- whether this engine can be asked to cap frames
 
 local VOLUMES = {{0, "off"}, {0.3, "quiet"}, {0.6, "half"}, {1.0, "full"}}
+-- The soundtrack is its own mixer group and its own row, because wanting the
+-- game loud and the music off is the commonest thing anybody wants out of a
+-- game's audio and one number cannot say it. Its ceiling is below the
+-- effects' on purpose: a soundtrack you have to shout over is one you turn
+-- off, and then all this was for nothing.
+local MUSICS = {{0, "off"}, {0.2, "quiet"}, {0.45, "half"}, {0.75, "full"}}
 local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 
 local SAVE = sys.get_save_file("vectorwake", "pilot")
 
 function M.save_identity()
     pcall(sys.save, SAVE, {
-        name = M.name, class = M.class, volume = M.volume, cap = M.cap,
+        name = M.name, class = M.class, volume = M.volume, music = M.music,
+        cap = M.cap,
     })
 end
 
@@ -69,6 +77,7 @@ function M.load_identity()
         M.name = d.name
         if type(d.class) == "number" then M.class = math.floor(d.class) % 8 end
         if type(d.volume) == "number" then M.volume = d.volume end
+        if type(d.music) == "number" then M.music = d.music end
         if type(d.cap) == "number" then M.cap = d.cap end
     else
         M.name = callsign.generate()
@@ -82,6 +91,7 @@ end
 -- engine does not have.
 function M.apply_settings()
     pcall(sound.set_group_gain, hash("master"), VOLUMES[M.volume][1])
+    pcall(sound.set_group_gain, hash("music"), MUSICS[M.music][1])
     -- A browser drives the frame loop from requestAnimationFrame, so on a
     -- 120 Hz laptop the game renders twice as often as on a 60 Hz one and
     -- costs twice the battery for it. The simulation is 100 Hz either way,
@@ -160,6 +170,8 @@ local NODES = {
     settings = {title = "settings", rows = {
         {label = "sound", detail = function() return VOLUMES[M.volume][2] end,
          act = "volume"},
+        {label = "music", detail = function() return MUSICS[M.music][2] end,
+         act = "music"},
         {label = "frames", detail = function()
             if not M.can_cap then return "as the display asks" end
             return CAPS[M.cap][2]
@@ -311,6 +323,11 @@ local function activate()
         return nil
     elseif r.act == "volume" then
         M.volume = M.volume % #VOLUMES + 1
+        M.apply_settings()
+        M.save_identity()
+        return nil
+    elseif r.act == "music" then
+        M.music = M.music % #MUSICS + 1
         M.apply_settings()
         M.save_identity()
         return nil

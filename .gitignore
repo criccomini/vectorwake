@@ -20,3 +20,6 @@ client/bundle/
 # rewrote a tracked file, and one of mine dropped a bot from the ladder
 # entirely before I noticed.
 ratings.json
+
+# The generator is run by hand; its bytecode cache is not ours to keep.
+client/tools/__pycache__/
