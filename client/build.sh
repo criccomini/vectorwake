@@ -52,9 +52,29 @@ cp ../sim/include/sim/*.h ext/simcore/include/sim/
 # which build a player is looking at. "Is this the old page" stops being a
 # debate the moment the answer is printed on it. A dirty tree gets a "+".
 STAMP="$(git rev-parse --short HEAD 2>/dev/null || echo dev)$(git diff --quiet 2>/dev/null || echo +)"
-printf '[project]\nversion = %s\n' "$STAMP" > /tmp/vw-stamp.settings
 
-set -- --archive --platform "$PLATFORM" --variant "$VARIANT" --settings /tmp/vw-stamp.settings
+# In a directory of its own, not loose in /tmp, and this is not tidiness.
+#
+# bob resolves settings by walking the directory the settings file lives in, and
+# its walk dereferences `listFiles()` without checking it for null. `listFiles()`
+# returns null on any directory the process cannot read, so pointing bob at a
+# shared /tmp means bob walks whatever else is in /tmp and dies on the first
+# entry it lacks permission to list.
+#
+# That is invisible to anyone running as root, which is why this shipped: it
+# built here for weeks and then failed the first time it ran on a GitHub runner,
+# as the unprivileged `runner` user, against a /tmp holding root-owned 700
+# directories. The error is a NullPointerException from inside bob with no path
+# in it, which says nothing at all about permissions or about /tmp.
+#
+# mktemp -d gives a private directory holding exactly one file, so the walk has
+# nothing else to trip over whoever is running it.
+STAMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$STAMP_DIR"' EXIT
+printf '[project]\nversion = %s\n' "$STAMP" > "$STAMP_DIR/vw-stamp.settings"
+
+set -- --archive --platform "$PLATFORM" --variant "$VARIANT" \
+       --settings "$STAMP_DIR/vw-stamp.settings"
 if [ "$TASK" = "bundle" ]; then
   set -- "$@" --bundle-output bundle/"$PLATFORM"
 fi
