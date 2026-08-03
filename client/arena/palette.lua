@@ -1,10 +1,9 @@
 -- The palette, in one place.
 --
--- These are the values the web prototype in `client-web/` uses, because that
--- page is what the game has actually been looked at in and the production
--- client has no business looking like a different game. Colours are
--- {r, g, b, a} in 0..1 rather than vector4s: every one of them is read inside
--- a draw loop, and a table index is cheaper than a userdata field.
+-- These are the values the hand-written web prototype used, carried over when
+-- it was retired, so the game kept the look it had already been seen in.
+-- Colours are {r, g, b, a} in 0..1 rather than vector4s: every one of them is
+-- read inside a draw loop, and a table index is cheaper than a userdata field.
 --
 -- Two teams separated by hue *and* luminance, per docs/design/identity.md, so
 -- the distinction survives colourblind vision.

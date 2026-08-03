@@ -1,6 +1,5 @@
 sim/build/
 sim/build2/
-client-web/build/
 server/target/
 client/ext/simcore/src/sim.c
 client/ext/simcore/src/baseline.c

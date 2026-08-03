@@ -1,12 +1,12 @@
 -- The interface.
 --
--- This is a transcription of `client-web/index.html`, which is the page this
--- game has actually been looked at in, down to its panel geometry and its
--- palette: fourteen pixels of margin, a translucent near-black panel behind a
--- one-pixel border, thirteen-pixel monospace, scores top left, radar top
--- right, feed under it, your own status bottom left, controls along the
--- bottom. The production client has no business looking like a different
--- game than the prototype everyone has already seen.
+-- The layout came from the hand-written web prototype that preceded this
+-- client, down to its panel geometry and its palette: fourteen pixels of
+-- margin, a translucent near-black panel behind a one-pixel border,
+-- thirteen-pixel monospace, scores top left, radar top right, feed under it,
+-- your own status bottom left. That page is gone and this is where the
+-- numbers survive, so they are worth reading as measurements rather than as
+-- preferences.
 --
 -- Shapes go into the `vwui` mesh layer in screen pixels. Text is appended to
 -- the shared list that ui/vwui.gui_script draws, because glyphs are the one

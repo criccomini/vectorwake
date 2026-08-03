@@ -28,9 +28,12 @@ Nakama would replace `persist.rs` -- storing and ranking a number -- and not
 `rating.rs`, because damage-weighted attribution across several attackers is
 specific to this game and no general backend has an opinion about it.
 
-The Defold client is the production one; `client-web/` remains the prototype
-that proved the networking contract, and the two now share it. Both link the
-same C core, so neither can drift from the rules.
+The Defold client is the only client. A hand-written web prototype came first
+and proved the networking contract, and it is gone: it stopped compiling when
+tiles became typed classes, nothing built it, and nothing noticed for as long
+as this history goes back. Its palette and panel geometry live on in
+`client/arena/palette.lua` and `client/arena/ui.lua`, which is the part of it
+worth keeping.
 
 M6 needs a Steam partner account, console manufacturer approval, and a
 Postgres deployment for Nakama. Those are credentials and decisions rather
