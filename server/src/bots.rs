@@ -118,6 +118,8 @@ pub async fn run() {
     // a time, which is what makes its rating the record of one career rather
     // than an average over clones.
     let taken: Arc<Mutex<HashSet<String>>> = Arc::default();
+    // One account secret per individual, held for the life of the process.
+    let secrets: Arc<Mutex<HashMap<String, String>>> = Arc::default();
     let mut fleet: HashMap<String, Instance> = HashMap::new();
 
     let dirs = crate::directory_urls().await;
@@ -217,6 +219,7 @@ pub async fn run() {
                         who.clone(),
                         Arc::clone(&maps),
                         Arc::clone(&yielding),
+                        Arc::clone(&secrets),
                     ));
                     inst.bots.push(Live {
                         name: who.name,
@@ -324,7 +327,50 @@ async fn request(url: &str, ask: u8, expect: u8) -> Option<String> {
 /// reaction delay and look cadence are counted in 100 Hz ticks, and a brain fed
 /// a 20 Hz picture would be a brain with five times the reaction time and a
 /// heading five ticks stale to steer against.
-async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, yielding: Arc<AtomicBool>) {
+/// The session token for one roster individual, claiming its account the first
+/// time and logging in whenever a token is wanted.
+///
+/// An individual is one account and one career, per docs/design/ai-players.md,
+/// so the account is claimed by name and the meta-layer hands back the same one
+/// however many times this process restarts. The secret is kept in memory for
+/// the life of the process, which is what stops a restart loop minting a
+/// credential row per attempt.
+async fn bot_token(who: &str, secrets: &Mutex<HashMap<String, String>>) -> Option<String> {
+    let meta = std::env::var("VW_META").unwrap_or_default();
+    let pool = std::env::var("VW_TOKEN").unwrap_or_default();
+    if meta.is_empty() || pool.is_empty() {
+        // A deployment without accounts. The bot still flies, declared and
+        // labeled as somebody's bot, and rates nothing.
+        return None;
+    }
+    // Read and release before any await: this is a plain mutex, and a guard
+    // held across a network call is a deadlock waiting for a slow reply.
+    let held = secrets.lock().ok().and_then(|m| m.get(who).cloned());
+    let secret = match held {
+        Some(s) => s,
+        None => {
+            let body = serde_json::json!({ "pool_token": pool, "name": who }).to_string();
+            let reply = crate::meta::call(&meta, "/v1/bot", &body)
+                .await
+                .map_err(|e| println!("bots: no account for {who}: {e}"))
+                .ok()?;
+            let s = reply.get("secret")?.as_str()?.to_string();
+            if let Ok(mut m) = secrets.lock() {
+                m.insert(who.to_string(), s.clone());
+            }
+            s
+        }
+    };
+    let body = serde_json::json!({ "secret": secret }).to_string();
+    let reply = crate::meta::call(&meta, "/v1/login", &body)
+        .await
+        .map_err(|e| println!("bots: {who} cannot log in: {e}"))
+        .ok()?;
+    Some(reply.get("token")?.as_str()?.to_string())
+}
+
+async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, yielding: Arc<AtomicBool>,
+             secrets: Arc<Mutex<HashMap<String, String>>>) {
     let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
         max_message_size: Some(2 * 1024 * 1024),
         max_frame_size: Some(2 * 1024 * 1024),
@@ -341,9 +387,16 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, yielding: Arc<
     // whatever the instance is running. It was sent here by a browse of that
     // very instance, and a wrong-zone refusal would only tell it what it already
     // knows -- that the arena changed game underneath the browse.
+    // Ours, and able to prove it. A house bot flies on a bot account, which is
+    // what lets one of them anchor the ladder and what tells a player which
+    // bots are the fleet's own. Without a meta-layer it flies declared but
+    // unaccounted, which reads as somebody else's bot, honestly enough.
+    let session = bot_token(&who.name, &secrets).await.unwrap_or_default();
+    let name = who.name.as_bytes();
     let mut join = vec![crate::C2S_JOIN, who.class.min(7), crate::CLIENT_PROTOCOL,
-                        crate::JOIN_BOT, 0];
-    join.extend_from_slice(who.name.as_bytes());
+                        crate::JOIN_BOT, 0, name.len().min(255) as u8];
+    join.extend_from_slice(name);
+    join.extend_from_slice(session.as_bytes());
     if sink.send(Message::Binary(join)).await.is_err() {
         return;
     }

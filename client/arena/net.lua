@@ -7,6 +7,8 @@
 -- Snapshots are decoded by the simulation core's own unpacker, so the client
 -- and the server cannot disagree about what a snapshot means.
 
+local account = require("arena.account")
+
 local M = {}
 
 local C2S_JOIN, C2S_INPUT = 1, 2
@@ -18,7 +20,7 @@ local S2C_MAP, S2C_SETTINGS, S2C_YIELD = 9, 10, 11
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 2
+local CLIENT_PROTOCOL = 3
 
 -- Why a join was refused. Three of these mean the address was fine and another
 -- instance would have taken us, which is a different thing to tell a player than
@@ -121,6 +123,12 @@ end
 -- roster arrived once and never again that was the roster for the rest of the
 -- session: a scoreboard of "ship 5" with real kills beside it. Keeping the last
 -- good one beats keeping part of a bad one.
+-- What a seat is, as the zone sees it. Derived from the account rather than
+-- asserted by the client, so it is worth showing: a pilot cannot dress a guest
+-- as a human by asking to. Unknown is most of the people you meet in their
+-- first session, so it reads as "not vouched for" rather than as an accusation.
+local LABEL = {[0] = "unknown", [1] = "human", [2] = "bot", [3] = "bot?"}
+
 local function on_roster(s)
     local n = string.byte(s, 2)
     if not n then return end
@@ -133,11 +141,16 @@ local function on_roster(s)
         -- a websocket callback where nobody is looking.
         if not len or #s < o + 5 + len then return end
         local ship = string.byte(s, o)
-        local is_ai = string.byte(s, o + 1) == 1
+        local label = string.byte(s, o + 1)
         local rating = i16(string.byte(s, o + 2), string.byte(s, o + 3))
         local games = string.byte(s, o + 4)
         pilots[ship] = {
-            name = string.sub(s, o + 6, o + 5 + len), ai = is_ai,
+            name = string.sub(s, o + 6, o + 5 + len),
+            -- Kept, because everything that used to ask "is this AI" still
+            -- wants that answer, and both bot labels are one.
+            ai = label == 2 or label == 3,
+            label = LABEL[label] or "unknown",
+            house = label == 2,
             games = games, tier = M.tier(rating, games),
         }
         ratings[ship] = rating
@@ -348,8 +361,14 @@ function M.connect(url, class, name, on_lost, zone)
                 -- outside the human cap, and first call to give that seat up.
                 -- A player wants none of the three. See JOIN_BOT in the server.
                 local want = zone or ""
-                local msg = string.char(C2S_JOIN, class, CLIENT_PROTOCOL, 0, #want)
-                    .. want .. name
+                -- The session token runs to the end, so the name needs a
+                -- length of its own now. An empty token is a pilot who has
+                -- never reached the meta-layer, or reached it while it was
+                -- down, and they fly as a guest rather than being turned away.
+                local session = account.token or ""
+                local msg = string.char(C2S_JOIN, class, CLIENT_PROTOCOL, 0,
+                                        #want, #name)
+                    .. want .. name .. session
                 -- The callback's own handle, not the module's: this can fire
                 -- before `websocket.connect` has returned, and `conn` is only
                 -- assigned afterwards.

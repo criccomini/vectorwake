@@ -22,6 +22,7 @@
 -- Selection only, still: this decides nothing and steps nothing. It reports
 -- an action and arena.script carries it out.
 
+local account = require("arena.account")
 local callsign = require("arena.callsign")
 local directory = require("arena.directory")
 
@@ -115,6 +116,16 @@ end
 function M.reroll()
     M.name = callsign.generate()
     M.save_identity()
+end
+
+-- The account's name wins once there is one. The arena takes the name from
+-- the token rather than from the client, so a menu showing anything else is
+-- showing a name nobody else can see.
+function M.adopt_account_name()
+    if account.name ~= "" and account.name ~= M.name then
+        M.name = account.name
+        M.save_identity()
+    end
 end
 
 -- Configuration, for a build that is pointed somewhere: a test naming its
@@ -211,10 +222,34 @@ local NODES = {
 
     zones = {title = "games", rows = zone_rows},
 
-    pilot = {title = "pilot", rows = {
-        {label = "call sign", detail = function() return M.name end,
-         act = "reroll", hint = "a name is drawn for you and kept between visits"},
-    }},
+    pilot = {title = "pilot", rows = function()
+        local rows = {
+            {label = "call sign", detail = function() return M.name end,
+             act = "reroll", hint = "a name is drawn for you and kept between visits"},
+            {label = "", detail = function() return account.status() end},
+        }
+        -- A claim is offered rather than demanded, and never while a key is
+        -- still on screen waiting to be written down.
+        if account.key ~= "" then
+            rows[#rows + 1] = {label = "your key", detail = account.key,
+                hint = "write this down now; it is the only way back in and it is not shown again"}
+            rows[#rows + 1] = {label = "done", act = "key_seen",
+                hint = "clears the key from this screen"}
+        elseif account.base ~= "" and not account.claimed then
+            rows[#rows + 1] = {label = "keep this pilot", act = "claim",
+                hint = "gives you a key that brings this rating back on another device"}
+        end
+        if account.claimed and account.key == "" then
+            if account.link_code ~= "" then
+                rows[#rows + 1] = {label = "code", detail = account.link_code,
+                    hint = "type this on the other device within ten minutes"}
+            else
+                rows[#rows + 1] = {label = "add a device", act = "link",
+                    hint = "shows a short code to type on the other device"}
+            end
+        end
+        return rows
+    end},
 
     settings = {title = "settings", rows = {
         {label = "sound", detail = function() return VOLUMES[M.volume][2] end,
@@ -422,6 +457,22 @@ local function activate()
         return "join"
     elseif r.act == "reroll" then
         M.reroll()
+        return nil
+    elseif r.act == "claim" then
+        account.claim(function(ok)
+            if not ok then M.note = account.note end
+        end)
+        return nil
+    elseif r.act == "key_seen" then
+        -- Off the screen and out of memory. It was never written to disk: a
+        -- key kept beside the secret it protects is a second copy of the same
+        -- thing.
+        account.key = ""
+        return nil
+    elseif r.act == "link" then
+        account.link(function(ok)
+            if not ok then M.note = account.note end
+        end)
         return nil
     elseif r.act == "volume" then
         M.volume = M.volume % #VOLUMES + 1

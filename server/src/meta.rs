@@ -445,6 +445,23 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value) -> (u16, serde
                         let _ = db
                             .execute("update names set reserved = true where account = $1", &[&a])
                             .await;
+                        // A new individual starts where the offline tournament
+                        // put it rather than at the default, which is what
+                        // gives a fresh deployment a sane ladder before a
+                        // single human has played. The pinned anchor is the
+                        // case that matters most: everything else in the fleet
+                        // is measured against it, so it has to be at its rating
+                        // from the first tick and not climb to it.
+                        if let Some(seed) = crate::calibrated_rating(&name) {
+                            let _ = db
+                                .execute(
+                                    "insert into ratings (account, class, rating, games)
+                                     values ($1, $2, $3, 0)
+                                     on conflict (account, class) do nothing",
+                                    &[&a, &DEFAULT_CLASS, &seed],
+                                )
+                                .await;
+                        }
                         a
                     }
                     Err(e) => return (500, serde_json::json!({ "error": e })),
@@ -608,6 +625,57 @@ async fn apply(
     .await
     .map(|_| ())
     .map_err(|e| format!("cannot apply rating: {e}"))
+}
+
+// ------------------------------------------------------------------ client
+
+/// A POST to the meta-layer, hand-rolled over a plain socket for the same
+/// reason `admin.rs` hand-rolls its responder: a handful of request shapes, and
+/// a client library would be the larger change. TLS is Caddy's job on a real
+/// deployment, as it already is for every other listener in the fleet.
+///
+/// This is the only way anything in this binary talks to the service, so an
+/// arena's rated events and the bot server's account claims share one parser
+/// and one set of failure messages.
+pub async fn call(base: &str, path: &str, body: &str) -> Result<serde_json::Value, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let rest = base.trim_end_matches('/');
+    let rest = rest.strip_prefix("http://").unwrap_or(rest);
+    let (host, prefix) = match rest.split_once('/') {
+        Some((h, p)) => (h, format!("/{p}")),
+        None => (rest, String::new()),
+    };
+    let addr = if host.contains(':') { host.to_string() } else { format!("{host}:80") };
+    let mut s = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::net::TcpStream::connect(&addr),
+    )
+    .await
+    .map_err(|_| format!("{addr} did not answer"))?
+    .map_err(|e| format!("cannot reach {addr}: {e}"))?;
+    let req = format!(
+        "POST {prefix}{path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    s.write_all(req.as_bytes()).await.map_err(|e| format!("{e}"))?;
+    let mut out = Vec::new();
+    s.read_to_end(&mut out).await.map_err(|e| format!("{e}"))?;
+    let text = String::from_utf8_lossy(&out).to_string();
+    let status = text.lines().next().unwrap_or("no reply").to_string();
+    let payload = text.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+    if !status.contains(" 200 ") {
+        // The body carries the reason, and the reason is the useful half: an
+        // unknown pool token reads very differently from a database that is
+        // down, and both arrive as a non-200.
+        let why = serde_json::from_str::<serde_json::Value>(payload)
+            .ok()
+            .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(|s| s.to_string()))
+            .unwrap_or(status);
+        return Err(why);
+    }
+    serde_json::from_str(payload).map_err(|e| format!("unreadable reply: {e}"))
 }
 
 // ------------------------------------------------------------------ server

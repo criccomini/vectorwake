@@ -18,10 +18,10 @@ mod directory;
 mod fleet;
 mod meta;
 mod modes;
-mod persist;
 mod rating;
 mod select;
 mod sim;
+mod spool;
 mod token;
 
 use std::collections::HashMap;
@@ -311,6 +311,17 @@ struct Arena {
     /// nothing in the tick can tell the two apart.
     players: HashMap<u64, Player>,
     names: HashMap<u8, Seat>,
+    /// Where rated events go on their way out of this process. Shared with
+    /// every other room here, because the spool is a property of the process
+    /// and its disk rather than of a room.
+    spool: std::sync::Arc<std::sync::Mutex<spool::Spool>>,
+    /// Rating id to account, for the pilots in this room that have one.
+    ///
+    /// It outlives the seat on purpose. A pilot who leaves can still appear as
+    /// a contributor to somebody else's death a moment later, since leaving
+    /// clears their own ledger and not their credit in anybody else's, and an
+    /// event that loses that contributor loses the rating with it.
+    accounts: HashMap<rating::Id, u64>,
     next_id: u64,
     rating: rating::Rating,
     mode: Box<dyn modes::Mode>,
@@ -772,6 +783,11 @@ impl Arena {
             world,
             players: HashMap::new(),
             names: HashMap::new(),
+            accounts: HashMap::new(),
+            // Replaced by the process's own the moment a Zone takes ownership
+            // of this room. A room built and never handed one writes nothing,
+            // which is the right answer for a room in a test.
+            spool: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::new("/nonexistent"))),
             next_id: 1,
             rating: rating::Rating::new(),
             mode: Box::new(modes::FreeForAll),
@@ -944,6 +960,9 @@ impl Arena {
             self.rating.set_anchor(&seat.rid, ai::ANCHOR_RATING);
         }
         let rid = seat.rid.clone();
+        if let Some(a) = seat.account {
+            self.accounts.insert(rid.clone(), a);
+        }
         self.names.insert(ship, seat);
         self.players.insert(
             id,
@@ -1150,9 +1169,18 @@ impl Arena {
             }
         }
         for (victim, killer) in deaths {
-            let vname = self.name_of(victim);
-            let kname = self.name_of(killer);
+            // Rating is filed under the pilot's id, which is their account
+            // where they have one. The display name is a different question
+            // and is answered separately below.
+            let vname = self.rid_of(victim);
+            let kname = self.rid_of(killer);
             let rated = self.rating.death(tick, &vname);
+            // On its way out of this process, if the participants have
+            // accounts to file it against. Appending to the spool is a
+            // buffered write to a local file, so a tick never waits on it.
+            if let Some(r) = rated.as_ref() {
+                self.hand_off(r);
+            }
             let mut m = vec![S2C_KILL];
             m.push(victim);
             m.push(killer);
@@ -1167,8 +1195,52 @@ impl Arena {
             }
             let assists = rated.as_ref().map_or(0, |r| r.credits.len());
             if assists > 1 {
-                println!("tick {tick}: {kname} killed {vname} with {assists} contributors");
+                println!(
+                    "tick {tick}: {} killed {} with {assists} contributors",
+                    self.name_of(killer),
+                    self.name_of(victim)
+                );
             }
+        }
+    }
+
+    /// A rated death, addressed to the meta-layer.
+    ///
+    /// Only participants with accounts travel. A guest is rated inside the
+    /// room and forgotten when it ends, which is what having no account means,
+    /// so sending them would be reporting a pilot nobody can look up. An event
+    /// where nobody at all has an account is not sent.
+    fn hand_off(&mut self, r: &rating::RatedEvent) {
+        let Some(&victim) = self.accounts.get(&r.victim) else {
+            // The victim carries the negative half of the exchange. Without
+            // them there is no event, only unbalanced credit.
+            return;
+        };
+        let credits: Vec<spool::Credit> = r
+            .credits
+            .iter()
+            .filter_map(|(who, w, before, after)| {
+                Some(spool::Credit {
+                    account: *self.accounts.get(who)?,
+                    weight: *w,
+                    before: *before,
+                    after: *after,
+                })
+            })
+            .collect();
+        if credits.is_empty() {
+            return;
+        }
+        let ev = spool::Event {
+            tick: r.tick,
+            victim,
+            victim_kind: u8::from(self.rating.is_bot(&r.victim)),
+            victim_before: r.victim_before,
+            victim_after: r.victim_after,
+            credits,
+        };
+        if let Ok(mut s) = self.spool.lock() {
+            s.push(ev);
         }
     }
 
@@ -1282,7 +1354,9 @@ struct Zone {
     /// docs/architecture/zones-and-arenas.md.
     rooms: Vec<Arena>,
     cfg: config::ConfigWatcher,
-    store: persist::Store,
+    /// Rated events on their way to the meta-layer. One per process, shared
+    /// with every room, and inert on a deployment without accounts.
+    spool: std::sync::Arc<std::sync::Mutex<spool::Spool>>,
     /// The zone this process is serving, empty when it is running the built-in
     /// room because no catalog reached it.
     zone_name: String,
@@ -1410,6 +1484,7 @@ impl Zone {
         // share one copy; without this the ceiling would be a memory limit
         // instead of a blast-radius one.
         let mut fresh = Self::build_room(&z, Some(&self.rooms[0].world))?;
+        fresh.spool = self.spool.clone();
         prime_ratings(&mut fresh.rating, &self.ladder);
         self.rooms.push(fresh);
         let n = self.rooms.len();
@@ -1494,22 +1569,13 @@ impl Zone {
     /// reads as still placing, and the next death moves them by a newcomer's K,
     /// which is four times as far as their record says it should.
     ///
-    /// With an account the record comes from the token, which is the
-    /// meta-layer's answer and therefore the same in every room of the fleet.
-    /// Without one it comes from this process's own file, which is all a
-    /// deployment running without accounts has.
+    /// The record comes from the token, which is the meta-layer's answer and
+    /// therefore the same in every room of the fleet. A pilot without one
+    /// arrives unrated, which is what having no account means.
     fn restore_pilot(&mut self, room: usize, seat: &Seat) {
         let class = self.rating_class();
-        let (saved, played) = if seat.account.is_some() {
-            match self.token_rating(seat, &class) {
-                Some(v) => v,
-                None => return,
-            }
-        } else {
-            match self.store.rating(&seat.rid) {
-                Some(v) => (v, self.store.games(&seat.rid)),
-                None => return,
-            }
+        let Some((saved, played)) = self.token_rating(seat, &class) else {
+            return;
         };
         if let Some(a) = self.rooms.get_mut(room) {
             a.rating.score.insert(seat.rid.clone(), saved);
@@ -1523,6 +1589,22 @@ impl Zone {
     fn token_rating(&self, seat: &Seat, class: &str) -> Option<(f64, u32)> {
         let r = seat.carried.as_ref()?.iter().find(|r| r.class == class)?;
         Some((r.rating, r.games))
+    }
+
+    /// Tell the spool where to send, which cannot be known until a catalog
+    /// has arrived: the meta-layer's address travels with it. Called on the
+    /// same slow clock the ladder save used to run on, so a zone change or a
+    /// catalog update is picked up without another trigger to remember.
+    fn aim_spool(&mut self) {
+        let (url, token) = (
+            self.catalog.as_ref().map(|c| c.meta_url.clone()).unwrap_or_default(),
+            std::env::var("VW_TOKEN").unwrap_or_default(),
+        );
+        let (zone, class, instance) =
+            (self.zone_name.clone(), self.rating_class(), self.fleet.instance.clone());
+        if let Ok(mut s) = self.spool.lock() {
+            s.aim(&url, &token, &zone, &class, &instance);
+        }
     }
 
     /// The class this zone rates into. One number per kind of game, per
@@ -1540,30 +1622,6 @@ impl Zone {
             meta::DEFAULT_CLASS.to_string()
         } else {
             m
-        }
-    }
-
-    /// Every room's ladder to disk. A human is in exactly one room at a time so
-    /// their score saves cleanly; a bot name appears in all of them and the last
-    /// room wins, which costs nothing because bots are re-seeded from the
-    /// calibrated ladder whenever a room is built.
-    fn save_ladder(&mut self) {
-        let rows: Vec<(String, f64, u32)> = self
-            .rooms
-            .iter()
-            .flat_map(|r| {
-                r.rating
-                    .score
-                    .iter()
-                    .map(|(k, v)| (k.clone(), *v, r.rating.games_of(k)))
-            })
-            .collect();
-        for (name, score, played) in rows {
-            self.store.set_rating(&name, score);
-            self.store.set_games(&name, played);
-        }
-        if let Err(e) = self.store.flush() {
-            println!("could not save ratings: {e}");
         }
     }
 
@@ -1827,6 +1885,7 @@ impl Zone {
         // From the bytes, not from a sibling: this is a change of zone, so the
         // map the running rooms hold is the wrong map.
         let mut arena = Self::build_room(z, None)?;
+        arena.spool = self.spool.clone();
         prime_ratings(&mut arena.rating, &self.ladder);
         // Tell the bots before the room they are in stops existing. Rule 1 means
         // no human is here to tell, but bots are: an instance with only bots in
@@ -1919,6 +1978,28 @@ fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64>) {
 /// ladder seeds every zone.
 const LADDER: &str = include_str!("../../zone/ladder.json");
 
+/// What the offline tournament measured for one calibrated individual.
+///
+/// The meta-layer seeds a house bot's account from this the first time it is
+/// claimed, which is where the calibrated ladder now enters the fleet. It used
+/// to enter by priming every room, and that stopped reaching accounted bots the
+/// moment their rating started being filed under an account rather than a name:
+/// a room primes what it knows, and it no longer knows them by name.
+pub fn calibrated_rating(name: &str) -> Option<f64> {
+    if name == ai::ANCHOR {
+        // The pinned reference personality. It is a definition rather than a
+        // measurement, so it does not depend on a calibration run having
+        // happened.
+        return Some(ai::ANCHOR_RATING);
+    }
+    if !ai::CALIBRATED.iter().any(|(n, _, _)| *n == name) {
+        return None;
+    }
+    serde_json::from_str::<HashMap<String, f64>>(LADDER)
+        .ok()
+        .and_then(|m| m.get(name).copied())
+}
+
 /// Read the ladder a calibration run wrote, falling back to the compiled one.
 /// A missing file is the normal case and not a warning: it means nobody has
 /// calibrated since this build.
@@ -1931,14 +2012,15 @@ fn load_ladder(dir: &str) -> HashMap<String, f64> {
 }
 
 impl Zone {
-    fn new(cfg: config::ConfigWatcher, store: persist::Store,
+    fn new(cfg: config::ConfigWatcher, spool: std::sync::Arc<std::sync::Mutex<spool::Spool>>,
            ladder: HashMap<String, f64>) -> Self {
         let mut arena = Arena::new_from(&cfg.current);
+        arena.spool = spool.clone();
         prime_ratings(&mut arena.rating, &ladder);
         Zone {
             rooms: vec![arena],
             cfg,
-            store,
+            spool,
             zone_name: String::new(),
             catalog: None,
             tick_us: 0,
@@ -2201,7 +2283,10 @@ async fn main() {
     if let Some(e) = err {
         println!("no usable zone.toml ({e}); running on the built-in defaults");
     }
-    let store = persist::Store::open(format!("{dir}/ratings.json"));
+    // The one thing an arena's disk holds besides its instance id: rated
+    // events waiting for the meta-layer.
+    let spool = std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::new(&dir)));
+    tokio::spawn(spool::drain_loop(spool.clone()));
     let ladder = load_ladder(&dir);
     let local = std::path::Path::new(&dir).join("ladder.json").exists();
     println!(
@@ -2220,7 +2305,7 @@ async fn main() {
         watcher.current.tls_cert.clone(),
         watcher.current.tls_key.clone(),
     );
-    let zone = Arc::new(Mutex::new(Zone::new(watcher, store, ladder)));
+    let zone = Arc::new(Mutex::new(Zone::new(watcher, spool, ladder)));
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind failed");
@@ -2286,7 +2371,7 @@ async fn main() {
                     z.reload();
                 }
                 if n % 3000 == 0 {
-                    z.save_ladder();
+                    z.aim_spool();
                 }
                 // Every room, in order. The process holds one arena per room and
                 // ticks them all on this thread: at 16 us for sixty-four ships
@@ -2810,7 +2895,7 @@ mod tests {
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = Zone::new(
             cfg,
-            persist::Store::open("/nonexistent/state.json"),
+            test_spool(),
             ladder,
         );
         let def = wire_zone(4, 2, 8);
@@ -3002,12 +3087,18 @@ mod tests {
         assert_eq!(z.rooms[0].rating.games_of(&fresh.rid), 0);
     }
 
+    /// A spool aimed nowhere, which is what a room that is not handing off
+    /// anywhere holds. Writes nothing, because it is not armed.
+    fn test_spool() -> std::sync::Arc<std::sync::Mutex<spool::Spool>> {
+        std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::new("/nonexistent")))
+    }
+
     /// A zone process already serving that definition. No config file and no
     /// store file: both read defaults when the path is absent, which is what a
     /// catalog-served arena runs on anyway.
     fn serving(rooms: u32, target: u32, cap: u32) -> Zone {
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         let def = wire_zone(rooms, target, cap);
         z.catalog = Some(fleet::WireCatalog {
@@ -3258,7 +3349,7 @@ mod tests {
         def.mode = "warzone".into();
         def.zone_toml = "description = \"war\"\n[arena]\nflags = 4\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         z.serve_zone(&def).expect("a room");
         // The bot server would put these here. A round needs a population and
@@ -3517,7 +3608,7 @@ mod tests {
         let mut def = wire_zone(1, 6, 16);
         def.zone_toml = "description = \"no kit\"\n[arena]\nspawn_prizes = 0\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         z.serve_zone(&def).expect("a room");
 
@@ -3568,7 +3659,7 @@ mod tests {
         def.zone_toml = "description = \"a zone with a kit\"\n\
                          [arena]\nspawn_prizes = 30\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         z.serve_zone(&def).expect("a room");
 
@@ -3590,7 +3681,7 @@ mod tests {
         let mut bare = wire_zone(1, 6, 16);
         bare.zone_toml = "description = \"bare\"\n[arena]\nspawn_prizes = 0\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z2 = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z2 = Zone::new(cfg, test_spool(),
                                HashMap::new());
         z2.serve_zone(&bare).expect("a room");
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
@@ -3608,7 +3699,7 @@ mod tests {
         def.teams = 2;
         def.mode = "warzone".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open("/nonexistent/state.json"),
+        let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
         z.serve_zone(&def).expect("a room");
         assert!(!z.rooms[0].free_for_all());
@@ -3681,33 +3772,96 @@ mod tests {
     }
 
     #[test]
-    fn a_settled_pilot_is_still_settled_after_a_restart() {
-        // The bug this covers: the file held the rating and not the game count,
-        // so a pilot with forty rated deaths came back reading as placing, and
-        // their next death moved them by a newcomer's K.
-        let path = std::env::temp_dir()
-            .join(format!("vw-ladder-{}.json", std::process::id()));
-        let _ = std::fs::remove_file(&path);
+    fn the_calibrated_ladder_seeds_an_account_and_pins_the_anchor() {
+        // Where the offline tournament's work now enters the fleet. A room
+        // primes by name and stopped reaching bots the moment their rating
+        // moved to an account, so this is the path that has to keep working.
+        assert_eq!(
+            calibrated_rating(ai::ANCHOR),
+            Some(ai::ANCHOR_RATING),
+            "the anchor is a definition, not a measurement"
+        );
+        for (name, _, _) in ai::CALIBRATED {
+            assert!(
+                calibrated_rating(name).is_some(),
+                "{name} was calibrated and has to arrive with its number"
+            );
+        }
+        // The roster is longer than the calibrated nine, and the rest earn
+        // their number in play.
+        let tenth = ai::individual(9);
+        assert!(calibrated_rating(&tenth.name).is_none());
+    }
+
+    #[test]
+    fn a_settled_pilot_is_still_settled_in_a_fresh_process() {
+        // The bug this covers outlived the file it was found in: a rating
+        // restored without its game count reads as placing, and the pilot's
+        // next death moves them by a newcomer's K. The record now arrives in
+        // the token rather than from a file beside the process, so the same
+        // property is asserted against the thing that carries it.
+        let mut z = serving_with_accounts();
+        let t = a_token_for(77, token::Kind::Human, true, "Veteran", vec![
+            token::ClassRating { class: "arena".into(), rating: 1640.0, games: 40 },
+        ]);
+        let seat = z.identify(&t, "", false).expect("verifies");
+        let rid = seat.rid.clone();
+        assert_eq!(z.rooms[0].rating.games_of(&rid), 0, "not until they join");
+        z.restore_pilot(0, &seat);
+        assert_eq!(z.rooms[0].rating.rating_of(&rid), 1640.0);
+        assert_eq!(z.rooms[0].rating.games_of(&rid), 40);
+        assert!(z.rooms[0].rating.tier_of(&rid).is_some(),
+                "a settled pilot is shown a tier, not 'placing'");
+    }
+
+    #[test]
+    fn a_rated_death_between_accounts_is_handed_off() {
+        let d = std::env::temp_dir().join(format!("vw-handoff-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let mut sp = spool::Spool::new(d.to_str().unwrap());
+        sp.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
+        let sp = std::sync::Arc::new(std::sync::Mutex::new(sp));
 
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = Zone::new(cfg, persist::Store::open(&path), HashMap::new());
-        let def = wire_zone(1, 6, 16);
-        z.serve_zone(&def).expect("a room");
-        z.rooms[0].rating.score.insert("veteran".into(), 1640.0);
-        z.rooms[0].rating.games.insert("veteran".into(), 40);
-        z.save_ladder();
+        let mut z = Zone::new(cfg, sp.clone(), HashMap::new());
+        z.serve_zone(&wire_zone(1, 6, 16)).expect("a room");
+        let a = &mut z.rooms[0];
+        a.accounts.insert("a1".into(), 1);
+        a.accounts.insert("a2".into(), 2);
 
-        // A new process, reading what the last one wrote.
-        let (cfg2, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z2 = Zone::new(cfg2, persist::Store::open(&path), HashMap::new());
-        z2.serve_zone(&def).expect("a room");
-        assert_eq!(z2.rooms[0].rating.games_of("veteran"), 0, "not until they join");
-        z2.restore_pilot(0, &Seat::guest("veteran", false));
-        assert_eq!(z2.rooms[0].rating.rating_of("veteran"), 1640.0);
-        assert_eq!(z2.rooms[0].rating.games_of("veteran"), 40);
-        assert!(z2.rooms[0].rating.tier_of("veteran").is_some(),
-                "a settled pilot is shown a tier, not 'placing'");
-        let _ = std::fs::remove_file(&path);
+        a.hand_off(&rating::RatedEvent {
+            tick: 100,
+            victim: "a2".into(),
+            victim_before: 1200.0,
+            victim_after: 1184.0,
+            credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
+        });
+        {
+            let s = sp.lock().unwrap();
+            assert_eq!(s.len(), 1, "both had accounts, so the event travels");
+        }
+
+        // A guest contributes nothing durable, because there is nobody to file
+        // it against. The event is dropped rather than sent half-formed.
+        a.hand_off(&rating::RatedEvent {
+            tick: 200,
+            victim: "a2".into(),
+            victim_before: 1184.0,
+            victim_after: 1170.0,
+            credits: vec![("some guest".into(), 1.0, 1200.0, 1214.0)],
+        });
+        // And a guest victim is not an event at all: the negative half of the
+        // exchange has nowhere to land.
+        a.hand_off(&rating::RatedEvent {
+            tick: 300,
+            victim: "another guest".into(),
+            victim_before: 1200.0,
+            victim_after: 1184.0,
+            credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
+        });
+        assert_eq!(sp.lock().unwrap().len(), 1, "neither half-formed event travelled");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

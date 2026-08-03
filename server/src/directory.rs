@@ -78,6 +78,13 @@ pub struct Browse {
     pub name: String,
     pub description: String,
     pub catalog_version: u32,
+    /// Where a client logs in, empty on a deployment without accounts. It
+    /// travels with the games list because that is the one thing a client asks
+    /// for before it needs an identity, which saves it a second address to be
+    /// configured with and keeps the account system a property of the
+    /// deployment rather than of the build.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub meta: String,
     pub zones: Vec<BrowseZone>,
 }
 
@@ -136,6 +143,7 @@ impl Directory {
                 })
                 .collect(),
             meta_key: c.meta.key.clone(),
+            meta_url: c.meta.url.clone(),
             zones: c
                 .order
                 .iter()
@@ -200,6 +208,7 @@ impl Directory {
     }
 
     pub fn browse(&self) -> Browse {
+        let meta = self.catalog.meta.url.clone();
         let mut zones: Vec<BrowseZone> = self
             .catalog
             .order
@@ -256,6 +265,7 @@ impl Directory {
             name: self.catalog.name.clone(),
             description: self.catalog.description.clone(),
             catalog_version: self.catalog.version,
+            meta,
             zones,
         }
     }

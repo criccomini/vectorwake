@@ -196,6 +196,10 @@ pub struct WireCatalog {
     /// else here, unlike the pool tokens that deliberately do not.
     #[serde(default)]
     pub meta_key: String,
+    /// Where the meta-layer answers. An arena posts rated events here and
+    /// never anything else; it is the client that logs in.
+    #[serde(default)]
+    pub meta_url: String,
     /// Declared order preserved: the selection tie-break is "first in the file".
     pub zones: Vec<WireZone>,
 }

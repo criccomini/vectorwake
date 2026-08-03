@@ -18,6 +18,7 @@
 
 local net = require("arena.net")
 local touch = require("arena.touch")
+local account = require("arena.account")
 local directory = require("arena.directory")
 local menu = require("arena.menu")
 local pal = require("arena.palette")
@@ -266,6 +267,9 @@ function go_home(self, at)
     ui.details = false
     menu.home = true
     menu.show(at)
+    -- The call sign travels with the first account request, so the word list
+    -- stays in one place in this codebase.
+    directory.pilot_name = menu.name
     directory.open(menu.directory)
 end
 
@@ -367,6 +371,9 @@ function init(self)
     -- A generated call sign, restored if this browser has one already. The
     -- configuration still wins, which is how a test names its clients.
     menu.load_identity()
+    -- The account secret this device already holds, if any. Logging in waits
+    -- until the games list says where the meta-layer is.
+    account.load()
     menu.defaults(sys.get_config_string("vectorwake.name", ""),
                   sys.get_config_string("vectorwake.directory", ""))
 
@@ -484,6 +491,9 @@ function update(self, dt)
     else
         directory.idle()
     end
+    -- The arena reads the name off the token, so the menu showing a different
+    -- one would be showing a name nobody else can see.
+    menu.adopt_account_name()
 
     if menu.open then
         menu.tick()

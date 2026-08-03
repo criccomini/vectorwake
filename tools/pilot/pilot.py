@@ -24,6 +24,9 @@ import websockets
 SO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libvwprobe.so")
 
 C2S_JOIN, C2S_INPUT, C2S_SHIP = 1, 2, 5
+# The client wire's version, checked by the zone before it reads anything else
+# in a join. Bumped when the join or the roster changes shape.
+PROTOCOL = 3
 (S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER, S2C_KILL, S2C_BANNER,
  S2C_ZONE, S2C_DENIED, S2C_MAP, S2C_SETTINGS) = 1, 2, 3, 4, 5, 6, 7, 9, 10
 
@@ -216,8 +219,13 @@ class Pilot:
             return self
         async with ws:
             z = self.zone.encode()
-            await ws.send(bytes([C2S_JOIN, self.rng.randrange(8), 1, len(z)])
-                          + z + self.name.encode())
+            n = self.name.encode()
+            # class, protocol, flags, then the lengths of the zone and the
+            # name. The session token runs to the end and is empty here: a
+            # pilot with no token is seated as an unknown guest, which is
+            # exactly what this harness wants to be.
+            await ws.send(bytes([C2S_JOIN, self.rng.randrange(8), PROTOCOL, 0,
+                                 len(z), len(n)]) + z + n)
 
             async def drive():
                 # Real flight: hold a turn for a while, thrust, and fire in
