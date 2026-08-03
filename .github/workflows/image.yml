@@ -47,6 +47,21 @@ jobs:
       - name: server tests
         run: cargo test --manifest-path server/Cargo.toml
 
+      # The deployment file, parsed by the thing that actually parses it.
+      #
+      # A duplicate volume key reached the host and broke every converge for five
+      # minutes, because it was checked with Python's yaml.safe_load, which
+      # accepts duplicate mapping keys and keeps the last one. Compose rejects
+      # them outright. A validator more permissive than the consumer is not a
+      # validator, so this runs compose.
+      - name: the compose files parse
+        run: |
+          printf 'VW_DOMAIN=example.invalid\nVW_POOL_TOKEN=x\nVW_ADMIN_TOKEN=y\n' > /tmp/ci.env
+          docker compose --env-file /tmp/ci.env -f deploy/docker-compose.yml config -q
+          docker compose --env-file /tmp/ci.env \
+            -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml config -q
+          echo "both compose files parse"
+
   publish:
     needs: test
     runs-on: ubuntu-latest

@@ -169,9 +169,6 @@ volumes:
   # What Caddy serves at /. Written by the `client` service, read by Caddy, and
   # the reason a client release is a pull rather than a restart.
   client-page:
-  # What Caddy serves at /. Written by the `client` service, read by Caddy, and
-  # the reason a client release is a pull rather than a restart.
-  client-page:
   # Per arena, and the reason is the instance id: it is written on first start
   # and read on every one after, so an arena that loses this file comes back
   # looking like a different instance and the directory lists a ghost until the
