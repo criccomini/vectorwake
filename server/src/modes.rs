@@ -167,24 +167,12 @@ impl Mode for Warzone {
             }
             (None, _) => {
                 self.hold = None;
-                // Every side that holds one, and what is still loose. Reading
-                // only sides zero and one made a third team's flags read as
-                // loose, and a free-for-all's read as nobody's at all.
-                let mut held = 0;
-                let mut parts = Vec::new();
-                for team in 0..self.teams {
-                    let n = ctx.world.flags_held(team);
-                    held += n;
-                    if n > 0 {
-                        parts.push(format!("{team}: {n}"));
-                    }
-                }
-                let loose = self.flags as i32 - held;
-                ctx.banner = if parts.is_empty() {
-                    format!("flags  all {loose} loose")
-                } else {
-                    format!("flags  {}   {loose} loose", parts.join("  "))
-                };
+                // Nothing. The HUD draws a pennant per flag, coloured yours,
+                // theirs or loose, twenty-five points above where this line
+                // lands, so a tally here was the same answer written out
+                // longhand under the picture of itself. The banner is for what
+                // the pennants cannot show: the countdown and the win.
+                ctx.banner = String::new();
             }
         }
     }
