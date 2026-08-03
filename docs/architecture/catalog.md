@@ -142,6 +142,13 @@ max_rooms = 1
 # MaxTeamDifference defaults to 1, so the balancer tolerates almost nothing.
 teams = 2
 balance = "smaller"        # smaller | random | none
+
+# Who this zone lets in: "any", the default, or "claimed" for a room that wants
+# a field it can vouch for. The bar is on the label a seat wears, which comes
+# from the account rather than from anything a client asserted. Most rooms
+# should stay "any": the cost of caring is a newcomer turned away in the second
+# they arrived. See design/accounts.md.
+admission = "any"
 private_teams = false     # the original's private freqs, off until wanted
 
 # Everything below is the settings surface that already existed, unchanged.
@@ -186,6 +193,7 @@ tooling validates and the directory validates again on load:
 | A `[meta]` url with no key | No arena could check a token the meta-layer minted |
 | `teams` of zero | Every pilot needs a team; one team is a free-for-all, none is nothing |
 | `balance` naming something unimplemented | The same dead-key failure as `mode`, one field over |
+| `admission` that is not `any` or `claimed` | The same again, and reading it as the default would silently open a zone meant to be closed |
 | A `version` not greater than the one being replaced | Arena servers take the highest; a rollback needs a new higher number, not a reused one |
 
 That last row is worth stating plainly because it is the surprising one. To roll

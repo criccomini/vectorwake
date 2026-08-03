@@ -41,6 +41,12 @@ pub struct ZoneDef {
     pub teams: Option<u8>,
     /// smaller | random | none.
     pub balance: String,
+    /// `any`, the default, or `claimed` for a zone that wants a field it can
+    /// vouch for. A ladder arena may reasonably care that everybody in it has
+    /// chosen to be the same person tomorrow; a public room reasonably does
+    /// not, since the cost of caring is a newcomer turned away in the second
+    /// they arrived.
+    pub admission: String,
     pub private_teams: bool,
     pub arena: crate::config::ArenaConfig,
     /// The text this was parsed from, kept so a directory can hand the zone to
@@ -63,6 +69,7 @@ impl Default for ZoneDef {
             max_rooms: None,
             teams: None,
             balance: "smaller".into(),
+            admission: "any".into(),
             private_teams: false,
             arena: crate::config::ArenaConfig::default(),
             raw: String::new(),
@@ -343,6 +350,14 @@ pub fn load(dir: impl AsRef<Path>) -> Result<Catalog, String> {
 }
 
 fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
+    // The same dead-key failure as `mode`, one field over: a value nobody
+    // implements has to be refused rather than quietly read as the default.
+    if !matches!(z.admission.as_str(), "any" | "claimed") {
+        return Err(format!(
+            "zone {name:?}: admission {:?} is not \"any\" or \"claimed\"",
+            z.admission
+        ));
+    }
     // A mode that falls back silently is how `arena.mode` became a dead key.
     if !crate::modes::exists(&z.mode) {
         return Err(format!(

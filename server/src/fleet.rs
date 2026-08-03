@@ -226,6 +226,9 @@ pub struct WireZone {
     pub max_rooms: u32,
     pub teams: u8,
     pub balance: String,
+    /// See `catalog::ZoneDef::admission`.
+    #[serde(default)]
+    pub admission: String,
     /// The packed map, base64 so the whole catalog stays one JSON document.
     /// A full-size map packs to a couple of kilobytes, so this is cheap.
     pub map_b64: String,

@@ -51,7 +51,7 @@ server/
     ai/               controllers, perception, navigation, population director
     rating/           damage ledgers, rated events, Elo
     modules/          wasm host, adviser dispatch
-    persist/          rated-event batching and handoff; no local database
+    spool/            rated events, batched to the meta-layer; no local database
   tests/
 ```
 
@@ -198,10 +198,9 @@ The directory was the other candidate and lost for exactly the reason it was
 tempting: it is the piece we most want to be able to lose, and the event log is
 the piece we can least afford to.
 
-Until that service exists, `persist.rs` writing `ratings.json` beside the
-process is the honest interim, and its own header says so. It is correct for
-one process serving one zone and wrong the moment two instances of the same
-zone both hold opinions about a pilot's rating.
+`persist.rs` writing `ratings.json` beside the process was the interim, and it
+is gone. It was correct for one process serving one zone and wrong the moment
+two instances of the same zone both held opinions about a pilot's rating.
 
 ASSS's score intervals, forever and per-reset and per-game, are still the model
 worth copying when this lands, because they are what tournament and league play

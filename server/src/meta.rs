@@ -474,6 +474,47 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value) -> (u16, serde
             (200, serde_json::json!({ "secret": secret, "account": account }))
         }
 
+        // Somebody else's bot, registered by the person who answers for it.
+        // Anyone may declare a bot at join and be labeled honestly; what this
+        // buys is an account, which is what a rating needs to outlive a room.
+        // The owner has to be claimed, because an owner who can evaporate by
+        // clearing local storage is not accountable for anything.
+        "/v1/bot/register" => {
+            let Some(owner) = account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            else {
+                return (403, serde_json::json!({ "error": "no such account" }));
+            };
+            let claims = match claims_for(&db, owner).await {
+                Ok(c) => c,
+                Err(e) if e == "banned" => return (403, serde_json::json!({ "error": "banned" })),
+                Err(e) => return (500, serde_json::json!({ "error": e })),
+            };
+            if claims.kind.is_bot() {
+                return (400, serde_json::json!({ "error": "a bot cannot own a bot" }));
+            }
+            if !claims.claimed {
+                return (403, serde_json::json!({
+                    "error": "claim your own account first; a bot needs an owner who can be found"
+                }));
+            }
+            let name = clean_name(&s("name"));
+            if name.is_empty() {
+                return (400, serde_json::json!({ "error": "a bot needs a name" }));
+            }
+            let account = match create_account(&db, KIND_THIRD_PARTY_BOT, Some(owner)).await {
+                Ok(a) => a,
+                Err(e) => return (500, serde_json::json!({ "error": e })),
+            };
+            if let Err(e) = set_name(&db, account, &name).await {
+                return (500, serde_json::json!({ "error": e }));
+            }
+            let secret = new_secret();
+            if let Err(e) = add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await {
+                return (500, serde_json::json!({ "error": e }));
+            }
+            (200, serde_json::json!({ "secret": secret, "account": account, "owner": owner }))
+        }
+
         // An arena handing off what it rated. The log is the durable artifact
         // and the ratings table is a projection of it, per
         // docs/design/rating.md.

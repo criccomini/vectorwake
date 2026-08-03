@@ -11,10 +11,10 @@
 | M3.5 AI opponents | Done server-side: input-only bots, labeled, taking and yielding seats |
 | M4 rating and modes | Done: damage ledgers, attribution, and the warzone flag game |
 | M4.5 duels | Built, then removed: deferred until a mode is catalog content |
-| M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities, persistence |
+| M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities |
 | M5.5 Defold client | Done: real core as a native extension, builds for host and browser, predicts against a live zone |
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and the games list in the menu |
-| M6 platforms | Accounts designed, not built. Steam and consoles still wait on credentials |
+| M6 platforms | Accounts built. Steam and consoles still wait on credentials |
 | M7 the fleet | Designed, not built. The directory, catalog and zone selection below |
 
 What M6 asked for that is code has landed. The bot ladder is calibrated by
@@ -22,14 +22,20 @@ an offline tournament and seeds every zone; ratings show as tiers once a
 pilot has earned one; the client takes touch input; and a directory service
 lists live zones, which the client's menu offers as the games you can join.
 
-What remains is partly ours again. Steam still needs a partner account and
-consoles still need manufacturer approval, but identity stopped waiting on
-Nakama: [decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list)
-makes the meta-layer our own service on bought Postgres, designed in
+The meta-layer is built: `vectorwake-server meta` over Postgres, holding
+accounts, credentials, names, ratings and the rated event log, per
+[decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list),
 [design/accounts.md](../design/accounts.md) and [meta-layer.md](meta-layer.md).
-It replaces `persist.rs`, which stores and ranks a number, and not
-`rating.rs`, because damage-weighted attribution across several attackers is
-specific to this game and no general backend has an opinion about it.
+A client mints a guest on first contact and never signs up; arenas verify a
+signed session token against a key the catalog carries; house bots hold
+accounts and one of them anchors the ladder. `persist.rs` and `ratings.json`
+are gone with it. `rating.rs` stayed, because damage-weighted attribution
+across several attackers is specific to this game and no general backend has
+an opinion about it.
+
+What remains of M6 is credentials rather than code: Steam needs a partner
+account and consoles need manufacturer approval, and each brings its own
+claim method with it.
 
 The Defold client is the only client. A hand-written web prototype came first
 and proved the networking contract, and it is gone: it stopped compiling when
@@ -37,10 +43,6 @@ tiles became typed classes, nothing built it, and nothing noticed for as long
 as this history goes back. Its palette and panel geometry live on in
 `client/arena/palette.lua` and `client/arena/ui.lua`, which is the part of it
 worth keeping.
-
-M6 needs a Steam partner account, console manufacturer approval, and the
-meta-layer built. The first two are credentials the milestone waits on;
-the third is engineering again, designed and ready to write.
 
 The rest of this document is the original plan, kept as written.
 
@@ -254,15 +256,15 @@ of claim worth writing down once rather than re-deriving:
   was a small-room test zone instead; the shape of the test is the same and the
   ladder does not know what a zone is for.
 
-**M7.7, durable state leaves the arena.** Deferred, but not indefinitely, and the
-deadline is structural rather than chosen: `ratings.json` beside the process is
-correct while one instance serves a zone and wrong the moment two do. So this has
-to land before the fill ladder's fourth rung ever fires in anger, which makes it
-a prerequisite for a second instance of any zone rather than a milestone free to
-slip. Rated events batch to the meta-layer, per
-[meta-layer.md](meta-layer.md), which closes on paper the question
-[server.md](server.md) used to leave open. Done when two instances of one zone
-can both rate the same pilot without disagreeing.
+**M7.7, durable state leaves the arena. Built.** `ratings.json` beside the
+process was correct while one instance served a zone and wrong the moment two
+did, which made this a prerequisite for a second instance of any zone rather
+than a milestone free to slip. An arena now spools rated events to its disk and
+drains them to the meta-layer, which appends each to the log and applies its
+delta to the projection. Two instances of one zone rate the same pilot without
+disagreeing, because addition commutes and neither of them holds an opinion
+worth reconciling. The arena keeps its debt while the service is down and
+drains it when the service returns.
 
 **M7.8, bots leave the arena process. Built.** A bot server joins the
 deployment as a fourth use of the same binary: one process flying the roster as

@@ -21,11 +21,39 @@ records why this is our own service rather than Nakama.
 | names | account, call sign, whether it is reserved |
 | rated_events | the log [rating.md](../design/rating.md) specifies: participants, weights, ratings before and after, arena, mode class, opponent kind, timestamp |
 | ratings | account, mode class, rating, games. A projection, rebuildable from `rated_events` at any time |
-| roster | house bot account to roster individual, per [ai-players.md](../design/ai-players.md) |
+| link_codes | a short-lived, single-use code and the account it joins |
+
+A house bot needs no table of its own: the roster individual's name *is* its
+credential, a `house` row in `credentials`, so claiming the account for one is
+the same lookup as logging in and an individual is one account however many
+times the bot server restarts.
 
 The label a seat wears, human, bot, or unknown, is derived rather than stored:
 bot kinds are bots, a human account with a credential beyond its secret is
 human, and a human account with only its secret is unknown.
+
+## The routes
+
+Every route takes JSON and answers JSON, hand-rolled over a socket for the
+same reason `admin.rs` hand-rolls its responder: the surface is small and a
+framework would be the larger change.
+
+| Route | Who calls it | What it does |
+|---|---|---|
+| `/v1/guest` | a client, once ever | Mints an account and returns its secret. The call sign travels with the request, so the word list lives in the client alone |
+| `/v1/login` | a client, once a session | Secret in, session token out. Where fleet bans are enforced |
+| `/v1/claim` | a client | Attaches an account key and reserves the call sign |
+| `/v1/redeem` | a client | An account key on a new device, which gets a secret of its own |
+| `/v1/link/new`, `/v1/link/redeem` | a client | A six-digit code from a logged-in device to a new one, single use |
+| `/v1/bot` | the bot server, with a pool token | The account for one roster individual, the same one every time. A new one is seeded from the calibrated ladder |
+| `/v1/bot/register` | anyone, with a claimed account | A third-party bot account under that owner, who answers for it |
+| `/v1/events` | an arena, with a pool token | Rated events, appended to the log and applied to the projection |
+| `/v1/ban` | an operator, with the admin token | Marks an account, which takes effect at the next token issuance |
+
+A client learns the address from the directory's games list, which is the one
+thing it asks for before it needs an identity. That keeps the account system a
+property of the deployment rather than of the build, and it means a client
+pointed at a fleet without accounts simply never signs in.
 
 ## The session token
 
@@ -69,16 +97,28 @@ prediction of the authoritative number in exactly the way a client's sim is a
 prediction of the arena's: small, brief disagreement, converging on the
 authority.
 
-The spool is the one new thing on an arena's disk. Batches that cannot be
-delivered wait there and drain when the service returns, and a spool is a
+The spool is the one new thing on an arena's disk: a JSONL file, appended to
+inside the tick and drained by a background task every few seconds. Batches
+that cannot be delivered wait there and survive a restart, and a spool is a
 buffer rather than a database: an arena destroyed mid-spool loses those events
 and nothing else, which is the same bounded loss the fleet already accepts for
 a room in progress.
 
-`persist.rs` and `ratings.json` retire when this lands. The records they hold
-are keyed by generated guest names on one box, which nobody can claim, so
-nothing migrates: human careers start when accounts arrive, and house bots are
-reseeded from the calibration ladder under their new accounts.
+Only participants with accounts travel. A guest is rated inside the room and
+forgotten when it ends, so an event where the victim has no account is not
+sent at all, and a guest contributor is dropped from one that is. Sending them
+would be reporting a pilot nobody can look up.
+
+`persist.rs` and `ratings.json` are gone. The records they held were keyed by
+generated guest names on one box, which nobody can claim, so nothing migrated:
+human careers start when accounts arrive.
+
+The calibrated ladder now enters the fleet here rather than in a room. A room
+primes its bots by name, and that stopped reaching them the moment their rating
+moved to an account, so `/v1/bot` seeds a new house bot account with what the
+offline tournament measured. The pinned anchor is the case that matters most:
+everything else in the fleet is measured against it, so it has to be at its
+rating from the first tick rather than climb to it.
 
 ## When it is down
 
@@ -93,7 +133,9 @@ any design this repository has ever had.
 ## Operations
 
 One more container beside the directory on the existing host, and the managed
-Postgres in the same region. The account secret is a random 256-bit bearer
+Postgres in the same region. Arenas and the bot server reach it on loopback
+through `VW_META`, rather than through the public address the catalog carries
+for clients, so their traffic never leaves the box. The account secret is a random 256-bit bearer
 value, minted by the service and carried only over TLS, and the account key is
 the same thing in a shape a person can keep, stored hashed like every other
 credential in the fleet. There is no external dependency at all: no mail

@@ -60,8 +60,9 @@ rating and the same history; what changes is that losing the device no longer
 loses the pilot. Claiming also reserves the account's call sign across the
 fleet, and it changes the label the next section defines.
 
-The client asks once, after a session has gone well, and never blocks play on
-the answer. A player who declines stays a guest forever and loses nothing but
+The client offers the claim on the pilot page and never blocks play on it. The
+key is shown once, on that page, and is never written to disk: a key kept
+beside the secret it protects is a second copy of the same thing. A player who declines stays a guest forever and loses nothing but
 the reservation and the label.
 
 ## Names
@@ -99,9 +100,11 @@ the seat, and the label says so rather than guessing. Most unknowns are humans
 in their first sessions, which is why unknown is not a punishment: an unknown
 pilot joins anything a default zone offers and rates normally.
 
-Zones that care can raise the bar. A zone's catalog row may set `admission` to
-`any`, the default, or `claimed`, for ladder arenas where knowing the field is
-human matters more than a newcomer joining in one second.
+Zones that care can raise the bar. A zone sets `admission` in its `zone.toml`
+to `any`, the default, or `claimed`, for ladder arenas where knowing the field
+is vouched for matters more than a newcomer joining in one second. The bar is
+on the label, so it is a statement about the account rather than about anything
+a client said.
 
 ## Bots hold accounts
 

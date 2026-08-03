@@ -1612,6 +1612,11 @@ impl Zone {
         }
     }
 
+    /// Whether this zone admits only pilots who have claimed their account.
+    fn wants_claimed(&self) -> bool {
+        self.wire_zone().map(|z| z.admission == "claimed").unwrap_or(false)
+    }
+
     /// The class this zone rates into. One number per kind of game, per
     /// docs/design/rating.md: a warzone and a duel ladder measure different
     /// skills and one number for both is a number about nothing.
@@ -2582,6 +2587,17 @@ async fn main() {
                                 break;
                             }
                         };
+                        // A zone that wants a field it can vouch for. The
+                        // default is `any`, because turning a newcomer away in
+                        // the second they arrived is the cost of caring and
+                        // most rooms should not pay it.
+                        if z.wants_claimed() && seat_of.label == token::Label::Unknown.to_byte() {
+                            let _ = tx.try_send(Message::Binary(deny(
+                                DENY_BANNED,
+                                "this zone is for claimed pilots; keep your pilot in the menu first",
+                            )));
+                            break;
+                        }
                         let name = seat_of.name.clone();
                         // A per-zone ban, checked against the name the token
                         // carries. The fleet ban never reaches this door: the
@@ -2939,6 +2955,7 @@ mod tests {
             max_rooms: rooms,
             teams: 1,
             balance: "smaller".into(),
+            admission: "any".into(),
             bot_fill: 0.0,
             map_b64: fleet::b64(&sim::World::new(1).packed_map()),
             // A zone's name lives in the catalog that references it, never in the
@@ -3774,6 +3791,28 @@ mod tests {
             read.values().any(|(_, l)| *l == token::Label::ThirdPartyBot.to_byte()),
             "a bot that declared itself without an account is somebody else's"
         );
+    }
+
+    #[test]
+    fn a_ladder_zone_can_ask_for_claimed_pilots() {
+        let mut z = serving_with_accounts();
+        assert!(!z.wants_claimed(), "a public room admits anybody, which is the default");
+        if let Some(c) = z.catalog.as_mut() {
+            c.zones[0].admission = "claimed".into();
+        }
+        let def = z.catalog.as_ref().unwrap().zones[0].clone();
+        z.serve_zone(&def).expect("a room");
+        assert!(z.wants_claimed());
+        // The bar is on the label, so it is on the account rather than on
+        // anything the client said about itself.
+        let guest = z
+            .identify(&a_token(token::Kind::Human, false, "Talon 3", vec![]), "", false)
+            .expect("verifies");
+        assert_eq!(guest.label, token::Label::Unknown.to_byte());
+        let claimed = z
+            .identify(&a_token(token::Kind::Human, true, "Vesper 47", vec![]), "", false)
+            .expect("verifies");
+        assert_eq!(claimed.label, token::Label::Human.to_byte());
     }
 
     #[test]
