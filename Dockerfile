@@ -33,6 +33,13 @@ RUN mkdir -p server/src && echo 'fn main() {}' > server/src/main.rs \
  && rm -rf server/src
 COPY sim ./sim
 COPY server ./server
+# And the reference zone, because the binary compiles part of it in: main.rs
+# takes ladder.json with include_str!, so a context without this directory does
+# not build a server with no ladder, it fails to compile. Which is how it broke.
+# The file landed, every test passed on a full checkout, and this build stopped
+# dead at `couldn't read src/../../zone/ladder.json` for four pushes running,
+# each of them green on the test job above it.
+COPY zone ./zone
 RUN cargo build --release --manifest-path server/Cargo.toml
 
 FROM debian:bookworm-slim
