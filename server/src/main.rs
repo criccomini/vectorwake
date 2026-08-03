@@ -559,7 +559,7 @@ impl Arena {
         a.world.state.flag_count = cfg.arena.flags.min(placed);
         a.mode = match cfg.arena.mode.as_str() {
             "arena" | "ffa" => Box::new(modes::FreeForAll),
-            _ => Box::new(modes::Warzone::new(a.world.state.flag_count)),
+            _ => Box::new(modes::Warzone::new(a.world.state.flag_count, a.teams)),
         };
         for w in Arena::apply_config(&mut a.world, &cfg.arena) {
             println!("zone: {w}");
@@ -599,7 +599,7 @@ impl Arena {
 
     fn with_world(world: sim::World) -> Self {
         let mut a = Arena::with_world_bare(world);
-        a.mode = Box::new(modes::Warzone::new(4));
+        a.mode = Box::new(modes::Warzone::new(4, a.teams));
         a.fill_bots();
         a.add_default_flags();
         a
@@ -656,11 +656,24 @@ impl Arena {
         self.bot_target = self.bots.len();
     }
 
-    /// One flag per quadrant, three hundred tiles apart, on the clear cell
-    /// offset the map's starts use. Away from every spawn, and far enough from
-    /// each other that holding two is a decision.
+    /// One flag per quadrant, forty tiles out from the middle, so all four are
+    /// on the radar of a pilot standing between them.
+    ///
+    /// They were three hundred tiles apart, which reads well and made the flag
+    /// game unplayable: the shipped War map starts its pilots in a 68-tile box at
+    /// the centre, so the nearest flag was two hundred tiles away, past sixty
+    /// tiles of sight, past the radar, and past anything that would take a pilot
+    /// there. Watched live for four minutes: forty-two kills, four flags, and the
+    /// banner never moved off "flags 0 - 0, 4 loose". Nobody had touched one.
+    ///
+    /// Forty is far enough that holding all four is a team's job -- eighty tiles
+    /// between neighbours is about twelve seconds of flying, so a lone pilot
+    /// collecting the set gives the other side time to flip one behind them --
+    /// and near enough that a player can see what the round is about. The
+    /// previous swing of this pendulum put them four tiles apart, which was one
+    /// scrum in one room; this is between the two, not a return to it.
     fn add_default_flags(&mut self) {
-        for (tx, ty) in [(308, 308), (756, 308), (308, 756), (756, 756)] {
+        for (tx, ty) in [(472, 472), (552, 472), (472, 552), (552, 552)] {
             self.world.add_flag(tx, ty);
         }
     }
@@ -2138,6 +2151,45 @@ mod tests {
                 .join(format!("p{room}-{i}"), 0, cap, tx)
                 .expect("a seat below the cap");
         }
+    }
+
+    #[test]
+    fn a_flag_is_somewhere_a_pilot_will_find_it() {
+        // The flag game ran for four minutes on the live server with forty-two
+        // kills and not one flag touched, because the flags were two hundred
+        // tiles from every spawn and a pilot sees sixty. A flag nobody can reach
+        // is a round nobody can win, and neither end of that says so: the arena
+        // is healthy, the fighting works, the banner just never moves.
+        // Measured against the middle of the map rather than against any one
+        // map's spawns: the two shipped zones start their pilots in a 68-tile box
+        // there, and a pilot with nothing in sight roams to the same place, so
+        // "on the radar from the middle" is the property that makes a flag
+        // findable however the map places its starts.
+        let mut z = serving(1, 6, 16);
+        let a = &mut z.rooms[0];
+        a.add_default_flags();
+        assert!(a.world.state.flag_count > 0, "flags were placed");
+        let mid = (sim::MAP_TILES as f32 / 2.0) * 16.0;
+
+        let mut spacing = f32::MAX;
+        for i in 0..a.world.state.flag_count as usize {
+            let f = a.world.state.flags[i];
+            let (fx, fy) = (f.x as f32 / 256.0, f.y as f32 / 256.0);
+            let d = ((fx - mid).powi(2) + (fy - mid).powi(2)).sqrt();
+            assert!(d <= ai::SIGHT,
+                    "flag {i} is {d:.0} px from the middle, and a pilot sees {}",
+                    ai::SIGHT);
+            for k in 0..i {
+                let g = a.world.state.flags[k];
+                let (gx, gy) = (g.x as f32 / 256.0, g.y as f32 / 256.0);
+                spacing = spacing.min(((fx - gx).powi(2) + (fy - gy).powi(2)).sqrt());
+            }
+        }
+        // And not a scrum: neighbours far enough apart that one pilot cannot sit
+        // on the whole set. They were four tiles apart once, which was one fight
+        // in one room and the reason they were flung to the corners.
+        assert!(spacing >= 40.0 * 16.0,
+                "flags are {spacing:.0} px apart, which one pilot covers at once");
     }
 
     #[test]

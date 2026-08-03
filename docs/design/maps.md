@@ -108,8 +108,24 @@ again, with a lot of unused address space around it.
 
 So: each side gets a home band, team 1 across the north and team 0 across the
 south, **eight starts apiece 256 tiles apart**, from (180,180) to (948,884).
-Flags sit one per quadrant, three hundred tiles apart -- they used to be four
-tiles apart in the middle, which made the flag game a scrum in one room.
+**Flags sit one per quadrant of the middle, forty tiles out.** Not spread with
+everything else, and that exception is the whole lesson of this section. They
+were three hundred tiles apart for the same reason the starts are, and it made
+the flag game unplayable rather than large: the shipped War map starts its
+pilots in a 68-tile box at the centre, so the nearest flag sat two hundred tiles
+away, past sixty tiles of sight, past the radar, and past anything that would
+take a pilot there. Watched on the live server for four minutes: forty-two
+kills, four flags, and the banner never moved off "flags 0 - 0, 4 loose". Nobody
+had touched one, and nothing about a healthy arena said so.
+
+Forty tiles out puts all four on the radar of a pilot standing between them, and
+eighty tiles between neighbours is about twelve seconds of flying -- enough that
+a lone pilot collecting the set gives the other side time to flip one behind
+them. The previous swing of this pendulum had them four tiles apart, which was
+one scrum in one room. This is between the two, not a return to it.
+
+Spread the territory; keep the objective where the people are. Greens learned
+the same thing one paragraph down.
 
 Crossing takes about thirty seconds at a hull's top speed, which is a journey
 rather than a walk. The bots fly it, but not for the reason first written here:

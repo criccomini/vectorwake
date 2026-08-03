@@ -333,7 +333,11 @@ local function bot_think(b)
         local fx_, fy, fteam, carried = sim.flag_at(i)
         if fteam ~= team and not carried then
             local dx, dy = fx_ - mx, fy - my
-            if dx * dx + dy * dy < 420 * 420 then
+            -- A flag this pilot can see is a flag they will go for. It was 420
+            -- px on the reasoning that a bot should not sprint the width of the
+            -- radar for one, which was written when a bot could see the whole
+            -- map; sight is the radar now, so 420 is a quarter of perception.
+            if dx * dx + dy * dy < SIGHT * SIGHT then
                 local out, off = steer(b, dx, dy, false)
                 if off < 0.5 then out = out + sim.BTN_THRUST end
                 return out
@@ -651,10 +655,13 @@ function start_offline(cls)
         local id = spawn_at(L[1], L[2], i, L[3], L[4], (i * 8192) % 65536)
         pilots[id] = {name = L[5], bot = make_bot(id, 0.28 + (i % 5) * 0.16)}
     end
-    -- One flag per quadrant, three hundred tiles apart, on the same clear
-    -- cell offset the starts use. They were four tiles apart in the middle of
-    -- the map, which made the whole flag game a scrum in one room.
-    for _, f in ipairs({{308, 308}, {756, 308}, {308, 756}, {756, 756}}) do
+    -- One flag per quadrant, forty tiles out, so all four are on the radar of
+    -- a pilot standing between them. Three hundred tiles apart read well and
+    -- made the flag game unplayable: watched on the live server for four
+    -- minutes, forty-two kills and not one flag touched, because the nearest
+    -- was two hundred tiles past what anybody can see. Four tiles apart, the
+    -- previous swing, was one scrum in one room; this is between the two.
+    for _, f in ipairs({{472, 472}, {552, 472}, {472, 552}, {552, 552}}) do
         sim.add_flag(f[1], f[2])
     end
 end

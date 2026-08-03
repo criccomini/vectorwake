@@ -172,10 +172,15 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     }
 
     // A flag nobody owns, or one the other side holds, is worth crossing the
-    // room for. Flags decide the round; kills only clear the way. The reach
-    // here is how far a pilot will detour, which is well inside what they can
-    // see -- a bot does not sprint the width of the radar for a flag.
-    out.flag = nearest_flag(w, mx, my, me.team, 420.0);
+    // room for. Flags decide the round; kills only clear the way.
+    //
+    // A flag this pilot can see is a flag they will go for. The reach used to be
+    // 420 px on the reasoning that it should sit "well inside what they can see
+    // -- a bot does not sprint the width of the radar for a flag", which was
+    // written when a bot could see the whole map. Sight is the radar now, so
+    // that reasoning inverts: 420 px is a quarter of perception, and with the
+    // flags where they were no bot ever saw one at all.
+    out.flag = nearest_flag(w, mx, my, me.team, SIGHT);
     out.prize = nearest_prize(w, mx, my, 200.0);
     out
 }
