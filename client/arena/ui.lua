@@ -45,6 +45,13 @@ local RADAR = 168
 
 M.hits = {}            -- clickable rectangles the menu published, top-left px
 M.map = false          -- the whole map, in the radar's corner
+-- Which pilot is being read about, by ship index, or nil. One at a time: this
+-- answers "who is that", and two of them open at once is a filing cabinet.
+M.inspect = nil
+-- The connection, in numbers, behind the link bars. Off by default and not in
+-- the menu, because it is for whoever is working on the client rather than for
+-- whoever is flying.
+M.debug = false
 
 -- --- primitives ------------------------------------------------------------
 
@@ -126,6 +133,34 @@ local function pips(x, y, n, filled, col, r, pitch)
             u:ring(px, ry(y), r, 0.9 * S, 8, pal.a(col, (col[4] or 1) * 0.3))
         end
     end
+end
+
+-- What flies a seat, when it is not a person: a head with two eyes and a
+-- stub of an aerial. Drawn rather than spelled, because "AI" beside a name is
+-- two letters that read as part of the name until you have learned they are
+-- not, and this list is scanned rather than read.
+--
+-- Chamfered, like everything else here. `y` is the middle of the line it sits
+-- on, so a caller can hand it a row's centre without knowing the height.
+local function bot_mark(x, y, col, k)
+    k = k or 9 * S
+    local w, h = k, k * 0.78
+    local left, top = x, y - h / 2
+    local cut = k * 0.22
+    -- The head, as five strokes: the chamfer replaces the top left corner.
+    local pts = {{left + cut, top}, {left + w, top}, {left + w, top + h},
+                 {left, top + h}, {left, top + cut}}
+    for i = 1, #pts do
+        local a, b = pts[i], pts[i % #pts + 1]
+        u:seg(a[1], ry(a[2]), b[1], ry(b[2]), 1.1 * S, col, true)
+    end
+    -- The aerial, off the square corner, so the shape has a top.
+    u:seg(left + w - cut, ry(top), left + w - cut, ry(top - k * 0.34),
+          1.1 * S, col, true)
+    local ey = top + h * 0.5
+    u:disc(left + w * 0.31, ry(ey), 1.15 * S, 6, col)
+    u:disc(left + w * 0.69, ry(ey), 1.15 * S, 6, col)
+    return w
 end
 
 -- A weapon level, as filled rungs. Three rungs and how many are lit, which is
@@ -466,7 +501,12 @@ end
 -- gui font. The projection is the render script's -- a fixed world extent
 -- across the shorter axis, centred on the camera -- so one number converts
 -- between them and the two cannot drift.
+-- Ship hit boxes, waiting for the end of the frame. See the note where they
+-- are filled: the world is behind every panel, so it is tested last.
+local world_hits = {}
+
 local function nameplates(o)
+    for i = #world_hits, 1, -1 do world_hits[i] = nil end
     if not o.half_w or o.half_w <= 0 then return end
     -- The render script publishes its own half-extents for exactly this, so
     -- that nothing keeps a second copy of the projection. Deriving one from
@@ -497,19 +537,36 @@ local function nameplates(o)
                     txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
                         pal.a(pal.BOUNTY, 0.85))
                 end
+                -- Ask about them by pointing at their name. The label, never
+                -- the hull: the left button is the gun and the right one is
+                -- the bomb, so a box over a ship would eat the trigger at the
+                -- exact moment a player is lined up on somebody, which is the
+                -- moment they are least willing to forgive it. The name hangs
+                -- off the hull's lower right and is a thing you point at on
+                -- purpose.
+                --
+                -- Held back rather than published here. A hit box is tested in
+                -- the order it was added and the first one wins, and the world
+                -- is behind everything: a name drifting under the radar would
+                -- otherwise swallow the click that was meant for the radar.
+                if not menu_up then
+                    -- The drawn label's own box: the monospace advance at this
+                    -- size, over the name and the bounty line under it.
+                    local lw = math.max(#nm, 3) * 6.6 * S + 8 * S
+                    local lh = (bty > 0 and 26 or 15) * S
+                    world_hits[#world_hits + 1] =
+                        {sx + 10 * S, sy + 4 * S, lw, lh, i}
+                end
             end
         end
     end
 
-    -- Your own bounty, under your own hull, in the place and the colour every
-    -- other ship carries theirs. It used to be a row in a corner panel, which
-    -- asked you to look away to read the one number about you that everyone
-    -- else reads without looking anywhere.
-    local mine = sim.ship_bounty(o.me)
-    if mine > 0 and sim.ship_alive(o.me) == 1 then
-        txt(tostring(mine), W / 2 + 12 * S, H / 2 + 25 * S, 11 * S,
-            pal.a(pal.BOUNTY, 0.85))
-    end
+    -- Not your own, for the same reason your name is not drawn: a bounty under
+    -- your hull is a number about you, in the one place on screen you are
+    -- already looking, and it rode along with every shot you lined up. The
+    -- corner stack carries it, where a glance finds it and nothing is in the
+    -- way of the fight. Everybody else keeps theirs, because theirs is what
+    -- says which of two ships in front of you is worth the risk.
 end
 
 -- --- panels ----------------------------------------------------------------
@@ -657,8 +714,16 @@ local function scores(me, pilots)
                   pal.a(pal.FRIEND, 0.95))
         end
         local name = string.sub(r.name, 1, 14)
-        txt(name .. (r.ai and "  AI" or ""), x + 12 * S, y + LINE * S / 2,
-            (FONT - 2) * S, pal.a(col, mine and 1.0 or 0.8))
+        local cy = y + LINE * S / 2
+        txt(name, x + 12 * S, cy, (FONT - 2) * S,
+            pal.a(col, mine and 1.0 or 0.8))
+        -- The mark goes at a fixed column rather than after the name, so a
+        -- scan down the list finds them in a line instead of at fourteen
+        -- different indents.
+        if r.ai then bot_mark(kx - 42 * S, cy, pal.a(pal.DIM, 0.75)) end
+        -- A row is the other way to ask about a pilot, and the more reliable
+        -- one: a hull in a fight is a moving target.
+        hit(x, y, w - 6 * S, LINE * S, "pilot", r.i)
         txt(tostring(r.k), kx, y + LINE * S / 2, (FONT - 2) * S,
             pal.a(pal.INK, 0.85), "right")
         txt(tostring(r.d), dx, y + LINE * S / 2, (FONT - 2) * S,
@@ -724,9 +789,13 @@ end
 -- ages them -- so the lifetime lives here, where both halves can see it.
 M.FEED_LIFE = 9
 local FEED_FADE = 1.6
+-- How many lines stand at once. Deep enough to hold a busy moment, shallow
+-- enough that the feed stays something you read at a glance rather than a log
+-- running down the side of the screen; a phone gets fewer again.
+M.FEED_MAX = 5
 
 local function feed(lines, top)
-    local shown = math.min(#lines, M.compact and 4 or 9)
+    local shown = math.min(#lines, M.compact and 4 or M.FEED_MAX)
     if shown == 0 then return end
     local right = W - PAD * S - PANEL_X * S
     local y = top + PANEL_Y * S
@@ -843,7 +912,7 @@ end
 -- the rest of what the ship is carrying, where they can be read without
 -- opening a panel at all.
 local function loadout(me, class_names, top)
-    if not M.details then return end
+    if not M.details then return top or 0 end
     local w = COL_W * S
     local x = PAD * S
     local h = 54 * S
@@ -867,6 +936,92 @@ local function loadout(me, class_names, top)
         txt(up.short, sx, y + 32 * S, (FONT - 4) * S, pal.a(pal.DIM, 0.75))
         pips(sx + 3 * S, y + 42 * S, 4, held, up.col, 1.9 * S, 6 * S)
     end
+    return y + h
+end
+
+-- Who that is: one pilot, read off the roster and the simulation.
+--
+-- It answers the question a name over a hull raises and cannot itself answer.
+-- The nameplate says what to call them; this says what the zone will vouch
+-- for, how they are doing, and whether they are on your side.
+--
+-- In the left column under whatever is already there, because that column is
+-- where this interface keeps things you asked to see. Not over the middle: a
+-- box you opened by clicking a ship must not cover the ship you clicked.
+local function inspect(o, top)
+    local i = M.inspect
+    if not i then return end
+    -- A pilot who left while the box was open. The box goes with them rather
+    -- than describing somebody who is not there.
+    if i < 0 or i >= sim.ship_count() then
+        M.inspect = nil
+        return
+    end
+    local p = o.pilots[i]
+    local w = COL_W * S
+    local x = PAD * S
+    local rowh = 15 * S
+    -- Name, then the rows that always exist, then the team when it means
+    -- something. Counted rather than guessed so the panel is exactly as tall
+    -- as what it holds.
+    local same_team = sim.ship_team(i) == sim.ship_team(o.me)
+    -- Whether the team is worth saying, asked of the room rather than of the
+    -- zone file, which the client is not sent. A free-for-all gives every seat
+    -- its own number, so there are as many teams as pilots and "TEAM 41" is
+    -- noise; sides mean something exactly when there are fewer of them than
+    -- there are ships to put in them.
+    local n = sim.ship_count()
+    local seen, teams = {}, 0
+    for k = 0, n - 1 do
+        local t = sim.ship_team(k)
+        if not seen[t] then seen[t] = true teams = teams + 1 end
+    end
+    local show_team = teams > 1 and teams < n
+    local rows_n = 3 + (show_team and 1 or 0)
+    local h = 30 * S + rows_n * rowh + 10 * S
+    -- Under whatever is in the column, and never above where the column
+    -- starts: with the scoreboard shut there is nothing above it, and a panel
+    -- at the top of the screen lands on the menu chip.
+    local y = math.max((top or 0) + 6 * S, top_y())
+    rect(x, y, w, h, pal.a(pal.BG, 0.72))
+    vrule(x, y, h, pal.a(same_team and pal.FRIEND or pal.ENEMY, 0.9))
+
+    local col = same_team and pal.FRIEND or pal.ENEMY
+    local nm = (p and p.name) or ("ship " .. i)
+    txt(nm, x + 12 * S, y + 17 * S, (FONT - 1) * S, pal.a(col, 0.95))
+    -- The mark rides after the name here, not in a column: there is one line
+    -- and nothing to line it up with.
+    if p and p.ai then
+        bot_mark(x + 12 * S + #nm * (FONT - 1) * S * 0.62, y + 15 * S,
+                 pal.a(pal.DIM, 0.85), 10 * S)
+    end
+    -- Close, in the corner it opened under. Escape does the same thing.
+    txt("X", x + w - 12 * S, y + 17 * S, (FONT - 2) * S, pal.a(pal.DIM, 0.8),
+        "right")
+    hit(x + w - 26 * S, y + 4 * S, 26 * S, 22 * S, "uninspect")
+
+    local ry_ = y + 30 * S
+    local lab = (FONT - 4) * S
+    local val = (FONT - 2) * S
+    local function row(k, v, vcol)
+        txt(k, x + 12 * S, ry_ + rowh / 2, lab, pal.a(pal.DIM, 0.8))
+        txt(v, x + w - 12 * S, ry_ + rowh / 2, val, vcol or pal.a(pal.INK, 0.9),
+            "right")
+        ry_ = ry_ + rowh
+    end
+    if show_team then
+        row("TEAM", tostring(sim.ship_team(i)), pal.a(col, 0.9))
+    end
+    -- What the zone is willing to say this seat is, which is the honest
+    -- version of the question: the client cannot tell, and the server's label
+    -- is the only answer anybody has. A guest is not an accusation.
+    row("SEAT", string.upper((p and p.label) or "unknown"))
+    row("RECORD", sim.ship_kills(i) .. "K  " .. sim.ship_deaths(i) .. "D  "
+        .. sim.ship_points(i) .. "P")
+    -- What killing them pays, which is the number that decides whether the
+    -- rest of this matters right now.
+    row("BOUNTY", tostring(sim.ship_bounty(i)), pal.a(pal.BOUNTY, 0.9))
+    return y + h
 end
 
 -- The damage vignette: red creeping in from the edges rather than a flash
@@ -941,6 +1096,59 @@ local function link(lag)
     end
     txt("LINK", right - 34 * S, base - 4 * S, (FONT - 3) * S,
         pal.a(pal.DIM, 0.8), "right")
+    -- The bars are the readout a player wants and the whole of it. Everything
+    -- behind them is for whoever is working on this, so it hides behind the
+    -- one thing on screen that is already about the connection.
+    if not menu_up then
+        hit(right - 40 * S, pad, 46 * S, 20 * S, "debug")
+    end
+end
+
+-- The connection in numbers, for whoever is debugging it.
+--
+-- Deliberately plain: labelled lines of text, no instrument, no colour doing
+-- work. It is read by somebody who wants a number they can quote in a bug
+-- report, and every one of these has been asked for out loud at least once.
+--
+-- Under the dial rather than beside it, and only ever one column wide, so it
+-- sits in the same place whatever the window is. It covers the feed, which is
+-- the trade: both cannot have that strip, and while this is up the feed is not
+-- what you are looking at.
+local function debug_hud(o, top)
+    if not M.debug then return end
+    local st = o.stats or {}
+    local w = 176 * S
+    local x = W - PAD * S - w
+    local rowh = 13 * S
+    local lines = {
+        {"fps", string.format("%.0f", o.fps or 0)},
+        {"frame", string.format("%.1f ms", (o.frame_ms or 0))},
+        {"lag", string.format("%d cs", st.lag or 0)},
+        {"lead", string.format("%d ticks", st.lead or 0)},
+        {"err", string.format("%.1f / %.1f px", st.err or 0, st.err_max or 0)},
+        {"rewind", string.format("%d ticks", st.rewind or 0)},
+        {"snaps", tostring(st.snaps or 0)},
+        {"down", string.format("%.1f kB/s", (o.rx_rate or 0) / 1000)},
+        {"up", string.format("%.1f kB/s", (o.tx_rate or 0) / 1000)},
+        {"tick", tostring(sim.tick())},
+        {"ships", tostring(sim.ship_count())},
+        {"shots", tostring(sim.weapon_count())},
+    }
+    local h = 20 * S + #lines * rowh + 6 * S
+    local y = (top or 0) + 6 * S
+    rect(x, y, w, h, pal.a(pal.BG, 0.78))
+    vrule(x, y, h, pal.a(pal.PRIZE, 0.8))
+    txt("DEBUG", x + 10 * S, y + 13 * S, (FONT - 4) * S, pal.a(pal.PRIZE, 0.9))
+    txt(o.zone or "", x + w - 10 * S, y + 13 * S, (FONT - 4) * S,
+        pal.a(pal.DIM, 0.8), "right")
+    local ly = y + 20 * S
+    for _, l in ipairs(lines) do
+        txt(l[1], x + 10 * S, ly + rowh / 2, (FONT - 4) * S,
+            pal.a(pal.DIM, 0.8))
+        txt(l[2], x + w - 10 * S, ly + rowh / 2, (FONT - 4) * S,
+            pal.a(pal.INK, 0.9), "right")
+        ly = ly + rowh
+    end
 end
 
 -- Where you are, over the dial's other top corner from the link readout.
@@ -1037,12 +1245,22 @@ function M.hud(o)
     -- a touchscreen: the lines land where a thumb flies the ship, and a
     -- phone's screen has no room for a running log a player cannot pause to
     -- read anyway.
-    if not M.touching then feed(o.feed, M.radar_span()) end
+    -- The debug readout wants the same strip the feed does, and takes it: a
+    -- reader who opened it is reading it rather than the kill lines.
+    if M.debug then
+        debug_hud(o, M.radar_span())
+    elseif not M.touching then
+        feed(o.feed, M.radar_span())
+    end
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it.
     status(me, o.pickup, o.charges, lift)
-    loadout(me, o.class_names, top)
+    inspect(o, loadout(me, o.class_names, top))
     menu_button()
+    -- Last, so every panel above has already claimed what it drew.
+    for _, b in ipairs(world_hits) do
+        hit(b[1], b[2], b[3], b[4], "pilot", b[5])
+    end
     vignette(o.hurt or 0)
 
     -- The two big centred lines are the only interface that sits where the

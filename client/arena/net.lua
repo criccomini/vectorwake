@@ -55,7 +55,12 @@ M.ratings = {}
 -- that arrives from before the death: one kill printed once per snapshot.
 -- The zone says each death exactly once, to everyone.
 M.kills = {}
-M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0}
+-- What the connection is doing, for the debug readout and for the clock
+-- steering. `rx` and `tx` are bytes since the socket opened; a rate is the
+-- difference between two readings, which the reader takes rather than keeping
+-- a second clock here.
+M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0,
+           rx = 0, tx = 0, msgs = 0}
 
 -- Where this client's clock wants to sit, measured in ticks of input lag: how
 -- long after we stamp an input the server is still to reach that tick.
@@ -283,6 +288,8 @@ local function on_snapshot(s)
 end
 
 local function on_message(s)
+    M.stats.rx = M.stats.rx + #s
+    M.stats.msgs = M.stats.msgs + 1
     local kind = string.byte(s, 1)
     if kind == S2C_MAP then
         local r = sim.apply_map(string.sub(s, 2))
@@ -351,7 +358,8 @@ function M.connect(url, class, name, on_lost, zone)
     M.pilots = {}
     M.ratings = {}
     M.kills = {}
-    M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
+    M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0,
+               rx = 0, tx = 0, msgs = 0}
     M.lost = nil
     -- The zone we came from should not have its name or its banner still on
     -- screen while the next one is being reached.
@@ -460,6 +468,7 @@ function M.step(buttons)
         t % 256, math.floor(t / 256) % 256,
         math.floor(t / 65536) % 256, math.floor(t / 16777216) % 256)
     websocket.send(conn, msg, {type = websocket.DATA_TYPE_BINARY})
+    M.stats.tx = M.stats.tx + #msg
     sim.replay(M.me, buttons)
     return true
 end
