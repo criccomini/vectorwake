@@ -79,7 +79,7 @@ fn bout(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: 
         world.step(&inputs);
 
         let tick = world.state.tick;
-        for (victim, _killer) in ingest_damage(&world, r, &name_of) {
+        for (victim, _killer, _paid) in ingest_damage(&world, r, &name_of) {
             r.death(tick, &name_of(victim));
         }
 

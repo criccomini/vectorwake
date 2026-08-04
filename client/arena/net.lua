@@ -49,6 +49,12 @@ M.denied = nil
 M.lost = nil
 M.pilots = {}
 M.ratings = {}
+-- Kills the zone has announced and the arena has not yet turned into feed
+-- lines. The feed reads these rather than the local simulation's death
+-- events, because prediction re-kills the same victim after every rollback
+-- that arrives from before the death: one kill printed once per snapshot.
+-- The zone says each death exactly once, to everyone.
+M.kills = {}
 M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0}
 
 -- Where this client's clock wants to sit, measured in ticks of input lag: how
@@ -178,6 +184,11 @@ local function on_kill(s)
     local victim, killer = string.byte(s, 2), string.byte(s, 3)
     local vr = i16(string.byte(s, 4), string.byte(s, 5))
     local kr = i16(string.byte(s, 6), string.byte(s, 7))
+    -- Byte 8 is the contributor count, which nothing here reads yet. The
+    -- payout follows it; `or 0` covers the deploy window where a zone one
+    -- image older has not started sending it.
+    local paid = (string.byte(s, 9) or 0) + (string.byte(s, 10) or 0) * 256
+    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = paid}
     M.ratings[victim] = vr
     M.ratings[killer] = kr
     -- A rated death is a game played, which is what decides whether the number
@@ -339,6 +350,7 @@ function M.connect(url, class, name, on_lost, zone)
     M.deny_code = 0
     M.pilots = {}
     M.ratings = {}
+    M.kills = {}
     M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
     M.lost = nil
     -- The zone we came from should not have its name or its banner still on
