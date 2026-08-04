@@ -5552,3 +5552,46 @@ mod tests {
         assert!(w.cfg.classes[0].max_speed < tuned_speed, "back to the baseline");
     }
 }
+
+#[cfg(test)]
+mod one_tick_weapons {
+    use crate::sim;
+
+    /// A repel is in the state for exactly one tick, which is why the client
+    /// cannot be sent one.
+    ///
+    /// It is spawned in the ship phase and ends in the weapon phase of the
+    /// very next step, so the only snapshot that can carry it is one packed on
+    /// the tick it was fired. At `SNAPSHOT_EVERY` of 5 that is one shove in
+    /// five with a picture on it, and the other four reach a watcher as ships
+    /// moving for no visible reason. The client draws those from the firer's
+    /// charge count instead; see `M.charges` in client/arena/world.lua.
+    ///
+    /// This is here to fail if that stops being true, because the day a repel
+    /// lives long enough to be packed is the day the client should go back to
+    /// drawing it from the weapon like everything else.
+    #[test]
+    fn a_repel_is_gone_before_a_snapshot_can_carry_it() {
+        let mut w = sim::World::new(7);
+        let a = w.spawn(0, 0, 30, 30, 0);
+        assert!(a >= 0);
+        w.state.ships[a as usize].charge[0] = 3;
+        for _ in 0..30 {
+            w.step(&[]);
+        }
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        let mut carried = Vec::new();
+        for t in 0..12 {
+            let buttons = if t == 0 { sim::BTN_USE } else { 0 };
+            w.step(&[sim::sim_input { ship: a as u8, buttons }]);
+            let n = w.pack(&mut buf);
+            let mut view = sim::World::new(1);
+            view.apply_snapshot(&buf[..n as usize]);
+            if view.state.weapon_count > 0 {
+                carried.push(t);
+            }
+        }
+        assert_eq!(carried, vec![0],
+                   "a repel should be packable on exactly the tick it is fired");
+    }
+}
