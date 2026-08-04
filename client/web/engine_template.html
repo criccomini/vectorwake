@@ -117,64 +117,75 @@
 		// Safari. The stock callback sets only the canvas's width and height
 		// attributes and lets CSS derive the element's height from its
 		// intrinsic aspect ratio -- and Safari does not reliably update that
-		// ratio when the attributes change. On an iPhone held sideways the
-		// drawable was the right shape while the element kept the stale
-		// portrait ratio, and the whole game drew vertically stretched.
-		// Setting the element's CSS size explicitly, from the same numbers
-		// the attributes are set from, leaves no ratio for any browser to
-		// derive.
+		// ratio when the attributes change. So the stylesheet pins the canvas
+		// to a container, and this code sizes the container in pixels: no
+		// browser is left a ratio to derive.
+		//
+		// The sizing is a reconciler on an interval, not a resize handler,
+		// and that is also Safari. iOS fires rotation events while the
+		// numbers still describe the old orientation, and moves the viewport
+		// again, without any event, when the toolbar settles. A handler that
+		// runs once per event bakes whichever stale number it was handed
+		// into the page, and on a real phone the container ended up sized by
+		// one pass and the drawable by another: the frame drew 360/276 too
+		// tall, the measured stretch exactly. Comparing the DOM against the
+		// live viewport four times a second and rewriting only what drifted
+		// survives every ordering, and a converged tick touches nothing --
+		// which matters because assigning canvas.width, even unchanged,
+		// clears the frame.
 		//
 		// visualViewport where it exists, because on iOS window.innerHeight
 		// answers for the layout viewport while the toolbar collapses and
 		// expands over the visual one; the game should fill what is actually
-		// visible. The loader attaches this to resize, orientationchange and
-		// focus when the engine starts; visualViewport's own resize fires on
-		// toolbar collapse, which none of those cover, so it is attached
-		// here.
-		CUSTOM_PARAMETERS.resize_window_callback = function() {
+		// visible.
+		(function() {
 			var is_iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-			if (is_iOS) {
-				window.scrollTo(0, 0);
-			}
-			var buttonHeight = 0;
+			function apply() {
+				var buttonHeight = 0;
 {{#html5.show_fullscreen_button}}
-			buttonHeight = 42;
+				buttonHeight = 42;
 {{/html5.show_fullscreen_button}}
 {{#html5.show_made_with_defold}}
-			buttonHeight = 42;
+				buttonHeight = 42;
 {{/html5.show_made_with_defold}}
-			var vp = window.visualViewport;
-			var width = Math.round(vp ? vp.width : window.innerWidth);
-			var height = Math.round(vp ? vp.height : window.innerHeight) - buttonHeight;
-			if (width < 1 || height < 1) {
-				return;
-			}
-			if (CUSTOM_PARAMETERS.resize_window_prev_inner_width == width &&
-				CUSTOM_PARAMETERS.resize_window_prev_inner_height == height) {
-				return;
-			}
-			CUSTOM_PARAMETERS.resize_window_prev_inner_width = width;
-			CUSTOM_PARAMETERS.resize_window_prev_inner_height = height;
-			var app_container = document.getElementById('app-container');
-			var game_canvas = document.getElementById('canvas');
-			var dpi = 1;
+				var vp = window.visualViewport;
+				var width = Math.round(vp ? vp.width : window.innerWidth);
+				var height = Math.round(vp ? vp.height : window.innerHeight) - buttonHeight;
+				if (width < 1 || height < 1) {
+					return;
+				}
+				var dpi = 1;
 {{#display.high_dpi}}
-			dpi = window.devicePixelRatio || 1;
+				dpi = window.devicePixelRatio || 1;
 {{/display.high_dpi}}
-			var canvas_container = document.getElementById('canvas-container');
-			app_container.style.marginLeft = '0px';
-			app_container.style.marginTop = '0px';
-			app_container.style.width = width + 'px';
-			app_container.style.height = (height + buttonHeight) + 'px';
-			canvas_container.style.width = width + 'px';
-			canvas_container.style.height = height + 'px';
-			game_canvas.width = Math.floor(width * dpi);
-			game_canvas.height = Math.floor(height * dpi);
-		};
-		if (window.visualViewport) {
-			window.visualViewport.addEventListener('resize',
-				function() { CUSTOM_PARAMETERS.resize_window_callback(); });
-		}
+				var app_container = document.getElementById('app-container');
+				var canvas_container = document.getElementById('canvas-container');
+				var game_canvas = document.getElementById('canvas');
+				var w = width + 'px';
+				var h = height + 'px';
+				var aw = Math.floor(width * dpi);
+				var ah = Math.floor(height * dpi);
+				if (app_container.style.marginLeft !== '0px') app_container.style.marginLeft = '0px';
+				if (app_container.style.marginTop !== '0px') app_container.style.marginTop = '0px';
+				if (app_container.style.width !== w) app_container.style.width = w;
+				var appH = (height + buttonHeight) + 'px';
+				if (app_container.style.height !== appH) app_container.style.height = appH;
+				if (canvas_container.style.width !== w) canvas_container.style.width = w;
+				if (canvas_container.style.height !== h) canvas_container.style.height = h;
+				if (game_canvas.width !== aw) game_canvas.width = aw;
+				if (game_canvas.height !== ah) game_canvas.height = ah;
+			}
+			CUSTOM_PARAMETERS.resize_window_callback = function() {
+				if (is_iOS) {
+					window.scrollTo(0, 0);
+				}
+				apply();
+			};
+			if (window.visualViewport) {
+				window.visualViewport.addEventListener('resize', apply);
+			}
+			setInterval(apply, 250);
+		})();
 	</script>
 	<script id='engine-start' type='text/javascript'>
 		var runningFromFileWarning = document.getElementById("running-from-file-warning");
