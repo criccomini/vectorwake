@@ -134,6 +134,7 @@ end
 -- pixel of every layer and still left the swing at nine percent; this costs
 -- about half again as many triangles on the layers that stroke, and beat
 -- sixteen samples.
+local dimmed = {0, 0, 0, 0}
 function Layer:seg(x1, y1, x2, y2, width, col, cap)
     local dx, dy = x2 - x1, y2 - y1
     local len = math.sqrt(dx * dx + dy * dy)
@@ -151,7 +152,16 @@ function Layer:seg(x1, y1, x2, y2, width, col, cap)
     local hc, ho = (w - px) * 0.5, (w + px) * 0.5
     local cx, cy = -uy * hc, ux * hc
     local ox, oy = -uy * ho, ux * ho
-    local c = {col[1], col[2], col[3], a}
+    -- A dimmed colour is written into one table that is never handed on,
+    -- rather than made fresh. The extension reads it during the call and keeps
+    -- nothing, and a stroke is the most frequent thing this client does: at
+    -- one table apiece a busy frame was several thousand of them for the
+    -- collector to walk, in an interpreter with no generational anything.
+    local c = col
+    if a ~= col[4] then
+        dimmed[1], dimmed[2], dimmed[3], dimmed[4] = col[1], col[2], col[3], a
+        c = dimmed
+    end
     if hc > 1e-6 then
         self:quad(x1 + cx, y1 + cy, x2 + cx, y2 + cy,
                   x2 - cx, y2 - cy, x1 - cx, y1 - cy, c)
