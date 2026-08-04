@@ -356,6 +356,17 @@ this capability issued by the wrong authority, the client itself; the filter
 and the capability ship together, because until data is withheld there is
 nothing for a grant to open.
 
+The leak has depth as well as reach. A packed ship is the whole ship: exact
+energy, charge counts, greens held, weapon rungs. A modified client can put an
+energy bar over every enemy, which is precisely the read `SeeEnergy` existed
+to gate, and can know whether a pilot still holds a repel before committing to
+the rush that repel would answer. So the filter, when it comes, trims fields
+as well as culling distant ships. One dependency to mind by then: the
+legitimate client reads remote charge counts to draw other people's repels,
+because a one-tick weapon never survives into a snapshot. Withholding those
+counts means sending the shove as its own message the way kills are sent,
+which is the cleaner shape anyway.
+
 A filter has a ceiling worth stating: clients can pool their lawful sights,
 which is a scout team and is answered like one, with seats, visibility on
 radar, and bans. The filter's job is economics rather than secrecy, making
