@@ -141,37 +141,50 @@ Frictionless flight means reaching a point is a control problem rather than a
 pathfinding one: a bot that thrusts at its target arrives at speed and sails past
 it into a wall.
 
-Neither layer below is built. What exists instead is one rule, and it is worth
-saying why, because the obvious reading of this section is that routing is done.
+Both layers are built now, in `server/src/nav.rs` and the back half of
+`server/src/ai.rs`. What stood here for a long time was one rule, and it is worth
+keeping the account of why that was not enough.
 
-A pilot heads straight for where it wants to be and gives up when that stops
-working: it keeps the closest it has come to its destination, and two seconds
-without closing by 32 px means the destination is behind something. Then it
-abandons that kind of destination for five seconds and falls through to the next
-thing it would rather be doing. Greens also get a straight-line check before
-they are chosen at all, since a green does not move and one behind a wall is
-selected again by every plan that follows.
+A pilot headed straight for where it wanted to be and gave up when that stopped
+working: it kept the closest it had come, and two seconds without closing by
+32 px meant the destination was behind something. Then it abandoned that kind of
+destination for five seconds. That fixed the bug that was reported, which was
+bots pressing their noses into a wall with a green on the other side. It did not
+fix flying, and a drill on Chaos eventually caught what it left: a pilot holding
+thrust into a wall for ninety seconds, travelling one pixel every ten ticks,
+because every replacement destination was rolled from the same box in the middle
+of the map and lay through the same wall.
 
-That fixed the bug that was actually reported, which was bots pressing their
-noses into a wall with a green on the other side, and A* would not have. A plan
-committed to a destination and then re-derived the same destination for ever, so
-anything chosen badly once was chosen badly until the pilot died. A pathfinder
-needs the give-up underneath it anyway, for every case where the path is right
-and the flying is not.
+**Route.** A* over the map at two tiles to a cell, 512 by 512, any solid tile
+shutting a cell, built once per map and shared by every pilot flying it. Cells
+against a wall cost three times an open one, which puts a route down the middle
+of a corridor rather than along its edge.
 
-The two layers below are still the plan for when a map has corridors worth
-routing through. On a lattice of mostly open cells, straight-line steering plus
-give-up covers it.
+Two tiles rather than the eight this document specified for years, and the
+difference is not a detail. Our walls are two tiles through, so an eight-tile
+cell holding a wall right across it is a quarter solid: any density threshold
+loose enough to keep the corridors open lets a route pass straight through the
+wall beside them. Built to spec it changed nothing measurable, because every cell
+on Chaos came out passable. A hull is 28 px across and a two-tile cell is 32, so
+"any wall shuts it" needs no threshold and no tuning.
 
-**Route.** A* over a coarse grid, downsampled from 1024x1024 tiles to 128x128
-cells of eight tiles each, with cell cost from wall density. Built once at map
-load and shared by every bot in the arena. It answers "roughly which way," not
-"exactly where."
+**Control.** The pilot wants a velocity, not a heading: `v² = 2as` gives the
+speed that can still be stopped in the room left, and the difference between that
+and what the hull is doing is the burn. The nose points at the burn when there is
+nothing to shoot and at the target when there is, since decision 17 makes the
+nose the gun and the engine at once, and thrust then fires only when it happens
+to help. That is what makes a fight look like circling rather than a charge.
 
-**Control.** Given the next waypoint, compute the desired velocity, then pick
-rotation and thrust that reduce the error while accounting for current momentum
-and stopping distance. Braking distance is `v² / 2a` from the ship's own thrust
-setting, so a heavy ship starts slowing earlier, exactly as a human learns to.
+Deciding and flying run on different clocks, and that split is load-bearing.
+Steering used to be decided with the plan and held until the next one, so a pilot
+on a 38 tick reaction held a turn for 38 ticks: at 230 rotation that is 79 degrees
+of swing with nothing looking. Reaction time belongs on what to do. A servo loop
+belongs on every tick.
+
+The give-up timer stays underneath all of it, watching the waypoint rather than
+the destination. Going the long way round a wall closes no straight-line distance
+for seconds at a time, so a timer watching the destination calls every correct
+detour a failure.
 
 Wall avoidance works from the map the bot was sent at join, walked the same way
 the brain's line-of-sight test walks it. The bot holds no second copy of the
@@ -185,6 +198,19 @@ intercept. Solve it, get the aim point, then apply the personality's aim error a
 an angular offset plus an error in the estimate of the target's velocity. Perfect
 aim is the special case where both errors are zero, which is the correct way
 around: skill is the removal of noise.
+
+Solved in `ai.rs` now, and in the pilot's own frame, which is the part that is
+easy to get wrong: the core fires a round at `vx0 + speed * direction`, so a shot
+carries the ship's velocity with it and only the target's *relative* motion has to
+be led. A hull does 3.25 px a tick and a bullet 2, so the ship outruns its own
+gun and a lead that ignores this is not a small error. What stood here was
+`lead = distance / 2`, a constant that happens to match the bullet the shipped
+zones fire and no other weapon in the game.
+
+A shot is also held unless the line to the target is clear and the aim is inside
+the angle the target actually subtends, rather than a flat 0.16 radians that was
+two ships wide up close and four at range. Before both, one shot in seventy-seven
+landed.
 
 Bombs need arc and timing rather than a lead point, mines need placement rules
 tied to chokepoints from the coarse grid, and bursts are a panic button with a
@@ -295,11 +321,30 @@ job of measuring prediction agreement, since bots do not predict.
 Bot-versus-bot tournaments calibrate the rating ladder before humans arrive,
 as described in [design/rating.md](../design/rating.md).
 
+That tournament is not a test of flying, and reading it as one cost a long time.
+It is fought in `sim_map_pit`, a bare thirty-tile box with two blocks in it, no
+greens and two ships, which is the right room for ranking two pilots and a room
+in which routing, dodging, a crowd and a prize economy cannot happen. Every
+failure that only shows up in Chaos is invisible to the ladder rating them.
+
+`vectorwake-server drill [zone] [seconds] [bots]` is the other half: the roster on
+a zone's own map, reporting kills, wall contacts, shots, what fraction of them
+land, how much of the time a pilot is going nowhere and how much ground the
+roster covers. It ranks nobody. It exists so that a change to the brain has a
+number on either side of it. `DRILL_TRACE=1 DRILL_FROM=<tick>` prints one pilot's
+control loop tick by tick, which is how the wall-pusher above was found.
+
 ## Open questions
 
-Whether the coarse grid is enough for maps with tight tunnels, or whether some
-maps need authored navigation hints. The original's maps were built for humans
-who learn a map over months, and some of them are cruel.
+Whether the grid is enough for maps with tight tunnels, or whether some maps need
+authored navigation hints. The original's maps were built for humans who learn a
+map over months, and some of them are cruel.
+
+Why pilots still spend most of their time travelling rather than fighting. On the
+drill it is 92 to 99 per cent, which is a roster that keeps missing each other:
+sight is sixty tiles, a map is a thousand, and roaming aims everybody at the
+middle. Somewhere between a smarter patrol and a reason to be anywhere in
+particular.
 
 Whether perception at 10 Hz is too generous or too stingy. It is a difficulty
 parameter as much as a performance one.

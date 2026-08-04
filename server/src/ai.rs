@@ -4,7 +4,19 @@
 //! than a human's, exactly as docs/design/ai-players.md requires. Skill is
 //! imperfection added: reaction delay, aim error, range misjudgement, and how
 //! early the pilot stops firing to protect its energy.
+//!
+//! Three clocks, and keeping them apart is most of what makes a pilot look like
+//! one. Perception refreshes on a look, ten to twenty times a second, and
+//! everything between looks works from a stale picture carried forward. What to
+//! do is decided at the pilot's reaction cadence. The hands run every tick,
+//! because a servo loop on a reaction clock is a pilot who cannot fly rather
+//! than a slow one.
+//!
+//! `impl Bot` takes no `&World`, which is what makes "a bot knows no more than a
+//! player" checkable by grep. It does take a `&Nav`: that is the map the pilot
+//! was sent at join, read into a grid, and every client holds the same thing.
 
+use crate::nav::Nav;
 use crate::sim::{self, World};
 
 /// A standing pilot. No side: which one they fly for is the zone's business,
@@ -130,6 +142,11 @@ pub struct Shot {
     pub per_tick: f32,
     pub cost: f32,
     pub blast: f32,
+    /// Muzzle speed in px a tick, which is what a lead has to be solved
+    /// against. It used to be assumed: the aim carried a hardcoded 2 px a
+    /// tick, which happens to be right for the bullet the shipped zones fire
+    /// and wrong for every bomb, every burst, and any zone that tunes one.
+    pub speed: f32,
 }
 
 /// The cockpit: what a pilot knows about their own ship without looking
@@ -138,11 +155,27 @@ pub struct Own {
     pub alive: bool,
     pub x: f32,
     pub y: f32,
+    /// Px a tick. This was missing, and its absence is most of why a bot flew
+    /// the way it did: with no sense of its own drift a pilot can only point
+    /// the nose at where it wants to be and hold thrust, which in a vacuum is
+    /// an overshoot every time and a wall shortly after.
+    pub vx: f32,
+    pub vy: f32,
+    /// What this hull can do about that: px per tick squared, and the ceiling
+    /// in px a tick. Braking distance is v squared over twice the first, which
+    /// on a stock hull at speed is about three hundred pixels.
+    pub accel: f32,
+    pub top: f32,
+    pub radius: f32,
     /// Turns, 0..1.
     pub heading: f32,
     /// Share of this hull's effective maximum.
     pub energy: f32,
     pub in_safe: bool,
+    /// What is left in each charge slot, so a repel can be spent rather than
+    /// carried to the grave. Three of each, on every hull, and until now not
+    /// one of them was ever used.
+    pub charges: [u8; sim::MAX_CHARGES],
     /// What each trigger would do if pulled now, at the rung this pilot is on.
     /// A pilot knows their own loadout, and the numbers behind it are in the
     /// settings table every client is sent.
@@ -162,6 +195,26 @@ pub struct Foe {
     pub clear: bool,
 }
 
+/// Something in the air with this pilot's name on it.
+///
+/// Bots could not see a shot coming at all: `Scan` was a foe, a flag and a
+/// green, so a bomb crossing the room was invisible and they flew into it. A
+/// player watches the bomb, which is most of what makes one hard to hit.
+#[derive(Clone, Copy)]
+pub struct Threat {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    /// Px of blast, so a bomb is given more room than a bullet.
+    pub blast: f32,
+    /// Ticks until it is nearest, and how near that is. Solved in the scan
+    /// because it is the same arithmetic for every candidate and only the
+    /// winner is worth carrying.
+    pub eta: f32,
+    pub miss: f32,
+}
+
 /// What a look around turned up. Kept between looks, so in between a pilot is
 /// working from where things were rather than where they are -- which is both
 /// cheaper and more human.
@@ -173,6 +226,7 @@ pub struct Scan {
     pub foe: Option<Foe>,
     pub flag: Option<(f32, f32)>,
     pub prize: Option<(f32, f32)>,
+    pub threat: Option<Threat>,
 }
 
 /// The pilot's own state, every tick.
@@ -185,13 +239,22 @@ pub struct Scan {
 pub fn own(w: &World, ship: u8) -> Own {
     let me = &w.state.ships[ship as usize];
     let max_e = w.eff_max_energy(ship as usize).max(1) as f32;
+    let cls = &w.cfg.classes[me.cls as usize];
     Own {
         alive: me.active != 0 && me.alive != 0,
         x: me.x as f32 / 256.0,
         y: me.y as f32 / 256.0,
+        vx: me.vx as f32 / 65536.0,
+        vy: me.vy as f32 / 65536.0,
+        // The effective numbers rather than the class ceiling: a pilot who has
+        // taken four speed greens flies the ship they are in.
+        accel: unsafe { sim::sim_eff_thrust(cls, me) } as f32 / 65536.0,
+        top: unsafe { sim::sim_eff_speed(cls, me) } as f32 / 65536.0,
+        radius: cls.radius as f32 / 256.0,
         heading: me.heading as f32 / 65536.0,
         energy: me.energy as f32 / max_e,
         in_safe: unsafe { sim::sim_in_safe(&*w.map, me.x, me.y) } != 0,
+        charges: me.charge,
         gun: shot_of(w, me, sim::TRIG_GUN, max_e),
         bomb: shot_of(w, me, sim::TRIG_BOMB, max_e),
     }
@@ -234,7 +297,60 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     // flags where they were no bot ever saw one at all.
     out.flag = nearest_flag(w, mx, my, me.team, SIGHT);
     out.prize = nearest_prize(w, mx, my, 200.0);
+    out.threat = incoming(w, mx, my, me.team, ship);
     out
+}
+
+/// The hostile round most likely to arrive, within a couple of seconds.
+///
+/// Closest approach of two points moving in straight lines, which is what a
+/// player is judging when they watch a bomb and decide whether to move. Rounds
+/// do not steer, so the straight line is exact rather than an estimate, and the
+/// only reason a pilot gets it wrong is that they looked a moment ago.
+fn incoming(w: &World, mx: f32, my: f32, team: u8, ship: u8) -> Option<Threat> {
+    /// Two seconds. Further out than that and a shot is somebody else's
+    /// problem, or will have hit a wall before it is yours.
+    const HORIZON: f32 = 200.0;
+    let mut best: Option<Threat> = None;
+    for i in 0..w.state.weapon_count as usize {
+        let p = &w.state.weapons[i];
+        if p.life == 0 || p.owner == ship || p.team == team {
+            continue;
+        }
+        let (px, py) = (p.x as f32 / 256.0 - mx, p.y as f32 / 256.0 - my);
+        let (vx, vy) = (p.vx as f32 / 65536.0, p.vy as f32 / 65536.0);
+        let vv = vx * vx + vy * vy;
+        if vv < 1e-4 {
+            continue;
+        }
+        // Where it passes closest, and when. A negative time is a round that
+        // is already past and receding.
+        let t = -(px * vx + py * vy) / vv;
+        if t < 0.0 || t > HORIZON.min(p.life as f32) {
+            continue;
+        }
+        let (cx, cy) = (px + vx * t, py + vy * t);
+        let miss = (cx * cx + cy * cy).sqrt();
+        let blast = w.cfg.specs[p.spec as usize].blast as f32 / 256.0;
+        // Anything that misses by more than its blast and a hull's width is a
+        // round to ignore, and ignoring it is what keeps a pilot from flinching
+        // at every shot in a crowded room.
+        if miss > blast + 40.0 {
+            continue;
+        }
+        if best.map_or(true, |b| t < b.eta) {
+            best = Some(Threat {
+                x: p.x as f32 / 256.0,
+                y: p.y as f32 / 256.0,
+                vx,
+                vy,
+                blast,
+                eta: t,
+                miss,
+            });
+        }
+    }
+    best
 }
 
 /// Whether the straight line between two points crosses a wall.
@@ -253,7 +369,7 @@ fn clear_line(w: &World, x0: f32, y0: f32, x1: f32, y1: f32) -> bool {
         if tx >= sim::MAP_TILES || ty >= sim::MAP_TILES {
             return false;
         }
-        let cls = unsafe { (*w.map).tile[ty * sim::MAP_TILES + tx] } & 0x0f;
+        let cls = w.map.tile[ty * sim::MAP_TILES + tx] & 0x0f;
         if cls == 1 || cls == 3 {
             return false;
         }
@@ -281,10 +397,77 @@ fn shot_of(w: &World, me: &sim::sim_ship, trig: usize, max_e: f32) -> Option<Sho
             per_tick: (sp.damage as f32 * p.count as f32) / p.delay.max(1) as f32,
             cost: p.energy as f32 / max_e,
             blast: sp.blast as f32 / 256.0,
+            speed: sp.speed as f32 / 65536.0,
         });
     }
     None
 }
+
+/// When a shot fired now would arrive, in ticks, or None when the target
+/// outruns it.
+///
+/// `p` is where the target is relative to the pilot and `v` how it is moving
+/// relative to the pilot, both in the pilot's own frame. That frame is the
+/// point: the core fires a round at `vx0 + speed * direction`, so a shot
+/// carries the ship's own velocity with it and only the *relative* motion has
+/// to be led. At a hull's 3.25 px a tick against a bullet's 2, the ship
+/// outruns its own gun, so a lead that ignores this is not a small error.
+///
+/// Solving |p + v t| = s t is a quadratic in t. Take the earlier positive root,
+/// which is the shot that arrives rather than the one that catches up later.
+fn intercept(p: (f32, f32), v: (f32, f32), s: f32) -> Option<f32> {
+    let a = v.0 * v.0 + v.1 * v.1 - s * s;
+    let b = 2.0 * (p.0 * v.0 + p.1 * v.1);
+    let c = p.0 * p.0 + p.1 * p.1;
+    // Running at exactly muzzle speed collapses the quadratic to a line, which
+    // is not a special case worth an approximation: it is a division by zero.
+    if a.abs() < 1e-5 {
+        if b.abs() < 1e-6 {
+            return None;
+        }
+        let t = -c / b;
+        return (t > 0.0).then_some(t);
+    }
+    let disc = b * b - 4.0 * a * c;
+    if disc < 0.0 {
+        return None;
+    }
+    let r = disc.sqrt();
+    let (t1, t2) = ((-b - r) / (2.0 * a), (-b + r) / (2.0 * a));
+    let best = match (t1 > 0.0, t2 > 0.0) {
+        (true, true) => t1.min(t2),
+        (true, false) => t1,
+        (false, true) => t2,
+        _ => return None,
+    };
+    Some(best)
+}
+
+/// The velocity a pilot wants while heading somewhere it means to stop at.
+///
+/// Fast when there is room and slow enough to stop when there is not, which is
+/// `v² = 2as` and nothing more. It is the whole difference between a pilot who
+/// arrives and one who arrives at speed and sails into the far wall: from a
+/// stock hull's top speed the braking distance is about three hundred pixels,
+/// nineteen tiles, which is most of a room.
+fn want_velocity(o: &Own, tx: f32, ty: f32, arrive: f32) -> (f32, f32) {
+    let (dx, dy) = (tx - o.x, ty - o.y);
+    let d = (dx * dx + dy * dy).sqrt();
+    if d < 1e-3 {
+        return (0.0, 0.0);
+    }
+    let room = (d - arrive).max(0.0);
+    let v = (2.0 * o.accel * room).sqrt().min(o.top);
+    (dx / d * v, dy / d * v)
+}
+
+/// A velocity error smaller than this is not worth a burn: the hull is already
+/// flying what it asked for, and pressing anything from here is the wobble.
+const DEAD: f32 = 0.28;
+/// How far off the nose a burn may be and still be worth making. Wider than it
+/// looks: thrust off the nose still has a component in the right direction, and
+/// waiting for a perfect alignment is a pilot who never accelerates.
+const BURN_ARC: f32 = 1.0;
 
 /// The things a plan can head towards, so an approach that stops closing can be
 /// abandoned without the pilot deciding it all over again on the next cycle.
@@ -313,14 +496,37 @@ const PROGRESS_PX: f32 = 32.0;
 /// taken and replaced nearby continues the attempt rather than restarting it.
 const SAME_GOAL_PX: f32 = 48.0;
 
+/// What the last decision settled on. Decisions are made at the pilot's
+/// reaction cadence; this is what the hands do with one in between.
+///
+/// Splitting the two is the point. Steering used to be decided with the plan
+/// and then held: a pilot on a 38 tick reaction held a turn for 38 ticks, which
+/// at 230 rotation is 79 degrees of swing before anything looked again. That is
+/// not a slow pilot, it is a pilot who cannot fly. Reaction time belongs on
+/// *what to do*, and a servo loop belongs on every tick.
+#[derive(Clone, Copy)]
+enum Mode {
+    /// Nothing worth pressing a key for.
+    Idle,
+    /// Somewhere to be, and how close counts as arrived.
+    Travel(f32, f32, f32),
+    /// Hold station on the last foe seen, at this range, and shoot it.
+    Fight(f32),
+}
+
 pub struct Bot {
     pub ship: u8,
     skill: f32,
     react: u32,
     look_every: u32,
     aim_err: f32,
+    /// This pilot's current misjudgement, held rather than re-rolled. Rolled
+    /// fresh on every look: a wrong estimate that changed a hundred times a
+    /// second would average to a right one, which is the opposite of what an
+    /// error is meant to model.
+    jitter: f32,
     timer: u32,
-    want: u16,
+    mode: Mode,
     seed: u32,
     /// The last look around, and the tick it was taken on. Refreshed on this
     /// pilot's own cadence and worked from in between.
@@ -341,7 +547,18 @@ pub struct Bot {
     best_at: u32,
     /// When each kind of approach is worth trying again, indexed by `Goal`.
     blocked: [u32; 4],
+    /// The route in progress, nearest waypoint first, and how far along it this
+    /// pilot has got. Held rather than solved every cycle: a search costs a few
+    /// hundred cells and the answer is good until the destination moves.
+    path: Vec<(f32, f32)>,
+    at: usize,
+    /// What the route was solved towards, so a destination that has wandered
+    /// off can be noticed without re-solving to find out.
+    path_to: (f32, f32),
 }
+
+/// How far a destination may drift before the route to it is stale. One cell.
+const REROUTE_PX: f32 = 128.0;
 
 impl Bot {
     pub fn new(ship: u8, skill: f32) -> Self {
@@ -355,8 +572,9 @@ impl Bot {
             // world every tick, at a hundred hertz, which no client can.
             look_every: (10.0 - skill * 5.0).max(5.0) as u32,
             aim_err: (1.0 - skill) * 0.42,
+            jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
-            want: 0,
+            mode: Mode::Idle,
             seed: 0x9e3779b9 ^ ((ship as u32) << 16),
             seen: Scan::default(),
             seen_at: 0,
@@ -367,6 +585,9 @@ impl Bot {
             best_dist: 0.0,
             best_at: 0,
             blocked: [0; 4],
+            path: Vec::new(),
+            at: 0,
+            path_to: (0.0, 0.0),
         }
     }
 
@@ -389,6 +610,18 @@ impl Bot {
     /// pilot has been told to stand down, because leaving is a thing a player
     /// does between fights: a bot that vanished mid-duel would be a bug the
     /// person it was fighting could see.
+    /// What this pilot thinks it is doing, for the drill to count. A roster
+    /// that is 90% travelling is a roster that never finds anybody, and that
+    /// is not visible from the outside: a bot flying hard at nothing looks
+    /// exactly like a bot flying hard at somebody.
+    pub fn doing(&self) -> usize {
+        match self.mode {
+            Mode::Idle => 0,
+            Mode::Travel(..) => 1,
+            Mode::Fight(_) => 2,
+        }
+    }
+
     pub fn horizon_clear(&self) -> bool {
         self.seen.foe.is_none() && self.seen.flag.is_none()
     }
@@ -409,16 +642,102 @@ impl Bot {
     /// control rate of fire, and since firing costs the same pool as living,
     /// the quickest pilot then shoots itself down to nothing. That is what
     /// made a skill-0.95 bot lose 20-1 to a skill-0.15 one.
-    pub fn think(&mut self, o: &Own, fresh: Option<Scan>) -> u16 {
+    pub fn think(&mut self, o: &Own, nav: &Nav, fresh: Option<Scan>) -> u16 {
+        if fresh.is_some() {
+            // A fresh look is a fresh estimate, right or wrong.
+            self.jitter = (self.rand() - 0.5) * self.aim_err;
+        }
         if let Some(s) = fresh {
             self.seen = s;
             self.seen_at = self.timer;
         }
         self.timer += 1;
         if self.timer % self.react == 0 {
-            self.want = self.plan(o);
+            self.decide(o, nav);
         }
-        self.want | self.trigger(o)
+        self.drive(o) | self.trigger(o) | self.charge(o)
+    }
+
+    /// The charges, which every hull carries three of and no bot has ever
+    /// spent. A repel is the answer to something already too close to outrun,
+    /// and a burst is what you throw when the answer to that did not work.
+    ///
+    /// Slot zero is the repel and slot one the burst, which is what the
+    /// baseline builds and what every shipped zone keeps. A hull whose slot is
+    /// empty simply never passes the count test.
+    fn charge(&mut self, o: &Own) -> u16 {
+        if !o.alive || o.in_safe {
+            return 0;
+        }
+        // The worst pilots never think of it, the same way they never bomb.
+        if self.skill < 0.35 {
+            return 0;
+        }
+        let threat = self.seen.threat;
+        // A repel: something is arriving and there is no time to be elsewhere.
+        // The push is hostile-only, so this costs the pilot nothing but the
+        // charge.
+        let shoved = threat.map_or(false, |t| t.eta < 45.0 && t.miss < t.blast + 24.0);
+        let crowded = self.dist < 150.0 && matches!(self.mode, Mode::Fight(_));
+        if o.charges[0] > 0 && (shoved || (crowded && o.energy < 0.45)) {
+            return sim::BTN_USE;
+        }
+        // A burst: sixteen rounds in every direction, which is a weapon only at
+        // the range where it cannot be dodged. Kept for the fight that has gone
+        // wrong rather than spent on the first contact.
+        if o.charges[1] > 0
+            && self.dist < 220.0
+            && o.energy < 0.35
+            && matches!(self.mode, Mode::Fight(_))
+        {
+            return sim::BTN_USE | (1 << sim::BTN_SLOT_SHIFT);
+        }
+        0
+    }
+
+    /// Turn a destination into somewhere to steer for now.
+    ///
+    /// A clear run is flown straight, which is most of them and costs nothing.
+    /// Otherwise the pilot follows a route, and follows it loosely: the next
+    /// waypoint is the furthest one still in plain sight, so a path through a
+    /// room is flown across the room rather than around its cell corners.
+    fn head_for(&mut self, o: &Own, nav: &Nav, dest: (f32, f32)) -> ((f32, f32), bool) {
+        let me = (o.x, o.y);
+        if nav.clear(me, dest) {
+            self.path.clear();
+            return (dest, false);
+        }
+        let stale = self.path.is_empty()
+            || self.at >= self.path.len()
+            || (self.path_to.0 - dest.0).abs() > REROUTE_PX
+            || (self.path_to.1 - dest.1).abs() > REROUTE_PX;
+        if stale {
+            self.path = nav.route(me, dest);
+            self.at = 0;
+            self.path_to = dest;
+        }
+        if self.path.is_empty() {
+            // Nowhere to route: head at it and let the give-up timer decide,
+            // which is what this AI did about everything before there was a
+            // route at all.
+            return (dest, false);
+        }
+        while self.at + 1 < self.path.len() && nav.clear(me, self.path[self.at + 1]) {
+            self.at += 1;
+        }
+        (self.path[self.at], true)
+    }
+
+    /// Note how the approach to wherever the pilot is *steering* is going.
+    ///
+    /// The waypoint rather than the destination, which matters as soon as there
+    /// is a route: going the long way round a wall closes no straight-line
+    /// distance to the far side of it for seconds at a time, so a timer watching
+    /// the destination calls every detour a wall and gives up on it. Watching
+    /// the waypoint keeps the timer doing its job, which is noticing that the
+    /// flying is not working, and an advancing waypoint resets it for free.
+    fn note(&mut self, o: &Own, g: Goal, at: (f32, f32), arrive: f32) {
+        self.approaching(o, g, at.0, at.1, arrive);
     }
 
     /// The share of the bar a pilot keeps back rather than shooting it away.
@@ -453,7 +772,19 @@ impl Bot {
         if o.energy <= self.reserve() {
             return 0;
         }
-        if self.aim_diff(o, self.aim.0, self.aim.1).abs() >= 0.16 {
+        // Nothing is shot through a wall. The bomb already asked this and the
+        // gun never did, so a pilot with a target behind a pillar emptied its
+        // bar into the pillar: on the drill, one shot in seventy-seven landed.
+        if !self.seen.foe.map_or(false, |f| f.clear) {
+            return 0;
+        }
+        // How wide the target is from here, which is the tolerance the shot
+        // actually has. A flat 0.16 radians was two ships wide at close range
+        // and four ships wide at a hundred tiles, so a pilot at range fired
+        // constantly and hit nothing.
+        let span = ((o.radius * 2.0) / self.dist.max(1.0)).atan();
+        let tol = (span + (1.0 - self.skill) * 0.04).clamp(0.05, 0.32);
+        if self.aim_diff(o, self.aim.0, self.aim.1).abs() >= tol {
             return 0;
         }
         // A bomb instead of the burst of gunfire, never as well as it. The
@@ -563,11 +894,14 @@ impl Bot {
         }
     }
 
-    fn plan(&mut self, o: &Own) -> u16 {
+    /// What to do, at the pilot's reaction cadence. Nothing here presses a key:
+    /// it settles a mode and `drive` flies it.
+    fn decide(&mut self, o: &Own, nav: &Nav) {
         if !o.alive {
             self.aim = (0.0, 0.0);
             self.goal = None;
-            return 0;
+            self.mode = Mode::Idle;
+            return;
         }
 
         // Get out of a safe zone, and never pull the trigger inside one: in
@@ -575,30 +909,34 @@ impl Bot {
         // through stops dead in the one place nothing can shoot into.
         if o.in_safe {
             let c = (sim::MAP_TILES as f32 / 2.0) * 16.0;
-            return self.steer(o, c - o.x, c - o.y, false) | sim::BTN_THRUST;
+            let ((tx, ty), _) = self.head_for(o, nav, (c, c));
+            self.mode = Mode::Travel(tx, ty, 0.0);
+            return;
         }
 
         // A flag nobody owns, or one the other side holds, is worth crossing
         // the room for. Flags decide the round; kills only clear the way.
         if let Some((fx, fy)) = self.seen.flag.filter(|_| self.worth_trying(Goal::Flag)) {
-            self.aim = (0.0, 0.0); // hands off the trigger while running a flag
-            self.approaching(o, Goal::Flag, fx, fy, 16.0);
-            return self.steer(o, fx - o.x, fy - o.y, false);
+            let ((tx, ty), _) = self.head_for(o, nav, (fx, fy));
+            self.note(o, Goal::Flag, (tx, ty), 16.0);
+            self.mode = Mode::Travel(tx, ty, 16.0);
+            return;
         }
 
         // A green within easy reach is worth the detour when energy allows.
         if o.energy > 0.4 {
             if let Some((px, py)) = self.seen.prize.filter(|_| self.worth_trying(Goal::Prize)) {
-                self.aim = (0.0, 0.0);
-                self.approaching(o, Goal::Prize, px, py, 16.0);
-                return self.steer(o, px - o.x, py - o.y, false);
+                let ((tx, ty), _) = self.head_for(o, nav, (px, py));
+                self.note(o, Goal::Prize, (tx, ty), 16.0);
+                self.mode = Mode::Travel(tx, ty, 16.0);
+                return;
             }
         }
 
         let foe = self.seen.foe.filter(|_| self.worth_trying(Goal::Foe));
         let Some(foe) = foe else {
-            self.aim = (0.0, 0.0);
-            return self.roam(o);
+            self.roam(o, nav);
+            return;
         };
         // Where they were when last looked at, carried forward by how long
         // ago that was. A pilot tracks a target rather than photographing it,
@@ -609,35 +947,150 @@ impl Bot {
         // until this line existed.
         let age = self.timer.saturating_sub(self.seen_at) as f32;
         let (fx, fy) = (foe.x + foe.vx * age, foe.y + foe.vy * age);
-        let (dx, dy) = (fx - o.x, fy - o.y);
-        let dist = (dx * dx + dy * dy).sqrt();
-        self.dist = dist;
 
-        // Lead the target: bullets travel about 2 px per tick.
-        let lead = (dist / 2.0).min(140.0);
-        let ax = dx + foe.vx * lead;
-        let ay = dy + foe.vy * lead;
-        self.aim = (ax, ay);
+        // A wall between the two of them is not a fight, it is a journey. Fly
+        // at them rather than holding a range against something that cannot be
+        // shot, and let the trigger stay shut on the way.
+        if !foe.clear {
+            let ((tx, ty), _) = self.head_for(o, nav, (fx, fy));
+            self.note(o, Goal::Foe, (tx, ty), 32.0);
+            self.mode = Mode::Travel(tx, ty, 0.0);
+            return;
+        }
 
-        let mut out = self.steer(o, ax, ay, true);
-
-        // Hold a working range; weaker pilots misjudge it.
+        // Hold a working range; weaker pilots misjudge it. Break off and
+        // rebuild rather than trade at the floor.
         let ideal = 130.0 + (1.0 - self.skill) * 90.0;
+        let range = if o.energy < self.reserve() * 0.6 { ideal * 2.2 } else { ideal };
         // Inside that range the pilot has arrived and is fighting, so closing no
         // further is the plan working rather than a wall. Only the run in counts
         // as an approach.
         self.approaching(o, Goal::Foe, fx, fy, ideal * 1.15);
-        if dist > ideal * 1.15 {
-            out |= sim::BTN_THRUST;
-        } else if dist < ideal * 0.55 {
-            out |= sim::BTN_REVERSE;
-        }
+        self.mode = Mode::Fight(range);
+    }
 
-        // Break off and rebuild rather than trade at the floor. The trigger
-        // itself lives in trigger(); this is only where the pilot goes.
-        if o.energy < self.reserve() * 0.6 {
-            out &= !sim::BTN_THRUST;
-            if dist < ideal * 1.6 {
+    /// The hands, every tick.
+    fn drive(&mut self, o: &Own) -> u16 {
+        if !o.alive {
+            return 0;
+        }
+        match self.mode {
+            Mode::Idle => {
+                self.aim = (0.0, 0.0);
+                0
+            }
+            Mode::Travel(tx, ty, arrive) => {
+                self.aim = (0.0, 0.0);
+                self.fly(o, tx, ty, arrive)
+            }
+            Mode::Fight(range) => {
+                let Some(foe) = self.seen.foe else {
+                    self.aim = (0.0, 0.0);
+                    return 0;
+                };
+                let age = self.timer.saturating_sub(self.seen_at) as f32;
+                let (fx, fy) = (foe.x + foe.vx * age, foe.y + foe.vy * age);
+                let (dx, dy) = (fx - o.x, fy - o.y);
+                let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+                self.dist = dist;
+
+                // Where to point. The shot inherits this ship's velocity, so
+                // what has to be led is the target's motion relative to ours,
+                // and the muzzle speed is the weapon's own rather than a
+                // constant. A round that cannot catch them leaves `intercept`
+                // empty, and then the best a pilot can do is point at them and
+                // wait for the geometry to improve.
+                let rel = (foe.vx - o.vx, foe.vy - o.vy);
+                let muzzle = o.gun.or(o.bomb).map_or(2.0, |s| s.speed);
+                let t = intercept((dx, dy), rel, muzzle).unwrap_or(0.0).min(200.0);
+                self.aim = (dx + rel.0 * t, dy + rel.1 * t);
+
+                // Stand off at the working range along the line already flown,
+                // so closing and backing off are one instruction rather than a
+                // thrust rule and a reverse rule that disagree at the boundary.
+                let (ux, uy) = (-dx / dist, -dy / dist);
+                self.fly(o, fx + ux * range, fy + uy * range, range * 0.25)
+            }
+        }
+    }
+
+    /// Fly towards a point, and stop there.
+    ///
+    /// The nose is the gun and the engine at once (decision 17), so the two
+    /// compete: a pilot with a shot lined up points at the target and takes
+    /// whatever thrust that leaves, which is what makes a fight look like
+    /// circling rather than a charge. With nothing to shoot the nose is free
+    /// and goes wherever the burn is.
+    /// Bend the wanted velocity off the line of an arriving round.
+    ///
+    /// Not a separate behaviour with its own buttons: a dodge is a different
+    /// answer to "where do I want to be going", and putting it here means it
+    /// composes with whatever the pilot was already doing rather than
+    /// interrupting it.
+    fn sidestep(&self, o: &Own, wx: f32, wy: f32) -> (f32, f32) {
+        let Some(t) = self.seen.threat else { return (wx, wy) };
+        let age = self.timer.saturating_sub(self.seen_at) as f32;
+        if t.eta - age > 45.0 {
+            return (wx, wy);
+        }
+        let (rx, ry) = (t.x + t.vx * age - o.x, t.y + t.vy * age - o.y);
+        let vv = t.vx * t.vx + t.vy * t.vy;
+        if vv < 1e-4 {
+            return (wx, wy);
+        }
+        // Where it will pass, relative to this hull.
+        let tc = -(rx * t.vx + ry * t.vy) / vv;
+        if tc < 0.0 {
+            return (wx, wy);
+        }
+        let (cx, cy) = (rx + t.vx * tc, ry + t.vy * tc);
+        let d = (cx * cx + cy * cy).sqrt();
+        // What would actually land, rather than what passes nearby. A crowded
+        // room is full of rounds going somewhere else, and a pilot who flinches
+        // at each of them never holds an aim: widening this by forty pixels cost
+        // a third of the shots fired and bought no fewer deaths.
+        let want = t.blast + o.radius;
+        if d >= want {
+            return (wx, wy);
+        }
+        // Away from where it will pass. Dead on, any perpendicular will do, and
+        // the one across its path is the one that clears soonest.
+        let (ax, ay) = if d > 1.0 {
+            (-cx / d, -cy / d)
+        } else {
+            let s = vv.sqrt();
+            (-t.vy / s, t.vx / s)
+        };
+        // At the hull's whole speed, because half a dodge is a hit.
+        (wx + ax * o.top, wy + ay * o.top)
+    }
+
+    fn fly(&mut self, o: &Own, tx: f32, ty: f32, arrive: f32) -> u16 {
+        let (wx, wy) = want_velocity(o, tx, ty, arrive);
+        let (wx, wy) = if std::env::var("AI_NODODGE").is_ok() { (wx, wy) } else { self.sidestep(o, wx, wy) };
+        let (ex, ey) = (wx - o.vx, wy - o.vy);
+        let err = (ex * ex + ey * ey).sqrt();
+        let free = self.aim == (0.0, 0.0);
+        // Where the nose goes when there is nothing to shoot: at the burn while
+        // there is one, and at the destination once the hull is already flying
+        // what it asked for. That second case is not a detail. A velocity error
+        // under `DEAD` is a vector of almost no length, and the direction of a
+        // vector of almost no length is noise, so a coasting pilot pointed at it
+        // turned gently and for ever: the drill caught one holding a left turn
+        // across eighty ticks of perfectly good flight, going in a circle.
+        let (nx, ny) = if !free {
+            self.aim
+        } else if err > DEAD {
+            (ex, ey)
+        } else {
+            (tx - o.x, ty - o.y)
+        };
+        let mut out = self.turn(o, nx, ny, !free);
+        if err > DEAD {
+            let off = self.aim_diff(o, ex, ey).abs();
+            if off < BURN_ARC {
+                out |= sim::BTN_THRUST;
+            } else if off > std::f32::consts::PI - BURN_ARC {
                 out |= sim::BTN_REVERSE;
             }
         }
@@ -657,7 +1110,7 @@ impl Bot {
     /// furniture and therefore where anybody else looking for a fight is also
     /// going, offset per pilot so a roster does not converge on one tile. A new
     /// one is rolled on arrival, so a bot that finds nobody there moves on.
-    fn roam(&mut self, o: &Own) -> u16 {
+    fn roam(&mut self, o: &Own, nav: &Nav) {
         let arrived = {
             let (dx, dy) = (self.roam.0 - o.x, self.roam.1 - o.y);
             dx * dx + dy * dy < (20.0 * 16.0) * (20.0 * 16.0)
@@ -671,8 +1124,11 @@ impl Bot {
         // A point rolled inside a wall would otherwise be pushed at for ever:
         // nothing is nearer than twenty tiles, so `arrived` never fires, and a
         // roam is the one approach with nothing after it to fall through to.
-        self.approaching(o, Goal::Roam, self.roam.0, self.roam.1, 20.0 * 16.0);
-        self.steer(o, self.roam.0 - o.x, self.roam.1 - o.y, false) | sim::BTN_THRUST
+        // Arriving at speed is fine here. A roam point is a direction to be
+        // going, not a place to park.
+        let ((tx, ty), _) = self.head_for(o, nav, self.roam);
+        self.note(o, Goal::Roam, (tx, ty), 20.0 * 16.0);
+        self.mode = Mode::Travel(tx, ty, 20.0 * 16.0);
     }
 
     fn aim_diff(&self, o: &Own, dx: f32, dy: f32) -> f32 {
@@ -688,23 +1144,17 @@ impl Bot {
         diff
     }
 
-    fn steer(&mut self, o: &Own, dx: f32, dy: f32, with_error: bool) -> u16 {
-        let jitter = if with_error {
-            (self.rand() - 0.5) * self.aim_err
-        } else {
-            0.0
-        };
-        let diff = self.aim_diff(o, dx, dy) + jitter;
-        let mut out = 0;
+    /// Put the nose on a bearing. Thrust is not decided here: what the engine
+    /// does depends on where the burn is, which is `fly`'s business.
+    fn turn(&mut self, o: &Own, dx: f32, dy: f32, with_error: bool) -> u16 {
+        let diff = self.aim_diff(o, dx, dy) + if with_error { self.jitter } else { 0.0 };
         if diff > 0.05 {
-            out |= sim::BTN_RIGHT;
+            sim::BTN_RIGHT
         } else if diff < -0.05 {
-            out |= sim::BTN_LEFT;
+            sim::BTN_LEFT
+        } else {
+            0
         }
-        if !with_error && diff.abs() < 0.5 {
-            out |= sim::BTN_THRUST;
-        }
-        out
     }
 }
 

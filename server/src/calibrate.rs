@@ -9,7 +9,7 @@
 //! rating math. Nothing here models an outcome, because a model of a fight is
 //! exactly the thing that would drift away from the fight.
 
-use crate::{ai, ingest_damage, rating, sim};
+use crate::{ai, ingest_damage, nav, rating, sim};
 
 /// A match ends at this many kills, or this many ticks if the two are too
 /// evenly matched to settle it. 100 ticks is a second.
@@ -19,6 +19,10 @@ const MATCH_TICKS: u32 = 30_000; // five minutes of arena time
 /// One match, fought to a result, with both pilots' credit going into `r`.
 fn bout(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: u32) {
     let mut world = sim::World::with_map(0xd0e1 ^ salt, sim::build_pit);
+    // The pit is one room and a pilot can see across it, so nothing here ever
+    // routes. Built anyway, because the brain takes one and a brain that took
+    // an Option would grow a branch nobody exercises.
+    let route = nav::Nav::build(&world.map);
     // No opening loadout, whatever the zone ships. This is a measurement of
     // the pilot, and thirty random greens at every spawn is not noise on that
     // measurement -- it erases it. Over a 48-round round-robin the skill
@@ -66,9 +70,11 @@ fn bout(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: 
     for _ in 0..MATCH_TICKS {
         let inputs = [
             sim::sim_input { ship: s1, buttons: bot1.think(
-                &ai::own(&world, s1), bot1.looks_due().then(|| ai::scan(&world, s1))) },
+                &ai::own(&world, s1), &route,
+                bot1.looks_due().then(|| ai::scan(&world, s1))) },
             sim::sim_input { ship: s2, buttons: bot2.think(
-                &ai::own(&world, s2), bot2.looks_due().then(|| ai::scan(&world, s2))) },
+                &ai::own(&world, s2), &route,
+                bot2.looks_due().then(|| ai::scan(&world, s2))) },
         ];
         world.step(&inputs);
 
