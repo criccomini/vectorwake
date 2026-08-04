@@ -163,6 +163,36 @@ local function bot_mark(x, y, col, k)
     return w
 end
 
+-- How wide a string draws. The interface is set in one monospace face, so
+-- this is exact rather than an estimate: DejaVu Sans Mono advances 1233 of
+-- 2048 units per glyph at every size. Written down once because two places
+-- had guessed at it separately, and a guess that runs 3% long puts a mark
+-- inside the last letter of a name.
+local ADVANCE = 1233 / 2048
+local function text_w(s, px)
+    return #s * px * ADVANCE
+end
+
+-- Close, as a drawn mark rather than the letter x.
+--
+-- A letter is a letter: at this size an x reads as text somebody left in the
+-- corner, and it inherits the font's proportions rather than the interface's.
+-- Four spokes instead, cut away from a void at the middle -- the same thing
+-- a chamfer does to a corner, which is the one move the walls, the brackets
+-- and the hulls all make. It still says close at a glance and stops looking
+-- like a character that wandered out of a paragraph.
+local function close_mark(x, y, col, k)
+    k = k or 9 * S
+    local out = k / 2
+    local inn = k * 0.17
+    local d = 0.7071
+    for _, s in ipairs({{1, 1}, {1, -1}, {-1, 1}, {-1, -1}}) do
+        local dx, dy = s[1] * d, s[2] * d
+        u:seg(x + dx * inn, ry(y + dy * inn),
+              x + dx * out, ry(y + dy * out), 1.25 * S, col, true)
+    end
+end
+
 -- A weapon level, as filled rungs. Three rungs and how many are lit, which is
 -- a rung count read without reading a numeral.
 local function ladder(x, y, rungs, level, col, w, h)
@@ -533,6 +563,16 @@ local function nameplates(o)
                 -- ships in front of you is worth the risk.
                 local bty = sim.ship_bounty(i)
                 txt(nm, sx + 12 * S, sy + 13 * S, 11 * S, pal.a(col, 0.7))
+                -- The same mark the scoreboard and the info box wear, on the
+                -- hull itself: who is flying a ship is worth knowing while
+                -- you are deciding whether to chase it, and that decision is
+                -- made looking at the ship rather than at a panel. Dim and
+                -- after the name, so it reads as a note about the label and
+                -- never competes with the bounty under it.
+                if p and p.ai then
+                    bot_mark(sx + 12 * S + text_w(nm, 11 * S) + 4 * S,
+                             sy + 13 * S, pal.a(col, 0.45), 8 * S)
+                end
                 if bty > 0 then
                     txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
                         pal.a(pal.BOUNTY, 0.85))
@@ -976,7 +1016,7 @@ local function inspect(o, top)
     -- menu. Drawn only when it would do something: you are on a private side,
     -- and this is somebody other than you who is not already on it.
     local invite = o.may_invite and i ~= o.me and not same_team
-    local rows_n = 3 + (side and 1 or 0)
+    local rows_n = 5 + (side and 1 or 0)
     local h = 30 * S + rows_n * rowh + (invite and 26 * S or 0) + 10 * S
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
@@ -991,12 +1031,11 @@ local function inspect(o, top)
     -- The mark rides after the name here, not in a column: there is one line
     -- and nothing to line it up with.
     if p and p.ai then
-        bot_mark(x + 12 * S + #nm * (FONT - 1) * S * 0.62, y + 15 * S,
+        bot_mark(x + 12 * S + text_w(nm, (FONT - 1) * S) + 5 * S, y + 17 * S,
                  pal.a(pal.DIM, 0.85), 10 * S)
     end
     -- Close, in the corner it opened under. Escape does the same thing.
-    txt("X", x + w - 12 * S, y + 17 * S, (FONT - 2) * S, pal.a(pal.DIM, 0.8),
-        "right")
+    close_mark(x + w - 17 * S, y + 17 * S, pal.a(pal.DIM, 0.8), 10 * S)
     hit(x + w - 26 * S, y + 4 * S, 26 * S, 22 * S, "uninspect")
 
     local ry_ = y + 30 * S
@@ -1015,8 +1054,13 @@ local function inspect(o, top)
     -- version of the question: the client cannot tell, and the server's label
     -- is the only answer anybody has. A guest is not an accusation.
     row("SEAT", string.upper((p and p.label) or "unknown"))
-    row("RECORD", sim.ship_kills(i) .. "K  " .. sim.ship_deaths(i) .. "D  "
-        .. sim.ship_points(i) .. "P")
+    -- A line each, rather than one line of "21K 20D 748P". Three numbers
+    -- packed into a row with their units stuck to them is a thing to decode;
+    -- three labelled rows are three numbers to read, and this panel already
+    -- reads that way everywhere else.
+    row("KILLS", tostring(sim.ship_kills(i)))
+    row("DEATHS", tostring(sim.ship_deaths(i)))
+    row("POINTS", tostring(sim.ship_points(i)))
     -- What killing them pays, which is the number that decides whether the
     -- rest of this matters right now.
     row("BOUNTY", tostring(sim.ship_bounty(i)), pal.a(pal.BOUNTY, 0.9))
@@ -1134,9 +1178,13 @@ end
 local function debug_hud(o, top)
     if not M.debug then return end
     local st = o.stats or {}
-    local w = 176 * S
-    local x = W - PAD * S - w
-    local rowh = 13 * S
+    -- Set at body size rather than the smallest the font will draw. This is a
+    -- readout somebody squints at while flying and then quotes into a bug
+    -- report, and four points below the interface's own text it was neither
+    -- glanceable nor quotable.
+    local size = (FONT - 1) * S
+    local colw = 214 * S
+    local rowh = 16 * S
     local lines = {
         {"fps", string.format("%.0f", o.fps or 0)},
         {"frame", string.format("%.1f ms", (o.frame_ms or 0))},
@@ -1151,20 +1199,52 @@ local function debug_hud(o, top)
         {"ships", tostring(sim.ship_count())},
         {"shots", tostring(sim.weapon_count())},
     }
-    local h = 20 * S + #lines * rowh + 6 * S
+    -- Wrapped into as many columns as the room below the dial can hold. A
+    -- phone in landscape is about four hundred points tall and the dial has
+    -- most of that: one column of twelve rows at a size worth reading runs
+    -- off the bottom of the screen, and a number nobody can see is not a
+    -- readout. Two columns of six is the usual answer; a desktop window has
+    -- the height for one and gets it.
     local y = (top or 0) + 6 * S
+    local avail = H - y - 6 * S
+    local most = math.max(1, math.floor((W - 2 * PAD * S) / colw))
+    -- The narrowest panel that fits, and a little type-shrinking is cheaper
+    -- than another column: three columns of four reach most of the way across
+    -- a phone held sideways and lie over the game, where two columns four per
+    -- cent smaller sit in the corner and read the same. So take the first
+    -- column count whose rows fit outright or all but, and only widen when
+    -- the squeeze would start to hurt.
+    local cols, per, k = most, 1, 1
+    for c = 1, most do
+        local p = math.ceil(#lines / c)
+        local need = 24 * S + p * rowh + 6 * S
+        local fit = (need <= avail) and 1 or (avail - 30 * S) / (p * rowh)
+        if fit >= 0.85 or c == most then
+            cols, per, k = c, p, math.max(0.62, math.min(1, fit))
+            break
+        end
+    end
+    rowh = rowh * k
+    size = size * k
+    local h = 24 * S + per * rowh + 6 * S
+    local w = colw * cols
+    local x = W - PAD * S - w
     rect(x, y, w, h, pal.a(pal.BG, 0.78))
     vrule(x, y, h, pal.a(pal.PRIZE, 0.8))
-    txt("DEBUG", x + 10 * S, y + 13 * S, (FONT - 4) * S, pal.a(pal.PRIZE, 0.9))
-    txt(o.zone or "", x + w - 10 * S, y + 13 * S, (FONT - 4) * S,
+    txt("DEBUG", x + 10 * S, y + 15 * S, size, pal.a(pal.PRIZE, 0.9))
+    -- The zone's name and nothing else. The wire sends the description on a
+    -- second line of the same message, and a sentence about the game is not a
+    -- diagnostic: it wrapped the header in prose that never changes while the
+    -- numbers under it do.
+    txt((o.zone or ""):match("^[^\n]*"), x + w - 10 * S, y + 15 * S, size,
         pal.a(pal.DIM, 0.8), "right")
-    local ly = y + 20 * S
-    for _, l in ipairs(lines) do
-        txt(l[1], x + 10 * S, ly + rowh / 2, (FONT - 4) * S,
-            pal.a(pal.DIM, 0.8))
-        txt(l[2], x + w - 10 * S, ly + rowh / 2, (FONT - 4) * S,
+    for n, l in ipairs(lines) do
+        local c = math.floor((n - 1) / per)
+        local cx = x + c * colw
+        local ly = y + 24 * S + ((n - 1) % per) * rowh
+        txt(l[1], cx + 10 * S, ly + rowh / 2, size, pal.a(pal.DIM, 0.8))
+        txt(l[2], cx + colw - 10 * S, ly + rowh / 2, size,
             pal.a(pal.INK, 0.9), "right")
-        ly = ly + rowh
     end
 end
 
