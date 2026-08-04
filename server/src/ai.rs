@@ -1165,11 +1165,7 @@ impl Bot {
     /// that small is noise: a coasting pilot pointed at it turned gently and
     /// for ever, so a settled hull points down the road instead.
     fn seek(&mut self, o: &Own, want: (f32, f32), ahead: (f32, f32)) -> u16 {
-        let (wx, wy) = if std::env::var("AI_NODODGE").is_ok() {
-            want
-        } else {
-            self.sidestep(o, want.0, want.1)
-        };
+        let (wx, wy) = self.sidestep(o, want.0, want.1);
         let (ex, ey) = (wx - o.vx, wy - o.vy);
         let err = (ex * ex + ey * ey).sqrt();
         let free = self.aim == (0.0, 0.0);
