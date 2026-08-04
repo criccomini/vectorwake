@@ -1177,9 +1177,13 @@ focused straight through held Shift+Tab. Guns sit on Shift: the same left
 pinky as Ctrl, one row up, and a modifier, which keyboards wire on their own
 matrix lines, so the layout cannot ghost the way arrows-plus-Space could.
 Digits spend charges by row of the corner stack, the keyboard catching up to
-the touch pads, which have named their slot directly all along; C and V stay
-as the spend-and-cycle fallback. WASD is gone, arrows are flight, and every
-held-Ctrl letter chord that a browser owns dies with it.
+the touch pads, which have named their slot directly all along, and the
+ready-and-cycle model went with the catching up: a selection is a thing to
+have forgotten to move, and with every control naming its own charge there
+is nothing left for one to do. The rows wear their digits in the corner
+stack, C and V are unbound, and the whole of spending is "press the number
+you can read". WASD is gone, arrows are flight, and every held-Ctrl letter
+chord that a browser owns dies with it.
 
 Fullscreen gives the literal keys back. The fullscreen action requests the
 Keyboard Lock alongside, and a *held lock*, not fullscreen itself, is what

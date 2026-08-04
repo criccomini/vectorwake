@@ -351,8 +351,7 @@ local NODES = {
         {label = "fly", detail = "arrow keys"},
         {label = "guns", detail = "shift, or space, Z, click"},
         {label = "bombs", detail = "tab, or X, right click"},
-        {label = "charges", detail = "1 2 3 4, by row of the corner stack"},
-        {label = "", detail = "or C to spend the ready one, V to swap"},
+        {label = "charges", detail = "1 2 3 4, numbered in the corner stack"},
         -- Worth a line of its own. A fan is a liability down a corridor and
         -- arrives from a green rather than by choice, so a pilot who has one
         -- and does not know this key has a gun that got worse.

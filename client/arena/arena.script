@@ -58,8 +58,6 @@ local pickup = nil
 -- reads it is not the same variable: the function closes over a global that is
 -- nil, and clearing it throws on the way out of every zone.
 local rolls = {}
--- Which charge the use key spends. The client's, not the simulation's.
-local charge_slot = 0
 local layers = nil
 -- The terrain window, in tiles either side of the camera, and how far the
 -- camera may walk before it is rebuilt. A map is 1024 tiles square, so what
@@ -123,7 +121,6 @@ local function bit_for(action)
             [hash("reverse")] = sim.BTN_REVERSE,
             [hash("guns")] = sim.BTN_FIRE,
             [hash("bombs")] = sim.BTN_BOMB,
-            [hash("use")] = sim.BTN_USE,
             -- Held rather than tapped here on purpose: the core toggles on the
             -- rising edge, so the client's job is only to report the key, and
             -- doing the edge here as well would make two places that have to
@@ -159,18 +156,6 @@ local function my_slots()
         if sim.charge_max(me, k) > 0 then out[#out + 1] = k end
     end
     return out
-end
-
--- The slot the use key would actually spend. Resolved rather than stored,
--- because a hull change moves which slots exist and a remembered index would
--- point at a charge this hull cannot carry, which is a use key that silently
--- does nothing.
-local function ready_slot()
-    local slots = my_slots()
-    for _, k in ipairs(slots) do
-        if k == charge_slot then return k end
-    end
-    return slots[1] or 0
 end
 
 -- The charge a pad asked for this frame, read from the latch once and held
@@ -218,13 +203,10 @@ local function my_buttons()
     for _, bit in ipairs(touch.bits(sim.ship_heading_raw(me))) do
         bits[bit] = true
     end
-    -- A tapped charge pad names its own slot, so on a touchscreen there is no
-    -- selection to read back: the control you pressed is the thing you get.
-    -- The keyboard still cycles, because a key per kind is what does not
-    -- survive a phone, and a phone is no longer the thing choosing.
-    --
-    -- Set rather than added, or a tap arriving on the same frame as the use
-    -- key would count the bit twice.
+    -- A spend names its own slot, whichever control asked: a pad's tap and a
+    -- digit's press land in the same latch, so there is no selection anywhere
+    -- to read back or to have forgotten to move. The control you pressed is
+    -- the thing you get.
     if charge_tap then bits[sim.BTN_USE] = true end
 
     local b = 0
@@ -232,7 +214,7 @@ local function my_buttons()
     -- Which charge is spent rides in the buttons rather than in the
     -- simulation: selection is a thing a pilot does with their own interface,
     -- so it costs no snapshot byte and no edge detection down in the core.
-    return b + (charge_tap or ready_slot()) * sim.BTN_SLOT_STEP
+    return b + (charge_tap or 0) * sim.BTN_SLOT_STEP
 end
 
 -- What the panel draws: every slot this hull can carry, how many are in
@@ -250,23 +232,9 @@ local function charge_row()
             -- How many this hull can hold, so the row can draw the empties
             -- as well as the full ones.
             max = sim.charge_max(me, k),
-            ready = (k == ready_slot()),
         }
     end
     return out
-end
-
-local function cycle_charge()
-    local slots = my_slots()
-    if #slots == 0 then return end
-    local cur = ready_slot()
-    for i, k in ipairs(slots) do
-        if k == cur then
-            charge_slot = slots[i % #slots + 1]
-            return
-        end
-    end
-    charge_slot = slots[1]
 end
 
 -- The menu and the info panels are the same kind of thing, a slab of text
@@ -730,14 +698,6 @@ function update(self, dt)
         toggle_menu()
         tapped[hash("menu")] = nil
         sfx.ui("ui_go")
-    end
-    -- One key cycles which charge is ready and one spends it, which is two
-    -- inputs for any number of charge kinds. A key per kind is what the
-    -- original did and it does not survive a phone.
-    if tapped[hash("cycle")] and not menu.open then
-        tapped[hash("cycle")] = nil
-        cycle_charge()
-        sfx.ui("ui_move")
     end
     -- The scoreboard and your loadout, together, on one key and one chip.
     -- Not gated on the menu being shut: asking for this while the menu is up

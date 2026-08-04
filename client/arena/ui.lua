@@ -902,12 +902,15 @@ local function status(me, pickup, charges, lift)
     end
 
     if show_charges then
-        for _, c in ipairs(slots) do
-            txt(string.upper(c.name or c.short), x, y + rows_h / 2, lab,
-                pal.a(pal.DIM, 0.8))
+        for i, c in ipairs(slots) do
+            -- The digit is the key that spends this row, so it leads the
+            -- label: the row is its own reminder and nothing has to be
+            -- looked up. There is no ready mark any more, because there is
+            -- no selection: a key or a pad names its charge outright.
+            txt(i .. "  " .. string.upper(c.name or c.short), x,
+                y + rows_h / 2, lab, pal.a(pal.DIM, 0.8))
             pips(val + 3 * S, y + rows_h / 2, math.max(1, c.max or 3), c.count,
-                 c.ready and pal.CHARGE_COL or pal.a(pal.CHARGE_COL, 0.7),
-                 2.7 * S, 9 * S)
+                 pal.CHARGE_COL, 2.7 * S, 9 * S)
             y = y + rows_h
         end
     end
