@@ -384,6 +384,32 @@ on the name beside it, which have to reach nothing, and on a scoreboard row,
 which has to reach the pilot. Both rules are invisible until somebody is
 flying, on a build that takes six minutes to publish.
 
+## The repel nobody could see
+
+A repel is a weapon whose life is one tick. It is spawned in the ship phase and
+ends in the weapon phase of the very next step, so the only snapshot that can
+carry it is one packed on the tick it was fired: at 20 Hz over a 100 Hz
+simulation, one shove in five. The other four reach a watcher with no weapon to
+draw and no expiry to hear, only ships suddenly moving. Your own is fine,
+because you simulate all of it yourself.
+
+That went unnoticed for as long as nobody fired one, and the bots learned to
+spend charges this week.
+
+Extending its life is not the fix: the shove is applied in `weapon_end`, so a
+round that lives five ticks is a repel that fires 50 ms late, and a repel is a
+panic button. So `world.charges` reads the firer's inventory instead, which is
+in every snapshot. A remote pilot's count moves only when a snapshot lands,
+since prediction runs their ship with no buttons, and a drop is a charge spent.
+It draws only for a charge that leaves nothing else to look at, which is the
+life test: a burst puts twenty-four rounds in the air and draws itself.
+
+`a_repel_is_gone_before_a_snapshot_can_carry_it` in the server pins the fact
+from the other side, so the day a repel becomes packable the client can go back
+to drawing it from the weapon. `lua5.1 client/tests/charges_test.lua` covers
+what must not draw: your own hull, a pickup, a death, a respawn, a seat
+somebody new has taken, and a charge that flies before it goes off.
+
 ## The games list survives its directory
 
 `arena/directory.lua` holds one socket and re-asks on a timer while the list is

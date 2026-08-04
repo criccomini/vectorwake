@@ -1796,12 +1796,19 @@ end
 local blast_of = {}
 local level_of = {}
 
+local life_of = {}
+-- What each pilot was last seen holding, by ship and charge slot. See
+-- `M.charges`.
+local charge_seen = {}
+
 -- A spec id means whatever the current settings say it means, and a zone
 -- sends its own -- so the answers cached here stop being true the moment a
 -- settings message lands. Cheap to rebuild, wrong to keep.
 function M.forget_specs()
     blast_of = {}
     level_of = {}
+    life_of = {}
+    charge_seen = {}
 end
 
 local function spec_blast(id)
@@ -1824,9 +1831,74 @@ local function spec_level(id)
     return r
 end
 
+local function spec_life(id)
+    local r = life_of[id]
+    if r == nil then
+        r = sim.spec_life(id)
+        life_of[id] = r
+    end
+    return r
+end
+
 local function bomb_col(lvl)
     if lvl < 0 then return pal.BURST end
     return pal.BOMB_LVL[math.min(lvl + 1, #pal.BOMB_LVL)]
+end
+
+-- Somebody else's repel, drawn from the only evidence there is: the count in
+-- their charge slot going down.
+--
+-- A repel is a weapon whose life is one tick. It is spawned and gone inside a
+-- single step, so it reaches the state a snapshot is packed from only when the
+-- tick it was fired on happens to be a snapshot tick, which at 20 Hz over a
+-- 100 Hz simulation is one time in five. The other four the watcher is sent
+-- nothing at all: no weapon to draw, no expiry to hear, only ships suddenly
+-- moving. Your own is fine, because you simulate the whole of it yourself.
+--
+-- Nobody noticed for as long as nobody fired one. The bots learned to spend
+-- charges this week and now a room is full of shoves with no explanation
+-- attached to four fifths of them.
+--
+-- So this reads the inventory instead, which is in every snapshot. A remote
+-- pilot's count is authoritative and moves only when one lands: prediction
+-- runs their ship with no buttons, so nothing local can spend their charges,
+-- and a drop is a charge spent. Only for a charge that leaves nothing behind
+-- to look at, which is what the life test is: a burst puts twenty-four rounds
+-- in the air and draws itself.
+function M.charges(me, sfx)
+    local n = sim.ship_count()
+    for i = 0, n - 1 do
+        local seen = charge_seen[i]
+        if not seen then seen = {} charge_seen[i] = seen end
+        local alive = sim.ship_alive(i) == 1
+        for k = 0, sim.MAX_CHARGES - 1 do
+            local held = sim.ship_charge(i, k)
+            local was = seen[k]
+            -- Your own is drawn by your own simulation, on the expiry event,
+            -- and drawing it twice would put two shockwaves on one shove.
+            --
+            -- A seat that was empty a moment ago, or a hull that just died or
+            -- respawned, is not a pilot spending anything: an arrival is
+            -- outfitted and a departure leaves zeroes behind, and both look
+            -- like a drop from here.
+            if was and held < was and i ~= me and alive and seen.alive then
+                local spec = sim.charge_spec(k)
+                local blast = spec >= 0 and spec_blast(spec) or 0
+                if spec >= 0 and blast > 0 and spec_life(spec) <= 1 then
+                    local x, y = sim.ship_x(i), sim.ship_y(i)
+                    fx.detonate(x, y, blast, bomb_col(spec_level(spec)))
+                    sfx("blast", x, y)
+                end
+            end
+            seen[k] = held
+        end
+        seen.alive = alive
+    end
+    -- Seats past the end of the room belong to nobody now, and holding their
+    -- counts would greet whoever takes one with a shockwave.
+    for i in pairs(charge_seen) do
+        if i >= n then charge_seen[i] = nil end
+    end
 end
 
 function M.weapons(fill, glow, me_team, t, cull)

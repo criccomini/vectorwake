@@ -424,6 +424,41 @@ int SpecBlast(lua_State* L) {
     return 1;
 }
 
+// How long a spec's rounds live, in ticks.
+//
+// Read for one reason: a weapon whose life is a single tick is one no watcher
+// can ever be sent. It is spawned and gone inside one step, so it appears in a
+// snapshot only when the tick it was fired on happens to be a snapshot tick,
+// and a client that misses it has nothing to draw and no way to know it
+// happened. The repel is exactly that weapon. See `charges` in world.lua.
+int SpecLife(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_cfg.spec_count) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.specs[i].life);
+    return 1;
+}
+
+// The spec a charge slot fires, or -1 for a slot this zone leaves empty. A
+// charge is a pattern plus an inventory, and the pattern names the spec, so
+// this is two hops the client would otherwise need two more bindings to make.
+int ChargeSpec(lua_State* L) {
+    int k = (int)luaL_checkinteger(L, 1);
+    if (k < 0 || k >= SIM_MAX_CHARGES) {
+        lua_pushnumber(L, -1);
+        return 1;
+    }
+    uint8_t pat = g_cfg.charge[k];
+    if (pat == SIM_NO_PATTERN || pat >= g_cfg.pattern_count) {
+        lua_pushnumber(L, -1);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.patterns[pat].spec);
+    return 1;
+}
+
 // Which rung of the tech tree fires this spec, learned from the ladders. A
 // spec deliberately carries no level -- it says what a projectile does, not
 // where it came from -- but every hull's trigger ladder says which rung each
@@ -823,7 +858,9 @@ const luaL_reg kFunctions[] = {
     {"ship_extents", ShipExtents},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},
+    {"spec_life", SpecLife},
     {"spec_level", SpecLevel},
+    {"charge_spec", ChargeSpec},
     {"tick", Tick},
     {"weapon_count", WeaponCount},
     {"weapon_at", WeaponAt},
