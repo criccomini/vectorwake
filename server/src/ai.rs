@@ -313,7 +313,13 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     // flags where they were no bot ever saw one at all.
     out.flag = nearest_flag(w, mx, my, me.team, SIGHT);
     out.prize = nearest_prize(w, mx, my, 200.0);
-    let r = w.cfg.classes[me.cls as usize].radius as f32;
+    // The margin a whisker keeps from a wall. The box follows the heading
+    // now, so the honest bound for "can I fly this way" is the hull's worst
+    // reach at any orientation: the nose-corner diagonal. A bot that probed
+    // with its flank width would plan routes its own nose cannot take.
+    let cls = &w.cfg.classes[me.cls as usize];
+    let (fore, halfw) = (cls.fore as f32, cls.halfw as f32);
+    let r = (fore * fore + halfw * halfw).sqrt();
     for k in 0..WHISKERS {
         let a = k as f32 / WHISKERS as f32 * std::f32::consts::TAU;
         out.clear[k] = whisker(w, mx, my, a.sin(), -a.cos(), r);
