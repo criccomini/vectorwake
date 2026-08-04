@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::{ai, directory, sim};
+use crate::{ai, directory, nav, sim};
 
 /// How often the fleet is re-read and the population reconciled. A second is
 /// far quicker than a population changes and costs one small JSON document per
@@ -63,18 +63,23 @@ const GONE_AFTER: u32 = 5;
 /// bytes, so without this the population would cost fifty megabytes of duplicate
 /// tiles per zone. It is the same trick the arena uses to keep a room at 79 KB,
 /// and the same `Arc`.
+/// The routing grid rides along with it, for the same reason and by the same
+/// argument: it is derived from the map and nothing else, so fifty pilots on
+/// one map want one of them rather than fifty. Building it reads a million
+/// tiles, which is a cost worth paying once.
 #[derive(Default)]
-struct Maps(Mutex<HashMap<u64, Arc<sim::sim_map>>>);
+struct Maps(Mutex<HashMap<u64, (Arc<sim::sim_map>, Arc<nav::Nav>)>>);
 
 impl Maps {
-    fn get(&self, packed: &[u8]) -> Option<Arc<sim::sim_map>> {
+    fn get(&self, packed: &[u8]) -> Option<(Arc<sim::sim_map>, Arc<nav::Nav>)> {
         let key = fingerprint(packed);
-        if let Some(m) = self.0.lock().ok()?.get(&key) {
-            return Some(Arc::clone(m));
+        if let Some((m, n)) = self.0.lock().ok()?.get(&key) {
+            return Some((Arc::clone(m), Arc::clone(n)));
         }
         let m = sim::unpack_map(packed)?;
-        self.0.lock().ok()?.insert(key, Arc::clone(&m));
-        Some(m)
+        let n = Arc::new(nav::Nav::build(&m));
+        self.0.lock().ok()?.insert(key, (Arc::clone(&m), Arc::clone(&n)));
+        Some((m, n))
     }
 }
 
@@ -402,6 +407,7 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, yielding: Arc<
     }
 
     let mut world: Option<sim::World> = None;
+    let mut route: Option<Arc<nav::Nav>> = None;
     let mut brain: Option<ai::Bot> = None;
     let mut ship: u8 = 0;
     let mut buttons: u16 = 0;
@@ -429,7 +435,8 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, yielding: Arc<
                 }
                 match data.first().copied() {
                     Some(crate::S2C_MAP) => {
-                        let Some(map) = maps.get(&data[1..]) else { break };
+                        let Some((map, grid)) = maps.get(&data[1..]) else { break };
+                        route = Some(grid);
                         // A seed per pilot rather than per room: this world is
                         // one client's picture and its rng is only ever used
                         // for whatever the core rolls locally, never for
@@ -486,7 +493,10 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, yielding: Arc<
                     }
                 }
                 let fresh = b.looks_due().then(|| ai::scan(w, ship));
-                buttons = b.think(&own, fresh);
+                buttons = match route.as_deref() {
+                    Some(r) => b.think(&own, r, fresh),
+                    None => 0,
+                };
                 if sent != Some(buttons) {
                     let mut m = vec![crate::C2S_INPUT];
                     m.extend_from_slice(&buttons.to_le_bytes());

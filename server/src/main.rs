@@ -15,9 +15,11 @@ mod calibrate;
 mod catalog;
 mod config;
 mod directory;
+mod drill;
 mod fleet;
 mod meta;
 mod modes;
+mod nav;
 mod rating;
 mod select;
 mod sim;
@@ -2330,6 +2332,11 @@ async fn main() {
         run_calibration();
         return;
     }
+    // What the ladder cannot see: the roster on a real map, with walls in it.
+    if std::env::args().nth(1).as_deref() == Some("drill") {
+        drill::run_check();
+        return;
+    }
     // The meta-layer: accounts, ratings, and the rated event log. The one
     // process in the fleet with a database behind it, and the one every other
     // process is designed to survive the loss of.
@@ -3463,6 +3470,7 @@ mod tests {
         for (i, ship) in seat_bots(&mut z.rooms[0], 12).into_iter().enumerate() {
             brains.push(ai::Bot::new(ship, ai::individual(i).skill));
         }
+        let route = nav::Nav::build(&z.rooms[0].world.map);
         let sides: Vec<u8> = z.rooms[0].world.state.ships.iter()
             .filter(|s| s.active != 0).map(|s| s.team).collect();
         let a = sides.iter().filter(|t| **t == 0).count();
@@ -3480,7 +3488,7 @@ mod tests {
             for b in brains.iter_mut() {
                 let ship = b.ship;
                 let fresh = b.looks_due().then(|| ai::scan(&z.rooms[0].world, ship));
-                let buttons = b.think(&ai::own(&z.rooms[0].world, ship), fresh);
+                let buttons = b.think(&ai::own(&z.rooms[0].world, ship), &route, fresh);
                 if let Some(p) = z.rooms[0].players.values_mut().find(|p| p.ship == ship) {
                     p.buttons = buttons;
                 }
@@ -3601,10 +3609,11 @@ mod tests {
         // them to see.
         let keep = seat_bots(a, 1)[0];
         let mut bot = ai::Bot::new(keep, 0.5);
+        let route = nav::Nav::build(&a.world.map);
         let mut moved = false;
         for _ in 0..400 {
             let fresh = bot.looks_due().then(|| ai::scan(&a.world, keep));
-            let buttons = bot.think(&ai::own(&a.world, keep), fresh);
+            let buttons = bot.think(&ai::own(&a.world, keep), &route, fresh);
             a.world.step(&[sim::sim_input { ship: keep, buttons }]);
             let sh = &a.world.state.ships[keep as usize];
             if sh.vx != 0 || sh.vy != 0 {
@@ -3673,30 +3682,40 @@ mod tests {
             prize: Some((px(511), px(506))),
             foe: Some(ai::Foe { x: px(503), y: px(517), vx: 0.0, vy: 0.0, clear: true }),
             flag: None,
+            threat: None,
             // Hand-built, so the whiskers say open on purpose: this test is
             // about giving up on a green behind a wall, and a bot that could
             // see the wall would never press into it to begin with.
             clear: [1e9; ai::WHISKERS],
         };
 
+        let route = nav::Nav::build(&w.map);
         let mut fired_at = None;
-        for t in 0..1500u32 {
+        for t in 0..2500u32 {
             // Handed over once and never refreshed. Working from a stale picture
             // is the ordinary case for these pilots, and here it is what keeps
             // the unreachable green in front of them.
             let fresh = (t == 0).then(|| stuck_on.clone());
-            let buttons = bot.think(&ai::own(&w, ship), fresh);
+            let buttons = bot.think(&ai::own(&w, ship), &route, fresh);
             if buttons & (sim::BTN_FIRE | sim::BTN_BOMB) != 0 && fired_at.is_none() {
                 fired_at = Some(t);
             }
             w.step(&[sim::sim_input { ship, buttons }]);
         }
-        // Measured at 290: two seconds of no progress, plus the reaction cycle it
-        // takes to act on that and the one it takes to line up the shot. The
-        // bound is loose because the exact tick is not the point; giving up at
-        // all is.
+        // Measured at 290 before there was a router: two seconds of no progress
+        // plus a reaction cycle to act on it and one more to line up the shot.
+        // The router moved it to about 1450, and the extra is the pilot being
+        // right about the geometry the whole way: this green *is* reachable
+        // around the block, so it routes there, finds nothing at the place a
+        // stale scan still swears a green stands, orbits the phantom, and only
+        // then concludes the errand is not working. Fourteen seconds to give up
+        // on a lie is the price of not giving up on every green that merely
+        // needs going round something.
+        //
+        // The bound stays loose because the exact tick is not the point. Giving
+        // up at all is.
         let t = fired_at.expect("never gave up on a green it could not reach");
-        assert!((200..600).contains(&t), "gave up on the green at tick {t}");
+        assert!((200..2200).contains(&t), "gave up on the green at tick {t}");
     }
 
     /// A seat is furniture, and its last occupant does not come with it.

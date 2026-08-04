@@ -25,6 +25,10 @@ pub const BTN_THRUST: u16 = 4;
 pub const BTN_REVERSE: u16 = 8;
 pub const BTN_FIRE: u16 = 16;
 pub const BTN_BOMB: u16 = 32;
+/// Spend one of the selected charge, and which slot that is. Two bits, because
+/// which charge is ready is the client's business and not simulation state.
+pub const BTN_USE: u16 = 64;
+pub const BTN_SLOT_SHIFT: u16 = 7;
 
 // Mirrored by hand from sim_event_type in sim/include/sim/sim.h, so the order
 // there is the order here and a new one goes on the end.
@@ -353,6 +357,8 @@ extern "C" {
     pub fn sim_map_arena(map: *mut sim_map);
     pub fn sim_map_pit(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
+    pub fn sim_eff_speed(c: *const sim_ship_class, s: *const sim_ship) -> i32;
+    pub fn sim_eff_thrust(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_take_prize(sh: *mut sim_ship, cfg: *const sim_settings, rng: *mut u32,
                           delta: *mut c_int) -> u8;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
@@ -436,7 +442,7 @@ pub struct World {
 /// it, and `sim_map` alone is a megabyte: two of those in one call chain
 /// overflow a default thread stack. These are `repr(C)` plain data from the
 /// core, where all-zeroes is the same state `memset` would leave.
-fn zeroed_box<T>() -> Box<T> {
+pub fn zeroed_box<T>() -> Box<T> {
     unsafe {
         let layout = std::alloc::Layout::new::<T>();
         let p = std::alloc::alloc_zeroed(layout) as *mut T;

@@ -57,7 +57,7 @@ fixed-point C library that both the client and the server run, tick for tick.
 flowchart LR
     subgraph Client["Defold client"]
         L["Lua: input, UI, audio, camera"]
-        R["Render: tilemap window, sprites, effects"]
+        R["Render: five mesh layers of vector geometry"]
         SC1["sim core (native extension / WASM)"]
         L --> SC1
         SC1 --> R

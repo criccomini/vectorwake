@@ -187,7 +187,9 @@ local function my_buttons()
             if not (steering and rudder) then bits[bit] = true end
         end
     end
-    for _, bit in ipairs(touch.bits(sim.ship_heading(me))) do
+    -- Raw: the stick compares the swipe against where the nose actually is,
+    -- and a heading eased for the screen is not a fact about the ship.
+    for _, bit in ipairs(touch.bits(sim.ship_heading_raw(me))) do
         bits[bit] = true
     end
     -- A tapped charge pad names its own slot, so on a touchscreen there is no
@@ -747,6 +749,17 @@ function update(self, dt)
         if feed[i].t > ui.FEED_LIFE then table.remove(feed, i) end
     end
 
+    -- Where this frame falls between the two ticks either side of it, and how
+    -- much of the last correction has been walked off. Everything that reads a
+    -- position below gets both folded in, including the camera, so the whole
+    -- scene moves together rather than the world sliding under a hull that is
+    -- being smoothed on its own.
+    --
+    -- Set even when there is no game: the menu's drifting starfield does not
+    -- ask the core for anything, but a stale alpha left over from the last
+    -- arena would be waiting for the next one.
+    sim.render_alpha(accum / DT)
+    if live then sim.smooth_decay(dt) end
     local cx, cy
     if live then
         -- What the menu calls your hull is whatever you are flying, asked
