@@ -206,35 +206,12 @@ local function team_rows()
                            act = "found",
                            hint = "start a side and invite people to it"}
     end
-    if #net.teams > 0 then
-        rows[#rows + 1] = {label = "invite", go = "invite",
-                           hint = "ask somebody in this room to fly with you"}
-    end
-    return rows
-end
-
--- Everybody in the room but you, to invite to your side.
---
--- The whole roster rather than only the pilots who could accept: whether an
--- invitation is worth anything is the invitee's business, and a list that
--- silently omits people reads as a list that is broken.
-local function invite_rows()
-    local rows = {}
-    local order = {}
-    for ship, p in pairs(net.pilots) do
-        if ship ~= net.me then order[#order + 1] = {ship = ship, p = p} end
-    end
-    table.sort(order, function(a, b) return a.p.name < b.p.name end)
-    for _, e in ipairs(order) do
-        rows[#rows + 1] = {
-            label = e.p.name,
-            detail = e.p.ai and "AI" or "",
-            act = "invite", value = e.ship,
-        }
-    end
-    if #rows == 0 then
-        rows[1] = {label = "", detail = "nobody else is here"}
-    end
+    -- Inviting is not here. It was a second roster under this list, sorted by
+    -- name, and the interface already had one you pick a person from: open the
+    -- scoreboard, click whoever it is, and the box that answers who they are
+    -- carries the invitation. Two rosters to keep in step was the cost, and a
+    -- player who wants to invite somebody is usually already reading about
+    -- them when they decide to.
     return rows
 end
 
@@ -309,7 +286,6 @@ local NODES = {
     zones = {title = "games", rows = zone_rows},
 
     teams = {title = "team", rows = team_rows},
-    invite = {title = "invite", rows = invite_rows},
 
     pilot = {title = "pilot", rows = function()
         local rows = {
@@ -576,12 +552,12 @@ local function activate()
         -- find out. `M.class` follows the ship, never leads it.
         M.pending = r.value
         return "ship"
-    elseif r.act == "team" or r.act == "invite" then
-        -- Likewise requests. Which sides exist, who may enter one, and whether
+    elseif r.act == "team" then
+        -- Likewise a request. Which sides exist, who may enter one, and whether
         -- this pilot is in any state to move are all the room's answers, and
         -- the team list it sends back is where they arrive.
         M.pending = r.value
-        return r.act
+        return "team"
     elseif r.act == "found" then
         return "found"
     elseif r.act == "join" then

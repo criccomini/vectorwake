@@ -966,8 +966,13 @@ local function inspect(o, top)
         if not seen[t] then seen[t] = true teams = teams + 1 end
     end
     local show_team = teams > 1 and teams < n
+    -- The invitation lives here because this is already the panel you open by
+    -- picking a person, and picking a person was the whole of the old invite
+    -- menu. Drawn only when it would do something: you are on a private side,
+    -- and this is somebody other than you who is not already on it.
+    local invite = o.may_invite and i ~= o.me and not same_team
     local rows_n = 3 + (show_team and 1 or 0)
-    local h = 30 * S + rows_n * rowh + 10 * S
+    local h = 30 * S + rows_n * rowh + (invite and 26 * S or 0) + 10 * S
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
     -- at the top of the screen lands on the menu chip.
@@ -1010,6 +1015,24 @@ local function inspect(o, top)
     -- What killing them pays, which is the number that decides whether the
     -- rest of this matters right now.
     row("BOUNTY", tostring(sim.ship_bounty(i)), pal.a(pal.BOUNTY, 0.9))
+
+    -- One word and a rule under it, like the menu chip, because that is what a
+    -- control looks like in here. Once it is sent it says so and stops taking
+    -- clicks: the zone answers an invitation with a team list that does not
+    -- name the invitee, so this mark is the only acknowledgement there is, and
+    -- a button that stayed pressable would invite an anxious second tap.
+    if invite then
+        local sent = o.invited and o.invited[i]
+        local by = ry_ + 4 * S
+        local c = pal.a(sent and pal.DIM or pal.FRIEND, sent and 0.7 or 0.95)
+        txt(sent and "INVITED" or "INVITE", x + 12 * S, by + 9 * S,
+            (FONT - 2) * S, c)
+        local uy = ry(by + 17 * S)
+        u:seg(x + 12 * S, uy, x + 12 * S + 46 * S, uy, 0.8 * S, pal.a(c, 0.5))
+        if not sent then
+            hit(x, by - 2 * S, w, 24 * S, "invite", i)
+        end
+    end
     return y + h
 end
 

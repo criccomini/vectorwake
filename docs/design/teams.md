@@ -68,6 +68,18 @@ typed. There are no passwords, which is not a sacrifice: a password is a
 secret that leaks, an invitation is a decision that does not, and the client
 could not have offered a text field anyway.
 
+The selection happens in the info box rather than in a menu of its own. Open
+the scoreboard, click whoever it is, and the panel that says who they are
+carries the invitation under their bounty. A separate invite menu was the
+first version and it was a second roster to keep in step with the first, sorted
+its own way, listing the same people; a player deciding to invite somebody is
+usually already reading about them when they decide. The control appears only
+when it would do something, which means you are on a private side and this is
+somebody else who is not already on it. Once sent it says so and stops taking
+clicks, because the zone answers an invitation with a team list that does not
+name the invitee, so the sender's own record of it is the only receipt there
+is.
+
 There is no kick. A team that wants someone gone walks away: everyone else
 changes teams, founds a fresh one under a fresh generated name, and re-invites
 in a few taps, leaving the unwanted member holding a team of one. This works
