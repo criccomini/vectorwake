@@ -12,9 +12,10 @@ The original called these freqs, and we inherit the structure while dropping
 the addressing. A freq was a number because 1997's interface was a chat box
 and `=245` was how you named a team from a keyboard. This client has no text
 input anywhere, a rule [menu.md](menu.md) records along with the bugs that
-earned it, so the number was never going to be the interface. Teams live in a menu and menus carry names. The simulation is
-untouched by any of this: a team is still one byte in the state and on the
-wire, and the name rides the roster the way a pilot's call sign does. Names
+earned it, so the number was never going to be the interface. Teams live in a
+menu and menus carry names. The simulation is untouched by any of this: a team
+is still one byte in the state and on the wire, and the name rides the roster
+the way a pilot's call sign does. Names
 are presentation. Numbers are simulation. That split already runs through the
 whole client.
 

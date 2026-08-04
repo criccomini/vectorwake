@@ -352,6 +352,8 @@ extern "C" {
     pub fn sim_in_safe(map: *const sim_map, x: i32, y: i32) -> i32;
     pub fn sim_map_pack(map: *const sim_map, out: *mut u8, cap: i32) -> i32;
     pub fn sim_map_unpack(map: *mut sim_map, inp: *const u8, len: i32) -> i32;
+    pub fn sim_set_ship_team(s: *mut sim_state, cfg: *const sim_settings,
+                             i: u8, team: u8) -> c_int;
     pub fn sim_map_spawn(map: *const sim_map, team: u8, nth: u32,
                          tx: *mut u16, ty: *mut u16) -> i32;
     pub fn sim_map_arena(map: *mut sim_map);
@@ -596,6 +598,13 @@ impl World {
     /// the whole of the rule and both sides get it from the same place.
     pub fn set_ship_class(&mut self, i: u8, cls: u8) -> bool {
         unsafe { sim_set_ship_class(&mut *self.state, &*self.cfg, i, cls.min(7)) == 0 }
+    }
+
+    /// Cross a pilot to another side. Which sides exist and who may enter one
+    /// is the room's business; this only asks the core to move somebody, and
+    /// the core refuses anyone dead or short of a full bar.
+    pub fn set_ship_team(&mut self, i: u8, team: u8) -> bool {
+        unsafe { sim_set_ship_team(&mut *self.state, &*self.cfg, i, team) == 0 }
     }
 
     pub fn step(&mut self, inputs: &[sim_input]) {

@@ -176,6 +176,68 @@ local function hull_rows()
     return rows
 end
 
+-- Every side this room will tell us about, one to a row.
+--
+-- The zone's own first, then any private one we are on or hold an invitation
+-- to, which is the order the server sends and the order a player thinks in.
+-- The count is people and AI apart, because the caps are, and because "four
+-- and eleven bots" is a different room from "fifteen".
+local function team_rows()
+    local rows = {}
+    for _, t in ipairs(net.teams) do
+        local mine = t.team == net.my_team
+        rows[#rows + 1] = {
+            label = t.name,
+            detail = t.bots > 0 and (t.humans .. " + " .. t.bots .. " AI")
+                or tostring(t.humans),
+            act = "team", value = t.team,
+            mark = function() return t.team == net.my_team end,
+            hint = mine and "the side you are flying for"
+                or (t.may_join and (t.public and "open to anybody with room in it"
+                                    or "you have been invited to this one")
+                    or (t.public and "full" or "invitation only")),
+        }
+    end
+    -- A side of your own, when the room may hold another. A zone whose
+    -- max_teams is the count of its own sides never offers this, which is how
+    -- a flag round says there is no third side to be.
+    if net.may_found then
+        rows[#rows + 1] = {label = "new team", detail = "yours",
+                           act = "found",
+                           hint = "start a side and invite people to it"}
+    end
+    if #net.teams > 0 then
+        rows[#rows + 1] = {label = "invite", go = "invite",
+                           hint = "ask somebody in this room to fly with you"}
+    end
+    return rows
+end
+
+-- Everybody in the room but you, to invite to your side.
+--
+-- The whole roster rather than only the pilots who could accept: whether an
+-- invitation is worth anything is the invitee's business, and a list that
+-- silently omits people reads as a list that is broken.
+local function invite_rows()
+    local rows = {}
+    local order = {}
+    for ship, p in pairs(net.pilots) do
+        if ship ~= net.me then order[#order + 1] = {ship = ship, p = p} end
+    end
+    table.sort(order, function(a, b) return a.p.name < b.p.name end)
+    for _, e in ipairs(order) do
+        rows[#rows + 1] = {
+            label = e.p.name,
+            detail = e.p.ai and "AI" or "",
+            act = "invite", value = e.ship,
+        }
+    end
+    if #rows == 0 then
+        rows[1] = {label = "", detail = "nobody else is here"}
+    end
+    return rows
+end
+
 -- The games the directory is offering, one to a row.
 --
 -- Two columns only, so what a row says is its name and how busy it is, and the
@@ -215,6 +277,15 @@ local NODES = {
             {label = "help", go = "help"},
             {label = "about", go = "about"},
         }
+        -- Sides are a thing a room has, so the row appears with the room and
+        -- says which one you are on. On the home screen there is no room and
+        -- nothing to be on.
+        if not M.home and #net.teams > 0 then
+            table.insert(rows, 4, {label = "team",
+                detail = function() return net.my_team_name() end,
+                go = "teams",
+                hint = "who you are flying with, and who else is here"})
+        end
         -- Only with a game behind the panel, because it is the way out of one.
         -- On the home screen there is nothing to leave, and a row that does
         -- nothing is a row a player tries once and stops trusting.
@@ -228,6 +299,9 @@ local NODES = {
     ship = {title = "ship", rows = hull_rows()},
 
     zones = {title = "games", rows = zone_rows},
+
+    teams = {title = "team", rows = team_rows},
+    invite = {title = "invite", rows = invite_rows},
 
     pilot = {title = "pilot", rows = function()
         local rows = {
@@ -493,6 +567,14 @@ local function activate()
         -- find out. `M.class` follows the ship, never leads it.
         M.pending = r.value
         return "ship"
+    elseif r.act == "team" or r.act == "invite" then
+        -- Likewise requests. Which sides exist, who may enter one, and whether
+        -- this pilot is in any state to move are all the room's answers, and
+        -- the team list it sends back is where they arrive.
+        M.pending = r.value
+        return r.act
+    elseif r.act == "found" then
+        return "found"
     elseif r.act == "join" then
         -- Likewise a request. Which address serves this game, and whether it
         -- answers, is the arena's business.

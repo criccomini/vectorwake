@@ -26,7 +26,7 @@ mod sim;
 mod spool;
 mod token;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
@@ -65,6 +65,13 @@ const DEFAULT_MAX_PLAYERS: usize = 16;
 const C2S_JOIN: u8 = 1;
 const C2S_INPUT: u8 = 2;
 const C2S_SHIP: u8 = 5;
+/// The three asks a pilot can make about sides, all of them requests rather
+/// than assertions: cross to a side, found one, invite somebody to mine. None
+/// is answered directly. The team list that follows says what happened, the
+/// same way a snapshot answers a hull change. See design/teams.md.
+const C2S_TEAM: u8 = 6;
+const C2S_FOUND: u8 = 7;
+const C2S_INVITE: u8 = 8;
 /// This client is a bot and says so. Everything that follows from the
 /// declaration is in the arena's favour, which is why a well-behaved bot sets
 /// it: a declared bot is labeled in the roster, sits outside the human cap, and
@@ -75,7 +82,7 @@ const JOIN_BOT: u8 = 1;
 /// `fleet.rs`: they change for different reasons and are spoken by different
 /// programs. Bump when a message's layout changes, so a stale build is told its
 /// build is stale rather than left to misparse a snapshot.
-const CLIENT_PROTOCOL: u8 = 4;
+const CLIENT_PROTOCOL: u8 = 5;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -143,6 +150,11 @@ const S2C_SETTINGS: u8 = 10;
 /// simulation it is no longer in. A client that ignores it holds a socket and
 /// nothing else.
 const S2C_YIELD: u8 = 11;
+/// Every side in the room, what it is called, who is on it, and whether this
+/// particular client may enter it. Built per recipient rather than broadcast
+/// as one buffer, because the last of those is a different answer for every
+/// pilot: a private side is a door only the invited can see open.
+const S2C_TEAMS: u8 = 12;
 
 struct Player {
     ship: u8,
@@ -286,6 +298,18 @@ fn ingest_damage(
 
 /// Who is in a seat. This was a name and a bot flag while those were the only
 /// two things a room knew about a pilot. Accounts add two more: what the
+/// A side in this room: what it is called, and whether its door is open.
+///
+/// Public teams are the zone's, named in its settings, stable across rounds,
+/// and the only ones a mode scores over. Private teams are the players': a
+/// generated name, entry by invitation, and gone when the last member leaves.
+/// See design/teams.md.
+#[derive(Clone, Debug)]
+struct Team {
+    name: String,
+    public: bool,
+}
+
 /// roster is allowed to say they are, and what their rating belongs to.
 #[derive(Clone, Debug, PartialEq)]
 struct Seat {
@@ -359,12 +383,25 @@ struct Arena {
     mode: Box<dyn modes::Mode>,
     banner: String,
     finished: bool,
-    /// How many teams the zone allows, and how an arrival is placed among them.
-    /// The mode owns the policy and the catalog owns the shape, which is why a
-    /// client never asserts a team: "what is a team here" is the same question
-    /// as "what game is this".
-    teams: u8,
-    balance: String,
+    /// Every side this room currently holds, by the byte the simulation knows
+    /// it as. The zone's own come first and outlive every round; the rest are
+    /// private, founded by players, and removed when their last member goes.
+    /// See design/teams.md.
+    teams: BTreeMap<u8, Team>,
+    /// How many of the zone's teams are its own, which is the count a mode
+    /// scores over. Private teams take bytes from here up and can never win a
+    /// flag round.
+    public_teams: u8,
+    /// The three caps that are the whole of the team policy. There is no
+    /// balance rule beyond them, so the only refusal a player can meet is a
+    /// full team.
+    max_teams: u8,
+    max_humans_per_team: u16,
+    max_bots_per_team: u16,
+    /// Standing invitations, by the ship they were extended to. A private team
+    /// admits nobody else. Cleared with the seat, because a seat is furniture
+    /// and the next occupant was invited to nothing.
+    invites: HashMap<u8, std::collections::HashSet<u8>>,
     /// The share of this room's seats the bot server is asked to keep filled.
     /// The arena does not fill anything itself; it publishes the count it would
     /// like and the bot server supplies it, per decision 29.
@@ -765,7 +802,7 @@ impl Arena {
         a.world.state.flag_count = cfg.arena.flags.min(placed);
         a.mode = match cfg.arena.mode.as_str() {
             "arena" | "ffa" => Box::new(modes::FreeForAll),
-            _ => Box::new(modes::Warzone::new(a.world.state.flag_count, a.teams)),
+            _ => Box::new(modes::Warzone::new(a.world.state.flag_count, a.public_teams)),
         };
         for w in Arena::apply_config(&mut a.world, &cfg.arena) {
             println!("zone: {w}");
@@ -805,7 +842,7 @@ impl Arena {
 
     fn with_world(world: sim::World) -> Self {
         let mut a = Arena::with_world_bare(world);
-        a.mode = Box::new(modes::Warzone::new(4, a.teams));
+        a.mode = Box::new(modes::Warzone::new(4, a.public_teams));
         a.add_default_flags();
         a
     }
@@ -827,8 +864,14 @@ impl Arena {
             mode: Box::new(modes::FreeForAll),
             banner: String::new(),
             finished: false,
-            teams: 2,
-            balance: "smaller".into(),
+            // A room nobody has configured is a free-for-all with no caps,
+            // which is the shape that needs no settings to be playable.
+            teams: BTreeMap::new(),
+            public_teams: 0,
+            max_teams: 255,
+            max_humans_per_team: 255,
+            max_bots_per_team: 255,
+            invites: HashMap::new(),
             bot_fill: catalog::DEFAULT_BOT_FILL,
         }
     }
@@ -921,10 +964,11 @@ impl Arena {
         self.world.state.ships[ship as usize].kills = 0;
         self.world.state.ships[ship as usize].deaths = 0;
 
-        // Which team is the zone's question and the mode's answer, never the
-        // client's. `smaller` is ASSS's behaviour, whose MaxTeamDifference
-        // defaults to 1, so the balancer tolerates almost nothing.
-        let team = self.pick_team(ship);
+        // Which side an arrival lands on is the room's answer, not the
+        // client's: the emptiest of the zone's own that has room, or a side of
+        // their own where the zone names none. Moving is then one selection
+        // away in the team list, and only a full side can refuse it.
+        let team = self.seat_team(ship, seat.bot);
         // Where a fresh pilot starts, worked out before anything about them is
         // set: a seat is furniture, and its last occupant does not come with
         // it.
@@ -1062,59 +1106,283 @@ impl Arena {
         ids.len()
     }
 
-    /// Where an arrival goes. One team is a free-for-all and there is nothing to
-    /// decide; otherwise `smaller` counts live ships per team and takes the
-    /// thinnest, `random` spreads without counting, and `none` leaves everybody
-    /// on team zero.
-    /// A free-for-all is not one team. It is no teams: every pilot their own
-    /// side.
+    /// A room with no named sides is a free-for-all, and a free-for-all is not
+    /// one team: it is none. Every pilot arrives as a side of their own.
     ///
-    /// Every hostility test in this stack, in the core and in the bots alike,
-    /// asks whether two teams differ. A weapon skips a ship on its own team, a
-    /// kill on a teammate pays no points and no bounty, a repel does not push
-    /// one, and a bot does not so much as look at one. So putting everybody on
-    /// side zero did not mean everybody in, it meant combat off: Chaos ran with
-    /// no damage, no kills and nine pilots with nothing to shoot at, sitting
-    /// perfectly still, while War two doors down played fine.
-    ///
-    /// A pilot's seat is their side. Ship indices stop at 254 and 255 is
-    /// `TEAM_NONE`, so there is room for every seat to be its own team.
+    /// This ran as `teams = 1` once, which put everybody on side zero, and
+    /// every hostility test in this stack asks whether two sides differ. Chaos
+    /// spent a day with no damage, no kills, and nine pilots with nothing to
+    /// shoot at while War two doors down played fine.
     fn free_for_all(&self) -> bool {
-        self.teams <= 1
+        self.public_teams == 0
     }
 
-    fn pick_team(&self, joining: u8) -> u8 {
-        if self.free_for_all() {
-            return joining;
+    /// The zone's own sides, and the caps that are the whole of the policy.
+    /// Called once when a room is built from its catalog entry.
+    fn set_teams(&mut self, def: &catalog::ZoneDef) {
+        self.teams.clear();
+        for (i, name) in def.teams.iter().take(254).enumerate() {
+            self.teams.insert(i as u8, Team { name: name.clone(), public: true });
         }
-        match self.balance.as_str() {
-            "none" => 0,
-            "random" => {
-                // The world's rng is the simulation's and must not be disturbed
-                // by something outside it, so this uses the seat number, which
-                // is arbitrary enough and costs no state.
-                joining % self.teams
+        self.public_teams = self.teams.len() as u8;
+        self.max_teams = def.max_teams();
+        self.max_humans_per_team = def.max_humans_per_team();
+        self.max_bots_per_team = def.max_bots_per_team();
+        self.invites.clear();
+    }
+
+    /// Who is on a side, counted apart because the caps are. `skip` leaves one
+    /// ship out, which is what a pilot asking to move needs: they are about to
+    /// stop being where they are.
+    fn team_census(&self, team: u8, skip: Option<u8>) -> (u16, u16) {
+        let (mut humans, mut bots) = (0u16, 0u16);
+        for (ship, seat) in &self.names {
+            if Some(*ship) == skip {
+                continue;
             }
-            // "smaller", and anything the catalog let through.
-            _ => {
-                let mut count = vec![0usize; self.teams as usize];
-                for (i, s) in self.world.state.ships.iter().enumerate() {
-                    if s.active == 0 || i as u8 == joining {
-                        continue;
-                    }
-                    if let Some(c) = count.get_mut(s.team as usize) {
-                        *c += 1;
-                    }
-                }
-                let mut best = 0u8;
-                for t in 1..self.teams {
-                    if count[t as usize] < count[best as usize] {
-                        best = t;
-                    }
-                }
-                best
+            let sh = &self.world.state.ships[*ship as usize];
+            if sh.active == 0 || sh.team != team {
+                continue;
+            }
+            if seat.bot { bots += 1 } else { humans += 1 }
+        }
+        (humans, bots)
+    }
+
+    /// Whether one more of this kind fits on this side.
+    fn team_has_room(&self, team: u8, bot: bool, skip: Option<u8>) -> bool {
+        let (humans, bots) = self.team_census(team, skip);
+        if bot { bots < self.max_bots_per_team } else { humans < self.max_humans_per_team }
+    }
+
+    /// Whether this ship may enter this side: it has to exist, have room, and
+    /// either be the zone's own or have invited them.
+    fn may_join(&self, ship: u8, team: u8, bot: bool) -> bool {
+        let Some(t) = self.teams.get(&team) else { return false };
+        if self.world.state.ships[ship as usize].team == team {
+            return true;
+        }
+        if !t.public && !self.invites.get(&ship).is_some_and(|s| s.contains(&team)) {
+            return false;
+        }
+        self.team_has_room(team, bot, Some(ship))
+    }
+
+    /// The lowest byte no side is using, or none when the room is at its cap.
+    fn free_team_byte(&self) -> Option<u8> {
+        if self.teams.len() as u16 >= self.max_teams as u16 {
+            return None;
+        }
+        (0u8..255).find(|b| !self.teams.contains_key(b))
+    }
+
+    /// Where an arrival is put. The emptiest of the zone's own sides that has
+    /// room, which is a default rather than a rule: the list is one selection
+    /// away and only a full side can refuse it. A free-for-all has no such
+    /// list, so an arrival founds their own side of one.
+    fn seat_team(&mut self, joining: u8, bot: bool) -> u8 {
+        let mut best: Option<(u8, u16)> = None;
+        for t in 0..self.public_teams {
+            if !self.team_has_room(t, bot, Some(joining)) {
+                continue;
+            }
+            // Emptiest of your own kind, because that is the emptiness the
+            // caps measure and the one an arrival cares about. Counting heads
+            // of both kinds together put six bots on one side of a two-team
+            // room: every side held no humans, so the first one always won.
+            let (humans, bots) = self.team_census(t, Some(joining));
+            let n = if bot { bots } else { humans };
+            if best.is_none_or(|(_, best_n)| n < best_n) {
+                best = Some((t, n));
             }
         }
+        if let Some((t, _)) = best {
+            return t;
+        }
+        // Every named side is full, or there are none. A side of your own is
+        // the honest answer to both: in a free-for-all it is the whole design,
+        // and in a full room it beats refusing a pilot who has a seat.
+        self.found_team(joining).unwrap_or(0)
+    }
+
+    /// A new private side, named and empty, or none when the room already
+    /// holds as many as it may. The founder is not moved here; the caller
+    /// does that, because moving is gated and founding is not.
+    fn found_team(&mut self, founder: u8) -> Option<u8> {
+        let byte = self.free_team_byte()?;
+        let name = self.fresh_team_name();
+        self.teams.insert(byte, Team { name, public: false });
+        // The founder is invited to their own team, which is what makes the
+        // move that follows legal without a special case for it.
+        self.invites.entry(founder).or_default().insert(byte);
+        Some(byte)
+    }
+
+    /// A name no side in this room is wearing. The words are the roster's
+    /// register and none of its names, the same rule the call sign generator
+    /// follows, so a team never reads as a pilot.
+    fn fresh_team_name(&self) -> String {
+        const WORDS: [&str; 24] = [
+            "Anvil Watch", "Black Sill", "Cold Harbour", "Deep Keel",
+            "Ember Line", "Far Reach", "Grey Span", "High Trestle",
+            "Iron Weir", "Long Lintel", "Mill Race", "North Gantry",
+            "Old Causeway", "Pale Arch", "Quarry Gate", "Red Culvert",
+            "Salt Pier", "Stone Chord", "Tall Derrick", "Under Span",
+            "Verge Works", "West Buttress", "Yard Bell", "Zinc Landing",
+        ];
+        for lap in 0..64u32 {
+            for w in WORDS {
+                let name = if lap == 0 { w.to_string() } else { format!("{w} {}", lap + 1) };
+                if !self.teams.values().any(|t| t.name == name) {
+                    return name;
+                }
+            }
+        }
+        "Unnamed".into()
+    }
+
+    /// Cross to a side. The room decides whether the door is open; the core
+    /// decides whether the pilot may leave where they are, which it refuses
+    /// for anyone dead or hurt. Both have to agree, and a refusal is silent:
+    /// the team list that follows still says where you are, which is the only
+    /// thing the client asked about.
+    fn join_team(&mut self, ship: u8, team: u8) -> bool {
+        let bot = self.names.get(&ship).is_some_and(|s| s.bot);
+        if !self.may_join(ship, team, bot) {
+            self.send_teams(ship);
+            return false;
+        }
+        let moved = self.world.set_ship_team(ship, team);
+        if moved {
+            // The side they left may have been its last member's.
+            self.reap_teams();
+            self.broadcast_teams();
+            self.broadcast_roster();
+        } else {
+            self.send_teams(ship);
+        }
+        moved
+    }
+
+    /// Found a side and cross to it, which is one act to a player and two
+    /// here. If the crossing is refused -- a hurt pilot, a dead one -- the
+    /// side is given back rather than left standing empty for the reaper.
+    fn found_and_move(&mut self, ship: u8) -> bool {
+        let Some(byte) = self.found_team(ship) else {
+            self.send_teams(ship);
+            return false;
+        };
+        if self.join_team(ship, byte) {
+            return true;
+        }
+        self.teams.remove(&byte);
+        if let Some(s) = self.invites.get_mut(&ship) {
+            s.remove(&byte);
+        }
+        self.send_teams(ship);
+        false
+    }
+
+    /// Extend an invitation to the inviter's own side. Only private sides have
+    /// a door to open: everyone may already walk into a public one, so an
+    /// invitation to it would be a message that changes nothing.
+    fn invite(&mut self, from: u8, to: u8) -> bool {
+        let team = self.world.state.ships[from as usize].team;
+        let private = self.teams.get(&team).is_some_and(|t| !t.public);
+        if !private || from == to || !self.names.contains_key(&to) {
+            return false;
+        }
+        self.invites.entry(to).or_default().insert(team);
+        // The invitee's list is the one that changed, but the inviter wants to
+        // see that it went, so everybody gets the new one.
+        self.broadcast_teams();
+        true
+    }
+
+    /// Move one bot toward the side that needs one.
+    ///
+    /// Seating already puts an arriving bot on the emptiest side, which is
+    /// enough until people start moving. Then it is not: five friends crossing
+    /// to one side of a flag game leaves the other holding whatever it held
+    /// when they arrived, and the room they made for themselves is a stomp
+    /// rather than the co-op raid it should be. So the ballast follows.
+    ///
+    /// One bot per call, on the roster's own slow clock, because a side that
+    /// emptied all at once should refill over a few seconds rather than blink.
+    /// The move goes through the same gate everything else does, so a bot in a
+    /// fight stays in it and the next call finds another.
+    fn rebalance_bots(&mut self) {
+        if self.public_teams < 2 {
+            return;
+        }
+        let mut count = Vec::new();
+        for team in 0..self.public_teams {
+            let (humans, bots) = self.team_census(team, None);
+            count.push((team, humans + bots, bots));
+        }
+        let Some(&(fullest, most, bots_there)) =
+            count.iter().max_by_key(|(_, n, _)| *n) else { return };
+        let Some(&(emptiest, fewest, _)) =
+            count.iter().min_by_key(|(_, n, _)| *n) else { return };
+        // Two is the smallest gap worth moving for: one is what an odd number
+        // of pilots looks like, and chasing it would move a bot every clock.
+        if fullest == emptiest || most < fewest + 2 || bots_there == 0 {
+            return;
+        }
+        let movers: Vec<u8> = self
+            .names
+            .iter()
+            .filter(|(ship, seat)| {
+                seat.bot && self.world.state.ships[**ship as usize].team == fullest
+            })
+            .map(|(ship, _)| *ship)
+            .collect();
+        for ship in movers {
+            if self.join_team(ship, emptiest) {
+                return;
+            }
+        }
+    }
+
+    /// The zone's own sides, in the order it scores them. Private sides are
+    /// left out: a mode never scores over one, so it never has to name one.
+    fn public_team_names(&self) -> Vec<String> {
+        (0..self.public_teams)
+            .map(|b| self.teams.get(&b).map(|t| t.name.clone()).unwrap_or_default())
+            .collect()
+    }
+
+    /// One client's team list, for the answers only they can see.
+    fn send_teams(&self, ship: u8) {
+        if let Some(p) = self.players.values().find(|p| p.ship == ship) {
+            let _ = p.tx.try_send(Message::Binary(self.teams_msg(ship)));
+        }
+    }
+
+    /// A private side nobody is left on stops existing, and its byte goes back
+    /// in the pool. Called wherever a ship stops being on one: leaving, and
+    /// crossing to somewhere else.
+    fn reap_teams(&mut self) {
+        let live: std::collections::HashSet<u8> = self
+            .names
+            .keys()
+            .filter(|s| self.world.state.ships[**s as usize].active != 0)
+            .map(|s| self.world.state.ships[*s as usize].team)
+            .collect();
+        let public = self.public_teams;
+        let gone: Vec<u8> = self
+            .teams
+            .iter()
+            .filter(|(b, t)| !t.public && **b >= public && !live.contains(b))
+            .map(|(b, _)| *b)
+            .collect();
+        for b in gone {
+            self.teams.remove(&b);
+            for s in self.invites.values_mut() {
+                s.remove(&b);
+            }
+        }
+        self.invites.retain(|_, s| !s.is_empty());
     }
 
     /// A pilot goes, and their seat is retired rather than handed on.
@@ -1131,6 +1399,15 @@ impl Arena {
             sh.active = 0;
             sh.alive = 0;
             self.names.remove(&p.ship);
+            // Invitations belong to the pilot, not the seat: the next occupant
+            // of this one was invited nowhere. And a private side whose last
+            // member just left stops existing.
+            self.invites.remove(&p.ship);
+            self.reap_teams();
+            // Here rather than at each of the several callers -- a quit, an
+            // eviction, a kick, a drain -- because every one of them changes
+            // who is on what.
+            self.broadcast_teams();
         }
     }
 
@@ -1158,9 +1435,11 @@ impl Arena {
             .iter()
             .map(|(s, seat)| (*s, seat.bot))
             .collect();
+        let names = self.public_team_names();
         let mut ctx = modes::ModeCtx {
             world: &mut self.world,
             seats: &seats,
+            team_names: &names,
             banner: std::mem::take(&mut self.banner),
             finished: false,
         };
@@ -1194,9 +1473,11 @@ impl Arena {
         let deaths = ingest_damage(&self.world, &mut self.rating, &name_of);
         for (victim, killer, _) in deaths.iter().copied() {
             let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, k)| (*s, k.bot)).collect();
+            let names = self.public_team_names();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
                 seats: &seats,
+                team_names: &names,
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
             };
@@ -1366,6 +1647,68 @@ impl Arena {
             m.extend_from_slice(&bytes[..len as usize]);
         }
         m
+    }
+
+    /// The team list, as one client sees it.
+    ///
+    /// Per recipient because two of its answers are: which side you are on,
+    /// and which of these doors is open to you. A public side with room is
+    /// open to everybody; a private one only to whoever it invited. The counts
+    /// are the same for all, but splitting the message to share them would
+    /// cost more than building a few dozen bytes a handful of times a minute.
+    fn teams_msg(&self, ship: u8) -> Vec<u8> {
+        let bot = self.names.get(&ship).is_some_and(|s| s.bot);
+        let mine = self.world.state.ships[ship as usize].team;
+        // Which sides are worth telling this client about: the zone's own,
+        // the one they are on, and any that has invited them. A free-for-all
+        // is why this is a filter rather than the whole list -- there, every
+        // pilot is a side, so sixty-four seats is sixty-four teams, and a menu
+        // listing sixty-three strangers' private sides of one is a menu nobody
+        // can use. A pact you were not invited to is not a door you can open,
+        // and who is allied with whom already reads off the scoreboard.
+        let shown: Vec<u8> = self
+            .teams
+            .iter()
+            .filter(|(b, t)| {
+                t.public
+                    || **b == mine
+                    || self.invites.get(&ship).is_some_and(|s| s.contains(b))
+            })
+            .map(|(b, _)| *b)
+            .collect();
+        let mut m = vec![S2C_TEAMS];
+        m.push(mine);
+        // Whether the found-a-team row is offered. A zone whose `max_teams` is
+        // its own count never offers it, which is how a flag round says there
+        // is no third side to be -- and neither does a room where you are
+        // already alone on one of your own, since founding another would hand
+        // you the same solitude under a different name.
+        let alone = self.teams.get(&mine).is_some_and(|t| !t.public)
+            && self.team_census(mine, None) == (1, 0);
+        m.push(u8::from(self.free_team_byte().is_some() && !alone));
+        m.push(shown.len().min(255) as u8);
+        for byte in shown {
+            let team = &self.teams[&byte];
+            let (humans, bots) = self.team_census(byte, None);
+            m.push(byte);
+            m.push(u8::from(team.public));
+            m.push(u8::from(self.may_join(ship, byte, bot)));
+            m.push(humans.min(255) as u8);
+            m.push(bots.min(255) as u8);
+            let bytes = team.name.as_bytes();
+            let len = bytes.len().min(24) as u8;
+            m.push(len);
+            m.extend_from_slice(&bytes[..len as usize]);
+        }
+        m
+    }
+
+    /// Sent on every change to who is where, and to whom. Cheap enough to send
+    /// whole rather than diffed: a room holds a handful of sides.
+    fn broadcast_teams(&self) {
+        for p in self.players.values() {
+            let _ = p.tx.try_send(Message::Binary(self.teams_msg(p.ship)));
+        }
     }
 
     /// Everyone in the room gets the new numbers. An operator retuning a
@@ -1754,9 +2097,8 @@ impl Zone {
         if let Some(m) = def.max_ships {
             arena.world.cfg.max_ships = m;
         }
-        arena.mode = modes::build(&z.mode, def.arena.flags, z.teams);
-        arena.teams = z.teams.max(1);
-        arena.balance = def.balance.clone();
+        arena.set_teams(&def);
+        arena.mode = modes::build(&z.mode, def.arena.flags, arena.public_teams);
         arena.bot_fill = def.bot_fill();
         if z.mode == "warzone" {
             arena.add_default_flags();
@@ -1988,8 +2330,19 @@ impl Zone {
         self.zone_name = z.name.clone();
         self.draining = false;
         println!(
-            "serving zone {:?}: mode {}, {} ships, {} players, {} team(s)",
-            z.name, z.mode, z.max_ships, z.max_players, z.teams
+            "serving zone {:?}: mode {}, {} ships, {} players, teams {}",
+            z.name, z.mode, z.max_ships, z.max_players,
+            if self.rooms[0].public_teams == 0 {
+                "free-for-all".to_string()
+            } else {
+                self.rooms[0]
+                    .teams
+                    .values()
+                    .filter(|t| t.public)
+                    .map(|t| t.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("/")
+            }
         );
         Ok(())
     }
@@ -2494,7 +2847,14 @@ async fn main() {
                         a.broadcast_banner();
                     }
                     if roster {
+                        // Ballast follows the people. See `rebalance_bots`.
+                        a.rebalance_bots();
                         a.broadcast_roster();
+                        // On the same clock and for the same reason: these go
+                        // out with `try_send`, which drops rather than waits,
+                        // and a client that missed one would hold a team list
+                        // from before somebody moved.
+                        a.broadcast_teams();
                     }
                 }
                 z.tick_us = t0.elapsed().as_micros() as u32;
@@ -2736,6 +3096,9 @@ async fn main() {
                             w.extend_from_slice(&a.world.state.tick.to_le_bytes());
                             let _ = tx.try_send(Message::Binary(w));
                             a.broadcast_roster();
+                            // Which sides this room holds, who is on them, and
+                            // which of their doors are open to this arrival.
+                            a.broadcast_teams();
                         } else {
                             let _ = tx.try_send(Message::Binary(deny(DENY_FULL, "no seat in that room")));
                         }
@@ -2759,6 +3122,54 @@ async fn main() {
                                     let ship = a.players.get(&pid).map(|p| p.ship);
                                     if let Some(ship) = ship {
                                         a.world.set_ship_class(ship, cls);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    C2S_TEAM => {
+                        // Cross to a side. Refused unless the side exists, has
+                        // room for one more of this kind, and either belongs
+                        // to the zone or has invited this pilot -- and then
+                        // refused again by the core unless they are alive and
+                        // whole, which is the gate a hull change gets and for
+                        // the same reason. Nothing is sent back but the team
+                        // list, whose "you are on" byte is the whole answer.
+                        if data.len() >= 2 {
+                            if let Some((room, pid)) = seat {
+                                let want = data[1];
+                                let mut z = zone.lock().await;
+                                if let Some(a) = z.rooms.get_mut(room) {
+                                    if let Some(ship) = a.players.get(&pid).map(|p| p.ship) {
+                                        a.join_team(ship, want);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    C2S_FOUND => {
+                        // A side of your own, if the room may hold another.
+                        if let Some((room, pid)) = seat {
+                            let mut z = zone.lock().await;
+                            if let Some(a) = z.rooms.get_mut(room) {
+                                if let Some(ship) = a.players.get(&pid).map(|p| p.ship) {
+                                    a.found_and_move(ship);
+                                }
+                            }
+                        }
+                    }
+                    C2S_INVITE => {
+                        // Any member may invite, because that is how a group
+                        // actually forms. There is no kick to go with it: a
+                        // team that wants somebody gone walks away and founds
+                        // another, which costs a respawn and no machinery.
+                        if data.len() >= 2 {
+                            if let Some((room, pid)) = seat {
+                                let guest = data[1];
+                                let mut z = zone.lock().await;
+                                if let Some(a) = z.rooms.get_mut(room) {
+                                    if let Some(ship) = a.players.get(&pid).map(|p| p.ship) {
+                                        a.invite(ship, guest);
                                     }
                                 }
                             }
@@ -3052,8 +3463,6 @@ mod tests {
             max_players: cap,
             fill_target: target,
             max_rooms: rooms,
-            teams: 1,
-            balance: "smaller".into(),
             admission: "any".into(),
             bot_fill: 0.0,
             map_b64: fleet::b64(&sim::World::new(1).packed_map()),
@@ -3466,9 +3875,9 @@ mod tests {
     #[ignore]
     fn round_pace() {
         let mut def = wire_zone(1, 16, 32);
-        def.teams = 2;
         def.mode = "warzone".into();
-        def.zone_toml = "description = \"war\"\n[arena]\nflags = 4\n".into();
+        def.zone_toml = "description = \"war\"\nteams = [\"Keel\", \"Vantage\"]\n\
+                         [arena]\nflags = 4\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
@@ -3828,13 +4237,235 @@ mod tests {
                    "and a zone with no kit hands out no kit");
     }
 
+    /// A room built from a zone with named sides, for the team tests below.
+    fn room_with_teams(toml: &str) -> Arena {
+        let mut def = wire_zone(1, 16, 32);
+        def.zone_toml = toml.into();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = Zone::new(cfg, test_spool(), HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        z.rooms.remove(0)
+    }
+
+    fn seat_human(a: &mut Arena, name: &str) -> u8 {
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let id = a
+            .join(Seat::guest(name.to_string(), false), 0, 32, tx)
+            .expect("a seat");
+        a.players[&id].ship
+    }
+
+    #[test]
+    fn a_zone_names_its_own_sides_and_arrivals_spread_over_them() {
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        assert_eq!(a.public_teams, 2);
+        assert_eq!(a.teams[&0].name, "Keel");
+        assert!(a.teams[&0].public, "the zone's own are public");
+        let one = seat_human(&mut a, "one");
+        let two = seat_human(&mut a, "two");
+        assert_ne!(
+            a.world.state.ships[one as usize].team,
+            a.world.state.ships[two as usize].team,
+            "the second arrival lands on the emptier side"
+        );
+    }
+
+    #[test]
+    fn a_full_side_is_the_only_thing_that_refuses_a_join() {
+        // The whole team policy is three caps, so this is the whole of what a
+        // player can be told no about.
+        let mut a = room_with_teams(
+            "teams = [\"Keel\", \"Vantage\"]\nmax_humans_per_team = 1\n",
+        );
+        let one = seat_human(&mut a, "one");
+        let two = seat_human(&mut a, "two");
+        let (first, second) = (
+            a.world.state.ships[one as usize].team,
+            a.world.state.ships[two as usize].team,
+        );
+        assert!(!a.join_team(two, first), "one a side means one a side");
+        assert_eq!(a.world.state.ships[two as usize].team, second, "and no move");
+        // The cap counts people, not seats: a bot on that side is not in the
+        // way of a human.
+        seat_bots(&mut a, 2);
+        assert!(!a.join_team(two, first), "still full of its one human");
+    }
+
+    #[test]
+    fn crossing_sides_drops_the_flag_and_the_bounty_it_earned() {
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let ship = seat_human(&mut a, "one");
+        a.world.state.ships[ship as usize].earned = 30;
+        assert!(a.join_team(ship, 1));
+        assert_eq!(a.world.state.ships[ship as usize].team, 1);
+        assert_eq!(
+            a.world.state.ships[ship as usize].earned, 0,
+            "what killing paid does not cross with you"
+        );
+        // And the gate: a hurt pilot stays where they are, so the team list is
+        // not a way out of a fight.
+        a.world.state.ships[ship as usize].energy /= 2;
+        assert!(!a.join_team(ship, 0), "not while hurt");
+        assert_eq!(a.world.state.ships[ship as usize].team, 1);
+    }
+
+    #[test]
+    fn a_private_side_admits_only_who_it_invited_and_dies_when_empty() {
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let founder = seat_human(&mut a, "founder");
+        let guest = seat_human(&mut a, "guest");
+        let stranger = seat_human(&mut a, "stranger");
+
+        assert!(a.found_and_move(founder), "anyone may found one");
+        let team = a.world.state.ships[founder as usize].team;
+        assert!(team >= a.public_teams, "and it is not one of the zone's");
+        assert!(!a.teams[&team].public);
+        assert!(!a.teams[&team].name.is_empty(), "wearing a generated name");
+
+        assert!(!a.join_team(stranger, team), "a closed door is closed");
+        assert!(a.invite(founder, guest), "any member may open it");
+        assert!(a.join_team(guest, team), "and then it is open");
+        assert!(!a.join_team(stranger, team), "to the invited only");
+
+        // Everyone walks away, which is how a team sheds somebody without a
+        // kick, and the side stops existing behind them.
+        assert!(a.join_team(founder, 0));
+        assert!(a.join_team(guest, 0));
+        assert!(!a.teams.contains_key(&team), "an empty private side is gone");
+    }
+
+    #[test]
+    fn a_zone_can_say_there_is_no_third_side() {
+        // max_teams at the count of its own is how a flag round refuses to
+        // seat a side its mode cannot score.
+        let mut a = room_with_teams(
+            "teams = [\"Keel\", \"Vantage\"]\nmax_teams = 2\n",
+        );
+        let ship = seat_human(&mut a, "one");
+        assert!(a.free_team_byte().is_none(), "no room for another");
+        assert!(!a.found_and_move(ship), "so nobody may found one");
+        assert_eq!(a.teams.len(), 2);
+    }
+
+    #[test]
+    fn a_free_for_all_seats_everybody_on_a_side_of_their_own() {
+        // The old shape of this was `teams = 1`, which is one side rather than
+        // none: everybody on side zero, and every hostility test in the stack
+        // asks whether two sides differ, so the zone ran with combat off.
+        let mut a = room_with_teams("teams = []\nmax_humans_per_team = 3\n");
+        assert!(a.free_for_all());
+        let ships: Vec<u8> = (0..4).map(|i| seat_human(&mut a, &format!("p{i}"))).collect();
+        let sides: std::collections::HashSet<u8> = ships
+            .iter()
+            .map(|s| a.world.state.ships[*s as usize].team)
+            .collect();
+        assert_eq!(sides.len(), 4, "four pilots, four sides");
+        assert!(sides.iter().all(|t| *t != sim::TEAM_NONE));
+
+        // A pact forms by invitation and stops at the cap, which is what the
+        // cap is for in a room of soloists.
+        let host = ships[0];
+        let team = a.world.state.ships[host as usize].team;
+        for guest in &ships[1..3] {
+            assert!(a.invite(host, *guest));
+            assert!(a.join_team(*guest, team));
+        }
+        assert!(a.invite(host, ships[3]));
+        assert!(!a.join_team(ships[3], team), "three is the pact this zone allows");
+    }
+
+    #[test]
+    fn bots_follow_the_people() {
+        // Five friends take one side of a flag game. The ballast is what turns
+        // that from a stomp into a raid, so it has to move after them.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        seat_bots(&mut a, 6);
+        let humans: Vec<u8> = (0..4).map(|i| seat_human(&mut a, &format!("p{i}"))).collect();
+        for h in &humans {
+            a.join_team(*h, 0);
+        }
+        assert_eq!(a.team_census(0, None).0, 4, "everybody on Keel");
+
+        let before = a.team_census(0, None);
+        for _ in 0..12 {
+            a.rebalance_bots();
+        }
+        let (k_humans, k_bots) = a.team_census(0, None);
+        let (_, v_bots) = a.team_census(1, None);
+        assert_eq!(k_humans, 4, "the people stay where they chose");
+        assert!(k_bots < before.1, "and the bots left with the imbalance");
+        assert!(v_bots > k_bots, "for the side that needed them");
+        // And it settles rather than oscillating: another dozen calls change
+        // nothing once the sides are within one of each other.
+        let settled = (a.team_census(0, None), a.team_census(1, None));
+        for _ in 0..12 {
+            a.rebalance_bots();
+        }
+        assert_eq!((a.team_census(0, None), a.team_census(1, None)), settled,
+                   "a balanced room stops moving");
+    }
+
+    #[test]
+    fn a_free_for_all_list_holds_your_own_side_and_nobody_elses() {
+        // Sixty-four seats is sixty-four sides here, and a menu listing
+        // sixty-three strangers' private teams of one is a menu nobody can
+        // use. You see the zone's own, your own, and any that invited you.
+        let mut a = room_with_teams("teams = []\n");
+        let me = seat_human(&mut a, "me");
+        for i in 0..5 {
+            seat_human(&mut a, &format!("other{i}"));
+        }
+        assert_eq!(a.teams.len(), 6, "six pilots, six sides");
+        let m = a.teams_msg(me);
+        assert_eq!(m[3], 1, "and one of them on my list");
+        assert_eq!(m[1], a.world.state.ships[me as usize].team);
+        assert_eq!(m[2], 0, "founding another alone would change nothing");
+    }
+
+    #[test]
+    fn the_team_wire_reads_back_exactly() {
+        // Same reason as the roster's: the client walks this with a cursor,
+        // so a field added on one side and not the other turns every name
+        // after it into gibberish.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let ship = seat_human(&mut a, "one");
+        seat_bots(&mut a, 2);
+        let m = a.teams_msg(ship);
+        assert_eq!(m[0], S2C_TEAMS);
+        assert_eq!(m[1], a.world.state.ships[ship as usize].team, "where you are");
+        assert_eq!(m[2], 1, "and whether you may found one");
+        let count = m[3] as usize;
+        assert_eq!(count, 2);
+        let mut at = 4;
+        let mut read = Vec::new();
+        for _ in 0..count {
+            let byte = m[at];
+            let public = m[at + 1];
+            let may_join = m[at + 2];
+            let humans = m[at + 3];
+            let bots = m[at + 4];
+            let len = m[at + 5] as usize;
+            let name = String::from_utf8(m[at + 6..at + 6 + len].to_vec()).unwrap();
+            at += 6 + len;
+            read.push((byte, public, may_join, humans, bots, name));
+        }
+        assert_eq!(at, m.len(), "the reader lands exactly on the end");
+        assert_eq!(read[0].5, "Keel");
+        assert_eq!(read[1].5, "Vantage");
+        assert!(read.iter().all(|r| r.1 == 1), "both are the zone's own");
+        assert!(read.iter().all(|r| r.2 == 1), "and both have room");
+        assert_eq!(read.iter().map(|r| r.3 as u32).sum::<u32>(), 1, "one human");
+        assert_eq!(read.iter().map(|r| r.4 as u32).sum::<u32>(), 2, "two bots");
+    }
+
     #[test]
     fn a_two_team_zone_still_has_two_teams() {
         // The other half of the same rule: a warzone must not become a
         // free-for-all with two flags in it.
         let mut def = wire_zone(1, 6, 16);
-        def.teams = 2;
         def.mode = "warzone".into();
+        def.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = Zone::new(cfg, test_spool(),
                               HashMap::new());
@@ -4094,7 +4725,7 @@ mod tests {
         let i = z.room_for_join().expect("a second room");
         assert_eq!(i, 1);
         assert_eq!(z.rooms[0].world.cfg.max_ships, z.rooms[1].world.cfg.max_ships);
-        assert_eq!(z.rooms[0].teams, z.rooms[1].teams);
+        assert_eq!(z.rooms[0].public_teams, z.rooms[1].public_teams);
         assert_eq!(z.rooms[0].bot_fill, z.rooms[1].bot_fill,
                    "including how full of bots each is meant to be");
         assert_eq!(z.rooms[0].world.packed_map(), z.rooms[1].world.packed_map());

@@ -13,14 +13,15 @@ local M = {}
 
 local C2S_JOIN, C2S_INPUT = 1, 2
 local C2S_SHIP = 5
+local C2S_TEAM, C2S_FOUND, C2S_INVITE = 6, 7, 8
 local S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER = 1, 2, 3
 local S2C_KILL, S2C_BANNER, S2C_ZONE, S2C_DENIED = 4, 5, 6, 7
-local S2C_MAP, S2C_SETTINGS, S2C_YIELD = 9, 10, 11
+local S2C_MAP, S2C_SETTINGS, S2C_YIELD, S2C_TEAMS = 9, 10, 11, 12
 
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 4
+local CLIENT_PROTOCOL = 5
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -55,6 +56,19 @@ M.ratings = {}
 -- that arrives from before the death: one kill printed once per snapshot.
 -- The zone says each death exactly once, to everyone.
 M.kills = {}
+
+-- The sides this room holds, as this client is allowed to see them: the
+-- zone's own, the one you are on, and any that has invited you. Each row is
+-- {team, name, public, may_join, humans, bots}, in the order the zone scores
+-- them. `M.my_team` is the byte you are on and `M.may_found` says whether the
+-- found-a-team row is worth drawing.
+--
+-- Sent whole rather than diffed, and rebuilt whole here, because a room holds
+-- a handful of sides and a partial update is a class of bug this file has
+-- already paid for once.
+M.teams = {}
+M.my_team = 0
+M.may_found = false
 M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0}
 
 -- Where this client's clock wants to sit, measured in ticks of input lag: how
@@ -170,6 +184,41 @@ local function on_roster(s)
         o = o + 6 + len
     end
     M.pilots, M.ratings = pilots, ratings
+end
+
+-- The team list. Walked with a cursor exactly as the roster is, and it bails
+-- on a short read for the same reason: `string.byte` answers nil past the end,
+-- the arithmetic on nil raises, and an error in here surfaces inside a
+-- websocket callback where nothing is watching.
+local function on_teams(s)
+    M.my_team = string.byte(s, 2) or 0
+    M.may_found = (string.byte(s, 3) or 0) ~= 0
+    local n = string.byte(s, 4)
+    if not n then return end
+    local o = 5
+    local teams = {}
+    for _ = 1, n do
+        local len = string.byte(s, o + 5)
+        if not len or #s < o + 5 + len then return end
+        teams[#teams + 1] = {
+            team = string.byte(s, o),
+            public = string.byte(s, o + 1) ~= 0,
+            may_join = string.byte(s, o + 2) ~= 0,
+            humans = string.byte(s, o + 3),
+            bots = string.byte(s, o + 4),
+            name = string.sub(s, o + 6, o + 5 + len),
+        }
+        o = o + 6 + len
+    end
+    M.teams = teams
+end
+
+-- What the side you are on is called, for the menu row that says so.
+function M.my_team_name()
+    for _, t in ipairs(M.teams) do
+        if t.team == M.my_team then return t.name end
+    end
+    return ""
 end
 
 -- A death, with both pilots' rating after the exchange and how many people
@@ -314,6 +363,8 @@ local function on_message(s)
         on_kill(s)
     elseif kind == S2C_ROSTER then
         on_roster(s)
+    elseif kind == S2C_TEAMS then
+        on_teams(s)
     elseif kind == S2C_BANNER then
         M.banner = string.sub(s, 2)
     elseif kind == S2C_ZONE then
@@ -351,6 +402,9 @@ function M.connect(url, class, name, on_lost, zone)
     M.pilots = {}
     M.ratings = {}
     M.kills = {}
+    M.teams = {}
+    M.my_team = 0
+    M.may_found = false
     M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
     M.lost = nil
     -- The zone we came from should not have its name or its banner still on
@@ -444,6 +498,26 @@ function M.set_class(cls)
     websocket.send(conn, string.char(C2S_SHIP, cls),
                    {type = websocket.DATA_TYPE_BINARY})
     return true
+end
+
+-- The three asks about sides. Requests, all of them: the zone answers with a
+-- team list, and a refusal is that list saying you are still where you were.
+local function ask(msg)
+    if not conn or not M.connected then return false end
+    websocket.send(conn, msg, {type = websocket.DATA_TYPE_BINARY})
+    return true
+end
+
+function M.set_team(team)
+    return ask(string.char(C2S_TEAM, team))
+end
+
+function M.found_team()
+    return ask(string.char(C2S_FOUND))
+end
+
+function M.invite(ship)
+    return ask(string.char(C2S_INVITE, ship))
 end
 
 function M.step(buttons)

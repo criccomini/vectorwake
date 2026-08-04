@@ -158,8 +158,6 @@ impl Directory {
                         fill_target: z.fill_target() as u32,
                         bot_fill: z.bot_fill(),
                         max_rooms: z.max_rooms() as u32,
-                        teams: z.teams(),
-                        balance: z.balance.clone(),
                         admission: z.admission.clone(),
                         map_b64: c.map_bytes(n).map(|b| fleet::b64(&b)).unwrap_or_default(),
                         zone_toml: z.raw.clone(),

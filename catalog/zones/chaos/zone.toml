@@ -37,11 +37,18 @@ bot_fill = 0.8
 # somebody else's crash.
 max_rooms = 1
 
-# One team is a free-for-all, and then balance has nothing to do. The file asks
-# for [Team] DesiredTeams=2 at MaxPerTeam=6, which is a different game from this
-# one and the reason Alpha exists.
-teams = 1
-balance = "none"
+# No named sides at all, which is what a free-for-all is: every pilot arrives
+# as a side of one. It used to be `teams = 1`, and one team is not none -- it
+# put everybody on side zero, and every hostility test in this stack asks
+# whether two sides differ, so the zone ran with combat switched off. The file
+# asks for [Team] DesiredTeams=2 at MaxPerTeam=6, which is a different game
+# from this one and the reason Alpha exists.
+teams = []
+
+# A pact of three may hunt together in a room of soloists. Six who nobody can
+# hurt is a different room, and this is the number that decides which. The
+# original spread the same dial across its freq-size settings.
+max_humans_per_team = 3
 
 [arena]
 # [Misc] BounceFactor=22, against 16 for a wall that takes nothing, and their

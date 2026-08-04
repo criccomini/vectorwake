@@ -319,42 +319,41 @@ layer:
    and seats the arrival, which is the backstop under the bot server's own habit
    of leaving a share of the room unfilled. A join is refused for space only by a
    room genuinely full of people.
-3. **Which team?** The mode decides, and the catalog gives it a number to work
-   with. Warzone wants balance, so it puts the arrival on the smaller side. Free
-   for all wants none, so everyone shares a team and friendly fire is off by being
-   irrelevant. Duel wants exactly two.
+3. **Which team?** The emptiest of the zone's own sides that has room for one
+   more of the arrival's kind. It is a default rather than a rule: the team
+   list is one selection away in the menu, and the only thing that can refuse
+   it is a full side.
 4. **Flying or watching?** A pilot may join as a spectator, and some are put there
    without asking.
 
-Team assignment is the one that needs a decision rather than a description, and it
-should not be a fifth rule in the selection algorithm or a field in the client's
-join message. It belongs to the mode, because "what is a team here" is the same
-question as "what game is this," and a client asserting a team is a client
-asserting something the server should own. So the catalog carries the shape and
-the mode carries the policy:
+The zone names its sides and caps them, and there is no balance policy beyond
+the caps. A client still never asserts a team: it asks, and the room answers
+with the team list. See [design/teams.md](../design/teams.md).
 
 ```toml
-teams = 2              # how many the mode may use; 1 is a free-for-all
-balance = "smaller"    # smaller | random | none
-private_teams = false  # whether players may form their own, ASSS's private freqs
+teams = ["Keel", "Vantage"]  # the zone's own, by name, in scoring order
+max_teams = 2                # counting its own; this one allows no private side
+max_humans_per_team = 8      # people on one side
+max_bots_per_team = 26       # and the ballast dial
 ```
 
-**A free-for-all is no teams, not one team.** `teams = 1` reads as "everybody on
-side zero", and side zero was what it did: every hostility test in the stack asks
-whether two teams differ, so a weapon skipped every ship, a kill paid no points
-and no bounty, a repel pushed nobody, and a bot did not so much as look at
-anybody. Chaos shipped that way and ran for a day with combat switched off --
-nine pilots holding perfectly still, because there was nothing any of them could
-see or shoot. A pilot's seat is their side in a one-team zone, which fits because
-ship indices stop at 254 and 255 is `TEAM_NONE`, and it needs no rule of its own
-in the core or in the client: the client already draws anybody not on your side
-as hostile, so a free-for-all colours itself.
+**A free-for-all is no teams, not one team.** It is `teams = []`, and every
+arrival is seated on a side of their own. It was `teams = 1` once, which reads
+as "everybody on side zero" and did exactly that: every hostility test in the
+stack asks whether two teams differ, so a weapon skipped every ship, a kill
+paid no points and no bounty, a repel pushed nobody, and a bot did not so much
+as look at anybody. Chaos shipped that way and ran for a day with combat
+switched off, nine pilots holding perfectly still because there was nothing any
+of them could see or shoot. The seat-per-side arrangement fits because ship
+indices stop at 254 and 255 is `TEAM_NONE`, and it needs no rule of its own in
+the core or in the client: the client already draws anybody not on your side as
+hostile, so a free-for-all colours itself.
 
-`balance = "smaller"` is ASSS's default behaviour and the right one to ship:
-`Team:MaxTeamDifference` defaults to 1 there, so the balancer tolerates almost
-nothing. Private teams are off until there is a reason, because the original's
-private freqs came with passwords, ownership and a whole social layer we have no
-use for yet.
+Private sides are founded by players from the same menu, wear a generated name,
+and admit whoever a member invites. The original's private freqs came with
+passwords, and this client has no text input to type one into; an invitation is
+a decision rather than a secret, so it does not leak. A zone that wants none
+sets `max_teams` to the count of its own, which is what a flag round does.
 
 ### Spectating is not a feature, it is three
 

@@ -802,6 +802,50 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     return 0;
 }
 
+int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
+                      uint8_t team) {
+    if (i >= s->ship_count) return -1;
+    sim_ship *sh = &s->ships[i];
+    if (!sh->active) return -1;
+    /* The side you are already on is not a change. A pilot who picks their own
+     * team out of a list should not be charged a respawn for reading it. */
+    if (sh->team == team) return 0;
+    /* The gate a hull change gets, for the reason a hull change gets it: this
+     * hands out a fresh position and a full bar, so ungated it is a way out of
+     * a fight that is going badly. */
+    if (!sh->alive) return -1;
+    if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
+
+    /* What you were carrying belongs to the side you are leaving. */
+    drop_flags(s, cfg, i, 0);
+    sh->team = team;
+    /* Bounty earned by killing does not cross with you. Two pilots trading
+     * sides to feed each other kills is the oldest arrangement in this genre,
+     * and what a kill pays is the victim's bounty. */
+    sh->earned = 0;
+
+    /* And your start moves to the new side's. A map that marks no start for
+     * this team hands out somebody else's, which `sim_map_spawn` already does
+     * and is the whole reason a team the map has never heard of -- a private
+     * one, formed in a room mid-round -- works at all. */
+    uint16_t tx = 0, ty = 0;
+    s->rng = xorshift32(s->rng);
+    if (sim_map_spawn(cfg->map, team, s->rng >> 8, &tx, &ty)) {
+        sh->spawn_x = (int32_t)tx * SIM_TILE_PX * 256;
+        sh->spawn_y = (int32_t)ty * SIM_TILE_PX * 256;
+    }
+    sh->x = sh->spawn_x;
+    sh->y = sh->spawn_y;
+    sh->vx = sh->vy = 0;
+    sh->fire_cooldown = 0;
+    sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
+    /* The hull and everything collected for it stay, which is where this parts
+     * company with a hull change. That one rerolls because the roster row
+     * moved and the old add-ons may not be things the new ship can hold;
+     * crossing to another side changes nothing about what you are flying. */
+    return 0;
+}
+
 static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) {
     for (int i = 0; i < s->flag_count; i++) {
         sim_flag *f = &s->flags[i];

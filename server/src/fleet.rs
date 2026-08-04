@@ -224,8 +224,6 @@ pub struct WireZone {
     #[serde(default)]
     pub bot_fill: f32,
     pub max_rooms: u32,
-    pub teams: u8,
-    pub balance: String,
     /// See `catalog::ZoneDef::admission`.
     #[serde(default)]
     pub admission: String,

@@ -135,13 +135,18 @@ fill_target = 20
 # Duel takes 100 because a duel is two people and a fresh room.
 max_rooms = 1
 
-# Teams. The mode decides who goes where; this is the shape it works within.
-# 1 is a free-for-all, which the arena implements as a side per seat rather than
-# one side for everybody -- see zones-and-arenas.md, since the difference is a
-# zone with no combat in it. "smaller" is ASSS's behaviour, whose
-# MaxTeamDifference defaults to 1, so the balancer tolerates almost nothing.
-teams = 2
-balance = "smaller"        # smaller | random | none
+# The zone's own sides, by name, in the order the mode scores them. Names are
+# what players see, and they are stable across rounds on purpose so a side is a
+# place rather than a number. An empty list is a free-for-all: no side to join,
+# every pilot their own. See design/teams.md.
+teams = ["Keel", "Vantage"]
+# The three caps, which are the whole team policy: the most sides this room may
+# hold at once counting its own, and how many of each kind fit on one. Writing
+# max_teams as the count of the zone's own sides is how a zone says no player
+# may found one.
+max_teams = 2
+max_humans_per_team = 8
+max_bots_per_team = 26
 
 # Who this zone lets in: "any", the default, or "claimed" for a room that wants
 # a field it can vouch for. The bar is on the label a seat wears, which comes
@@ -149,7 +154,6 @@ balance = "smaller"        # smaller | random | none
 # should stay "any": the cost of caring is a newcomer turned away in the second
 # they arrived. See design/accounts.md.
 admission = "any"
-private_teams = false     # the original's private freqs, off until wanted
 
 # Everything below is the settings surface that already existed, unchanged.
 [arena]

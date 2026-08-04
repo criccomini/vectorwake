@@ -61,13 +61,12 @@ max_rooms = 1
 # Thirty-two players in two colours was a crowd, not two crews. Five teams
 # across the same seats cap a side at seven, which is few enough that who is
 # with you fits in your head.
-teams = 5
+teams = ["Ridge", "Vantage", "Sable", "Coppice", "Halyard"]
 # [Team] ForceEvenTeams=0 says the original will not reshuffle a running game,
-# and neither do we. It does still put an arriving pilot on the smaller side,
-# which is what this key does. Writing "none" here is not the neutral choice it
-# looks like: it puts everybody on side zero, and every hostility test in this
-# stack asks whether two sides differ, so it would be combat off.
-balance = "smaller"
+# and neither do we. An arriving pilot still lands on the emptiest side, which
+# is a default rather than a rule: the team list is one selection away and the
+# only thing that can refuse it is a full side.
+max_humans_per_team = 7
 
 [arena]
 # [Misc] BounceFactor=22, against 16 for a wall that takes nothing. The
