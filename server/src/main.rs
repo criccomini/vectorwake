@@ -256,7 +256,7 @@ fn ingest_damage(
     world: &sim::World,
     rating: &mut rating::Rating,
     name_of: &dyn Fn(u8) -> String,
-) -> Vec<(u8, u8)> {
+) -> Vec<(u8, u8, i32)> {
     let tick = world.state.tick;
     let ev = &*world.events;
     let mut deaths = Vec::new();
@@ -271,7 +271,11 @@ fn ingest_damage(
                     rating.damage(tick, &name_of(e.a), &name_of(e.b), e.v, same);
                 }
             }
-            sim::EV_DEATH => deaths.push((e.a, e.b)),
+            // The event's value is what the kill paid, and it travels to the
+            // clients: the feed is drawn from this message rather than from
+            // each client's own prediction, which used to print the same
+            // death once per rollback that revived and re-killed the victim.
+            sim::EV_DEATH => deaths.push((e.a, e.b, e.v)),
             _ => {}
         }
     }
@@ -1182,7 +1186,7 @@ impl Arena {
                 .unwrap_or_else(|| format!("ship{ship}"))
         };
         let deaths = ingest_damage(&self.world, &mut self.rating, &name_of);
-        for (victim, killer) in deaths.iter().copied() {
+        for (victim, killer, _) in deaths.iter().copied() {
             let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, k)| (*s, k.bot)).collect();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
@@ -1196,7 +1200,7 @@ impl Arena {
                 self.finished = true;
             }
         }
-        for (victim, killer) in deaths {
+        for (victim, killer, paid) in deaths {
             // Rating is filed under the pilot's id, which is their account
             // where they have one. The display name is a different question
             // and is answered separately below.
@@ -1218,6 +1222,10 @@ impl Arena {
             m.extend_from_slice(&vr.to_le_bytes());
             m.extend_from_slice(&kr.to_le_bytes());
             m.push(rated.as_ref().map_or(0, |r| r.credits.len() as u8));
+            // What the kill paid, for the feed line. Clamped into a u16
+            // because a bounty is a few dozen points and the field should
+            // not inherit i32 from the event struct.
+            m.extend_from_slice(&(paid.clamp(0, u16::MAX as i32) as u16).to_le_bytes());
             for p in self.players.values() {
                 let _ = p.tx.try_send(Message::Binary(m.clone()));
             }
