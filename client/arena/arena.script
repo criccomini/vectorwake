@@ -187,7 +187,9 @@ local function my_buttons()
             if not (steering and rudder) then bits[bit] = true end
         end
     end
-    for _, bit in ipairs(touch.bits(sim.ship_heading(me))) do
+    -- Raw: the stick compares the swipe against where the nose actually is,
+    -- and a heading eased for the screen is not a fact about the ship.
+    for _, bit in ipairs(touch.bits(sim.ship_heading_raw(me))) do
         bits[bit] = true
     end
     -- A tapped charge pad names its own slot, so on a touchscreen there is no
@@ -398,24 +400,34 @@ end
 -- Every report the simulation made this tick, turned into light, noise and
 -- feed lines. Drained per tick rather than per frame: a frame can advance the
 -- simulation eight times, and the event list is replaced by each one.
+-- Kills come off the wire rather than out of the local simulation. The local
+-- death event still drives the explosion, but as a feed line it printed the
+-- same kill once per rollback: prediction runs a few ticks ahead, a snapshot
+-- from before the death revives the victim, and the next predicted ticks
+-- kill them again. The zone announces each death exactly once, with what it
+-- paid, and that message is already how ratings arrive.
+local function drain_kills()
+    for _, k in ipairs(net.kills) do
+        local vn = pilot_name(k.victim)
+        -- Your own bomb counts as your kill in the ledger, which is correct
+        -- and reads as nonsense in a feed line.
+        -- The payout is shown when there is one. A pilot who was carrying
+        -- nothing is worth nothing, and the line says so by staying quiet
+        -- rather than by printing a zero.
+        local paid = (k.paid > 0 and k.killer ~= 255 and k.killer ~= k.victim)
+            and (" for " .. k.paid) or ""
+        notify((k.victim == k.killer) and (vn .. " was caught in it")
+            or (k.killer == 255) and (vn .. " flew into the wall")
+            or (pilot_name(k.killer) .. " killed " .. vn .. paid))
+    end
+    if #net.kills > 0 then net.kills = {} end
+end
+
 local function drain_events()
     world.events(me, sfx.play)
     for i = 0, sim.event_count() - 1 do
         local ty, a, b, v = sim.event_at(i)
-        if ty == sim.EV_DEATH then
-            local vn = pilot_name(a)
-            local kn = (b ~= 255) and pilot_name(b) or "the arena"
-            -- Your own bomb counts as your kill in the ledger, which is
-            -- correct and reads as nonsense in a feed line.
-            -- What the kill paid, when it paid anything. A pilot who was
-            -- carrying nothing is worth nothing, and the line says so by
-            -- staying quiet rather than by printing a zero.
-            local paid = (v and v > 0 and b ~= 255 and b ~= a)
-                and (" for " .. v) or ""
-            notify((a == b) and (vn .. " was caught in it")
-                or (b == 255) and (vn .. " flew into the wall")
-                or (kn .. " killed " .. vn .. paid))
-        elseif ty == sim.EV_HIT and a == me then
+        if ty == sim.EV_HIT and a == me then
             hurt = 1
         elseif ty == sim.EV_PRIZE and a == me then
             local col, name = pal.prize(b)
@@ -725,6 +737,10 @@ function update(self, dt)
     menu.home = not live
     if not live then menu.open = true end
 
+    -- Kills the zone announced since last frame, before the expiry pass so
+    -- a line's clock starts the frame it appears.
+    drain_kills()
+
     -- Notifications expire. A feed that only ever scrolls leaves the last
     -- nine deaths on screen through a lull, which reads as a fight that is
     -- still happening somewhere.
@@ -733,6 +749,17 @@ function update(self, dt)
         if feed[i].t > ui.FEED_LIFE then table.remove(feed, i) end
     end
 
+    -- Where this frame falls between the two ticks either side of it, and how
+    -- much of the last correction has been walked off. Everything that reads a
+    -- position below gets both folded in, including the camera, so the whole
+    -- scene moves together rather than the world sliding under a hull that is
+    -- being smoothed on its own.
+    --
+    -- Set even when there is no game: the menu's drifting starfield does not
+    -- ask the core for anything, but a stale alpha left over from the last
+    -- arena would be waiting for the next one.
+    sim.render_alpha(accum / DT)
+    if live then sim.smooth_decay(dt) end
     local cx, cy
     if live then
         -- What the menu calls your hull is whatever you are flying, asked

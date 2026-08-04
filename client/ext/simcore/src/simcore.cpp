@@ -20,6 +20,8 @@
 #include "sim/pack.h"
 #include "sim/sim.h"
 
+#include <math.h>
+
 // The vertex writer, which lives in vwbuf.cpp and is registered from here.
 void VwBufInit(lua_State* L);
 void VwBufFinal();
@@ -131,6 +133,83 @@ int ApplySnapshot(lua_State* L) {
     return 1;
 }
 
+// --- what the screen shows, against what the simulation holds ---------------
+//
+// The core runs at 100 Hz and no display refreshes at a multiple of it. Drawing
+// the newest tick therefore advances the world by one tick on some frames and
+// two on others at 60 Hz, and by one or none at 120: a speed ripple on every
+// frame of every screen, on the camera and everything in it. Interpolating
+// between the last two ticks by where the frame actually falls costs one tick
+// of visual latency -- ten milliseconds, less than a frame anywhere -- and buys
+// a constant one in place of a random nought-to-ten. Constant latency is
+// invisible. Varying latency is the judder.
+//
+// The other jitter is the network's. A snapshot lands twenty times a second and
+// replaces state outright, so a remote ship that was extrapolated wrong snaps to
+// the truth. `smooth_capture` and `smooth_settle` bracket that: whatever the
+// screen was last asserting about a ship is held, and the difference between it
+// and the truth is carried as an offset that decays away over about a tenth of a
+// second. The simulation is never touched; only the drawing lies, briefly, and
+// then stops.
+//
+// Both live here rather than at the call sites because there are twenty of those
+// and one of them being missed is worse than none of them being fixed: a hull
+// that judders against its own health bar reads as broken in a way a hull that
+// judders with everything else does not.
+
+float g_alpha = 0.0f;
+float g_off_x[SIM_MAX_SHIPS];
+float g_off_y[SIM_MAX_SHIPS];
+int32_t g_held_x[SIM_MAX_SHIPS];
+int32_t g_held_y[SIM_MAX_SHIPS];
+uint8_t g_held[SIM_MAX_SHIPS];
+
+// Past this, it is a teleport and not a correction. Four tiles: a respawn, a
+// wormhole and a repel all clear it, and nothing a mispredicted hull does comes
+// near it.
+const double SMOOTH_SNAP = 64.0;
+// And a ceiling on what the drawing may be lying by at any moment, so a stream
+// of corrections in one direction cannot accumulate into a ship drawn somewhere
+// it has never been.
+const double SMOOTH_MAX = 40.0;
+
+// Whether the other buffer really holds the tick before this one.
+//
+// `sim_step` writes into the spare and swaps, so it does -- except across an
+// arriving snapshot, which rewrites the current state from the wire and leaves
+// the spare holding whatever tick it held before. Asking the tick numbers is
+// self-checking, where a flag would be one more thing to remember to clear.
+bool has_prev() {
+    return g_nxt->tick + 1 == g_cur->tick;
+}
+
+double blend(int32_t prev, int32_t cur) {
+    if (!has_prev()) return cur / 256.0;
+    return (prev + (cur - prev) * (double)g_alpha) / 256.0;
+}
+
+// Angles are a wrapping sixteen-bit turn, so the blend has to take the short way
+// round or a hull crossing north spins the long way once per lap.
+double blend_turn(uint16_t prev, uint16_t cur) {
+    if (!has_prev()) return cur;
+    int32_t d = (int32_t)cur - (int32_t)prev;
+    if (d > 32768) d -= 65536;
+    if (d < -32768) d += 65536;
+    double h = (double)prev + (double)d * (double)g_alpha;
+    if (h < 0.0) h += 65536.0;
+    if (h >= 65536.0) h -= 65536.0;
+    return h;
+}
+
+// Whether a ship's two ticks are the same continuous ship. A respawn moves a
+// hull the width of the map between one tick and the next, and interpolating
+// through that draws it streaking across the room.
+bool ship_continuous(const sim_ship* p, const sim_ship* c) {
+    if (!p->active || !c->active || p->alive != c->alive) return false;
+    double dx = (c->x - p->x) / 256.0, dy = (c->y - p->y) / 256.0;
+    return dx * dx + dy * dy < SMOOTH_SNAP * SMOOTH_SNAP;
+}
+
 // Read-only views. Rendering asks; it never writes.
 #define SHIP_GETTER(NAME, EXPR)                          \
     int NAME(lua_State* L) {                             \
@@ -141,9 +220,37 @@ int ApplySnapshot(lua_State* L) {
         return 1;                                        \
     }
 
-SHIP_GETTER(ShipX, s->x / 256.0)
-SHIP_GETTER(ShipY, s->y / 256.0)
-SHIP_GETTER(ShipHeading, s->heading)
+// Where a hull is, as the frame being drawn should show it: between the last
+// two ticks, plus whatever the drawing is still owed from the last correction.
+// Everything that draws asks for this, which is why it is the plain name.
+#define SHIP_SEEN(NAME, AXIS, OFF)                                     \
+    int NAME(lua_State* L) {                                           \
+        int i = (int)luaL_checkinteger(L, 1);                          \
+        const sim_ship* c = &g_cur->ships[i];                          \
+        const sim_ship* p = &g_nxt->ships[i];                          \
+        double v = ship_continuous(p, c) ? blend(p->AXIS, c->AXIS)     \
+                                         : c->AXIS / 256.0;            \
+        lua_pushnumber(L, v + OFF[i]);                                 \
+        return 1;                                                      \
+    }
+SHIP_SEEN(ShipX, x, g_off_x)
+SHIP_SEEN(ShipY, y, g_off_y)
+
+int ShipHeading(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    const sim_ship* c = &g_cur->ships[i];
+    const sim_ship* p = &g_nxt->ships[i];
+    lua_pushnumber(L, ship_continuous(p, c) ? blend_turn(p->heading, c->heading)
+                                            : (double)c->heading);
+    return 1;
+}
+
+// The tick as the simulation actually holds it, for the two things that must
+// not be told a comfortable story: measuring how far a prediction missed by,
+// and deciding what the pilot's own hands asked for.
+SHIP_GETTER(ShipXRaw, s->x / 256.0)
+SHIP_GETTER(ShipYRaw, s->y / 256.0)
+SHIP_GETTER(ShipHeadingRaw, s->heading)
 SHIP_GETTER(ShipAlive, s->alive)
 SHIP_GETTER(ShipTeam, s->team)
 SHIP_GETTER(ShipClass, s->cls)
@@ -366,11 +473,28 @@ int WeaponCount(lua_State* L) {
 // velocity and tinted by whose it is, so the renderer needs all of it, and
 // asking for it in seven separate calls per weapon per frame is the kind of
 // cost that only shows up on the platform that matters most.
+// Whether a weapon slot holds the same projectile it held last tick.
+//
+// It often does not. The core retires a weapon by moving the last one into its
+// place, so an index is a slot rather than an identity and a round that expires
+// hands its number to something else entirely. Interpolating on that draws a
+// bolt streaking across the map. There is no id on the wire to ask for, so this
+// asks whether the two are plausibly one thing: same weapon, same owner, and
+// near enough that a tick of flight explains the gap.
+bool weapon_continuous(const sim_weapon* p, const sim_weapon* c) {
+    if (!p->life || !c->life) return false;
+    if (p->spec != c->spec || p->owner != c->owner) return false;
+    double dx = (c->x - p->x) / 256.0, dy = (c->y - p->y) / 256.0;
+    return dx * dx + dy * dy < 16.0 * 16.0;
+}
+
 int WeaponAt(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     const sim_weapon* w = &g_cur->weapons[i];
-    lua_pushnumber(L, w->x / 256.0);
-    lua_pushnumber(L, w->y / 256.0);
+    const sim_weapon* p = &g_nxt->weapons[i];
+    bool same = has_prev() && weapon_continuous(p, w);
+    lua_pushnumber(L, same ? blend(p->x, w->x) : w->x / 256.0);
+    lua_pushnumber(L, same ? blend(p->y, w->y) : w->y / 256.0);
     lua_pushnumber(L, w->spec);
     lua_pushnumber(L, w->vx / 65536.0);
     lua_pushnumber(L, w->vy / 65536.0);
@@ -500,8 +624,16 @@ int FlagCount(lua_State* L) {
 int FlagAt(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     const sim_flag* f = &g_cur->flags[i];
-    lua_pushnumber(L, f->x / 256.0);
-    lua_pushnumber(L, f->y / 256.0);
+    const sim_flag* p = &g_nxt->flags[i];
+    // A carried flag is wherever its carrier is, so it has to move the way the
+    // carrier does or it swims against the hull holding it. Flags keep their
+    // index for the life of the arena, so there is no identity to check; a
+    // dropped or taken flag jumps, and the distance guard covers that.
+    double dx = (f->x - p->x) / 256.0, dy = (f->y - p->y) / 256.0;
+    bool same = has_prev() && p->active && f->active
+                && dx * dx + dy * dy < SMOOTH_SNAP * SMOOTH_SNAP;
+    lua_pushnumber(L, same ? blend(p->x, f->x) : f->x / 256.0);
+    lua_pushnumber(L, same ? blend(p->y, f->y) : f->y / 256.0);
     lua_pushnumber(L, f->team);
     lua_pushboolean(L, f->carried);
     return 4;
@@ -541,6 +673,96 @@ int ApplySettings(lua_State* L) {
 int Hash(lua_State* L) {
     lua_pushnumber(L, (double)(uint32_t)(sim_hash(g_cur) & 0xffffffffu));
     return 1;
+}
+
+// The frame's place between the last two ticks, nought to one. Set once per
+// frame, before anything draws.
+int RenderAlpha(lua_State* L) {
+    double a = luaL_checknumber(L, 1);
+    g_alpha = (float)(a < 0.0 ? 0.0 : (a > 1.0 ? 1.0 : a));
+    return 0;
+}
+
+// Hold what the screen is currently asserting about every hull. Called before a
+// snapshot is applied, while that assertion is still true.
+int SmoothCapture(lua_State* L) {
+    (void)L;
+    for (int i = 0; i < g_cur->ship_count && i < SIM_MAX_SHIPS; i++) {
+        const sim_ship* c = &g_cur->ships[i];
+        g_held[i] = c->active && c->alive;
+        // The raw tick rather than the blended position: the offset is a
+        // correction to the tick grid, and the blend rides on top of whatever
+        // it comes out as. Folding the blend in here would count it twice.
+        g_held_x[i] = c->x;
+        g_held_y[i] = c->y;
+    }
+    for (int i = g_cur->ship_count; i < SIM_MAX_SHIPS; i++) g_held[i] = 0;
+    return 0;
+}
+
+// And afterwards, once the replay has run: whatever moved, keep drawing where it
+// was and owe the difference.
+//
+// The clock steering rides in here too, and deliberately. A snapshot that trims
+// the client's lead by a tick moves every hull by a tick of flight, which is
+// exactly the kind of jump worth hiding rather than snapping through.
+int SmoothSettle(lua_State* L) {
+    (void)L;
+    for (int i = 0; i < SIM_MAX_SHIPS; i++) {
+        const sim_ship* c = &g_cur->ships[i];
+        if (!g_held[i] || !c->active || !c->alive) {
+            g_off_x[i] = g_off_y[i] = 0.0f;
+            continue;
+        }
+        double ox = g_off_x[i] + (g_held_x[i] - c->x) / 256.0;
+        double oy = g_off_y[i] + (g_held_y[i] - c->y) / 256.0;
+        double d2 = ox * ox + oy * oy;
+        if (d2 > SMOOTH_SNAP * SMOOTH_SNAP) {
+            // A teleport. Nothing to smooth: a respawn or a wormhole is
+            // supposed to look instant, and easing one reads as a ship being
+            // dragged rather than arriving.
+            ox = oy = 0.0;
+        } else if (d2 > SMOOTH_MAX * SMOOTH_MAX) {
+            double k = SMOOTH_MAX / sqrt(d2);
+            ox *= k;
+            oy *= k;
+        }
+        g_off_x[i] = (float)ox;
+        g_off_y[i] = (float)oy;
+    }
+    return 0;
+}
+
+// Bleed the offsets away. Exponential on a half-life, so the pull is strongest
+// where the lie is largest and there is no moment at which it stops.
+int SmoothDecay(lua_State* L) {
+    double dt = luaL_checknumber(L, 1);
+    double half = luaL_optnumber(L, 2, 0.08);
+    if (dt <= 0.0 || half <= 0.0) return 0;
+    float k = (float)pow(0.5, dt / half);
+    for (int i = 0; i < SIM_MAX_SHIPS; i++) {
+        g_off_x[i] *= k;
+        g_off_y[i] *= k;
+        // Under a hundredth of a pixel it is arithmetic nobody can see, and
+        // leaving it running means every hull carries a decaying number for the
+        // rest of the session.
+        if (g_off_x[i] * g_off_x[i] + g_off_y[i] * g_off_y[i] < 0.0001f) {
+            g_off_x[i] = g_off_y[i] = 0.0f;
+        }
+    }
+    return 0;
+}
+
+// Leaving a zone. Offsets are about a room, and carrying one into the next is a
+// hull drawn beside itself on arrival.
+int SmoothReset(lua_State* L) {
+    (void)L;
+    for (int i = 0; i < SIM_MAX_SHIPS; i++) {
+        g_off_x[i] = g_off_y[i] = 0.0f;
+        g_held[i] = 0;
+    }
+    g_alpha = 0.0f;
+    return 0;
 }
 
 const luaL_reg kFunctions[] = {
@@ -592,6 +814,14 @@ const luaL_reg kFunctions[] = {
     {"flag_at", FlagAt},
     {"add_flag", AddFlag},
     {"hash", Hash},
+    {"ship_x_raw", ShipXRaw},
+    {"ship_y_raw", ShipYRaw},
+    {"ship_heading_raw", ShipHeadingRaw},
+    {"render_alpha", RenderAlpha},
+    {"smooth_capture", SmoothCapture},
+    {"smooth_settle", SmoothSettle},
+    {"smooth_decay", SmoothDecay},
+    {"smooth_reset", SmoothReset},
     {"apply_map", ApplyMap},
     {"apply_settings", ApplySettings},
     {0, 0}};

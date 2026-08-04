@@ -49,6 +49,12 @@ M.denied = nil
 M.lost = nil
 M.pilots = {}
 M.ratings = {}
+-- Kills the zone has announced and the arena has not yet turned into feed
+-- lines. The feed reads these rather than the local simulation's death
+-- events, because prediction re-kills the same victim after every rollback
+-- that arrives from before the death: one kill printed once per snapshot.
+-- The zone says each death exactly once, to everyone.
+M.kills = {}
 M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0}
 
 -- Where this client's clock wants to sit, measured in ticks of input lag: how
@@ -178,6 +184,11 @@ local function on_kill(s)
     local victim, killer = string.byte(s, 2), string.byte(s, 3)
     local vr = i16(string.byte(s, 4), string.byte(s, 5))
     local kr = i16(string.byte(s, 6), string.byte(s, 7))
+    -- Byte 8 is the contributor count, which nothing here reads yet. The
+    -- payout follows it; `or 0` covers the deploy window where a zone one
+    -- image older has not started sending it.
+    local paid = (string.byte(s, 9) or 0) + (string.byte(s, 10) or 0) * 256
+    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = paid}
     M.ratings[victim] = vr
     M.ratings[killer] = kr
     -- A rated death is a game played, which is what decides whether the number
@@ -203,7 +214,14 @@ local function on_snapshot(s)
                       string.byte(s, 5), string.byte(s, 6))
     M.stats.snaps = M.stats.snaps + 1
 
-    local px, py = sim.ship_x(M.me), sim.ship_y(M.me)
+    -- Raw, not what the screen is showing. This measures how far the
+    -- prediction missed by, and a number that has had render smoothing folded
+    -- into it measures the smoothing instead.
+    local px, py = sim.ship_x_raw(M.me), sim.ship_y_raw(M.me)
+    -- What the screen is currently asserting about every hull, held across the
+    -- correction so the drawing can be walked to the truth rather than cut to
+    -- it. See the render section of simcore.cpp.
+    sim.smooth_capture()
     if sim.apply_snapshot(body) ~= 0 then return end
 
     -- Replay the inputs the server had not applied when it sent this.
@@ -248,7 +266,11 @@ local function on_snapshot(s)
     end
     if steps > M.stats.rewind then M.stats.rewind = steps end
 
-    local dx, dy = sim.ship_x(M.me) - px, sim.ship_y(M.me) - py
+    -- Everything the snapshot and the replay moved is now owed to the drawing,
+    -- which pays it off over the next tenth of a second.
+    sim.smooth_settle()
+
+    local dx, dy = sim.ship_x_raw(M.me) - px, sim.ship_y_raw(M.me) - py
     local err = math.sqrt(dx * dx + dy * dy)
     M.stats.err = err
     -- The first snapshots after joining are a teleport, not a misprediction.
@@ -328,6 +350,7 @@ function M.connect(url, class, name, on_lost, zone)
     M.deny_code = 0
     M.pilots = {}
     M.ratings = {}
+    M.kills = {}
     M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0}
     M.lost = nil
     -- The zone we came from should not have its name or its banner still on
@@ -344,6 +367,10 @@ function M.connect(url, class, name, on_lost, zone)
     -- which a player reads as their ship moving at several times its speed.
     input_log = {}
     predicted_tick = 0
+    -- And whatever the drawing was still owed in the last room. An offset is
+    -- about a hull in an arena; carried across, it draws the next one beside
+    -- itself on arrival.
+    sim.smooth_reset()
     -- The clock offset is per zone for the same reason the log is, and it is
     -- earned rather than remembered: a new arena's latency is its own, so the
     -- lead starts at nothing and climbs into place over the first second.
