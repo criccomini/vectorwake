@@ -258,7 +258,15 @@ local function zone_rows()
     if #rows == 0 then
         -- Never an empty panel. Whatever the directory is doing, or failing to
         -- do, is the only thing this level has to say.
-        rows[1] = {label = "", detail = directory.note}
+        --
+        -- The hint carries the part that is about time rather than about what
+        -- went wrong, and it goes under the list where there is room for a
+        -- sentence: the detail is one right-aligned line already holding an
+        -- address, and a phone has no width to spare on it. What it says is
+        -- worth saying, because the answer to this used to be reloading the
+        -- client and a player has no way to know it is not still.
+        rows[1] = {label = "", detail = directory.note,
+                   hint = "the list fills in by itself when a directory answers"}
     end
     return rows
 end

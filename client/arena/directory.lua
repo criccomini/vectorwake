@@ -28,6 +28,14 @@ local S2C_STATUS = 8
 -- right now, which is a number that moves while somebody reads it.
 local REFRESH = 3
 
+-- How long to wait before dialling again after a socket dies, and the ceiling
+-- it backs off to. A dial is a TLS handshake rather than the one byte a
+-- refresh costs, so a directory that is down for ten minutes should not be
+-- handshaked two hundred times; but the first retry is quick, because the
+-- common case by far is a deploy and the list should come back on its own
+-- within seconds of the server doing.
+local RETRY_FIRST, RETRY_MAX = 2, 15
+
 M.rows = {}
 M.note = "looking for games"
 -- Set by the caller before the list is opened. Used once, on first contact
@@ -39,6 +47,17 @@ local since = 0
 -- Whether the list is the thing on screen. The rising edge is an ask, so
 -- opening the list never shows counts from the last time somebody stood here.
 local watching = false
+-- Where to dial, kept so that a socket that dies can be replaced without the
+-- caller being involved. It is the same address for the life of the client.
+local url = nil
+-- The redial timer: how long since the socket went, and how long to wait.
+local down_for = 0
+local retry_in = RETRY_FIRST
+-- Which dial a callback belongs to. A socket that has been replaced can still
+-- deliver its own disconnect afterwards, and without this that event clears
+-- `conn` for the socket that replaced it: the list would then dial, come up,
+-- be torn down by the ghost of the last one, and do it again for ever.
+local generation = 0
 
 local function on_message(s)
     if string.byte(s, 1) ~= S2C_STATUS then return end
@@ -97,14 +116,17 @@ local function ask()
           {type = websocket.DATA_TYPE_BINARY})
 end
 
-function M.open(url)
-    M.close()
-    M.rows = {}
-    M.note = "looking for games"
-    since = 0
-    watching = false
+-- One dial. Everything that decides *when* to dial is in `M.tick`; this only
+-- knows how.
+local function dial()
+    generation = generation + 1
+    local mine = generation
+    down_for = 0
     local ok = pcall(function()
         conn = websocket.connect(url, {}, function(self, cid, data)
+            -- A reply from a socket we have already given up on. It may not
+            -- touch `conn`, which by now belongs to its replacement.
+            if mine ~= generation then return end
             if data.event == websocket.EVENT_CONNECTED then
                 -- The callback's own handle: this can fire before
                 -- `websocket.connect` has returned, and `conn` is only
@@ -112,6 +134,9 @@ function M.open(url)
                 pcall(websocket.send, cid, string.char(C2S_STATUS),
                       {type = websocket.DATA_TYPE_BINARY})
             elseif data.event == websocket.EVENT_MESSAGE then
+                -- A directory that is answering is a directory worth dialling
+                -- straight away next time it is not.
+                retry_in = RETRY_FIRST
                 on_message(data.message)
             elseif data.event == websocket.EVENT_DISCONNECTED
                 or data.event == websocket.EVENT_ERROR then
@@ -128,7 +153,21 @@ function M.open(url)
     end
 end
 
+function M.open(at)
+    M.close()
+    M.rows = {}
+    M.note = "looking for games"
+    since = 0
+    watching = false
+    retry_in = RETRY_FIRST
+    url = at
+    dial()
+end
+
 function M.close()
+    -- Bumped whether or not there was a socket, so nothing still in flight
+    -- from the last one can speak for the next.
+    generation = generation + 1
     if conn then pcall(websocket.disconnect, conn) end
     conn = nil
 end
@@ -137,15 +176,40 @@ end
 -- player count for a list they are not looking at, so this is the whole of the
 -- polling and it stops the moment the list does.
 function M.tick(dt)
-    if not conn then return end
     -- Opening the list asks at once. Somebody who has been three levels down
     -- setting the volume, or in a game for ten minutes, would otherwise be
     -- shown the counts from whenever they last stood here and have to wait out
     -- the interval for the truth, which is the staleness this exists to
     -- remove.
+    --
+    -- With no socket it is a dial rather than an ask, and the backoff starts
+    -- over: somebody who has just walked up to the list is asking now, and
+    -- should not be serving out the tail of a wait that grew while they were
+    -- somewhere else.
     if not watching then
         watching = true
-        ask()
+        retry_in = RETRY_FIRST
+        if conn then
+            ask()
+        elseif url then
+            dial()
+        end
+        return
+    end
+    -- The socket went and nothing else will replace it. Without this the list
+    -- is a dead end for the life of the process: the fleet restarts, the
+    -- directory comes back, and the only way to see it is to reload the whole
+    -- client. The moment it is most likely to happen is a deploy, which is
+    -- also the moment somebody is most likely to be watching this list.
+    if not conn then
+        if not url then return end
+        down_for = down_for + dt
+        if down_for >= retry_in then
+            -- Grown before the dial rather than after it, so a directory that
+            -- refuses instantly cannot be dialled every frame.
+            retry_in = math.min(retry_in * 2, RETRY_MAX)
+            dial()
+        end
         return
     end
     since = since + dt
