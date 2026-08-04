@@ -341,11 +341,17 @@ Order decides overlaps. The scoreboard is where that bites: each row publishes
 its box before the panel publishes the one that takes the wheel, so a press on
 a row reaches the pilot instead of the list.
 
-Clicking a pilot's row on the scoreboard opens one box about them: which side
-they are on when sides mean anything, what the zone will vouch for the seat
-being, their record and their bounty. It belongs to that list and goes when the
-list goes, since a box standing under a shut scoreboard says nothing about who
-it is for.
+Clicking a pilot's row on the scoreboard opens one box about them: their side,
+what the zone will vouch for the seat being, their record and their bounty. It
+belongs to that list and goes when the list goes, since a box standing under a
+shut scoreboard says nothing about who it is for.
+
+The side is named only when the zone marked it public, or when it is your own,
+which you are in and may know either way. A private side is a squad who
+arranged themselves and naming it here would hand the room a roster the zone
+deliberately did not send. An unknown side gets no row at all: falling back to
+the team byte, which the client can read off any ship, would be the same leak
+by a duller instrument.
 
 Escape shuts what is open before it opens anything, innermost outwards: the
 pilot box, then the info panel it came from, then the menu. It is the key a

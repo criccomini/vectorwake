@@ -1034,6 +1034,11 @@ function update(self, dt)
             -- The server's roster, because those are other people's names and
             -- only it knows them.
             pilots = net.pilots,
+            -- The sides, as the zone is willing to describe them. A pilot's
+            -- box names the one they are on only when the zone marked it
+            -- public, so what may be said comes from here rather than from a
+            -- team byte the client could read off any ship.
+            teams = net.teams,
             feed = feed, hurt = hurt, pickup = pickup,
             charges = charge_row(),
             cam_x = cx, cam_y = cy,

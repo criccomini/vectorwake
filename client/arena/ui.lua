@@ -953,20 +953,25 @@ local function inspect(o, top)
     -- Name, then the rows that always exist, then the team when it means
     -- something. Counted rather than guessed so the panel is exactly as tall
     -- as what it holds.
-    local same_team = sim.ship_team(i) == sim.ship_team(o.me)
-    -- Whether the team is worth saying, asked of the room rather than of the
-    -- zone file, which the client is not sent. A free-for-all gives every seat
-    -- its own number, so there are as many teams as pilots and "TEAM 41" is
-    -- noise; sides mean something exactly when there are fewer of them than
-    -- there are ships to put in them.
-    local n = sim.ship_count()
-    local seen, teams = {}, 0
-    for k = 0, n - 1 do
-        local t = sim.ship_team(k)
-        if not seen[t] then seen[t] = true teams = teams + 1 end
+    local theirs = sim.ship_team(i)
+    local same_team = theirs == sim.ship_team(o.me)
+    -- Which side they are on, and whether this pilot is allowed to be told.
+    --
+    -- The zone decides. A side it marks public is one anybody may see and name;
+    -- a private one is a squad who arranged themselves, and naming it here
+    -- would hand the room a roster the zone deliberately did not send. Your own
+    -- side is always yours to know, whatever it is marked, since you are in it.
+    --
+    -- Falling back to the raw number when the zone has sent no team list at all
+    -- would be the same leak by a duller instrument, so an unknown side simply
+    -- has no row: this box says what it is told and infers nothing.
+    local side = nil
+    for _, t in ipairs(o.teams or {}) do
+        if t.team == theirs and (t.public or same_team) then
+            side = (t.name ~= "" and t.name) or ("team " .. t.team)
+        end
     end
-    local show_team = teams > 1 and teams < n
-    local rows_n = 3 + (show_team and 1 or 0)
+    local rows_n = 3 + (side and 1 or 0)
     local h = 30 * S + rows_n * rowh + 10 * S
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
@@ -998,8 +1003,8 @@ local function inspect(o, top)
             "right")
         ry_ = ry_ + rowh
     end
-    if show_team then
-        row("TEAM", tostring(sim.ship_team(i)), pal.a(col, 0.9))
+    if side then
+        row("SIDE", side, pal.a(col, 0.9))
     end
     -- What the zone is willing to say this seat is, which is the honest
     -- version of the question: the client cannot tell, and the server's label
