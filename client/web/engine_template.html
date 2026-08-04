@@ -228,6 +228,22 @@
 				window.visualViewport.addEventListener('resize', apply);
 			}
 			setInterval(apply, 250);
+
+			// The game draws the pointer itself (the stylesheet hides the
+			// browser's over the canvas), and a drawn pointer must not
+			// outlive its mouse: once the pointer leaves the canvas, the
+			// real one is already showing somewhere else on the desktop.
+			// The engine surfaces no leave event to the game, so the fact
+			// lives here as a flag the client polls while its cursor is on
+			// screen.
+			window.vwPointerOut = false;
+			var pointer_canvas = document.getElementById('canvas');
+			pointer_canvas.addEventListener('mouseleave', function() {
+				window.vwPointerOut = true;
+			});
+			pointer_canvas.addEventListener('mouseenter', function() {
+				window.vwPointerOut = false;
+			});
 		})();
 	</script>
 	<script id='engine-start' type='text/javascript'>

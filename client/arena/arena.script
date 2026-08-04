@@ -1088,9 +1088,19 @@ function update(self, dt)
     -- touchscreen has no pointer and gets nothing.
     self.cursor_idle = (self.cursor_idle or 0) + dt
     if html5 and self.cursor_x and not touch.used then
+        -- A drawn pointer must not outlive its mouse. Once the pointer is
+        -- off the canvas the real cursor is already showing somewhere else
+        -- on the desktop, so this one goes at once instead of fading; the
+        -- template keeps the flag, the engine having no leave event of its
+        -- own. Forgetting the position rather than hiding is what makes
+        -- both exits cheap: a retired cursor is never polled for again
+        -- until the mouse says something new.
+        local ok, out = pcall(html5.run, "window.vwPointerOut?1:0")
         local a = math.min(1, (CURSOR_HOLD + CURSOR_FADE - self.cursor_idle)
                               / CURSOR_FADE)
-        if a > 0 then
+        if (ok and out == "1") or a <= 0 then
+            self.cursor_x, self.cursor_y = nil, nil
+        else
             ui.cursor(self.cursor_x, wh - self.cursor_y, a)
         end
     end
@@ -1374,11 +1384,15 @@ function on_input(self, action_id, action)
     end
 
     -- A press of a real mouse button is a hand on the mouse, so a click
-    -- brings the drawn cursor back even when it has not travelled. Before
-    -- the handlers below, because the ones that consume a press return.
+    -- brings the drawn cursor back even when it has not travelled, and it
+    -- carries a position because a fully faded cursor has forgotten its
+    -- own. Before the handlers below, because the ones that consume a
+    -- press return.
     if not touch.used and action.pressed
        and (action_id == hash("pointer")
             or action_id == hash("pointer_alt")) then
+        self.cursor_x = action.screen_x or action.x
+        self.cursor_y = action.screen_y or action.y
         self.cursor_idle = 0
     end
 
