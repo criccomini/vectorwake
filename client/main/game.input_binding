@@ -96,7 +96,7 @@ key_trigger {
 }
 key_trigger {
   input: KEY_M
-  action: "menu"
+  action: "map"
 }
 key_trigger {
   input: KEY_BACKSPACE

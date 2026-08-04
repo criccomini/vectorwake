@@ -292,6 +292,7 @@ local NODES = {
         -- and does not know this key has a gun that got worse.
         {label = "one shot", detail = "Q, to stop multifire fanning"},
         {label = "scores", detail = "I, or the info button"},
+        {label = "map", detail = "M, or click the radar"},
         {label = "menu", detail = "escape"},
         {label = "", detail = ""},
         -- Every key here has a second binding, and this is the reason. Most

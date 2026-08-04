@@ -413,6 +413,52 @@ int TileAt(lua_State* L) {
     return 2;
 }
 
+// What a cell of the overview shows when several kinds of tile stand in it.
+// A wall beats a door beats a safe zone beats a wormhole, and everything else
+// a map can hold is scenery the overview leaves out.
+int OverviewRank(int cls) {
+    switch (cls) {
+        case SIM_TILE_SOLID: return 4;
+        case SIM_TILE_DOOR: return 3;
+        case SIM_TILE_SAFE: return 2;
+        case SIM_TILE_WORMHOLE: return 1;
+        default: return 0;
+    }
+}
+
+// The whole map at one cell per `cell` tiles, as a string of tile classes.
+//
+// Showing all thousand tiles at once means reading all of them, and from Lua
+// that is a call per tile: a million of those is a stall a player sees. Here
+// it is one pass over an array this module already holds, which costs about a
+// millisecond and happens once per map.
+//
+// A cell reports the most important thing standing in it rather than whatever
+// tile a stride happened to land on. At this scale a wall is a pixel or two
+// wide, and sampling drops one between samples, which is a map with gaps in
+// it exactly where the rooms are.
+int MapCoarse(lua_State* L) {
+    // Two tiles is the finest this will go, which is what the buffer below is
+    // sized for and finer than any screen can show a thousand of.
+    int cell = (int)luaL_checkinteger(L, 1);
+    if (cell < 2) cell = 2;
+    if (cell > SIM_MAP_TILES) cell = SIM_MAP_TILES;
+    const int g = SIM_MAP_TILES / cell;
+    static uint8_t out[(SIM_MAP_TILES / 2) * (SIM_MAP_TILES / 2)];
+    memset(out, 0, (size_t)g * (size_t)g);
+    for (int ty = 0; ty < g * cell; ty++) {
+        uint8_t* row = out + (ty / cell) * g;
+        for (int tx = 0; tx < g * cell; tx++) {
+            int cls = SIM_TILE_CLASS(sim_tile_at(&g_map, tx, ty));
+            uint8_t* cur = row + tx / cell;
+            if (OverviewRank(cls) > OverviewRank(*cur)) *cur = (uint8_t)cls;
+        }
+    }
+    lua_pushlstring(L, (const char*)out, (size_t)g * (size_t)g);
+    lua_pushnumber(L, g);
+    return 2;
+}
+
 int DoorOpen(lua_State* L) {
     lua_pushboolean(L, sim_door_open(&g_cfg, g_cur->tick,
                                      (uint8_t)luaL_checkinteger(L, 1)));
@@ -530,6 +576,7 @@ const luaL_reg kFunctions[] = {
     {"prize_at", PrizeAt},
     {"solid", Solid},
     {"tile", TileAt},
+    {"map_coarse", MapCoarse},
     {"door_open", DoorOpen},
     {"in_safe", InSafe},
     {"event_count", EventCount},

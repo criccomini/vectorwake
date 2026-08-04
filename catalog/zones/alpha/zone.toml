@@ -1,4 +1,4 @@
-# Alpha: two teams, six a side, kills only.
+# Alpha: two teams, sixteen a side, kills only.
 #
 # The numbers here are not ours. They come from a settings file for the
 # original's server, so this is a translation and reads like one: every value
@@ -22,36 +22,41 @@
 #   Lancaster  Lattice   bombs that come back off a wall
 #   Shark      Spire     the hull a team is built around
 #
-# That file has seven ship sections and no [Shark], so Spire is the one hull
-# here with nothing said about it and keeps the baseline throughout.
+# That file has seven ship sections and no [Shark], so Spire is the one hull it
+# says nothing about. Its numbers come from the reference server's own
+# `dist/conf/svs/ship-shark` instead, and its block says which line it took.
 
-description = "two teams, six a side"
+description = "two teams, sixteen a side"
 
 # [Flag] MaxFlags=0 with FlagMode=0, [Soccer] BallCount=0, [King] DeathCount=0.
 # No flag game, no ball and no crown, which leaves kills.
 mode = "arena"
 
 # The zone's own map, converted from the `.lvl` that came with the settings
-# file above by `sim/tools/lvl2vw`. Twelve pilots spread over a thousand tiles
-# are twelve pilots who never meet, and this one puts its structure in reach of
-# the starts the converter picked.
+# file above by `sim/tools/lvl2vw`. A thousand tiles can swallow a roster whole
+# and leave two teams looking for each other; this one puts its structure in
+# reach of the starts the converter picked.
 map = "alpha.vwmap"
 
-# [Team] MaxPerTeam=6 across DesiredTeams=2.
-max_players = 12
-# Seats, which is those twelve plus the nine bots holding the room until they
+# The room is Chaos's room, seat for seat, so a zone that is a game rather than
+# a brawl is not also the smallest place to land.
+#
+# This is where the settings file stops deciding. [Team] MaxPerTeam=6 across
+# DesiredTeams=2 is twelve players, and twelve was what stood here. Two teams is
+# still the game, and sixteen a side is what they hold now.
+max_players = 32
+# Seats, which is those thirty-two plus the bots holding the room until they
 # arrive.
-max_ships = 24
-# The room is full at its human cap, so that is when the next one opens.
-fill_target = 12
+max_ships = 64
+fill_target = 20
 
-# Six a side is the game, so the room is held at twenty of its twenty-four
-# seats and the four spare are what an arriving pair drop into.
+# Four seats in five held by AI, so an arriving pair find a game in progress
+# rather than an empty map. The bot server stands one down per human.
 bot_fill = 0.8
-# Rooms are how a twelve-player zone holds more than twelve people. Chaos and
-# War keep one apiece because each is a single large room; four of these cost
-# less than one of those.
-max_rooms = 4
+# One room to a process, as Chaos and War have. Four of them made sense when a
+# room was twelve players. At thirty-two it is the same room those two run, and
+# four of it is four times the bill for a zone nobody has filled once.
+max_rooms = 1
 
 teams = 2
 # [Team] ForceEvenTeams=0 says the original will not reshuffle a running game,
@@ -78,9 +83,10 @@ respawn_delay = 200
 # seconds, which as one green at a time is one every thirty ticks.
 prize_delay = 30
 # [Prize] PrizeFactor=1300, which is greens per thousand players in the game.
-# Twelve of them ask for sixteen. The room also carries bots, so the field is a
-# little thinner per pilot here than that file meant it to be.
-prize_max = 16
+# Thirty-two of them ask for forty-two. The room also carries bots, so the field
+# is a little thinner per pilot here than that file meant it to be. This number
+# is read off the player cap, so raising that raises this.
+prize_max = 42
 # [Prize] PrizeMinExist=4000 and PrizeMaxExist=8000. One number here rather
 # than a range, so the middle of theirs.
 prize_life = 6000
@@ -260,12 +266,15 @@ life = 6000
 name = "lattice-bomb-2"
 life = 6000
 
-# The ships.
+# The ships, all eight of them, so the roster reads here rather than half here
+# and half out of the core's baseline.
 #
-# Four of the seven sections in that file differ from the rest, and this is
-# them. Everything not written here is identical across all seven, which is the
-# original's own habit: its ships fly alike and are told apart by what they
-# carry.
+# Everything not written below is identical across all seven sections that file
+# has, which is the original's own habit: its ships fly alike and are told apart
+# by what they carry. Seven sections, though, and eight hulls. There is no
+# [Shark] anywhere in it, so Spire is the one whose numbers come from the
+# reference server's `dist/conf/svs/ship-shark` instead, and its block says
+# which line it took.
 
 # [Warbird] MaximumRotation=300 against 230, InitialRotation=210 against 200,
 # MaximumThrust=19 against 17 and InitialThrust=16 against 15. The interceptor
@@ -306,12 +315,34 @@ bomb_mods = { prox = 1, shrapnel = 2 }
 name = "Anvil"
 bomb_mods = { prox = 1, shrapnel = 2 }
 
+# The Shark, which this file never mentions. Its section in the reference
+# server's `svs` set is the same template as the other seven with three lines
+# changed, and one of them is ShrapnelMax=31 against everyone else's 8. That is
+# the whole of the Shark as a per-ship number, and it lands here as the top rung
+# of shrapnel: in this zone Spire is the only hull that reaches it.
+#
+# The other two are Gravity=0, a hull no wormhole pulls, and CloakStatus=1.
+# Wormhole strength is per arena here rather than per hull, and there is no
+# cloak, so both go on the list at the bottom.
+[[arena.ships]]
+name = "Spire"
+bomb_mods = { prox = 1, shrapnel = 3 }
+
 # [Weasel] ShrapnelMax=0. The one hull whose bombs never break up, which is
 # most of what makes its EMP bomb above a different weapon rather than a
 # better one.
 [[arena.ships]]
 name = "Cipher"
 bomb_mods = { prox = 1 }
+
+# [Terrier] DoubleBarrel=1, alone in that file, which is a rung of multifire
+# nobody else climbs to and what the baseline already builds Facet around. Its
+# other line is BulletFireDelay=30, a weapon rather than a hull, and it is with
+# the weapons above.
+[[arena.ships]]
+name = "Facet"
+gun_mods = { multi = 2, bounce = 1 }
+bomb_mods = { prox = 1, shrapnel = 2 }
 
 # [Lancaster] BombBounceCount=1, the only ship in that file with any. It is
 # innate there and an add-on here, so this is the ceiling rather than what it

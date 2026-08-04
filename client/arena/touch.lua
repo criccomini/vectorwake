@@ -73,8 +73,9 @@ function M.layout(w, h, s)
     local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
     local gap = r * 0.35
     local row = r * 1.5
-    local guns  = {x = w - r * 1.4, y = row, r = r}
-    local bombs = {x = guns.x - (r + gap + r * 0.8), y = row, r = r * 0.8}
+    local gun_pad  = {x = w - r * 1.4, y = row, r = r}
+    local bomb_pad = {x = gun_pad.x - (r + gap + r * 0.8), y = row,
+                      r = r * 0.8}
     local home  = {x = r * 1.6, y = r * 1.8, r = r * 1.15}
 
     -- The charges continue the row, smaller: they are tapped once in a while
@@ -83,7 +84,7 @@ function M.layout(w, h, s)
     -- weapon pad is actually drawn, so a hull with no rack closes the gap
     -- instead of leaving a hole where the bomb pad would have been.
     local cr = r * 0.55
-    local lead = M.has_bomb and bombs or guns
+    local lead = M.has_bomb and bomb_pad or gun_pad
     local x = lead.x - lead.r - gap - cr
     local y = row
     -- The stick's resting mark owns the other corner, and a pad that reaches
@@ -95,13 +96,14 @@ function M.layout(w, h, s)
     local charge = {}
     for i, k in ipairs(M.charges) do
         if x - cr < edge then
-            x, y, edge = guns.x, y + r + gap + cr, cr
+            x, y, edge = gun_pad.x, y + r + gap + cr, cr
         end
         charge[i] = {slot = k, x = x, y = y, r = cr}
         x = x - (cr * 2 + gap)
     end
 
-    return {r = r, guns = guns, bombs = bombs, home = home, charge = charge}
+    return {r = r, guns = gun_pad, bombs = bomb_pad, home = home,
+            charge = charge}
 end
 
 local function near(pad, x, y, slack)

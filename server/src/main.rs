@@ -4716,6 +4716,21 @@ mod tests {
                    "a reload does not append a row every time");
     }
 
+    /// The zones we ship are the worked example of this format, and the half of
+    /// it that goes wrong quietly is the names: a weapon no hull has, an add-on
+    /// spelled wrong, a prize that is not a prize. None of those is a parse
+    /// error. They are a line in a warning list nobody is reading at three in
+    /// the morning, and a setting that reached the fleet and did nothing.
+    #[test]
+    fn every_shipped_zone_applies_without_a_warning() {
+        let cat = crate::catalog::load("../catalog").expect("the shipped catalog loads");
+        for name in &cat.order {
+            let mut w = sim::World::new(1);
+            let warn = Arena::apply_config(&mut w, &cat.zones[name].arena);
+            assert!(warn.is_empty(), "zone {name:?} applies with warnings: {warn:?}");
+        }
+    }
+
     /// And a line taken out of the file comes back out of the arena.
     #[test]
     fn removing_a_line_removes_its_effect() {

@@ -254,6 +254,14 @@ local function toggle_details()
     if ui.details then menu.close() end
 end
 
+-- The map is not one of those. It is an instrument rather than a slab of
+-- text: it stands in the radar's corner, it covers no more of the fight than
+-- the radar already did, and reading it while the scoreboard is up is a
+-- reasonable thing to want. So it toggles on its own and shuts nothing.
+local function toggle_map()
+    ui.map = not ui.map
+end
+
 -- The terrain and the starfield never move, so they are built once per map
 -- rather than per frame. Rebuilding them was the single most expensive thing
 -- the old renderer did, and it did it sixty times a second.
@@ -325,6 +333,7 @@ end
 -- hold whatever map was last built, and a menu over the walls of the zone you
 -- just left reads as a game still running behind it.
 local function clear_static()
+    world.forget_overview()
     if not layers then return end
     layers.bg:reset()
     layers.bg:flush()
@@ -359,6 +368,7 @@ function go_home(self, at)
     clear_static()
     me = 0
     ui.details = false
+    ui.map = false
     menu.home = true
     menu.show(at)
     -- The call sign travels with the first account request, so the word list
@@ -478,7 +488,13 @@ function init(self)
         -- at every layout and both toggles, the busiest went from 2.1k
         -- vertices to 3639 against a ceiling of 4096, which is a margin too
         -- thin to hold a scoreboard that grows with the room.
-        ui = vec.layer("#ui", 6144),
+        --
+        -- Raised again for the map, which is the whole arena as rectangles and
+        -- the one thing here whose size is a property of the zone rather than
+        -- of the layout. Merged into greedy blocks the three shipped maps come
+        -- to 928, 1376 and 2195 of them, so 24576 holds the worst of those
+        -- with the rest of the interface still under it.
+        ui = vec.layer("#ui", 24576),
     }
 
     -- A generated call sign, restored if this browser has one already. The
@@ -638,6 +654,15 @@ function update(self, dt)
             sfx.ui("ui_move")
         end
     end
+    -- The whole map, on the same terms: gated on there being an arena, since
+    -- the menu with nothing behind it has no map to show.
+    if tapped[hash("map")] then
+        tapped[hash("map")] = nil
+        if live then
+            toggle_map()
+            sfx.ui("ui_move")
+        end
+    end
     -- The games list is polled only while it is the thing being read: how busy
     -- each game is moves under a player looking at it, and matters not at all
     -- while they are three levels away setting the volume or in a fight. Told
@@ -789,6 +814,11 @@ function update(self, dt)
         if net.map_epoch ~= (self.map_epoch or 0) then
             self.map_epoch = net.map_epoch
             rebuild_static()
+            -- The map view is the one thing that reads all thousand tiles, so
+            -- it is built here with the terrain and never again. Doing it on
+            -- the first press instead would put a scan of the whole arena in
+            -- the frame somebody asked to see it.
+            world.build_overview()
         end
         -- Same reason, for what a weapon looks like: a zone's spec table is
         -- its own, so a bolt here can be a bomb there, and the drawing code
@@ -1018,6 +1048,7 @@ function apply_menu(self, act)
         me = 0
         directory.close()
         ui.details = false
+        ui.map = false
         menu.zone = r.zone
         menu.save_identity()
         menu.note = "joining " .. r.name
@@ -1127,6 +1158,11 @@ function on_input(self, action_id, action)
                 end
                 if r.action == "details" then
                     toggle_details()
+                    sfx.ui("ui_move")
+                    return true
+                end
+                if r.action == "map" then
+                    toggle_map()
                     sfx.ui("ui_move")
                     return true
                 end

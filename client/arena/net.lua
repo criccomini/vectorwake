@@ -29,6 +29,10 @@ M.PROTOCOL = CLIENT_PROTOCOL
 -- instance would have taken us, which is a different thing to tell a player than
 -- "stop trying". See the refusal table in docs/architecture/zones-and-arenas.md.
 local DENY_FULL, DENY_DRAINING, DENY_WRONG_ZONE = 1, 2, 3
+-- Named for the table's sake rather than for this file's: nothing here tests
+-- for them, because neither is worth retrying and the generic path already
+-- says so. Written down so the numbering is readable next to the three above.
+-- luacheck: ignore DENY_BANNED DENY_VERSION
 local DENY_BANNED, DENY_VERSION = 4, 5
 -- True when picking the same game again would plausibly land somewhere with
 -- room. The refusal drops the player back on the games list either way, so
@@ -346,7 +350,7 @@ function M.connect(url, class, name, on_lost, zone)
     M.stats.lag, M.stats.lead = 0, 0
     on_lost_cb = on_lost
 
-    local ok, err = pcall(function()
+    local ok = pcall(function()
         conn = websocket.connect(url, {}, function(self, cid, data)
             -- A socket we have already left. Closing one buys no promise of
             -- silence, and its parting message would otherwise be read as the

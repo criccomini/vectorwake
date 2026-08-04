@@ -35,7 +35,6 @@ M.note = "looking for games"
 M.pilot_name = ""
 
 local conn = nil
-local address = nil
 local since = 0
 -- Whether the list is the thing on screen. The rising edge is an ask, so
 -- opening the list never shows counts from the last time somebody stood here.
@@ -100,7 +99,6 @@ end
 
 function M.open(url)
     M.close()
-    address = url
     M.rows = {}
     M.note = "looking for games"
     since = 0

@@ -27,6 +27,10 @@ local M = {}
 local W, H, S = 0, 0, 1
 local u = nil          -- the ui mesh layer for this frame
 local text, nt = nil, 0
+-- The HUD stays up under the menu, so its hit boxes do too, and the first box
+-- a press lands in wins. A dial the size of a quarter of the frame would sit
+-- over half the menu and swallow every row behind it.
+local menu_up = false
 
 -- Metrics, in CSS pixels before the density scale.
 local PAD = 14
@@ -40,6 +44,7 @@ local COL_W = 248      -- the width of the three stacked side panels
 local RADAR = 168
 
 M.hits = {}            -- clickable rectangles the menu published, top-left px
+M.map = false          -- the whole map, in the radar's corner
 
 -- --- primitives ------------------------------------------------------------
 
@@ -49,13 +54,6 @@ end
 
 local function rect(x, y, w, h, col)
     u:rect(x, ry(y, h), w, h, col)
-end
-
--- A panel: translucent fill under a hairline border, which is the whole of
--- the prototype's chrome.
-local function panel(x, y, w, h)
-    rect(x, y, w, h, pal.PANEL)
-    u:frame(x, ry(y, h), w, h, S, pal.BORDER)
 end
 
 local function txt(s, x, y, px, col, pivot)
@@ -148,16 +146,6 @@ local function ladder(x, y, rungs, level, col, w, h)
     end
 end
 
--- A keycap, the way the prototype's <kbd> reads: a boxed glyph in a line of
--- ordinary text. Returns the width it consumed.
-local function kbd(x, y, label, h)
-    local w = math.max(h * 0.72, #label * FONT * S * 0.62 + 8 * S)
-    rect(x, y, w, h, pal.a(pal.BTN_BG, 0.9))
-    u:frame(x, ry(y, h), w, h, S, pal.BAR_EDGE)
-    txt(label, x + w / 2, y + h / 2, FONT * S, pal.INK, "center")
-    return w
-end
-
 -- --- frame -----------------------------------------------------------------
 
 -- True when the screen is too narrow for the desktop layout: three columns of
@@ -210,11 +198,58 @@ end
 -- about six screens across: far enough to see a fight starting, close enough
 -- that a blip means something.
 
--- How much vertical room the dial takes, so the feed under it can be told
--- rather than guess. Returned rather than duplicated: a second copy of this
--- arithmetic is how the pads and their own hit test drifted apart once.
+-- The top right corner holds one instrument at a time: the radar, or the map
+-- when that is open. Everything that hangs off its edges asks here rather than
+-- keeping a second copy of where it is, which is how the touch pads and their
+-- own hit test drifted apart once.
+--
+-- The map is about a quarter of the frame, capped three ways: against the
+-- window's width so it cannot run off the left edge, against its height so
+-- there is still room for the feed under it, and against the corner the MENU
+-- and INFO chips stand in, since a hit box over those is two controls a
+-- pointer can no longer reach.
+local function dial()
+    local pad = (M.compact and 8 or PAD) * S
+    local side = RADAR * S
+    if M.map then
+        side = math.max(side,
+                        math.min(math.min(W, H) * 0.66, H * 0.66,
+                                 W - pad - 124 * S))
+    end
+    -- Whole pixels. The dial snaps its contents to its own origin, so an
+    -- origin landing on a half pixel would put the fraction back into every
+    -- blip it was taken out of. Density is not always a whole number and
+    -- neither, then, is the padding.
+    return math.floor(W - pad - side), math.floor(pad + 18 * S),
+           math.floor(side)
+end
+
+-- How much vertical room it takes, so the feed under it can be told rather
+-- than guess.
 function M.radar_span()
-    return PAD * S * 2 + RADAR * S + 18 * S
+    local _, _, side = dial()
+    return PAD * S * 2 + side + 18 * S
+end
+
+-- You, as an arrow. On any view of the arena the one thing worth knowing
+-- besides where you are is which way you are pointing, and the radar and the
+-- map draw the same mark because they are the same statement about the same
+-- ship. Clamped rather than dropped when it falls outside the frame it is
+-- given: a view without you on it is a view with no origin.
+local function own_arrow(ax, ay, ox, oy, side, me)
+    local edge = 5 * S
+    if ax < ox + edge then ax = ox + edge end
+    if ay < oy + edge then ay = oy + edge end
+    if ax > ox + side - edge then ax = ox + side - edge end
+    if ay > oy + side - edge then ay = oy + side - edge end
+    local a = (sim.ship_heading(me) / 65536) * math.pi * 2
+    local dx, dy = math.sin(a), -math.cos(a)
+    local nose, back, wide = 6.5 * S, 3.4 * S, 3.2 * S
+    u:disc(ax, ry(ay, 0), 7 * S, 12, pal.a(pal.WHITE, 0.14))
+    u:tri(ax + dx * nose, ry(ay + dy * nose, 0),
+          ax - dx * back - dy * wide, ry(ay - dy * back + dx * wide, 0),
+          ax - dx * back + dy * wide, ry(ay - dy * back - dx * wide, 0),
+          pal.WHITE)
 end
 
 local function radar(cx, cy, me)
@@ -225,21 +260,40 @@ local function radar(cx, cy, me)
     --
     -- A faint wash stays, because dots over a starfield are dots lost in a
     -- starfield -- but it is a wash rather than a panel.
-    local r = RADAR * S
-    local pad = (M.compact and 8 or PAD) * S
-    local ix = W - pad - r
     -- Under the link readout, which owns the top right corner now.
-    local iy = pad + 18 * S
+    local ix, iy, r = dial()
     rect(ix, iy, r, r, pal.a(pal.RADAR_BG, 0.55))
+    -- The dial is the way in to the map: a thing you point at to see more of
+    -- is a thing you can click, and it saves teaching a key to somebody who
+    -- never opens the help.
+    if not menu_up then hit(ix, iy, r, r, "map") end
 
     -- Sixty tiles out, so the reference arena nearly fills the dial. At a
     -- hundred and fifty it sat in the middle quarter with the rest of the
     -- radar showing empty space nobody can fly to.
     local SPAN = 60 * 16
     local k = r / (2 * SPAN)
+    -- The dial is a diagram, not a window, and it is worth snapping to the
+    -- pixel grid it is drawn on.
+    --
+    -- A blip is a square about 2.8 pixels across with a hard edge, and a hard
+    -- edge that size covers two pixel centres at some sub-pixel offsets and
+    -- three at others: four pixels of area against nine, a bit over twice the
+    -- ink, flipping as the fraction rolls over. Every blip shares the fraction,
+    -- because they are a regular grid under one affine map, so the whole map
+    -- breathes at once and reads as the terrain blinking off and on.
+    --
+    -- Two things fix it and both are free. A whole number of pixels covers
+    -- exactly that many centres wherever it starts, so the size stops
+    -- mattering; and snapping the camera to a whole dial pixel leaves every
+    -- blip's own fraction fixed, so the pattern slides rigidly rather than
+    -- each square shifting off its neighbours. What a blip stands for is a
+    -- two-tile sample, and no part of that is worth a sub-pixel.
+    local qx = math.floor(cx * k + 0.5) / k
+    local qy = math.floor(cy * k + 0.5) / k
     local function put(wx, wy)
-        local px = ix + (wx - cx + SPAN) * k
-        local py = iy + (wy - cy + SPAN) * k
+        local px = ix + (wx - qx + SPAN) * k
+        local py = iy + (wy - qy + SPAN) * k
         if px < ix or py < iy or px > ix + r or py > iy + r then return nil end
         return px, py
     end
@@ -249,17 +303,22 @@ local function radar(cx, cy, me)
     -- One blip covers exactly the ground its sample stands for -- two tiles,
     -- the sampling stride -- so a wall reads as a wall. A fixed pixel size
     -- left gaps between samples and turned every wall into a dashed line.
-    local dot = math.max(2 * 16 * k, 1.5 * S)
-    local function blips(list, col, grow)
-        local d = dot * (grow or 1)
+    -- Whole pixels, per above. A door gets one more rather than a fraction
+    -- more, which is the only way "bigger" survives being rounded.
+    local dot = math.max(1, math.floor(math.max(2 * 16 * k, 1.5 * S) + 0.5))
+    local function blips(list, col, extra)
+        local d = dot + (extra or 0)
         for n = 1, #list, 2 do
             local px, py = put(list[n], list[n + 1])
-            if px then rect(px - d / 2, py - d / 2, d, d, col) end
+            if px then
+                rect(math.floor(px - d / 2 + 0.5),
+                     math.floor(py - d / 2 + 0.5), d, d, col)
+            end
         end
     end
     blips(world.radar_tiles, pal.RADAR_TILE)
     blips(world.radar_safe, pal.a(pal.RADAR_SAFE, 0.95))
-    blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1.15)
+    blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1)
 
     -- Greens, under the flags and ships and over the terrain: a green is
     -- worth steering for, but never worth steering for instead of the pilot
@@ -325,8 +384,14 @@ local function radar(cx, cy, me)
     -- thing anybody converts mid-fight, and the rings answer the comparison
     -- people actually make, which is whether that one is closer than this one.
     local mx, my = ix + r / 2, iy + r / 2
-    u:ring(mx, ry(my), r / 4, 0.7 * S, 20, pal.a(pal.RADAR_GRID, 0.9))
-    u:ring(mx, ry(my), r / 2.4, 0.7 * S, 24, pal.a(pal.RADAR_GRID, 0.55))
+    -- A whole pixel, not seven tenths of one. `ring` strokes hard quads, and a
+    -- hard stroke under a pixel covers a pixel centre at some offsets and none
+    -- at others: these sit at fixed dial coordinates, so it does not flicker,
+    -- it just means whether the range rings exist at all is decided by where
+    -- the dial happens to land. One pixel covers exactly one, wherever it
+    -- starts.
+    u:ring(mx, ry(my), r / 4, 1.0 * S, 20, pal.a(pal.RADAR_GRID, 0.9))
+    u:ring(mx, ry(my), r / 2.4, 1.0 * S, 24, pal.a(pal.RADAR_GRID, 0.55))
     for i = 0, 7 do
         local a = i * math.pi / 4
         local long = (i % 2 == 0)
@@ -338,33 +403,75 @@ local function radar(cx, cy, me)
     end
     bracket(ix, iy, r, r, pal.a(pal.RADAR_TILE, 0.8), 18 * S)
 
-    -- You, last and as an arrow: on a radar the one thing worth knowing
-    -- besides where you are is which way you are pointing.
-    --
-    -- Placed by hand rather than through `put`, and clamped into the dial
-    -- rather than dropped when it falls outside one. `put` answers nil for
-    -- anything off the edge, which is right for a contact and wrong for the
-    -- pilot reading the thing: the dial is drawn around the camera, the camera
-    -- is not the ship, and on a wide window it leads far enough that the arrow
-    -- simply went missing. A radar without you on it is a radar with no origin.
-    local ax = ix + (sim.ship_x(me) - cx + SPAN) * k
-    local ay = iy + (sim.ship_y(me) - cy + SPAN) * k
-    local edge = 5 * S
-    if ax < ix + edge then ax = ix + edge end
-    if ay < iy + edge then ay = iy + edge end
-    if ax > ix + r - edge then ax = ix + r - edge end
-    if ay > iy + r - edge then ay = iy + r - edge end
-    do
-        local a = (sim.ship_heading(me) / 65536) * math.pi * 2
-        local dx, dy = math.sin(a), -math.cos(a)
-        local nose, back, wide = 6.5 * S, 3.4 * S, 3.2 * S
-        u:disc(ax, ry(ay, 0), 7 * S, 12, pal.a(pal.WHITE, 0.14))
-        u:tri(ax + dx * nose, ry(ay + dy * nose, 0),
-              ax - dx * back - dy * wide, ry(ay - dy * back + dx * wide, 0),
-              ax - dx * back + dy * wide, ry(ay - dy * back - dx * wide, 0),
-              pal.WHITE)
-    end
+    -- You, last. Placed by hand rather than through `put`, which answers nil
+    -- for anything off the edge: right for a contact and wrong for the pilot
+    -- reading the thing, because the dial is drawn around the camera, the
+    -- camera is not the ship, and on a wide window it leads far enough that
+    -- the arrow simply went missing.
+    own_arrow(ix + (sim.ship_x(me) - cx + SPAN) * k,
+              iy + (sim.ship_y(me) - cy + SPAN) * k, ix, iy, r, me)
+end
 
+-- --- the map ---------------------------------------------------------------
+--
+-- The radar answers "what is near me". The map answers "where am I going",
+-- which on a thousand tiles is a different question and one nothing on screen
+-- could answer before.
+--
+-- Terrain and nothing else. No ships, no greens, no flags, nothing in flight:
+-- a view of the whole arena with every pilot on it is a wall hack with a
+-- keyboard shortcut, and contacts are the radar's job. So this draws what the
+-- room is rather than what is happening in it, and never changes between the
+-- frame a map arrives and the frame the next one does.
+--
+-- Constants rather than calls in the loop below, which runs a couple of
+-- thousand times a frame: `pal.a` builds a colour, and building four of them
+-- per rectangle is work for the collector rather than for the screen.
+local MAP_WALL = pal.a(pal.RADAR_TILE, 0.85)
+local MAP_SAFE = pal.a(pal.RADAR_SAFE, 0.95)
+local MAP_DOOR = pal.a(pal.RADAR_DOOR, 1.0)
+local MAP_HOLE = pal.a(pal.HOLE, 0.9)
+
+local function overview(me)
+    local ix, iy, side = dial()
+    local ov = world.overview
+    -- Opaque, where the radar's wash is not, and that is the rule above
+    -- rather than a preference about panels. At the radar's 0.55 a green
+    -- lying under the dial comes through it at half strength, so a view that
+    -- draws no prizes shows prizes anyway, in the one place a player would
+    -- read them as part of the map.
+    rect(ix, iy, side, side, pal.RADAR_BG)
+    if ov.grid > 0 then
+        local k = side / ov.grid
+        local r = ov.rect
+        for i = 1, ov.n, 5 do
+            local cls = r[i + 4]
+            local col = (cls == sim.T_SOLID and MAP_WALL)
+                or (cls == sim.T_SAFE and MAP_SAFE)
+                or (cls == sim.T_DOOR and MAP_DOOR)
+                or MAP_HOLE
+            rect(ix + r[i] * k, iy + r[i + 1] * k,
+                 r[i + 2] * k, r[i + 3] * k, col)
+        end
+    end
+    bracket(ix, iy, side, side, pal.a(pal.RADAR_TILE, 0.8), 22 * S)
+    -- You, and only you. No ships is the rule above, and it stands: a map
+    -- showing where everybody is would be a wall hack. Where *you* are is
+    -- something you already know, and without it a view of a thousand tiles
+    -- is a picture of somewhere rather than of where you are standing, which
+    -- is the whole question the map exists to answer.
+    --
+    -- A cell is OVERVIEW_CELL tiles of sixteen pixels, so the world divides
+    -- by that to land in the same coordinates the rectangles above use.
+    if ov.grid > 0 then
+        local cell = 4 * 16
+        local k = side / ov.grid
+        own_arrow(ix + (sim.ship_x(me) / cell) * k,
+                  iy + (sim.ship_y(me) / cell) * k, ix, iy, side, me)
+    end
+    -- Clicking it again puts the radar back, which is the same gesture that
+    -- opened it.
+    if not menu_up then hit(ix, iy, side, side, "map") end
 end
 
 -- Names, at each ship's lower right.
@@ -857,7 +964,7 @@ end
 -- long that nobody can hold in their head or call across a room.
 local function coords(me)
     local pad = (M.compact and 8 or PAD) * S
-    local x = W - pad - RADAR * S
+    local x = dial()
     local base = pad + 13 * S
     txt("POS", x, base - 4 * S, (FONT - 3) * S, pal.a(pal.DIM, 0.8))
     txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
@@ -923,6 +1030,7 @@ end
 function M.hud(o)
     if sim.ship_count() == 0 then return end
     local me = o.me
+    menu_up = o.menu_open
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -932,7 +1040,10 @@ function M.hud(o)
 
     local top = scores(me, o.pilots)
     nameplates(o)
-    radar(o.cam_x, o.cam_y, me)
+    -- One corner, one instrument. The map is the radar pulled back to the
+    -- whole thousand tiles, so it stands where the radar stands rather than
+    -- somewhere else with the radar still lit beside it.
+    if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
     link(o.lag or 0)
     coords(me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
@@ -997,8 +1108,8 @@ local MENU_W = 460
 function M.menu(v)
     local w = math.min(MENU_W * S, W - 24 * S)
     local x = math.max(24 * S, (W - w) / 2 - 120 * S)
-    local rows = #v.rows
-    local h = ROW_H * S * rows + 76 * S
+    local nrows = #v.rows
+    local h = ROW_H * S * nrows + 76 * S
     local y = math.max(20 * S, (H - h) / 2)
 
     -- Not a curtain: dimmed enough to read against, clear enough to see the
