@@ -122,11 +122,16 @@ jobs:
       - name: build the bundle
         run: JAVA_HOME=$JAVA_HOME ./client/build.sh wasm-web release bundle
 
+      # The full document, not --fragment. The fragment exists for artifact
+      # hosts that supply their own doctype and head; served directly it is a
+      # page in quirks mode with no title and no icon, leaning on injected
+      # scripts for the viewport meta the head would have carried. Prod serves
+      # this file as the page, so it gets the real head.
       - name: fold it into one file
         run: |
           mkdir -p page
           python3 client/tools/single_file.py \
-            client/bundle/wasm-web/vectorwake page/index.html --fragment
+            client/bundle/wasm-web/vectorwake page/index.html
           ls -l page/
 
       - uses: docker/setup-buildx-action@v3
