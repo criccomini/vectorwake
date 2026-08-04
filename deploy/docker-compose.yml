@@ -70,6 +70,9 @@ services:
       # adding a route means changing it, and changing it is what makes compose
       # act. Keep it in step with the Caddyfile.
       vw.routes: dir meta a1 a2 a3
+      # The same trick a third time. This names the client page's cache policy
+      # so a policy change in the Caddyfile has something here to move.
+      vw.page-cache: no-cache
     security_opt:
       - no-new-privileges:true
     # Caddy is the one thing here that binds privileged ports, so it keeps
