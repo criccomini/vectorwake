@@ -280,13 +280,83 @@ them from being readable by any unprivileged process that can open a socket to
   checked, not assumed -- because a box that cannot report its own failure gets
   debugged by guessing.
 
+## Every process says what it costs
+
+Each service serves Prometheus text on its own loopback port when `VW_METRICS`
+names an address, and opens no port at all when it does not.
+
+| Port | Process |
+|---|---|
+| 9101, 9102, 9103 | the arenas |
+| 9105 | the bot server |
+| 9106 | the directory |
+| 9107 | the meta-layer |
+
+Nothing in the Caddyfile routes to any of them, so reading one means being on
+the host. That is on purpose: these are for whatever is watching, not for
+players, and 9100 is missing from the list because the admin surface has it.
+
+The reason it is per process rather than per host is an afternoon spent on the
+wrong question. A host graph showed a pegged core and could not say which of
+six processes held it, so the answer came from arithmetic and a commit message
+instead. The bot server, which turned out to be the larger half, was the one
+process with nothing to ask at all. So every process reads its own
+`/proc/self` and reports its own processor time, which makes attribution exact
+and costs no agent and nothing to keep in step.
+
+What each one carries beyond the standard process numbers: an arena its tick
+time, populations, sockets, snapshot bytes and dropped sends; the bot server
+its pilots and the arena connections it has opened; the directory what it has
+registered and what it turned away.
+
+Tick time is a histogram rather than a number, and that is the same lesson
+twice. `STATUS` reports the last tick, and one reading of an arena said 2300
+microseconds against 150 next door, which read as one room costing fifteen
+times its neighbours. Twelve readings put its median at 289. The 2300 was
+real: it was the tick every two seconds that also rebuilds the roster, and a
+point sample of a periodic process finds it eventually. Buckets cannot be
+caught out that way.
+
+Counters that would always read zero are not here. A metric nobody incremented
+does not say "nothing happened", it says nothing, and the two look identical
+on a graph.
+
+## Deploys are marked in the binary
+
+Every process reports `vw_build_info{commit=...}`, stamped into the image at
+build time from the same short sha the image is tagged with. So the question
+that gets asked during an incident, whether the thing running now is the thing
+that was running an hour ago, has an answer that does not involve `docker
+inspect` or reading a log.
+
+Stamped into the image and deliberately not passed in as an environment
+variable. Compose recreates a container whose configuration moved, so a commit
+in the environment would restart every service on every push, Caddy included.
+Caddy restarting is how this game once spent three of its five weekly
+certificate issuances and went dark. An image only replaces the containers
+whose image changed, which is exactly the set with new code in them.
+
+`server/build.rs` declares `rerun-if-env-changed=VW_COMMIT`, because
+`option_env!` is resolved at compile time and cargo will otherwise serve a
+cached build. Without that line the stamp is whatever it was when the source
+last changed, which is a deploy marker that lies.
+
+The updater's own log at `/deploy` is still the other half of this, and stays:
+it says when a deploy landed, where the metrics say what is running now.
+
 ## What is deliberately not here
 
-No Kubernetes: zone selection is the scheduler, so nothing needs placing. No
-monitoring beyond the metrics in `STATUS` and what the admin page
-draws from them, and in particular nothing that plays the game -- every bug found
-in the first days of running this was invisible to `/health` and obvious to
-thirty seconds of `tools/pilot`, which is the gap most worth closing next.
+No Kubernetes: zone selection is the scheduler, so nothing needs placing.
+
+No collector, no dashboards and no alerts yet. Every process exposes its
+numbers, above, and nothing gathers them: a scrape is a `curl` from the host.
+That is a deliberate stopping point rather than an unfinished one. The endpoint
+is the part that cannot be added later from outside, and a number nobody is
+recording is still a number somebody can read while something is going wrong.
+
+And nothing that plays the game, which is still the gap most worth closing.
+Every bug found in the first days of running this was invisible to `/health`
+and obvious to thirty seconds of `tools/pilot`.
 
 The meta-layer used to be on this list, on the grounds that the first
 deployment had no accounts and ratings sat on the arena's own disk. Both halves

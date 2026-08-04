@@ -18,6 +18,7 @@ mod directory;
 mod drill;
 mod fleet;
 mod meta;
+mod metrics;
 mod modes;
 mod nav;
 mod rating;
@@ -1643,7 +1644,12 @@ impl Arena {
             msg.push(p.ship);
             msg.extend_from_slice(&p.last_input_tick.to_le_bytes());
             msg.extend_from_slice(&buf[..n as usize]);
-            let _ = p.tx.try_send(Message::Binary(msg));
+            // Counted here rather than at the socket: this is the byte the
+            // room decided to send, and egress is what a host bills for.
+            metrics::SNAPSHOT_BYTES.add(msg.len() as u64);
+            if p.tx.try_send(Message::Binary(msg)).is_err() {
+                metrics::SEND_DROPPED.inc();
+            }
         }
     }
 
@@ -2785,6 +2791,9 @@ async fn main() {
     let tls = tls_acceptor(&cfg_tls.0, &cfg_tls.1);
     let scheme = if tls.is_some() { "wss" } else { "ws" };
     println!("vectorwake arena server listening on {scheme}://{addr}");
+    // The zone name is empty here and filled in by the tick loop, which is
+    // where it is actually known. See metrics::set_zone.
+    metrics::spawn("arena", "");
 
     // Join a fleet, if one was configured. An arena server with no directory is
     // still a whole game: it serves the built-in room or its local zone file to
@@ -2883,7 +2892,21 @@ async fn main() {
                         a.broadcast_teams();
                     }
                 }
-                z.tick_us = t0.elapsed().as_micros() as u32;
+                let us = t0.elapsed().as_micros() as u64;
+                z.tick_us = us as u32;
+                // Published every tick rather than read on a scrape, so
+                // whatever asks never waits on the lock this loop is holding.
+                // The histogram is the part that matters: `tick_us` alone is
+                // the last tick, and the last tick is sometimes the one that
+                // rebuilt the roster.
+                metrics::TICK.observe_us(us);
+                // The zone an arena serves is chosen after it starts, and can
+                // change, so it is published from here rather than captured at
+                // boot.
+                metrics::set_zone(&z.zone_name);
+                metrics::PLAYERS.set(z.total_players() as i64);
+                metrics::BOTS.set(z.total_bots() as i64);
+                metrics::ROOMS.set(z.rooms.len() as i64);
 
                 // A drain that has finished is an instance free to choose again,
                 // and an empty extra room is memory to give back.
@@ -2936,6 +2959,8 @@ async fn main() {
                 Ok(w) => w,
                 Err(_) => return,
             };
+            // Held for the life of the connection, however this task leaves.
+            let _conn = metrics::ConnGuard::new();
             let (mut sink, mut source) = ws.split();
             let (tx, mut rx) = mpsc::channel::<Message>(OUT_QUEUE);
 

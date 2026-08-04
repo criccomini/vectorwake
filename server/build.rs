@@ -23,4 +23,9 @@ fn main() {
     ] {
         println!("cargo:rerun-if-changed={f}");
     }
+    // The commit is read with `option_env!`, which cargo resolves at compile
+    // time and will happily serve from cache. Without this, changing the
+    // commit rebuilds nothing and every process reports the stamp of whenever
+    // main.rs last changed, which is a deploy marker that lies.
+    println!("cargo:rerun-if-env-changed=VW_COMMIT");
 }

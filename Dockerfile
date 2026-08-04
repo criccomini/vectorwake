@@ -40,6 +40,19 @@ COPY server ./server
 # dead at `couldn't read src/../../zone/ladder.json` for four pushes running,
 # each of them green on the test job above it.
 COPY zone ./zone
+# Which commit this is, baked into the binary so every process can say so.
+#
+# Deliberately here rather than in the environment of a running container.
+# Compose recreates a container whose configuration moved, so a commit passed
+# in at run time would restart every service on every push, Caddy included,
+# and Caddy restarting is how this game once spent three of its five weekly
+# certificate issuances. An image only replaces the containers whose image
+# changed, which is exactly the set that has new code in it.
+#
+# And after the dependency layer, so stamping a commit does not invalidate the
+# five minutes of crates above it.
+ARG VW_COMMIT=unknown
+ENV VW_COMMIT=$VW_COMMIT
 RUN cargo build --release --manifest-path server/Cargo.toml
 
 FROM debian:bookworm-slim
