@@ -219,6 +219,14 @@ impl Nav {
         let path = SCRATCH.with(|s| s.borrow_mut().solve(self, start, goal, to));
         if path.is_empty() {
             if let Ok(mut f) = self.failed.lock() {
+                // Bounded, because roam goals are rolled from the whole map
+                // and the pairs never settle into a fixed set. Overflowing
+                // costs re-losing some searches; growing for the life of the
+                // process costs memory with no ceiling. At sixteen bytes a
+                // pair the bound is a quarter megabyte.
+                if f.len() >= 16_384 {
+                    f.clear();
+                }
                 f.insert(key);
             }
         }
