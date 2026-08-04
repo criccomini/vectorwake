@@ -82,6 +82,12 @@ points_per_flag = 0
 # stands.
 door_period = 600
 
+# The map's two wormholes, pulling more than twice the baseline's 90 px/s and
+# reaching 20 tiles instead of 14: strong enough to bend a straight run that
+# clips a well's edge, wide enough that the bend starts before the rings do.
+wormhole_pull = 200
+wormhole_range = 320
+
 # MultiFireAngle=500 in the ship sections, where 111 is a degree. That is 4.5,
 # and this key counts whole ones.
 mod_spread = 5
@@ -345,5 +351,5 @@ bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }
 # One of those is worth a second line here rather than a pointer. This map has
 # two wormholes, and the file sets Gravity=1500 on seven ships and 0 on the
 # Shark. Ours pulls at one strength on everything, so a Spire is drawn in like
-# anybody else. `wormhole_pull` and `wormhole_range` are the keys if that is ever
-# worth tuning; neither is set here, so both are the baseline's.
+# anybody else. `wormhole_pull` and `wormhole_range` are the keys, set beside
+# the door clock above: the baseline's 90-over-220 was a pull nobody felt.

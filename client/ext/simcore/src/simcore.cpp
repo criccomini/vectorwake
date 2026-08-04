@@ -424,6 +424,31 @@ int SpecBlast(lua_State* L) {
     return 1;
 }
 
+// Which rung of the tech tree fires this spec, learned from the ladders. A
+// spec deliberately carries no level -- it says what a projectile does, not
+// where it came from -- but every hull's trigger ladder says which rung each
+// pattern sits on, and a pattern names its spec, so the fact is there to be
+// read. The highest rung found wins, and -1 is a spec on no ladder at all: a
+// charge like the burst, or a bomb's shrapnel, which is its own kind of
+// answer and drawn as one.
+int SpecLevel(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    int lvl = -1;
+    if (i >= 0 && i < g_cfg.spec_count) {
+        for (int c = 0; c < g_cfg.class_count; c++) {
+            for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+                for (int r = 0; r < SIM_MAX_RUNGS; r++) {
+                    uint8_t pat = g_cfg.classes[c].trigger[t][r];
+                    if (pat == SIM_NO_PATTERN || pat >= g_cfg.pattern_count) continue;
+                    if (g_cfg.patterns[pat].spec == i && r > lvl) lvl = r;
+                }
+            }
+        }
+    }
+    lua_pushinteger(L, lvl);
+    return 1;
+}
+
 // The blast a ship's own bomb makes, for the effects that have to be sized
 // before anything has been fired.
 int ShipBombRadius(lua_State* L) {
@@ -798,6 +823,7 @@ const luaL_reg kFunctions[] = {
     {"ship_extents", ShipExtents},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},
+    {"spec_level", SpecLevel},
     {"tick", Tick},
     {"weapon_count", WeaponCount},
     {"weapon_at", WeaponAt},

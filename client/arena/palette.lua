@@ -27,6 +27,18 @@ M.ENEMY     = rgb(0xffa552)
 M.BOMB      = rgb(0xff5ea8)
 M.WHITE     = rgb(0xffffff)
 
+-- A weapon's rung is a hue. Pink is the bomb everybody meets first; a
+-- levelled bomb goes crimson and then gold, which keeps the family in the
+-- hot band away from team cyan-and-amber and door green. Bolts keep their
+-- team's colour -- friend or foe is the first read under fire -- and climb
+-- toward white heat with the rung instead of changing family; those ramps
+-- are built below M.hot. Violet is the spray weapons': a burst's bolts and
+-- a bomb's shrapnel sit on no hull's ladder and answer to no aim, so they
+-- share the wormhole's band, the one that already means "a place, not a
+-- player".
+M.BOMB_LVL  = {M.BOMB, rgb(0xff4855), rgb(0xffd166), rgb(0xfff0d0)}
+M.BURST     = rgb(0xc27bff)
+
 M.PANEL     = rgb(0x05080e, 0.72)
 M.BORDER    = rgb(0x1d2838)
 M.BAR_BG    = rgb(0x121a26)
@@ -159,5 +171,13 @@ function M.hot(col, k, alpha)
         alpha or col[4],
     }
 end
+
+-- The bolt ramps: the team's colour at rung zero, hotter with each rung.
+-- Built once here rather than in the draw loop, which runs per projectile
+-- per frame and must not allocate.
+M.FRIEND_LVL = {M.FRIEND, M.hot(M.FRIEND, 0.30), M.hot(M.FRIEND, 0.58),
+                M.hot(M.FRIEND, 0.80)}
+M.ENEMY_LVL  = {M.ENEMY, M.hot(M.ENEMY, 0.30), M.hot(M.ENEMY, 0.58),
+                M.hot(M.ENEMY, 0.80)}
 
 return M

@@ -342,12 +342,25 @@ did not die, cannot teleport, and cannot fire faster than the settings allow,
 because none of those are things a client asserts.
 
 What remains is the class of cheats that make a legitimate client better:
-aimbots, and clients that render information the player should not have, like
-cloaked ships. Those need different answers. Information the player should not
-have is not sent, which is a server-side visibility filter and the same
-mechanism that gates energy visibility in Subspace's `Misc:SeeEnergy`. Aim
-assistance is a behavioral detection problem, and we are not solving it in the
-architecture.
+aimbots, and clients that render information the player should not have. Those
+need different answers, and the second is decided but not built. Today a
+snapshot carries the whole room to every client, and the 60-tile sight limit
+is drawn by the client rather than enforced by the wire, so a modified client
+reads the map. The answer, when it is worth its weight, is a visibility filter
+where snapshots pack, the mechanism behind Subspace's `Misc:SeeEnergy`, with
+full view becoming a named capability like the staff powers the catalog
+already carries: granted per account and zone, held by the house fleet, whose
+shared prediction needs whole-room snapshots, and by staff. The bot flag a
+client declares at join grants the whole prize table in the meantime, which is
+this capability issued by the wrong authority, the client itself; the filter
+and the capability ship together, because until data is withheld there is
+nothing for a grant to open.
+
+A filter has a ceiling worth stating: clients can pool their lawful sights,
+which is a scout team and is answered like one, with seats, visibility on
+radar, and bans. The filter's job is economics rather than secrecy, making
+global knowledge cost what a team costs instead of nothing. Aim assistance is
+a behavioral detection problem, and we are not solving it in the architecture.
 
 We deliberately do not follow Continuum's approach of checksumming the
 executable, the settings, and the map to prove the client is unmodified. That
