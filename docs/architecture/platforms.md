@@ -20,11 +20,18 @@ evenly distributed.
 
 | Target | Defold status | Transport | Input | Identity |
 |---|---|---|---|---|
-| Web (WASM) | Supported, HTML5 build | WebSocket only | Keyboard and mouse | Guest, email, or linked account |
-| Windows, macOS, Linux | Supported | UDP | Keyboard and mouse | Steam or account |
+| Web (WASM) | Supported, HTML5 build | WebSocket only | Keyboard and mouse | Guest, then an account key or a link code |
+| Windows, macOS, Linux | Supported | UDP | Keyboard and mouse | Steam, or a link code from the web |
 | Android, iOS | Supported | UDP | Touch, unsolved | Platform account |
 | Switch, PS4, PS5 | Supported, gated | UDP | Controller | Platform account, required |
 | Xbox | Announced, verify | UDP | Controller | Platform account, required |
+
+Identity is one account with several ways back into it, per
+[design/accounts.md](../design/accounts.md). A claim method is added only when
+a platform forces one, which is why there is no email column here and no OAuth:
+the web forces nothing, so it uses an account key, and every other row uses
+whatever its platform already requires. A link code carries one account between
+any two of them.
 
 Console access works through the manufacturer. Defold keeps console-specific
 code in private repositories and gives approved developers the plugin plus a

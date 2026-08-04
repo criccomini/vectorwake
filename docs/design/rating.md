@@ -165,9 +165,12 @@ Every rated event is stored with its inputs: participants, weights, ratings
 before and after, arena, mode class, and timestamp. Ratings are a projection of
 that log, not the source of truth.
 
-This costs a little disk and buys the ability to change the model. When we
-replace Elo with something better, we recompute history rather than resetting
-everybody, and we can test a proposed model against real data before shipping it.
+This costs disk and buys the ability to change the model. When we replace Elo
+with something better, we recompute history rather than resetting everybody,
+and we can test a proposed model against real data before shipping it. The disk
+is not a rounding error once bots hold accounts, because bots fight around the
+clock: the measured rate and what to do about it are in
+[meta-layer.md](../architecture/meta-layer.md).
 The same log read along its time axis is a career, which is how a profile draws
 rating over time without any storage of its own, per [accounts.md](accounts.md).
 
