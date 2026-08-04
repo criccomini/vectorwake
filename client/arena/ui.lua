@@ -51,13 +51,6 @@ local function rect(x, y, w, h, col)
     u:rect(x, ry(y, h), w, h, col)
 end
 
--- A panel: translucent fill under a hairline border, which is the whole of
--- the prototype's chrome.
-local function panel(x, y, w, h)
-    rect(x, y, w, h, pal.PANEL)
-    u:frame(x, ry(y, h), w, h, S, pal.BORDER)
-end
-
 local function txt(s, x, y, px, col, pivot)
     nt = nt + 1
     local t = text[nt]
@@ -146,16 +139,6 @@ local function ladder(x, y, rungs, level, col, w, h)
                     pal.a(col, (col[4] or 1) * 0.32))
         end
     end
-end
-
--- A keycap, the way the prototype's <kbd> reads: a boxed glyph in a line of
--- ordinary text. Returns the width it consumed.
-local function kbd(x, y, label, h)
-    local w = math.max(h * 0.72, #label * FONT * S * 0.62 + 8 * S)
-    rect(x, y, w, h, pal.a(pal.BTN_BG, 0.9))
-    u:frame(x, ry(y, h), w, h, S, pal.BAR_EDGE)
-    txt(label, x + w / 2, y + h / 2, FONT * S, pal.INK, "center")
-    return w
 end
 
 -- --- frame -----------------------------------------------------------------
@@ -873,8 +856,8 @@ local MENU_W = 460
 function M.menu(v)
     local w = math.min(MENU_W * S, W - 24 * S)
     local x = math.max(24 * S, (W - w) / 2 - 120 * S)
-    local rows = #v.rows
-    local h = ROW_H * S * rows + 76 * S
+    local nrows = #v.rows
+    local h = ROW_H * S * nrows + 76 * S
     local y = math.max(20 * S, (H - h) / 2)
 
     -- Not a curtain: dimmed enough to read against, clear enough to see the

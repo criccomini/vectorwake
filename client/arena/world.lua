@@ -465,8 +465,8 @@ local function key(tx, ty) return ty * 1024 + tx end
 -- otherwise straight wall. It is the same double-cover the hulls had at their
 -- corners, and merging is both the fix and the cheaper path.
 local function runs(set, cells, side, emit)
-    local ax, ay = 0, 0                 -- toward the neighbour being tested
-    local px, py = 0, 0                 -- toward the previous tile in a run
+    local ax, ay                        -- toward the neighbour being tested
+    local px, py                        -- toward the previous tile in a run
     if side == "n" then ax, ay, px, py = 0, -1, -1, 0
     elseif side == "s" then ax, ay, px, py = 0, 1, -1, 0
     elseif side == "w" then ax, ay, px, py = -1, 0, 0, -1
