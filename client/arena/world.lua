@@ -1372,6 +1372,96 @@ function M.draw_over(glow, cull)
     end
 end
 
+-- --- the home screen --------------------------------------------------------
+
+-- One hull crossing the field, and the trail it leaves.
+--
+-- The screen a stranger lands on used to be a text column in the middle of an
+-- empty starfield, and three quarters of it carried nothing. This is what
+-- carries it: a ship going somewhere, and the wake the game is named after.
+--
+-- Positions come out of the time rather than out of a history buffer. The path
+-- is a closed loop, so sampling it backwards gives the trail exactly and there
+-- is nothing to keep between frames, nothing to reset when a zone is left, and
+-- no seam when the loop comes round.
+local WAKE_N = 64          -- samples in a trail
+local WAKE_DT = 0.13       -- seconds between them, so a trail is ~8s long
+
+-- Where the hull is at time s, and the only reason this is a closed curve is
+-- that a closed curve has no seam: sampling it backwards for the trail works
+-- everywhere on it, including across the join, which a there-and-back path
+-- would have to fade over.
+--
+-- Pushed to the right of the camera rather than centred on it, because the
+-- menu owns the left of the screen and a hull crossing the words would be
+-- decoration fighting the thing it is decorating.
+-- Sized against the view rather than in world pixels, because what these have
+-- to stay clear of is the menu, and the menu is laid out in screen space. A
+-- fixed offset clears the column at exactly one window width and drifts
+-- through the rows at every other.
+local function home_path(s, ax, ay, hw, hh, p)
+    local a = s * p.w + p.phase
+    -- A slow wobble on the radius, so it is a drift rather than a machine part.
+    local k = 1 + 0.11 * math.sin(a * 3 + 1.1)
+    return ax + hw * p.ox + math.cos(a) * hw * p.rx * k,
+           ay + math.sin(a) * hh * p.ry * k
+end
+
+local function home_trail(glow, cx, cy, hw, hh, t, p, col, a, w1)
+    local px, py = home_path(t, cx, cy, hw, hh, p)
+    for i = 1, WAKE_N do
+        local qx, qy = home_path(t - i * WAKE_DT, cx, cy, hw, hh, p)
+        -- Newest segment is widest and brightest, and it is gone by the end.
+        local f0 = 1 - (i - 1) / WAKE_N
+        local f1 = 1 - i / WAKE_N
+        glow:seg_fade(px, py, qx, qy, w1 * f0 * f0, w1 * f1 * f1,
+                      0.30 * a * f0 * f0, 0.30 * a * f1 * f1, col)
+        glow:seg_fade(px, py, qx, qy, w1 * 0.3 * f0 * f0, w1 * 0.3 * f1 * f1,
+                      0.85 * a * f0 ^ 2.6, 0.85 * a * f1 ^ 2.6,
+                      pal.hot(col, 0.5, 1))
+        px, py = qx, qy
+    end
+end
+
+-- Two of them, crossing opposite ways on different paths, and that is the
+-- whole reason there are two: one hull is off the edge for a good part of its
+-- loop and leaves the screen as empty as it was before any of this. Two never
+-- are at once, and two going opposite ways read as traffic rather than as an
+-- exhibit going round.
+-- Both kept to the right of the column, which ends about a hundred pixels
+-- right of the camera at the width the menu is laid out for. A hull drifting
+-- across the words is decoration fighting the thing it decorates.
+--
+-- Hulls chosen for silhouette rather than for meaning. The Apex and the Spire
+-- read as ships at a glance and at any size; the heavier ones are handsome up
+-- close and a lozenge at arm's length, which on a title screen is a rock.
+local HOME_PATHS = {
+    {cls = 0, w = 0.20, phase = 0, ox = 0.72, rx = 0.47, ry = 0.75,
+     col = "FRIEND", a = 1.0, w1 = 9.0},
+    {cls = 4, w = -0.15, phase = 2.6, ox = 0.66, rx = 0.38, ry = 0.55,
+     col = "ENEMY", a = 0.5, w1 = 6.0},
+}
+
+-- Drawn behind the menu on the home screen, in world space, so the starfield
+-- parallaxes behind it the way it does behind everything else.
+function M.home_art(fill, glow, cx, cy, hw, hh, t)
+    if hw <= 0 or hh <= 0 then return end
+    for k = 1, #HOME_PATHS do
+        local p = HOME_PATHS[k]
+        local col = (p.col == "FRIEND") and pal.FRIEND or pal.ENEMY
+        home_trail(glow, cx, cy, hw, hh, t, p, col, p.a, p.w1)
+        local hx, hy = home_path(t, cx, cy, hw, hh, p)
+        local bx, by = home_path(t - 0.05, cx, cy, hw, hh, p)
+        local dx, dy = hx - bx, hy - by
+        if dx * dx + dy * dy > 1e-6 then
+            M.ship(fill, glow, p.cls, hx, hy,
+                   math.atan2(dx, -dy) / TAU * 65536, col,
+                   {thrusting = true, alpha = p.a,
+                    flicker = (t * 7 + k * 3) % 11 / 11})
+        end
+    end
+end
+
 -- --- ships -----------------------------------------------------------------
 
 -- Transform a hull into world space. Heading a travels along (sin a, -cos a)

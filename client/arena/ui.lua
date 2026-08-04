@@ -1095,7 +1095,10 @@ function M.menu(v)
     local w = math.min(MENU_W * S, W - 24 * S)
     local x = math.max(24 * S, (W - w) / 2 - 120 * S)
     local nrows = #v.rows
-    local h = ROW_H * S * nrows + 76 * S
+    -- The home screen carries the name at a size that owns its corner, and
+    -- everything under it moves down by the room that takes.
+    local head = v.home_root and 60 * S or 0
+    local h = ROW_H * S * nrows + 76 * S + head
     local y = math.max(20 * S, (H - h) / 2)
 
     -- Not a curtain: dimmed enough to read against, clear enough to see the
@@ -1111,8 +1114,33 @@ function M.menu(v)
     -- middle of the screen.
     vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.8), 40 * S)
 
-    txt(v.title, x + 20 * S, y + 26 * S, (M.compact and 19 or 23) * S,
-        pal.FRIEND)
+    if v.home_root then
+        -- The name, and under it the thing the name is about.
+        --
+        -- Not a logotype: the same monospace as everything else, at a size
+        -- nothing else on the screen is. What makes it a mark is the stroke
+        -- beneath, which starts at nothing on the left, swells under the word
+        -- and is gone again by the end of it, which is a wake.
+        local size = (M.compact and 30 or 46) * S
+        txt(v.title, x + 20 * S, y + 40 * S, size, pal.INK)
+        local ww = math.min(#v.title * size * 0.62, w - 40 * S)
+        local wy = y + 72 * S
+        local n = 40
+        for i = 0, n - 1 do
+            local t0, t1 = i / n, (i + 1) / n
+            local function swell(t)
+                return math.sin(t * math.pi) ^ 1.6
+            end
+            local a0, a1 = swell(t0), swell(t1)
+            u:seg_fade(x + 20 * S + ww * t0, ry(wy),
+                       x + 20 * S + ww * t1, ry(wy),
+                       (0.7 + 2.6 * a0) * S, (0.7 + 2.6 * a1) * S,
+                       0.85 * a0, 0.85 * a1, pal.FRIEND)
+        end
+    else
+        txt(v.title, x + 20 * S, y + 26 * S, (M.compact and 19 or 23) * S,
+            pal.FRIEND)
+    end
     -- A phone has no escape key, so the way out is drawn. At the root of the
     -- home screen there is no way out to draw: nothing is behind the column,
     -- and a `close` that leaves a player on an empty starfield would be a
@@ -1122,10 +1150,10 @@ function M.menu(v)
             11 * S, pal.a(pal.DIM, 0.8), "right")
         hit(x + w - 90 * S, y + 8 * S, 90 * S, 34 * S, "row", -1)
     end
-    ticks(x + 20 * S, y + 40 * S, w - 20 * S, pal.a(pal.RADAR_TILE, 0.4),
-          12 * S)
+    ticks(x + 20 * S, y + 40 * S + head, w - 20 * S,
+          pal.a(pal.RADAR_TILE, 0.4), 12 * S)
 
-    local ry0 = y + 48 * S
+    local ry0 = y + 48 * S + head
     for i, r in ipairs(v.rows) do
         local top = ry0 + (i - 1) * ROW_H * S
         local on = i == v.sel

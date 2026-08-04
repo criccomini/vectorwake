@@ -805,6 +805,14 @@ function update(self, dt)
     -- arena's, which is one routine either way.
     world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
 
+    -- The home screen's own art, over the starfield and under the menu. Only
+    -- there: with a game behind it the arena is the picture, and a hull
+    -- nobody is flying crossing the middle of it would be a lie.
+    if not live then
+        world.home_art(fill, glow, cx, cy, self.hw or 0, self.hh or 0,
+                       self.drift / 7)
+    end
+
     if live then
         -- A zone's map replaces whatever was there, and the terrain mesh is
         -- built on the assumption that never happens. Rebuilt here rather than

@@ -451,8 +451,11 @@ function M.view()
     local nd = node()
     local rows = rows_of(nd)
     local sel = row_index(rows)
+    -- The first screen a stranger sees, which is the only one that gets the
+    -- name set large. Every other screen is a title on a column.
     local out = {title = nd.title, depth = #M.stack, sel = sel,
                  note = M.note, closable = not M.home or #M.stack > 1,
+                 home_root = M.home and #M.stack == 1,
                  rows = {}}
     for i, r in ipairs(rows) do
         local d = r.detail
