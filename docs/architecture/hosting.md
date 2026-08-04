@@ -241,6 +241,19 @@ The meta-layer is our own service per
 and it is the one piece of the stack that needs PostgreSQL. Plain Postgres,
 because its traffic is logins and rated event batches, which stresses nothing.
 
+Bought and running: `vectorwake-meta`, the 25 GB hobbyist plan in ewr beside
+the game host, $15 a month. Size it by disk rather than by load. The event log
+grows at bot speed rather than player speed, which is 40 to 50 GB a year and
+outgrows this plan inside a year; the arithmetic and the retention answer are
+in [meta-layer.md](meta-layer.md).
+
+**The connection needs TLS, and not as a hardening pass.** A managed database
+refuses a cleartext connection outright, and Vultr signs each project's
+databases with a CA of its own rather than a publicly trusted one, so
+`webpki-roots` alone cannot verify it either. `deploy/db-ca.pem` carries that
+CA and `VW_META_CA` points at it. This is the kind of thing that fails on the
+host and nowhere else, which is exactly why it is written down here.
+
 Buy the database rather than running it. Arena servers and directories hold
 nothing, so losing one costs capacity and nothing else; an identity and rating
 database is the only thing in the system whose loss cannot be repaired by

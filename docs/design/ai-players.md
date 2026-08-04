@@ -96,6 +96,16 @@ carries its record with it.
 once, and never twice in one arena. This is the rule that makes it an
 individual: its rating is the record of one career, not an average over clones.
 
+**An individual is an account.** The career above is not a metaphor for one:
+each individual holds a real account at the meta-layer, claimed by name with
+the bot server's pool credential and the same one every time, so a restart
+resumes a career rather than starting one. Its rating lives where a human's
+does and moves by the same math. A new individual is seeded from the calibrated
+prior of its template on the day its account is created, which is where the
+offline tournament's work enters the fleet. See
+[accounts.md](accounts.md) and
+[meta-layer.md](../architecture/meta-layer.md).
+
 **Presence.** Each individual keeps loose hours, a few sessions a week, biased
 toward the zone's own peak times with some spread into the off hours. Arenas at
 different times of day have different regulars, and a player who keeps getting

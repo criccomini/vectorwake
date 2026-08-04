@@ -6,18 +6,19 @@ read [docs/research](../research/README.md), particularly
 decisions come from. For what the game is rather than how it is built, see
 [docs/design](../design/README.md).
 
-These started as proposals and are no longer uniformly that. The simulation core,
-the client, the authoritative server, bots, rating and the zone settings surface
-are built and playable; the fleet described in
-[zones-and-arenas.md](zones-and-arenas.md), [catalog.md](catalog.md),
-[discovery.md](discovery.md) and [admin.md](admin.md) is designed and not built,
-and [roadmap.md](roadmap.md) says in what order it should be. Each document says
+These started as proposals and are mostly no longer that. The simulation core,
+the client, the authoritative server, bots, rating, the zone settings surface,
+the fleet in [zones-and-arenas.md](zones-and-arenas.md),
+[catalog.md](catalog.md) and [discovery.md](discovery.md), and the accounts in
+[meta-layer.md](meta-layer.md) are built and running on vectorwake.net.
+[admin.md](admin.md) is designed and thin on the ground, and
+[roadmap.md](roadmap.md) says what is left. Each document says
 which of the two it is, and where a decision is still open it says so.
 
 | Document | Contents |
 |---|---|
 | [goals-and-constraints.md](goals-and-constraints.md) | What we are trying to build, what we refuse to trade away, what we are willing to lose |
-| [system-overview.md](system-overview.md) | The pieces and how they fit: sim core, client, zone server, bots, directory |
+| [system-overview.md](system-overview.md) | The pieces and how they fit: sim core, client, zone server, bots, directory, meta-layer |
 | [platforms.md](platforms.md) | Browser, Steam, mobile, consoles: what each one costs us and in what order |
 | [simulation-core.md](simulation-core.md) | The deterministic C core: fixed point, tick model, state layout, API |
 | [client-defold.md](client-defold.md) | What Defold does for us, what it does not, project layout, map rendering, prediction |

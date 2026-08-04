@@ -14,7 +14,7 @@
 | M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities |
 | M5.5 Defold client | Done: real core as a native extension, builds for host and browser, predicts against a live zone |
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and the games list in the menu |
-| M6 platforms | Accounts built. Steam and consoles still wait on credentials |
+| M6 platforms | Accounts live on the fleet. Steam and consoles still wait on credentials |
 | M7 the fleet | Designed, not built. The directory, catalog and zone selection below |
 
 What M6 asked for that is code has landed. The bot ladder is calibrated by
@@ -28,7 +28,10 @@ accounts, credentials, names, ratings and the rated event log, per
 [design/accounts.md](../design/accounts.md) and [meta-layer.md](meta-layer.md).
 A client mints a guest on first contact and never signs up; arenas verify a
 signed session token against a key the catalog carries; house bots hold
-accounts and one of them anchors the ladder. `persist.rs` and `ratings.json`
+accounts and one of them anchors the ladder. Live on vectorwake.net since
+2026-08-03, verified by flying a token-carrying client into Chaos and watching
+the rating come back through the meta-layer, with the anchor pinned at 1200 and
+the calibrated ladder reaching the fleet through account seeding. `persist.rs` and `ratings.json`
 are gone with it. `rating.rs` stayed, because damage-weighted attribution
 across several attackers is specific to this game and no general backend has
 an opinion about it.

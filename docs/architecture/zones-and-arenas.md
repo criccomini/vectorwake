@@ -546,12 +546,14 @@ the TLS certificate, which is the one non-obvious consequence.
 `max_rooms` in [catalog.md](catalog.md). The cap earns its keep twice, bounding
 memory and bounding the blast radius of one process dying.
 
-**Deferred: where a rated event goes.** Not answered, and deliberately not
-blocking. `persist.rs` writing `ratings.json` beside the process is correct for
-one instance per zone and wrong the moment there are two, so this has to be
-settled before a zone is ever served by more than one arena server at once.
-Until then the argument is recorded in [server.md](server.md): the directory is
-the tempting sink and the wrong one.
+**Closed: where a rated event goes.** The meta-layer, not the directory, which
+was the tempting sink and the wrong one for the reason that made it tempting:
+the directory is the piece the fleet most wants to be able to lose. An arena
+spools rated events to its own disk and drains them, so a tick never waits on
+the network and an outage costs the debt rather than the events. Two instances
+of one zone can now rate the same pilot without disagreeing, which was the
+blocker on a zone ever being served by more than one arena server at once. See
+[meta-layer.md](meta-layer.md).
 
 **Deferred: spectators.** The design is in the join path above and stands; it is
 simply not being built yet. Two things wait on it. The duel queue needs pilots
