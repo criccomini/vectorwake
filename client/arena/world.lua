@@ -1063,6 +1063,77 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
     glow:flush()
 end
 
+-- --- the overview ----------------------------------------------------------
+--
+-- The whole map as a few thousand rectangles, so a view of all thousand tiles
+-- costs a list walk per frame rather than a million tile reads.
+--
+-- Four tiles to a cell. The map view is around four hundred pixels on a
+-- desktop, which is two and a half tiles to the pixel, so a finer grain buys
+-- detail nothing can draw. Coarser and the corridors start closing up.
+local OVERVIEW_CELL = 4
+
+-- Rectangles, five numbers each: cell x, cell y, width, height, tile class.
+-- Flat rather than a table per rectangle, because two thousand small tables
+-- is two thousand things for the collector to walk every time it runs.
+M.overview = {grid = 0, n = 0, rect = {}}
+
+-- Greedy rectangles rather than one quad per cell, which is the difference
+-- between two thousand of them and sixty thousand. A row of identical cells
+-- becomes one run, and the run swallows the rows under it while they match.
+--
+-- Measured on the three shipped maps by client/tests/overview_test.lua: 928 to
+-- 2195 rectangles, against 3287 to 4104 for rows alone and the 6144 vertices
+-- the interface layer used to hold.
+function M.build_overview()
+    local s, g = sim.map_coarse(OVERVIEW_CELL)
+    local byte = string.byte
+    local taken = {}
+    local r, n = {}, 0
+    for y = 0, g - 1 do
+        local x = 0
+        while x < g do
+            -- One-based, because a Lua string is.
+            local i = y * g + x + 1
+            local cls = byte(s, i)
+            if cls == 0 or taken[i] then
+                x = x + 1
+            else
+                local w = 1
+                while x + w < g and byte(s, i + w) == cls and not taken[i + w] do
+                    w = w + 1
+                end
+                local h = 1
+                while y + h < g do
+                    local j = i + h * g
+                    local same = true
+                    for k = 0, w - 1 do
+                        if byte(s, j + k) ~= cls or taken[j + k] then
+                            same = false
+                            break
+                        end
+                    end
+                    if not same then break end
+                    h = h + 1
+                end
+                for yy = 0, h - 1 do
+                    local j = i + yy * g
+                    for xx = 0, w - 1 do taken[j + xx] = true end
+                end
+                r[n + 1], r[n + 2], r[n + 3] = x, y, w
+                r[n + 4], r[n + 5] = h, cls
+                n = n + 5
+                x = x + w
+            end
+        end
+    end
+    M.overview = {grid = g, n = n, rect = r}
+end
+
+function M.forget_overview()
+    M.overview = {grid = 0, n = 0, rect = {}}
+end
+
 -- Made once, not per frame: these are constants wearing a function's clothes,
 -- and allocating them in a draw loop is what a collector notices first.
 local DOOR_LIT = pal.hot(pal.WALL_EDGE, 0.5, 1)

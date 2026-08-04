@@ -285,6 +285,7 @@ local NODES = {
         {label = "use", detail = "C, or ctrl"},
         {label = "swap", detail = "V, or tab"},
         {label = "scores", detail = "I, or the info button"},
+        {label = "map", detail = "M, or click the radar"},
         {label = "menu", detail = "escape"},
         {label = "", detail = ""},
         -- Every key here has a second binding, and this is the reason. Most
