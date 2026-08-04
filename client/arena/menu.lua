@@ -325,7 +325,8 @@ local NODES = {
             if not M.can_cap then return "as the display asks" end
             return CAPS[M.cap][2]
         end, act = "cap"},
-        {label = "fullscreen", detail = "fill the screen", act = "fullscreen"},
+        {label = "fullscreen", detail = "fill the screen", act = "fullscreen",
+         hint = "locks the keyboard where it can, and ctrl becomes a gun"},
     }},
 
     -- The controls used to be a line of text across the bottom of the screen
@@ -333,6 +334,13 @@ local NODES = {
     -- on a phone they were laid over the thumbs, naming keys the device does
     -- not have while the controls it does have sat unexplained. A thing you
     -- consult belongs somewhere you go to consult it.
+    -- The layout is the original's where the browser permits: arrows and Tab
+    -- are Continuum's own, the gun sits on Shift because windowed Ctrl is
+    -- half the browser's (Ctrl with Tab switches tabs everywhere, and macOS
+    -- takes Ctrl with the arrows for itself), and fullscreen with a keyboard
+    -- lock gives Ctrl back where the browser has one to give. Shift and Tab
+    -- also sit on their own lines in a keyboard matrix, so the layout cannot
+    -- ghost the way arrows-plus-space could; the letters stay as alternates.
     help = {title = "help", rows = {
         {label = "", detail = "on a touchscreen"},
         {label = "steer", detail = "left thumb: point where you want the nose"},
@@ -340,11 +348,11 @@ local NODES = {
         {label = "charges", detail = "tap a charge pad to spend it"},
         {label = "", detail = ""},
         {label = "", detail = "on a keyboard"},
-        {label = "fly", detail = "arrow keys, or WASD"},
-        {label = "guns", detail = "space, or Z"},
-        {label = "bombs", detail = "shift, or X"},
-        {label = "use", detail = "C, or ctrl"},
-        {label = "swap", detail = "V, or tab"},
+        {label = "fly", detail = "arrow keys"},
+        {label = "guns", detail = "shift, or space, Z, click"},
+        {label = "bombs", detail = "tab, or X, right click"},
+        {label = "charges", detail = "1 2 3 4, by row of the corner stack"},
+        {label = "", detail = "or C to spend the ready one, V to swap"},
         -- Worth a line of its own. A fan is a liability down a corridor and
         -- arrives from a green rather than by choice, so a pilot who has one
         -- and does not know this key has a gun that got worse.
@@ -354,15 +362,8 @@ local NODES = {
         {label = "who", detail = "click a pilot on the scoreboard"},
         {label = "menu", detail = "escape, once anything open is shut"},
         {label = "", detail = ""},
-        -- Every key here has a second binding, and this is the reason. Most
-        -- keyboards are a matrix that cannot report certain three-key
-        -- combinations at all, and arrows-plus-space is one of the common
-        -- casualties: turning stops working while you thrust and fire. No
-        -- software can recover a keystroke the keyboard never sent, so the
-        -- answer is a key on a different row.
-        {label = "", detail = "if a third key stops working while two are held,"},
-        {label = "", detail = "your keyboard cannot see that combination:"},
-        {label = "", detail = "try Z for guns, or WASD to fly"},
+        {label = "", detail = "fullscreen adds ctrl as a gun, where the"},
+        {label = "", detail = "browser allows the keyboard to be locked"},
     }},
 
     -- What this build is, rather than what the game is.

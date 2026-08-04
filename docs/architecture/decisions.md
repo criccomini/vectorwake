@@ -1155,3 +1155,52 @@ operator must write before a zone feels finished.
 small caps, which argues for pact-versus-pact scoring rather than smaller
 pacts. Or if migration-as-exclusion becomes a griefing ritual in itself, at
 which point a founder's kick is the smaller evil after all.
+
+## 33. The original's keys, where the browser permits them
+
+**Status:** accepted
+
+Test players asked for Continuum's controls. Continuum fires guns with Ctrl
+and bombs with Tab, and the pair cannot be given to a browser tab: gun held
+plus bomb tapped is Ctrl+Tab, the tab switcher in Chrome, Firefox and Safari
+alike, acted on before `preventDefault` is consulted; and macOS takes Ctrl
+with every arrow for Spaces and Mission Control at the window server, so a
+Mac player holding the authentic gun key cannot steer at all. This is also
+the second attempt: the first shipped Ctrl and Tab on day one and retreated
+inside the day, but retreated all the way to Space and Shift instead of to
+the nearest keys the browser leaves alive.
+
+So the layout is the original's wherever a key survives, and the nearest
+safe key where one does not. Arrows fly and Tab bombs, both Continuum's own
+and both verified against the deployed engine, which keeps the canvas
+focused straight through held Shift+Tab. Guns sit on Shift: the same left
+pinky as Ctrl, one row up, and a modifier, which keyboards wire on their own
+matrix lines, so the layout cannot ghost the way arrows-plus-Space could.
+Digits spend charges by row of the corner stack, the keyboard catching up to
+the touch pads, which have named their slot directly all along; C and V stay
+as the spend-and-cycle fallback. WASD is gone, arrows are flight, and every
+held-Ctrl letter chord that a browser owns dies with it.
+
+Fullscreen gives the literal keys back. The fullscreen action requests the
+Keyboard Lock alongside, and a *held lock*, not fullscreen itself, is what
+turns Ctrl into a gun: Firefox fullscreen still switches tabs on Ctrl+Tab,
+and the lock API needs a JS-initiated fullscreen, so F11 counts for nothing.
+Unlocked, Ctrl does nothing at all, which is the honest reading of a key the
+browser owns half of; a Ctrl that fired windowed would spring the tab
+switcher on exactly the veterans it was courting, and one that still spent a
+charge would be worse. Windowed play stays first-class, because this game's
+ancestor was a chat program with a dogfight attached, and its players are
+the alt-tab-to-Discord crowd.
+
+**Cost:** windowed guns are one key from authentic, and the fullscreen Ctrl
+is Chromium's to grant, so Firefox and Safari never get the literal key.
+Existing testers' Shift finger fires guns where it fired bombs. Tap-firing
+Shift five times is Windows' Sticky Keys chord, mitigated by guns being held
+rather than tapped and by Space and Z remaining. Shift+Esc opening Chrome's
+task manager over the menu is unverified on hardware, as is whether the lock
+beats Mission Control's claim on Ctrl+arrows on a Mac.
+
+**Reconsider if:** hardware testing shows the lock losing Ctrl+arrows to
+macOS anyway, at which point the fullscreen promise shrinks to Windows and
+Linux and the help text should say so. Or if a rebinding screen ever ships,
+at which point this whole layout becomes the default rather than the rule.

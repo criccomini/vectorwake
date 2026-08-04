@@ -128,10 +128,21 @@ local function bit_for(action)
             -- trigger pull, and a menu row read a trigger pull as a choice.
             [hash("pointer")] = sim.BTN_FIRE,
             [hash("pointer_alt")] = sim.BTN_BOMB,
+            -- Continuum's own gun key, honoured only under the keyboard lock:
+            -- see the gate in my_buttons.
+            [hash("guns_ctrl")] = sim.BTN_FIRE,
         }
     end
     return ACTION_BITS[action] or 0
 end
+
+-- Whether the page holds the keyboard lock, polled from the fullscreen state
+-- once a second. While it is held, Ctrl fires guns and the layout is the
+-- original's outright. While it is not, Ctrl does nothing at all, which is
+-- the honest reading of a key the browser owns half of: windowed, Ctrl with
+-- Tab switches tabs on every platform and no preventDefault is consulted, so
+-- a Ctrl that fired would be a trap sprung by the game's commonest chord.
+local kb_locked = false
 
 -- The charge slots this hull can ever carry, in order. An empty list means a
 -- hull with no charges at all, and the row simply is not drawn.
@@ -163,6 +174,9 @@ end
 -- flame, so the first call would swallow the tap and the one that mattered
 -- would see nothing.
 local charge_tap = nil
+-- The same latch for a digit key, filled where taps are read and drained into
+-- `charge_tap` by the step loop.
+local key_charge = nil
 
 local function my_buttons()
     if menu.open then return 0 end
@@ -179,7 +193,12 @@ local function my_buttons()
         -- emulated pointer is ignored and the pads are the only triggers.
         local emulated = touch.used and (action == hash("pointer")
                                          or action == hash("pointer_alt"))
-        if down and not emulated then
+        -- Ctrl is a gun only while the keyboard lock holds. Gated here rather
+        -- than at the binding, because the binding cannot know and a Ctrl that
+        -- spent a charge or fired unlocked would be worse than one that does
+        -- nothing.
+        local unlocked_ctrl = action == hash("guns_ctrl") and not kb_locked
+        if down and not emulated and not unlocked_ctrl then
             -- Two sources on the rudder would fight; the stick wins while it
             -- is down, and the keys keep everything else.
             local bit = bit_for(action)
@@ -643,13 +662,30 @@ function update(self, dt)
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
     -- timestep, and Defold's physics is off entirely.
+    -- A digit spends its row of the corner stack directly, the way a charge
+    -- pad already does on a touchscreen: the number you press is the row you
+    -- read. By row rather than by absolute slot, so a hull that carries only
+    -- some slots still puts 1 on the first thing listed. Latched like the
+    -- pad's tap, and for the same reason: the press has to survive until a
+    -- simulation step spends it.
+    if not menu.open then
+        for i = 1, 4 do
+            if tapped[hash("charge_" .. i)] then
+                tapped[hash("charge_" .. i)] = nil
+                local slot = my_slots()[i]
+                if slot then key_charge = slot end
+            end
+        end
+    end
+
     if self.online then
         accum = accum + math.min(dt, 0.25)
         local steps = 0
         while accum >= DT and steps < MAX_CATCHUP do
             -- Read once, before anything asks for the buttons, and cleared
             -- after the step that spends it.
-            charge_tap = touch.fired_charge()
+            charge_tap = touch.fired_charge() or key_charge
+            key_charge = nil
             step_once()
             charge_tap = nil
             accum = accum - DT
@@ -796,6 +832,19 @@ function update(self, dt)
     -- interesting question is what the last second looked like, not what this
     -- frame did. Counted whether or not anybody is looking, so opening the
     -- readout shows a settled figure rather than a second of zeroes.
+    -- Whether the keyboard lock still holds, once a second. The template
+    -- clears the flag on any exit from fullscreen, including the browser's
+    -- own hold-escape, so this is a read rather than a guess; a second of
+    -- Ctrl doing nothing after an exit is well inside what a hand notices.
+    self.lock_t = (self.lock_t or 1) + dt
+    if self.lock_t >= 1 then
+        self.lock_t = 0
+        if html5 then
+            local ok, r = pcall(html5.run, "window.vwLocked and '1' or ''")
+            kb_locked = ok and r == "1"
+        end
+    end
+
     self.perf_t = (self.perf_t or 0) + dt
     self.perf_frames = (self.perf_frames or 0) + 1
     if self.perf_t >= 1.0 then
@@ -1152,9 +1201,18 @@ function apply_menu(self, act)
 
     if act == "fullscreen" then
         if html5 then
+            -- Fullscreen brings the keyboard lock along where the browser has
+            -- one, and the lock is what lets Ctrl be a gun: windowed, Ctrl
+            -- with Tab is the browser's tab switcher on every platform, and
+            -- on a Mac the system takes Ctrl with the arrows before the
+            -- browser exists. The template clears vwLocked when fullscreen
+            -- goes, however it goes, including Chrome's hold-escape.
             pcall(html5.run, "(document.fullscreenElement" ..
                   " ? document.exitFullscreen()" ..
-                  " : document.documentElement.requestFullscreen())")
+                  " : document.documentElement.requestFullscreen().then(" ..
+                  "function(){return navigator.keyboard&&navigator.keyboard.lock" ..
+                  "?navigator.keyboard.lock().then(function(){window.vwLocked=1})" ..
+                  ":0}).catch(function(){}))")
         end
         return
     end

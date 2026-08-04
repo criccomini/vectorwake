@@ -128,6 +128,15 @@
 		if (typeof globalThis === 'undefined') {
 			window.globalThis = window;
 		}
+		// Whether the keyboard lock holds. The game sets it after a
+		// fullscreen request resolves and reads it once a second; this
+		// listener is the half the game cannot do itself, clearing the flag
+		// on any exit from fullscreen, including the browser's hold-escape,
+		// which never passes through the game's own code.
+		window.vwLocked = 0;
+		document.addEventListener('fullscreenchange', function () {
+			if (!document.fullscreenElement) { window.vwLocked = 0; }
+		});
 	</script>
 	<script id='engine-loader' type='text/javascript' src="dmloader.js"></script>
 	<script id='engine-setup' type='text/javascript'>
