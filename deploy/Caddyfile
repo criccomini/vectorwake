@@ -83,6 +83,12 @@ play.{$VW_DOMAIN} {
 	# gzips to 2.9, and egress is the one cost this deployment has.
 	handle {
 		encode zstd gzip
+		# Revalidate on every load. The page carries an ETag, so this costs one
+		# conditional request answered 304 until a deploy actually changes the
+		# file. Without the header browsers fall back to heuristic caching, and
+		# Safari kept handing a phone the previous build through two fixes it
+		# never saw.
+		header Cache-Control "no-cache"
 		root * /srv/play
 		file_server
 	}

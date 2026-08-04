@@ -44,6 +44,7 @@ max_sound_instances = 256
 
 [html5]
 scale_mode = stretch
+htmlfile = /web/engine_template.html
 
 [library]
 include_dirs = ext/simcore, websocket
