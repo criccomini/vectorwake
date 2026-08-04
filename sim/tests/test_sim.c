@@ -2372,6 +2372,113 @@ int main(void) {
         }
     }
 
+    /* Touching a wormhole puts you somewhere else.
+     *
+     * The pull was already there and did nothing but bend a course. What a
+     * wormhole is for is the other side of it, so contact with the tile itself
+     * moves the ship to a spawn point chosen at random and stops it dead: an
+     * exit that keeps your velocity puts you through the wall behind wherever
+     * you came out. */
+    {
+        sim_map *wm = malloc(sizeof *wm);
+        memset(wm->tile, SIM_TILE_EMPTY, sizeof wm->tile);
+        for (int i = 0; i < SIM_MAP_TILES; i++) {
+            wm->tile[i] = SIM_TILE_SOLID;
+            wm->tile[(size_t)(SIM_MAP_TILES - 1) * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
+            wm->tile[(size_t)i * SIM_MAP_TILES] = SIM_TILE_SOLID;
+            wm->tile[(size_t)i * SIM_MAP_TILES + SIM_MAP_TILES - 1] = SIM_TILE_SOLID;
+        }
+        wm->tile[(size_t)512 * SIM_MAP_TILES + 512] = SIM_TILE_WORMHOLE;
+        /* Two of them, far apart, so "went to a spawn" cannot be satisfied by
+         * standing still. */
+        wm->tile[(size_t)300 * SIM_MAP_TILES + 300] = SIM_TILE(SIM_TILE_SPAWN, 0);
+        wm->tile[(size_t)700 * SIM_MAP_TILES + 700] = SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(wm);
+        sim_settings wc;
+        memset(&wc, 0, sizeof wc);
+        sim_settings_baseline(&wc, wm);
+        wc.spawn_prizes = 0;
+
+        sim_state s;
+        sim_init(&s, 1);
+        /* Four tiles above the hole, pointing down at it. Stepped one tick at
+         * a time because the interesting state is the tick the warp lands on:
+         * a ship still holding thrust is off the spawn tile a second later,
+         * which is the game working rather than the test failing. */
+        int id = sim_spawn(&s, APEX, 0, 512 * 16, 508 * 16, 32768, &wc);
+        int warped = 0;
+        for (int t = 0; t < 200 && !warped; t++) {
+            ev_counts c = step_counting(&s, &wc, SIM_BTN_THRUST, 0, 1);
+            warped = c.warps > 0;
+        }
+        CHECK(warped, "flying into a wormhole warps the ship");
+        int at_a = (s.ships[id].x >> 12) == 300 && (s.ships[id].y >> 12) == 300;
+        int at_b = (s.ships[id].x >> 12) == 700 && (s.ships[id].y >> 12) == 700;
+        CHECK(at_a || at_b, "and puts it on a spawn tile");
+        CHECK(s.ships[id].vx == 0 && s.ships[id].vy == 0,
+              "with its speed taken off it");
+        CHECK(s.ships[id].alive, "and without killing it");
+        free(wm);
+    }
+
+    /* Multifire is a switch the pilot holds, not one the prize decides.
+     *
+     * A fan is worse than a single shot down a corridor, and the add-on
+     * arrives from a green rather than by choice, so a pilot who has one needs
+     * a way to stop using it. The button toggles on the press rather than
+     * while held: this is a state, and a state you have to keep a finger on is
+     * a state you cannot fly with. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[id].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        int fan = 1 + cfg.mod_step[SIM_MOD_MULTI];
+
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == fan, "multifire fans by default");
+
+        /* Held down, the toggle flips once. */
+        step_n(&s, &cfg, SIM_BTN_MULTI, 0, 30);
+        CHECK(s.ships[id].multi_off, "the button turns it off");
+        s.weapon_count = 0;
+        s.ships[id].fire_cooldown = 0;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1, "and then the gun fires one");
+        CHECK(sim_mod_get(s.ships[id].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
+              "while the add-on is still held");
+
+        /* Released and pressed again, it flips back. */
+        step_n(&s, &cfg, 0, 0, 1);
+        step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);
+        CHECK(!s.ships[id].multi_off, "a second press turns it back on");
+        s.weapon_count = 0;
+        s.ships[id].fire_cooldown = 0;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == fan, "and the fan is back");
+
+        /* A snapshot landing under a held key does not read as a new press.
+         *
+         * This is the whole reason last tick's buttons ride the wire.
+         * `sim_unpack` clears the state it fills, so a client that took a
+         * snapshot mid-press would see an edge the server never saw, and at
+         * ten snapshots a second one deliberate press becomes four. */
+        {
+            static uint8_t buf[1 << 16];
+            sim_state s2;
+            step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);   /* down: toggles once */
+            CHECK(s.ships[id].multi_off, "the key goes down and it toggles");
+            int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1);
+            CHECK(m > 0, "the state packs");
+            CHECK(sim_unpack(&s2, buf, m) == 0, "and reads back");
+            CHECK(s2.ships[id].btn_prev == SIM_BTN_MULTI,
+                  "with the press still recorded");
+            step_n(&s2, &cfg, SIM_BTN_MULTI, 0, 1);  /* still held */
+            CHECK(s2.ships[id].multi_off,
+                  "so holding it through a snapshot does not toggle again");
+        }
+    }
+
     free(m);
     if (failures == 0) printf("all tests passed\n");
     return failures ? 1 : 0;

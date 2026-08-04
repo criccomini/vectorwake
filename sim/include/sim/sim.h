@@ -67,6 +67,16 @@ extern "C" {
  * cycling a selection needs no edge detection down here and no byte in a
  * snapshot. Two bits is four slots, which is what a pilot can carry. */
 #define SIM_BTN_USE 0x0040u
+/* Multifire on or off, toggled on the press rather than held.
+ *
+ * The original made this a key because a fan is not always what you want: it
+ * costs more energy and more cooldown per rung, and a single barrel is the
+ * shot that hits something small and far away. A pilot who has picked the
+ * upgrade up should be able to decline to use it without dropping it.
+ *
+ * Edge-triggered inside the core rather than pulsed by the client, so a lost
+ * input cannot leave the two ends disagreeing about a piece of ship state. */
+#define SIM_BTN_MULTI 0x0200u
 #define SIM_BTN_SLOT_SHIFT 7
 #define SIM_BTN_SLOT_MASK 0x0180u
 #define SIM_BTN_SLOT(b) (((b) & SIM_BTN_SLOT_MASK) >> SIM_BTN_SLOT_SHIFT)
@@ -467,6 +477,16 @@ typedef struct {
      * survived with. */
     uint8_t level[SIM_TRIG_COUNT];
     uint16_t mods[SIM_TRIG_COUNT];
+    /* Multifire declined. The add-on stays held and stays on the scoreboard;
+     * this only stops it being applied when the trigger is pulled. Cleared by
+     * death with everything else, because the add-on it refuses is. */
+    uint8_t multi_off;
+    /* Last tick's buttons, for the toggles that fire on a press rather than
+     * on a hold. Nothing else needs it, which is why it took this long to
+     * appear, and it rides in the snapshot with the rest: an edge detector
+     * that starts every snapshot believing nothing was held sees a press that
+     * never happened. */
+    uint16_t btn_prev;
     /* Charges in hand, spent one at a time. */
     uint8_t charge[SIM_MAX_CHARGES];
     /* Bounty that is not sitting in an upgrade slot: what killing has paid,

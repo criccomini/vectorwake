@@ -1065,26 +1065,33 @@ end
 
 -- Made once, not per frame: these are constants wearing a function's clothes,
 -- and allocating them in a draw loop is what a collector notices first.
-local DOOR_LIT = pal.hot(pal.WALL_EDGE, 0.5, 1)
-local DOOR_SEAM = pal.a(pal.hot(pal.WALL_EDGE, 0.8, 1), 0.95)
-local DOOR_SLAT = pal.a(DOOR_LIT, 0.34)
-local DOOR_POST_SHUT = pal.a(DOOR_LIT, 0.9)
-local DOOR_POST_OPEN = pal.a(DOOR_LIT, 0.45)
-local DOOR_TICK_SHUT = pal.a(DOOR_LIT, 0.85)
-local DOOR_TICK_OPEN = pal.a(DOOR_LIT, 0.4)
-local DOOR_MARK = pal.a(DOOR_LIT, 0.5)
-local DOOR_SILL = pal.a(DOOR_LIT, 0.16)
-local HOLE_RING = {pal.a(pal.HOLE, 0.34), pal.a(pal.HOLE, 0.22),
-                   pal.a(pal.HOLE, 0.15), pal.a(pal.HOLE, 0.10)}
+-- A door reads in its own colour now rather than in the wall's, and shut and
+-- open are different hues rather than two brightnesses of one. See pal.DOOR:
+-- the band is nothing else's, so this costs no other reading.
+local DOOR_LIT = pal.DOOR
+local DOOR_SEAM = pal.a(pal.hot(pal.DOOR, 0.55, 1), 0.98)
+local DOOR_SLAT = pal.a(DOOR_LIT, 0.42)
+local DOOR_POST_SHUT = pal.a(DOOR_LIT, 0.95)
+local DOOR_POST_OPEN = pal.a(pal.DOOR_OPEN, 0.7)
+local DOOR_TICK_SHUT = pal.a(DOOR_LIT, 0.9)
+local DOOR_TICK_OPEN = pal.a(pal.DOOR_OPEN, 0.6)
+local DOOR_MARK = pal.a(pal.DOOR_OPEN, 0.8)
+local DOOR_SILL = pal.a(pal.DOOR_OPEN, 0.28)
+-- The rings are a function of the clock now, so their colours are made per
+-- frame rather than held here. The arms still are: their fade is by depth
+-- rather than by time.
 local HOLE_ARM = {}
 for k = 1, 5 do HOLE_ARM[k] = pal.a(pal.HOLE, 0.34 - (k - 1) * 0.05) end
 
 -- One door, however many tiles it spans.
 --
--- Colour is not available here: it belongs to teams and to weapon classes, and
--- a door that borrows either is a door somebody misreads under fire. So a door
--- is a shape and a motion, and which of the four clocks it is on is a count of
--- ticks on its posts.
+-- A door has a colour of its own, and the rule it used to follow said it could
+-- not. That rule was about not borrowing: colour belongs to teams and to weapon
+-- classes, and a door wearing cyan or pink is a door somebody misreads under
+-- fire. Green borrows from neither, so the door keeps its shape and its motion
+-- and gains a hue, and shut and open now differ in colour rather than only in
+-- brightness. Which of the four clocks it is on is still a count of ticks on
+-- its posts.
 --
 -- A run is framed once. Framed per tile, a four-tile gateway reads as four
 -- separate shutters, which is four wrong answers to "can I fit through that".
@@ -1109,8 +1116,10 @@ local function door_run(fill, glow, x0, y0, x1, y1, vertical, group, shut)
         else
             ax, ay, bx, by = (x0 + x1) / 2, y0, (x0 + x1) / 2, y1
         end
-        glow:seg_glow(ax, ay, bx, by, 5, 0.11, pal.a(DOOR_LIT, 1))
-        glow:seg(ax, ay, bx, by, 1.0, DOOR_SEAM)
+        -- The bar down the middle is what says "shut", so it carries the
+        -- colour hardest: a wide soft glow under a bright thin line.
+        glow:seg_glow(ax, ay, bx, by, 7, 0.20, pal.a(DOOR_LIT, 1))
+        glow:seg(ax, ay, bx, by, 1.3, DOOR_SEAM)
     else
         -- Open, the gap is marked: brackets reaching in from the posts and a
         -- faint line across the threshold. Posts alone are a doorway a pilot
@@ -1211,27 +1220,49 @@ function M.draw_tiles(fill, glow, now, cull)
                          not across, group, not sim.door_open(t.variant))
             end
         else
-            -- A well, and a hole rather than a wall: you fly into it. A dark
-            -- eye, rings that tighten inward, and arms that turn, so its reach
-            -- can be read before entering it.
+            -- A well, and a hole rather than a wall: you fly into it, and
+            -- since touching one now moves the ship, it has to look like
+            -- somewhere that goes somewhere rather than like a decorated
+            -- floor tile.
+            --
+            -- Everything here travels inward. Four rings are born at the rim
+            -- and fall to the eye on a shared clock, so at any moment there is
+            -- one just appearing and one about to vanish, and each fades as it
+            -- closes; the arms turn against that fall, which is what stops the
+            -- whole thing reading as a single rotating sprite. The eye itself
+            -- beats. None of it is state: it is all a function of the clock,
+            -- so every client draws the same well at the same moment without
+            -- anything being sent.
             local cx = t.tx * TILE + TILE / 2
             local cy = t.ty * TILE + TILE / 2
-            local spin = now * 0.35
+            local spin = now * 0.9
             fill:disc(cx, cy, 7, 10, pal.a(pal.BG, 1))
-            glow:ring(cx, cy, 36, 1.1, 20, HOLE_RING[1])
-            glow:ring(cx, cy, 27, 1.1, 18, HOLE_RING[2])
-            glow:ring(cx, cy, 19, 1.1, 14, HOLE_RING[3])
-            glow:ring(cx, cy, 12, 1.1, 12, HOLE_RING[4])
+            local RIM, EYE = 38, 9
+            for k = 1, 4 do
+                -- Phase, offset a quarter turn per ring so they arrive evenly.
+                local ph = (now * 0.45 + (k - 1) * 0.25) % 1
+                local rr = RIM - (RIM - EYE) * ph
+                -- Brightest in the middle of the fall: a ring that appeared
+                -- at full strength would pop, and one that vanished at full
+                -- strength would blink.
+                local fade = math.sin(ph * math.pi)
+                glow:ring(cx, cy, rr, 1.1, 20, pal.a(pal.HOLE, 0.36 * fade))
+            end
+            -- Arms, turning against the fall so the two motions read apart.
             for i = 0, 3 do
-                local a0 = i * TAU / 4 + spin
+                local a0 = i * TAU / 4 - spin
                 for k = 1, 5 do
                     glow:arc(cx, cy, 10 + (k - 1) * 5.5,
                              a0 + (k - 1) * 0.30, a0 + (k - 1) * 0.30 + 0.5,
                              1.3, 3, HOLE_ARM[k])
                 end
             end
-            glow:halo(cx, cy, 15, 10, pal.a(pal.HOLE, 0.30))
-            glow:ring(cx, cy, 7, 1.4, 12, pal.a(pal.hot(pal.HOLE, 0.4, 1), 0.9))
+            -- The eye, beating. Slower than the rings, so the two clocks do
+            -- not line up into one pulse.
+            local beat = 0.5 + 0.5 * math.sin(now * 2.1)
+            glow:halo(cx, cy, 15 + beat * 5, 10, pal.a(pal.HOLE, 0.24 + 0.16 * beat))
+            glow:ring(cx, cy, 7, 1.4 + beat * 0.6, 12,
+                      pal.a(pal.hot(pal.HOLE, 0.4, 1), 0.75 + 0.25 * beat))
         end
     end
 end

@@ -21,6 +21,9 @@ local S2C_MAP, S2C_SETTINGS, S2C_YIELD = 9, 10, 11
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
 local CLIENT_PROTOCOL = 3
+-- Published, because the about page says what this build talks, and a second
+-- copy of the number is a second thing to forget to bump.
+M.PROTOCOL = CLIENT_PROTOCOL
 
 -- Why a join was refused. Three of these mean the address was fine and another
 -- instance would have taken us, which is a different thing to tell a player than
