@@ -675,6 +675,21 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
 int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
                        uint8_t cls);
 
+/* Put a pilot on a different side. Gated exactly as a hull change is, and for
+ * the same reason: it is a respawn at the new side's start with a full bar, so
+ * ungated it is an escape. Flags are dropped and bounty earned by killing is
+ * cleared, which is what stops two pilots swapping sides to feed each other.
+ *
+ * What you are flying is untouched -- hull, levels, add-ons and charges all
+ * cross with you -- because unlike a hull change nothing about the roster row
+ * moved. Which team numbers exist and who may enter one is the zone's
+ * business; this core only knows that a ship has a side and that sides differ.
+ *
+ * Returns 0, or -1 for an unknown ship, a dead pilot, or one not at full
+ * energy. Asking for the side you are already on does nothing and succeeds. */
+int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
+                      uint8_t team);
+
 void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
               uint16_t input_count, const sim_settings *cfg, sim_events *ev);
 

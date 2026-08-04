@@ -1111,6 +1111,39 @@ function apply_menu(self, act)
         return
     end
 
+    -- Crossing to another side, and founding one. The same gate a hull change
+    -- gets, for the same reason and enforced in the same place: the rule lives
+    -- in the core so both ends hold one copy, and these checks exist only so a
+    -- refusal arrives with a sentence instead of in silence.
+    if act == "team" or act == "found" then
+        if not self.online then return end
+        if sim.ship_alive(me) ~= 1 then
+            menu.note = "not while you are waiting to respawn"
+            return
+        end
+        if sim.ship_energy(me) < sim.ship_max_energy(me) then
+            menu.note = "changing sides needs a full bar"
+            return
+        end
+        if act == "found" then
+            net.found_team()
+        else
+            net.set_team(menu.pending)
+        end
+        -- Left open on purpose, unlike a hull change: the team list is what
+        -- answers, and closing the menu would hide the answer to the question
+        -- just asked.
+        return
+    end
+
+    -- An invitation costs the inviter nothing and is not a respawn, so it
+    -- carries no gate at all. There is no kick to go with it: a side that
+    -- wants somebody gone walks away and founds another.
+    if act == "invite" then
+        if self.online then net.invite(menu.pending) end
+        return
+    end
+
     if act == "fullscreen" then
         if html5 then
             pcall(html5.run, "(document.fullscreenElement" ..

@@ -19,8 +19,16 @@ fill_target = 16
 bot_fill = 0.8
 max_rooms = 1
 
-teams = 2
-balance = "smaller"
+# Two sides with names that outlive the round, so a regular can say "Rampart
+# always rushes the north flags" and be understood. The mode scores over these
+# and only these. Neither name is one any pilot wears: the bot roster and the
+# call sign generator hand out single words too, and Vantage stood here until
+# somebody noticed it was also one of the calibrated nine.
+teams = ["Keel", "Rampart"]
+# And no others: a flag round cannot seat a third combat side without becoming
+# a different game, so nobody may found one here. Playing with your friends is
+# joining the same side as them while it has room.
+max_teams = 2
 
 [arena]
 flags = 4

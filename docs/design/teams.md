@@ -12,9 +12,10 @@ The original called these freqs, and we inherit the structure while dropping
 the addressing. A freq was a number because 1997's interface was a chat box
 and `=245` was how you named a team from a keyboard. This client has no text
 input anywhere, a rule [menu.md](menu.md) records along with the bugs that
-earned it, so the number was never going to be the interface. Teams live in a menu and menus carry names. The simulation is
-untouched by any of this: a team is still one byte in the state and on the
-wire, and the name rides the roster the way a pilot's call sign does. Names
+earned it, so the number was never going to be the interface. Teams live in a
+menu and menus carry names. The simulation is untouched by any of this: a team
+is still one byte in the state and on the wire, and the name rides the roster
+the way a pilot's call sign does. Names
 are presentation. Numbers are simulation. That split already runs through the
 whole client.
 
@@ -74,6 +75,14 @@ because teams are ephemeral and names are free, so nobody defends an asset.
 It also makes invitations socially cheap, since a mistake is not a commitment
 that needs a moderation tool to undo. A team with no members left in it stops
 existing and its byte returns to the pool.
+
+The walk-away only reads as a walk-away if the new team looks new, so the
+generator carries on through its word list instead of restarting at the top of
+it. Restarting was the first version and it handed a lone player the word the
+reaper had just freed, which made founding a second team look like a button
+that did nothing. The list still wraps once it is exhausted, because a
+free-for-all founds a side for every arrival and a counter that only climbed
+would have a room of bots flying for Anvil Watch 30 by the afternoon.
 
 What a private team means depends on the mode. In a free-form zone it is its
 own side: you and yours, mutually friendly inside the brawl. In a fixed-side

@@ -37,17 +37,26 @@ pub struct ZoneDef {
     /// The most simulations one process may hold for this zone. A ceiling, not
     /// a count: rooms appear on demand and are reclaimed when they empty.
     pub max_rooms: Option<usize>,
-    /// How many teams the mode may use. One is a free-for-all.
-    pub teams: Option<u8>,
-    /// smaller | random | none.
-    pub balance: String,
+    /// The zone's own teams, by name, in the order the mode scores them. The
+    /// names are what players see and are stable across rounds on purpose, so
+    /// a side is a place rather than a number. An empty list is a free-for-all:
+    /// no side to join, every pilot their own.
+    pub teams: Vec<String>,
+    /// The most sides the room may hold at once, the zone's own included.
+    /// Setting this to the number of public teams is how a zone says no
+    /// player may found one.
+    pub max_teams: Option<u8>,
+    /// People on one side, and bots on one side. There is no balance rule
+    /// beyond these: the only refusal a player meets is a full team, and the
+    /// bot cap is the ballast dial. See design/teams.md.
+    pub max_humans_per_team: Option<u16>,
+    pub max_bots_per_team: Option<u16>,
     /// `any`, the default, or `claimed` for a zone that wants a field it can
     /// vouch for. A ladder arena may reasonably care that everybody in it has
     /// chosen to be the same person tomorrow; a public room reasonably does
     /// not, since the cost of caring is a newcomer turned away in the second
     /// they arrived.
     pub admission: String,
-    pub private_teams: bool,
     pub arena: crate::config::ArenaConfig,
     /// The text this was parsed from, kept so a directory can hand the zone to
     /// an arena verbatim rather than re-serialising it. Not a field in the file;
@@ -67,10 +76,11 @@ impl Default for ZoneDef {
             fill_target: None,
             bot_fill: None,
             max_rooms: None,
-            teams: None,
-            balance: "smaller".into(),
+            teams: Vec::new(),
+            max_teams: None,
+            max_humans_per_team: None,
+            max_bots_per_team: None,
             admission: "any".into(),
-            private_teams: false,
             arena: crate::config::ArenaConfig::default(),
             raw: String::new(),
         }
@@ -103,8 +113,19 @@ impl ZoneDef {
     pub fn max_players(&self) -> usize {
         self.max_players.unwrap_or(16)
     }
-    pub fn teams(&self) -> u8 {
-        self.teams.unwrap_or(2).max(1)
+    /// A byte is the whole range a side can have and 255 is `TEAM_NONE`, so
+    /// this is what "as many as there can be" means. A zone that wants only
+    /// its own sides writes their count here instead.
+    pub fn max_teams(&self) -> u8 {
+        self.max_teams.unwrap_or(255).max(self.teams.len().min(255) as u8).max(1)
+    }
+    /// No cap by default, in both directions: a room's real ceiling is its
+    /// seats, and a zone that wants a tighter one says so.
+    pub fn max_humans_per_team(&self) -> u16 {
+        self.max_humans_per_team.unwrap_or(255).max(1)
+    }
+    pub fn max_bots_per_team(&self) -> u16 {
+        self.max_bots_per_team.unwrap_or(255)
     }
 }
 
@@ -366,17 +387,27 @@ fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
             crate::modes::NAMES.join(", ")
         ));
     }
-    if !matches!(z.balance.as_str(), "smaller" | "random" | "none") {
+    // A side with no name has nothing a menu can draw, and a zone that meant
+    // a free-for-all writes no teams at all rather than an empty string.
+    for (i, team) in z.teams.iter().enumerate() {
+        if team.trim().is_empty() {
+            return Err(format!("zone {name:?}: team {i} has no name"));
+        }
+    }
+    if z.teams.len() > 254 {
         return Err(format!(
-            "zone {name:?}: balance {:?} is not smaller, random or none",
-            z.balance
+            "zone {name:?}: {} teams, and a side is a byte where 255 means \
+             none",
+            z.teams.len()
         ));
     }
-    if let Some(t) = z.teams {
-        if t == 0 {
+    // A mode scores over the public teams, so a room that cannot hold them
+    // all is a zone whose own sides do not fit in it.
+    if let Some(cap) = z.max_teams {
+        if (cap as usize) < z.teams.len() {
             return Err(format!(
-                "zone {name:?}: teams must be at least 1; one team is a \
-                 free-for-all, none is nothing"
+                "zone {name:?}: max_teams {cap} is under its {} named teams",
+                z.teams.len()
             ));
         }
     }
@@ -622,14 +653,15 @@ mod tests {
                                           [[pool]]\nname = \"p\"\ntoken = \"hunter2\"\n\
                                           [[zone]]\nname = \"war\"\n")
             }), "sha256"),
-            ("badbalance", Box::new(|d: &Path| {
+            ("namelessteam", Box::new(|d: &Path| {
                 write(d, "zones/war/zone.toml", "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
-                                                 balance = \"alphabetical\"\n")
-            }), "balance"),
-            ("zeroteams", Box::new(|d: &Path| {
+                                                 teams = [\"Keel\", \"\"]\n")
+            }), "no name"),
+            ("teamsovercap", Box::new(|d: &Path| {
                 write(d, "zones/war/zone.toml", "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
-                                                 teams = 0\n")
-            }), "teams"),
+                                                 teams = [\"Keel\", \"Vantage\"]\n\
+                                                 max_teams = 1\n")
+            }), "max_teams"),
             ("baddefault", Box::new(|d: &Path| {
                 write(d, "catalog.toml", "version = 1\ndefault_zone = \"nope\"\n\
                                           [[zone]]\nname = \"war\"\n")
@@ -691,9 +723,11 @@ pub fn run_check() {
                 let map = c.map_bytes(name).map(|b| b.len()).unwrap_or(0);
                 println!(
                     "  zone {name:<10} mode {:<8} {} ships / {} players, fill {}, \
-                     bots {:.0}%, {} room(s), {} team(s), map {map} B",
+                     bots {:.0}%, {} room(s), teams {}, map {map} B",
                     z.mode, z.max_ships.unwrap_or(64), z.max_players(),
-                    z.fill_target(), z.bot_fill() * 100.0, z.max_rooms(), z.teams()
+                    z.fill_target(), z.bot_fill() * 100.0, z.max_rooms(),
+                    if z.teams.is_empty() { "free-for-all".to_string() }
+                    else { z.teams.join("/") }
                 );
             }
             println!("  default {:?}", c.fallback_zone().unwrap_or_default());

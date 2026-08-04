@@ -64,13 +64,18 @@ max_rooms = 1
 # so the population is the seats, not the player cap. Five teams over that
 # put ten on a side within the hour it shipped; sixty-four over ten is never
 # more than seven, however full the room runs.
-teams = 10
+#
+# Named for the things that hold a structure up, which is the register the
+# hulls are named in, and no name here is a name any pilot wears: the bot
+# roster and the call sign generator are both single words, so a side never
+# reads as a person.
+teams = ["Bastion", "Caisson", "Corbel", "Culvert", "Girder",
+         "Lintel", "Pylon", "Spandrel", "Trestle", "Weir"]
 # [Team] ForceEvenTeams=0 says the original will not reshuffle a running game,
-# and neither do we. It does still put an arriving pilot on the smaller side,
-# which is what this key does. Writing "none" here is not the neutral choice it
-# looks like: it puts everybody on side zero, and every hostility test in this
-# stack asks whether two sides differ, so it would be combat off.
-balance = "smaller"
+# and neither do we. An arriving pilot still lands on the emptiest side, which
+# is a default rather than a rule: the team list is one selection away and the
+# only thing that can refuse it is a full side.
+max_humans_per_team = 7
 
 [arena]
 # [Misc] BounceFactor=22, against 16 for a wall that takes nothing. The

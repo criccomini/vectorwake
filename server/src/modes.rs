@@ -15,10 +15,28 @@ pub struct ModeCtx<'a> {
     pub world: &'a mut World,
     /// Ships in this arena, and whether each is a bot.
     pub seats: &'a [(u8, bool)],
+    /// The zone's own sides, by name, in the order it scores them. A mode
+    /// writes banners about the game, and a side is a name to everybody
+    /// reading one: "Vantage holds all four flags" is news, "team 1 holds all
+    /// four flags" is a log line. Private sides are not in here and cannot
+    /// win, which is what stops a pair of friends founding their way to a
+    /// round victory in a flag game.
+    pub team_names: &'a [String],
     /// Lines the client shows above the scoreboard.
     pub banner: String,
     /// Set when the mode is finished and the arena should be torn down.
     pub finished: bool,
+}
+
+impl ModeCtx<'_> {
+    /// What to call a side in a sentence. A zone that named none, or a side
+    /// above the ones it named, still has to read as something.
+    pub fn team_name(&self, team: u8) -> String {
+        self.team_names
+            .get(team as usize)
+            .cloned()
+            .unwrap_or_else(|| format!("team {team}"))
+    }
 }
 
 /// Every mode a zone may name. The catalog checks against this rather than
@@ -156,14 +174,15 @@ impl Mode for Warzone {
                         *w += 1;
                     }
                     self.reset_at = Some(self.clock + 500);
-                    ctx.banner = format!("team {t} wins round {}", self.round);
+                    ctx.banner = format!("{} wins round {}", ctx.team_name(t), self.round);
                 } else {
-                    ctx.banner = format!("team {t} holds all {} flags: {}", self.flags, left / 100 + 1);
+                    ctx.banner = format!("{} holds all {} flags: {}",
+                                        ctx.team_name(t), self.flags, left / 100 + 1);
                 }
             }
             (Some(t), _) => {
                 self.hold = Some((t, self.clock));
-                ctx.banner = format!("team {t} holds all {} flags", self.flags);
+                ctx.banner = format!("{} holds all {} flags", ctx.team_name(t), self.flags);
             }
             (None, _) => {
                 self.hold = None;
@@ -198,7 +217,8 @@ mod warzone_tests {
     }
 
     fn ctx(world: &mut World) -> ModeCtx<'_> {
-        ModeCtx { world, seats: &[], banner: String::new(), finished: false }
+        ModeCtx { world, seats: &[], team_names: &[], banner: String::new(),
+                  finished: false }
     }
 
     #[test]

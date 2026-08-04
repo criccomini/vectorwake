@@ -708,6 +708,61 @@ int main(void) {
         CHECK(sim_set_ship_class(&s, &cfg, 0, 99) == -1, "no such class");
     }
 
+    /* Changing sides is the same respawn under the same gate, and it takes
+     * what you were carrying for the other side away with it. What it does
+     * not take is the ship: crossing over is not a new hull. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, APEX, 1, 8500, 8192, 0, &cfg);
+        step_n(&s, &cfg, SIM_BTN_THRUST, SIM_BTN_THRUST, 30);
+        s.ships[0].up[SIM_UP_SPEED] = 3;
+        s.ships[0].earned = 40;
+        int32_t foe_y = s.ships[1].y;
+        CHECK(s.ships[0].y != s.ships[0].spawn_y, "the pilot had flown off");
+
+        CHECK(sim_set_ship_team(&s, &cfg, 0, 5) == 0, "the side changed");
+        CHECK(s.ships[0].team == 5, "to the one asked for");
+        CHECK(s.ships[0].cls == APEX, "in the hull they were already flying");
+        CHECK(s.ships[0].up[SIM_UP_SPEED] == 3,
+              "keeping what they had collected for it");
+        CHECK(s.ships[0].earned == 0, "and none of the bounty they had earned");
+        CHECK(s.ships[0].x == s.ships[0].spawn_x
+              && s.ships[0].y == s.ships[0].spawn_y, "back at a start");
+        CHECK(s.ships[0].vx == 0 && s.ships[0].vy == 0, "at rest");
+        CHECK(s.ships[0].energy ==
+              sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]),
+              "with a full bar");
+        CHECK(s.ships[1].y == foe_y, "and nobody else moved");
+
+        /* A side the map has never marked a start for still gets one, or a
+         * private team formed mid-round would spawn inside the walls. */
+        CHECK(sim_set_ship_team(&s, &cfg, 0, 200) == 0, "any side is a side");
+        CHECK(SIM_TILE_CLASS(sim_tile_at(cfg.map, s.ships[0].x >> 12,
+                                         s.ships[0].y >> 12)) != SIM_TILE_SOLID,
+              "and its start is somewhere you can fly");
+
+        CHECK(sim_set_ship_team(&s, &cfg, 0, 200) == 0, "asking again is fine");
+        CHECK(sim_set_ship_team(&s, &cfg, 9, 1) == -1, "no such ship");
+    }
+
+    /* And the gate itself, which is the only thing standing between a team
+     * list and a heal button. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].energy /= 2;
+        CHECK(sim_set_ship_team(&s, &cfg, 0, 1) == -1, "not while hurt");
+        CHECK(s.ships[0].team == 0, "and the side did not move");
+        s.ships[0].energy = sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]);
+        s.ships[0].alive = 0;
+        CHECK(sim_set_ship_team(&s, &cfg, 0, 1) == -1, "nor while dead");
+        s.ships[0].alive = 1;
+        CHECK(sim_set_ship_team(&s, &cfg, 0, 1) == 0, "whole and alive, yes");
+    }
+
     /* Only from a full bar. A fresh hull is a full bar, so without this the
      * ship list is a way out of a fight you are losing. */
     {
