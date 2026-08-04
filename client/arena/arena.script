@@ -56,11 +56,40 @@ local charge_slot = 0
 local layers = nil
 -- The terrain window, in tiles either side of the camera, and how far the
 -- camera may walk before it is rebuilt. A map is 1024 tiles square, so what
--- gets meshed is a window rather than the map: 113 tiles across is about the
--- same work the whole old arena was, and at 56 out against a view about 20
--- tiles wide there are two rebuilds' worth of margin beyond the screen.
-local STATIC_HALF = 56
+-- gets meshed is a window rather than the map.
+--
+-- It follows the view, and has to. The camera holds a fixed zoom per decision
+-- 13, so a wider window sees further rather than seeing the same thing
+-- bigger: half the window in tiles is the drawable's half-width over sixteen.
+-- This was 56, a constant, written against "a view about 20 tiles wide" and
+-- correct for exactly one size of browser. At 1280 CSS pixels the view is 40
+-- tiles either side and 56 leaves precisely one rebuild's margin; past that
+-- the margin goes negative and terrain stops in mid air, short of an edge the
+-- player can plainly see over. Rebuilding does not close it, because the
+-- window is recentred rather than widened, which is why it reads as a gap
+-- that follows you.
 local STATIC_STEP = 16
+-- What a 1280-wide window needs, and the floor: a window smaller than this
+-- gains nothing from meshing less, and the home screen has no viewport yet.
+local STATIC_MIN = 56
+-- A ceiling on one rebuild, in tiles either side. The window is meshed whole
+-- and held whole, so its cost is the square of this: 137 is a 3840-wide
+-- drawable with its rebuild margin intact, and asks about 22 MB of the two
+-- static layers. Past it the old gap comes back, far out, which is the trade
+-- against a client that would otherwise ask for hundreds of megabytes on a
+-- wall display. Note this is CSS pixels rather than device ones: a dense
+-- display folds its density into the zoom, so a retina laptop sees the same
+-- amount of world as a plain one and asks for the same window.
+local STATIC_MAX = 137
+local static_half = STATIC_MIN
+-- What a static layer starts at before any build has said what it needs, and
+-- the floor it is never taken below. The window is meshed rarely and drawn
+-- always, so what a capacity really costs is a per-frame one: the mesh
+-- component submits the whole buffer every frame, degenerate or not, and a
+-- capacity chosen for the densest tile of the map is paid for over the empty
+-- ones too. So these are a starting guess and `fit_static` below moves them.
+local STATIC_SEED = 16384
+local STATIC_FLOOR = 8192
 local static_tx, static_ty = nil, nil
 -- Forward declared: leaving a zone is reached both from a menu row and from a
 -- socket that dropped, and one of those runs above the place that knows what
@@ -223,6 +252,33 @@ end
 -- The terrain and the starfield never move, so they are built once per map
 -- rather than per frame. Rebuilding them was the single most expensive thing
 -- the old renderer did, and it did it sixty times a second.
+-- What the two static layers should hold next time, decided by what they held
+-- last time. Applied before the next build rather than after this one, because
+-- resizing hands a layer an empty buffer and rebuilding twice to fill it would
+-- put the whole cost of the change into one frame.
+local bg_want, bgglow_want = nil, nil
+
+-- Choose a capacity from what a build actually used.
+--
+-- Density varies across a map far more than the window size does: a window of
+-- open space costs almost nothing to mesh and the middle of Chaos costs
+-- everything. Sizing for the worst tile everywhere is what made the layers
+-- expensive, since the whole buffer is drawn every frame whether it holds
+-- geometry or not.
+--
+-- Half again as much as the last build is the target. It is enough that
+-- ordinary drift across a map does not touch the capacity at all, and the
+-- band below is wide enough that a layer does not thrash between two sizes on
+-- a ship flying back and forth across one wall.
+local function fit_static(layer, dropped)
+    local used = layer.n + dropped
+    local want = math.max(STATIC_FLOOR, math.ceil(used * 1.5))
+    if used > layer.cap * 0.9 or want < layer.cap * 0.55 then
+        return want
+    end
+    return nil
+end
+
 local function rebuild_static(tx, ty)
     if not layers then return end
     if not tx then
@@ -239,9 +295,25 @@ local function rebuild_static(tx, ty)
     -- terrain is built long before the frame that draws a ship, so the team
     -- goes in here rather than being passed down every call.
     world.my_team = (sim.ship_count() > 0) and sim.ship_team(me) or 0
+    -- Whatever the last build asked for, before this one writes anything.
+    if bg_want then layers.bg:resize(bg_want); bg_want = nil end
+    if bgglow_want then layers.bgglow:resize(bgglow_want); bgglow_want = nil end
     world.build_static(layers.bg, layers.bgglow,
-                       tx - STATIC_HALF, ty - STATIC_HALF,
-                       tx + STATIC_HALF, ty + STATIC_HALF)
+                       tx - static_half, ty - static_half,
+                       tx + static_half, ty + static_half)
+    -- What this one turned out to need. A layer that dropped geometry is
+    -- short right now rather than next time, so it is rebuilt at once; that
+    -- is the one case worth paying two builds for, because the alternative is
+    -- terrain missing from the screen until the camera happens to move.
+    bg_want = fit_static(layers.bg, layers.bg.dropped)
+    bgglow_want = fit_static(layers.bgglow, layers.bgglow.dropped)
+    if layers.bg.dropped > 0 or layers.bgglow.dropped > 0 then
+        if bg_want then layers.bg:resize(bg_want); bg_want = nil end
+        if bgglow_want then layers.bgglow:resize(bgglow_want); bgglow_want = nil end
+        world.build_static(layers.bg, layers.bgglow,
+                           tx - static_half, ty - static_half,
+                           tx + static_half, ty + static_half)
+    end
 end
 
 -- No terrain at all, which is what the home screen wants. The static layers
@@ -373,23 +445,20 @@ function init(self)
 
     layers = {
         -- The static layers are built when the camera leaves its window and
-        -- uploaded once, not per frame, so their capacity costs memory rather
-        -- than bandwidth. Terrain that draws its faces as runs, its corners as
-        -- chamfers and its objects as objects wants more room than an outline
-        -- per tile did, and it is the cheapest place in the client to buy it.
-        bg = vec.layer("#bg", 32768),
-        -- Doubled when strokes got their falloff. Every wall face carries a
-        -- ramp on each side now, and War's densest window measured 50304
-        -- vertices against a ceiling of 49152: it fit before and did not
-        -- after, and what an overflow looks like is a wall that is simply not
-        -- drawn. Swept across every window of all three shipped maps, the
-        -- worst is under half of this.
-        bgglow = vec.layer("#bgglow", 98304),
-        -- The two static layers above are uploaded once per map. These three
-        -- go up every frame, whole, however little of them is used, so the
-        -- headroom is bandwidth spent on nothing, and these are sized against
-        -- what a heavy frame actually measures (fill 2.8k, glow 3.8k, ui 2.1k)
-        -- with room to spare rather than by an order of magnitude.
+        -- uploaded when the camera leaves its window rather than per frame,
+        -- but *drawn* every frame in full, so a capacity is a per-frame cost
+        -- and not only memory. That is why these two start at a guess and are
+        -- then sized against what the map in front of them actually needs;
+        -- see fit_static. They used to be fixed at 32768 and 98304, chosen for
+        -- the densest window of the densest map and paid for over every empty
+        -- one.
+        bg = vec.layer("#bg", STATIC_SEED),
+        bgglow = vec.layer("#bgglow", STATIC_SEED),
+        -- These three go up every frame, whole, however little of them is
+        -- used, so the headroom is bandwidth spent on nothing, and these are
+        -- sized against what a heavy frame actually measures (fill 2.8k, glow
+        -- 3.8k, ui 2.1k) with room to spare rather than by an order of
+        -- magnitude.
         fill = vec.layer("#fill", 6144),
         -- Raised from 8192 with the detailed hulls. A hull costs up to 780
         -- vertices where the old outline and spine cost 134, so the old
@@ -995,6 +1064,30 @@ function on_message(self, message_id, message)
             -- again. Forgetting where it was centred is what asks for that.
             if px ~= self.px then
                 self.px = px
+                static_tx = nil
+            end
+        end
+        -- The window the terrain has to cover, and the room the two static
+        -- layers need to hold it. Both follow the view: see STATIC_STEP.
+        if layers and message.hw and message.hw > 0 then
+            local need = math.max(message.hw, message.hh) / 16
+            local want = math.ceil(need) + STATIC_STEP + 1
+            if want < STATIC_MIN then want = STATIC_MIN end
+            if want > STATIC_MAX then
+                -- Said once, because a gap on a window this wide is now a
+                -- deliberate ceiling rather than the bug it used to be, and
+                -- somebody looking at one deserves to find out why.
+                if static_half ~= STATIC_MAX then
+                    print(string.format(
+                        "TERRAIN: view wants %d tiles either side, holding at %d",
+                        want, STATIC_MAX))
+                end
+                want = STATIC_MAX
+            end
+            if want ~= static_half then
+                static_half = want
+                -- The capacities follow from what the next build measures,
+                -- not from the window: see fit_static.
                 static_tx = nil
             end
         end
