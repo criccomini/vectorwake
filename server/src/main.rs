@@ -1321,7 +1321,13 @@ impl Arena {
             // microseconds of a fifty millisecond period. The bytes saved are
             // worth far more than the pack costs.
             let sh = &self.world.state.ships[p.ship as usize];
-            let n = self.world.pack_around(buf, sh.x, sh.y, PRIZE_INTEREST);
+            // A declared bot gets every prize. The radius exists to keep human
+            // snapshot bytes down across the internet; the bot server sits on
+            // loopback, and it predicts each room in one world shared by all
+            // its pilots, which is only sound if any one bot's snapshot is the
+            // whole room's truth. Prizes were the one thing packed per player.
+            let radius = if p.bot { -1 } else { PRIZE_INTEREST };
+            let n = self.world.pack_around(buf, sh.x, sh.y, radius);
             if n <= 0 {
                 continue;
             }

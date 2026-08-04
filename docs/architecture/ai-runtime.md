@@ -92,15 +92,24 @@ review. It is now kept by the protocol.
 
 A bot decodes snapshots through the simulation core, the way the client and
 `tools/pilot` do: map and settings arrive at join, snapshots at 20 Hz, and the
-bot server unpacks them into a world the brain reads through the same `own`
-and `scan` the calibration harness uses. Whatever visibility filter the server
-applied before sending is the filter the bot sees through.
+brain reads the decoded world through the same `own` and `scan` the
+calibration harness uses. Whatever filter the server applied before sending is
+the filter the bot sees through. For a declared bot that filter is nothing:
+prizes, the one per-player difference in a snapshot, arrive whole, so any one
+bot's snapshot is the entire room's truth.
 
-No prediction. Bots look at 10 to 20 Hz and work from a stale picture between
-looks, which is both cheaper and more human, so a 20 Hz snapshot stream over
-loopback is fresher than the cadence the brain was tuned against. The bot
-server holds the latest decoded state and lets each brain look on its own
-schedule, offset per bot so the cost spreads.
+That truth is held once per arena. The fifty bots an arena wants are all being
+sent the same room, so the bot server predicts it in one shared world rather
+than a private copy per bot: one pilot holds the pen, applies the snapshots,
+and steps the world at the simulation's 100 Hz with every seat's latest
+buttons, and the rest only read. The brain's timing survives unchanged, since
+the picture still advances every tick. What changed is the bill, one step per
+arena per tick instead of one per bot, which was measured at 82% of the
+process before the sharing. A pilot's own input echoes up to a tick late
+instead of instantly, inside the noise of the snapshot corrections it already
+rides out, and the other bots' inputs now show between snapshots, where a
+private world showed everyone else coasting. Brains still look at 10 to 20 Hz,
+offset per bot so the cost spreads.
 
 Sight reaches sixty tiles, the radar's own reach. That bound arrived after the
 map did, and it exposed something the unbounded version had been hiding: a
@@ -316,16 +325,16 @@ tournament.
 
 ## Budget
 
-The costs moved rather than grew. Measured on a 64-seat room at `bot_fill` 0.8,
-which is 51 bots, with the numbers in [hosting.md](hosting.md): the arena spends
-3% of its tick budget in the worst case, almost all of it building 51
-interest-filtered snapshots on the ticks that carry one, and the bot server
-spends 14% of a core and 15 MB.
+The costs moved rather than grew. Measured on the deployed shape, three
+64-seat arenas at `bot_fill` 0.8 with 153 pilots in the air: each arena
+process spends about 7% of a core, and the bot server about 40% of one, the
+whole population inside about 60 MB. Prediction dominates that 40%, and the
+shared rig is what holds it there: stepping a private copy per pilot instead
+costs 141% of a core on the same fleet, which is more than the host has.
 
-The bot server's share is the larger one and it is the price of the brain
-keeping its timing: each bot steps its own copy of the room at 100 Hz between
-snapshots. Memory stays small because the bots of one zone share one map by
-`Arc`, the same trick that keeps a room at 79 KB.
+Memory stays small because the bots of one zone share one map, and the bots
+of one arena share one world, the same `Arc` trick that keeps a room at
+79 KB.
 
 Traffic is free while the bot server sits beside its arenas, since 30 KB/s per
 client is loopback. It stops being free for a region with arenas and no bot
@@ -357,7 +366,8 @@ server's tick and is now a tenant of a process whose whole job is bots.
 Bots stay the load generator, and they become the wire's canary: a soak test
 is the bot server pointed at a real arena, and every hour of fill is an hour
 of protocol exercise on the path players use. `tools/pilot` keeps its separate
-job of measuring prediction agreement, since bots do not predict.
+job of measuring prediction agreement, which bots never exercise: their
+prediction is overwritten by every snapshot rather than reconciled against it.
 
 Bot-versus-bot tournaments calibrate the rating ladder before humans arrive,
 as described in [design/rating.md](../design/rating.md).
