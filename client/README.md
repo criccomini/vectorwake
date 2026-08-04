@@ -367,6 +367,31 @@ on the name beside it, which have to reach nothing, and on a scoreboard row,
 which has to reach the pilot. Both rules are invisible until somebody is
 flying, on a build that takes six minutes to publish.
 
+## The games list survives its directory
+
+`arena/directory.lua` holds one socket and re-asks on a timer while the list is
+the thing on screen. The socket dying is the case that matters, because the
+moment it is most likely to happen is a deploy, which is also the moment
+somebody is most likely to be staring at this list waiting for the fleet to
+come back. So `M.tick` dials again when there is no connection, backing off
+from two seconds to fifteen: a dial is a TLS handshake rather than the one byte
+a refresh costs, but the first retry is quick because a restart takes seconds.
+
+Every dial carries a generation, and a callback from a socket that has been
+replaced is dropped. Without that, a socket given up on can still deliver its
+own disconnect, clear the connection belonging to its replacement, and leave
+the list dialling over the top of a working link for ever.
+
+An outage under a list that already has rows is silent and leaves them up: a
+reply that never came is a worse reason to blank three games off the screen
+than counts a few seconds stale. An outage with nothing to show says where it
+was looking, and the line under the list says the list fills in by itself,
+because reloading the whole client used to be the only way out of that screen.
+
+`lua5.1 client/tests/directory_test.lua` stubs the socket and delivers the
+events by hand, since none of this is reachable without a server that stops and
+then starts.
+
 ## No audio ships in the page
 
 The kit is fifteen sounds and about a megabyte of 16-bit PCM, which compresses
