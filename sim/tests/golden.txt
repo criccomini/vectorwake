@@ -27,4 +27,4 @@ tick 13000 hash 0fc67c784079f329
 tick 13500 hash 7169f4a3d44237cf
 tick 14000 hash df29de59b6a2391c
 tick 14500 hash 4f2bbfa2140da791
-final tick 14720 hash a26d4a868e9d607e fires 102 hits 31 deaths 8 bounces 7
+final tick 14720 hash a26d4a868e9d607e fires 92 hits 31 deaths 8 bounces 7

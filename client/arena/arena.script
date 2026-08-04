@@ -449,10 +449,11 @@ end
 
 local function drain_events()
     world.events(me, sfx.play)
-    -- What the events cannot say, because a one-tick weapon is gone before a
-    -- snapshot is packed. Read off the state rather than the event list, so it
-    -- goes here rather than in the loop below.
+    -- What the events cannot say, because they are this client's own
+    -- simulation talking and it simulates one pilot. Both of these read the
+    -- state instead, so they go here rather than in the loop below.
     world.charges(me, sfx.play)
+    world.shots(me, sfx.play)
     for i = 0, sim.event_count() - 1 do
         local ty, a, b, v = sim.event_at(i)
         if ty == sim.EV_HIT and a == me then

@@ -103,6 +103,38 @@ information you cannot see, and this document opens by saying sound should carry
 exactly that. If it comes back it should be its own thin ricochet at the bullet's
 position rather than a second muzzle crack.
 
+## Everybody's guns, not only yours
+
+A fire event belongs to the one pilot this client predicts, and that is not a gap
+in the event. The core is handed your buttons and nobody else's, so a stranger is
+flown coasting, their trigger is never pulled here, and there is nothing for it to
+raise. Their rounds arrive already in the air, in a snapshot.
+
+Left at that, an arena sounds of explosions and wall hits with nothing leaving the
+guns making them, which reads as though everyone else is firing blanks. It sounded
+that way for a while.
+
+Two things in every snapshot say a stranger fired. Their fire cooldown is the
+honest one: a shot sets it and every tick takes one off, so on a hull nothing
+local can fire it only counts down, and a rise came off the wire. What it cannot
+say is which trigger, so the rounds answer that. Counting their live ones by
+family over the same tick, a cooldown that rose while their bomb count did was a
+bomb.
+
+Both have to agree, because each is wrong on its own. A round appearing is also
+what a mispredicted collision looks like when the next snapshot puts it back.
+Missing a shot is cheaper than inventing one, so the price of insisting on both is
+the shot fired and finished inside a single snapshot, which nobody was going to
+pick out of a firefight anyway.
+
+## A fragment is not a trigger pull
+
+Shrapnel used to raise the same fire event a trigger raises, because both come out
+of one function in the core. The client hears that event as a muzzle and puts it
+on the hull that pulled it, so a bomb breaking up left a gunshot and a muzzle
+flash on the bomber, wherever on the map it had gone off. Only a round somebody
+aimed raises one now.
+
 ## Held sounds and answered sounds are different problems
 
 Two sounds are held: thrust and the soundtrack. Everything else answers

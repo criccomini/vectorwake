@@ -1007,6 +1007,18 @@ int main(void) {
          * step of a fork bomb, and the table has room for a thousand. */
         step_n(&s, &w, 0, 0, 45);
         CHECK(s.weapon_count == 0, "fragments do not fragment");
+
+        /* And breaking up is not firing. The client hears a fire event as a
+         * trigger and puts the noise on the hull that pulled it, so a
+         * fragment counted here was a gunshot at the shooter every time one
+         * of their rounds broke, from wherever on the map it broke. */
+        sim_state t;
+        sim_init(&t, 1);
+        sim_spawn(&t, APEX, 0, 8192, 8192, 0, &w);
+        ev_counts pull = step_counting(&t, &w, SIM_BTN_FIRE, 0, 1);
+        CHECK(pull.fires == 1, "pulling the trigger is one fire event");
+        ev_counts flight = step_counting(&t, &w, 0, 0, 25);
+        CHECK(flight.fires == 0, "and the eight fragments it became are none");
     }
 
     {
@@ -1726,12 +1738,15 @@ int main(void) {
         s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 3);
         step_n(&s, &w, SIM_BTN_BOMB, 0, 1);
         CHECK(s.weapon_count == 1, "one bomb away");
-        /* Counted by the shot it fires rather than by what is in the air a
-         * tick later. Fragments come into being at the point of impact, which
-         * is on top of the hull that was hit, and scattered ones mostly die
-         * against it in the same tick they were born -- which is faithful,
-         * and is the reason the original pays shrapnel almost nothing for its
-         * first quarter second. */
+        /* Looked for every tick rather than at the end. Fragments come into
+         * being at the point of impact, which is on top of the hull that was
+         * hit, and scattered ones mostly die against it in the same tick they
+         * were born. That is faithful, and is the reason the original pays
+         * shrapnel almost nothing for its first quarter second.
+         *
+         * This used to count fire events instead, which was quicker to write
+         * and wrong twice over: it read a splinter as a trigger pull, and it
+         * stopped being true the day splinters stopped emitting one. */
         int seen = 0, carried = 0;
         ev_counts ec = {0, 0, 0, 0, 0, 0, 0};
         for (int t = 0; t < 200; t++) {
@@ -1743,9 +1758,9 @@ int main(void) {
                     if (s.weapons[i].mods != 0) carried = 1;
                 }
         }
-        CHECK(ec.fires >= 1, "the hit broke it up");
-        CHECK(seen, "and the fragments were there to look at");
-        CHECK(!carried, "and they carry nothing");
+        CHECK(seen, "the hit broke it up");
+        CHECK(ec.fires == 0, "without anybody pulling a trigger");
+        CHECK(!carried, "and the fragments carry nothing");
     }
 
     {

@@ -713,7 +713,13 @@ static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
         spawn_weapon(s, p->spec, owner, team, x, y, vx, vy, spec->life,
                      spec->bounces, depth, mods);
     }
-    emit(ev, SIM_EV_FIRE, owner, p->spec, 0);
+    /* A fire event is a trigger being pulled, so shrapnel is not one: nobody
+     * aimed it and its owner may well be dead. The client reads this event as
+     * a muzzle, at the ship rather than at the weapon, because a shot leaves a
+     * hull. So a fragment reported here put a gunshot and a muzzle flash on
+     * the bomber every time one of their bombs went off, anywhere on the map.
+     * Depth is the whole of the test: only a splinter has one. */
+    if (depth == 0) emit(ev, SIM_EV_FIRE, owner, p->spec, 0);
 }
 
 /* ---- flags ---- */
