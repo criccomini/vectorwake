@@ -46,6 +46,11 @@ local accum = 0
 local feed = {}
 local hurt = 0
 local pickup = nil
+-- Per-seat bank state, described where it is used further down. Declared up
+-- here because go_home clears it, and a local declared below the function that
+-- reads it is not the same variable: the function closes over a global that is
+-- nil, and clearing it throws on the way out of every zone.
+local rolls = {}
 -- Which charge the use key spends. The client's, not the simulation's.
 local charge_slot = 0
 local layers = nil
@@ -460,7 +465,6 @@ end
 --
 -- Purely visual, per decision 5: nothing here touches the simulation, and a
 -- rolled hull's collision radius is whatever the core says it is.
-local rolls = {}
 local TAU = 2 * math.pi
 local FULL_TURN = 3.0        -- rad/s of turn that earns the whole bank;
                              -- an unupgraded hull turns at about pi
