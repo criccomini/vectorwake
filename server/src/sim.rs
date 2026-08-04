@@ -202,6 +202,11 @@ pub struct sim_ship {
     /// The rung each trigger is on, and the add-ons held on each.
     pub level: [u8; TRIG_COUNT],
     pub mods: [u16; TRIG_COUNT],
+    /// Multifire declined: the add-on is still held, it is just not applied
+    /// when the trigger is pulled.
+    pub multi_off: u8,
+    /// Last tick's buttons, for the toggles that fire on a press.
+    pub btn_prev: u16,
     /// Charges in hand, spent one at a time.
     pub charge: [u8; MAX_CHARGES],
     /// Bounty earned by killing, as opposed to bounty carried.

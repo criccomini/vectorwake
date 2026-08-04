@@ -57,6 +57,17 @@ M.ROCK_EDGE = rgb(0x8a8794)
 -- A gravity well gets a band nothing else uses. Pink belongs to the bomb and
 -- orange to a team; a wormhole wearing either is a wormhole people shoot at.
 M.HOLE      = rgb(0xa06bff)
+-- A door's own colour, and the reason it is this one.
+--
+-- Doors used to be drawn in the wall's blue, deliberately: colour belongs to
+-- teams and to weapon classes, and a door wearing either is a door somebody
+-- misreads under fire. That rule stands and this does not break it. Teams are
+-- cyan and amber, weapons are pink and gold, and a door is green, which is a
+-- band nothing else in the arena occupies. What it buys is that a shut door
+-- and an open one differ in hue rather than only in brightness, which is the
+-- difference you want to read at speed and across a starfield.
+M.DOOR      = rgb(0x35e0a0)
+M.DOOR_OPEN = rgb(0x1c8f6a)
 -- Three depths of star. The old pair were #1b2740 and #121b2e on a #05070c
 -- field, which is a dark slate on a darker one: present in the buffer,
 -- invisible on the screen, and reported as a missing starfield. The near

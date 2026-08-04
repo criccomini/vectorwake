@@ -1157,6 +1157,17 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 }
             }
         }
+        /* Multifire, declined or taken back, on the press. The add-on is
+         * untouched: this only decides whether it is applied when the trigger
+         * is pulled, so a pilot can hold a fan and still take a single
+         * accurate shot. Edge-detected here rather than pulsed by the client,
+         * because a pulse that arrives twice or not at all is a ship state
+         * the two ends disagree about. */
+        if ((b & SIM_BTN_MULTI) && !(sh->btn_prev & SIM_BTN_MULTI)) {
+            sh->multi_off = (uint8_t)(sh->multi_off ? 0 : 1);
+        }
+        sh->btn_prev = b;
+
         /* 3a. A charge: a weapon carried by the count and spent. The slot
          * comes down in the buttons rather than living on the ship, so
          * choosing which one is ready is the client's business and costs the
@@ -1192,7 +1203,11 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             uint8_t pat = trigger_pattern(cls, trig, sh->level[trig]);
             sim_fire_pattern fp;
             sim_weapon_spec fs;
-            if (resolve(cfg, pat, sh->mods[trig], sh->level[trig], &fp, &fs)) {
+            uint16_t use_mods = sh->mods[trig];
+            if (sh->multi_off) {
+                use_mods = sim_mod_set(use_mods, SIM_MOD_MULTI, 0);
+            }
+            if (resolve(cfg, pat, use_mods, sh->level[trig], &fp, &fs)) {
                 /* The cost is the shot's, not each projectile's: a burst of
                  * sixteen costs what pulling the trigger costs, and so does
                  * multifire -- an add-on that made a shot cost per barrel
@@ -1204,7 +1219,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
                     spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
                                   sh->vx, sh->vy, sh->heading, 0,
-                                  sh->mods[trig], sh->level[trig], ev);
+                                  use_mods, sh->level[trig], ev);
                     sh->energy -= fp.energy;
                     sh->fire_cooldown = fp.delay;
                     sh->vx -= (int32_t)(((int64_t)fp.recoil * dx) >> 15);
@@ -1249,6 +1264,40 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 int64_t mag = isqrt64(mag2);
                 sh->vx = (int32_t)((int64_t)sh->vx * max / mag);
                 sh->vy = (int32_t)((int64_t)sh->vy * max / mag);
+            }
+        }
+
+        /* 4a. A wormhole taken at close range throws the ship somewhere else
+         * on the map.
+         *
+         * The pull above is the whole of what a wormhole used to do, which
+         * made it a hazard to steer around rather than a thing to steer
+         * *for*: it dragged a pilot in and then let them coast out the far
+         * side having gained nothing but a bad angle. Touching it now moves
+         * you, which is what a wormhole is for.
+         *
+         * Contact is the tile, the same test the door below makes, so a
+         * wormhole drawn six tiles across is entered by flying into the part
+         * of it that is drawn rather than by passing over a point.
+         *
+         * The destination is any of the map's spawns rather than the pilot's
+         * own team's, because a wormhole that only ever sent you home would
+         * be a retreat button. Drawn from the state's own generator, so the
+         * two ends of the wire agree about where a ship went. */
+        if (sh->alive
+            && SIM_TILE_CLASS(sim_tile_at(cfg->map, sh->x >> 12, sh->y >> 12))
+                   == SIM_TILE_WORMHOLE) {
+            uint16_t stx = 0, sty = 0;
+            next->rng = xorshift32(next->rng);
+            if (sim_map_spawn(cfg->map, sh->team, next->rng >> 8, &stx, &sty)) {
+                sh->x = (int32_t)stx * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
+                sh->y = (int32_t)sty * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
+                /* Momentum does not survive the trip. Arriving at a spawn at
+                 * four hundred pixels a second is arriving inside whatever is
+                 * next to it. */
+                sh->vx = 0;
+                sh->vy = 0;
+                emit(ev, SIM_EV_WARP, (uint8_t)i, 1, 0);
             }
         }
 
@@ -1517,6 +1566,11 @@ uint64_t sim_hash(const sim_state *s) {
         for (int t = 0; t < SIM_TRIG_COUNT; t++)
             h = hash_u32(h, (uint32_t)(sh->level[t] | (sh->mods[t] << 8)));
         for (int k = 0; k < SIM_MAX_CHARGES; k++) h = hash_u32(h, sh->charge[k]);
+        /* What the next shot will be, and what the last press was. Both are
+         * state: the second decides whether the next tick sees an edge, and a
+         * client that guessed at it would toggle when the server did not. */
+        h = hash_u32(h, sh->multi_off);
+        h = hash_u32(h, sh->btn_prev);
         h = hash_u32(h, sh->earned);
         h = hash_u32(h, sh->points);
     }

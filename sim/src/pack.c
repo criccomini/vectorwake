@@ -88,6 +88,19 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
             w16(&w, sh->mods[t]);
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, sh->charge[k]);
+        /* Whether this pilot has multifire switched off. It travels because a
+         * client predicting its own shots has to know, and because the
+         * interface says which way the toggle is set.
+         *
+         * And last tick's buttons with it, which looks like sending an input
+         * back to the machine that sent it. It is not optional: `sim_unpack`
+         * clears the state it fills, so without this the edge detector wakes
+         * up thinking nothing was held, and a key still down when a snapshot
+         * lands reads as a fresh press. At ten snapshots a second a pilot
+         * holding the key for a moment toggles four times on the client and
+         * once on the server. */
+        w8(&w, sh->multi_off);
+        w16(&w, sh->btn_prev);
         w16(&w, sh->earned);
         w32(&w, sh->points);
     }
@@ -185,6 +198,8 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
             sh->charge[k] = (uint8_t)r8(&r);
+        sh->multi_off = (uint8_t)r8(&r);
+        sh->btn_prev = (uint16_t)r16(&r);
         sh->earned = (uint16_t)r16(&r);
         sh->points = r32(&r);
     }
