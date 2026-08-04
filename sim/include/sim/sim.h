@@ -67,6 +67,16 @@ extern "C" {
  * cycling a selection needs no edge detection down here and no byte in a
  * snapshot. Two bits is four slots, which is what a pilot can carry. */
 #define SIM_BTN_USE 0x0040u
+/* Multifire on or off, toggled on the press rather than held.
+ *
+ * The original made this a key because a fan is not always what you want: it
+ * costs more energy and more cooldown per rung, and a single barrel is the
+ * shot that hits something small and far away. A pilot who has picked the
+ * upgrade up should be able to decline to use it without dropping it.
+ *
+ * Edge-triggered inside the core rather than pulsed by the client, so a lost
+ * input cannot leave the two ends disagreeing about a piece of ship state. */
+#define SIM_BTN_MULTI 0x0200u
 #define SIM_BTN_SLOT_SHIFT 7
 #define SIM_BTN_SLOT_MASK 0x0180u
 #define SIM_BTN_SLOT(b) (((b) & SIM_BTN_SLOT_MASK) >> SIM_BTN_SLOT_SHIFT)
@@ -343,7 +353,15 @@ typedef struct {
     int32_t rot, init_rot, up_rot;                 /* heading units per tick */
     int32_t max_energy, init_energy, up_energy;    /* Q10 */
     int32_t recharge, init_recharge, up_recharge;  /* Q10 per tick */
-    int32_t radius;                                /* Q8 px */
+    /* The hull's footprint, in Q8 px from the point it turns about: how far
+     * it reaches past the nose, behind the tail, and to either side. One
+     * square radius stood here, and it could not be right for this roster: a
+     * square that covers an Apex's nose floats its flanks eleven pixels off
+     * every wall, and one that hugs the flanks buries the nose. The walls
+     * collide against the world-axis box of these extents at the current
+     * heading, and weapons and pickups test the oriented rectangle itself,
+     * so what you hit is what is drawn, whichever way it points. */
+    int32_t fore, aft, halfw;                      /* Q8 px */
 
     /* What the two triggers fire: a ladder of patterns per trigger, climbed
      * by the pilot's level. Rung zero is what a fresh hull carries, and
@@ -467,6 +485,16 @@ typedef struct {
      * survived with. */
     uint8_t level[SIM_TRIG_COUNT];
     uint16_t mods[SIM_TRIG_COUNT];
+    /* Multifire declined. The add-on stays held and stays on the scoreboard;
+     * this only stops it being applied when the trigger is pulled. Cleared by
+     * death with everything else, because the add-on it refuses is. */
+    uint8_t multi_off;
+    /* Last tick's buttons, for the toggles that fire on a press rather than
+     * on a hold. Nothing else needs it, which is why it took this long to
+     * appear, and it rides in the snapshot with the rest: an edge detector
+     * that starts every snapshot believing nothing was held sees a press that
+     * never happened. */
+    uint16_t btn_prev;
     /* Charges in hand, spent one at a time. */
     uint8_t charge[SIM_MAX_CHARGES];
     /* Bounty that is not sitting in an upgrade slot: what killing has paid,
@@ -677,7 +705,8 @@ typedef struct {
     int32_t init_rotation, up_rotation, max_rotation;
     int32_t init_energy, up_energy, max_energy;
     int32_t init_recharge, up_recharge, max_recharge;
-    int32_t radius_px;
+    /* No footprint here: the settings files these units mirror never carried
+     * one, and the extents are measured off our own hulls in baseline.c. */
 } sim_class_units;
 
 /* Fill a class from settings-file units. Weapons, add-ons and charges are

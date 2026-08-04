@@ -40,7 +40,50 @@ env:
   BOB_VERSION: "1.13.0"
 
 jobs:
+  # Lua's own worst failure mode, caught before the page is built.
+  #
+  # A local is resolved at compile time, so a function written above the `local`
+  # it uses does not see that local: it compiles to a global read, the global is
+  # nil, and nothing says so until the line runs. That shipped once. `rolls` was
+  # declared below the function that clears it, `init` ends by calling that
+  # function, and every boot threw on `pairs(nil)` -- while still drawing, so the
+  # only symptom was that the audio never woke up. Nothing else in this
+  # toolchain looks for it: bob compiles the file happily, and the Lua that
+  # matters runs in a browser tab nobody attaches a debugger to.
+  #
+  # Its own job rather than a step in the bundle, because it needs no bob, no
+  # Java and no network, and it should say what is wrong in ten seconds rather
+  # than after a four-minute build.
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: install luacheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1 luarocks
+             && sudo luarocks install luacheck
+      # Named rather than globbed, because the engine's own file kinds are Lua
+      # and do not end in .lua: the script that owns the frame loop is one of
+      # them, and it is where the bug above lived.
+      - name: luacheck
+        run: luacheck client/arena client/render client/ui client/tests
+             client/arena/*.script client/render/*.render_script
+             client/ui/*.gui_script
+      # The client's own tests, which had been sitting in the tree runnable and
+      # unrun. They need the same lua5.1 this job already installs and no
+      # engine at all, and one of them is the only thing comparing what the
+      # client draws against what the simulation collides: hull_fit_test reads
+      # the radii out of sim/src/baseline.c, so a hull redrawn past its box
+      # fails here rather than on somebody's screen.
+      #
+      # From the repository root, because they read the maps and the settings
+      # the fleet actually serves rather than copies written down beside them.
+      - name: client tests
+        run: for t in client/tests/*_test.lua; do echo "== $t"; lua5.1 "$t" || exit 1; done
+
   bundle:
+    needs: lint
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -142,23 +142,30 @@ pathfinding one: a bot that thrusts at its target arrives at speed and sails pas
 it into a wall.
 
 Both layers are built now, in `server/src/nav.rs` and the back half of
-`server/src/ai.rs`. What stood here for a long time was one rule, and it is worth
-keeping the account of why that was not enough.
+`server/src/ai.rs`, and so are the three reflexes that were built in parallel
+with them. The two arrived from opposite ends of the same problem: the router
+knows the way through a maze and nothing about the wall eight pixels off the
+bow mid-leg, and the reflexes know exactly that and nothing about the maze.
+They keep each other honest, and the account of both is worth keeping.
 
-A pilot headed straight for where it wanted to be and gave up when that stopped
-working: it kept the closest it had come, and two seconds without closing by
-32 px meant the destination was behind something. Then it abandoned that kind of
-destination for five seconds. That fixed the bug that was reported, which was
-bots pressing their noses into a wall with a green on the other side. It did not
-fix flying, and a drill on Chaos eventually caught what it left: a pilot holding
-thrust into a wall for ninety seconds, travelling one pixel every ten ticks,
-because every replacement destination was rolled from the same box in the middle
-of the map and lay through the same wall.
+What stood here first was one rule, the give-up: head straight for where you
+want to be, keep the closest you have come, and two seconds without closing by
+32 px means the destination is behind something, so leave that kind of
+destination alone for five. It fixed the bug that was reported, bots pressing
+their noses into a wall with a green on the other side, and it fixed nothing
+else. A drill on Chaos caught a pilot holding thrust into a wall for ninety
+seconds, because every replacement destination was rolled from the same box in
+the middle of the map and lay through the same wall; a straight-steering
+harness later measured the general case at 56.2% of every pilot's life spent
+nose against a wall. The give-up survives underneath everything below, for
+every case where the path is right and the flying is not, watching distance
+measured along the route so a correct detour is progress rather than a stall.
 
 **Route.** A* over the map at two tiles to a cell, 512 by 512, any solid tile
 shutting a cell, built once per map and shared by every pilot flying it. Cells
 against a wall cost three times an open one, which puts a route down the middle
 of a corridor rather than along its edge.
+
 
 Two tiles rather than the eight this document specified for years, and the
 difference is not a detail. Our walls are two tiles through, so an eight-tile
@@ -193,10 +200,32 @@ on a 38 tick reaction held a turn for 38 ticks: at 230 rotation that is 79 degre
 of swing with nothing looking. Reaction time belongs on what to do. A servo loop
 belongs on every tick.
 
-The give-up timer stays underneath all of it, watching the waypoint rather than
-the destination. Going the long way round a wall closes no straight-line distance
-for seconds at a time, so a timer watching the destination calls every correct
-detour a failure.
+The give-up timer stays underneath all of it, watching distance measured along
+the route rather than the straight line, so going the long way round a wall
+reads as the progress it is.
+
+**Whiskers.** A look around includes sixteen rays of wall distance, cast as a
+capsule the hull's own width plus a few pixels of slack, because the converted
+maps are full of gaps a ray threads and a hull does not: dashed walls with
+one-tile holes, and passages a hull fits only if centred to the pixel. The
+control layer bends the wanted velocity to the nearest sufficiently open ray,
+so a pilot mid-leg slides along a wall the router's two-tile grid never saw
+instead of pressing its nose into it.
+
+**The unstick reflex** backstops all of it. Everything above the engine can be
+wrong about a wall: the whiskers sample, the router's cells are coarse, corners
+are knife edges, doors move. A hull that has been pushing for a third of a
+second while moving under half a pixel a tick is not an estimate, so the pilot
+stops arguing with its map, turns to the openest direction there is, flies that
+way for most of a second, and resumes, dropping its route on the way out since
+the route was derived from a picture that just proved wrong. The approach keeps
+its no-progress clock through the escape, so an unreachable goal is still
+abandoned on schedule.
+
+The grinding harness, `bots_do_not_grind_walls_on_a_real_map` in ai.rs, runs
+ten pilots on the shipped Chaos map for two minutes and counts sustained
+pinning only: straight-at-it steering measured 56.2%, the reflexes alone zero,
+and the bound it enforces on the merged brain is two per cent.
 
 Wall avoidance works from the map the bot was sent at join, walked the same way
 the brain's line-of-sight test walks it. The bot holds no second copy of the

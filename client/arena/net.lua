@@ -20,12 +20,19 @@ local S2C_MAP, S2C_SETTINGS, S2C_YIELD = 9, 10, 11
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 3
+local CLIENT_PROTOCOL = 4
+-- Published, because the about page says what this build talks, and a second
+-- copy of the number is a second thing to forget to bump.
+M.PROTOCOL = CLIENT_PROTOCOL
 
 -- Why a join was refused. Three of these mean the address was fine and another
 -- instance would have taken us, which is a different thing to tell a player than
 -- "stop trying". See the refusal table in docs/architecture/zones-and-arenas.md.
 local DENY_FULL, DENY_DRAINING, DENY_WRONG_ZONE = 1, 2, 3
+-- Named for the table's sake rather than for this file's: nothing here tests
+-- for them, because neither is worth retrying and the generic path already
+-- says so. Written down so the numbering is readable next to the three above.
+-- luacheck: ignore DENY_BANNED DENY_VERSION
 local DENY_BANNED, DENY_VERSION = 4, 5
 -- True when picking the same game again would plausibly land somewhere with
 -- room. The refusal drops the player back on the games list either way, so
@@ -358,7 +365,7 @@ function M.connect(url, class, name, on_lost, zone)
     M.stats.lag, M.stats.lead = 0, 0
     on_lost_cb = on_lost
 
-    local ok, err = pcall(function()
+    local ok = pcall(function()
         conn = websocket.connect(url, {}, function(self, cid, data)
             -- A socket we have already left. Closing one buys no promise of
             -- silence, and its parting message would otherwise be read as the

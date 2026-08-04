@@ -56,13 +56,6 @@ local function rect(x, y, w, h, col)
     u:rect(x, ry(y, h), w, h, col)
 end
 
--- A panel: translucent fill under a hairline border, which is the whole of
--- the prototype's chrome.
-local function panel(x, y, w, h)
-    rect(x, y, w, h, pal.PANEL)
-    u:frame(x, ry(y, h), w, h, S, pal.BORDER)
-end
-
 local function txt(s, x, y, px, col, pivot)
     nt = nt + 1
     local t = text[nt]
@@ -153,16 +146,6 @@ local function ladder(x, y, rungs, level, col, w, h)
     end
 end
 
--- A keycap, the way the prototype's <kbd> reads: a boxed glyph in a line of
--- ordinary text. Returns the width it consumed.
-local function kbd(x, y, label, h)
-    local w = math.max(h * 0.72, #label * FONT * S * 0.62 + 8 * S)
-    rect(x, y, w, h, pal.a(pal.BTN_BG, 0.9))
-    u:frame(x, ry(y, h), w, h, S, pal.BAR_EDGE)
-    txt(label, x + w / 2, y + h / 2, FONT * S, pal.INK, "center")
-    return w
-end
-
 -- --- frame -----------------------------------------------------------------
 
 -- True when the screen is too narrow for the desktop layout: three columns of
@@ -233,7 +216,12 @@ local function dial()
                         math.min(math.min(W, H) * 0.66, H * 0.66,
                                  W - pad - 124 * S))
     end
-    return W - pad - side, pad + 18 * S, side
+    -- Whole pixels. The dial snaps its contents to its own origin, so an
+    -- origin landing on a half pixel would put the fraction back into every
+    -- blip it was taken out of. Density is not always a whole number and
+    -- neither, then, is the padding.
+    return math.floor(W - pad - side), math.floor(pad + 18 * S),
+           math.floor(side)
 end
 
 -- How much vertical room it takes, so the feed under it can be told rather
@@ -241,6 +229,27 @@ end
 function M.radar_span()
     local _, _, side = dial()
     return PAD * S * 2 + side + 18 * S
+end
+
+-- You, as an arrow. On any view of the arena the one thing worth knowing
+-- besides where you are is which way you are pointing, and the radar and the
+-- map draw the same mark because they are the same statement about the same
+-- ship. Clamped rather than dropped when it falls outside the frame it is
+-- given: a view without you on it is a view with no origin.
+local function own_arrow(ax, ay, ox, oy, side, me)
+    local edge = 5 * S
+    if ax < ox + edge then ax = ox + edge end
+    if ay < oy + edge then ay = oy + edge end
+    if ax > ox + side - edge then ax = ox + side - edge end
+    if ay > oy + side - edge then ay = oy + side - edge end
+    local a = (sim.ship_heading(me) / 65536) * math.pi * 2
+    local dx, dy = math.sin(a), -math.cos(a)
+    local nose, back, wide = 6.5 * S, 3.4 * S, 3.2 * S
+    u:disc(ax, ry(ay, 0), 7 * S, 12, pal.a(pal.WHITE, 0.14))
+    u:tri(ax + dx * nose, ry(ay + dy * nose, 0),
+          ax - dx * back - dy * wide, ry(ay - dy * back + dx * wide, 0),
+          ax - dx * back + dy * wide, ry(ay - dy * back - dx * wide, 0),
+          pal.WHITE)
 end
 
 local function radar(cx, cy, me)
@@ -264,9 +273,27 @@ local function radar(cx, cy, me)
     -- radar showing empty space nobody can fly to.
     local SPAN = 60 * 16
     local k = r / (2 * SPAN)
+    -- The dial is a diagram, not a window, and it is worth snapping to the
+    -- pixel grid it is drawn on.
+    --
+    -- A blip is a square about 2.8 pixels across with a hard edge, and a hard
+    -- edge that size covers two pixel centres at some sub-pixel offsets and
+    -- three at others: four pixels of area against nine, a bit over twice the
+    -- ink, flipping as the fraction rolls over. Every blip shares the fraction,
+    -- because they are a regular grid under one affine map, so the whole map
+    -- breathes at once and reads as the terrain blinking off and on.
+    --
+    -- Two things fix it and both are free. A whole number of pixels covers
+    -- exactly that many centres wherever it starts, so the size stops
+    -- mattering; and snapping the camera to a whole dial pixel leaves every
+    -- blip's own fraction fixed, so the pattern slides rigidly rather than
+    -- each square shifting off its neighbours. What a blip stands for is a
+    -- two-tile sample, and no part of that is worth a sub-pixel.
+    local qx = math.floor(cx * k + 0.5) / k
+    local qy = math.floor(cy * k + 0.5) / k
     local function put(wx, wy)
-        local px = ix + (wx - cx + SPAN) * k
-        local py = iy + (wy - cy + SPAN) * k
+        local px = ix + (wx - qx + SPAN) * k
+        local py = iy + (wy - qy + SPAN) * k
         if px < ix or py < iy or px > ix + r or py > iy + r then return nil end
         return px, py
     end
@@ -276,17 +303,22 @@ local function radar(cx, cy, me)
     -- One blip covers exactly the ground its sample stands for -- two tiles,
     -- the sampling stride -- so a wall reads as a wall. A fixed pixel size
     -- left gaps between samples and turned every wall into a dashed line.
-    local dot = math.max(2 * 16 * k, 1.5 * S)
-    local function blips(list, col, grow)
-        local d = dot * (grow or 1)
+    -- Whole pixels, per above. A door gets one more rather than a fraction
+    -- more, which is the only way "bigger" survives being rounded.
+    local dot = math.max(1, math.floor(math.max(2 * 16 * k, 1.5 * S) + 0.5))
+    local function blips(list, col, extra)
+        local d = dot + (extra or 0)
         for n = 1, #list, 2 do
             local px, py = put(list[n], list[n + 1])
-            if px then rect(px - d / 2, py - d / 2, d, d, col) end
+            if px then
+                rect(math.floor(px - d / 2 + 0.5),
+                     math.floor(py - d / 2 + 0.5), d, d, col)
+            end
         end
     end
     blips(world.radar_tiles, pal.RADAR_TILE)
     blips(world.radar_safe, pal.a(pal.RADAR_SAFE, 0.95))
-    blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1.15)
+    blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1)
 
     -- Greens, under the flags and ships and over the terrain: a green is
     -- worth steering for, but never worth steering for instead of the pilot
@@ -344,41 +376,26 @@ local function radar(cx, cy, me)
         end
     end
 
-    -- Two rings and a bearing tick on each eighth, so a contact has something
-    -- to be read against. A dot in an empty square says where something is
-    -- and nothing about how far, and how far is the whole question.
+    -- Nothing drawn on the dial but the map and what is flying over it.
     --
-    -- No range printed anywhere: the number of tiles the dial spans is not a
-    -- thing anybody converts mid-fight, and the rings answer the comparison
-    -- people actually make, which is whether that one is closer than this one.
-    local mx, my = ix + r / 2, iy + r / 2
-    u:ring(mx, ry(my), r / 4, 0.7 * S, 20, pal.a(pal.RADAR_GRID, 0.9))
-    u:ring(mx, ry(my), r / 2.4, 0.7 * S, 24, pal.a(pal.RADAR_GRID, 0.55))
-    for i = 0, 7 do
-        local a = i * math.pi / 4
-        local long = (i % 2 == 0)
-        local e = r / 2
-        local inn = e - (long and 7 or 4) * S
-        u:seg(mx + math.cos(a) * inn, ry(my + math.sin(a) * inn),
-              mx + math.cos(a) * e, ry(my + math.sin(a) * e), S,
-              pal.a(pal.RADAR_TILE, long and 0.55 or 0.3))
-    end
-    bracket(ix, iy, r, r, pal.a(pal.RADAR_TILE, 0.8), 18 * S)
+    -- It carried two range rings, a bearing tick on each eighth and a
+    -- chamfered bracket at the corners, on the argument that a dot in an empty
+    -- square says where a contact is and nothing about how far. What that
+    -- missed is that the dial is small and the graticule was competing with
+    -- the contacts for the same few pixels. The square's own edge is the
+    -- reference, the wash is what separates it from the starfield, and both
+    -- are already there.
+    --
+    -- The expanded map keeps its bracket. It is large enough to need telling
+    -- where it ends, which is the thing a bracket is for.
 
-    -- You, last and as an arrow: on a radar the one thing worth knowing
-    -- besides where you are is which way you are pointing.
-    local px, py = put(sim.ship_x(me), sim.ship_y(me))
-    if px then
-        local a = (sim.ship_heading(me) / 65536) * math.pi * 2
-        local dx, dy = math.sin(a), -math.cos(a)
-        local nose, back, wide = 6.5 * S, 3.4 * S, 3.2 * S
-        u:disc(px, ry(py, 0), 7 * S, 12, pal.a(pal.WHITE, 0.14))
-        u:tri(px + dx * nose, ry(py + dy * nose, 0),
-              px - dx * back - dy * wide, ry(py - dy * back + dx * wide, 0),
-              px - dx * back + dy * wide, ry(py - dy * back - dx * wide, 0),
-              pal.WHITE)
-    end
-
+    -- You, last. Placed by hand rather than through `put`, which answers nil
+    -- for anything off the edge: right for a contact and wrong for the pilot
+    -- reading the thing, because the dial is drawn around the camera, the
+    -- camera is not the ship, and on a wide window it leads far enough that
+    -- the arrow simply went missing.
+    own_arrow(ix + (sim.ship_x(me) - cx + SPAN) * k,
+              iy + (sim.ship_y(me) - cy + SPAN) * k, ix, iy, r, me)
 end
 
 -- --- the map ---------------------------------------------------------------
@@ -401,7 +418,7 @@ local MAP_SAFE = pal.a(pal.RADAR_SAFE, 0.95)
 local MAP_DOOR = pal.a(pal.RADAR_DOOR, 1.0)
 local MAP_HOLE = pal.a(pal.HOLE, 0.9)
 
-local function overview()
+local function overview(me)
     local ix, iy, side = dial()
     local ov = world.overview
     -- Opaque, where the radar's wash is not, and that is the rule above
@@ -424,6 +441,20 @@ local function overview()
         end
     end
     bracket(ix, iy, side, side, pal.a(pal.RADAR_TILE, 0.8), 22 * S)
+    -- You, and only you. No ships is the rule above, and it stands: a map
+    -- showing where everybody is would be a wall hack. Where *you* are is
+    -- something you already know, and without it a view of a thousand tiles
+    -- is a picture of somewhere rather than of where you are standing, which
+    -- is the whole question the map exists to answer.
+    --
+    -- A cell is OVERVIEW_CELL tiles of sixteen pixels, so the world divides
+    -- by that to land in the same coordinates the rectangles above use.
+    if ov.grid > 0 then
+        local cell = 4 * 16
+        local k = side / ov.grid
+        own_arrow(ix + (sim.ship_x(me) / cell) * k,
+                  iy + (sim.ship_y(me) / cell) * k, ix, iy, side, me)
+    end
     -- Clicking it again puts the radar back, which is the same gesture that
     -- opened it.
     if not menu_up then hit(ix, iy, side, side, "map") end
@@ -484,6 +515,20 @@ end
 -- --- panels ----------------------------------------------------------------
 
 local rows = {}
+-- How the scoreboard is ordered, and how far down it. Both belong to the
+-- interface rather than to the game: nothing here changes what is true, only
+-- which part of it is on screen.
+--
+-- `points` is the default because points are the score. Clicking a heading
+-- picks that column, and clicking the one already picked does nothing: every
+-- column here has an obvious direction, and a name that sorts Z to A or a
+-- kill count that puts the worst first is a state somebody reaches by accident
+-- and then has to work out how to leave.
+M.sort = "points"
+M.scroll = 0
+-- Rows on screen at once. The list was capped at nine with no way to see the
+-- tenth, which in a room of sixty-four is most of it.
+local SHOWN = 9
 
 -- Where the scoreboard starts: under the menu chip when there is one, since
 -- the chip owns the corner.
@@ -511,24 +556,59 @@ local function scores(me, pilots)
         -- which the client no longer flies and the server never sends, so the
         -- column was blank for every AI in a zone full of them.
         r.ai = (p and p.ai) or false
+        -- What the zone is willing to say this seat is, which is a stronger
+        -- statement than "AI" and is what the counts below are made of.
+        r.label = (p and p.label) or "unknown"
+        r.mine = sim.ship_team(i) == sim.ship_team(me)
     end
     for i = n + 1, #rows do rows[i] = nil end
-    -- By points, because points are the score. Kills stay on the row: they
-    -- are what a player counts in their head, and the two numbers say
-    -- different things -- a pilot who kills loaded ships outscores one who
-    -- kills more of the empty.
+    -- Your own team first, whatever the column says.
+    --
+    -- The scoreboard answers two questions and they do not sort the same way.
+    -- "Who is winning" is the column somebody picked; "who is with me" is a
+    -- partition, and in a fight it is the more urgent of the two, because a
+    -- name is only worth reading once you know which end of the gun it is on.
+    -- So the sort runs inside each side rather than across both.
+    --
+    -- Points is the default, because points are the score. Kills stay on the
+    -- row: they are what a player counts in their head, and the two numbers
+    -- say different things, since a pilot who kills loaded ships outscores one
+    -- who kills more of the empty.
+    local key = M.sort
     table.sort(rows, function(a, b)
+        if a.mine ~= b.mine then return a.mine end
+        if key == "name" then
+            if a.name ~= b.name then return a.name < b.name end
+        elseif key == "kills" then
+            if a.k ~= b.k then return a.k > b.k end
+        elseif key == "deaths" then
+            -- Fewest first: on every other column the top of the list is the
+            -- pilot doing best, and this is the one where that means less.
+            if a.d ~= b.d then return a.d < b.d end
+        else
+            if a.p ~= b.p then return a.p > b.p end
+        end
         if a.p ~= b.p then return a.p > b.p end
         if a.k ~= b.k then return a.k > b.k end
-        if a.d ~= b.d then return a.d < b.d end
         return a.name < b.name
     end)
 
-    local shown = math.min(n, 9)
-    if shown == 0 then return 0 end
+    if n == 0 then
+        M.scroll = 0
+        return 0
+    end
+    -- Clamped here rather than where the wheel is read, because this is the
+    -- only place that knows how many pilots there are: a room empties while
+    -- somebody is scrolled to the bottom of it.
+    local max_scroll = math.max(0, n - SHOWN)
+    if M.scroll > max_scroll then M.scroll = max_scroll end
+    if M.scroll < 0 then M.scroll = 0 end
+    local shown = math.min(n, SHOWN)
     local w = COL_W * S
     local head = 24 * S
-    local h = head + shown * LINE * S + 10 * S
+    -- Header, rows, and a line of totals under them.
+    local foot = 16 * S
+    local h = head + shown * LINE * S + foot + 8 * S
     local x = PAD * S
     -- Enough behind it to read over a starfield, and no border: a rule down
     -- the left is what holds the column, the way it holds a wall face.
@@ -539,17 +619,32 @@ local function scores(me, pilots)
     local dx = x + w - 44 * S
     local px = x + w - 12 * S
     local small = (FONT - 3) * S
-    txt("PILOTS", x + 12 * S, top_y() + 14 * S, (FONT - 2) * S,
-        pal.a(pal.INK, 0.9))
-    txt("K", kx, top_y() + 14 * S, small, pal.a(pal.DIM, 0.7), "right")
-    txt("D", dx, top_y() + 14 * S, small, pal.a(pal.DIM, 0.7), "right")
-    txt("PTS", px, top_y() + 14 * S, small, pal.a(pal.DIM, 0.7), "right")
+    -- A heading is a control now, so the one in use is lit and the rest are
+    -- not: the same way every other toggle in this interface says which way it
+    -- is set.
+    local function head_col(name, label, hx, align)
+        local on = M.sort == name
+        txt(label, hx, top_y() + 14 * S, small,
+            on and pal.a(pal.FRIEND, 0.95) or pal.a(pal.DIM, 0.7), align)
+        return on
+    end
+    head_col("name", "PILOTS", x + 12 * S, nil)
+    head_col("kills", "K", kx, "right")
+    head_col("deaths", "D", dx, "right")
+    head_col("points", "PTS", px, "right")
+    -- Hit boxes over the headings. Generous, and to the left of each label,
+    -- because the labels are right-aligned one or three characters wide and a
+    -- box the size of the glyphs is a target nobody can hit.
+    hit(x + 8 * S, top_y() + 4 * S, 60 * S, 18 * S, "sort_name")
+    hit(kx - 24 * S, top_y() + 4 * S, 28 * S, 18 * S, "sort_kills")
+    hit(dx - 24 * S, top_y() + 4 * S, 28 * S, 18 * S, "sort_deaths")
+    hit(px - 26 * S, top_y() + 4 * S, 30 * S, 18 * S, "sort_points")
     ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
           pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
     local my_team = sim.ship_team(me)
     local y = top_y() + head
-    for i = 1, shown do
+    for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
         local mine = r.i == me
         local col = (sim.ship_team(r.i) == my_team) and pal.FRIEND or pal.ENEMY
@@ -572,6 +667,47 @@ local function scores(me, pilots)
             pal.a(pal.BOUNTY, 0.9), "right")
         y = y + LINE * S
     end
+
+    -- Who is in the room, by what the zone is willing to say about them.
+    --
+    -- Three numbers rather than one, because "sixty in the room" is a
+    -- different room depending on how many of them are people. The three are
+    -- the three labels a seat can wear: a claimed account, a guest, and a
+    -- declared bot. A guest is counted apart from a claimed pilot rather than
+    -- folded into the humans, because the label is a statement about what the
+    -- server knows and most guests are people in their first session.
+    --
+    -- Spelled out rather than punched into "0/2/50". Three bare numbers in a
+    -- corner are a code, and this line is read once by somebody deciding
+    -- whether a room is worth joining.
+    local claimed, guests, bots = 0, 0, 0
+    for i = 1, n do
+        local l = rows[i].label
+        if l == "bot" or l == "bot?" then bots = bots + 1
+        elseif l == "human" then claimed = claimed + 1
+        else guests = guests + 1 end
+    end
+    local fy = y + foot / 2
+    txt(string.format("%d HERE: %d SIGNED, %d GUEST, %d AI",
+                      n, claimed, guests, bots),
+        x + 12 * S, fy, (FONT - 4) * S, pal.a(pal.DIM, 0.8))
+
+    -- Only when there is something to scroll to. A bar on a list that fits is
+    -- a control that does nothing.
+    if n > shown then
+        local track = shown * LINE * S
+        local ty = top_y() + head
+        local frac = shown / n
+        local bar = math.max(10 * S, track * frac)
+        local at = (M.scroll / math.max(1, n - shown)) * (track - bar)
+        u:seg(x + w - 3 * S, ry(ty + at), x + w - 3 * S, ry(ty + at + bar),
+              2 * S, pal.a(pal.RADAR_TILE, 0.8))
+    end
+
+    -- The whole panel takes the wheel, rather than a strip beside it: a list
+    -- is the thing you point at when you mean to scroll it.
+    hit(x, top_y(), w, h, "scores")
+
     -- The bottom edge, not the height: what the loadout below needs to know
     -- is where this ends, and it does not start at the top of the screen.
     return top_y() + h
@@ -653,12 +789,18 @@ local function status(me, pickup, charges, lift)
             ladder(val, y + rows_h / 2 - 2 * S, 3, lvl + 1, pal.FRIEND,
                    40 * S, 4 * S)
             local at = val + 50 * S
+            local off = sim.ship_multi_off and sim.ship_multi_off(me)
             for m, mod in ipairs(pal.MODS) do
                 local nn = sim.ship_mod(me, t, m - 1)
                 if nn > 0 then
+                    -- A declined add-on is drawn dimmed rather than dropped.
+                    -- You still hold it, and a fan that quietly stopped
+                    -- fanning with nothing on screen to say so is a weapon
+                    -- that looks broken.
+                    local muted = off and m - 1 == 0
                     txt(mod.name .. (nn > 1 and ("x" .. nn) or ""), at,
                         y + rows_h / 2, (FONT - 2) * S,
-                        pal.a(pal.FRIEND, 0.75))
+                        muted and pal.a(pal.DIM, 0.45) or pal.a(pal.FRIEND, 0.75))
                     at = at + 46 * S
                 end
             end
@@ -887,7 +1029,7 @@ function M.hud(o)
     -- One corner, one instrument. The map is the radar pulled back to the
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
-    if M.map then overview() else radar(o.cam_x, o.cam_y, me) end
+    if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
     link(o.lag or 0)
     coords(me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
@@ -952,8 +1094,11 @@ local MENU_W = 460
 function M.menu(v)
     local w = math.min(MENU_W * S, W - 24 * S)
     local x = math.max(24 * S, (W - w) / 2 - 120 * S)
-    local rows = #v.rows
-    local h = ROW_H * S * rows + 76 * S
+    local nrows = #v.rows
+    -- The home screen carries the name at a size that owns its corner, and
+    -- everything under it moves down by the room that takes.
+    local head = v.home_root and 60 * S or 0
+    local h = ROW_H * S * nrows + 76 * S + head
     local y = math.max(20 * S, (H - h) / 2)
 
     -- Not a curtain: dimmed enough to read against, clear enough to see the
@@ -969,8 +1114,33 @@ function M.menu(v)
     -- middle of the screen.
     vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.8), 40 * S)
 
-    txt(v.title, x + 20 * S, y + 26 * S, (M.compact and 19 or 23) * S,
-        pal.FRIEND)
+    if v.home_root then
+        -- The name, and under it the thing the name is about.
+        --
+        -- Not a logotype: the same monospace as everything else, at a size
+        -- nothing else on the screen is. What makes it a mark is the stroke
+        -- beneath, which starts at nothing on the left, swells under the word
+        -- and is gone again by the end of it, which is a wake.
+        local size = (M.compact and 30 or 46) * S
+        txt(v.title, x + 20 * S, y + 40 * S, size, pal.INK)
+        local ww = math.min(#v.title * size * 0.62, w - 40 * S)
+        local wy = y + 72 * S
+        local n = 40
+        for i = 0, n - 1 do
+            local t0, t1 = i / n, (i + 1) / n
+            local function swell(t)
+                return math.sin(t * math.pi) ^ 1.6
+            end
+            local a0, a1 = swell(t0), swell(t1)
+            u:seg_fade(x + 20 * S + ww * t0, ry(wy),
+                       x + 20 * S + ww * t1, ry(wy),
+                       (0.7 + 2.6 * a0) * S, (0.7 + 2.6 * a1) * S,
+                       0.85 * a0, 0.85 * a1, pal.FRIEND)
+        end
+    else
+        txt(v.title, x + 20 * S, y + 26 * S, (M.compact and 19 or 23) * S,
+            pal.FRIEND)
+    end
     -- A phone has no escape key, so the way out is drawn. At the root of the
     -- home screen there is no way out to draw: nothing is behind the column,
     -- and a `close` that leaves a player on an empty starfield would be a
@@ -980,10 +1150,10 @@ function M.menu(v)
             11 * S, pal.a(pal.DIM, 0.8), "right")
         hit(x + w - 90 * S, y + 8 * S, 90 * S, 34 * S, "row", -1)
     end
-    ticks(x + 20 * S, y + 40 * S, w - 20 * S, pal.a(pal.RADAR_TILE, 0.4),
-          12 * S)
+    ticks(x + 20 * S, y + 40 * S + head, w - 20 * S,
+          pal.a(pal.RADAR_TILE, 0.4), 12 * S)
 
-    local ry0 = y + 48 * S
+    local ry0 = y + 48 * S + head
     for i, r in ipairs(v.rows) do
         local top = ry0 + (i - 1) * ROW_H * S
         local on = i == v.sel

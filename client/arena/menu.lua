@@ -23,6 +23,9 @@
 -- an action and arena.script carries it out.
 
 local account = require("arena.account")
+-- For the protocol number the about page prints. Reading it from the module
+-- that speaks it is what keeps the page honest when the wire changes.
+local net = require("arena.net")
 local callsign = require("arena.callsign")
 local directory = require("arena.directory")
 local sfx = require("arena.sfx")
@@ -284,6 +287,10 @@ local NODES = {
         {label = "bombs", detail = "shift, or X"},
         {label = "use", detail = "C, or ctrl"},
         {label = "swap", detail = "V, or tab"},
+        -- Worth a line of its own. A fan is a liability down a corridor and
+        -- arrives from a green rather than by choice, so a pilot who has one
+        -- and does not know this key has a gun that got worse.
+        {label = "one shot", detail = "Q, to stop multifire fanning"},
         {label = "scores", detail = "I, or the info button"},
         {label = "map", detail = "M, or click the radar"},
         {label = "menu", detail = "escape"},
@@ -299,18 +306,46 @@ local NODES = {
         {label = "", detail = "try Z for guns, or WASD to fly"},
     }},
 
-    about = {title = "about", rows = {
-        {label = "", detail = "a top-down space game about frictionless flight"},
-        {label = "", detail = ""},
-        {label = "", detail = "the bar over a ship is its energy, which is its"},
-        {label = "", detail = "health and its ammunition at once"},
-        {label = "", detail = "the number under it is its bounty: what killing"},
-        {label = "", detail = "it pays, and what dying costs you"},
-        {label = "", detail = ""},
-        {label = "", detail = function()
-            return "build " .. (sys.get_config("project.version") or "dev")
-        end},
-    }},
+    -- What this build is, rather than what the game is.
+    --
+    -- The page used to be six lines explaining energy and bounty, which is
+    -- what `help` is for, and one build number at the bottom. Anybody who
+    -- opens `about` in a game that updates several times a day wants to know
+    -- which build they are looking at and what it is talking to, and that is
+    -- the one question no other screen answers.
+    about = {title = "about", rows = function()
+        local rows = {
+            {label = "build", detail = function()
+                -- get_config_string, not get_config: the short name went out
+                -- of the engine two versions before the one we build with,
+                -- and calling it threw inside a draw, which on this renderer
+                -- means the frame is never flushed and the last one stays on
+                -- the GPU. That is why `about` looked like a menu that did
+                -- nothing rather than a page that crashed.
+                return sys.get_config_string("project.version", "dev")
+            end, hint = "the commit this page was built from; + means it was dirty"},
+            {label = "wire", detail = function()
+                return "protocol " .. tostring(net.PROTOCOL)
+            end, hint = "a zone speaking a different one refuses the join and says so"},
+            {label = "engine", detail = function()
+                return "defold " .. (sys.get_engine_info().version or "?")
+            end},
+            {label = "zone", detail = function()
+                if M.zone == "" then return "not in one" end
+                return M.zone
+            end},
+            {label = "account", detail = function()
+                if account.account and account.account > 0 then
+                    return "#" .. tostring(account.account)
+                end
+                return "none yet"
+            end, hint = account.status()},
+            {label = "", detail = ""},
+            {label = "", detail = "inspired by subspace, and none of its"},
+            {label = "", detail = "art, sound, maps or names"},
+        }
+        return rows
+    end},
 }
 
 -- --- navigation -------------------------------------------------------------
@@ -416,8 +451,11 @@ function M.view()
     local nd = node()
     local rows = rows_of(nd)
     local sel = row_index(rows)
+    -- The first screen a stranger sees, which is the only one that gets the
+    -- name set large. Every other screen is a title on a column.
     local out = {title = nd.title, depth = #M.stack, sel = sel,
                  note = M.note, closable = not M.home or #M.stack > 1,
+                 home_root = M.home and #M.stack == 1,
                  rows = {}}
     for i, r in ipairs(rows) do
         local d = r.detail

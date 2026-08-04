@@ -8,6 +8,10 @@
 #include "sim/baseline.h"
 #include "sim/pack.h"
 
+/* The core's own sine table, for the one test that rebuilds the collision
+ * box outside the core to check the core never leaves it inside a wall. */
+#include "../src/sintab.h"
+
 static int failures = 0;
 #define CHECK(cond, msg)                                          \
     do {                                                          \
@@ -902,7 +906,7 @@ int main(void) {
         CHECK(s.ships[1].energy
               < sim_eff_max_energy(&w.classes[APEX], &s.ships[1]),
               "close enough counted");
-        CHECK(last - s.ships[1].y > w.classes[APEX].radius,
+        CHECK(last - s.ships[1].y > w.classes[APEX].fore,
               "without ever reaching the hull");
     }
 
@@ -2370,6 +2374,236 @@ int main(void) {
                   "an over-full bar settles at the ceiling");
             CHECK(s.ships[0].energy > 0, "and never wraps negative");
         }
+    }
+
+    /* Touching a wormhole puts you somewhere else.
+     *
+     * The pull was already there and did nothing but bend a course. What a
+     * wormhole is for is the other side of it, so contact with the tile itself
+     * moves the ship to a spawn point chosen at random and stops it dead: an
+     * exit that keeps your velocity puts you through the wall behind wherever
+     * you came out. */
+    {
+        sim_map *wm = malloc(sizeof *wm);
+        memset(wm->tile, SIM_TILE_EMPTY, sizeof wm->tile);
+        for (int i = 0; i < SIM_MAP_TILES; i++) {
+            wm->tile[i] = SIM_TILE_SOLID;
+            wm->tile[(size_t)(SIM_MAP_TILES - 1) * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
+            wm->tile[(size_t)i * SIM_MAP_TILES] = SIM_TILE_SOLID;
+            wm->tile[(size_t)i * SIM_MAP_TILES + SIM_MAP_TILES - 1] = SIM_TILE_SOLID;
+        }
+        wm->tile[(size_t)512 * SIM_MAP_TILES + 512] = SIM_TILE_WORMHOLE;
+        /* Two of them, far apart, so "went to a spawn" cannot be satisfied by
+         * standing still. */
+        wm->tile[(size_t)300 * SIM_MAP_TILES + 300] = SIM_TILE(SIM_TILE_SPAWN, 0);
+        wm->tile[(size_t)700 * SIM_MAP_TILES + 700] = SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(wm);
+        sim_settings wc;
+        memset(&wc, 0, sizeof wc);
+        sim_settings_baseline(&wc, wm);
+        wc.spawn_prizes = 0;
+
+        sim_state s;
+        sim_init(&s, 1);
+        /* Four tiles above the hole, pointing down at it. Stepped one tick at
+         * a time because the interesting state is the tick the warp lands on:
+         * a ship still holding thrust is off the spawn tile a second later,
+         * which is the game working rather than the test failing. */
+        int id = sim_spawn(&s, APEX, 0, 512 * 16, 508 * 16, 32768, &wc);
+        int warped = 0;
+        for (int t = 0; t < 200 && !warped; t++) {
+            ev_counts c = step_counting(&s, &wc, SIM_BTN_THRUST, 0, 1);
+            warped = c.warps > 0;
+        }
+        CHECK(warped, "flying into a wormhole warps the ship");
+        int at_a = (s.ships[id].x >> 12) == 300 && (s.ships[id].y >> 12) == 300;
+        int at_b = (s.ships[id].x >> 12) == 700 && (s.ships[id].y >> 12) == 700;
+        CHECK(at_a || at_b, "and puts it on a spawn tile");
+        CHECK(s.ships[id].vx == 0 && s.ships[id].vy == 0,
+              "with its speed taken off it");
+        CHECK(s.ships[id].alive, "and without killing it");
+        free(wm);
+    }
+
+    /* Multifire is a switch the pilot holds, not one the prize decides.
+     *
+     * A fan is worse than a single shot down a corridor, and the add-on
+     * arrives from a green rather than by choice, so a pilot who has one needs
+     * a way to stop using it. The button toggles on the press rather than
+     * while held: this is a state, and a state you have to keep a finger on is
+     * a state you cannot fly with. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[id].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        int fan = 1 + cfg.mod_step[SIM_MOD_MULTI];
+
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == fan, "multifire fans by default");
+
+        /* Held down, the toggle flips once. */
+        step_n(&s, &cfg, SIM_BTN_MULTI, 0, 30);
+        CHECK(s.ships[id].multi_off, "the button turns it off");
+        s.weapon_count = 0;
+        s.ships[id].fire_cooldown = 0;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1, "and then the gun fires one");
+        CHECK(sim_mod_get(s.ships[id].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
+              "while the add-on is still held");
+
+        /* Released and pressed again, it flips back. */
+        step_n(&s, &cfg, 0, 0, 1);
+        step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);
+        CHECK(!s.ships[id].multi_off, "a second press turns it back on");
+        s.weapon_count = 0;
+        s.ships[id].fire_cooldown = 0;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == fan, "and the fan is back");
+
+        /* A snapshot landing under a held key does not read as a new press.
+         *
+         * This is the whole reason last tick's buttons ride the wire.
+         * `sim_unpack` clears the state it fills, so a client that took a
+         * snapshot mid-press would see an edge the server never saw, and at
+         * ten snapshots a second one deliberate press becomes four. */
+        {
+            static uint8_t buf[1 << 16];
+            sim_state s2;
+            step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);   /* down: toggles once */
+            CHECK(s.ships[id].multi_off, "the key goes down and it toggles");
+            int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1);
+            CHECK(m > 0, "the state packs");
+            CHECK(sim_unpack(&s2, buf, m) == 0, "and reads back");
+            CHECK(s2.ships[id].btn_prev == SIM_BTN_MULTI,
+                  "with the press still recorded");
+            step_n(&s2, &cfg, SIM_BTN_MULTI, 0, 1);  /* still held */
+            CHECK(s2.ships[id].multi_off,
+                  "so holding it through a snapshot does not toggle again");
+        }
+    }
+
+    /* A hull's box follows its heading. The extents are measured off what
+     * the client draws, which is why client/tests/hull_fit_test.lua reads
+     * the table they come from; here we check the properties the core
+     * depends on. Every hull has all three, none reaches past 23 px in any
+     * direction at any heading -- the ceiling the shipped maps were
+     * flood-filled and spawn-checked against, now applied to the diagonal
+     * corner rather than a square's side -- and a ship flown at a wall
+     * nose-first stops at its nose where the same ship drifted in sideways
+     * stops at its flank. */
+    {
+        for (int c = 0; c < cfg.class_count; c++) {
+            int64_t fore = cfg.classes[c].fore, aft = cfg.classes[c].aft;
+            int64_t w = cfg.classes[c].halfw;
+            CHECK(fore > 0 && aft > 0 && w > 0, "every hull has extents");
+            CHECK(fore * fore + w * w <= (int64_t)(23 * 256) * (23 * 256),
+                  "the nose corner is inside the roster ceiling");
+            CHECK(aft * aft + w * w <= (int64_t)(23 * 256) * (23 * 256),
+                  "and so is the tail corner");
+        }
+        CHECK(cfg.classes[0].fore != cfg.classes[0].halfw,
+              "an Apex is longer than it is wide");
+
+        sim_map *wm = walled_map();
+        for (int y = 0; y < 40; y++)
+            for (int x = 0; x < SIM_MAP_TILES; x++)
+                wm->tile[(size_t)y * SIM_MAP_TILES + x] = SIM_TILE_SOLID;
+        sim_map_index(wm);
+        sim_settings hc;
+        memset(&hc, 0, sizeof hc);
+        sim_settings_baseline(&hc, wm);
+        hc.spawn_prizes = 0;
+        const int32_t face = 40 * 16 * 256;   /* the wall's south edge */
+
+        /* Nose-first: thrust straight up at the wall and take the closest
+         * approach, since holding thrust against a wall bounces. */
+        {
+            sim_state s;
+            sim_init(&s, 1);
+            int id = sim_spawn(&s, APEX, 0, 512 * 16, 60 * 16, 0, &hc);
+            int32_t lo = s.ships[id].y;
+            for (int t = 0; t < 3000; t++) {
+                step_n(&s, &hc, SIM_BTN_THRUST, 0, 1);
+                if (s.ships[id].y < lo) lo = s.ships[id].y;
+            }
+            /* One Q8 unit inside the face: the clamp's deliberate -1,
+             * which keeps the box's edge strictly out of the wall tile. */
+            CHECK(lo - hc.classes[APEX].fore == face - 1,
+                  "flown at a wall, an Apex stops at its nose");
+        }
+
+        /* Sideways: same hull, same wall, but drifting in flank-first with
+         * the nose pointing along it. The stop is the half-width, which for
+         * an Apex is ten pixels closer than the nose gets. */
+        {
+            sim_state s;
+            sim_init(&s, 1);
+            /* Heading east, so the hull lies along x and its flank faces
+             * the wall above. */
+            int id = sim_spawn(&s, APEX, 0, 512 * 16, 60 * 16, 16384, &hc);
+            int32_t lo = s.ships[id].y;
+            for (int t = 0; t < 3000; t++) {
+                s.ships[id].vy = -60000;   /* pushed at the wall, no thrust */
+                step_n(&s, &hc, 0, 0, 1);
+                if (s.ships[id].y < lo) lo = s.ships[id].y;
+            }
+            CHECK(lo - hc.classes[APEX].halfw == face - 1,
+                  "drifted in sideways, it stops at its flank");
+            CHECK(hc.classes[APEX].fore - hc.classes[APEX].halfw > 9 * 256,
+                  "and the two stops are most of a tile apart");
+        }
+
+        /* Rotating against the wall. Parked flank-on a pixel off it, holding
+         * a turn sweeps the nose across the wall with nothing moving, which
+         * the sliding clamp can never fix. The rule is that the ship gets
+         * nudged out or the turn is refused; either way the box never ends a
+         * tick inside the wall, and the ship never teleports. */
+        {
+            sim_state s;
+            sim_init(&s, 1);
+            int id = sim_spawn(&s, APEX, 0, 512 * 16,
+                               41 * 16 + hc.classes[APEX].halfw / 256 + 1,
+                               16384, &hc);
+            int32_t x0 = s.ships[id].x, y0 = s.ships[id].y;
+            int ok = 1;
+            for (int t = 0; t < 400 && ok; t++) {
+                step_n(&s, &hc, SIM_BTN_LEFT, 0, 1);
+                const sim_ship *sh = &s.ships[id];
+                /* The box, recomputed here the way the core computes it. */
+                int32_t fx = 0, fy = 0;
+                {
+                    uint16_t hidx = (uint16_t)(sh->heading >> 4);
+                    fx = sim_sintab[hidx & 4095];
+                    fy = -sim_sintab[(hidx + 1024) & 4095];
+                }
+                int32_t afx = fx < 0 ? -fx : fx, afy = fy < 0 ? -fy : fy;
+                int32_t half = (hc.classes[APEX].fore
+                                + hc.classes[APEX].aft) / 2;
+                int32_t off = (hc.classes[APEX].fore
+                               - hc.classes[APEX].aft) / 2;
+                int32_t bx = sh->x + (int32_t)(((int64_t)off * fx) >> 15);
+                int32_t by = sh->y + (int32_t)(((int64_t)off * fy) >> 15);
+                int32_t hx = (int32_t)(((int64_t)half * afx
+                                        + (int64_t)hc.classes[APEX].halfw * afy) >> 15);
+                int32_t hy = (int32_t)(((int64_t)half * afy
+                                        + (int64_t)hc.classes[APEX].halfw * afx) >> 15);
+                for (int32_t ty = (by - hy) >> 12; ty <= (by + hy) >> 12; ty++)
+                    for (int32_t tx = (bx - hx) >> 12; tx <= (bx + hx) >> 12; tx++)
+                        if (SIM_TILE_CLASS(sim_tile_at(wm, tx, ty))
+                                == SIM_TILE_SOLID)
+                            ok = 0;
+                int32_t moved_x = sh->x - x0, moved_y = sh->y - y0;
+                if (moved_x < 0) moved_x = -moved_x;
+                if (moved_y < 0) moved_y = -moved_y;
+                CHECK(moved_x < 16 * 256 && moved_y < 16 * 256,
+                      "the nudge is pixels, never a teleport");
+                x0 = sh->x;
+                y0 = sh->y;
+            }
+            CHECK(ok, "turning beside a wall never leaves the box inside it");
+        }
+        free(wm);
     }
 
     free(m);

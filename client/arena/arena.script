@@ -117,6 +117,11 @@ local function bit_for(action)
             [hash("guns")] = sim.BTN_FIRE,
             [hash("bombs")] = sim.BTN_BOMB,
             [hash("use")] = sim.BTN_USE,
+            -- Held rather than tapped here on purpose: the core toggles on the
+            -- rising edge, so the client's job is only to report the key, and
+            -- doing the edge here as well would make two places that have to
+            -- agree about one press.
+            [hash("multi")] = sim.BTN_MULTI,
             -- The mouse buttons are their own actions rather than aliases of
             -- guns and bombs. A browser synthesises a click from every touch,
             -- so while they shared a name, one tap anywhere on a phone was a
@@ -813,6 +818,14 @@ function update(self, dt)
     -- arena's, which is one routine either way.
     world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
 
+    -- The home screen's own art, over the starfield and under the menu. Only
+    -- there: with a game behind it the arena is the picture, and a hull
+    -- nobody is flying crossing the middle of it would be a lie.
+    if not live then
+        world.home_art(fill, glow, cx, cy, self.hw or 0, self.hh or 0,
+                       self.drift / 7)
+    end
+
     if live then
         -- A zone's map replaces whatever was there, and the terrain mesh is
         -- built on the assumption that never happens. Rebuilt here rather than
@@ -1174,6 +1187,21 @@ function on_input(self, action_id, action)
                     sfx.ui("ui_move")
                     return true
                 end
+                -- A heading picks the column and takes the list back to the
+                -- top, because the row somebody was looking at is not the row
+                -- that will be there after a re-sort.
+                local sort = string.match(r.action or "", "^sort_(%a+)$")
+                if sort then
+                    if ui.sort ~= sort then
+                        ui.sort = sort
+                        ui.scroll = 0
+                        sfx.ui("ui_move")
+                    end
+                    return true
+                end
+                -- The list itself swallows the click so a tap meant for a
+                -- pilot's row does not fall through to whatever is behind it.
+                if r.action == "scores" then return true end
                 if not menu.open then return false end
                 local act, moved = menu.click(r.value)
                 if moved then sfx.ui(act and "ui_go" or "ui_move") end
@@ -1211,6 +1239,18 @@ function on_input(self, action_id, action)
         if hit(action.screen_x or action.x, action.screen_y or action.y) then
             return
         end
+    end
+
+    -- The wheel, which belongs to whichever list is on screen: the menu when
+    -- it is open, the scoreboard when it is not. Defold reports a wheel notch
+    -- as a press and a release of the same action, so only the press counts or
+    -- every notch would move two.
+    if action_id == hash("wheel_up") or action_id == hash("wheel_down") then
+        if action.pressed then
+            local d = (action_id == hash("wheel_up")) and -1 or 1
+            if not menu.open and ui.details then ui.scroll = ui.scroll + d end
+        end
+        return
     end
 
     if action_id == nil then return end

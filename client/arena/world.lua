@@ -104,7 +104,16 @@ M.HULLS = {
               {-4.4,-6.4, -2,-11.4}, {0,22, 0,16.5}},
      canopy = {0,15.5, 1.6,12.2, 0,10.4, -1.6,12.2},
      pods = {{0, 22.6, 2.6}, {10.2, 1, 1.6}, {-10.2, 1, 1.6}},
-     jets = {-1.6,-12.8, 1.6,-12.8}},
+     jets = {-1.6,-12.8, 1.6,-12.8},
+     -- The only hull drawn at anything but its written size. The lamp on the
+     -- mast sits at 22.6 and is 2.6 across, so the Spire as written reaches
+     -- 25.2 px, further than any other hull, and no collision box for that
+     -- reach keeps its diagonal inside the 23 px every shipped map was
+     -- checked against: see hull_extent in sim/src/baseline.c. Thirteen
+     -- percent off the whole ship is the price of keeping the lamp where the
+     -- design puts it, on top of the mast, and it lands the drawing about a
+     -- pixel proud of its box on every face like the rest of the roster.
+     scale = 0.87},
     -- Cipher: a knife. Draws dimmer than the rest of the roster on purpose,
     -- since the class is meant to be hard to pick out of a fight.
     {poly = {0,23, 1.7,7, 3.4,-2, 3,-9, 6.5,-12.5, 2.2,-11.5, 1.6,-13, 0,-13,
@@ -225,7 +234,28 @@ local function triangulate(p)
     return out
 end
 
+-- A hull with a `scale` is redrawn at that size before anything is derived
+-- from it, so nothing downstream has to know. One hull has one, and the reason
+-- is in the roster above.
+--
+-- Applied here rather than at draw time because a ship is drawn in eight
+-- pieces and a scale threaded through eight call sites is a scale somebody
+-- forgets on the ninth. `client/tests/hull_fit_test.lua` measures the result.
+local function rescale(h, k)
+    local function pts(t) for i = 1, #t do t[i] = t[i] * k end end
+    pts(h.poly)
+    if h.canopy then pts(h.canopy) end
+    if h.jets then pts(h.jets) end
+    if h.plates then for _, q in ipairs(h.plates) do pts(q) end end
+    if h.lines then for _, q in ipairs(h.lines) do pts(q) end end
+    -- A pod is {x, y, radius} and a tube {x1, y1, x2, y2, width}: every number
+    -- in both is a length, so both scale whole.
+    if h.pods then for _, q in ipairs(h.pods) do pts(q) end end
+    if h.tubes then for _, q in ipairs(h.tubes) do pts(q) end end
+end
+
 for _, h in ipairs(M.HULLS) do
+    if h.scale then rescale(h, h.scale) h.scale = nil end
     local p = h.poly
     local n = #p / 2
     local w = (turn(p) > 0) and 1 or -1
@@ -465,8 +495,8 @@ local function key(tx, ty) return ty * 1024 + tx end
 -- otherwise straight wall. It is the same double-cover the hulls had at their
 -- corners, and merging is both the fix and the cheaper path.
 local function runs(set, cells, side, emit)
-    local ax, ay = 0, 0                 -- toward the neighbour being tested
-    local px, py = 0, 0                 -- toward the previous tile in a run
+    local ax, ay                        -- toward the neighbour being tested
+    local px, py                        -- toward the previous tile in a run
     if side == "n" then ax, ay, px, py = 0, -1, -1, 0
     elseif side == "s" then ax, ay, px, py = 0, 1, -1, 0
     elseif side == "w" then ax, ay, px, py = -1, 0, 0, -1
@@ -1040,13 +1070,39 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
     --
     -- Safe zones and doors get their own lists: they are the two things worth
     -- steering by, and they were not on the radar at all.
+    -- Anchored to the map's own even grid, never to the window. The stride
+    -- is two tiles, so the phase of the sampled grid decides which tiles are
+    -- looked at, and taking it from the window centre meant every rebuild
+    -- could flip it: measured on Chaos, 664 of 719 blips vanished when the
+    -- window moved one tile, which on screen was the whole dial re-rolling
+    -- every 256 pixels of flight. On the map's grid the same tiles are
+    -- sampled from every centre, so the picture slides and never re-rolls.
+    --
+    -- And the whole two-by-two block per sample, not its corner tile. With a
+    -- fixed phase, a corner read would leave a one-tile wall on the odd
+    -- parity permanently invisible rather than blinking, which is worse.
+    -- Doors outrank safe outranks wall inside a block, because the door is
+    -- the part worth steering by.
     local rt, rs, rd = {}, {}, {}
+    if rx0 % 2 == 1 then rx0 = rx0 + 1 end
+    if ry0 % 2 == 1 then ry0 = ry0 + 1 end
     for ty = ry0, ry1, 2 do
         for tx = rx0, rx1, 2 do
-            local cls = sim.tile(tx, ty)
-            local out = (cls == sim.T_SOLID and rt)
-                or (cls == sim.T_SAFE and rs)
-                or (cls == sim.T_DOOR and rd)
+            local best = 0
+            for dy = 0, 1 do
+                for dx = 0, 1 do
+                    local cls = sim.tile(tx + dx, ty + dy)
+                    if cls == sim.T_DOOR then
+                        best = 3
+                    elseif cls == sim.T_SAFE and best < 2 then
+                        best = 2
+                    elseif cls == sim.T_SOLID and best < 1 then
+                        best = 1
+                    end
+                end
+            end
+            local out = (best == 1 and rt) or (best == 2 and rs)
+                or (best == 3 and rd)
             if out then
                 out[#out + 1] = tx * TILE
                 out[#out + 1] = ty * TILE
@@ -1136,26 +1192,33 @@ end
 
 -- Made once, not per frame: these are constants wearing a function's clothes,
 -- and allocating them in a draw loop is what a collector notices first.
-local DOOR_LIT = pal.hot(pal.WALL_EDGE, 0.5, 1)
-local DOOR_SEAM = pal.a(pal.hot(pal.WALL_EDGE, 0.8, 1), 0.95)
-local DOOR_SLAT = pal.a(DOOR_LIT, 0.34)
-local DOOR_POST_SHUT = pal.a(DOOR_LIT, 0.9)
-local DOOR_POST_OPEN = pal.a(DOOR_LIT, 0.45)
-local DOOR_TICK_SHUT = pal.a(DOOR_LIT, 0.85)
-local DOOR_TICK_OPEN = pal.a(DOOR_LIT, 0.4)
-local DOOR_MARK = pal.a(DOOR_LIT, 0.5)
-local DOOR_SILL = pal.a(DOOR_LIT, 0.16)
-local HOLE_RING = {pal.a(pal.HOLE, 0.34), pal.a(pal.HOLE, 0.22),
-                   pal.a(pal.HOLE, 0.15), pal.a(pal.HOLE, 0.10)}
+-- A door reads in its own colour now rather than in the wall's, and shut and
+-- open are different hues rather than two brightnesses of one. See pal.DOOR:
+-- the band is nothing else's, so this costs no other reading.
+local DOOR_LIT = pal.DOOR
+local DOOR_SEAM = pal.a(pal.hot(pal.DOOR, 0.55, 1), 0.98)
+local DOOR_SLAT = pal.a(DOOR_LIT, 0.42)
+local DOOR_POST_SHUT = pal.a(DOOR_LIT, 0.95)
+local DOOR_POST_OPEN = pal.a(pal.DOOR_OPEN, 0.7)
+local DOOR_TICK_SHUT = pal.a(DOOR_LIT, 0.9)
+local DOOR_TICK_OPEN = pal.a(pal.DOOR_OPEN, 0.6)
+local DOOR_MARK = pal.a(pal.DOOR_OPEN, 0.8)
+local DOOR_SILL = pal.a(pal.DOOR_OPEN, 0.28)
+-- The rings are a function of the clock now, so their colours are made per
+-- frame rather than held here. The arms still are: their fade is by depth
+-- rather than by time.
 local HOLE_ARM = {}
 for k = 1, 5 do HOLE_ARM[k] = pal.a(pal.HOLE, 0.34 - (k - 1) * 0.05) end
 
 -- One door, however many tiles it spans.
 --
--- Colour is not available here: it belongs to teams and to weapon classes, and
--- a door that borrows either is a door somebody misreads under fire. So a door
--- is a shape and a motion, and which of the four clocks it is on is a count of
--- ticks on its posts.
+-- A door has a colour of its own, and the rule it used to follow said it could
+-- not. That rule was about not borrowing: colour belongs to teams and to weapon
+-- classes, and a door wearing cyan or pink is a door somebody misreads under
+-- fire. Green borrows from neither, so the door keeps its shape and its motion
+-- and gains a hue, and shut and open now differ in colour rather than only in
+-- brightness. Which of the four clocks it is on is still a count of ticks on
+-- its posts.
 --
 -- A run is framed once. Framed per tile, a four-tile gateway reads as four
 -- separate shutters, which is four wrong answers to "can I fit through that".
@@ -1180,8 +1243,10 @@ local function door_run(fill, glow, x0, y0, x1, y1, vertical, group, shut)
         else
             ax, ay, bx, by = (x0 + x1) / 2, y0, (x0 + x1) / 2, y1
         end
-        glow:seg_glow(ax, ay, bx, by, 5, 0.11, pal.a(DOOR_LIT, 1))
-        glow:seg(ax, ay, bx, by, 1.0, DOOR_SEAM)
+        -- The bar down the middle is what says "shut", so it carries the
+        -- colour hardest: a wide soft glow under a bright thin line.
+        glow:seg_glow(ax, ay, bx, by, 7, 0.20, pal.a(DOOR_LIT, 1))
+        glow:seg(ax, ay, bx, by, 1.3, DOOR_SEAM)
     else
         -- Open, the gap is marked: brackets reaching in from the posts and a
         -- faint line across the threshold. Posts alone are a doorway a pilot
@@ -1282,27 +1347,49 @@ function M.draw_tiles(fill, glow, now, cull)
                          not across, group, not sim.door_open(t.variant))
             end
         else
-            -- A well, and a hole rather than a wall: you fly into it. A dark
-            -- eye, rings that tighten inward, and arms that turn, so its reach
-            -- can be read before entering it.
+            -- A well, and a hole rather than a wall: you fly into it, and
+            -- since touching one now moves the ship, it has to look like
+            -- somewhere that goes somewhere rather than like a decorated
+            -- floor tile.
+            --
+            -- Everything here travels inward. Four rings are born at the rim
+            -- and fall to the eye on a shared clock, so at any moment there is
+            -- one just appearing and one about to vanish, and each fades as it
+            -- closes; the arms turn against that fall, which is what stops the
+            -- whole thing reading as a single rotating sprite. The eye itself
+            -- beats. None of it is state: it is all a function of the clock,
+            -- so every client draws the same well at the same moment without
+            -- anything being sent.
             local cx = t.tx * TILE + TILE / 2
             local cy = t.ty * TILE + TILE / 2
-            local spin = now * 0.35
+            local spin = now * 0.9
             fill:disc(cx, cy, 7, 10, pal.a(pal.BG, 1))
-            glow:ring(cx, cy, 36, 1.1, 20, HOLE_RING[1])
-            glow:ring(cx, cy, 27, 1.1, 18, HOLE_RING[2])
-            glow:ring(cx, cy, 19, 1.1, 14, HOLE_RING[3])
-            glow:ring(cx, cy, 12, 1.1, 12, HOLE_RING[4])
+            local RIM, EYE = 38, 9
+            for k = 1, 4 do
+                -- Phase, offset a quarter turn per ring so they arrive evenly.
+                local ph = (now * 0.45 + (k - 1) * 0.25) % 1
+                local rr = RIM - (RIM - EYE) * ph
+                -- Brightest in the middle of the fall: a ring that appeared
+                -- at full strength would pop, and one that vanished at full
+                -- strength would blink.
+                local fade = math.sin(ph * math.pi)
+                glow:ring(cx, cy, rr, 1.1, 20, pal.a(pal.HOLE, 0.36 * fade))
+            end
+            -- Arms, turning against the fall so the two motions read apart.
             for i = 0, 3 do
-                local a0 = i * TAU / 4 + spin
+                local a0 = i * TAU / 4 - spin
                 for k = 1, 5 do
                     glow:arc(cx, cy, 10 + (k - 1) * 5.5,
                              a0 + (k - 1) * 0.30, a0 + (k - 1) * 0.30 + 0.5,
                              1.3, 3, HOLE_ARM[k])
                 end
             end
-            glow:halo(cx, cy, 15, 10, pal.a(pal.HOLE, 0.30))
-            glow:ring(cx, cy, 7, 1.4, 12, pal.a(pal.hot(pal.HOLE, 0.4, 1), 0.9))
+            -- The eye, beating. Slower than the rings, so the two clocks do
+            -- not line up into one pulse.
+            local beat = 0.5 + 0.5 * math.sin(now * 2.1)
+            glow:halo(cx, cy, 15 + beat * 5, 10, pal.a(pal.HOLE, 0.24 + 0.16 * beat))
+            glow:ring(cx, cy, 7, 1.4 + beat * 0.6, 12,
+                      pal.a(pal.hot(pal.HOLE, 0.4, 1), 0.75 + 0.25 * beat))
         end
     end
 end
@@ -1337,6 +1424,96 @@ function M.draw_over(glow, cull)
                 glow:seg(x + 2, y + 4, x + 12, y + 14, 0.7,
                          pal.a(pal.PANEL_INK, 0.20))
             end
+        end
+    end
+end
+
+-- --- the home screen --------------------------------------------------------
+
+-- One hull crossing the field, and the trail it leaves.
+--
+-- The screen a stranger lands on used to be a text column in the middle of an
+-- empty starfield, and three quarters of it carried nothing. This is what
+-- carries it: a ship going somewhere, and the wake the game is named after.
+--
+-- Positions come out of the time rather than out of a history buffer. The path
+-- is a closed loop, so sampling it backwards gives the trail exactly and there
+-- is nothing to keep between frames, nothing to reset when a zone is left, and
+-- no seam when the loop comes round.
+local WAKE_N = 64          -- samples in a trail
+local WAKE_DT = 0.13       -- seconds between them, so a trail is ~8s long
+
+-- Where the hull is at time s, and the only reason this is a closed curve is
+-- that a closed curve has no seam: sampling it backwards for the trail works
+-- everywhere on it, including across the join, which a there-and-back path
+-- would have to fade over.
+--
+-- Pushed to the right of the camera rather than centred on it, because the
+-- menu owns the left of the screen and a hull crossing the words would be
+-- decoration fighting the thing it is decorating.
+-- Sized against the view rather than in world pixels, because what these have
+-- to stay clear of is the menu, and the menu is laid out in screen space. A
+-- fixed offset clears the column at exactly one window width and drifts
+-- through the rows at every other.
+local function home_path(s, ax, ay, hw, hh, p)
+    local a = s * p.w + p.phase
+    -- A slow wobble on the radius, so it is a drift rather than a machine part.
+    local k = 1 + 0.11 * math.sin(a * 3 + 1.1)
+    return ax + hw * p.ox + math.cos(a) * hw * p.rx * k,
+           ay + math.sin(a) * hh * p.ry * k
+end
+
+local function home_trail(glow, cx, cy, hw, hh, t, p, col, a, w1)
+    local px, py = home_path(t, cx, cy, hw, hh, p)
+    for i = 1, WAKE_N do
+        local qx, qy = home_path(t - i * WAKE_DT, cx, cy, hw, hh, p)
+        -- Newest segment is widest and brightest, and it is gone by the end.
+        local f0 = 1 - (i - 1) / WAKE_N
+        local f1 = 1 - i / WAKE_N
+        glow:seg_fade(px, py, qx, qy, w1 * f0 * f0, w1 * f1 * f1,
+                      0.30 * a * f0 * f0, 0.30 * a * f1 * f1, col)
+        glow:seg_fade(px, py, qx, qy, w1 * 0.3 * f0 * f0, w1 * 0.3 * f1 * f1,
+                      0.85 * a * f0 ^ 2.6, 0.85 * a * f1 ^ 2.6,
+                      pal.hot(col, 0.5, 1))
+        px, py = qx, qy
+    end
+end
+
+-- Two of them, crossing opposite ways on different paths, and that is the
+-- whole reason there are two: one hull is off the edge for a good part of its
+-- loop and leaves the screen as empty as it was before any of this. Two never
+-- are at once, and two going opposite ways read as traffic rather than as an
+-- exhibit going round.
+-- Both kept to the right of the column, which ends about a hundred pixels
+-- right of the camera at the width the menu is laid out for. A hull drifting
+-- across the words is decoration fighting the thing it decorates.
+--
+-- Hulls chosen for silhouette rather than for meaning. The Apex and the Spire
+-- read as ships at a glance and at any size; the heavier ones are handsome up
+-- close and a lozenge at arm's length, which on a title screen is a rock.
+local HOME_PATHS = {
+    {cls = 0, w = 0.20, phase = 0, ox = 0.72, rx = 0.47, ry = 0.75,
+     col = "FRIEND", a = 1.0, w1 = 9.0},
+    {cls = 4, w = -0.15, phase = 2.6, ox = 0.66, rx = 0.38, ry = 0.55,
+     col = "ENEMY", a = 0.5, w1 = 6.0},
+}
+
+-- Drawn behind the menu on the home screen, in world space, so the starfield
+-- parallaxes behind it the way it does behind everything else.
+function M.home_art(fill, glow, cx, cy, hw, hh, t)
+    if hw <= 0 or hh <= 0 then return end
+    for k = 1, #HOME_PATHS do
+        local p = HOME_PATHS[k]
+        local col = (p.col == "FRIEND") and pal.FRIEND or pal.ENEMY
+        home_trail(glow, cx, cy, hw, hh, t, p, col, p.a, p.w1)
+        local hx, hy = home_path(t, cx, cy, hw, hh, p)
+        local bx, by = home_path(t - 0.05, cx, cy, hw, hh, p)
+        local dx, dy = hx - bx, hy - by
+        if dx * dx + dy * dy > 1e-6 then
+            M.ship(fill, glow, p.cls, hx, hy,
+                   math.atan2(dx, -dy) / TAU * 65536, col,
+                   {thrusting = true, alpha = p.a,
+                    flicker = (t * 7 + k * 3) % 11 / 11})
         end
     end
 end

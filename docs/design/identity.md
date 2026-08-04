@@ -117,6 +117,9 @@ you while guns fire in front. Events near you duck events far away, and distance
 attenuates fast. There is no combat music; the arena's sound is the game's
 sound, and a player should be able to fight with their eyes on the radar.
 
+The kit itself, what each sound is for and what stays silent, is in
+[audio.md](audio.md).
+
 ## Fiction
 
 Deliberately thin. Subspace never explained itself and was better for it: the

@@ -75,7 +75,33 @@ const JOIN_BOT: u8 = 1;
 /// `fleet.rs`: they change for different reasons and are spoken by different
 /// programs. Bump when a message's layout changes, so a stale build is told its
 /// build is stale rather than left to misparse a snapshot.
-const CLIENT_PROTOCOL: u8 = 3;
+const CLIENT_PROTOCOL: u8 = 4;
+
+/// Whether this arena files its rated exchanges with the meta-layer.
+///
+/// On unless `VW_REPORT` says otherwise. That way round because reporting is
+/// what the ladder is made of, and a deployment that quietly kept its results
+/// to itself would be a worse surprise than one that quietly sent them: the
+/// off switch has to be something an operator wrote down.
+///
+/// Read per call rather than cached. It is an environment variable, so it
+/// cannot change under a running process, and reading it costs nothing next to
+/// the clock this is on.
+fn reporting_enabled() -> bool {
+    reporting_from(std::env::var("VW_REPORT").ok().as_deref())
+}
+
+/// The reading, split out from the environment so it can be tested without a
+/// test reaching into a variable the whole process shares.
+fn reporting_from(v: Option<&str>) -> bool {
+    match v {
+        Some(s) => !matches!(
+            s.trim().to_ascii_lowercase().as_str(),
+            "0" | "off" | "false" | "no"
+        ),
+        None => true,
+    }
+}
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
 /// magnitude of headroom.
@@ -587,7 +613,9 @@ impl Arena {
                     cls.up_recharge = sim::sim_units_recharge(v);
                 }
             }
-            if let Some(v) = s.radius { cls.radius = v * 256; }
+            if let Some(v) = s.fore { cls.fore = v * 256; }
+            if let Some(v) = s.aft { cls.aft = v * 256; }
+            if let Some(v) = s.width { cls.halfw = v * 256 / 2; }
         }
         warn
     }
@@ -1372,6 +1400,10 @@ struct Zone {
     pinned: Option<(String, String, u64)>,
     /// Set by a `drain` command or by wanting a different zone. No new joins.
     draining: bool,
+    /// Whether the line about reporting being off has been said. `aim_spool`
+    /// runs on a slow clock forever, and a log that repeats a standing
+    /// condition every few seconds is a log nobody reads.
+    said_quiet: bool,
     /// Everything about this instance's place in a fleet: its id, the views the
     /// directories pushed, what it has announced. Empty and harmless when no
     /// directory was ever configured.
@@ -1598,6 +1630,32 @@ impl Zone {
     /// same slow clock the ladder save used to run on, so a zone change or a
     /// catalog update is picked up without another trigger to remember.
     fn aim_spool(&mut self) {
+        // Unless this arena has been told not to file anything, in which case
+        // the spool is simply never aimed. An unaimed spool writes nothing and
+        // posts nothing, which is the whole of the off switch: see
+        // `Spool::push` and `spool::drain_loop`, both of which check `armed`.
+        //
+        // Nothing else changes. Accounts still work, a pilot still arrives
+        // carrying the rating they earned, the room still rates every
+        // exchange, the scoreboard still shows it, and the meta-layer keeps
+        // running. What stops is this process filing any of it, which is what
+        // a fleet under test wants: a test session's kills are real enough to
+        // move a real ladder, and that ladder is other people's.
+        if !reporting_enabled() {
+            if !self.said_quiet {
+                self.said_quiet = true;
+                let held = self.spool.lock().map(|s| s.len()).unwrap_or(0);
+                println!(
+                    "spool: VW_REPORT is off, rated events are not filed{}",
+                    if held > 0 {
+                        format!(" ({held} carried over from before are held, not dropped)")
+                    } else {
+                        String::new()
+                    }
+                );
+            }
+            return;
+        }
         // The catalog's address is the public one, because it is the one a
         // client dials. An arena on the same host as the meta-layer should not
         // go out through DNS, TLS and a proxy to reach a port beside it, so
@@ -2038,6 +2096,7 @@ impl Zone {
             tick_us: 0,
             pinned: None,
             draining: false,
+            said_quiet: false,
             fleet: select::Fleet::default(),
             ladder,
         }
@@ -2747,6 +2806,21 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reporting is on unless somebody wrote down that it is off, and the ways
+    /// of writing that down are the ways an operator would reach for. Anything
+    /// else is on, including nonsense: a typo in a variable meant to silence a
+    /// fleet should leave the ladder recording, not quietly stop it.
+    #[test]
+    fn only_a_deliberate_word_turns_reporting_off() {
+        for off in ["0", "off", "false", "no", "OFF", " no ", "False"] {
+            assert!(!reporting_from(Some(off)), "{off} should turn it off");
+        }
+        for on in ["1", "on", "true", "yes", "", "maybe", "0.0"] {
+            assert!(reporting_from(Some(on)), "{on} should leave it on");
+        }
+        assert!(reporting_from(None), "unset reports, which is the point");
+    }
 
     fn parse(toml_src: &str) -> config::ArenaConfig {
         let z: config::ZoneConfig = toml::from_str(toml_src).expect("zone file parses");
@@ -3601,6 +3675,10 @@ mod tests {
             foe: Some(ai::Foe { x: px(503), y: px(517), vx: 0.0, vy: 0.0, clear: true }),
             flag: None,
             threat: None,
+            // Hand-built, so the whiskers say open on purpose: this test is
+            // about giving up on a green behind a wall, and a bot that could
+            // see the wall would never press into it to begin with.
+            clear: [1e9; ai::WHISKERS],
         };
 
         let route = nav::Nav::build(&w.map);
@@ -4642,7 +4720,9 @@ mod tests {
             upgrade_speed = 600
             initial_energy = 500
             upgrade_recharge = 200
-            radius = 20
+            fore = 20
+            aft = 12
+            width = 18
         "#);
         assert!(warn.is_empty(), "{warn:?}");
         let apex = w.cfg.classes[ai::class_index("Apex").unwrap()];
@@ -4653,7 +4733,9 @@ mod tests {
             assert_eq!(apex.init_energy, sim::sim_units_energy(500));
             assert_eq!(apex.up_recharge, sim::sim_units_recharge(200));
         }
-        assert_eq!(apex.radius, 20 * 256);
+        assert_eq!(apex.fore, 20 * 256);
+        assert_eq!(apex.aft, 12 * 256);
+        assert_eq!(apex.halfw, 9 * 256, "width is the whole beam, halved");
 
         // A ceiling on its own still moves the floor and the step with it, so
         // raising a hull's top speed does not make it start slower relative to

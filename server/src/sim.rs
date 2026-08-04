@@ -110,7 +110,10 @@ pub struct sim_ship_class {
     pub rot: i32, pub init_rot: i32, pub up_rot: i32,
     pub max_energy: i32, pub init_energy: i32, pub up_energy: i32,
     pub recharge: i32, pub init_recharge: i32, pub up_recharge: i32,
-    pub radius: i32,
+    /// The hull's footprint: reach past the nose, behind the tail, and to
+    /// either side, Q8 px. The core builds the collision box from these at
+    /// the ship's current heading.
+    pub fore: i32, pub aft: i32, pub halfw: i32,
     /// A ladder of patterns per trigger, climbed by the pilot's level, with
     /// 255 ending it. The ladder's length is the hull's ceiling for that
     /// weapon; a hull with no bomb rack has 255 at rung zero.
@@ -206,6 +209,11 @@ pub struct sim_ship {
     /// The rung each trigger is on, and the add-ons held on each.
     pub level: [u8; TRIG_COUNT],
     pub mods: [u16; TRIG_COUNT],
+    /// Multifire declined: the add-on is still held, it is just not applied
+    /// when the trigger is pulled.
+    pub multi_off: u8,
+    /// Last tick's buttons, for the toggles that fire on a press.
+    pub btn_prev: u16,
     /// Charges in hand, spent one at a time.
     pub charge: [u8; MAX_CHARGES],
     /// Bounty earned by killing, as opposed to bounty carried.
