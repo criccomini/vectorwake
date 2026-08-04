@@ -104,7 +104,14 @@ M.HULLS = {
               {-4.4,-6.4, -2,-11.4}, {0,22, 0,16.5}},
      canopy = {0,15.5, 1.6,12.2, 0,10.4, -1.6,12.2},
      pods = {{0, 22.6, 2.6}, {10.2, 1, 1.6}, {-10.2, 1, 1.6}},
-     jets = {-1.6,-12.8, 1.6,-12.8}},
+     jets = {-1.6,-12.8, 1.6,-12.8},
+     -- The only hull drawn at anything but its written size. The lamp on the
+     -- mast sits at 22.6 and is 2.6 across, so the Spire reached 25.2 px,
+     -- further than any other hull and past the 23 the roster is capped at:
+     -- see the note on hull_radius in sim/src/baseline.c for why 23 and not
+     -- 26. Nine percent off the whole ship is invisible, and it keeps the
+     -- lamp where the design puts it, on top of the mast.
+     scale = 23 / 25.2},
     -- Cipher: a knife. Draws dimmer than the rest of the roster on purpose,
     -- since the class is meant to be hard to pick out of a fight.
     {poly = {0,23, 1.7,7, 3.4,-2, 3,-9, 6.5,-12.5, 2.2,-11.5, 1.6,-13, 0,-13,
@@ -225,7 +232,28 @@ local function triangulate(p)
     return out
 end
 
+-- A hull with a `scale` is redrawn at that size before anything is derived
+-- from it, so nothing downstream has to know. One hull has one, and the reason
+-- is in the roster above.
+--
+-- Applied here rather than at draw time because a ship is drawn in eight
+-- pieces and a scale threaded through eight call sites is a scale somebody
+-- forgets on the ninth. `client/tests/hull_fit_test.lua` measures the result.
+local function rescale(h, k)
+    local function pts(t) for i = 1, #t do t[i] = t[i] * k end end
+    pts(h.poly)
+    if h.canopy then pts(h.canopy) end
+    if h.jets then pts(h.jets) end
+    if h.plates then for _, q in ipairs(h.plates) do pts(q) end end
+    if h.lines then for _, q in ipairs(h.lines) do pts(q) end end
+    -- A pod is {x, y, radius} and a tube {x1, y1, x2, y2, width}: every number
+    -- in both is a length, so both scale whole.
+    if h.pods then for _, q in ipairs(h.pods) do pts(q) end end
+    if h.tubes then for _, q in ipairs(h.tubes) do pts(q) end end
+end
+
 for _, h in ipairs(M.HULLS) do
+    if h.scale then rescale(h, h.scale) h.scale = nil end
     local p = h.poly
     local n = #p / 2
     local w = (turn(p) > 0) and 1 or -1

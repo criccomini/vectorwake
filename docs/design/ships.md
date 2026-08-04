@@ -43,6 +43,40 @@ turn per second, recharge in energy per second times ten.
 Numbers are a starting point for M3, not a balance claim. They will be wrong,
 and the first playtest will say how.
 
+## Size
+
+The one number on a ship the original does not supply. Its ship files carry no
+radius at all, so a flat 14 pixels was a placeholder we inherited from nothing,
+and every hull was drawn larger than the box it was given: an Apex reaches 21.5
+pixels forward against a box that stops 14 from a wall, so its nose was drawn
+seven and a half pixels inside the wall. Half a tile, on the hull most people
+fly.
+
+Each hull now collides in a box measured off its own drawing.
+
+| Apex | Wedge | Chord | Anvil | Spire | Cipher | Facet | Lattice |
+|---|---|---|---|---|---|---|---|
+| 22 | 19 | 19 | 18 | 23 | 23 | 17 | 17 |
+
+That is a balance change and not only a cosmetic one, because the box is also
+what a weapon tests against and what a wall stops. A Spire is a third wider
+than a Facet, so it is a third easier to hit and it cannot tuck as close to
+cover. It is the first thing that has ever actually told the hulls apart: they
+fly identically today whatever the table above says, and size is a difference
+you can see rather than one a blurb claims.
+
+Twenty-three is the ceiling, and it is a promise to every map rather than a
+matter of taste. Anywhere between 17 and 23 a hull needs the same three-tile
+gap, fits every spawn on all three shipped maps, and reaches the same rooms. At
+26 that stops being true: one spawn on Chaos and one on Alpha no longer fit, so
+a hull that size respawns inside a wall, and War loses passages. Holding the
+whole roster inside 23 means a map that works for one hull works for all eight,
+and nobody drawing a map has to remember an exception. The Spire is the hull
+that wanted more, and its drawing is scaled down nine percent to fit instead.
+
+`client/tests/hull_fit_test.lua` reads these out of `sim/src/baseline.c` and
+measures the client's hulls against them, so the two cannot drift apart again.
+
 ## What each ship is for
 
 **Apex** catches things. Highest top speed, highest thrust, sharpest turn, and

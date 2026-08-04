@@ -45,7 +45,10 @@ typedef struct {
  * exactly alike there, and what tells them apart is the ten capability flags
  * and nothing else.
  *
- * Radius has no value in those files, so the client's default of 14 stands.
+ * Radius is the exception and it is not here: it has no value in those files
+ * at all, so there is nothing to inherit and a flat 14 was only ever a
+ * placeholder. It is per hull, in `rows` below, measured off the shape the
+ * client draws.
  *
  * The step counts fall out rather than being chosen: five greens take speed
  * from 2010 to its 3250 ceiling, seven take energy from 1000 to 1700, and one
@@ -57,7 +60,7 @@ static const sim_class_units flight = {
     200,   40,  230,      /* rotation */
     1000, 100, 1700,      /* energy */
     400,  166, 1150,      /* recharge */
-    14,                   /* radius, in pixels */
+    0,                    /* radius: per hull, see `rows` */
 };
 
 /* The weapons, also identical on every hull, from the same files and the
@@ -113,6 +116,43 @@ static const sim_class_units flight = {
  * can never shoot twice, which is what the first test run caught. */
 #define GUN_ALL   (M1(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE))
 #define BOMB_ALL  (M1(SIM_MOD_PROX) | M2(SIM_MOD_SHRAPNEL))
+/* Radius, per hull, in pixels. client/tests/hull_fit_test.lua reads this table
+   out of this file by name and measures the client's drawing against it, so
+   the two cannot drift; renaming it breaks that test rather than silencing it.
+
+   These are measured, not chosen. A hull collides as an axis-aligned box of
+   this half-width that never rotates, so a ship pressed nose-first into a
+   wall stops with its centre exactly this far from the face. Anything the
+   client draws further out than that is drawn inside the wall, which is what
+   a flat 14 did to all eight of them: an Apex reaches 21.5 px forward, so its
+   nose crossed the face by seven and a half pixels, half a tile.
+
+   So each number is the furthest point of that hull's own drawing, rounded
+   up. What the roster now says is that hulls differ in size, which is the
+   first thing that has ever actually told them apart: they fly identically
+   and always have. A bigger hull is a bigger target, since this is also the
+   box a weapon tests against, and it cannot get as close to a wall.
+
+   23 is the ceiling and it is a contract with every map rather than an
+   aesthetic. Between 17 and 23 nothing changes about where a hull can go:
+   all of them need a three-tile gap, all of them fit every spawn on all
+   three shipped maps, and the flood fill reaches the same rooms. At 26 that
+   breaks -- one spawn on Chaos and one on Alpha stop fitting, so a hull that
+   size would respawn inside a wall, and War loses passages. Keeping the
+   whole roster inside 23 means a map that works for one hull works for all
+   of them, and nobody drawing a map has to remember an exception. The Spire
+   is the one hull that wanted more; its drawing is scaled to fit instead. */
+static const uint8_t hull_radius[SIM_MAX_CLASSES] = {
+    22,  /* Apex:    a dart, and nearly all of it is nose */
+    19,  /* Wedge:   widest at the bomb bay rather than forward */
+    19,  /* Chord:   the same, and the widest hull in the roster */
+    18,  /* Anvil */
+    23,  /* Spire:   the mast, once its lamp is inside the box */
+    23,  /* Cipher:  a knife, so it is long and reaches furthest but one */
+    17,  /* Facet:   squat, and the smallest target on the board */
+    17,  /* Lattice */
+};
+
 static const class_row rows[SIM_MAX_CLASSES] = {
     /* MaxGuns is 3 on every ship the original ships and MaxBombs is 2 on
        seven of them, so that is what every row here says. The Anvil is the
@@ -409,6 +449,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         const class_row *r = &rows[i];
         sim_ship_class *c = &cfg->classes[i];
         sim_class_from_units(c, &flight);
+        c->radius = (int32_t)hull_radius[i] * 256;
         c->mod_max[SIM_TRIG_GUN] = r->gun_mods;
         c->mod_max[SIM_TRIG_BOMB] = r->bomb_mods;
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
