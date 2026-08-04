@@ -51,6 +51,11 @@
 	#canvas {
 		outline: none;
 		border: 0;
+		/* No browser cursor over the game: the client draws its own pointer
+		on the interface layer and fades it when the hand goes still, which
+		an OS cursor cannot do. The loading overlay is a separate element,
+		so the ordinary cursor stays while the engine compiles. */
+		cursor: none;
 		/* Both axes pinned to the container, and pinned hard. The engine's
 		own resize handling strips the canvas element's inline style, and
 		Safari does not reliably refresh a canvas's intrinsic ratio when its
