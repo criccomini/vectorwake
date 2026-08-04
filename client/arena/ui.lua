@@ -546,10 +546,16 @@ end
 -- debugging itself on a player's screen.
 local function status(me, pickup, charges, lift)
     local slots = charges or {}
-    local rows_h = 18 * S
+    -- Sized up. This corner is what a pilot checks mid-fight without looking
+    -- away from their own hull, and it was set three and four points under
+    -- the body text: legible while you are reading it and not while you are
+    -- flying, which is the only time it is on screen. The row pitch and the
+    -- value column move with the type rather than being left where the small
+    -- labels fit.
+    local rows_h = 22 * S
     local x = PAD * S
-    local lab = (FONT - 3) * S
-    local val = x + 50 * S
+    local lab = FONT * S
+    local val = x + 62 * S
 
     -- The pad carries the charge counts on a touchscreen, so those rows would
     -- be the same thing twice at opposite corners.
@@ -569,15 +575,16 @@ local function status(me, pickup, charges, lift)
             local lvl = sim.ship_level(me, t)
             txt((t == sim.TRIG_GUN) and "GUN" or "BOMB", x,
                 y + rows_h / 2, lab, pal.a(pal.DIM, 0.8))
-            ladder(val, y + rows_h / 2 - 2 * S, 3, lvl + 1, pal.FRIEND)
-            local at = val + 42 * S
+            ladder(val, y + rows_h / 2 - 2 * S, 3, lvl + 1, pal.FRIEND,
+                   40 * S, 4 * S)
+            local at = val + 50 * S
             for m, mod in ipairs(pal.MODS) do
                 local nn = sim.ship_mod(me, t, m - 1)
                 if nn > 0 then
                     txt(mod.name .. (nn > 1 and ("x" .. nn) or ""), at,
-                        y + rows_h / 2, (FONT - 4) * S,
+                        y + rows_h / 2, (FONT - 2) * S,
                         pal.a(pal.FRIEND, 0.75))
-                    at = at + 38 * S
+                    at = at + 46 * S
                 end
             end
             y = y + rows_h
@@ -588,8 +595,9 @@ local function status(me, pickup, charges, lift)
         for _, c in ipairs(slots) do
             txt(string.upper(c.name or c.short), x, y + rows_h / 2, lab,
                 pal.a(pal.DIM, 0.8))
-            pips(val + 2 * S, y + rows_h / 2, math.max(1, c.max or 3), c.count,
-                 c.ready and pal.CHARGE_COL or pal.a(pal.CHARGE_COL, 0.7))
+            pips(val + 3 * S, y + rows_h / 2, math.max(1, c.max or 3), c.count,
+                 c.ready and pal.CHARGE_COL or pal.a(pal.CHARGE_COL, 0.7),
+                 2.7 * S, 9 * S)
             y = y + rows_h
         end
     end
@@ -598,13 +606,13 @@ local function status(me, pickup, charges, lift)
     -- and which was only ever behind the info toggle.
     txt("BOUNTY", x, y + rows_h / 2, lab, pal.a(pal.DIM, 0.8))
     local bty = sim.ship_bounty(me)
-    txt(tostring(bty), val, y + rows_h / 2, (FONT - 4) * S,
+    txt(tostring(bty), val, y + rows_h / 2, (FONT - 2) * S,
         bty > 0 and pal.a(pal.PRIZE, 0.95) or pal.a(pal.DIM, 0.5))
     y = y + rows_h
 
     if pickup then
         txt((pickup.sign or "+") .. " " .. pickup.name, x,
-            y + rows_h / 2, (FONT - 2) * S, pal.a(pickup.col, pickup.t))
+            y + rows_h / 2, FONT * S, pal.a(pickup.col, pickup.t))
     end
     return 0
 end
@@ -718,6 +726,21 @@ local function link(lag)
         pal.a(pal.DIM, 0.8), "right")
 end
 
+-- Where you are, over the dial's other top corner from the link readout.
+--
+-- In tiles, because that is the unit the map is laid out in and the unit a
+-- player says out loud. Pixels would be the same place in numbers six digits
+-- long that nobody can hold in their head or call across a room.
+local function coords(me)
+    local pad = (M.compact and 8 or PAD) * S
+    local x = W - pad - RADAR * S
+    local base = pad + 13 * S
+    txt("POS", x, base - 4 * S, (FONT - 3) * S, pal.a(pal.DIM, 0.8))
+    txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
+                      math.floor(sim.ship_y(me) / 16)),
+        x + 26 * S, base - 4 * S, (FONT - 3) * S, pal.a(pal.INK, 0.85))
+end
+
 -- The count in each charge pad.
 --
 -- The pad and its icon are drawn by touch.lua, which owns where a pad is and
@@ -787,6 +810,7 @@ function M.hud(o)
     nameplates(o)
     radar(o.cam_x, o.cam_y, me)
     link(o.lag or 0)
+    coords(me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap.
     feed(o.feed, M.radar_span())
