@@ -1,18 +1,25 @@
--- The interface's clickable rectangles, and what wins when two overlap.
+-- The interface's clickable rectangles: where they are, and what a press on
+-- one actually reaches.
 --
 --     lua5.1 client/tests/hud_hits_test.lua
 --
 -- `ui.lua` publishes a list of boxes and `arena.script` takes the first one a
--- press lands in. That makes the order the boxes are added into a rule about
--- which control the player gets, and nothing else in the tree states it: a
--- ship drifting under the radar publishes a box over the radar's, and if it
--- were added first, a click meant for the map would open a stranger's record
--- instead. The only other way to find that out is to fly under the dial and
--- click, on a build that takes six minutes to publish.
+-- press lands in, so two rules govern every control on screen and neither is
+-- written anywhere else.
 --
--- So this runs the real `M.hud` against a stubbed engine and asks the
--- questions a hand at a mouse would: what is on screen, and what does a press
--- at these coordinates hit.
+-- The first is that the field of play holds no boxes at all. A press there is
+-- a trigger pull: left is the gun, right is the bomb. A box over a hull, or
+-- over the name beside it, swallows the press, so a player lined up on
+-- somebody would pull and fire nothing. Asking who a pilot is belongs to the
+-- scoreboard, where a click is a click.
+--
+-- The second is that order decides overlaps, and the scoreboard is where that
+-- bites: each row publishes before the panel's own box, which exists to take
+-- the wheel and would otherwise eat every press meant for a row.
+--
+-- Both are invisible until somebody is flying, on a build that takes six
+-- minutes to publish. So this runs the real `M.hud` against a stubbed engine
+-- and asks the questions a hand at a mouse would.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -43,8 +50,10 @@ end
 local room = {count = 4, teams = {[0] = 1, 1, 1, 1}, alive = {}}
 local sim = {
     ship_count = function() return room.count end,
-    ship_x = function(i) return 100 + i * 500 end,
-    ship_y = function(i) return 100 + i * 300 end,
+    -- Spread so that all three strangers land on screen at the extents the
+    -- harness uses, which is what makes the sweep below cover more than one.
+    ship_x = function(i) return 100 + i * 180 end,
+    ship_y = function(i) return 100 + i * 120 end,
     ship_heading = function() return 0 end,
     ship_alive = function(i) return room.alive[i] == false and 0 or 1 end,
     ship_team = function(i) return room.teams[i] or 0 end,
@@ -156,82 +165,49 @@ local function box(action, value)
     return nil
 end
 
--- --- the world is behind every panel ---------------------------------------
+-- --- the trigger owns the field of play ------------------------------------
 
-frame()
-check("a ship publishes a box to ask about it", box("pilot", 1) ~= nil)
-
--- The rule this file exists for. Every panel is tested before the world, so a
--- ship flying under one cannot take its clicks.
-local world_at = rank("pilot")
-for _, panel in ipairs({"map", "debug", "open", "details"}) do
-    local at = rank(panel)
-    check(panel .. " is tested before any ship",
-          at ~= nil and world_at ~= nil and at < world_at,
-          "panel at " .. tostring(at) .. ", ships from " .. tostring(world_at))
-end
-
--- And the same thing asked the way a player would ask it: a press on the dial
--- opens the map even when a name is under it. Ship 2 is parked on the radar.
---
--- The camera sits on ship 0 and the projection is a pixel per unit at these
--- extents, so screen (1160, 90) is world (620, -210). The label hangs off the
--- hull's lower right, which puts it inside the dial: 168 wide against the
--- right margin.
-local held_x, held_y = sim.ship_x, sim.ship_y
-sim.ship_x = function(i) return i == 2 and 620 or held_x(i) end
-sim.ship_y = function(i) return i == 2 and -210 or held_y(i) end
-frame()
-local dial = box("map")
-local dx, dy = dial.x + dial.w / 2, dial.y + dial.h / 2
--- The setup is only worth anything if a ship really is under the dial, so the
--- test says so rather than trusting the arithmetic above.
-local over = false
-for _, r in ipairs(ui.hits) do
-    if r.action == "pilot" and dx >= r.x and dx <= r.x + r.w
-       and dy >= r.y and dy <= r.y + r.h then over = true end
-end
-check("the setup put a ship under the dial", over)
-check("a press on the dial is the dial, whoever is flying over it",
-      press(dx, dy) == "map", "landed on " .. tostring(press(dx, dy)))
-sim.ship_x, sim.ship_y = held_x, held_y
-
--- --- the trigger keeps the hull --------------------------------------------
-
--- The left button is the gun, so a box over a ship would eat the shot at the
--- moment a player is lined up on somebody. Only the name is clickable, and a
--- press on the hull itself has to fall through to nothing.
+-- Every ship on screen, pressed on the hull and on the label beside it. Both
+-- have to fall through to nothing, or that press was a shot a player did not
+-- get to take.
 frame()
 local scale = W / (2 * 640)
-for _, i in ipairs({1, 2, 3}) do
+local tested = 0
+for i = 1, 3 do
     local sx = W / 2 + (sim.ship_x(i) - sim.ship_x(0)) * scale
     local sy = H / 2 + (sim.ship_y(i) - sim.ship_y(0)) * scale
     if sx > 0 and sx < W and sy > 0 and sy < H then
+        tested = tested + 1
         check("a press on ship " .. i .. "'s hull is not a click",
-              press(sx, sy) == nil,
-              "landed on " .. tostring(press(sx, sy)))
-        check("a press on ship " .. i .. "'s name asks about them",
-              press(sx + 30 * 1, sy + 10 * 1) == "pilot",
-              "landed on " .. tostring(press(sx + 30, sy + 10)))
+              press(sx, sy) == nil, "landed on " .. tostring(press(sx, sy)))
+        -- Where the nameplate is drawn: the hull's lower right.
+        check("a press on ship " .. i .. "'s name is not a click",
+              press(sx + 30, sy + 14) == nil,
+              "landed on " .. tostring(press(sx + 30, sy + 14)))
     end
 end
+check("the sweep found ships to press on", tested > 0)
 
 -- --- the menu takes the screen ---------------------------------------------
 
 frame({menu_open = true})
-check("no ship is clickable under the menu", box("pilot", 1) == nil)
 check("the map is not clickable under the menu", box("map") == nil)
 check("the debug readout is not clickable under the menu", box("debug") == nil)
 
--- --- the scoreboard is the other way to ask --------------------------------
+-- --- the scoreboard is where you ask ---------------------------------------
 
 ui.details = true
 frame()
 check("a scoreboard row asks about its pilot", box("pilot", 3) ~= nil)
 local row = box("pilot", 3)
+-- The ordering rule, asked the way a hand asks it. The panel publishes its own
+-- box to take the wheel; a row published after it would be unreachable.
 check("a row's click reaches the pilot rather than the list",
       row ~= nil and press(row.x + 4, row.y + 4) == "pilot",
       "landed on " .. tostring(row and press(row.x + 4, row.y + 4)))
+check("every row is tested before the panel that holds them",
+      rank("pilot") ~= nil and rank("scores") ~= nil
+      and rank("pilot") < rank("scores"))
 ui.details = false
 
 -- --- the feed is bounded ---------------------------------------------------
@@ -249,17 +225,25 @@ check("a long feed still draws something", drawn > 0 and before ~= nil)
 
 -- --- the info box ----------------------------------------------------------
 
+-- It belongs to the scoreboard, which is the only thing that opens it.
+ui.details = true
 ui.inspect = 2
 frame()
 check("the info box publishes its close box", box("uninspect") ~= nil)
-check("the close box is tested before the world",
-      rank("uninspect") ~= nil and rank("uninspect") < rank("pilot"))
 
 -- A pilot who left. The box goes with them rather than describing a seat that
 -- is no longer in the room.
 ui.inspect = 9
 frame()
 check("an info box for a departed pilot closes itself", ui.inspect == nil)
+
+-- And it goes with the list it came from, rather than standing alone with
+-- nothing on screen saying who it is about or how to get another.
+ui.inspect = 2
+ui.details = false
+frame()
+check("shutting the scoreboard shuts the info box", ui.inspect == nil)
+check("and takes its close box with it", box("uninspect") == nil)
 
 -- --- the debug readout -----------------------------------------------------
 

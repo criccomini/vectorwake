@@ -293,7 +293,7 @@ local NODES = {
         {label = "one shot", detail = "Q, to stop multifire fanning"},
         {label = "scores", detail = "I, or the info button"},
         {label = "map", detail = "M, or click the radar"},
-        {label = "who", detail = "click a pilot's name, or their row"},
+        {label = "who", detail = "click a pilot on the scoreboard"},
         {label = "menu", detail = "escape"},
         {label = "", detail = ""},
         -- Every key here has a second binding, and this is the reason. Most

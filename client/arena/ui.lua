@@ -501,12 +501,12 @@ end
 -- gui font. The projection is the render script's -- a fixed world extent
 -- across the shorter axis, centred on the camera -- so one number converts
 -- between them and the two cannot drift.
--- Ship hit boxes, waiting for the end of the frame. See the note where they
--- are filled: the world is behind every panel, so it is tested last.
-local world_hits = {}
-
+-- Nothing here is clickable, deliberately. The left button is the gun and the
+-- right one is the bomb, and a hit box publishes over both: a box on a hull,
+-- or on the label beside it, would eat the trigger at the exact moment a
+-- player is lined up on somebody. Asking who somebody is belongs to the
+-- scoreboard, where a click is a click and nothing else.
 local function nameplates(o)
-    for i = #world_hits, 1, -1 do world_hits[i] = nil end
     if not o.half_w or o.half_w <= 0 then return end
     -- The render script publishes its own half-extents for exactly this, so
     -- that nothing keeps a second copy of the projection. Deriving one from
@@ -536,26 +536,6 @@ local function nameplates(o)
                 if bty > 0 then
                     txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
                         pal.a(pal.BOUNTY, 0.85))
-                end
-                -- Ask about them by pointing at their name. The label, never
-                -- the hull: the left button is the gun and the right one is
-                -- the bomb, so a box over a ship would eat the trigger at the
-                -- exact moment a player is lined up on somebody, which is the
-                -- moment they are least willing to forgive it. The name hangs
-                -- off the hull's lower right and is a thing you point at on
-                -- purpose.
-                --
-                -- Held back rather than published here. A hit box is tested in
-                -- the order it was added and the first one wins, and the world
-                -- is behind everything: a name drifting under the radar would
-                -- otherwise swallow the click that was meant for the radar.
-                if not menu_up then
-                    -- The drawn label's own box: the monospace advance at this
-                    -- size, over the name and the bounty line under it.
-                    local lw = math.max(#nm, 3) * 6.6 * S + 8 * S
-                    local lh = (bty > 0 and 26 or 15) * S
-                    world_hits[#world_hits + 1] =
-                        {sx + 10 * S, sy + 4 * S, lw, lh, i}
                 end
             end
         end
@@ -704,14 +684,17 @@ local function scores(me, pilots)
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
         local mine = r.i == me
+        local reading = M.inspect == r.i
         local col = (sim.ship_team(r.i) == my_team) and pal.FRIEND or pal.ENEMY
-        if mine then
+        if mine or reading then
             -- Your row, marked the way a selected row is marked everywhere
             -- else in this interface: a lit rule and a wash off it, not a
-            -- glyph in front of your name.
-            wash(x, y, w, LINE * S, pal.a(pal.FRIEND, 0.13))
-            u:seg(x, ry(y), x, ry(y + LINE * S), 1.6 * S,
-                  pal.a(pal.FRIEND, 0.95))
+            -- glyph in front of your name. The row being read about wears the
+            -- same mark, in its own colour, since it is a selection and this
+            -- is how this interface draws one.
+            local mark = reading and pal.BOUNTY or pal.FRIEND
+            wash(x, y, w, LINE * S, pal.a(mark, 0.13))
+            u:seg(x, ry(y), x, ry(y + LINE * S), 1.6 * S, pal.a(mark, 0.95))
         end
         local name = string.sub(r.name, 1, 14)
         local cy = y + LINE * S / 2
@@ -721,8 +704,9 @@ local function scores(me, pilots)
         -- scan down the list finds them in a line instead of at fourteen
         -- different indents.
         if r.ai then bot_mark(kx - 42 * S, cy, pal.a(pal.DIM, 0.75)) end
-        -- A row is the other way to ask about a pilot, and the more reliable
-        -- one: a hull in a fight is a moving target.
+        -- The one way to ask about a pilot. Published before the panel's own
+        -- box below, which takes the wheel and would otherwise swallow the
+        -- press: first box in wins.
         hit(x, y, w - 6 * S, LINE * S, "pilot", r.i)
         txt(tostring(r.k), kx, y + LINE * S / 2, (FONT - 2) * S,
             pal.a(pal.INK, 0.85), "right")
@@ -949,6 +933,11 @@ end
 -- where this interface keeps things you asked to see. Not over the middle: a
 -- box you opened by clicking a ship must not cover the ship you clicked.
 local function inspect(o, top)
+    -- It belongs to the scoreboard, which is the only thing that opens it, so
+    -- it goes when the scoreboard goes. A box left standing under a shut list
+    -- is a panel about somebody with nothing on screen saying who they were or
+    -- how to get another one.
+    if not M.details then M.inspect = nil end
     local i = M.inspect
     if not i then return end
     -- A pilot who left while the box was open. The box goes with them rather
@@ -1257,10 +1246,6 @@ function M.hud(o)
     status(me, o.pickup, o.charges, lift)
     inspect(o, loadout(me, o.class_names, top))
     menu_button()
-    -- Last, so every panel above has already claimed what it drew.
-    for _, b in ipairs(world_hits) do
-        hit(b[1], b[2], b[3], b[4], "pilot", b[5])
-    end
     vignette(o.hurt or 0)
 
     -- The two big centred lines are the only interface that sits where the
