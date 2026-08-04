@@ -16,6 +16,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [bounty.md](bounty.md) | What you are worth and what you have been paid: bounty derived from what you carry, points paid as the victim's bounty |
 | [rating.md](rating.md) | Skill rating across humans and AI, and how credit for a kill is split among everyone who caused it |
 | [accounts.md](accounts.md) | Guest-first accounts, claiming, generated names, the human/bot/unknown label, and bots as account holders |
+| [teams.md](teams.md) | Named public and private teams, invitations instead of passwords, three caps instead of a balance rule, and bots as the ballast |
 
 ## The one-line version
 
