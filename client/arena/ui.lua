@@ -1096,8 +1096,17 @@ function M.menu(v)
     local x = math.max(24 * S, (W - w) / 2 - 120 * S)
     local nrows = #v.rows
     -- The home screen carries the name at a size that owns its corner, and
-    -- everything under it moves down by the room that takes.
-    local head = v.home_root and 60 * S or 0
+    -- everything under it moves down by the room that takes. Only while the
+    -- room exists: a phone held sideways has about 350 points of height, the
+    -- column with the big header is 374, and a wordmark that pushes "tap a
+    -- row" off the bottom of the screen is decoration eating the controls.
+    -- The header yields and the title falls back to the size every other
+    -- screen uses.
+    local head = 0
+    if v.home_root then
+        local need = ROW_H * nrows + 76 + 60 + 24
+        if H / S >= need then head = 60 * S end
+    end
     local h = ROW_H * S * nrows + 76 * S + head
     local y = math.max(20 * S, (H - h) / 2)
 
@@ -1114,7 +1123,7 @@ function M.menu(v)
     -- middle of the screen.
     vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.8), 40 * S)
 
-    if v.home_root then
+    if head > 0 then
         -- The name, and under it the thing the name is about.
         --
         -- Not a logotype: the same monospace as everything else, at a size
