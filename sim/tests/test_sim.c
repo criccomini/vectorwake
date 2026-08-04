@@ -8,6 +8,10 @@
 #include "sim/baseline.h"
 #include "sim/pack.h"
 
+/* The core's own sine table, for the one test that rebuilds the collision
+ * box outside the core to check the core never leaves it inside a wall. */
+#include "../src/sintab.h"
+
 static int failures = 0;
 #define CHECK(cond, msg)                                          \
     do {                                                          \
@@ -902,7 +906,7 @@ int main(void) {
         CHECK(s.ships[1].energy
               < sim_eff_max_energy(&w.classes[APEX], &s.ships[1]),
               "close enough counted");
-        CHECK(last - s.ships[1].y > w.classes[APEX].radius,
+        CHECK(last - s.ships[1].y > w.classes[APEX].fore,
               "without ever reaching the hull");
     }
 
@@ -2479,26 +2483,28 @@ int main(void) {
         }
     }
 
-    /* A hull's box is its own, and it is the one number on a ship that the
-     * original's files do not supply. It is measured off what the client
-     * draws, which is why client/tests/hull_fit_test.lua reads the table this
-     * comes from. Here we only check the properties the core depends on: that
-     * the eight are not all one number any more, that none exceeds the ceiling
-     * the shipped maps were checked against, and that a bigger box really does
-     * stop a ship further from a wall, which is the whole point. */
+    /* A hull's box follows its heading. The extents are measured off what
+     * the client draws, which is why client/tests/hull_fit_test.lua reads
+     * the table they come from; here we check the properties the core
+     * depends on. Every hull has all three, none reaches past 23 px in any
+     * direction at any heading -- the ceiling the shipped maps were
+     * flood-filled and spawn-checked against, now applied to the diagonal
+     * corner rather than a square's side -- and a ship flown at a wall
+     * nose-first stops at its nose where the same ship drifted in sideways
+     * stops at its flank. */
     {
-        int32_t big = 0, small = INT32_MAX;
         for (int c = 0; c < cfg.class_count; c++) {
-            int32_t r = cfg.classes[c].radius;
-            CHECK(r > 0, "every hull has a radius");
-            CHECK(r <= 23 * 256, "and none is past the roster's ceiling");
-            if (r > big) big = r;
-            if (r < small) small = r;
+            int64_t fore = cfg.classes[c].fore, aft = cfg.classes[c].aft;
+            int64_t w = cfg.classes[c].halfw;
+            CHECK(fore > 0 && aft > 0 && w > 0, "every hull has extents");
+            CHECK(fore * fore + w * w <= (int64_t)(23 * 256) * (23 * 256),
+                  "the nose corner is inside the roster ceiling");
+            CHECK(aft * aft + w * w <= (int64_t)(23 * 256) * (23 * 256),
+                  "and so is the tail corner");
         }
-        CHECK(big > small, "the hulls are not all one size");
+        CHECK(cfg.classes[0].fore != cfg.classes[0].halfw,
+              "an Apex is longer than it is wide");
 
-        /* Two hulls flown into the same wall stop at different distances, and
-         * the difference is exactly the difference between their boxes. */
         sim_map *wm = walled_map();
         for (int y = 0; y < 40; y++)
             for (int x = 0; x < SIM_MAP_TILES; x++)
@@ -2508,39 +2514,95 @@ int main(void) {
         memset(&hc, 0, sizeof hc);
         sim_settings_baseline(&hc, wm);
         hc.spawn_prizes = 0;
+        const int32_t face = 40 * 16 * 256;   /* the wall's south edge */
 
-        int fat = 0, thin = 0;
-        for (int c = 1; c < hc.class_count; c++) {
-            if (hc.classes[c].radius > hc.classes[fat].radius) fat = c;
-            if (hc.classes[c].radius < hc.classes[thin].radius) thin = c;
-        }
-        /* The closest it ever gets, not where it happens to be at the end:
-         * thrust held against a wall bounces, so the last tick of a run is a
-         * ship somewhere in a bounce and the interesting number is the near
-         * edge of one. */
-        int32_t stop[2];
-        int who[2] = {fat, thin};
-        for (int k = 0; k < 2; k++) {
+        /* Nose-first: thrust straight up at the wall and take the closest
+         * approach, since holding thrust against a wall bounces. */
+        {
             sim_state s;
             sim_init(&s, 1);
-            /* Pointing at the wall the whole way, heading 0 being up. */
-            int id = sim_spawn(&s, who[k], 0, 512 * 16, 60 * 16, 0, &hc);
-            stop[k] = s.ships[id].y;
+            int id = sim_spawn(&s, APEX, 0, 512 * 16, 60 * 16, 0, &hc);
+            int32_t lo = s.ships[id].y;
             for (int t = 0; t < 3000; t++) {
                 step_n(&s, &hc, SIM_BTN_THRUST, 0, 1);
-                if (s.ships[id].y < stop[k]) stop[k] = s.ships[id].y;
+                if (s.ships[id].y < lo) lo = s.ships[id].y;
             }
+            /* One Q8 unit inside the face: the clamp's deliberate -1,
+             * which keeps the box's edge strictly out of the wall tile. */
+            CHECK(lo - hc.classes[APEX].fore == face - 1,
+                  "flown at a wall, an Apex stops at its nose");
         }
-        CHECK(stop[0] > stop[1],
-              "a bigger hull stops further from the wall it flew into");
-        CHECK(stop[0] - stop[1]
-                  == hc.classes[fat].radius - hc.classes[thin].radius,
-              "by exactly the difference between the two boxes");
-        /* Both boxes end flush against the same tile, which is the property
-         * that makes the first check mean what it says. */
-        CHECK((stop[0] - hc.classes[fat].radius)
-                  == (stop[1] - hc.classes[thin].radius),
-              "and both boxes stop flush against the same face");
+
+        /* Sideways: same hull, same wall, but drifting in flank-first with
+         * the nose pointing along it. The stop is the half-width, which for
+         * an Apex is ten pixels closer than the nose gets. */
+        {
+            sim_state s;
+            sim_init(&s, 1);
+            /* Heading east, so the hull lies along x and its flank faces
+             * the wall above. */
+            int id = sim_spawn(&s, APEX, 0, 512 * 16, 60 * 16, 16384, &hc);
+            int32_t lo = s.ships[id].y;
+            for (int t = 0; t < 3000; t++) {
+                s.ships[id].vy = -60000;   /* pushed at the wall, no thrust */
+                step_n(&s, &hc, 0, 0, 1);
+                if (s.ships[id].y < lo) lo = s.ships[id].y;
+            }
+            CHECK(lo - hc.classes[APEX].halfw == face - 1,
+                  "drifted in sideways, it stops at its flank");
+            CHECK(hc.classes[APEX].fore - hc.classes[APEX].halfw > 9 * 256,
+                  "and the two stops are most of a tile apart");
+        }
+
+        /* Rotating against the wall. Parked flank-on a pixel off it, holding
+         * a turn sweeps the nose across the wall with nothing moving, which
+         * the sliding clamp can never fix. The rule is that the ship gets
+         * nudged out or the turn is refused; either way the box never ends a
+         * tick inside the wall, and the ship never teleports. */
+        {
+            sim_state s;
+            sim_init(&s, 1);
+            int id = sim_spawn(&s, APEX, 0, 512 * 16,
+                               41 * 16 + hc.classes[APEX].halfw / 256 + 1,
+                               16384, &hc);
+            int32_t x0 = s.ships[id].x, y0 = s.ships[id].y;
+            int ok = 1;
+            for (int t = 0; t < 400 && ok; t++) {
+                step_n(&s, &hc, SIM_BTN_LEFT, 0, 1);
+                const sim_ship *sh = &s.ships[id];
+                /* The box, recomputed here the way the core computes it. */
+                int32_t fx = 0, fy = 0;
+                {
+                    uint16_t hidx = (uint16_t)(sh->heading >> 4);
+                    fx = sim_sintab[hidx & 4095];
+                    fy = -sim_sintab[(hidx + 1024) & 4095];
+                }
+                int32_t afx = fx < 0 ? -fx : fx, afy = fy < 0 ? -fy : fy;
+                int32_t half = (hc.classes[APEX].fore
+                                + hc.classes[APEX].aft) / 2;
+                int32_t off = (hc.classes[APEX].fore
+                               - hc.classes[APEX].aft) / 2;
+                int32_t bx = sh->x + (int32_t)(((int64_t)off * fx) >> 15);
+                int32_t by = sh->y + (int32_t)(((int64_t)off * fy) >> 15);
+                int32_t hx = (int32_t)(((int64_t)half * afx
+                                        + (int64_t)hc.classes[APEX].halfw * afy) >> 15);
+                int32_t hy = (int32_t)(((int64_t)half * afy
+                                        + (int64_t)hc.classes[APEX].halfw * afx) >> 15);
+                for (int32_t ty = (by - hy) >> 12; ty <= (by + hy) >> 12; ty++)
+                    for (int32_t tx = (bx - hx) >> 12; tx <= (bx + hx) >> 12; tx++)
+                        if (SIM_TILE_CLASS(sim_tile_at(wm, tx, ty))
+                                == SIM_TILE_SOLID)
+                            ok = 0;
+                int32_t moved_x = sh->x - x0, moved_y = sh->y - y0;
+                if (moved_x < 0) moved_x = -moved_x;
+                if (moved_y < 0) moved_y = -moved_y;
+                CHECK(moved_x < 16 * 256 && moved_y < 16 * 256,
+                      "the nudge is pixels, never a teleport");
+                x0 = sh->x;
+                y0 = sh->y;
+            }
+            CHECK(ok, "turning beside a wall never leaves the box inside it");
+        }
         free(wm);
     }
 

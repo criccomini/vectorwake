@@ -106,7 +106,10 @@ pub struct sim_ship_class {
     pub rot: i32, pub init_rot: i32, pub up_rot: i32,
     pub max_energy: i32, pub init_energy: i32, pub up_energy: i32,
     pub recharge: i32, pub init_recharge: i32, pub up_recharge: i32,
-    pub radius: i32,
+    /// The hull's footprint: reach past the nose, behind the tail, and to
+    /// either side, Q8 px. The core builds the collision box from these at
+    /// the ship's current heading.
+    pub fore: i32, pub aft: i32, pub halfw: i32,
     /// A ladder of patterns per trigger, climbed by the pilot's level, with
     /// 255 ending it. The ladder's length is the hull's ceiling for that
     /// weapon; a hull with no bomb rack has 255 at rung zero.

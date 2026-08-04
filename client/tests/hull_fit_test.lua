@@ -2,21 +2,33 @@
 --
 --     lua5.1 client/tests/hull_fit_test.lua
 --
--- A ship collides as an axis-aligned box of `radius` half-width that never
--- rotates, so one pressed nose-first into a wall stops with its centre exactly
--- that far from the face. Anything the client draws further out than that is
--- drawn inside the wall. That is not a subtle failure and it still shipped for
--- months, because the two numbers live in different languages in different
--- directories and nothing compared them: the radius was a flat 14 in
--- sim/src/baseline.c and the Apex's nose reached 21.5 in arena/world.lua.
+-- A ship's collision box is built from three extents at its current heading:
+-- reach past the nose, behind the tail, and to either side. A wall stops the
+-- box and a weapon has to reach the rectangle, so the drawing and the extents
+-- have to agree or the game lies at every wall. They live in different
+-- languages in different directories, which is how a flat radius of 14 stood
+-- against a 21.5 px nose for months with nothing comparing the halves.
 --
--- So this reads the radii out of the C rather than repeating them here, the
--- same way overview_test reads the maps the fleet serves. Redraw a hull past
--- its box, or shrink a box under its hull, and this is what says so.
+-- So this reads the extents out of the C rather than repeating them here, the
+-- same way overview_test reads the maps the fleet serves, and measures each
+-- face of each drawn hull against its own number. The contract per face is a
+-- band, not equality: the box may sit up to about a pixel and a half inside
+-- the drawing, never outside it. Inside is deliberate -- it is what keeps the
+-- box's diagonal under the 23 px ceiling the shipped maps were flood-filled
+-- and spawn-checked against, so a long hull can still spin in a three-tile
+-- corridor -- and a pixel of art crossing a wall at the moment of contact is
+-- invisible where the seven and a half this test exists to prevent was not.
+-- Outside would be the opposite defect: a ship bouncing off walls it visibly
+-- never touched.
 
 package.path = "client/?.lua;" .. package.path
 
-local RADII_SRC = "sim/src/baseline.c"
+local EXTENTS_SRC = "sim/src/baseline.c"
+
+-- How far past its box a drawn face may reach, and the ceiling on the box's
+-- own diagonal. Both are explained above; the second is the map contract.
+local MAX_OVERLAP = 1.7
+local CEILING = 23
 
 local fails = 0
 local function check(name, ok, detail)
@@ -28,31 +40,38 @@ local function check(name, ok, detail)
     end
 end
 
--- The `hull_radius` table in baseline.c, in roster order.
-local function radii_from_c()
-    local f = assert(io.open(RADII_SRC, "r"), "run me from the repository root")
+-- The `hull_extent` table in baseline.c: eight rows of {fore, aft, halfw}.
+local function extents_from_c()
+    local f = assert(io.open(EXTENTS_SRC, "r"), "run me from the repository root")
     local src = f:read("*a")
     f:close()
-    local body = src:match("hull_radius%[SIM_MAX_CLASSES%]%s*=%s*{(.-)}%s*;")
-    assert(body, RADII_SRC .. " has no hull_radius table this test can read")
-    -- Comments carry numbers of their own, so they go before the digits do.
-    body = body:gsub("/%*.-%*/", ""):gsub("//[^\n]*", "")
+    local body = src:match("hull_extent%[SIM_MAX_CLASSES%]%[3%]%s*=%s*{(.-)}%s*;")
+    assert(body, EXTENTS_SRC .. " has no hull_extent table this test can read")
     local out = {}
-    for n in body:gmatch("%d+") do out[#out + 1] = tonumber(n) end
-    assert(#out == 8, "expected 8 radii, read " .. #out)
+    for row in body:gmatch("{(.-)}") do
+        local t = {}
+        for n in row:gmatch("%d+") do t[#t + 1] = tonumber(n) end
+        assert(#t == 3, "a row of hull_extent is not three numbers")
+        out[#out + 1] = t
+    end
+    assert(#out == 8, "expected 8 hulls, read " .. #out)
     return out
 end
 
--- How far the drawing of one hull reaches from the point the ship turns and
--- collides about. Every part, not just the outline: the Spire's mast lamp is a
--- pod sitting past its own nose, and it was the furthest thing on the roster.
+-- The reach of one hull's drawing on each face: past the nose (+y in hull
+-- space), behind the tail, and to either side. Every part, not just the
+-- outline: the Spire's mast lamp is a pod sitting past its own nose, and it
+-- was the furthest thing on the roster.
 local function reach(h)
-    local far = 0
+    local fwd, aft, side = 0, 0, 0
     local function scan(pts, pad)
         pad = pad or 0
         for i = 1, #pts, 2 do
-            local d = math.sqrt(pts[i] ^ 2 + pts[i + 1] ^ 2) + pad
-            if d > far then far = d end
+            local x, y = pts[i], pts[i + 1]
+            if y + pad > fwd then fwd = y + pad end
+            if -y + pad > aft then aft = -y + pad end
+            local ax = x < 0 and -x or x
+            if ax + pad > side then side = ax + pad end
         end
     end
     scan(h.poly)
@@ -66,9 +85,11 @@ local function reach(h)
     end
     -- A tube is {x1, y1, x2, y2, width}: a stroke, so half its width.
     if h.tubes then
-        for _, q in ipairs(h.tubes) do scan({q[1], q[2], q[3], q[4]}, q[5] / 2) end
+        for _, q in ipairs(h.tubes) do
+            scan({q[1], q[2], q[3], q[4]}, q[5] / 2)
+        end
     end
-    return far
+    return fwd, aft, side
 end
 
 -- world.lua wants the extension for tile classes and never touches it at load.
@@ -76,35 +97,33 @@ _G.sim = {T_SOLID = 1, T_SAFE = 2, T_DOOR = 3, T_WORMHOLE = 5,
           map_coarse = function() return "", 0 end}
 
 local world = require("arena.world")
-local radii = radii_from_c()
+local extents = extents_from_c()
 local NAMES = {"Apex", "Wedge", "Chord", "Anvil",
                "Spire", "Cipher", "Facet", "Lattice"}
 
-check("the roster and the radii are the same length",
-      #world.HULLS == #radii,
-      #world.HULLS .. " hulls against " .. #radii .. " radii")
-
--- 23 is the ceiling, and it is a promise to every map rather than a taste: at
--- 26 a hull stops fitting two of the spawns on the shipped maps and would
--- respawn inside a wall. See the note beside the table in baseline.c.
-local CEILING = 23
+check("the roster and the extents are the same length",
+      #world.HULLS == #extents,
+      #world.HULLS .. " hulls against " .. #extents .. " rows")
 
 for i, h in ipairs(world.HULLS) do
-    local r = radii[i] or 0
-    local far = reach(h)
+    local fore, aft, halfw = extents[i][1], extents[i][2], extents[i][3]
     local name = NAMES[i] or ("hull " .. i)
-    check(string.format("%s is drawn inside its box (%.1f px into %d)",
-                        name, far, r),
-          far <= r + 1e-6,
-          string.format("%.1f px past the wall face when it noses into one",
-                        far - r))
-    -- Slack is not a bug, but a hull two pixels inside a box a size larger
-    -- than it needs is a hull that is easier to hit than it looks.
-    check(string.format("%s's box is not oversized", name),
-          r - far < 1.0,
-          string.format("radius %d for a hull reaching %.1f", r, far))
-    check(string.format("%s is within the roster ceiling", name),
-          r <= CEILING, "radius " .. r .. " needs gaps no map promises")
+    local df, da, ds = reach(h)
+    for _, face in ipairs({{"nose", df, fore}, {"tail", da, aft},
+                           {"flank", ds, halfw}}) do
+        local what, drawn, box = face[1], face[2], face[3]
+        check(string.format("%s %s: box %d inside drawing %.1f",
+                            name, what, box, drawn),
+              drawn - box >= -1e-6 and drawn - box <= MAX_OVERLAP,
+              string.format("drawn %.1f against a box of %d is %+.1f px",
+                            drawn, box, drawn - box))
+    end
+    local diag = math.max(math.sqrt(fore ^ 2 + halfw ^ 2),
+                          math.sqrt(aft ^ 2 + halfw ^ 2))
+    check(string.format("%s's diagonal is inside the map ceiling (%.1f)",
+                        name, diag),
+          diag <= CEILING,
+          "a box this long and wide reaches past 23 px when flown diagonally")
 end
 
 print(fails == 0 and "all ok" or (fails .. " failed"))

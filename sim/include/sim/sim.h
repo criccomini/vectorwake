@@ -353,7 +353,15 @@ typedef struct {
     int32_t rot, init_rot, up_rot;                 /* heading units per tick */
     int32_t max_energy, init_energy, up_energy;    /* Q10 */
     int32_t recharge, init_recharge, up_recharge;  /* Q10 per tick */
-    int32_t radius;                                /* Q8 px */
+    /* The hull's footprint, in Q8 px from the point it turns about: how far
+     * it reaches past the nose, behind the tail, and to either side. One
+     * square radius stood here, and it could not be right for this roster: a
+     * square that covers an Apex's nose floats its flanks eleven pixels off
+     * every wall, and one that hugs the flanks buries the nose. The walls
+     * collide against the world-axis box of these extents at the current
+     * heading, and weapons and pickups test the oriented rectangle itself,
+     * so what you hit is what is drawn, whichever way it points. */
+    int32_t fore, aft, halfw;                      /* Q8 px */
 
     /* What the two triggers fire: a ladder of patterns per trigger, climbed
      * by the pilot's level. Rung zero is what a fresh hull carries, and
@@ -697,7 +705,8 @@ typedef struct {
     int32_t init_rotation, up_rotation, max_rotation;
     int32_t init_energy, up_energy, max_energy;
     int32_t init_recharge, up_recharge, max_recharge;
-    int32_t radius_px;
+    /* No footprint here: the settings files these units mirror never carried
+     * one, and the extents are measured off our own hulls in baseline.c. */
 } sim_class_units;
 
 /* Fill a class from settings-file units. Weapons, add-ons and charges are

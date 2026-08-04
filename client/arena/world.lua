@@ -106,12 +106,14 @@ M.HULLS = {
      pods = {{0, 22.6, 2.6}, {10.2, 1, 1.6}, {-10.2, 1, 1.6}},
      jets = {-1.6,-12.8, 1.6,-12.8},
      -- The only hull drawn at anything but its written size. The lamp on the
-     -- mast sits at 22.6 and is 2.6 across, so the Spire reached 25.2 px,
-     -- further than any other hull and past the 23 the roster is capped at:
-     -- see the note on hull_radius in sim/src/baseline.c for why 23 and not
-     -- 26. Nine percent off the whole ship is invisible, and it keeps the
-     -- lamp where the design puts it, on top of the mast.
-     scale = 23 / 25.2},
+     -- mast sits at 22.6 and is 2.6 across, so the Spire as written reaches
+     -- 25.2 px, further than any other hull, and no collision box for that
+     -- reach keeps its diagonal inside the 23 px every shipped map was
+     -- checked against: see hull_extent in sim/src/baseline.c. Thirteen
+     -- percent off the whole ship is the price of keeping the lamp where the
+     -- design puts it, on top of the mast, and it lands the drawing about a
+     -- pixel proud of its box on every face like the rest of the roster.
+     scale = 0.87},
     -- Cipher: a knife. Draws dimmer than the rest of the roster on purpose,
     -- since the class is meant to be hard to pick out of a fight.
     {poly = {0,23, 1.7,7, 3.4,-2, 3,-9, 6.5,-12.5, 2.2,-11.5, 1.6,-13, 0,-13,

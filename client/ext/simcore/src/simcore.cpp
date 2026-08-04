@@ -289,10 +289,17 @@ int ShipPoints(lua_State* L) {
     return 1;
 }
 
-int ShipRadius(lua_State* L) {
+// The hull's footprint, in px: reach past the nose, behind the tail, and to
+// either side. Nothing in the client draws from these -- the drawing is what
+// they were measured off -- but a debug overlay or a test wants the numbers
+// the zone is actually colliding with.
+int ShipExtents(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
-    lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].radius / 256.0);
-    return 1;
+    const sim_ship_class* c = &g_cfg.classes[g_cur->ships[i].cls];
+    lua_pushnumber(L, c->fore / 256.0);
+    lua_pushnumber(L, c->aft / 256.0);
+    lua_pushnumber(L, c->halfw / 256.0);
+    return 3;
 }
 
 // How big a spec's blast is, which is what an explosion has to be drawn at
@@ -566,7 +573,7 @@ const luaL_reg kFunctions[] = {
     {"trigger_rate", TriggerRate},
     {"ship_mod", ShipMod},
     {"ship_multi_off", ShipMultiOff},
-    {"ship_radius", ShipRadius},
+    {"ship_extents", ShipExtents},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},
     {"tick", Tick},

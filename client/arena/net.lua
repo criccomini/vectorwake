@@ -20,7 +20,7 @@ local S2C_MAP, S2C_SETTINGS, S2C_YIELD = 9, 10, 11
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 3
+local CLIENT_PROTOCOL = 4
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL

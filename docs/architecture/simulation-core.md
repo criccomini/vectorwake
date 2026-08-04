@@ -175,9 +175,10 @@ catches them. It was a 44-byte struct copy and a pass of `compose` per weapon
 per tick: forty thousand of each a second at four hundred rounds, for a handful
 of distinct answers.
 
-**Ship position and radius are pulled into a compact array** before the loop
-rather than read through a 72-byte ship and a second lookup into the class
-table per pair. 64 x 12 bytes fits L1.
+**Ship position, heading vector and extents are pulled into a compact array**
+before the loop rather than read through a 72-byte ship and a second lookup
+into the class table per pair, with the heading resolved to a unit vector once
+per ship so the sine table stays out of the inner loop. 64 x 28 bytes fits L1.
 
 `alive` is deliberately *not* cached with them. A weapon that kills a ship
 early in the loop must leave later weapons seeing a dead one, and freezing that

@@ -317,7 +317,9 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w32(&w, (uint32_t)c->recharge);
         w32(&w, (uint32_t)c->init_recharge);
         w32(&w, (uint32_t)c->up_recharge);
-        w32(&w, (uint32_t)c->radius);
+        w32(&w, (uint32_t)c->fore);
+        w32(&w, (uint32_t)c->aft);
+        w32(&w, (uint32_t)c->halfw);
         for (int t = 0; t < SIM_TRIG_COUNT; t++) {
             for (int r = 0; r < SIM_MAX_RUNGS; r++) w8(&w, c->trigger[t][r]);
             w16(&w, c->mod_max[t]);
@@ -418,7 +420,9 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         c->recharge = (int32_t)r32(&r);
         c->init_recharge = (int32_t)r32(&r);
         c->up_recharge = (int32_t)r32(&r);
-        c->radius = (int32_t)r32(&r);
+        c->fore = (int32_t)r32(&r);
+        c->aft = (int32_t)r32(&r);
+        c->halfw = (int32_t)r32(&r);
         for (int t = 0; t < SIM_TRIG_COUNT; t++) {
             for (int k = 0; k < SIM_MAX_RUNGS; k++)
                 c->trigger[t][k] = (uint8_t)r8(&r);

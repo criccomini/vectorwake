@@ -43,39 +43,55 @@ turn per second, recharge in energy per second times ten.
 Numbers are a starting point for M3, not a balance claim. They will be wrong,
 and the first playtest will say how.
 
-## Size
+## Size and shape
 
-The one number on a ship the original does not supply. Its ship files carry no
-radius at all, so a flat 14 pixels was a placeholder we inherited from nothing,
-and every hull was drawn larger than the box it was given: an Apex reaches 21.5
-pixels forward against a box that stops 14 from a wall, so its nose was drawn
-seven and a half pixels inside the wall. Half a tile, on the hull most people
-fly.
+The one thing about a ship the original does not supply. Its files carry no
+size at all, so for a while a flat 14-pixel square stood in, then a square per
+hull, and neither could be right: these hulls are darts and knives, and no
+square fits a ship three times longer than it is wide. Sized to the nose it
+floats the flanks eleven pixels off every wall; sized to the flanks it buries
+the nose. The original never had this problem because its ships were drawn
+compact enough to fill a square, and ours are deliberately not.
 
-Each hull now collides in a box measured off its own drawing.
+So a hull's footprint is three numbers, measured off its own drawing: reach
+past the nose, behind the tail, and to either side.
 
-| Apex | Wedge | Chord | Anvil | Spire | Cipher | Facet | Lattice |
-|---|---|---|---|---|---|---|---|
-| 22 | 19 | 19 | 18 | 23 | 23 | 17 | 17 |
+| px | Apex | Wedge | Chord | Anvil | Spire | Cipher | Facet | Lattice |
+|---|---|---|---|---|---|---|---|---|
+| nose | 20 | 13 | 13 | 15 | 21 | 22 | 14 | 16 |
+| tail | 11 | 12 | 5 | 11 | 10 | 12 | 12 | 14 |
+| side | 10 | 15 | 17 | 13 | 9 | 6 | 11 | 14 |
 
-That is a balance change and not only a cosmetic one, because the box is also
-what a weapon tests against and what a wall stops. A Spire is a third wider
-than a Facet, so it is a third easier to hit and it cannot tuck as close to
-cover. It is the first thing that has ever actually told the hulls apart: they
-fly identically today whatever the table above says, and size is a difference
-you can see rather than one a blurb claims.
+The collision box follows the heading. Against a wall the simulation uses the
+world-axis bounds of the hull as oriented that tick, so a ship touches where
+it is drawn touching, whichever way it points, and an Apex flying diagonally
+genuinely needs more room than one flying straight: a gap you must straighten
+up to thread is correct physics and a skill element, not an artifact. Turning
+against a wall levers the ship gently off it; in a slot exactly your own
+width, the turn is refused, because you cannot spin a 40-pixel dart in a
+40-pixel gap. Weapons and pickups test the oriented rectangle itself rather
+than a box around it.
 
-Twenty-three is the ceiling, and it is a promise to every map rather than a
-matter of taste. Anywhere between 17 and 23 a hull needs the same three-tile
-gap, fits every spawn on all three shipped maps, and reaches the same rooms. At
-26 that stops being true: one spawn on Chaos and one on Alpha no longer fit, so
-a hull that size respawns inside a wall, and War loses passages. Holding the
-whole roster inside 23 means a map that works for one hull works for all eight,
-and nobody drawing a map has to remember an exception. The Spire is the hull
-that wanted more, and its drawing is scaled down nine percent to fit instead.
+That last part is the balance change worth saying out loud. A shot into a
+Cipher's flank now has to reach the knife, so thin hulls are genuinely thin
+targets from the side, and facing starts to matter: presenting your profile
+is presenting six pixels instead of twenty-two. It is the first thing that
+has ever actually told the hulls apart, since they fly identically today
+whatever the settings table above says.
 
-`client/tests/hull_fit_test.lua` reads these out of `sim/src/baseline.c` and
-measures the client's hulls against them, so the two cannot drift apart again.
+The ceiling is a diagonal: no hull's nose-corner reach, the square root of
+nose squared plus side squared, may pass 23 pixels. That is the number all
+three shipped maps were flood-filled and spawn-checked against, so holding it
+means every room stays reachable, every spawn stays safe, and a full rotation
+fits a three-tile corridor, for every hull, on any map drawn to the same
+promise. It is why each box sits about a pixel inside its drawing rather than
+flush: a pixel of art crossing a wall at the moment of contact is invisible,
+and it buys the diagonal back. The Spire could not fit under the ceiling at
+any inset, and its drawing is scaled down instead.
+
+`client/tests/hull_fit_test.lua` reads the extents out of `sim/src/baseline.c`
+and measures every face of the client's hulls against them, so the two cannot
+drift apart again, and the sim's own tests hold the diagonal ceiling.
 
 ## What each ship is for
 

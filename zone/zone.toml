@@ -119,7 +119,10 @@ thrust = 30
 rotation = 420
 energy = 1350
 recharge = 1500
-radius = 14
+# The hull's footprint is deliberately not set here. The defaults are measured
+# off the drawn ships and the collision box follows the heading; a zone that
+# overrides `fore`, `aft` or `width` should keep sqrt(fore^2 + (width/2)^2)
+# inside 23 px, the diagonal every shipped map was checked against.
 
 [[arena.ships]]
 name = "Anvil"

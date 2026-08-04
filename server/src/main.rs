@@ -73,7 +73,7 @@ const JOIN_BOT: u8 = 1;
 /// `fleet.rs`: they change for different reasons and are spoken by different
 /// programs. Bump when a message's layout changes, so a stale build is told its
 /// build is stale rather than left to misparse a snapshot.
-const CLIENT_PROTOCOL: u8 = 3;
+const CLIENT_PROTOCOL: u8 = 4;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -611,7 +611,9 @@ impl Arena {
                     cls.up_recharge = sim::sim_units_recharge(v);
                 }
             }
-            if let Some(v) = s.radius { cls.radius = v * 256; }
+            if let Some(v) = s.fore { cls.fore = v * 256; }
+            if let Some(v) = s.aft { cls.aft = v * 256; }
+            if let Some(v) = s.width { cls.halfw = v * 256 / 2; }
         }
         warn
     }
@@ -4695,7 +4697,9 @@ mod tests {
             upgrade_speed = 600
             initial_energy = 500
             upgrade_recharge = 200
-            radius = 20
+            fore = 20
+            aft = 12
+            width = 18
         "#);
         assert!(warn.is_empty(), "{warn:?}");
         let apex = w.cfg.classes[ai::class_index("Apex").unwrap()];
@@ -4706,7 +4710,9 @@ mod tests {
             assert_eq!(apex.init_energy, sim::sim_units_energy(500));
             assert_eq!(apex.up_recharge, sim::sim_units_recharge(200));
         }
-        assert_eq!(apex.radius, 20 * 256);
+        assert_eq!(apex.fore, 20 * 256);
+        assert_eq!(apex.aft, 12 * 256);
+        assert_eq!(apex.halfw, 9 * 256, "width is the whole beam, halved");
 
         // A ceiling on its own still moves the floor and the step with it, so
         // raising a hull's top speed does not make it start slower relative to

@@ -163,8 +163,16 @@ pub struct ShipConfig {
     pub recharge: Option<i32>,
     pub initial_recharge: Option<i32>,
     pub upgrade_recharge: Option<i32>,
-    /// Px from the middle of the hull that counts as hitting it.
-    pub radius: Option<i32>,
+    /// The hull's footprint, px from the point it turns about: reach past
+    /// the nose, behind the tail, and to either side. The collision box
+    /// follows the ship's heading, so these are the shape a wall stops and
+    /// a weapon has to reach. Defaults are measured off the drawn hulls in
+    /// sim/src/baseline.c; a zone overriding one should keep the diagonal
+    /// (sqrt of fore^2 + width^2) inside 23 px or its maps owe the roster
+    /// gaps the shipped ones were never checked for.
+    pub fore: Option<i32>,
+    pub aft: Option<i32>,
+    pub width: Option<i32>,
     /// What the two triggers fire: the ladder, by weapon name, first rung
     /// first. One name is a hull that never levels and `bomb = []` takes the
     /// rack out. A hull keeps its own ladder unless the file says otherwise.

@@ -104,7 +104,6 @@ void sim_class_from_units(sim_ship_class *c, const sim_class_units *u) {
     c->rot = sim_units_rotation(u->max_rotation);
     c->max_energy = sim_units_energy(u->max_energy);
     c->recharge = sim_units_recharge(u->max_recharge);
-    c->radius = u->radius_px * 256;
     /* Where a fresh hull starts and what one prize is worth, both named
      * rather than derived. They used to be a flat seventy per cent of the
      * ceiling and an eighth of the gap, which is tidy and is not what the
@@ -273,13 +272,56 @@ static int solid(const sim_map *m, const sim_settings *cfg, uint32_t tick,
 }
 
 static int box_hits(const sim_map *m, const sim_settings *cfg, uint32_t tick,
-                    int32_t x, int32_t y, int32_t r) {
-    int32_t tx0 = (x - r) >> 12, tx1 = (x + r) >> 12;
-    int32_t ty0 = (y - r) >> 12, ty1 = (y + r) >> 12;
+                    int32_t x, int32_t y, int32_t rx, int32_t ry) {
+    int32_t tx0 = (x - rx) >> 12, tx1 = (x + rx) >> 12;
+    int32_t ty0 = (y - ry) >> 12, ty1 = (y + ry) >> 12;
     for (int32_t ty = ty0; ty <= ty1; ty++)
         for (int32_t tx = tx0; tx <= tx1; tx++)
             if (solid(m, cfg, tick, tx, ty)) return 1;
     return 0;
+}
+
+/* The world-axis box a hull stands in at a heading: the tight bounding box of
+ * its oriented footprint. `ox, oy` is where the box's centre sits relative to
+ * the ship's position, because a hull reaches further past its nose than
+ * behind its tail; `hx, hy` are the half-extents. An Apex flying diagonally
+ * really is wider than one flying straight, so a gap it threads nose-first is
+ * a gap it has to straighten up for, which is the point of computing this
+ * from the heading rather than keeping one number.
+ *
+ * Two table reads, six multiplies. The thrust code pays the same table read
+ * every tick and has never shown up in a profile. */
+static void hull_box(const sim_ship_class *c, uint16_t heading,
+                     int32_t *ox, int32_t *oy, int32_t *hx, int32_t *hy) {
+    int32_t fx, fy;
+    heading_dir(heading, &fx, &fy);
+    int32_t afx = fx < 0 ? -fx : fx;
+    int32_t afy = fy < 0 ? -fy : fy;
+    int32_t half = (c->fore + c->aft) / 2;
+    int32_t off = (c->fore - c->aft) / 2;
+    *ox = (int32_t)(((int64_t)off * fx) >> 15);
+    *oy = (int32_t)(((int64_t)off * fy) >> 15);
+    *hx = (int32_t)(((int64_t)half * afx + (int64_t)c->halfw * afy) >> 15);
+    *hy = (int32_t)(((int64_t)half * afy + (int64_t)c->halfw * afx) >> 15);
+}
+
+/* Whether a point falls within `pad` of the hull's oriented rectangle, which
+ * is the shape the client draws. Weapons and pickups use this rather than the
+ * world-axis box above: a wall stops you where your box is, but a bullet into
+ * a Cipher's flank should have to reach the knife, not a square drawn around
+ * it. The delta is rotated into the hull's own frame; along runs tail to
+ * nose, across runs wing to wing. */
+static int hull_reaches(const sim_ship_class *c, uint16_t heading,
+                        int32_t sx, int32_t sy, int32_t px, int32_t py,
+                        int32_t pad) {
+    int32_t fx, fy;
+    heading_dir(heading, &fx, &fy);
+    int64_t dx = (int64_t)px - sx, dy = (int64_t)py - sy;
+    int64_t along = (dx * fx + dy * fy) >> 15;
+    int64_t across = (dy * fx - dx * fy) >> 15;
+    if (across < 0) across = -across;
+    return along >= -((int64_t)c->aft + pad) && along <= (int64_t)c->fore + pad
+        && across <= (int64_t)c->halfw + pad;
 }
 
 /* The tile a point stands in, by class. */
@@ -784,9 +826,9 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
             sim_ship *sh = &s->ships[k];
             if (!sh->active || !sh->alive) continue;
             if (f->team == sh->team) continue;  /* already ours */
-            int64_t dx = (int64_t)sh->x - f->x, dy = (int64_t)sh->y - f->y;
-            int64_t r = cfg->flag_radius + cfg->classes[sh->cls].radius;
-            if (dx * dx + dy * dy > r * r) continue;
+            if (!hull_reaches(&cfg->classes[sh->cls], sh->heading,
+                              sh->x, sh->y, f->x, f->y, cfg->flag_radius))
+                continue;
             f->carried = 1;
             f->carrier = (uint8_t)k;
             f->team = sh->team;
@@ -1036,9 +1078,9 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
         for (int k = 0; k < s->ship_count; k++) {
             sim_ship *sh = &s->ships[k];
             if (!sh->active || !sh->alive) continue;
-            int64_t dx = (int64_t)sh->x - p->x, dy = (int64_t)sh->y - p->y;
-            int64_t r = cfg->prize_radius + cfg->classes[sh->cls].radius;
-            if (dx * dx + dy * dy > r * r) continue;
+            if (!hull_reaches(&cfg->classes[sh->cls], sh->heading,
+                              sh->x, sh->y, p->x, p->y, cfg->prize_radius))
+                continue;
             /* Every green is takeable by everybody; what it turns out to be
              * is rolled here, from what this hull could ever hold. A pilot
              * already at that ceiling is still told what they found -- the
@@ -1180,8 +1222,8 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             sim_weapon_spec cs;
             if (sh->charge[k] > 0 && resolve(cfg, pat, 0, 0, &cp, &cs)
                 && sh->energy > cp.energy) {
-                int32_t mx = sh->x + (int32_t)(((int64_t)(cls->radius + 512) * dx) >> 15);
-                int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
+                int32_t mx = sh->x + (int32_t)(((int64_t)(cls->fore + 512) * dx) >> 15);
+                int32_t my = sh->y + (int32_t)(((int64_t)(cls->fore + 512) * dy) >> 15);
                 /* A charge carries none of the pilot's add-ons. It is a thing
                  * you found whole, not a weapon you have been improving, and
                  * a repel that inherited shrapnel would be a surprise nobody
@@ -1215,8 +1257,8 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 if (sh->energy > fp.energy) {
                     /* Muzzle just outside the hull, so a shot never spawns
                      * inside its own ship. */
-                    int32_t mx = sh->x + (int32_t)(((int64_t)(cls->radius + 512) * dx) >> 15);
-                    int32_t my = sh->y + (int32_t)(((int64_t)(cls->radius + 512) * dy) >> 15);
+                    int32_t mx = sh->x + (int32_t)(((int64_t)(cls->fore + 512) * dx) >> 15);
+                    int32_t my = sh->y + (int32_t)(((int64_t)(cls->fore + 512) * dy) >> 15);
                     spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
                                   sh->vx, sh->vy, sh->heading, 0,
                                   use_mods, sh->level[trig], ev);
@@ -1308,7 +1350,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * position without being lethal to the pilot. */
         if (SIM_TILE_CLASS(sim_tile_at(cfg->map, sh->x >> 12, sh->y >> 12))
                 == SIM_TILE_DOOR
-            && box_hits(cfg->map, cfg, next->tick, sh->x, sh->y, 0)) {
+            && box_hits(cfg->map, cfg, next->tick, sh->x, sh->y, 0, 0)) {
             sh->x = sh->spawn_x;
             sh->y = sh->spawn_y;
             sh->vx = 0;
@@ -1317,17 +1359,61 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         }
 
         /* 5. Integrate and collide, one axis at a time so a wall kills only
-         * the normal component and the ship slides along it. */
+         * the normal component and the ship slides along it.
+         *
+         * The box follows the heading: hull_box gives the world-axis bounds
+         * of the hull as oriented this tick, and its centre sits `ox, oy`
+         * from the ship because a hull is longer ahead of its pivot than
+         * behind it. The clamps below are the old flush-to-tile arithmetic
+         * with the reach on each side spelt out, since with an offset box
+         * the reach to the right is no longer the reach to the left. */
         {
             const sim_map *m = cfg->map;
-            int32_t r = cls->radius;
+            int32_t ox, oy, hx, hy;
+            hull_box(cls, sh->heading, &ox, &oy, &hx, &hy);
+
+            /* 5a. Turning grows the box: a dart rotating beside a wall
+             * sweeps its nose across it with nothing moving, which the
+             * axis-by-axis clamp below can never resolve. So a rotation that
+             * leaves the box overlapping gets the ship nudged out sideways,
+             * a pixel or two at most since the box grows under a pixel per
+             * tick. It reads as the nose levering the hull off the wall. If
+             * no nudge frees it, the turn is taken back: a slot exactly your
+             * width is a slot you cannot spin in, which is not a bug to a
+             * pilot looking at a 40-pixel ship and a 40-pixel gap. */
+            if ((b & (SIM_BTN_LEFT | SIM_BTN_RIGHT))
+                && box_hits(m, cfg, next->tick, sh->x + ox, sh->y + oy,
+                            hx, hy)) {
+                int freed = 0;
+                for (int32_t d = 256; d <= 1024 && !freed; d += 256) {
+                    const int32_t nudge[4][2] = {
+                        {-d, 0}, {d, 0}, {0, -d}, {0, d}};
+                    for (int k = 0; k < 4; k++) {
+                        if (!box_hits(m, cfg, next->tick,
+                                      sh->x + nudge[k][0] + ox,
+                                      sh->y + nudge[k][1] + oy, hx, hy)) {
+                            sh->x += nudge[k][0];
+                            sh->y += nudge[k][1];
+                            freed = 1;
+                            break;
+                        }
+                    }
+                }
+                if (!freed) {
+                    sh->heading = prev->ships[i].heading;
+                    hull_box(cls, sh->heading, &ox, &oy, &hx, &hy);
+                }
+            }
+
+            int32_t east = ox + hx, west = hx - ox;   /* reach each way */
+            int32_t south = oy + hy, north = hy - oy;
 
             int32_t nx = sh->x + sh->vx / 256;
-            if (box_hits(m, cfg, next->tick, nx, sh->y, r)) {
+            if (box_hits(m, cfg, next->tick, nx + ox, sh->y + oy, hx, hy)) {
                 if (sh->vx > 0)
-                    nx = ((((sh->x + r) >> 12) + 1) << 12) - r - 1;
+                    nx = ((((sh->x + east) >> 12) + 1) << 12) - east - 1;
                 else if (sh->vx < 0)
-                    nx = (((sh->x - r) >> 12) << 12) + r;
+                    nx = (((sh->x - west) >> 12) << 12) + west;
                 else
                     nx = sh->x;
                 /* Reverse and damp the component that hit, and scrub some
@@ -1342,11 +1428,11 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             sh->x = nx;
 
             int32_t ny = sh->y + sh->vy / 256;
-            if (box_hits(m, cfg, next->tick, sh->x, ny, r)) {
+            if (box_hits(m, cfg, next->tick, sh->x + ox, ny + oy, hx, hy)) {
                 if (sh->vy > 0)
-                    ny = ((((sh->y + r) >> 12) + 1) << 12) - r - 1;
+                    ny = ((((sh->y + south) >> 12) + 1) << 12) - south - 1;
                 else if (sh->vy < 0)
-                    ny = (((sh->y - r) >> 12) << 12) + r;
+                    ny = (((sh->y - north) >> 12) << 12) + north;
                 else
                     ny = sh->y;
                 int32_t impact = sh->vy < 0 ? -sh->vy : sh->vy;
@@ -1414,24 +1500,31 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
     sim_weapon_spec cached;
     memset(&cached, 0, sizeof cached);
 
-    /* Where every ship is and how big it is, in one compact array.
+    /* Where every ship is, which way it points, and how far it reaches, in
+     * one compact array.
      *
      * The test below runs once per projectile per ship -- four hundred rounds
      * against forty hulls is sixteen thousand a tick -- and each iteration was
-     * striding a 72-byte ship to read two coordinates and then chasing
-     * `cfg->classes[cls].radius` into a different structure again. Pulling the
-     * three numbers into 64 x 12 bytes puts the whole scan in L1.
+     * striding a 72-byte ship to read two coordinates and then chasing the
+     * class's extents in a different structure again. Pulling everything into
+     * 64 x 24 bytes puts the whole scan in L1, and resolving the heading to a
+     * unit vector once per ship here keeps the table lookup out of the inner
+     * loop entirely.
      *
-     * Position, class and team do not move during this loop: ships were
-     * stepped before it and an ending only changes energy and velocity.
+     * Position, class, team and heading do not move during this loop: ships
+     * were stepped before it and an ending only changes energy and velocity.
      * `alive` is deliberately *not* cached -- a weapon that kills a ship early
      * in the loop must leave later weapons seeing a dead one, and freezing
      * that flag would let a corpse be shot twice. */
-    struct { int32_t x, y, r; } hull[SIM_MAX_SHIPS];
+    struct { int32_t x, y, fx, fy, fore, aft, halfw; } hull[SIM_MAX_SHIPS];
     for (int i = 0; i < next->ship_count; i++) {
+        const sim_ship_class *hc = &cfg->classes[next->ships[i].cls];
         hull[i].x = next->ships[i].x;
         hull[i].y = next->ships[i].y;
-        hull[i].r = cfg->classes[next->ships[i].cls].radius;
+        heading_dir(next->ships[i].heading, &hull[i].fx, &hull[i].fy);
+        hull[i].fore = hc->fore;
+        hull[i].aft = hc->aft;
+        hull[i].halfw = hc->halfw;
     }
 
     for (uint16_t wi = 0; wi < next->weapon_count;) {
@@ -1470,14 +1563,14 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * -- the same treatment a ship gets, and for the same reason. */
         int32_t px = w->x - w->vx / 256, py = w->y - w->vy / 256;
         if (spec->on_wall != SIM_WALL_PASS
-            && box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0)) {
+            && box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0, 0)) {
             if (spec->on_wall == SIM_WALL_BOUNCE && w->left > 0) {
                 w->left--;
-                if (box_hits(cfg->map, cfg, next->tick, w->x, py, 0)) {
+                if (box_hits(cfg->map, cfg, next->tick, w->x, py, 0, 0)) {
                     w->vx = -w->vx;
                     w->x = px;
                 }
-                if (box_hits(cfg->map, cfg, next->tick, px, w->y, 0)) {
+                if (box_hits(cfg->map, cfg, next->tick, px, w->y, 0, 0)) {
                     w->vy = -w->vy;
                     w->y = py;
                 }
@@ -1502,11 +1595,18 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 const sim_ship *sh = &next->ships[i];
                 if (!sh->active || !sh->alive) continue;
                 if ((uint8_t)i == w->owner || sh->team == w->team) continue;
-                int64_t ddx = (int64_t)hull[i].x - w->x;
-                int64_t ddy = (int64_t)hull[i].y - w->y;
-                int64_t d2 = ddx * ddx + ddy * ddy;
-                int64_t r = hull[i].r + spec->trigger;
-                if (d2 <= r * r) {
+                /* The hull's own rectangle, not a circle drawn around it: a
+                 * round into a Cipher's flank has to reach the knife. The
+                 * weapon's trigger distance pads every face, so a proximity
+                 * fuse still goes off near rather than on. */
+                int64_t ddx = (int64_t)w->x - hull[i].x;
+                int64_t ddy = (int64_t)w->y - hull[i].y;
+                int64_t along = (ddx * hull[i].fx + ddy * hull[i].fy) >> 15;
+                int64_t across = (ddy * hull[i].fx - ddx * hull[i].fy) >> 15;
+                if (across < 0) across = -across;
+                if (along >= -((int64_t)hull[i].aft + spec->trigger)
+                    && along <= (int64_t)hull[i].fore + spec->trigger
+                    && across <= (int64_t)hull[i].halfw + spec->trigger) {
                     ended = 1;
                     hit_ship = i;
                 }

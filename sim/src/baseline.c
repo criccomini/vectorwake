@@ -45,10 +45,9 @@ typedef struct {
  * exactly alike there, and what tells them apart is the ten capability flags
  * and nothing else.
  *
- * Radius is the exception and it is not here: it has no value in those files
- * at all, so there is nothing to inherit and a flat 14 was only ever a
- * placeholder. It is per hull, in `rows` below, measured off the shape the
- * client draws.
+ * The footprint is the exception and it is not here: those files carry no
+ * ship size at all, so there is nothing to inherit and the extents are
+ * measured off our own hulls in `hull_extent` below.
  *
  * The step counts fall out rather than being chosen: five greens take speed
  * from 2010 to its 3250 ceiling, seven take energy from 1000 to 1700, and one
@@ -60,7 +59,6 @@ static const sim_class_units flight = {
     200,   40,  230,      /* rotation */
     1000, 100, 1700,      /* energy */
     400,  166, 1150,      /* recharge */
-    0,                    /* radius: per hull, see `rows` */
 };
 
 /* The weapons, also identical on every hull, from the same files and the
@@ -116,41 +114,41 @@ static const sim_class_units flight = {
  * can never shoot twice, which is what the first test run caught. */
 #define GUN_ALL   (M1(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE))
 #define BOMB_ALL  (M1(SIM_MOD_PROX) | M2(SIM_MOD_SHRAPNEL))
-/* Radius, per hull, in pixels. client/tests/hull_fit_test.lua reads this table
-   out of this file by name and measures the client's drawing against it, so
-   the two cannot drift; renaming it breaks that test rather than silencing it.
+/* Each hull's footprint, in pixels from the point it turns about: past the
+   nose, behind the tail, to either side. client/tests/hull_fit_test.lua reads
+   this table out of this file by name and measures the client's drawing
+   against it, so the two cannot drift; renaming it breaks that test rather
+   than silencing it.
 
-   These are measured, not chosen. A hull collides as an axis-aligned box of
-   this half-width that never rotates, so a ship pressed nose-first into a
-   wall stops with its centre exactly this far from the face. Anything the
-   client draws further out than that is drawn inside the wall, which is what
-   a flat 14 did to all eight of them: an Apex reaches 21.5 px forward, so its
-   nose crossed the face by seven and a half pixels, half a tile.
+   Measured, not chosen: each number is the reach of that hull's own drawing,
+   less about a pixel. A single square radius stood here, and no square fits
+   this roster -- one that covers an Apex's nose floats its flanks eleven
+   pixels off every wall, and one that hugs the flanks buries the nose. The
+   collision box is built from these at the ship's current heading, so a hull
+   touches a wall where it is drawn touching it whichever way it points, and
+   a bullet into a Cipher's flank has to reach the knife rather than a square
+   drawn around it. That last part is the balance consequence worth saying
+   out loud: thin hulls are now genuinely thin targets, from the side.
 
-   So each number is the furthest point of that hull's own drawing, rounded
-   up. What the roster now says is that hulls differ in size, which is the
-   first thing that has ever actually told them apart: they fly identically
-   and always have. A bigger hull is a bigger target, since this is also the
-   box a weapon tests against, and it cannot get as close to a wall.
+   The pixel of inset is not slack. It is what lets a long hull spin: at the
+   worst diagonal the box reaches sqrt(fore^2 + halfw^2) from the ship, and
+   holding that under 23 -- the ceiling the shipped maps were flood-filled
+   and spawn-checked against -- is what keeps every room reachable, every
+   spawn safe, and a full rotation possible in a three-tile corridor. The
+   Spire could not fit under it at any inset and its drawing is scaled
+   instead. A pixel of hull crossing a wall at the moment of contact is
+   invisible; the old defect was seven and a half.
 
-   23 is the ceiling and it is a contract with every map rather than an
-   aesthetic. Between 17 and 23 nothing changes about where a hull can go:
-   all of them need a three-tile gap, all of them fit every spawn on all
-   three shipped maps, and the flood fill reaches the same rooms. At 26 that
-   breaks -- one spawn on Chaos and one on Alpha stop fitting, so a hull that
-   size would respawn inside a wall, and War loses passages. Keeping the
-   whole roster inside 23 means a map that works for one hull works for all
-   of them, and nobody drawing a map has to remember an exception. The Spire
-   is the one hull that wanted more; its drawing is scaled to fit instead. */
-static const uint8_t hull_radius[SIM_MAX_CLASSES] = {
-    22,  /* Apex:    a dart, and nearly all of it is nose */
-    19,  /* Wedge:   widest at the bomb bay rather than forward */
-    19,  /* Chord:   the same, and the widest hull in the roster */
-    18,  /* Anvil */
-    23,  /* Spire:   the mast, once its lamp is inside the box */
-    23,  /* Cipher:  a knife, so it is long and reaches furthest but one */
-    17,  /* Facet:   squat, and the smallest target on the board */
-    17,  /* Lattice */
+                                fore  aft  halfw */
+static const uint8_t hull_extent[SIM_MAX_CLASSES][3] = {
+    /* Apex:    a dart, nearly all of it nose */ {20, 11, 10},
+    /* Wedge:   widest at the bomb bay        */ {13, 12, 15},
+    /* Chord:   a bow, wider than it is long  */ {13,  5, 17},
+    /* Anvil                                  */ {15, 11, 13},
+    /* Spire:   the mast, art scaled to fit   */ {21, 10,  9},
+    /* Cipher:  the knife, longest and thinnest */ {22, 12,  6},
+    /* Facet:   squat, the smallest target    */ {14, 12, 11},
+    /* Lattice: near square, near flush       */ {16, 14, 14},
 };
 
 static const class_row rows[SIM_MAX_CLASSES] = {
@@ -449,7 +447,9 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         const class_row *r = &rows[i];
         sim_ship_class *c = &cfg->classes[i];
         sim_class_from_units(c, &flight);
-        c->radius = (int32_t)hull_radius[i] * 256;
+        c->fore = (int32_t)hull_extent[i][0] * 256;
+        c->aft = (int32_t)hull_extent[i][1] * 256;
+        c->halfw = (int32_t)hull_extent[i][2] * 256;
         c->mod_max[SIM_TRIG_GUN] = r->gun_mods;
         c->mod_max[SIM_TRIG_BOMB] = r->bomb_mods;
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
