@@ -1175,12 +1175,16 @@ impl Arena {
     /// know rating exists; this layer reads what it produced.
     fn score_events(&mut self) {
         let tick = self.world.state.tick;
-        let names = self.names.clone();
+        // Borrowed, not cloned. This runs every tick of every room, and the
+        // clone it replaces copied a map of names and account ids at 100 Hz to
+        // serve events that mostly do not happen.
+        //
         // A seat with no name is a seat nobody is sitting in, which is what a
         // ship that died on the tick its owner disconnected looks like. It used
         // to fall back to the roster name for that index, which was right while
         // seats and roster entries were the same list and is a fabrication now
         // that a name arrives with its pilot.
+        let names = &self.names;
         let name_of = move |ship: u8| {
             names
                 .get(&ship)

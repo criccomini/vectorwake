@@ -44,6 +44,40 @@ const HUG: u8 = 3;
 
 pub struct Nav {
     cost: Box<[u8]>,
+    /// Which patch of connected open cells each cell belongs to, zero for a
+    /// wall. Labelled once at build by a flood fill, and the whole reason it
+    /// exists is the question "is there any path at all", answered without
+    /// searching.
+    ///
+    /// This is exact, not an estimate, because of the corner rule: the search
+    /// takes a diagonal only when both orthogonal neighbours are open, and any
+    /// such diagonal can be replaced by those two orthogonal steps. So what A*
+    /// can reach is precisely what a 4-connected flood fill can reach, and two
+    /// cells with different labels have no route between them, full stop.
+    ///
+    /// Without it, a route to somewhere unreachable -- a foe behind a sealed
+    /// wall, a roam point rolled inside a closed room -- failed only after
+    /// exhausting its whole component, up to the 40,000-cell cap, returned
+    /// empty, and was asked again at the pilot's next reaction. A profile of
+    /// the drill put 96% of the server's entire instruction count inside that
+    /// loop.
+    comp: Box<[u32]>,
+    /// Queries the search has already failed, by start and goal cell.
+    ///
+    /// The component labels above answer "no path exists"; this answers the
+    /// other way a search comes back empty, which is the expansion cap firing
+    /// on a route that exists but is too hard to find. Both are pure functions
+    /// of the map and the two cells, so remembering the answer is exact -- the
+    /// caller gets the byte the search would have produced, without the forty
+    /// thousand expansions it would have burned producing it again.
+    ///
+    /// It matters because a pilot denied a route does not go away. It heads
+    /// straight, pins, and re-asks at its reaction cadence: the drill measured
+    /// 606 of 792 searches in a minute as repeats of a handful of corner-to-
+    /// middle queries, at the full cap apiece, which was three quarters of the
+    /// whole server's CPU. A mutex, because the bot server shares one Nav per
+    /// map across its tasks; the lock is held for a hash probe.
+    failed: std::sync::Mutex<std::collections::HashSet<u64>>,
 }
 
 fn cell_of(px: f32) -> usize {
@@ -99,7 +133,34 @@ impl Nav {
                 }
             }
         }
-        Nav { cost: out }
+        // Label the connected patches of open ground, 4-connected to match
+        // what the search can actually traverse; see `comp`.
+        let mut comp = vec![0u32; W * W].into_boxed_slice();
+        let mut next = 0u32;
+        let mut stack: Vec<u32> = Vec::new();
+        for start in 0..W * W {
+            if out[start] == BLOCKED || comp[start] != 0 {
+                continue;
+            }
+            next += 1;
+            comp[start] = next;
+            stack.push(start as u32);
+            while let Some(c) = stack.pop() {
+                let (cx, cy) = ((c as usize % W) as i32, (c as usize / W) as i32);
+                for (dx, dy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                    let (nx, ny) = (cx + dx, cy + dy);
+                    if nx < 0 || ny < 0 || nx >= W as i32 || ny >= W as i32 {
+                        continue;
+                    }
+                    let n = ny as usize * W + nx as usize;
+                    if out[n] != BLOCKED && comp[n] == 0 {
+                        comp[n] = next;
+                        stack.push(n as u32);
+                    }
+                }
+            }
+        }
+        Nav { cost: out, comp, failed: std::sync::Mutex::new(std::collections::HashSet::new()) }
     }
 
     fn open(&self, cx: usize, cy: usize) -> bool {
@@ -143,7 +204,25 @@ impl Nav {
         if start == goal {
             return vec![to];
         }
-        SCRATCH.with(|s| s.borrow_mut().solve(self, start, goal, to))
+        // No path exists: say so now rather than after exhausting the whole
+        // component. The answer is identical to what the search would return,
+        // by the argument on `comp`; only the bill changes.
+        if self.comp[start] != self.comp[goal] {
+            return Vec::new();
+        }
+        let key = (start as u64) << 32 | goal as u64;
+        if let Ok(f) = self.failed.lock() {
+            if f.contains(&key) {
+                return Vec::new();
+            }
+        }
+        let path = SCRATCH.with(|s| s.borrow_mut().solve(self, start, goal, to));
+        if path.is_empty() {
+            if let Ok(mut f) = self.failed.lock() {
+                f.insert(key);
+            }
+        }
+        path
     }
 
     /// The nearest open cell to one that may not be, searched outwards. Four
@@ -187,7 +266,7 @@ struct Scratch {
     stamp: Vec<u32>,
     g: Vec<u32>,
     came: Vec<u8>,
-    heap: std::collections::BinaryHeap<std::cmp::Reverse<(u32, u32)>>,
+    heap: std::collections::BinaryHeap<std::cmp::Reverse<(u32, u32, u32)>>,
 }
 
 /// The eight ways into a cell, and the index each is stored as.
@@ -217,12 +296,12 @@ impl Scratch {
         self.heap.clear();
         self.stamp[start] = gen;
         self.g[start] = 0;
-        self.heap.push(std::cmp::Reverse((0, start as u32)));
+        self.heap.push(std::cmp::Reverse((0, start as u32, 0)));
 
         let (gx, gy) = ((goal % W) as i32, (goal / W) as i32);
         let mut expanded = 0u32;
         let mut found = false;
-        while let Some(std::cmp::Reverse((_, cur))) = self.heap.pop() {
+        while let Some(std::cmp::Reverse((_, cur, g_then))) = self.heap.pop() {
             let cur = cur as usize;
             if cur == goal {
                 found = true;
@@ -231,6 +310,19 @@ impl Scratch {
             expanded += 1;
             if expanded > MAX_EXPAND {
                 break;
+            }
+            // A superseded entry: this node was pushed again later with a
+            // better cost, and that better entry popped first, because a
+            // smaller g at the same node is a smaller f. Its neighbours were
+            // all offered the better cost then, so walking them again from the
+            // worse one changes nothing and costs eight probes. The pop is
+            // still counted above -- the expansion cap has to fire on the same
+            // search it fired on before this branch existed.
+            //
+            // The third element never reorders the heap: f is g plus a fixed
+            // per-node h, so equal (f, node) implies equal g.
+            if g_then != self.g[cur] {
+                continue;
             }
             let (cx, cy) = ((cur % W) as i32, (cur / W) as i32);
             for (k, &(dx, dy)) in STEPS.iter().enumerate() {
@@ -263,7 +355,7 @@ impl Scratch {
                 // enough that the search does not fan out over the map.
                 let (ax, ay) = ((nx - gx).abs(), (ny - gy).abs());
                 let h = 10 * (ax + ay) - 6 * ax.min(ay);
-                self.heap.push(std::cmp::Reverse((ng + h as u32, n as u32)));
+                self.heap.push(std::cmp::Reverse((ng + h as u32, n as u32, ng)));
             }
         }
         if !found {
