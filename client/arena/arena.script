@@ -357,6 +357,9 @@ function go_home(self, at)
     feed = {}
     pickup = nil
     hurt = 0
+    -- A box about somebody in the room you just left describes a seat number
+    -- that the next room will have dealt to a stranger.
+    ui.inspect = nil
     -- The next zone deals these seats to different pilots.
     for k in pairs(rolls) do rolls[k] = nil end
     fx.reset()
@@ -394,7 +397,7 @@ end
 -- the place they look to find out what just happened.
 local function notify(text, col)
     table.insert(feed, 1, {text = text, col = col, t = 0})
-    while #feed > 9 do table.remove(feed) end
+    while #feed > ui.FEED_MAX do table.remove(feed) end
 end
 
 -- Every report the simulation made this tick, turned into light, noise and
@@ -641,6 +644,16 @@ function update(self, dt)
 
     -- Escape opens the menu; inside it, escape goes back a level, and at the
     -- root that is the same as closing. One key, no modes.
+    --
+    -- Except that escape dismisses whatever it opened first. A pilot's info
+    -- box is the newest thing on screen and the key that shuts things is the
+    -- key a player will reach for; sending them to the menu instead answers a
+    -- question they did not ask and leaves the box open behind it.
+    if tapped[hash("menu")] and not menu.open and ui.inspect then
+        ui.inspect = nil
+        tapped[hash("menu")] = nil
+        sfx.ui("ui_move")
+    end
     if tapped[hash("menu")] and not menu.open then
         toggle_menu()
         tapped[hash("menu")] = nil
@@ -741,12 +754,31 @@ function update(self, dt)
     -- a line's clock starts the frame it appears.
     drain_kills()
 
-    -- Notifications expire. A feed that only ever scrolls leaves the last
-    -- nine deaths on screen through a lull, which reads as a fight that is
-    -- still happening somewhere.
+    -- Notifications expire. A feed that only ever scrolls leaves the last few
+    -- deaths on screen through a lull, which reads as a fight that is still
+    -- happening somewhere.
     for i = #feed, 1, -1 do
         feed[i].t = feed[i].t + dt
         if feed[i].t > ui.FEED_LIFE then table.remove(feed, i) end
+    end
+
+    -- What the debug readout reports about this client rather than about the
+    -- connection. Averaged over a second, because a per-frame figure is a
+    -- number nobody can read: it changes faster than the eye resolves and the
+    -- interesting question is what the last second looked like, not what this
+    -- frame did. Counted whether or not anybody is looking, so opening the
+    -- readout shows a settled figure rather than a second of zeroes.
+    self.perf_t = (self.perf_t or 0) + dt
+    self.perf_frames = (self.perf_frames or 0) + 1
+    if self.perf_t >= 1.0 then
+        self.fps = self.perf_frames / self.perf_t
+        self.frame_ms = 1000 * self.perf_t / self.perf_frames
+        -- Clamped at zero, because a reconnect replaces the counters and the
+        -- reading held from before it is then larger than the one after.
+        self.rx_rate = math.max(0, net.stats.rx - (self.rx_was or 0)) / self.perf_t
+        self.tx_rate = math.max(0, net.stats.tx - (self.tx_was or 0)) / self.perf_t
+        self.rx_was, self.tx_was = net.stats.rx, net.stats.tx
+        self.perf_t, self.perf_frames = 0, 0
     end
 
     -- Where this frame falls between the two ticks either side of it, and how
@@ -988,8 +1020,12 @@ function update(self, dt)
             -- The round trip, in ticks of a centisecond, which the readout
             -- above the dial turns into four bars. The prediction error that
             -- used to be printed here was this client debugging itself on a
-            -- player's screen.
+            -- player's screen; it is in the debug readout now, behind the
+            -- bars, where somebody who wants it can ask for it.
             lag = net.stats.lag,
+            stats = net.stats, zone = net.zone,
+            fps = self.fps, frame_ms = self.frame_ms,
+            rx_rate = self.rx_rate, tx_rate = self.tx_rate,
         })
     end
     if menu.open then ui.menu(menu.view()) end
@@ -1198,6 +1234,24 @@ function on_input(self, action_id, action)
                 end
                 if r.action == "map" then
                     toggle_map()
+                    sfx.ui("ui_move")
+                    return true
+                end
+                -- Who that is. Clicking the pilot already being read about
+                -- closes the box, which is how every other toggle in here
+                -- behaves and saves aiming at the X.
+                if r.action == "pilot" then
+                    ui.inspect = (ui.inspect ~= r.value) and r.value or nil
+                    sfx.ui(ui.inspect and "ui_go" or "ui_move")
+                    return true
+                end
+                if r.action == "uninspect" then
+                    ui.inspect = nil
+                    sfx.ui("ui_move")
+                    return true
+                end
+                if r.action == "debug" then
+                    ui.debug = not ui.debug
                     sfx.ui("ui_move")
                     return true
                 end
