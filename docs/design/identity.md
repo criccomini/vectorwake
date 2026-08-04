@@ -113,9 +113,10 @@ because a busy arena produces dozens of events per second and anything with a
 long tail turns into mud.
 
 Weapon classes occupy separate frequency bands, so you can hear a bomb behind
-you while guns fire in front. Events near you duck events far away, and distance
-attenuates fast. There is no combat music; the arena's sound is the game's
-sound, and a player should be able to fight with their eyes on the radar.
+you while guns fire in front. Distance attenuates fast, and where a lot of one
+thing happens at once the extra copies are dropped rather than piled up. There
+is no combat music; the arena's sound is the game's sound, and a player should
+be able to fight with their eyes on the radar.
 
 The kit itself, what each sound is for and what stays silent, is in
 [audio.md](audio.md).

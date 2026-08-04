@@ -2,156 +2,146 @@
 
 ## The division of labor
 
-Defold draws, plays sound, reads input, and manages screens. The sim core moves
-ships and decides collisions. The line between them is strict: no game rule is
-implemented in Lua, and the sim core knows nothing about sprites.
+Defold draws, reads input, and manages screens. The sim core moves ships and
+decides collisions. The line between them is strict: no game rule is implemented
+in Lua, and the sim core knows nothing about how anything looks.
 
 This is not tidiness for its own sake. Defold's manual states that the order in
 which component `update()` functions run within a collection is unspecified, so
 game state distributed across game object scripts has no defined evaluation
 order. Worse, LuaJIT is unavailable in HTML5 builds, which fall back to Lua
-5.1.4, so a simulation written in Lua would be fastest on the platform that
-needs it least. Putting state in one C struct sidesteps both problems.
+5.1.4, so a simulation written in Lua would be fastest on the platform that needs
+it least. Putting state in one C struct sidesteps both problems.
+
+Sound is the one place the division is not clean, and deliberately. Defold's
+mixer plays the held sounds, but on the web the one-shots go straight to the
+browser's audio graph, because the mixer queues four buffers ahead and a gun that
+answers a keypress cannot afford them. See [design/audio.md](../design/audio.md).
 
 ## What Lua does
 
 - Sample input and build the command sent to the server
-- Call `sim.step()` for local prediction and reconciliation
-- Drive the camera, the HUD, the radar, and menus with Defold GUI
-- Turn sim events into sounds, particles, and screen shake
-- Manage connection state, arena joins, and the server browser
+- Call `sim.step` for local prediction, and `sim.replay` for reconciliation
+- Build the geometry for every layer, the HUD, the radar and the menus
+- Turn sim events into sounds, sparks and screen shake
+- Manage connection state, arena joins, and the games list
 
-## Project layout
+## The shape of it
 
-```
-client/
-  game.project
-  main/
-    main.collection            bootstrap, connection, screen routing
-    loader.script
-  arena/
-    arena.collection           the playing screen
-    arena.script               owns the sim handle and the frame loop
-    ship_view.script           one per visible ship, presentation only
-    camera.script
-  render/
-    vectorwake.render_script   custom render pipeline
-    tiles/                     tilemap window chunks
-  gui/
-    hud.gui, radar.gui, statbox.gui, menu.gui
-  ext/
-    simcore/                   native extension wrapping sim/
-      ext.manifest
-      src/sim_ext.c            Lua bindings
-      include/ -> ../../../sim/include
-  net/
-    transport.lua              UDP on native, WebSocket on web
-    protocol.lua               encode and decode
-    prediction.lua             rollback and reconciliation
-```
+The file layout, and what each piece is, is in
+[client/README.md](../../client/README.md), kept there because that is where
+somebody changing it will be looking. The parts worth knowing at this level:
 
-The extension under `ext/simcore` is a thin binding layer. It exposes a handful
-of functions to Lua and does no game logic:
+One script owns the frame loop. `arena/arena.script` reads input, drives the
+accumulator, steps the core and draws. There is no script per ship and no script
+per screen, because component update order inside a collection is unspecified and
+one loop has an order by construction.
+
+The native extension under `ext/simcore` is a binding layer with no game logic in
+it. The core keeps its state in file-scope structs rather than handing out a
+handle, so Lua asks about a ship by index:
 
 ```lua
-local h = sim.create(settings_blob, map_blob)
-sim.step(h, input)                    -- advance one tick
-sim.apply_snapshot(h, snapshot_blob)  -- authoritative correction
-sim.replay(h, from_tick, inputs)      -- rollback and re-simulate
-local ships = sim.ships(h)            -- read-only view for rendering
-local ev = sim.events(h)              -- events since last drain
+sim.init(seed)                  -- build the arena, settings and state
+sim.step(buttons_by_ship)       -- advance one tick
+sim.replay(me, buttons)         -- advance one tick, only this ship steering
+sim.apply_snapshot(bytes)       -- the server's word, decoded by the core
+sim.ship_x(i), sim.ship_heading(i), sim.ship_energy(i)   -- read-only views
+sim.event_at(n)                 -- what happened this tick
 ```
 
-Defold's build server compiles this for every target it supports, including
-WebAssembly, which is the mechanism that lets the browser build run the same
-simulation as the dedicated server.
+The same extension carries the vertex writer and the sound kit, for the same
+reason in both cases: a Lua loop that crosses into C per float, or per sample, is
+the cost that actually shows up on the web.
+
+Defold's build server compiles all of it for every target including WebAssembly,
+which is the mechanism that lets a browser tab run the same simulation as the
+dedicated server.
 
 ## The frame loop
 
 Rendering is decoupled from simulation. The arena script accumulates real time
-and steps the sim at a fixed 100 Hz, then renders at whatever the display gives
-us, interpolating between the two most recent states.
+and steps the core at a fixed 100 Hz, then draws at whatever the display gives
+us.
 
 Defold offers `fixed_update()` with `engine.fixed_update_frequency`, which looks
 like a natural fit. We do not use it for the simulation, because it is tied to
-the physics timestep and to the component lifecycle, and because we want the
-accumulator under our control for prediction and rollback. We drive stepping
-from a single script's `update()` instead. Defold's physics is disabled
+the physics timestep and to the component lifecycle, and because prediction and
+rollback want the accumulator under our control. Defold's physics is disabled
 entirely; collision is the sim core's job.
 
-Two details that matter in practice. `engine.max_time_step` should be set so a
-long stall does not produce a hundred catch-up steps in one frame. And after a
-tab regains focus in a browser, we clamp catch-up and request a fresh snapshot
-rather than simulating through the gap.
+Catch-up is capped per frame, so a long stall does not produce a hundred steps at
+once. A backgrounded browser tab is the common case for that cap, since the
+browser throttles the frame callback the loop is driven from.
 
 ## Prediction and reconciliation
 
-The client predicts only its own ship. Remote players are interpolated between
-authoritative snapshots, delayed by a small buffer so packet jitter does not
-show as stutter.
+The client predicts its own ship and coasts everybody else. There is no
+interpolation buffer: remote ships are carried forward by the same core, holding
+whatever they were last doing, until the next snapshot corrects them. That is why
+the clock lead is bounded, since the further ahead the client runs, the longer
+those ships coast on stale intent.
 
-Each input frame carries a sequence number and the tick it applies to. The
-client keeps its recent inputs. When a snapshot arrives for tick T, the client
-compares its stored prediction for T against the authority. On a match it drops
-history up to T. On a mismatch it resets its ship to the authoritative value and
-replays every input after T, which at 100 Hz and 250 ms of history is at most 25
-steps of one ship, cheap enough to do inside a frame.
+Inputs are stamped with the tick they apply to and kept. A snapshot carries the
+last tick the server had applied from this client, so on arrival the client
+accepts the state wholesale and replays its own inputs from that tick forward.
+The replay is one ship's buttons over a handful of ticks, which is cheap enough
+to do inside a frame.
 
-Weapons are shown immediately on fire and resolved by the server. The visual
-projectile is prediction; the damage is not. When the server disagrees, the
-projectile disappears and no damage was ever applied locally, so there is
-nothing to roll back on the receiving end. This is the deliberate inversion of
-Subspace's model, where the victim's client decided.
+The clock steers by one tick per snapshot rather than jumping, aiming to have
+inputs arrive just before the tick they belong to. An input that arrives early
+waits in the server's queue and is applied on the tick the client applied it, so
+both ends agree and there is nothing to correct.
 
-## Rendering a 16384-pixel world
+Prediction runs the whole core, so the client shows its own hits and deaths
+immediately and those events drive the sparks and the sound. None of it is
+authoritative. Every snapshot overwrites the lot, and the server decides who
+died. This is the deliberate inversion of Subspace's model, where the victim's
+client decided.
 
-The map is 1024x1024 tiles. Painting that into a single Defold tilemap component
-is not something we should assume works, so the plan is a moving window.
+The transport is a WebSocket everywhere, including native builds, rather than UDP
+on native and WebSocket on the web. One protocol, one code path, and the browser
+is the platform that matters most.
 
-Keep a tilemap sized to the viewport plus a margin, roughly 64x48 tiles. As the
-camera crosses a tile boundary, rewrite the newly exposed row or column with
-`tilemap.set_tile`. The cost per frame is bounded by the perimeter rather than
-by map size, and memory is constant.
+## Drawing a 16384-pixel world
 
-The alternative is a custom render script that draws tiles from an atlas
-directly, which gives more control and costs us Defold's tooling. Start with the
-window, measure, and only write the custom path if the window fails. This is
-flagged as an open question rather than a decision.
+Nothing is a sprite. The client draws vector geometry into five mesh components,
+built fresh each frame in Lua and uploaded once each: two static layers for
+terrain, then fill, glow and interface. `render/vec.lua` builds the shapes and
+the extension's vertex writer does the writing, so a triangle costs one crossing
+into C rather than twenty-one.
 
-Radar is a separate concern: it needs the whole map at low resolution, so we
-bake a downsampled texture at map load and draw player blips over it.
+Terrain is a window rather than the whole map. A 1024-tile map is meshed for the
+tiles around the camera, sized from the drawable and rebuilt when the camera
+walks far enough, so the cost tracks the view rather than the map. The window is
+meshed whole and held whole, which is why its capacity is fitted to what a build
+actually used rather than guessed at.
 
-Ships, projectiles, and effects are ordinary Defold sprites, pooled through
-factories. Note `collection.max_instances` defaults to 1024, and a busy arena
-with 40 ships and hundreds of live projectiles will exceed that if every
-projectile is a game object. Projectiles are therefore drawn from the sim
-state's array, not spawned as objects, which also keeps them exactly where the
-simulation says they are.
+Projectiles are drawn straight from the core's arrays rather than spawned as
+objects, which keeps them exactly where the simulation says they are and avoids
+the instance ceiling entirely.
+
+The radar samples the map's own grid, anchored to it rather than to the terrain
+window, so the blips do not re-roll every time the window moves.
+
+Text is the one thing Defold's GUI draws, in a single component with no widgets
+in it.
 
 ## Presentation state versus simulation state
 
-Ships have a `ship_view.script` for animation, exhaust, banners, and sound. It
-reads from the sim view each frame and owns nothing. When a ship dies, the view
-is recycled to a pool. Any state that would change the game belongs in the core,
-and any state that only changes what you see belongs in the view. Bricks and
-doors sit right on that line: their existence is simulation, their animation is
-presentation.
+Any state that would change the game belongs in the core, and any state that only
+changes what you see belongs in the client. The client holds a few things of its
+own: which charge the use key would spend, the bank angle a hull is drawn at, the
+kill feed, and the terrain window's extent. None of it is in a snapshot and none
+of it is in the core.
+
+Bricks and doors sit right on that line: their existence is simulation, their
+animation is presentation.
 
 ## Platforms
 
-Desktop first for development, because that is where we can attach a debugger to
-the extension. The web build is the distribution channel and needs to work from
-the first milestone, since a link is the whole marketing plan. Mobile is
-plausible later given that nullspace ships an Android client, but touch controls
-for a game about precise thrust are a design problem we are not solving yet.
-
-## Open questions
-
-Whether the tilemap window holds up at 60 fps while the camera moves fast, or
-whether we need the custom tile renderer.
-
-How large the WASM bundle gets with the sim core included, and whether the
-HTML5 build's Lua 5.1.4 costs enough in the non-simulation code to matter.
-
-Whether Defold GUI is sufficient for the statbox, which is dense and
-text-heavy in a way Defold's GUI system is not obviously built for.
+The web build is the distribution channel and the one that has to work, since a
+link is the whole marketing plan. Desktop builds are how the client gets
+debugged, and how it is photographed under a virtual display. Touch is
+implemented rather than deferred: a drawn thumbstick that asks for a course, and
+a row of weapon pads.
