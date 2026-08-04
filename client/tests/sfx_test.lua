@@ -53,10 +53,14 @@ _G.go = {get = function(url, prop)
     if prop == "gain" then return COMPONENT_GAIN end
     return url
 end}
+-- Only what Defold's sound module actually has. There is no sound.is_playing,
+-- and a stub that invented one is how the soundtrack came to restart twelve
+-- times a session without a test noticing: the code called it, the call raised
+-- every frame under pcall, and here it cheerfully returned true.
 _G.sound = {
     play = function(url) played[#played + 1] = url end,
     stop = function() end,
-    is_playing = function() return true end,
+    set_group_gain = function() end,
 }
 
 local sfx = require("arena.sfx")
@@ -194,6 +198,43 @@ local fell_back = played[1] == "#gun0"
 if not fell_back then fails = fails + 1 end
 print(string.format("%-38s -> %-10s %s", "falls back while still decoding",
                     tostring(played[1]), fell_back and "ok" or "FAIL"))
+
+-- The soundtrack starts once, and not before the browser's audio is awake.
+--
+-- Starting it early is not harmless. A suspended context has its mixed audio
+-- thrown away rather than held, so the track runs on silently and a player
+-- joins it in the middle. Starting it repeatedly is worse, and was the bug:
+-- the opening bars began over and over for the first twenty-three seconds.
+do
+    local awake = false
+    local starts = 0
+    _G.html5 = {run = function(js)
+        if js:match("audioCtx%.state") then return awake and "1" or "0" end
+        return "1"
+    end}
+    package.loaded["arena.sfx"] = nil
+    local s = require("arena.sfx")
+    s.init()
+    local realplay = _G.sound.play
+    _G.sound.play = function(url)
+        if url == "#music" then starts = starts + 1 end
+        return realplay(url)
+    end
+
+    s.music(true)
+    for _ = 1, 200 do s.music_tick(0.016) end       -- three seconds, still muted
+    local quiet = starts
+    awake = true
+    for _ = 1, 200 do s.music_tick(0.016) end       -- and three more, awake
+
+    local ok = quiet == 0 and starts == 1
+    if not ok then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s",
+                        "music waits, then starts once",
+                        quiet .. " then " .. starts,
+                        ok and "ok" or "FAIL, wanted 0 then 1"))
+    _G.sound.play = realplay
+end
 
 -- The master volume has to reach the browser graph whichever order the menu
 -- and this module come up in. The menu applies the saved volume during its own
