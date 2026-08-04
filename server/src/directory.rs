@@ -393,6 +393,9 @@ async fn serve_registration(
                 // turned away, and until this existed neither side named a
                 // wrong token at all.
                 let reject = |reason: &str, detail: &str| {
+                    // Every refusal goes through here, so counting it once
+                    // here counts all of them.
+                    crate::metrics::REFUSALS.inc();
                     println!(
                         "refused a registration for {:?} from {:?}: {reason} {detail}",
                         r.instance, r.address
@@ -469,6 +472,7 @@ async fn serve_registration(
                         catalog: d.wire_catalog(),
                         verified: false,
                     };
+                    crate::metrics::REGISTRATIONS.inc();
                     let _ = tx.send(Message::Binary(fleet::frame(fleet::D2A_ACCEPTED, &accepted)));
                 }
                 println!(
@@ -638,6 +642,7 @@ async fn push_views(dir: Arc<Mutex<Directory>>) {
 ///
 ///     vectorwake-server directory <listen> [catalog-dir]
 pub async fn run() {
+    crate::metrics::spawn("directory", "");
     let addr = std::env::args()
         .nth(2)
         .unwrap_or_else(|| "0.0.0.0:9000".into());

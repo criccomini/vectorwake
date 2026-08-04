@@ -149,6 +149,12 @@ services:
       # clear from anyone. Caddy terminates TLS and is the only way in.
       VW_ADMIN_LISTEN: 127.0.0.1:9100
       VW_ADMIN_TOKEN: ${VW_ADMIN_TOKEN:?set VW_ADMIN_TOKEN}
+      # Every process serves its own numbers on its own loopback port, so what
+      # a scrape reads is one process rather than the box. 9101 to 9107, and
+      # not 9100 because the admin surface above already has it. Nothing in
+      # the Caddyfile routes to any of them: this is for something running on
+      # the host, not for the internet.
+      VW_METRICS: 127.0.0.1:9106
 
   # Accounts, ratings, and the rated event log. The one process here with a
   # database behind it, and the one every other process is built to survive the
@@ -174,6 +180,7 @@ services:
       - ./db-ca.pem:/etc/vectorwake/db-ca.pem:ro
     environment:
       VW_META_LISTEN: 127.0.0.1:9400
+      VW_METRICS: 127.0.0.1:9107
       VW_META_CA: /etc/vectorwake/db-ca.pem
       # Empty means no accounts. See above. A managed database wants
       # `?sslmode=require` on the end of it, which is what makes the connection
@@ -197,6 +204,7 @@ services:
       # it serves cleartext on loopback and Caddy is the wss endpoint.
       # One hostname, a path per arena: see the Caddyfile for why.
       VW_ADDRESS: wss://play.${VW_DOMAIN}/a1
+      VW_METRICS: 127.0.0.1:9101
       # Rated exchanges are not filed with the meta-layer while this is off.
       # Nothing else changes: pilots still sign in, arrive carrying the rating
       # they earned, and see it move on the scoreboard. The room rates every
@@ -223,6 +231,7 @@ services:
       VW_DIRECTORY: ws://127.0.0.1:9000
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
       VW_ADDRESS: wss://play.${VW_DOMAIN}/a2
+      VW_METRICS: 127.0.0.1:9102
       # Rated exchanges are not filed with the meta-layer while this is off.
       # Nothing else changes: pilots still sign in, arrive carrying the rating
       # they earned, and see it move on the scoreboard. The room rates every
@@ -247,6 +256,7 @@ services:
       VW_DIRECTORY: ws://127.0.0.1:9000
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
       VW_ADDRESS: wss://play.${VW_DOMAIN}/a3
+      VW_METRICS: 127.0.0.1:9103
       # Rated exchanges are not filed with the meta-layer while this is off.
       # Nothing else changes: pilots still sign in, arrive carrying the rating
       # they earned, and see it move on the scoreboard. The room rates every
@@ -298,6 +308,7 @@ services:
     command: ["bots"]
     environment:
       VW_ARENAS: ws://127.0.0.1:9001,ws://127.0.0.1:9002,ws://127.0.0.1:9003
+      VW_METRICS: 127.0.0.1:9105
       VW_META: http://127.0.0.1:9400
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
     depends_on: [directory, a1, a2, a3, meta]

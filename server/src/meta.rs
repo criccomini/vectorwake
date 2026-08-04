@@ -785,6 +785,7 @@ async fn serve(mut s: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result
 
 /// `vectorwake-server meta [catalog-dir]`
 pub async fn run() {
+    crate::metrics::spawn("meta", "");
     let dir = std::env::args().nth(2).unwrap_or_else(|| ".".into());
     let addr = std::env::var("VW_META_LISTEN").unwrap_or_else(|_| "0.0.0.0:7400".into());
     let url = std::env::var("VW_META_DATABASE").unwrap_or_default();
