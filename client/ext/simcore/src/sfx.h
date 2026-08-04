@@ -28,6 +28,12 @@ extern const char *const sfx_names[];
 // kit does not know. The caller owns the block and frees it.
 unsigned char *sfx_render(const char *name, size_t *len);
 
+// Whether this sound is played end to end forever rather than as an event.
+// The client routes the two differently, and which is which is decided here
+// so that the kit stays the only place that knows. Zero for a name the kit
+// does not hold.
+int sfx_is_loop(const char *name);
+
 #ifdef __cplusplus
 }
 #endif

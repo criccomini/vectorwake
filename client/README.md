@@ -350,6 +350,50 @@ To hear the kit without running the game:
 make -C client/tools sfx && client/tools/sfxdump /tmp/kit
 ```
 
+## One-shots skip the engine's mixer on the web
+
+Defold's HTML5 sound device mixes into chunks of 1024 samples and hands each to
+Web Audio scheduled at the end of the last one, keeping four pending. Measured
+on the shipped page, that is 43 to 75 ms of already mixed audio waiting to play,
+and a gun fired now joins the back of it.
+
+The queue is the engine's insurance against a slow frame, and its depth in
+seconds is both the delay and the stall margin, so no setting shortens one
+without shortening the other. Both alternatives were built and measured:
+`sample_frame_count` at 768 and at 512 cut the delay and crackled at 26 fps
+(0.3% and 7.3% of buffers arriving late), which is a frame cap this menu offers.
+`use_thread` with the pthread engine and cross-origin isolation made it worse,
+3.6% at full speed, because Web Audio exists only on the main thread and a sound
+thread's calls are proxied back to it anyway.
+
+So one-shots stand beside the mixer instead of shortening its queue.
+`arena/sfx.lua` installs a small Web Audio graph through `html5.run`, hands it
+the same buffers `sfx.c` renders, and plays each effect as an
+`AudioBufferSourceNode` started immediately: 2.7 ms out rather than 45, measured
+against the mixer's queue in the same page at the same moment.
+
+The engine's own `AudioContext` is reused rather than a second one created, so
+the autoplay gate, the gesture unlock in `tools/single_file.py` and the iOS
+audio-session fix keep applying with nothing to hold in step. Per-sound gain is
+read back off the `.sound` components with `go.get`, so the mix those files
+carry is not duplicated in a second table to drift.
+
+Held sounds stay on the mixer. A queue is only late at the start, and the start
+of a rumble that runs for minutes is not something anyone can time. The
+soundtrack alone is four fifths of the kit's bytes and its retry loop is
+delicate, so moving it would be work in exchange for nothing audible.
+
+Everything degrades rather than breaks. No `html5` module, a graph that fails to
+install, a component whose gain will not read, a buffer still inside
+`decodeAudioData`: each falls back to the mixer for that sound, which is where it
+worked before. The `SOUND:` line at boot ends with how many made it, `19 direct`
+being all of them.
+
+Costs, measured: about 89 us per sound to build and start the nodes, so 1.25 ms
+in a frame that plays the budget's full fourteen. The `html5.run` bridge itself
+is 0.2 us and not worth batching away. Native builds are untouched, because the
+whole path is behind `if html5`.
+
 ## Sound in a browser is gated, and the engine's gate is narrow
 
 Every page starts muted: the audio context is created suspended and only a

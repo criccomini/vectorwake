@@ -52,7 +52,74 @@ int Render(lua_State* L) {
     return 1;
 }
 
-const luaL_reg kFunctions[] = {{"names", Names}, {"render", Render}, {0, 0}};
+// Bytes as base64, for the browser.
+//
+// A sound that has to reach Web Audio goes through html5.run, which is an
+// eval of a string, so the wav has to survive being spliced into JavaScript
+// source. Base64 is the alphabet that does: no quote, no backslash, no
+// newline, nothing eval has an opinion about.
+//
+// Encoded here rather than in Lua because Lua 5.1 has no bitwise operators,
+// and doing this a nibble at a time in arithmetic, over a megabyte, at boot,
+// on the platform that is already the slowest, is not a trade worth making.
+//
+// Takes what was rendered rather than a name, so a sound is synthesised once
+// and spent twice: on the engine's mixer, which still holds the fallback, and
+// on the browser's own audio graph.
+int B64(lua_State* L) {
+    static const char kB64[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    int top = lua_gettop(L);
+    size_t len = 0;
+    const unsigned char* wav = (const unsigned char*)luaL_checklstring(L, 1, &len);
+    size_t out_len = (len + 2) / 3 * 4;
+    char* out = (char*)malloc(out_len + 1);
+    if (!out) {
+        lua_pushnil(L);
+        assert(top + 1 == lua_gettop(L));
+        return 1;
+    }
+    size_t i = 0, o = 0;
+    while (i + 2 < len) {
+        uint32_t n = ((uint32_t)wav[i] << 16) | ((uint32_t)wav[i + 1] << 8) |
+                     (uint32_t)wav[i + 2];
+        out[o++] = kB64[(n >> 18) & 63];
+        out[o++] = kB64[(n >> 12) & 63];
+        out[o++] = kB64[(n >> 6) & 63];
+        out[o++] = kB64[n & 63];
+        i += 3;
+    }
+    if (i < len) {
+        // One or two bytes over, padded, which is the half of base64 that is
+        // easy to write wrong and silent when it is: a decoder reads the tail
+        // as zeros and the sound ends in a click.
+        uint32_t n = (uint32_t)wav[i] << 16;
+        int two = (i + 1 < len);
+        if (two) n |= (uint32_t)wav[i + 1] << 8;
+        out[o++] = kB64[(n >> 18) & 63];
+        out[o++] = kB64[(n >> 12) & 63];
+        out[o++] = two ? kB64[(n >> 6) & 63] : '=';
+        out[o++] = '=';
+    }
+    lua_pushlstring(L, out, o);
+    free(out);
+    assert(top + 1 == lua_gettop(L));
+    return 1;
+}
+
+// Whether a sound loops, which is what decides how the client plays it.
+int IsLoop(lua_State* L) {
+    int top = lua_gettop(L);
+    lua_pushboolean(L, sfx_is_loop(luaL_checkstring(L, 1)));
+    assert(top + 1 == lua_gettop(L));
+    return 1;
+}
+
+const luaL_reg kFunctions[] = {{"names", Names},
+                               {"render", Render},
+                               {"b64", B64},
+                               {"is_loop", IsLoop},
+                               {0, 0}};
 
 }  // namespace
 

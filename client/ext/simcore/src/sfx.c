@@ -804,6 +804,14 @@ const char *const sfx_names[] = {
     "rust", "charge", "flag", "thrust", "ui_move", "ui_go", "music", NULL,
 };
 
+int sfx_is_loop(const char *name) {
+    int i;
+    for (i = 0; i < KIT_COUNT; i++) {
+        if (strcmp(KIT[i].name, name) == 0) return KIT[i].loop;
+    }
+    return 0;
+}
+
 static void put32(unsigned char *p, uint32_t v) {
     p[0] = (unsigned char)(v & 0xff);
     p[1] = (unsigned char)((v >> 8) & 0xff);

@@ -14,6 +14,7 @@
 package.path = "client/?.lua;" .. package.path
 
 local NAMES = {}
+local LOOPS = {}
 do
     local f = assert(io.open("client/ext/simcore/src/sfx.c"),
                      "run me from the repository root")
@@ -22,6 +23,16 @@ do
     local list = assert(src:match("const char %*const sfx_names%[%] = {(.-)};"),
                         "sfx_names not found in sfx.c")
     for name in list:gmatch('"([%w_]+)"') do NAMES[#NAMES + 1] = name end
+    -- Which of them loop, off the KIT table, so the test cannot hold a
+    -- different opinion from the synth about what is a held sound.
+    local kit = assert(src:match("static const entry KIT%[%] = {(.-)};"),
+                       "KIT not found in sfx.c")
+    -- The duration is any expression, not just a literal: the soundtrack's is
+    -- computed from the bar count.
+    for name, loop in kit:gmatch('{"([%w_]+)",%s*[^,]+,%s*(%d),') do
+        LOOPS[name] = loop == "1"
+    end
+    assert(LOOPS.music and LOOPS.thrust, "the loops did not parse")
 end
 
 local played = {}
@@ -31,9 +42,17 @@ _G.vwsfx = {
     -- Enough of a wav header to be a string with a length. Nothing here
     -- decodes it: resource.set_sound is the engine's, and it is stubbed.
     render = function() return string.rep("\0", 44) end,
+    b64 = function(s) return string.rep("A", math.ceil(#s / 3) * 4) end,
+    is_loop = function(name) return LOOPS[name] end,
 }
 _G.resource = {set_sound = function() end}
-_G.go = {get = function(url) return url end}
+-- The component gain the browser path reads back, so the mix survives the
+-- move. A real one is whatever the .sound file says.
+local COMPONENT_GAIN = 0.5
+_G.go = {get = function(url, prop)
+    if prop == "gain" then return COMPONENT_GAIN end
+    return url
+end}
 _G.sound = {
     play = function(url) played[#played + 1] = url end,
     stop = function() end,
@@ -112,6 +131,95 @@ fails = fails + unwired
 print(string.format("%-38s -> %-10s %s", "every sound has a component",
                     #NAMES - unwired .. "/" .. #NAMES,
                     unwired == 0 and "ok" or "FAIL"))
+
+-- --- and again on the web, where one-shots leave the mixer ---------------
+--
+-- The split is the whole point of the browser path: a one-shot goes straight
+-- to Web Audio to skip the mixer's queue, a loop stays on the mixer because a
+-- queue is only late at the start. Getting it backwards is silent both ways,
+-- a loop that never repeats and effects that are still late.
+local evals = {}
+_G.html5 = {run = function(js) evals[#evals + 1] = js; return "1" end}
+package.loaded["arena.sfx"] = nil
+local web = require("arena.sfx")
+web.init()
+web.listener(0, 0)
+
+local function web_try(desc, want_js, want_mixer, fn)
+    played, evals = {}, {}
+    web.frame()
+    fn()
+    local js = nil
+    for _, e in ipairs(evals) do
+        if e:match("^vwA%.p%(") then js = e end
+    end
+    local got_js = js and js:match('^vwA%.p%("([%w_]+)"') or nil
+    local ok = got_js == want_js and (played[1] ~= nil) == want_mixer
+    if not ok then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", desc,
+                        tostring(got_js or played[1]),
+                        ok and "ok" or "FAIL"))
+    return js
+end
+
+local gun_js = web_try("gun goes straight to Web Audio", "gun0", false,
+                       function() web.play("gun", 0, 0, 0) end)
+web_try("a UI bleep does too", "ui_go", false, function() web.ui("ui_go") end)
+web_try("thrust stays on the mixer", nil, true,
+        function() web.loop("thrust", true) end)
+web_try("and so does the soundtrack", nil, true,
+        function() web.fire("music", {gain = 1, pan = 0, speed = 1}) end)
+
+-- The component's own gain has to reach the browser, or the mix that the
+-- .sound files carry is lost the moment a sound stops going through them.
+if gun_js then
+    local g = tonumber(gun_js:match('^vwA%.p%("[%w_]+",([%-%d%.]+)'))
+    local want = 1.0 * COMPONENT_GAIN
+    local ok = g and math.abs(g - want) < 0.001
+    if not ok then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "carries the component gain",
+                        tostring(g), ok and "ok" or ("FAIL, wanted " .. want)))
+end
+
+-- A sound the browser has not decoded yet must not vanish. decodeAudioData is
+-- asynchronous, so this is the first second of every session.
+_G.html5.run = function(js)
+    if js:match("^vwA%.p%(") then return "0" end     -- not decoded yet
+    return "1"
+end
+played, evals = {}, {}
+web.frame()
+web.play("gun", 0, 0, 0)
+local fell_back = played[1] == "#gun0"
+if not fell_back then fails = fails + 1 end
+print(string.format("%-38s -> %-10s %s", "falls back while still decoding",
+                    tostring(played[1]), fell_back and "ok" or "FAIL"))
+
+-- The master volume has to reach the browser graph whichever order the menu
+-- and this module come up in. The menu applies the saved volume during its own
+-- load, and nothing sequences that against sfx.init.
+for _, order in ipairs({"volume first", "init first"}) do
+    local set = {}
+    _G.html5 = {run = function(js)
+        local v = js:match("^vwA%.master%(([%d%.]+)%)")
+        if v then set[#set + 1] = tonumber(v) end
+        return "1"
+    end}
+    package.loaded["arena.sfx"] = nil
+    local s = require("arena.sfx")
+    if order == "volume first" then
+        s.master_gain(0.6)
+        s.init()
+    else
+        s.init()
+        s.master_gain(0.6)
+    end
+    local last = set[#set]
+    local ok = last == 0.6
+    if not ok then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "master gain survives " .. order,
+                        tostring(last), ok and "ok" or "FAIL, wanted 0.6"))
+end
 
 print(fails == 0 and "ALL PASS" or (fails .. " FAILED"))
 os.exit(fails == 0 and 0 or 1)
