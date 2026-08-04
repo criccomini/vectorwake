@@ -241,6 +241,9 @@ struct Instance {
 }
 
 pub async fn run() {
+    // The one process in the fleet nothing could ask about, which is why it
+    // was the one nobody could account for when the host pegged.
+    crate::metrics::spawn("bots", "");
     let maps: Arc<Maps> = Arc::default();
     let rigs: Arc<Rigs> = Arc::default();
     // Names in use across the whole fleet. An individual appears in one place at
@@ -517,6 +520,11 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
         tokio_tungstenite::connect_async_with_config(&addr, Some(cfg), false),
     );
     let Ok(Ok((ws, _))) = dial.await else { return };
+    // Counted after the dial succeeds, so this is arenas reached rather than
+    // arenas attempted. A step in it with no deploy behind it is a roster
+    // being rebuilt, which is the shape a restart has from in here.
+    crate::metrics::BOT_CONNECTS.inc();
+    let _flying = crate::metrics::PilotGuard::new();
     let (mut sink, mut source) = ws.split();
 
     // A bot picks its zone the way a player who typed an address does: it takes

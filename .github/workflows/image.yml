@@ -88,6 +88,12 @@ jobs:
           context: .
           file: ./Dockerfile
           push: ${{ github.event_name == 'push' }}
+          # The same commit the label carries, but inside the binary, where a
+          # running process can report it on /metrics. A label answers "what is
+          # this image"; this answers "what is that process", which is the
+          # question asked while something is going wrong.
+          build-args: |
+            VW_COMMIT=${{ steps.rev.outputs.short }}
           # Two tags, doing two jobs. `sha-` is immutable and is what a running
           # container can be traced back to; `prod` is the moving pointer the
           # host follows, so a rollback is retagging it at an older sha and
