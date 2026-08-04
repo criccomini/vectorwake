@@ -632,7 +632,21 @@ end
 
 -- Rock. Faceted and grey on purpose: a hull is smooth, lit and coloured, and
 -- at a glance across a room that is the whole difference between the two.
-local function rock(bg, glow, cx, cy, r, seed, sides, craters)
+-- An asteroid's shape, in its own space and built once.
+--
+-- Rocks turn, so their geometry cannot live in the static mesh with the walls
+-- and cannot be rebuilt from scratch sixty times a second either. This is the
+-- hull treatment applied to terrain: the random shape is drawn once out of the
+-- seed and kept, and a frame does nothing but rotate it.
+--
+-- Cached on the seed, so two rocks that would have looked alike still do, and
+-- a map with a hundred of them holds a hundred small tables.
+local rock_shapes = {}
+
+local function rock_shape(seed, sides, r, craters)
+    local k = seed .. ":" .. sides .. ":" .. r .. ":" .. craters
+    local s = rock_shapes[k]
+    if s then return s end
     local rs = seed
     local function rnd()
         rs = (rs * 48271) % 2147483647
@@ -642,37 +656,95 @@ local function rock(bg, glow, cx, cy, r, seed, sides, craters)
     for i = 0, sides - 1 do
         local a = i / sides * TAU + (rnd() - 0.5) * 0.42
         local rr = r * (0.64 + rnd() * 0.46)
-        pts[i * 2 + 1] = cx + math.cos(a) * rr
-        pts[i * 2 + 2] = cy + math.sin(a) * rr
+        pts[i * 2 + 1] = math.cos(a) * rr
+        pts[i * 2 + 2] = math.sin(a) * rr
         nrm[i * 2 + 1] = math.cos(a)
         nrm[i * 2 + 2] = math.sin(a)
+    end
+    local facets = {}
+    local step = math.max(2, math.floor(sides / 3))
+    for i = 0, sides - 1, step do
+        local j = (i + math.floor(sides / 2)) % sides
+        facets[#facets + 1] = {pts[i * 2 + 1], pts[i * 2 + 2],
+                               (pts[i * 2 + 1] + pts[j * 2 + 1]) / 3,
+                               (pts[i * 2 + 2] + pts[j * 2 + 2]) / 3}
+    end
+    local pits = {}
+    for _ = 1, craters do
+        local a, d = rnd() * TAU, (0.25 + rnd() * 0.35) * r
+        pits[#pits + 1] = {math.cos(a) * d, math.sin(a) * d,
+                           r * (0.16 + rnd() * 0.12)}
+    end
+    -- How it turns, out of the same seed: a rate, a direction, and a phase, so
+    -- a field of rocks is a field of rocks rather than a rank of them turning
+    -- in step. Slowest is a full revolution in about two minutes and fastest
+    -- in about forty seconds, which reads as adrift rather than as machinery.
+    local q = (seed % 97) / 97
+    s = {pts = pts, nrm = nrm, facets = facets, pits = pits, sides = sides,
+         rate = ((seed % 2 == 0) and 1 or -1) * (0.05 + q * 0.11),
+         wob = 0.06 + q * 0.05,
+         phase = q * TAU,
+         tmp = {}, ntmp = {}}
+    rock_shapes[k] = s
+    return s
+end
+
+-- One asteroid, turned to where it is this frame.
+local function draw_rock(fill, glow, cx, cy, s, now)
+    local ang = now * s.rate
+    -- A rock is not a wheel. The long axis is squeezed a little on a slower
+    -- cycle than the spin, which is what an irregular body tumbling in three
+    -- dimensions does to its own silhouette; kept under a tenth so it reads as
+    -- depth rather than as something soft being pressed.
+    local squash = 1 - s.wob * (0.5 + 0.5 * math.cos(now * 0.31 + s.phase))
+    local ca, sa = math.cos(ang), math.sin(ang)
+    local src, pts, nrm = s.pts, s.tmp, s.ntmp
+    local sn = s.nrm
+    for i = 1, #src, 2 do
+        local px, py = src[i] * squash, src[i + 1]
+        pts[i] = cx + px * ca - py * sa
+        pts[i + 1] = cy + px * sa + py * ca
+        local nx, ny = sn[i], sn[i + 1]
+        nrm[i] = nx * ca - ny * sa
+        nrm[i + 1] = nx * sa + ny * ca
     end
     -- Fanned from the centre, not from a vertex: the outline is star-shaped
     -- about its own centre and nothing else, and a vertex fan on a shape with
     -- one notch in it paints outside the rock.
+    local sides = s.sides
     local body = pal.a(pal.ROCK, 1)
     for i = 0, sides - 1 do
         local j = (i + 1) % sides
-        bg:tri(cx, cy, pts[i * 2 + 1], pts[i * 2 + 2],
-               pts[j * 2 + 1], pts[j * 2 + 2], body)
+        fill:tri(cx, cy, pts[i * 2 + 1], pts[i * 2 + 2],
+                 pts[j * 2 + 1], pts[j * 2 + 2], body)
     end
     glow:glow_band(pts, nrm, 5, 0.12, pal.a(pal.ROCK_EDGE, 1))
     glow:outline(pts, 1.2, pal.a(pal.hot(pal.ROCK_EDGE, 0.15, 1), 0.8), true)
     local facet = pal.a(pal.ROCK_EDGE, 0.22)
-    local step = math.max(2, math.floor(sides / 3))
-    for i = 0, sides - 1, step do
-        local j = (i + math.floor(sides / 2)) % sides
-        glow:seg(pts[i * 2 + 1], pts[i * 2 + 2],
-                 (pts[i * 2 + 1] + pts[j * 2 + 1] + cx) / 3,
-                 (pts[i * 2 + 2] + pts[j * 2 + 2] + cy) / 3, 0.7, facet)
+    for k = 1, #s.facets do
+        local f = s.facets[k]
+        local ax, ay = f[1] * squash, f[2]
+        local bx, by = f[3] * squash, f[4]
+        glow:seg(cx + ax * ca - ay * sa, cy + ax * sa + ay * ca,
+                 cx + bx * ca - by * sa, cy + bx * sa + by * ca, 0.7, facet)
     end
-    -- Half a crater rim, lit from the same side every time, so a field of them
-    -- reads as one field rather than a scatter of unrelated marks.
+    -- Half a crater rim. The pit rides round with the rock; the lit side does
+    -- not, because the light does not turn. Drawn as segments rather than
+    -- through arc, which strokes hard quads: on something that is now moving,
+    -- an eight-tenths-of-a-pixel hard edge is the flicker all over again.
     local rim = pal.a(pal.ROCK_EDGE, 0.38)
-    for _ = 1, craters do
-        local a, d = rnd() * TAU, (0.25 + rnd() * 0.35) * r
-        local px, py = cx + math.cos(a) * d, cy + math.sin(a) * d
-        glow:arc(px, py, r * (0.16 + rnd() * 0.12), -2.5, -0.4, 0.8, 6, rim)
+    for k = 1, #s.pits do
+        local p = s.pits[k]
+        local px, py = p[1] * squash, p[2]
+        local wx, wy = cx + px * ca - py * sa, cy + px * sa + py * ca
+        local rr = p[3]
+        local a0, a1, n = -2.5, -0.4, 5
+        local step2 = (a1 - a0) / n
+        for j = 0, n - 1 do
+            local b0, b1 = a0 + step2 * j, a0 + step2 * (j + 1)
+            glow:seg(wx + math.cos(b0) * rr, wy + math.sin(b0) * rr,
+                     wx + math.cos(b1) * rr, wy + math.sin(b1) * rr, 0.8, rim)
+        end
     end
 end
 
@@ -888,17 +960,26 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
     for i = 1, #unders, 3 do
         under_mark(glow, unders[i], unders[i + 1], unders[i + 2])
     end
+    -- Rocks are not built into this mesh. They turn, so they are drawn per
+    -- frame like the doors and the wells; what happens here is that the
+    -- window's worth of them is found once and their shapes baked, instead of
+    -- the whole map being searched every frame for a dozen asteroids.
+    local found = {}
     for i = 1, #rocks, 3 do
         local tx, ty, var = rocks[i], rocks[i + 1], rocks[i + 2]
+        local e
         if var == V_ROCK_BIG then
-            rock(bg, glow, (tx + 1) * TILE, (ty + 1) * TILE, 14.5,
-                 60413 + tx * 7 + ty * 13, 11, 2)
+            e = {x = (tx + 1) * TILE, y = (ty + 1) * TILE,
+                 s = rock_shape(60413 + tx * 7 + ty * 13, 11, 14.5, 2)}
         else
-            rock(bg, glow, (tx + 0.5) * TILE, (ty + 0.5) * TILE, 7,
-                 (var == V_ROCK_B and 977 or 12345) + tx * 31 + ty * 17,
-                 var == V_ROCK_B and 7 or 8, 1)
+            e = {x = (tx + 0.5) * TILE, y = (ty + 0.5) * TILE,
+                 s = rock_shape((var == V_ROCK_B and 977 or 12345)
+                                + tx * 31 + ty * 17,
+                                var == V_ROCK_B and 7 or 8, 7, 1)}
         end
+        found[#found + 1] = e
     end
+    M.rocks = found
     for i = 1, #stations, 2 do
         station(bg, glow, stations[i], stations[i + 1])
     end
@@ -1079,6 +1160,20 @@ end
 -- Doors and the tiles that mark a place rather than block one. These cannot
 -- go in the static mesh: a door is a wall on a clock, and a wall nobody can
 -- see is the worst thing in the game.
+-- The asteroids, turning. Drawn before the ships rather than with the doors,
+-- because a rock's body is opaque and the fill layer composites in the order
+-- it was written: after them it would paint over anything flying past one.
+function M.draw_rocks(fill, glow, now, cull)
+    local list = M.rocks
+    if not list then return end
+    for n = 1, #list do
+        local e = list[n]
+        if not outside(cull, e.x, e.y) then
+            draw_rock(fill, glow, e.x, e.y, e.s, now)
+        end
+    end
+end
+
 function M.draw_tiles(fill, glow, now, cull)
     local list = M.moving_tiles
     local seen = {}

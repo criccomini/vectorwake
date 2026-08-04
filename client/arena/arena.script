@@ -735,6 +735,10 @@ function update(self, dt)
         -- blinking empty rather than as a slow frame.
         local cull = {x0 = cx - self.hw - 96, x1 = cx + self.hw + 96,
                       y0 = cy - self.hh - 96, y1 = cy + self.hh + 96}
+        -- Before anything that flies. A rock's body is opaque and the fill
+        -- layer composites in write order, so drawn later it would paint over
+        -- a ship passing in front of one.
+        world.draw_rocks(fill, glow, t, cull)
         world.prizes(fill, glow, t, cull)
         world.weapons(fill, glow, my_team, t, cull)
 
