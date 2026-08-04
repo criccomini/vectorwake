@@ -1,7 +1,22 @@
 # Chaos: everybody against everybody, on the full map.
+#
+# The numbers below are not ours. They come from the settings file that shipped
+# with this zone's map, so this is a translation and reads like one: every value
+# names the key it came from. Where that file and our baseline disagree the file
+# wins, and where it says nothing the baseline stands.
+#
+# It is the same kind of file Alpha was built from, and near enough the same
+# file: the two differ in what they call themselves and in almost nothing else.
+# The long form of why a given key translates the way it does is written out
+# once, in ../alpha/zone.toml, rather than twice.
+#
+# What that file cannot decide is the room. Seats, players, sides and bots are
+# this zone's own, and nothing below moves them.
 
 description = "everybody against everybody"
 
+# [Flag] MaxFlags=0 with FlagMode=0, [Soccer] BallCount=0, [King] DeathCount=0.
+# No flag game, no ball and no crown, which leaves kills.
 mode = "arena"
 # Converted from a `.lvl` by `sim/tools/lvl2vw`. A free-for-all wants structure
 # everywhere rather than one arena in the middle, which is what this map is:
@@ -22,16 +37,313 @@ bot_fill = 0.8
 # somebody else's crash.
 max_rooms = 1
 
-# One team is a free-for-all, and then balance has nothing to do.
+# One team is a free-for-all, and then balance has nothing to do. The file asks
+# for [Team] DesiredTeams=2 at MaxPerTeam=6, which is a different game from this
+# one and the reason Alpha exists.
 teams = 1
 balance = "none"
 
 [arena]
-bounce = 10
-friction = 14
-respawn_delay = 300
-prize_delay = 100
-prize_max = 20
-rust = 10
+# [Misc] BounceFactor=22, against 16 for a wall that takes nothing, and their
+# number divides where ours multiplies. A wall gives back 16/22 of what hit it,
+# which is 12 in the out-of-16 units this key uses.
+bounce = 12
+friction = 12
+
+# [Kill] EnterDelay=200, so two seconds dead rather than three.
+respawn_delay = 200
+
+# [Prize] PrizeDelay=300 with PrizeHideCount=10: ten greens every three seconds,
+# which as one green at a time is one every thirty ticks.
+prize_delay = 30
+# [Prize] PrizeFactor=1300, greens per thousand players in the game. Thirty-two
+# of them ask for forty-two.
+prize_max = 42
+# [Prize] PrizeMinExist=4000 and PrizeMaxExist=8000, and one number here rather
+# than a range, so the middle of theirs.
+prize_life = 6000
+# [Prize] PrizeNegativeFactor=300, one green in three hundred, against the
+# thousand this key counts in.
+rust = 3
+# Its ships start bare: InitialGuns=1, InitialBombs=0 and every charge at zero,
+# which is what a fresh hull here already is. Alpha hands out thirty greens at
+# spawn and says why; that was a call of ours and not something this file asks
+# for, so a brawl starts everybody plain.
 spawn_prizes = 0
-bounty_per_kill = 3
+
+# [Kill] BountyIncreaseForKill=6, twice what our own zones paid, so a streak in
+# here is visible from further away.
+bounty_per_kill = 6
+# [Kill] KillPointsPerFlag=0, and there are no flags in an arena anyway.
+points_per_flag = 0
+
+# [Door] DoorDelay=600. DoorMode=-1 is weighted random, which this core has no
+# model of: ours is a clock, and the baseline's four seconds open of the six
+# stands.
+door_period = 600
+
+# MultiFireAngle=500 in the ship sections, where 111 is a degree. That is 4.5,
+# and this key counts whole ones.
+mod_spread = 5
+
+# MultiFireEnergy=30 against BulletFireEnergy=20, and MultiFireDelay=50 against
+# BulletFireDelay=25: half again the energy, twice the wait.
+multi_energy = 50
+multi_delay = 100
+
+# [Bomb] ProximityDistance=3 tiles, and a tile more for each level of the bomb
+# carrying it.
+prox_step = 16
+# [Shrapnel] InactiveShrapDamage=3, over the first quarter second, which is what
+# stops a bomb landing twice at point blank.
+shrap_inactive = 3
+shrap_inactive_ticks = 25
+
+[arena.mod_step]
+# One rung of multifire is two more barrels, one rung of bouncing is one more
+# wall, and proximity is ProximityDistance in pixels.
+multi = 2
+bounce = 1
+prox = 48
+
+# [PrizeWeight], entry for entry, for everything in it this core has a prize for.
+# The numbers are relative rather than percentages, and are read against the pool
+# of whichever hull took the green.
+#
+# Energy at 90 and thrust at 80 are the heaviest entries. A burst is the lightest
+# at 10, against the 70 our baseline gives it, and both weapon levels are 60
+# where our own zones price a level at 25.
+#
+# Left alone: bomb-multi, gun-prox, gun-shrapnel and bomb-bounce, which that file
+# has no entry for because those pairings do not exist there, and freeze and
+# push, which are ours. An absent line is not a weight of zero, and writing zero
+# would take the prize out of the game.
+[arena.prize_weight]
+energy = 90         # Energy
+recharge = 70       # QuickCharge
+speed = 70          # TopSpeed
+thrust = 80         # Thruster
+rotation = 50       # Rotation
+gun-level = 60      # Gun
+bomb-level = 60     # Bomb
+gun-multi = 30      # MultiFire
+gun-bounce = 40     # BouncingBullets
+bomb-prox = 40      # Proximity
+bomb-shrapnel = 60  # Shrapnel
+charge-1 = 40       # Repel
+charge-2 = 10       # Burst
+
+# [Burst] BurstDamageLevel=515, the damage of one of the twenty-four rounds a
+# burst throws. Our baseline uses the 700 the reference server ships, so a burst
+# here is survivable at a range that one is not.
+[[arena.weapons]]
+name = "charge-2"
+damage = 515
+
+# [Terrier] BulletFireDelay=30, where every other ship in that file fires at 25.
+# A ladder is a weapon per rung, so all three rungs say it.
+[[arena.weapons]]
+name = "facet-gun"
+delay = 30
+
+[[arena.weapons]]
+name = "facet-gun-2"
+delay = 30
+
+[[arena.weapons]]
+name = "facet-gun-3"
+delay = 30
+
+# [Bomb] BombAliveTime=6000 against the 8000 the reference server ships. Sixty
+# seconds at BombSpeed is 750 tiles, so on a map this size it is still "until it
+# hits something", but it is what the file says.
+#
+# Cipher's two carry one line more. EmpBomb=1 on the Weasel, with [Bomb]
+# EBombShutdownTime=400, stops a hit pilot recharging for four seconds.
+# EBombDamagePercent=1000 is full damage, so nothing else about them moves.
+[[arena.weapons]]
+name = "apex-bomb"
+life = 6000
+
+[[arena.weapons]]
+name = "apex-bomb-2"
+life = 6000
+
+[[arena.weapons]]
+name = "wedge-bomb"
+life = 6000
+
+[[arena.weapons]]
+name = "wedge-bomb-2"
+life = 6000
+
+[[arena.weapons]]
+name = "chord-bomb"
+life = 6000
+
+[[arena.weapons]]
+name = "chord-bomb-2"
+life = 6000
+
+[[arena.weapons]]
+name = "anvil-bomb"
+life = 6000
+
+[[arena.weapons]]
+name = "anvil-bomb-2"
+life = 6000
+
+[[arena.weapons]]
+name = "anvil-bomb-3"
+life = 6000
+
+[[arena.weapons]]
+name = "spire-bomb"
+life = 6000
+
+[[arena.weapons]]
+name = "spire-bomb-2"
+life = 6000
+
+[[arena.weapons]]
+name = "cipher-bomb"
+life = 6000
+stall = 400
+
+[[arena.weapons]]
+name = "cipher-bomb-2"
+life = 6000
+stall = 400
+
+[[arena.weapons]]
+name = "facet-bomb"
+life = 6000
+
+[[arena.weapons]]
+name = "facet-bomb-2"
+life = 6000
+
+[[arena.weapons]]
+name = "lattice-bomb"
+life = 6000
+
+[[arena.weapons]]
+name = "lattice-bomb-2"
+life = 6000
+
+# The ships, all eight of them, so the roster reads here rather than half here
+# and half out of the core's baseline.
+#
+# Hulls are ours and ships are theirs, so the per-ship lines needed a mapping.
+# It is the one baseline.c already implies, drawn on what each hull is for:
+#
+#   Warbird    Apex      the interceptor
+#   Javelin    Wedge     the flat fast bomber
+#   Spider     Chord     the skirmisher
+#   Leviathan  Anvil     the heavy, and the only three-bomb rack
+#   Terrier    Facet     DoubleBarrel, which is Facet's whole character
+#   Weasel     Cipher    the hull that arrives unseen
+#   Lancaster  Lattice   bombs that come back off a wall
+#   Shark      Spire     the hull a team is built around
+#
+# Everything not written below is identical across all seven sections that file
+# has, which is the original's own habit: its ships fly alike and are told apart
+# by what they carry. Seven sections, though, and eight hulls. There is no
+# [Shark] anywhere in it, so Spire is the one whose numbers come from the
+# reference server's `dist/conf/svs/ship-shark` instead, and its block says
+# which line it took.
+
+# [Warbird] MaximumRotation=300 against 230, InitialRotation=210 against 200,
+# MaximumThrust=19 against 17 and InitialThrust=16 against 15. The interceptor
+# turns harder and pushes harder than anything else in the zone, and pays for it
+# with the same hull everyone has.
+[[arena.ships]]
+name = "Apex"
+rotation = 300
+initial_rotation = 210
+upgrade_rotation = 40
+thrust = 19
+initial_thrust = 16
+upgrade_thrust = 2
+# ShrapnelMax=8, which is the rung a fragment count of eight sits on here.
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Javelin] MaximumSpeed=3750 against 3250 and InitialSpeed=2200 against 2010.
+# It is the fastest thing in the zone from the moment it spawns.
+[[arena.ships]]
+name = "Wedge"
+speed = 3750
+initial_speed = 2200
+upgrade_speed = 250
+# ShrapnelMax=8 like everything else in that file, so the bombers lose the extra
+# rung our baseline gives them off the Shark's 31.
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Spider] InitialRecharge=500 against 400. It starts a quarter better at getting
+# energy back and climbs to the same ceiling as everyone.
+[[arena.ships]]
+name = "Chord"
+initial_recharge = 500
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Leviathan] MaxBombs=3, which the baseline already gives Anvil. Its ShrapnelMax
+# is 8 like the rest.
+[[arena.ships]]
+name = "Anvil"
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# The Shark, which this file never mentions. Its section in the reference
+# server's `svs` set is the same template as the other seven with three lines
+# changed, and one of them is ShrapnelMax=31 against everyone else's 8. That is
+# the whole of the Shark as a per-ship number, and it lands here as the top rung
+# of shrapnel: in this zone Spire is the only hull that reaches it.
+#
+# The other two are Gravity=0, a hull no wormhole pulls, and CloakStatus=1.
+# Wormhole strength is per arena here rather than per hull, and there is no
+# cloak, so both go on the list at the bottom.
+[[arena.ships]]
+name = "Spire"
+bomb_mods = { prox = 1, shrapnel = 3 }
+
+# [Weasel] ShrapnelMax=0. The one hull whose bombs never break up, which is most
+# of what makes its EMP bomb above a different weapon rather than a better one.
+[[arena.ships]]
+name = "Cipher"
+bomb_mods = { prox = 1 }
+
+# [Terrier] DoubleBarrel=1, alone in that file, which is a rung of multifire
+# nobody else climbs to and what the baseline already builds Facet around. Its
+# other line is BulletFireDelay=30, a weapon rather than a hull, and it is with
+# the weapons above.
+[[arena.ships]]
+name = "Facet"
+gun_mods = { multi = 2, bounce = 1 }
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Lancaster] BombBounceCount=1, the only ship in that file with any. It is
+# innate there and an add-on here, so this is the ceiling rather than what it
+# spawns with. Push is ours, has no entry to copy, and stays where the baseline
+# put it.
+[[arena.ships]]
+name = "Lattice"
+bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }
+
+# What that file asks for and this core has nowhere to put. The full accounting
+# is in ../alpha/zone.toml, since it is the same file and the same gaps: cloak,
+# stealth, xradar, antiwarp, warp, decoys, thors, bricks, portals, rockets,
+# mines, shields and super, with their costs and prize weights; turrets and
+# AttachBounty; InitialBounty, because bounty here is derived from what a pilot
+# holds; a hull that starts on a rung above one, which is InitialGuns=2 on the
+# Terrier and InitialBombs=1 on the Leviathan and the Weasel; BombExplodeDelay,
+# BombSafety and JitterTime; Gravity and GravityTopSpeed, with the two
+# [Wormhole] keys, since a wormhole here is a map feature with an arena-wide
+# pull; the placement half of the prize settings; the reward tables, DamageFactor
+# and the whole [Cost] section, since nothing here is bought; and everything
+# about a 1997 client and its network, the [Message] section included, since
+# there is no chat in this game at all.
+#
+# One of those is worth a second line here rather than a pointer. This map has
+# two wormholes, and the file sets Gravity=1500 on seven ships and 0 on the
+# Shark. Ours pulls at one strength on everything, so a Spire is drawn in like
+# anybody else. `wormhole_pull` and `wormhole_range` are the keys if that is ever
+# worth tuning; neither is set here, so both are the baseline's.
