@@ -1,4 +1,4 @@
-# Alpha: five teams, seven a side at most, kills only.
+# Alpha: ten teams, seven a side at most, kills only.
 #
 # The numbers here are not ours. They come from a settings file for the
 # original's server, so this is a translation and reads like one: every value
@@ -26,7 +26,7 @@
 # says nothing about. Its numbers come from the reference server's own
 # `dist/conf/svs/ship-shark` instead, and its block says which line it took.
 
-description = "five teams, seven a side"
+description = "small teams, seven a side"
 
 # [Flag] MaxFlags=0 with FlagMode=0, [Soccer] BallCount=0, [King] DeathCount=0.
 # No flag game, no ball and no crown, which leaves kills.
@@ -58,10 +58,19 @@ bot_fill = 0.8
 # four of it is four times the bill for a zone nobody has filled once.
 max_rooms = 1
 
-# Thirty-two players in two colours was a crowd, not two crews. Five teams
-# across the same seats cap a side at seven, which is few enough that who is
-# with you fits in your head.
-teams = ["Ridge", "Vantage", "Sable", "Coppice", "Halyard"]
+# Thirty-two players in two colours was a crowd, not two crews. The cap that
+# matters is seven a side, and the number to divide is the sixty-four seats
+# the room actually holds -- the bot server keeps four in five of them warm,
+# so the population is the seats, not the player cap. Five teams over that
+# put ten on a side within the hour it shipped; sixty-four over ten is never
+# more than seven, however full the room runs.
+#
+# Named for the things that hold a structure up, which is the register the
+# hulls are named in, and no name here is a name any pilot wears: the bot
+# roster and the call sign generator are both single words, so a side never
+# reads as a person.
+teams = ["Bastion", "Caisson", "Corbel", "Culvert", "Girder",
+         "Lintel", "Pylon", "Spandrel", "Trestle", "Weir"]
 # [Team] ForceEvenTeams=0 says the original will not reshuffle a running game,
 # and neither do we. An arriving pilot still lands on the emptiest side, which
 # is a default rather than a rule: the team list is one selection away and the

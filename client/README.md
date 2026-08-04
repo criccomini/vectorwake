@@ -325,6 +325,48 @@ grid and compares it to the map they came from, which catches a merge that
 reaches too far as well as one that stops short. It reads the catalog's own
 maps, so a reconverted map is one this test immediately covers.
 
+## Pointing at things
+
+`ui.lua` publishes a list of rectangles in the pixel space it drew them in, and
+`arena.script` takes the first one a press lands in. Nothing else decides what
+a click does, which makes two rules load-bearing and neither of them visible in
+the code that depends on them.
+
+The field of play holds no boxes. A press there is a trigger pull, left for the
+gun and right for the bomb, and a box over a hull or the name beside it eats
+that press: a player lined up on somebody would pull and fire nothing. This is
+why nameplates are drawn and not clickable.
+
+Order decides overlaps. The scoreboard is where that bites: each row publishes
+its box before the panel publishes the one that takes the wheel, so a press on
+a row reaches the pilot instead of the list.
+
+Clicking a pilot's row on the scoreboard opens one box about them: which side
+they are on when sides mean anything, what the zone will vouch for the seat
+being, their record and their bounty. It belongs to that list and goes when the
+list goes, since a box standing under a shut scoreboard says nothing about who
+it is for. Escape closes it before it reaches the menu, because it is the
+newest thing on screen and the key that shuts things is the one a hand reaches
+for.
+
+A bot is marked with a drawn head rather than the letters AI. Two letters after
+a name read as part of the name until you have learned they are not, and the
+scoreboard is scanned rather than read; the mark sits at its own column so a
+scan finds them in a line.
+
+The four link bars are the whole of the connection readout a player gets.
+Clicking them opens the numbers behind it: frame rate, round trip, clock lead,
+prediction error, rewind depth, bytes each way, tick, and what is in the room.
+That is for whoever is working on the client, which is why it is behind a click
+on the thing it is about rather than in the menu, and why it takes the feed's
+strip while it is up.
+
+`lua5.1 client/tests/hud_hits_test.lua` runs the real `M.hud` against a stubbed
+engine and asks what a press at a given point hits: on every ship on screen and
+on the name beside it, which have to reach nothing, and on a scoreboard row,
+which has to reach the pilot. Both rules are invisible until somebody is
+flying, on a build that takes six minutes to publish.
+
 ## No audio ships in the page
 
 The kit is fifteen sounds and about a megabyte of 16-bit PCM, which compresses
