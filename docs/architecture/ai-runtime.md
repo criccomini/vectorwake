@@ -141,23 +141,44 @@ Frictionless flight means reaching a point is a control problem rather than a
 pathfinding one: a bot that thrusts at its target arrives at speed and sails past
 it into a wall.
 
-Neither layer below is built. What exists instead is one rule, and it is worth
-saying why, because the obvious reading of this section is that routing is done.
+Neither layer below is built. What exists instead is three reflexes, and it is
+worth saying why, because the obvious reading of this section is that routing
+is done.
 
-A pilot heads straight for where it wants to be and gives up when that stops
-working: it keeps the closest it has come to its destination, and two seconds
-without closing by 32 px means the destination is behind something. Then it
-abandons that kind of destination for five seconds and falls through to the next
-thing it would rather be doing. Greens also get a straight-line check before
-they are chosen at all, since a green does not move and one behind a wall is
-selected again by every plan that follows.
+The first is the give-up. A pilot heads for where it wants to be and keeps the
+closest it has come; two seconds without closing by 32 px means the destination
+is behind something, and that kind of destination is left alone for five
+seconds while the pilot falls through to the next thing it would rather do.
+Greens also get a straight-line check before they are chosen at all, since a
+green does not move and one behind a wall would be selected again by every plan
+that follows.
 
-That fixed the bug that was actually reported, which was bots pressing their
-noses into a wall with a green on the other side, and A* would not have. A plan
-committed to a destination and then re-derived the same destination for ever, so
-anything chosen badly once was chosen badly until the pilot died. A pathfinder
-needs the give-up underneath it anyway, for every case where the path is right
-and the flying is not.
+The second is the whiskers. A look around now includes sixteen rays of wall
+distance, cast as a capsule the hull's own width plus a few pixels of slack,
+because the converted maps are full of gaps a ray threads and a hull does not:
+dashed walls with one-tile holes, and passages a hull fits only if centred to
+the pixel. Steering bends the desired direction to the nearest sufficiently
+open ray, so a blocked pilot slides along a wall instead of pressing its nose
+into it, and a wander picks its next leg from what is open where the pilot
+stands, leaning toward the contested middle, rather than rolling a point in
+the middle and pushing at whatever stands in the way.
+
+The third is the unstick reflex, and it is the one that backstops the other
+two. Everything above the engine can be wrong about a wall: the whiskers
+sample, corners are knife edges, doors move. A hull that has been pushing for
+half a second while moving under a third of a pixel a tick is not an estimate,
+so the pilot stops arguing with its map, turns to the openest direction there
+is, flies that way for most of a second, and resumes. The approach it was on
+keeps its no-progress clock through the escape, so an unreachable goal is
+still abandoned on schedule.
+
+Measured on the shipped Chaos map, ten pilots for two minutes, counting
+sustained pinning only: straight-at-it steering spent 56.2% of every pilot's
+life nose against a wall, and the three reflexes together measure zero. The
+harness is `bots_do_not_grind_walls_on_a_real_map` in ai.rs, and it runs in CI.
+
+A pathfinder still needs all three underneath it, for every case where the
+path is right and the flying is not.
 
 The two layers below are still the plan for when a map has corridors worth
 routing through. On a lattice of mostly open cells, straight-line steering plus
