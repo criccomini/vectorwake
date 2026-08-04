@@ -414,11 +414,11 @@ static void k_flag(voice *v) {
 // so it does not read as tape hiss. Half a second is long enough that the ear
 // cannot hear the repeat and short enough to be a small buffer.
 static void k_thrust(voice *v) {
-    v_loop_noise(v, 0.60, 520, 101);      // the rumble
-    v_loop_noise(v, 0.16, 2600, 103);     // a little air over it
-    v_loop_sine(v, 58, 0.26);
-    v_loop_sine(v, 87, 0.13);
-    v_loop_sine(v, 146, 0.06);
+    v_loop_noise(v, 0.90, 520, 101);      // the rumble
+    v_loop_noise(v, 0.24, 2600, 103);     // a little air over it
+    v_loop_sine(v, 58, 0.39);
+    v_loop_sine(v, 87, 0.20);
+    v_loop_sine(v, 146, 0.09);
     v_drive(v, 1.25);
 }
 

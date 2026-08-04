@@ -1,4 +1,4 @@
-# Alpha: two teams, sixteen a side, kills only.
+# Alpha: five teams, seven a side at most, kills only.
 #
 # The numbers here are not ours. They come from a settings file for the
 # original's server, so this is a translation and reads like one: every value
@@ -26,7 +26,7 @@
 # says nothing about. Its numbers come from the reference server's own
 # `dist/conf/svs/ship-shark` instead, and its block says which line it took.
 
-description = "two teams, sixteen a side"
+description = "five teams, seven a side"
 
 # [Flag] MaxFlags=0 with FlagMode=0, [Soccer] BallCount=0, [King] DeathCount=0.
 # No flag game, no ball and no crown, which leaves kills.
@@ -42,8 +42,8 @@ map = "alpha.vwmap"
 # a brawl is not also the smallest place to land.
 #
 # This is where the settings file stops deciding. [Team] MaxPerTeam=6 across
-# DesiredTeams=2 is twelve players, and twelve was what stood here. Two teams is
-# still the game, and sixteen a side is what they hold now.
+# DesiredTeams=2 is twelve players, and twelve was what stood here; the room
+# holds thirty-two now.
 max_players = 32
 # Seats, which is those thirty-two plus the bots holding the room until they
 # arrive.
@@ -58,7 +58,10 @@ bot_fill = 0.8
 # four of it is four times the bill for a zone nobody has filled once.
 max_rooms = 1
 
-teams = 2
+# Thirty-two players in two colours was a crowd, not two crews. Five teams
+# across the same seats cap a side at seven, which is few enough that who is
+# with you fits in your head.
+teams = 5
 # [Team] ForceEvenTeams=0 says the original will not reshuffle a running game,
 # and neither do we. It does still put an arriving pilot on the smaller side,
 # which is what this key does. Writing "none" here is not the neutral choice it
@@ -115,6 +118,12 @@ points_per_flag = 0
 # model of: ours is a clock, and the baseline's four seconds open of the six
 # stands.
 door_period = 600
+
+# The map's one wormhole, pulling more than twice the baseline's 90 px/s and
+# reaching 20 tiles instead of 14: strong enough to bend a straight run that
+# clips the well's edge, wide enough that the bend starts before the rings do.
+wormhole_pull = 200
+wormhole_range = 320
 
 # MultiFireAngle=500 in the ship sections, where 111 is a degree. That is 4.5,
 # and this key counts whole ones.
@@ -373,8 +382,8 @@ bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }
 # Bomb detail with no model: BombExplodeDelay, BombSafety and JitterTime.
 # Gravity and GravityTopSpeed, with Wormhole:GravityBombs and SwitchTime, since
 # a wormhole here is a map feature with its own two settings. This map has one,
-# and since this file sets neither `wormhole_pull` nor `wormhole_range` it pulls
-# at the baseline's strength.
+# and `wormhole_pull` with `wormhole_range`, set beside the door clock above,
+# raise it well past the baseline's strength, which nobody flying by ever felt.
 #
 # Prize detail with no model: MultiPrizeCount, PrizeHideCount as a batch rather
 # than a rate, DeathPrizeTime, EngineShutdownTime, and MinimumVirtual with
