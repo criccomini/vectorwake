@@ -194,6 +194,17 @@ services:
       # it serves cleartext on loopback and Caddy is the wss endpoint.
       # One hostname, a path per arena: see the Caddyfile for why.
       VW_ADDRESS: wss://play.${VW_DOMAIN}/a1
+      # Rated exchanges are not filed with the meta-layer while this is off.
+      # Nothing else changes: pilots still sign in, arrive carrying the rating
+      # they earned, and see it move on the scoreboard. The room rates every
+      # kill as it always did; this process simply does not report any of it,
+      # because the fleet is being tested and a test session's kills are real
+      # enough to move a ladder that is other people's.
+      #
+      # Delete these two lines to start recording again. Events generated while
+      # it is off are dropped rather than held, so turning it back on starts
+      # from then rather than replaying the test.
+      VW_REPORT: "0"
       VW_REGION: ${VW_REGION:-local}
       # Where rated events go. Loopback rather than the catalog's public
       # address, which is for clients.
@@ -209,6 +220,17 @@ services:
       VW_DIRECTORY: ws://127.0.0.1:9000
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
       VW_ADDRESS: wss://play.${VW_DOMAIN}/a2
+      # Rated exchanges are not filed with the meta-layer while this is off.
+      # Nothing else changes: pilots still sign in, arrive carrying the rating
+      # they earned, and see it move on the scoreboard. The room rates every
+      # kill as it always did; this process simply does not report any of it,
+      # because the fleet is being tested and a test session's kills are real
+      # enough to move a ladder that is other people's.
+      #
+      # Delete these two lines to start recording again. Events generated while
+      # it is off are dropped rather than held, so turning it back on starts
+      # from then rather than replaying the test.
+      VW_REPORT: "0"
       VW_REGION: ${VW_REGION:-local}
       VW_META: http://127.0.0.1:9400
     volumes:
@@ -222,6 +244,17 @@ services:
       VW_DIRECTORY: ws://127.0.0.1:9000
       VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
       VW_ADDRESS: wss://play.${VW_DOMAIN}/a3
+      # Rated exchanges are not filed with the meta-layer while this is off.
+      # Nothing else changes: pilots still sign in, arrive carrying the rating
+      # they earned, and see it move on the scoreboard. The room rates every
+      # kill as it always did; this process simply does not report any of it,
+      # because the fleet is being tested and a test session's kills are real
+      # enough to move a ladder that is other people's.
+      #
+      # Delete these two lines to start recording again. Events generated while
+      # it is off are dropped rather than held, so turning it back on starts
+      # from then rather than replaying the test.
+      VW_REPORT: "0"
       VW_REGION: ${VW_REGION:-local}
       VW_META: http://127.0.0.1:9400
     volumes:

@@ -376,32 +376,18 @@ local function radar(cx, cy, me)
         end
     end
 
-    -- Two rings and a bearing tick on each eighth, so a contact has something
-    -- to be read against. A dot in an empty square says where something is
-    -- and nothing about how far, and how far is the whole question.
+    -- Nothing drawn on the dial but the map and what is flying over it.
     --
-    -- No range printed anywhere: the number of tiles the dial spans is not a
-    -- thing anybody converts mid-fight, and the rings answer the comparison
-    -- people actually make, which is whether that one is closer than this one.
-    local mx, my = ix + r / 2, iy + r / 2
-    -- A whole pixel, not seven tenths of one. `ring` strokes hard quads, and a
-    -- hard stroke under a pixel covers a pixel centre at some offsets and none
-    -- at others: these sit at fixed dial coordinates, so it does not flicker,
-    -- it just means whether the range rings exist at all is decided by where
-    -- the dial happens to land. One pixel covers exactly one, wherever it
-    -- starts.
-    u:ring(mx, ry(my), r / 4, 1.0 * S, 20, pal.a(pal.RADAR_GRID, 0.9))
-    u:ring(mx, ry(my), r / 2.4, 1.0 * S, 24, pal.a(pal.RADAR_GRID, 0.55))
-    for i = 0, 7 do
-        local a = i * math.pi / 4
-        local long = (i % 2 == 0)
-        local e = r / 2
-        local inn = e - (long and 7 or 4) * S
-        u:seg(mx + math.cos(a) * inn, ry(my + math.sin(a) * inn),
-              mx + math.cos(a) * e, ry(my + math.sin(a) * e), S,
-              pal.a(pal.RADAR_TILE, long and 0.55 or 0.3))
-    end
-    bracket(ix, iy, r, r, pal.a(pal.RADAR_TILE, 0.8), 18 * S)
+    -- It carried two range rings, a bearing tick on each eighth and a
+    -- chamfered bracket at the corners, on the argument that a dot in an empty
+    -- square says where a contact is and nothing about how far. What that
+    -- missed is that the dial is small and the graticule was competing with
+    -- the contacts for the same few pixels. The square's own edge is the
+    -- reference, the wash is what separates it from the starfield, and both
+    -- are already there.
+    --
+    -- The expanded map keeps its bracket. It is large enough to need telling
+    -- where it ends, which is the thing a bracket is for.
 
     -- You, last. Placed by hand rather than through `put`, which answers nil
     -- for anything off the edge: right for a contact and wrong for the pilot

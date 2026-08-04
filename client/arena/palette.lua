@@ -36,7 +36,6 @@ M.RADAR_BG  = rgb(0x060a10)
 -- #16243a on #070b12, which is a dark slate on a darker one: technically
 -- present, invisible in practice.
 M.RADAR_TILE= rgb(0x3f5878)
-M.RADAR_GRID= rgb(0x141f30)
 M.RADAR_SAFE= rgb(0x1d5f63)
 M.RADAR_DOOR= rgb(0x7a4a2a)
 M.BTN_BG    = rgb(0x0a0f18)

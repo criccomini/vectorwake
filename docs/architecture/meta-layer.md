@@ -178,6 +178,36 @@ accounted killer is dropped rather than sent, because there is nobody to credit
 and the alternative is letting anybody farm a real pilot's rating down from a
 throwaway account.
 
+## Turning reporting off
+
+`VW_REPORT=0` on an arena stops it filing anything, and stops nothing else.
+
+Pilots still sign in, still arrive carrying the rating they earned, and still
+watch it move on the scoreboard, because a room rates its own exchanges and
+always did. The meta-layer keeps running and keeps serving tokens. What the
+arena stops doing is posting the result, so the ladder in the database does not
+move on anything that happens there.
+
+It is the same machinery an accountless deployment uses rather than a second
+path: the spool is simply never aimed, and an unaimed spool writes nothing and
+posts nothing. That is checked in `spool.rs`, which is the invariant the switch
+rests on.
+
+The default is on, and deliberately that way round. Reporting is what the
+ladder is made of, so a deployment that quietly kept its results to itself
+would be a worse surprise than one that quietly sent them: the off switch has
+to be something an operator wrote down. Only `0`, `off`, `false` or `no` count
+as off; a typo meant to silence a fleet leaves it recording rather than
+silently stopping it.
+
+Events raised while it is off are dropped where they are made, not queued, so
+turning it back on starts from then. Anything already spooled from before is
+still owed and is held, and the arena says so once at startup.
+
+What this does not do is unsay anything already recorded. A fleet that has been
+reporting has rows in the database, and turning the switch off leaves them
+exactly where they are.
+
 ## When it is down
 
 The meta-layer is allowed to be down, and the fleet's job is to make that
