@@ -410,7 +410,11 @@ static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
     }
     if ((n = sim_mod_get(mods, SIM_MOD_BOUNCE)) != 0) {
         sp->on_wall = SIM_WALL_BOUNCE;
-        sp->bounces = (uint8_t)(sp->bounces + n * cfg->mod_step[SIM_MOD_BOUNCE]);
+        /* Saturating, not wrapping. Shrapnel's base is already 255, and a
+         * fragment inherits its parent's mods, so a bounce add-on under a
+         * u8 wrap would hand whole-life fragments a handful of bounces. */
+        int32_t b = sp->bounces + n * cfg->mod_step[SIM_MOD_BOUNCE];
+        sp->bounces = (uint8_t)(b > 255 ? 255 : b);
     }
     if ((n = sim_mod_get(mods, SIM_MOD_PROX)) != 0) {
         /* ProximityDistance is the L1 radius and each bomb level adds one
