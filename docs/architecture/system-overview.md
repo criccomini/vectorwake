@@ -89,7 +89,7 @@ named.
 ```mermaid
 flowchart TB
     subgraph Zone["Zone: vectorwake"]
-        CAT[["Catalog v6<br/>Alpha, Chaos, War"]]
+        CAT[["Catalog v7<br/>Alpha, Chaos, War"]]
         D1["Directory A"]
         D2["Directory B"]
         CAT --> D1 & D2

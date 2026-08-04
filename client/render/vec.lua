@@ -32,7 +32,7 @@ Layer.__index = Layer
 -- where Lua 5.1 runs the interpreter rather than LuaJIT, that alone was about
 -- five milliseconds a frame. It is one call per shape now. The arithmetic
 -- that decides where a shape goes is still here, where it can be read.
-local attach, reset = vwbuf.attach, vwbuf.reset
+local attach, reset, rebind = vwbuf.attach, vwbuf.reset, vwbuf.rebind
 local w_tri, w_tri_fade = vwbuf.tri, vwbuf.tri_fade
 local w_quad, w_rect, finish = vwbuf.quad, vwbuf.rect, vwbuf.finish
 
@@ -68,6 +68,27 @@ end
 
 function Layer:reset()
     reset(self.id)
+end
+
+-- Give this layer a different capacity, keeping the id every draw call holds.
+--
+-- A world layer is sized against how much world the camera can see, and that
+-- is a property of the window rather than of the build, so it changes when
+-- somebody resizes theirs. The buffer is replaced and the mesh re-pointed at
+-- it; what is drawn next frame is whatever the next build writes, which is why
+-- the caller has to follow this with one.
+function Layer:resize(capacity)
+    if capacity == self.cap then return end
+    local buf = buffer.create(capacity, {
+        {name = STREAM_POS, type = buffer.VALUE_TYPE_FLOAT32, count = 3},
+        {name = STREAM_COL, type = buffer.VALUE_TYPE_FLOAT32, count = 4},
+    })
+    rebind(self.id, buf)
+    self.buf = buf
+    self.cap = capacity
+    self.n = 0
+    self.dropped = 0
+    resource.set_buffer(self.res, buf)
 end
 
 -- Degenerate whatever a busier frame left behind, then upload. A triangle

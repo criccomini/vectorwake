@@ -59,6 +59,7 @@ in `sim/`.
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `tools/sfxdump.c` | Writes the kit out as wav files, for listening to |
 | `tests/sfx_test.lua` | Which sound each weapon rung reaches |
+| `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
 | `arena/world.lua` | Ships, weapons, flags, prizes, terrain, in triangles |
 | `arena/ui.lua` | The HUD and the menu, laid out like the web prototype |
@@ -208,7 +209,7 @@ whole design:
 | `bgglow` | world | additive | wall edges, built once per map |
 | `fill` | world | alpha | the starfield, and the dark inside of a hull |
 | `glow` | world | additive | outlines, bolts, blasts, sparks |
-| `ui` | screen | alpha | panels, bars, radar, buttons |
+| `ui` | screen | alpha | panels, bars, the radar and the map, buttons |
 
 The starfield is in the per-frame layer rather than the baked one because it
 moves: three depths of hashed cell grid, each drawn at `base + cam*(1 - k)`
@@ -297,6 +298,32 @@ than an arena rebuild -- the design and its consequences are in
 docs/design/menu.md. The page also draws its own starfield and wordmark while
 the engine compiles, and the game tells it when to stop, from the first frame
 that has an arena on it.
+
+## Two instruments, one corner
+
+The top right holds the radar or the map, never both. The radar is sixty tiles
+around you and answers what is near; the map is all 1024 and answers where you
+are going, which on a map this size is a question nothing else on screen could
+answer. `M` swaps them, and so does clicking either one.
+
+The map draws terrain and nothing else: no ships, no prizes, no flags, nothing
+in flight. A view of the whole arena with every pilot on it is a wall hack with
+a keyboard shortcut, and contacts are what the radar is for. Its panel is
+opaque for the same reason, since at the radar's own 0.55 wash a prize lying
+under the dial comes through it and reads as part of the map.
+
+Reading all thousand tiles from Lua would be a call per tile, so `sim.map_coarse`
+in the extension does the pass in C and hands back one byte per four tiles,
+holding the most important thing standing in that square. A cell rather than a
+sample, because at this scale a wall is a pixel wide and a stride steps over
+one. `world.build_overview` merges that grid into greedy rectangles once per
+map: 928 of them for Chaos, 2195 for Alpha, against roughly 65000 cells. That
+is why the `ui` layer holds 24576 vertices rather than 6144.
+
+`lua5.1 client/tests/overview_test.lua` paints those rectangles back into a
+grid and compares it to the map they came from, which catches a merge that
+reaches too far as well as one that stops short. It reads the catalog's own
+maps, so a reconverted map is one this test immediately covers.
 
 ## No audio ships in the page
 

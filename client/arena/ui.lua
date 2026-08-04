@@ -27,6 +27,10 @@ local M = {}
 local W, H, S = 0, 0, 1
 local u = nil          -- the ui mesh layer for this frame
 local text, nt = nil, 0
+-- The HUD stays up under the menu, so its hit boxes do too, and the first box
+-- a press lands in wins. A dial the size of a quarter of the frame would sit
+-- over half the menu and swallow every row behind it.
+local menu_up = false
 
 -- Metrics, in CSS pixels before the density scale.
 local PAD = 14
@@ -40,6 +44,7 @@ local COL_W = 248      -- the width of the three stacked side panels
 local RADAR = 168
 
 M.hits = {}            -- clickable rectangles the menu published, top-left px
+M.map = false          -- the whole map, in the radar's corner
 
 -- --- primitives ------------------------------------------------------------
 
@@ -193,11 +198,32 @@ end
 -- about six screens across: far enough to see a fight starting, close enough
 -- that a blip means something.
 
--- How much vertical room the dial takes, so the feed under it can be told
--- rather than guess. Returned rather than duplicated: a second copy of this
--- arithmetic is how the pads and their own hit test drifted apart once.
+-- The top right corner holds one instrument at a time: the radar, or the map
+-- when that is open. Everything that hangs off its edges asks here rather than
+-- keeping a second copy of where it is, which is how the touch pads and their
+-- own hit test drifted apart once.
+--
+-- The map is about a quarter of the frame, capped three ways: against the
+-- window's width so it cannot run off the left edge, against its height so
+-- there is still room for the feed under it, and against the corner the MENU
+-- and INFO chips stand in, since a hit box over those is two controls a
+-- pointer can no longer reach.
+local function dial()
+    local pad = (M.compact and 8 or PAD) * S
+    local side = RADAR * S
+    if M.map then
+        side = math.max(side,
+                        math.min(math.min(W, H) * 0.66, H * 0.66,
+                                 W - pad - 124 * S))
+    end
+    return W - pad - side, pad + 18 * S, side
+end
+
+-- How much vertical room it takes, so the feed under it can be told rather
+-- than guess.
 function M.radar_span()
-    return PAD * S * 2 + RADAR * S + 18 * S
+    local _, _, side = dial()
+    return PAD * S * 2 + side + 18 * S
 end
 
 local function radar(cx, cy, me)
@@ -208,12 +234,13 @@ local function radar(cx, cy, me)
     --
     -- A faint wash stays, because dots over a starfield are dots lost in a
     -- starfield -- but it is a wash rather than a panel.
-    local r = RADAR * S
-    local pad = (M.compact and 8 or PAD) * S
-    local ix = W - pad - r
     -- Under the link readout, which owns the top right corner now.
-    local iy = pad + 18 * S
+    local ix, iy, r = dial()
     rect(ix, iy, r, r, pal.a(pal.RADAR_BG, 0.55))
+    -- The dial is the way in to the map: a thing you point at to see more of
+    -- is a thing you can click, and it saves teaching a key to somebody who
+    -- never opens the help.
+    if not menu_up then hit(ix, iy, r, r, "map") end
 
     -- Sixty tiles out, so the reference arena nearly fills the dial. At a
     -- hundred and fifty it sat in the middle quarter with the rest of the
@@ -335,6 +362,54 @@ local function radar(cx, cy, me)
               pal.WHITE)
     end
 
+end
+
+-- --- the map ---------------------------------------------------------------
+--
+-- The radar answers "what is near me". The map answers "where am I going",
+-- which on a thousand tiles is a different question and one nothing on screen
+-- could answer before.
+--
+-- Terrain and nothing else. No ships, no greens, no flags, nothing in flight:
+-- a view of the whole arena with every pilot on it is a wall hack with a
+-- keyboard shortcut, and contacts are the radar's job. So this draws what the
+-- room is rather than what is happening in it, and never changes between the
+-- frame a map arrives and the frame the next one does.
+--
+-- Constants rather than calls in the loop below, which runs a couple of
+-- thousand times a frame: `pal.a` builds a colour, and building four of them
+-- per rectangle is work for the collector rather than for the screen.
+local MAP_WALL = pal.a(pal.RADAR_TILE, 0.85)
+local MAP_SAFE = pal.a(pal.RADAR_SAFE, 0.95)
+local MAP_DOOR = pal.a(pal.RADAR_DOOR, 1.0)
+local MAP_HOLE = pal.a(pal.HOLE, 0.9)
+
+local function overview()
+    local ix, iy, side = dial()
+    local ov = world.overview
+    -- Opaque, where the radar's wash is not, and that is the rule above
+    -- rather than a preference about panels. At the radar's 0.55 a green
+    -- lying under the dial comes through it at half strength, so a view that
+    -- draws no prizes shows prizes anyway, in the one place a player would
+    -- read them as part of the map.
+    rect(ix, iy, side, side, pal.RADAR_BG)
+    if ov.grid > 0 then
+        local k = side / ov.grid
+        local r = ov.rect
+        for i = 1, ov.n, 5 do
+            local cls = r[i + 4]
+            local col = (cls == sim.T_SOLID and MAP_WALL)
+                or (cls == sim.T_SAFE and MAP_SAFE)
+                or (cls == sim.T_DOOR and MAP_DOOR)
+                or MAP_HOLE
+            rect(ix + r[i] * k, iy + r[i + 1] * k,
+                 r[i + 2] * k, r[i + 3] * k, col)
+        end
+    end
+    bracket(ix, iy, side, side, pal.a(pal.RADAR_TILE, 0.8), 22 * S)
+    -- Clicking it again puts the radar back, which is the same gesture that
+    -- opened it.
+    if not menu_up then hit(ix, iy, side, side, "map") end
 end
 
 -- Names, at each ship's lower right.
@@ -716,7 +791,7 @@ end
 -- long that nobody can hold in their head or call across a room.
 local function coords(me)
     local pad = (M.compact and 8 or PAD) * S
-    local x = W - pad - RADAR * S
+    local x = dial()
     local base = pad + 13 * S
     txt("POS", x, base - 4 * S, (FONT - 3) * S, pal.a(pal.DIM, 0.8))
     txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
@@ -782,6 +857,7 @@ end
 function M.hud(o)
     if sim.ship_count() == 0 then return end
     local me = o.me
+    menu_up = o.menu_open
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -791,7 +867,10 @@ function M.hud(o)
 
     local top = scores(me, o.pilots)
     nameplates(o)
-    radar(o.cam_x, o.cam_y, me)
+    -- One corner, one instrument. The map is the radar pulled back to the
+    -- whole thousand tiles, so it stands where the radar stands rather than
+    -- somewhere else with the radar still lit beside it.
+    if M.map then overview() else radar(o.cam_x, o.cam_y, me) end
     link(o.lag or 0)
     coords(me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its

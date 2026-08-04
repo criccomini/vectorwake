@@ -33,3 +33,104 @@ rust = 10
 spawn_prizes = 0
 bounty_per_kill = 3
 points_per_flag = 100
+
+# The ships, all eight of them, so the roster reads here rather than half here
+# and half out of the core's baseline.
+#
+# This zone has no settings file of its own the way Alpha and Chaos do, so the
+# per-ship lines come from the two places the original's ships are written down,
+# and the two do not say the same thing.
+#
+# The reference server's `dist/conf/svs` set has one file per ship, and all eight
+# are the same template: diff them and what is left is nine lines. MaxBombs=3 on
+# the Leviathan, DoubleBarrel=1 on the Terrier, BombBounceCount=1 and a hundred
+# bricks on the Lancaster, EmpBomb and SeeMines on the Weasel, CloakStatus on the
+# Spider and the Shark, Gravity=0 on the Shark, and ShrapnelMax=31 on the Shark
+# against 8 on the other seven. docs/research/original-settings.md says outright
+# that a template where every ship flies alike is not a roster to copy, and it is
+# right, so the flight numbers here come from the other place.
+#
+# That is a real zone's settings file, the one Chaos and Alpha are translations
+# of. It differentiates three hulls by how they fly: the Warbird turns and pushes
+# harder, the Javelin is faster, the Spider starts better at recharging. Those
+# are the ships those names have meant for thirty years, and they are what our
+# own ships.md already claims for Apex, Wedge and Chord, so they belong in every
+# zone rather than only in the two that inherited a file.
+#
+# Where the two sources disagree the reference wins here, because it is the
+# general case and the other is one zone's taste. That decides one line: the
+# Weasel's ShrapnelMax is 0 in that zone and 8 in the reference, and it is 8
+# here. In that zone the 0 pays for an EMP bomb; this zone has no EMP bomb to
+# pay for, so taking the shrapnel away would be a straight loss.
+#
+# Hulls are ours and ships are theirs. The mapping is in ../alpha/zone.toml.
+
+# [Warbird] MaximumRotation=300 against 230, InitialRotation=210 against 200,
+# MaximumThrust=19 against 17 and InitialThrust=16 against 15. The interceptor
+# turns harder and pushes harder than anything else in the zone, and pays for it
+# with the same hull everyone has.
+[[arena.ships]]
+name = "Apex"
+rotation = 300
+initial_rotation = 210
+upgrade_rotation = 40
+thrust = 19
+initial_thrust = 16
+upgrade_thrust = 2
+# ShrapnelMax=8, which is the rung a fragment count of eight sits on here. It is
+# a rung down from what the baseline hands the bombers, and the rung it went to
+# is on Spire below, which is where the original had it.
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Javelin] MaximumSpeed=3750 against 3250 and InitialSpeed=2200 against 2010.
+# It is the fastest thing in the zone from the moment it spawns.
+[[arena.ships]]
+name = "Wedge"
+speed = 3750
+initial_speed = 2200
+upgrade_speed = 250
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Spider] InitialRecharge=500 against 400. It starts a quarter better at getting
+# energy back and climbs to the same ceiling as everyone. CloakStatus=2 is the
+# other thing the reference gives it, and there is no cloak here.
+[[arena.ships]]
+name = "Chord"
+initial_recharge = 500
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Leviathan] MaxBombs=3, the only per-ship weapon number in the whole reference
+# set, and the baseline already gives Anvil the three-rung rack it asks for.
+[[arena.ships]]
+name = "Anvil"
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Shark] ShrapnelMax=31 against everyone else's 8, which is the top rung of
+# shrapnel and the one per-ship number the Shark has. Its other two lines are
+# Gravity=0, a hull no wormhole pulls, and CloakStatus=1: wormhole strength is
+# per arena here rather than per hull, and there is no cloak.
+[[arena.ships]]
+name = "Spire"
+bomb_mods = { prox = 1, shrapnel = 3 }
+
+# [Weasel] EmpBomb=1 and SeeMines=1. Neither is a hull key here: an EMP bomb is
+# `stall` on the bombs a hull fires, which is a weapon block and one this zone
+# does not write, and there are no mines to see.
+[[arena.ships]]
+name = "Cipher"
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Terrier] DoubleBarrel=1, alone in the set, which is a rung of multifire nobody
+# else climbs to and what the baseline already builds Facet around.
+[[arena.ships]]
+name = "Facet"
+gun_mods = { multi = 2, bounce = 1 }
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# [Lancaster] BombBounceCount=1, the only ship with any. It is innate there and
+# an add-on here, so this is the ceiling rather than what it spawns with, and one
+# wall rather than the baseline's two. BrickMax=100 has nothing to land on. Push
+# is ours, has no entry to copy, and stays where the baseline put it.
+[[arena.ships]]
+name = "Lattice"
+bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }
