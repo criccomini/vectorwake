@@ -464,7 +464,12 @@ local rolls = {}
 local TAU = 2 * math.pi
 local FULL_TURN = 3.0        -- rad/s of turn that earns the whole bank;
                              -- an unupgraded hull turns at about pi
-local MAX_BANK = 0.72        -- radians of roll at that rate
+-- Radians of roll at that rate. Fifty-four degrees, so a hull holding a turn
+-- draws at 58% of its width against the 75% it did: the first pass was a lean
+-- you had to be told about. Past about sixty the wings foreshorten faster than
+-- the eye reads them as wings and the class stops being legible from its
+-- silhouette, which identity.md puts above any of this.
+local MAX_BANK = 0.95
 
 local function ship_roll(i, heading, dt)
     local s = rolls[i]
