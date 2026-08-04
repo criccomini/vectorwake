@@ -70,6 +70,12 @@ M.teams = {}
 M.my_team = 0
 M.may_found = false
 
+-- Ships this client has sent an invitation to, by ship index. The zone does
+-- not report an invitation back, and it does not need to: this is the sender
+-- remembering what they asked for, so the button says SENT instead of sitting
+-- there looking unpressed. It is not a claim that anybody accepted.
+M.invited = {}
+
 -- What the connection is doing, for the debug readout and for the clock
 -- steering. `rx` and `tx` are bytes since the socket opened; a rate is the
 -- difference between two readings, which the reader takes rather than keeping
@@ -197,8 +203,14 @@ end
 -- the arithmetic on nil raises, and an error in here surfaces inside a
 -- websocket callback where nothing is watching.
 local function on_teams(s)
+    local was = M.my_team
     M.my_team = string.byte(s, 2) or 0
     M.may_found = (string.byte(s, 3) or 0) ~= 0
+    -- Invitations belong to the side that sent them, so crossing to another
+    -- one forgets who you asked. Leaving your own side usually ends it
+    -- outright, and the marks would otherwise claim you had already invited
+    -- somebody to a team that no longer exists.
+    if M.my_team ~= was then M.invited = {} end
     local n = string.byte(s, 4)
     if not n then return end
     local o = 5
@@ -225,6 +237,18 @@ function M.my_team_name()
         if t.team == M.my_team then return t.name end
     end
     return ""
+end
+
+-- Whether an invitation from you would mean anything, which is true exactly
+-- when your own side is private. The zone refuses one sent from a public side
+-- and is right to: everybody may already walk into those, so the message would
+-- change nothing. Asked before the button is drawn rather than after it is
+-- pressed, so there is no control that quietly does nothing.
+function M.may_invite()
+    for _, t in ipairs(M.teams) do
+        if t.team == M.my_team then return not t.public end
+    end
+    return false
 end
 
 -- A death, with both pilots' rating after the exchange and how many people
@@ -416,6 +440,7 @@ function M.connect(url, class, name, on_lost, zone)
     M.teams = {}
     M.my_team = 0
     M.may_found = false
+    M.invited = {}
     M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0,
                rx = 0, tx = 0, msgs = 0}
     M.lost = nil
@@ -529,7 +554,9 @@ function M.found_team()
 end
 
 function M.invite(ship)
-    return ask(string.char(C2S_INVITE, ship))
+    if not ask(string.char(C2S_INVITE, ship)) then return false end
+    M.invited[ship] = true
+    return true
 end
 
 function M.step(buttons)
