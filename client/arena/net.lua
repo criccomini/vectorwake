@@ -257,8 +257,11 @@ end
 -- only with a roster, which is sent when somebody joins or leaves, so a pilot
 -- fighting for ten minutes was shown the number they had when they walked in.
 --
--- The feed itself is drawn from local simulation events rather than from here,
--- because the client is already stepping the same core and knows who died.
+-- The feed's kill lines are drawn from these rather than from the local
+-- simulation's death events, which is a correction: prediction runs ahead, a
+-- snapshot from before a death revives the victim, and the next predicted ticks
+-- kill them again, so one death printed a line per rollback. The zone says each
+-- one exactly once.
 local function on_kill(s)
     local victim, killer = string.byte(s, 2), string.byte(s, 3)
     local vr = i16(string.byte(s, 4), string.byte(s, 5))

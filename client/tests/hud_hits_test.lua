@@ -121,6 +121,7 @@ local function frame(o)
             [2] = {name = "a bot", label = "bot", ai = true, house = true},
             [3] = {name = "a guest", label = "unknown"},
         },
+        teams = o.teams or {},
         feed = o.feed or {},
         hurt = 0,
         charges = {},
@@ -218,10 +219,10 @@ local many = {}
 for i = 1, 12 do many[i] = {text = "line " .. i, t = 0} end
 local before = package.loaded["arena.state"].n
 frame({feed = many})
-local drawn = package.loaded["arena.state"].n
+local lines = package.loaded["arena.state"].n
 check("the feed is capped at FEED_MAX", ui.FEED_MAX == 5,
       "FEED_MAX is " .. tostring(ui.FEED_MAX))
-check("a long feed still draws something", drawn > 0 and before ~= nil)
+check("a long feed still draws something", lines > 0 and before ~= nil)
 
 -- --- the info box ----------------------------------------------------------
 
@@ -244,6 +245,49 @@ ui.details = false
 frame()
 check("shutting the scoreboard shuts the info box", ui.inspect == nil)
 check("and takes its close box with it", box("uninspect") == nil)
+
+-- --- whose side a pilot is on ----------------------------------------------
+
+-- The zone decides what may be said. A side it marks public is one anybody may
+-- read; a private one is a squad who arranged themselves, and naming it here
+-- would hand the room a roster the zone deliberately did not send.
+--
+-- Read off the drawn text, because that is what a player sees and the point of
+-- the rule is what reaches them. Ship 0 is us on team 1; ship 3 is on team 9.
+local function drawn()
+    local st = package.loaded["arena.state"]
+    local out = {}
+    for k = 1, st.n do out[#out + 1] = st.text[k].s end
+    return table.concat(out, "\n")
+end
+local function says(word) return drawn():find(word, 1, true) ~= nil end
+
+room.teams = {[0] = 1, 1, 1, 9}
+ui.details = true
+ui.inspect = 3
+
+frame({teams = {{team = 1, name = "blue", public = true},
+                {team = 9, name = "gold", public = true}}})
+check("a public side is named", says("gold"), "no side in: " .. drawn())
+
+frame({teams = {{team = 1, name = "blue", public = true},
+                {team = 9, name = "gold", public = false}}})
+check("a private side is not named", not says("gold"))
+check("and the row is dropped rather than blanked", not says("SIDE"))
+
+-- Your own side is yours to know however it is marked, since you are in it.
+room.teams = {[0] = 9, 1, 1, 9}
+frame({teams = {{team = 9, name = "gold", public = false}}})
+check("your own side is named even when it is private", says("gold"))
+
+-- A zone that has sent no team list at all says nothing. Falling back to the
+-- raw team byte would be the same leak by a duller instrument.
+frame({teams = {}})
+check("no team list means no side row", not says("SIDE"))
+
+room.teams = {[0] = 1, 1, 1, 1}
+ui.inspect = nil
+ui.details = false
 
 -- --- the debug readout -----------------------------------------------------
 

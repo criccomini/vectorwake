@@ -341,18 +341,35 @@ Order decides overlaps. The scoreboard is where that bites: each row publishes
 its box before the panel publishes the one that takes the wheel, so a press on
 a row reaches the pilot instead of the list.
 
-Clicking a pilot's row on the scoreboard opens one box about them: which side
-they are on when sides mean anything, what the zone will vouch for the seat
-being, their record and their bounty. It belongs to that list and goes when the
-list goes, since a box standing under a shut scoreboard says nothing about who
-it is for. Escape closes it before it reaches the menu, because it is the
-newest thing on screen and the key that shuts things is the one a hand reaches
-for.
+Clicking a pilot's row on the scoreboard opens one box about them: their side,
+what the zone will vouch for the seat being, their record and their bounty. It
+belongs to that list and goes when the list goes, since a box standing under a
+shut scoreboard says nothing about who it is for.
+
+The side is named only when the zone marked it public, or when it is your own,
+which you are in and may know either way. A private side is a squad who
+arranged themselves and naming it here would hand the room a roster the zone
+deliberately did not send. An unknown side gets no row at all: falling back to
+the team byte, which the client can read off any ship, would be the same leak
+by a duller instrument.
+
+Escape shuts what is open before it opens anything, innermost outwards: the
+pilot box, then the info panel it came from, then the menu. It is the key a
+hand reaches for to dismiss whatever is on screen, and answering it with a menu
+answers a question nobody asked while leaving the thing they meant standing
+behind it.
 
 A bot is marked with a drawn head rather than the letters AI. Two letters after
 a name read as part of the name until you have learned they are not, and the
 scoreboard is scanned rather than read; the mark sits at its own column so a
 scan finds them in a line.
+
+The feed stands five lines deep, and two of them are lit: green for a kill you
+took, red for one taken off you. Those are the two lines out of a busy feed
+worth finding without reading it, and lighting a third would mean none of them
+stands out. A kill's payout rides in brackets, `(+40)`, because the line is
+already a sentence and a second clause on the end of it is one more thing to
+read past.
 
 The four link bars are the whole of the connection readout a player gets.
 Clicking them opens the numbers behind it: frame rate, round trip, clock lead,
