@@ -1118,3 +1118,40 @@ render.
 fact, in which case the label needs softer words rather than different
 mechanics. Or if unclaimed churn makes ratings in the low tiers meaningless,
 at which point rated play may need an `admission` bar of `claimed` by default.
+
+## 32. Teams are named doors with sizes
+
+**Status:** proposed
+
+A team is a name, a door, and a size, and nothing else. Public teams are the
+zone's: operator-named, stable across rounds, scored by the mode. Private
+teams are the players': founded from the menu, named by a generator, entered
+by invitation from any member, dead when empty. Three settings shape a room's
+teams, `max_teams`, `max_humans_per_team` and `max_bots_per_team`, and the
+only refusal a player can meet is a full team. The simulation keeps its team
+byte; names ride the roster like call signs. Changing teams is gated like
+changing hulls: alive, full bar, a respawn that drops flags and clears earned
+bounty. Free-for-all stops being `teams = 1` with ship-index-as-side and
+becomes settings: everyone a team of one, pact size capped. The bot server
+prefers the short side, inside its cap, so human choices never strand one.
+
+This adopts the original's freq structure and drops its addressing: freqs
+were numbers because the interface was a chat box, and this client has no
+text input. It also rejects two designs considered on the way. Passwords for
+private teams lose to invitations, which need no keyboard and do not leak. A
+relative balance invariant, refusing moves that widen the human gap past one,
+loses to plain caps: it needed a case table, froze legal swaps, and could
+deadlock two players who both wanted to cross, all to prevent a stacking that
+bot backfill, pairwise rating, and a low cap in a zone that cares already
+bound. The full design is [design/teams.md](../design/teams.md).
+
+**Cost:** Stacking inside the caps is legal, and a generous cap plus an
+indifferent operator makes lopsided rooms. No kick means an unwelcome pilot
+is shed by everyone else migrating, which respawns them all and reads odd the
+first time a player sees it. And stable public names are one more thing an
+operator must write before a zone feels finished.
+
+**Reconsider if:** playtests show pacts dominating free-for-all rooms even at
+small caps, which argues for pact-versus-pact scoring rather than smaller
+pacts. Or if migration-as-exclusion becomes a griefing ritual in itself, at
+which point a founder's kick is the smaller evil after all.
