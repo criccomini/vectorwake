@@ -32,6 +32,14 @@ roster apart where trust matters. See [ai-runtime.md](ai-runtime.md),
 [design/ai-players.md](../design/ai-players.md), and
 [decision 29](decisions.md#29-a-bot-is-a-client).
 
+**Meta-layer** (`server/`, same binary, `meta` subcommand). Accounts,
+credentials, call signs, the rated event log and the rating projection it
+feeds, on PostgreSQL. The only process in the fleet with a database behind it,
+and the only one nothing else has to be able to reach: it mints signed session
+tokens that arenas verify offline, so an outage costs persistence rather than
+play. See [meta-layer.md](meta-layer.md) and
+[design/accounts.md](../design/accounts.md).
+
 **Directory** (`server/`, same binary, `directory` subcommand). The front door for
 many zones: it holds every zone's configuration and the token table, accepts arena
 server registrations, verifies the addresses they claim, and answers browse
@@ -81,7 +89,7 @@ named.
 ```mermaid
 flowchart TB
     subgraph Zone["Zone: vectorwake"]
-        CAT[["Catalog v37<br/>Alpha, Chaos, War, Duel"]]
+        CAT[["Catalog v6<br/>Alpha, Chaos, War"]]
         D1["Directory A"]
         D2["Directory B"]
         CAT --> D1 & D2
@@ -95,12 +103,23 @@ flowchart TB
     end
     D1 <-- "register, view, catalog" --> NET
     D2 <-- "register, view, catalog" --> NET
+    M["Meta-layer<br/>accounts, ratings, event log"]
+    PG[("PostgreSQL")]
+    M --> PG
     W["Web client (WASM)"] -- browse --> D1
     W -- play --> NET
+    W -- "sign in, once a session" --> M
     N["Native client"] -- UDP --> NET
     B["Bot server"] -- browse --> D1
     B -- "play, one socket per bot" --> NET
+    B -- "claim bot accounts" --> M
+    NET -- "rated events, batched" --> M
 ```
+
+Nothing on the join path touches the meta-layer. A client signs in once and
+carries a signed token; the arena checks the signature against a key the
+catalog delivered, so the only arrow from an arena to the meta-layer is rated
+events leaving, and it never blocks a tick.
 
 Settings, map and simulation are per process, and none of them are durable. The
 catalog, bans and staff capabilities are deployment-wide and arrive from a
@@ -112,8 +131,9 @@ up.
 
 The transport layer runs on its own thread and hands the arena a queue of decoded
 inputs. The arena ticks on one thread, and since the process holds a single arena
-there is no pool and nothing to schedule. Database writes go to a separate thread
-behind a queue, as does the batch of rated events on its way to the meta-layer.
+there is no pool and nothing to schedule. Rated events go to a local spool file and a
+background task drains them to the meta-layer, so a tick waits on neither a
+disk seek nor a network round trip.
 The registration client runs on the async runtime alongside the transport and
 never blocks a tick.
 

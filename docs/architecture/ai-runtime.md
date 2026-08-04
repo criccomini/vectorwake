@@ -57,6 +57,12 @@ bounds humans, and is the first thing dropped when a full room must seat an
 arriving human. Any client may declare, and a well-behaved bot is one that
 does.
 
+House bots hold accounts of their own, claimed with the bot server's pool
+credential and one per roster individual, per
+[design/accounts.md](../design/accounts.md). That is what makes the label a
+player sees say *house bot* rather than *somebody's bot*, and it is what lets
+one of them anchor the ladder.
+
 House bots also authenticate, presenting a credential from the same table that
 authorises arena pools (see [discovery.md](discovery.md)). The split is where
 trust lands: anyone's declared bot is welcome, labeled, and rated like any

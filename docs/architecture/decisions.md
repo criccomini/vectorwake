@@ -378,6 +378,13 @@ fallback if rating periods fit better than per-event updates.
 **Cost:** Damage ledgers per victim, an event log that grows forever, and a
 model that will need retuning once real data exists.
 
+**Measured, once bots held accounts:** "grows forever" turned out to be set by
+the bot population rather than by the players, since bots fight at fill around
+the clock. The live fleet writes on the order of 300,000 events a day, which is
+40 to 50 GB a year and fills a 25 GB database in six to nine months. Throughput
+is nowhere near a limit; space is. The answer is retention rather than a bigger
+disk, and it is in [meta-layer.md](meta-layer.md).
+
 **Reconsider if:** the pairwise decomposition produces ratings that disagree with
 what good players can see with their own eyes. The event log is what makes that
 recoverable.

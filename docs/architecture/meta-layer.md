@@ -120,6 +120,64 @@ offline tournament measured. The pinned anchor is the case that matters most:
 everything else in the fleet is measured against it, so it has to be at its
 rating from the first tick rather than climb to it.
 
+## What the log costs
+
+The event log grows forever by design, and the rate it grows at is not set by
+how many people are playing. It is set by the bots, which fight around the
+clock at bot fill whether or not anybody is watching.
+
+Measured on the live fleet: Chaos alone resolves about 1.8 deaths a second with
+its rooms full, so three arenas run somewhere near 3 to 4 a second, which is
+roughly 300,000 events a day and 100 million rows a year. At 400 to 500 bytes a
+row with its indexes, that is 40 to 50 GB a year against the 25 GB the
+hobbyist plan holds. So the disk fills in six to nine months.
+
+Throughput is not the problem and will not be for a long time. A batch arrives
+every five seconds, each event is one small transaction, and the projection
+update is an indexed upsert per participant. That is single-digit transactions
+per second against a database that does thousands on one vCPU, and login is a
+primary-key lookup. What runs out is space.
+
+The fix, when the disk says so, follows from what the log is for. The rows
+worth keeping forever are the ones with a human in them, because a model
+migration or a disputed rating replays those; bot-on-bot events have done their
+work the moment the projection applies them, and a bot's career re-seeds from
+calibration anyway. Partition by month, keep human-involving rows, drop
+bot-only partitions after a few weeks. Dropping a partition is metadata, so
+retention costs nothing at write time.
+
+The cruder alternatives are worth naming so they are not rediscovered as
+insights. Not spooling bot-vs-bot events at all would break the rule that a
+rating is a projection of the log, for bots. Buying a larger plan defers the
+question by about a year per step and answers nothing.
+
+[Decision 15](decisions.md#15-rating-is-damage-weighted-pairwise-elo-stored-as-an-event-log)
+priced this as "an event log that grows forever" and meant it, but the estimate
+behind it assumed human-speed growth. Giving bots accounts is what changed the
+rate.
+
+The same stream has a second, smaller home worth knowing about: an arena keeps
+`Rating::log` in memory for the life of a room, so a busy room accretes on the
+order of 15 MB a day until it empties and is reclaimed. Not a database problem
+and not urgent, since a room that never empties is a room somebody is enjoying,
+but it is the same unbounded thing in a place nobody is watching.
+
+## Turning it on over a running fleet
+
+Two things do not happen by themselves, and both were found by turning it on.
+
+The bot server claims a bot's account when that bot joins, so bots already
+flying when the meta-layer arrives keep flying without one. Restart it and the
+whole population reconnects with accounts and the calibrated ladder behind
+them, the anchor included. Left alone it resolves only as bots are evicted and
+refilled around arriving players, which in a quiet room is never.
+
+Until that happens the ladder does not move at all, and the reason looks like a
+fault but is the rule working: a death with an accounted victim and no
+accounted killer is dropped rather than sent, because there is nobody to credit
+and the alternative is letting anybody farm a real pilot's rating down from a
+throwaway account.
+
 ## When it is down
 
 The meta-layer is allowed to be down, and the fleet's job is to make that

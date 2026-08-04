@@ -212,12 +212,21 @@ per outage rather than once per attempt.
 
 A client sends `C2S_STATUS` as it does today and gets `S2C_STATUS` back, so the
 tag and the direction are unchanged. What grew is the body, because a player now
-picks a game rather than a server:
+picks a game rather than a server.
+
+`meta` is where accounts live, absent on a deployment that has none. It rides
+this reply because the games list is the one thing a client asks for before it
+needs an identity, which saves the client an address to be configured with and
+keeps accounts a property of the deployment rather than of the build. A
+directory holds no identity itself and never will, per
+[decision 25](decisions.md#25-an-arena-server-chooses-which-zone-it-serves);
+this is a signpost, not a service.
 
 ```json
 {
   "name": "vectorwake",
   "catalog_version": 37,
+  "meta": "https://play.example/meta",
   "zones": [
     {"name": "chaos", "description": "...", "players": 41, "bots": 6,
      "instances": [
