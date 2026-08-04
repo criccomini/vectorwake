@@ -168,12 +168,24 @@ wall beside them. Built to spec it changed nothing measurable, because every cel
 on Chaos came out passable. A hull is 28 px across and a two-tile cell is 32, so
 "any wall shuts it" needs no threshold and no tuning.
 
-**Control.** The pilot wants a velocity, not a heading: `v² = 2as` gives the
-speed that can still be stopped in the room left, and the difference between that
-and what the hull is doing is the burn. The nose points at the burn when there is
-nothing to shoot and at the target when there is, since decision 17 makes the
-nose the gun and the engine at once, and thrust then fires only when it happens
-to help. That is what makes a fight look like circling rather than a charge.
+**Control.** The pilot wants a velocity, not a heading: `v² = v_end² + 2as`
+gives the speed that can still be shed in the road left, and the difference
+between that and what the hull is doing is the burn. The nose points at the burn
+when there is nothing to shoot and at the target when there is, since decision 17
+makes the nose the gun and the engine at once, and thrust then fires only when it
+happens to help. That is what makes a fight look like circling rather than a
+charge.
+
+The `v_end` term is where the first version of this went wrong, and it cost the
+roster half its life. Braking to zero at the *steer point* means parking at every
+waypoint of every route and at every green, then turning from a standstill at
+230 rotation and accelerating from nothing, over and over: the drill measured
+50 to 70 per cent of all bot-ticks under half a pixel of motion, nearly all of it
+in travel. So a route carries a pass speed per bend, set by the angle between its
+legs, and a destination carries one too -- a green's pickup radius is sixteen
+pixels, so it is taken at a slow pass rather than a stop. Waypoints advance at
+the tick rate the moment they are passed; only deciding waits for a reaction.
+Crawling fell to about a quarter of ticks, and kills roughly doubled.
 
 Deciding and flying run on different clocks, and that split is load-bearing.
 Steering used to be decided with the plan and held until the next one, so a pilot
@@ -341,7 +353,8 @@ authored navigation hints. The original's maps were built for humans who learn a
 map over months, and some of them are cruel.
 
 Why pilots still spend most of their time travelling rather than fighting. On the
-drill it is 92 to 99 per cent, which is a roster that keeps missing each other:
+drill it is about nine parts in ten, which is a roster that keeps missing each
+other:
 sight is sixty tiles, a map is a thousand, and roaming aims everybody at the
 middle. Somewhere between a smarter patrol and a reason to be anywhere in
 particular.

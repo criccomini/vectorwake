@@ -46,6 +46,9 @@ pub struct Drill {
     /// Bot-ticks spent idle, travelling and fighting. A roster that is nearly
     /// all travel is a roster that never finds anybody.
     pub doing: [u64; 3],
+    /// And which of those the crawling ticks land in, so a slow roster can be
+    /// told apart from a stuck one.
+    pub crawl_by: [u64; 3],
 }
 
 /// Half a pixel a tick. A hull under thrust does six times this.
@@ -78,6 +81,13 @@ impl Drill {
             100.0 * self.doing[1] as f64 / t,
             100.0 * self.doing[2] as f64 / t
         );
+        let c = self.crawling.max(1) as f64;
+        println!(
+            "  crawl in {:.0}% idle, {:.0}% travelling, {:.0}% fighting",
+            100.0 * self.crawl_by[0] as f64 / c,
+            100.0 * self.crawl_by[1] as f64 / c,
+            100.0 * self.crawl_by[2] as f64 / c
+        );
     }
 }
 
@@ -104,7 +114,7 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
 
     let mut d = Drill {
         ticks, bots, kills: 0, bounces: 0, shots: 0, hits: 0,
-        crawling: 0, flying: 0, speed: 0.0, cells: 0, doing: [0; 3],
+        crawling: 0, flying: 0, speed: 0.0, cells: 0, doing: [0; 3], crawl_by: [0; 3],
     };
     let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
     let brains_first = brains[0].ship;
@@ -151,6 +161,7 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
             d.speed += v as f64;
             if v < CRAWL {
                 d.crawling += 1;
+                d.crawl_by[b.doing()] += 1;
             }
             let cx = (s.x >> 8) / (16 * 8);
             let cy = (s.y >> 8) / (16 * 8);

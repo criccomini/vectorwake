@@ -3605,7 +3605,7 @@ mod tests {
 
         let route = nav::Nav::build(&w.map);
         let mut fired_at = None;
-        for t in 0..1500u32 {
+        for t in 0..2500u32 {
             // Handed over once and never refreshed. Working from a stale picture
             // is the ordinary case for these pilots, and here it is what keeps
             // the unreachable green in front of them.
@@ -3616,19 +3616,20 @@ mod tests {
             }
             w.step(&[sim::sim_input { ship, buttons }]);
         }
-        // Measured at 290 before there was a router, which is two seconds of no
-        // progress plus the reaction cycle it takes to act on that and the one
-        // it takes to line up the shot. It is 776 now, and the extra is the
-        // pilot doing the right thing first: a destination it cannot reach in a
-        // straight line is one it asks for a route to, and it follows that route
-        // until that is not working either. Giving up on a green in eight
-        // seconds rather than three is the price of not giving up on every green
-        // that merely needs going round something.
+        // Measured at 290 before there was a router: two seconds of no progress
+        // plus a reaction cycle to act on it and one more to line up the shot.
+        // The router moved it to about 1450, and the extra is the pilot being
+        // right about the geometry the whole way: this green *is* reachable
+        // around the block, so it routes there, finds nothing at the place a
+        // stale scan still swears a green stands, orbits the phantom, and only
+        // then concludes the errand is not working. Fourteen seconds to give up
+        // on a lie is the price of not giving up on every green that merely
+        // needs going round something.
         //
         // The bound stays loose because the exact tick is not the point. Giving
         // up at all is.
         let t = fired_at.expect("never gave up on a green it could not reach");
-        assert!((200..1200).contains(&t), "gave up on the green at tick {t}");
+        assert!((200..2200).contains(&t), "gave up on the green at tick {t}");
     }
 
     /// A seat is furniture, and its last occupant does not come with it.

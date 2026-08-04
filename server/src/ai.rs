@@ -464,10 +464,11 @@ fn want_velocity(o: &Own, tx: f32, ty: f32, arrive: f32) -> (f32, f32) {
 /// A velocity error smaller than this is not worth a burn: the hull is already
 /// flying what it asked for, and pressing anything from here is the wobble.
 const DEAD: f32 = 0.28;
-/// How far off the nose a burn may be and still be worth making. Wider than it
-/// looks: thrust off the nose still has a component in the right direction, and
-/// waiting for a perfect alignment is a pilot who never accelerates.
-const BURN_ARC: f32 = 1.0;
+/// How far off the nose a burn may be and still be worth making. Wide enough
+/// that a pilot does not wait for perfect alignment, and no wider: at a full
+/// radian this held ships pinned on walls, thrusting fifty degrees off the
+/// nose straight into the brick they were trying to pass.
+const BURN_ARC: f32 = 0.7;
 
 /// The things a plan can head towards, so an approach that stops closing can be
 /// abandoned without the pilot deciding it all over again on the next cycle.
@@ -508,8 +509,12 @@ const SAME_GOAL_PX: f32 = 48.0;
 enum Mode {
     /// Nothing worth pressing a key for.
     Idle,
-    /// Somewhere to be, and how close counts as arrived.
-    Travel(f32, f32, f32),
+    /// Somewhere to be: where, how close counts as arrived, and how fast
+    /// arriving may still be. The pass speed matters more than it looks: the
+    /// pickup radius on a green is sixteen pixels, so a pilot can take one at
+    /// a slow pass, and braking to a dead stop on every pickup and corner was
+    /// costing the roster half its life stood still.
+    Travel(f32, f32, f32, f32),
     /// Hold station on the last foe seen, at this range, and shoot it.
     Fight(f32),
 }
@@ -549,12 +554,19 @@ pub struct Bot {
     blocked: [u32; 4],
     /// The route in progress, nearest waypoint first, and how far along it this
     /// pilot has got. Held rather than solved every cycle: a search costs a few
-    /// hundred cells and the answer is good until the destination moves.
+    /// thousand cells and the answer is good until the destination moves.
     path: Vec<(f32, f32)>,
     at: usize,
     /// What the route was solved towards, so a destination that has wandered
     /// off can be noticed without re-solving to find out.
     path_to: (f32, f32),
+    /// What flying the route needs, one entry per waypoint: how fast its bend
+    /// can be taken, and how much route remains beyond it. The first is what
+    /// lets the speed envelope brake for the corner ahead instead of parking at
+    /// every waypoint; the second is what makes "how far away is it" mean the
+    /// road rather than the wall between.
+    corner: Vec<f32>,
+    suffix: Vec<f32>,
 }
 
 /// How far a destination may drift before the route to it is stale. One cell.
@@ -588,6 +600,8 @@ impl Bot {
             path: Vec::new(),
             at: 0,
             path_to: (0.0, 0.0),
+            corner: Vec::new(),
+            suffix: Vec::new(),
         }
     }
 
@@ -695,49 +709,88 @@ impl Bot {
         0
     }
 
-    /// Turn a destination into somewhere to steer for now.
+    /// Keep the route to `dest` current, and say how far away it is by the road
+    /// this pilot will actually fly: the straight line when one is open, the
+    /// length of the route when not. That distance is what the give-up timer
+    /// watches, and measuring it along the road is the point of returning it.
     ///
     /// A clear run is flown straight, which is most of them and costs nothing.
-    /// Otherwise the pilot follows a route, and follows it loosely: the next
-    /// waypoint is the furthest one still in plain sight, so a path through a
-    /// room is flown across the room rather than around its cell corners.
-    fn head_for(&mut self, o: &Own, nav: &Nav, dest: (f32, f32)) -> ((f32, f32), bool) {
+    /// Otherwise the route is refreshed when it is spent or its destination has
+    /// wandered, and the pilot follows it loosely: skipped ahead here to the
+    /// furthest waypoint in plain sight, so a path through a room is flown
+    /// across the room rather than corner to corner.
+    fn plot(&mut self, o: &Own, nav: &Nav, dest: (f32, f32)) -> f32 {
         let me = (o.x, o.y);
+        let straight =
+            ((dest.0 - me.0) * (dest.0 - me.0) + (dest.1 - me.1) * (dest.1 - me.1)).sqrt();
         if nav.clear(me, dest) {
-            self.path.clear();
-            return (dest, false);
+            self.drop_route();
+            return straight;
         }
         let stale = self.path.is_empty()
             || self.at >= self.path.len()
             || (self.path_to.0 - dest.0).abs() > REROUTE_PX
             || (self.path_to.1 - dest.1).abs() > REROUTE_PX;
         if stale {
-            self.path = nav.route(me, dest);
-            self.at = 0;
-            self.path_to = dest;
+            let route = nav.route(me, dest);
+            self.store_route(me, route, dest);
         }
         if self.path.is_empty() {
             // Nowhere to route: head at it and let the give-up timer decide,
             // which is what this AI did about everything before there was a
             // route at all.
-            return (dest, false);
+            return straight;
         }
         while self.at + 1 < self.path.len() && nav.clear(me, self.path[self.at + 1]) {
             self.at += 1;
         }
-        (self.path[self.at], true)
+        let w = self.path[self.at];
+        ((w.0 - me.0) * (w.0 - me.0) + (w.1 - me.1) * (w.1 - me.1)).sqrt()
+            + self.suffix[self.at]
     }
 
-    /// Note how the approach to wherever the pilot is *steering* is going.
-    ///
-    /// The waypoint rather than the destination, which matters as soon as there
-    /// is a route: going the long way round a wall closes no straight-line
-    /// distance to the far side of it for seconds at a time, so a timer watching
-    /// the destination calls every detour a wall and gives up on it. Watching
-    /// the waypoint keeps the timer doing its job, which is noticing that the
-    /// flying is not working, and an advancing waypoint resets it for free.
-    fn note(&mut self, o: &Own, g: Goal, at: (f32, f32), arrive: f32) {
-        self.approaching(o, g, at.0, at.1, arrive);
+    fn drop_route(&mut self) {
+        self.path.clear();
+        self.corner.clear();
+        self.suffix.clear();
+        self.at = 0;
+    }
+
+    /// Keep a route, and precompute what flying it needs. A bend's pass speed
+    /// comes from the angle between its legs: straight through is no cap at
+    /// all, a right angle is a crawl, and a hairpin is barely moving. Absolute
+    /// numbers rather than shares of top speed, because a corner is geometry
+    /// and does not widen for a faster hull.
+    fn store_route(&mut self, me: (f32, f32), path: Vec<(f32, f32)>, dest: (f32, f32)) {
+        self.path = path;
+        self.at = 0;
+        self.path_to = dest;
+        let n = self.path.len();
+        self.suffix = vec![0.0; n];
+        self.corner = vec![f32::INFINITY; n];
+        for i in (0..n.saturating_sub(1)).rev() {
+            let (a, b) = (self.path[i], self.path[i + 1]);
+            self.suffix[i] = self.suffix[i + 1]
+                + ((b.0 - a.0) * (b.0 - a.0) + (b.1 - a.1) * (b.1 - a.1)).sqrt();
+        }
+        for i in 0..n.saturating_sub(1) {
+            let prev = if i == 0 { me } else { self.path[i - 1] };
+            let (here, next) = (self.path[i], self.path[i + 1]);
+            let (ax, ay) = (here.0 - prev.0, here.1 - prev.1);
+            let (bx, by) = (next.0 - here.0, next.1 - here.1);
+            let la = (ax * ax + ay * ay).sqrt().max(1e-3);
+            let lb = (bx * bx + by * by).sqrt().max(1e-3);
+            let c = (ax * bx + ay * by) / (la * lb);
+            self.corner[i] = if c > 0.85 {
+                f32::INFINITY
+            } else if c > 0.45 {
+                1.6
+            } else if c > -0.2 {
+                1.0
+            } else {
+                0.6
+            };
+        }
     }
 
     /// The share of the bar a pilot keeps back rather than shooting it away.
@@ -852,22 +905,21 @@ impl Bot {
 
     /// Note how an approach is going, and give up on it when it stops closing.
     ///
-    /// This is the whole of the routing this AI has, and it is deliberately not
-    /// routing: rather than working out whether somewhere is reachable, a pilot
-    /// heads for it and notices when that is not working. The alternative on the
-    /// table was A* over a coarse grid, per docs/architecture/ai-runtime.md, and
-    /// it would not have fixed the thing that was actually wrong. What was wrong
-    /// is that a plan committed to a destination and then re-derived the same
-    /// destination for ever, so any target chosen badly once was chosen badly
-    /// until the pilot died. A pathfinder still needs this underneath it, for
-    /// every case the path is right and the flying is not.
+    /// The router does not retire this; it needs it underneath, for every case
+    /// where the path is right and the flying is not. `d` is how far away the
+    /// destination is by the road the pilot will fly -- route length when there
+    /// is a route, straight line when there is not -- and measuring it that way
+    /// is what stops the timer and the router fighting. Watching the straight
+    /// line, every correct detour reads as a stall. Watching the steer point
+    /// instead, as this briefly did, makes the goal's identity churn with every
+    /// re-route, and a genuinely pinned pilot chasing a moving target never
+    /// accumulates enough stillness to give up: the drill caught one holding
+    /// thrust into a wall for ninety seconds on exactly that.
     ///
     /// `arrive` is the distance at which the approach has succeeded rather than
     /// stalled, which is what keeps a bot holding its working range from
     /// deciding it is stuck against the enemy it is busy shooting.
-    fn approaching(&mut self, o: &Own, g: Goal, tx: f32, ty: f32, arrive: f32) {
-        let (dx, dy) = (tx - o.x, ty - o.y);
-        let d = (dx * dx + dy * dy).sqrt();
+    fn approaching(&mut self, g: Goal, tx: f32, ty: f32, d: f32, arrive: f32) {
         if d <= arrive {
             self.goal = None;
             return;
@@ -909,26 +961,29 @@ impl Bot {
         // through stops dead in the one place nothing can shoot into.
         if o.in_safe {
             let c = (sim::MAP_TILES as f32 / 2.0) * 16.0;
-            let ((tx, ty), _) = self.head_for(o, nav, (c, c));
-            self.mode = Mode::Travel(tx, ty, 0.0);
+            self.plot(o, nav, (c, c));
+            self.mode = Mode::Travel(c, c, 0.0, f32::INFINITY);
             return;
         }
 
         // A flag nobody owns, or one the other side holds, is worth crossing
         // the room for. Flags decide the round; kills only clear the way.
         if let Some((fx, fy)) = self.seen.flag.filter(|_| self.worth_trying(Goal::Flag)) {
-            let ((tx, ty), _) = self.head_for(o, nav, (fx, fy));
-            self.note(o, Goal::Flag, (tx, ty), 16.0);
-            self.mode = Mode::Travel(tx, ty, 16.0);
+            let d = self.plot(o, nav, (fx, fy));
+            self.approaching(Goal::Flag, fx, fy, d, 24.0);
+            // Taken at a pass: the flag radius is eighteen pixels, so slowing
+            // to walking pace is enough and stopping is a habit that cost the
+            // roster half its life.
+            self.mode = Mode::Travel(fx, fy, 24.0, 1.2);
             return;
         }
 
         // A green within easy reach is worth the detour when energy allows.
         if o.energy > 0.4 {
             if let Some((px, py)) = self.seen.prize.filter(|_| self.worth_trying(Goal::Prize)) {
-                let ((tx, ty), _) = self.head_for(o, nav, (px, py));
-                self.note(o, Goal::Prize, (tx, ty), 16.0);
-                self.mode = Mode::Travel(tx, ty, 16.0);
+                let d = self.plot(o, nav, (px, py));
+                self.approaching(Goal::Prize, px, py, d, 24.0);
+                self.mode = Mode::Travel(px, py, 24.0, 1.2);
                 return;
             }
         }
@@ -952,9 +1007,9 @@ impl Bot {
         // at them rather than holding a range against something that cannot be
         // shot, and let the trigger stay shut on the way.
         if !foe.clear {
-            let ((tx, ty), _) = self.head_for(o, nav, (fx, fy));
-            self.note(o, Goal::Foe, (tx, ty), 32.0);
-            self.mode = Mode::Travel(tx, ty, 0.0);
+            let d = self.plot(o, nav, (fx, fy));
+            self.approaching(Goal::Foe, fx, fy, d, 48.0);
+            self.mode = Mode::Travel(fx, fy, 0.0, 1.5);
             return;
         }
 
@@ -965,7 +1020,8 @@ impl Bot {
         // Inside that range the pilot has arrived and is fighting, so closing no
         // further is the plan working rather than a wall. Only the run in counts
         // as an approach.
-        self.approaching(o, Goal::Foe, fx, fy, ideal * 1.15);
+        let (ddx, ddy) = (fx - o.x, fy - o.y);
+        self.approaching(Goal::Foe, fx, fy, (ddx * ddx + ddy * ddy).sqrt(), ideal * 1.15);
         self.mode = Mode::Fight(range);
     }
 
@@ -979,9 +1035,46 @@ impl Bot {
                 self.aim = (0.0, 0.0);
                 0
             }
-            Mode::Travel(tx, ty, arrive) => {
+            Mode::Travel(dx, dy, arrive, vend) => {
                 self.aim = (0.0, 0.0);
-                self.fly(o, tx, ty, arrive)
+                // Waypoints are passed the moment they are passed, at the tick
+                // rate rather than the reaction cadence that planned them. A
+                // pilot who needed a whole reaction to notice each corner
+                // behind them flew every route as a chain of stops, and the
+                // stops are where the roster's time was going.
+                while self.at < self.path.len() {
+                    let p = self.path[self.at];
+                    let (px, py) = (p.0 - o.x, p.1 - o.y);
+                    let close = px * px + py * py < 40.0 * 40.0;
+                    let passed = !close && self.at + 1 < self.path.len() && {
+                        // Beyond the plane through the waypoint that faces the
+                        // next leg, which catches a corner cut wide.
+                        let q = self.path[self.at + 1];
+                        (q.0 - p.0) * -px + (q.1 - p.1) * -py > 0.0
+                    };
+                    if close || passed {
+                        self.at += 1;
+                    } else {
+                        break;
+                    }
+                }
+                let (steer, cap, rest) = if self.at < self.path.len() {
+                    (self.path[self.at], self.corner[self.at], self.suffix[self.at])
+                } else {
+                    ((dx, dy), f32::INFINITY, 0.0)
+                };
+                let (sx, sy) = (steer.0 - o.x, steer.1 - o.y);
+                let d = (sx * sx + sy * sy).sqrt();
+                // Fast where there is road, slow enough for the bend ahead, and
+                // down to the pass speed by the end: v² = v_end² + 2as, each
+                // cap measured from where its own constraint stands.
+                let room = (d + rest - arrive).max(0.0);
+                let v = o
+                    .top
+                    .min((vend * vend + 2.0 * o.accel * room).sqrt())
+                    .min((cap * cap + 2.0 * o.accel * d).sqrt());
+                let want = if d > 1e-3 { (sx / d * v, sy / d * v) } else { (0.0, 0.0) };
+                self.seek(o, want, (sx, sy))
             }
             Mode::Fight(range) => {
                 let Some(foe) = self.seen.foe else {
@@ -1014,13 +1107,6 @@ impl Bot {
         }
     }
 
-    /// Fly towards a point, and stop there.
-    ///
-    /// The nose is the gun and the engine at once (decision 17), so the two
-    /// compete: a pilot with a shot lined up points at the target and takes
-    /// whatever thrust that leaves, which is what makes a fight look like
-    /// circling rather than a charge. With nothing to shoot the nose is free
-    /// and goes wherever the burn is.
     /// Bend the wanted velocity off the line of an arriving round.
     ///
     /// Not a separate behaviour with its own buttons: a dodge is a different
@@ -1065,27 +1151,41 @@ impl Bot {
         (wx + ax * o.top, wy + ay * o.top)
     }
 
-    fn fly(&mut self, o: &Own, tx: f32, ty: f32, arrive: f32) -> u16 {
-        let (wx, wy) = want_velocity(o, tx, ty, arrive);
-        let (wx, wy) = if std::env::var("AI_NODODGE").is_ok() { (wx, wy) } else { self.sidestep(o, wx, wy) };
+    /// One wanted velocity in, buttons out: the common tail of every flight.
+    ///
+    /// The nose is the gun and the engine at once (decision 17), so the two
+    /// compete: a pilot with a shot lined up points at the target and takes
+    /// whatever thrust that leaves, which is what makes a fight look like
+    /// circling rather than a charge. With nothing to shoot the nose follows
+    /// the burn -- except when the burn is a brake. Flipping the hull around to
+    /// slow down is what the reverse key is for, and a pilot who did it by
+    /// turning spent every deceleration facing backwards.
+    ///
+    /// A burn under `DEAD` is not worth making, and the direction of a vector
+    /// that small is noise: a coasting pilot pointed at it turned gently and
+    /// for ever, so a settled hull points down the road instead.
+    fn seek(&mut self, o: &Own, want: (f32, f32), ahead: (f32, f32)) -> u16 {
+        let (wx, wy) = if std::env::var("AI_NODODGE").is_ok() {
+            want
+        } else {
+            self.sidestep(o, want.0, want.1)
+        };
         let (ex, ey) = (wx - o.vx, wy - o.vy);
         let err = (ex * ex + ey * ey).sqrt();
         let free = self.aim == (0.0, 0.0);
-        // Where the nose goes when there is nothing to shoot: at the burn while
-        // there is one, and at the destination once the hull is already flying
-        // what it asked for. That second case is not a detail. A velocity error
-        // under `DEAD` is a vector of almost no length, and the direction of a
-        // vector of almost no length is noise, so a coasting pilot pointed at it
-        // turned gently and for ever: the drill caught one holding a left turn
-        // across eighty ticks of perfectly good flight, going in a circle.
-        let (nx, ny) = if !free {
+        let braking = ex * ahead.0 + ey * ahead.1 < 0.0;
+        let dir = if !free {
             self.aim
-        } else if err > DEAD {
+        } else if err > DEAD && !braking {
             (ex, ey)
         } else {
-            (tx - o.x, ty - o.y)
+            ahead
         };
-        let mut out = self.turn(o, nx, ny, !free);
+        let mut out = if dir.0.abs() + dir.1.abs() > 1e-3 {
+            self.turn(o, dir.0, dir.1, !free)
+        } else {
+            0
+        };
         if err > DEAD {
             let off = self.aim_diff(o, ex, ey).abs();
             if off < BURN_ARC {
@@ -1095,6 +1195,13 @@ impl Bot {
             }
         }
         out
+    }
+
+    /// Fly towards a point, and stop there. The bare version, for a
+    /// destination with no route behind it: the fight's stand-off point.
+    fn fly(&mut self, o: &Own, tx: f32, ty: f32, arrive: f32) -> u16 {
+        let want = want_velocity(o, tx, ty, arrive);
+        self.seek(o, want, (tx - o.x, ty - o.y))
     }
 
     /// Where a pilot goes when they can see nothing worth going to.
@@ -1126,9 +1233,9 @@ impl Bot {
         // roam is the one approach with nothing after it to fall through to.
         // Arriving at speed is fine here. A roam point is a direction to be
         // going, not a place to park.
-        let ((tx, ty), _) = self.head_for(o, nav, self.roam);
-        self.note(o, Goal::Roam, (tx, ty), 20.0 * 16.0);
-        self.mode = Mode::Travel(tx, ty, 20.0 * 16.0);
+        let d = self.plot(o, nav, self.roam);
+        self.approaching(Goal::Roam, self.roam.0, self.roam.1, d, 20.0 * 16.0);
+        self.mode = Mode::Travel(self.roam.0, self.roam.1, 20.0 * 16.0, f32::INFINITY);
     }
 
     fn aim_diff(&self, o: &Own, dx: f32, dy: f32) -> f32 {
