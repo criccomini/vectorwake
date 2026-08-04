@@ -302,7 +302,7 @@ local NODES = {
         {label = "scores", detail = "I, or the info button"},
         {label = "map", detail = "M, or click the radar"},
         {label = "who", detail = "click a pilot on the scoreboard"},
-        {label = "menu", detail = "escape"},
+        {label = "menu", detail = "escape, once anything open is shut"},
         {label = "", detail = ""},
         -- Every key here has a second binding, and this is the reason. Most
         -- keyboards are a matrix that cannot report certain three-key

@@ -418,10 +418,24 @@ local function drain_kills()
         -- nothing is worth nothing, and the line says so by staying quiet
         -- rather than by printing a zero.
         local paid = (k.paid > 0 and k.killer ~= 255 and k.killer ~= k.victim)
-            and (" for " .. k.paid) or ""
+            and (" (+" .. k.paid .. ")") or ""
+        -- Two lines out of every feed are about you, and they are the two
+        -- worth finding without reading: green when you took somebody, red
+        -- when somebody took you. Everything else stays the feed's own colour,
+        -- because a feed where every line is lit says nothing by lighting one.
+        --
+        -- Yours outranks theirs when you managed both at once, which is a
+        -- pilot who blew themselves up with the kill: that is your kill, and
+        -- it is the line you will want to see.
+        local col = nil
+        if k.killer == me and k.victim ~= me then
+            col = pal.PRIZE
+        elseif k.victim == me then
+            col = pal.HURT
+        end
         notify((k.victim == k.killer) and (vn .. " was caught in it")
             or (k.killer == 255) and (vn .. " flew into the wall")
-            or (pilot_name(k.killer) .. " killed " .. vn .. paid))
+            or (pilot_name(k.killer) .. " killed " .. vn .. paid), col)
     end
     if #net.kills > 0 then net.kills = {} end
 end
@@ -645,14 +659,24 @@ function update(self, dt)
     -- Escape opens the menu; inside it, escape goes back a level, and at the
     -- root that is the same as closing. One key, no modes.
     --
-    -- Except that escape dismisses whatever it opened first. A pilot's info
-    -- box is the newest thing on screen and the key that shuts things is the
-    -- key a player will reach for; sending them to the menu instead answers a
-    -- question they did not ask and leaves the box open behind it.
-    if tapped[hash("menu")] and not menu.open and ui.inspect then
-        ui.inspect = nil
-        tapped[hash("menu")] = nil
-        sfx.ui("ui_move")
+    -- Except that it shuts what is already open first, innermost outwards: the
+    -- box about a pilot, then the info panel that box was opened from. Escape
+    -- is the key a player reaches for to dismiss whatever they are looking at,
+    -- and answering it with a menu is answering a question nobody asked while
+    -- leaving the thing they meant standing behind it.
+    if tapped[hash("menu")] and not menu.open then
+        local shut = nil
+        if ui.inspect then
+            ui.inspect = nil
+            shut = true
+        elseif ui.details then
+            toggle_details()
+            shut = true
+        end
+        if shut then
+            tapped[hash("menu")] = nil
+            sfx.ui("ui_move")
+        end
     end
     if tapped[hash("menu")] and not menu.open then
         toggle_menu()
