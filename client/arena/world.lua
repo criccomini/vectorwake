@@ -1068,13 +1068,39 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
     --
     -- Safe zones and doors get their own lists: they are the two things worth
     -- steering by, and they were not on the radar at all.
+    -- Anchored to the map's own even grid, never to the window. The stride
+    -- is two tiles, so the phase of the sampled grid decides which tiles are
+    -- looked at, and taking it from the window centre meant every rebuild
+    -- could flip it: measured on Chaos, 664 of 719 blips vanished when the
+    -- window moved one tile, which on screen was the whole dial re-rolling
+    -- every 256 pixels of flight. On the map's grid the same tiles are
+    -- sampled from every centre, so the picture slides and never re-rolls.
+    --
+    -- And the whole two-by-two block per sample, not its corner tile. With a
+    -- fixed phase, a corner read would leave a one-tile wall on the odd
+    -- parity permanently invisible rather than blinking, which is worse.
+    -- Doors outrank safe outranks wall inside a block, because the door is
+    -- the part worth steering by.
     local rt, rs, rd = {}, {}, {}
+    if rx0 % 2 == 1 then rx0 = rx0 + 1 end
+    if ry0 % 2 == 1 then ry0 = ry0 + 1 end
     for ty = ry0, ry1, 2 do
         for tx = rx0, rx1, 2 do
-            local cls = sim.tile(tx, ty)
-            local out = (cls == sim.T_SOLID and rt)
-                or (cls == sim.T_SAFE and rs)
-                or (cls == sim.T_DOOR and rd)
+            local best = 0
+            for dy = 0, 1 do
+                for dx = 0, 1 do
+                    local cls = sim.tile(tx + dx, ty + dy)
+                    if cls == sim.T_DOOR then
+                        best = 3
+                    elseif cls == sim.T_SAFE and best < 2 then
+                        best = 2
+                    elseif cls == sim.T_SOLID and best < 1 then
+                        best = 1
+                    end
+                end
+            end
+            local out = (best == 1 and rt) or (best == 2 and rs)
+                or (best == 3 and rd)
             if out then
                 out[#out + 1] = tx * TILE
                 out[#out + 1] = ty * TILE
