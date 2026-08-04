@@ -70,6 +70,17 @@ jobs:
         run: luacheck client/arena client/render client/ui client/tests
              client/arena/*.script client/render/*.render_script
              client/ui/*.gui_script
+      # The client's own tests, which had been sitting in the tree runnable and
+      # unrun. They need the same lua5.1 this job already installs and no
+      # engine at all, and one of them is the only thing comparing what the
+      # client draws against what the simulation collides: hull_fit_test reads
+      # the radii out of sim/src/baseline.c, so a hull redrawn past its box
+      # fails here rather than on somebody's screen.
+      #
+      # From the repository root, because they read the maps and the settings
+      # the fleet actually serves rather than copies written down beside them.
+      - name: client tests
+        run: for t in client/tests/*_test.lua; do echo "== $t"; lua5.1 "$t" || exit 1; done
 
   bundle:
     needs: lint

@@ -2479,6 +2479,71 @@ int main(void) {
         }
     }
 
+    /* A hull's box is its own, and it is the one number on a ship that the
+     * original's files do not supply. It is measured off what the client
+     * draws, which is why client/tests/hull_fit_test.lua reads the table this
+     * comes from. Here we only check the properties the core depends on: that
+     * the eight are not all one number any more, that none exceeds the ceiling
+     * the shipped maps were checked against, and that a bigger box really does
+     * stop a ship further from a wall, which is the whole point. */
+    {
+        int32_t big = 0, small = INT32_MAX;
+        for (int c = 0; c < cfg.class_count; c++) {
+            int32_t r = cfg.classes[c].radius;
+            CHECK(r > 0, "every hull has a radius");
+            CHECK(r <= 23 * 256, "and none is past the roster's ceiling");
+            if (r > big) big = r;
+            if (r < small) small = r;
+        }
+        CHECK(big > small, "the hulls are not all one size");
+
+        /* Two hulls flown into the same wall stop at different distances, and
+         * the difference is exactly the difference between their boxes. */
+        sim_map *wm = walled_map();
+        for (int y = 0; y < 40; y++)
+            for (int x = 0; x < SIM_MAP_TILES; x++)
+                wm->tile[(size_t)y * SIM_MAP_TILES + x] = SIM_TILE_SOLID;
+        sim_map_index(wm);
+        sim_settings hc;
+        memset(&hc, 0, sizeof hc);
+        sim_settings_baseline(&hc, wm);
+        hc.spawn_prizes = 0;
+
+        int fat = 0, thin = 0;
+        for (int c = 1; c < hc.class_count; c++) {
+            if (hc.classes[c].radius > hc.classes[fat].radius) fat = c;
+            if (hc.classes[c].radius < hc.classes[thin].radius) thin = c;
+        }
+        /* The closest it ever gets, not where it happens to be at the end:
+         * thrust held against a wall bounces, so the last tick of a run is a
+         * ship somewhere in a bounce and the interesting number is the near
+         * edge of one. */
+        int32_t stop[2];
+        int who[2] = {fat, thin};
+        for (int k = 0; k < 2; k++) {
+            sim_state s;
+            sim_init(&s, 1);
+            /* Pointing at the wall the whole way, heading 0 being up. */
+            int id = sim_spawn(&s, who[k], 0, 512 * 16, 60 * 16, 0, &hc);
+            stop[k] = s.ships[id].y;
+            for (int t = 0; t < 3000; t++) {
+                step_n(&s, &hc, SIM_BTN_THRUST, 0, 1);
+                if (s.ships[id].y < stop[k]) stop[k] = s.ships[id].y;
+            }
+        }
+        CHECK(stop[0] > stop[1],
+              "a bigger hull stops further from the wall it flew into");
+        CHECK(stop[0] - stop[1]
+                  == hc.classes[fat].radius - hc.classes[thin].radius,
+              "by exactly the difference between the two boxes");
+        /* Both boxes end flush against the same tile, which is the property
+         * that makes the first check mean what it says. */
+        CHECK((stop[0] - hc.classes[fat].radius)
+                  == (stop[1] - hc.classes[thin].radius),
+              "and both boxes stop flush against the same face");
+        free(wm);
+    }
+
     free(m);
     if (failures == 0) printf("all tests passed\n");
     return failures ? 1 : 0;
