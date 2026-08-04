@@ -45,6 +45,11 @@ end
 
 -- url: the mesh component to feed. capacity: vertices, which is three per
 -- triangle and the hard ceiling on how much a layer can draw in a frame.
+--
+-- `px` is how much of this layer's coordinate space one screen pixel covers,
+-- and it is what lets a stroke know how thin it is allowed to get. One is
+-- right for a layer drawn in pixels, which the interface is; a world layer is
+-- told its own by whoever owns the camera, because only that knows the zoom.
 function M.layer(url, capacity)
     local buf = buffer.create(capacity, {
         {name = STREAM_POS, type = buffer.VALUE_TYPE_FLOAT32, count = 3},
@@ -55,6 +60,7 @@ function M.layer(url, capacity)
         id = attach(buf),
         res = go.get(url, "vertices"),
         cap = capacity,
+        px = 1,
         n = 0,        -- vertices written, as of the last flush
         dropped = 0,
     }, Layer)
@@ -108,17 +114,56 @@ end
 -- an outline leaves a notch at every vertex where two quads meet at an angle;
 -- a capped segment closes it. The quad is the same quad, only longer, so the
 -- fix costs nothing.
+--
+-- The edges carry a pixel of falloff, and the reason is that this game draws
+-- almost nothing else. A wall face is a line 0.7 pixels wide, and a hard edge
+-- that narrow does not have a dim version: the pixel centre is inside the quad
+-- or it is not, so as the camera slides under it the line switches off and on.
+-- Measured on a converted map, sliding the camera an eighth of a pixel at a
+-- time, the light on screen swung by fifteen percent from one frame to the
+-- next and a lit pixel could change by a hundred levels. That is the flicker
+-- you see off a wall when you fly past it.
+--
+-- So: never thinner than a pixel, dimmed by whatever it was widened by so it
+-- keeps the light it had, and a pixel of ramp on each side. The profile
+-- integrates to exactly what the hard quad did. It is the same shape a line
+-- rasteriser with coverage would produce, drawn as geometry because the alpha
+-- the browser gives us is one sample per pixel and no argument.
+--
+-- Cheaper than the alternative, too. Four multisamples cost fill rate on every
+-- pixel of every layer and still left the swing at nine percent; this costs
+-- about half again as many triangles on the layers that stroke, and beat
+-- sixteen samples.
 function Layer:seg(x1, y1, x2, y2, width, col, cap)
     local dx, dy = x2 - x1, y2 - y1
     local len = math.sqrt(dx * dx + dy * dy)
     if len < 1e-6 then return end
-    local nx, ny = -dy / len * width * 0.5, dx / len * width * 0.5
+    local px = self.px
+    local ux, uy = dx / len, dy / len
     if cap then
-        local ex, ey = dx / len * width * 0.5, dy / len * width * 0.5
+        local ex, ey = ux * width * 0.5, uy * width * 0.5
         x1, y1, x2, y2 = x1 - ex, y1 - ey, x2 + ex, y2 + ey
     end
-    self:quad(x1 + nx, y1 + ny, x2 + nx, y2 + ny,
-              x2 - nx, y2 - ny, x1 - nx, y1 - ny, col)
+    local w, a = width, col[4]
+    if w < px then a = a * w / px w = px end
+    -- The core is what is left after a pixel of ramp is taken off each side,
+    -- and for most of the lines in this game there is nothing left of it.
+    local hc, ho = (w - px) * 0.5, (w + px) * 0.5
+    local cx, cy = -uy * hc, ux * hc
+    local ox, oy = -uy * ho, ux * ho
+    local c = {col[1], col[2], col[3], a}
+    if hc > 1e-6 then
+        self:quad(x1 + cx, y1 + cy, x2 + cx, y2 + cy,
+                  x2 - cx, y2 - cy, x1 - cx, y1 - cy, c)
+    end
+    self:tri_fade(x1 + cx, y1 + cy, 1, x2 + cx, y2 + cy, 1,
+                  x2 + ox, y2 + oy, 0, c)
+    self:tri_fade(x1 + cx, y1 + cy, 1, x2 + ox, y2 + oy, 0,
+                  x1 + ox, y1 + oy, 0, c)
+    self:tri_fade(x1 - cx, y1 - cy, 1, x2 - cx, y2 - cy, 1,
+                  x2 - ox, y2 - oy, 0, c)
+    self:tri_fade(x1 - cx, y1 - cy, 1, x2 - ox, y2 - oy, 0,
+                  x1 - ox, y1 - oy, 0, c)
 end
 
 -- A segment that fades across its width rather than along its length: full
