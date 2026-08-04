@@ -138,6 +138,11 @@ pub struct Own {
     pub alive: bool,
     pub x: f32,
     pub y: f32,
+    /// Pixels a tick. What the engine is actually doing, as against what the
+    /// whiskers predict it could: the unstick reflex reads this, because a
+    /// hull pinned on a corner is a fact about the world, not the map.
+    pub vx: f32,
+    pub vy: f32,
     /// Turns, 0..1.
     pub heading: f32,
     /// Share of this hull's effective maximum.
@@ -173,6 +178,78 @@ pub struct Scan {
     pub foe: Option<Foe>,
     pub flag: Option<(f32, f32)>,
     pub prize: Option<(f32, f32)>,
+    /// How far the nearest wall is along each of sixteen compass rays, in
+    /// pixels, capped at `WHISKER_PX`. This is what a player gets from the
+    /// screen for free: not a route anywhere, just whether the direction they
+    /// are about to fly is about to be a wall. Index 0 is north, clockwise,
+    /// matching how headings are measured everywhere else here.
+    pub clear: [f32; WHISKERS],
+}
+
+pub const WHISKERS: usize = 16;
+/// Eleven tiles. At full thrust a hull covers about three pixels a tick, so
+/// this is around half a second of warning, which is what a pilot glancing
+/// ahead actually has.
+const WHISKER_PX: f32 = 176.0;
+
+/// Distance this hull can actually fly along a ray before something stops
+/// it, walked at half a tile like `clear_line`, doors counted as walls for
+/// the same reason they are there.
+///
+/// A capsule as wide as the hull, not a line. The shipped maps are full of
+/// dashed walls -- single tiles with one-tile gaps -- and a line threads a
+/// sixteen-pixel gap that no hull fits through: every hull is wider than
+/// that, and the widest need two tiles and change. A bot given line rays
+/// pressed at the gap it could see through for as long as the test ran,
+/// which turned one dashed wall on Chaos into two thirds of all the
+/// grinding on the map. Each step therefore checks a point either side of
+/// the ray at most of the hull's radius, so a gap reads open only when this
+/// hull passes it.
+fn whisker(w: &World, x: f32, y: f32, dx: f32, dy: f32, r: f32) -> f32 {
+    // The full radius and a few pixels of slack, not a fraction of it. The
+    // width this answers is "can this hull fly down there", and the shipped
+    // maps hold passages a hull fits through only if centred to the pixel --
+    // a 46 px hull at a 48 px gap. A capsule narrower than the hull calls
+    // those open, and a bot believes it, clips the corner, and spends its
+    // life being un-stuck; asking for the hull plus room to manoeuvre makes
+    // it decline squeezes it could only thread perfectly, which is what a
+    // person does with them.
+    let half = r + 4.0;
+    let (px, py) = (-dy * half, dx * half);
+    let wall = |sx: f32, sy: f32| {
+        let tx = (sx / 16.0) as usize;
+        let ty = (sy / 16.0) as usize;
+        if tx >= sim::MAP_TILES || ty >= sim::MAP_TILES {
+            return true;
+        }
+        let cls = unsafe { (*w.map).tile[ty * sim::MAP_TILES + tx] } & 0x0f;
+        cls == 1 || cls == 3
+    };
+    // A side ray that is blocked at its very first step is a wall this hull
+    // is already flush against, and flying along a wall you are touching is
+    // something the collision happily allows -- so that side stops counting.
+    // Without this a bot scraping a long wall read every direction but
+    // straight back as blocked, and the fallback pressed it into the wall it
+    // was trying to leave.
+    let mut side_a = true;
+    let mut side_b = true;
+    let mut d = 8.0;
+    while d < WHISKER_PX {
+        let (cx, cy) = (x + dx * d, y + dy * d);
+        if wall(cx, cy) {
+            return d;
+        }
+        if d == 8.0 {
+            side_a = !wall(cx + px, cy + py);
+            side_b = !wall(cx - px, cy - py);
+        } else if (side_a && wall(cx + px, cy + py))
+            || (side_b && wall(cx - px, cy - py))
+        {
+            return d;
+        }
+        d += 8.0;
+    }
+    WHISKER_PX
 }
 
 /// The pilot's own state, every tick.
@@ -189,6 +266,8 @@ pub fn own(w: &World, ship: u8) -> Own {
         alive: me.active != 0 && me.alive != 0,
         x: me.x as f32 / 256.0,
         y: me.y as f32 / 256.0,
+        vx: me.vx as f32 / 65536.0,
+        vy: me.vy as f32 / 65536.0,
         heading: me.heading as f32 / 65536.0,
         energy: me.energy as f32 / max_e,
         in_safe: unsafe { sim::sim_in_safe(&*w.map, me.x, me.y) } != 0,
@@ -234,6 +313,11 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     // flags where they were no bot ever saw one at all.
     out.flag = nearest_flag(w, mx, my, me.team, SIGHT);
     out.prize = nearest_prize(w, mx, my, 200.0);
+    let r = w.cfg.classes[me.cls as usize].radius as f32;
+    for k in 0..WHISKERS {
+        let a = k as f32 / WHISKERS as f32 * std::f32::consts::TAU;
+        out.clear[k] = whisker(w, mx, my, a.sin(), -a.cos(), r);
+    }
     out
 }
 
@@ -341,6 +425,16 @@ pub struct Bot {
     best_at: u32,
     /// When each kind of approach is worth trying again, indexed by `Goal`.
     blocked: [u32; 4],
+    /// Ticks spent pushing the engine while the hull stayed pinned, and the
+    /// escape in progress when that went on long enough: where to fly and
+    /// until when.
+    pinned: u32,
+    detour_dir: f32,
+    detour_until: u32,
+    /// Whether the hull was facing close enough to where the last steer
+    /// wanted to go. Thrust reads this: pushing while pointed somewhere else
+    /// is how a pilot grinds a wall while turning away from it.
+    aligned: bool,
 }
 
 impl Bot {
@@ -367,6 +461,10 @@ impl Bot {
             best_dist: 0.0,
             best_at: 0,
             blocked: [0; 4],
+            pinned: 0,
+            detour_dir: 0.0,
+            detour_until: 0,
+            aligned: true,
         }
     }
 
@@ -415,10 +513,60 @@ impl Bot {
             self.seen_at = self.timer;
         }
         self.timer += 1;
-        if self.timer % self.react == 0 {
-            self.want = self.plan(o);
+
+        // The unstick reflex. Everything above the engine can be wrong about
+        // a wall -- the whiskers sample, corners are knife edges, doors move
+        // -- but a hull that has been pushing for half a second and going
+        // nowhere is not an estimate. When that happens, stop arguing with
+        // the map: turn to the openest direction there is and fly that way
+        // for most of a second, then resume. It is what a person does when
+        // they find themselves nosed into a corner, and it backstops every
+        // geometric case this file gets subtly wrong, which by construction
+        // it cannot enumerate.
+        let out = if o.alive && self.timer < self.detour_until {
+            self.steer(o, self.detour_dir.sin() * 100.0,
+                       -self.detour_dir.cos() * 100.0, false)
+        } else {
+            if self.timer % self.react == 0 {
+                self.want = self.plan(o);
+            }
+            self.want | self.trigger(o)
+        };
+        // The bookkeeping runs on whatever is actually being flown, the
+        // escape included: an escape that is itself pinned has to be noticed,
+        // or one bad direction choice becomes a hole a bot never leaves.
+        if o.alive
+            && out & sim::BTN_THRUST != 0
+            && (o.vx * o.vx + o.vy * o.vy).sqrt() < 0.4
+        {
+            self.pinned += 1;
+            if self.pinned > 35 {
+                self.pinned = 0;
+                let c = &self.seen.clear;
+                let mut best = 0;
+                for k in 0..WHISKERS {
+                    if c[k] > c[best] {
+                        best = k;
+                    }
+                }
+                self.detour_dir = best as f32 * std::f32::consts::TAU
+                    / WHISKERS as f32
+                    + (self.rand() - 0.5) * 0.5;
+                // Long enough to turn fully round and then actually fly:
+                // half a rotation alone is most of a second.
+                self.detour_until = self.timer + 130;
+                // The roam target is re-rolled, because a wander has no
+                // memory worth keeping and the next pick starts from here.
+                // The approach in progress is deliberately NOT dropped: its
+                // no-progress clock is what abandons an unreachable goal,
+                // and resetting it on every escape would let pin-and-escape
+                // cycles stretch that give-up out for ever.
+                self.roam = (0.0, 0.0);
+            }
+        } else {
+            self.pinned = 0;
         }
-        self.want | self.trigger(o)
+        out
     }
 
     /// The share of the bar a pilot keeps back rather than shooting it away.
@@ -575,7 +723,7 @@ impl Bot {
         // through stops dead in the one place nothing can shoot into.
         if o.in_safe {
             let c = (sim::MAP_TILES as f32 / 2.0) * 16.0;
-            return self.steer(o, c - o.x, c - o.y, false) | sim::BTN_THRUST;
+            return self.steer(o, c - o.x, c - o.y, false);
         }
 
         // A flag nobody owns, or one the other side holds, is worth crossing
@@ -627,7 +775,7 @@ impl Bot {
         // further is the plan working rather than a wall. Only the run in counts
         // as an approach.
         self.approaching(o, Goal::Foe, fx, fy, ideal * 1.15);
-        if dist > ideal * 1.15 {
+        if dist > ideal * 1.15 && self.aligned {
             out |= sim::BTN_THRUST;
         } else if dist < ideal * 0.55 {
             out |= sim::BTN_REVERSE;
@@ -663,16 +811,55 @@ impl Bot {
             dx * dx + dy * dy < (20.0 * 16.0) * (20.0 * 16.0)
         };
         if self.roam == (0.0, 0.0) || arrived {
-            let c = (sim::MAP_TILES as f32 / 2.0) * 16.0;
-            let spread = (sim::MAP_TILES as f32 / 8.0) * 16.0;
-            let (rx, ry) = (self.rand(), self.rand());
-            self.roam = (c + (rx - 0.5) * 2.0 * spread, c + (ry - 0.5) * 2.0 * spread);
+            self.roam = self.pick_roam(o);
         }
         // A point rolled inside a wall would otherwise be pushed at for ever:
         // nothing is nearer than twenty tiles, so `arrived` never fires, and a
         // roam is the one approach with nothing after it to fall through to.
         self.approaching(o, Goal::Roam, self.roam.0, self.roam.1, 20.0 * 16.0);
-        self.steer(o, self.roam.0 - o.x, self.roam.1 - o.y, false) | sim::BTN_THRUST
+        self.steer(o, self.roam.0 - o.x, self.roam.1 - o.y, false)
+    }
+
+    /// The next place to wander to: a hop in a direction the whiskers say is
+    /// open, leaning toward the contested middle.
+    ///
+    /// It used to be a point rolled in the middle quarter of the map, full
+    /// stop, and that is what parked bots against the dashed walls the
+    /// converted maps are full of. From anywhere north-east of a dashed
+    /// corner, every roll in the middle box is south-west, the dashes are
+    /// always in the way, and the give-up fired, re-rolled, and re-derived
+    /// the same impossible intent for ever -- a third of all the grinding on
+    /// the map came from one such corner. A hop picked from what is open
+    /// where the pilot actually is cannot fixate: blocked one way, it leans
+    /// another, works around the obstacle a leg at a time, and the bias
+    /// still collects everybody in the middle where the fights are.
+    fn pick_roam(&mut self, o: &Own) -> (f32, f32) {
+        let c = (sim::MAP_TILES as f32 / 2.0) * 16.0;
+        let clear = self.seen.clear;
+        if clear.iter().all(|v| *v == 0.0) {
+            // Never looked yet. The first scan is at most a tenth of a
+            // second away and a target is re-picked freely, so anything
+            // sensible does: aim at the middle.
+            return (c, c);
+        }
+        let (mx, my) = (c - o.x, c - o.y);
+        let md = (mx * mx + my * my).sqrt().max(1.0);
+        let step = std::f32::consts::TAU / WHISKERS as f32;
+        let mut best_k = 0;
+        let mut best = f32::MIN;
+        for k in 0..WHISKERS {
+            let a = k as f32 * step;
+            let (dx, dy) = (a.sin(), -a.cos());
+            let dot = (dx * mx + dy * my) / md;
+            let score = clear[k] + dot * 70.0 + self.rand() * 60.0;
+            if score > best {
+                best = score;
+                best_k = k;
+            }
+        }
+        let a = best_k as f32 * step;
+        let hop = (24.0 + self.rand() * 32.0) * 16.0;
+        (o.x + a.sin() * hop, o.y - a.cos() * hop)
     }
 
     fn aim_diff(&self, o: &Own, dx: f32, dy: f32) -> f32 {
@@ -688,20 +875,79 @@ impl Bot {
         diff
     }
 
+    /// Bend a desired direction around what the whiskers say is a wall.
+    ///
+    /// The straight line to the target stays the plan whenever it is clear
+    /// enough: `need` is the distance to the target or a hull's worth of
+    /// stopping room, whichever is less, so a point-blank fight never bends.
+    /// When it is not clear, the nearest sufficiently open ray wins, tried
+    /// outward from the straight line a step at a time starting on the side
+    /// with more room. When no ray is open enough, the openest one wins,
+    /// which in a dead end is straight back out of it.
+    ///
+    /// This is deliberately still not routing, per ai-runtime.md: nothing
+    /// here knows where anything is, only which ways are walls right now.
+    /// The give-up in `approaching` stays underneath it for everywhere a
+    /// slide along a wall still does not reach.
+    fn bend(&self, want: f32, dist: f32) -> f32 {
+        let c = &self.seen.clear;
+        // Never looked yet: the first scan lands within a tenth of a second,
+        // and steering at the target until it does beats steering at north.
+        if c.iter().all(|v| *v == 0.0) {
+            return want;
+        }
+        let step = std::f32::consts::TAU / WHISKERS as f32;
+        let k0 = (want / step).round() as i32;
+        let at = |k: i32| c[k.rem_euclid(WHISKERS as i32) as usize];
+        let need = dist.min(96.0).max(24.0);
+        if at(k0) >= need {
+            return want;
+        }
+        let side = if at(k0 + 1) >= at(k0 - 1) { 1 } else { -1 };
+        for off in 1..=(WHISKERS as i32 / 2) {
+            for s in [side, -side] {
+                let k = k0 + s * off;
+                if at(k) >= need {
+                    return k as f32 * step;
+                }
+            }
+        }
+        // Boxed in on every side that matters: take the openest direction,
+        // ties going to straight back the way we came, because a hull that
+        // cannot go anywhere useful should at least stop pressing forward.
+        let mut best = k0 + WHISKERS as i32 / 2;
+        for k in 0..WHISKERS as i32 {
+            if at(k) > at(best) {
+                best = k;
+            }
+        }
+        best as f32 * step
+    }
+
     fn steer(&mut self, o: &Own, dx: f32, dy: f32, with_error: bool) -> u16 {
         let jitter = if with_error {
             (self.rand() - 0.5) * self.aim_err
         } else {
             0.0
         };
-        let diff = self.aim_diff(o, dx, dy) + jitter;
+        let dist = (dx * dx + dy * dy).sqrt();
+        let want = self.bend(dx.atan2(-dy), dist);
+        let head = o.heading * std::f32::consts::TAU;
+        let mut diff = want - head + jitter;
+        while diff > std::f32::consts::PI {
+            diff -= std::f32::consts::TAU;
+        }
+        while diff < -std::f32::consts::PI {
+            diff += std::f32::consts::TAU;
+        }
         let mut out = 0;
         if diff > 0.05 {
             out |= sim::BTN_RIGHT;
         } else if diff < -0.05 {
             out |= sim::BTN_LEFT;
         }
-        if !with_error && diff.abs() < 0.5 {
+        self.aligned = diff.abs() < 0.5;
+        if !with_error && self.aligned {
             out |= sim::BTN_THRUST;
         }
         out
@@ -757,4 +1003,98 @@ fn nearest_prize(w: &World, mx: f32, my: f32, within: f32) -> Option<(f32, f32)>
         }
     }
     best.map(|(_, x, y)| (x, y))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sim;
+
+    /// Bots on the shipped Chaos map, measured for the failure a player
+    /// reports as "stuck in corners": thrust held while going nowhere.
+    ///
+    /// The number is the share of alive bot-ticks inside sustained pinning:
+    /// half a second or more of engine lit and the hull moving under a third
+    /// of a pixel a tick. Launches and reversals pass through low speed and
+    /// are not that.
+    ///
+    /// Straight-at-it steering with no wall sense measured 56.2% on this
+    /// exact harness: more than half of every bot's life nose against a
+    /// wall, which is what "bots stuck in corners" looks like from a
+    /// cockpit. Whiskers, the unstick reflex and open-direction roaming
+    /// measure 0.0%.
+    #[test]
+    fn bots_do_not_grind_walls_on_a_real_map() {
+        let bytes = std::fs::read("../catalog/zones/chaos/chaos.vwmap")
+            .expect("the chaos map ships in this repository");
+        let mut w = sim::World::from_packed(0x5eed, &bytes).expect("a map");
+        let mut bots = Vec::new();
+        for i in 0..10usize {
+            let e = individual(i);
+            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2,
+                                      512, 512, 0);
+            assert!(ship >= 0, "a seat on the map");
+            let mut b = Bot::new(ship as u8, e.skill);
+            b.reseed(i as u32 * 977 + 13);
+            bots.push(b);
+        }
+
+        let mut inputs = Vec::new();
+        let mut alive_ticks = 0u64;
+        let mut grinding = 0u64;
+        let mut grind_at: Vec<(i32, i32)> = Vec::new();
+        // A launch or a reversal passes through low speed with the engine
+        // lit, and neither is being stuck. Stuck is staying that way: only
+        // runs of fifty consecutive pinned ticks count, and the whole run
+        // counts once it does.
+        let mut run: Vec<u32> = vec![0; bots.len()];
+        for _ in 0..12_000u32 {
+            inputs.clear();
+            for b in bots.iter_mut() {
+                let ship = b.ship;
+                let fresh = b.looks_due().then(|| scan(&w, ship));
+                let buttons = b.think(&own(&w, ship), fresh);
+                inputs.push(sim::sim_input { ship, buttons });
+            }
+            w.step(&inputs);
+            for (bi, inp) in inputs.iter().enumerate() {
+                let sh = &w.state.ships[inp.ship as usize];
+                if sh.active == 0 || sh.alive == 0 {
+                    run[bi] = 0;
+                    continue;
+                }
+                alive_ticks += 1;
+                let vx = sh.vx as f32 / 65536.0;
+                let vy = sh.vy as f32 / 65536.0;
+                let pushing = inp.buttons & sim::BTN_THRUST != 0;
+                if pushing && (vx * vx + vy * vy).sqrt() < 0.35 {
+                    run[bi] += 1;
+                    if run[bi] == 50 {
+                        grinding += 50;
+                        grind_at.push((sh.x / 256 / 16, sh.y / 256 / 16));
+                    } else if run[bi] > 50 {
+                        grinding += 1;
+                    }
+                } else {
+                    run[bi] = 0;
+                }
+            }
+        }
+        let mut spots: std::collections::HashMap<(i32, i32), u32> =
+            std::collections::HashMap::new();
+        for (tx, ty) in grind_at.iter() {
+            *spots.entry((tx / 4, ty / 4)).or_default() += 1;
+        }
+        let mut top: Vec<_> = spots.into_iter().collect();
+        top.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        for ((cx, cy), n) in top.iter().take(10) {
+            println!("  {n:6} ticks near tile ({}, {})", cx * 4 + 2, cy * 4 + 2);
+        }
+        let share = grinding as f64 / alive_ticks.max(1) as f64;
+        println!("grinding {grinding} of {alive_ticks} alive bot-ticks \
+                  ({:.1}%)", share * 100.0);
+        assert!(share < 0.02,
+                "bots spend {:.1}% of their lives pushing into walls",
+                share * 100.0);
+    }
 }

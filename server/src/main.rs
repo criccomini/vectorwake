@@ -3665,6 +3665,10 @@ mod tests {
             prize: Some((px(511), px(506))),
             foe: Some(ai::Foe { x: px(503), y: px(517), vx: 0.0, vy: 0.0, clear: true }),
             flag: None,
+            // Hand-built, so the whiskers say open on purpose: this test is
+            // about giving up on a green behind a wall, and a bot that could
+            // see the wall would never press into it to begin with.
+            clear: [1e9; ai::WHISKERS],
         };
 
         let mut fired_at = None;
