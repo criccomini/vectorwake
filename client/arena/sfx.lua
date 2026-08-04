@@ -64,8 +64,8 @@ local top = {}
 --
 -- Held sounds stay on the mixer. A queue is only late at the start, and the
 -- start of a rumble that runs for minutes is not a thing anybody can time.
--- Music alone is four fifths of the kit's bytes, and moving it would mean
--- rewriting the retry loop below for no audible gain.
+-- Music alone is four fifths of the kit's bytes, so moving it would be work
+-- for no audible gain.
 local WEB_AUDIO_JS = [[(function () {
   var sh = window._dmJSDeviceShared;
   if (!sh || !sh.audioCtx) return "0";
@@ -290,51 +290,56 @@ end
 -- The soundtrack, which is a loop like thrust but wanted the moment there is
 -- anything to hear rather than on an edge the game computes.
 --
--- Asked rather than told: a browser makes no sound at all until the page has
--- been interacted with, so the first attempt is often refused and nothing
--- says so. Checking whether it is actually running and starting it again if
--- not is what makes that self-healing, and it costs one call a keypress.
-local music = {want = false, settled = false, wait = 0, tries = 0}
+-- Wanting it and starting it are separate, because a browser makes no sound
+-- until the page has been interacted with, and a track started before that is
+-- not held back, it runs silently. So `want` is set at boot and the start
+-- waits for the device. See M.music_tick.
+local music = {want = false, settled = false}
 
 function M.music(on)
     music.want = on and true or false
     music.settled = false
-    music.wait = 0
-    music.tries = 0
     if not music.want then pcall(sound.stop, "#music") end
 end
 
--- Once a frame, and the reason the soundtrack is asked for rather than told.
+-- Is the browser's audio actually awake?
 --
--- Two gates sit between wanting music and hearing it. A browser makes no
--- sound at all until the page has been interacted with, and Defold's audio
--- device does not wake until something has actually played -- so the first
--- request is accepted, returns success, and is silently dropped. Measured:
--- asking once at the first keypress left the track silent forever, and firing
--- the guns was what let it in.
+-- A page makes no sound until it has been interacted with, and the engine's
+-- device does not queue anything while its context is suspended: it mixes the
+-- audio and throws it away, so a track started before the gesture is not
+-- waiting, it is running silently and losing its beginning.
 --
--- So this asks again every couple of seconds until the engine agrees it is
--- running, and then stops asking. Stopping before each retry is what makes
--- that safe: a second voice of a nineteen second loop playing against itself
--- is the worst sound this game could make. The attempt count is a backstop
--- for the case where `is_playing` is wrong about a component -- a bounded
--- number of restarts beats an endless one.
+-- This asks the context directly, which is the only honest answer available.
+-- Nil on anything but the web, where there is no gate to wait for.
+local function audio_awake()
+    if not html5 then return true end
+    local ok, r = pcall(html5.run, [[(window._dmJSDeviceShared
+        && window._dmJSDeviceShared.audioCtx
+        && window._dmJSDeviceShared.audioCtx.state === "running") ? "1" : "0"]])
+    return ok and r == "1"
+end
+
+-- Once a frame, until the soundtrack is running.
+--
+-- Started when the audio device is awake rather than at once, and started
+-- exactly once. Both halves of that were wrong before, in a way that took
+-- reading the engine's own JavaScript to see.
+--
+-- The old version polled `sound.is_playing` and restarted the track whenever
+-- the answer was not yes. There is no `sound.is_playing` in Defold's sound
+-- module, so the call raised every frame, the answer was never yes, and the
+-- backstop that was meant for a misreported component became the normal path:
+-- twelve restarts at two second intervals across the first twenty-three
+-- seconds of every session, measured in the shipped build. A player heard the
+-- opening bars begin over and over.
+--
+-- Starting it before the gate is the other half. Audio mixed into a suspended
+-- context is discarded rather than held, so the track advances while nobody
+-- can hear it, and the first thing a player does hear is the middle of it.
 function M.music_tick(dt)
     if not music.want or music.settled then return end
-    local ok, playing = pcall(sound.is_playing, "#music")
-    if ok and playing then
-        music.settled = true
-        return
-    end
-    if music.tries >= 12 then
-        music.settled = true
-        return
-    end
-    music.wait = music.wait - (dt or 0)
-    if music.wait > 0 then return end
-    music.wait = 2.0
-    music.tries = music.tries + 1
-    pcall(sound.stop, "#music")
+    if not audio_awake() then return end
+    music.settled = true
     M.fire("music", {gain = 1, pan = 0, speed = 1})
 end
 
