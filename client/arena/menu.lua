@@ -334,35 +334,17 @@ local NODES = {
     -- on a phone they were laid over the thumbs, naming keys the device does
     -- not have while the controls it does have sat unexplained. A thing you
     -- consult belongs somewhere you go to consult it.
-    -- The layout is the original's where the browser permits: arrows and Tab
-    -- are Continuum's own, the gun sits on Shift because windowed Ctrl is
-    -- half the browser's (Ctrl with Tab switches tabs everywhere, and macOS
-    -- takes Ctrl with the arrows for itself), and fullscreen with a keyboard
-    -- lock gives Ctrl back where the browser has one to give. Shift and Tab
-    -- also sit on their own lines in a keyboard matrix, so the layout cannot
-    -- ghost the way arrows-plus-space could; the letters stay as alternates.
-    help = {title = "help", rows = {
-        {label = "", detail = "on a touchscreen"},
+    -- On a keyboard the page draws the keyboard: ui.lua renders the board
+    -- with the bound keys lit by function when `board` is set, and these
+    -- rows are only ever read on a touchscreen, where the thumbs are the
+    -- controls and the board would be a picture of keys the device has not
+    -- got. The layout itself is decision 33: the original's keys where the
+    -- browser permits them, the nearest safe key where it does not.
+    help = {title = "help", board = true, rows = {
         {label = "steer", detail = "left thumb: point where you want the nose"},
         {label = "fire", detail = "right pads: guns, then bombs"},
         {label = "charges", detail = "tap a charge pad to spend it"},
-        {label = "", detail = ""},
-        {label = "", detail = "on a keyboard"},
-        {label = "fly", detail = "arrow keys"},
-        {label = "guns", detail = "shift, or space, Z, click"},
-        {label = "bombs", detail = "tab, or X, right click"},
-        {label = "charges", detail = "1 2 3 4, numbered in the corner stack"},
-        -- Worth a line of its own. A fan is a liability down a corridor and
-        -- arrives from a green rather than by choice, so a pilot who has one
-        -- and does not know this key has a gun that got worse.
-        {label = "one shot", detail = "Q, to stop multifire fanning"},
-        {label = "scores", detail = "I, or the info button"},
-        {label = "map", detail = "M, or click the radar"},
-        {label = "who", detail = "click a pilot on the scoreboard"},
-        {label = "menu", detail = "escape, once anything open is shut"},
-        {label = "", detail = ""},
-        {label = "", detail = "fullscreen adds ctrl as a gun, where the"},
-        {label = "", detail = "browser allows the keyboard to be locked"},
+        {label = "who", detail = "tap a pilot on the scoreboard"},
     }},
 
     -- What this build is, rather than what the game is.
@@ -515,6 +497,10 @@ function M.view()
     local out = {title = nd.title, depth = #M.stack, sel = sel,
                  note = M.note, closable = not M.home or #M.stack > 1,
                  home_root = M.home and #M.stack == 1,
+                 -- The help page asks for the drawn keyboard; whether the
+                 -- device gets one is ui.lua's call, since only it knows
+                 -- whether there is a keyboard to draw a picture of.
+                 board = nd.board or false,
                  rows = {}}
     for i, r in ipairs(rows) do
         local d = r.detail

@@ -902,13 +902,13 @@ local function status(me, pickup, charges, lift)
     end
 
     if show_charges then
-        for i, c in ipairs(slots) do
-            -- The digit is the key that spends this row, so it leads the
-            -- label: the row is its own reminder and nothing has to be
-            -- looked up. There is no ready mark any more, because there is
-            -- no selection: a key or a pad names its charge outright.
-            txt(i .. "  " .. string.upper(c.name or c.short), x,
-                y + rows_h / 2, lab, pal.a(pal.DIM, 0.8))
+        for _, c in ipairs(slots) do
+            -- No ready mark and no digit: there is no selection to show any
+            -- more, a key or a pad names its charge outright, and which
+            -- number is which row is the help page's job, not a label worn
+            -- in the corner of every fight.
+            txt(string.upper(c.name or c.short), x, y + rows_h / 2, lab,
+                pal.a(pal.DIM, 0.8))
             pips(val + 3 * S, y + rows_h / 2, math.max(1, c.max or 3), c.count,
                  pal.CHARGE_COL, 2.7 * S, 9 * S)
             y = y + rows_h
@@ -1408,10 +1408,152 @@ end
 local ROW_H = 34
 local MENU_W = 460
 
+-- The help page's keyboard, drawn as a keyboard.
+--
+-- The controls were a column of sentences, which is a wall of text about a
+-- thing everybody already has a picture of under their hands. So the picture
+-- is what gets drawn: the board itself, unbound keys as faint outlines and
+-- the bound ones lit in the colour of what they do, with a legend saying what
+-- each colour is. A key does not need a caption when the board it sits on
+-- says where it is.
+--
+-- Widths are in key units so the board scales with the panel. The rows are
+-- the standard board's, minus the function row nothing binds.
+local BOARD = {
+    {{"esc", 1.3, "ui"}, {"1", 1, "charge"}, {"2", 1, "charge"},
+     {"3", 1, "charge"}, {"4", 1, "charge"}, {"5"}, {"6"}, {"7"}, {"8"},
+     {"9"}, {"0"}},
+    {{"tab", 1.7, "bomb"}, {"Q", 1, "ui"}, {"W"}, {"E"}, {"R"}, {"T"}, {"Y"},
+     {"U"}, {"I", 1, "ui"}, {"O"}, {"P"}},
+    {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H"}, {"J"}, {"K"},
+     {"L"}},
+    {{"shift", 2.25, "gun"}, {"Z", 1, "gun"}, {"X", 1, "bomb"}, {"C"}, {"V"},
+     {"B"}, {"N"}, {"M", 1, "ui"}},
+    {{"ctrl", 1.6, "gun2"}, {"space", 6.2, "gun"}},
+}
+-- The board is 12.4 units across, and the arrow cluster hangs off its right
+-- edge over the two bottom rows, where the letter rows have already ended.
+local BOARD_UNITS = 12.4
+
+-- What each colour means, in the order the legend reads.
+local BOARD_CATS = {
+    {key = "fly", word = "fly"},
+    {key = "gun", word = "guns"},
+    {key = "bomb", word = "bombs"},
+    {key = "charge", word = "charges"},
+}
+
+local function board_col(cat)
+    if cat == "gun" then return pal.FRIEND end
+    if cat == "bomb" then return pal.BOMB end
+    if cat == "charge" then return pal.CHARGE_COL end
+    if cat == "fly" then return pal.INK end
+    if cat == "ui" then return pal.a(pal.DIM, 1.0) end
+    return nil
+end
+
+-- One key: an outline in its function's colour with a hint of fill, or a
+-- faint outline for a key the game does not use. `cy` is the row's top.
+local function board_key(bx, cy, kw, kh, label, cat, dimmed)
+    local col = board_col(cat)
+    if col and not dimmed then
+        rect(bx, cy, kw, kh, pal.a(col, 0.10))
+        u:frame(bx, ry(cy, kh), kw, kh, 1.1 * S, pal.a(col, 0.85))
+    elseif col then
+        -- Ctrl: a gun the browser only surrenders in fullscreen, drawn at
+        -- half light so the board says "sometimes" without a footnote on it.
+        u:frame(bx, ry(cy, kh), kw, kh, 1.1 * S, pal.a(col, 0.35))
+    else
+        u:frame(bx, ry(cy, kh), kw, kh, 0.8 * S, pal.a(pal.DIM, 0.22))
+    end
+    if label then
+        local size = (#label > 1 and (FONT - 5) or (FONT - 3)) * S
+        local ink = col and pal.a(col, dimmed and 0.5 or 0.95)
+            or pal.a(pal.DIM, 0.4)
+        txt(label, bx + kw / 2, cy + kh / 2, size, ink, "center")
+    end
+end
+
+-- A direction, as a triangle, because the gui font's charset is picked over
+-- and an arrow glyph it does not carry would draw as nothing.
+local function board_arrow(cx, cy, dx, dy, col)
+    local r = 3.6 * S
+    u:tri(cx + dx * r, ry(cy + dy * r),
+          cx - dx * r + dy * r, ry(cy - dy * r - dx * r),
+          cx - dx * r - dy * r, ry(cy - dy * r + dx * r), col)
+end
+
+-- The whole board, drawn into the panel at `x, top`, `w` wide. Returns its
+-- height so the caller can size the panel around it.
+local function board(x, top, w)
+    local unit = w / BOARD_UNITS
+    local kh = unit * 0.82
+    local pitch = kh + 3 * S
+    for r, row in ipairs(BOARD) do
+        local bx = x
+        local cy = top + (r - 1) * pitch
+        for _, k in ipairs(row) do
+            local kw = (k[2] or 1) * unit - 3 * S
+            board_key(bx, cy, kw, kh, k[1], k[3], k[3] == "gun2")
+            bx = bx + (k[2] or 1) * unit
+        end
+    end
+    -- The arrows, as the inverted T they are on the board: up over down, in
+    -- the corner the two bottom rows leave empty. Each entry is a column, a
+    -- row off the shift row, and the direction its triangle points.
+    local fly = board_col("fly")
+    local aw = unit * 0.92
+    local ax = x + w - 3 * aw
+    for _, d in ipairs({{1, 0, 0, -1}, {0, 1, -1, 0}, {1, 1, 0, 1},
+                        {2, 1, 1, 0}}) do
+        local kx = ax + d[1] * aw
+        local cy = top + (3 + d[2]) * pitch
+        local kw = aw - 3 * S
+        rect(kx, cy, kw, kh, pal.a(fly, 0.08))
+        u:frame(kx, ry(cy, kh), kw, kh, 1.1 * S, pal.a(fly, 0.75))
+        board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4], pal.a(fly, 0.95))
+    end
+
+    -- The legend: a swatch per colour, one line.
+    local ly = top + 5 * pitch + 10 * S
+    local lx = x
+    for _, c in ipairs(BOARD_CATS) do
+        local col = board_col(c.key)
+        rect(lx, ly + 2 * S, 8 * S, 8 * S, pal.a(col, 0.9))
+        txt(c.word, lx + 14 * S, ly + 6 * S, (FONT - 3) * S,
+            pal.a(pal.DIM, 0.95))
+        lx = lx + (14 + #c.word * 7 + 18) * S
+    end
+
+    -- What a drawing cannot say, in as few lines as it can be said.
+    local caps = {
+        "mouse: left guns, right bombs, wheel scrolls lists",
+        "Q holds a multifire gun to one shot; I scores, M map, esc menu",
+        "1 to 4 spend the charges as the corner stack lists them",
+        "in fullscreen ctrl joins the guns, where the browser allows it",
+    }
+    local cy = ly + 22 * S
+    for _, line in ipairs(caps) do
+        txt(line, x, cy, (FONT - 4) * S, pal.a(pal.DIM, 0.85))
+        cy = cy + 14 * S
+    end
+    return (cy - top) + 2 * S
+end
+
+-- What the board will ask for, so the panel can be sized before drawing it.
+local function board_height(w)
+    local unit = w / BOARD_UNITS
+    return 5 * (unit * 0.82 + 3 * S) + 10 * S + 22 * S + 4 * 14 * S + 2 * S
+end
+
 function M.menu(v)
     local w = math.min(MENU_W * S, W - 24 * S)
     local x = math.max(24 * S, (W - w) / 2 - 120 * S)
     local nrows = #v.rows
+    -- The help page draws the keyboard instead of listing it, except on a
+    -- touchscreen, where the rows describe the thumbs and a picture of keys
+    -- the device does not have would be the wall of text's sillier cousin.
+    local show_board = v.board and not M.touching
     -- The home screen carries the name at a size that owns its corner, and
     -- everything under it moves down by the room that takes. Only while the
     -- room exists: a phone held sideways has about 350 points of height, the
@@ -1425,6 +1567,7 @@ function M.menu(v)
         if H / S >= need then head = 60 * S end
     end
     local h = ROW_H * S * nrows + 76 * S + head
+    if show_board then h = board_height(w - 40 * S) + 84 * S end
     local y = math.max(20 * S, (H - h) / 2)
 
     -- Not a curtain: dimmed enough to read against, clear enough to see the
@@ -1480,7 +1623,11 @@ function M.menu(v)
           pal.a(pal.RADAR_TILE, 0.4), 12 * S)
 
     local ry0 = y + 48 * S + head
+    if show_board then
+        board(x + 20 * S, ry0, w - 40 * S)
+    end
     for i, r in ipairs(v.rows) do
+        if show_board then break end
         local top = ry0 + (i - 1) * ROW_H * S
         local on = i == v.sel
         if on and r.pick then
