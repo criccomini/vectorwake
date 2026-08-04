@@ -133,6 +133,40 @@ int Attach(lua_State* L) {
     return 1;
 }
 
+// Point an existing layer at a new buffer, keeping its id.
+//
+// A layer's capacity is chosen from the size of the view, and the view
+// changes when somebody resizes their window, so a capacity has to be able to
+// change with it. Attaching again would not do: `attach` only ever appends,
+// there are eight slots, and five are spoken for, so a player dragging a
+// window wider a few times would run the table out and take the client with
+// it.
+//
+// The id is what every draw call already holds, so rebinding under it means
+// nothing above here has to know this happened.
+int Rebind(lua_State* L) {
+    VwLayer* v = Layer(L, 1);
+    v->buf = dmScript::CheckBufferUnpack(L, 2);
+    if (!Resolve(v)) {
+        return luaL_error(L, "vwbuf: need float3 position and float4 color");
+    }
+    // For the reason Attach zeroes: everything past the busiest frame is drawn
+    // exactly as it arrived, and a fresh malloc arrives full of whatever used
+    // to be there. The counters go with it, because a peak measured against
+    // the old capacity says nothing about this one.
+    void* bytes = 0;
+    uint32_t size = 0;
+    if (dmBuffer::GetBytes(v->buf, &bytes, &size) != dmBuffer::RESULT_OK) {
+        return luaL_error(L, "vwbuf: cannot read the buffer back");
+    }
+    memset(bytes, 0, size);
+    v->n = 0;
+    v->high = 0;
+    v->peak = 0;
+    v->dropped = 0;
+    return 0;
+}
+
 int Reset(lua_State* L) {
     VwLayer* v = Layer(L, 1);
     Resolve(v);
@@ -275,7 +309,8 @@ int Stats(lua_State* L) {
     return 3;
 }
 
-const luaL_reg kFunctions[] = {{"attach", Attach}, {"reset", Reset},
+const luaL_reg kFunctions[] = {{"attach", Attach}, {"rebind", Rebind},
+                               {"reset", Reset},
                                {"tri", Tri},       {"tri_fade", TriFade},
                                {"quad", Quad},     {"rect", Rect},
                                {"finish", Finish},

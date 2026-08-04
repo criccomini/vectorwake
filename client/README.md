@@ -407,8 +407,8 @@ carry is not duplicated in a second table to drift.
 
 Held sounds stay on the mixer. A queue is only late at the start, and the start
 of a rumble that runs for minutes is not something anyone can time. The
-soundtrack alone is four fifths of the kit's bytes and its retry loop is
-delicate, so moving it would be work in exchange for nothing audible.
+soundtrack alone is four fifths of the kit's bytes, so moving it would be work
+in exchange for nothing audible.
 
 Everything degrades rather than breaks. No `html5` module, a graph that fails to
 install, a component whose gain will not read, a buffer still inside
@@ -422,6 +422,20 @@ is 0.2 us and not worth batching away. Native builds are untouched, because the
 whole path is behind `if html5`.
 
 ## Sound in a browser is gated, and the engine's gate is narrow
+
+The soundtrack waits for that gate rather than starting into it. Audio mixed
+into a suspended context is discarded, not held: the engine keeps mixing and the
+device throws it away, so a track started at boot runs on silently and the first
+thing a player hears is the middle of it. `sfx.music_tick` asks the context
+directly whether it is `running`, and starts the track once, when it is.
+
+It used to poll `sound.is_playing` and restart the track whenever the answer was
+not yes. There is no `sound.is_playing` in Defold's sound module. The call raised
+every frame under its `pcall`, the answer was never yes, and the bounded backstop
+meant for a misreported component became the normal path: twelve restarts at two
+second intervals across the first twenty-three seconds of every session, measured
+in the shipped build. The test stub had invented the function, which is why no
+test noticed; it now stubs only what the module really has.
 
 Every page starts muted: the audio context is created suspended and only a
 user gesture resumes it. The engine asks for that resume from exactly one
