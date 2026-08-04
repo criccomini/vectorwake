@@ -402,6 +402,10 @@ struct Arena {
     /// admits nobody else. Cleared with the seat, because a seat is furniture
     /// and the next occupant was invited to nothing.
     invites: HashMap<u8, std::collections::HashSet<u8>>,
+    /// Where the next founded side takes its name from. It only moves forward,
+    /// so leaving a side and starting another hands out a different word rather
+    /// than the one the reaper just freed.
+    name_cursor: usize,
     /// The share of this room's seats the bot server is asked to keep filled.
     /// The arena does not fill anything itself; it publishes the count it would
     /// like and the bot server supplies it, per decision 29.
@@ -872,6 +876,7 @@ impl Arena {
             max_humans_per_team: 255,
             max_bots_per_team: 255,
             invites: HashMap::new(),
+            name_cursor: 0,
             bot_fill: catalog::DEFAULT_BOT_FILL,
         }
     }
@@ -1221,7 +1226,18 @@ impl Arena {
     /// A name no side in this room is wearing. The words are the roster's
     /// register and none of its names, the same rule the call sign generator
     /// follows, so a team never reads as a pilot.
-    fn fresh_team_name(&self) -> String {
+    ///
+    /// The search starts where the last one stopped rather than at the top of
+    /// the list. Starting at the top always returned the same word to a lone
+    /// player: found a side, leave it, the reaper takes it, and the next found
+    /// hands back the name that just came free. Two different sides in a row
+    /// called Anvil Watch reads as a button that did nothing.
+    ///
+    /// The cursor still wraps, so a room only reuses a freed word after going
+    /// all the way round. That matters in a free-for-all, where every arrival
+    /// founds a side: a cursor that only ever climbed would have a room of
+    /// twenty-five bots flying for Anvil Watch 30 by the afternoon.
+    fn fresh_team_name(&mut self) -> String {
         const WORDS: [&str; 24] = [
             "Anvil Watch", "Black Sill", "Cold Harbour", "Deep Keel",
             "Ember Line", "Far Reach", "Grey Span", "High Trestle",
@@ -1230,9 +1246,19 @@ impl Arena {
             "Salt Pier", "Stone Chord", "Tall Derrick", "Under Span",
             "Verge Works", "West Buttress", "Yard Bell", "Zinc Landing",
         ];
-        for lap in 0..64u32 {
+        for step in 0..WORDS.len() {
+            let i = (self.name_cursor + step) % WORDS.len();
+            if !self.teams.values().any(|t| t.name == WORDS[i]) {
+                self.name_cursor = i + 1;
+                return WORDS[i].to_string();
+            }
+        }
+        // Every word is out at once, which takes twenty-four live sides. The
+        // laps are plain suffixes and the cursor stays out of them: a room this
+        // full is a free-for-all, and there the number is the useful part.
+        for lap in 1..64u32 {
             for w in WORDS {
-                let name = if lap == 0 { w.to_string() } else { format!("{w} {}", lap + 1) };
+                let name = format!("{w} {}", lap + 1);
                 if !self.teams.values().any(|t| t.name == name) {
                     return name;
                 }
@@ -4333,6 +4359,37 @@ mod tests {
         assert!(a.join_team(founder, 0));
         assert!(a.join_team(guest, 0));
         assert!(!a.teams.contains_key(&team), "an empty private side is gone");
+    }
+
+    #[test]
+    fn founding_again_after_leaving_gives_a_different_name() {
+        // A lone player founding, leaving, and founding again used to be
+        // handed the word the reaper had just freed, so the second side was
+        // called Anvil Watch exactly like the first and the menu looked stuck.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let ship = seat_human(&mut a, "one");
+
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            assert!(a.found_and_move(ship));
+            let team = a.world.state.ships[ship as usize].team;
+            seen.push(a.teams[&team].name.clone());
+            assert!(a.join_team(ship, 0), "back to the zone's own side");
+        }
+        let mut sorted = seen.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), seen.len(), "four founds, four names: {seen:?}");
+
+        // The cursor wraps rather than climbing, so the words come back round
+        // instead of turning into Anvil Watch 30 in a room that churns.
+        for _ in 0..20 {
+            assert!(a.found_and_move(ship));
+            assert!(a.join_team(ship, 0));
+        }
+        assert!(a.found_and_move(ship));
+        let team = a.world.state.ships[ship as usize].team;
+        assert_eq!(a.teams[&team].name, seen[0], "round again, no suffix");
     }
 
     #[test]

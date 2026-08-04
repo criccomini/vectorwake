@@ -76,6 +76,14 @@ It also makes invitations socially cheap, since a mistake is not a commitment
 that needs a moderation tool to undo. A team with no members left in it stops
 existing and its byte returns to the pool.
 
+The walk-away only reads as a walk-away if the new team looks new, so the
+generator carries on through its word list instead of restarting at the top of
+it. Restarting was the first version and it handed a lone player the word the
+reaper had just freed, which made founding a second team look like a button
+that did nothing. The list still wraps once it is exhausted, because a
+free-for-all founds a side for every arrival and a counter that only climbed
+would have a room of bots flying for Anvil Watch 30 by the afternoon.
+
 What a private team means depends on the mode. In a free-form zone it is its
 own side: you and yours, mutually friendly inside the brawl. In a fixed-side
 mode there is no third side to be, and none is needed, because playing
