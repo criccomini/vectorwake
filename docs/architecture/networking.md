@@ -281,6 +281,59 @@ margin.
 That lead is the client's only latency compensation. We are not doing lag
 compensation by rewinding the server, and the reason is in the next section.
 
+## What the screen shows, against what the simulation holds
+
+Two jitters, neither of them a prediction failure, both fixed in the drawing
+rather than in the state. See the render section of `client/ext/simcore/src/simcore.cpp`.
+
+**The tick grid against the refresh rate.** The core runs at 100 Hz and no
+display refreshes at a multiple of it, so drawing the newest tick advances the
+world by one tick on some frames and two on others at 60 Hz, and by one or none
+at 120. That is a speed ripple on every frame of every screen, on the camera and
+everything in it, and it has nothing to do with the network. Positions are
+interpolated between the last two ticks by where the frame actually falls. The
+cost is one tick of visual latency, ten milliseconds, less than a frame anywhere;
+the gain is that it is *constant*, in place of a random nought to ten. Constant
+latency is invisible. Varying latency is the judder.
+
+Raising the tick rate to 120 would divide 60 and 120 cleanly and fix the same
+thing without interpolating, and it was considered and dropped. Every delay,
+lifetime and cooldown in every zone file is a tick count inherited from a server
+that ran at 100 Hz, `original-settings.md` turns on the two rates being equal,
+the unit conversions in `sim.c` bake in the thousand, and it would still alias on
+a 144 Hz screen. Interpolation makes the sim rate and the refresh rate
+independent, which is the property actually wanted.
+
+**The snapshot against the extrapolation.** A snapshot lands twenty times a
+second and replaces state outright, so a remote ship extrapolated wrong snaps to
+the truth. `smooth_capture` and `smooth_settle` bracket the correction: whatever
+the screen was asserting about each hull is held, and the difference between it
+and the truth is carried as a per-ship offset that decays on an eighty
+millisecond half-life. Past four tiles it is a teleport rather than a correction
+-- a respawn, a wormhole -- and snaps, because easing one reads as a ship being
+dragged rather than arriving. Forty pixels caps what the drawing may be lying by
+at any moment.
+
+The clock steering rides in the same mechanism, deliberately: a snapshot that
+trims the lead by a tick moves every hull by a tick of flight, which is exactly
+the kind of jump worth walking off rather than cutting to.
+
+Both live in the extension rather than at the twenty call sites that draw a
+position, because one of those being missed is worse than none of them being
+fixed. A hull that judders against its own health bar reads as broken in a way a
+hull that judders with everything else does not. `ship_x_raw` and its two
+siblings are the exceptions: measuring how far a prediction missed by, and
+reading what the pilot's own hands asked for, are the two things that must not be
+told a comfortable story.
+
+What this does *not* do is interpolate remote ships from the past, the way a
+Source-lineage game renders everyone 100 ms back. Aiming here is the nose, so
+showing a remote ship where it was would systematically shift where players aim
+at it. Extrapolation stays; these two smooth how it is presented. Making the
+extrapolation itself better -- carrying each ship's held buttons in the snapshot,
+so a turning remote curves instead of flying straight -- is the next thing, and
+it is a protocol change rather than a presentation one.
+
 ## Anti-cheat, and what we are not doing
 
 Because the server simulates weapons and damage, the cheats that killed
@@ -311,6 +364,11 @@ Revisit if the shooting feels wrong at 150 ms.
 
 Whether 20 Hz snapshots are enough for the weapon density a busy arena
 generates, or whether projectiles need their own faster channel.
+
+How large the corrections on a remote ship actually are at 150 ms and 3% loss,
+now that there is something absorbing them. That number, rather than own-ship
+prediction error, is what would justify or kill transport work: `tools/pilot`
+measures the wrong one for this question.
 
 Whether WebTransport is worth adopting when browser support settles, since it
 would give web clients unreliable datagrams and delete the whole TCP
@@ -350,9 +408,9 @@ Distant players on a lossy link are not. At 150 ms and 3% -- the gate's own
 numbers -- 14 gaps over 150 ms in 20 seconds is a hitch roughly every 1.4
 seconds, the worst of them 307 ms.
 
-What keeps that from being as bad as it reads: nothing interpolates, but
-`net.step` advances the whole simulation every tick, so ships with no fresh
-input coast on their last known velocity. Flight is frictionless and has no
+What keeps that from being as bad as it reads: `net.step` advances the whole
+simulation every tick, so ships with no fresh input coast on their last known
+velocity. Flight is frictionless and has no
 drag term, which makes coasting an unusually good predictor -- a remote ship
 is only wrong by however much it accelerated during the gap. The artifact is
 a correction when the late snapshot lands, not a freeze.
