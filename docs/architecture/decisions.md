@@ -175,7 +175,7 @@ to optimize the step instead.
 
 ## 9. Fixed-window tilemap rendering
 
-**Status:** proposed
+**Status:** superseded
 
 A 1024x1024 tile map is a million tiles, and we should not assume a single
 Defold tilemap component handles that. A tilemap sized to the viewport plus a
@@ -187,6 +187,13 @@ expected.
 
 **Reconsider if:** measurement says the window stutters, in which case a custom
 render script drawing tiles from an atlas replaces it.
+
+**Superseded:** no tilemap was ever built. The art direction went to vector
+geometry rather than sprites, which took the question with it: there is no atlas
+to draw tiles from and nothing to rewrite at the edges. The client meshes the
+terrain around the camera into two static layers and uploads them when the camera
+walks far enough, so what survives of this record is the window, not the tilemap.
+The window sizes itself from the drawable now rather than from a constant.
 
 ---
 

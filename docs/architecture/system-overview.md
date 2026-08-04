@@ -168,6 +168,6 @@ position for nearby players sent more often than for distant ones. See
 | `data.db` per zone | Deleted. Arena servers are disposable; durable state is the meta-layer's |
 | Lag actions | Server, between transport and arena |
 | Client-authoritative death | Deleted. The arena decides |
-| `.lvl` maps | Imported to our map format, rendered through Defold tilemaps |
+| `.lvl` maps | Imported to our map format, drawn as vector geometry rather than tiles |
 | Bots | Declared clients on the ordinary protocol; the house roster flies from the bot server |
 | Nothing equivalent | Skill rating, computed from arena events outside the simulation |
