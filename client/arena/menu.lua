@@ -25,6 +25,7 @@
 local account = require("arena.account")
 local callsign = require("arena.callsign")
 local directory = require("arena.directory")
+local sfx = require("arena.sfx")
 
 local M = {}
 
@@ -105,6 +106,9 @@ end
 function M.apply_settings()
     pcall(sound.set_group_gain, hash("master"), VOLUMES[M.volume][1])
     pcall(sound.set_group_gain, hash("music"), MUSICS[M.music][1])
+    -- The effects do not all go through that mixer on the web, so the ones
+    -- that do not have to be told the same number. See arena/sfx.lua.
+    sfx.master_gain(VOLUMES[M.volume][1])
     -- A browser drives the frame loop from requestAnimationFrame, so on a
     -- 120 Hz laptop the game renders twice as often as on a 60 Hz one and
     -- costs twice the battery for it. The simulation is 100 Hz either way,
