@@ -1179,9 +1179,14 @@ end
 
 -- Transform a hull into world space. Heading a travels along (sin a, -cos a)
 -- in simulation coordinates, so that is where the local +y axis has to point.
-local function place(pts, out, x, y, ca, sa, scale)
+--
+-- `sx` scales the lateral axis alone, and it is how a hull banks: rolled
+-- about its own long axis and seen from above, the wings foreshorten and
+-- nothing else moves, which is exactly a cosine on local x.
+local function place(pts, out, x, y, ca, sa, scale, sx)
+    local kx = scale * (sx or 1)
     for i = 1, #pts, 2 do
-        local px, py = pts[i] * scale, pts[i + 1] * scale
+        local px, py = pts[i] * kx, pts[i + 1] * scale
         out[i] = x + px * ca + py * sa
         out[i + 1] = y + px * sa - py * ca
     end
@@ -1214,7 +1219,15 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
     local a = heading / 65536 * TAU
     local ca, sa = math.cos(a), math.sin(a)
-    local pts = place(h.poly, h.tmp, x, y, ca, sa, 1)
+    -- Roll, handed in as radians of bank. Everything below that speaks a
+    -- local x multiplies by this, so the whole ship leans together: hull,
+    -- plates, canopy, hardpoints, lamps and the engines, whose plumes stay
+    -- on the heading while their nozzles come inboard.
+    local squash = 1
+    if opts and opts.roll and opts.roll ~= 0 then
+        squash = math.cos(opts.roll)
+    end
+    local pts = place(h.poly, h.tmp, x, y, ca, sa, 1, squash)
     local mine = opts and opts.mine
     local dim = ((opts and opts.alpha) or 1) * (h.dim or 1)
     local near = not (opts and opts.far)
@@ -1226,8 +1239,8 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     if opts and opts.thrusting then
         local flick = 0.72 + (opts.flicker or 0) * 0.28
         for i = 1, #h.jets, 2 do
-            local jx = x + h.jets[i] * ca + h.jets[i + 1] * sa
-            local jy = y + h.jets[i] * sa - h.jets[i + 1] * ca
+            local jx = x + h.jets[i] * squash * ca + h.jets[i + 1] * sa
+            local jy = y + h.jets[i] * squash * sa - h.jets[i + 1] * ca
             local len = 17 * flick
             local mx, my = jx + sa * 1.5, jy - ca * 1.5
             glow:halo(jx, jy, 5.4 * flick, 8, pal.a(pal.THRUST, 0.42 * dim))
@@ -1282,14 +1295,16 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     if near then
         if h.plates then
             for k = 1, #h.plates do
-                local q = place(h.plates[k], h.ptmp[k], x, y, ca, sa, 1)
+                local q = place(h.plates[k], h.ptmp[k], x, y, ca, sa, 1,
+                                squash)
                 glow:fan(q, pal.a(pal.PANEL_INK, 0.035 * dim))
                 glow:outline(q, 0.85, pal.a(pal.PANEL_INK, 0.36 * dim), true)
             end
         end
         if h.lines then
             for k = 1, #h.lines do
-                local q = place(h.lines[k], h.ltmp[k], x, y, ca, sa, 1)
+                local q = place(h.lines[k], h.ltmp[k], x, y, ca, sa, 1,
+                                squash)
                 for i = 1, #q - 3, 2 do
                     glow:seg(q[i], q[i + 1], q[i + 2], q[i + 3], 0.7,
                              pal.a(pal.PANEL_INK, 0.26 * dim), true)
@@ -1304,10 +1319,10 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     if h.tubes then
         for k = 1, #h.tubes do
             local t = h.tubes[k]
-            local ax = x + t[1] * ca + t[2] * sa
-            local ay = y + t[1] * sa - t[2] * ca
-            local bx = x + t[3] * ca + t[4] * sa
-            local by = y + t[3] * sa - t[4] * ca
+            local ax = x + t[1] * squash * ca + t[2] * sa
+            local ay = y + t[1] * squash * sa - t[2] * ca
+            local bx = x + t[3] * squash * ca + t[4] * sa
+            local by = y + t[3] * squash * sa - t[4] * ca
             glow:seg_glow(ax, ay, bx, by, t[5] + 4.0, 0.09 * dim, col)
             glow:seg(ax, ay, bx, by, t[5], pal.a(col, 0.30 * dim), true)
             glow:seg(ax, ay, bx, by, t[5] * 0.34,
@@ -1318,6 +1333,10 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- The silhouette: two skirts of bloom and a hot edge on top, each edge at
     -- its own brightness. It was three concentric strokes, which beaded at
     -- every corner and banded rather than falling off.
+    -- The normals are not squashed with the points. Correcting them is an
+    -- inverse scale and a renormalise apiece, and what they aim is a soft
+    -- skirt three to nine pixels deep: at the steepest bank the error is a
+    -- few degrees on a gradient, which is nothing.
     local nrm = place_dir(h.nrm, h.ntmp, ca, sa)
     glow:glow_band(pts, nrm, 9.0, 0.105 * dim, col, h.wide)
     glow:glow_band(pts, nrm, 3.0, 0.32 * dim, col, h.band)
@@ -1335,7 +1354,7 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- on the ship, and it is always forward of centre, so "which end is the
     -- front" never needs a second look.
     if h.canopy then
-        local q = place(h.canopy, h.ctmp, x, y, ca, sa, 1)
+        local q = place(h.canopy, h.ctmp, x, y, ca, sa, 1, squash)
         glow:fan(q, pal.a(pal.hot(col, 0.3, 1), 0.42 * dim))
         glow:outline(q, 0.9, pal.a(pal.hot(col, 0.8, 1), 0.95 * dim), true)
     end
@@ -1346,8 +1365,8 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     if near and h.pods then
         for k = 1, #h.pods do
             local d = h.pods[k]
-            local lx = x + d[1] * ca + d[2] * sa
-            local ly = y + d[1] * sa - d[2] * ca
+            local lx = x + d[1] * squash * ca + d[2] * sa
+            local ly = y + d[1] * squash * sa - d[2] * ca
             glow:halo(lx, ly, d[3] * 2.6, 6, pal.a(col, 0.30 * dim))
             glow:disc(lx, ly, d[3] * 0.45, 4,
                       pal.a(pal.hot(col, 0.8, 1), 0.8 * dim))
@@ -1356,8 +1375,8 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
 
     -- Engines lit at idle, so a coasting hull still has something running.
     for i = 1, #h.jets, 2 do
-        local jx = x + h.jets[i] * ca + h.jets[i + 1] * sa
-        local jy = y + h.jets[i] * sa - h.jets[i + 1] * ca
+        local jx = x + h.jets[i] * squash * ca + h.jets[i + 1] * sa
+        local jy = y + h.jets[i] * squash * sa - h.jets[i + 1] * ca
         glow:halo(jx, jy, 4.2, 6, pal.a(pal.THRUST, 0.15 * dim))
     end
 

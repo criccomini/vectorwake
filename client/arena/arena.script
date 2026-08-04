@@ -264,6 +264,8 @@ function go_home(self, at)
     feed = {}
     pickup = nil
     hurt = 0
+    -- The next zone deals these seats to different pilots.
+    for k in pairs(rolls) do rolls[k] = nil end
     fx.reset()
     -- Leaving a zone re-derives the tables from the baseline, so what a spec
     -- id means changes on the way out of one as well as into it.
@@ -445,6 +447,46 @@ end
 -- with their engine is not something this client is told.
 local function burning(i, mine_buttons, bit)
     return i == me and has(mine_buttons, bit)
+end
+
+-- Bank, read off the heading rather than off the buttons, because buttons are
+-- yours alone and everybody's ship should lean into a turn. Watching the
+-- heading move is the one signal the client has for every seat.
+--
+-- The rate is smoothed on about a tenth of a second. Remote headings arrive
+-- in snapshot steps, so raw differences are a spike and four zeroes; smoothed
+-- they are the turn the pilot is actually making. It also eases your own bank
+-- in and out instead of snapping it on with the key.
+--
+-- Purely visual, per decision 5: nothing here touches the simulation, and a
+-- rolled hull's collision radius is whatever the core says it is.
+local rolls = {}
+local TAU = 2 * math.pi
+local FULL_TURN = 3.0        -- rad/s of turn that earns the whole bank;
+                             -- an unupgraded hull turns at about pi
+local MAX_BANK = 0.72        -- radians of roll at that rate
+
+local function ship_roll(i, heading, dt)
+    local s = rolls[i]
+    if not s then
+        s = {h = heading, v = 0}
+        rolls[i] = s
+    end
+    local dh = heading - s.h
+    s.h = heading
+    if dh > 32768 then dh = dh - 65536
+    elseif dh < -32768 then dh = dh + 65536 end
+    -- A jump no rudder reaches inside a frame is a respawn or a seat handed
+    -- to somebody new, and neither is a turn.
+    if dt <= 0 or dh > 4096 or dh < -4096 then
+        s.v = 0
+        return 0
+    end
+    local rate = dh / 65536 * TAU / dt
+    s.v = s.v + (rate - s.v) * (1 - math.exp(-dt / 0.11))
+    local k = s.v / FULL_TURN
+    if k > 1 then k = 1 elseif k < -1 then k = -1 end
+    return k * MAX_BANK
 end
 
 function update(self, dt)
@@ -711,13 +753,15 @@ function update(self, dt)
                 -- which does not report an overflow, it just stops drawing.
                 local dx = sim.ship_x(i) - cx
                 local dy = sim.ship_y(i) - cy
+                local hdg = sim.ship_heading(i)
                 world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
-                           sim.ship_y(i), sim.ship_heading(i), col, {
+                           sim.ship_y(i), hdg, col, {
                     mine = i == me,
                     far = dx * dx + dy * dy > DETAIL_R2,
                     thrusting = burning(i, mine_buttons, sim.BTN_THRUST),
                     reversing = burning(i, mine_buttons, sim.BTN_REVERSE),
                     flicker = (sim.tick() * 7 + i * 13) % 11 / 11,
+                    roll = ship_roll(i, hdg, dt),
                 })
                 -- Only the wounded carry a pip. A bar over every hull in a
                 -- nine-ship room is noise; a bar over the one that is hurt is
