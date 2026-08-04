@@ -216,7 +216,12 @@ local function dial()
                         math.min(math.min(W, H) * 0.66, H * 0.66,
                                  W - pad - 124 * S))
     end
-    return W - pad - side, pad + 18 * S, side
+    -- Whole pixels. The dial snaps its contents to its own origin, so an
+    -- origin landing on a half pixel would put the fraction back into every
+    -- blip it was taken out of. Density is not always a whole number and
+    -- neither, then, is the padding.
+    return math.floor(W - pad - side), math.floor(pad + 18 * S),
+           math.floor(side)
 end
 
 -- How much vertical room it takes, so the feed under it can be told rather
@@ -247,9 +252,27 @@ local function radar(cx, cy, me)
     -- radar showing empty space nobody can fly to.
     local SPAN = 60 * 16
     local k = r / (2 * SPAN)
+    -- The dial is a diagram, not a window, and it is worth snapping to the
+    -- pixel grid it is drawn on.
+    --
+    -- A blip is a square about 2.8 pixels across with a hard edge, and a hard
+    -- edge that size covers two pixel centres at some sub-pixel offsets and
+    -- three at others: four pixels of area against nine, a bit over twice the
+    -- ink, flipping as the fraction rolls over. Every blip shares the fraction,
+    -- because they are a regular grid under one affine map, so the whole map
+    -- breathes at once and reads as the terrain blinking off and on.
+    --
+    -- Two things fix it and both are free. A whole number of pixels covers
+    -- exactly that many centres wherever it starts, so the size stops
+    -- mattering; and snapping the camera to a whole dial pixel leaves every
+    -- blip's own fraction fixed, so the pattern slides rigidly rather than
+    -- each square shifting off its neighbours. What a blip stands for is a
+    -- two-tile sample, and no part of that is worth a sub-pixel.
+    local qx = math.floor(cx * k + 0.5) / k
+    local qy = math.floor(cy * k + 0.5) / k
     local function put(wx, wy)
-        local px = ix + (wx - cx + SPAN) * k
-        local py = iy + (wy - cy + SPAN) * k
+        local px = ix + (wx - qx + SPAN) * k
+        local py = iy + (wy - qy + SPAN) * k
         if px < ix or py < iy or px > ix + r or py > iy + r then return nil end
         return px, py
     end
@@ -259,17 +282,22 @@ local function radar(cx, cy, me)
     -- One blip covers exactly the ground its sample stands for -- two tiles,
     -- the sampling stride -- so a wall reads as a wall. A fixed pixel size
     -- left gaps between samples and turned every wall into a dashed line.
-    local dot = math.max(2 * 16 * k, 1.5 * S)
-    local function blips(list, col, grow)
-        local d = dot * (grow or 1)
+    -- Whole pixels, per above. A door gets one more rather than a fraction
+    -- more, which is the only way "bigger" survives being rounded.
+    local dot = math.max(1, math.floor(math.max(2 * 16 * k, 1.5 * S) + 0.5))
+    local function blips(list, col, extra)
+        local d = dot + (extra or 0)
         for n = 1, #list, 2 do
             local px, py = put(list[n], list[n + 1])
-            if px then rect(px - d / 2, py - d / 2, d, d, col) end
+            if px then
+                rect(math.floor(px - d / 2 + 0.5),
+                     math.floor(py - d / 2 + 0.5), d, d, col)
+            end
         end
     end
     blips(world.radar_tiles, pal.RADAR_TILE)
     blips(world.radar_safe, pal.a(pal.RADAR_SAFE, 0.95))
-    blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1.15)
+    blips(world.radar_doors, pal.a(pal.RADAR_DOOR, 1.0), 1)
 
     -- Greens, under the flags and ships and over the terrain: a green is
     -- worth steering for, but never worth steering for instead of the pilot
@@ -335,8 +363,14 @@ local function radar(cx, cy, me)
     -- thing anybody converts mid-fight, and the rings answer the comparison
     -- people actually make, which is whether that one is closer than this one.
     local mx, my = ix + r / 2, iy + r / 2
-    u:ring(mx, ry(my), r / 4, 0.7 * S, 20, pal.a(pal.RADAR_GRID, 0.9))
-    u:ring(mx, ry(my), r / 2.4, 0.7 * S, 24, pal.a(pal.RADAR_GRID, 0.55))
+    -- A whole pixel, not seven tenths of one. `ring` strokes hard quads, and a
+    -- hard stroke under a pixel covers a pixel centre at some offsets and none
+    -- at others: these sit at fixed dial coordinates, so it does not flicker,
+    -- it just means whether the range rings exist at all is decided by where
+    -- the dial happens to land. One pixel covers exactly one, wherever it
+    -- starts.
+    u:ring(mx, ry(my), r / 4, 1.0 * S, 20, pal.a(pal.RADAR_GRID, 0.9))
+    u:ring(mx, ry(my), r / 2.4, 1.0 * S, 24, pal.a(pal.RADAR_GRID, 0.55))
     for i = 0, 7 do
         local a = i * math.pi / 4
         local long = (i % 2 == 0)
