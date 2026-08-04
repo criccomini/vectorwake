@@ -69,7 +69,7 @@ services:
       # recreates the container. This label lists what the file routes, so
       # adding a route means changing it, and changing it is what makes compose
       # act. Keep it in step with the Caddyfile.
-      vw.routes: dir meta a1 a2 a3
+      vw.routes: dir meta a1 a2 a3 metrics
       # The same trick a third time. This names the client page's cache policy
       # so a policy change in the Caddyfile has something here to move.
       vw.page-cache: no-cache
@@ -103,6 +103,24 @@ services:
       - client-page:/srv/play:ro
     environment:
       VW_DOMAIN: ${VW_DOMAIN:?set VW_DOMAIN}
+      # The password on /metrics/*. Both are optional: the Caddyfile defaults
+      # to a hash of a password nobody holds, so leaving these unset serves the
+      # routes and lets nobody through, rather than refusing to parse and
+      # taking the certificate and every arena down with it.
+      #
+      # Make one with `caddy hash-password`, and mind that compose reads `$` as
+      # the start of a variable, so a bcrypt hash goes in .env rather than
+      # inline here.
+      VW_METRICS_USER: ${VW_METRICS_USER:-metrics}
+      # The default is the same locked hash the Caddyfile carries, repeated
+      # here because an empty value is worse than an absent one: Caddy refuses
+      # to parse `basic_auth` with a blank hash, and a Caddyfile that will not
+      # parse takes the certificate, the client and every arena down. Measured,
+      # not guessed: `caddy validate` with this empty is an adapter error.
+      #
+      # `$$` is compose's escape for a literal `$`, which bcrypt hashes are
+      # full of.
+      VW_METRICS_HASH: ${VW_METRICS_HASH:-$$2a$$14$$aR/L0A/FhAV.CioV4bvl8e71L8eWnYNF08TV6AbjOekZ6Kaw0Wfcu}
 
   # The page, delivered rather than served. A payload image with no process: it
   # copies the bundle into the volume Caddy is already serving and exits, so a

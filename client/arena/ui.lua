@@ -1529,4 +1529,26 @@ function M.menu(v)
     end
 end
 
+-- --- cursor ----------------------------------------------------------------
+
+-- The pointer. The page hides the browser's cursor over the canvas, so this
+-- arrow is the only one anybody sees: the usual shape, restated in the
+-- interface's language, with the heel corner cut at the same diagonal the
+-- walls and the brackets use. Dark in the body and lit at the edge, the way
+-- a hull is, so it reads over a starfield and over a panel alike. The tip is
+-- the hotspot, exactly where the browser says the pointer is.
+function M.cursor(x, y, alpha)
+    local k = 16 * S
+    local cut = 0.22 * k
+    -- Down the left edge, across the chamfer, and back up the hypotenuse.
+    local pts = {
+        x, ry(y),
+        x, ry(y + k - cut),
+        x + 0.93 * cut, ry(y + k - 0.38 * cut),
+        x + 0.71 * k, ry(y + 0.71 * k),
+    }
+    u:fan(pts, pal.a(pal.BG, 0.85 * alpha))
+    u:outline(pts, 1.25 * S, pal.a(pal.INK, alpha), true)
+end
+
 return M

@@ -1801,6 +1801,9 @@ local life_of = {}
 -- `M.charges`.
 local charge_seen = {}
 
+-- What each pilot's trigger was last seen doing, by ship. See `M.shots`.
+local shot_seen = {}
+
 -- A spec id means whatever the current settings say it means, and a zone
 -- sends its own -- so the answers cached here stop being true the moment a
 -- settings message lands. Cheap to rebuild, wrong to keep.
@@ -1809,6 +1812,7 @@ function M.forget_specs()
     level_of = {}
     life_of = {}
     charge_seen = {}
+    shot_seen = {}
 end
 
 local function spec_blast(id)
@@ -1898,6 +1902,77 @@ function M.charges(me, sfx)
     -- counts would greet whoever takes one with a shockwave.
     for i in pairs(charge_seen) do
         if i >= n then charge_seen[i] = nil end
+    end
+end
+
+-- Somebody else's trigger.
+--
+-- The fire event only ever fires here for the ship you are flying, and that is
+-- not a bug in the event: this client predicts one ship. `sim.replay` is handed
+-- your buttons and nobody else's, so a remote pilot is flown coasting, their
+-- trigger is never pulled locally, and no fire event for them can exist. Their
+-- rounds arrive already in the air, in a snapshot. So an arena sounded of
+-- explosions and wall hits and nothing at all leaving the guns making them,
+-- which reads as though everyone else is shooting blanks.
+--
+-- Two things in every snapshot say it happened. `fire_cooldown` is the honest
+-- one: a shot sets it and each tick takes one off, so on a hull nothing local
+-- can fire it only ever counts down, and a rise came from the wire. It cannot
+-- lie the way a weapon appearing can, because prediction kills remote rounds
+-- against ships whose position it got wrong, and the next snapshot puts them
+-- back, which looks exactly like firing.
+--
+-- What it does not say is *what* was fired, so the rounds answer that: the
+-- count of live ones by family, over the same tick. A cooldown that rose while
+-- their bomb count did was a bomb. Rounds a snapshot never carried, from
+-- somebody shooting on the far side of the map past the cull, leave neither
+-- count moving and are silent, which is where they belong.
+--
+-- Missing one is cheaper than inventing one, so both signals have to agree.
+local guns, bombs, gun_spec, bomb_spec = {}, {}, {}, {}
+function M.shots(me, sfx)
+    local n = sim.ship_count()
+    for i = 0, n - 1 do
+        guns[i], bombs[i], gun_spec[i], bomb_spec[i] = 0, 0, nil, nil
+    end
+    for i = 0, sim.weapon_count() - 1 do
+        local _, _, spec, _, _, _, _, owner, depth = sim.weapon_at(i)
+        -- A fragment is nobody's aim, and a repel is spent from an inventory
+        -- rather than fired. `M.charges` has that one, and counting it here
+        -- would put a bomb shot on top of the shockwave.
+        if depth == 0 and guns[owner] and spec_life(spec) > 1 then
+            if spec_blast(spec) > 0 then
+                bombs[owner] = bombs[owner] + 1
+                bomb_spec[owner] = spec
+            else
+                guns[owner] = guns[owner] + 1
+                gun_spec[owner] = spec
+            end
+        end
+    end
+
+    for i = 0, n - 1 do
+        local seen = shot_seen[i]
+        if not seen then seen = {cd = 0, gun = 0, bomb = 0} shot_seen[i] = seen end
+        local cd = sim.ship_cooldown(i)
+        local g, b = guns[i], bombs[i]
+        -- A seat that just filled, or a hull that just died or respawned,
+        -- arrives with numbers that have nothing to do with the ones before
+        -- them, and every one of those changes looks like a shot from here.
+        local alive = sim.ship_alive(i) == 1
+        if i ~= me and alive and seen.alive and cd > seen.cd then
+            local x, y = sim.ship_x(i), sim.ship_y(i)
+            if b > seen.bomb then
+                sfx("bomb", x, y, spec_level(bomb_spec[i]))
+            elseif g > seen.gun then
+                sfx("gun", x, y, spec_level(gun_spec[i]))
+            end
+        end
+        seen.cd, seen.gun, seen.bomb, seen.alive = cd, g, b, alive
+    end
+
+    for i in pairs(shot_seen) do
+        if i >= n then shot_seen[i] = nil end
     end
 end
 

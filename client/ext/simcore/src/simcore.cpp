@@ -309,6 +309,19 @@ int ShipMultiOff(lua_State* L) {
     return 1;
 }
 
+// Ticks left before this pilot's trigger answers again.
+//
+// It is here for what it says about somebody else. A shot sets it and every
+// tick takes one off, so it only ever counts down, apart from the tick a
+// trigger is pulled, and a client predicts nobody's trigger but its own. A
+// remote pilot's cooldown going *up* therefore came from the wire, and means
+// they fired. See world.shots.
+int ShipCooldown(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    lua_pushnumber(L, g_cur->ships[i].fire_cooldown);
+    return 1;
+}
+
 // How many of a charge kind a pilot is holding, and how many their hull may
 // ever hold. The second is the roster's rule, and the panel needs it to know
 // which slots to draw at all.
@@ -529,10 +542,13 @@ int WeaponCount(lua_State* L) {
     return 1;
 }
 
-// x, y, type, vx, vy, team, life. A bolt is drawn as a streak along its own
-// velocity and tinted by whose it is, so the renderer needs all of it, and
-// asking for it in seven separate calls per weapon per frame is the kind of
-// cost that only shows up on the platform that matters most.
+// x, y, type, vx, vy, team, life, owner, depth. A bolt is drawn as a streak
+// along its own velocity and tinted by whose it is, so the renderer needs all
+// of it, and asking for it in nine separate calls per weapon per frame is the
+// kind of cost that only shows up on the platform that matters most.
+//
+// The last two are not for drawing. Owner is who to put a fire sound on, and
+// depth tells a round somebody aimed from a fragment of one that broke.
 // Whether a weapon slot holds the same projectile it held last tick.
 //
 // It often does not. The core retires a weapon by moving the last one into its
@@ -560,7 +576,9 @@ int WeaponAt(lua_State* L) {
     lua_pushnumber(L, w->vy / 65536.0);
     lua_pushnumber(L, w->team);
     lua_pushnumber(L, w->life);
-    return 7;
+    lua_pushnumber(L, w->owner);
+    lua_pushnumber(L, w->depth);
+    return 9;
 }
 
 int PrizeCount(lua_State* L) {
@@ -855,6 +873,7 @@ const luaL_reg kFunctions[] = {
     {"trigger_rate", TriggerRate},
     {"ship_mod", ShipMod},
     {"ship_multi_off", ShipMultiOff},
+    {"ship_cooldown", ShipCooldown},
     {"ship_extents", ShipExtents},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},

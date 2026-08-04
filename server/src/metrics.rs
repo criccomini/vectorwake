@@ -17,9 +17,14 @@
 //! records is still a number somebody can `curl` at three in the morning, and
 //! the endpoint is the part that has to exist first.
 //!
-//! Loopback only, and only when `VW_METRICS` names an address. A process with
-//! nothing set opens no port, which is what keeps this from becoming a new
-//! thing to secure.
+//! Bound to loopback, and only when `VW_METRICS` names an address. A process
+//! with nothing set opens no port at all.
+//!
+//! Caddy publishes them at `/metrics/<service>` behind a password, so the
+//! password is the only thing between these numbers and the internet. That is
+//! a deliberate choice and a narrow one: a read view is useful without a token,
+//! which is why the admin surface is not routed at all, and why this one is not
+//! routed without `basic_auth` in front of it.
 
 use std::fmt::Write;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
