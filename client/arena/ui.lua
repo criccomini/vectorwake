@@ -1033,8 +1033,11 @@ function M.hud(o)
     link(o.lag or 0)
     coords(me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
-    -- padding, so a constant here would have left a gap or an overlap.
-    feed(o.feed, M.radar_span())
+    -- padding, so a constant here would have left a gap or an overlap. Not on
+    -- a touchscreen: the lines land where a thumb flies the ship, and a
+    -- phone's screen has no room for a running log a player cannot pause to
+    -- read anyway.
+    if not M.touching then feed(o.feed, M.radar_span()) end
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it.
     status(me, o.pickup, o.charges, lift)

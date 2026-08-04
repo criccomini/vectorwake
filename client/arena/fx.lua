@@ -17,10 +17,12 @@ local M = {}
 
 local MAX_PARTS = 320
 local MAX_WAVES = 48
+local MAX_DEBRIS = 96
 
 local parts = {}   -- {x, y, vx, vy, age, life, size, col, drag}
 local waves = {}   -- {x, y, r0, r1, age, life, width, col, kind}
-local np, nw = 0, 0
+local debris = {}  -- {x, y, vx, vy, ang, spin, len, age, life, col}
+local np, nw, nd = 0, 0, 0
 
 local shake = 0
 local shake_x, shake_y = 0, 0
@@ -35,7 +37,7 @@ local function rnd()
 end
 
 function M.reset()
-    np, nw, shake = 0, 0, 0
+    np, nw, nd, shake = 0, 0, 0, 0
 end
 
 -- --- emitters --------------------------------------------------------------
@@ -68,6 +70,24 @@ function M.burst(x, y, count, speed, life, size, col, vx0, vy0)
     end
 end
 
+-- Hull fragments: line shards that tumble away and burn out. A point reads
+-- as a spark whatever its size; a ship coming apart needs pieces with
+-- length, spinning, or the hull just vanishes into confetti.
+function M.shards(x, y, count, speed, life, len, col, vx0, vy0)
+    vx0, vy0 = vx0 or 0, vy0 or 0
+    for _ = 1, count do
+        if nd >= MAX_DEBRIS then return end
+        nd = nd + 1
+        local a = rnd() * math.pi * 2
+        local s = speed * (0.3 + rnd() * 0.7)
+        debris[nd] = {x = x, y = y,
+                      vx = vx0 + math.cos(a) * s, vy = vy0 + math.sin(a) * s,
+                      ang = rnd() * math.pi * 2, spin = (rnd() - 0.5) * 16,
+                      len = len * (0.6 + rnd() * 0.8), age = 0,
+                      life = life * (0.6 + rnd() * 0.7), col = col}
+    end
+end
+
 -- A cone, for a muzzle: heading in radians, spread in radians either side.
 function M.cone(x, y, dir, spread, count, speed, life, size, col)
     for _ = 1, count do
@@ -88,14 +108,22 @@ function M.detonate(x, y, radius, col)
     M.jolt(0.55, x, y)
 end
 
--- A ship coming apart. Bigger, slower, and it leaves embers, because a death
--- is the one event in this game that is allowed a full second of attention.
+-- A ship coming apart: the one event in this game allowed a full second of
+-- attention, and the one that has to read as an explosion rather than as a
+-- large spark. In order of arrival: a white flash felt before it is read,
+-- the fireball, two shockwaves, the hull leaving as spinning pieces, and
+-- embers that outlive everything else. The pieces inherit the ship's
+-- velocity, so a hull at speed dies along its own course instead of
+-- stopping dead to explode.
 function M.destroy(x, y, vx, vy, col)
-    M.wave(x, y, 4, 84, 0.6, 9, pal.hot(col, 0.45, 1))
-    M.wave(x, y, 2, 30, 0.3, 14, pal.hot(col, 0.85, 1))
-    M.burst(x, y, 26, 190, 0.85, 2.4, col, vx * 60, vy * 60)
-    M.burst(x, y, 12, 70, 1.5, 1.6, pal.hot(col, 0.6, 1), vx * 60, vy * 60)
-    M.jolt(1.0, x, y)
+    M.wave(x, y, 2, 24, 0.16, 15, pal.WHITE)
+    M.wave(x, y, 4, 96, 0.6, 10, pal.hot(col, 0.45, 1))
+    M.wave(x, y, 2, 44, 0.32, 14, pal.hot(col, 0.85, 1))
+    M.shards(x, y, 10, 160, 1.1, 9, col, vx * 60, vy * 60)
+    M.shards(x, y, 5, 60, 1.7, 6, pal.hot(col, 0.5, 1), vx * 60, vy * 60)
+    M.burst(x, y, 30, 210, 0.8, 2.6, pal.hot(col, 0.65, 1), vx * 60, vy * 60)
+    M.burst(x, y, 14, 75, 1.8, 1.5, col, vx * 60, vy * 60)
+    M.jolt(1.15, x, y)
 end
 
 -- Camera shake, attenuated by distance from whoever is watching. Set the
@@ -130,6 +158,28 @@ function M.update(dt)
             p.y = p.y + p.vy * dt
             p.vx = p.vx * k
             p.vy = p.vy * k
+            i = i + 1
+        end
+    end
+
+    i = 1
+    while i <= nd do
+        local p = debris[i]
+        p.age = p.age + dt
+        if p.age >= p.life then
+            debris[i] = debris[nd]
+            debris[nd] = nil
+            nd = nd - 1
+        else
+            -- Heavier than a spark, so it coasts further and spins down as
+            -- it goes, the way a thrown thing does.
+            local k = 0.965 ^ (dt * 60)
+            p.x = p.x + p.vx * dt
+            p.y = p.y + p.vy * dt
+            p.vx = p.vx * k
+            p.vy = p.vy * k
+            p.ang = p.ang + p.spin * dt
+            p.spin = p.spin * (0.985 ^ (dt * 60))
             i = i + 1
         end
     end
@@ -186,6 +236,20 @@ function M.draw(glow)
         local sx, sy = p.vx * 0.016, p.vy * 0.016
         glow:seg_fade(p.x - sx, p.y - sy, p.x, p.y,
                       p.size * 0.3, p.size * fade, 0, 1, c)
+    end
+
+    for i = 1, nd do
+        local p = debris[i]
+        local t = p.age / p.life
+        local fade = 1 - t
+        local col = p.col
+        local c = {col[1], col[2], col[3], col[4] * fade}
+        -- A piece of hull is drawn along its own angle, not its velocity:
+        -- tumbling free of its course is what tells it apart from a spark.
+        local h = p.len * (0.4 + 0.6 * fade) / 2
+        local ca, sa = math.cos(p.ang), math.sin(p.ang)
+        glow:seg_fade(p.x - ca * h, p.y - sa * h, p.x + ca * h, p.y + sa * h,
+                      0.8, 1.5, fade * 0.45, fade, c)
     end
 end
 

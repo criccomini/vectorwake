@@ -707,12 +707,17 @@ local function rock_shape(seed, sides, r, craters)
     end
     -- How it turns, out of the same seed: a rate, a direction, and a phase, so
     -- a field of rocks is a field of rocks rather than a rank of them turning
-    -- in step. Slowest is a full revolution in about two minutes and fastest
-    -- in about forty seconds, which reads as adrift rather than as machinery.
+    -- in step. Slowest is a full revolution in about a minute and fastest in
+    -- about twenty seconds, which still reads as adrift rather than as
+    -- machinery. The other three numbers are the tumble: how deeply the
+    -- silhouette foreshortens, how fast that cycle runs, and how fast the
+    -- axis it happens about wanders round the screen plane.
     local q = (seed % 97) / 97
     s = {pts = pts, nrm = nrm, facets = facets, pits = pits, sides = sides,
-         rate = ((seed % 2 == 0) and 1 or -1) * (0.05 + q * 0.11),
-         wob = 0.06 + q * 0.05,
+         rate = ((seed % 2 == 0) and 1 or -1) * (0.10 + q * 0.22),
+         depth = 0.14 + q * 0.16,
+         trate = 0.23 + q * 0.30,
+         drift = ((seed % 3 == 0) and 1 or -1) * (0.05 + q * 0.07),
          phase = q * TAU,
          tmp = {}, ntmp = {}}
     rock_shapes[k] = s
@@ -722,18 +727,32 @@ end
 -- One asteroid, turned to where it is this frame.
 local function draw_rock(fill, glow, cx, cy, s, now)
     local ang = now * s.rate
-    -- A rock is not a wheel. The long axis is squeezed a little on a slower
-    -- cycle than the spin, which is what an irregular body tumbling in three
-    -- dimensions does to its own silhouette; kept under a tenth so it reads as
-    -- depth rather than as something soft being pressed.
-    local squash = 1 - s.wob * (0.5 + 0.5 * math.cos(now * 0.31 + s.phase))
+    -- A rock is not a wheel. The silhouette foreshortens along one direction,
+    -- which is what rotation about an axis lying in the screen plane does to
+    -- an irregular body -- and that axis wanders slowly round the plane
+    -- instead of riding the outline, so the squeeze crosses the shape rather
+    -- than breathing with it. Spin, foreshorten and precession run on three
+    -- unrelated clocks, which is the whole tell of a tumble against a turn.
+    --
+    -- One 2x2 matrix carries all of it: rotate by the spin, foreshorten
+    -- along the axis, and each vertex costs what plain rotation cost.
+    local axis = now * s.drift + s.phase * 2
+    local squash = 1 - s.depth * (0.5 + 0.5 * math.cos(now * s.trate + s.phase))
+    local cf, sf = math.cos(axis), math.sin(axis)
+    local cb, sb = math.cos(ang - axis), math.sin(ang - axis)
+    local m11 = cf * squash * cb - sf * sb
+    local m12 = -(cf * squash * sb + sf * cb)
+    local m21 = sf * squash * cb + cf * sb
+    local m22 = cf * cb - sf * squash * sb
+    -- Normals only turn. Foreshortening them too would swing the lit side
+    -- with the tumble, and the light does not tumble.
     local ca, sa = math.cos(ang), math.sin(ang)
     local src, pts, nrm = s.pts, s.tmp, s.ntmp
     local sn = s.nrm
     for i = 1, #src, 2 do
-        local px, py = src[i] * squash, src[i + 1]
-        pts[i] = cx + px * ca - py * sa
-        pts[i + 1] = cy + px * sa + py * ca
+        local px, py = src[i], src[i + 1]
+        pts[i] = cx + px * m11 + py * m12
+        pts[i + 1] = cy + px * m21 + py * m22
         local nx, ny = sn[i], sn[i + 1]
         nrm[i] = nx * ca - ny * sa
         nrm[i + 1] = nx * sa + ny * ca
@@ -753,10 +772,9 @@ local function draw_rock(fill, glow, cx, cy, s, now)
     local facet = pal.a(pal.ROCK_EDGE, 0.22)
     for k = 1, #s.facets do
         local f = s.facets[k]
-        local ax, ay = f[1] * squash, f[2]
-        local bx, by = f[3] * squash, f[4]
-        glow:seg(cx + ax * ca - ay * sa, cy + ax * sa + ay * ca,
-                 cx + bx * ca - by * sa, cy + bx * sa + by * ca, 0.7, facet)
+        local ax, ay, bx, by = f[1], f[2], f[3], f[4]
+        glow:seg(cx + ax * m11 + ay * m12, cy + ax * m21 + ay * m22,
+                 cx + bx * m11 + by * m12, cy + bx * m21 + by * m22, 0.7, facet)
     end
     -- Half a crater rim. The pit rides round with the rock; the lit side does
     -- not, because the light does not turn. Drawn as segments rather than
@@ -765,8 +783,8 @@ local function draw_rock(fill, glow, cx, cy, s, now)
     local rim = pal.a(pal.ROCK_EDGE, 0.38)
     for k = 1, #s.pits do
         local p = s.pits[k]
-        local px, py = p[1] * squash, p[2]
-        local wx, wy = cx + px * ca - py * sa, cy + px * sa + py * ca
+        local px, py = p[1], p[2]
+        local wx, wy = cx + px * m11 + py * m12, cy + px * m21 + py * m22
         local rr = p[3]
         local a0, a1, n = -2.5, -0.4, 5
         local step2 = (a1 - a0) / n
@@ -1197,7 +1215,11 @@ end
 -- the band is nothing else's, so this costs no other reading.
 local DOOR_LIT = pal.DOOR
 local DOOR_SEAM = pal.a(pal.hot(pal.DOOR, 0.55, 1), 0.98)
-local DOOR_SLAT = pal.a(DOOR_LIT, 0.42)
+local DOOR_WASH = pal.a(DOOR_LIT, 0.07)
+local DOOR_FIL = pal.a(DOOR_LIT, 0.5)
+local DOOR_PULSE = pal.a(pal.hot(pal.DOOR, 0.45, 1), 0.85)
+local DOOR_NODE = pal.a(pal.hot(pal.DOOR, 0.6, 1), 0.95)
+local DOOR_NODE_HALO = pal.a(DOOR_LIT, 0.35)
 local DOOR_POST_SHUT = pal.a(DOOR_LIT, 0.95)
 local DOOR_POST_OPEN = pal.a(pal.DOOR_OPEN, 0.7)
 local DOOR_TICK_SHUT = pal.a(DOOR_LIT, 0.9)
@@ -1222,31 +1244,48 @@ for k = 1, 5 do HOLE_ARM[k] = pal.a(pal.HOLE, 0.34 - (k - 1) * 0.05) end
 --
 -- A run is framed once. Framed per tile, a four-tile gateway reads as four
 -- separate shutters, which is four wrong answers to "can I fit through that".
-local function door_run(fill, glow, x0, y0, x1, y1, vertical, group, shut)
+--
+-- Shut, it is a force field, not a shutter. The old drawing was a slate
+-- slab with ribs and a meeting seam -- machinery, a thing with halves and
+-- hinges -- and a barrier the map switches on and off is not machinery, it
+-- is energy held between two points. So: a faint wash where the field
+-- stands, a bright filament down the length of the gap flanked by two
+-- dimmer ones that breathe by width, a charge that runs the length from
+-- emitter to emitter, and a lit node at each end where the field takes hold
+-- of the frame. The breathing is width rather than colour because widths
+-- are numbers and colours are tables, and this runs per door per frame.
+local function door_run(fill, glow, x0, y0, x1, y1, vertical, group, shut, now)
     if shut then
-        fill:rect(x0, y0, x1 - x0, y1 - y0, pal.WALL)
-        -- Ribs every two tiles. Pitched off the door's thickness instead,
-        -- a fifteen-tile gateway gets sixty of them and reads as a comb.
-        local span = vertical and (y1 - y0) or (x1 - x0)
-        local n = math.max(2, math.floor(span / 32))
-        for k = 1, n - 1 do
-            local t = k / n
-            if vertical then
-                glow:seg(x0, y0 + span * t, x1, y0 + span * t, 0.8, DOOR_SLAT)
-            else
-                glow:seg(x0 + span * t, y0, x0 + span * t, y1, 0.8, DOOR_SLAT)
-            end
-        end
-        local ax, ay, bx, by
+        fill:rect(x0, y0, x1 - x0, y1 - y0, DOOR_WASH)
+        local ax, ay, bx, by, ux, uy, nx, ny, span
         if vertical then
-            ax, ay, bx, by = x0, (y0 + y1) / 2, x1, (y0 + y1) / 2
-        else
             ax, ay, bx, by = (x0 + x1) / 2, y0, (x0 + x1) / 2, y1
+            ux, uy, nx, ny = 0, 1, 1, 0
+            span = y1 - y0
+        else
+            ax, ay, bx, by = x0, (y0 + y1) / 2, x1, (y0 + y1) / 2
+            ux, uy, nx, ny = 1, 0, 0, 1
+            span = x1 - x0
         end
-        -- The bar down the middle is what says "shut", so it carries the
-        -- colour hardest: a wide soft glow under a bright thin line.
         glow:seg_glow(ax, ay, bx, by, 7, 0.20, pal.a(DOOR_LIT, 1))
-        glow:seg(ax, ay, bx, by, 1.3, DOOR_SEAM)
+        glow:seg(ax, ay, bx, by, 1.2, DOOR_SEAM)
+        local br = 0.55 + 0.30 * math.sin(now * 6 + group * 1.7)
+        glow:seg(ax + nx * 4, ay + ny * 4, bx + nx * 4, by + ny * 4,
+                 0.6 + br * 0.5, DOOR_FIL)
+        glow:seg(ax - nx * 4, ay - ny * 4, bx - nx * 4, by - ny * 4,
+                 1.1 - br * 0.5, DOOR_FIL)
+        -- The charge crosses the gap and leaves off the end before coming
+        -- round, so it reads as sent rather than as orbiting.
+        local ph = (now * 110 + group * 53) % (span + 24) - 12
+        local p0, p1 = math.max(0, ph - 9), math.min(span, ph + 9)
+        if p1 > p0 then
+            glow:seg_glow(ax + ux * p0, ay + uy * p0,
+                          ax + ux * p1, ay + uy * p1, 6, 0.55, DOOR_PULSE)
+        end
+        glow:halo(ax, ay, 8, 8, DOOR_NODE_HALO)
+        glow:halo(bx, by, 8, 8, DOOR_NODE_HALO)
+        fill:disc(ax, ay, 2.6, 6, DOOR_NODE)
+        fill:disc(bx, by, 2.6, 6, DOOR_NODE)
     else
         -- Open, the gap is marked: brackets reaching in from the posts and a
         -- faint line across the threshold. Posts alone are a doorway a pilot
@@ -1344,7 +1383,7 @@ function M.draw_tiles(fill, glow, now, cull)
                 -- and down, so its slats lie along the run and its posts cap
                 -- the ends.
                 door_run(fill, glow, wx, wy, (ex + 1) * TILE, (ey + 1) * TILE,
-                         not across, group, not sim.door_open(t.variant))
+                         not across, group, not sim.door_open(t.variant), now)
             end
         else
             -- A well, and a hole rather than a wall: you fly into it, and
@@ -1755,12 +1794,14 @@ end
 -- because it *is* one -- the appearance follows a simulation property rather
 -- than a second field that could disagree with it.
 local blast_of = {}
+local level_of = {}
 
 -- A spec id means whatever the current settings say it means, and a zone
 -- sends its own -- so the answers cached here stop being true the moment a
 -- settings message lands. Cheap to rebuild, wrong to keep.
 function M.forget_specs()
     blast_of = {}
+    level_of = {}
 end
 
 local function spec_blast(id)
@@ -1772,6 +1813,22 @@ local function spec_blast(id)
     return r
 end
 
+-- The rung a spec sits on, or -1 for a weapon on no ladder: a charge like
+-- the burst, or a bomb's shrapnel. The colour tables answer both.
+local function spec_level(id)
+    local r = level_of[id]
+    if r == nil then
+        r = sim.spec_level(id)
+        level_of[id] = r
+    end
+    return r
+end
+
+local function bomb_col(lvl)
+    if lvl < 0 then return pal.BURST end
+    return pal.BOMB_LVL[math.min(lvl + 1, #pal.BOMB_LVL)]
+end
+
 function M.weapons(fill, glow, me_team, t, cull)
     local pulse = 0.72 + 0.28 * math.sin(t * 11)
     for i = 0, sim.weapon_count() - 1 do
@@ -1781,8 +1838,9 @@ function M.weapons(fill, glow, me_team, t, cull)
         elseif spec_blast(spec) > 0 then
             -- A bomb is a heavy, slow, obviously dangerous object: a hot core
             -- inside a ring that breathes, with a trail long enough to read
-            -- its heading from across the arena.
-            local col = pal.BOMB
+            -- its heading from across the arena. Its rung is its hue -- see
+            -- the palette -- so what is coming says how hard it hits.
+            local col = bomb_col(spec_level(spec))
             glow:seg_fade(x - vx * 7, y - vy * 7, x, y, 1.5, 5.5, 0, 0.55, col)
             glow:halo(x, y, 13 * pulse, 10, pal.a(col, 0.5))
             glow:ring(x, y, 4.6, 1.4, 10, pal.a(col, 0.95))
@@ -1791,8 +1849,18 @@ function M.weapons(fill, glow, me_team, t, cull)
             -- A bolt: a streak along its own velocity with a hot head. The
             -- streak is what makes a stream of fire read as a direction
             -- rather than as a scatter of dots, and it is the whole reason
-            -- the core reports weapon velocity to the client at all.
-            local col = (team == me_team) and pal.FRIEND or pal.ENEMY
+            -- the core reports weapon velocity to the client at all. The
+            -- team's colour, run hotter with the rung; a bolt from no ladder
+            -- -- a burst's, a shrapnel fragment -- is violet, because it
+            -- answers to nobody's aim.
+            local lvl = spec_level(spec)
+            local col
+            if lvl < 0 then
+                col = pal.BURST
+            else
+                local fam = (team == me_team) and pal.FRIEND_LVL or pal.ENEMY_LVL
+                col = fam[math.min(lvl + 1, #fam)]
+            end
             glow:seg_fade(x - vx * 14, y - vy * 14, x, y, 0.6, 4.5, 0, 0.30, col)
             glow:seg_fade(x - vx * 6, y - vy * 6, x, y, 0.8, 2.6, 0, 0.85, col)
             glow:seg_fade(x - vx * 2, y - vy * 2, x, y, 0.6, 1.6, 0, 1,
@@ -1893,7 +1961,7 @@ function M.events(me, sfx)
             local y = v % 16384
             local r = spec_blast(a)
             if r > 0 then
-                fx.detonate(x, y, r, pal.BOMB)
+                fx.detonate(x, y, r, bomb_col(spec_level(a)))
                 sfx("blast", x, y)
             else
                 fx.burst(x, y, 4, 90, 0.22, 1.5, pal.a(pal.INK, 0.9))
