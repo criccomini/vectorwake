@@ -6,6 +6,14 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, minimal-ui, shrink-to-fit=no, viewport-fit=cover">
 	<meta name="apple-mobile-web-app-capable" content="yes">
 	<!-- The above 4 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+	<!-- The browser's own chrome tints itself from the page: theme-color
+	where it is honoured, sampled page background where it is not, and the
+	body behind the canvas is part of that page. All three say the same
+	dark, so the bars around the game belong to the game rather than
+	standing round it in daylight grey. -->
+	<meta name="theme-color" content="#05070d">
+	<meta name="color-scheme" content="dark">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
 	<title>{{project.title}} {{project.version}}</title>
 	<!-- The mark, carried in the page: this file is the whole deployment,
@@ -77,6 +85,14 @@
 	}
 
 	{{{DEFOLD_CUSTOM_CSS_INLINE}}}
+
+	/* After the engine's default sheet, which paints the body white and
+	would otherwise win the cascade. The strip the browser's bars overlay
+	is bare body, and the chrome samples it, so this is the rule the
+	theme-color meta above is telling the truth about. */
+	html, body {
+		background: #05070d;
+	}
 	</style>
 </head>
 
