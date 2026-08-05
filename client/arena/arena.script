@@ -1202,20 +1202,15 @@ function update(self, dt)
         local ok, out = pcall(html5.run, "window.vwPointerOut?1:0")
         local a = math.min(1, (CURSOR_HOLD + CURSOR_FADE - self.cursor_idle)
                               / CURSOR_FADE)
-        if ok and out == "1" then
+        -- The word a hovered instrument shows lives and dies with the arrow.
+        -- Retiring the position is what takes it away, since the interface is
+        -- handed a pointer only while there is one: a hand that has gone still
+        -- has stopped asking, and the screen goes quiet with it. Moving the
+        -- mouse brings back the arrow and the word together.
+        if (ok and out == "1") or a <= 0 then
             self.cursor_x, self.cursor_y = nil, nil
-        elseif a > 0 then
+        else
             ui.cursor(self.cursor_x, wh - self.cursor_y, a)
-        elseif not ui.help_at(self.cursor_x, wh - self.cursor_y) then
-            -- Faded out with nothing under it: retire as before.
-            --
-            -- A hand left resting on an instrument is the exception, and the
-            -- position is kept for it. The arrow still goes, because a still
-            -- hand does not need one, but the interface has to keep knowing
-            -- where the hand is or the word it is reading would vanish under
-            -- it two and a half seconds in, which is about when somebody
-            -- rested there to read.
-            self.cursor_x, self.cursor_y = nil, nil
         end
     end
     ui.finish()
