@@ -1674,37 +1674,41 @@ local function fig_bounty(cx, cy, k)
     txt("42", cx, cy + k * 0.88, 12 * S, pal.a(pal.BOUNTY, 0.95), "center")
 end
 
--- Every card: the figure and what it does, and no name. The box used to
--- caption each figure with its word, and the word earned nothing: the
--- sentence already names the thing where it needs naming, and the figure is
--- the arena's own shape, which is the recognition this exists to build.
+-- Every card: the figure, the word for it, and what it does.
+--
+-- The word sits over the sentence rather than out at the box's edge, which is
+-- where a caption lived once and did not work: out there it read as a label
+-- for the whole panel, and the panel is always the same thing. Above the body
+-- it is a heading for the paragraph under it, which is what it actually is,
+-- and it gives a pilot the name to carry away. The figure alone taught the
+-- shape and left them with nothing to call it.
 local CARDS = {
-    bomb = {fig = fig_bomb,
+    bomb = {fig = fig_bomb, name = "BOMB",
             text = "Heavy weapon that detonates on impact. Upgrades include " ..
                    "shrapnel and proximity abilities. Proximity detonates on " ..
                    "a near miss."},
-    bolt = {fig = fig_bolt,
+    bolt = {fig = fig_bolt, name = "BULLET",
             text = "Bullets are your rapid fire weapon. Upgrades include " ..
                    "spread and bouncing abilities."},
-    green = {fig = fig_green,
+    green = {fig = fig_green, name = "GREEN",
              text = "Greens contain prizes that upgrade your ship. They also " ..
                     "increase your bounty."},
-    repel = {fig = fig_repel,
+    repel = {fig = fig_repel, name = "REPEL",
              text = "Pushes enemy fire and ships away from you. Does not " ..
                     "affect you or your team."},
-    burst = {fig = fig_burst,
+    burst = {fig = fig_burst, name = "BURST",
              text = "Fires bullets in every direction at once. Deadly at " ..
                     "close range."},
-    bounty = {fig = fig_bounty,
+    bounty = {fig = fig_bounty, name = "BOUNTY",
               text = "Points earned for destroying an enemy. Your enemies " ..
                      "earn your bounty when they destroy you."},
-    shrap = {fig = fig_shrap,
+    shrap = {fig = fig_shrap, name = "SHRAPNEL",
              text = "Fragments thrown by a bomb when it detonates. Each one " ..
                     "hits as hard as a bullet, and they bounce off walls."},
-    safe = {fig = fig_safe,
+    safe = {fig = fig_safe, name = "SAFE ZONE",
             text = "Nothing can hurt you inside one, and you cannot fire " ..
                    "out. Pulling a trigger there stops your ship dead."},
-    hole = {fig = fig_hole,
+    hole = {fig = fig_hole, name = "WORMHOLE",
             text = "Pulls in anything that comes near. Fly into one and it " ..
                    "throws you to a random start with your speed gone."},
 }
@@ -1753,14 +1757,19 @@ local function wait_layout(which)
 
     local rule = 12 * S              -- the clock rule, at the top of the box
     local rowh = 15 * S
-    -- Tall enough for the figure or for the sentence, whichever asks for more,
+    -- The heading and the air under it, which the figure's cell has to clear
+    -- as well: the shape is centred on the whole block, name included, or it
+    -- floats against a column it is supposed to sit beside.
+    local lab = (M.compact and 9 or 10) * S
+    local headh = lab + 8 * S
+    -- Tall enough for the figure or for the words, whichever asks for more,
     -- so a one-line card is not a box with a bomb hanging out of the bottom.
-    local body = math.max(cell, #lines * rowh)
+    local body = math.max(cell, headh + #lines * rowh)
     local h = rule + 11 * S + body + 11 * S
     return {
         x = (W - w) / 2, y = H * 0.46 + (M.compact and 22 or 30) * S,
         w = w, h = h, inner = inner, pad = pad,
-        fs = fs, rule = rule, rowh = rowh,
+        fs = fs, lab = lab, headh = headh, rule = rule, rowh = rowh,
         cell = cell, gap = gap, body = body,
         card = card, lines = lines,
     }
@@ -1790,19 +1799,35 @@ local function wait(b, me)
               1.2 * S, pal.a(pal.FRIEND, 0.7))
     end
 
-    -- The figure in its cell, then the sentence beside it. Both centred on
-    -- the body's own middle rather than hung from the top, so a one-line card
-    -- and a two-line card are both balanced against the shape.
+    -- The words on the left, the figure on the right.
+    --
+    -- Reading order decides it. Every other panel in this interface opens at
+    -- the left edge and the eye starts there by habit, so the name is the
+    -- first thing met and the shape is what the sentence hands you at the end
+    -- of it. With the figure leading, the eye had to step over a shape it did
+    -- not yet have a word for.
+    --
+    -- The block of words is centred on the body's own middle rather than hung
+    -- from the top, so a one-line card and a three-line card are both
+    -- balanced against the shape, and the figure sits on that same middle.
     local top = y + b.rule + 11 * S
     local mid = top + b.body / 2
-    b.card.fig(x + b.pad + b.cell / 2, mid, b.cell / 2)
 
-    local tx = x + b.pad + b.cell + b.gap
-    local ty = mid - (#b.lines - 1) * b.rowh / 2
+    local tx = x + b.pad
+    local block = b.headh + #b.lines * b.rowh
+    local ty = mid - block / 2 + b.lab / 2
+    -- Brighter than the sentence under it, in the ink the interface names
+    -- things with, so the eye takes the word first and then reads why.
+    txt(b.card.name, tx, ty, b.lab, pal.a(pal.INK, 0.9))
+    ty = ty + b.headh - b.lab / 2 + b.rowh / 2
     for _, line in ipairs(b.lines) do
         txt(line, tx, ty, b.fs, pal.a(pal.PANEL_INK, 0.92))
         ty = ty + b.rowh
     end
+
+    -- Centred in what the text column left, against the box's right padding,
+    -- so the shape has air round it rather than being pushed against a wall.
+    b.card.fig(x + b.w - b.pad - b.cell / 2, mid, b.cell / 2)
 end
 
 local function vignette(amount)
