@@ -67,6 +67,18 @@ local function rect(x, y, w, h, col)
     u:rect(x, ry(y, h), w, h, col)
 end
 
+-- How heavy to draw a mark of this size.
+--
+-- Against the mark rather than against the window, which is the difference
+-- between a drawing that can be resized and one that cannot. The corner stack
+-- used to put every width in multiples of S, so drawing the whole block larger
+-- would have grown the shapes and left the lines where they were: a set of
+-- hairlines at twice the size, which is not the same drawing bigger. The floor
+-- is for the small end, where a stroke under a pixel disappears.
+local function pen(k, ratio)
+    return math.max(0.9 * S, k * ratio)
+end
+
 -- `font` names one of the faces the gui scene carries: nil for the mono
 -- everything in flight is set in, "menu" for the menu's own. It is passed
 -- through rather than looked up, so a caller that says nothing gets what the
@@ -151,31 +163,60 @@ local function pips(x, y, n, filled, col, r, pitch)
     end
 end
 
--- What flies a seat, when it is not a person: a head with two eyes and a
--- stub of an aerial. Drawn rather than spelled, because "AI" beside a name is
--- two letters that read as part of the name until you have learned they are
--- not, and this list is scanned rather than read.
+-- Who is in a seat, in two marks cut from one helmet.
 --
--- Chamfered, like everything else here. `y` is the middle of the line it sits
--- on, so a caller can hand it a row's centre without knowing the height.
+-- A flat crown, straight sides, and the jaw taken off at the chamfer this
+-- interface cuts everything with. Both marks are that shell and differ only
+-- in what is inside it: a person gets a brow and a visor, a machine gets two
+-- lamps and an antenna. Drawn rather than spelled, because "AI" beside a name
+-- is two letters that read as part of the name until you have learned they
+-- are not, and these lists are scanned rather than read.
+--
+-- One shell because of one row. The games list puts a count of people beside
+-- a count of machines, and there the pair has to read as one question with
+-- two answers rather than as two unrelated pictures. Everywhere else each is
+-- alone, which is what the antenna is for: it says machine with nothing to
+-- compare against.
+--
+-- `k` is the width of the shell. `y` is the middle of the line it sits on, so
+-- a caller can hand it a row's centre without knowing the height.
+local HELM_TALL, HELM_CUT = 0.82, 0.24
+
+local function helm(cx, cy, k, col)
+    local w = k
+    local h = w * HELM_TALL
+    local x0, y0 = cx - w / 2, cy - h / 2
+    local cut = w * HELM_CUT
+    u:outline({x0, ry(y0), x0 + w, ry(y0),
+               x0 + w, ry(y0 + h - cut), x0 + w - cut, ry(y0 + h),
+               x0 + cut, ry(y0 + h), x0, ry(y0 + h - cut)},
+              pen(k, 0.12), col, true)
+    return x0, y0, w, h
+end
+
+-- A person: the brow under the crown, and the visor below it.
+local function pilot_mark(cx, cy, col, k)
+    k = k or 9 * S
+    local x0, y0, w, h = helm(cx, cy, k, col)
+    u:seg(x0 + w * 0.30, ry(y0 + h * 0.18), x0 + w * 0.70,
+          ry(y0 + h * 0.18), pen(k, 0.09),
+          pal.a(col, (col[4] or 1) * 0.55), true)
+    rect(x0 + w * 0.14, y0 + h * 0.36, w * 0.72, h * 0.26, col)
+    return w
+end
+
+-- A machine: two lamps where the visor goes, and the antenna over the crown.
+-- `x` is its left edge rather than its centre, because every caller of this
+-- one is laying a row out left to right and knows where the mark starts.
 local function bot_mark(x, y, col, k)
     k = k or 9 * S
-    local w, h = k, k * 0.78
-    local left, top = x, y - h / 2
-    local cut = k * 0.22
-    -- The head, as five strokes: the chamfer replaces the top left corner.
-    local pts = {{left + cut, top}, {left + w, top}, {left + w, top + h},
-                 {left, top + h}, {left, top + cut}}
-    for i = 1, #pts do
-        local a, b = pts[i], pts[i % #pts + 1]
-        u:seg(a[1], ry(a[2]), b[1], ry(b[2]), 1.1 * S, col, true)
-    end
-    -- The aerial, off the square corner, so the shape has a top.
-    u:seg(left + w - cut, ry(top), left + w - cut, ry(top - k * 0.34),
-          1.1 * S, col, true)
-    local ey = top + h * 0.5
-    u:disc(left + w * 0.31, ry(ey), 1.15 * S, 6, col)
-    u:disc(left + w * 0.69, ry(ey), 1.15 * S, 6, col)
+    local cx = x + k / 2
+    local x0, y0, w, h = helm(cx, y, k, col)
+    local ey = y0 + h * 0.49
+    u:disc(x0 + w * 0.30, ry(ey), w * 0.115, 8, col)
+    u:disc(x0 + w * 0.70, ry(ey), w * 0.115, 8, col)
+    u:seg(cx, ry(y0), cx, ry(y0 - h * 0.34), pen(k, 0.09), col, true)
+    u:disc(cx, ry(y0 - h * 0.44), w * 0.12, 8, col)
     return w
 end
 
@@ -693,7 +734,11 @@ local function nameplates(o)
                     -- about the label and never competes with the bounty
                     -- under it.
                     if p and p.ai then
-                        bot_mark(sx + 12 * S + text_w(nm, 11 * S) + 4 * S,
+                        -- A mark set four points off the last letter reads as
+                        -- the end of the name rather than as a thing beside
+                        -- it, and a call sign is exactly the kind of string
+                        -- somebody will end in a bracket or a dot.
+                        bot_mark(sx + 12 * S + text_w(nm, 11 * S) + 9 * S,
                                  sy + 13 * S, pal.a(col, 0.45), 8 * S)
                     end
                     if bty > 0 then
@@ -1002,18 +1047,6 @@ end
 -- what a player actually holds is one gun and one bomb that greens have been
 -- changing all match. So there is one mark per trigger now, and an add-on is
 -- something drawn onto it: the round you fire, wearing what it has learned.
-
--- How heavy to draw a mark of this size.
---
--- Against the mark rather than against the window, which is the difference
--- between a stack that can be resized and one that cannot. Every width in
--- this corner used to be a multiple of S, so drawing the whole block larger
--- would have grown the shapes and left the lines where they were: a set of
--- hairlines at twice the size, which is not the same drawing bigger. The
--- floor is for the small end, where a stroke under a pixel disappears.
-local function pen(k, ratio)
-    return math.max(0.9 * S, k * ratio)
-end
 
 -- The repel's rings, which are also the push add-on's: the same force in
 -- both places, so the same mark.
@@ -2800,19 +2833,10 @@ local function mark_zones(cx, cy, r, col)
 end
 
 local function mark_pilot(cx, cy, r, col)
-    -- A call sign on a plate: the chamfer top left, a dot for the mark and
-    -- two rules for the name, which is what the scoreboard row looks like
-    -- from far enough away.
-    local w, h, c = r * 1.7, r * 1.25, r * 0.34
-    local x0, y0 = cx - w / 2, cy - h / 2
-    local pts = {x0 + c, ry(y0), x0 + w, ry(y0), x0 + w, ry(y0 + h),
-                 x0, ry(y0 + h), x0, ry(y0 + c)}
-    u:outline(pts, 1.2 * S, col, true)
-    u:disc(x0 + r * 0.42, ry(cy - r * 0.02), r * 0.17, 8, col)
-    u:seg(x0 + r * 0.75, ry(cy - r * 0.22), x0 + w - r * 0.28,
-          ry(cy - r * 0.22), 1.0 * S, pal.a(col, 0.75), true)
-    u:seg(x0 + r * 0.75, ry(cy + r * 0.24), x0 + w - r * 0.5,
-          ry(cy + r * 0.24), 1.0 * S, pal.a(col, 0.5), true)
+    -- The same helmet the games list counts people with, so the stop a player
+    -- opens to change their call sign wears the mark that stands for them
+    -- everywhere else.
+    pilot_mark(cx, cy, col, r * 1.6)
 end
 
 local function mark_team(cx, cy, r, col)
@@ -2906,8 +2930,12 @@ local function population(x, y, players, bots, col)
     end
     local pc = players > 0 and col or pal.a(pal.DIM, 0.8)
     txt(tostring(players), right, y, 13 * S, pc, "right")
-    u:disc(right - text_w(tostring(players), 13 * S) - 9 * S, ry(y), 3.2 * S,
-           10, pc)
+    -- A helmet rather than the plain dot this used to draw. The dot said
+    -- "some number of somethings" and left the row's two counts looking like
+    -- a bullet and a picture; the pair is one shell now, and which of them a
+    -- player is looking at is the face in it.
+    pilot_mark(right - text_w(tostring(players), 13 * S) - 11 * S, y, pc,
+               9 * S)
 end
 
 -- One row of the stage: a mark for the one you are on, the name, and
