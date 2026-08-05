@@ -1,17 +1,13 @@
--- Which card is shown under DESTROYED, and which death earns which.
+-- The card dealt under DESTROYED.
 --
 --     lua5.1 client/tests/tips_test.lua
 --
--- Two things this has to get right. The contextual cards answer the death that
--- just happened, so they outrank the cycle and each other in a fixed order;
--- and the cycle is a cycle rather than a roll, because a random pick repeats
--- itself inside three deaths often enough to read as broken.
---
--- It is a plain table in and a card name out, with no engine anywhere near it,
--- which is the whole reason the picking lives in its own module: the numbers
--- it chooses on are gone from the simulation by the time anything can look.
--- The card that name refers to, the figure and the sentence, lives in ui.lua
--- beside the code that draws the real thing.
+-- The pick is random, so this checks properties rather than a sequence:
+-- every card dealt is one the drawing side knows, every card in the pool
+-- turns up eventually, and no card is ever dealt twice running, which is the
+-- one rule the randomness keeps. At six cards a true roll doubles up every
+-- sixth death, and a repeat does not read as chance, it reads as a box that
+-- failed to change.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -27,67 +23,39 @@ end
 
 local tips = require("arena.tips")
 
-local function cycles(s)
-    for _, name in ipairs(tips.STOCK) do
-        if name == s then return true end
-    end
-    return false
+local known = {}
+for _, name in ipairs(tips.POOL) do known[name] = true end
+
+local DRAWS = 600
+local seen, repeats, foreign = {}, 0, 0
+local prev = nil
+for _ = 1, DRAWS do
+    local c = tips.pick()
+    if not known[c] then foreign = foreign + 1 end
+    if c == prev then repeats = repeats + 1 end
+    seen[c] = (seen[c] or 0) + 1
+    prev = c
 end
 
--- --- the contextual cards --------------------------------------------------
+check("every deal is a card from the pool", foreign == 0,
+      foreign .. " foreign")
+check("no card is dealt twice running", repeats == 0, repeats .. " repeats")
 
-tips.reset()
-local own = tips.pick({self = true, bounty = 0, rungs = 0})
-check("your own blast earns the bomb", own == "bomb", own)
+local distinct = 0
+for _ in pairs(seen) do distinct = distinct + 1 end
+check("every card in the pool turns up", distinct == #tips.POOL,
+      distinct .. " of " .. #tips.POOL)
 
-local loss = tips.pick({self = false, bounty = 0, rungs = 3})
-check("a loaded hull earns the green", loss == "green", loss)
-
-local hunted = tips.pick({self = false, bounty = 40, rungs = 0})
-check("a fat bounty earns the bounty", hunted == "bounty", hunted)
-
--- Your own bomb outranks everything: it is the most specific thing that can
--- be said about a death, and it is the one a pilot is actually asking about.
-check("your own blast outranks a lost loadout",
-      tips.pick({self = true, rungs = 3, bounty = 40}) == "bomb")
-check("and a lost loadout outranks a bounty",
-      tips.pick({self = false, rungs = 3, bounty = 40}) == "green")
-
--- --- what is ordinary gets the cycle ---------------------------------------
-
--- A pilot who died with one rung and no bounty is an ordinary death. If the
--- contextual cards fired on those too they would fire on nearly every death
--- and stop meaning anything.
-check("one rung is not a loadout worth mourning",
-      cycles(tips.pick({rungs = 1, bounty = 0})))
-check("and a couple of points is not a manhunt",
-      cycles(tips.pick({rungs = 0, bounty = 2})))
-check("a death with nothing to say still shows a card",
-      cycles(tips.pick({})))
-check("and so does one with no table at all", cycles(tips.pick()))
-
--- --- the cycle -------------------------------------------------------------
-
-tips.reset()
-local seen = {}
-for i = 1, #tips.STOCK do
-    seen[i] = tips.pick({})
+-- No card hogs the deck. Uniform over six cards across six hundred draws
+-- puts each near a hundred; a generator stuck in a short orbit lands far
+-- outside a generous band around that.
+local lo, hi = DRAWS, 0
+for _, n in pairs(seen) do
+    if n < lo then lo = n end
+    if n > hi then hi = n end
 end
-check("the cycle comes out in order", seen[1] == tips.STOCK[1]
-      and seen[#tips.STOCK] == tips.STOCK[#tips.STOCK])
-local uniq = {}
-for _, s in ipairs(seen) do uniq[s] = true end
-local n = 0
-for _ in pairs(uniq) do n = n + 1 end
-check("with no repeats inside one pass", n == #tips.STOCK,
-      n .. " distinct of " .. #tips.STOCK)
-check("and it wraps rather than running out",
-      tips.pick({}) == tips.STOCK[1])
-
--- A room you leave takes the cursor with it.
-tips.pick({})
-tips.reset()
-check("a fresh zone starts the cycle over", tips.pick({}) == tips.STOCK[1])
+check("and none hogs the deck", lo > DRAWS / #tips.POOL / 3
+      and hi < DRAWS / #tips.POOL * 3, lo .. ".." .. hi)
 
 -- --- every name is a card --------------------------------------------------
 
@@ -96,14 +64,11 @@ check("a fresh zone starts the cycle over", tips.pick({}) == tips.STOCK[1])
 -- nothing at all. Read out of ui.lua's source rather than by loading it,
 -- since that would want an engine.
 local src = io.open("client/arena/ui.lua"):read("*a")
-local known = {}
-for name in src:gmatch("\n    (%w+) = {fig = ") do known[name] = true end
-check("ui.lua defines some cards", next(known) ~= nil)
-for _, name in ipairs(tips.STOCK) do
-    check("the cycle names a card that exists: " .. name, known[name] == true)
-end
-for _, name in ipairs({"bomb", "green", "bounty"}) do
-    check("the contextual card exists: " .. name, known[name] == true)
+local cards = {}
+for name in src:gmatch("\n    (%w+) = {fig = ") do cards[name] = true end
+check("ui.lua defines some cards", next(cards) ~= nil)
+for _, name in ipairs(tips.POOL) do
+    check("the pool names a card that exists: " .. name, cards[name] == true)
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

@@ -53,17 +53,10 @@ local me = 0
 local accum = 0
 local feed = {}
 local hurt = 0
--- The card drawn under DESTROYED, how far up the ladders this hull had
--- climbed when it was still flying, and whether it has been dead since the
--- card was set: the card is cleared on the way back up, so `was_dead` is the
+-- The card drawn under DESTROYED, and whether the hull has been dead since
+-- it was set: the card is cleared on the way back up, so `was_dead` is the
 -- edge detector.
---
--- `carried` is sampled every frame rather than read at the death, because a
--- death clears every rung and add-on in the same tick it lands: asking
--- afterwards always answers zero. It costs a handful of reads a frame, which
--- is what the corner panel already spends drawing the same numbers.
 local tip = nil
-local carried = 0
 local was_dead = false
 -- Which zone the "nobody is running X" note is about, so the note can be
 -- withdrawn when the games list shows that zone live again.
@@ -393,12 +386,8 @@ function go_home(self, at)
     self.joining = nil
     feed = {}
     hurt = 0
-    -- The next room is a fresh start for the tips as well: its first death
-    -- gets the first card rather than wherever the last room left the cycle.
     tip = nil
-    carried = 0
     was_dead = false
-    tips.reset()
     -- A box about somebody in the room you just left describes a seat number
     -- that the next room will have dealt to a stranger.
     ui.inspect = nil
@@ -478,20 +467,11 @@ local function drain_kills()
         notify((k.victim == k.killer) and (vn .. " was caught in it")
             or (k.killer == 255) and (vn .. " flew into the wall")
             or (pilot_name(k.killer) .. " killed " .. vn .. paid), col)
-        -- Your own death picks the line shown under DESTROYED.
-        --
-        -- Chosen from the zone's announcement rather than from the simulation,
-        -- because by the time anything local can look, there is nothing to
-        -- look at: apply_damage strips the rungs, the add-ons, the charges and
-        -- the bounty and only then emits the death. So `paid` is the bounty
-        -- that died with you, straight off the wire, and the rung count comes
-        -- from `carried`, which is sampled while you are still flying.
+        -- Your own death deals the card shown under DESTROYED. Set from the
+        -- zone's announcement rather than from the local simulation, which
+        -- can be up to four ticks behind the news. See the clear below.
         if k.victim == me then
-            tip = tips.pick({
-                self = k.killer == k.victim,
-                bounty = k.paid,
-                rungs = carried,
-            })
+            tip = tips.pick()
         end
     end
     if #net.kills > 0 then net.kills = {} end
@@ -1107,10 +1087,6 @@ function update(self, dt)
         -- change, because a zone can hand you a different ship than the one
         -- you asked for.
         touch.has_bomb = sim.has_trigger(me, sim.TRIG_BOMB)
-        -- What this hull has climbed to, held against the death that will
-        -- clear it. Rungs and add-ons together: both are greens, and a pilot
-        -- who lost a fan and a level lost two things.
-        --
         -- Flying again is what takes the card down, and it has to be the
         -- edge of that, not the state. The zone announces a kill every tick
         -- but packs a snapshot one tick in five, and a shot fired and landing
@@ -1123,14 +1099,6 @@ function update(self, dt)
         if sim.ship_alive(me) == 1 then
             if was_dead then tip = nil end
             was_dead = false
-            local n = 0
-            for t2 = 0, sim.TRIG_COUNT - 1 do
-                n = n + sim.ship_level(me, t2)
-                for m = 0, sim.MOD_COUNT - 1 do
-                    n = n + sim.ship_mod(me, t2, m)
-                end
-            end
-            carried = n
         else
             was_dead = true
         end
