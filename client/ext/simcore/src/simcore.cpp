@@ -178,14 +178,33 @@ int ApplySnapshot(lua_State* L) {
 float g_alpha = 0.0f;
 float g_off_x[SIM_MAX_SHIPS];
 float g_off_y[SIM_MAX_SHIPS];
+// The heading's own owed correction, in turn units, decayed with the two
+// above. Position always had this and heading never did, and under coasting
+// the difference is the whole of how a remote ship rotates: prediction holds
+// no buttons for it, so its heading is frozen between snapshots and all of
+// its actual turning arrives in fifty-millisecond lumps. A full-rate turn is
+// ten degrees a lump, which drew as a 20 Hz stairstep. Note this eases only
+// corrections of the past; it predicts nothing, which is the line the
+// held-button experiment crossed and the reason that one is gone.
+float g_off_h[SIM_MAX_SHIPS];
 int32_t g_held_x[SIM_MAX_SHIPS];
 int32_t g_held_y[SIM_MAX_SHIPS];
+uint16_t g_held_h[SIM_MAX_SHIPS];
 uint8_t g_held[SIM_MAX_SHIPS];
 
 // Past this, it is a teleport and not a correction. Four tiles: a respawn, a
 // wormhole and a repel all clear it, and nothing a mispredicted hull does comes
 // near it.
 const double SMOOTH_SNAP = 64.0;
+// The heading's own snap and ceiling, in turn units. Ninety degrees is not a
+// correction: a hull facing somewhere genuinely else -- a respawn -- should
+// appear facing it, because easing that reads as a swivel. Thirty degrees caps
+// the lie, and it is a tighter proportion than the position cap on purpose:
+// an enemy's nose is aiming information, and the smoothing may delay it but
+// must never bury it.
+const double TURN_SNAP = 65536.0 * 90.0 / 360.0;
+const double TURN_MAX = 65536.0 * 30.0 / 360.0;
+
 // And a ceiling on what the drawing may be lying by at any moment, so a stream
 // of corrections in one direction cannot accumulate into a ship drawn somewhere
 // it has never been.
@@ -267,8 +286,14 @@ int ShipHeading(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     const sim_ship* c = &g_cur->ships[i];
     const sim_ship* p = &g_nxt->ships[i];
-    lua_pushnumber(L, ship_continuous(p, c) ? blend_turn(p->heading, c->heading)
-                                            : (double)c->heading);
+    double h = ship_continuous(p, c) ? blend_turn(p->heading, c->heading)
+                                     : (double)c->heading;
+    // Plus whatever turn the drawing still owes from the last correction,
+    // exactly as the position getters add theirs.
+    h += (double)g_off_h[i];
+    if (h < 0.0) h += 65536.0;
+    if (h >= 65536.0) h -= 65536.0;
+    lua_pushnumber(L, h);
     return 1;
 }
 
@@ -812,6 +837,7 @@ int SmoothCapture(lua_State* L) {
         // it comes out as. Folding the blend in here would count it twice.
         g_held_x[i] = c->x;
         g_held_y[i] = c->y;
+        g_held_h[i] = c->heading;
     }
     for (int i = g_cur->ship_count; i < SIM_MAX_SHIPS; i++) g_held[i] = 0;
     return 0;
@@ -828,7 +854,7 @@ int SmoothSettle(lua_State* L) {
     for (int i = 0; i < SIM_MAX_SHIPS; i++) {
         const sim_ship* c = &g_cur->ships[i];
         if (!g_held[i] || !c->active || !c->alive) {
-            g_off_x[i] = g_off_y[i] = 0.0f;
+            g_off_x[i] = g_off_y[i] = g_off_h[i] = 0.0f;
             continue;
         }
         double ox = g_off_x[i] + (g_held_x[i] - c->x) / 256.0;
@@ -846,6 +872,23 @@ int SmoothSettle(lua_State* L) {
         }
         g_off_x[i] = (float)ox;
         g_off_y[i] = (float)oy;
+
+        // The heading's owed turn, by the short way round the circle, since
+        // an angle has no long way worth easing through.
+        int32_t dh = (int32_t)g_held_h[i] - (int32_t)c->heading;
+        if (dh > 32768) dh -= 65536;
+        if (dh < -32768) dh += 65536;
+        double oh = g_off_h[i] + (double)dh;
+        if (oh > 32768.0) oh -= 65536.0;
+        if (oh < -32768.0) oh += 65536.0;
+        if (oh > TURN_SNAP || oh < -TURN_SNAP) {
+            oh = 0.0;
+        } else if (oh > TURN_MAX) {
+            oh = TURN_MAX;
+        } else if (oh < -TURN_MAX) {
+            oh = -TURN_MAX;
+        }
+        g_off_h[i] = (float)oh;
     }
     return 0;
 }
@@ -866,12 +909,15 @@ int SmoothDecay(lua_State* L) {
     for (int i = 0; i < SIM_MAX_SHIPS; i++) {
         g_off_x[i] *= k;
         g_off_y[i] *= k;
+        g_off_h[i] *= k;
         // Under a hundredth of a pixel it is arithmetic nobody can see, and
         // leaving it running means every hull carries a decaying number for the
         // rest of the session.
         if (g_off_x[i] * g_off_x[i] + g_off_y[i] * g_off_y[i] < 0.0001f) {
             g_off_x[i] = g_off_y[i] = 0.0f;
         }
+        // Two turn units is a hundredth of a degree.
+        if (g_off_h[i] < 2.0f && g_off_h[i] > -2.0f) g_off_h[i] = 0.0f;
     }
     return 0;
 }
@@ -881,7 +927,7 @@ int SmoothDecay(lua_State* L) {
 int SmoothReset(lua_State* L) {
     (void)L;
     for (int i = 0; i < SIM_MAX_SHIPS; i++) {
-        g_off_x[i] = g_off_y[i] = 0.0f;
+        g_off_x[i] = g_off_y[i] = g_off_h[i] = 0.0f;
         g_held[i] = 0;
     }
     g_alpha = 0.0f;
