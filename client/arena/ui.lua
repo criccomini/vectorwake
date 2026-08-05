@@ -2884,7 +2884,12 @@ function M.logo(cx, cy, s, alpha)
     local along = (LOGO_FORE - LOGO_AFT - LOGO_PASS) / 2
     local ux, uy = math.sin(LOGO_TILT), -math.cos(LOGO_TILT)
     local px, py = math.cos(LOGO_TILT), math.sin(LOGO_TILT)
-    local w = math.max(1.2 * S, s * 0.30)
+    -- Against the hull unit, so the weight travels with the mark rather than
+    -- with the window. It used to be a tenth of this and the floor underneath
+    -- did all the work, which meant the mark drew a hairline at every size it
+    -- was ever asked for and got thinner the smaller it was set. The floor is
+    -- still here for the sizes where a stroke under a pixel disappears.
+    local w = math.max(1.2 * S, s * 1.1)
     logo_hull(cx - px * LOGO_SEP / 2 * s - ux * along * s,
               cy - py * LOGO_SEP / 2 * s - uy * along * s,
               LOGO_TILT, s, pal.a(pal.FRIEND, alpha), w)
@@ -2900,13 +2905,25 @@ end
 -- nothing on the left, swells under the word and is gone again by the end of
 -- it, which is a wake. It was here before this layout and it stays: the one
 -- piece of decoration in the whole interface that anybody has asked to keep.
+-- How tall the mark stands and how much room it wants, both against the type
+-- it sits beside. The pair measures 37.3 hull units from the highest nose to
+-- the lowest tail (see LOGO_SHIP and the two offsets in M.logo), so a height
+-- asked for in ems converts to one hull unit by dividing by that.
+--
+-- 0.74 em is a shade over the cap height of the face the name is set in. The
+-- mark reads as belonging to the word at that size, and as a picture beside a
+-- caption above it: the first draft stood a full em and a bit tall and lifted
+-- itself a third of an em besides, which put its weight above the line the
+-- word sits on and made the lockup look assembled by accident.
+local LOGO_EM, LOGO_SPAN = 0.74, 37.31
+
 local function wordmark(x, y, size, ww)
-    -- The mark stands to the left of the name, at the type's own height, so
-    -- the two read as one lockup rather than as a picture with a caption
-    -- under it. It takes the room it needs and the name starts after it.
-    local s = size * 0.030
-    local lw = size * 1.15
-    M.logo(x + lw / 2, y - size * 0.30, s)
+    -- The mark stands to the left of the name and centred on the same line, so
+    -- the two read as one lockup. It takes the room it needs and the name
+    -- starts after it.
+    local s = size * LOGO_EM / LOGO_SPAN
+    local lw = size * 0.95
+    M.logo(x + lw / 2, y, s)
     x = x + lw
     ww = ww - lw
     txt("vectorwake", x, y, size, pal.INK, nil, MENU_FONT)
