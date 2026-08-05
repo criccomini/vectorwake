@@ -2636,16 +2636,19 @@ int main(void) {
                   "so holding it through a snapshot does not toggle again");
         }
 
-        /* Losing the add-on does not throw the switch back. A pilot who
-         * turned fans off meant it, and dying is not changing their mind. */
+        /* A fan that leaves takes the switch with it, so the next one picked
+         * up fans. A decline sitting on a hull that has nothing to decline is
+         * a setting nobody can see, waiting to surprise whoever finds the
+         * green. */
         s.ships[id].mods[SIM_TRIG_GUN] = 0;
         step_n(&s, &cfg, 0, 0, 1);
-        CHECK(s.ships[id].multi_off, "losing the add-on leaves the switch off");
+        CHECK(!s.ships[id].multi_off, "losing the add-on puts the switch back");
 
-        /* And with no fan in hand the button cannot move it either way, so a
-         * pilot cannot arm a decline for a fan they are not carrying. */
-        step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);
-        CHECK(s.ships[id].multi_off, "and the button does not move it back");
+        s.ships[id].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        s.ships[id].fire_cooldown = 0;
+        s.weapon_count = 0;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == fan, "so the next fan arrives fanning");
     }
 
     /* And the switch does nothing at all on a hull that has no fan.

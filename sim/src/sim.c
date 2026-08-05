@@ -1269,15 +1269,19 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * because a pulse that arrives twice or not at all is a ship state
          * the two ends disagree about.
          *
-         * A hull carrying no fan has nothing to decline, so the press does
-         * nothing at all: the flag does not move, and a client that says the
-         * key landed by watching the flag stays quiet with it. What the flag
-         * does survive is losing the add-on. The pilot who turned fans off
-         * meant it, and a death is not them changing their mind, so a fan
-         * picked up two lives later arrives declined and the corner stack
-         * draws it dimmed, which is the job that dimming has. */
-        if ((b & SIM_BTN_MULTI) && !(sh->btn_prev & SIM_BTN_MULTI)
-            && ship_has_multi(sh)) {
+         * The switch exists only while there is a fan to throw it on. A hull
+         * carrying none has nothing to decline, so the press does nothing at
+         * all: the flag does not move, and a client that says the key landed
+         * by watching the flag stays quiet with it. And a fan that leaves, to
+         * a death or to a green that takes rather than gives, takes the
+         * switch with it, rather than leaving a decline lying in wait for
+         * whatever the pilot picks up next. Enforced here, once a tick,
+         * rather than at each of the three places a rung can leave a ship;
+         * a dead hull skips this loop, so the clear lands on the first tick
+         * of the next life, before there is anything to pick up. */
+        if (!ship_has_multi(sh)) {
+            sh->multi_off = 0;
+        } else if ((b & SIM_BTN_MULTI) && !(sh->btn_prev & SIM_BTN_MULTI)) {
             sh->multi_off = (uint8_t)(sh->multi_off ? 0 : 1);
         }
         sh->btn_prev = b;
