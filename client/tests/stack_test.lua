@@ -195,13 +195,13 @@ local pal = require("arena.palette")
 local W, H = 1280, 800
 local SCALE = 2      -- the density scale a retina window hands the interface
 
-local function frame(help)
+local function frame(px, py)
     shapes = {}
     ink = {}
     state.n = 0
-    ui.help = help or false
     ui.begin(layer, W, H, SCALE, false)
     ui.hud({
+        point_x = px, point_y = py,
         me = 0,
         class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher",
                        "Lattice", "Spire"},
@@ -479,22 +479,37 @@ local function said()
     return table.concat(out, "\n")
 end
 
+-- A point inside a row, asked of the interface rather than worked out here.
+-- The zones come from the frame just drawn, so this runs between two frames:
+-- one to publish them, one with the pointer resting where they said.
+local function point_in(key)
+    for py = H - 320, H, 2 do
+        for px = 0, 320, 2 do
+            if ui.help_at(px, py) == key then return px, py end
+        end
+    end
+    return nil
+end
+
 -- Matched against the whole phrase rather than the words in it, because the
 -- bomb's own card already contains "shrapnel" and "proximity" as things a
 -- bomb can have. What is under test is the sentence about this hull.
 mods = {[1] = {[2] = 1, [3] = 3}}
-frame(true)
+frame()
+frame(point_in("bomb"))
 local words = said()
-check("held H names the add-ons this bomb is carrying",
+check("pointing at the bomb names the add-ons it is carrying",
       words:find("Carrying prox, shrapnel x3.", 1, true) ~= nil, words)
 
 mods = {[0] = {[0] = 2}}
-frame(true)
+frame()
+frame(point_in("gun"))
 check("and names the gun's separately",
       said():find("Carrying multi x2.", 1, true) ~= nil, said())
 
 mods = {}
-frame(true)
+frame()
+frame(point_in("gun"))
 check("a bare weapon is not described as carrying anything",
       said():find("Carrying", 1, true) == nil, said())
 

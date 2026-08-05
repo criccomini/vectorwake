@@ -115,7 +115,7 @@ check("a touchscreen gets rows, not a picture of keys", #frames == 0,
 -- interface keys is gone.
 local LEGEND_WORDS = {}
 for _, w in ipairs({"fly", "guns", "multifire", "bombs", "charges", "players",
-                    "map", "labels", "menu"}) do
+                    "map", "menu"}) do
     LEGEND_WORDS[w] = true
 end
 

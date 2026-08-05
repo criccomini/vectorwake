@@ -1,8 +1,8 @@
--- The help overlay: what it says, and where it puts it.
+-- The help label: what it says, and where it puts it.
 --
 --     lua5.1 client/tests/help_test.lua
 --
--- Hold H and the screen names its own parts. It does that without a single
+-- Point at an instrument and it names itself. It does that without a single
 -- leader line, which is the whole design: a word set beside a thing is read as
 -- being about that thing, and the lines drawn to reach eleven captions were
 -- what made the first draft of this unreadable.
@@ -42,8 +42,8 @@ function layer:rect(x, y, w, h, col)
     self.rects[#self.rects + 1] = {x = x, y = y, w = w, h = h, col = col}
 end
 
--- Two add-ons on the gun, because the overlay's column has to clear the widest
--- row the stack can draw and a hull holding nothing would never test that.
+-- Two add-ons on the gun, because a sentence has to clear the widest row the
+-- stack can draw and a hull holding nothing would never test that.
 local mods = {[0] = 1, [1] = 0, [2] = 1, [3] = 0, [4] = 0, [5] = 0}
 local sim = {
     ship_count = function() return 2 end,
@@ -114,7 +114,6 @@ end
 
 local function frame(o)
     o = o or {}
-    ui.help = o.help or false
     ui.map = o.map or false
     layer.rects = {}
     ui.begin(layer, W, H, 1, o.touching or false)
@@ -209,9 +208,7 @@ local function block_of(f, s)
                 if s:find(acc, 1, true) ~= 1 then break end
             end
             if acc == s then
-                -- The block's extent, not its first and last baseline. Two
-                -- blocks whose baselines clear each other by less than a line
-                -- are still printing through each other.
+                -- The block's extent, not its first and last baseline.
                 local half = LINE_H / 2
                 return {top = f[i].y - half, bot = f[j].y + half,
                         mid = (f[i].y + f[j].y) / 2,
@@ -234,59 +231,45 @@ local RADAR = "near space. the rings are range."
 local MAP = "the whole arena, and you as the arrow"
 local FEED = "who paid whom"
 
--- Three things this deliberately does not say, each because the instrument
--- already says it. The energy pip empties when you are shot; four bars
--- labelled LINK are a sentence about the connection; and a held overlay does
--- not need to announce that letting go closes it.
-local SILENT = {"armour and ammunition, one pool", "your line to the arena",
-                "let go and it is gone"}
+-- Two things this deliberately does not say, each because the instrument
+-- already says it. The energy pip empties when you are shot, and four bars
+-- labelled LINK are a sentence about the connection.
+local SILENT = {"armour and ammunition, one pool", "your line to the arena"}
 
 local ALL = {GUN, BOMB, CHG, BST, BTY, RADAR, FEED}
 
--- --- it is off until it is held --------------------------------------------
+-- --- nothing until something is pointed at ---------------------------------
 
 local quiet = frame()
 local leaked = nil
 for _, s in ipairs(ALL) do
     if says(quiet, s) then leaked = s end
 end
-check("nothing of it is drawn until H is held", leaked == nil, leaked)
+check("nothing of it is drawn while the pointer is nowhere", leaked == nil,
+      leaked)
 
--- --- and then all of it is -------------------------------------------------
-
-local held = frame({help = true})
-local spoke = {}
-for _, s in ipairs(SILENT) do
-    if says(held, s) then spoke[#spoke + 1] = s end
-end
-check("what the instruments say for themselves is left unsaid", #spoke == 0,
-      table.concat(spoke, "; "))
-
-local missing = {}
-for _, s in ipairs(ALL) do
-    if not says(held, s) then missing[#missing + 1] = s end
-end
-check("holding H names every instrument", #missing == 0,
-      table.concat(missing, "; "))
-if #missing > 0 then
-    print(#missing .. " absent, so the rest cannot be measured")
-    os.exit(1)
-end
-
--- --- pointing at a row answers beside that row ---------------------------
+-- --- what can be pointed at ------------------------------------------------
 --
--- Held, the stack's sentences are a column: a card's worth of words is taller
--- than the row it belongs to, and five of them left where the rows are would
--- print through each other. Pointing at one is the case where the promise
--- still holds exactly, because one block has nothing to collide with.
---
--- The rows wear glyphs rather than words now, so the drawn text cannot say
--- where a row is. The hover zones can: they are the row rectangles the
--- interface itself publishes, and they are also what a pointer resting there
--- names, so the test and the player are asking the same question.
+-- The rows wear glyphs rather than words, so the drawn text cannot say where a
+-- row is. The hover zones can: they are the row rectangles the interface
+-- itself publishes, and they are also what a pointer resting there names, so
+-- the test and the player are asking the same question.
 
+-- A point inside a given instrument, asked of the interface itself rather than
+-- worked out again here. Reads the zones the last frame filed, so a frame has
+-- to have been drawn first.
+local function a_point_in(key)
+    for y = 0, H - 1, 3 do
+        for x = 0, W - 1, 3 do
+            if ui.help_at(x, y) == key then return x, y end
+        end
+    end
+    return nil
+end
+
+-- The run of rows one key owns, down the stack's left column.
 local function zone_band(key)
-    local x = 20            -- inside the stack's left column
+    local x = 20
     local top, bot = nil, nil
     for yy = 0, H, 2 do
         if ui.help_at(x, yy) == key then
@@ -296,6 +279,32 @@ local function zone_band(key)
     end
     return top, bot
 end
+
+-- Each charge row is its own key, since a repel and a burst have a card each.
+local KEYS = {"gun", "bomb", "charge:repel", "charge:burst", "bounty",
+              "radar", "feed"}
+local unreachable = {}
+for _, k in ipairs(KEYS) do
+    if not a_point_in(k) then unreachable[#unreachable + 1] = k end
+end
+check("every named instrument can be pointed at", #unreachable == 0,
+      table.concat(unreachable, "; "))
+if #unreachable > 0 then
+    print("nothing to point at, so the rest cannot be measured")
+    os.exit(1)
+end
+
+-- The field of play is not a hover zone by accident: the middle of the screen
+-- belongs to flying, and only the pip over your own hull answers there.
+check("open space answers nothing", ui.help_at(W * 0.72, H * 0.55) == nil,
+      tostring(ui.help_at(W * 0.72, H * 0.55)))
+
+-- --- pointing at a row answers beside that row ----------------------------
+--
+-- The whole promise, and the one that breaks silently. A card's worth of words
+-- is taller than the row it belongs to, so the block is centred on the row and
+-- pushed back on screen at the edges, and either of those can drift far enough
+-- to name the row above instead.
 
 for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"bounty", BTY}}) do
     local key, sentence = pair[1], pair[2]
@@ -308,151 +317,12 @@ for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"bounty", BTY}}) do
           b and mid and ("row " .. mid .. ", words at " .. b.mid) or "absent")
 end
 
--- --- a charge is named for what it is, not for the digit that spends it ---
---
--- A repel and a burst do different things and each has a card of its own.
--- They shared one sentence only while that sentence was about which digit
--- spends them, which is a fact about the keyboard rather than about either.
-
-do
-    local rx, ry_ = nil, nil
-    local bx, by = nil, nil
-    for y = 0, H - 1, 3 do
-        for x = 0, W - 1, 3 do
-            local k = ui.help_at(x, y)
-            if k == "charge:repel" and not rx then rx, ry_ = x, y end
-            if k == "charge:burst" and not bx then bx, by = x, y end
-        end
-    end
-    check("the two charge rows are pointed at separately",
-          rx and bx and ry_ ~= by,
-          tostring(ry_) .. " and " .. tostring(by))
-    local fr = frame({point_x = rx, point_y = ry_})
-    local fb = frame({point_x = bx, point_y = by})
-    check("the repel row says what a repel is",
-          says(fr, CHG) and not says(fr, BST))
-    check("the burst row says what a burst is",
-          says(fb, BST) and not says(fb, CHG))
-end
-
--- --- and held, the column does not print through itself ------------------
---
--- This is the one that breaks silently. Five wrapped blocks in the space four
--- rows used to occupy will overlap unless they are laid out, and overlapping
--- text is unreadable long before it looks wrong.
-
-do
-    local blocks = {}
-    for _, sentence in ipairs(ALL) do
-        local b = block_of(held, sentence)
-        if b then blocks[#blocks + 1] = {b = b, s = sentence} end
-    end
-    -- Only the stack's own column can collide with itself; the dial and the
-    -- feed sit off on the right and are checked below.
-    local clash = nil
-    for i = 1, #blocks do
-        for j = i + 1, #blocks do
-            local a, c = blocks[i], blocks[j]
-            if a.b.top < c.b.bot and c.b.top < a.b.bot then
-                clash = "two blocks share the rows " ..
-                        math.floor(a.b.top) .. ".." .. math.floor(a.b.bot) ..
-                        " and " .. math.floor(c.b.top) .. ".." ..
-                        math.floor(c.b.bot)
-            end
-        end
-    end
-    check("the held column lays itself out without overlapping", clash == nil,
-          clash)
-    check("and it has something in it", #blocks >= 4,
-          tostring(#blocks) .. " blocks")
-end
-
--- --- nothing runs off the screen -------------------------------------------
---
--- Every drawn line, not only the ones this test knows the words of: a wrapped
--- sentence is several lines and any one of them can be the one that hangs off
--- the edge.
-
-do
-    local off = nil
-    for _, t in ipairs(held) do
-        if t.left < -1 or t.right > W + 1 or t.y < 0 or t.y > H then
-            off = string.format("%q spans %.0f..%.0f at y %.0f", t.s, t.left,
-                                t.right, t.y)
-        end
-    end
-    check("every line the overlay draws fits on the screen", off == nil, off)
-end
-
--- --- the dial says which dial it is ----------------------------------------
---
--- M swaps the radar for the whole map in the same corner. The word beside it
--- has to swap too, or it describes range rings that are not there.
-
-local mapped = frame({help = true, map = true})
-check("with the map up the dial is described as the map",
-      find(mapped, MAP) and not find(mapped, RADAR))
-local mapped_clash = nil
-for _, s in ipairs({MAP, FEED, GUN, BOMB, CHG, BST, BTY}) do
-    if not says(mapped, s) then
-        mapped_clash = s .. " went missing with the map up"
-    end
-end
-check("and the rest of it still clears its row with the map up",
-      mapped_clash == nil, mapped_clash)
-
--- --- the menu is a different screen ----------------------------------------
-
-local under_menu = frame({help = true, menu_open = true})
-local shown = nil
-for _, s in ipairs(ALL) do
-    if find(under_menu, s) then shown = s end
-end
-check("held under the menu it stays down", shown == nil, shown)
-
--- --- a hull with no charges gets no charge line ----------------------------
-
-local bare = frame({help = true, charges = {}})
-check("a hull carrying no charges is not told how to spend them",
-      not says(bare, CHG))
-check("and the rest of it is still there", says(bare, GUN))
-
--- --- and the pointer names one thing at a time ----------------------------
+-- --- one thing at a time ---------------------------------------------------
 --
 -- Resting on an instrument is a question about that instrument. It answers
--- with one line, no wash, and none of the other eight, so it costs about what
--- looking at the thing costs.
+-- with one line and none of the other six, so it costs about what looking at
+-- the thing costs.
 
--- A point inside a given instrument, asked of the interface itself
--- rather than worked out again here.
--- One frame first, so the zones exist to be asked about.
-frame()
-local function a_point_in(key)
-    for y = 0, H - 1, 3 do
-        for x = 0, W - 1, 3 do
-            if ui.help_at(x, y) == key then return x, y end
-        end
-    end
-    return nil
-end
-
--- Each charge row is its own key now, since a repel and a burst have a card
--- each; the harness gives the hull a repel.
-local KEYS = {"gun", "bomb", "charge:repel", "charge:burst", "bounty",
-              "radar", "feed"}
-local unreachable = {}
-for _, k in ipairs(KEYS) do
-    if not a_point_in(k) then unreachable[#unreachable + 1] = k end
-end
-check("every named instrument can be pointed at", #unreachable == 0,
-      table.concat(unreachable, "; "))
-
--- The field of play is not a hover zone by accident: the middle of the screen
--- belongs to flying, and only the pip over your own hull answers there.
-check("open space answers nothing", ui.help_at(W * 0.72, H * 0.55) == nil,
-      tostring(ui.help_at(W * 0.72, H * 0.55)))
-
--- Hovering draws that line and stops.
 local hx, hy = a_point_in("bounty")
 local hovered = frame({point_x = hx, point_y = hy})
 check("the pointer on a row draws that row's line", says(hovered, BTY))
@@ -461,6 +331,18 @@ for _, s in ipairs({GUN, BOMB, CHG, BST, RADAR, FEED}) do
     if says(hovered, s) then extras[#extras + 1] = s end
 end
 check("and none of the others", #extras == 0, table.concat(extras, "; "))
+
+local spoke = {}
+for _, s in ipairs(SILENT) do
+    for _, k in ipairs(KEYS) do
+        local px, py = a_point_in(k)
+        if says(frame({point_x = px, point_y = py}), s) then
+            spoke[#spoke + 1] = s
+        end
+    end
+end
+check("what the instruments say for themselves is left unsaid", #spoke == 0,
+      table.concat(spoke, "; "))
 
 -- Each instrument answers with its own sentence and not its neighbour's.
 for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"radar", RADAR},
@@ -473,23 +355,79 @@ for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"radar", RADAR},
           "absent")
 end
 
--- Held beats hovered. A hand that happens to be resting on the dial must not
--- cut the other eight lines out of a mode the player deliberately opened.
-local both = frame({help = true, point_x = hx, point_y = hy})
-local lost = {}
-for _, s in ipairs(ALL) do
-    if not says(both, s) then lost[#lost + 1] = s end
-end
-check("holding H with the pointer resting still says everything",
-      #lost == 0, table.concat(lost, "; "))
+-- --- a charge is named for what it is, not for the digit that spends it ---
+--
+-- A repel and a burst do different things and each has a card of its own.
+-- They shared one sentence only while that sentence was about which digit
+-- spends them, which is a fact about the keyboard rather than about either.
 
--- And the menu is still a different screen.
+do
+    local rx, ry_ = a_point_in("charge:repel")
+    local bx, by = a_point_in("charge:burst")
+    check("the two charge rows are pointed at separately", ry_ ~= by,
+          tostring(ry_) .. " and " .. tostring(by))
+    local fr = frame({point_x = rx, point_y = ry_})
+    local fb = frame({point_x = bx, point_y = by})
+    check("the repel row says what a repel is",
+          says(fr, CHG) and not says(fr, BST))
+    check("the burst row says what a burst is",
+          says(fb, BST) and not says(fb, CHG))
+end
+
+-- --- nothing runs off the screen -------------------------------------------
+--
+-- Every drawn line, not only the ones this test knows the words of: a wrapped
+-- sentence is several lines and any one of them can be the one that hangs off
+-- the edge. The bounty row is the case that needs the clamp, since it is the
+-- last row of a stack standing on the bottom of the screen.
+
+do
+    local off = nil
+    for _, k in ipairs(KEYS) do
+        local px, py = a_point_in(k)
+        for _, t in ipairs(frame({point_x = px, point_y = py})) do
+            if t.left < -1 or t.right > W + 1 or t.y < 0 or t.y > H then
+                off = string.format("%s: %q spans %.0f..%.0f at y %.0f", k,
+                                    t.s, t.left, t.right, t.y)
+            end
+        end
+    end
+    check("every line it draws fits on the screen", off == nil, off)
+end
+
+-- --- the dial says which dial it is ----------------------------------------
+--
+-- M swaps the radar for the whole map in the same corner. The word beside it
+-- has to swap too, or it describes range rings that are not there.
+
+do
+    frame({map = true})
+    local px, py = a_point_in("radar")
+    local mapped = frame({map = true, point_x = px, point_y = py})
+    check("with the map up the dial is described as the map",
+          find(mapped, MAP) and not find(mapped, RADAR))
+end
+
+-- --- the menu is a different screen ----------------------------------------
+--
+-- It has a help page of its own, and two things explaining the interface at
+-- once is neither.
+
+frame()
 local hover_menu = frame({menu_open = true, point_x = hx, point_y = hy})
 check("hovering under the menu says nothing", not says(hover_menu, BTY))
 
--- A pointer the client does not have names nothing.
-local none = frame()
-check("no pointer, no line", not says(none, BTY))
+-- --- a hull with no charges gets no charge row -----------------------------
+
+do
+    frame({charges = {}})
+    check("a hull carrying no charges has no charge row to point at",
+          a_point_in("charge:repel") == nil)
+    local gx, gy = a_point_in("gun")
+    check("and the rest of the stack is still there",
+          gx ~= nil and says(frame({charges = {}, point_x = gx, point_y = gy}),
+                             GUN))
+end
 
 -- --- a bar as tall as the thing it names ----------------------------------
 --
@@ -499,14 +437,18 @@ check("no pointer, no line", not says(none, BTY))
 -- instrument's whole height.
 
 do
-    local f = frame({help = true})
+    frame()
+    local px, py = a_point_in("radar")
+    local f = frame({point_x = px, point_y = py})
     local word = find(f, RADAR)
     local bar = bar_at(f, word.right + 11 * 1)
     check("the dial's bar is as tall as the dial",
           bar and bar.h > 100, bar and ("height " .. bar.h) or "no bar")
 
-    local fw = find(f, FEED)
-    local fbar = bar_at(f, fw.right + 11 * 1)
+    local fx, fy = a_point_in("feed")
+    local ff = frame({point_x = fx, point_y = fy})
+    local fw = find(ff, FEED)
+    local fbar = bar_at(ff, fw.right + 11 * 1)
     -- Five lines at the interface's own line height, less a little slack.
     check("the feed's bar is as tall as the feed",
           fbar and fbar.h > 4 * 18, fbar and ("height " .. fbar.h) or "no bar")
@@ -518,7 +460,9 @@ end
 -- sixth kill.
 
 do
-    local f = frame({help = true})
+    frame()
+    local fx, fy = a_point_in("feed")
+    local f = frame({point_x = fx, point_y = fy})
     local word = find(f, FEED)
     local lowest, highest = 0, math.huge
     for _, line in ipairs(FEED_LINES) do
