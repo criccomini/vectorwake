@@ -135,6 +135,8 @@ end
 
 -- What this hull is carrying, by trigger and by add-on index. Set per frame.
 local mods = {}
+-- Whether the fan is declined, which Q toggles in flight.
+local multi_off = false
 
 local sim = {
     ship_count = function() return 1 end,
@@ -154,7 +156,7 @@ local sim = {
     ship_level = function() return 1 end,
     ship_charge = function() return 2 end,
     ship_mod = function(_, t, m) return (mods[t] and mods[t][m]) or 0 end,
-    ship_multi_off = function() return false end,
+    ship_multi_off = function() return multi_off end,
     charge_max = function() return 3 end,
     has_trigger = function() return true end,
     trigger_rate = function() return 1 end,
@@ -692,6 +694,59 @@ local gap = (counting or 0) - (axis.gun or 0)
 check("the counting column sits close to the marks",
       gap > 8 * SCALE and gap < 26 * SCALE,
       string.format("%.0f px from the subject to the ladder", gap))
+
+-- --- a barrel you are not firing ------------------------------------------
+
+-- Q declines the fan. The two extra barrels stay on the mark, dimmed, because
+-- a fan that quietly stopped fanning with nothing on screen to say so is a
+-- weapon that looks broken. What they stop being is rounds.
+--
+-- That distinction is the whole of this: bounce rings the rounds a gun puts
+-- out, and it was ringing all three dots whether or not two of them were
+-- firing. Nothing here measured it, which is how it shipped.
+local function rings_on_gun()
+    mods = {[0] = {[0] = 2, [1] = 2}}
+    frame()
+    local b = row_box("gun")
+    if not b then return -1 end
+    local n = 0
+    for _, sh in ipairs(shapes) do
+        local mid = (sh.y0 + sh.y1) / 2
+        -- A bounce ring is the widest thing drawn on a dot, and it is drawn
+        -- as a ring: count the shapes whose box is square and larger than the
+        -- dot inside it.
+        if mid > b.y0 and mid < b.y1 then
+            local w, h = sh.x1 - sh.x0, sh.y1 - sh.y0
+            if sh.w and math.abs(w - h) < 1 and w > 6 * SCALE then
+                n = n + 1
+            end
+        end
+    end
+    return n
+end
+
+multi_off = false
+local firing = rings_on_gun()
+multi_off = true
+local declined = rings_on_gun()
+multi_off = false
+
+check("a fanned gun rings all three of its rounds", firing == 3,
+      tostring(firing) .. " rings")
+check("and a declined fan rings only the one it fires", declined == 1,
+      tostring(declined) .. " rings")
+check("the barrels themselves stay on the mark when declined",
+      (function()
+          multi_off = true
+          mods = {[0] = {[0] = 2}}
+          frame()
+          local n = #cell(row_box("gun"))
+          multi_off = false
+          mods = {[0] = {}}
+          frame()
+          local plain = #cell(row_box("gun"))
+          return n > plain
+      end)(), "a declined fan should still be drawn")
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

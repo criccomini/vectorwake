@@ -1094,13 +1094,16 @@ local CHARGE_HUES = {repel = pal.CHARGE_COL, burst = pal.BURST}
 -- barely do one.
 local BOLT_LEN, BOLT_DOT, BOLT_FAN = 1.4, 0.17, 0.47
 
-local function bolt_line(m, a, col)
-    local ca, sa = math.cos(a), math.sin(a)
+-- `held` is a barrel you have but are not firing: drawn, so the fan does not
+-- appear to vanish when it is declined, but not counted as a round. What is
+-- not firing does not bounce, and a ring on it says it does.
+local function bolt_line(m, ang, col, held)
+    local ca, sa = math.cos(ang), math.sin(ang)
     local d = m.k * BOLT_LEN
     local dx, dy = m.origin + ca * d, m.y + sa * d
     u:seg(m.origin, ry(m.y), dx, ry(dy), pen(m.k, 0.075), col)
     u:disc(dx, ry(dy), m.k * BOLT_DOT, 10, col)
-    m.dots[#m.dots + 1] = {dx, dy}
+    if not held then m.dots[#m.dots + 1] = {dx, dy} end
     m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
 end
 
@@ -1172,9 +1175,10 @@ local function dec_multi(m, col, n)
     -- because a corner that answers "how many barrels" with a count of strokes
     -- stops being a shape and starts being a tally.
     if m.bolt then
-        -- Two more barrels off the same muzzle, at any depth.
-        bolt_line(m, -BOLT_FAN, col)
-        bolt_line(m, BOLT_FAN, col)
+        -- Two more barrels off the same muzzle, at any depth. Declined, they
+        -- stay on the mark and stop being rounds: see bolt_line.
+        bolt_line(m, -BOLT_FAN, col, m.off)
+        bolt_line(m, BOLT_FAN, col, m.off)
         return
     end
     local len = m.x - m.tail
@@ -1347,6 +1351,7 @@ local function weapon_mark(cx, cy, k, me, t)
     -- it, and a fan that quietly stopped fanning with nothing on screen to
     -- say so is a weapon that looks broken.
     local off = sim.ship_multi_off and sim.ship_multi_off(me)
+    m.off = off and true or false
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a
     -- different colour stuck on the side of it.
