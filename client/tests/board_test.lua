@@ -110,6 +110,15 @@ ui.finish()
 check("a touchscreen gets rows, not a picture of keys", #frames == 0,
       "frames: " .. #frames)
 
+-- Every colour the board lights a key in has a word under it, and the words
+-- are the whole of the explanation now that the line of prose naming the
+-- interface keys is gone.
+local LEGEND_WORDS = {}
+for _, w in ipairs({"fly", "guns", "multifire", "bombs", "charges", "scores",
+                    "map", "menu"}) do
+    LEGEND_WORDS[w] = true
+end
+
 -- The page takes the room a desktop window has, and gives it back when the
 -- window has not got it. Both directions bound the same drawing: the board
 -- is as tall as it is wide, so a short window is as much a limit as a narrow
@@ -129,15 +138,22 @@ local function draw_at(w, h)
         x0, x1 = math.min(x0, f.x), math.max(x1, f.x + f.w)
         y0, y1 = math.min(y0, f.y), math.max(y1, f.y + f.h)
     end
+    -- How far right the keys themselves reach, which is the board's own
+    -- width and what the legend under it has to stay inside.
+    local keyx1 = x1
     -- The captions hang below the last key row, so the drawing reaches
     -- further down than the keys do. Take the text into account or the fit
     -- check passes on a page whose last line is off the bottom.
+    local legend = 0
     for k = 1, st.n do
         local t = st.text[k]
         y1 = math.max(y1, h - t.y + t.px)
-        x1 = math.max(x1, t.x + (t.pivot ~= "right" and #t.s * t.px * 0.62 or 0))
+        local reach = t.x + (t.pivot ~= "right" and #t.s * t.px * 0.62 or 0)
+        x1 = math.max(x1, reach)
+        if LEGEND_WORDS[t.s] then legend = math.max(legend, reach) end
     end
-    return {x0 = x0, x1 = x1, y0 = y0, y1 = y1, keyh = frames[1] and frames[1].h}
+    return {x0 = x0, x1 = x1, y0 = y0, y1 = y1, keyx1 = keyx1,
+            legend = legend, keyh = frames[1] and frames[1].h}
 end
 
 for _, shape in ipairs({{1280, 800}, {1920, 1080}, {900, 600}, {1400, 400},
@@ -146,6 +162,21 @@ for _, shape in ipairs({{1280, 800}, {1920, 1080}, {900, 600}, {1400, 400},
     check(string.format("%dx%d keeps the board on screen", shape[1], shape[2]),
           b.x0 >= 0 and b.x1 <= shape[1] and b.y0 >= 0 and b.y1 <= shape[2],
           string.format("extent %.0f..%.0f x %.0f..%.0f", b.x0, b.x1, b.y0, b.y1))
+end
+
+-- The legend wraps rather than running off the end of the board. Eight
+-- colours and their words fit across a wide board and do not fit across a
+-- narrow one, and a line that overflowed would carry away the last two of
+-- them. Since the captions naming those keys are gone, the legend is the only
+-- place the page says what they are.
+for _, shape in ipairs({{1280, 800}, {1920, 1080}, {1400, 400}, {900, 600},
+                        {700, 500}}) do
+    local b = draw_at(shape[1], shape[2])
+    check(string.format("%dx%d keeps the legend inside the board",
+                        shape[1], shape[2]),
+          b.legend > 0 and b.legend <= b.keyx1 + 1,
+          string.format("legend reaches %.0f, board ends %.0f", b.legend,
+                        b.keyx1))
 end
 
 -- And the point of all of it: on a desktop window the keys are drawn at a

@@ -268,6 +268,34 @@ local function toggle_map()
     ui.map = not ui.map
 end
 
+-- What the pointer is resting on in the menu, which lights the same way the
+-- arrow keys light a row: one cursor, moved by either hand.
+--
+-- Asked every frame rather than on the mouse event, because the thing under
+-- the pointer moves on its own: the games list refills every three seconds
+-- and a long one scrolls under the cursor. A highlight that only followed the
+-- mouse would sit on whatever slid beneath it. It is a walk of a dozen
+-- rectangles and it costs nothing.
+--
+-- Reports whether the pointer arrived somewhere, so the caller can make the
+-- noise a key makes. Leaving a row is silent: there is nothing to say.
+local function hover_menu(x, y, vh)
+    if not menu.open or touch.used or not x then
+        return menu.hover_stage(nil)
+    end
+    local px, py = x, vh - y
+    for _, r in ipairs(ui.hits) do
+        if px >= r.x and px <= r.x + r.w
+           and py >= r.y and py <= r.y + r.h then
+            -- Boxes are tested in publication order and the first one wins,
+            -- which is the rule a press already goes by, so a chip drawn over
+            -- the panel does not light the row behind it.
+            return menu.hover_stage(r.action == "stage" and r.value or nil)
+        end
+    end
+    return menu.hover_stage(nil)
+end
+
 -- The terrain and the starfield never move, so they are built once per map
 -- rather than per frame. Rebuilding them was the single most expensive thing
 -- the old renderer did, and it did it sixty times a second.
@@ -766,6 +794,13 @@ function update(self, dt)
 
     if menu.open then
         menu.tick()
+        if hover_menu(self.cursor_x, self.cursor_y, self.vh or 0) then
+            sfx.ui("ui_move")
+        end
+        -- How wide the hull grid came out last frame, which is what its
+        -- arrows are measured in. The drawing owns the number: how many
+        -- columns fit is a fact about the window.
+        menu.cols = ui.stage_cols
         local act, moved = menu.step({
             left = tapped[hash("turn_left")], right = tapped[hash("turn_right")],
             up = tapped[hash("thrust")], down = tapped[hash("reverse")],

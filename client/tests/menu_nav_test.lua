@@ -101,6 +101,73 @@ menu.click_stage(3)
 check("a stage tap picks from the page it is on", menu.pending == 2,
       "asked for hull " .. tostring(menu.pending))
 
+-- --- the hulls are a grid, and its arrows mean what a grid's arrows mean ---
+--
+-- Right is enter everywhere else, which is what a one-column list wants and
+-- exactly wrong on a page laid out in four: pressing right to look at the
+-- hull beside this one flew it instead, and down, which should have gone to
+-- the row below, went one ship along.
+
+menu.stack = {"root"}
+menu.sel = {}
+menu.cols = 4
+menu.click_rail(ship_at)
+menu.pending = nil
+menu.step({right = true})
+check("right in the grid moves rather than picks",
+      menu.sel.ship == 2 and menu.pending == nil,
+      "cursor " .. tostring(menu.sel.ship) .. ", asked for "
+          .. tostring(menu.pending))
+menu.step({down = true})
+check("down goes to the row below, not one to the right",
+      menu.sel.ship == 6, "cursor " .. tostring(menu.sel.ship))
+menu.step({up = true})
+check("and up comes back", menu.sel.ship == 2,
+      "cursor " .. tostring(menu.sel.ship))
+local act = menu.step({go = true})
+check("enter is the only thing that picks",
+      act == "ship" and menu.pending == 1,
+      tostring(act) .. ", asked for " .. tostring(menu.pending))
+
+-- Left is still the way out, from the column where there is nothing to its
+-- left. Inside the grid it is one ship back.
+menu.sel.ship = 6
+menu.step({left = true})
+check("left inside the grid moves", menu.sel.ship == 5 and menu.stack[2] == "ship",
+      "cursor " .. tostring(menu.sel.ship) .. " at "
+          .. table.concat(menu.stack, "/"))
+menu.step({left = true})
+check("and off the first column it goes back", menu.stack[2] == nil,
+      table.concat(menu.stack, "/"))
+
+-- --- a pointer resting on a row is the same cursor the arrows move --------
+
+menu.stack = {"root"}
+menu.sel = {}
+menu.hover_stage(nil)
+menu.click_rail(ship_at)
+check("a hover moves the cursor", menu.hover_stage(4) and menu.sel.ship == 4,
+      "cursor " .. tostring(menu.sel.ship))
+check("and resting on the same row says nothing more",
+      menu.hover_stage(4) == false)
+-- A pointer left lying on a row must not put the cursor back on it, or the
+-- arrows could never leave the row the mouse happens to be over.
+menu.step({down = true})
+check("and does not hold the arrows to it", menu.sel.ship == 8,
+      "cursor " .. tostring(menu.sel.ship))
+
+menu.hover_stage(nil)
+menu.stack = {"root"}
+menu.sel = {}
+local rail_before = menu.view().rail_sel
+menu.hover_stage(3)
+check("a hover in a preview leaves the rail where it is",
+      menu.view().rail_sel == rail_before,
+      tostring(rail_before) .. " -> " .. tostring(menu.view().rail_sel))
+check("and says where the pointer is instead", menu.view().hover == 3,
+      tostring(menu.view().hover))
+menu.hover_stage(nil)
+
 -- --- what the view says about the window does not depend on the page -----
 --
 -- `home` decides where the whole block is measured from: clear of the corner
