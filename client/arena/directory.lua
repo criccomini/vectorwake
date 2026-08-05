@@ -37,7 +37,13 @@ local REFRESH = 3
 local RETRY_FIRST, RETRY_MAX = 2, 15
 
 M.rows = {}
+-- What the list says when it has nothing to list: a heading, the line under
+-- it, and the address being asked. Three strings rather than one, because an
+-- empty page has room to say what is happening and what will happen, and the
+-- address is for whoever is running this rather than for whoever is playing.
 M.note = "looking for games"
+M.why = "asking the directory"
+M.at = ""
 -- Set by the caller before the list is opened. Used once, on first contact
 -- with a meta-layer, to name a brand new account.
 M.pilot_name = ""
@@ -64,6 +70,7 @@ local function on_message(s)
     local ok, reply = pcall(json.decode, string.sub(s, 2))
     if not ok or type(reply) ~= "table" or type(reply.zones) ~= "table" then
         M.note = "the directory sent something unreadable"
+        M.why = "still asking, every few seconds"
         return
     end
     -- Where accounts live, if this deployment has any. It rides the games list
@@ -111,7 +118,8 @@ local function on_message(s)
     -- parse halfway leaves the last good list up, which is a better answer
     -- than an empty one.
     M.rows = rows
-    M.note = (#rows == 0) and "the directory lists no games" or ""
+    M.note = (#rows == 0) and "no games are running" or ""
+    M.why = "the list fills in by itself when one starts"
 end
 
 local function ask()
@@ -147,14 +155,16 @@ local function dial()
                 or data.event == websocket.EVENT_ERROR then
                 conn = nil
                 if #M.rows == 0 then
-                    M.note = "no directory at " .. url
+                    M.note = "no directory answered"
+                    M.why = "still asking, every few seconds"
                 end
             end
         end)
     end)
     if not ok then
         conn = nil
-        M.note = "that directory address cannot be reached"
+        M.note = "that address cannot be dialled"
+        M.why = "the client was pointed somewhere it cannot reach"
     end
 end
 
@@ -162,6 +172,8 @@ function M.open(at)
     M.close()
     M.rows = {}
     M.note = "looking for games"
+    M.why = "asking the directory"
+    M.at = at or ""
     since = 0
     watching = false
     retry_in = RETRY_FIRST

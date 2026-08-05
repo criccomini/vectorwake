@@ -265,20 +265,15 @@ local function zone_rows()
         rows[#rows + 1] = {label = "leave this game", act = "leave",
                            note = "back to the home screen"}
     end
-    if #rows == 0 then
-        -- Never an empty panel. Whatever the directory is doing, or failing to
-        -- do, is the only thing this level has to say.
-        --
-        -- The hint carries the part that is about time rather than about what
-        -- went wrong, and it goes under the list where there is room for a
-        -- sentence: the detail is one right-aligned line already holding an
-        -- address, and a phone has no width to spare on it. What it says is
-        -- worth saying, because the answer to this used to be reloading the
-        -- client and a player has no way to know it is not still.
-        rows[1] = {label = "", detail = directory.note,
-                   hint = "the list fills in by itself when a directory answers"}
-    end
     return rows
+end
+
+-- What the games page holds instead of games. See `empty` on the node: a
+-- blank row carrying the directory's note was what this was, which is a row
+-- pretending to be a game and a sentence pretending to be a name.
+local function zone_empty()
+    if #directory.rows > 0 then return nil end
+    return {head = directory.note, line = directory.why, at = directory.at}
 end
 
 local NODES = {
@@ -315,7 +310,7 @@ local NODES = {
     -- rather than a rule about pages.
     ship = {grid = true, rows = hull_rows()},
 
-    zones = {rows = zone_rows},
+    zones = {rows = zone_rows, empty = zone_empty},
 
     teams = {rows = team_rows},
 
@@ -582,6 +577,8 @@ function M.view()
     -- carries the word for it, so a title over the stage would be the same
     -- answer written twice.
     local out = {depth = #M.stack, sel = sel,
+                 -- What the page has to say when it has nothing to list.
+                 empty = nd.empty and nd.empty() or nil,
                  -- The hull you are in, so the rail can draw it as its mark.
                  class = M.class,
                  -- Whether there is anything to shut, which is whether there
@@ -655,6 +652,7 @@ function M.view()
         if pick and pick.go and NODES[pick.go] then
             local nd2 = NODES[pick.go]
             out.board = nd2.board or false
+            out.empty = nd2.empty and nd2.empty() or nil
             out.rows = {}
             for i, r in ipairs(rows_of(nd2)) do
                 local d = r.detail
@@ -784,6 +782,15 @@ function M.step(keys)
     local nd = node()
     local rows = rows_of(nd)
     local n = #rows
+
+    -- A page can hold nothing at all: the games, before a directory has
+    -- answered. Escape and left still work; there is no row for anything else
+    -- to move to, and a cursor stepped round a list of none is a nan.
+    if n == 0 then
+        if keys.back then return escape() end
+        if keys.left then return back() end
+        return nil, false
+    end
 
     -- A grid reads its own arrows. Everywhere else right is enter, which is
     -- what a one-column list wants and exactly wrong on a page laid out in

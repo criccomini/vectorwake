@@ -217,6 +217,9 @@ check("and says so", dir.note ~= "", "note: " .. tostring(dir.note))
 -- somebody can act on, and it has to say that waiting is one of the actions.
 -- Reloading the client used to be the only way out of this screen, and a
 -- player has no way to know that it is not still.
+--
+-- It is a page with nothing in it rather than a row with nothing in it: a
+-- blank row carrying the note was a row pretending to be a game.
 package.loaded["arena.account"].name = ""
 package.loaded["arena.account"].status = function() return "" end
 package.loaded["arena.account"].aim = function() end
@@ -227,13 +230,26 @@ local menu = require("arena.menu")
 menu.show("zones")
 
 dir.rows = {}
-dir.note = "no directory at wss://dir.example/x"
+dir.note = "no directory answered"
+dir.why = "still asking, every few seconds"
+dir.at = "wss://dir.example/x"
 local view = menu.view()
-check("an empty list says why", view.rows[1] ~= nil
-      and view.rows[1].detail == dir.note,
-      "detail: " .. tostring(view.rows[1] and view.rows[1].detail))
-check("and says it is still trying", view.hint ~= nil and view.hint ~= "",
-      "hint: " .. tostring(view.hint))
+check("an empty list draws no rows at all", #view.rows == 0,
+      #view.rows .. " rows")
+check("and says why", view.empty and view.empty.head == dir.note,
+      "head: " .. tostring(view.empty and view.empty.head))
+check("and that it is still trying",
+      view.empty and view.empty.line ~= nil and view.empty.line ~= "",
+      "line: " .. tostring(view.empty and view.empty.line))
+check("and which address it is asking",
+      view.empty and view.empty.at == dir.at,
+      "at: " .. tostring(view.empty and view.empty.at))
+
+-- And a page with games on it has nothing to explain.
+dir.rows = {{zone = "chaos", name = "chaos", detail = "a brawl", count = "",
+             players = 0, bots = 0, live = true}}
+check("a list with games in it says nothing", menu.view().empty == nil,
+      tostring(menu.view().empty))
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)
