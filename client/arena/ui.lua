@@ -180,43 +180,113 @@ end
 --
 -- `k` is the width of the shell. `y` is the middle of the line it sits on, so
 -- a caller can hand it a row's centre without knowing the height.
-local HELM_TALL, HELM_CUT = 0.82, 0.24
+-- A bowl of glass on a collar: one turn of a circle, cut off at the bottom by
+-- the neckline it sits in. The chamfer the rest of this interface is built
+-- from went here first and made a box with a face in it, and straight sides
+-- after that made a bucket. A helmet is the one object in this game that is
+-- not machined, and it reads as one once its edges stop being edges.
+--
+-- HELM_NECK is how far below the centre the collar cuts. The arc runs from
+-- one end of that cut, up over the crown, to the other.
+-- The neck cut is high enough that the collar is a run of line rather than a
+-- foot under a ball, and the mark's height is what the two of them actually
+-- draw, so it sits on a row's middle rather than high in a box of air.
+local HELM_NECK, HELM_COLLAR = 0.68, 1.26
+local HELM_TALL = 0.5 * (1 + HELM_NECK)
 
 local function helm(cx, cy, k, col)
     local w = k
     local h = w * HELM_TALL
     local x0, y0 = cx - w / 2, cy - h / 2
-    local cut = w * HELM_CUT
-    u:outline({x0, ry(y0), x0 + w, ry(y0),
-               x0 + w, ry(y0 + h - cut), x0 + w - cut, ry(y0 + h),
-               x0 + cut, ry(y0 + h), x0, ry(y0 + h - cut)},
-              pen(k, 0.12), col, true)
-    return x0, y0, w, h
+    local r = w * 0.5
+    local mid = y0 + r                 -- the centre of the bowl
+    local neck = mid + r * HELM_NECK   -- where the collar cuts it off
+    local half = math.sqrt(math.max(0, r * r - (neck - mid) ^ 2))
+    local line = pen(k, 0.11)
+    local segs = math.max(8, math.floor(k * 0.8))
+    -- The angle the cut meets the circle at, measured off the horizontal.
+    local a = math.asin((neck - mid) / r)
+    u:arc(cx, ry(mid), r, -a, math.pi + a, line, segs, col)
+    -- The collar: the cut itself, run a little past the glass either side, so
+    -- the helmet sits in something rather than ending in mid air.
+    u:seg(cx - half * HELM_COLLAR, ry(neck), cx + half * HELM_COLLAR, ry(neck),
+          line, col, true)
+    return x0, y0, w, h, mid, r
 end
 
--- A person: the brow under the crown, and the visor below it.
+-- A bowl on a collar with a visor in it has more parts than the box this
+-- replaced, and parts are what die first when a mark is drawn small. Eleven
+-- points rather than nine: still a mark beside a number rather than a picture
+-- in a row, and enough for the glass, the collar and the band to survive.
+local MARK_K = 11
+
+-- A person: the visor, one band straight across the glass.
+--
+-- It was a pair of shades with a wedge of nose between them, and the nose was
+-- the part doing the work: two lenses without it close into a band with a
+-- nick, and with it they read as a face rather than as a helmet. A visor is
+-- the simpler object and the one a space helmet actually has, so the band is
+-- unbroken and the face behind it is left alone.
+--
+-- Cut to the bowl at both ends rather than to the mark's width. A circle is
+-- narrower at the eyes than at its widest, and a band run to the nominal half
+-- width sits on top of the glass instead of behind it.
 local function pilot_mark(cx, cy, col, k)
-    k = k or 9 * S
-    local x0, y0, w, h = helm(cx, cy, k, col)
-    u:seg(x0 + w * 0.30, ry(y0 + h * 0.18), x0 + w * 0.70,
-          ry(y0 + h * 0.18), pen(k, 0.09),
-          pal.a(col, (col[4] or 1) * 0.55), true)
-    rect(x0 + w * 0.14, y0 + h * 0.36, w * 0.72, h * 0.26, col)
+    k = k or MARK_K * S
+    local w, h, mid, r = select(3, helm(cx, cy, k, col))
+    local _ = h
+    -- Sat above the middle of the glass, where a face is.
+    local top = mid - r * 0.32
+    local bot = mid + r * 0.12
+    local inset = pen(k, 0.11) + w * 0.045
+    local function reach(y)
+        return math.max(0, math.sqrt(math.max(0, r * r - (y - mid) ^ 2))
+                        - inset)
+    end
+    -- Straight along the top and the bottom, and bowed at both ends: the band
+    -- is bounded by the glass, held off it by the gap, and pulled in a little
+    -- further at its own corners than at the eyeline. Held to the glass exactly
+    -- the ends are a copy of the outline a few points inside it, which reads
+    -- as a cut rather than as a thing with a shape of its own. The bow is what
+    -- makes it look like it was made to fit.
+    --
+    -- Two or three samples a side left the ends reading as cut corners rather
+    -- than as a curve, which is the same fault the shell had before it stopped
+    -- being a polygon, so the count follows the size the mark is drawn at.
+    local bow = w * 0.028
+    local n = math.max(3, math.floor(k / 3))
+    local pts = {}
+    local function edge(side, from, to)
+        for i = 0, n do
+            local y = from + (to - from) * i / n
+            local t = (y - top) / (bot - top)
+            local pull = bow * (1 - math.sin(t * math.pi) ^ 0.55)
+            pts[#pts + 1] = cx + side * (reach(y) - pull)
+            pts[#pts + 1] = ry(y)
+        end
+    end
+    edge(1, top, bot)
+    edge(-1, bot, top)
+    u:fan(pts, col)
     return w
 end
 
--- A machine: two lamps where the visor goes, and the antenna over the crown.
+-- A machine: the same helmet, two lamps, and the antenna over the crown.
+--
 -- `x` is its left edge rather than its centre, because every caller of this
 -- one is laying a row out left to right and knows where the mark starts.
+--
+-- The antenna is the part that cannot be shared. Three of this mark's four
+-- uses are solo, with no person beside them to be read against, so the shell
+-- carries the family and the antenna carries the meaning.
 local function bot_mark(x, y, col, k)
-    k = k or 9 * S
+    k = k or MARK_K * S
     local cx = x + k / 2
-    local x0, y0, w, h = helm(cx, y, k, col)
-    local ey = y0 + h * 0.49
-    u:disc(x0 + w * 0.30, ry(ey), w * 0.115, 8, col)
-    u:disc(x0 + w * 0.70, ry(ey), w * 0.115, 8, col)
-    u:seg(cx, ry(y0), cx, ry(y0 - h * 0.34), pen(k, 0.09), col, true)
-    u:disc(cx, ry(y0 - h * 0.44), w * 0.12, 8, col)
+    local x0, _, w, _, mid, r = helm(cx, y, k, col)
+    u:disc(x0 + w * 0.31, ry(mid + r * 0.10), w * 0.115, 8, col)
+    u:disc(x0 + w * 0.69, ry(mid + r * 0.10), w * 0.115, 8, col)
+    u:seg(cx, ry(mid - r), cx, ry(mid - r * 1.30), pen(k, 0.09), col, true)
+    u:disc(cx, ry(mid - r * 1.40), w * 0.11, 8, col)
     return w
 end
 
@@ -739,7 +809,7 @@ local function nameplates(o)
                         -- it, and a call sign is exactly the kind of string
                         -- somebody will end in a bracket or a dot.
                         bot_mark(sx + 12 * S + text_w(nm, 11 * S) + 9 * S,
-                                 sy + 13 * S, pal.a(col, 0.45), 8 * S)
+                                 sy + 13 * S, pal.a(col, 0.45), 10 * S)
                     end
                     if bty > 0 then
                         txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
@@ -2929,8 +2999,8 @@ local function population(x, y, players, bots, col)
     local right = x
     if bots and bots > 0 then
         txt(tostring(bots), right, y, 12 * S, pal.a(pal.DIM, 0.9), "right")
-        bot_mark(right - text_w(tostring(bots), 12 * S) - 14 * S, y,
-                 pal.a(pal.DIM, 0.75), 9 * S)
+        bot_mark(right - text_w(tostring(bots), 12 * S) - 16 * S, y,
+                 pal.a(pal.DIM, 0.75))
         right = right - text_w(tostring(bots), 12 * S) - 26 * S
     end
     local pc = players > 0 and col or pal.a(pal.DIM, 0.8)
@@ -2939,8 +3009,7 @@ local function population(x, y, players, bots, col)
     -- "some number of somethings" and left the row's two counts looking like
     -- a bullet and a picture; the pair is one shell now, and which of them a
     -- player is looking at is the face in it.
-    pilot_mark(right - text_w(tostring(players), 13 * S) - 11 * S, y, pc,
-               9 * S)
+    pilot_mark(right - text_w(tostring(players), 13 * S) - 12 * S, y, pc)
 end
 
 -- One row of the stage: a mark for the one you are on, the name, and

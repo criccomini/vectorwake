@@ -35,7 +35,7 @@ local W, H = 512, 512
 local segs = {}
 local layer = {}
 local function noop() end
-for _, n in ipairs({"disc", "flush", "frame", "quad", "rect", "reset", "ring",
+for _, n in ipairs({"arc", "disc", "flush", "frame", "quad", "rect", "reset", "ring",
                     "seg_fade", "skirt", "tri", "tri_fade", "fan"}) do
     layer[n] = noop
 end
