@@ -223,6 +223,18 @@ M.touching = false
 -- size decided this before and got it backwards on the device it was written
 -- for; see M.begin.
 M.details = false
+-- Held, never toggled: the screen names its own parts for as long as the key
+-- is down. See `help_overlay`.
+M.help = false
+
+-- Where each instrument landed this frame.
+--
+-- The help overlay sets a word beside a thing instead of drawing a line to it,
+-- so it has to know where the thing ended up, and the only account of that
+-- which cannot drift is the one each element files as it draws itself. A
+-- second copy of the layout arithmetic would be two places that have to agree
+-- about one corner.
+local anchor = {}
 
 function M.begin(layer, w, h, density, touching)
     u, W, H = layer, w, h
@@ -249,6 +261,7 @@ function M.begin(layer, w, h, density, touching)
     nt = 0
     u:reset()
     M.hits = {}
+    anchor = {}
 end
 
 function M.finish()
@@ -285,8 +298,13 @@ local function dial()
     -- origin landing on a half pixel would put the fraction back into every
     -- blip it was taken out of. Density is not always a whole number and
     -- neither, then, is the padding.
-    return math.floor(W - pad - side), math.floor(pad + 18 * S),
-           math.floor(side)
+    local ix, iy = math.floor(W - pad - side), math.floor(pad + 18 * S)
+    side = math.floor(side)
+    -- Filed here rather than in the two functions that draw into it, because
+    -- the dial and the map are the same corner and want the same word beside
+    -- them.
+    anchor.radar = {ix, iy + side * 0.5}
+    return ix, iy, side
 end
 
 -- How much vertical room it takes, so the feed under it can be told rather
@@ -834,6 +852,7 @@ local function feed(lines, top)
             pal.a(f.col or pal.DIM, a), "right")
         y = y + LINE * S
     end
+    anchor.feed = {right, y + LINE * S / 2}
 end
 
 -- The corner stack: what the triggers do, what you carry and can spend, and
@@ -871,6 +890,11 @@ local function status(me, pickup, charges, lift)
     local n = trigs + (show_charges and #slots or 0) + 1
         + (pickup and 1 or 0)
     local y = H - PAD * S - n * rows_h - (lift or 0)
+    -- How far right the stack actually reached, which is what decides where
+    -- the help overlay's column starts. A hull holding three add-ons is a good
+    -- deal wider than one holding none, and a constant here would either crowd
+    -- the wide case or strand the narrow one.
+    local wide = val + 50 * S
 
     -- A level is the same weapon harder, so it is rungs; an add-on changes
     -- its character, so it is a word.
@@ -897,6 +921,12 @@ local function status(me, pickup, charges, lift)
                     at = at + 46 * S
                 end
             end
+            if t == sim.TRIG_GUN then
+                anchor.gun = y + rows_h / 2
+            else
+                anchor.bomb = y + rows_h / 2
+            end
+            if at > wide then wide = at end
             y = y + rows_h
         end
     end
@@ -909,8 +939,15 @@ local function status(me, pickup, charges, lift)
             -- in the corner of every fight.
             txt(string.upper(c.name or c.short), x, y + rows_h / 2, lab,
                 pal.a(pal.DIM, 0.8))
-            pips(val + 3 * S, y + rows_h / 2, math.max(1, c.max or 3), c.count,
+            local slot_max = math.max(1, c.max or 3)
+            pips(val + 3 * S, y + rows_h / 2, slot_max, c.count,
                  pal.CHARGE_COL, 2.7 * S, 9 * S)
+            -- First and last, because however many charge rows a hull carries
+            -- they are one idea and the overlay says it once.
+            anchor.chg_top = anchor.chg_top or (y + rows_h / 2)
+            anchor.chg_bot = y + rows_h / 2
+            local pw = val + 3 * S + slot_max * 9 * S
+            if pw > wide then wide = pw end
             y = y + rows_h
         end
     end
@@ -921,12 +958,16 @@ local function status(me, pickup, charges, lift)
     local bty = sim.ship_bounty(me)
     txt(tostring(bty), val, y + rows_h / 2, (FONT - 2) * S,
         bty > 0 and pal.a(pal.PRIZE, 0.95) or pal.a(pal.DIM, 0.5))
+    anchor.bounty = y + rows_h / 2
+    local bw = val + text_w(tostring(bty), (FONT - 2) * S)
+    if bw > wide then wide = bw end
     y = y + rows_h
 
     if pickup then
         txt((pickup.sign or "+") .. " " .. pickup.name, x,
             y + rows_h / 2, FONT * S, pal.a(pickup.col, pickup.t))
     end
+    anchor.stack_x = wide + 26 * S
     return 0
 end
 
@@ -1160,6 +1201,8 @@ local function link(lag)
     end
     txt("LINK", right - 34 * S, base - 4 * S, (FONT - 3) * S,
         pal.a(pal.DIM, 0.8), "right")
+    anchor.link = {right - 34 * S - text_w("LINK", (FONT - 3) * S) - 8 * S,
+                   base - 4 * S}
     -- The bars are the readout a player wants and the whole of it. Everything
     -- behind them is for whoever is working on this, so it hides behind the
     -- one thing on screen that is already about the connection.
@@ -1321,10 +1364,102 @@ local function flag_strip(me)
     end
 end
 
+-- --- the help overlay ------------------------------------------------------
+--
+-- Held, never toggled. H down and the screen names its own parts; H up and it
+-- is gone. That is the difference between something you consult in the middle
+-- of a fight and a panel you have to remember to shut, and it is why there is
+-- no way to leave this open by accident.
+--
+-- No leader lines anywhere in it, which was the whole lesson of the first
+-- draft. Every instrument on this screen already sits against an edge with
+-- clear space beside it, so a word set next to a thing is read as being about
+-- that thing, and the eleven strokes crossing open sky to reach eleven
+-- captions were doing nothing except making the screen unreadable. What is
+-- left is one line per instrument, in the colour that instrument already
+-- wears, and only where the label on the row does not say it already: GUN and
+-- BOMB name themselves, so those lines explain the rung rather than the word.
+
+-- A bar in the thing's own colour, then the sentence. The bar sits on the side
+-- facing whatever is being named, so it points without a line.
+local function help_mark(x, y, s, col, align)
+    local f = (FONT - 1) * S
+    if align == "right" then
+        rect(x - 3 * S, y - 6.5 * S, 3 * S, 13 * S, pal.a(col, 0.85))
+        txt(s, x - 11 * S, y, f, pal.a(pal.INK, 0.95), "right")
+    else
+        rect(x, y - 6.5 * S, 3 * S, 13 * S, pal.a(col, 0.85))
+        txt(s, x + 11 * S, y, f, pal.a(pal.INK, 0.95))
+    end
+end
+
+local function help_overlay(o)
+    local sx = anchor.stack_x
+    if sx then
+        if anchor.gun then
+            help_mark(sx, anchor.gun, "at its rung, and what is bolted on",
+                      pal.FRIEND)
+        end
+        if anchor.bomb then
+            help_mark(sx, anchor.bomb, "a rung buys blast, not damage",
+                      pal.BOMB)
+        end
+        -- One bar down the side of however many charge rows there are, and one
+        -- sentence against the middle of it.
+        if anchor.chg_top then
+            rect(sx, anchor.chg_top - 6.5 * S, 3 * S,
+                 anchor.chg_bot - anchor.chg_top + 13 * S,
+                 pal.a(pal.CHARGE_COL, 0.85))
+            txt("digits 1 to 4 spend these, top down", sx + 11 * S,
+                (anchor.chg_top + anchor.chg_bot) / 2, (FONT - 1) * S,
+                pal.a(pal.INK, 0.95))
+        end
+        if anchor.bounty then
+            help_mark(sx, anchor.bounty, "what a kill on you pays", pal.PRIZE)
+        end
+    end
+    if anchor.radar then
+        help_mark(anchor.radar[1] - 16 * S, anchor.radar[2],
+                  M.map and "the whole arena, and you as the arrow"
+                  or "near space. the rings are range.",
+                  pal.RADAR_TILE, "right")
+    end
+    if anchor.link then
+        help_mark(anchor.link[1], anchor.link[2], "your line to the arena",
+                  pal.DIM, "right")
+    end
+    if anchor.feed then
+        help_mark(anchor.feed[1], anchor.feed[2], "who paid whom",
+                  pal.BOUNTY, "right")
+    end
+    -- Your own hull is the one in the middle of the screen, and the pip above
+    -- it is the same pip every other hull wears. Projected the way nameplates
+    -- projects, off the half-extents the render script publishes, so the word
+    -- lands on the bar at any camera.
+    if o.half_w and o.half_w > 0 then
+        local scale = W / (2 * o.half_w)
+        help_mark(W / 2 + 13 * scale, H / 2 - 26 * scale,
+                  "armour and ammunition, one pool", pal.FRIEND)
+    end
+    -- The one thing the overlay cannot say by pointing at it.
+    txt("let go and it is gone", W / 2, H - 20 * S, (FONT - 3) * S,
+        pal.a(pal.DIM, 0.8), "center")
+end
+
 function M.hud(o)
     if sim.ship_count() == 0 then return end
     local me = o.me
     menu_up = o.menu_open
+
+    -- The scenery dims and the instruments do not, so the wash goes down
+    -- before any of them and over the whole arena. Nothing is paused while
+    -- this is up: you can be killed reading it, and anything that helps you
+    -- fly has to stay exactly as bright as it was.
+    --
+    -- Not under the menu, which is a different screen with its own help page
+    -- on it. Two of these reading at once is neither.
+    local help = M.help and not o.menu_open
+    if help then rect(0, 0, W, H, pal.rgb(0x03050a, 0.60)) end
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -1358,6 +1493,8 @@ function M.hud(o)
     inspect(o, loadout(me, o.class_names, top))
     menu_button()
     vignette(o.hurt or 0)
+    -- Last, so every word lands on top of the instrument it names.
+    if help then help_overlay(o) end
 
     -- The two big centred lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
@@ -1425,8 +1562,8 @@ local BOARD = {
      {"9"}, {"0"}},
     {{"tab", 1.7, "bomb"}, {"Q", 1, "ui"}, {"W"}, {"E"}, {"R"}, {"T"}, {"Y"},
      {"U"}, {"I", 1, "ui"}, {"O"}, {"P"}},
-    {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H"}, {"J"}, {"K"},
-     {"L"}},
+    {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H", 1, "ui"}, {"J"},
+     {"K"}, {"L"}},
     {{"shift", 2.25, "gun"}, {"Z", 1, "gun"}, {"X", 1, "bomb"}, {"C"}, {"V"},
      {"B"}, {"N"}, {"M", 1, "ui"}},
     {{"ctrl", 1.6, "gun2"}, {"space", 6.2, "gun"}},
@@ -1441,6 +1578,19 @@ local BOARD_CATS = {
     {key = "gun", word = "guns"},
     {key = "bomb", word = "bombs"},
     {key = "charge", word = "charges"},
+}
+
+-- What a drawing of a keyboard cannot say, in as few lines as it can be said.
+-- Up here rather than inside `board` because the panel has to be sized before
+-- it is drawn, and a count written twice is a count that goes stale: adding
+-- the line about H to the list and leaving a 4 in the height is exactly the
+-- kind of drift this file has been bitten by.
+local BOARD_CAPS = {
+    "mouse: left guns, right bombs, wheel scrolls lists",
+    "Q holds a multifire gun to one shot; I scores, M map, esc menu",
+    "1 to 4 spend the charges as the corner stack lists them",
+    "hold H and the screen names its own parts, for as long as you hold it",
+    "in fullscreen ctrl joins the guns, where the browser allows it",
 }
 
 local function board_col(cat)
@@ -1525,15 +1675,8 @@ local function board(x, top, w)
         lx = lx + (14 + #c.word * 7 + 18) * S
     end
 
-    -- What a drawing cannot say, in as few lines as it can be said.
-    local caps = {
-        "mouse: left guns, right bombs, wheel scrolls lists",
-        "Q holds a multifire gun to one shot; I scores, M map, esc menu",
-        "1 to 4 spend the charges as the corner stack lists them",
-        "in fullscreen ctrl joins the guns, where the browser allows it",
-    }
     local cy = ly + 22 * S
-    for _, line in ipairs(caps) do
+    for _, line in ipairs(BOARD_CAPS) do
         txt(line, x, cy, (FONT - 4) * S, pal.a(pal.DIM, 0.85))
         cy = cy + 14 * S
     end
@@ -1543,7 +1686,8 @@ end
 -- What the board will ask for, so the panel can be sized before drawing it.
 local function board_height(w)
     local unit = w / BOARD_UNITS
-    return 5 * (unit * 0.82 + 3 * S) + 10 * S + 22 * S + 4 * 14 * S + 2 * S
+    return 5 * (unit * 0.82 + 3 * S) + 10 * S + 22 * S
+           + #BOARD_CAPS * 14 * S + 2 * S
 end
 
 function M.menu(v)

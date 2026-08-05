@@ -325,6 +325,36 @@ grid and compares it to the map they came from, which catches a merge that
 reaches too far as well as one that stops short. It reads the catalog's own
 maps, so a reconverted map is one this test immediately covers.
 
+## The screen naming its own parts
+
+Hold `H` and every instrument grows a word beside it: what a rung buys, what a
+bounty is a price for, which pool the bar over your own hull draws from. Let go
+and it is gone. Held rather than toggled, so there is no mode to be stuck in
+and nothing to remember to shut. It stays down under the menu, which is a
+different screen and has the drawn keyboard on it already.
+
+There are no leader lines in it. The first version had eleven captions with
+eleven strokes running out across the arena to reach them, and the strokes were
+the whole of what made it unreadable. Every instrument here already sits
+against an edge with clear space beside it, so a word set next to a thing is
+read as being about that thing, at none of the cost. What is left is one line
+per instrument, in the colour that instrument already wears, and only where the
+label on the row does not say it already: `GUN` names itself, so the line
+beside it explains the rung.
+
+The wash goes down before the HUD and over the arena, not over both. Nothing is
+paused while this is open and you can be killed reading it, so the scenery dims
+and anything that helps you fly stays exactly as bright as it was.
+
+Where the words go is filed rather than worked out twice. Each element records
+where it landed as it draws itself, into `anchor` in `ui.lua`, and the overlay
+reads that; the corner stack also reports how far right it actually reached, so
+a hull carrying three add-ons pushes the column of sentences right rather than
+having them printed through its own loadout. `lua5.1 client/tests/help_test.lua`
+runs the real `M.hud` against a stubbed engine and measures where the text came
+out: on the row it names, clear of what is already on that row, inside the
+screen, and not on top of the next one.
+
 ## Pointing at things
 
 `ui.lua` publishes a list of rectangles in the pixel space it drew them in, and
