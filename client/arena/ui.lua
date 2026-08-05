@@ -1084,7 +1084,7 @@ local function status(me, charges, lift)
                    40 * S, 4 * S)
             local at = val + 50 * S
             local off = sim.ship_multi_off and sim.ship_multi_off(me)
-            for m, mod in ipairs(pal.MODS) do
+            for m = 1, #pal.MODS do
                 local nn = sim.ship_mod(me, t, m - 1)
                 if nn > 0 then
                     -- A declined add-on is drawn dimmed rather than dropped.
@@ -1152,7 +1152,6 @@ local function status(me, charges, lift)
     local bw = val + text_w(tostring(bty), (FONT - 2) * S)
     if bw > wide then wide = bw end
     zone("bounty", x, y, bw - x, rows_h)
-    y = y + rows_h
 
     anchor.stack_x = wide + 26 * S
     return 0
