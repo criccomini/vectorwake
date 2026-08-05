@@ -30,9 +30,22 @@ local POOL = {"bolt", "green", "bomb", "shrap", "repel", "burst",
 
 local seed = (os.time() % 65521) * 31
     + math.floor((os.clock() * 1000) % 997) + 7
+-- Park-Miller, and the top of the state rather than the bottom of it.
+--
+-- Both halves of that matter here, and the deck is where it showed. The
+-- multiplier was glibc's, 1103515245, which against a state of thirty-one
+-- bits makes a product of sixty-one; Lua has doubles and nothing else, so
+-- past fifty-three bits the product is rounded and the low bits of it are
+-- rounding, not a sequence. Those were exactly the bits this then read. Over
+-- nine thousand deals of nine cards the rarest came up 420 times and the
+-- commonest 1620, against a thousand each.
+--
+-- 16807 against the same state stays inside fifty-three bits and is exact,
+-- and scaling the whole state onto the range spends its leading bits, which
+-- are the ones an LCG has.
 local function rnd(n)
-    seed = (seed * 1103515245 + 12345) % 2147483648
-    return math.floor(seed / 1024) % n + 1
+    seed = (seed * 16807) % 2147483647
+    return math.floor(seed / 2147483647 * n) + 1
 end
 
 local last = nil
