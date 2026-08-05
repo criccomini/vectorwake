@@ -2635,6 +2635,45 @@ int main(void) {
             CHECK(s2.ships[id].multi_off,
                   "so holding it through a snapshot does not toggle again");
         }
+
+        /* Losing the add-on does not throw the switch back. A pilot who
+         * turned fans off meant it, and dying is not changing their mind. */
+        s.ships[id].mods[SIM_TRIG_GUN] = 0;
+        step_n(&s, &cfg, 0, 0, 1);
+        CHECK(s.ships[id].multi_off, "losing the add-on leaves the switch off");
+
+        /* And with no fan in hand the button cannot move it either way, so a
+         * pilot cannot arm a decline for a fan they are not carrying. */
+        step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);
+        CHECK(s.ships[id].multi_off, "and the button does not move it back");
+    }
+
+    /* And the switch does nothing at all on a hull that has no fan.
+     *
+     * There is no state to move: turning off an add-on you are not carrying
+     * changes no shot, and the client says the key landed by watching this
+     * flag, so a flag that moved would be a sound about nothing. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        CHECK(sim_mod_get(s.ships[id].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 0,
+              "a fresh Apex carries no fan");
+
+        step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);
+        CHECK(!s.ships[id].multi_off, "and the button leaves the switch alone");
+        step_n(&s, &cfg, 0, 0, 1);
+        step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);
+        CHECK(!s.ships[id].multi_off, "however many times it is pressed");
+
+        /* So the fan it picks up later arrives fanning: the presses that
+         * landed on nothing left nothing behind. */
+        s.ships[id].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        s.ships[id].fire_cooldown = 0;
+        s.weapon_count = 0;
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1 + cfg.mod_step[SIM_MOD_MULTI],
+              "and a fan picked up afterwards fans");
     }
 
     /* A hull's box follows its heading. The extents are measured off what
