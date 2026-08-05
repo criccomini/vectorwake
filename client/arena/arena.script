@@ -1434,14 +1434,9 @@ function on_input(self, action_id, action)
         touch.on_touch(action, self.vw or 0, self.vh or 0, self.density or 1)
         return
     end
-    -- A press and a release that land inside the same engine frame are
-    -- dropped before this ever runs: the button state is polled once a frame,
-    -- and a down followed by an up between two polls reads as never pressed.
-    -- At 60 Hz that needs a sub-16 ms click, which a hand cannot produce, but
-    -- an automated one can. Playwright's click() is instantaneous, and under a
-    -- software renderer the frames are long enough that every click vanishes.
-    -- A test driving this has to hold the button for ~90 ms, or it will
-    -- conclude the interface is dead when it is not.
+    -- A click faster than a frame never reaches this line at all. See the note
+    -- on the latch at the end of this function: it is the same fact for the
+    -- mouse as for the keyboard, and it is the engine's doing rather than ours.
     if action_id == hash("pointer") and action.pressed and not touch.used then
         if hit(action.screen_x or action.x, action.screen_y or action.y) then
             return
@@ -1474,6 +1469,26 @@ function on_input(self, action_id, action)
         end
         return
     end
+    -- The latch. `held` is the key's live state and `tapped` is a press that
+    -- has not been read yet, cleared at the end of the update that reads it
+    -- rather than on release, so a press and a release inside one frame still
+    -- reaches the frame loop.
+    --
+    -- What it cannot save is a press the engine never reported. Input is polled
+    -- once a frame and pressed and released are the differences between two
+    -- polls, so a down and an up inside one poll produce no difference and no
+    -- action at all: nothing arrives here to be latched. That is true of the
+    -- mouse buttons and of every key alike, and it is Defold's input layer
+    -- rather than anything in this file.
+    --
+    -- At 60 Hz it takes a sub-16 ms press, which a hand cannot produce and an
+    -- automated driver produces every time. Playwright's click() and press()
+    -- are both instantaneous, and under a software renderer the frames are long
+    -- enough to swallow them whole. A script driving this has to hold for
+    -- ~90 ms or it will conclude the interface is dead when it is not. Two
+    -- sessions have now reached exactly that conclusion, one about the mouse
+    -- and one about M and Esc, which is why the note is here rather than in the
+    -- pointer branch where only half of it was visible.
     local name = action_id
     if action.pressed then held[name] = true; tapped[name] = true end
     if action.released then held[name] = nil end

@@ -167,25 +167,43 @@ cannot reach.
 
 ## Driving it from a test
 
-Clicks have to be held. The engine polls the mouse once a frame, so a press
-and release inside one frame reads as no press at all, and an instantaneous
-`mouse.click()` under a software renderer -- where frames are long -- lands
-that way every time. Move, wait, hold for ~90 ms, release:
+Every press has to be held. Keys as much as mouse buttons: the engine polls
+input once a frame and reports pressed and released as the differences between
+two polls, so a down and an up inside one poll produce no difference and no
+event, and nothing reaches the client to act on. An instantaneous
+`mouse.click()` or `keyboard.press()` under a software renderer, where frames
+are long, lands that way every time. Move if you are clicking, then hold for
+~90 ms and release:
 
 ```js
 await p.mouse.move(x, y); await p.waitForTimeout(120);
 await p.mouse.down(); await p.waitForTimeout(90); await p.mouse.up();
+
+await p.keyboard.down("m"); await p.waitForTimeout(90); await p.keyboard.up("m");
 ```
 
-A hand cannot click faster than a frame at 60 Hz, so this is a property of
-the harness rather than of the game. It cost an afternoon once: fast clicks
-plus coordinates measured from a screenshot taken before a button was added
-to the row looked exactly like a dead interface.
+No key is exempt, but not every key gets you into trouble. Flying and firing
+are held anyway, so a driver that holds the arrows and Shift is already doing
+the right thing without knowing why. It is the momentary ones that invite the
+one-shot helper and lose the press: Esc, M, I, Enter and the digits.
+
+A hand cannot press faster than a frame at 60 Hz, so this is a property of the
+harness rather than of the game, and it is Defold's input layer rather than
+anything in this client. It has now cost two sessions. The first read fast
+clicks plus coordinates measured from a screenshot taken before a button was
+added to the row, and reported a dead start screen. The second held H, saw the
+help overlay appear, then tapped M and Esc and reported that the map and the
+menu did nothing. Both times the interface was fine.
+
+You do not have to click the canvas first to give it the keyboard. The engine
+listens at the document, so a key held with nothing focused arrives anyway,
+which is worth knowing because clicking to focus is the obvious first move and
+in this game a click is a trigger pull.
 
 `release` strips `print`, so a test that reads the client's own log needs a
 `debug` bundle. Anything checking whether a player actually reached a zone
-should ask the server instead -- its status reports players and bots, and it
-is the honest witness either way.
+should ask the server instead: its status reports players and bots, and it is
+the honest witness either way.
 
 ## Two things worth knowing
 
