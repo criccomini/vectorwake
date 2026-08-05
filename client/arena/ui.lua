@@ -1434,6 +1434,18 @@ local BOARD = {
 -- The board is 12.4 units across, and the arrow cluster hangs off its right
 -- edge over the two bottom rows, where the letter rows have already ended.
 local BOARD_UNITS = 12.4
+-- How wide the page that draws it may go, against the 460 every other page
+-- takes. A menu of six words does not want the room; a picture of a keyboard
+-- with four lines of caption under it does, and on a desktop window there is
+-- a thousand points of it going spare. The column keeps its left edge and
+-- grows to the right, so nothing jumps when the page changes.
+local BOARD_W = 780
+-- Everything on the board is sized off the key, so the whole picture scales
+-- with the panel rather than a drawing growing around type that does not.
+local KEY_LETTER = 0.40   -- a single character, against key height
+local KEY_WORD = 0.30     -- "shift", "space": the ones that have to fit across
+local CAP_SIZE = 0.30     -- the caption lines under the legend
+local CAP_PITCH = 0.46
 
 -- What each colour means, in the order the legend reads.
 local BOARD_CATS = {
@@ -1467,7 +1479,11 @@ local function board_key(bx, cy, kw, kh, label, cat, dimmed)
         u:frame(bx, ry(cy, kh), kw, kh, 0.8 * S, pal.a(pal.DIM, 0.22))
     end
     if label then
-        local size = (#label > 1 and (FONT - 5) or (FONT - 3)) * S
+        local size = kh * (#label > 1 and KEY_WORD or KEY_LETTER)
+        -- A word on a one-unit key would run over both its edges, so it takes
+        -- whichever is smaller: the key's height or the room across it.
+        local across = (kw - 6 * S) / (#label * ADVANCE)
+        if size > across then size = across end
         local ink = col and pal.a(col, dimmed and 0.5 or 0.95)
             or pal.a(pal.DIM, 0.4)
         txt(label, bx + kw / 2, cy + kh / 2, size, ink, "center")
@@ -1514,15 +1530,19 @@ local function board(x, top, w)
         board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4], pal.a(fly, 0.95))
     end
 
-    -- The legend: a swatch per colour, one line.
+    -- The legend: a swatch per colour, one line. Sized off the key like
+    -- everything else here, so a wide board does not end up captioned in
+    -- type meant for a narrow one.
+    local lsize = math.max((FONT - 3) * S, kh * 0.34)
+    local sw = lsize * 0.7
     local ly = top + 5 * pitch + 10 * S
     local lx = x
     for _, c in ipairs(BOARD_CATS) do
         local col = board_col(c.key)
-        rect(lx, ly + 2 * S, 8 * S, 8 * S, pal.a(col, 0.9))
-        txt(c.word, lx + 14 * S, ly + 6 * S, (FONT - 3) * S,
+        rect(lx, ly + lsize * 0.2, sw, sw, pal.a(col, 0.9))
+        txt(c.word, lx + sw + 6 * S, ly + lsize / 2, lsize,
             pal.a(pal.DIM, 0.95))
-        lx = lx + (14 + #c.word * 7 + 18) * S
+        lx = lx + sw + 6 * S + text_w(c.word, lsize) + 18 * S
     end
 
     -- What a drawing cannot say, in as few lines as it can be said.
@@ -1532,24 +1552,46 @@ local function board(x, top, w)
         "1 to 4 spend the charges as the corner stack lists them",
         "in fullscreen ctrl joins the guns, where the browser allows it",
     }
-    local cy = ly + 22 * S
+    local csize = math.max((FONT - 3) * S, kh * CAP_SIZE)
+    local cpitch = math.max(14 * S, kh * CAP_PITCH)
+    local cy = ly + lsize + 12 * S
     for _, line in ipairs(caps) do
-        txt(line, x, cy, (FONT - 4) * S, pal.a(pal.DIM, 0.85))
-        cy = cy + 14 * S
+        txt(line, x, cy, csize, pal.a(pal.DIM, 0.85))
+        cy = cy + cpitch
     end
     return (cy - top) + 2 * S
 end
 
 -- What the board will ask for, so the panel can be sized before drawing it.
+-- Every term here is one the drawing uses, in the same order it uses them:
+-- five key rows, the gap to the legend, the legend, four caption lines.
 local function board_height(w)
-    local unit = w / BOARD_UNITS
-    return 5 * (unit * 0.82 + 3 * S) + 10 * S + 22 * S + 4 * 14 * S + 2 * S
+    local kh = (w / BOARD_UNITS) * 0.82
+    local lsize = math.max((FONT - 3) * S, kh * 0.34)
+    local cpitch = math.max(14 * S, kh * CAP_PITCH)
+    return 5 * (kh + 3 * S) + 10 * S + lsize + 12 * S + 4 * cpitch + 2 * S
 end
 
 function M.menu(v)
     local w = math.min(MENU_W * S, W - 24 * S)
     local x = math.max(24 * S, (W - w) / 2 - 120 * S)
     local nrows = #v.rows
+    -- The page that draws the keyboard takes the room the rest do not want,
+    -- from the same left edge, so a picture of a board on a desktop window is
+    -- not drawn at the width of a phone's menu column with captions to match.
+    if v.board and not M.touching then
+        w = math.max(w, math.min(BOARD_W * S, W - x - 24 * S))
+        -- The board is as tall as it is wide, so a short window bounds the
+        -- width as surely as a narrow one does. Backed off rather than
+        -- solved: board_height is a sum of terms that will change again, and
+        -- a loop that asks it stays right when an inverted formula would
+        -- quietly stop being.
+        while w > MENU_W * S
+              and board_height(w - 40 * S) + 84 * S > H - 40 * S do
+            w = w * 0.94
+        end
+        w = math.max(w, math.min(MENU_W * S, W - 24 * S))
+    end
     -- The help page draws the keyboard instead of listing it, except on a
     -- touchscreen, where the rows describe the thumbs and a picture of keys
     -- the device does not have would be the wall of text's sillier cousin.
