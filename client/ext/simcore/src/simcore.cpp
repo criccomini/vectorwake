@@ -322,6 +322,18 @@ int ShipCooldown(lua_State* L) {
     return 1;
 }
 
+// Ticks left before a dead pilot flies again, and the delay it started from.
+//
+// Both, because a fraction is what a drawing wants and neither number is one
+// on its own. The delay is the zone's setting rather than a constant here:
+// rooms run it anywhere from two seconds to three.
+int ShipRespawn(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    lua_pushnumber(L, g_cur->ships[i].respawn_at);
+    lua_pushnumber(L, g_cfg.respawn_delay);
+    return 2;
+}
+
 // How many of a charge kind a pilot is holding, and how many their hull may
 // ever hold. The second is the roster's rule, and the panel needs it to know
 // which slots to draw at all.
@@ -874,6 +886,7 @@ const luaL_reg kFunctions[] = {
     {"ship_mod", ShipMod},
     {"ship_multi_off", ShipMultiOff},
     {"ship_cooldown", ShipCooldown},
+    {"ship_respawn", ShipRespawn},
     {"ship_extents", ShipExtents},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},

@@ -87,8 +87,9 @@ max_humans_per_team = 7
 bounce = 12
 friction = 12
 
-# [Kill] EnterDelay=200, so two seconds dead.
-respawn_delay = 200
+# [Kill] EnterDelay=200, so two seconds dead in the file this came from.
+# Ours is longer, to leave time to read the card the wait carries.
+respawn_delay = 400
 
 # [Prize] PrizeDelay=300 with PrizeHideCount=10: ten greens every three
 # seconds, which as one green at a time is one every thirty ticks.

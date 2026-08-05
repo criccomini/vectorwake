@@ -14,7 +14,8 @@
 local state = require("arena.state")
 
 local FONT = "ui"
-local FONT_SIZE = 26     -- the size ui.font was built at; scale is relative
+-- The size each face was built at, since scale here is relative to it.
+local SIZES = {ui = 26, menu = 26}
 local POOL = 128
 
 local PIVOTS = {
@@ -43,6 +44,7 @@ function init(self)
         self.was[i] = {
             on = false, s = false, pivot = false, x = false, y = false,
             scale = false, r = false, g = false, b = false, a = false,
+            font = FONT,
             pos = vmath.vector3(0, 0, 0),
             sc = vmath.vector3(1, 1, 1),
             col = vmath.vector4(1, 1, 1, 1),
@@ -70,6 +72,12 @@ function update(self)
         local pivot = PIVOTS[t.pivot] or gui.PIVOT_W
         if w.pivot ~= pivot then gui.set_pivot(node, pivot) w.pivot = pivot end
 
+        -- Two faces: the mono everything in flight is set in, and the menu's.
+        -- A node keeps whichever it was last given, so this is the same
+        -- compare-then-set every other property here does.
+        local font = t.font or FONT
+        if w.font ~= font then gui.set_font(node, font) w.font = font end
+
         if w.x ~= t.x or w.y ~= t.y then
             local p = w.pos
             p.x, p.y = t.x, t.y
@@ -77,7 +85,7 @@ function update(self)
             w.x, w.y = t.x, t.y
         end
 
-        local s = t.px / FONT_SIZE
+        local s = t.px / SIZES[font]
         if w.scale ~= s then
             local v = w.sc
             v.x, v.y = s, s
@@ -85,12 +93,17 @@ function update(self)
             w.scale = s
         end
 
+        -- `dim` is a whole-layer fade the interface applies to itself, so
+        -- it multiplies the alpha rather than replacing the colour: a label
+        -- keeps its meaning while the menu is over it and simply stops
+        -- shouting.
         local c = t.col
-        if w.r ~= c[1] or w.g ~= c[2] or w.b ~= c[3] or w.a ~= c[4] then
+        local a = c[4] * (t.dim or 1)
+        if w.r ~= c[1] or w.g ~= c[2] or w.b ~= c[3] or w.a ~= a then
             local v = w.col
-            v.x, v.y, v.z, v.w = c[1], c[2], c[3], c[4]
+            v.x, v.y, v.z, v.w = c[1], c[2], c[3], a
             gui.set_color(node, v)
-            w.r, w.g, w.b, w.a = c[1], c[2], c[3], c[4]
+            w.r, w.g, w.b, w.a = c[1], c[2], c[3], a
         end
     end
     for i = count + 1, self.live do

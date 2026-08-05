@@ -19,6 +19,10 @@
 -- A two-pane menu reads better on a desktop and falls apart at 390 points
 -- wide.
 --
+-- The hulls are the one page laid out in two dimensions rather than one, so
+-- there the arrows mean a column and a row and only enter picks. See `grid`
+-- on the node and the branch it takes in `step`.
+--
 -- Selection only, still: this decides nothing and steps nothing. It reports
 -- an action and arena.script carries it out.
 
@@ -39,7 +43,13 @@ M.pending = nil         -- the hull a row just asked for
 M.chosen = nil          -- the game a row just asked for
 M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
+M.hover = nil           -- the stage row a pointer is resting on
 M.note = nil            -- set by the arena when a connection fails
+-- How many hulls the ship page is drawing across, set by whoever draws it.
+-- The page is a grid rather than a list and its arrows have to mean what a
+-- grid's arrows mean, which needs the one number this file cannot work out
+-- for itself: that depends on the width of a window.
+M.cols = 4
 
 -- Who you are, where the games are, and which one you were in last.
 --
@@ -228,9 +238,20 @@ local function zone_rows()
     for i, r in ipairs(directory.rows) do
         rows[i] = {
             label = r.name, detail = r.count, hint = r.detail,
+            -- What the meter draws, when the interface would rather show a
+            -- room's population than spell it.
+            players = r.players, bots = r.bots, live = r.live,
             act = "join", value = i,
             mark = function() return r.zone == M.zone end,
         }
+    end
+    -- Leaving is not a destination, so it is not a stop on the rail: it is
+    -- the last thing in the list of games, which is where you are when you
+    -- are thinking about which game you are in. Only with one behind the
+    -- panel, since on the home screen there is nothing to leave.
+    if not M.home then
+        rows[#rows + 1] = {label = "leave this game", act = "leave",
+                           hint = "back to the home screen"}
     end
     if #rows == 0 then
         -- Never an empty panel. Whatever the directory is doing, or failing to
@@ -249,49 +270,53 @@ local function zone_rows()
 end
 
 local NODES = {
-    root = {title = "vectorwake", rows = function()
+    root = {rows = function()
         local rows = {
-            {label = "play", detail = function()
+            {label = "zones", icon = "zones", detail = function()
                 if M.zone ~= "" then return M.zone end
                 return "choose a game"
             end, go = "zones"},
-            {label = "ship", detail = function() return HULLS[M.class + 1][1] end,
+            {label = "ship", icon = "ship",
+             detail = function() return HULLS[M.class + 1][1] end,
              go = "ship"},
-            {label = "pilot", detail = function() return M.name end, go = "pilot"},
-            {label = "settings", go = "settings"},
-            {label = "help", go = "help"},
-            {label = "about", go = "about"},
+            {label = "pilot", icon = "pilot",
+             detail = function() return M.name end, go = "pilot"},
+            {label = "settings", icon = "settings", go = "settings"},
+            {label = "help", icon = "help", go = "help"},
+            {label = "about", icon = "about", go = "about"},
         }
         -- Sides are a thing a room has, so the row appears with the room and
         -- says which one you are on. On the home screen there is no room and
         -- nothing to be on.
         if not M.home and #net.teams > 0 then
-            table.insert(rows, 4, {label = "team",
+            table.insert(rows, 4, {label = "team", icon = "team",
                 detail = function() return net.my_team_name() end,
                 go = "teams",
                 hint = "who you are flying with, and who else is here"})
         end
-        -- Only with a game behind the panel, because it is the way out of one.
-        -- On the home screen there is nothing to leave, and a row that does
-        -- nothing is a row a player tries once and stops trusting.
-        if not M.home then
-            rows[#rows + 1] = {label = "leave", detail = "back to the menu",
-                               act = "leave"}
-        end
         return rows
     end},
 
-    ship = {title = "ship", rows = hull_rows()},
+    -- A grid, not a list: the hulls are drawings laid out in rows and columns,
+    -- so left and right are a column apart and up and down are a row apart.
+    -- Nothing else in the tree is, which is why it is a flag on the node
+    -- rather than a rule about pages.
+    ship = {grid = true, rows = hull_rows()},
 
-    zones = {title = "games", rows = zone_rows},
+    zones = {rows = zone_rows},
 
-    teams = {title = "team", rows = team_rows},
+    teams = {rows = team_rows},
 
-    pilot = {title = "pilot", rows = function()
+    pilot = {rows = function()
         local rows = {
+            -- What the account layer makes of you rides on the hint line
+            -- rather than in a row of its own. It is a sentence, and a
+            -- sentence in the value column of a row with no label floated in
+            -- the middle of the panel attached to nothing.
             {label = "call sign", detail = function() return M.name end,
-             act = "reroll", hint = "a name is drawn for you and kept between visits"},
-            {label = "", detail = function() return account.status() end},
+             act = "reroll",
+             hint = function() return account.status() end},
+
         }
         -- A claim is offered rather than demanded, and never while a key is
         -- still on screen waiting to be written down.
@@ -316,14 +341,30 @@ local NODES = {
         return rows
     end},
 
-    settings = {title = "settings", rows = {
+    -- Settings carry a `choice`, where a value sits along its range, as well
+    -- as the word for it. The interface draws the range as steps and lights
+    -- the one it is on, which says "two of three" in the shape of the thing
+    -- rather than in a word that has to be read and compared against the word
+    -- on the row above.
+    --
+    -- Sound and music count their steps from off rather than from their first
+    -- value, so silence is an empty range: three boxes with nothing in them.
+    -- Lighting a box for off is a control saying it is doing a little of
+    -- something while doing none of it, and that is the state somebody sets
+    -- deliberately and then comes back wondering about.
+    settings = {rows = {
         {label = "sound", detail = function() return VOLUMES[M.volume][2] end,
+         choice = function() return M.volume - 1, #VOLUMES - 1 end,
          act = "volume"},
         {label = "music", detail = function() return MUSICS[M.music][2] end,
+         choice = function() return M.music - 1, #MUSICS - 1 end,
          act = "music"},
         {label = "frames", detail = function()
             if not M.can_cap then return "as the display asks" end
             return CAPS[M.cap][2]
+        end, choice = function()
+            if not M.can_cap then return nil end
+            return M.cap, #CAPS
         end, act = "cap"},
         {label = "fullscreen", detail = "fill the screen", act = "fullscreen",
          hint = "locks the keyboard where it can, and ctrl becomes a gun"},
@@ -340,7 +381,7 @@ local NODES = {
     -- controls and the board would be a picture of keys the device has not
     -- got. The layout itself is decision 33: the original's keys where the
     -- browser permits them, the nearest safe key where it does not.
-    help = {title = "help", board = true, rows = {
+    help = {board = true, rows = {
         {label = "steer", detail = "left thumb: point where you want the nose"},
         {label = "fire", detail = "right pads: guns, then bombs"},
         {label = "charges", detail = "tap a charge pad to spend it"},
@@ -354,7 +395,7 @@ local NODES = {
     -- opens `about` in a game that updates several times a day wants to know
     -- which build they are looking at and what it is talking to, and that is
     -- the one question no other screen answers.
-    about = {title = "about", rows = function()
+    about = {rows = function()
         local rows = {
             {label = "build", detail = function()
                 -- get_config_string, not get_config: the short name went out
@@ -444,6 +485,7 @@ function M.close()
     if M.home then return false end
     M.open = false
     M.stack = {"root"}
+    M.hover = nil
     -- The row as well as the level. Resetting only the stack left the root
     -- sitting on whatever was last chosen there, so escape-then-enter went
     -- wherever you went last time rather than into the first row, the same
@@ -492,11 +534,27 @@ function M.view()
     local nd = node()
     local rows = rows_of(nd)
     local sel = row_index(rows)
-    -- The first screen a stranger sees, which is the only one that gets the
-    -- name set large. Every other screen is a title on a column.
-    local out = {title = nd.title, depth = #M.stack, sel = sel,
-                 note = M.note, closable = not M.home or #M.stack > 1,
-                 home_root = M.home and #M.stack == 1,
+    -- No page here is named. The rail is lit at the stop you are inside and
+    -- carries the word for it, so a title over the stage would be the same
+    -- answer written twice.
+    local out = {depth = #M.stack, sel = sel,
+                 -- The hull you are in, so the rail can draw it as its mark.
+                 class = M.class,
+                 -- Whether there is anything to shut, which is whether there
+                 -- is a game behind the panel. It used to say "or you are a
+                 -- level in", because the same control did the going back as
+                 -- well; the rail does that from every level now, and this is
+                 -- only the way out.
+                 note = M.note, closable = not M.home,
+                 -- Whether there is a game behind the panel, which is what
+                 -- decides where the block sits: clear of the corner stack
+                 -- over an arena, centred over the starfield. Not whether you
+                 -- are at the top of the menu. It used to say both at once,
+                 -- and so the whole block moved every time you went a level
+                 -- in: on a phone held sideways the rail slid 124 points out
+                 -- from under the thumb that had just tapped it, and the next
+                 -- tap hit nothing.
+                 home = M.home,
                  -- The help page asks for the drawn keyboard; whether the
                  -- device gets one is ui.lua's call, since only it knows
                  -- whether there is a keyboard to draw a picture of.
@@ -505,8 +563,12 @@ function M.view()
     for i, r in ipairs(rows) do
         local d = r.detail
         if type(d) == "function" then d = d() end
+        local ci, cn
+        if r.choice then ci, cn = r.choice() end
         out.rows[i] = {
             label = r.label, detail = d, index = i, hull = r.hull,
+            role = r.role, players = r.players, bots = r.bots, live = r.live,
+            choice = ci, choices = cn,
             pick = (r.go or r.act) ~= nil,
             mark = r.mark and r.mark() or false,
         }
@@ -515,6 +577,78 @@ function M.view()
     -- list rather than squeezed onto every row.
     local cur = rows[sel]
     out.hint = cur and cur.hint or nil
+    -- A hint may be a function, for the ones that describe something that
+    -- moves: whether this pilot is signed in changes while the page is open.
+    if type(out.hint) == "function" then out.hint = out.hint() end
+
+    -- The destinations, always, whatever level the stack is at: the interface
+    -- draws them as a rail of icons and the rail is the one thing on screen
+    -- that does not move. Which of them you are inside is `rail_sel`, and at
+    -- the root that is simply the row the cursor is on.
+    local top = rows_of(NODES.root)
+    out.rail = {}
+    for i, r in ipairs(top) do
+        local d = r.detail
+        if type(d) == "function" then d = d() end
+        out.rail[i] = {label = r.label, icon = r.icon or "about",
+                       detail = d, index = i}
+    end
+    if #M.stack == 1 then
+        out.rail_sel = sel
+        out.focus = "rail"
+        -- The row a pointer is resting on. Only here: one level in the stage
+        -- has the cursor, and a hover moves that cursor rather than lighting
+        -- a second row beside it. At the root the cursor is on the rail, so
+        -- the only thing that can say what a click would land on is the
+        -- pointer itself.
+        out.hover = M.hover
+        -- What the destination under the cursor holds, drawn in the stage
+        -- beside the rail rather than after a keystroke. Moving down a rail
+        -- that shows you what each stop contains is one gesture; moving down
+        -- a list of words and pressing enter to find out is two.
+        local pick = top[sel]
+        if pick and pick.go and NODES[pick.go] then
+            local nd2 = NODES[pick.go]
+            out.board = nd2.board or false
+            out.rows = {}
+            for i, r in ipairs(rows_of(nd2)) do
+                local d = r.detail
+                if type(d) == "function" then d = d() end
+                local ci, cn
+                if r.choice then ci, cn = r.choice() end
+                out.rows[i] = {label = r.label, detail = d, index = i,
+                               hull = r.hull, role = r.role,
+                               players = r.players, bots = r.bots,
+                               live = r.live, choice = ci, choices = cn,
+                               pick = (r.go or r.act) ~= nil,
+                               mark = r.mark and r.mark() or false}
+            end
+            out.hint = nil
+            -- Nothing in the preview is selected, because the cursor is on
+            -- the rail. `sel` at this level counts rail stops, and left where
+            -- it was it lit whichever stage row happened to share that
+            -- number: standing on `ship` put a cursor on the second hull.
+            -- What stays lit is the marked row, which is the hull you are
+            -- flying or the game you are in, and that is a fact rather than
+            -- a cursor.
+            out.sel = 0
+        else
+            -- A stop that acts rather than descends. Nothing on the rail
+            -- does today, but the branch stays: the stage says what the stop
+            -- will do rather than drawing an empty panel.
+            out.rows = {}
+            out.hint = pick and (pick.hint or pick.detail) or nil
+            if type(out.hint) == "function" then out.hint = out.hint() end
+        end
+    else
+        out.focus = "stage"
+        -- Which rail stop this level lives under, so the icon stays lit while
+        -- you are inside it.
+        local id = M.stack[2]
+        for i, r in ipairs(top) do
+            if r.go == id then out.rail_sel = i end
+        end
+    end
     return out
 end
 
@@ -598,14 +732,51 @@ end
 function M.step(keys)
     if not M.open then return nil, false end
 
-    if keys.back or keys.left then return back() end
-
     local id = M.stack[#M.stack]
     -- Built once. A node's rows may be a function, and asking it three times
     -- to move a cursor one row is three lists allocated to answer one
     -- keystroke.
-    local rows = rows_of(node())
+    local nd = node()
+    local rows = rows_of(nd)
     local n = #rows
+
+    -- A grid reads its own arrows. Everywhere else right is enter, which is
+    -- what a one-column list wants and exactly wrong on a page laid out in
+    -- four: pressing right to look at the hull beside this one flew it
+    -- instead, and down, which should have gone to the row below, went one
+    -- ship to the right. Enter is still the only thing that picks.
+    if nd.grid and #M.stack > 1 and n > 0 then
+        local cols = math.max(1, math.min(M.cols, n))
+        local i = row_index(rows)
+        if keys.back then return back() end
+        -- Every edge wraps, along the row for left and right and through the
+        -- list for up and down. Nothing on this page is out of reach in one
+        -- press, and an arrow never does nothing. Escape is the way out, since
+        -- left is busy going round.
+        local first = i - (i - 1) % cols
+        local last = math.min(first + cols - 1, n)
+        if keys.left then
+            M.sel[id] = (i > first) and (i - 1) or last
+            return nil, true
+        end
+        if keys.right then
+            M.sel[id] = (i < last) and (i + 1) or first
+            return nil, true
+        end
+        if keys.up then
+            M.sel[id] = (i - 1 - cols) % n + 1
+            return nil, true
+        end
+        if keys.down then
+            M.sel[id] = (i - 1 + cols) % n + 1
+            return nil, true
+        end
+        if keys.go then return activate(), true end
+        return nil, false
+    end
+
+    if keys.back or keys.left then return back() end
+
     if keys.up then
         M.sel[id] = (row_index(rows) - 2) % n + 1
         return nil, true
@@ -618,13 +789,79 @@ function M.step(keys)
     return nil, false
 end
 
+-- A pointer landed on the rail, which names a destination whatever level the
+-- stack is at. That is the whole difference between it and a row: the rail
+-- does not belong to the page you are looking at, so a tap on it has to go
+-- home before it goes anywhere.
+--
+-- It used to be routed as a row, which was right when the menu was one list
+-- and the root's rows were the destinations. With a rail on screen at every
+-- level it meant that once you were inside a page the rail stopped
+-- navigating: a tap on `settings` from inside `ship` picked the fourth hull.
+-- On a phone, where the rail is the only way to move, that is the whole of
+-- navigation not working.
+function M.click_rail(index)
+    if not M.open then return nil, false end
+    M.stack = {"root"}
+    M.sel.root = index
+    M.note = nil
+    return activate(), true
+end
+
+-- A pointer came to rest on a row of the stage, or on none. It moves the
+-- cursor, which is what up and down do, so the two hands are driving one
+-- highlight rather than lighting a row each.
+--
+-- Only on a change. A pointer left lying on a row would otherwise put the
+-- cursor back on it every frame, and the arrow keys would not be able to
+-- leave the row the mouse happens to be over.
+--
+-- Reports whether it landed somewhere, so the caller can make the same noise
+-- a key does. Leaving a row is silent: there is nothing to say about it.
+function M.hover_stage(index)
+    if index == M.hover then return false end
+    M.hover = index
+    -- At the root the cursor belongs to the rail and the stage is a preview,
+    -- so a hover there is drawn rather than moved. One level in, the stage has
+    -- the cursor and this is that cursor.
+    if index and M.open and #M.stack > 1 then
+        local rows = rows_of(node())
+        if rows[index] then M.sel[M.stack[#M.stack]] = index end
+    end
+    return index ~= nil
+end
+
+-- A pointer landed on a row of the stage, which is not always a row of the
+-- node the cursor is in: on the home screen the stage shows what the rail is
+-- pointing at, before anybody has gone in. So this goes in first and then
+-- acts, which is what the tap meant.
+function M.click_stage(index)
+    if not M.open then return nil, false end
+    if #M.stack == 1 then
+        local top = rows_of(node())
+        local r = top[row_index(top)]
+        if not (r and r.go) then return nil, false end
+        M.stack[#M.stack + 1] = r.go
+        M.note = nil
+    end
+    local id = M.stack[#M.stack]
+    M.sel[id] = index
+    return activate(), true
+end
+
 -- A pointer landed on a row the interface published.
 function M.click(index)
     if not M.open then return nil, false end
-    local id = M.stack[#M.stack]
-    if index == -1 then return back() end
-    M.sel[id] = index
+    M.sel[M.stack[#M.stack]] = index
     return activate(), true
+end
+
+-- The x on the panel. It shuts the menu rather than stepping back a level,
+-- which is what a cross means everywhere else, and it is drawn only where
+-- there is a game behind to shut it onto.
+function M.click_close()
+    if not M.open then return nil, false end
+    return nil, M.close()
 end
 
 return M

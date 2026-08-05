@@ -198,7 +198,14 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * hurt, which is what makes tight flying a skill. */
     cfg->bounce = 10;
     cfg->friction = 14;
-    cfg->respawn_delay = 300; /* 3 s */
+    /* Four seconds dead, which is longer than the three this was and longer
+     * than the original's own EnterDelay. The extra second is not a difficulty
+     * knob: the wait carries a card explaining a thing in the arena, and the
+     * longest of them runs to three rows, which is not readable in the time it
+     * took to read DESTROYED and nothing else. A death is the one moment a
+     * player has nothing to fly and a reason to care, and buying that moment
+     * costs a second of a respawn nobody enjoyed anyway. */
+    cfg->respawn_delay = 400; /* 4 s */
     /* Two hundred greens at five a second was the number for placing them
      * uniformly over a map a thousand tiles across, where two hundred is one
      * green per five thousand tiles and a pilot sweeping the field meets one
@@ -353,7 +360,18 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * wider field, which is a wire change rather than a number. */
         frag.speed = sim_units_speed(3000);
         frag.life = 550;
-        frag.on_wall = SIM_WALL_END;
+        /* Fragments bounce, for the whole of their life. The wire format the
+         * research recovered carries `shrapbouncing` as its own bit on every
+         * shot, so bouncing fragments are a mode the original had; ours had
+         * SIM_WALL_END here, and the difference was visible in play. A bomb
+         * mostly goes off against a wall, fragments scatter from a point a
+         * couple of pixels away from it, and the half that rolled wallward
+         * headings died inside a tick or two, so a rung of shrapnel read
+         * as one fragment, or none. 255 bounces outlasts the 550-tick life
+         * in any corridor a map has, which makes it a property rather than
+         * a countdown, the way a one-bit mode is. */
+        frag.on_wall = SIM_WALL_BOUNCE;
+        frag.bounces = 255;
         frag.damage = sim_units_energy(200);
         frag.splinter = SIM_NO_PATTERN;
         uint8_t frag_spec = (uint8_t)sim_add_spec(cfg, &frag);

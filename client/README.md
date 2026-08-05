@@ -167,25 +167,43 @@ cannot reach.
 
 ## Driving it from a test
 
-Clicks have to be held. The engine polls the mouse once a frame, so a press
-and release inside one frame reads as no press at all, and an instantaneous
-`mouse.click()` under a software renderer -- where frames are long -- lands
-that way every time. Move, wait, hold for ~90 ms, release:
+Every press has to be held. Keys as much as mouse buttons: the engine polls
+input once a frame and reports pressed and released as the differences between
+two polls, so a down and an up inside one poll produce no difference and no
+event, and nothing reaches the client to act on. An instantaneous
+`mouse.click()` or `keyboard.press()` under a software renderer, where frames
+are long, lands that way every time. Move if you are clicking, then hold for
+~90 ms and release:
 
 ```js
 await p.mouse.move(x, y); await p.waitForTimeout(120);
 await p.mouse.down(); await p.waitForTimeout(90); await p.mouse.up();
+
+await p.keyboard.down("m"); await p.waitForTimeout(90); await p.keyboard.up("m");
 ```
 
-A hand cannot click faster than a frame at 60 Hz, so this is a property of
-the harness rather than of the game. It cost an afternoon once: fast clicks
-plus coordinates measured from a screenshot taken before a button was added
-to the row looked exactly like a dead interface.
+No key is exempt, but not every key gets you into trouble. Flying and firing
+are held anyway, so a driver that holds the arrows and Shift is already doing
+the right thing without knowing why. It is the momentary ones that invite the
+one-shot helper and lose the press: Esc, M, P, Enter and the digits.
+
+A hand cannot press faster than a frame at 60 Hz, so this is a property of the
+harness rather than of the game, and it is Defold's input layer rather than
+anything in this client. It has now cost two sessions. The first read fast
+clicks plus coordinates measured from a screenshot taken before a button was
+added to the row, and reported a dead start screen. The second held H, saw the
+help overlay appear, then tapped M and Esc and reported that the map and the
+menu did nothing. Both times the interface was fine.
+
+You do not have to click the canvas first to give it the keyboard. The engine
+listens at the document, so a key held with nothing focused arrives anyway,
+which is worth knowing because clicking to focus is the obvious first move and
+in this game a click is a trigger pull.
 
 `release` strips `print`, so a test that reads the client's own log needs a
 `debug` bundle. Anything checking whether a player actually reached a zone
-should ask the server instead -- its status reports players and bots, and it
-is the honest witness either way.
+should ask the server instead: its status reports players and bots, and it is
+the honest witness either way.
 
 ## Two things worth knowing
 
@@ -324,6 +342,36 @@ is why the `ui` layer holds 24576 vertices rather than 6144.
 grid and compares it to the map they came from, which catches a merge that
 reaches too far as well as one that stops short. It reads the catalog's own
 maps, so a reconverted map is one this test immediately covers.
+
+## The screen naming its own parts
+
+Hold `H` and every instrument grows a word beside it: what a rung buys, what a
+bounty is a price for, which pool the bar over your own hull draws from. Let go
+and it is gone. Held rather than toggled, so there is no mode to be stuck in
+and nothing to remember to shut. It stays down under the menu, which is a
+different screen and has the drawn keyboard on it already.
+
+There are no leader lines in it. The first version had eleven captions with
+eleven strokes running out across the arena to reach them, and the strokes were
+the whole of what made it unreadable. Every instrument here already sits
+against an edge with clear space beside it, so a word set next to a thing is
+read as being about that thing, at none of the cost. What is left is one line
+per instrument, in the colour that instrument already wears, and only where the
+label on the row does not say it already: `GUN` names itself, so the line
+beside it explains the rung.
+
+The wash goes down before the HUD and over the arena, not over both. Nothing is
+paused while this is open and you can be killed reading it, so the scenery dims
+and anything that helps you fly stays exactly as bright as it was.
+
+Where the words go is filed rather than worked out twice. Each element records
+where it landed as it draws itself, into `anchor` in `ui.lua`, and the overlay
+reads that; the corner stack also reports how far right it actually reached, so
+a hull carrying three add-ons pushes the column of sentences right rather than
+having them printed through its own loadout. `lua5.1 client/tests/help_test.lua`
+runs the real `M.hud` against a stubbed engine and measures where the text came
+out: on the row it names, clear of what is already on that row, inside the
+screen, and not on top of the next one.
 
 ## Pointing at things
 

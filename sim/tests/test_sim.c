@@ -1721,10 +1721,11 @@ int main(void) {
         w.prize_max = 0;
         sim_state s;
         sim_init(&s, 1);
-        /* Broken on a ship out in the open rather than against a wall.
-         * Fragments scatter now, and a shell that ends on a wall throws half
-         * of them straight back into it, so the count a tick later says more
-         * about which way one seed threw them than about splitting. */
+        /* Broken on a ship out in the open rather than against a wall, so
+         * that what this watches is the hull: fragments born at the point of
+         * impact are born inside the ship that was hit, and dying against it
+         * is the hull's collision rule, not the wall's. The wall case has its
+         * own test below. */
         sim_spawn(&s, WEDGE, 0, 8192, 300, 0, &w);
         sim_spawn(&s, WEDGE, 1, 8192, 150, 0, &w);   /* short of the wall */
         /* The top rung, eight fragments, which is both the case the sentence
@@ -1761,6 +1762,89 @@ int main(void) {
         CHECK(seen, "the hit broke it up");
         CHECK(ec.fires == 0, "without anybody pulling a trigger");
         CHECK(!carried, "and the fragments carry nothing");
+    }
+
+    {
+        /* Shrapnel against the wall its bomb hit.
+         *
+         * A bomb mostly goes off against a wall, and fragments leave from a
+         * point a couple of pixels off its face, so with fragments that end
+         * on walls the half thrown wallward died in the tick or two they
+         * took to reach it. A rung of shrapnel read as one fragment, or
+         * none, depending on which way the scatter rolled. The original's
+         * wire format carries bouncing shrapnel as its own one-bit mode on
+         * every shot, and a mode is what the baseline makes it: fragments
+         * bounce, with more bounces than a 550-tick life can spend. */
+        const int WEDGE = 1;
+        sim_settings w = cfg;
+        w.prize_max = 0;
+        for (int k = 1; k < SIM_MAX_RUNGS; k++) {
+            const sim_weapon_spec *fs =
+                &w.specs[w.patterns[w.mod_splinter[k]].spec];
+            CHECK(fs->on_wall == SIM_WALL_BOUNCE, "a fragment's spec bounces");
+            CHECK(fs->bounces == 255, "for the whole of its life");
+        }
+
+        sim_state s;
+        sim_init(&s, 1);
+        /* Facing the top wall with nobody else in the arena, so the wall is
+         * the only thing a fragment can die against. */
+        sim_spawn(&s, WEDGE, 0, 8192, 300, 0, &w);
+        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 3);
+        step_n(&s, &w, SIM_BTN_BOMB, 0, 1);
+        CHECK(s.weapon_count == 1, "one bomb away");
+
+        /* Ricochets are counted from the walk as well as the settle: a
+         * fragment thrown at the wall it was born beside comes off it on its
+         * own first step, which is the same tick the bomb ended. */
+        sim_state tmp;
+        sim_events ev;
+        int waited = 0, ricos = 0;
+        while (s.weapon_count == 1 && waited < 400) {
+            sim_input in = {0, 0};
+            sim_step(&tmp, &s, &in, 1, &w, &ev);
+            s = tmp;
+            waited++;
+            for (uint16_t e = 0; e < ev.count; e++)
+                if (ev.e[e].type == SIM_EV_RICOCHET) ricos++;
+        }
+        CHECK(s.weapon_count == 8, "the wall broke it into all eight");
+
+        for (int t = 0; t < 120; t++) {
+            sim_input in = {0, 0};
+            sim_step(&tmp, &s, &in, 1, &w, &ev);
+            s = tmp;
+            for (uint16_t e = 0; e < ev.count; e++)
+                if (ev.e[e].type == SIM_EV_RICOCHET) ricos++;
+        }
+        CHECK(s.weapon_count == 8, "and the wall ends none of them");
+        CHECK(ricos > 0, "because the wallward ones came off it");
+        for (uint16_t i = 0; i < s.weapon_count; i++)
+            CHECK(s.weapons[i].left > 200, "with most of a life of bounces left");
+    }
+
+    {
+        /* The bounce add-on saturates a spec's bounce count rather than
+         * wrapping it. Base counts near the top of the byte exist now,
+         * shrapnel sits at 255, and a wrap would hand a whole-life bouncer
+         * a handful. */
+        sim_settings w = cfg;
+        w.prize_max = 0;
+        w.mod_step[SIM_MOD_BOUNCE] = 20;
+        sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
+        sp.on_wall = SIM_WALL_BOUNCE;
+        sp.bounces = 250;
+        sim_fire_pattern fp = *gun_of(&w, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_BOUNCE, 1);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1, "fired");
+        CHECK(s.weapons[0].left == 255, "250 base and 20 more saturates at 255");
     }
 
     {
