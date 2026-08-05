@@ -58,6 +58,10 @@ local hurt = 0
 -- edge detector.
 local tip = nil
 local was_dead = false
+-- Whether the fan was declined last frame, so the frame after a press can
+-- hear that it landed. Nil until a hull has been read once: a seat this
+-- client has not looked at yet has no previous state to have changed from.
+local multi_was = nil
 -- Which zone the "nobody is running X" note is about, so the note can be
 -- withdrawn when the games list shows that zone live again.
 local note_zone = nil
@@ -388,6 +392,9 @@ function go_home(self, at)
     hurt = 0
     tip = nil
     was_dead = false
+    -- The next seat is a different pilot's switch, and inheriting this one's
+    -- would click on arrival.
+    multi_was = nil
     -- A box about somebody in the room you just left describes a seat number
     -- that the next room will have dealt to a stranger.
     ui.inspect = nil
@@ -1039,6 +1046,25 @@ function update(self, dt)
             and (has(mine_buttons, sim.BTN_THRUST)
                  or has(mine_buttons, sim.BTN_REVERSE)))
 
+        -- Declining the fan, or taking it back. The only control in this game
+        -- whose whole effect is a setting: nothing moves, nothing is spent,
+        -- and on a hull carrying no multifire even the corner stack has
+        -- nothing to redraw, so without a sound the key reads as unbound.
+        --
+        -- Read off the ship rather than off the press, because the core owns
+        -- the edge and this way there is one answer instead of two that can
+        -- disagree. Once a frame, not once a tick: a snapshot rolls the ship
+        -- back and replays it, and the flicker inside that belongs to the
+        -- rollback rather than to anything a pilot did.
+        local multi_now = sim.ship_multi_off(me)
+        if multi_was ~= nil and multi_now ~= multi_was then
+            -- The two interface sounds this client already has, used the way
+            -- the menu uses them: the rising one for taking something, the
+            -- tick for stepping a control along.
+            sfx.ui(multi_now and "ui_move" or "ui_go")
+        end
+        multi_was = multi_now
+
         world.flags(fill, glow, my_team, t)
         -- What is on screen, grown by enough that nothing pops at the edge: a
         -- bomb's halo is 13 px, a hull's is 26, a blast reaches further.
@@ -1342,6 +1368,7 @@ function apply_menu(self, act)
         net.disconnect()
         feed = {}
         hurt = 0
+        multi_was = nil
         fx.reset()
         world.forget_specs()
         sim.init(0x5eed)
