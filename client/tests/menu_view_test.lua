@@ -308,15 +308,21 @@ local marked = draw({title = "v", stage_title = "zones", depth = 2, sel = 1,
                      rows = {{label = "alpha", index = 1, pick = true,
                               mark = true},
                              {label = "chaos", index = 2, pick = true}}})
-local ax, cx
+local ax, cx, hx
 for i = 1, marked.n do
     local t = marked.text[i]
     if t.s == "alpha" then ax = t.x end
     if t.s == "chaos" then cx = t.x end
+    if t.s == "zones" then hx = t.x end
 end
 check("a marked row keeps the column every other row is in",
       ax and cx and math.abs(ax - cx) < 0.01,
       string.format("marked at %s, plain at %s", tostring(ax), tostring(cx)))
+-- And that column is the title's. The mark lives in the gutter to the left of
+-- it, off the type, so nothing on the page steps sideways.
+check("and the column is the one the title is set in",
+      hx and ax and math.abs(hx - ax) < 0.01,
+      string.format("title at %s, rows at %s", tostring(hx), tostring(ax)))
 
 -- --- a long value does not run under the label it belongs to -------------
 --
