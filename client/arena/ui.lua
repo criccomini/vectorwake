@@ -325,10 +325,15 @@ end
 -- keeping a second copy of where it is, which is how the touch pads and their
 -- own hit test drifted apart once.
 --
+-- How far the MENU and PLAYERS keys reach across the top left, filed by the
+-- thing that draws them rather than written down twice. It is a word's width,
+-- and PLAYERS grew the row the day it stopped being INFO.
+local chip_right = 0
+
 -- The map is about a quarter of the frame, capped three ways: against the
 -- window's width so it cannot run off the left edge, against its height so
 -- there is still room for the feed under it, and against the corner the MENU
--- and PLAYERS chips stand in, since a hit box over those is two controls a
+-- and PLAYERS keys stand in, since a hit box over those is two controls a
 -- pointer can no longer reach.
 local function dial()
     local pad = (M.compact and 8 or PAD) * S
@@ -336,7 +341,8 @@ local function dial()
     if M.map then
         side = math.max(side,
                         math.min(math.min(W, H) * 0.66, H * 0.66,
-                                 W - pad - 124 * S))
+                                 W - pad - math.max(chip_right + 8 * S,
+                                                    124 * S)))
     end
     -- Whole pixels. The dial snaps its contents to its own origin, so an
     -- origin landing on a half pixel would put the fraction back into every
@@ -1200,8 +1206,8 @@ local function inspect(o, top)
     -- rest of this matters right now.
     row("BOUNTY", tostring(sim.ship_bounty(i)), pal.a(pal.BOUNTY, 0.9))
 
-    -- One word and a rule under it, like the menu chip, because that is what a
-    -- control looks like in here. Once it is sent it says so and stops taking
+    -- One word and a rule under it, because that is what a control looks like
+    -- inside a panel. Once it is sent it says so and stops taking
     -- clicks: the zone answers an invitation with a team list that does not
     -- name the invitee, so this mark is the only acknowledgement there is, and
     -- a button that stayed pressable would invite an anxious second tap.
@@ -1476,42 +1482,37 @@ end
 -- menu now, under `help`, which is where a thing you consult belongs.
 
 local function menu_button()
-    -- Two words and a rule, where there were two boxed labels. A box is the
-    -- one shape the rest of this game does not contain, and a control does not
-    -- need one to be a control: the rule under the pair says they belong
-    -- together, and the lit segment says which is on.
+    -- Two keys, drawn the way the help page draws a key: a frame with a hint
+    -- of fill, lit in the colour of what it does. They were two bare words
+    -- over a shared rule, which asked a player to know that a word in that
+    -- corner was a thing to press, and the board has taught the same hand what
+    -- a key looks like already.
     --
-    -- One colour between them, and the same rule for lighting it. MENU was
-    -- drawn in ink and PLAYERS in slate, which is two controls that do the
-    -- same kind of thing wearing two different states before either had been
-    -- pressed. What they wear now is off or on, and the panel each opens is
-    -- what turns it on.
+    -- One colour between them, and one rule for lighting it. MENU was drawn in
+    -- ink and PLAYERS in slate, which is two controls that do the same kind of
+    -- thing wearing two different states before either had been pressed. What
+    -- they wear now is off or on, and the panel each opens is what turns it on.
     local x, y = PAD * S, PAD * S
     local h = 26 * S
     local size = (FONT - 1) * S
-    local gap = 16 * S
-    local ruley = y + h - 6 * S
-    -- Each word is as wide as it is. A slot cut for four letters is a slot
-    -- the longer of the two runs out of.
-    local total = -gap
-    for _, c in ipairs({"MENU", "PLAYERS"}) do
-        total = total + text_w(c, size) + gap
-    end
-    u:seg(x, ry(ruley), x + total, ry(ruley), 0.8 * S,
-          pal.a(pal.RADAR_TILE, 0.5))
+    -- Each key is as wide as its own word. A slot cut for four letters is a
+    -- slot the longer of the two runs out of.
+    local padx = 9 * S
+    local gap = 6 * S
     local cx = x
     for _, c in ipairs({{"MENU", "open", menu_up},
                         {"PLAYERS", "details", M.details}}) do
-        local ww = text_w(c[1], size)
-        txt(c[1], cx, y + h / 2, size,
-            c[3] and pal.FRIEND or pal.a(pal.DIM, 0.85))
-        hit(cx - 4 * S, y, ww + 8 * S, h, c[2])
-        if c[3] then
-            u:seg(cx, ry(ruley), cx + ww, ry(ruley), 1.4 * S,
-                  pal.a(pal.FRIEND, 0.9))
-        end
+        local on = c[3]
+        local ww = text_w(c[1], size) + 2 * padx
+        local col = on and pal.FRIEND or pal.DIM
+        rect(cx, y, ww, h, pal.a(col, on and 0.16 or 0.07))
+        u:frame(cx, ry(y, h), ww, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
+        txt(c[1], cx + ww / 2, y + h / 2, size,
+            pal.a(col, on and 1 or 0.85), "center")
+        hit(cx, y, ww, h, c[2])
         cx = cx + ww + gap
     end
+    chip_right = cx - gap
 end
 
 -- How good the line is, above the dial. It belongs up here with the
