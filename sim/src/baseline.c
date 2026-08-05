@@ -198,7 +198,14 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * hurt, which is what makes tight flying a skill. */
     cfg->bounce = 10;
     cfg->friction = 14;
-    cfg->respawn_delay = 300; /* 3 s */
+    /* Four seconds dead, which is longer than the three this was and longer
+     * than the original's own EnterDelay. The extra second is not a difficulty
+     * knob: the wait carries a card explaining a thing in the arena, and the
+     * longest of them runs to three rows, which is not readable in the time it
+     * took to read DESTROYED and nothing else. A death is the one moment a
+     * player has nothing to fly and a reason to care, and buying that moment
+     * costs a second of a respawn nobody enjoyed anyway. */
+    cfg->respawn_delay = 400; /* 4 s */
     /* Two hundred greens at five a second was the number for placing them
      * uniformly over a map a thousand tiles across, where two hundred is one
      * green per five thousand tiles and a pilot sweeping the field meets one

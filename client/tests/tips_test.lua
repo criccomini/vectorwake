@@ -1,15 +1,17 @@
--- The line shown under DESTROYED, and which death gets which.
+-- Which card is shown under DESTROYED, and which death earns which.
 --
 --     lua5.1 client/tests/tips_test.lua
 --
--- Two things this has to get right. The contextual lines answer the death
--- that just happened, so they outrank the stock and each other in a fixed
--- order; and the stock cycles rather than rolling, because a random pick
--- repeats itself inside three deaths often enough to read as broken.
+-- Two things this has to get right. The contextual cards answer the death that
+-- just happened, so they outrank the cycle and each other in a fixed order;
+-- and the cycle is a cycle rather than a roll, because a random pick repeats
+-- itself inside three deaths often enough to read as broken.
 --
--- It is a plain table in and a string out, with no engine anywhere near it,
+-- It is a plain table in and a card name out, with no engine anywhere near it,
 -- which is the whole reason the picking lives in its own module: the numbers
 -- it chooses on are gone from the simulation by the time anything can look.
+-- The card that name refers to, the figure and the sentence, lives in ui.lua
+-- beside the code that draws the real thing.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -25,47 +27,44 @@ end
 
 local tips = require("arena.tips")
 
-local function stock(s)
-    for _, line in ipairs(tips.STOCK) do
-        if line == s then return true end
+local function cycles(s)
+    for _, name in ipairs(tips.STOCK) do
+        if name == s then return true end
     end
     return false
 end
 
--- --- the contextual lines --------------------------------------------------
+-- --- the contextual cards --------------------------------------------------
 
 tips.reset()
 local own = tips.pick({self = true, bounty = 0, rungs = 0})
-check("your own blast is answered", not stock(own), own)
-check("and says so about the blast", own:find("blast") ~= nil, own)
+check("your own blast earns the bomb", own == "bomb", own)
 
 local loss = tips.pick({self = false, bounty = 0, rungs = 3})
-check("a loaded hull is told what it lost", not stock(loss), loss)
-check("and it is a different line", loss ~= own)
+check("a loaded hull earns the green", loss == "green", loss)
 
 local hunted = tips.pick({self = false, bounty = 40, rungs = 0})
-check("a fat bounty is answered", not stock(hunted), hunted)
-check("and it is its own line", hunted ~= own and hunted ~= loss)
+check("a fat bounty earns the bounty", hunted == "bounty", hunted)
 
 -- Your own bomb outranks everything: it is the most specific thing that can
 -- be said about a death, and it is the one a pilot is actually asking about.
 check("your own blast outranks a lost loadout",
-      tips.pick({self = true, rungs = 3, bounty = 40}) == own)
+      tips.pick({self = true, rungs = 3, bounty = 40}) == "bomb")
 check("and a lost loadout outranks a bounty",
-      tips.pick({self = false, rungs = 3, bounty = 40}) == loss)
+      tips.pick({self = false, rungs = 3, bounty = 40}) == "green")
 
--- --- what is ordinary gets the stock ---------------------------------------
+-- --- what is ordinary gets the cycle ---------------------------------------
 
 -- A pilot who died with one rung and no bounty is an ordinary death. If the
--- contextual lines fired on those too they would fire on nearly every death
+-- contextual cards fired on those too they would fire on nearly every death
 -- and stop meaning anything.
 check("one rung is not a loadout worth mourning",
-      stock(tips.pick({rungs = 1, bounty = 0})))
+      cycles(tips.pick({rungs = 1, bounty = 0})))
 check("and a couple of points is not a manhunt",
-      stock(tips.pick({rungs = 0, bounty = 2})))
-check("a death with nothing to say still says something",
-      stock(tips.pick({})))
-check("and so does one with no table at all", stock(tips.pick()))
+      cycles(tips.pick({rungs = 0, bounty = 2})))
+check("a death with nothing to say still shows a card",
+      cycles(tips.pick({})))
+check("and so does one with no table at all", cycles(tips.pick()))
 
 -- --- the cycle -------------------------------------------------------------
 
@@ -74,7 +73,7 @@ local seen = {}
 for i = 1, #tips.STOCK do
     seen[i] = tips.pick({})
 end
-check("the stock comes out in order", seen[1] == tips.STOCK[1]
+check("the cycle comes out in order", seen[1] == tips.STOCK[1]
       and seen[#tips.STOCK] == tips.STOCK[#tips.STOCK])
 local uniq = {}
 for _, s in ipairs(seen) do uniq[s] = true end
@@ -90,15 +89,21 @@ tips.pick({})
 tips.reset()
 check("a fresh zone starts the cycle over", tips.pick({}) == tips.STOCK[1])
 
--- --- the lines themselves --------------------------------------------------
+-- --- every name is a card --------------------------------------------------
 
--- A zone respawns in two to three seconds, so anything that needs reading
--- twice is not read at all. Measured against the widest the box gets: about
--- 60 characters at the desktop size before it wraps to a second row.
-for _, line in ipairs(tips.STOCK) do
-    check("a stock line fits two rows: " .. line, #line <= 90, #line .. " chars")
-    check("and is lower case: " .. line, line == line:lower())
-    check("and carries no full stop: " .. line, line:sub(-1) ~= ".")
+-- The picker and the drawing meet by name, and nothing checks that at load
+-- time, so a card renamed on one side of the wall is a wait box that draws
+-- nothing at all. Read out of ui.lua's source rather than by loading it,
+-- since that would want an engine.
+local src = io.open("client/arena/ui.lua"):read("*a")
+local known = {}
+for name in src:gmatch("\n    (%w+) = {fig = ") do known[name] = true end
+check("ui.lua defines some cards", next(known) ~= nil)
+for _, name in ipairs(tips.STOCK) do
+    check("the cycle names a card that exists: " .. name, known[name] == true)
+end
+for _, name in ipairs({"bomb", "green", "bounty"}) do
+    check("the contextual card exists: " .. name, known[name] == true)
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

@@ -1,4 +1,4 @@
--- What a pilot is told while they are waiting to fly again.
+-- Which card a pilot is shown while they are waiting to fly again.
 --
 -- The three seconds after a death are the only moment in this game when a
 -- player is looking at the screen with nothing to do, and they have just been
@@ -6,22 +6,27 @@
 -- for this: it is not a loading screen looking for something to fill it, it is
 -- the one window where an explanation is both welcome and earned.
 --
--- Which is also why they are short. A zone respawns in two to three seconds,
--- so a line that has to be read twice is a line nobody reads. One clause, one
--- idea, lower case, no punctuation to parse.
+-- A card is a drawing of a thing that is out there and a sentence saying what
+-- it is. The drawing does the work a sentence cannot: a line about bombs is a
+-- line about bombs, and the shape beside it is the one that just killed you,
+-- which you have watched a hundred times without ever being told its name.
+-- The figures live in ui.lua next to the code that draws the real ones; this
+-- file only decides which card a death has earned.
 --
--- The first ones are answers rather than advice. This client knows how the
--- hull died and what it was carrying, so a death by your own bomb says so, and
--- a pilot who had climbed two rungs is told what those rungs cost them. What
--- is left over is the general stock, and that is deliberately small: six lines
--- seen occasionally are six lines somebody remembers, and thirty are wallpaper.
+-- The sentences stay to one clause. A zone respawns in two to three seconds,
+-- so anything that has to be read twice is not read at all.
 --
--- The mechanics here are the ones the interface cannot show. The help page
--- draws the keyboard and the corner panel draws the loadout; nothing anywhere
--- says that a green is gone when you are, or that a fresh hull is worth
--- nothing to the pilot who just killed you. They are true of this simulation
--- rather than of the genre: see apply_damage in sim/src/sim.c, which strips
--- rungs, add-ons, charges and earned bounty in that order.
+-- Answers before advice. This client knows how the hull died and what it was
+-- carrying, so a pilot caught in their own blast gets the bomb, one who had
+-- climbed two rungs gets the green, and one who was worth killing gets the
+-- bounty. Everything else falls through to the cycle, which is deliberately
+-- short: six cards seen occasionally are six a player comes to know, and
+-- thirty are wallpaper.
+--
+-- What they say is true of this simulation rather than of the genre. See
+-- apply_damage in sim/src/sim.c, which strips rungs, add-ons, charges and
+-- earned bounty in that order, and sim_bounty, which counts every one of them
+-- back up: that is why a green raises what you are worth.
 
 local M = {}
 
@@ -37,20 +42,17 @@ local M = {}
 
 -- The stock, in the order it cycles. Ordered rather than shuffled: a random
 -- pick repeats itself within three deaths often enough to look broken, and
--- nobody can tell a cycle from a shuffle at one line every thirty seconds.
-local STOCK = {
-    "energy is your health and your ammunition, one bar for both",
-    "a green is gone when you are, so what you carry is what you have survived",
-    "a fresh hull is worth nothing, so nobody profits by camping your start",
-    "bounty is what you are carrying, and what brings them",
-    "you cannot be touched in a safe zone, and you cannot fire from one",
-    "your own bomb does not care whose it is",
-}
+-- nobody can tell a cycle from a shuffle at one card every thirty seconds.
+--
+-- These are keys into ui.CARDS, which holds the figure and the words. What a
+-- card *is* belongs next to the code that draws it; which card a death earns
+-- belongs here, and the two meet by name.
+local STOCK = {"bolt", "green", "bomb", "repel", "burst", "bounty"}
 
--- The contextual lines, each with the question it answers.
-local SELF = "your own blast reaches further with every rung you add to it"
-local CARRIED = "everything those greens gave you went with the hull"
-local HUNTED = "a bounty that high is a bounty somebody came for"
+-- The contextual cards, each with the death it answers.
+local SELF = "bomb"
+local CARRIED = "green"
+local HUNTED = "bounty"
 
 -- What counts as worth remarking on. A pilot who died with one rung and no
 -- bounty is an ordinary death and gets the stock, or the contextual lines
@@ -60,8 +62,8 @@ local BOUNTY_WORTH_SAYING = 5
 
 local cursor = 0
 
--- Called on each death. Returns the line to show, or nil when there is
--- nothing to say, which is never: the stock always has a next entry.
+-- Called on each death. Returns the name of a card in ui.CARDS. Never nil:
+-- the cycle always has a next entry.
 function M.pick(d)
     d = d or {}
     if d.self then return SELF end
