@@ -1,5 +1,7 @@
-<!-- vectorwake's mark: two wakes converging on a bright point, in
-     the two team colours, on the chamfered tile the interface uses
-     everywhere. The template embeds this and two PNG cuts of it as
-     data URIs; regenerate those from this file. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path d="M88,0H512V424L424,512H0V88Z" fill="#05070c"/><path d="M59,131L80,182L104,228L130,272L158,311L188,347L219,379L256,404L256,404L234,366L212,330L191,291L174,249L158,205L145,158L133,109Z" fill="#4fd6ff"/><path d="M379,109L367,158L354,205L338,249L321,291L300,330L278,366L256,404L256,404L293,379L324,347L354,311L382,272L408,228L432,182L453,131Z" fill="#ffa552"/><circle cx="256" cy="400" r="30" fill="#dfe9f5"/></svg>
+<!-- vectorwake's mark: two hulls passing on a course tilted off
+     vertical, each nose a little past the other's tail, drawn as the
+     silhouette the simulation flies (hull_extent's 20 fore, 11 aft,
+     10 half width, chamfered tail) and nothing else. The template
+     embeds a favicon cut of this and two PNGs as data URIs, and
+     ui.lua draws the same pair beside the wordmark. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path d="M92,0H512V420L420,512H0V92Z" fill="#05070c"/><path d="M105.6,180.4L289.6,310.6L270.6,352.4L210.9,394.3L165.1,397.8Z" fill="none" stroke="#4fd6ff" stroke-width="19" stroke-linejoin="miter"/><path d="M406.4,331.6L222.4,201.4L241.4,159.6L301.1,117.7L346.9,114.2Z" fill="none" stroke="#ffa552" stroke-width="19" stroke-linejoin="miter"/></svg>

@@ -432,6 +432,35 @@ on the name beside it, which have to reach nothing, and on a scoreboard row,
 which has to reach the pilot. Both rules are invisible until somebody is
 flying, on a build that takes six minutes to publish.
 
+## The mark
+
+Two hulls passing on a course tilted off vertical, each nose a little past the
+other's tail, in the two team colours. The silhouette is the simulation's own:
+`hull_extent` in `sim/src/baseline.c` gives the Apex 20 forward, 11 back and 10
+to a side with the tail cut flat, so the shape in the tab is the shape people
+fly. Outline only, no canopy and no fill, because the interface draws
+everything else in the same thin strokes.
+
+What makes it the mark is the arrangement rather than the ship. Two hulls at
+rest, symmetric about a point, is the swap glyph every icon set already ships;
+two hulls passing is a moment out of the game, and nothing in a tab bar looks
+like it. The angle is deliberately off the 45 degrees the tile's own chamfer
+cuts: at 45 the tails lined up with the corners and the pair read as a shape
+fitted to its box rather than as two craft on a course.
+
+It exists twice, which is the risk worth knowing about. `client/web/icon.svg`
+is the source the page template carries as three data URIs, and `ui.logo` in
+`arena/ui.lua` draws the same pair as strokes beside the wordmark, because the
+interface has no way to put a picture on screen and would not want one.
+`lua5.1 client/tests/logo_test.lua` reads the shipped SVG's own coordinates and
+holds the Lua to them, so the two cannot drift apart without CI saying so. It
+also checks the property the mark depends on, that each nose reaches past the
+other's tail.
+
+The favicon is its own cut rather than the logo shrunk: wider apart and a
+heavier line, since at sixteen pixels two outlines at logo weight share pixels
+and read as one knot.
+
 ## The repel nobody could see
 
 A repel is a weapon whose life is one tick. It is spawned in the ship phase and
