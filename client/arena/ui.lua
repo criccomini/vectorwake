@@ -1891,33 +1891,41 @@ M.CARDS = CARDS
 local function wait_layout(which)
     local card = CARDS[which]
     if not card then return nil end
-    local fs = (M.compact and 10 or 12) * S
-    local pad = 14 * S
-    -- Wide enough to read, never wider than the screen it is on.
-    local w = math.min(430 * S, W - 40 * S)
+    -- Sized up, and against the wrong thing before. It was set under the
+    -- corner stack's own body text, which is what a pilot reads at a glance
+    -- while flying; this is read once, at arm's length, in the only seconds
+    -- of the game where there is nothing else to do. A card nobody finishes
+    -- is a card that may as well not be dealt.
+    local fs = (M.compact and 13 or 15) * S
+    local pad = 16 * S
+    -- Wide enough to read, never wider than the screen it is on. The width
+    -- is set by the longest card rather than by taste: the bomb is 123
+    -- characters and wraps to four rows under 560, the last of them holding
+    -- the single word "miss."
+    local w = math.min(560 * S, W - 40 * S)
     local inner = w - pad * 2
     -- The figure's cell, and what is left for the sentence beside it. Square,
     -- because every shape in here is drawn around its own centre and a cell
     -- that was not square would put the bomb and the flag on different axes.
-    local cell = (M.compact and 40 or 48) * S
-    local gap = 12 * S
+    local cell = (M.compact and 50 or 60) * S
+    local gap = 14 * S
     -- Wrapped to less than the column holds. A line broken at exactly the
     -- width ends flush against the padding, which reads as text that only
     -- just fitted rather than text that was laid out.
     local measure = inner - cell - gap - 6 * S
     local lines = wrap(card.text, fs, measure)
 
-    local rule = 12 * S              -- the clock rule, at the top of the box
-    local rowh = 15 * S
+    local rule = 13 * S              -- the clock rule, at the top of the box
+    local rowh = 19 * S
     -- The heading and the air under it, which the figure's cell has to clear
     -- as well: the shape is centred on the whole block, name included, or it
     -- floats against a column it is supposed to sit beside.
-    local lab = (M.compact and 9 or 10) * S
-    local headh = lab + 8 * S
+    local lab = (M.compact and 11 or 12) * S
+    local headh = lab + 9 * S
     -- Tall enough for the figure or for the words, whichever asks for more,
     -- so a one-line card is not a box with a bomb hanging out of the bottom.
     local body = math.max(cell, headh + #lines * rowh)
-    local h = rule + 11 * S + body + 11 * S
+    local h = rule + 13 * S + body + 13 * S
     return {
         x = (W - w) / 2, y = H * 0.46 + (M.compact and 22 or 30) * S,
         w = w, h = h, inner = inner, pad = pad,
@@ -1942,7 +1950,7 @@ local function wait(b, me)
     -- would drift off the tick that actually puts the hull back.
     local left, delay = 0, 0
     if sim.ship_respawn then left, delay = sim.ship_respawn(me) end
-    ticks(x + b.pad, y + b.rule, b.inner, pal.a(pal.DIM, 0.5), 14 * S)
+    ticks(x + b.pad, y + b.rule, b.inner, pal.a(pal.DIM, 0.5), 16 * S)
     if delay > 0 and left > 0 then
         local frac = left / delay
         if frac > 1 then frac = 1 end
@@ -1962,7 +1970,7 @@ local function wait(b, me)
     -- The block of words is centred on the body's own middle rather than hung
     -- from the top, so a one-line card and a three-line card are both
     -- balanced against the shape, and the figure sits on that same middle.
-    local top = y + b.rule + 11 * S
+    local top = y + b.rule + 13 * S
     local mid = top + b.body / 2
 
     local tx = x + b.pad
