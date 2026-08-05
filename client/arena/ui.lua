@@ -1771,8 +1771,15 @@ local function stage_row(x, y, w, h, r, sel, focused, live)
         tx = tx + 15 * S
     end
     local size = (M.compact and 17 or 18) * S
-    txt(r.label or "", tx, y + h / 2, size,
-        pal.a(col, (sel or r.mark) and 1 or 0.82), nil, MENU_FONT)
+    -- Drawn here unless the detail turns out not to fit beside it, in which
+    -- case the pair is laid out as two lines below and this one is skipped.
+    local two_line = r.detail and r.detail ~= "" and not r.players
+        and not r.choice
+        and text_w(r.detail, 12 * S) > w - 32 * S - (tx - x) - 12 * S
+    if not two_line then
+        txt(r.label or "", tx, y + h / 2, size,
+            pal.a(col, (sel or r.mark) and 1 or 0.82), nil, MENU_FONT)
+    end
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
     if r.players and r.live then
@@ -1803,8 +1810,22 @@ local function stage_row(x, y, w, h, r, sel, focused, live)
                 pal.a(pal.DIM, 0.8), "right")
         end
     elseif r.detail and r.detail ~= "" then
-        txt(r.detail, x + w - 16 * S, y + h / 2, 12 * S,
-            pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right")
+        -- Beside the label where it fits, under it where it does not. The
+        -- help rows a phone gets are sentences -- "left thumb: point where
+        -- you want the nose" -- and right-aligned in a column 350 points
+        -- wide they ran back under the word they belong to.
+        --
+        -- `two_line` decides it, once, above: asking the same question in
+        -- two places is how a row ends up with its label drawn twice, or not
+        -- at all, the day somebody edits one of them.
+        if two_line then
+            txt(r.label or "", tx, y + h * 0.32, size,
+                pal.a(col, (sel or r.mark) and 1 or 0.82), nil, MENU_FONT)
+            txt(r.detail, tx, y + h * 0.70, 11 * S, pal.a(pal.DIM, 0.9))
+        else
+            txt(r.detail, x + w - 16 * S, y + h / 2, 12 * S,
+                pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right")
+        end
     end
 end
 

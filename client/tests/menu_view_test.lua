@@ -188,5 +188,38 @@ check("a setting draws one step per value", steps + lit == 4,
       steps .. " outlined, " .. lit .. " filled")
 check("and lights the one it is on", lit == 3, lit .. " filled")
 
+-- --- a long value does not run under the label it belongs to -------------
+--
+-- The help rows a phone gets are sentences, and right-aligned in a column
+-- 350 points wide they came back under the word they describe.
+
+local st2 = draw({title = "v", stage_title = "help", depth = 2, sel = 1,
+                  rail = RAIL, rail_sel = 5, focus = "stage",
+                  home_root = false, closable = true,
+                  rows = {{label = "steer", index = 1, pick = true,
+                           detail = "left thumb: point where you want the nose"}}},
+                 390, 844, true)
+local lab, det
+for i = 1, st2.n do
+    local t = st2.text[i]
+    if t.s == "steer" then lab = t end
+    if t.s:find("left thumb") then det = t end
+end
+-- A right-aligned string reports its right edge, so its left edge is that
+-- less its width. Reading `x` as the left edge is how this check passed
+-- against the very overlap it was written for.
+local function left_of(t)
+    local w = #t.s * t.px * 0.602
+    if t.pivot == "right" then return t.x - w end
+    if t.pivot == "center" then return t.x - w / 2 end
+    return t.x
+end
+check("a long value clears the label it belongs to", lab and det and (
+          math.abs(lab.y - det.y) > 4
+          or left_of(det) - (lab.x + #lab.s * lab.px * 0.602) > 8),
+      lab and det and string.format("label ends %.0f, value starts %.0f, dy %.0f",
+          lab.x + #lab.s * lab.px * 0.602, left_of(det), math.abs(lab.y - det.y))
+          or "not drawn")
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)
