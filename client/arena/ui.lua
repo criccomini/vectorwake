@@ -192,7 +192,17 @@ end
 -- Broken into lines no wider than `measure`, at whitespace. Used by the card a
 -- dead pilot reads and by the help overlay, which say the same sentences and
 -- would otherwise break them in two different places.
+--
+-- Remembered, because the answer only changes when the sentence or the room
+-- does, and the help overlay asks the same question of the same sentence every
+-- frame a pointer rests on an instrument. Building it each time is a hundred
+-- string joins a frame to redraw words that have not moved, which is exactly
+-- the sort of thing that shows up as a cursor that does not keep up.
+local wrap_cache = {}
 local function wrap(s, px, measure)
+    local id = s .. "\1" .. px .. "\1" .. measure
+    local hit_ = wrap_cache[id]
+    if hit_ then return hit_ end
     local out, line = {}, nil
     for word in string.gmatch(s, "%S+") do
         local try = line and (line .. " " .. word) or word
@@ -204,6 +214,7 @@ local function wrap(s, px, measure)
         end
     end
     if line then out[#out + 1] = line end
+    wrap_cache[id] = out
     return out
 end
 
@@ -316,6 +327,10 @@ function M.begin(layer, w, h, density, touching)
     -- is what makes a phone fit; scaling the type down as well only made it
     -- unreadable on the device with the least room to spare. Panels are 248
     -- points wide and a narrow phone is 390, so one column always fits.
+    -- Every wrapped sentence was broken against the old width, so the memo
+    -- goes with the size that produced it. Only on a real change: clearing it
+    -- every frame would be the same as not having one.
+    if S ~= density then wrap_cache = {} end
     S = density
     M.touching = touching or false
     text = state.text
@@ -1821,7 +1836,11 @@ end
 -- questions. Holding H draws all of it. Resting the pointer on one instrument
 -- draws that instrument's line and nothing else, and the key it is filed under
 -- is what makes "that one" a thing this file can say.
-local function help_lines(o)
+-- `only` builds the one entry that key names and skips the rest. The pointer
+-- wants a single sentence and asks every frame it rests somewhere, so building
+-- all seven to draw one of them is six sentences wrapped and thrown away sixty
+-- times a second.
+local function help_lines(o, only)
     local out = {}
     -- `top` and `bot` are the run of the bar. Given, it is as tall as the
     -- instrument; left out, it is as tall as the sentence, which is now often
@@ -1831,6 +1850,7 @@ local function help_lines(o)
     -- than a measure somebody can read across. A card's worth of words set as
     -- one line runs most of the way over the arena.
     local function add(key, x, y, s, col, align, top, bot)
+        if only and key ~= only then return end
         local px = (FONT - 1) * S
         local room = (align == "right") and (x - 22 * S) or (W - x - 22 * S)
         local e = {key = key, x = x, y = y, col = col, align = align,
@@ -1947,7 +1967,7 @@ end
 -- screen at once and reads as a mode; this is a question asked of one thing
 -- and has to cost about as much as looking at it.
 local function help_hover(o, key)
-    for _, e in ipairs(help_lines(o)) do
+    for _, e in ipairs(help_lines(o, key)) do
         if e.key == key then
             -- On its own row, not shuffled into a column: one block has
             -- nothing to collide with and every reason to sit against the
