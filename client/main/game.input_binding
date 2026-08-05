@@ -99,6 +99,10 @@ key_trigger {
   action: "map"
 }
 key_trigger {
+  input: KEY_H
+  action: "help"
+}
+key_trigger {
   input: KEY_BACKSPACE
   action: "backspace"
 }

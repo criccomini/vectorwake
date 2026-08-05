@@ -34,7 +34,8 @@ max_teams = 2
 flags = 4
 bounce = 10
 friction = 14
-respawn_delay = 300
+# Long enough to read the card the wait carries. See baseline.c.
+respawn_delay = 400
 prize_delay = 100
 prize_max = 20
 rust = 10
