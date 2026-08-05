@@ -208,11 +208,19 @@ impl Nav {
     /// pilot has no give-up clock, since there is nothing else for it to do,
     /// it spent the rest of its life pushing at the wall between.
     const REFUGE_KEEP: usize = 6;
+    /// `calm` decides what a safe zone is worth. A pilot leaving the game
+    /// wants one, because that is where a player goes to stop. A pilot
+    /// escaping a corner it keeps pinning in must never be sent to one: it is
+    /// not allowed to stay, so a safe zone as an escape target is an
+    /// oscillation, into the safe, pushed back out, and in again, at walking
+    /// pace on the boundary. Measured as a 28-second stand-still before this
+    /// flag existed.
     pub fn refuge(
         &self,
         from: (f32, f32),
         crowd: &[(f32, f32)],
         within: f32,
+        calm: bool,
     ) -> Option<(f32, f32)> {
         let start = self.nearest_open(cell_of(from.0), cell_of(from.1))?;
         let mine = self.comp[start];
@@ -227,14 +235,15 @@ impl Nav {
                 if dx * dx + dy * dy <= within * within
                     && self.cost[c] != BLOCKED
                     && self.comp[c] == mine
+                    && (calm || !self.safe[c])
                 {
                     let mut near = f32::INFINITY;
                     for &(ox, oy) in crowd {
                         let (ex, ey) = (x - ox, y - oy);
                         near = near.min(ex * ex + ey * ey);
                     }
-                    let score =
-                        near.sqrt() + if self.safe[c] { SAFE_WORTH } else { 0.0 };
+                    let score = near.sqrt()
+                        + if calm && self.safe[c] { SAFE_WORTH } else { 0.0 };
                     let at = best.partition_point(|(_, b)| *b > score);
                     if at < Self::REFUGE_KEEP {
                         best.insert(at, ((x, y), score));
@@ -554,7 +563,7 @@ mod tests {
         let crowd: Vec<(f32, f32)> = (0..6)
             .map(|i| ((490 - i) as f32 * 16.0, 500.0 * 16.0))
             .collect();
-        let spot = n.refuge(me, &crowd, 1_400.0).expect("open ground has corners");
+        let spot = n.refuge(me, &crowd, 1_400.0, true).expect("open ground has corners");
         let (dx, dy) = (spot.0 - me.0, spot.1 - me.1);
         assert!(
             (dx * dx + dy * dy).sqrt() <= 1_400.0,
@@ -584,7 +593,7 @@ mod tests {
         let n = Nav::build(&m);
         let me = (310.0 * 16.0, 340.0 * 16.0); // outside the pocket
         let crowd = vec![me];
-        let spot = n.refuge(me, &crowd, 1_400.0).expect("open ground has corners");
+        let spot = n.refuge(me, &crowd, 1_400.0, true).expect("open ground has corners");
         assert!(
             !n.route(me, spot).is_empty() || n.clear(me, spot),
             "it picked {spot:?}, which cannot be flown to"
@@ -623,7 +632,8 @@ mod tests {
                 "the safe patch has to be the nearer option and still win: \
                  {d:.0} px against a {range:.0} px range");
 
-        let spot = n.refuge(me, &[me], range).expect("somewhere to go");
+        let spot = n.refuge(me, &[me], range, true).expect("somewhere to go");
         assert_eq!(spot, safe_at, "picked open ground over a safe zone");
     }
+
 }

@@ -743,6 +743,14 @@ pub struct Bot {
     pinned: u32,
     detour_until: u32,
     detour_dir: f32,
+    /// Where the reflex last fired and when, so firing again in the same spot
+    /// can be told apart from firing somewhere new. The first is a plan that
+    /// keeps not working; the second is ordinary flying.
+    pin_site: (f32, f32),
+    pin_seen: u32,
+    /// How many escapes deep this pilot is: pinning during a detour means the
+    /// escape itself hit a wall, and each link widens the next throw.
+    detour_chain: u32,
     /// How far through leaving this pilot is, the tick it was told to, and how
     /// many clear looks it has had since parking.
     exit: Exit,
@@ -804,6 +812,9 @@ impl Bot {
             pinned: 0,
             detour_until: 0,
             detour_dir: 0.0,
+            pin_site: (0.0, 0.0),
+            pin_seen: 0,
+            detour_chain: 0,
             exit: Exit::Staying,
             exit_at: 0,
             parked_for: 0,
@@ -971,19 +982,63 @@ impl Bot {
                         best = k;
                     }
                 }
+                // Pinning while a detour owns the controls means the escape
+                // itself hit a wall. Each link in that chain throws wider,
+                // because the openest whisker got us here: in a slot where
+                // every ray is short, "openest plus a little jitter" names
+                // nearly the same wall every time, and a bot was measured
+                // re-detouring in place for twenty-eight seconds on the
+                // strength of it. The third link stops throwing altogether
+                // and hands the controls back to the plan, which by then is
+                // aiming somewhere routed rather than somewhere pointed at.
+                let chained = self.timer < self.detour_until;
+                self.detour_chain = if chained { self.detour_chain + 1 } else { 1 };
+                let spread = 0.5 + 0.7 * (self.detour_chain - 1) as f32;
                 self.detour_dir = best as f32 * std::f32::consts::TAU
                     / WHISKERS as f32
-                    + (self.rand() - 0.5) * 0.5;
+                    + (self.rand() - 0.5) * spread.min(2.4);
                 // Long enough to turn fully round and then actually fly:
                 // half a rotation alone is most of a second.
-                self.detour_until = self.timer + 130;
-                // The roam target and the route are re-rolled: both were
-                // derived from a picture that just proved wrong about a wall.
-                // The approach in progress is deliberately NOT dropped -- its
-                // no-progress clock is what abandons an unreachable goal, and
-                // resetting it on every escape would let pin-and-escape
-                // cycles stretch that give-up out for ever.
+                self.detour_until = if self.detour_chain >= 3 {
+                    self.timer
+                } else {
+                    self.timer + 130
+                };
+                // Pinned here before, and recently: the escape flew, the plan
+                // resumed, and the plan led straight back. The third pass is
+                // not going to end differently, so the destination is what has
+                // to change. Measured before this existed: a bot that
+                // respawned near one bad corner on Chaos unstuck at the same
+                // wall every 250 ticks for as long as the run lasted, drifting
+                // a hundred pixels a cycle, which from a cockpit is a bot
+                // sitting still. The roam that replaces the one being given up
+                // on goes out the open way instead of being rolled from the
+                // middle of the map, because the middle of the map is the
+                // direction the wall is in.
+                let (dx, dy) = (o.x - self.pin_site.0, o.y - self.pin_site.1);
+                let again = dx * dx + dy * dy < 200.0 * 200.0
+                    && self.timer.saturating_sub(self.pin_seen) < 700;
+                self.pin_site = (o.x, o.y);
+                self.pin_seen = self.timer;
                 self.roam = (0.0, 0.0);
+                if again {
+                    // Somewhere genuinely else, found the way the departure
+                    // search finds a quiet corner: reachable by the grid's own
+                    // reckoning and validated against a real route, with the
+                    // pin site as the thing to be far from. A straight ray
+                    // was tried first and could not work; a pocket you need
+                    // unsticking from is a pocket with no 300-pixel straight
+                    // line out of it, or you would not be pinned in it.
+                    if let Some(p) = nav.refuge((o.x, o.y), &[(o.x, o.y)], 1200.0, false) {
+                        self.roam = p;
+                    }
+                }
+                // The route is dropped either way: it was derived from a
+                // picture that just proved wrong about a wall. The approach in
+                // progress is deliberately NOT dropped, because its no-progress
+                // clock is what abandons an unreachable goal, and resetting it
+                // on every escape would let pin-and-escape cycles stretch that
+                // give-up out for ever.
                 self.drop_route();
             }
         } else {
@@ -1952,7 +2007,7 @@ mod tests {
                     if b.wants_refuge() {
                         let mut c = crowd(w, ship);
                         c.extend_from_slice(b.avoid());
-                        b.refuge(route.refuge((o.x, o.y), &c, REFUGE_PX));
+                        b.refuge(route.refuge((o.x, o.y), &c, REFUGE_PX, true));
                     }
                     let buttons = b.think(&o, &route, fresh);
                     if let Some(watch) = watch.as_deref_mut() {
@@ -2018,6 +2073,64 @@ mod tests {
         }
         assert!(nearest > SIGHT,
                 "logged off {nearest:.0} px from somebody, inside their sight");
+    }
+
+
+
+
+    /// The failure a player reports as "bots sit still until I shoot at
+    /// them", measured as the longest run of ticks any bot spends alive, in
+    /// travel, and not moving. Four minutes of the shipped Chaos map with the
+    /// calibrated roster: before the unstick reflex learned to escalate, this
+    /// harness measured freezes of 1,473, 7,327 and 1,818 ticks across three
+    /// salts, the worst of them a minute and a quarter of a bot standing
+    /// against a wall re-firing the same escape. The bound is three times the worst this
+    /// code measures now and eight times an ordinary corner scrape, so it
+    /// catches the loop coming back without breaking on tuning noise.
+    #[test]
+    fn nobody_stands_still_for_twelve_seconds() {
+        let bytes = std::fs::read("../catalog/zones/chaos/chaos.vwmap").unwrap();
+        let mut w = sim::World::from_packed(0x5eed, &bytes).unwrap();
+        let mut bots = Vec::new();
+        for i in 0..24usize {
+            let e = individual(i);
+            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 512, 512, 0);
+            let mut b = Bot::new(ship as u8, e.skill);
+            b.reseed(i as u32 * 977 + 13);
+            bots.push(b);
+        }
+        let route = crate::nav::Nav::build(&w.map);
+        let mut inputs = Vec::new();
+        let mut streak = vec![0u32; bots.len()];
+        let mut worst = vec![0u32; bots.len()];
+        for _ in 0..24_000u32 {
+            inputs.clear();
+            for b in bots.iter_mut() {
+                let ship = b.ship;
+                let fresh = b.looks_due().then(|| scan(&w, ship));
+                let buttons = b.think(&own(&w, ship), &route, fresh);
+                inputs.push(sim::sim_input { ship, buttons });
+            }
+            w.step(&inputs);
+            for (bi, b) in bots.iter().enumerate() {
+                let s = &w.state.ships[b.ship as usize];
+                let (vx, vy) = (s.vx as f32 / 65536.0, s.vy as f32 / 65536.0);
+                // Stationary while alive and trying to travel: the shape a
+                // player reads as a bot sitting still.
+                if s.active != 0 && s.alive != 0 && b.doing() == 1
+                    && (vx * vx + vy * vy).sqrt() < 0.4
+                {
+                    streak[bi] += 1;
+                    worst[bi] = worst[bi].max(streak[bi]);
+                } else {
+                    streak[bi] = 0;
+                }
+            }
+        }
+        let bad = worst.iter().copied().max().unwrap_or(0);
+        assert!(bad < 1_200,
+                "a bot stood still in travel for {bad} ticks; the pin loop \
+is back");
     }
 
 }
