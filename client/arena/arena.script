@@ -17,6 +17,7 @@
 -- of release builds entirely: a shipped bundle drew an empty arena.
 
 local net = require("arena.net")
+local tips = require("arena.tips")
 local touch = require("arena.touch")
 local account = require("arena.account")
 local directory = require("arena.directory")
@@ -53,6 +54,15 @@ local accum = 0
 local feed = {}
 local hurt = 0
 local pickup = nil
+-- The line drawn under DESTROYED, and how far up the ladders this hull had
+-- climbed when it was still flying.
+--
+-- `carried` is sampled every frame rather than read at the death, because a
+-- death clears every rung and add-on in the same tick it lands: asking
+-- afterwards always answers zero. It costs a handful of reads a frame, which
+-- is what the corner panel already spends drawing the same numbers.
+local tip = nil
+local carried = 0
 -- Per-seat bank state, described where it is used further down. Declared up
 -- here because go_home clears it, and a local declared below the function that
 -- reads it is not the same variable: the function closes over a global that is
@@ -351,6 +361,11 @@ function go_home(self, at)
     feed = {}
     pickup = nil
     hurt = 0
+    -- The next room is a fresh start for the tips as well: its first death
+    -- gets the first line rather than wherever the last room left the cycle.
+    tip = nil
+    carried = 0
+    tips.reset()
     -- A box about somebody in the room you just left describes a seat number
     -- that the next room will have dealt to a stranger.
     ui.inspect = nil
@@ -430,6 +445,21 @@ local function drain_kills()
         notify((k.victim == k.killer) and (vn .. " was caught in it")
             or (k.killer == 255) and (vn .. " flew into the wall")
             or (pilot_name(k.killer) .. " killed " .. vn .. paid), col)
+        -- Your own death picks the line shown under DESTROYED.
+        --
+        -- Chosen from the zone's announcement rather than from the simulation,
+        -- because by the time anything local can look, there is nothing to
+        -- look at: apply_damage strips the rungs, the add-ons, the charges and
+        -- the bounty and only then emits the death. So `paid` is the bounty
+        -- that died with you, straight off the wire, and the rung count comes
+        -- from `carried`, which is sampled while you are still flying.
+        if k.victim == me then
+            tip = tips.pick({
+                self = k.killer == k.victim,
+                bounty = k.paid,
+                rungs = carried,
+            })
+        end
     end
     if #net.kills > 0 then net.kills = {} end
 end
@@ -1024,6 +1054,24 @@ function update(self, dt)
         -- change, because a zone can hand you a different ship than the one
         -- you asked for.
         touch.has_bomb = sim.has_trigger(me, sim.TRIG_BOMB)
+        -- What this hull has climbed to, held against the death that will
+        -- clear it. Rungs and add-ons together: both are greens, and a pilot
+        -- who lost a fan and a level lost two things.
+        --
+        -- Flying again is what takes the line down. The state says so
+        -- directly, so this needs no timer of its own and cannot leave a box
+        -- on screen over a living ship.
+        if sim.ship_alive(me) == 1 then
+            tip = nil
+            local n = 0
+            for t2 = 0, sim.TRIG_COUNT - 1 do
+                n = n + sim.ship_level(me, t2)
+                for m = 0, sim.MOD_COUNT - 1 do
+                    n = n + sim.ship_mod(me, t2, m)
+                end
+            end
+            carried = n
+        end
         -- Which charge slots this hull carries, and how many of each are in
         -- hand. The pads are built from this, so a hull with none draws none
         -- and a zone that fills all four gets four.
@@ -1069,7 +1117,7 @@ function update(self, dt)
             -- connection's business, so they are read here rather than in the
             -- renderer, which knows about drawing and not about sides.
             may_invite = net.may_invite(), invited = net.invited,
-            feed = feed, hurt = hurt, pickup = pickup,
+            feed = feed, hurt = hurt, pickup = pickup, tip = tip,
             charges = charge_row(),
             cam_x = cx, cam_y = cy,
             half_w = self.hw, half_h = self.hh,
@@ -1397,7 +1445,18 @@ function on_input(self, action_id, action)
                 -- pilot's row does not fall through to whatever is behind it.
                 if r.action == "scores" then return true end
                 if not menu.open then return false end
-                local act, moved = menu.click(r.value)
+                -- Written out rather than as an and/or chain: that form
+                -- keeps only the first return, so `moved` came back nil and
+                -- every click was silent. The sounds are half of what makes
+                -- this feel like a control panel.
+                local act, moved
+                if r.action == "stage" then
+                    act, moved = menu.click_stage(r.value)
+                elseif r.action == "rail" then
+                    act, moved = menu.click_rail(r.value)
+                else
+                    act, moved = menu.click(r.value)
+                end
                 if moved then sfx.ui(act and "ui_go" or "ui_move") end
                 if act then apply_menu(self, act) end
                 return true

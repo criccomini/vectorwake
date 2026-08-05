@@ -50,7 +50,7 @@ local ui = require("arena.ui")
 
 ui.begin(layer, W, H, 1, false)
 ui.menu({title = "help", depth = 2, sel = 1, closable = true,
-         home_root = false, board = true, rows = {}})
+         home = false, board = true, rows = {}})
 ui.finish()
 
 -- Every frame drawn while the board is up is a key outline; the panel edges
@@ -104,11 +104,56 @@ check("no caption runs off the screen", wide <= W, "reach " .. wide)
 frames, rects = {}, {}
 ui.begin(layer, W, H, 1, true)
 ui.menu({title = "help", depth = 2, sel = 1, closable = true,
-         home_root = false, board = true,
+         home = false, board = true,
          rows = {{label = "steer", detail = "left thumb", index = 1}}})
 ui.finish()
 check("a touchscreen gets rows, not a picture of keys", #frames == 0,
       "frames: " .. #frames)
+
+-- The page takes the room a desktop window has, and gives it back when the
+-- window has not got it. Both directions bound the same drawing: the board
+-- is as tall as it is wide, so a short window is as much a limit as a narrow
+-- one, and the width backs off until the whole thing fits.
+local function draw_at(w, h)
+    -- The recorder flips y against H, so that has to be this window's height
+    -- before anything is drawn into it.
+    H = h
+    frames, rects = {}, {}
+    st.n = 0
+    ui.begin(layer, w, h, 1, false)
+    ui.menu({title = "help", depth = 2, sel = 1, closable = true,
+             home = false, board = true, rows = {}})
+    ui.finish()
+    local x0, x1, y0, y1 = math.huge, 0, math.huge, 0
+    for _, f in ipairs(frames) do
+        x0, x1 = math.min(x0, f.x), math.max(x1, f.x + f.w)
+        y0, y1 = math.min(y0, f.y), math.max(y1, f.y + f.h)
+    end
+    -- The captions hang below the last key row, so the drawing reaches
+    -- further down than the keys do. Take the text into account or the fit
+    -- check passes on a page whose last line is off the bottom.
+    for k = 1, st.n do
+        local t = st.text[k]
+        y1 = math.max(y1, h - t.y + t.px)
+        x1 = math.max(x1, t.x + (t.pivot ~= "right" and #t.s * t.px * 0.62 or 0))
+    end
+    return {x0 = x0, x1 = x1, y0 = y0, y1 = y1, keyh = frames[1] and frames[1].h}
+end
+
+for _, shape in ipairs({{1280, 800}, {1920, 1080}, {900, 600}, {1400, 400},
+                        {700, 500}}) do
+    local b = draw_at(shape[1], shape[2])
+    check(string.format("%dx%d keeps the board on screen", shape[1], shape[2]),
+          b.x0 >= 0 and b.x1 <= shape[1] and b.y0 >= 0 and b.y1 <= shape[2],
+          string.format("extent %.0f..%.0f x %.0f..%.0f", b.x0, b.x1, b.y0, b.y1))
+end
+
+-- And the point of all of it: on a desktop window the keys are drawn at a
+-- size somebody can read across a desk, not at the width of a phone's menu
+-- column. Forty points is comfortably past what the fixed 460 column gave.
+local big = draw_at(1280, 800)
+check("a desktop window draws a readable board", (big.keyh or 0) > 40,
+      "key height " .. tostring(big.keyh))
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

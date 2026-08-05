@@ -88,6 +88,11 @@ local function on_message(s)
             count = up
                 and string.format("%d playing, %d AI", players, z.bots or 0)
                 or "nobody is running it",
+            -- The same two numbers unpacked, for a meter rather than a
+            -- sentence: how full a game is reads faster as a row of pips than
+            -- as "3 playing, 51 AI" read and compared against the next line.
+            players = players,
+            bots = z.bots or 0,
             live = up ~= nil,
         }
     end

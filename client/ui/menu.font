@@ -1,0 +1,9 @@
+font: "/ui/menu.ttf"
+material: "/builtins/fonts/font-df.material"
+size: 26
+extra_characters: "←↑↓→▸•×·°"
+antialias: 1
+alpha: 1.0
+shadow_alpha: 0.0
+shadow_blur: 0
+output_format: TYPE_DISTANCE_FIELD
