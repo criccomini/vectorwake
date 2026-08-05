@@ -1057,8 +1057,17 @@ function update(self, dt)
         -- Once a frame, not once a tick: a snapshot rolls the ship back and
         -- replays it, and the flicker inside that belongs to the rollback
         -- rather than to anything a pilot did.
+        --
+        -- One change here is nobody's press: losing the last fan puts the
+        -- switch back, and a pilot who has just died does not need a click
+        -- about their weapons on the way out. So the sound needs a fan in
+        -- hand as well as a change, which the press always has and the
+        -- clearing never does.
         local multi_now = sim.ship_multi_off(me)
-        if multi_was ~= nil and multi_now ~= multi_was then
+        local have_fan =
+            sim.ship_mod(me, sim.TRIG_GUN, sim.MOD_MULTI) > 0
+            or sim.ship_mod(me, sim.TRIG_BOMB, sim.MOD_MULTI) > 0
+        if multi_was ~= nil and multi_now ~= multi_was and have_fan then
             -- The two interface sounds this client already has, used the way
             -- the menu uses them: the rising one for taking something, the
             -- tick for stepping a control along.
