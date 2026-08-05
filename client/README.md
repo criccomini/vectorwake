@@ -343,6 +343,53 @@ grid and compares it to the map they came from, which catches a merge that
 reaches too far as well as one that stops short. It reads the catalog's own
 maps, so a reconverted map is one this test immediately covers.
 
+## What your ship is carrying
+
+Bottom left: a row for the gun, a row for the bomb, a row per charge, and your
+bounty. Each row is a mark, a count, and nothing else. The marks used to be
+words, which made the one corner a pilot only ever glances at into a column of
+reading.
+
+There is one mark per trigger, and an add-on is drawn onto it rather than set
+out beside it. That is the correction to the first version of this, which gave
+every add-on a symbol of its own and lined them up to the right of the ladder:
+six shapes beside a seventh read as seven things the ship is carrying, when
+what a player holds is one gun and one bomb that greens have been changing all
+match. So a bolt with bouncing on it is a bolt with a ball on each end of it,
+and a bomb with proximity is a bomb inside a broken ring.
+
+Both marks are the same skeleton, a path with a head on the end of it, because
+that is what each looks like in the arena and it lets one set of add-on marks
+fit both. Every add-on is something that happens either to the path (multifire
+fans it, freeze rimes it) or to the head (proximity rings it, shrapnel throws
+fragments off it, the repel add-on stands a wave in front of it).
+
+Rungs are in the shape rather than in a number beside it, and they are the
+zone's own arithmetic: one rung of multifire is two more barrels, one rung of
+shrapnel is two more fragments, a rung of proximity is a wider reach. Read
+`mod_step` in a `zone.toml` and then read `dec_multi` and the rest in
+`ui.lua`; they say the same thing twice on purpose.
+
+The room outside the round is shared out before anything draws rather than
+spent first come. A row is 22 points tall and the mark has to live inside it
+however loaded the hull is, so the add-ons that ring the head are counted
+first and each gets an equal ring of what is left. Two of them get half each
+and read clearly, and the six-add-on hull that no zone in the catalog hands
+out gets a sixth each and reads as a dense mark, which is the right way round.
+Spending the room as it was asked for instead would put a Spire's fragments
+through the row above.
+
+`lua5.1 client/tests/stack_test.lua` runs the real `M.hud` against a stubbed
+engine and measures: every add-on draws something, a third rung looks
+different from a first, the row's hover box covers everything its mark drew,
+and no combination of the six at full depth leaves its own row or reaches the
+column the ladders count in. That last one walks all 64 combinations, because
+the case that overflows is never the one somebody thought to try.
+
+Since the shapes are the row now, holding `H` names what this hull is actually
+carrying rather than what weapons can carry in general. A shape drawn onto a
+mark is learnable exactly once, by being told.
+
 ## The screen naming its own parts
 
 Hold `H` and every instrument grows a word beside it: what a rung buys, what a
@@ -431,6 +478,35 @@ engine and asks what a press at a given point hits: on every ship on screen and
 on the name beside it, which have to reach nothing, and on a scoreboard row,
 which has to reach the pilot. Both rules are invisible until somebody is
 flying, on a build that takes six minutes to publish.
+
+## The mark
+
+Two hulls passing on a course tilted off vertical, each nose a little past the
+other's tail, in the two team colours. The silhouette is the simulation's own:
+`hull_extent` in `sim/src/baseline.c` gives the Apex 20 forward, 11 back and 10
+to a side with the tail cut flat, so the shape in the tab is the shape people
+fly. Outline only, no canopy and no fill, because the interface draws
+everything else in the same thin strokes.
+
+What makes it the mark is the arrangement rather than the ship. Two hulls at
+rest, symmetric about a point, is the swap glyph every icon set already ships;
+two hulls passing is a moment out of the game, and nothing in a tab bar looks
+like it. The angle is deliberately off the 45 degrees the tile's own chamfer
+cuts: at 45 the tails lined up with the corners and the pair read as a shape
+fitted to its box rather than as two craft on a course.
+
+It exists twice, which is the risk worth knowing about. `client/web/icon.svg`
+is the source the page template carries as three data URIs, and `ui.logo` in
+`arena/ui.lua` draws the same pair as strokes beside the wordmark, because the
+interface has no way to put a picture on screen and would not want one.
+`lua5.1 client/tests/logo_test.lua` reads the shipped SVG's own coordinates and
+holds the Lua to them, so the two cannot drift apart without CI saying so. It
+also checks the property the mark depends on, that each nose reaches past the
+other's tail.
+
+The favicon is its own cut rather than the logo shrunk: wider apart and a
+heavier line, since at sixteen pixels two outlines at logo weight share pixels
+and read as one knot.
 
 ## The repel nobody could see
 

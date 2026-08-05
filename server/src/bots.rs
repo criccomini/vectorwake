@@ -740,7 +740,7 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
                 // while holding it.
                 if let Some(crowd) = crowd {
                     b.refuge(route.as_deref().and_then(|r| {
-                        r.refuge((own.x, own.y), &crowd, ai::REFUGE_PX)
+                        r.refuge((own.x, own.y), &crowd, ai::REFUGE_PX, true)
                     }));
                 }
                 // Asked to stand down. From here the pilot is leaving rather
