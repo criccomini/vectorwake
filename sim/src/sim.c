@@ -1165,6 +1165,15 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
     }
 }
 
+/* Whether this hull is carrying a fan at all. Multifire is held per trigger
+ * and the decline is one switch over both, so a pilot with a fanning bomb and
+ * a plain gun still has something to turn off. */
+static int ship_has_multi(const sim_ship *sh) {
+    for (int t = 0; t < SIM_TRIG_COUNT; t++)
+        if (sim_mod_get(sh->mods[t], SIM_MOD_MULTI)) return 1;
+    return 0;
+}
+
 /* ---- the step ---- */
 
 void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
@@ -1258,8 +1267,17 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * is pulled, so a pilot can hold a fan and still take a single
          * accurate shot. Edge-detected here rather than pulsed by the client,
          * because a pulse that arrives twice or not at all is a ship state
-         * the two ends disagree about. */
-        if ((b & SIM_BTN_MULTI) && !(sh->btn_prev & SIM_BTN_MULTI)) {
+         * the two ends disagree about.
+         *
+         * A hull carrying no fan has nothing to decline, so the press does
+         * nothing at all: the flag does not move, and a client that says the
+         * key landed by watching the flag stays quiet with it. What the flag
+         * does survive is losing the add-on. The pilot who turned fans off
+         * meant it, and a death is not them changing their mind, so a fan
+         * picked up two lives later arrives declined and the corner stack
+         * draws it dimmed, which is the job that dimming has. */
+        if ((b & SIM_BTN_MULTI) && !(sh->btn_prev & SIM_BTN_MULTI)
+            && ship_has_multi(sh)) {
             sh->multi_off = (uint8_t)(sh->multi_off ? 0 : 1);
         }
         sh->btn_prev = b;
