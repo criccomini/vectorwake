@@ -91,10 +91,12 @@ local function on_message(s)
             detail = z.description or "",
             -- A zone with nobody running it is a row, not a gap: a player is
             -- better off seeing that Chaos exists and is down than wondering
-            -- whether they misread the list.
+            -- whether they misread the list. It says so without a sentence,
+            -- by wearing the dial that is looking for an arena where the busy
+            -- rows carry their counts.
             count = up
                 and string.format("%d playing, %d AI", players, z.bots or 0)
-                or "nobody is running it",
+                or "",
             -- The same two numbers unpacked, for a meter rather than a
             -- sentence: how full a game is reads faster as a row of pips than
             -- as "3 playing, 51 AI" read and compared against the next line.

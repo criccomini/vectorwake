@@ -246,6 +246,12 @@ local function zone_rows()
     for i, r in ipairs(directory.rows) do
         rows[i] = {
             label = r.name, detail = r.count,
+            -- A zone the directory lists with no arena behind it. The row
+            -- keeps its place, because a player is better off seeing that
+            -- Chaos exists and is down than wondering whether they misread
+            -- the list, and it wears the dial that is looking for one rather
+            -- than a sentence saying nobody is.
+            waiting = not r.live,
             -- What the game is, under its own name rather than at the foot of
             -- the panel. Choosing between three games is reading three
             -- sentences; one at a time, a long way from the name it belongs
@@ -607,7 +613,8 @@ function M.view()
         local ci, cn
         if r.choice then ci, cn = r.choice() end
         out.rows[i] = {
-            label = r.label, detail = d, note = r.note, index = i,
+            label = r.label, detail = d, note = r.note, waiting = r.waiting,
+            index = i,
             hull = r.hull, role = r.role,
             players = r.players, bots = r.bots, live = r.live,
             choice = ci, choices = cn,
@@ -660,6 +667,7 @@ function M.view()
                 local ci, cn
                 if r.choice then ci, cn = r.choice() end
                 out.rows[i] = {label = r.label, detail = d, note = r.note,
+                               waiting = r.waiting,
                                index = i, hull = r.hull, role = r.role,
                                players = r.players, bots = r.bots,
                                live = r.live, choice = ci, choices = cn,
