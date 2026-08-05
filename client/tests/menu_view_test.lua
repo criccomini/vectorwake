@@ -90,16 +90,60 @@ for i = 1, 3 do
 end
 local st = draw({title = "vectorwake", stage_title = "games", depth = 1,
                  sel = 0, rail = RAIL, rail_sel = 1, focus = "rail",
-                 home_root = true, closable = false, rows = rows})
+                 home = true, closable = false, rows = rows})
 
 local rail_hits = 0
 for _, h in ipairs(ui.hits) do
-    if h.action == "row" and h.value and h.value >= 1 then rail_hits = rail_hits + 1 end
+    if h.action == "rail" then rail_hits = rail_hits + 1 end
 end
 check("every rail stop publishes a hit box", rail_hits == #RAIL,
       rail_hits .. " of " .. #RAIL)
+-- And under its own action, because a rail tap does not mean what a tap on
+-- the page's rows means: routed as a row it picked the fourth hull when it
+-- was asked for settings.
+local as_rows = 0
+for _, h in ipairs(ui.hits) do
+    if h.action == "row" and h.value and h.value >= 1 then as_rows = as_rows + 1 end
+end
+check("and not as a row of whatever page is showing", as_rows == 0,
+      as_rows .. " rail stops published as rows")
 check("the rail names its stops", has(st, "play") and has(st, "about"))
 check("the stage shows what the rail points at", has(st, "zone1"))
+
+-- --- the rail does not move when you go a level in ------------------------
+--
+-- The stop you just tapped has to still be under your thumb, because the next
+-- tap is the one that goes somewhere else. It was not: the layout asked one
+-- flag both "is there a game behind this" and "are we at the top level", so
+-- descending on the start screen shifted the block clear of a corner stack
+-- that is not there. On a phone held sideways that is 124 points sideways --
+-- the rail slides out from under the thumb and the next tap lands on nothing.
+
+local function rail_boxes(w, h, depth)
+    draw({title = "v", stage_title = depth == 1 and "vectorwake" or "ship",
+          depth = depth, sel = depth == 1 and 0 or 1, rail = RAIL,
+          rail_sel = 2, focus = depth == 1 and "rail" or "stage",
+          home = true, closable = depth > 1, rows = rows}, w, h, true)
+    local out = {}
+    for _, hh in ipairs(ui.hits) do
+        if hh.action == "rail" then
+            out[hh.value] = string.format("%.0f,%.0f,%.0f,%.0f",
+                                          hh.x, hh.y, hh.w, hh.h)
+        end
+    end
+    return out
+end
+
+for _, shape in ipairs({{390, 844}, {844, 390}, {1280, 800}, {1600, 900}}) do
+    local a = rail_boxes(shape[1], shape[2], 1)
+    local b = rail_boxes(shape[1], shape[2], 2)
+    local moved
+    for i = 1, #RAIL do
+        if a[i] ~= b[i] then moved = i .. ": " .. a[i] .. " -> " .. b[i] end
+    end
+    check(string.format("%dx%d holds the rail still on the way in",
+                        shape[1], shape[2]), not moved, moved)
+end
 
 -- --- a preview carries no cursor -------------------------------------------
 --
@@ -114,7 +158,7 @@ check("a previewed stage draws no cursor bracket",
           -- the bracket is drawn only when `sel and focused`.
           local view = {title = "v", stage_title = "ship", depth = 1, sel = 2,
                         rail = RAIL, rail_sel = 2, focus = "rail",
-                        home_root = true, closable = false, rows = rows}
+                        home = true, closable = false, rows = rows}
           draw(view)
           local a = #segs
           view.focus = "stage"
@@ -130,7 +174,7 @@ for i = 1, 30 do
     many[i] = {label = "row" .. i, detail = "", index = i, pick = true}
 end
 st = draw({title = "v", stage_title = "games", depth = 2, sel = 25,
-           rail = RAIL, rail_sel = 1, focus = "stage", home_root = false,
+           rail = RAIL, rail_sel = 1, focus = "stage", home = false,
            closable = true, rows = many})
 check("a cursor near the end of a long list is on screen", has(st, "row25"),
       "drew: " .. table.concat(texts(st), " "))
@@ -146,7 +190,7 @@ end
 check("and no row is drawn off the screen to get there", below == 0,
       below .. " lines outside")
 st = draw({title = "v", stage_title = "games", depth = 2, sel = 1,
-           rail = RAIL, rail_sel = 1, focus = "stage", home_root = false,
+           rail = RAIL, rail_sel = 1, focus = "stage", home = false,
            closable = true, rows = many})
 check("and one at the start is too", has(st, "row1"))
 
@@ -155,7 +199,7 @@ check("and one at the start is too", has(st, "row1"))
 for _, shape in ipairs({{1280, 800}, {900, 600}, {700, 500}, {1600, 900},
                         {390, 844}, {844, 390}}) do
     draw({title = "v", stage_title = "games", depth = 2, sel = 1,
-          rail = RAIL, rail_sel = 1, focus = "stage", home_root = false,
+          rail = RAIL, rail_sel = 1, focus = "stage", home = false,
           closable = true, rows = rows}, shape[1], shape[2])
     local x1, y1 = 0, 0
     for _, r in ipairs(rects) do
@@ -172,7 +216,7 @@ end
 -- --- settings draw as steps rather than words -----------------------------
 
 draw({title = "v", stage_title = "settings", depth = 2, sel = 1,
-      rail = RAIL, rail_sel = 4, focus = "stage", home_root = false,
+      rail = RAIL, rail_sel = 4, focus = "stage", home = false,
       closable = true,
       rows = {{label = "sound", detail = "half", choice = 3, choices = 4,
                index = 1, pick = true}}})
@@ -195,7 +239,7 @@ check("and lights the one it is on", lit == 3, lit .. " filled")
 
 local st2 = draw({title = "v", stage_title = "help", depth = 2, sel = 1,
                   rail = RAIL, rail_sel = 5, focus = "stage",
-                  home_root = false, closable = true,
+                  home = false, closable = true,
                   rows = {{label = "steer", index = 1, pick = true,
                            detail = "left thumb: point where you want the nose"}}},
                  390, 844, true)

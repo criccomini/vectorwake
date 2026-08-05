@@ -1978,7 +1978,11 @@ function M.menu(v)
     local labelled = pts_h >= 430
     local rail = v.rail or {}
     local n = #rail
-    local home = v.home_root
+    -- Is there a game behind this, or the starfield. Every measurement below
+    -- that depends on the window depends on this and on nothing else, so the
+    -- rail and the stage are in the same place on every screen of the menu:
+    -- what changes as you move around is what is written in them.
+    local home = v.home
 
     -- Not a curtain. Over an arena you can see the fight you left, and that
     -- you are still in it; on the way in the starfield is what is behind it.
@@ -2095,10 +2099,12 @@ function M.menu(v)
                 pal.a(sel and pal.FRIEND or pal.DIM, sel and 1 or 0.8),
                 "center", MENU_FONT)
         end
+        -- The rail's own action: it names a destination, not a row of
+        -- whatever page is on the stage.
         if vertical then
-            hit(rx - 6 * S, cy - pitch / 2, rw + 10 * S, pitch, "row", i)
+            hit(rx - 6 * S, cy - pitch / 2, rw + 10 * S, pitch, "rail", i)
         else
-            hit(cx - pitch / 2, ry_ - 8 * S, pitch, rh + 8 * S, "row", i)
+            hit(cx - pitch / 2, ry_ - 8 * S, pitch, rh + 8 * S, "rail", i)
         end
     end
 

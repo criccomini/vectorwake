@@ -50,7 +50,7 @@ local ui = require("arena.ui")
 
 ui.begin(layer, W, H, 1, false)
 ui.menu({title = "help", depth = 2, sel = 1, closable = true,
-         home_root = false, board = true, rows = {}})
+         home = false, board = true, rows = {}})
 ui.finish()
 
 -- Every frame drawn while the board is up is a key outline; the panel edges
@@ -104,7 +104,7 @@ check("no caption runs off the screen", wide <= W, "reach " .. wide)
 frames, rects = {}, {}
 ui.begin(layer, W, H, 1, true)
 ui.menu({title = "help", depth = 2, sel = 1, closable = true,
-         home_root = false, board = true,
+         home = false, board = true,
          rows = {{label = "steer", detail = "left thumb", index = 1}}})
 ui.finish()
 check("a touchscreen gets rows, not a picture of keys", #frames == 0,
@@ -122,7 +122,7 @@ local function draw_at(w, h)
     st.n = 0
     ui.begin(layer, w, h, 1, false)
     ui.menu({title = "help", depth = 2, sel = 1, closable = true,
-             home_root = false, board = true, rows = {}})
+             home = false, board = true, rows = {}})
     ui.finish()
     local x0, x1, y0, y1 = math.huge, 0, math.huge, 0
     for _, f in ipairs(frames) do

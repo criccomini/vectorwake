@@ -1448,6 +1448,8 @@ function on_input(self, action_id, action)
                 local act, moved
                 if r.action == "stage" then
                     act, moved = menu.click_stage(r.value)
+                elseif r.action == "rail" then
+                    act, moved = menu.click_rail(r.value)
                 else
                     act, moved = menu.click(r.value)
                 end

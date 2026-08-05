@@ -517,7 +517,15 @@ function M.view()
                  -- The hull you are in, so the rail can draw it as its mark.
                  class = M.class,
                  note = M.note, closable = not M.home or #M.stack > 1,
-                 home_root = M.home and #M.stack == 1,
+                 -- Whether there is a game behind the panel, which is what
+                 -- decides where the block sits: clear of the corner stack
+                 -- over an arena, centred over the starfield. Not whether you
+                 -- are at the top of the menu. It used to say both at once,
+                 -- and so the whole block moved every time you went a level
+                 -- in: on a phone held sideways the rail slid 124 points out
+                 -- from under the thumb that had just tapped it, and the next
+                 -- tap hit nothing.
+                 home = M.home,
                  -- The help page asks for the drawn keyboard; whether the
                  -- device gets one is ui.lua's call, since only it knows
                  -- whether there is a keyboard to draw a picture of.
@@ -710,6 +718,25 @@ function M.step(keys)
     end
     if keys.go or keys.right then return activate(), true end
     return nil, false
+end
+
+-- A pointer landed on the rail, which names a destination whatever level the
+-- stack is at. That is the whole difference between it and a row: the rail
+-- does not belong to the page you are looking at, so a tap on it has to go
+-- home before it goes anywhere.
+--
+-- It used to be routed as a row, which was right when the menu was one list
+-- and the root's rows were the destinations. With a rail on screen at every
+-- level it meant that once you were inside a page the rail stopped
+-- navigating: a tap on `settings` from inside `ship` picked the fourth hull.
+-- On a phone, where the rail is the only way to move, that is the whole of
+-- navigation not working.
+function M.click_rail(index)
+    if not M.open then return nil, false end
+    M.stack = {"root"}
+    M.sel.root = index
+    M.note = nil
+    return activate(), true
 end
 
 -- A pointer landed on a row of the stage, which is not always a row of the
