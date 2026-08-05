@@ -915,9 +915,16 @@ local function status(me, pickup, charges, lift)
                     -- fanning with nothing on screen to say so is a weapon
                     -- that looks broken.
                     local muted = off and m - 1 == 0
-                    txt(mod.name .. (nn > 1 and ("x" .. nn) or ""), at,
-                        y + rows_h / 2, (FONT - 2) * S,
+                    local word = mod.name .. (nn > 1 and ("x" .. nn) or "")
+                    txt(word, at, y + rows_h / 2, (FONT - 2) * S,
                         muted and pal.a(pal.DIM, 0.45) or pal.a(pal.FRIEND, 0.75))
+                    -- Measured, not stepped. The column is 46 wide and
+                    -- "shrapnel" is 53, so a row ending in the longest add-on
+                    -- reaches past where the next column would start, and the
+                    -- help overlay lining up on the step would sit on the tail
+                    -- of the word.
+                    local ends = at + text_w(word, (FONT - 2) * S)
+                    if ends > wide then wide = ends end
                     at = at + 46 * S
                 end
             end
@@ -926,7 +933,6 @@ local function status(me, pickup, charges, lift)
             else
                 anchor.bomb = y + rows_h / 2
             end
-            if at > wide then wide = at end
             y = y + rows_h
         end
     end
@@ -1201,8 +1207,11 @@ local function link(lag)
     end
     txt("LINK", right - 34 * S, base - 4 * S, (FONT - 3) * S,
         pal.a(pal.DIM, 0.8), "right")
-    anchor.link = {right - 34 * S - text_w("LINK", (FONT - 3) * S) - 8 * S,
-                   base - 4 * S}
+    -- The dial's left edge, not the bars', because the bars are the right-hand
+    -- end of a row that starts with the position readout: a word set just left
+    -- of `LINK` is a word printed over `POS 382,360`. The same edge the dial's
+    -- own line is set against, so the two stack into one column.
+    anchor.link = {dial(), base - 4 * S}
     -- The bars are the readout a player wants and the whole of it. Everything
     -- behind them is for whoever is working on this, so it hides behind the
     -- one thing on screen that is already about the connection.
@@ -1424,9 +1433,15 @@ local function help_overlay(o)
                   or "near space. the rings are range.",
                   pal.RADAR_TILE, "right")
     end
-    if anchor.link then
-        help_mark(anchor.link[1], anchor.link[2], "your line to the arena",
-                  pal.DIM, "right")
+    -- Not while the map is up. The readouts along the top right start at the
+    -- dial's left edge, and the map is four times the dial, so that edge lands
+    -- near the middle of the screen and the only space left beside `POS` is
+    -- the strip the flags fly in. A word with nowhere to go is not drawn: the
+    -- whole method here is space beside the thing, and when there is none the
+    -- honest answer is to say nothing rather than to print over the flags.
+    if anchor.link and not M.map then
+        help_mark(anchor.link[1] - 16 * S, anchor.link[2],
+                  "your line to the arena", pal.DIM, "right")
     end
     if anchor.feed then
         help_mark(anchor.feed[1], anchor.feed[2], "who paid whom",

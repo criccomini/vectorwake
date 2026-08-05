@@ -217,20 +217,26 @@ end
 
 -- --- and clears what is already on that row --------------------------------
 --
--- This is the one that breaks silently. The column starts past the widest row
--- the stack drew, so a hull carrying add-ons pushes it right; get that wrong
--- and the sentence is printed over the loadout it is explaining.
+-- This is the one that breaks silently, and it broke: the column starts past
+-- the widest row the corner stack drew, so a hull carrying add-ons pushes it
+-- right, and the line about the connection was anchored to the left of `LINK`
+-- when `LINK` is the right-hand end of a row that opens with `POS 382,360`.
+-- Both faults print a sentence through the readout it is explaining, and
+-- neither shows up in a check that only compares the help lines with each
+-- other. So every one of them is measured against everything else sharing its
+-- row, whichever side of it the instrument sits on.
 
 local overlap = nil
-for _, s in ipairs({GUN, BOMB, BTY}) do
+for _, s in ipairs(ALL) do
     local t = find(held, s)
     for _, other in ipairs(row_of(held, t)) do
-        if other.right > t.left then
+        if t.left < other.right and other.left < t.right then
             overlap = s .. " over " .. other.s
         end
     end
 end
-check("no word is printed over the row it explains", overlap == nil, overlap)
+check("no word is printed over anything already on its row",
+      overlap == nil, overlap)
 
 -- --- nothing runs off the screen -------------------------------------------
 
@@ -266,6 +272,26 @@ check("no two of them land on each other", clash == nil, clash)
 local mapped = frame({help = true, map = true})
 check("with the map up the dial is described as the map",
       find(mapped, MAP) and not find(mapped, RADAR))
+-- The map is four times the dial, so the readouts along the top of it start
+-- near the middle of the screen and there is no clear space left of them. The
+-- line about the connection stands down rather than printing over the flags.
+check("and the line with nowhere left to go stands down",
+      not find(mapped, LINK))
+local mapped_clash = nil
+for _, s in ipairs({MAP, FEED, NRG, GUN, BOMB, CHG, BTY, LETGO}) do
+    local t = find(mapped, s)
+    if not t then
+        mapped_clash = s .. " went missing with the map up"
+    else
+        for _, other in ipairs(row_of(mapped, t)) do
+            if t.left < other.right and other.left < t.right then
+                mapped_clash = s .. " over " .. other.s
+            end
+        end
+    end
+end
+check("and the rest of it still clears its row with the map up",
+      mapped_clash == nil, mapped_clash)
 
 -- --- the menu is a different screen ----------------------------------------
 
