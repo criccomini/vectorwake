@@ -1321,26 +1321,28 @@ local function fig_bounty(cx, cy, k)
     txt("42", cx, cy + k * 0.88, 12 * S, pal.a(pal.BOUNTY, 0.95), "center")
 end
 
--- Every card: the figure, the word for it, and what it does. The order is the
--- order they cycle in.
+-- Every card: the figure and what it does, and no name. The box used to
+-- caption each figure with its word, and the word earned nothing: the
+-- sentence already names the thing where it needs naming, and the figure is
+-- the arena's own shape, which is the recognition this exists to build.
 local CARDS = {
-    bomb = {fig = fig_bomb, name = "BOMB",
+    bomb = {fig = fig_bomb,
             text = "Heavy weapon that detonates on impact. Upgrades include " ..
                    "shrapnel and proximity abilities. Proximity detonates on " ..
                    "a near miss."},
-    bolt = {fig = fig_bolt, name = "BULLET",
+    bolt = {fig = fig_bolt,
             text = "Bullets are your rapid fire weapon. Upgrades include " ..
                    "spread and bouncing abilities."},
-    green = {fig = fig_green, name = "GREEN",
+    green = {fig = fig_green,
              text = "Greens contain prizes that upgrade your ship. They also " ..
                     "increase your bounty."},
-    repel = {fig = fig_repel, name = "REPEL",
+    repel = {fig = fig_repel,
              text = "Pushes enemy fire and ships away from you. Does not " ..
                     "affect you or your team."},
-    burst = {fig = fig_burst, name = "BURST",
+    burst = {fig = fig_burst,
              text = "Fires bullets in every direction at once. Deadly at " ..
                     "close range."},
-    bounty = {fig = fig_bounty, name = "BOUNTY",
+    bounty = {fig = fig_bounty,
               text = "Points earned for destroying an enemy. Your enemies " ..
                      "earn your bounty when they destroy you."},
 }
@@ -1348,22 +1350,21 @@ M.CARDS = CARDS
 
 -- What is drawn under DESTROYED while a pilot waits to fly again.
 --
--- The shape is the interface's own and nothing new: a wash to lift it off the
--- arena, four chamfered corners instead of a border, a label in the small
--- grey the panels label their rows in, and the map border's tick as the rule
--- between the label and the line. Everything here is already on screen
--- somewhere else, which is the point. A death is not the moment to introduce
--- a new kind of box.
+-- The shape is the interface's own and nothing new: a wash to lift it off
+-- the arena, the map border's tick as a rule across the top, and under it a
+-- card. It had corner brackets and a caption once, and both went. A frame is
+-- for holding a cluster together against the panels around it, and this box
+-- shares the middle of the screen with nothing.
 --
--- The rule doubles as the clock. It is drawn twice, dim across the full width
--- and lit across what is left of the respawn, so the same element that
--- separates the label from the tip also says how long you have to read it.
--- A numeral counting down would be a thing to watch instead of the sentence,
--- and this game has one big centred readout already.
+-- The rule is the clock. It is drawn twice, dim across the full width and
+-- lit across what is left of the respawn, so the one line the box carries
+-- besides its card also says how long there is to read it. A numeral
+-- counting down would be a thing to watch instead of the sentence, and this
+-- game has one big centred readout already.
 --
--- Centred under the banner rather than in a corner, because for these three
+-- Centred under the banner rather than in a corner, because for these few
 -- seconds there is nothing to fly and nothing to look away from, and it goes
--- the instant the hull is back.
+-- the moment the hull is back.
 -- Where the box goes and what it holds, worked out before anything else is
 -- drawn so `nameplates` can step around it in the same frame. Measuring and
 -- drawing are separate for that reason alone: the box is drawn last, over
@@ -1373,7 +1374,6 @@ local function wait_layout(which)
     local card = CARDS[which]
     if not card then return nil end
     local fs = (M.compact and 10 or 12) * S
-    local lab = (M.compact and 8 or 9) * S
     local pad = 14 * S
     -- Wide enough to read, never wider than the screen it is on.
     local w = math.min(430 * S, W - 40 * S)
@@ -1402,8 +1402,7 @@ local function wait_layout(which)
         if line then lines[#lines + 1] = line end
     end
 
-    local head = 16 * S              -- label baseline inside the box
-    local rule = head + 9 * S        -- the tick rule under it
+    local rule = 12 * S              -- the clock rule, at the top of the box
     local rowh = 15 * S
     -- Tall enough for the figure or for the sentence, whichever asks for more,
     -- so a one-line card is not a box with a bomb hanging out of the bottom.
@@ -1412,7 +1411,7 @@ local function wait_layout(which)
     return {
         x = (W - w) / 2, y = H * 0.46 + (M.compact and 22 or 30) * S,
         w = w, h = h, inner = inner, pad = pad,
-        fs = fs, lab = lab, head = head, rule = rule, rowh = rowh,
+        fs = fs, rule = rule, rowh = rowh,
         cell = cell, gap = gap, body = body,
         card = card, lines = lines,
     }
@@ -1427,10 +1426,6 @@ local function wait(b, me)
     -- hull flies straight through it, and a line you have three seconds to
     -- read cannot afford to be shared with one.
     rect(x, y, b.w, b.h, pal.a(pal.BG, 0.86))
-    bracket(x, y, b.w, b.h, pal.a(pal.DIM, 0.5), 12 * S, 4 * S)
-    -- The word for the thing, where the panels put their row labels. It says
-    -- what the figure underneath it is, which is the one job a caption has.
-    txt(b.card.name, x + b.pad, y + b.head, b.lab, pal.a(pal.DIM, 0.85))
 
     -- The clock. `respawn_at` counts down in the core and is in every
     -- snapshot, so this is read rather than timed here: a local stopwatch
