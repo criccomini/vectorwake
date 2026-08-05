@@ -560,6 +560,14 @@ function M.view()
                                mark = r.mark and r.mark() or false}
             end
             out.hint = nil
+            -- Nothing in the preview is selected, because the cursor is on
+            -- the rail. `sel` at this level counts rail stops, and left where
+            -- it was it lit whichever stage row happened to share that
+            -- number: standing on `ship` put a cursor on the second hull.
+            -- What stays lit is the marked row, which is the hull you are
+            -- flying or the game you are in, and that is a fact rather than
+            -- a cursor.
+            out.sel = 0
         else
             -- A destination that acts rather than descends: `leave`. There is
             -- nothing to preview, so the stage says what it will do.
