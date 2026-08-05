@@ -996,20 +996,15 @@ end
 -- The stack used to label its rows and add-ons in words, which made the
 -- corner a column of reading in the one place a pilot only ever glances.
 -- Each word is a mark now: rows wear a miniature of the thing itself, drawn
--- the way the arena draws it, and an add-on wears a shape of what it does to
--- the shot. The hover and the held H spell any of them out on request, so
--- the words are an ask away rather than always on.
-
-local function gl_gun(cx, cy, k, col)
-    u:seg_fade(cx - k, ry(cy), cx + k * 0.45, ry(cy), 0.9 * S, 3.2 * S,
-               0, (col[4] or 1), col)
-    u:disc(cx + k * 0.5, ry(cy), k * 0.3, 8, col)
-end
-
-local function gl_bomb(cx, cy, k, col)
-    u:ring(cx, ry(cy), k * 0.62, 1.1 * S, 12, col)
-    u:disc(cx, ry(cy), k * 0.26, 8, col)
-end
+-- the way the arena draws it. The hover and the held H spell any of them out
+-- on request, so the words are an ask away rather than always on.
+--
+-- A trigger's add-ons used to be marks of their own, set out in a row to the
+-- right of the ladder, and that was the wrong picture of what they are. Six
+-- shapes lined up beside a seventh read as seven things a ship carries, when
+-- what a player actually holds is one gun and one bomb that greens have been
+-- changing all match. So there is one mark per trigger now, and an add-on is
+-- something drawn onto it: the round you fire, wearing what it has learned.
 
 -- The repel's rings, which are also the push add-on's: the same force in
 -- both places, so the same mark.
@@ -1030,43 +1025,6 @@ local function gl_spokes(n)
     end
 end
 local gl_burst = gl_spokes(8)
-local gl_shrap = gl_spokes(6)
-
--- One pull, three barrels.
-local function gl_multi(cx, cy, k, col)
-    for i = -1, 1 do
-        local a = i * 0.5
-        u:seg(cx - k * 0.9, ry(cy),
-              cx + k * math.cos(a), ry(cy + k * 0.9 * math.sin(a)), S, col)
-    end
-end
-
--- A round coming off a floor.
-local function gl_bounce(cx, cy, k, col)
-    u:seg(cx - k, ry(cy - k * 0.6), cx, ry(cy + k * 0.35), S, col)
-    u:seg(cx, ry(cy + k * 0.35), cx + k, ry(cy - k * 0.6), S, col)
-    u:seg(cx - k, ry(cy + k * 0.75), cx + k, ry(cy + k * 0.75), 0.8 * S,
-          pal.a(col, (col[4] or 1) * 0.45))
-end
-
--- A fuse: the reach it fires at, dashed because nothing is there yet.
-local function gl_prox(cx, cy, k, col)
-    u:disc(cx, ry(cy), k * 0.2, 6, col)
-    for i = 0, 3 do
-        local a0 = i * math.pi / 2 + 0.3
-        u:arc(cx, ry(cy), k * 0.78, a0, a0 + math.pi / 2 - 0.6, S, 5,
-              pal.a(col, (col[4] or 1) * 0.8))
-    end
-end
-
--- Six arms, which is what cold has looked like since before this game.
-local function gl_freeze(cx, cy, k, col)
-    for i = 0, 2 do
-        local a = i * math.pi / 3 + math.pi / 6
-        local dx, dy = math.cos(a) * k, math.sin(a) * k
-        u:seg(cx - dx, ry(cy - dy), cx + dx, ry(cy + dy), S, col)
-    end
-end
 
 -- What a green is, worn by the row that counts what greens made you worth.
 local function gl_diamond(cx, cy, k, col)
@@ -1075,13 +1033,220 @@ local function gl_diamond(cx, cy, k, col)
     u:outline(pts, 1.1 * S, col, true)
 end
 
--- In pal.MODS order: multi, bounce, prox, shrapnel, freeze, push.
-local MOD_GLYPHS = {gl_multi, gl_bounce, gl_prox, gl_shrap, gl_freeze,
-                    gl_rings}
-
 -- A charge is whatever the zone put in the slot, so the mark follows the
 -- name and an unfamiliar one falls back to the prize shape it arrived as.
 local CHARGE_GLYPHS = {repel = gl_rings, burst = gl_burst}
+
+-- --- the two weapon marks --------------------------------------------------
+--
+-- Both are one drawing done twice: a path with a head on the end of it,
+-- travelling right. A bolt is a long streak ending in a hot point, a bomb a
+-- shorter trail around a ringed core, which is what each of them looks like
+-- out in the arena. Drawing them to the same skeleton is what lets one set of
+-- add-on marks fit both, because every add-on in this game is something that
+-- happens either to the path or to the head.
+--
+-- Each returns the mark it drew: where the head is, where the trail begins,
+-- and how far out from the head anything has reached so far. Add-ons hang off
+-- those three numbers, so a mark can grow without any of them being told a
+-- size in advance.
+
+local function mk_bolt(cx, cy, k, col)
+    local hx = cx + k * 0.5
+    u:seg_fade(cx - k, ry(cy), hx, ry(cy), 0.8 * S, 3.0 * S, 0,
+               (col[4] or 1), col)
+    u:disc(hx, ry(cy), k * 0.24, 8, col)
+    return {x = hx, y = cy, k = k, tail = cx - k,
+            out = k * 0.24, far = k * 0.24}
+end
+
+local function mk_bomb(cx, cy, k, col)
+    local hx = cx + k * 0.32
+    u:seg_fade(cx - k, ry(cy), hx, ry(cy), 0.7 * S, 2.2 * S, 0,
+               (col[4] or 1) * 0.6, col)
+    u:ring(hx, ry(cy), k * 0.46, 1.1 * S, 12, col)
+    u:disc(hx, ry(cy), k * 0.19, 8, col)
+    return {x = hx, y = cy, k = k, tail = cx - k,
+            out = k * 0.46, far = k * 0.46}
+end
+
+-- Every add-on takes the mark, a colour and how many rungs deep it is, and
+-- draws its rungs rather than reporting them. A number beside a symbol was
+-- what the stack did before, and it made a corner of arithmetic out of six
+-- facts a shape can carry: one rung of multifire is two more barrels, one
+-- rung of bouncing is one more wall, a rung of proximity is a wider reach.
+-- The zone says so in mod_step, and this draws what the zone said.
+--
+-- Four of the six ring the head, and those share out `m.step`: one ring of
+-- room each, decided before any of them draws. See weapon_mark for why. Depth
+-- moves a mark inside its own ring rather than pushing past it, so a third
+-- rung of proximity never costs shrapnel the room it was given.
+--
+-- `m.out` is the cursor through those shares and `m.far` is how far anything
+-- actually got drawn. They are not the same number: a mark that spends less
+-- than its share should not claim the width it did not use.
+
+local function dec_multi(m, col, n)
+    local len = m.x - m.tail
+    for i = 1, math.min(n, 3) do
+        local a = 0.26 * i
+        local d = len * (1 - 0.14 * i)
+        for _, s in ipairs({-1, 1}) do
+            u:seg_fade(m.tail, ry(m.y),
+                       m.tail + math.cos(a) * d,
+                       ry(m.y + s * math.sin(a) * d),
+                       0.7 * S, 2.0 * S, 0, (col[4] or 1) * 0.85, col)
+        end
+    end
+end
+
+-- A ball on each end of the path. A stroke that runs off into nothing is a
+-- shot that stops where it lands, and one stopped at both ends is a shot that
+-- comes back; a rung is one more wall, so it is one more ball back along the
+-- trail.
+local function dec_bounce(m, col, n)
+    local r = math.min(m.step * 0.42, m.k * 0.16)
+    local len = m.x - m.tail
+    -- Sitting against the head rather than out in the middle of its share.
+    -- A ball with clear sky between it and the round it belongs to reads as a
+    -- second object in the row, not as the end of the first one.
+    local at = m.out + r * 1.2
+    u:disc(m.x + at, ry(m.y), r, 8, col)
+    for i = 1, math.min(n, 3) do
+        u:disc(m.tail + (i - 1) * len * 0.17, ry(m.y), r, 8,
+               pal.a(col, (col[4] or 1) * (1 - (i - 1) * 0.22)))
+    end
+    m.out = m.out + m.step
+    m.far = math.max(m.far, at + r)
+end
+
+-- A fuse: the reach it goes off at, broken because nothing is there yet, and
+-- a rung further out because a rung is another tile of reach. Broken by a
+-- quarter rather than by half, so that it still reads as a ring when it is
+-- sharing the mark with the fragments that hang outside it.
+local function dec_prox(m, col, n)
+    local r = m.out + m.step * (0.52 + 0.14 * math.min(n, 3))
+    for i = 0, 3 do
+        local a0 = i * math.pi / 2 + 0.17
+        u:arc(m.x, ry(m.y), r, a0, a0 + math.pi / 2 - 0.34, 0.95 * S, 5,
+              pal.a(col, (col[4] or 1) * 0.9))
+    end
+    m.out = m.out + m.step
+    m.far = math.max(m.far, r)
+end
+
+-- What is left of it afterwards, thrown clear of everything else the mark
+-- wears. Two more fragments a rung, which is the one add-on whose count a
+-- player can read straight off the arena.
+local function dec_shrap(m, col, n)
+    local r0 = m.out + m.step * 0.28
+    local r1 = m.out + m.step
+    local c = 4 + 2 * math.min(n, 3)
+    for i = 0, c - 1 do
+        local a = (i + 0.5) * 2 * math.pi / c
+        local dx, dy = math.cos(a), math.sin(a)
+        u:seg(m.x + dx * r0, ry(m.y + dy * r0),
+              m.x + dx * r1, ry(m.y + dy * r1), 0.9 * S, col)
+    end
+    m.out = r1
+    m.far = math.max(m.far, r1)
+end
+
+-- Rime across the trail. Freeze is the one add-on that does nothing to the
+-- round and everything to whoever it reaches, so it is drawn on the path
+-- rather than around the head: the shot is unchanged, and it is carrying
+-- something.
+local function dec_freeze(m, col, n)
+    local len = m.x - m.tail
+    local t = m.k * 0.24
+    for i = 1, 2 + math.min(n, 2) do
+        local px = m.tail + len * (0.28 + 0.15 * (i - 1))
+        u:seg(px, ry(m.y - t), px, ry(m.y + t), 0.9 * S, col)
+    end
+end
+
+-- A shove standing off the head, and a rung is another wave of it. The repel
+-- wears rings closed all the way round because it happens at a place; this
+-- one opens forward, because it is a shove a round is carrying somewhere.
+local function dec_push(m, col, n)
+    local rungs = math.min(n, 3)
+    for i = 1, rungs do
+        u:arc(m.x, ry(m.y), m.out + m.step * (i / rungs), -0.85, 0.85,
+              0.9 * S, 6, pal.a(col, (col[4] or 1) * (1 - 0.2 * (i - 1))))
+    end
+    m.out = m.out + m.step
+    m.far = math.max(m.far, m.out)
+end
+
+-- In pal.MODS order, which is also the order they draw in: each of the ones
+-- that rings the head takes the next ring of room out from the last, so the
+-- fuse sits inside the fragments and the fragments inside the shove. Reorder
+-- this list and they land on top of each other.
+local MOD_DECOR = {dec_multi, dec_bounce, dec_prox, dec_shrap, dec_freeze,
+                   dec_push}
+-- Which of them ring the head, and so want a share of the room around it.
+-- Multifire hangs off the tail and freeze sits on the trail; neither costs
+-- the mark any width.
+local MOD_RADIAL = {false, true, true, true, false, true}
+-- How far out from the head a mark may reach, against its own size. The row
+-- is 22 points tall and a mark has to live inside it however loaded it is,
+-- so this is what the shares are shares of.
+local MARK_REACH = 1.05
+
+-- A trigger's mark: the round it fires, wearing what the greens did to it.
+-- The round is drawn dim and its add-ons in the team colour, so a glance says
+-- which of the two things on the row was earned.
+--
+-- The room outside the round is shared out before anything draws rather than
+-- spent first come. Two add-ons take half of it each and read clearly; six
+-- take a sixth each and read as a dense mark, which is the right way round,
+-- and no loadout can push a mark into the row above it. Nothing in the
+-- catalog gives one trigger more than three.
+--
+-- Returns how far right the whole thing reached, since a hull holding three
+-- add-ons draws a good deal wider than one holding none and the row is
+-- measured by what it drew rather than by a constant.
+local function weapon_mark(cx, cy, k, me, t)
+    local base = pal.a(pal.DIM, 0.8)
+    local m = (t == sim.TRIG_GUN) and mk_bolt(cx, cy, k, base)
+        or mk_bomb(cx, cy, k, base)
+    local rings = 0
+    for i = 1, #pal.MODS do
+        if MOD_RADIAL[i] and sim.ship_mod(me, t, i - 1) > 0 then
+            rings = rings + 1
+        end
+    end
+    m.step = rings > 0 and (k * MARK_REACH - m.out) / rings or 0
+    -- A declined add-on is drawn dimmed rather than dropped. You still hold
+    -- it, and a fan that quietly stopped fanning with nothing on screen to
+    -- say so is a weapon that looks broken.
+    local off = sim.ship_multi_off and sim.ship_multi_off(me)
+    for i = 1, #pal.MODS do
+        local n = sim.ship_mod(me, t, i - 1)
+        if n > 0 then
+            local muted = off and i == 1
+            MOD_DECOR[i](m, muted and pal.a(pal.DIM, 0.45)
+                         or pal.a(pal.FRIEND, 0.85), n)
+        end
+    end
+    return m.x + m.far
+end
+
+-- What those marks mean, in words, for the hover and the held H. The
+-- decorations are the row now, and a player who has just picked up their
+-- first proximity has no way to learn that the dashed ring is what arrived.
+local function mod_words(me, t)
+    local out = nil
+    for i = 1, #pal.MODS do
+        local n = sim.ship_mod(me, t, i - 1)
+        if n > 0 then
+            local w = pal.MODS[i].name
+            if n > 1 then w = w .. " x" .. n end
+            out = out and (out .. ", " .. w) or w
+        end
+    end
+    return out
+end
 
 local function status(me, charges, lift)
     local slots = charges or {}
@@ -1093,7 +1258,15 @@ local function status(me, charges, lift)
     -- labels fit.
     local rows_h = 22 * S
     local x = PAD * S
-    local val = x + 62 * S
+    -- Where the counting starts: ladders, pips and the bounty all line up on
+    -- it. Closer to the marks than it used to be, because the column it used
+    -- to clear held a word per row and now holds a drawing about a third as
+    -- wide, and the gap left behind read as two stacks rather than one.
+    local val = x + 48 * S
+    -- The mark cell. Centred rather than left-aligned: a bolt is a long thin
+    -- thing and a bomb a round one, and hanging both off the same left edge
+    -- puts their weight in different places on consecutive rows.
+    local mid = x + 13 * S
 
     -- The pad carries the charge counts on a touchscreen, so those rows would
     -- be the same thing twice at opposite corners.
@@ -1108,50 +1281,28 @@ local function status(me, charges, lift)
     -- the help overlay's column starts. A hull holding three add-ons is a good
     -- deal wider than one holding none, and a constant here would either crowd
     -- the wide case or strand the narrow one.
-    local wide = val + 50 * S
+    local wide = val + 44 * S
     -- The charge rows in the order they were drawn, so the overlay can walk
     -- them down the stack the way a reader does.
     anchor.charge_order = {}
 
-    -- A level is the same weapon harder, so it is rungs; an add-on changes
-    -- its character, so it is a mark of its own.
+    -- A level is the same weapon harder, so it is rungs on a ladder; an
+    -- add-on changes what the round is, so it is drawn onto the round.
     for t = 0, SIM_TRIGGERS - 1 do
         if sim.has_trigger(me, t) then
             local lvl = sim.ship_level(me, t)
-            local rg = (t == sim.TRIG_GUN) and gl_gun or gl_bomb
-            rg(x + 8 * S, y + rows_h / 2, 6.5 * S, pal.a(pal.DIM, 0.8))
+            local reach = weapon_mark(mid, y + rows_h / 2, 9 * S, me, t)
             ladder(val, y + rows_h / 2 - 2 * S, 3, lvl + 1, pal.FRIEND,
                    40 * S, 4 * S)
-            local at = val + 50 * S
-            local off = sim.ship_multi_off and sim.ship_multi_off(me)
-            for m = 1, #pal.MODS do
-                local nn = sim.ship_mod(me, t, m - 1)
-                if nn > 0 then
-                    -- A declined add-on is drawn dimmed rather than dropped.
-                    -- You still hold it, and a fan that quietly stopped
-                    -- fanning with nothing on screen to say so is a weapon
-                    -- that looks broken.
-                    local muted = off and m - 1 == 0
-                    local col = muted and pal.a(pal.DIM, 0.45)
-                        or pal.a(pal.FRIEND, 0.75)
-                    MOD_GLYPHS[m](at + 7 * S, y + rows_h / 2, 6 * S, col)
-                    -- Depth as marks beside the mark, the way every other
-                    -- count in this interface reads.
-                    local ends = at + 14 * S
-                    if nn > 1 then
-                        pips(ends + 3 * S, y + rows_h / 2, nn, nn,
-                             col, 1.5 * S, 5 * S)
-                        ends = ends + 3 * S + nn * 5 * S
-                    end
-                    if ends > wide then wide = ends end
-                    at = ends + 10 * S
-                end
-            end
-            -- The row as far right as it actually drew, so the add-ons are
-            -- part of the thing you point at rather than dead space beside it.
             local key = (t == sim.TRIG_GUN) and "gun" or "bomb"
             anchor[key] = y + rows_h / 2
-            zone(key, x, y, math.max(at, val + 50 * S) - x, rows_h)
+            anchor[key .. "_mods"] = mod_words(me, t)
+            -- The row as far right as it actually drew. A loaded bomb wears
+            -- fragments a third of the mark's width clear of it, and pointing
+            -- at one of those is still pointing at the bomb.
+            local right = math.max(reach, val + 40 * S)
+            if right > wide then wide = right end
+            zone(key, x, y, right - x, rows_h)
             y = y + rows_h
         end
     end
@@ -1164,7 +1315,7 @@ local function status(me, charges, lift)
             -- in the corner of every fight.
             local gc = CHARGE_GLYPHS[string.lower(c.name or c.short or "")]
                 or gl_diamond
-            gc(x + 8 * S, y + rows_h / 2, 6.5 * S, pal.a(pal.DIM, 0.8))
+            gc(mid, y + rows_h / 2, 7 * S, pal.a(pal.DIM, 0.8))
             local slot_max = math.max(1, c.max or 3)
             pips(val + 3 * S, y + rows_h / 2, slot_max, c.count,
                  pal.CHARGE_COL, 2.7 * S, 9 * S)
@@ -1185,7 +1336,7 @@ local function status(me, charges, lift)
     -- What you are worth, which is the number that decides who comes for you,
     -- and which was only ever behind the info toggle. The mark is the green's
     -- own diamond, since greens are most of what the number counts.
-    gl_diamond(x + 8 * S, y + rows_h / 2, 5.5 * S, pal.a(pal.DIM, 0.7))
+    gl_diamond(mid, y + rows_h / 2, 6 * S, pal.a(pal.DIM, 0.7))
     local bty = sim.ship_bounty(me)
     txt(tostring(bty), val, y + rows_h / 2, (FONT - 2) * S,
         bty > 0 and pal.a(pal.PRIZE, 0.95) or pal.a(pal.DIM, 0.5))
@@ -1871,13 +2022,19 @@ local function help_lines(o, only)
     -- different sets of words.
     local sx = anchor.stack_x
     if sx then
-        local function card(key, at, which, col)
+        local function card(key, at, which, col, mods)
             local c = CARDS[which]
             if not at or not c then return end
-            add(key, sx, at, c.text, col)
+            -- What the round on the row is wearing, named. The card says what
+            -- the weapon is in general; the add-ons are what this hull picked
+            -- up in this fight, and a shape drawn onto a mark is learnable
+            -- exactly once, by being told.
+            local s = mods and (c.text .. " Carrying " .. mods .. ".")
+                or c.text
+            add(key, sx, at, s, col)
         end
-        card("gun", anchor.gun, "bolt", pal.FRIEND)
-        card("bomb", anchor.bomb, "bomb", pal.BOMB)
+        card("gun", anchor.gun, "bolt", pal.FRIEND, anchor.gun_mods)
+        card("bomb", anchor.bomb, "bomb", pal.BOMB, anchor.bomb_mods)
         for _, key in ipairs(anchor.charge_order or {}) do
             -- The slot's own name is the card's name: repel and burst each
             -- have one. A slot with no card is a charge this build has not
