@@ -272,16 +272,21 @@ where the whole figure is send cadence and snapshot timing rather than distance,
 so a real link starts further behind and the loop simply settles further ahead.
 
 The cost of running ahead is paid by everyone else on your screen. Remote
-ships extrapolate between snapshots, so a larger lead means a longer
-extrapolation. They used to coast on their last known velocity, which
-frictionless flight makes a decent predictor and a repel makes a terrible one;
-now each ship's last-seen steering rides in the snapshot (`btn_prev`, which was
-already there for the multifire toggle) and the client holds those buttons down
-through the predicted ticks. A thrusting ship keeps thrusting and a turning
-ship keeps its curve. Movement bits only: extrapolating a held trigger would
-fill the screen with shots the server never fired, and a phantom bullet has to
-visibly vanish where a slightly misplaced hull corrects quietly. Either way the
-lead stays the smallest number that works rather than a comfortable margin.
+ships have no inputs to predict from and coast on their last known velocity
+between snapshots, so a larger lead means a longer coast. Frictionless flight
+makes coasting an unusually good predictor, which is why the cost is mild, but
+it is the reason the lead is the smallest number that works rather than a
+comfortable margin.
+
+Holding each remote ship's last-seen buttons through the predicted ticks --
+`btn_prev` already rides in every snapshot -- was tried and reverted within a
+day. It survived a two-human test, because people hold keys for hundreds of
+milliseconds, and fell apart in a room of bots, whose bang-bang steering flips
+buttons faster than snapshots sample them: the button a snapshot catches is
+wrong about half the time, and holding it for the lead amplifies dither into
+hulls twitching at snapshot rate. The lesson is written down because the idea
+will look good again someday: an extrapolator here has to be right about the
+median ship in the room, and the median ship is a bot.
 
 That lead is the client's only latency compensation. We are not doing lag
 compensation by rewinding the server, and the reason is in the next section.
@@ -313,17 +318,21 @@ independent, which is the property actually wanted.
 second and replaces state outright, so a remote ship extrapolated wrong snaps to
 the truth. `smooth_capture` and `smooth_settle` bracket the correction: whatever
 the screen was asserting about each hull is held, and the difference between it
-and the truth is carried as a per-ship offset that decays on a fifty millisecond
-half-life. Past four tiles it is a teleport rather than a correction -- a
-respawn, a wormhole -- and snaps, because easing one reads as a ship being
-dragged rather than arriving. Sixteen pixels caps what the drawing may be lying
-by at any moment. Both numbers were larger when extrapolation was ballistic;
-they are priced against a shot visibly passing through a hull that is drawn
-somewhere its box is not, so the cap sits just over the thinnest flank in the
-roster and the decay is gone by the second snapshot after the correction.
-Detonations are pinned the same way from the other side: a weapon's ending
-names the hull it ended on, and the renderer moves the blast by that hull's
-current offset so the ring stays on the ship the shooter is looking at.
+and the truth is carried as a per-ship offset that decays on an eighty
+millisecond half-life. Past four tiles it is a teleport rather than a correction
+-- a respawn, a wormhole -- and snaps, because easing one reads as a ship being
+dragged rather than arriving. Forty pixels caps what the drawing may be lying by
+at any moment. Both numbers were cut once -- to fifty milliseconds and sixteen
+pixels, priced against a shot visibly passing through a hull drawn somewhere its
+box is not -- and restored within a day. The mechanism also carries the clock
+steering for the pilot's own camera, and on a live link those corrections are
+small, frequent, and alternating in sign; the decay sets how much of each one
+shows before the next cancels it, and at fifty milliseconds the sum read as the
+whole screen juddering at snapshot rate. A wall measured in a player's recording
+stepped backwards seven pixels every few frames. Detonations are pinned to hulls
+from the other side: a weapon's ending names the hull it ended on, and the
+renderer moves the blast by that hull's current offset so the ring stays on the
+ship the shooter is looking at.
 
 The clock steering rides in the same mechanism, deliberately: a snapshot that
 trims the lead by a tick moves every hull by a tick of flight, which is exactly
@@ -340,8 +349,7 @@ told a comfortable story.
 What this does *not* do is interpolate remote ships from the past, the way a
 Source-lineage game renders everyone 100 ms back. Aiming here is the nose, so
 showing a remote ship where it was would systematically shift where players aim
-at it. Extrapolation stays, held buttons and all; these two smooth how it is
-presented.
+at it. Extrapolation stays; these two smooth how it is presented.
 
 One more pass-through had nothing to do with the network at all. The weapon
 hit test sampled once per tick, at the end of the tick's travel, and a round
