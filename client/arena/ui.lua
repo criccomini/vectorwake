@@ -2037,7 +2037,7 @@ end
 -- right of the board. board_test measures exactly that.
 local BOARD_CAPS = {
     "1 to 4 spend the charges as the corner stack lists them",
-    "hold H and the screen names its own parts",
+    "hold H to name the whole screen, or point at one thing",
     "in fullscreen ctrl joins the guns, where the browser allows it",
 }
 
