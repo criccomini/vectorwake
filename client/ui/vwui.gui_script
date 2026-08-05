@@ -93,12 +93,17 @@ function update(self)
             w.scale = s
         end
 
+        -- `dim` is a whole-layer fade the interface applies to itself, so
+        -- it multiplies the alpha rather than replacing the colour: a label
+        -- keeps its meaning while the menu is over it and simply stops
+        -- shouting.
         local c = t.col
-        if w.r ~= c[1] or w.g ~= c[2] or w.b ~= c[3] or w.a ~= c[4] then
+        local a = c[4] * (t.dim or 1)
+        if w.r ~= c[1] or w.g ~= c[2] or w.b ~= c[3] or w.a ~= a then
             local v = w.col
-            v.x, v.y, v.z, v.w = c[1], c[2], c[3], c[4]
+            v.x, v.y, v.z, v.w = c[1], c[2], c[3], a
             gui.set_color(node, v)
-            w.r, w.g, w.b, w.a = c[1], c[2], c[3], c[4]
+            w.r, w.g, w.b, w.a = c[1], c[2], c[3], a
         end
     end
     for i = count + 1, self.live do

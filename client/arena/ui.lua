@@ -67,12 +67,19 @@ end
 -- everything in flight is set in, "menu" for the menu's own. It is passed
 -- through rather than looked up, so a caller that says nothing gets what the
 -- rest of the interface uses.
+-- Everything drawn while this is set draws that much of its alpha. It is
+-- how the interface stands down under the menu: glyphs come from the gui,
+-- which draws over every mesh, so no wash the menu lays down can touch them
+-- and the only way to quiet a label is to quiet the label.
+local text_dim = 1
+
 local function txt(s, x, y, px, col, pivot, font)
     nt = nt + 1
     local t = text[nt]
     if not t then t = {} text[nt] = t end
     t.s, t.x, t.y, t.px, t.col, t.pivot = s, x, H - y, px, col, pivot or "left"
     t.font = font
+    t.dim = text_dim ~= 1 and text_dim or nil
 end
 
 -- A rectangle the pointer can land on, published in the same coordinates it
@@ -1330,6 +1337,11 @@ function M.hud(o)
     if sim.ship_count() == 0 then return end
     local me = o.me
     menu_up = o.menu_open
+    -- Under the menu the instruments stay -- you can still be shot while you
+    -- are reading -- but they stop competing with it. A third of their light
+    -- is enough to keep a glance at your energy or the dial worth taking and
+    -- not enough to read across the panel.
+    text_dim = o.menu_open and 0.34 or 1
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -1766,6 +1778,30 @@ local function stage_row(x, y, w, h, r, sel, focused, live)
     if r.players and r.live then
         population(x + w - 16 * S, y + h / 2, r.players, r.bots,
                    pal.a(pal.FRIEND, sel and 1 or 0.85))
+    elseif r.choice then
+        -- A setting drawn as its own range: one step per value, the one it
+        -- is on filled. "half" is a word to read and hold against the word
+        -- on the row above; three steps of four lit is a position, and a
+        -- press moves it along.
+        local n = r.choices or 1
+        local sw2 = 13 * S
+        local gap = 5 * S
+        local x1 = x + w - 16 * S
+        local x0 = x1 - (n * sw2 + (n - 1) * gap)
+        for i = 1, n do
+            local px = x0 + (i - 1) * (sw2 + gap)
+            if i <= r.choice then
+                rect(px, y + h / 2 - 5 * S, sw2, 10 * S,
+                     pal.a(pal.FRIEND, sel and 1 or 0.8))
+            else
+                u:frame(px, ry(y + h / 2 - 5 * S, 10 * S), sw2, 10 * S,
+                        1.0 * S, pal.a(pal.DIM, 0.45))
+            end
+        end
+        if r.detail and r.detail ~= "" then
+            txt(r.detail, x0 - 12 * S, y + h / 2, 11 * S,
+                pal.a(pal.DIM, 0.8), "right")
+        end
     elseif r.detail and r.detail ~= "" then
         txt(r.detail, x + w - 16 * S, y + h / 2, 12 * S,
             pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right")
@@ -1835,6 +1871,7 @@ end
 -- --- the whole thing -------------------------------------------------------
 
 function M.menu(v)
+    text_dim = 1
     local pts_w, pts_h = W / S, H / S
     -- One rule about the window, three layouts. 620 points is where a rail
     -- with its labels and a stage worth reading stop fitting side by side;
@@ -2009,12 +2046,33 @@ function M.menu(v)
         -- to, which reads as two panels rather than one.
         local ty = top
         if narrow and used < room * 0.6 then ty = top + (room - used) / 2 end
-        for i, r in ipairs(v.rows) do
-            local y = ty + (i - 1) * rowh
-            if y + rowh <= sy + sh then
-                stage_row(sx, y, lw, rowh, r, i == v.sel, focused)
-                if r.pick then hit(sx, y, lw, rowh, "stage", i) end
-            end
+        -- A list longer than the room it has scrolls, and the cursor drags it
+        -- rather than walking off the bottom edge. Rows past the end used to
+        -- be skipped, which is a list that quietly stops being the list: a
+        -- fleet with a dozen games would have shown seven of them and said
+        -- nothing about the rest.
+        local fits = math.max(1, math.floor(room / rowh))
+        local first = 1
+        if #v.rows > fits then
+            ty = top
+            local cur = (v.sel and v.sel > 0) and v.sel or 1
+            first = math.min(math.max(1, cur - math.floor(fits / 2)),
+                             #v.rows - fits + 1)
+        end
+        for i = first, math.min(#v.rows, first + fits - 1) do
+            local r = v.rows[i]
+            local y = ty + (i - first) * rowh
+            stage_row(sx, y, lw, rowh, r, i == v.sel, focused)
+            if r.pick then hit(sx, y, lw, rowh, "stage", i) end
+        end
+        -- What is off the ends, as the same tick the map border uses. It says
+        -- there is more without spending a row on saying so.
+        if #v.rows > fits then
+            local bar = 3 * S
+            local hgt = room * fits / #v.rows
+            local at = room * (first - 1) / #v.rows
+            rect(sx + lw + 8 * S, ty, bar, room, pal.a(pal.DIM, 0.18))
+            rect(sx + lw + 8 * S, ty + at, bar, hgt, pal.a(pal.FRIEND, 0.6))
         end
         if #v.rows == 0 then
             txt(v.note or "", sx + 16 * S, top + 20 * S, 13 * S,

@@ -235,6 +235,14 @@ local function zone_rows()
             mark = function() return r.zone == M.zone end,
         }
     end
+    -- Leaving is not a destination, so it is not a stop on the rail: it is
+    -- the last thing in the list of games, which is where you are when you
+    -- are thinking about which game you are in. Only with one behind the
+    -- panel, since on the home screen there is nothing to leave.
+    if not M.home then
+        rows[#rows + 1] = {label = "leave this game", act = "leave",
+                           hint = "back to the home screen"}
+    end
     if #rows == 0 then
         -- Never an empty panel. Whatever the directory is doing, or failing to
         -- do, is the only thing this level has to say.
@@ -276,13 +284,6 @@ local NODES = {
                 go = "teams",
                 hint = "who you are flying with, and who else is here"})
         end
-        -- Only with a game behind the panel, because it is the way out of one.
-        -- On the home screen there is nothing to leave, and a row that does
-        -- nothing is a row a player tries once and stops trusting.
-        if not M.home then
-            rows[#rows + 1] = {label = "leave", icon = "leave",
-                               detail = "back to the menu", act = "leave"}
-        end
         return rows
     end},
 
@@ -294,9 +295,14 @@ local NODES = {
 
     pilot = {title = "pilot", rows = function()
         local rows = {
+            -- What the account layer makes of you rides on the hint line
+            -- rather than in a row of its own. It is a sentence, and a
+            -- sentence in the value column of a row with no label floated in
+            -- the middle of the panel attached to nothing.
             {label = "call sign", detail = function() return M.name end,
-             act = "reroll", hint = "a name is drawn for you and kept between visits"},
-            {label = "", detail = function() return account.status() end},
+             act = "reroll",
+             hint = function() return account.status() end},
+
         }
         -- A claim is offered rather than demanded, and never while a key is
         -- still on screen waiting to be written down.
@@ -321,14 +327,22 @@ local NODES = {
         return rows
     end},
 
+    -- Settings carry a `choice` -- where a value sits along its range -- as
+    -- well as the word for it. The interface draws the range as steps and
+    -- lights the one it is on, which says "two of four" in the shape of the
+    -- thing rather than in a word that has to be read and compared against
+    -- the word on the row above.
     settings = {title = "settings", rows = {
         {label = "sound", detail = function() return VOLUMES[M.volume][2] end,
-         act = "volume"},
+         choice = function() return M.volume, #VOLUMES end, act = "volume"},
         {label = "music", detail = function() return MUSICS[M.music][2] end,
-         act = "music"},
+         choice = function() return M.music, #MUSICS end, act = "music"},
         {label = "frames", detail = function()
             if not M.can_cap then return "as the display asks" end
             return CAPS[M.cap][2]
+        end, choice = function()
+            if not M.can_cap then return nil end
+            return M.cap, #CAPS
         end, act = "cap"},
         {label = "fullscreen", detail = "fill the screen", act = "fullscreen",
          hint = "locks the keyboard where it can, and ctrl becomes a gun"},
@@ -512,9 +526,12 @@ function M.view()
     for i, r in ipairs(rows) do
         local d = r.detail
         if type(d) == "function" then d = d() end
+        local ci, cn
+        if r.choice then ci, cn = r.choice() end
         out.rows[i] = {
             label = r.label, detail = d, index = i, hull = r.hull,
             role = r.role, players = r.players, bots = r.bots, live = r.live,
+            choice = ci, choices = cn,
             pick = (r.go or r.act) ~= nil,
             mark = r.mark and r.mark() or false,
         }
@@ -523,6 +540,9 @@ function M.view()
     -- list rather than squeezed onto every row.
     local cur = rows[sel]
     out.hint = cur and cur.hint or nil
+    -- A hint may be a function, for the ones that describe something that
+    -- moves: whether this pilot is signed in changes while the page is open.
+    if type(out.hint) == "function" then out.hint = out.hint() end
 
     -- The destinations, always, whatever level the stack is at: the interface
     -- draws them as a rail of icons and the rail is the one thing on screen
@@ -552,10 +572,12 @@ function M.view()
             for i, r in ipairs(rows_of(nd2)) do
                 local d = r.detail
                 if type(d) == "function" then d = d() end
+                local ci, cn
+                if r.choice then ci, cn = r.choice() end
                 out.rows[i] = {label = r.label, detail = d, index = i,
                                hull = r.hull, role = r.role,
                                players = r.players, bots = r.bots,
-                               live = r.live,
+                               live = r.live, choice = ci, choices = cn,
                                pick = (r.go or r.act) ~= nil,
                                mark = r.mark and r.mark() or false}
             end
@@ -569,8 +591,9 @@ function M.view()
             -- a cursor.
             out.sel = 0
         else
-            -- A destination that acts rather than descends: `leave`. There is
-            -- nothing to preview, so the stage says what it will do.
+            -- A stop that acts rather than descends. Nothing on the rail
+            -- does today, but the branch stays: the stage says what the stop
+            -- will do rather than drawing an empty panel.
             out.stage_title = pick and pick.label or ""
             out.rows = {}
             out.hint = pick and (pick.hint or pick.detail) or nil
