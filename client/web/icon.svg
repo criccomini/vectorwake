@@ -1,0 +1,5 @@
+<!-- vectorwake's mark: two wakes converging on a bright point, in
+     the two team colours, on the chamfered tile the interface uses
+     everywhere. The template embeds this and two PNG cuts of it as
+     data URIs; regenerate those from this file. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path d="M88,0H512V424L424,512H0V88Z" fill="#05070c"/><path d="M59,131L80,182L104,228L130,272L158,311L188,347L219,379L256,404L256,404L234,366L212,330L191,291L174,249L158,205L145,158L133,109Z" fill="#4fd6ff"/><path d="M379,109L367,158L354,205L338,249L321,291L300,330L278,366L256,404L256,404L293,379L324,347L354,311L382,272L408,228L432,182L453,131Z" fill="#ffa552"/><circle cx="256" cy="400" r="30" fill="#dfe9f5"/></svg>

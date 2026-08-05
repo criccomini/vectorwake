@@ -270,7 +270,7 @@ local function zone_rows()
 end
 
 local NODES = {
-    root = {title = "vectorwake", rows = function()
+    root = {rows = function()
         local rows = {
             {label = "zones", icon = "zones", detail = function()
                 if M.zone ~= "" then return M.zone end
@@ -301,13 +301,13 @@ local NODES = {
     -- so left and right are a column apart and up and down are a row apart.
     -- Nothing else in the tree is, which is why it is a flag on the node
     -- rather than a rule about pages.
-    ship = {title = "ship", grid = true, rows = hull_rows()},
+    ship = {grid = true, rows = hull_rows()},
 
-    zones = {title = "zones", rows = zone_rows},
+    zones = {rows = zone_rows},
 
-    teams = {title = "team", rows = team_rows},
+    teams = {rows = team_rows},
 
-    pilot = {title = "pilot", rows = function()
+    pilot = {rows = function()
         local rows = {
             -- What the account layer makes of you rides on the hint line
             -- rather than in a row of its own. It is a sentence, and a
@@ -352,7 +352,7 @@ local NODES = {
     -- Lighting a box for off is a control saying it is doing a little of
     -- something while doing none of it, and that is the state somebody sets
     -- deliberately and then comes back wondering about.
-    settings = {title = "settings", rows = {
+    settings = {rows = {
         {label = "sound", detail = function() return VOLUMES[M.volume][2] end,
          choice = function() return M.volume - 1, #VOLUMES - 1 end,
          act = "volume"},
@@ -381,7 +381,7 @@ local NODES = {
     -- controls and the board would be a picture of keys the device has not
     -- got. The layout itself is decision 33: the original's keys where the
     -- browser permits them, the nearest safe key where it does not.
-    help = {title = "help", board = true, rows = {
+    help = {board = true, rows = {
         {label = "steer", detail = "left thumb: point where you want the nose"},
         {label = "fire", detail = "right pads: guns, then bombs"},
         {label = "charges", detail = "tap a charge pad to spend it"},
@@ -395,7 +395,7 @@ local NODES = {
     -- opens `about` in a game that updates several times a day wants to know
     -- which build they are looking at and what it is talking to, and that is
     -- the one question no other screen answers.
-    about = {title = "about", rows = function()
+    about = {rows = function()
         local rows = {
             {label = "build", detail = function()
                 -- get_config_string, not get_config: the short name went out
@@ -534,9 +534,10 @@ function M.view()
     local nd = node()
     local rows = rows_of(nd)
     local sel = row_index(rows)
-    -- The first screen a stranger sees, which is the only one that gets the
-    -- name set large. Every other screen is a title on a column.
-    local out = {title = nd.title, depth = #M.stack, sel = sel,
+    -- No page here is named. The rail is lit at the stop you are inside and
+    -- carries the word for it, so a title over the stage would be the same
+    -- answer written twice.
+    local out = {depth = #M.stack, sel = sel,
                  -- The hull you are in, so the rail can draw it as its mark.
                  class = M.class,
                  -- Whether there is anything to shut, which is whether there
@@ -608,7 +609,6 @@ function M.view()
         local pick = top[sel]
         if pick and pick.go and NODES[pick.go] then
             local nd2 = NODES[pick.go]
-            out.stage_title = nd2.title
             out.board = nd2.board or false
             out.rows = {}
             for i, r in ipairs(rows_of(nd2)) do
@@ -636,14 +636,12 @@ function M.view()
             -- A stop that acts rather than descends. Nothing on the rail
             -- does today, but the branch stays: the stage says what the stop
             -- will do rather than drawing an empty panel.
-            out.stage_title = pick and pick.label or ""
             out.rows = {}
             out.hint = pick and (pick.hint or pick.detail) or nil
             if type(out.hint) == "function" then out.hint = out.hint() end
         end
     else
         out.focus = "stage"
-        out.stage_title = nd.title
         -- Which rail stop this level lives under, so the icon stays lit while
         -- you are inside it.
         local id = M.stack[2]

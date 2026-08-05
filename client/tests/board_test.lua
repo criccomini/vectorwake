@@ -49,7 +49,7 @@ package.loaded["arena.world"] = {build_overview = noop, forget_overview = noop,
 local ui = require("arena.ui")
 
 ui.begin(layer, W, H, 1, false)
-ui.menu({title = "help", depth = 2, sel = 1, closable = true,
+ui.menu({depth = 2, sel = 1, closable = true,
          home = false, board = true, rows = {}})
 ui.finish()
 
@@ -103,7 +103,7 @@ check("no caption runs off the screen", wide <= W, "reach " .. wide)
 -- On a touchscreen the board yields to the thumb rows: same view, touching.
 frames, rects = {}, {}
 ui.begin(layer, W, H, 1, true)
-ui.menu({title = "help", depth = 2, sel = 1, closable = true,
+ui.menu({depth = 2, sel = 1, closable = true,
          home = false, board = true,
          rows = {{label = "steer", detail = "left thumb", index = 1}}})
 ui.finish()
@@ -130,7 +130,7 @@ local function draw_at(w, h)
     frames, rects = {}, {}
     st.n = 0
     ui.begin(layer, w, h, 1, false)
-    ui.menu({title = "help", depth = 2, sel = 1, closable = true,
+    ui.menu({depth = 2, sel = 1, closable = true,
              home = false, board = true, rows = {}})
     ui.finish()
     local x0, x1, y0, y1 = math.huge, 0, math.huge, 0

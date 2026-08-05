@@ -104,8 +104,7 @@ for i = 1, 3 do
     rows[i] = {label = "zone" .. i, detail = "", index = i, pick = true,
                players = i, bots = 4, live = true}
 end
-local st = draw({title = "vectorwake", stage_title = "games", depth = 1,
-                 sel = 0, rail = RAIL, rail_sel = 1, focus = "rail",
+local st = draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 1, focus = "rail",
                  home = true, closable = false, rows = rows})
 
 local rail_hits = 0
@@ -136,8 +135,7 @@ check("the stage shows what the rail points at", has(st, "zone1"))
 -- the rail slides out from under the thumb and the next tap lands on nothing.
 
 local function rail_boxes(w, h, depth)
-    draw({title = "v", stage_title = depth == 1 and "vectorwake" or "ship",
-          depth = depth, sel = depth == 1 and 0 or 1, rail = RAIL,
+    draw({depth = depth, sel = depth == 1 and 0 or 1, rail = RAIL,
           rail_sel = 2, focus = depth == 1 and "rail" or "stage",
           home = true, closable = depth > 1, rows = rows}, w, h, true)
     local out = {}
@@ -166,7 +164,7 @@ end
 -- `sel` counts rail stops at this level. A stage that highlighted row `sel`
 -- put a cursor on the second hull while the arrow keys moved the rail.
 
-local preview = {title = "v", stage_title = "ship", depth = 1, sel = 2,
+local preview = {depth = 1, sel = 2,
                  rail = RAIL, rail_sel = 2, focus = "rail",
                  home = true, closable = false, rows = rows}
 draw(preview)
@@ -197,7 +195,7 @@ local many = {}
 for i = 1, 30 do
     many[i] = {label = "row" .. i, detail = "", index = i, pick = true}
 end
-st = draw({title = "v", stage_title = "games", depth = 2, sel = 25,
+st = draw({depth = 2, sel = 25,
            rail = RAIL, rail_sel = 1, focus = "stage", home = false,
            closable = true, rows = many})
 check("a cursor near the end of a long list is on screen", has(st, "row25"),
@@ -213,7 +211,7 @@ for i = 1, st.n do
 end
 check("and no row is drawn off the screen to get there", below == 0,
       below .. " lines outside")
-st = draw({title = "v", stage_title = "games", depth = 2, sel = 1,
+st = draw({depth = 2, sel = 1,
            rail = RAIL, rail_sel = 1, focus = "stage", home = false,
            closable = true, rows = many})
 check("and one at the start is too", has(st, "row1"))
@@ -222,7 +220,7 @@ check("and one at the start is too", has(st, "row1"))
 
 for _, shape in ipairs({{1280, 800}, {900, 600}, {700, 500}, {1600, 900},
                         {390, 844}, {844, 390}}) do
-    draw({title = "v", stage_title = "games", depth = 2, sel = 1,
+    draw({depth = 2, sel = 1,
           rail = RAIL, rail_sel = 1, focus = "stage", home = false,
           closable = true, rows = rows}, shape[1], shape[2])
     local x1, y1 = 0, 0
@@ -240,7 +238,7 @@ end
 -- --- settings draw as steps rather than words -----------------------------
 
 local function setting(choice, choices)
-    draw({title = "v", stage_title = "settings", depth = 2, sel = 1,
+    draw({depth = 2, sel = 1,
           rail = RAIL, rail_sel = 4, focus = "stage", home = false,
           closable = true,
           rows = {{label = "sound", detail = "half", choice = choice,
@@ -283,7 +281,7 @@ local function closers()
     return n
 end
 
-local shut = {title = "v", stage_title = "zones", depth = 2, sel = 1,
+local shut = {depth = 2, sel = 1,
               rail = RAIL, rail_sel = 1, focus = "stage", home = false,
               closable = true, rows = rows}
 st = draw(shut)
@@ -302,7 +300,7 @@ check("and none at all with nothing behind it", closers() == 0,
 -- and push its own label fifteen points right of every other label on the
 -- page, so the one row worth finding was the one out of line with the rest.
 
-local marked = draw({title = "v", stage_title = "zones", depth = 2, sel = 1,
+local marked = draw({depth = 2, sel = 1,
                      rail = RAIL, rail_sel = 1, focus = "stage", home = false,
                      closable = true,
                      rows = {{label = "alpha", index = 1, pick = true,
@@ -318,18 +316,21 @@ end
 check("a marked row keeps the column every other row is in",
       ax and cx and math.abs(ax - cx) < 0.01,
       string.format("marked at %s, plain at %s", tostring(ax), tostring(cx)))
--- And that column is the title's. The mark lives in the gutter to the left of
--- it, off the type, so nothing on the page steps sideways.
-check("and the column is the one the title is set in",
-      hx and ax and math.abs(hx - ax) < 0.01,
-      string.format("title at %s, rows at %s", tostring(hx), tostring(ax)))
+-- And the page is named once, out on the rail. A title over the stage was the
+-- same word twice on one screen, in the place the list could have used.
+local names = 0
+for i = 1, marked.n do
+    if marked.text[i].s == "zones" then names = names + 1 end
+end
+check("the page is named on the rail and nowhere else", names == 1,
+      names .. " times, at " .. tostring(hx))
 
 -- --- a long value does not run under the label it belongs to -------------
 --
 -- The help rows a phone gets are sentences, and right-aligned in a column
 -- 350 points wide they came back under the word they describe.
 
-local st2 = draw({title = "v", stage_title = "help", depth = 2, sel = 1,
+local st2 = draw({depth = 2, sel = 1,
                   rail = RAIL, rail_sel = 5, focus = "stage",
                   home = false, closable = true,
                   rows = {{label = "steer", index = 1, pick = true,
