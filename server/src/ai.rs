@@ -342,6 +342,22 @@ pub fn own(w: &World, ship: u8) -> Own {
     }
 }
 
+/// Everybody else in the room, whatever side they are on and whether or not
+/// this pilot can see them. Not a look around: this is the question "where is
+/// there nobody" being asked by a pilot on its way out, and the answer has to
+/// account for the people it cannot see as well as the ones it can.
+pub fn crowd(w: &World, ship: u8) -> Vec<(f32, f32)> {
+    let mut out = Vec::with_capacity(w.state.ship_count as usize);
+    for i in 0..w.state.ship_count as usize {
+        let o = &w.state.ships[i];
+        if i == ship as usize || o.active == 0 {
+            continue;
+        }
+        out.push((o.x as f32 / 256.0, o.y as f32 / 256.0));
+    }
+    out
+}
+
 /// A look around, bounded by `SIGHT`.
 pub fn scan(w: &World, ship: u8) -> Scan {
     let me = &w.state.ships[ship as usize];
@@ -352,6 +368,16 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     for i in 0..w.state.ship_count as usize {
         let o = &w.state.ships[i];
         if i == ship as usize || o.active == 0 || o.alive == 0 || o.team == me.team {
+            continue;
+        }
+        // Somebody standing in a safe zone is not a target. Nothing can be
+        // shot into one, so a bot that kept them selected held station outside
+        // the door and waited, trigger shut, for as long as they cared to
+        // stand there: a pilot who ducks into a safe has a bot parked on them
+        // rather than a game going on. Skipping them here rather than in
+        // `decide` is what makes the whole chain let go: the approach, the
+        // aim and the trigger all read this one field.
+        if unsafe { sim::sim_in_safe(&*w.map, o.x, o.y) } != 0 {
             continue;
         }
         let (ox, oy) = (o.x as f32 / 256.0, o.y as f32 / 256.0);
@@ -575,6 +601,10 @@ enum Goal {
     Prize = 1,
     Foe = 2,
     Roam = 3,
+    /// The quiet corner a pilot on its way out is heading for. Its own kind
+    /// rather than a roam, because giving up on it means picking a different
+    /// corner and giving up on a roam means rolling a new point.
+    Leave = 4,
 }
 
 /// How long a pilot pushes at something that is not getting any closer, and how
@@ -612,6 +642,54 @@ enum Mode {
     Fight(f32),
 }
 
+/// A pilot told to stand down, and how far through leaving it is.
+///
+/// Leaving is a state rather than a moment because the moment never came. The
+/// old rule was "go when dead or when nobody is in sight, and go anyway after
+/// ten seconds", with the pilot fighting at full strength the whole time: in a
+/// busy room nobody is ever out of sight, so what fired was the timer, and what
+/// a player saw was an opponent blinking out of a duel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Exit {
+    /// Not going anywhere.
+    Staying,
+    /// Told to go, and seeing out the fight it was already in. A pilot that
+    /// turns and runs the instant it is told to leave reads as fleeing, and
+    /// takes a kill the player had earned away with it.
+    Breaking,
+    /// Out of contact and on the way to somewhere quiet.
+    Leaving,
+    /// Arrived, and waiting to be sure of it.
+    Parked,
+}
+
+/// How long a departing pilot may go on fighting before it breaks off anyway,
+/// in ticks. Fifteen seconds: long enough that most fights finish on their own
+/// terms, short enough to leave the flight out inside the whole budget, which
+/// is `DEPART_MAX_MS` in the bot server.
+const BREAK_OFF_TICKS: u32 = 1_500;
+/// How far a pilot will look for somewhere to leave from, in pixels. Not much
+/// beyond `SIGHT`, which is the whole requirement: leaving quietly means being
+/// off the radar of everyone who was watching.
+///
+/// Reaching further costs more than it buys. A route across this much of a
+/// maze is a hundred waypoints of hairpins, and the speed envelope brakes for
+/// every one of them: measured on Chaos, a pilot sent 2,400 px away covered
+/// 150 px in four seconds and its road distance to the corner did not move at
+/// all. A near corner is usually a straight line, and a straight line is flown
+/// at speed.
+pub const REFUGE_PX: f32 = 1_400.0;
+/// Consecutive clear looks before a parked pilot closes its socket. Two, so a
+/// foe crossing the edge of sight on the wrong tick does not produce a logoff
+/// in front of them.
+const PARKED_LOOKS: u32 = 2;
+/// How near the chosen spot counts as arrived. Twenty tiles, the same as a
+/// roam point, and for the same reason: this is a corner to end up in, not a
+/// coordinate to hit. At a cell and a half the pilot flew a route of a hundred
+/// waypoints, passed within six hundred pixels, missed the window, and gave up
+/// on a corner it had essentially reached.
+const REFUGE_ARRIVE_PX: f32 = 320.0;
+
 pub struct Bot {
     pub ship: u8,
     skill: f32,
@@ -644,7 +722,7 @@ pub struct Bot {
     best_dist: f32,
     best_at: u32,
     /// When each kind of approach is worth trying again, indexed by `Goal`.
-    blocked: [u32; 4],
+    blocked: [u32; 5],
     /// The route in progress, nearest waypoint first, and how far along it this
     /// pilot has got. Held rather than solved every cycle: a search costs a few
     /// thousand cells and the answer is good until the destination moves.
@@ -665,6 +743,29 @@ pub struct Bot {
     pinned: u32,
     detour_until: u32,
     detour_dir: f32,
+    /// How far through leaving this pilot is, the tick it was told to, and how
+    /// many clear looks it has had since parking.
+    exit: Exit,
+    exit_at: u32,
+    parked_for: u32,
+    /// Where it is going to log off. Chosen by whoever holds the world, at the
+    /// moment this pilot breaks contact; see `wants_refuge`.
+    refuge: Option<(f32, f32)>,
+    /// Where it broke contact, and whether it has since put a full sight
+    /// radius between itself and there.
+    ///
+    /// That, and not arrival, is what leaving actually asks for. A pilot that
+    /// has flown out of the fight and can see nobody has left properly whether
+    /// or not it reached the particular corner it set out for, and on a map of
+    /// tight corridors it often will not: the corner is the direction, the
+    /// distance is the requirement.
+    left_from: (f32, f32),
+    went_far: bool,
+    /// Corners it set out for and could not get to. Handed to the next search
+    /// alongside the people, because what a departing pilot wants is distance
+    /// from these just as much: without it the same unreachable corner wins
+    /// the ranking again and the pilot spends its whole budget re-choosing it.
+    tried: Vec<(f32, f32)>,
 }
 
 /// How far a destination may drift before the route to it is stale. One cell.
@@ -694,7 +795,7 @@ impl Bot {
             goal: None,
             best_dist: 0.0,
             best_at: 0,
-            blocked: [0; 4],
+            blocked: [0; 5],
             path: Vec::new(),
             at: 0,
             path_to: (0.0, 0.0),
@@ -703,7 +804,58 @@ impl Bot {
             pinned: 0,
             detour_until: 0,
             detour_dir: 0.0,
+            exit: Exit::Staying,
+            exit_at: 0,
+            parked_for: 0,
+            refuge: None,
+            left_from: (0.0, 0.0),
+            went_far: false,
+            tried: Vec::new(),
         }
+    }
+
+    /// Told to stand down. From here the pilot is leaving: it will see out the
+    /// fight it is in, break off, fly somewhere nobody is, and stop there.
+    ///
+    /// Idempotent, because the supervisor may say so more than once and the
+    /// clock this starts is the whole budget for going.
+    pub fn stand_down(&mut self) {
+        if self.exit == Exit::Staying {
+            self.exit = Exit::Breaking;
+            self.exit_at = self.timer;
+        }
+    }
+
+    /// Whether this pilot is out of contact and still has nowhere to go. The
+    /// caller answers with `refuge`, because choosing a quiet corner needs the
+    /// positions of everybody in the room and this file is only ever handed
+    /// one pilot's view of it.
+    pub fn wants_refuge(&self) -> bool {
+        self.exit == Exit::Leaving && self.refuge.is_none()
+    }
+
+    /// Corners this pilot has already failed to reach, to be weighed with the
+    /// people when choosing the next one.
+    pub fn avoid(&self) -> &[(f32, f32)] {
+        &self.tried
+    }
+
+    /// Where to go and stop. `None` means there was nowhere reachable, which
+    /// is not a failure: the pilot parks where it stands and waits for the
+    /// room to empty around it, which is what leaving used to be.
+    pub fn refuge(&mut self, at: Option<(f32, f32)>) {
+        match at {
+            Some(p) => self.refuge = Some(p),
+            None => self.exit = Exit::Parked,
+        }
+    }
+
+    /// Whether this pilot has finished leaving and its socket can close. True
+    /// once it has parked somewhere quiet and stayed sure of it, which is the
+    /// graceful ending; the caller's own ceiling is what covers the rest.
+    pub fn departed(&self) -> bool {
+        self.parked_for >= PARKED_LOOKS
+            && (self.exit == Exit::Parked || self.went_far)
     }
 
     /// Vary this pilot's luck. Two bots with the same hull and skill would
@@ -730,6 +882,12 @@ impl Bot {
     /// is not visible from the outside: a bot flying hard at nothing looks
     /// exactly like a bot flying hard at somebody.
     pub fn doing(&self) -> usize {
+        // Leaving first, because from the outside it looks exactly like
+        // travelling and a roster quietly spending its life walking out is the
+        // failure this counter exists to make visible.
+        if self.exit != Exit::Staying {
+            return 3;
+        }
         match self.mode {
             Mode::Idle => 0,
             Mode::Travel(..) => 1,
@@ -765,6 +923,14 @@ impl Bot {
         if let Some(s) = fresh {
             self.seen = s;
             self.seen_at = self.timer;
+            // Being sure, rather than being lucky for one tick. A foe that
+            // wanders back into sight resets the count, so a pilot only
+            // vanishes from somewhere that has stayed empty.
+            if matches!(self.exit, Exit::Leaving | Exit::Parked) && self.horizon_clear() {
+                self.parked_for += 1;
+            } else {
+                self.parked_for = 0;
+            }
         }
         self.timer += 1;
 
@@ -784,6 +950,7 @@ impl Bot {
         } else {
             if self.timer % self.react == 0 {
                 self.decide(o, nav);
+                self.breaking_off((o.x, o.y));
             }
             self.drive(o) | self.trigger(o) | self.charge(o)
         };
@@ -971,6 +1138,11 @@ impl Bot {
         if o.in_safe {
             return 0;
         }
+        // Past breaking off, this pilot is not playing any more. Shooting on
+        // the way out is how a departure stops reading as one.
+        if matches!(self.exit, Exit::Leaving | Exit::Parked) {
+            return 0;
+        }
         // Energy is health and ammunition in one pool, so knowing when to
         // stop shooting is the whole game. A pilot who fires whenever the
         // shot is on sits permanently at their floor and dies to the first
@@ -1101,11 +1273,99 @@ impl Bot {
 
     /// What to do, at the pilot's reaction cadence. Nothing here presses a key:
     /// it settles a mode and `drive` flies it.
+    /// The one transition that cannot be made inside `decide`, because it
+    /// depends on what `decide` just settled on.
+    ///
+    /// A pilot told to leave keeps fighting while it is fighting: turning tail
+    /// the instant it is told reads as running away and takes a kill the other
+    /// pilot had earned. The moment the fight is over, it goes. `BREAK_OFF_TICKS`
+    /// is the backstop for the fight that never ends, and the whole reason the
+    /// budget above it is generous enough to fly somewhere afterwards.
+    fn breaking_off(&mut self, from: (f32, f32)) {
+        if self.exit != Exit::Breaking {
+            return;
+        }
+        let done = !matches!(self.mode, Mode::Fight(_))
+            || self.timer.saturating_sub(self.exit_at) > BREAK_OFF_TICKS;
+        if done {
+            self.exit = Exit::Leaving;
+            self.left_from = from;
+            // The plan it was flying belonged to the game it is no longer in.
+            self.goal = None;
+            self.drop_route();
+        }
+    }
+
+    /// Fly to the chosen corner and stop there. Nothing else in `decide`
+    /// applies once this is running: no flags, no greens, no targets, and the
+    /// safe-zone escape above all does not fire, because a safe zone is a
+    /// perfectly good place to have gone.
+    fn departing(&mut self, o: &Own, nav: &Nav) {
+        self.aim = (0.0, 0.0);
+        // How far it has got from the fight it left, which is the thing
+        // leaving actually asks for. Latched: a pilot that has once been a
+        // sight radius clear has left, whatever the corridor does with it
+        // afterwards.
+        let (gx, gy) = (o.x - self.left_from.0, o.y - self.left_from.1);
+        self.went_far |= gx * gx + gy * gy > SIGHT * SIGHT;
+        if self.exit == Exit::Parked {
+            // Arrived. Sit still and wait to be sure of it.
+            self.goal = None;
+            self.mode = Mode::Idle;
+            return;
+        }
+        if let Some((rx, ry)) = self.refuge {
+            // By the road rather than the wall between, which is what makes
+            // the give-up clock below mean "this is not working" rather than
+            // "there is a corner in the way".
+            let d = self.plot(o, nav, (rx, ry));
+            if d < REFUGE_ARRIVE_PX {
+                self.exit = Exit::Parked;
+                self.goal = None;
+                self.mode = Mode::Idle;
+                return;
+            }
+            // The same clock every other approach runs on, and a departing
+            // pilot needs it most: it has nothing else it would rather be
+            // doing, so an approach that cannot work is one it will fly at
+            // until its budget runs out. Measured: a pilot picked a corner
+            // 4,000 px away across a map it could not route through, and spent
+            // every remaining tick pinned and unsticking in the same corridor.
+            self.approaching(Goal::Leave, rx, ry, d, REFUGE_ARRIVE_PX);
+            if self.goal.is_some() {
+                self.mode = Mode::Travel(rx, ry, REFUGE_ARRIVE_PX, f32::INFINITY);
+                return;
+            }
+            // It stopped closing. Somewhere else, chosen from where this pilot
+            // has ended up rather than from where it set out, and with this
+            // corner on the list of places not to choose again.
+            if self.tried.len() < 4 {
+                self.tried.push((rx, ry));
+            }
+            self.refuge = None;
+            self.drop_route();
+        }
+        // Between corners, or with nowhere reachable to be. Keep moving and
+        // stop as soon as nobody is about: that is what leaving was before any
+        // of this, and it is still a perfectly good ending. The trigger stays
+        // shut either way, which is the half that matters to whoever is
+        // watching.
+        self.roam(o, nav);
+    }
+
     fn decide(&mut self, o: &Own, nav: &Nav) {
         if !o.alive {
             self.aim = (0.0, 0.0);
             self.goal = None;
             self.mode = Mode::Idle;
+            return;
+        }
+
+        // On the way out. Above the safe-zone escape on purpose: a pilot that
+        // has parked in one has arrived, and the rule below would fly it back
+        // into the middle of the room to be shot at while it waits.
+        if matches!(self.exit, Exit::Leaving | Exit::Parked) {
+            self.departing(o, nav);
             return;
         }
 
@@ -1618,4 +1878,147 @@ mod tests {
                 "bots spend {:.1}% of their lives pushing into walls",
                 share * 100.0);
     }
+
+    /// A safe patch in the middle of open ground, to duck into.
+    fn safe_pocket(m: &mut sim::sim_map) {
+        for ty in 500..510 {
+            for tx in 500..510 {
+                m.tile[ty * sim::MAP_TILES + tx] = 2; // SIM_TILE_SAFE
+            }
+        }
+    }
+
+    #[test]
+    fn nobody_is_a_target_while_they_stand_in_a_safe_zone() {
+        let mut w = sim::World::with_map(0x5eed, safe_pocket);
+        let me = w.spawn(0, 0, 480, 505, 0);
+        let them = w.spawn(0, 1, 520, 505, 0);
+        assert!(me >= 0 && them >= 0, "two seats");
+
+        assert!(scan(&w, me as u8).foe.is_some(),
+                "somebody on open ground is a target");
+
+        // The same pilot, one tile inside the safe. Nothing can be shot into
+        // one, so a bot that kept them selected would hold station outside the
+        // door with its trigger shut for as long as they cared to stand there.
+        let s = &mut w.state.ships[them as usize];
+        s.x = 505 * 16 * 256;
+        s.y = 505 * 16 * 256;
+        assert!(scan(&w, me as u8).foe.is_none(),
+                "somebody standing in a safe zone is not");
+
+        // And the moment they step out again they are.
+        let s = &mut w.state.ships[them as usize];
+        s.x = 520 * 16 * 256;
+        assert!(scan(&w, me as u8).foe.is_some(), "back out, back on");
+    }
+
+    /// Leaving, end to end, on a real map: told to stand down, seeing out the
+    /// fight, flying somewhere nobody is, and stopping there.
+    ///
+    /// The failure this holds off is the one a player reports as a bot
+    /// vanishing mid-duel. It cannot be seen in one frame and it cannot be
+    /// seen from the roster, because both ends look identical either way: what
+    /// differs is where the pilot was and what it was doing on the way out.
+    #[test]
+    fn a_pilot_told_to_leave_flies_away_before_it_goes() {
+        let bytes = std::fs::read("../catalog/zones/chaos/chaos.vwmap")
+            .expect("the chaos map ships in this repository");
+        let mut w = sim::World::from_packed(0x5eed, &bytes).expect("a map");
+        let mut bots = Vec::new();
+        for i in 0..8usize {
+            let e = individual(i);
+            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2,
+                                      512, 512, 0);
+            assert!(ship >= 0, "a seat on the map");
+            let mut b = Bot::new(ship as u8, e.skill);
+            b.reseed(i as u32 * 977 + 13);
+            bots.push(b);
+        }
+        let route = crate::nav::Nav::build(&w.map);
+
+        // Long enough that the room is a going concern and the pilot being
+        // sent home is in the middle of something.
+        let mut inputs = Vec::new();
+        let mut run = |w: &mut sim::World, bots: &mut Vec<Bot>,
+                       inputs: &mut Vec<sim::sim_input>, ticks: u32,
+                       mut watch: Option<&mut dyn FnMut(&Bot, u16)>| {
+            for _ in 0..ticks {
+                inputs.clear();
+                for b in bots.iter_mut() {
+                    let ship = b.ship;
+                    let fresh = b.looks_due().then(|| scan(w, ship));
+                    let o = own(w, ship);
+                    if b.wants_refuge() {
+                        let mut c = crowd(w, ship);
+                        c.extend_from_slice(b.avoid());
+                        b.refuge(route.refuge((o.x, o.y), &c, REFUGE_PX));
+                    }
+                    let buttons = b.think(&o, &route, fresh);
+                    if let Some(watch) = watch.as_deref_mut() {
+                        watch(b, buttons);
+                    }
+                    inputs.push(sim::sim_input { ship, buttons });
+                }
+                w.step(inputs);
+            }
+        };
+        run(&mut w, &mut bots, &mut inputs, 3_000, None);
+
+        bots[0].stand_down();
+        let leaver = bots[0].ship;
+        // Every tick the leaver spends past breaking off, and whether it ever
+        // pulled a trigger there. Shooting on the way out is how a departure
+        // stops reading as one.
+        let mut shot_while_going = 0u32;
+        let mut going_ticks = 0u32;
+        let mut done_at = None;
+        for t in 0..4_000u32 {
+            {
+                let mut watch = |b: &Bot, buttons: u16| {
+                    if b.ship == leaver && matches!(b.exit, Exit::Leaving | Exit::Parked) {
+                        going_ticks += 1;
+                        if buttons & (sim::BTN_FIRE | sim::BTN_BOMB) != 0 {
+                            shot_while_going += 1;
+                        }
+                    }
+                };
+                run(&mut w, &mut bots, &mut inputs, 1, Some(&mut watch));
+            }
+            if bots[0].departed() {
+                done_at = Some(t);
+                break;
+            }
+        }
+
+        let done_at = done_at.expect(
+            "a pilot told to leave finishes leaving inside the ceiling");
+        // 40 seconds is the bot server's ceiling. Reaching it is the backstop
+        // firing, not the ordinary way out, so this asserts the ordinary way
+        // out actually happens.
+        assert!(done_at < 4_000, "left after {done_at} ticks");
+        assert!(going_ticks > 100,
+                "it flew somewhere: only {going_ticks} ticks spent leaving");
+        assert_eq!(shot_while_going, 0,
+                   "the trigger stays shut once a pilot is on its way out");
+
+        // And it ended up somewhere nobody is. Sight is 960 px, so clearing it
+        // is the whole point: a pilot that logs off inside somebody's radar
+        // has popped in front of them however politely it got there.
+        let me = &w.state.ships[leaver as usize];
+        let (mx, my) = (me.x as f32 / 256.0, me.y as f32 / 256.0);
+        let mut nearest = f32::INFINITY;
+        for b in bots.iter().skip(1) {
+            let o = &w.state.ships[b.ship as usize];
+            if o.active == 0 {
+                continue;
+            }
+            let (dx, dy) = (o.x as f32 / 256.0 - mx, o.y as f32 / 256.0 - my);
+            nearest = nearest.min((dx * dx + dy * dy).sqrt());
+        }
+        assert!(nearest > SIGHT,
+                "logged off {nearest:.0} px from somebody, inside their sight");
+    }
+
 }
+

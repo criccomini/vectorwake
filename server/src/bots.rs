@@ -50,9 +50,20 @@ const MIN_LIFE_MS: u64 = 30_000;
 /// And how long an instance waits after letting a bot go before it takes
 /// another. The other half of the same guard.
 const REFILL_COOLDOWN_MS: u64 = 30_000;
-/// How long a bot that has been asked to leave may take to find a good moment.
-/// It waits for a death or for an empty horizon; past this it simply goes.
-const YIELD_GRACE_MS: u64 = 10_000;
+/// The whole budget for leaving: break off, fly somewhere nobody is, and stop.
+/// Past this the bot goes wherever it happens to be.
+///
+/// Forty seconds, against the ten it replaces. Ten was not a backstop, it was
+/// the exit: the old rule waited for a death or an empty horizon while the bot
+/// went on fighting at full strength, and in a busy room neither arrives, so
+/// what fired was the timer and what a player saw was an opponent vanishing
+/// mid-duel. This is sized so the ordinary departure finishes well inside it
+/// and reaching it means something went wrong.
+///
+/// It is charged to a seat somebody may be waiting for: a yielding bot still
+/// holds its own until it goes. That is affordable only because a room with no
+/// seats left does not wait: `evict_bot` takes one that tick.
+const DEPART_MAX_MS: u64 = 40_000;
 /// Snapshots stop arriving and nothing else says why. Ten seconds is five
 /// hundred missed snapshots, so this only ever fires on a connection that is
 /// actually gone.
@@ -365,23 +376,35 @@ pub async fn run() {
             } else if have > n {
                 // Oldest first among those old enough to go, so a bot that has
                 // just arrived is not immediately turned around.
-                let mut asked = 0;
+                //
+                // One at a time, whatever the surplus. A room shrinks by one
+                // seat per person who joins it, so a group arriving together
+                // used to put that many bots into leaving in the same second.
+                // While leaving was instant nobody could tell; now that it is
+                // a flight across the map with the trigger shut, five at once
+                // is an evacuation, and a cycle is about a second, so the
+                // surplus still drains at a person's pace. The already-going
+                // ones are counted first so this does not stack a second
+                // departure on a bot that is mid-way through one.
+                let mut asked = inst
+                    .bots
+                    .iter()
+                    .filter(|b| b.yielding.load(Ordering::Relaxed))
+                    .count();
                 let over = have - n;
-                for b in inst.bots.iter() {
-                    if asked >= over {
+                if asked < over {
+                    for b in inst.bots.iter() {
+                        if now.saturating_sub(b.born_ms) < MIN_LIFE_MS
+                            || b.yielding.load(Ordering::Relaxed)
+                        {
+                            continue;
+                        }
+                        b.yielding.store(true, Ordering::Relaxed);
+                        inst.released_ms = now;
+                        asked += 1;
+                        println!("{addr}: {have} bots, wants {n}; {} stands down", b.name);
                         break;
                     }
-                    if b.yielding.load(Ordering::Relaxed) {
-                        asked += 1; // already on its way
-                        continue;
-                    }
-                    if now.saturating_sub(b.born_ms) < MIN_LIFE_MS {
-                        continue;
-                    }
-                    b.yielding.store(true, Ordering::Relaxed);
-                    inst.released_ms = now;
-                    asked += 1;
-                    println!("{addr}: {have} bots, wants {n}; {} stands down", b.name);
                 }
             }
         }
@@ -678,7 +701,7 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
                 // One pass against the current picture, whichever kind this
                 // pilot holds. The look happens here too, inside the same
                 // lock, so a scan and the step it reads cannot interleave.
-                let (own, fresh, tick) = match &mut sight {
+                let (own, fresh, tick, crowd) = match &mut sight {
                     Sight::Shared(rig) => {
                         // The pen is claimed on the tick rather than at
                         // welcome, so whoever is flying picks it up within
@@ -690,24 +713,67 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
                         }
                         let own = ai::own(&w, ship);
                         let fresh = b.looks_due().then(|| ai::scan(&w, ship));
-                        (own, fresh, w.state.tick)
+                        let crowd = b.wants_refuge().then(|| {
+                            let mut c = ai::crowd(&w, ship);
+                            c.extend_from_slice(b.avoid());
+                            c
+                        });
+                        (own, fresh, w.state.tick, crowd)
                     }
                     Sight::Private(w) => {
                         let own = ai::own(w, ship);
                         let fresh = b.looks_due().then(|| ai::scan(w, ship));
-                        (own, fresh, w.state.tick)
+                        let crowd = b.wants_refuge().then(|| {
+                            let mut c = ai::crowd(w, ship);
+                            c.extend_from_slice(b.avoid());
+                            c
+                        });
+                        (own, fresh, w.state.tick, crowd)
                     }
                     Sight::Dark => continue,
                 };
-                // Asked to stand down, and looking for the moment. A pilot that
-                // is dead is between fights, and one with nobody in sight is
-                // not in one; either will do, and past the grace it simply
-                // goes. Both tests are the bot's own view, which is the only
-                // one it has.
+                // Somewhere to go, answered out here because it needs the
+                // whole room and `ai` is only ever handed one pilot's view of
+                // it. Deliberately outside the lock above: on the shared rig
+                // that lock is held by every bot predicting the same arena,
+                // and a few hundred candidate cells is not something to do
+                // while holding it.
+                if let Some(crowd) = crowd {
+                    b.refuge(route.as_deref().and_then(|r| {
+                        r.refuge((own.x, own.y), &crowd, ai::REFUGE_PX)
+                    }));
+                }
+                // Asked to stand down. From here the pilot is leaving rather
+                // than waiting to be allowed to: it sees out the fight it is
+                // in, flies somewhere nobody is, and stops there. Dying is
+                // still the cleanest ending and takes it at once.
+                //
+                // The ceiling is for a departure that cannot finish, with no
+                // route or a corner that filled up behind it, and is long
+                // enough that reaching it means something went wrong. The ten
+                // seconds it replaces were not that: in a busy room nobody is
+                // ever out of sight, so the timer was the ordinary way out and
+                // what a player saw was an opponent blinking out of a duel.
                 if yielding.load(Ordering::Relaxed) {
+                    b.stand_down();
                     let since = *asked.get_or_insert_with(std::time::Instant::now);
-                    let quiet = !own.alive || b.horizon_clear();
-                    if quiet || since.elapsed().as_millis() as u64 > YIELD_GRACE_MS {
+                    // Which of the three endings this was, because they are not
+                    // equally good and nothing else can tell them apart. A
+                    // roster mostly ending on `gave up` is a roster still
+                    // popping out of fights, and from the outside that looks
+                    // exactly like a roster leaving politely.
+                    let how = if !own.alive {
+                        Some("died")
+                    } else if b.departed() {
+                        Some("clear")
+                    } else if since.elapsed().as_millis() as u64 > DEPART_MAX_MS {
+                        Some("gave up")
+                    } else {
+                        None
+                    };
+                    if let Some(how) = how {
+                        println!("{addr}: {} left ({how}, {:.1}s)",
+                                 who.name, since.elapsed().as_secs_f32());
                         break;
                     }
                 }

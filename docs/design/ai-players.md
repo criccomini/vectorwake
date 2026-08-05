@@ -34,10 +34,26 @@ carried in the roster to every client; a fleet credential additionally marks the
 house roster apart from visiting bots where trust matters, such as anchoring the
 rating scale.
 
-**Bots leave gracefully.** They do not blink out when a human joins. They fly to
-spectator and then leave the arena the way a player does, preferring the moment
-after their own death, preferring bots far from any human, and never leaving
-mid-fight or while carrying a flag or the ball.
+**Bots leave gracefully.** They do not blink out when a human joins. A bot told
+to stand down sees out the fight it is in, because turning tail the moment it is
+told reads as running away and takes a kill somebody had earned with it. Then it
+stops playing: the trigger shuts, nothing is chased, and it flies for an empty
+corner of the map, preferring a safe zone, which is where a player goes to stop.
+It logs off once it is a sight radius clear of where it broke contact and has
+seen nobody for two looks running. Dying on the way is the cleanest ending of
+all and takes it immediately.
+
+The whole departure is budgeted, because a bot on its way out is still holding a
+seat: past forty seconds it goes wherever it happens to be. Reaching that
+ceiling means something went wrong rather than being the ordinary way out. The
+rule it replaces waited for a death or an empty horizon while the bot fought on
+at full strength, and in a busy room neither arrives, so what fired was the
+timer and what a player saw was an opponent vanishing mid-duel.
+
+**Nobody in a safe zone is a target.** Nothing can be shot into one, so a bot
+that kept a pilot selected after they ducked inside held station at the door
+with its trigger shut for as long as they cared to stand there. A pilot in a
+safe is not in the game, and the bots treat them accordingly.
 
 **No rubber-banding inside a fight.** A bot's skill is set when it spawns and
 does not change while you are fighting it. Adaptation happens at the roster
@@ -153,10 +169,18 @@ the target is the job.
 
 **Yield to humans.** When a human joins, a bot is marked for removal and leaves
 under the graceful rules above. Bots never outnumber humans on the opposing team
-by more than the configured ratio once a room is populated. The arena backstops
-the race a burst of joins can win: a join that would otherwise be refused for
-space drops the newest declared bot and seats the human, so the headroom is a
-courtesy rather than a load-bearing assumption.
+by more than the configured ratio once a room is populated. One bot is asked at
+a time, whatever the surplus: a room sheds a seat per person who joins it, and a
+group arriving together would otherwise send that many bots across the map at
+once, which is an evacuation rather than a room getting quieter.
+
+The arena backstops the race a burst of joins can win, and that backstop is the
+one place there is no walking out: a join that would otherwise be refused for
+space takes a declared bot's seat that tick. It takes it from the bot fewest
+people are looking at, preferring one that is dead and then one with nobody
+within sight, because the room holds the whole simulation and can tell. Age only
+breaks ties. The headroom remains a courtesy rather than a load-bearing
+assumption.
 
 **Resist churn.** A bot lives at least thirty seconds. After a removal, no bot is
 added for a minute. A player joining and leaving repeatedly should not make the
