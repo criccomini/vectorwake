@@ -119,5 +119,8 @@ The logo lockup's mark got a visible stroke and a measuring test, and heading co
 Bots stop freezing when two share a spawn pixel, and the held H help overlay goes: hover names one instrument at a time now.                                                                                                                                                                   
 Death cards name themselves over the body, words left and figure right. Corner stack shipped: 1.5x, strokes from the mark, rows aligned by ink centroid, arena level colours, gun is a line and a dot (three fanned, ring when it bounces).                                                    
 A kill the local sim mistimed used to vanish silently, since unpack emits nothing and rollback swallows events; on_snapshot now diffs ships and rounds across the unpack and the arena draws what was missed. Zero silent deaths, from 15%.                                                    
+<<<<<<< HEAD
+Pilot and bot are one helmet: flat crown, chamfered jaw, person wears a brow and visor, machine two lamps and an antenna (unshareable, since three of four bot-mark uses are solo). Declined fan barrels are drawn dimmed but not counted as rounds, so one round means one ring.              
+=======
 Controls cut to one key per job: guns Space (Ctrl under lock), bombs Tab, charges Q/W/A/S by stack row, multifire on backquote; Shift/Z/X unbound, help board's menu key amber. And a declined fan draws dimmed barrels that are not rounds, so one round is one ring.                         
-The fan's switch sounds (ui_go on, ui_move off) off a frame watching sim.ship_multi_off(me), not the key, so the core owns the only edge. It refuses the press on a hull with no fan, which is what keeps that silent; the flag survives losing the add-on, being a preference.                
+>>>>>>> origin/main
