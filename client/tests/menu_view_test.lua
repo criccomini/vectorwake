@@ -355,6 +355,38 @@ end
 check("the page is named on the rail and nowhere else", names == 1,
       names .. " times, at " .. tostring(hx))
 
+-- --- a row that carries a sentence puts it in the row --------------------
+--
+-- The games are chosen between by reading them, and at the foot of the panel
+-- they arrived one at a time, a screen away from the name each belonged to.
+-- A row with a `note` gives it the lower half and takes the upper for
+-- everything else, including the count on the right.
+
+local noted = draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
+                    focus = "stage", home = false, closable = true,
+                    rows = {{label = "chaos", index = 1, pick = true,
+                             players = 4, bots = 51, live = true,
+                             note = "everybody against everybody"}}})
+local name_x, name_y, note_x, note_y, count_y
+for i = 1, noted.n do
+    local t = noted.text[i]
+    if t.s == "chaos" then name_x, name_y = t.x, t.y end
+    if t.s == "everybody against everybody" then note_x, note_y = t.x, t.y end
+    if t.s == "4" then count_y = t.y end
+end
+-- `state` counts y up from the bottom, so under means a smaller number.
+check("a row's sentence sits under its name",
+      name_y and note_y and name_y - note_y > 8,
+      string.format("name at %s, sentence at %s", tostring(name_y),
+                    tostring(note_y)))
+check("and in the same column", name_x and note_x
+      and math.abs(name_x - note_x) < 0.01,
+      string.format("%s against %s", tostring(name_x), tostring(note_x)))
+check("with the count still on the name's line",
+      count_y and name_y and math.abs(count_y - name_y) < 1.5,
+      string.format("count at %s, name at %s", tostring(count_y),
+                    tostring(name_y)))
+
 -- --- a long value does not run under the label it belongs to -------------
 --
 -- The help rows a phone gets are sentences, and right-aligned in a column

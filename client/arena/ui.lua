@@ -2941,19 +2941,29 @@ local function stage_row(x, y, w, h, r, hot)
     end
     local sel = hot or r.mark
     local size = (M.compact and 17 or 18) * S
+    -- A row carrying a sentence of its own gives it the lower half and takes
+    -- the upper for everything else. The games are the list that wants it:
+    -- choosing between three of them is reading three sentences, and one at a
+    -- time at the foot of the panel, a screen away from the name it belongs
+    -- to, is not reading them.
+    local ly = r.note and (y + h * 0.36) or (y + h / 2)
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
     local two_line = r.detail and r.detail ~= "" and not r.players
-        and not r.choice
+        and not r.choice and not r.note
         and text_w(r.detail, 12 * S) > w - 32 * S - (tx - x) - 12 * S
     if not two_line then
-        txt(r.label or "", tx, y + h / 2, size,
+        txt(r.label or "", tx, ly, size,
             pal.a(col, sel and 1 or 0.82), nil, MENU_FONT)
+    end
+    if r.note then
+        txt(r.note, tx, y + h * 0.68, 11.5 * S,
+            pal.a(pal.DIM, hot and 1 or 0.75))
     end
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
     if r.players and r.live then
-        population(x + w - 16 * S, y + h / 2, r.players, r.bots,
+        population(x + w - 16 * S, ly, r.players, r.bots,
                    pal.a(pal.FRIEND, sel and 1 or 0.85))
     elseif r.choice then
         -- A setting drawn as its own range: one step per value, the one it
@@ -2993,7 +3003,7 @@ local function stage_row(x, y, w, h, r, hot)
                 pal.a(col, sel and 1 or 0.82), nil, MENU_FONT)
             txt(r.detail, tx, y + h * 0.70, 11 * S, pal.a(pal.DIM, 0.9))
         else
-            txt(r.detail, x + w - 16 * S, y + h / 2, 12 * S,
+            txt(r.detail, x + w - 16 * S, ly, 12 * S,
                 pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right")
         end
     end
@@ -3367,7 +3377,13 @@ function M.menu(v)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else
-        local rowh = math.min((M.compact and 46 or 40) * S,
+        -- Two lines of room where the rows have two lines in them, held to
+        -- one height either way so nothing shifts as the cursor walks down.
+        local noted = false
+        for _, r in ipairs(v.rows) do
+            if r.note then noted = true break end
+        end
+        local rowh = math.min((noted and 58 or (M.compact and 46 or 40)) * S,
                               math.max(30 * S, room / math.max(#v.rows, 1)))
         -- A short list sits in the middle of the room rather than at the top
         -- of it: three games hung under a title on a tall phone leave the
