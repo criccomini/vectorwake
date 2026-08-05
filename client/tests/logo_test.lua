@@ -224,13 +224,18 @@ local L, why = lockup(1280, 800)
 check("the home screen draws the name and the mark together", L ~= nil, why)
 
 if L then
-    -- Centred on the line the word sits on. `txt` takes the middle of the
-    -- line, so these are the same number when the lockup is right.
+    -- On the middle of the word, which is not the middle of its line box.
+    -- `txt` centres a string in a box with descender room under it, and this
+    -- name is lowercase with no descenders, so its ink and its weight both
+    -- sit lower than the box does. How much lower is a judgement made against
+    -- a screenshot and recorded as LOGO_DROP; what is checked here is that
+    -- the mark is placed against that judgement and not against zero, and
+    -- that the offset travels with the type rather than being a pixel count.
     local centre = (L.y0 + L.y1) / 2
-    check("the mark is centred on the name's line",
-          math.abs(centre - L.wy) <= L.size * 0.06,
-          string.format("mark centre %.1f, name centre %.1f, %.2f em apart",
-                        centre, L.wy, math.abs(centre - L.wy) / L.size))
+    local drop = (centre - L.wy) / L.size
+    check("the mark sits on the middle of the word, not of its line box",
+          drop > 0.06 and drop < 0.20,
+          string.format("%.3f em below the line box centre", drop))
     -- Shorter than the type it stands beside. A mark taller than the em is
     -- the one that made the first draft read as a picture with a caption.
     local tall = L.y1 - L.y0
@@ -250,12 +255,12 @@ end
 -- so it has to hold at both, and a constant hiding in it shows up here.
 local narrow = lockup(420, 780)
 if L and narrow then
+    local ndrop = ((narrow.y0 + narrow.y1) / 2 - narrow.wy) / narrow.size
     check("the lockup holds at the small size",
-          math.abs((narrow.y0 + narrow.y1) / 2 - narrow.wy)
-          <= narrow.size * 0.06,
-          string.format("%.2f em off",
-                        math.abs((narrow.y0 + narrow.y1) / 2 - narrow.wy)
-                        / narrow.size))
+          math.abs(ndrop - (L.y0 + L.y1) / 2 / L.size
+                   + L.wy / L.size) < 0.02,
+          string.format("%.3f em against %.3f em", ndrop,
+                        ((L.y0 + L.y1) / 2 - L.wy) / L.size))
     check("and the mark scales with the type",
           math.abs((narrow.y1 - narrow.y0) / narrow.size
                    - (L.y1 - L.y0) / L.size) < 0.02,

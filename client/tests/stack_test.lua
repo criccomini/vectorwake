@@ -38,33 +38,92 @@ end
 -- The stack is read back in those, since flipping twice to ask a question
 -- about a row is two chances to get the arithmetic wrong.
 local shapes = {}
-local function box(x0, y0, x1, y1)
+local kind = nil       -- what primitive is being recorded, for `subject`
+local function box(x0, y0, x1, y1, col, w)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
-    shapes[#shapes + 1] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1}
+    shapes[#shapes + 1] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1, col = col,
+                           w = w, kind = kind}
+end
+
+-- How much of the row a shape actually darkens, and where that ink sits.
+--
+-- Kept apart from the boxes above because the two answer different questions
+-- and the difference is a real fault, not a rounding one: a bomb's trail is a
+-- fade that reaches its full length and almost none of its brightness, so a
+-- bounding box counts it and a player does not see it. Centring the boxes put
+-- the bomb visibly right of the rows under it while every box-based check
+-- said the stack was aligned.
+local ink = {}
+local function mark(weight, cx, cy)
+    if weight > 0 then ink[#ink + 1] = {w = weight, x = cx, y = cy} end
 end
 
 local layer = {}
-function layer:seg(x1, y1, x2, y2, w) box(x1 - w, y1 - w, x2 + w, y2 + w) end
-function layer:seg_fade(x1, y1, x2, y2, w1, w2)
-    local w = math.max(w1, w2)
-    box(x1 - w, y1 - w, x2 + w, y2 + w)
+local function len(x1, y1, x2, y2)
+    return math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2)
 end
-function layer:disc(x, y, r) box(x - r, y - r, x + r, y + r) end
+
+function layer:seg(x1, y1, x2, y2, w)
+    box(x1 - w, y1 - w, x2 + w, y2 + w, nil, w)
+    mark(len(x1, y1, x2, y2) * w, (x1 + x2) / 2, (y1 + y2) / 2)
+end
+-- Sampled along its length rather than taken whole, because the point of a
+-- fade is that one end of it is not there.
+function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2)
+    local w = math.max(w1, w2)
+    box(x1 - w, y1 - w, x2 + w, y2 + w, nil, w)
+    local n = 8
+    for i = 0, n - 1 do
+        local t = (i + 0.5) / n
+        mark(len(x1, y1, x2, y2) / n * (w1 + (w2 - w1) * t)
+             * (a1 + (a2 - a1) * t), x1 + (x2 - x1) * t,
+             y1 + (y2 - y1) * t)
+    end
+end
+function layer:disc(x, y, r)
+    kind = "disc"
+    box(x - r, y - r, x + r, y + r)
+    kind = nil
+    mark(math.pi * r * r, x, y)
+end
 function layer:halo(x, y, r) box(x - r, y - r, x + r, y + r) end
-function layer:ring(x, y, r, w) box(x - r - w, y - r - w, x + r + w, y + r + w) end
+function layer:ring(x, y, r, w)
+    box(x - r - w, y - r - w, x + r + w, y + r + w, nil, w)
+    mark(2 * math.pi * r * w, x, y)
+end
 function layer:ring_fade(x, y, r, w)
     box(x - r - w, y - r - w, x + r + w, y + r + w)
 end
 -- An arc is bounded by its own circle whichever way it opens, which is all
 -- this needs: the question is whether a mark stayed inside a row, and a
 -- generous box can only fail a mark that passed.
-function layer:arc(x, y, r, _, _, w) box(x - r - w, y - r - w, x + r + w, y + r + w) end
-function layer:rect(x, y, w, h) box(x, y, x + w, y + h) end
-function layer:frame(x, y, w, h) box(x, y, x + w, y + h) end
+-- An arc is bounded by its own circle whichever way it opens, which is all the
+-- box needs: the question there is whether a mark stayed inside a row, and a
+-- generous box can only fail a mark that passed. Its ink is the run of it, and
+-- its ink sits at the mean of the arc rather than at the centre of the circle.
+function layer:arc(x, y, r, a0, a1, w)
+    box(x - r - w, y - r - w, x + r + w, y + r + w, nil, w)
+    local d = a1 - a0
+    if d ~= 0 then
+        mark(r * math.abs(d) * w,
+             x + r * (math.sin(a1) - math.sin(a0)) / d, y)
+    end
+end
+function layer:rect(x, y, w, h, col)
+    box(x, y, x + w, y + h, col)
+    mark(w * h, x + w / 2, y + h / 2)
+end
+function layer:frame(x, y, w, h, s, col)
+    box(x, y, x + w, y + h, col)
+    mark(2 * (w + h) * (s or 1), x + w / 2, y + h / 2)
+end
 function layer:outline(pts, w)
     for i = 1, #pts - 1, 2 do
         box(pts[i] - w, pts[i + 1] - w, pts[i] + w, pts[i + 1] + w)
+        local j = (i + 2 <= #pts - 1) and i + 2 or 1
+        mark(len(pts[i], pts[i + 1], pts[j], pts[j + 1]) * w,
+             (pts[i] + pts[j]) / 2, (pts[i + 1] + pts[j + 1]) / 2)
     end
 end
 function layer:fan(pts)
@@ -138,6 +197,7 @@ local SCALE = 2      -- the density scale a retina window hands the interface
 
 local function frame(px, py)
     shapes = {}
+    ink = {}
     state.n = 0
     ui.begin(layer, W, H, SCALE, false)
     ui.hud({
@@ -185,14 +245,34 @@ local function row_box(key)
     return {x0 = x0, x1 = x1, y0 = H - y1, y1 = H - y0}
 end
 
--- What the mark cell holds: everything drawn left of the counting column, at
--- this row's height. The ladder starts at `val`, so the cell ends there.
-local LADDER_X = (14 + 48) * SCALE
+-- Where the counting column starts, read off the drawing rather than worked
+-- out here. The stack is measured in a scale of its own that backs off on a
+-- short window, so a constant in this file is a constant that goes stale the
+-- first time the block is resized and takes the checks below with it.
+--
+-- The ladder is the run of rungs in the team colour on a weapon row: lit ones
+-- are filled rects and spent ones are frames, both in FRIEND.
+local function ladder_x(b)
+    local at = nil
+    for _, s in ipairs(shapes) do
+        local mid = (s.y0 + s.y1) / 2
+        if mid > b.y0 and mid < b.y1 and s.col
+            and s.col[1] == pal.FRIEND[1] and s.col[2] == pal.FRIEND[2]
+            and s.col[3] == pal.FRIEND[3] then
+            at = math.min(at or s.x0, s.x0)
+        end
+    end
+    return at
+end
+
+-- What the mark cell holds: everything drawn left of that column, at this
+-- row's height.
 local function cell(b)
+    local edge = ladder_x(b) or (W / 2)
     local out = {}
     for _, s in ipairs(shapes) do
         local mid = (s.y0 + s.y1) / 2
-        if mid > b.y0 and mid < b.y1 and s.x0 < LADDER_X then
+        if mid > b.y0 and mid < b.y1 and s.x0 < edge then
             out[#out + 1] = s
         end
     end
@@ -276,6 +356,14 @@ local function measure(key)
     return #c, x0 or 0, y0 or 0, x1 or 0, y1 or 0
 end
 
+-- The gun draws one line or three, and a ring or no ring, at any depth. That
+-- is a decision rather than an oversight: how deep the fan or the bouncing
+-- runs is for colour to carry, and a shape at this size cannot hold a count as
+-- well as an identity. Pinned here rather than left out, so that adding depth
+-- back into the shape reads as contradicting a decision instead of passing
+-- quietly.
+local FIXED = {[0] = {[0] = true, [1] = true}, [1] = {}}
+
 for _, t in ipairs({{0, "gun"}, {1, "bomb"}}) do
     for i = 1, #pal.MODS do
         mods = {[t[1]] = {[i - 1] = 1}}
@@ -288,11 +376,19 @@ for _, t in ipairs({{0, "gun"}, {1, "bomb"}}) do
         -- is the add-on's business: fragments count up, a fuse reaches out.
         local moved = math.abs(c0 - a0) + math.abs(d0 - b0)
             + math.abs(c1 - a1) + math.abs(d1 - b1)
-        check(string.format("a third rung of %s on the %s reads differently",
-                            pal.MODS[i].name, t[2]),
-              n3 ~= n1 or moved > 0.5,
-              string.format("%d shapes either way, extent moved %.2f",
-                            n1, moved))
+        if FIXED[t[1]][i - 1] then
+            check(string.format("%s on the %s draws the same at any depth",
+                                pal.MODS[i].name, t[2]),
+                  n3 == n1 and moved < 0.01,
+                  string.format("%d against %d shapes, extent moved %.2f",
+                                n1, n3, moved))
+        else
+            check(string.format("a third rung of %s on the %s reads differently",
+                                pal.MODS[i].name, t[2]),
+                  n3 ~= n1 or moved > 0.5,
+                  string.format("%d shapes either way, extent moved %.2f",
+                                n1, moved))
+        end
     end
 end
 
@@ -345,9 +441,10 @@ for _, key in ipairs({"gun", "bomb"}) do
         reach = math.max(reach, x1 or 0)
     end
 end
+local column = ladder_x(row_box("gun")) or 0
 check("a fully loaded mark stops short of the counting column",
-      reach > 0 and reach < LADDER_X,
-      string.format("reached %.0f, column is at %d", reach, LADDER_X))
+      reach > 0 and column > 0 and reach < column,
+      string.format("reached %.0f, column is at %.0f", reach, column))
 
 -- --- the row grows with what it carries ------------------------------------
 
@@ -415,6 +512,186 @@ frame()
 frame(point_in("gun"))
 check("a bare weapon is not described as carrying anything",
       said():find("Carrying", 1, true) == nil, said())
+
+-- --- the block is sized to the window it is in ----------------------------
+
+-- The stack draws larger than the rest of the interface, because it is read
+-- from the middle of a fight rather than at rest. That is a good reason on a
+-- desktop and a bad one on a phone held sideways, where five rows at full
+-- size are most of the height, so the scale backs off against the room there
+-- is. Neither end of that is visible without measuring it.
+local function block(w, h, dens)
+    shapes = {}
+    ink = {}
+    state.n = 0
+    ui.help = false
+    ui.begin(layer, w, h, dens, false)
+    ui.hud({
+        me = 0, class_names = {"Apex"}, menu_open = false,
+        pilots = {[0] = {name = "you", label = "human"}},
+        teams = {}, feed = {}, hurt = 0,
+        charges = {{name = "repel", short = "RPL", count = 2, max = 3},
+                   {name = "burst", short = "BST", count = 1, max = 3}},
+        cam_x = 400, cam_y = 400, half_w = w / 2, half_h = h / 2,
+        banner = "", lag = 4,
+        stats = {lag = 4, lead = 2, err = 1, err_max = 9, rewind = 0,
+                 snaps = 1, rx = 0, tx = 0},
+        zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
+    })
+    ui.finish()
+    -- Top and bottom of the whole block, from the rows it published.
+    local top, bot
+    for _, key in ipairs({"gun", "bomb", "bounty"}) do
+        for py = 0, h, 2 do
+            if ui.help_at(4 + 14 * dens, py) == key then
+                top = math.min(top or py, py)
+                bot = math.max(bot or py, py)
+            end
+        end
+    end
+    if not top then return nil end
+    -- The heaviest line anywhere in the block, which is what says whether the
+    -- strokes grew with it or the shapes grew and left the lines behind.
+    local heaviest = 0
+    for _, sh in ipairs(shapes) do
+        local mid = (sh.y0 + sh.y1) / 2
+        if sh.w and h - mid > top - 4 and h - mid < bot + 4
+            and sh.x0 < 200 * dens then
+            heaviest = math.max(heaviest, sh.w)
+        end
+    end
+    return {top = top, bot = bot, tall = bot - top, pts = (bot - top) / dens,
+            ink = heaviest / dens}
+end
+
+mods = {[0] = {[0] = 1}, [1] = {[2] = 1, [3] = 2}}
+for _, shape in ipairs({{1280, 800, 1}, {1280, 800, 2}, {2560, 1440, 2},
+                        {844, 390, 2}, {390, 844, 2}, {1600, 900, 1}}) do
+    local w, h, dens = shape[1], shape[2], shape[3]
+    local b = block(w, h, dens)
+    local at = string.format("%dx%d at %dx", w, h, dens)
+    check("the stack fits its window: " .. at,
+          b ~= nil and b.bot <= h and b.top >= 0,
+          b and string.format("%.0f..%.0f in %d", b.top, b.bot, h) or "no rows")
+    -- Either it stayed inside the share it is allowed, or the back-off has
+    -- already run out and put it at the size it has always been. The floor is
+    -- deliberate: this change makes the stack bigger, and a window too short
+    -- for five rows at the old size was too short before it and is not this
+    -- change's to fix. On a real phone the pad carries the charges and the
+    -- stack is three rows, which is where that case actually lives.
+    if b then
+        local base = math.abs(b.pts - 5 * 22) < 2
+        check("and takes a fair share of it: " .. at,
+              b.tall <= h * 0.42 or base,
+              string.format("%.0f of %d px, %.0f points, base %s",
+                            b.tall, h, b.pts, tostring(base)))
+        check("and never draws smaller than it always has: " .. at,
+              b.pts >= 5 * 22 - 2,
+              string.format("%.0f points", b.pts))
+    end
+end
+
+-- A window with room draws the block bigger than the metric the rest of the
+-- interface uses. Without this, setting the scale back to 1 reverts the whole
+-- thing and every check above still passes: they all say "no larger than", and
+-- none of them says "larger than".
+local roomy = block(2560, 1440, 2)
+check("a window with room draws the stack bigger than the base",
+      roomy and roomy.pts > 5 * 22 * 1.2,
+      roomy and string.format("%.0f points against a base of %d",
+                              roomy.pts, 5 * 22) or "no rows")
+
+-- And the lines grew with it. Every width in this corner used to be a
+-- multiple of the density scale, so growing the block would have grown the
+-- shapes and left the strokes where they were: the same drawing at twice the
+-- size wearing hairlines.
+local tight = block(1280, 400, 1)
+if roomy and tight then
+    check("and draws them with heavier lines, not the same hairline",
+          roomy.ink > tight.ink * 1.15,
+          string.format("%.2f against %.2f points of line",
+                        roomy.ink, tight.ink))
+end
+
+-- --- the rows line up ------------------------------------------------------
+
+-- Every mark stands its subject on one axis: the head of each round, the hub
+-- of the repel's rings and the burst's spokes, the middle of the green. That
+-- is not the same as centring the drawings, because a bolt is a long streak
+-- with a small head and a bomb a short one with a big head, so centring the
+-- boxes would put the round in a different place on each row. What the eye
+-- lands on is the round.
+--
+-- Found as the darkest, densest thing on the row: the head of a weapon mark
+-- is a filled disc and the radial glyphs are drawn about their own centre, so
+-- the middle of the tightest shape on each row is its subject.
+-- What lines up down the stack is the drawing, not the round inside it.
+--
+-- Neither weapon mark is symmetric about its own round: a gun's lines leave
+-- from a muzzle well behind the dot and a bomb trails, so standing the round
+-- on the axis hangs the mark off to the left of every other row. The charge
+-- glyphs and the green are drawn about their own middles, so for them the two
+-- are the same thing and this is one rule rather than two.
+--
+-- Measured bare, because that is what the bias is computed against: add-ons
+-- hang off the right, and a bomb that picked up shrapnel should not slide left
+-- out of the column it shares with four other rows.
+local function mark_box(key, edge)
+    local b = row_box(key)
+    if not b then return nil end
+    local sum, wsum = 0, 0
+    for _, e in ipairs(ink) do
+        if e.y > b.y0 and e.y < b.y1 and e.x < edge then
+            sum = sum + e.w
+            wsum = wsum + e.w * e.x
+        end
+    end
+    if sum == 0 then return nil end
+    return wsum / sum
+end
+
+local ROWS = {"gun", "bomb", "charge:repel", "charge:burst", "bounty"}
+
+mods = {}
+frame()
+local counting = ladder_x(row_box("gun"))
+local axis = {}
+for _, key in ipairs(ROWS) do
+    axis[key] = mark_box(key, counting or W)
+end
+local lo, hi
+for _, at in pairs(axis) do
+    if at then lo = math.min(lo or at, at) hi = math.max(hi or at, at) end
+end
+local spread = (hi or 0) - (lo or 0)
+check("every row centres its mark on one axis", spread <= 2 * SCALE,
+      string.format("%.1f px of spread across %d rows", spread, #ROWS))
+
+-- And a loadout does not drag a row out of that column. The gun's fan opens
+-- inside the span its bare line already occupied and the bomb's add-ons ring
+-- a head that has not moved, so both should sit where they sat.
+mods = {[0] = {[0] = 3, [1] = 3}, [1] = {[2] = 1, [3] = 3}}
+frame()
+local worst_drift, drifter = 0, nil
+for _, key in ipairs({"gun", "bomb"}) do
+    local now = mark_box(key, counting or W)
+    if now and axis[key] then
+        local d = math.abs(now - axis[key])
+        if d > worst_drift then worst_drift, drifter = d, key end
+    end
+end
+check("and a loadout does not drag the row out of it",
+      worst_drift <= 6 * SCALE,
+      string.format("%.1f px on the %s", worst_drift, tostring(drifter)))
+
+-- And the counting column sits in close, not out where a row of separate
+-- add-on symbols used to need it.
+mods = {}
+frame()
+local gap = (counting or 0) - (axis.gun or 0)
+check("the counting column sits close to the marks",
+      gap > 8 * SCALE and gap < 26 * SCALE,
+      string.format("%.0f px from the subject to the ladder", gap))
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)
