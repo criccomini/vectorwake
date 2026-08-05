@@ -2637,6 +2637,61 @@ local function ship_grid(x, y, w, h, v, focused)
     end
 end
 
+-- The mark: two hulls passing, each nose a little past the other's tail.
+--
+-- The same drawing the page carries as its icon, and drawn here rather than
+-- imported, because the interface has no way to put a picture on screen and
+-- would not want one: everything else here is strokes into a mesh layer, and
+-- a mark that arrived as pixels would be the only thing in the client that
+-- could not be drawn at any size.
+--
+-- The silhouette is the simulation's own. `hull_extent` in sim/src/baseline.c
+-- gives the Apex 20 forward, 11 back and 10 to a side, with the tail cut flat
+-- rather than pointed, so the shape in the tab is the shape people fly.
+--
+-- What makes it ours is the arrangement rather than the ship. Two hulls at
+-- rest, symmetric about a point, is the swap glyph every icon set already
+-- has; two hulls passing on a course off the vertical is a moment out of the
+-- game, and nothing in a tab bar looks like it. The angle is off the diagonal
+-- the tile's own chamfer cuts, on purpose: at forty five the tails lined up
+-- with the corners and the pair read as a shape fitted to its box.
+local LOGO_FORE, LOGO_AFT, LOGO_HALF = 20, 11, 10
+local LOGO_SHIP = {
+    {0, -LOGO_FORE}, {LOGO_HALF, LOGO_AFT * 0.72}, {LOGO_HALF * 0.48, LOGO_AFT},
+    {-LOGO_HALF * 0.48, LOGO_AFT}, {-LOGO_HALF, LOGO_AFT * 0.72},
+}
+-- Tilt off vertical, how far apart the two fly, and how far each nose reaches
+-- past the other's tail. All three in hull units, so the mark scales by one
+-- number.
+local LOGO_TILT = -35 * math.pi / 180
+local LOGO_SEP, LOGO_PASS = 21, 8
+
+local function logo_hull(cx, cy, ang, s, col, w)
+    local ca, sa = math.cos(ang), math.sin(ang)
+    local pts = {}
+    for _, p in ipairs(LOGO_SHIP) do
+        local x, y = p[1] * s, p[2] * s
+        pts[#pts + 1] = cx + x * ca - y * sa
+        pts[#pts + 1] = ry(cy + x * sa + y * ca)
+    end
+    u:outline(pts, w, col, true)
+end
+
+-- `s` is one hull unit, so the pair stands about 31 of them long.
+function M.logo(cx, cy, s, alpha)
+    alpha = alpha or 1
+    local along = (LOGO_FORE - LOGO_AFT - LOGO_PASS) / 2
+    local ux, uy = math.sin(LOGO_TILT), -math.cos(LOGO_TILT)
+    local px, py = math.cos(LOGO_TILT), math.sin(LOGO_TILT)
+    local w = math.max(1.2 * S, s * 0.30)
+    logo_hull(cx - px * LOGO_SEP / 2 * s - ux * along * s,
+              cy - py * LOGO_SEP / 2 * s - uy * along * s,
+              LOGO_TILT, s, pal.a(pal.FRIEND, alpha), w)
+    logo_hull(cx + px * LOGO_SEP / 2 * s + ux * along * s,
+              cy + py * LOGO_SEP / 2 * s + uy * along * s,
+              LOGO_TILT + math.pi, s, pal.a(pal.ENEMY, alpha), w)
+end
+
 -- The name, and the stroke under it that makes it a mark.
 --
 -- Not a logotype: the same face the menu is set in, at a size nothing else on
@@ -2645,6 +2700,14 @@ end
 -- it, which is a wake. It was here before this layout and it stays: the one
 -- piece of decoration in the whole interface that anybody has asked to keep.
 local function wordmark(x, y, size, ww)
+    -- The mark stands to the left of the name, at the type's own height, so
+    -- the two read as one lockup rather than as a picture with a caption
+    -- under it. It takes the room it needs and the name starts after it.
+    local s = size * 0.030
+    local lw = size * 1.15
+    M.logo(x + lw / 2, y - size * 0.30, s)
+    x = x + lw
+    ww = ww - lw
     txt("vectorwake", x, y, size, pal.INK, nil, MENU_FONT)
     local wy = y + size * 0.78
     local n = 40
