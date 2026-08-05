@@ -1107,6 +1107,82 @@ end
 -- the vignette says "you are being hit", the hull's pip says how much is
 -- left, and its colour says how urgent that is. Three channels, none of them
 -- a panel.
+-- What is drawn under DESTROYED while a pilot waits to fly again.
+--
+-- The shape is the interface's own and nothing new: a wash to lift it off the
+-- arena, four chamfered corners instead of a border, a label in the small
+-- grey the panels label their rows in, and the map border's tick as the rule
+-- between the label and the line. Everything here is already on screen
+-- somewhere else, which is the point. A death is not the moment to introduce
+-- a new kind of box.
+--
+-- The rule doubles as the clock. It is drawn twice, dim across the full width
+-- and lit across what is left of the respawn, so the same element that
+-- separates the label from the tip also says how long you have to read it.
+-- A numeral counting down would be a thing to watch instead of the sentence,
+-- and this game has one big centred readout already.
+--
+-- Centred under the banner rather than in a corner, because for these three
+-- seconds there is nothing to fly and nothing to look away from, and it goes
+-- the instant the hull is back.
+local function wait(tip, me)
+    if not tip or tip == "" then return end
+    local fs = (M.compact and 10 or 12) * S
+    local lab = (M.compact and 8 or 9) * S
+    local pad = 14 * S
+    -- Wide enough to read, never wider than the screen it is on. The tip
+    -- wraps to whatever is left, so a phone gets two lines where a desktop
+    -- gets one rather than a sentence running off the edge.
+    local w = math.min(430 * S, W - 40 * S)
+    local inner = w - pad * 2
+    local lines = {}
+    do
+        local line = nil
+        for word in string.gmatch(tip, "%S+") do
+            local try = line and (line .. " " .. word) or word
+            if line and text_w(try, fs) > inner then
+                lines[#lines + 1] = line
+                line = word
+            else
+                line = try
+            end
+        end
+        if line then lines[#lines + 1] = line end
+    end
+
+    local head = 16 * S              -- label baseline inside the box
+    local rule = head + 9 * S        -- the tick rule under it
+    local rowh = 15 * S
+    -- The last row clears the bottom arms rather than sitting on them: a
+    -- chamfered corner is a frame only while there is air inside it.
+    local h = rule + 9 * S + #lines * rowh + 9 * S
+    local x = (W - w) / 2
+    local y = H * 0.46 + (M.compact and 22 or 30) * S
+
+    rect(x, y, w, h, pal.a(pal.BG, 0.74))
+    bracket(x, y, w, h, pal.a(pal.DIM, 0.5), 12 * S, 4 * S)
+    txt("TIP", x + pad, y + head, lab, pal.a(pal.DIM, 0.85))
+
+    -- The clock. `respawn_at` counts down in the core and is in every
+    -- snapshot, so this is read rather than timed here: a local stopwatch
+    -- would drift off the tick that actually puts the hull back.
+    local left, delay = 0, 0
+    if sim.ship_respawn then left, delay = sim.ship_respawn(me) end
+    ticks(x + pad, y + rule, inner, pal.a(pal.DIM, 0.5), 14 * S)
+    if delay > 0 and left > 0 then
+        local frac = left / delay
+        if frac > 1 then frac = 1 end
+        u:seg(x + pad, ry(y + rule), x + pad + inner * frac, ry(y + rule),
+              1.2 * S, pal.a(pal.FRIEND, 0.7))
+    end
+
+    local ty = y + rule + 9 * S + rowh / 2
+    for _, line in ipairs(lines) do
+        txt(line, W / 2, ty, fs, pal.a(pal.PANEL_INK, 0.92), "center")
+        ty = ty + rowh
+    end
+end
+
 local function vignette(amount)
     if amount <= 0.01 then return end
     local col = pal.a(pal.HURT, 0.55 * amount)
@@ -1394,6 +1470,7 @@ function M.hud(o)
     if sim.ship_alive(me) == 0 then
         txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
             pal.ENEMY, "center")
+        wait(o.tip, me)
     end
 end
 
