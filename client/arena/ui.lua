@@ -954,7 +954,7 @@ end
 -- least likely to be looking. Nor is your speed, which nobody has made a
 -- decision on, nor the prediction error in pixels, which was this client
 -- debugging itself on a player's screen.
-local function status(me, pickup, charges, lift)
+local function status(me, charges, lift)
     local slots = charges or {}
     -- Sized up. This corner is what a pilot checks mid-fight without looking
     -- away from their own hull, and it was set three and four points under
@@ -975,7 +975,6 @@ local function status(me, pickup, charges, lift)
         if sim.has_trigger(me, t) then trigs = trigs + 1 end
     end
     local n = trigs + (show_charges and #slots or 0) + 1
-        + (pickup and 1 or 0)
     local y = H - PAD * S - n * rows_h - (lift or 0)
     -- How far right the stack actually reached, which is what decides where
     -- the help overlay's column starts. A hull holding three add-ons is a good
@@ -1060,10 +1059,6 @@ local function status(me, pickup, charges, lift)
     zone("bounty", x, y, bw - x, rows_h)
     y = y + rows_h
 
-    if pickup then
-        txt((pickup.sign or "+") .. " " .. pickup.name, x,
-            y + rows_h / 2, FONT * S, pal.a(pickup.col, pickup.t))
-    end
     anchor.stack_x = wide + 26 * S
     return 0
 end
@@ -1867,7 +1862,7 @@ function M.hud(o)
     end
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it.
-    status(me, o.pickup, o.charges, lift)
+    status(me, o.charges, lift)
     inspect(o, loadout(me, o.class_names, top))
     menu_button()
     vignette(o.hurt or 0)
