@@ -190,11 +190,11 @@ local function text_w(s, px)
 end
 
 -- Broken into lines no wider than `measure`, at whitespace. Used by the card a
--- dead pilot reads and by the help overlay, which say the same sentences and
--- would otherwise break them in two different places.
+-- dead pilot reads and by the label the pointer raises, which say the same
+-- sentences and would otherwise break them in two different places.
 --
 -- Remembered, because the answer only changes when the sentence or the room
--- does, and the help overlay asks the same question of the same sentence every
+-- does, and the label asks the same question of the same sentence every
 -- frame a pointer rests on an instrument. Building it each time is a hundred
 -- string joins a frame to redraw words that have not moved, which is exactly
 -- the sort of thing that shows up as a cursor that does not keep up.
@@ -268,13 +268,10 @@ M.touching = false
 -- size decided this before and got it backwards on the device it was written
 -- for; see M.begin.
 M.details = false
--- Held, never toggled: the screen names its own parts for as long as the key
--- is down. See `help_overlay`.
-M.help = false
 
 -- Where each instrument landed this frame.
 --
--- The help overlay sets a word beside a thing instead of drawing a line to it,
+-- The help label sets a word beside a thing instead of drawing a line to it,
 -- so it has to know where the thing ended up, and the only account of that
 -- which cannot drift is the one each element files as it draws itself. A
 -- second copy of the layout arithmetic would be two places that have to agree
@@ -1277,13 +1274,13 @@ local function status(me, charges, lift)
     end
     local n = trigs + (show_charges and #slots or 0) + 1
     local y = H - PAD * S - n * rows_h - (lift or 0)
-    -- How far right the stack actually reached, which is what decides where
-    -- the help overlay's column starts. A hull holding three add-ons is a good
-    -- deal wider than one holding none, and a constant here would either crowd
-    -- the wide case or strand the narrow one.
+    -- How far right the stack actually reached, which is what decides where a
+    -- label beside it starts. A hull holding three add-ons is a good deal
+    -- wider than one holding none, and a constant here would either crowd the
+    -- wide case or strand the narrow one.
     local wide = val + 44 * S
-    -- The charge rows in the order they were drawn, so the overlay can walk
-    -- them down the stack the way a reader does.
+    -- The charge rows in the order they were drawn, so a reader of this list
+    -- walks them down the stack the way a reader of the stack does.
     anchor.charge_order = {}
 
     -- A level is the same weapon harder, so it is rungs on a ladder; an
@@ -1883,8 +1880,8 @@ local function link(lag)
     end
     txt("LINK", right - 34 * S, base - 4 * S, (FONT - 3) * S,
         pal.a(pal.DIM, 0.8), "right")
-    -- The help overlay does not name this one. Four bars labelled LINK beside
-    -- a millisecond count are already a sentence about the connection, and a
+    -- Pointing at this one names nothing. Four bars labelled LINK beside a
+    -- millisecond count are already a sentence about the connection, and a
     -- word saying so is the interface reading its own label back.
     -- The bars are the readout a player wants and the whole of it. Everything
     -- behind them is for whoever is working on this, so it hides behind the
@@ -2047,34 +2044,35 @@ local function flag_strip(me)
     end
 end
 
--- --- the help overlay ------------------------------------------------------
+-- --- the help label --------------------------------------------------------
 --
--- Held, never toggled. H down and the screen names its own parts; H up and it
--- is gone. That is the difference between something you consult in the middle
--- of a fight and a panel you have to remember to shut, and it is why there is
--- no way to leave this open by accident.
+-- Point at an instrument and it says what it is. Nothing is held, nothing is
+-- toggled, and one thing is named at a time: the pointer is already an
+-- expression of what you are asking about, so the question and the answer land
+-- in the same place.
 --
--- No leader lines anywhere in it, which was the whole lesson of the first
--- draft. Every instrument on this screen already sits against an edge with
--- clear space beside it, so a word set next to a thing is read as being about
--- that thing, and the eleven strokes crossing open sky to reach eleven
--- captions were doing nothing except making the screen unreadable. What is
--- left is one line per instrument, in the colour that instrument already
--- wears, and only where the label on the row does not say it already: GUN and
--- BOMB name themselves, so those lines explain the rung rather than the word.
+-- There was a held key for a while that named every instrument at once, and
+-- what killed it is the sentences getting longer. Short phrases sat beside
+-- their rows and adjacency did the work. Cards do not fit on a row, so all of
+-- them together had to be gathered into a column, and a column off to one side
+-- says which instrument each line belongs to by colour rather than by
+-- position, which is the one thing this was built to avoid.
+--
+-- No leader lines either, which was the lesson before that. Every instrument
+-- sits against an edge with clear space beside it, so a word set next to a
+-- thing reads as being about that thing.
 
--- Every line the overlay can draw, and which instrument each one belongs to.
+-- The line for one instrument, or nil where an instrument has nothing to say
+-- beyond the label it already wears: GUN and BOMB name themselves, so their
+-- lines explain the rung rather than the word.
 --
--- Built rather than drawn directly, because the same list answers two
--- questions. Holding H draws all of it. Resting the pointer on one instrument
--- draws that instrument's line and nothing else, and the key it is filed under
--- is what makes "that one" a thing this file can say.
--- `only` builds the one entry that key names and skips the rest. The pointer
--- wants a single sentence and asks every frame it rests somewhere, so building
--- all seven to draw one of them is six sentences wrapped and thrown away sixty
--- times a second.
-local function help_lines(o, only)
-    local out = {}
+-- Every instrument offers itself and only the one asked for is built, which
+-- keeps the list of what can be named in one place while costing one sentence
+-- to draw one. The pointer asks again every frame it rests somewhere, and
+-- wrapping six sentences sixty times a second to draw the seventh is how a
+-- cursor stops keeping up.
+local function help_line(want)
+    local found = nil
     -- `top` and `bot` are the run of the bar. Given, it is as tall as the
     -- instrument; left out, it is as tall as the sentence, which is now often
     -- more than one line.
@@ -2083,15 +2081,14 @@ local function help_lines(o, only)
     -- than a measure somebody can read across. A card's worth of words set as
     -- one line runs most of the way over the arena.
     local function add(key, x, y, s, col, align, top, bot)
-        if only and key ~= only then return end
+        if key ~= want then return end
         local px = (FONT - 1) * S
         local room = (align == "right") and (x - 22 * S) or (W - x - 22 * S)
         local e = {key = key, x = x, y = y, col = col, align = align,
                    top = top, bot = bot,
                    lines = wrap(s, px, math.min(room, 640 * S))}
         e.h = #e.lines * LINE * S
-        out[#out + 1] = e
-        return e
+        found = e
     end
     -- The corner stack says what the card a dead pilot reads says, word for
     -- word, out of CARDS. One sentence per thing, wherever a player meets it:
@@ -2136,7 +2133,7 @@ local function help_lines(o, only)
         add("feed", anchor.feed[1] - 16 * S, (top + bot) / 2, "who paid whom",
             pal.BOUNTY, "right", top, bot)
     end
-    return out
+    return found
 end
 
 -- A bar in the thing's own colour, then the sentence. The bar sits on the side
@@ -2167,55 +2164,16 @@ local function help_fit(e)
     if e.y - half < 8 * S then e.y = 8 * S + half end
 end
 
--- Held, the four or five lines off the corner stack are a column rather than
--- four or five marks beside four or five rows: a card's worth of words is
--- taller than the row it belongs to, and left on their rows they would print
--- through each other. Laid out bottom up from where the stack ends, so the
--- order still matches the order of the rows and the colours still say which
--- is which.
-local function help_column(list)
-    if #list == 0 then return end
-    local gap = 7 * S
-    local total = 0
-    for i, e in ipairs(list) do
-        total = total + e.h + (i > 1 and gap or 0)
-    end
-    local bottom = math.min(list[#list].y + list[#list].h / 2, H - 8 * S)
-    local top = math.max(bottom - total, 8 * S)
-    for _, e in ipairs(list) do
-        e.y = top + e.h / 2
-        top = top + e.h + gap
-    end
-end
-
-local function help_overlay(o)
-    local all = help_lines(o)
-    local stack = {}
-    for _, e in ipairs(all) do
-        if e.align ~= "right" then stack[#stack + 1] = e end
-    end
-    help_column(stack)
-    for _, e in ipairs(all) do
-        help_fit(e)
-        help_draw(e)
-    end
-end
-
 -- The pointer resting on one instrument names that instrument, and nothing
--- else happens: no wash, no other lines, no key held. Holding H is the whole
--- screen at once and reads as a mode; this is a question asked of one thing
--- and has to cost about as much as looking at it.
-local function help_hover(o, key)
-    for _, e in ipairs(help_lines(o, key)) do
-        if e.key == key then
-            -- On its own row, not shuffled into a column: one block has
-            -- nothing to collide with and every reason to sit against the
-            -- thing being pointed at.
-            help_fit(e)
-            help_draw(e)
-            return
-        end
-    end
+-- else happens: no wash, no other lines, no mode. This is a question asked of
+-- one thing, and it has to cost about as much as looking at it.
+local function help_hover(key)
+    local e = help_line(key)
+    if not e then return end
+    -- On its own row, since one block has nothing to collide with and every
+    -- reason to sit against the thing being pointed at.
+    help_fit(e)
+    help_draw(e)
 end
 
 function M.hud(o)
@@ -2237,16 +2195,6 @@ function M.hud(o)
     if not o.menu_open and sim.ship_alive(me) == 0 then
         wait_box = wait_layout(o.tip)
     end
-
-    -- The scenery dims and the instruments do not, so the wash goes down
-    -- before any of them and over the whole arena. Nothing is paused while
-    -- this is up: you can be killed reading it, and anything that helps you
-    -- fly has to stay exactly as bright as it was.
-    --
-    -- Not under the menu, which is a different screen with its own help page
-    -- on it. Two of these reading at once is neither.
-    local help = M.help and not o.menu_open
-    if help then rect(0, 0, W, H, pal.rgb(0x03050a, 0.60)) end
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -2290,17 +2238,12 @@ function M.hud(o)
     -- shot and fills when you stop being shot is the one instrument here that
     -- explains itself, and a word beside it in the middle of the screen is a
     -- word in the middle of the fight.
-    -- Last, so every word lands on top of the instrument it names.
     --
-    -- Held wins over hovered. H is a deliberate "explain the screen" and the
-    -- pointer is often somewhere by accident, so a hand resting on the dial
-    -- must not quietly cut the other eight lines out of a mode the player
-    -- asked for.
-    if help then
-        help_overlay(o)
-    elseif not o.menu_open then
+    -- Last, so the word lands on top of the instrument it names. Not under the
+    -- menu, which is a different screen with its own help page on it.
+    if not o.menu_open then
         local key = M.help_at(o.point_x, o.point_y)
-        if key then help_hover(o, key) end
+        if key then help_hover(key) end
     end
 
     -- The two big centred lines are the only interface that sits where the
@@ -2384,7 +2327,7 @@ local BOARD = {
      {"9"}, {"0"}},
     {{"tab", 1.7, "bomb"}, {"Q", 1, "multi"}, {"W"}, {"E"}, {"R"}, {"T"},
      {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
-    {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H", 1, "labels"},
+    {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H"},
      {"J"}, {"K"}, {"L"}},
     {{"shift", 2.25, "gun"}, {"Z", 1, "gun"}, {"X", 1, "bomb"}, {"C"}, {"V"},
      {"B"}, {"N"}, {"M", 1, "map"}},
@@ -2418,7 +2361,6 @@ local BOARD_CATS = {
     {key = "charge", word = "charges"},
     {key = "players", word = "players"},
     {key = "map", word = "map"},
-    {key = "labels", word = "labels"},
     {key = "menu", word = "menu"},
 }
 
@@ -2434,7 +2376,6 @@ local function board_col(cat)
     if cat == "fly" then return pal.INK end
     if cat == "players" then return pal.DOOR end
     if cat == "map" then return pal.HOLE end
-    if cat == "labels" then return pal.ENEMY end
     if cat == "menu" then return pal.a(pal.DIM, 1.0) end
     return nil
 end

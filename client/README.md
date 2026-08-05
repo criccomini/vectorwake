@@ -191,9 +191,9 @@ A hand cannot press faster than a frame at 60 Hz, so this is a property of the
 harness rather than of the game, and it is Defold's input layer rather than
 anything in this client. It has now cost two sessions. The first read fast
 clicks plus coordinates measured from a screenshot taken before a button was
-added to the row, and reported a dead start screen. The second held H, saw the
-help overlay appear, then tapped M and Esc and reported that the map and the
-menu did nothing. Both times the interface was fine.
+added to the row, and reported a dead start screen. The second held a key down,
+saw what it does appear, then tapped M and Esc and reported that the map and
+the menu did nothing. Both times the interface was fine.
 
 You do not have to click the canvas first to give it the keyboard. The engine
 listens at the document, so a key held with nothing focused arrives anyway,
@@ -386,39 +386,52 @@ and no combination of the six at full depth leaves its own row or reaches the
 column the ladders count in. That last one walks all 64 combinations, because
 the case that overflows is never the one somebody thought to try.
 
-Since the shapes are the row now, holding `H` names what this hull is actually
-carrying rather than what weapons can carry in general. A shape drawn onto a
-mark is learnable exactly once, by being told.
+Since the shapes are the row now, pointing at one names what this hull is
+actually carrying rather than what weapons can carry in general. A shape drawn
+onto a mark is learnable exactly once, by being told.
 
 ## The screen naming its own parts
 
-Hold `H` and every instrument grows a word beside it: what a rung buys, what a
-bounty is a price for, which pool the bar over your own hull draws from. Let go
-and it is gone. Held rather than toggled, so there is no mode to be stuck in
-and nothing to remember to shut. It stays down under the menu, which is a
-different screen and has the drawn keyboard on it already.
+Rest the pointer on an instrument and it says what it is: what a rung buys,
+what a bounty is a price for, which dial is standing in the corner. Move off
+and the word goes. One instrument at a time, because the pointer is already an
+expression of what you are asking about, so the question and the answer land in
+the same place. Nothing answers under the menu, which is a different screen and
+has the drawn keyboard on it already.
 
-There are no leader lines in it. The first version had eleven captions with
+A held key did this for a while, naming every instrument at once. What killed
+it is the sentences getting longer. They say what the card a dead pilot reads
+says, word for word, so that learning what a bomb is from the wait after one
+killed you and then pointing at the `BOMB` row is not learning it twice in two
+different sets of words. A card does not fit on a row, so all of them at once
+had to be gathered into a column off to one side, and a column says which
+instrument each line belongs to by colour rather than by position. Position was
+the whole point.
+
+There are no leader lines either. The first version had eleven captions with
 eleven strokes running out across the arena to reach them, and the strokes were
 the whole of what made it unreadable. Every instrument here already sits
 against an edge with clear space beside it, so a word set next to a thing is
 read as being about that thing, at none of the cost. What is left is one line
-per instrument, in the colour that instrument already wears, and only where the
-label on the row does not say it already: `GUN` names itself, so the line
-beside it explains the rung.
+in the colour that instrument already wears, and only where the label on the
+row does not say it already: `GUN` names itself, so the line beside it explains
+the rung.
 
-The wash goes down before the HUD and over the arena, not over both. Nothing is
-paused while this is open and you can be killed reading it, so the scenery dims
-and anything that helps you fly stays exactly as bright as it was.
+What can be pointed at is a list of rectangles filed the same way and at the
+same time as the anchors, and deliberately not `M.hits`. A hit box is a press,
+and the field of play holds none at all because left click is the gun; these
+are read by the pointer and by nothing else, so naming a thing can never cost a
+trigger pull. A touchscreen sends no pointer and gets nothing here, which is
+what the cards under `DESTROYED` are for.
 
 Where the words go is filed rather than worked out twice. Each element records
-where it landed as it draws itself, into `anchor` in `ui.lua`, and the overlay
+where it landed as it draws itself, into `anchor` in `ui.lua`, and the label
 reads that; the corner stack also reports how far right it actually reached, so
-a hull carrying three add-ons pushes the column of sentences right rather than
-having them printed through its own loadout. `lua5.1 client/tests/help_test.lua`
-runs the real `M.hud` against a stubbed engine and measures where the text came
-out: on the row it names, clear of what is already on that row, inside the
-screen, and not on top of the next one.
+a hull carrying three add-ons pushes the sentence right rather than having it
+printed through its own loadout. `lua5.1 client/tests/help_test.lua` runs the
+real `M.hud` against a stubbed engine and measures where the text came out: on
+the row it names, clear of what is already on that row, and inside the screen,
+which for the bottom row of the stack takes a clamp.
 
 ## Pointing at things
 

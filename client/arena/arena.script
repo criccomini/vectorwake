@@ -1135,10 +1135,6 @@ function update(self, dt)
     -- scoreboard and the radar behind a panel would be a lie about what is
     -- happening: you can be shot while reading this.
     if live then
-        -- Read from `held` rather than `tapped`, which is the whole design of
-        -- it: the overlay is up exactly as long as the key is down, so there
-        -- is no mode to be stuck in and nothing to remember to close.
-        ui.help = held[hash("help")] or false
         ui.hud({
             me = me, class_names = CLASS_NAMES, menu_open = menu.open,
             -- Where the pointer is, in the interface's own coordinates, so an
