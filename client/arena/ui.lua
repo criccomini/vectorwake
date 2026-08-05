@@ -297,8 +297,12 @@ function M.help_at(x, y)
     return found
 end
 
-function M.begin(layer, w, h, density, touching)
+-- `now` is the frame's clock in seconds, for the few things on screen that
+-- move on their own. Nothing that is laid out depends on it, so a caller with
+-- no clock draws the same interface at rest.
+function M.begin(layer, w, h, density, touching, now)
     u, W, H = layer, w, h
+    M.now = now or 0
     -- Points of screen rather than pixels: a phone at two device pixels per
     -- point is a small screen, not a large one, and laying the interface out
     -- against the pixel count is how it ends up drawn at half size on the
@@ -2065,13 +2069,29 @@ end
 -- A hull drawn small, inside its button. The silhouette is what picks a ship;
 -- the name only confirms it. The canopy comes along because at this size it is
 -- the only thing that says which end is the front.
-function thumb(cx, cy, cls, col, scale)
+--
+-- `turn` is an angle about the hull's own vertical axis. For a flat body that
+-- is a squeeze across it, which is what an orthographic projection does to a
+-- shape turning about an axis lying in the screen plane: the same move the
+-- asteroids tumble with, on one axis instead of two.
+--
+-- Never quite to a hairline. A cutout seen exactly edge-on is a line, which is
+-- honest and reads as the drawing having blinked, so the end of the turn is
+-- spent rather than drawn: the width bottoms out at a fifth and carries on
+-- through, keeping its sign so the far side comes round rather than bouncing
+-- back off the near one.
+function thumb(cx, cy, cls, col, scale, turn)
     local h = world.HULLS[cls + 1]
     if not h then return end
+    local k = 1
+    if turn then
+        local ct = math.cos(turn)
+        k = (ct >= 0 and 1 or -1) * (0.2 + 0.8 * math.abs(ct))
+    end
     local function trace(src, width, c)
         local pts = {}
         for i = 1, #src, 2 do
-            pts[i] = cx + src[i] * scale
+            pts[i] = cx + src[i] * scale * k
             pts[i + 1] = ry(cy - (src[i + 1] - h.mid) * scale)
         end
         u:outline(pts, width, c, true)
@@ -2625,8 +2645,12 @@ local function ship_grid(x, y, w, h, v, focused)
         -- lit cell. The role used to sit on that edge, its descenders over the
         -- line, so a selected ship read as type in a box a size too small for
         -- it.
+        -- The one under the cursor turns, and nothing else on the page does.
+        -- Eight hulls all revolving is a screensaver; one of them turning is
+        -- the one you are looking at, answering.
         thumb(cx, cy - ch * 0.17, r.hull or 0,
-              pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116)
+              pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116,
+              hot and M.now * 1.7 or nil)
         txt(r.label or "", cx, cy + ch * 0.20, (M.compact and 14 or 15) * S,
             pal.a(col, (hot or r.mark) and 1 or 0.8), "center", MENU_FONT)
         if r.role then
