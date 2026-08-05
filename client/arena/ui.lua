@@ -548,6 +548,12 @@ end
 -- or on the label beside it, would eat the trigger at the exact moment a
 -- player is lined up on somebody. Asking who somebody is belongs to the
 -- scoreboard, where a click is a click and nothing else.
+-- Where the wait box is standing this frame, or nil when there is none. Set
+-- by `wait` and read by `nameplates`, which is the one thing that can land on
+-- top of it: a nameplate is a gui glyph, and the gui draws over every mesh, so
+-- no wash can quiet one. The only way past that is to not draw it.
+local wait_box = nil
+
 local function nameplates(o)
     if not o.half_w or o.half_w <= 0 then return end
     -- The render script publishes its own half-extents for exactly this, so
@@ -574,20 +580,32 @@ local function nameplates(o)
                 -- them pays, so it is the one number that says which of two
                 -- ships in front of you is worth the risk.
                 local bty = sim.ship_bounty(i)
-                txt(nm, sx + 12 * S, sy + 13 * S, 11 * S, pal.a(col, 0.7))
-                -- The same mark the scoreboard and the info box wear, on the
-                -- hull itself: who is flying a ship is worth knowing while
-                -- you are deciding whether to chase it, and that decision is
-                -- made looking at the ship rather than at a panel. Dim and
-                -- after the name, so it reads as a note about the label and
-                -- never competes with the bounty under it.
-                if p and p.ai then
-                    bot_mark(sx + 12 * S + text_w(nm, 11 * S) + 4 * S,
-                             sy + 13 * S, pal.a(col, 0.45), 8 * S)
-                end
-                if bty > 0 then
-                    txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
-                        pal.a(pal.BOUNTY, 0.85))
+                -- Not when it would land on the line somebody has three
+                -- seconds to read. A name is worth knowing while you are
+                -- deciding whether to chase somebody, and you are dead, so
+                -- for those three seconds it is worth less than the sentence
+                -- underneath it. The hull still draws; only the label goes.
+                local b = wait_box
+                local clear = not (b and sx + 12 * S < b.x + b.w
+                    and sx + 90 * S > b.x and sy + 28 * S > b.y
+                    and sy + 4 * S < b.y + b.h)
+                if clear then
+                    txt(nm, sx + 12 * S, sy + 13 * S, 11 * S, pal.a(col, 0.7))
+                    -- The same mark the scoreboard and the info box wear, on
+                    -- the hull itself: who is flying a ship is worth knowing
+                    -- while you are deciding whether to chase it, and that
+                    -- decision is made looking at the ship rather than at a
+                    -- panel. Dim and after the name, so it reads as a note
+                    -- about the label and never competes with the bounty
+                    -- under it.
+                    if p and p.ai then
+                        bot_mark(sx + 12 * S + text_w(nm, 11 * S) + 4 * S,
+                                 sy + 13 * S, pal.a(col, 0.45), 8 * S)
+                    end
+                    if bty > 0 then
+                        txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
+                            pal.a(pal.BOUNTY, 0.85))
+                    end
                 end
             end
         end
@@ -1125,8 +1143,13 @@ end
 -- Centred under the banner rather than in a corner, because for these three
 -- seconds there is nothing to fly and nothing to look away from, and it goes
 -- the instant the hull is back.
-local function wait(tip, me)
-    if not tip or tip == "" then return end
+-- Where the box goes and what it holds, worked out before anything else is
+-- drawn so `nameplates` can step around it in the same frame. Measuring and
+-- drawing are separate for that reason alone: the box is drawn last, over
+-- everything, and a rectangle published then would be a frame stale, which is
+-- one frame of a stranger's name across the sentence at the moment it appears.
+local function wait_layout(tip)
+    if not tip or tip == "" then return nil end
     local fs = (M.compact and 10 or 12) * S
     local lab = (M.compact and 8 or 9) * S
     local pad = 14 * S
@@ -1135,12 +1158,16 @@ local function wait(tip, me)
     -- gets one rather than a sentence running off the edge.
     local w = math.min(430 * S, W - 40 * S)
     local inner = w - pad * 2
+    -- Wrapped to less than the box holds. A line broken at exactly the inner
+    -- width ends flush against the padding, which reads as text that only
+    -- just fitted rather than text that was laid out.
+    local measure = inner - 10 * S
     local lines = {}
     do
         local line = nil
         for word in string.gmatch(tip, "%S+") do
             local try = line and (line .. " " .. word) or word
-            if line and text_w(try, fs) > inner then
+            if line and text_w(try, fs) > measure then
                 lines[#lines + 1] = line
                 line = word
             else
@@ -1156,30 +1183,44 @@ local function wait(tip, me)
     -- The last row clears the bottom arms rather than sitting on them: a
     -- chamfered corner is a frame only while there is air inside it.
     local h = rule + 9 * S + #lines * rowh + 9 * S
-    local x = (W - w) / 2
-    local y = H * 0.46 + (M.compact and 22 or 30) * S
+    return {
+        x = (W - w) / 2, y = H * 0.46 + (M.compact and 22 or 30) * S,
+        w = w, h = h, inner = inner, pad = pad,
+        fs = fs, lab = lab, head = head, rule = rule, rowh = rowh,
+        lines = lines,
+    }
+end
 
-    rect(x, y, w, h, pal.a(pal.BG, 0.74))
-    bracket(x, y, w, h, pal.a(pal.DIM, 0.5), 12 * S, 4 * S)
-    txt("TIP", x + pad, y + head, lab, pal.a(pal.DIM, 0.85))
+local function wait(b, me)
+    if not b then return end
+    local x, y = b.x, b.y
+
+    -- Darker than the panels' own wash. Those sit in a corner over mostly
+    -- empty field; this sits in the middle of the arena, where a stranger's
+    -- hull flies straight through it, and a line you have three seconds to
+    -- read cannot afford to be shared with one.
+    rect(x, y, b.w, b.h, pal.a(pal.BG, 0.86))
+    bracket(x, y, b.w, b.h, pal.a(pal.DIM, 0.5), 12 * S, 4 * S)
+    txt("TIP", x + b.pad, y + b.head, b.lab, pal.a(pal.DIM, 0.85))
 
     -- The clock. `respawn_at` counts down in the core and is in every
     -- snapshot, so this is read rather than timed here: a local stopwatch
     -- would drift off the tick that actually puts the hull back.
     local left, delay = 0, 0
     if sim.ship_respawn then left, delay = sim.ship_respawn(me) end
-    ticks(x + pad, y + rule, inner, pal.a(pal.DIM, 0.5), 14 * S)
+    ticks(x + b.pad, y + b.rule, b.inner, pal.a(pal.DIM, 0.5), 14 * S)
     if delay > 0 and left > 0 then
         local frac = left / delay
         if frac > 1 then frac = 1 end
-        u:seg(x + pad, ry(y + rule), x + pad + inner * frac, ry(y + rule),
+        u:seg(x + b.pad, ry(y + b.rule),
+              x + b.pad + b.inner * frac, ry(y + b.rule),
               1.2 * S, pal.a(pal.FRIEND, 0.7))
     end
 
-    local ty = y + rule + 9 * S + rowh / 2
-    for _, line in ipairs(lines) do
-        txt(line, W / 2, ty, fs, pal.a(pal.PANEL_INK, 0.92), "center")
-        ty = ty + rowh
+    local ty = y + b.rule + 9 * S + b.rowh / 2
+    for _, line in ipairs(b.lines) do
+        txt(line, W / 2, ty, b.fs, pal.a(pal.PANEL_INK, 0.92), "center")
+        ty = ty + b.rowh
     end
 end
 
@@ -1419,6 +1460,16 @@ function M.hud(o)
     -- not enough to read across the panel.
     text_dim = o.menu_open and 0.34 or 1
 
+    -- Measured first, drawn last. Nameplates need to know where it is before
+    -- they draw, and it needs to sit over everything, so the two happen at
+    -- opposite ends of this function. Nil whenever it will not be drawn:
+    -- alive, or under the menu, which takes the centre of the screen for
+    -- itself and puts both of these away.
+    wait_box = nil
+    if not o.menu_open and sim.ship_alive(me) == 0 then
+        wait_box = wait_layout(o.tip)
+    end
+
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
     -- which is exactly where the status panel and the control hint were, so
@@ -1470,7 +1521,7 @@ function M.hud(o)
     if sim.ship_alive(me) == 0 then
         txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
             pal.ENEMY, "center")
-        wait(o.tip, me)
+        wait(wait_box, me)
     end
 end
 
