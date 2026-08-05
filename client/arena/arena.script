@@ -484,6 +484,18 @@ local function drain_events()
     -- state instead, so they go here rather than in the loop below.
     world.charges(me, sfx.play)
     world.shots(me, sfx.play)
+    -- And what the events never got to say: kills and detonations that
+    -- arrived as a snapshot's state change rather than as anything the local
+    -- simulation lived through. Without these a mistimed kill is a hull that
+    -- vanishes mid-flight with the bomb still drawn beside it.
+    for _, d in ipairs(net.snap_deaths) do
+        world.corpse(d.ship, d.vx, d.vy, me, sfx.play)
+    end
+    for _, w in ipairs(net.snap_blasts) do
+        world.late_blast(w, sfx.play)
+    end
+    if #net.snap_deaths > 0 then net.snap_deaths = {} end
+    if #net.snap_blasts > 0 then net.snap_blasts = {} end
     for i = 0, sim.event_count() - 1 do
         local ty, a, b, v = sim.event_at(i)
         if ty == sim.EV_HIT and a == me then

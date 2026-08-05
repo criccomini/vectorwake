@@ -2139,6 +2139,23 @@ end
 -- noise. Positions come from the event where the core carries one, because by
 -- the time the client looks a dead weapon is already gone from the state.
 
+-- The two announcements a snapshot swallows, drawn late rather than never.
+-- net.lua queues them when a state replacement kills a ship or ends a bomb
+-- before the local simulation got to; each draws exactly what the missed
+-- event would have. See the comment on the queues in net.lua.
+function M.corpse(i, vx, vy, me, sfx)
+    local x, y = sim.ship_x(i), sim.ship_y(i)
+    local col = (sim.ship_team(i) == sim.ship_team(me)) and pal.FRIEND
+        or pal.ENEMY
+    fx.destroy(x, y, vx, vy, col)
+    sfx("death", x, y)
+end
+
+function M.late_blast(w, sfx)
+    fx.detonate(w.x, w.y, spec_blast(w.spec), bomb_col(spec_level(w.spec)))
+    sfx("blast", w.x, w.y)
+end
+
 function M.events(me, sfx)
     for i = 0, sim.event_count() - 1 do
         local ty, a, b, v = sim.event_at(i)

@@ -57,6 +57,17 @@ M.ratings = {}
 -- The zone says each death exactly once, to everyone.
 M.kills = {}
 
+-- Deaths and bomb endings the simulation never announced, found by comparing
+-- the world the client had with the world a snapshot handed it. A snapshot
+-- replaces state outright and emits no events, and anything emitted inside
+-- the rollback replay is cleared by the next step before anyone reads it, so
+-- a kill the local prediction mistimed was a hull vanishing with no
+-- explosion and no sound: measured at 15% of deaths against a server on
+-- loopback, and a real link's longer lead can only raise that. The arena
+-- drains these into the same light and noise the events would have made.
+M.snap_deaths = {}
+M.snap_blasts = {}
+
 -- The sides this room holds, as this client is allowed to see them: the
 -- zone's own, the one you are on, and any that has invited you. Each row is
 -- {team, name, public, may_join, humans, bots}, in the order the zone scores
@@ -304,6 +315,23 @@ local function on_snapshot(s)
     -- correction so the drawing can be walked to the truth rather than cut to
     -- it. See the render section of simcore.cpp.
     sim.smooth_capture()
+    -- What the client believes before the truth arrives, for the queues
+    -- above: who was flying, how fast, and every round in the air. A round
+    -- is named by owner, spec and birth tick, which both ends agree on
+    -- because birth is current tick minus the life it has spent.
+    local was_alive, was_vx, was_vy = {}, {}, {}
+    for i = 0, sim.ship_count() - 1 do
+        was_alive[i] = sim.ship_alive(i)
+        was_vx[i], was_vy[i] = sim.ship_vel(i)
+    end
+    local flying = {}
+    local pre_tick = sim.tick()
+    for i = 0, sim.weapon_count() - 1 do
+        local x, y, spec, _, _, _, life, owner = sim.weapon_at(i)
+        local born = owner * 16777216 + spec * 65536
+            + (pre_tick - (sim.spec_life(spec) - life)) % 65536
+        flying[born] = {x = x, y = y, spec = spec, life = life}
+    end
     if sim.apply_snapshot(body) ~= 0 then return end
 
     -- Replay the inputs the server had not applied when it sent this.
@@ -351,6 +379,33 @@ local function on_snapshot(s)
     -- Everything the snapshot and the replay moved is now owed to the drawing,
     -- which pays it off over the next tenth of a second.
     sim.smooth_settle()
+
+    -- Whoever was flying and is now dead in an occupied seat died without a
+    -- word; an empty seat is a departure, not a death. The velocity is the
+    -- one the client was drawing, so the pieces leave along the course the
+    -- hull was seen on.
+    for i = 0, sim.ship_count() - 1 do
+        if was_alive[i] == 1 and sim.ship_active(i) == 1
+            and sim.ship_alive(i) ~= 1 then
+            M.snap_deaths[#M.snap_deaths + 1] =
+                {ship = i, vx = was_vx[i] or 0, vy = was_vy[i] or 0}
+        end
+    end
+    -- And every round that was in the air and is not any more, with life
+    -- left to fly, ended on something. Twenty ticks of margin excludes a
+    -- round the local simulation was about to expire by itself.
+    local post_tick = sim.tick()
+    for i = 0, sim.weapon_count() - 1 do
+        local _, _, spec, _, _, _, life, owner = sim.weapon_at(i)
+        local born = owner * 16777216 + spec * 65536
+            + (post_tick - (sim.spec_life(spec) - life)) % 65536
+        flying[born] = nil
+    end
+    for _, w in pairs(flying) do
+        if w.life > 20 and sim.spec_blast(w.spec) > 0 then
+            M.snap_blasts[#M.snap_blasts + 1] = w
+        end
+    end
 
     local dx, dy = sim.ship_x_raw(M.me) - px, sim.ship_y_raw(M.me) - py
     local err = math.sqrt(dx * dx + dy * dy)
@@ -437,10 +492,23 @@ function M.connect(url, class, name, on_lost, zone)
     M.pilots = {}
     M.ratings = {}
     M.kills = {}
+
+-- Deaths and bomb endings the simulation never announced, found by comparing
+-- the world the client had with the world a snapshot handed it. A snapshot
+-- replaces state outright and emits no events, and anything emitted inside
+-- the rollback replay is cleared by the next step before anyone reads it, so
+-- a kill the local prediction mistimed was a hull vanishing with no
+-- explosion and no sound: measured at 15% of deaths against a server on
+-- loopback, and a real link's longer lead can only raise that. The arena
+-- drains these into the same light and noise the events would have made.
+M.snap_deaths = {}
+M.snap_blasts = {}
     M.teams = {}
     M.my_team = 0
     M.may_found = false
     M.invited = {}
+    M.snap_deaths = {}
+    M.snap_blasts = {}
     M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0,
                rx = 0, tx = 0, msgs = 0}
     M.lost = nil

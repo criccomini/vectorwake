@@ -61,14 +61,15 @@ for i, n in ipairs({"zones", "ship", "pilot", "settings", "help", "about"}) do
 end
 
 -- The cursor, as the drawing makes it: a field of team blue across the row it
--- is on. Counted by colour, since the rail's own lit stop and the wash a
--- marked row carries are the same blue at a lighter weight.
+-- is on. Counted by colour, since the wash a marked row carries is the same
+-- blue at a lighter weight, and by width, since the rail's own lit stop wears
+-- the same field at the same weight and is a third as wide.
 local function cursors()
     local n = 0
     for _, r in ipairs(rects) do
         local c = r.col
         if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
-           and c[4] > 0.12 and c[4] < 0.2 then
+           and c[4] > 0.12 and r.w > 300 then
             n = n + 1
         end
     end
@@ -188,6 +189,35 @@ draw(preview)
 check("a pointer lights the row it rests on", cursors() == 1,
       cursors() .. " rows lit")
 preview.hover = nil
+
+-- --- the lit half is the half the arrows are in ---------------------------
+--
+-- Both halves mark their cursor with the same blue field, so the one wearing
+-- the brighter of the two is the whole of the answer to what up and down will
+-- move. Read off the rail's own field, drawn either side of the focus.
+
+local function rail_wash()
+    local a = 0
+    for _, r in ipairs(rects) do
+        local c = r.col
+        if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
+           and r.w < 300 and c[4] < 0.5 and c[4] > a then
+            a = c[4]
+        end
+    end
+    return a
+end
+
+preview.focus = "rail"
+draw(preview)
+local lit_rail = rail_wash()
+preview.focus = "stage"
+draw(preview)
+local dim_rail = rail_wash()
+check("the rail lights brighter while the arrows are in it",
+      lit_rail > dim_rail and dim_rail > 0,
+      lit_rail .. " against " .. dim_rail)
+preview.focus = "rail"
 
 -- --- a long list scrolls rather than stopping -----------------------------
 

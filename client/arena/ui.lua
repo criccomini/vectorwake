@@ -1896,33 +1896,41 @@ M.CARDS = CARDS
 local function wait_layout(which)
     local card = CARDS[which]
     if not card then return nil end
-    local fs = (M.compact and 10 or 12) * S
-    local pad = 14 * S
-    -- Wide enough to read, never wider than the screen it is on.
-    local w = math.min(430 * S, W - 40 * S)
+    -- Sized up, and against the wrong thing before. It was set under the
+    -- corner stack's own body text, which is what a pilot reads at a glance
+    -- while flying; this is read once, at arm's length, in the only seconds
+    -- of the game where there is nothing else to do. A card nobody finishes
+    -- is a card that may as well not be dealt.
+    local fs = (M.compact and 13 or 15) * S
+    local pad = 16 * S
+    -- Wide enough to read, never wider than the screen it is on. The width
+    -- is set by the longest card rather than by taste: the bomb is 123
+    -- characters and wraps to four rows under 560, the last of them holding
+    -- the single word "miss."
+    local w = math.min(560 * S, W - 40 * S)
     local inner = w - pad * 2
     -- The figure's cell, and what is left for the sentence beside it. Square,
     -- because every shape in here is drawn around its own centre and a cell
     -- that was not square would put the bomb and the flag on different axes.
-    local cell = (M.compact and 40 or 48) * S
-    local gap = 12 * S
+    local cell = (M.compact and 50 or 60) * S
+    local gap = 14 * S
     -- Wrapped to less than the column holds. A line broken at exactly the
     -- width ends flush against the padding, which reads as text that only
     -- just fitted rather than text that was laid out.
     local measure = inner - cell - gap - 6 * S
     local lines = wrap(card.text, fs, measure)
 
-    local rule = 12 * S              -- the clock rule, at the top of the box
-    local rowh = 15 * S
+    local rule = 13 * S              -- the clock rule, at the top of the box
+    local rowh = 19 * S
     -- The heading and the air under it, which the figure's cell has to clear
     -- as well: the shape is centred on the whole block, name included, or it
     -- floats against a column it is supposed to sit beside.
-    local lab = (M.compact and 9 or 10) * S
-    local headh = lab + 8 * S
+    local lab = (M.compact and 11 or 12) * S
+    local headh = lab + 9 * S
     -- Tall enough for the figure or for the words, whichever asks for more,
     -- so a one-line card is not a box with a bomb hanging out of the bottom.
     local body = math.max(cell, headh + #lines * rowh)
-    local h = rule + 11 * S + body + 11 * S
+    local h = rule + 13 * S + body + 13 * S
     return {
         x = (W - w) / 2, y = H * 0.46 + (M.compact and 22 or 30) * S,
         w = w, h = h, inner = inner, pad = pad,
@@ -1947,7 +1955,7 @@ local function wait(b, me)
     -- would drift off the tick that actually puts the hull back.
     local left, delay = 0, 0
     if sim.ship_respawn then left, delay = sim.ship_respawn(me) end
-    ticks(x + b.pad, y + b.rule, b.inner, pal.a(pal.DIM, 0.5), 14 * S)
+    ticks(x + b.pad, y + b.rule, b.inner, pal.a(pal.DIM, 0.5), 16 * S)
     if delay > 0 and left > 0 then
         local frac = left / delay
         if frac > 1 then frac = 1 end
@@ -1967,7 +1975,7 @@ local function wait(b, me)
     -- The block of words is centred on the body's own middle rather than hung
     -- from the top, so a one-line card and a three-line card are both
     -- balanced against the shape, and the figure sits on that same middle.
-    local top = y + b.rule + 11 * S
+    local top = y + b.rule + 13 * S
     local mid = top + b.body / 2
 
     local tx = x + b.pad
@@ -3250,6 +3258,11 @@ function M.menu(v)
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
 
+    -- Which half the arrows are in. The two halves share one cursor and mark
+    -- it with the same blue field, so the half wearing the brighter one is the
+    -- answer to "what does up do here" without a word spent on saying it.
+    local focused = (v.focus == "stage")
+
     -- --- the rail
     local pitch = vertical and (rh / n) or (rw / n)
     for i, e in ipairs(rail) do
@@ -3267,17 +3280,21 @@ function M.menu(v)
         if sel then
             -- The lit one, and a rule reaching from it toward the stage, so
             -- the eye is told which mark the panel belongs to rather than
-            -- having to work it out from a highlight.
+            -- having to work it out from a highlight. Brighter while the
+            -- arrows are in the rail, down to the weight the stop keeps for
+            -- saying where you are once they have gone into the page.
+            local lit = pal.a(pal.FRIEND, focused and 0.06 or 0.22)
+            local bar = pal.a(pal.FRIEND, focused and 0.5 or 1)
             if vertical then
                 rect(rx - 6 * S, cy - pitch / 2 + 3 * S,
-                     rw + 6 * S, pitch - 6 * S, pal.a(pal.FRIEND, 0.08))
+                     rw + 6 * S, pitch - 6 * S, lit)
                 u:seg(rx - 6 * S, ry(cy - pitch / 2 + 3 * S), rx - 6 * S,
-                      ry(cy + pitch / 2 - 3 * S), 1.6 * S, pal.FRIEND, true)
+                      ry(cy + pitch / 2 - 3 * S), 1.6 * S, bar, true)
             else
                 rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, rh - 4 * S,
-                     pal.a(pal.FRIEND, 0.08))
+                     lit)
                 u:seg(cx - pitch / 2 + 3 * S, ry(ry_), cx + pitch / 2 - 3 * S,
-                      ry(ry_), 1.6 * S, pal.FRIEND, true)
+                      ry(ry_), 1.6 * S, bar, true)
             end
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
@@ -3304,7 +3321,6 @@ function M.menu(v)
     end
 
     -- --- the stage
-    local focused = (v.focus == "stage")
     local listy = not (v.board and not M.touching)
         and not (v.rows and #v.rows > 0 and v.rows[1].hull)
     -- Everything with type in it hangs off `tx`, a gutter in from the stage's
