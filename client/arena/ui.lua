@@ -954,6 +954,98 @@ end
 -- least likely to be looking. Nor is your speed, which nobody has made a
 -- decision on, nor the prediction error in pixels, which was this client
 -- debugging itself on a player's screen.
+-- --- the corner stack's glyphs ---------------------------------------------
+--
+-- The stack used to label its rows and add-ons in words, which made the
+-- corner a column of reading in the one place a pilot only ever glances.
+-- Each word is a mark now: rows wear a miniature of the thing itself, drawn
+-- the way the arena draws it, and an add-on wears a shape of what it does to
+-- the shot. The hover and the held H spell any of them out on request, so
+-- the words are an ask away rather than always on.
+
+local function gl_gun(cx, cy, k, col)
+    u:seg_fade(cx - k, ry(cy), cx + k * 0.45, ry(cy), 0.9 * S, 3.2 * S,
+               0, (col[4] or 1), col)
+    u:disc(cx + k * 0.5, ry(cy), k * 0.3, 8, col)
+end
+
+local function gl_bomb(cx, cy, k, col)
+    u:ring(cx, ry(cy), k * 0.62, 1.1 * S, 12, col)
+    u:disc(cx, ry(cy), k * 0.26, 8, col)
+end
+
+-- The repel's rings, which are also the push add-on's: the same force in
+-- both places, so the same mark.
+local function gl_rings(cx, cy, k, col)
+    u:ring(cx, ry(cy), k * 0.36, S, 10, col)
+    u:ring(cx, ry(cy), k * 0.78, 0.9 * S, 12, pal.a(col, (col[4] or 1) * 0.5))
+end
+
+-- Rounds in every direction: the burst at eight spokes, shrapnel at six.
+local function gl_spokes(n)
+    return function(cx, cy, k, col)
+        for i = 0, n - 1 do
+            local a = (i + 0.5) * 2 * math.pi / n
+            local dx, dy = math.cos(a), math.sin(a)
+            u:seg(cx + dx * k * 0.3, ry(cy + dy * k * 0.3),
+                  cx + dx * k, ry(cy + dy * k), S, col)
+        end
+    end
+end
+local gl_burst = gl_spokes(8)
+local gl_shrap = gl_spokes(6)
+
+-- One pull, three barrels.
+local function gl_multi(cx, cy, k, col)
+    for i = -1, 1 do
+        local a = i * 0.5
+        u:seg(cx - k * 0.9, ry(cy),
+              cx + k * math.cos(a), ry(cy + k * 0.9 * math.sin(a)), S, col)
+    end
+end
+
+-- A round coming off a floor.
+local function gl_bounce(cx, cy, k, col)
+    u:seg(cx - k, ry(cy - k * 0.6), cx, ry(cy + k * 0.35), S, col)
+    u:seg(cx, ry(cy + k * 0.35), cx + k, ry(cy - k * 0.6), S, col)
+    u:seg(cx - k, ry(cy + k * 0.75), cx + k, ry(cy + k * 0.75), 0.8 * S,
+          pal.a(col, (col[4] or 1) * 0.45))
+end
+
+-- A fuse: the reach it fires at, dashed because nothing is there yet.
+local function gl_prox(cx, cy, k, col)
+    u:disc(cx, ry(cy), k * 0.2, 6, col)
+    for i = 0, 3 do
+        local a0 = i * math.pi / 2 + 0.3
+        u:arc(cx, ry(cy), k * 0.78, a0, a0 + math.pi / 2 - 0.6, S, 5,
+              pal.a(col, (col[4] or 1) * 0.8))
+    end
+end
+
+-- Six arms, which is what cold has looked like since before this game.
+local function gl_freeze(cx, cy, k, col)
+    for i = 0, 2 do
+        local a = i * math.pi / 3 + math.pi / 6
+        local dx, dy = math.cos(a) * k, math.sin(a) * k
+        u:seg(cx - dx, ry(cy - dy), cx + dx, ry(cy + dy), S, col)
+    end
+end
+
+-- What a green is, worn by the row that counts what greens made you worth.
+local function gl_diamond(cx, cy, k, col)
+    local pts = {cx, ry(cy - k), cx + k * 0.8, ry(cy),
+                 cx, ry(cy + k), cx - k * 0.8, ry(cy)}
+    u:outline(pts, 1.1 * S, col, true)
+end
+
+-- In pal.MODS order: multi, bounce, prox, shrapnel, freeze, push.
+local MOD_GLYPHS = {gl_multi, gl_bounce, gl_prox, gl_shrap, gl_freeze,
+                    gl_rings}
+
+-- A charge is whatever the zone put in the slot, so the mark follows the
+-- name and an unfamiliar one falls back to the prize shape it arrived as.
+local CHARGE_GLYPHS = {repel = gl_rings, burst = gl_burst}
+
 local function status(me, charges, lift)
     local slots = charges or {}
     -- Sized up. This corner is what a pilot checks mid-fight without looking
@@ -964,7 +1056,6 @@ local function status(me, charges, lift)
     -- labels fit.
     local rows_h = 22 * S
     local x = PAD * S
-    local lab = FONT * S
     local val = x + 62 * S
 
     -- The pad carries the charge counts on a touchscreen, so those rows would
@@ -983,12 +1074,12 @@ local function status(me, charges, lift)
     local wide = val + 50 * S
 
     -- A level is the same weapon harder, so it is rungs; an add-on changes
-    -- its character, so it is a word.
+    -- its character, so it is a mark of its own.
     for t = 0, SIM_TRIGGERS - 1 do
         if sim.has_trigger(me, t) then
             local lvl = sim.ship_level(me, t)
-            txt((t == sim.TRIG_GUN) and "GUN" or "BOMB", x,
-                y + rows_h / 2, lab, pal.a(pal.DIM, 0.8))
+            local rg = (t == sim.TRIG_GUN) and gl_gun or gl_bomb
+            rg(x + 8 * S, y + rows_h / 2, 6.5 * S, pal.a(pal.DIM, 0.8))
             ladder(val, y + rows_h / 2 - 2 * S, 3, lvl + 1, pal.FRIEND,
                    40 * S, 4 * S)
             local at = val + 50 * S
@@ -1001,17 +1092,19 @@ local function status(me, charges, lift)
                     -- fanning with nothing on screen to say so is a weapon
                     -- that looks broken.
                     local muted = off and m - 1 == 0
-                    local word = mod.name .. (nn > 1 and ("x" .. nn) or "")
-                    txt(word, at, y + rows_h / 2, (FONT - 2) * S,
-                        muted and pal.a(pal.DIM, 0.45) or pal.a(pal.FRIEND, 0.75))
-                    -- Measured, not stepped. The column is 46 wide and
-                    -- "shrapnel" is 53, so a row ending in the longest add-on
-                    -- reaches past where the next column would start, and the
-                    -- help overlay lining up on the step would sit on the tail
-                    -- of the word.
-                    local ends = at + text_w(word, (FONT - 2) * S)
+                    local col = muted and pal.a(pal.DIM, 0.45)
+                        or pal.a(pal.FRIEND, 0.75)
+                    MOD_GLYPHS[m](at + 7 * S, y + rows_h / 2, 6 * S, col)
+                    -- Depth as marks beside the mark, the way every other
+                    -- count in this interface reads.
+                    local ends = at + 14 * S
+                    if nn > 1 then
+                        pips(ends + 3 * S, y + rows_h / 2, nn, nn,
+                             col, 1.5 * S, 5 * S)
+                        ends = ends + 3 * S + nn * 5 * S
+                    end
                     if ends > wide then wide = ends end
-                    at = at + 46 * S
+                    at = ends + 10 * S
                 end
             end
             -- The row as far right as it actually drew, so the add-ons are
@@ -1029,8 +1122,9 @@ local function status(me, charges, lift)
             -- more, a key or a pad names its charge outright, and which
             -- number is which row is the help page's job, not a label worn
             -- in the corner of every fight.
-            txt(string.upper(c.name or c.short), x, y + rows_h / 2, lab,
-                pal.a(pal.DIM, 0.8))
+            local gc = CHARGE_GLYPHS[string.lower(c.name or c.short or "")]
+                or gl_diamond
+            gc(x + 8 * S, y + rows_h / 2, 6.5 * S, pal.a(pal.DIM, 0.8))
             local slot_max = math.max(1, c.max or 3)
             pips(val + 3 * S, y + rows_h / 2, slot_max, c.count,
                  pal.CHARGE_COL, 2.7 * S, 9 * S)
@@ -1048,8 +1142,9 @@ local function status(me, charges, lift)
     end
 
     -- What you are worth, which is the number that decides who comes for you,
-    -- and which was only ever behind the info toggle.
-    txt("BOUNTY", x, y + rows_h / 2, lab, pal.a(pal.DIM, 0.8))
+    -- and which was only ever behind the info toggle. The mark is the green's
+    -- own diamond, since greens are most of what the number counts.
+    gl_diamond(x + 8 * S, y + rows_h / 2, 5.5 * S, pal.a(pal.DIM, 0.7))
     local bty = sim.ship_bounty(me)
     txt(tostring(bty), val, y + rows_h / 2, (FONT - 2) * S,
         bty > 0 and pal.a(pal.PRIZE, 0.95) or pal.a(pal.DIM, 0.5))
