@@ -45,6 +45,10 @@ M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
 M.hover = nil           -- the stage row a pointer is resting on
 M.note = nil            -- set by the arena when a connection fails
+-- Whether the games list has worked out where its cursor belongs since it was
+-- last opened. Declared up here because opening the menu clears it and the
+-- opening is written above the asking.
+local zone_synced = false
 -- How many hulls the ship page is drawing across, set by whoever draws it.
 -- The page is a grid rather than a list and its arrows have to mean what a
 -- grid's arrows mean, which needs the one number this file cannot work out
@@ -466,7 +470,11 @@ function M.toggle()
     if M.open then
         M.close()
     else
-        M.open = true
+        -- Opened on the games, the page the client itself opens on, with the
+        -- cursor in the list rather than on the rail. Escape mid-fight is
+        -- somebody looking for another game as often as it is anything else,
+        -- and the rail is one press to the left of it either way.
+        M.show("zones")
         M.note = nil
     end
     return M.open
@@ -478,6 +486,10 @@ function M.show(...)
     M.stack = {"root"}
     for _, id in ipairs({...}) do M.stack[#M.stack + 1] = id end
     M.open = true
+    M.hover = nil
+    -- The games list works out where its cursor belongs the next time it is
+    -- looked at, so opening on it has to let it ask again.
+    zone_synced = false
 end
 
 -- Closing forgets where you were. A menu that reopens three levels down is a
@@ -513,6 +525,21 @@ local function back()
     return "cancel", false
 end
 
+-- Escape, from anywhere in here.
+--
+-- Over a game it shuts the panel and puts you back in the fight, whatever
+-- level you are on. One press put the menu up, so one press has to take it
+-- down: the menu opens on the games rather than at the root now, and walking
+-- back out a level at a time made leaving cost three presses where it used to
+-- cost two. Left is still what walks back through the tree.
+--
+-- With nothing behind the panel there is nothing to shut it onto, so escape
+-- walks back like left does and means at the root what it always meant.
+local function escape()
+    if M.close() then return nil, true end
+    return back()
+end
+
 -- Put the cursor on the game you were in last, once the directory has
 -- answered. Called by the arena rather than worked out during a draw, because
 -- the list arrives on its own schedule and moving a selection out from under a
@@ -523,8 +550,6 @@ end
 -- well, a lit wedge and a lit name on the game you were in, which is a second
 -- thing to read saying what the cursor already sits on, and on a list of three
 -- games two of them were the answer to different questions.
-local zone_synced = false
-
 function M.tick()
     if M.at() ~= "zones" then
         zone_synced = false
@@ -768,7 +793,7 @@ function M.step(keys)
     if nd.grid and #M.stack > 1 and n > 0 then
         local cols = math.max(1, math.min(M.cols, n))
         local i = row_index(rows)
-        if keys.back then return back() end
+        if keys.back then return escape() end
         -- The edges wrap, along the row for right and through the list for up
         -- and down, so nothing on this page is out of reach in one press.
         --
@@ -799,7 +824,8 @@ function M.step(keys)
         return nil, false
     end
 
-    if keys.back or keys.left then return back() end
+    if keys.back then return escape() end
+    if keys.left then return back() end
 
     if keys.up then
         M.sel[id] = (row_index(rows) - 2) % n + 1
