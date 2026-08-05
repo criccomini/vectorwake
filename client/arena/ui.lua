@@ -308,8 +308,12 @@ function M.help_at(x, y)
     return found
 end
 
-function M.begin(layer, w, h, density, touching)
+-- `now` is the frame's clock in seconds, for the few things on screen that
+-- move on their own. Nothing that is laid out depends on it, so a caller with
+-- no clock draws the same interface at rest.
+function M.begin(layer, w, h, density, touching, now)
     u, W, H = layer, w, h
+    M.now = now or 0
     -- Points of screen rather than pixels: a phone at two device pixels per
     -- point is a small screen, not a large one, and laying the interface out
     -- against the pixel count is how it ends up drawn at half size on the
@@ -2085,13 +2089,29 @@ end
 -- A hull drawn small, inside its button. The silhouette is what picks a ship;
 -- the name only confirms it. The canopy comes along because at this size it is
 -- the only thing that says which end is the front.
-function thumb(cx, cy, cls, col, scale)
+--
+-- `turn` is an angle about the hull's own vertical axis. For a flat body that
+-- is a squeeze across it, which is what an orthographic projection does to a
+-- shape turning about an axis lying in the screen plane: the same move the
+-- asteroids tumble with, on one axis instead of two.
+--
+-- Never quite to a hairline. A cutout seen exactly edge-on is a line, which is
+-- honest and reads as the drawing having blinked, so the end of the turn is
+-- spent rather than drawn: the width bottoms out at a fifth and carries on
+-- through, keeping its sign so the far side comes round rather than bouncing
+-- back off the near one.
+function thumb(cx, cy, cls, col, scale, turn)
     local h = world.HULLS[cls + 1]
     if not h then return end
+    local k = 1
+    if turn then
+        local ct = math.cos(turn)
+        k = (ct >= 0 and 1 or -1) * (0.2 + 0.8 * math.abs(ct))
+    end
     local function trace(src, width, c)
         local pts = {}
         for i = 1, #src, 2 do
-            pts[i] = cx + src[i] * scale
+            pts[i] = cx + src[i] * scale * k
             pts[i + 1] = ry(cy - (src[i + 1] - h.mid) * scale)
         end
         u:outline(pts, width, c, true)
@@ -2354,10 +2374,8 @@ end
 -- Three shapes, from one rule about the window rather than a guess about the
 -- device:
 --
---   wide and tall    rail down the left with its labels, stage beside it
---   wide and short   the same, icons only, because eight labelled stops do
---                    not fit a phone held sideways
---   narrow           stage above, rail along the bottom where the thumbs are
+--   wide      rail down the left with its labels, stage beside it
+--   narrow    stage above, rail along the bottom where the thumbs are
 --
 -- The five inputs are unchanged, and so are the sounds: up and down move,
 -- right or enter goes in, left or escape comes back. A pointer may land on
@@ -2367,11 +2385,11 @@ end
 
 local MENU_FONT = "menu"
 
--- How far under the top of the block the stage's first row sits: the title
--- takes a line and the rule under it takes another. The rail starts there too,
--- so a mark is level with the row it would open rather than with the middle of
--- the list.
-local STAGE_TOP = 40
+-- How far under the top of the block the stage's first row sits: the rule
+-- that introduces the list, and the way out sitting over it. The rail starts
+-- there too, so a mark is level with the row it would open rather than with
+-- the middle of the list.
+local STAGE_TOP = 30
 
 -- The strip down the left of the stage that the type does not enter. The mark
 -- on the row you are already in sits there, off the column rather than in it,
@@ -2647,8 +2665,12 @@ local function ship_grid(x, y, w, h, v, focused)
         -- lit cell. The role used to sit on that edge, its descenders over the
         -- line, so a selected ship read as type in a box a size too small for
         -- it.
+        -- The one under the cursor turns, and nothing else on the page does.
+        -- Eight hulls all revolving is a screensaver; one of them turning is
+        -- the one you are looking at, answering.
         thumb(cx, cy - ch * 0.17, r.hull or 0,
-              pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116)
+              pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116,
+              hot and M.now * 1.7 or nil)
         txt(r.label or "", cx, cy + ch * 0.20, (M.compact and 14 or 15) * S,
             pal.a(col, (hot or r.mark) and 1 or 0.8), "center", MENU_FONT)
         if r.role then
@@ -2687,9 +2709,9 @@ function M.menu(v)
     local pts_w, pts_h = W / S, H / S
     -- One rule about the window, three layouts. 620 points is where a rail
     -- with its labels and a stage worth reading stop fitting side by side;
-    -- 430 is where eight labelled stops stop fitting down the side.
+    -- 430 is where the name set large over it stops having the room.
     local narrow = pts_w < 620
-    local labelled = pts_h >= 430
+    local tall = pts_h >= 430
     local rail = v.rail or {}
     local n = #rail
     -- Is there a game behind this, or the starfield. Every measurement below
@@ -2729,7 +2751,12 @@ function M.menu(v)
             -- the screen carrying the end of the keyboard with it.
             total = math.min(total, W - x0 - margin)
         end
-        rw = (labelled and 150 or 62) * S
+        -- Wide enough for the words, at any height. A rail of marks alone
+        -- was the short window's layout, on the argument that eight labelled
+        -- stops do not fit a phone held sideways; they fit, and with no title
+        -- over the stage the lit word is the only thing on screen that says
+        -- which page this is.
+        rw = 150 * S
         local pitch = math.min(math.max((H - head - 3 * margin) / n,
                                         38 * S), 58 * S)
         rh = pitch * n
@@ -2746,7 +2773,7 @@ function M.menu(v)
         sy, sh = top, block
         sw = total - rw - 26 * S
         if home then
-            wordmark(x0, top - head + 30 * S, (labelled and 40 or 30) * S,
+            wordmark(x0, top - head + 30 * S, (tall and 40 or 30) * S,
                      math.min(sw, 420 * S))
         end
         -- What you are reading, laid over what you are not. A wash rather
@@ -2781,14 +2808,14 @@ function M.menu(v)
         local sel = (i == v.rail_sel)
         local cx, cy
         if vertical then
-            cx = labelled and (rx + 26 * S) or (rx + rw / 2)
+            cx = rx + 26 * S
             cy = ry_ + (i - 0.5) * pitch
         else
             cx = rx + (i - 0.5) * pitch
             cy = ry_ + (home and 30 or 32) * S
         end
         local col = sel and pal.FRIEND or pal.a(pal.DIM, 0.9)
-        local r = (vertical and (labelled and 13 or 14) or 13) * S
+        local r = 13 * S
         if sel then
             -- The lit one, and a rule reaching from it toward the stage, so
             -- the eye is told which mark the panel belongs to rather than
@@ -2806,7 +2833,7 @@ function M.menu(v)
             end
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
-        if vertical and labelled then
+        if vertical then
             txt(e.label, rx + 48 * S, cy, 16 * S,
                 pal.a(sel and pal.INK or pal.DIM, sel and 1 or 0.85),
                 nil, MENU_FONT)
@@ -2830,18 +2857,20 @@ function M.menu(v)
 
     -- --- the stage
     local focused = (v.focus == "stage")
-    local title = v.stage_title or v.title or ""
     local listy = not (v.board and not M.touching)
         and not (v.rows and #v.rows > 0 and v.rows[1].hull)
     -- Everything with type in it hangs off `tx`, a gutter in from the stage's
-    -- own left edge: the title, the rule under it, and every row's label. A
+    -- own left edge: the rule at the head of it, and every row's label. A
     -- row's field starts back at `sx`, so what is lit reaches under the mark
     -- and the words never sit against the edge of it.
     local tx = sx + GUTTER * S
     local avail = sw - GUTTER * S
     local lw = listy and math.min(avail, 520 * S) or avail
-    txt(title, tx, sy + 14 * S, (M.compact and 19 or 22) * S,
-        pal.a(pal.FRIEND, focused and 1 or 0.75), nil, MENU_FONT)
+    -- No title over the stage. The rail is lit at the stop you are inside and
+    -- says its name there, so a heading repeating it is the same answer
+    -- written twice, in the one place a list of games could have used the
+    -- room instead.
+    --
     -- The way out, where a way out goes, and only where there is one: with
     -- nothing behind the panel the menu is the screen and cannot be shut.
     --
@@ -2850,8 +2879,8 @@ function M.menu(v)
     -- and a rail that navigates from every level had already taken the going
     -- back. What is left is shutting the panel, and everything shuts on an x.
     if v.closable then
-        close_mark(tx + lw - 8 * S, sy + 14 * S, pal.a(pal.DIM, 0.9), 11 * S)
-        hit(tx + lw - 30 * S, sy, 40 * S, 30 * S, "close")
+        close_mark(tx + lw - 8 * S, sy + 11 * S, pal.a(pal.DIM, 0.9), 11 * S)
+        hit(tx + lw - 30 * S, sy, 40 * S, 24 * S, "close")
     end
     local top = sy + STAGE_TOP * S
     local room = sh - (top - sy) - 26 * S
@@ -2859,7 +2888,7 @@ function M.menu(v)
     -- sits at the other, a screen apart, is two columns nobody reads as one
     -- line. The board and the hull grid are drawings and take everything.
     -- The rule introduces whatever is under it, so it is as wide as that.
-    ticks(tx, sy + 28 * S, lw, pal.a(pal.RADAR_TILE, 0.45), 12 * S)
+    ticks(tx, sy + 22 * S, lw, pal.a(pal.RADAR_TILE, 0.45), 12 * S)
     if v.board and not M.touching then
         -- The widest board the stage has the height for, backed off rather
         -- than solved, the same way the page used to do it.

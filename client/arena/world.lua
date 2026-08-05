@@ -2106,6 +2106,20 @@ function M.events(me, sfx)
         elseif ty == sim.EV_EXPIRE then
             local x = math.floor(v / 16384)
             local y = v % 16384
+            -- Pinned to the hull it ended on, when it ended on one. The event
+            -- position is simulation truth, but a remote hull is drawn where
+            -- the render smoothing says, up to a correction behind the truth,
+            -- and a detonation centred beside the ship it plainly just hit is
+            -- the game telling the shooter their shot missed. Moving the ring
+            -- by the same offset the hull is drawn under keeps the two
+            -- together; the offset dies away in a tenth of a second anyway.
+            -- A dead victim's offset is already zero, so the anchor degrades
+            -- to a no-op on a kill shot, where the death burst is drawn at
+            -- the hull anyway.
+            if b < sim.ship_count() then
+                x = x + (sim.ship_x(b) - sim.ship_x_raw(b))
+                y = y + (sim.ship_y(b) - sim.ship_y_raw(b))
+            end
             local r = spec_blast(a)
             if r > 0 then
                 fx.detonate(x, y, r, bomb_col(spec_level(a)))

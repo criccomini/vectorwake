@@ -1602,35 +1602,68 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * timer -- which is what `expire_ends` is. */
         if (w->life == 0) {
             if (spec->expire_ends) weapon_end(next, cfg, spec, w, -1, ev);
-            emit(ev, SIM_EV_EXPIRE, w->spec, w->owner, pack_pos(w->x, w->y));
+            /* The second argument is the hull it ended on, or 255 for none.
+             * It used to be the owner, which nothing ever read; the renderer
+             * wants the victim, so a detonation can be drawn stuck to the
+             * ship it hit rather than to a coordinate the render smoothing
+             * has moved the ship away from. */
+            emit(ev, SIM_EV_EXPIRE, w->spec, 255, pack_pos(w->x, w->y));
             kill_weapon(next, wi);
             continue;
         }
         w->life--;
-        w->x += w->vx / 256;
-        w->y += w->vy / 256;
 
-        /* 2. Walls: stop here, bounce off, or ignore them entirely.
+        /* The tick's travel, walked in samples no further apart than 4 px
+         * rather than tested once at the far end. One endpoint sample was the
+         * old rule, and it is exactly what a projectile passing *through* a
+         * hull looks like: a bullet plus its shooter's velocity covers up to
+         * 6.25 px a tick, an incoming hull adds its own, and a Cipher's flank
+         * is 12 px thick, so a grazing crossing could fall entirely between
+         * two samples and never register -- on the server, with no lag
+         * involved at all. Walls had the same hole at higher speeds than any
+         * shipped zone uses, but a zone file can retune speed upward and
+         * nothing here should quietly stop working when one does.
          *
-         * A bounce reflects the axis that hit, tested one axis at a time so
-         * a corner turns a projectile around rather than letting it through
-         * -- the same treatment a ship gets, and for the same reason. */
-        int32_t px = w->x - w->vx / 256, py = w->y - w->vy / 256;
-        if (spec->on_wall != SIM_WALL_PASS
-            && box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0, 0)) {
-            if (spec->on_wall == SIM_WALL_BOUNCE && w->left > 0) {
-                w->left--;
-                if (box_hits(cfg->map, cfg, next->tick, w->x, py, 0, 0)) {
-                    w->vx = -w->vx;
-                    w->x = px;
+         * The count comes from the velocity alone, so it is as deterministic
+         * as the flight. Capped because a step count is a cost multiplier:
+         * sixteen samples covers 64 px a tick, five times the fastest thing
+         * any current tuning can make, and past the cap spacing grows instead
+         * of the loop. */
+        int32_t dx = w->vx / 256, dy = w->vy / 256;
+        int32_t adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+        int32_t span = adx > ady ? adx : ady;
+        int sweep = 1 + span / 1024;
+        if (sweep > 16) sweep = 16;
+        int32_t x0 = w->x, y0 = w->y;
+
+        for (int si = 1; si <= sweep && !ended; si++) {
+            /* 2. Walls: stop here, bounce off, or ignore them entirely.
+             *
+             * A bounce reflects the axis that hit, tested one axis at a time
+             * so a corner turns a projectile around rather than letting it
+             * through -- the same treatment a ship gets, and for the same
+             * reason. Bouncing forfeits the rest of this tick's walk, since
+             * the precomputed samples describe a flight the reflection just
+             * ended. */
+            int32_t px = w->x, py = w->y;
+            w->x = x0 + (int32_t)((int64_t)dx * si / sweep);
+            w->y = y0 + (int32_t)((int64_t)dy * si / sweep);
+            if (spec->on_wall != SIM_WALL_PASS
+                && box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0, 0)) {
+                if (spec->on_wall == SIM_WALL_BOUNCE && w->left > 0) {
+                    w->left--;
+                    if (box_hits(cfg->map, cfg, next->tick, w->x, py, 0, 0)) {
+                        w->vx = -w->vx;
+                        w->x = px;
+                    }
+                    if (box_hits(cfg->map, cfg, next->tick, px, w->y, 0, 0)) {
+                        w->vy = -w->vy;
+                        w->y = py;
+                    }
+                    emit(ev, SIM_EV_RICOCHET, w->owner, w->spec,
+                         pack_pos(w->x, w->y));
+                    break;
                 }
-                if (box_hits(cfg->map, cfg, next->tick, px, w->y, 0, 0)) {
-                    w->vy = -w->vy;
-                    w->y = py;
-                }
-                emit(ev, SIM_EV_RICOCHET, w->owner, w->spec,
-                     pack_pos(w->x, w->y));
-            } else {
                 /* End on the near side of the wall rather than a step inside
                  * it. A blast centred in the tile spends half its reach on
                  * the far side where nobody is, and shrapnel spawned in there
@@ -1638,13 +1671,15 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 w->x = px;
                 w->y = py;
                 ended = 1;
+                break;
             }
-        }
 
-        /* 3. Ships. A weapon never arrives at its owner or a teammate, and
-         * `trigger` is how close counts: zero is contact with the hull, which
-         * is a bullet, and anything larger is a proximity fuse. */
-        if (!ended) {
+            /* 3. Ships. A weapon never arrives at its owner or a teammate,
+             * and `trigger` is how close counts: zero is contact with the
+             * hull, which is a bullet, and anything larger is a proximity
+             * fuse. A hit ends the walk where it landed, which puts a blast
+             * at the point of impact rather than at wherever the tick would
+             * have carried the round. */
             for (int i = 0; i < next->ship_count && !ended; i++) {
                 const sim_ship *sh = &next->ships[i];
                 if (!sh->active || !sh->alive) continue;
@@ -1667,10 +1702,14 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             }
         }
 
-        /* 4. The ending. */
+        /* 4. The ending. The event names the hull it ended on, 255 for a
+         * wall, so the renderer can pin the detonation to the ship the
+         * player is looking at. */
         if (ended) {
             weapon_end(next, cfg, spec, w, hit_ship, ev);
-            emit(ev, SIM_EV_EXPIRE, w->spec, w->owner, pack_pos(w->x, w->y));
+            emit(ev, SIM_EV_EXPIRE, w->spec,
+                 hit_ship >= 0 ? (uint8_t)hit_ship : 255,
+                 pack_pos(w->x, w->y));
             kill_weapon(next, wi);
             continue;
         }

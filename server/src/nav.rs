@@ -42,8 +42,22 @@ const BLOCKED: u8 = 0;
 /// What a cell next to a wall costs against an open one.
 const HUG: u8 = 3;
 
+/// Cells between candidates when looking for somewhere quiet. Eight of them is
+/// 256 pixels, which is finer than the question deserves: a pilot leaving wants
+/// a good empty corner, not the single emptiest point on the map.
+const REFUGE_STRIDE: usize = 8;
+/// What a safe zone is worth beyond its distance from the crowd, in pixels. It
+/// is where a player goes to stop, nothing can be shot into it, and a bot that
+/// parks in one has visibly stepped out of the game rather than wandered off.
+/// Thirty tiles: enough to win against a marginally lonelier patch of open
+/// space, not enough to drag a pilot across the map to reach one.
+const SAFE_WORTH: f32 = 480.0;
+
 pub struct Nav {
     cost: Box<[u8]>,
+    /// Whether each cell is a safe zone, recorded on the same pass that reads
+    /// the tiles for walls because the bytes are already in cache.
+    safe: Box<[bool]>,
     /// Which patch of connected open cells each cell belongs to, zero for a
     /// wall. Labelled once at build by a flood fill, and the whole reason it
     /// exists is the question "is there any path at all", answered without
@@ -94,9 +108,11 @@ impl Nav {
     /// one of these, not fifty-one.
     pub fn build(map: &sim::sim_map) -> Nav {
         let mut cost = vec![1u8; W * W].into_boxed_slice();
+        let mut safe = vec![false; W * W].into_boxed_slice();
         for cy in 0..W {
             for cx in 0..W {
                 let mut shut = false;
+                let mut calm = false;
                 for ty in cy * CELL..(cy + 1) * CELL {
                     let row = ty * sim::MAP_TILES;
                     for tx in cx * CELL..(cx + 1) * CELL {
@@ -107,11 +123,15 @@ impl Nav {
                         if cls == 1 || cls == 3 {
                             shut = true;
                         }
+                        if cls == 2 {
+                            calm = true;
+                        }
                     }
                 }
                 if shut {
                     cost[cy * W + cx] = BLOCKED;
                 }
+                safe[cy * W + cx] = calm;
             }
         }
         // A second pass, because the first has to finish before anything can
@@ -160,7 +180,77 @@ impl Nav {
                 }
             }
         }
-        Nav { cost: out, comp, failed: std::sync::Mutex::new(std::collections::HashSet::new()) }
+        Nav {
+            cost: out,
+            safe,
+            comp,
+            failed: std::sync::Mutex::new(std::collections::HashSet::new()),
+        }
+    }
+
+    /// Somewhere to be nobody: the open cell within `within` pixels that is
+    /// furthest from `crowd` and that this pilot can actually reach.
+    ///
+    /// Sampled on a stride rather than searched. The grid is a quarter of a
+    /// million cells and the answer only has to be a good empty corner, so a
+    /// few hundred candidates settle it; this is asked once when a pilot is
+    /// told to leave, not every time it thinks.
+    ///
+    /// Reachability is the component label, which is exact and free. Without
+    /// it the pick could land across a sealed wall, the route would come back
+    /// empty, and the pilot would spend its whole departure pushing at a
+    /// destination it can never arrive at.
+    /// The best few are kept rather than the single best, because the winner
+    /// still has to be somewhere this pilot can get to and a component label
+    /// does not promise that: a route across a map this size can exist and
+    /// still lose to the search's expansion cap. That case is not academic. A
+    /// pick 4,000 pixels away came back with no route, and since a departing
+    /// pilot has no give-up clock, since there is nothing else for it to do,
+    /// it spent the rest of its life pushing at the wall between.
+    const REFUGE_KEEP: usize = 6;
+    pub fn refuge(
+        &self,
+        from: (f32, f32),
+        crowd: &[(f32, f32)],
+        within: f32,
+    ) -> Option<(f32, f32)> {
+        let start = self.nearest_open(cell_of(from.0), cell_of(from.1))?;
+        let mine = self.comp[start];
+        let mut best: Vec<((f32, f32), f32)> = Vec::with_capacity(Self::REFUGE_KEEP + 1);
+        let mut cy = REFUGE_STRIDE / 2;
+        while cy < W {
+            let mut cx = REFUGE_STRIDE / 2;
+            while cx < W {
+                let c = cy * W + cx;
+                let (x, y) = (centre(cx), centre(cy));
+                let (dx, dy) = (x - from.0, y - from.1);
+                if dx * dx + dy * dy <= within * within
+                    && self.cost[c] != BLOCKED
+                    && self.comp[c] == mine
+                {
+                    let mut near = f32::INFINITY;
+                    for &(ox, oy) in crowd {
+                        let (ex, ey) = (x - ox, y - oy);
+                        near = near.min(ex * ex + ey * ey);
+                    }
+                    let score =
+                        near.sqrt() + if self.safe[c] { SAFE_WORTH } else { 0.0 };
+                    let at = best.partition_point(|(_, b)| *b > score);
+                    if at < Self::REFUGE_KEEP {
+                        best.insert(at, ((x, y), score));
+                        best.truncate(Self::REFUGE_KEEP);
+                    }
+                }
+                cx += REFUGE_STRIDE;
+            }
+            cy += REFUGE_STRIDE;
+        }
+        // Whichever of them this pilot can actually fly to. A failed search is
+        // remembered, so asking is cheap the second time and the answer here
+        // costs at most a handful of them, once, when somebody is leaving.
+        best.iter()
+            .find(|(p, _)| self.clear(from, *p) || !self.route(from, *p).is_empty())
+            .map(|(p, _)| *p)
     }
 
     fn open(&self, cx: usize, cy: usize) -> bool {
@@ -453,5 +543,87 @@ mod tests {
         let inside = (305.0 * 16.0, 305.0 * 16.0);
         let outside = (500.0 * 16.0, 500.0 * 16.0);
         assert!(n.route(inside, outside).is_empty(), "no way out is no route");
+    }
+
+    #[test]
+    fn somewhere_quiet_is_away_from_people_and_reachable() {
+        let n = Nav::build(&crate::sim::zeroed_box());
+        let me = (500.0 * 16.0, 500.0 * 16.0);
+        // A crowd immediately west of this pilot. Anywhere east of them will
+        // do; what must not happen is a pick in among them.
+        let crowd: Vec<(f32, f32)> = (0..6)
+            .map(|i| ((490 - i) as f32 * 16.0, 500.0 * 16.0))
+            .collect();
+        let spot = n.refuge(me, &crowd, 1_400.0).expect("open ground has corners");
+        let (dx, dy) = (spot.0 - me.0, spot.1 - me.1);
+        assert!(
+            (dx * dx + dy * dy).sqrt() <= 1_400.0,
+            "it stays inside the range it was given: {spot:?}"
+        );
+        let nearest = crowd
+            .iter()
+            .map(|&(x, y)| ((spot.0 - x).powi(2) + (spot.1 - y).powi(2)).sqrt())
+            .fold(f32::INFINITY, f32::min);
+        assert!(nearest > 1_000.0, "it picked {nearest:.0} px from the crowd");
+    }
+
+    #[test]
+    fn somewhere_quiet_is_never_somewhere_sealed_off() {
+        // A walled pocket of open ground, far from everybody, which scores
+        // beautifully and cannot be flown to. Reachability is a component
+        // compare and it is the difference between a pilot leaving and a pilot
+        // spending its whole budget pushing at the wall around the answer.
+        let mut m: Box<sim::sim_map> = crate::sim::zeroed_box();
+        for ty in 300..321 {
+            for tx in 300..321 {
+                if ty == 300 || ty == 320 || tx == 300 || tx == 320 {
+                    m.tile[ty * sim::MAP_TILES + tx] = 1;
+                }
+            }
+        }
+        let n = Nav::build(&m);
+        let me = (310.0 * 16.0, 340.0 * 16.0); // outside the pocket
+        let crowd = vec![me];
+        let spot = n.refuge(me, &crowd, 1_400.0).expect("open ground has corners");
+        assert!(
+            !n.route(me, spot).is_empty() || n.clear(me, spot),
+            "it picked {spot:?}, which cannot be flown to"
+        );
+    }
+
+    #[test]
+    fn a_safe_zone_beats_open_ground_that_is_further_out() {
+        // A safe zone is where a player goes to stop, and a bot that logs off
+        // in one has visibly stepped out of the game rather than wandered off.
+        // So it is worth `SAFE_WORTH` of distance, and this is that trade being
+        // made: on open ground the winner is always the candidate at the edge
+        // of the range, and here a nearer safe one takes it instead.
+        //
+        // The patch is placed on a cell the search actually samples. It walks a
+        // stride from a half-stride offset, so candidate cells are the ones at
+        // `REFUGE_STRIDE / 2` modulo the stride, and a safe zone laid down
+        // between two of them is a safe zone this search never sees.
+        let (scx, scy) = (268usize, 252usize);
+        assert_eq!(scx % REFUGE_STRIDE, REFUGE_STRIDE / 2, "a sampled cell");
+        assert_eq!(scy % REFUGE_STRIDE, REFUGE_STRIDE / 2, "a sampled cell");
+        let mut m: Box<sim::sim_map> = crate::sim::zeroed_box();
+        for ty in scy * CELL..(scy + 1) * CELL {
+            for tx in scx * CELL..(scx + 1) * CELL {
+                m.tile[ty * sim::MAP_TILES + tx] = 2; // SIM_TILE_SAFE
+            }
+        }
+        let n = Nav::build(&m);
+        let me = (500.0 * 16.0, 500.0 * 16.0);
+        // Everybody is standing on this pilot, so loneliness is simply distance
+        // from here and the best open-ground score is the range itself.
+        let range = 800.0;
+        let safe_at = (centre(scx), centre(scy));
+        let d = ((safe_at.0 - me.0).powi(2) + (safe_at.1 - me.1).powi(2)).sqrt();
+        assert!(d < range && d + SAFE_WORTH > range,
+                "the safe patch has to be the nearer option and still win: \
+                 {d:.0} px against a {range:.0} px range");
+
+        let spot = n.refuge(me, &[me], range).expect("somewhere to go");
+        assert_eq!(spot, safe_at, "picked open ground over a safe zone");
     }
 }
