@@ -102,6 +102,7 @@ local function frame(o)
     ui.map = o.map or false
     ui.begin(layer, W, H, 1, o.touching or false)
     ui.hud({
+        point_x = o.point_x, point_y = o.point_y,
         me = 0,
         class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher",
                        "Lattice", "Spire"},
@@ -308,6 +309,77 @@ local bare = frame({help = true, charges = {}})
 check("a hull carrying no charges is not told how to spend them",
       not find(bare, CHG))
 check("and the rest of it is still there", find(bare, GUN) ~= nil)
+
+-- --- and the pointer names one thing at a time ----------------------------
+--
+-- Resting on an instrument is a question about that instrument. It answers
+-- with one line, no wash, and none of the other eight, so it costs about what
+-- looking at the thing costs.
+
+-- A point inside a given instrument, asked of the interface itself
+-- rather than worked out again here.
+-- One frame first, so the zones exist to be asked about.
+frame()
+local function a_point_in(key)
+    for y = 0, H - 1, 3 do
+        for x = 0, W - 1, 3 do
+            if ui.help_at(x, y) == key then return x, y end
+        end
+    end
+    return nil
+end
+
+local KEYS = {"gun", "bomb", "charges", "bounty", "radar", "link", "feed",
+              "energy"}
+local unreachable = {}
+for _, k in ipairs(KEYS) do
+    if not a_point_in(k) then unreachable[#unreachable + 1] = k end
+end
+check("every named instrument can be pointed at", #unreachable == 0,
+      table.concat(unreachable, "; "))
+
+-- The field of play is not a hover zone by accident: the middle of the screen
+-- belongs to flying, and only the pip over your own hull answers there.
+check("open space answers nothing", ui.help_at(W * 0.72, H * 0.55) == nil,
+      tostring(ui.help_at(W * 0.72, H * 0.55)))
+
+-- Hovering draws that line and stops.
+local hx, hy = a_point_in("bounty")
+local hovered = frame({point_x = hx, point_y = hy})
+check("the pointer on a row draws that row's line", find(hovered, BTY) ~= nil)
+local extras = {}
+for _, s in ipairs({GUN, BOMB, CHG, RADAR, LINK, FEED, NRG, LETGO}) do
+    if find(hovered, s) then extras[#extras + 1] = s end
+end
+check("and none of the others", #extras == 0, table.concat(extras, "; "))
+
+-- Each instrument answers with its own sentence and not its neighbour's.
+for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"radar", RADAR},
+                       {"feed", FEED}, {"energy", NRG}}) do
+    local key, want = pair[1], pair[2]
+    local px, py = a_point_in(key)
+    local f = frame({point_x = px, point_y = py})
+    check("pointing at " .. key .. " says its own line",
+          find(f, want) ~= nil, "absent")
+end
+
+-- Held beats hovered. A hand that happens to be resting on the dial must not
+-- cut the other eight lines out of a mode the player deliberately opened.
+local both = frame({help = true, point_x = hx, point_y = hy})
+local lost = {}
+for _, s in ipairs(ALL) do
+    if not find(both, s) then lost[#lost + 1] = s end
+end
+check("holding H with the pointer resting still says everything",
+      #lost == 0, table.concat(lost, "; "))
+
+-- And the menu is still a different screen.
+local hover_menu = frame({menu_open = true, point_x = hx, point_y = hy})
+check("hovering under the menu says nothing", find(hover_menu, BTY) == nil)
+
+-- A pointer the client does not have names nothing.
+local none = frame()
+check("no pointer, no line", find(none, BTY) == nil)
 
 if fails > 0 then
     print(fails .. " failed")

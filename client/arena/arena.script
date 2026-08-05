@@ -1104,6 +1104,13 @@ function update(self, dt)
         ui.help = held[hash("help")] or false
         ui.hud({
             me = me, class_names = CLASS_NAMES, menu_open = menu.open,
+            -- Where the pointer is, in the interface's own coordinates, so an
+            -- instrument under it can name itself. A touchscreen has no
+            -- pointer and sends none; there is nothing to hover with and a
+            -- thumb is already busy being a control.
+            point_x = (not touch.used) and self.cursor_x or nil,
+            point_y = (not touch.used) and self.cursor_y
+                      and (wh - self.cursor_y) or nil,
             -- The server's roster, because those are other people's names and
             -- only it knows them.
             pilots = net.pilots,
@@ -1160,10 +1167,20 @@ function update(self, dt)
         local ok, out = pcall(html5.run, "window.vwPointerOut?1:0")
         local a = math.min(1, (CURSOR_HOLD + CURSOR_FADE - self.cursor_idle)
                               / CURSOR_FADE)
-        if (ok and out == "1") or a <= 0 then
+        if ok and out == "1" then
             self.cursor_x, self.cursor_y = nil, nil
-        else
+        elseif a > 0 then
             ui.cursor(self.cursor_x, wh - self.cursor_y, a)
+        elseif not ui.help_at(self.cursor_x, wh - self.cursor_y) then
+            -- Faded out with nothing under it: retire as before.
+            --
+            -- A hand left resting on an instrument is the exception, and the
+            -- position is kept for it. The arrow still goes, because a still
+            -- hand does not need one, but the interface has to keep knowing
+            -- where the hand is or the word it is reading would vanish under
+            -- it two and a half seconds in, which is about when somebody
+            -- rested there to read.
+            self.cursor_x, self.cursor_y = nil, nil
         end
     end
     ui.finish()
