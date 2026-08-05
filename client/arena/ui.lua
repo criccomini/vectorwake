@@ -1876,15 +1876,13 @@ local BOARD = {
 local BOARD_UNITS = 12.4
 -- How wide the page that draws it may go, against the 460 every other page
 -- takes. A menu of six words does not want the room; a picture of a keyboard
--- with four lines of caption under it does, and on a desktop window there is
--- a thousand points of it going spare. The column keeps its left edge and
--- grows to the right, so nothing jumps when the page changes.
+-- does, and on a desktop window there is a thousand points of it going spare.
+-- The column keeps its left edge and grows to the right, so nothing jumps when
+-- the page changes.
 -- Everything on the board is sized off the key, so the whole picture scales
 -- with the panel rather than a drawing growing around type that does not.
 local KEY_LETTER = 0.40   -- a single character, against key height
 local KEY_WORD = 0.30     -- "shift", "space": the ones that have to fit across
-local CAP_SIZE = 0.30     -- the caption lines under the legend
-local CAP_PITCH = 0.46
 
 -- What each colour means, in the order the legend reads.
 --
@@ -1921,23 +1919,6 @@ local function board_col(cat)
     if cat == "menu" then return pal.a(pal.DIM, 1.0) end
     return nil
 end
-
--- What a drawing cannot say, in as few lines as it can be said. Every key
--- that does a thing has a colour and a word in the legend instead, so what
--- is left here is the two facts a swatch cannot carry: which digit is which
--- charge, and that a key is held rather than pressed.
---
--- Up here rather than inside `board` because the panel has to be sized before
--- it is drawn, and a count written twice is a count that goes stale.
---
--- No line longer than the longest already here: the captions are set off the
--- key size, and at 700 points across a line of 69 characters runs off the
--- right of the board. board_test measures exactly that.
-local BOARD_CAPS = {
-    "1 to 4 spend the charges as the corner stack lists them",
-    "hold H and the screen names its own parts",
-    "in fullscreen ctrl joins the guns, where the browser allows it",
-}
 
 -- The legend, sized off the key like everything else here so a wide board
 -- does not end up captioned in type meant for a narrow one.
@@ -2074,28 +2055,18 @@ local function board(x, top, w)
         ly = ly + lsize + LEG_GAP * S
     end
 
-    local csize = math.max((FONT - 3) * S, kh * CAP_SIZE)
-    local cpitch = math.max(14 * S, kh * CAP_PITCH)
-    local cy = ly + 4 * S
-    for _, line in ipairs(BOARD_CAPS) do
-        txt(line, x, cy, csize, pal.a(pal.DIM, 0.85))
-        cy = cy + cpitch
-    end
-    return (cy - top) + 2 * S
+    return (ly - top) + 2 * S
 end
 
 -- What the board will ask for, so the panel can be sized before drawing it.
 -- Every term here is one the drawing uses, in the same order it uses them:
--- five key rows, the gap to the legend, however many lines the legend falls
--- into at this width, and the captions, counted off the list itself rather
--- than written down a second time.
+-- five key rows, the gap to the legend, and however many lines the legend
+-- falls into at this width.
 local function board_height(w)
     local kh = (w / BOARD_UNITS) * 0.82
     local lsize = legend_size(kh)
-    local cpitch = math.max(14 * S, kh * CAP_PITCH)
     return 5 * (kh + 3 * S) + 10 * S
-        + #legend_lines(w, lsize) * (lsize + LEG_GAP * S) + 4 * S
-        + #BOARD_CAPS * cpitch + 2 * S
+        + #legend_lines(w, lsize) * (lsize + LEG_GAP * S) + 2 * S
 end
 
 -- --- the menu -------------------------------------------------------------
@@ -2132,6 +2103,12 @@ end
 
 local MENU_FONT = "menu"
 
+-- How far under the top of the block the stage's first row sits: the title
+-- takes a line and the rule under it takes another. The rail starts there too,
+-- so a mark is level with the row it would open rather than with the middle of
+-- the list.
+local STAGE_TOP = 40
+
 -- --- marks -----------------------------------------------------------------
 --
 -- Every destination gets a drawing rather than a word, in the same strokes
@@ -2142,29 +2119,31 @@ local MENU_FONT = "menu"
 -- thing it opens, not a symbol somebody has to learn.
 
 local function mark_zones(cx, cy, r, col)
-    -- Rooms, and the lines between them: the stop opens the list of games a
-    -- directory is relaying, so the mark is that list. Three of them, the one
-    -- you are in filled and holding the lines, the others open.
+    -- A world with a ring around it. The stop opens the list of places there
+    -- are to fly in, and in this game a place is a world.
     --
-    -- It wore a triangle before, which is the mark every media player in the
-    -- world puts on the thing that starts a video. It promised a button and
-    -- led to a list of places. A box with a cross in it was tried next and
-    -- read worse: a plus inside a frame is what every interface draws on the
-    -- control that makes a new one.
-    local n = {{-0.8, 0.5, 0.24}, {0.0, -0.8, 0.21}, {0.78, 0.46, 0.33}}
-    local hub = n[#n]
-    for i = 1, #n - 1 do
-        u:seg(cx + hub[1] * r, ry(cy + hub[2] * r), cx + n[i][1] * r,
-              ry(cy + n[i][2] * r), 1.1 * S, pal.a(col, 0.4), true)
+    -- Three marks came before it, each borrowed from somewhere that already
+    -- owns the shape. A triangle is what every media player puts on the thing
+    -- that starts a video, so it promised a button and led to a list. A cross
+    -- in a box is what every interface draws on the control that makes a new
+    -- one. Three linked dots is the mark for sharing a page.
+    local body = r * 0.58
+    -- The ring first and whole, with the world laid over it, so it passes
+    -- behind rather than through.
+    local a, b = r * 1.06, r * 0.34
+    local ca, sa = math.cos(-0.34), math.sin(-0.34)
+    local pts = {}
+    for i = 0, 23 do
+        local t = i / 24 * math.pi * 2
+        local ex, ey = a * math.cos(t), b * math.sin(t)
+        pts[#pts + 1] = cx + ex * ca - ey * sa
+        pts[#pts + 1] = ry(cy + ex * sa + ey * ca)
     end
-    for _, a in ipairs(n) do
-        local px, py, rad = cx + a[1] * r, cy + a[2] * r, a[3] * r
-        if a == hub then
-            u:disc(px, ry(py), rad, 12, col)
-        else
-            u:ring(px, ry(py), rad, 1.2 * S, 10, pal.a(col, 0.85))
-        end
-    end
+    u:outline(pts, 1.1 * S, pal.a(col, 0.8), true)
+    -- Dark in the body and lit at the rim, which is how everything solid in
+    -- this game is drawn, from a wall face to a hull.
+    u:disc(cx, ry(cy), body, 18, pal.a(pal.BG, 0.94))
+    u:ring(cx, ry(cy), body, 1.3 * S, 20, col)
 end
 
 local function mark_pilot(cx, cy, r, col)
@@ -2290,16 +2269,17 @@ local function stage_row(x, y, w, h, r, hot)
     -- marks saying one thing, and the corners cut the row into a box in a
     -- panel that has no boxes anywhere else in it.
     if hot then rect(x, y, w, h, pal.a(pal.FRIEND, 0.16)) end
-    -- One text column, whatever the row is. The wedge that says "this is the
-    -- one you are already on" hangs in the margin to the left of it: drawn
-    -- inline it pushed its own label fifteen points right of every other
-    -- label, so the one row worth finding was the one out of line.
-    local tx = x + 30 * S
+    -- One text column, whatever the row is, and it is where it always was.
+    -- The wedge that says "this is the one you are already on" hangs off the
+    -- left of that column, in the margin the panel already had: drawn inline
+    -- it pushed its own label fifteen points right of every other label, so
+    -- the one row worth finding was the one out of line.
+    local tx = x + 16 * S
     if r.mark then
         -- A lit wedge, the same one the corner stack uses to say a slot is
         -- the ready one.
-        u:tri(x + 11 * S, ry(y + h / 2 - 4.5 * S), x + 18 * S, ry(y + h / 2),
-              x + 11 * S, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
+        u:tri(x + 3 * S, ry(y + h / 2 - 4.5 * S), x + 10 * S, ry(y + h / 2),
+              x + 3 * S, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
     end
     local sel = hot or r.mark
     local size = (M.compact and 17 or 18) * S
@@ -2394,12 +2374,16 @@ local function ship_grid(x, y, w, h, v, focused)
             rect(x + c * cw + 4 * S, y + rr * ch + 2 * S, cw - 8 * S,
                  ch - 4 * S, pal.a(pal.FRIEND, 0.14))
         end
-        thumb(cx, cy - ch * 0.12, r.hull or 0,
+        -- The hull, its name and its trade, held clear of the bottom of the
+        -- lit cell. The role used to sit on that edge, its descenders over the
+        -- line, so a selected ship read as type in a box a size too small for
+        -- it.
+        thumb(cx, cy - ch * 0.17, r.hull or 0,
               pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116)
-        txt(r.label or "", cx, cy + ch * 0.30, (M.compact and 14 or 15) * S,
+        txt(r.label or "", cx, cy + ch * 0.20, (M.compact and 14 or 15) * S,
             pal.a(col, (hot or r.mark) and 1 or 0.8), "center", MENU_FONT)
         if r.role then
-            txt(r.role, cx, cy + ch * 0.44, 10 * S, pal.a(pal.DIM, 0.9),
+            txt(r.role, cx, cy + ch * 0.34, 10 * S, pal.a(pal.DIM, 0.9),
                 "center")
         end
         hit(x + c * cw, y + rr * ch, cw, ch, "stage", i)
@@ -2480,9 +2464,15 @@ function M.menu(v)
         local pitch = math.min(math.max((H - head - 3 * margin) / n,
                                         38 * S), 58 * S)
         rh = pitch * n
-        local block = math.max(rh, math.min(H - head - 2 * margin, 470 * S))
+        -- The rail hangs from the top of the block, starting where the stage's
+        -- first row starts. Centred in the block instead, six stops in a tall
+        -- window sat opposite the middle of a three-row list with the whole
+        -- top of the panel empty above them, and the two halves read as two
+        -- panels that had been put side by side by accident.
+        local block = math.max(rh + STAGE_TOP * S,
+                               math.min(H - head - 2 * margin, 470 * S))
         local top = math.max(margin, (H - block - head) / 2) + head
-        rx, ry_ = x0, top + (block - rh) / 2
+        rx, ry_ = x0, top + STAGE_TOP * S
         sx = x0 + rw + 26 * S
         sy, sh = top, block
         sw = total - rw - 26 * S
@@ -2577,12 +2567,18 @@ function M.menu(v)
     local lw = listy and math.min(sw, 520 * S) or sw
     txt(title, sx, sy + 14 * S, (M.compact and 19 or 22) * S,
         pal.a(pal.FRIEND, focused and 1 or 0.75), nil, MENU_FONT)
+    -- The way out, where a way out goes, and only where there is one: with
+    -- nothing behind the panel the menu is the screen and cannot be shut.
+    --
+    -- The mark rather than a word. It said "back" from inside a page and
+    -- "close" at the top, which is one control with two jobs and two names,
+    -- and a rail that navigates from every level had already taken the going
+    -- back. What is left is shutting the panel, and everything shuts on an x.
     if v.closable then
-        txt(focused and "back" or "close", sx + lw, sy + 14 * S, 12 * S,
-            pal.a(pal.DIM, 0.85), "right", MENU_FONT)
-        hit(sx + lw - 70 * S, sy, 70 * S, 30 * S, "row", -1)
+        close_mark(sx + lw - 8 * S, sy + 14 * S, pal.a(pal.DIM, 0.9), 11 * S)
+        hit(sx + lw - 30 * S, sy, 40 * S, 30 * S, "close")
     end
-    local top = sy + 40 * S
+    local top = sy + STAGE_TOP * S
     local room = sh - (top - sy) - 26 * S
     -- A list is capped: a row whose name sits at one edge and whose count
     -- sits at the other, a screen apart, is two columns nobody reads as one

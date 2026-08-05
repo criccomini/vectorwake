@@ -1489,6 +1489,8 @@ function on_input(self, action_id, action)
                     act, moved = menu.click_stage(r.value)
                 elseif r.action == "rail" then
                     act, moved = menu.click_rail(r.value)
+                elseif r.action == "close" then
+                    act, moved = menu.click_close()
                 else
                     act, moved = menu.click(r.value)
                 end
