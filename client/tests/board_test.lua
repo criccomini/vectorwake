@@ -115,9 +115,10 @@ check("a touchscreen gets rows, not a picture of keys", #frames == 0,
 -- is as tall as it is wide, so a short window is as much a limit as a narrow
 -- one, and the width backs off until the whole thing fits.
 local function draw_at(w, h)
-    W, H = w, h
+    -- The recorder flips y against H, so that has to be this window's height
+    -- before anything is drawn into it.
+    H = h
     frames, rects = {}, {}
-    local st = package.loaded["arena.state"]
     st.n = 0
     ui.begin(layer, w, h, 1, false)
     ui.menu({title = "help", depth = 2, sel = 1, closable = true,
