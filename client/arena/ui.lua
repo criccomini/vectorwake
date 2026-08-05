@@ -3152,6 +3152,10 @@ end
 -- looked.
 local LOGO_EM, LOGO_SPAN, LOGO_DROP = 0.74, 37.31, 0.12
 
+-- How much of the stroke under the name is drawn at full weight before it
+-- starts going. The tail is the rest of it.
+local HOLD = 0.55
+
 local function wordmark(x, y, size, ww)
     -- The mark stands to the left of the name, on the middle of the word
     -- rather than the middle of its line box, so the two read as one lockup.
@@ -3159,16 +3163,26 @@ local function wordmark(x, y, size, ww)
     local s = size * LOGO_EM / LOGO_SPAN
     local lw = size * 0.95
     M.logo(x + lw / 2, y + size * LOGO_DROP, s)
+    -- The stroke runs under the whole lockup, mark and name alike, from the
+    -- edge the panel below it starts at. Kept before the name takes the room
+    -- the mark left it.
+    local ux, uw = x, ww
     x = x + lw
-    ww = ww - lw
     txt("vectorwake", x, y, size, pal.INK, nil, MENU_FONT)
+    -- The stroke under it: solid from the first letter, and gone by the end.
+    -- It used to swell out of nothing on the left as well, which is a shape
+    -- with two tails and no start, and left the name sitting over the thin
+    -- part of it. A wake is heaviest where the hull was and thins behind.
     local wy = y + size * 0.78
     local n = 40
     for i = 0, n - 1 do
         local t0, t1 = i / n, (i + 1) / n
-        local function swell(t) return math.sin(t * math.pi) ^ 1.6 end
+        local function swell(t)
+            if t <= HOLD then return 1 end
+            return 0.5 + 0.5 * math.cos((t - HOLD) / (1 - HOLD) * math.pi)
+        end
         local a0, a1 = swell(t0), swell(t1)
-        u:seg_fade(x + ww * t0, ry(wy), x + ww * t1, ry(wy),
+        u:seg_fade(ux + uw * t0, ry(wy), ux + uw * t1, ry(wy),
                    (0.7 + 2.6 * a0) * S, (0.7 + 2.6 * a1) * S,
                    0.85 * a0, 0.85 * a1, pal.FRIEND)
     end
@@ -3366,8 +3380,11 @@ function M.menu(v)
     -- A list is capped: a row whose name sits at one edge and whose count
     -- sits at the other, a screen apart, is two columns nobody reads as one
     -- line. The board and the hull grid are drawings and take everything.
-    -- The rule introduces whatever is under it, so it is as wide as that.
-    ticks(tx, sy + 22 * S, lw, pal.a(pal.RADAR_TILE, 0.45), 12 * S)
+    --
+    -- Nothing is drawn across the head of it. A ticked rule sat there, the
+    -- one the map border is made of, introducing a list that needs no
+    -- introducing: the rail says what the page is and the rows say what they
+    -- are, and the rule was a third line of furniture between them.
     if v.board and not M.touching then
         -- The widest board the stage has the height for, backed off rather
         -- than solved, the same way the page used to do it.
