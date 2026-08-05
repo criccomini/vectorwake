@@ -3122,13 +3122,14 @@ function M.logo(cx, cy, s, alpha)
               LOGO_TILT + math.pi, s, pal.a(pal.ENEMY, alpha), w)
 end
 
--- The name, and the stroke under it that makes it a mark.
+-- The mark and the name, and nothing under them.
 --
 -- Not a logotype: the same face the menu is set in, at a size nothing else on
--- screen is. What makes it ours is the stroke beneath, which starts at
--- nothing on the left, swells under the word and is gone again by the end of
--- it, which is a wake. It was here before this layout and it stays: the one
--- piece of decoration in the whole interface that anybody has asked to keep.
+-- screen is, with the drawn mark beside it. A stroke ran under the pair for a
+-- while, a wake that swelled and faded across the width of the panel. It was
+-- decoration in an interface that has none anywhere else, and every shape of
+-- it that was tried, swelling from both ends and then solid into a tail, read
+-- as a rule somebody had left there rather than as part of the name.
 -- How tall the mark stands and how much room it wants, both against the type
 -- it sits beside. The pair measures 37.3 hull units from the highest nose to
 -- the lowest tail (see LOGO_SHIP and the two offsets in M.logo), so a height
@@ -3152,40 +3153,14 @@ end
 -- looked.
 local LOGO_EM, LOGO_SPAN, LOGO_DROP = 0.74, 37.31, 0.12
 
--- How much of the stroke under the name is drawn at full weight before it
--- starts going. The tail is the rest of it.
-local HOLD = 0.55
-
-local function wordmark(x, y, size, ww)
+local function wordmark(x, y, size)
     -- The mark stands to the left of the name, on the middle of the word
     -- rather than the middle of its line box, so the two read as one lockup.
     -- It takes the room it needs and the name starts after it.
     local s = size * LOGO_EM / LOGO_SPAN
     local lw = size * 0.95
     M.logo(x + lw / 2, y + size * LOGO_DROP, s)
-    -- The stroke runs under the whole lockup, mark and name alike, from the
-    -- edge the panel below it starts at. Kept before the name takes the room
-    -- the mark left it.
-    local ux, uw = x, ww
-    x = x + lw
-    txt("vectorwake", x, y, size, pal.INK, nil, MENU_FONT)
-    -- The stroke under it: solid from the first letter, and gone by the end.
-    -- It used to swell out of nothing on the left as well, which is a shape
-    -- with two tails and no start, and left the name sitting over the thin
-    -- part of it. A wake is heaviest where the hull was and thins behind.
-    local wy = y + size * 0.78
-    local n = 40
-    for i = 0, n - 1 do
-        local t0, t1 = i / n, (i + 1) / n
-        local function swell(t)
-            if t <= HOLD then return 1 end
-            return 0.5 + 0.5 * math.cos((t - HOLD) / (1 - HOLD) * math.pi)
-        end
-        local a0, a1 = swell(t0), swell(t1)
-        u:seg_fade(ux + uw * t0, ry(wy), ux + uw * t1, ry(wy),
-                   (0.7 + 2.6 * a0) * S, (0.7 + 2.6 * a1) * S,
-                   0.85 * a0, 0.85 * a1, pal.FRIEND)
-    end
+    txt("vectorwake", x + lw, y, size, pal.INK, nil, MENU_FONT)
 end
 
 -- --- the whole thing -------------------------------------------------------
@@ -3260,8 +3235,7 @@ function M.menu(v)
         sx = x0 + rw + 26 * S
         sy, sh = top, block
         sw = total - rw - 26 * S
-        wordmark(x0, top - head + 30 * S, (tall and 40 or 30) * S,
-                 math.min(sw, 420 * S))
+        wordmark(x0, top - head + 30 * S, (tall and 40 or 30) * S)
         -- What you are reading, laid over what you are not. A wash rather
         -- than a panel: no border, no corners, just enough that the type sits
         -- on something and the arena stays visible round the edges of it.
@@ -3282,7 +3256,7 @@ function M.menu(v)
         sy = margin + head + chip
         sh = ry_ - 20 * S - sy
         rect(0, sy - 16 * S, W, sh + rh + 46 * S, pal.rgb(0x03050a, 0.5))
-        wordmark(margin, margin + chip + 22 * S, 30 * S, math.min(sw, 300 * S))
+        wordmark(margin, margin + chip + 22 * S, 30 * S)
         u:seg(margin, ry(ry_ - 12 * S), W - margin, ry(ry_ - 12 * S),
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
