@@ -129,15 +129,32 @@ check("enter is the only thing that picks",
       act == "ship" and menu.pending == 1,
       tostring(act) .. ", asked for " .. tostring(menu.pending))
 
--- Left is still the way out, from the column where there is nothing to its
--- left. Inside the grid it is one ship back.
+-- Every edge wraps. Nothing on the page is out of reach in one press, and an
+-- arrow never does nothing, which is what right at the last column did.
 menu.sel.ship = 6
 menu.step({left = true})
 check("left inside the grid moves", menu.sel.ship == 5 and menu.stack[2] == "ship",
       "cursor " .. tostring(menu.sel.ship) .. " at "
           .. table.concat(menu.stack, "/"))
 menu.step({left = true})
-check("and off the first column it goes back", menu.stack[2] == nil,
+check("and off the first column it wraps to the end of the row",
+      menu.sel.ship == 8 and menu.stack[2] == "ship",
+      "cursor " .. tostring(menu.sel.ship) .. " at "
+          .. table.concat(menu.stack, "/"))
+menu.step({right = true})
+check("and right off the last column comes back to the first",
+      menu.sel.ship == 5, "cursor " .. tostring(menu.sel.ship))
+menu.sel.ship = 3
+menu.step({up = true})
+check("up from the top row is the bottom row, same column",
+      menu.sel.ship == 7, "cursor " .. tostring(menu.sel.ship))
+menu.step({down = true})
+check("and down from the bottom is the top again", menu.sel.ship == 3,
+      "cursor " .. tostring(menu.sel.ship))
+
+-- Escape is the way out, since left is busy going round.
+menu.step({back = true})
+check("escape leaves the page", menu.stack[2] == nil,
       table.concat(menu.stack, "/"))
 
 -- --- a pointer resting on a row is the same cursor the arrows move --------

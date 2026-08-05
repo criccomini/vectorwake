@@ -539,7 +539,12 @@ function M.view()
     local out = {title = nd.title, depth = #M.stack, sel = sel,
                  -- The hull you are in, so the rail can draw it as its mark.
                  class = M.class,
-                 note = M.note, closable = not M.home or #M.stack > 1,
+                 -- Whether there is anything to shut, which is whether there
+                 -- is a game behind the panel. It used to say "or you are a
+                 -- level in", because the same control did the going back as
+                 -- well; the rail does that from every level now, and this is
+                 -- only the way out.
+                 note = M.note, closable = not M.home,
                  -- Whether there is a game behind the panel, which is what
                  -- decides where the block sits: clear of the corner stack
                  -- over an arena, centred over the starfield. Not whether you
@@ -746,16 +751,18 @@ function M.step(keys)
         local cols = math.max(1, math.min(M.cols, n))
         local i = row_index(rows)
         if keys.back then return back() end
-        -- Left off the first column is the way out, which is what left means
-        -- on every other page. Inside the grid it is one ship back.
+        -- Every edge wraps, along the row for left and right and through the
+        -- list for up and down. Nothing on this page is out of reach in one
+        -- press, and an arrow never does nothing. Escape is the way out, since
+        -- left is busy going round.
+        local first = i - (i - 1) % cols
+        local last = math.min(first + cols - 1, n)
         if keys.left then
-            if (i - 1) % cols == 0 then return back() end
-            M.sel[id] = i - 1
+            M.sel[id] = (i > first) and (i - 1) or last
             return nil, true
         end
         if keys.right then
-            if (i - 1) % cols == cols - 1 or i >= n then return nil, false end
-            M.sel[id] = i + 1
+            M.sel[id] = (i < last) and (i + 1) or first
             return nil, true
         end
         if keys.up then
@@ -847,10 +854,16 @@ end
 -- A pointer landed on a row the interface published.
 function M.click(index)
     if not M.open then return nil, false end
-    local id = M.stack[#M.stack]
-    if index == -1 then return back() end
-    M.sel[id] = index
+    M.sel[M.stack[#M.stack]] = index
     return activate(), true
+end
+
+-- The x on the panel. It shuts the menu rather than stepping back a level,
+-- which is what a cross means everywhere else, and it is drawn only where
+-- there is a game behind to shut it onto.
+function M.click_close()
+    if not M.open then return nil, false end
+    return nil, M.close()
 end
 
 return M

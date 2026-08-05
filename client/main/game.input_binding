@@ -83,7 +83,7 @@ key_trigger {
   action: "charge_4"
 }
 key_trigger {
-  input: KEY_I
+  input: KEY_P
   action: "details"
 }
 key_trigger {

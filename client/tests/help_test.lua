@@ -30,9 +30,9 @@ end
 
 local layer = {n = 0, rects = {}}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"disc", "flush", "frame", "outline", "quad",
-                       "reset", "ring", "seg", "seg_fade", "skirt", "tri",
-                       "tri_fade"}) do
+for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline",
+                       "quad", "reset", "ring", "seg", "seg_fade",
+                       "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
 end
 -- Rectangles are kept rather than counted: a bar as tall as the instrument it
@@ -132,7 +132,9 @@ local function frame(o)
         feed = FEED_LINES,
         hurt = 0,
         charges = o.charges or {{name = "repel", short = "RPL",
-                                 max = 3, count = 2}},
+                                 max = 3, count = 2},
+                                {name = "burst", short = "BST",
+                                 max = 3, count = 1}},
         cam_x = sim.ship_x(0), cam_y = sim.ship_y(0),
         half_w = 640, half_h = 400,
         banner = "",
@@ -226,6 +228,7 @@ end
 local GUN = ui.CARDS.bolt.text
 local BOMB = ui.CARDS.bomb.text
 local CHG = ui.CARDS.repel.text
+local BST = ui.CARDS.burst.text
 local BTY = ui.CARDS.bounty.text
 local RADAR = "near space. the rings are range."
 local MAP = "the whole arena, and you as the arrow"
@@ -238,7 +241,7 @@ local FEED = "who paid whom"
 local SILENT = {"armour and ammunition, one pool", "your line to the arena",
                 "let go and it is gone"}
 
-local ALL = {GUN, BOMB, CHG, BTY, RADAR, FEED}
+local ALL = {GUN, BOMB, CHG, BST, BTY, RADAR, FEED}
 
 -- --- it is off until it is held --------------------------------------------
 
@@ -273,23 +276,63 @@ end
 -- --- pointing at a row answers beside that row ---------------------------
 --
 -- Held, the stack's sentences are a column: a card's worth of words is taller
--- than the row it belongs to and five of them left on their rows would print
--- through each other. Pointing at one is the case where the promise still
--- holds exactly, because one block has nothing to collide with.
+-- than the row it belongs to, and five of them left where the rows are would
+-- print through each other. Pointing at one is the case where the promise
+-- still holds exactly, because one block has nothing to collide with.
+--
+-- The rows wear glyphs rather than words now, so the drawn text cannot say
+-- where a row is. The hover zones can: they are the row rectangles the
+-- interface itself publishes, and they are also what a pointer resting there
+-- names, so the test and the player are asking the same question.
+
+local function zone_band(key)
+    local x = 20            -- inside the stack's left column
+    local top, bot = nil, nil
+    for yy = 0, H, 2 do
+        if ui.help_at(x, yy) == key then
+            top = top or yy
+            bot = yy
+        end
+    end
+    return top, bot
+end
 
 for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"bounty", BTY}}) do
     local key, sentence = pair[1], pair[2]
-    local px, py = nil, nil
-    for y = 0, H - 1, 3 do
-        for x = 0, W - 1, 3 do
-            if not px and ui.help_at(x, y) == key then px, py = x, y end
-        end
-    end
-    local f = frame({point_x = px, point_y = py})
+    local top, bot = zone_band(key)
+    local mid = top and (top + bot) / 2
+    local f = frame({point_x = 20, point_y = mid})
     local b = block_of(f, sentence)
     check("pointing at " .. key .. " answers beside the " .. key .. " row",
-          b and math.abs(b.mid - py) < 40,
-          b and ("row " .. py .. ", words at " .. b.mid) or "absent")
+          b and mid and math.abs(b.mid - mid) < 40,
+          b and mid and ("row " .. mid .. ", words at " .. b.mid) or "absent")
+end
+
+-- --- a charge is named for what it is, not for the digit that spends it ---
+--
+-- A repel and a burst do different things and each has a card of its own.
+-- They shared one sentence only while that sentence was about which digit
+-- spends them, which is a fact about the keyboard rather than about either.
+
+do
+    local rx, ry_ = nil, nil
+    local bx, by = nil, nil
+    for y = 0, H - 1, 3 do
+        for x = 0, W - 1, 3 do
+            local k = ui.help_at(x, y)
+            if k == "charge:repel" and not rx then rx, ry_ = x, y end
+            if k == "charge:burst" and not bx then bx, by = x, y end
+        end
+    end
+    check("the two charge rows are pointed at separately",
+          rx and bx and ry_ ~= by,
+          tostring(ry_) .. " and " .. tostring(by))
+    local fr = frame({point_x = rx, point_y = ry_})
+    local fb = frame({point_x = bx, point_y = by})
+    check("the repel row says what a repel is",
+          says(fr, CHG) and not says(fr, BST))
+    check("the burst row says what a burst is",
+          says(fb, BST) and not says(fb, CHG))
 end
 
 -- --- and held, the column does not print through itself ------------------
@@ -350,7 +393,7 @@ local mapped = frame({help = true, map = true})
 check("with the map up the dial is described as the map",
       find(mapped, MAP) and not find(mapped, RADAR))
 local mapped_clash = nil
-for _, s in ipairs({MAP, FEED, GUN, BOMB, CHG, BTY}) do
+for _, s in ipairs({MAP, FEED, GUN, BOMB, CHG, BST, BTY}) do
     if not says(mapped, s) then
         mapped_clash = s .. " went missing with the map up"
     end
@@ -395,7 +438,8 @@ end
 
 -- Each charge row is its own key now, since a repel and a burst have a card
 -- each; the harness gives the hull a repel.
-local KEYS = {"gun", "bomb", "charge:repel", "bounty", "radar", "feed"}
+local KEYS = {"gun", "bomb", "charge:repel", "charge:burst", "bounty",
+              "radar", "feed"}
 local unreachable = {}
 for _, k in ipairs(KEYS) do
     if not a_point_in(k) then unreachable[#unreachable + 1] = k end
@@ -413,14 +457,15 @@ local hx, hy = a_point_in("bounty")
 local hovered = frame({point_x = hx, point_y = hy})
 check("the pointer on a row draws that row's line", says(hovered, BTY))
 local extras = {}
-for _, s in ipairs({GUN, BOMB, CHG, RADAR, FEED}) do
+for _, s in ipairs({GUN, BOMB, CHG, BST, RADAR, FEED}) do
     if says(hovered, s) then extras[#extras + 1] = s end
 end
 check("and none of the others", #extras == 0, table.concat(extras, "; "))
 
 -- Each instrument answers with its own sentence and not its neighbour's.
 for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"radar", RADAR},
-                       {"feed", FEED}}) do
+                       {"feed", FEED}, {"charge:repel", CHG},
+                       {"charge:burst", BST}}) do
     local key, want = pair[1], pair[2]
     local px, py = a_point_in(key)
     local f = frame({point_x = px, point_y = py})

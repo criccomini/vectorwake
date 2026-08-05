@@ -53,7 +53,6 @@ local me = 0
 local accum = 0
 local feed = {}
 local hurt = 0
-local pickup = nil
 -- The card drawn under DESTROYED, how far up the ladders this hull had
 -- climbed when it was still flying, and whether it has been dead since the
 -- card was set: the card is cleared on the way back up, so `was_dead` is the
@@ -66,6 +65,9 @@ local pickup = nil
 local tip = nil
 local carried = 0
 local was_dead = false
+-- Which zone the "nobody is running X" note is about, so the note can be
+-- withdrawn when the games list shows that zone live again.
+local note_zone = nil
 -- Per-seat bank state, described where it is used further down. Declared up
 -- here because go_home clears it, and a local declared below the function that
 -- reads it is not the same variable: the function closes over a global that is
@@ -390,7 +392,6 @@ function go_home(self, at)
     self.online = false
     self.joining = nil
     feed = {}
-    pickup = nil
     hurt = 0
     -- The next room is a fresh start for the tips as well: its first death
     -- gets the first card rather than wherever the last room left the cycle.
@@ -513,7 +514,6 @@ local function drain_events()
             -- is the one place that says which happened.
             local up = v >= 0
             if not up then col = pal.RUST end
-            pickup = {name = name, col = col, t = 1, sign = up and "+" or "-"}
             notify((up and "+ " or "- ") .. name, col)
         elseif ty == sim.EV_FLAG_TAKE or ty == sim.EV_FLAG_DROP then
             local col = (sim.ship_team(a) == sim.ship_team(me))
@@ -792,6 +792,24 @@ function update(self, dt)
     else
         directory.idle()
     end
+    -- The one note that is a claim about the games list rather than about a
+    -- press: "nobody is running X" is set when a join finds the row dead, and
+    -- the list goes on refreshing underneath it. A note still standing in red
+    -- after the row it accuses has come back is the menu contradicting
+    -- itself, so it is checked against the list for as long as it is up.
+    if note_zone then
+        if menu.note ~= ("nobody is running " .. note_zone) then
+            note_zone = nil
+        else
+            for _, r in ipairs(directory.rows) do
+                if r.name == note_zone and r.live then
+                    menu.note = nil
+                    note_zone = nil
+                    break
+                end
+            end
+        end
+    end
     -- The arena reads the name off the token, so the menu showing a different
     -- one would be showing a name nobody else can see.
     menu.adopt_account_name()
@@ -933,10 +951,6 @@ function update(self, dt)
     fx.listener(cx, cy)
     fx.update(dt)
     hurt = hurt * (0.955 ^ (dt * 60))
-    if pickup then
-        pickup.t = pickup.t * (0.975 ^ (dt * 60))
-        if pickup.t < 0.02 then pickup = nil end
-    end
 
     local sx, sy = fx.shake_offset()
     msg.post("@render:", "camera",
@@ -1172,7 +1186,7 @@ function update(self, dt)
             -- connection's business, so they are read here rather than in the
             -- renderer, which knows about drawing and not about sides.
             may_invite = net.may_invite(), invited = net.invited,
-            feed = feed, hurt = hurt, pickup = pickup, tip = tip,
+            feed = feed, hurt = hurt, tip = tip,
             charges = charge_row(),
             cam_x = cx, cam_y = cy,
             half_w = self.hw, half_h = self.hh,
@@ -1328,15 +1342,16 @@ function apply_menu(self, act)
         if not r.live then
             -- The row already says nobody is running it on its right-hand
             -- side, so this only has to not be silent: a press that produces
-            -- nothing reads as a dead screen.
+            -- nothing reads as a dead screen. The zone is remembered so the
+            -- note can be taken down when the list stops agreeing with it.
             menu.note = "nobody is running " .. r.name
+            note_zone = r.name
             return
         end
         -- Whatever we were in, we are leaving. `net.connect` drops the old
         -- socket itself, but the world it filled is this script's to clear.
         net.disconnect()
         feed = {}
-        pickup = nil
         hurt = 0
         fx.reset()
         world.forget_specs()
@@ -1514,6 +1529,8 @@ function on_input(self, action_id, action)
                     act, moved = menu.click_stage(r.value)
                 elseif r.action == "rail" then
                     act, moved = menu.click_rail(r.value)
+                elseif r.action == "close" then
+                    act, moved = menu.click_close()
                 else
                     act, moved = menu.click(r.value)
                 end

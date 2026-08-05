@@ -268,6 +268,34 @@ steps, lit = setting(0, 3)
 check("a setting at nothing lights nothing", lit == 0 and steps == 3,
       steps .. " outlined, " .. lit .. " filled")
 
+-- --- the way out is a mark, and only where there is a way out -------------
+--
+-- It was a word that said "back" from inside a page and "close" at the top,
+-- which is one control doing two jobs under two names. The rail navigates
+-- from every level, so what is left for this one is shutting the panel, and
+-- with nothing behind the panel there is nothing to shut it onto.
+
+local function closers()
+    local n = 0
+    for _, h in ipairs(ui.hits) do
+        if h.action == "close" then n = n + 1 end
+    end
+    return n
+end
+
+local shut = {title = "v", stage_title = "zones", depth = 2, sel = 1,
+              rail = RAIL, rail_sel = 1, focus = "stage", home = false,
+              closable = true, rows = rows}
+st = draw(shut)
+check("a menu over a game carries one way out", closers() == 1,
+      closers() .. " published")
+check("and no word for it", not has(st, "close") and not has(st, "back"),
+      table.concat(texts(st), " "))
+shut.closable = false
+draw(shut)
+check("and none at all with nothing behind it", closers() == 0,
+      closers() .. " published")
+
 -- --- the mark hangs off the column rather than moving it ------------------
 --
 -- The wedge that says "this is the game you are in" used to be drawn inline
