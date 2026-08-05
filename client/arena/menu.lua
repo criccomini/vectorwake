@@ -749,14 +749,18 @@ function M.step(keys)
         local cols = math.max(1, math.min(M.cols, n))
         local i = row_index(rows)
         if keys.back then return back() end
-        -- Every edge wraps, along the row for left and right and through the
-        -- list for up and down. Nothing on this page is out of reach in one
-        -- press, and an arrow never does nothing. Escape is the way out, since
-        -- left is busy going round.
+        -- The edges wrap, along the row for right and through the list for up
+        -- and down, so nothing on this page is out of reach in one press.
+        --
+        -- Left off the first column is the exception, because left is the way
+        -- out on every other page and this page has to have one: wrapped
+        -- round to the far end of the row it shut the door, and a hand on the
+        -- arrows alone could not get back to the rail.
         local first = i - (i - 1) % cols
         local last = math.min(first + cols - 1, n)
         if keys.left then
-            M.sel[id] = (i > first) and (i - 1) or last
+            if i == first then return back() end
+            M.sel[id] = i - 1
             return nil, true
         end
         if keys.right then
