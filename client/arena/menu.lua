@@ -158,7 +158,11 @@ end
 -- and one of: `go` to descend, or `act` for the arena to carry out. A row with
 -- neither is a line of text, which is what `about` is made of. A row may also
 -- carry a `hint`, which is a sentence about it drawn under the list while it
--- is the row selected.
+-- is the row selected, or a `note`, which is a sentence drawn in the row
+-- itself, under its name, whether or not the cursor is on it. A list whose
+-- rows are things to choose between wants notes; one whose rows are controls
+-- wants hints, because a sentence about what a control will do is only worth
+-- the room while you are on it.
 --
 -- A node's `rows` is a table, or a function returning one when what is in the
 -- list depends on the moment.
@@ -237,7 +241,12 @@ local function zone_rows()
     local rows = {}
     for i, r in ipairs(directory.rows) do
         rows[i] = {
-            label = r.name, detail = r.count, hint = r.detail,
+            label = r.name, detail = r.count,
+            -- What the game is, under its own name rather than at the foot of
+            -- the panel. Choosing between three games is reading three
+            -- sentences; one at a time, a long way from the name it belongs
+            -- to, is not reading them.
+            note = r.detail,
             -- What the meter draws, when the interface would rather show a
             -- room's population than spell it.
             players = r.players, bots = r.bots, live = r.live,
@@ -250,7 +259,7 @@ local function zone_rows()
     -- panel, since on the home screen there is nothing to leave.
     if not M.home then
         rows[#rows + 1] = {label = "leave this game", act = "leave",
-                           hint = "back to the home screen"}
+                           note = "back to the home screen"}
     end
     if #rows == 0 then
         -- Never an empty panel. Whatever the directory is doing, or failing to
@@ -576,8 +585,9 @@ function M.view()
         local ci, cn
         if r.choice then ci, cn = r.choice() end
         out.rows[i] = {
-            label = r.label, detail = d, index = i, hull = r.hull,
-            role = r.role, players = r.players, bots = r.bots, live = r.live,
+            label = r.label, detail = d, note = r.note, index = i,
+            hull = r.hull, role = r.role,
+            players = r.players, bots = r.bots, live = r.live,
             choice = ci, choices = cn,
             pick = (r.go or r.act) ~= nil,
             mark = r.mark and r.mark() or false,
@@ -626,8 +636,8 @@ function M.view()
                 if type(d) == "function" then d = d() end
                 local ci, cn
                 if r.choice then ci, cn = r.choice() end
-                out.rows[i] = {label = r.label, detail = d, index = i,
-                               hull = r.hull, role = r.role,
+                out.rows[i] = {label = r.label, detail = d, note = r.note,
+                               index = i, hull = r.hull, role = r.role,
                                players = r.players, bots = r.bots,
                                live = r.live, choice = ci, choices = cn,
                                pick = (r.go or r.act) ~= nil,
