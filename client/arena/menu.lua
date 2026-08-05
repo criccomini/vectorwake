@@ -242,7 +242,6 @@ local function zone_rows()
             -- room's population than spell it.
             players = r.players, bots = r.bots, live = r.live,
             act = "join", value = i,
-            mark = function() return r.zone == M.zone end,
         }
     end
     -- Leaving is not a destination, so it is not a stop on the rail: it is
@@ -422,9 +421,6 @@ local NODES = {
                 end
                 return "none yet"
             end, hint = account.status()},
-            {label = "", detail = ""},
-            {label = "", detail = "inspired by subspace, and none of its"},
-            {label = "", detail = "art, sound, maps or names"},
         }
         return rows
     end},
@@ -513,11 +509,20 @@ end
 -- the list arrives on its own schedule and moving a selection out from under a
 -- player mid-frame is exactly the surprise the stack reset above exists to
 -- stop.
+--
+-- The cursor is the whole of it. A row of this list used to carry a mark as
+-- well, a lit wedge and a lit name on the game you were in, which is a second
+-- thing to read saying what the cursor already sits on, and on a list of three
+-- games two of them were the answer to different questions.
 local zone_synced = false
 
 function M.tick()
     if M.at() ~= "zones" then
         zone_synced = false
+        -- And forget where the cursor was. Every other page is a place you
+        -- left off; this one has a right answer, and it is the game you are in
+        -- rather than the row you were reading when you walked away.
+        M.sel.zones = nil
         return
     end
     if zone_synced or #directory.rows == 0 then return end

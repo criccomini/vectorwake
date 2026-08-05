@@ -2985,8 +2985,10 @@ function M.menu(v)
     rect(0, 0, W, H, pal.rgb(0x03050a, narrow and (base + 0.08) or base))
 
     local margin = (narrow and 18 or 40) * S
-    local head = 0
-    if home then head = (narrow and 54 or 76) * S end
+    -- Room over the block for the name, wherever the menu is. It was kept for
+    -- the home screen alone, so the same menu opened mid-fight opened without
+    -- the one thing on it that says what this is.
+    local head = (narrow and 54 or 76) * S
 
     local rx, ry_, rw, rh          -- the rail
     local sx, sy, sw, sh           -- the stage
@@ -3028,10 +3030,8 @@ function M.menu(v)
         sx = x0 + rw + 26 * S
         sy, sh = top, block
         sw = total - rw - 26 * S
-        if home then
-            wordmark(x0, top - head + 30 * S, (tall and 40 or 30) * S,
-                     math.min(sw, 420 * S))
-        end
+        wordmark(x0, top - head + 30 * S, (tall and 40 or 30) * S,
+                 math.min(sw, 420 * S))
         -- What you are reading, laid over what you are not. A wash rather
         -- than a panel: no border, no corners, just enough that the type sits
         -- on something and the arena stays visible round the edges of it.
@@ -3046,14 +3046,13 @@ function M.menu(v)
         ry_ = H - margin - rh
         sx, sw = margin, W - 2 * margin
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
-        -- corner while the arena is live, and a title drawn into them is two
-        -- words in one place.
-        sy = margin + head + (home and 0 or 34 * S)
+        -- corner while the arena is live, and the name drawn into them is two
+        -- things in one place.
+        local chip = home and 0 or 34 * S
+        sy = margin + head + chip
         sh = ry_ - 20 * S - sy
         rect(0, sy - 16 * S, W, sh + rh + 46 * S, pal.rgb(0x03050a, 0.5))
-        if home then
-            wordmark(margin, margin + 26 * S, 30 * S, math.min(sw, 300 * S))
-        end
+        wordmark(margin, margin + chip + 22 * S, 30 * S, math.min(sw, 300 * S))
         u:seg(margin, ry(ry_ - 12 * S), W - margin, ry(ry_ - 12 * S),
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
