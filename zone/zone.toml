@@ -51,7 +51,7 @@ friction = 14
 # stay near 64 is how the game plays, not what it costs.
 max_ships = 64
 
-respawn_delay = 300   # ticks, so three seconds
+respawn_delay = 400   # ticks, so four seconds
 
 # Greens: how fast they arrive, how many the map holds, how long one waits to
 # be collected, how close a ship has to get, and the tile band they land in.
