@@ -228,6 +228,9 @@ local function zone_rows()
     for i, r in ipairs(directory.rows) do
         rows[i] = {
             label = r.name, detail = r.count, hint = r.detail,
+            -- What the meter draws, when the interface would rather show a
+            -- room's population than spell it.
+            players = r.players, bots = r.bots, live = r.live,
             act = "join", value = i,
             mark = function() return r.zone == M.zone end,
         }
@@ -251,22 +254,24 @@ end
 local NODES = {
     root = {title = "vectorwake", rows = function()
         local rows = {
-            {label = "play", detail = function()
+            {label = "play", icon = "play", detail = function()
                 if M.zone ~= "" then return M.zone end
                 return "choose a game"
             end, go = "zones"},
-            {label = "ship", detail = function() return HULLS[M.class + 1][1] end,
+            {label = "ship", icon = "ship",
+             detail = function() return HULLS[M.class + 1][1] end,
              go = "ship"},
-            {label = "pilot", detail = function() return M.name end, go = "pilot"},
-            {label = "settings", go = "settings"},
-            {label = "help", go = "help"},
-            {label = "about", go = "about"},
+            {label = "pilot", icon = "pilot",
+             detail = function() return M.name end, go = "pilot"},
+            {label = "settings", icon = "settings", go = "settings"},
+            {label = "help", icon = "help", go = "help"},
+            {label = "about", icon = "about", go = "about"},
         }
         -- Sides are a thing a room has, so the row appears with the room and
         -- says which one you are on. On the home screen there is no room and
         -- nothing to be on.
         if not M.home and #net.teams > 0 then
-            table.insert(rows, 4, {label = "team",
+            table.insert(rows, 4, {label = "team", icon = "team",
                 detail = function() return net.my_team_name() end,
                 go = "teams",
                 hint = "who you are flying with, and who else is here"})
@@ -275,8 +280,8 @@ local NODES = {
         -- On the home screen there is nothing to leave, and a row that does
         -- nothing is a row a player tries once and stops trusting.
         if not M.home then
-            rows[#rows + 1] = {label = "leave", detail = "back to the menu",
-                               act = "leave"}
+            rows[#rows + 1] = {label = "leave", icon = "leave",
+                               detail = "back to the menu", act = "leave"}
         end
         return rows
     end},
@@ -495,6 +500,8 @@ function M.view()
     -- The first screen a stranger sees, which is the only one that gets the
     -- name set large. Every other screen is a title on a column.
     local out = {title = nd.title, depth = #M.stack, sel = sel,
+                 -- The hull you are in, so the rail can draw it as its mark.
+                 class = M.class,
                  note = M.note, closable = not M.home or #M.stack > 1,
                  home_root = M.home and #M.stack == 1,
                  -- The help page asks for the drawn keyboard; whether the
@@ -507,6 +514,7 @@ function M.view()
         if type(d) == "function" then d = d() end
         out.rows[i] = {
             label = r.label, detail = d, index = i, hull = r.hull,
+            role = r.role, players = r.players, bots = r.bots, live = r.live,
             pick = (r.go or r.act) ~= nil,
             mark = r.mark and r.mark() or false,
         }
@@ -515,6 +523,61 @@ function M.view()
     -- list rather than squeezed onto every row.
     local cur = rows[sel]
     out.hint = cur and cur.hint or nil
+
+    -- The destinations, always, whatever level the stack is at: the interface
+    -- draws them as a rail of icons and the rail is the one thing on screen
+    -- that does not move. Which of them you are inside is `rail_sel`, and at
+    -- the root that is simply the row the cursor is on.
+    local top = rows_of(NODES.root)
+    out.rail = {}
+    for i, r in ipairs(top) do
+        local d = r.detail
+        if type(d) == "function" then d = d() end
+        out.rail[i] = {label = r.label, icon = r.icon or "about",
+                       detail = d, index = i}
+    end
+    if #M.stack == 1 then
+        out.rail_sel = sel
+        out.focus = "rail"
+        -- What the destination under the cursor holds, drawn in the stage
+        -- beside the rail rather than after a keystroke. Moving down a rail
+        -- that shows you what each stop contains is one gesture; moving down
+        -- a list of words and pressing enter to find out is two.
+        local pick = top[sel]
+        if pick and pick.go and NODES[pick.go] then
+            local nd2 = NODES[pick.go]
+            out.stage_title = nd2.title
+            out.board = nd2.board or false
+            out.rows = {}
+            for i, r in ipairs(rows_of(nd2)) do
+                local d = r.detail
+                if type(d) == "function" then d = d() end
+                out.rows[i] = {label = r.label, detail = d, index = i,
+                               hull = r.hull, role = r.role,
+                               players = r.players, bots = r.bots,
+                               live = r.live,
+                               pick = (r.go or r.act) ~= nil,
+                               mark = r.mark and r.mark() or false}
+            end
+            out.hint = nil
+        else
+            -- A destination that acts rather than descends: `leave`. There is
+            -- nothing to preview, so the stage says what it will do.
+            out.stage_title = pick and pick.label or ""
+            out.rows = {}
+            out.hint = pick and (pick.hint or pick.detail) or nil
+            if type(out.hint) == "function" then out.hint = out.hint() end
+        end
+    else
+        out.focus = "stage"
+        out.stage_title = nd.title
+        -- Which rail stop this level lives under, so the icon stays lit while
+        -- you are inside it.
+        local id = M.stack[2]
+        for i, r in ipairs(top) do
+            if r.go == id then out.rail_sel = i end
+        end
+    end
     return out
 end
 
@@ -616,6 +679,24 @@ function M.step(keys)
     end
     if keys.go or keys.right then return activate(), true end
     return nil, false
+end
+
+-- A pointer landed on a row of the stage, which is not always a row of the
+-- node the cursor is in: on the home screen the stage shows what the rail is
+-- pointing at, before anybody has gone in. So this goes in first and then
+-- acts, which is what the tap meant.
+function M.click_stage(index)
+    if not M.open then return nil, false end
+    if #M.stack == 1 then
+        local top = rows_of(node())
+        local r = top[row_index(top)]
+        if not (r and r.go) then return nil, false end
+        M.stack[#M.stack + 1] = r.go
+        M.note = nil
+    end
+    local id = M.stack[#M.stack]
+    M.sel[id] = index
+    return activate(), true
 end
 
 -- A pointer landed on a row the interface published.

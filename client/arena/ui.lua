@@ -63,11 +63,16 @@ local function rect(x, y, w, h, col)
     u:rect(x, ry(y, h), w, h, col)
 end
 
-local function txt(s, x, y, px, col, pivot)
+-- `font` names one of the faces the gui scene carries: nil for the mono
+-- everything in flight is set in, "menu" for the menu's own. It is passed
+-- through rather than looked up, so a caller that says nothing gets what the
+-- rest of the interface uses.
+local function txt(s, x, y, px, col, pivot, font)
     nt = nt + 1
     local t = text[nt]
     if not t then t = {} text[nt] = t end
     t.s, t.x, t.y, t.px, t.col, t.pivot = s, x, H - y, px, col, pivot or "left"
+    t.font = font
 end
 
 -- A rectangle the pointer can land on, published in the same coordinates it
@@ -1333,7 +1338,13 @@ function M.hud(o)
     local lift = M.touching and 150 * S or 0
 
     local top = scores(me, o.pilots)
-    nameplates(o)
+    -- Names hanging off ships, but not under the menu. Glyphs come from the
+    -- gui and the gui draws over every mesh, so nothing the menu lays down
+    -- can cover them: a panel with six pilots' names scattered through it
+    -- reads as a fault rather than as depth. The instruments stay -- your
+    -- bars, the dial, the feed -- because you can still be shot while you
+    -- are reading, and those are what say so.
+    if not o.menu_open then nameplates(o) end
     -- One corner, one instrument. The map is the radar pulled back to the
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
@@ -1405,8 +1416,6 @@ end
 -- is translucent rather than opaque. Over an arena you can see the fight you
 -- left, and that you are still in it; on the way in there is a starfield
 -- behind it and the same wash makes the type readable against the stars.
-local ROW_H = 34
-local MENU_W = 460
 
 -- The help page's keyboard, drawn as a keyboard.
 --
@@ -1439,7 +1448,6 @@ local BOARD_UNITS = 12.4
 -- with four lines of caption under it does, and on a desktop window there is
 -- a thousand points of it going spare. The column keeps its left edge and
 -- grows to the right, so nothing jumps when the page changes.
-local BOARD_W = 780
 -- Everything on the board is sized off the key, so the whole picture scales
 -- with the panel rather than a drawing growing around type that does not.
 local KEY_LETTER = 0.40   -- a single character, against key height
@@ -1572,152 +1580,452 @@ local function board_height(w)
     return 5 * (kh + 3 * S) + 10 * S + lsize + 12 * S + 4 * cpitch + 2 * S
 end
 
-function M.menu(v)
-    local w = math.min(MENU_W * S, W - 24 * S)
-    local x = math.max(24 * S, (W - w) / 2 - 120 * S)
-    local nrows = #v.rows
-    -- The page that draws the keyboard takes the room the rest do not want,
-    -- from the same left edge, so a picture of a board on a desktop window is
-    -- not drawn at the width of a phone's menu column with captions to match.
-    if v.board and not M.touching then
-        w = math.max(w, math.min(BOARD_W * S, W - x - 24 * S))
-        -- The board is as tall as it is wide, so a short window bounds the
-        -- width as surely as a narrow one does. Backed off rather than
-        -- solved: board_height is a sum of terms that will change again, and
-        -- a loop that asks it stays right when an inverted formula would
-        -- quietly stop being.
-        while w > MENU_W * S
-              and board_height(w - 40 * S) + 84 * S > H - 40 * S do
-            w = w * 0.94
-        end
-        w = math.max(w, math.min(MENU_W * S, W - 24 * S))
-    end
-    -- The help page draws the keyboard instead of listing it, except on a
-    -- touchscreen, where the rows describe the thumbs and a picture of keys
-    -- the device does not have would be the wall of text's sillier cousin.
-    local show_board = v.board and not M.touching
-    -- The home screen carries the name at a size that owns its corner, and
-    -- everything under it moves down by the room that takes. Only while the
-    -- room exists: a phone held sideways has about 350 points of height, the
-    -- column with the big header is 374, and a wordmark that pushes "tap a
-    -- row" off the bottom of the screen is decoration eating the controls.
-    -- The header yields and the title falls back to the size every other
-    -- screen uses.
-    local head = 0
-    if v.home_root then
-        local need = ROW_H * nrows + 76 + 60 + 24
-        if H / S >= need then head = 60 * S end
-    end
-    local h = ROW_H * S * nrows + 76 * S + head
-    if show_board then h = board_height(w - 40 * S) + 84 * S end
-    local y = math.max(20 * S, (H - h) / 2)
+-- --- the menu -------------------------------------------------------------
+--
+-- A rail of destinations and a stage showing what the one you are on holds.
+--
+-- The old menu was one column of words: a title, `label ....... value` rows,
+-- and a sentence underneath. It read the same on a phone and on a desktop,
+-- which meant it was laid out for neither, and every level looked like every
+-- other level, so nothing on screen told you where you were except a word at
+-- the top.
+--
+-- What replaces it is two things that do not move. The rail carries the
+-- destinations as marks -- play, ship, pilot, settings -- and stays put
+-- whatever level you are at, so the answer to "where am I" is a lit icon
+-- rather than a breadcrumb to read. The stage beside it shows what the rail
+-- is pointing at, filled in already rather than after a keystroke: moving
+-- down the rail on a home screen walks you through the games, the hulls and
+-- the settings without choosing anything.
+--
+-- Three shapes, from one rule about the window rather than a guess about the
+-- device:
+--
+--   wide and tall    rail down the left with its labels, stage beside it
+--   wide and short   the same, icons only, because eight labelled stops do
+--                    not fit a phone held sideways
+--   narrow           stage above, rail along the bottom where the thumbs are
+--
+-- The five inputs are unchanged, and so are the sounds: up and down move,
+-- right or enter goes in, left or escape comes back. A pointer may land on
+-- either half, which is the one thing the keyboard cannot do and the reason
+-- the stage publishes its own hit boxes.
 
-    -- Not a curtain: dimmed enough to read against, clear enough to see the
-    -- arena still running behind it. Opening the menu does not pause anything
-    -- and should not look as though it does.
-    rect(0, 0, W, H, pal.rgb(0x03050a, 0.58))
+local MENU_FONT = "menu"
 
-    -- No panel. A modal box with a border is the one shape this game does not
-    -- otherwise contain, and it made the menu look like a settings dialog
-    -- borrowed from another application. What holds the column together is
-    -- the same thing that holds a wall together: a lit rule with the light
-    -- falling off it. The column sits left of centre so the arena keeps the
-    -- middle of the screen.
-    vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.8), 40 * S)
+-- --- marks -----------------------------------------------------------------
+--
+-- Every destination gets a drawing rather than a word, in the same strokes
+-- the hulls and the walls are made of: thin lines, chamfered corners, a
+-- little fill where something is solid. They are drawn at a radius so the
+-- rail can size them, and they are the only place in this interface where a
+-- shape has to carry a meaning on its own -- so each one is a picture of the
+-- thing it opens, not a symbol somebody has to learn.
 
-    if head > 0 then
-        -- The name, and under it the thing the name is about.
-        --
-        -- Not a logotype: the same monospace as everything else, at a size
-        -- nothing else on the screen is. What makes it a mark is the stroke
-        -- beneath, which starts at nothing on the left, swells under the word
-        -- and is gone again by the end of it, which is a wake.
-        local size = (M.compact and 30 or 46) * S
-        txt(v.title, x + 20 * S, y + 40 * S, size, pal.INK)
-        local ww = math.min(#v.title * size * 0.62, w - 40 * S)
-        local wy = y + 72 * S
-        local n = 40
-        for i = 0, n - 1 do
-            local t0, t1 = i / n, (i + 1) / n
-            local function swell(t)
-                return math.sin(t * math.pi) ^ 1.6
-            end
-            local a0, a1 = swell(t0), swell(t1)
-            u:seg_fade(x + 20 * S + ww * t0, ry(wy),
-                       x + 20 * S + ww * t1, ry(wy),
-                       (0.7 + 2.6 * a0) * S, (0.7 + 2.6 * a1) * S,
-                       0.85 * a0, 0.85 * a1, pal.FRIEND)
-        end
-    else
-        txt(v.title, x + 20 * S, y + 26 * S, (M.compact and 19 or 23) * S,
-            pal.FRIEND)
-    end
-    -- A phone has no escape key, so the way out is drawn. At the root of the
-    -- home screen there is no way out to draw: nothing is behind the column,
-    -- and a `close` that leaves a player on an empty starfield would be a
-    -- button that breaks the game.
-    if v.closable then
-        txt(v.depth > 1 and "back" or "close", x + w - 20 * S, y + 26 * S,
-            11 * S, pal.a(pal.DIM, 0.8), "right")
-        hit(x + w - 90 * S, y + 8 * S, 90 * S, 34 * S, "row", -1)
-    end
-    ticks(x + 20 * S, y + 40 * S + head, w - 20 * S,
-          pal.a(pal.RADAR_TILE, 0.4), 12 * S)
+local function mark_play(cx, cy, r, col)
+    local pts = {cx - r * 0.55, ry(cy - r * 0.8), cx + r * 0.9, ry(cy),
+                 cx - r * 0.55, ry(cy + r * 0.8)}
+    u:fan(pts, pal.a(col, 0.16))
+    u:outline(pts, 1.3 * S, col, true)
+end
 
-    local ry0 = y + 48 * S + head
-    if show_board then
-        board(x + 20 * S, ry0, w - 40 * S)
+local function mark_pilot(cx, cy, r, col)
+    -- A call sign on a plate: the chamfer top left, a dot for the mark and
+    -- two rules for the name, which is what the scoreboard row looks like
+    -- from far enough away.
+    local w, h, c = r * 1.7, r * 1.25, r * 0.34
+    local x0, y0 = cx - w / 2, cy - h / 2
+    local pts = {x0 + c, ry(y0), x0 + w, ry(y0), x0 + w, ry(y0 + h),
+                 x0, ry(y0 + h), x0, ry(y0 + c)}
+    u:outline(pts, 1.2 * S, col, true)
+    u:disc(x0 + r * 0.42, ry(cy - r * 0.02), r * 0.17, 8, col)
+    u:seg(x0 + r * 0.75, ry(cy - r * 0.22), x0 + w - r * 0.28,
+          ry(cy - r * 0.22), 1.0 * S, pal.a(col, 0.75), true)
+    u:seg(x0 + r * 0.75, ry(cy + r * 0.24), x0 + w - r * 0.5,
+          ry(cy + r * 0.24), 1.0 * S, pal.a(col, 0.5), true)
+end
+
+local function mark_team(cx, cy, r, col)
+    -- Two pennants, which is what a flag is drawn as in the world.
+    for i, k in ipairs({{-0.5, 0.85}, {0.35, 1.0}}) do
+        local px, s = cx + r * k[1], r * k[2]
+        u:seg(px, ry(cy - s * 0.9), px, ry(cy + s * 0.85), 1.2 * S,
+              pal.a(col, i == 2 and 1 or 0.6), true)
+        local pts = {px, ry(cy - s * 0.9), px + s * 0.85, ry(cy - s * 0.55),
+                     px, ry(cy - s * 0.2)}
+        u:fan(pts, pal.a(col, i == 2 and 0.22 or 0.12))
+        u:outline(pts, 1.1 * S, pal.a(col, i == 2 and 1 or 0.6), true)
     end
+end
+
+local function mark_settings(cx, cy, r, col)
+    -- Three rules with a knob apiece, at three different settings, because a
+    -- row of identical sliders is a picture of nothing being adjustable.
+    for i, k in ipairs({-0.62, 0, 0.62}) do
+        local y = cy + r * k
+        u:seg(cx - r, ry(y), cx + r, ry(y), 1.0 * S, pal.a(col, 0.45), true)
+        local kx = cx + r * ({-0.3, 0.42, -0.05})[i]
+        rect(kx - r * 0.17, y - r * 0.26, r * 0.34, r * 0.52, col)
+    end
+end
+
+local function mark_help(cx, cy, r, col)
+    -- A key off the board the page draws, with the question on it.
+    local w, h, c = r * 1.5, r * 1.5, r * 0.3
+    local x0, y0 = cx - w / 2, cy - h / 2
+    local pts = {x0 + c, ry(y0), x0 + w, ry(y0), x0 + w, ry(y0 + h - c),
+                 x0 + w - c, ry(y0 + h), x0, ry(y0 + h), x0, ry(y0 + c)}
+    u:fan(pts, pal.a(col, 0.10))
+    u:outline(pts, 1.2 * S, col, true)
+    txt("?", cx, cy, r * 1.25, col, "center")
+end
+
+local function mark_about(cx, cy, r, col)
+    u:ring(cx, ry(cy), r * 0.86, 1.15 * S, 18, col)
+    u:disc(cx, ry(cy - r * 0.4), r * 0.15, 8, col)
+    u:seg(cx, ry(cy - r * 0.05), cx, ry(cy + r * 0.45), 1.4 * S, col, true)
+end
+
+local function mark_leave(cx, cy, r, col)
+    -- A doorway with the arrow going out of it, drawn open on the side the
+    -- arrow leaves by so the shape says which way it means.
+    local pts = {cx + r * 0.15, ry(cy - r * 0.9), cx - r * 0.85,
+                 ry(cy - r * 0.9), cx - r * 0.85, ry(cy + r * 0.9),
+                 cx + r * 0.15, ry(cy + r * 0.9)}
+    u:outline(pts, 1.2 * S, pal.a(col, 0.8), false)
+    u:seg(cx - r * 0.2, ry(cy), cx + r * 0.85, ry(cy), 1.3 * S, col, true)
+    u:tri(cx + r, ry(cy), cx + r * 0.45, ry(cy - r * 0.4),
+          cx + r * 0.45, ry(cy + r * 0.4), col)
+end
+
+-- The hull is its own mark: the ship you are flying, drawn as the ship you
+-- are flying. Nothing else in the rail has to be looked up.
+local function mark_ship(cx, cy, r, col, cls)
+    thumb(cx, cy, cls or 0, col, r / 17)
+end
+
+local MARKS = {play = mark_play, pilot = mark_pilot, team = mark_team,
+               settings = mark_settings, help = mark_help, about = mark_about,
+               leave = mark_leave}
+
+local function draw_mark(kind, cx, cy, r, col, cls)
+    if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end
+    local f = MARKS[kind] or mark_about
+    f(cx, cy, r, col)
+end
+
+-- --- the stage -------------------------------------------------------------
+
+-- How full a room is, as pips rather than a sentence. Filled for people,
+-- outlined for the AI holding seats until people arrive, so a glance says
+-- both how busy a game is and how much of that is real.
+-- Who is in a room, as two counts with a mark apiece rather than a sentence.
+--
+-- Pips were tried first and read as a dashed line: a room with fifty bots and
+-- nobody in it lit nothing, which is honest and says nothing. A filled dot
+-- for people and the same bot mark the scoreboard wears for the AI holding
+-- seats says both numbers at a glance, and the marks are ones a player has
+-- already met in flight.
+local function population(x, y, players, bots, col)
+    local right = x
+    if bots and bots > 0 then
+        txt(tostring(bots), right, y, 12 * S, pal.a(pal.DIM, 0.9), "right")
+        bot_mark(right - text_w(tostring(bots), 12 * S) - 14 * S, y,
+                 pal.a(pal.DIM, 0.75), 9 * S)
+        right = right - text_w(tostring(bots), 12 * S) - 26 * S
+    end
+    local pc = players > 0 and col or pal.a(pal.DIM, 0.8)
+    txt(tostring(players), right, y, 13 * S, pc, "right")
+    u:disc(right - text_w(tostring(players), 13 * S) - 9 * S, ry(y), 3.2 * S,
+           10, pc)
+end
+
+-- One row of the stage: a mark for the one you are on, the name, and
+-- whatever the row has to say about itself on the right.
+local function stage_row(x, y, w, h, r, sel, focused, live)
+    local col = r.mark and pal.FRIEND or pal.INK
+    if sel and focused then
+        rect(x, y, w, h, pal.a(pal.FRIEND, 0.09))
+        bracket(x, y, w, h, pal.a(pal.FRIEND, 0.9), 12 * S, 4 * S)
+    elseif sel then
+        rect(x, y, w, h, pal.a(pal.INK, 0.04))
+    end
+    local tx = x + 16 * S
+    if r.mark then
+        -- Where you already are: a lit wedge, the same one the corner stack
+        -- uses to say a slot is the ready one.
+        u:tri(tx, ry(y + h / 2 - 4.5 * S), tx + 7 * S, ry(y + h / 2),
+              tx, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
+        tx = tx + 15 * S
+    end
+    local size = (M.compact and 17 or 18) * S
+    txt(r.label or "", tx, y + h / 2, size,
+        pal.a(col, (sel or r.mark) and 1 or 0.82), nil, MENU_FONT)
+    -- The right hand side is data, so it stays in the face the numbers in
+    -- flight are set in: a call sign, a count, a hull's name.
+    if r.players and r.live then
+        population(x + w - 16 * S, y + h / 2, r.players, r.bots,
+                   pal.a(pal.FRIEND, sel and 1 or 0.85))
+    elseif r.detail and r.detail ~= "" then
+        txt(r.detail, x + w - 16 * S, y + h / 2, 12 * S,
+            pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right")
+    end
+end
+
+-- The hulls, as hulls. A list of eight names is eight words about drawings
+-- the game already owns, and picking a ship from a menu that shows you the
+-- ships is the one page that does not need reading at all.
+local function ship_grid(x, y, w, h, v, focused)
+    local n = #v.rows
+    if n == 0 then return end
+    local cols = (w / S >= 420) and 4 or 2
+    local rowsn = math.ceil(n / cols)
+    local cw = w / cols
+    local ch = math.min(h / rowsn, (M.compact and 92 or 104) * S)
+    -- Centred in the room it was given rather than hung off the top, so a
+    -- tall phone does not draw eight ships in the top third of the screen.
+    y = y + math.max(0, (h - ch * rowsn) / 2)
     for i, r in ipairs(v.rows) do
-        if show_board then break end
-        local top = ry0 + (i - 1) * ROW_H * S
-        local on = i == v.sel
-        if on and r.pick then
-            -- A wash off the rule, and the rule lit where the row meets it.
-            wash(x, top, w, ROW_H * S, pal.a(pal.FRIEND, 0.14))
-            u:seg(x, ry(top), x, ry(top + ROW_H * S), 2.2 * S, pal.FRIEND)
-            u:seg(x + 8 * S, ry(top + ROW_H * S / 2),
-                  x + 13 * S, ry(top + ROW_H * S / 2), 1.4 * S, pal.FRIEND)
+        local c, rr = (i - 1) % cols, math.floor((i - 1) / cols)
+        local cx = x + c * cw + cw / 2
+        local cy = y + rr * ch + ch / 2
+        local sel = (i == v.sel)
+        local col = r.mark and pal.FRIEND or pal.INK
+        if sel and focused then
+            bracket(x + c * cw + 4 * S, y + rr * ch + 2 * S, cw - 8 * S,
+                    ch - 4 * S, pal.a(pal.FRIEND, 0.9), 12 * S, 4 * S)
         end
-        local ink = r.pick and (on and pal.INK or pal.a(pal.INK, 0.7))
-            or pal.a(pal.DIM, 0.9)
-        local lx = x + 20 * S
-        if r.hull then
-            -- The silhouette is what picks a ship. Eight names mean nothing
-            -- to somebody who has not flown them; eight shapes are the game
-            -- telling you what it has.
-            thumb(x + 36 * S, top + ROW_H * S / 2, r.hull,
-                  on and pal.INK or pal.a(pal.INK, 0.55), 0.62 * S)
-            lx = x + 62 * S
+        if r.mark then
+            rect(x + c * cw + 4 * S, y + rr * ch + 2 * S, cw - 8 * S,
+                 ch - 4 * S, pal.a(pal.FRIEND, 0.07))
         end
-        if r.label ~= "" then
-            txt(r.label, lx, top + ROW_H * S / 2, FONT * S, ink)
+        thumb(cx, cy - ch * 0.12, r.hull or 0,
+              pal.a(col, (sel or r.mark) and 1 or 0.7), ch / 116)
+        txt(r.label or "", cx, cy + ch * 0.30, (M.compact and 14 or 15) * S,
+            pal.a(col, (sel or r.mark) and 1 or 0.8), "center", MENU_FONT)
+        if r.role then
+            txt(r.role, cx, cy + ch * 0.44, 10 * S, pal.a(pal.DIM, 0.9),
+                "center")
         end
-        if r.detail and r.detail ~= "" then
-            -- The value sits on the right of the row it belongs to, which is
-            -- how a settings list reads everywhere else in the world.
-            txt(r.detail, x + w - 20 * S, top + ROW_H * S / 2, FONT * S,
-                r.mark and pal.FRIEND or pal.a(pal.DIM, 0.95), "right")
+        hit(x + c * cw, y + rr * ch, cw, ch, "stage", i)
+    end
+end
+
+-- The name, and the stroke under it that makes it a mark.
+--
+-- Not a logotype: the same face the menu is set in, at a size nothing else on
+-- screen is. What makes it ours is the stroke beneath, which starts at
+-- nothing on the left, swells under the word and is gone again by the end of
+-- it, which is a wake. It was here before this layout and it stays: the one
+-- piece of decoration in the whole interface that anybody has asked to keep.
+local function wordmark(x, y, size, ww)
+    txt("vectorwake", x, y, size, pal.INK, nil, MENU_FONT)
+    local wy = y + size * 0.78
+    local n = 40
+    for i = 0, n - 1 do
+        local t0, t1 = i / n, (i + 1) / n
+        local function swell(t) return math.sin(t * math.pi) ^ 1.6 end
+        local a0, a1 = swell(t0), swell(t1)
+        u:seg_fade(x + ww * t0, ry(wy), x + ww * t1, ry(wy),
+                   (0.7 + 2.6 * a0) * S, (0.7 + 2.6 * a1) * S,
+                   0.85 * a0, 0.85 * a1, pal.FRIEND)
+    end
+end
+
+-- --- the whole thing -------------------------------------------------------
+
+function M.menu(v)
+    local pts_w, pts_h = W / S, H / S
+    -- One rule about the window, three layouts. 620 points is where a rail
+    -- with its labels and a stage worth reading stop fitting side by side;
+    -- 430 is where eight labelled stops stop fitting down the side.
+    local narrow = pts_w < 620
+    local labelled = pts_h >= 430
+    local rail = v.rail or {}
+    local n = #rail
+    local home = v.home_root
+
+    -- Not a curtain. Over an arena you can see the fight you left, and that
+    -- you are still in it; on the way in the starfield is what is behind it.
+    -- Heavier over a game than over a starfield, because a wall lit at the
+    -- edge and a kill feed are a great deal more to read through than stars,
+    -- and a menu you have to squint past the game to read is not a menu.
+    local base = home and 0.6 or 0.78
+    rect(0, 0, W, H, pal.rgb(0x03050a, narrow and (base + 0.08) or base))
+
+    local margin = (narrow and 18 or 40) * S
+    local head = 0
+    if home then head = (narrow and 54 or 76) * S end
+
+    local rx, ry_, rw, rh          -- the rail
+    local sx, sy, sw, sh           -- the stage
+    local vertical = not narrow
+
+    if vertical then
+        local total = math.min(W - 2 * margin, 940 * S)
+        local x0 = (W - total) / 2
+        -- Clear of what the ship is carrying. Over a game the corner stack
+        -- holds the left edge, and on a phone held sideways a centred block
+        -- lands right on it: the rail's marks and the words GUN and BOMB in
+        -- the same column read as one broken thing. The stack stays, because
+        -- what you are carrying is worth knowing while you pick a hull.
+        if not home then x0 = math.max(x0, 124 * S) end
+        rw = (labelled and 150 or 62) * S
+        local pitch = math.min(math.max((H - head - 3 * margin) / n,
+                                        38 * S), 58 * S)
+        rh = pitch * n
+        local block = math.max(rh, math.min(H - head - 2 * margin, 470 * S))
+        local top = math.max(margin, (H - block - head) / 2) + head
+        rx, ry_ = x0, top + (block - rh) / 2
+        sx = x0 + rw + 26 * S
+        sy, sh = top, block
+        sw = total - rw - 26 * S
+        if home then
+            wordmark(x0, top - head + 30 * S, (labelled and 40 or 30) * S,
+                     math.min(sw, 420 * S))
         end
-        if r.pick then hit(x, top, w, ROW_H * S, "row", i) end
+        -- What you are reading, laid over what you are not. A wash rather
+        -- than a panel: no border, no corners, just enough that the type sits
+        -- on something and the arena stays visible round the edges of it.
+        rect(x0 - 18 * S, top - 16 * S, total + 36 * S, block + 30 * S,
+             pal.rgb(0x03050a, 0.5))
+        -- The rule the whole thing hangs off, between the rail and the stage.
+        vrule(x0 + rw + 1 * S, top, block, pal.a(pal.RADAR_TILE, 0.75), 30 * S)
+    else
+        rh = (home and 78 or 84) * S
+        rw = W - 2 * margin
+        rx = margin
+        ry_ = H - margin - rh
+        sx, sw = margin, W - 2 * margin
+        -- Under the chip row over a game: MENU and INFO hold the top left
+        -- corner while the arena is live, and a title drawn into them is two
+        -- words in one place.
+        sy = margin + head + (home and 0 or 34 * S)
+        sh = ry_ - 20 * S - sy
+        rect(0, sy - 16 * S, W, sh + rh + 46 * S, pal.rgb(0x03050a, 0.5))
+        if home then
+            wordmark(margin, margin + 26 * S, 30 * S, math.min(sw, 300 * S))
+        end
+        u:seg(margin, ry(ry_ - 12 * S), W - margin, ry(ry_ - 12 * S),
+              1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
 
-    -- One line under the list, and three things want it. A note is why
-    -- something did not work and outranks everything. A hint is the sentence
-    -- about whatever is under the cursor, which is how a game in the list says
-    -- what it is without a second column no phone has room for. The controls
-    -- are what is left when there is nothing more useful to say.
-    local by = y + h - 16 * S
-    ticks(x + 20 * S, by - 16 * S, w - 20 * S, pal.a(pal.RADAR_TILE, 0.25),
-          12 * S)
-    if v.note then
-        txt(v.note, x + 20 * S, by, FONT * S, pal.ENEMY)
-    elseif v.hint then
-        txt(v.hint, x + 20 * S, by, (FONT - 1) * S, pal.a(pal.DIM, 0.95))
+    -- --- the rail
+    local pitch = vertical and (rh / n) or (rw / n)
+    for i, e in ipairs(rail) do
+        local sel = (i == v.rail_sel)
+        local cx, cy
+        if vertical then
+            cx = labelled and (rx + 26 * S) or (rx + rw / 2)
+            cy = ry_ + (i - 0.5) * pitch
+        else
+            cx = rx + (i - 0.5) * pitch
+            cy = ry_ + (home and 30 or 32) * S
+        end
+        local col = sel and pal.FRIEND or pal.a(pal.DIM, 0.9)
+        local r = (vertical and (labelled and 13 or 14) or 13) * S
+        if sel then
+            -- The lit one, and a rule reaching from it toward the stage, so
+            -- the eye is told which mark the panel belongs to rather than
+            -- having to work it out from a highlight.
+            if vertical then
+                rect(rx - 6 * S, cy - pitch / 2 + 3 * S,
+                     rw + 6 * S, pitch - 6 * S, pal.a(pal.FRIEND, 0.08))
+                u:seg(rx - 6 * S, ry(cy - pitch / 2 + 3 * S), rx - 6 * S,
+                      ry(cy + pitch / 2 - 3 * S), 1.6 * S, pal.FRIEND, true)
+            else
+                rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, rh - 4 * S,
+                     pal.a(pal.FRIEND, 0.08))
+                u:seg(cx - pitch / 2 + 3 * S, ry(ry_), cx + pitch / 2 - 3 * S,
+                      ry(ry_), 1.6 * S, pal.FRIEND, true)
+            end
+        end
+        draw_mark(e.icon, cx, cy, r, col, v.class or 0)
+        if vertical and labelled then
+            txt(e.label, rx + 48 * S, cy, 16 * S,
+                pal.a(sel and pal.INK or pal.DIM, sel and 1 or 0.85),
+                nil, MENU_FONT)
+        elseif not vertical and (sel or n <= 6) then
+            -- Every stop is labelled while there is room for it. With eight
+            -- of them on a phone there is not: "settings" and "about" run
+            -- into each other, so only the one you are on says its name and
+            -- the rest are marks, which is what they were drawn to be.
+            txt(e.label, cx, cy + 24 * S, 11 * S,
+                pal.a(sel and pal.FRIEND or pal.DIM, sel and 1 or 0.8),
+                "center", MENU_FONT)
+        end
+        if vertical then
+            hit(rx - 6 * S, cy - pitch / 2, rw + 10 * S, pitch, "row", i)
+        else
+            hit(cx - pitch / 2, ry_ - 8 * S, pitch, rh + 8 * S, "row", i)
+        end
+    end
+
+    -- --- the stage
+    local focused = (v.focus == "stage")
+    local title = v.stage_title or v.title or ""
+    local listy = not (v.board and not M.touching)
+        and not (v.rows and #v.rows > 0 and v.rows[1].hull)
+    local lw = listy and math.min(sw, 520 * S) or sw
+    txt(title, sx, sy + 14 * S, (M.compact and 19 or 22) * S,
+        pal.a(pal.FRIEND, focused and 1 or 0.75), nil, MENU_FONT)
+    if v.closable then
+        txt(focused and "back" or "close", sx + lw, sy + 14 * S, 12 * S,
+            pal.a(pal.DIM, 0.85), "right", MENU_FONT)
+        hit(sx + lw - 70 * S, sy, 70 * S, 30 * S, "row", -1)
+    end
+    local top = sy + 40 * S
+    local room = sh - (top - sy) - 26 * S
+    -- A list is capped: a row whose name sits at one edge and whose count
+    -- sits at the other, a screen apart, is two columns nobody reads as one
+    -- line. The board and the hull grid are drawings and take everything.
+    -- The rule introduces whatever is under it, so it is as wide as that.
+    ticks(sx, sy + 28 * S, lw, pal.a(pal.RADAR_TILE, 0.45), 12 * S)
+    if v.board and not M.touching then
+        -- The widest board the stage has the height for, backed off rather
+        -- than solved, the same way the page used to do it.
+        local bw = sw
+        while bw > 240 * S and board_height(bw) > room do bw = bw * 0.94 end
+        board(sx, top, bw)
+    elseif v.rows and #v.rows > 0 and v.rows[1].hull then
+        ship_grid(sx, top, sw, room, v, focused)
     else
-        txt((M.touching or M.compact) and "tap a row"
-            or "up down to move    enter to choose    esc to go back",
-            x + 20 * S, by, (FONT - 2) * S, pal.a(pal.DIM, 0.7))
+        local rowh = math.min((M.compact and 46 or 40) * S,
+                              math.max(30 * S, room / math.max(#v.rows, 1)))
+        -- A short list sits in the middle of the room rather than at the top
+        -- of it: three games hung under a title on a tall phone leave the
+        -- screen looking half loaded. A list long enough to fill the space
+        -- starts where it always did, so nothing shifts as one grows.
+        local used = rowh * #v.rows
+        -- Only where the stage is tall and thin. On a phone three games hung
+        -- under a title leave the screen looking half loaded; on a desktop
+        -- the same centring floats the list away from the title it belongs
+        -- to, which reads as two panels rather than one.
+        local ty = top
+        if narrow and used < room * 0.6 then ty = top + (room - used) / 2 end
+        for i, r in ipairs(v.rows) do
+            local y = ty + (i - 1) * rowh
+            if y + rowh <= sy + sh then
+                stage_row(sx, y, lw, rowh, r, i == v.sel, focused)
+                if r.pick then hit(sx, y, lw, rowh, "stage", i) end
+            end
+        end
+        if #v.rows == 0 then
+            txt(v.note or "", sx + 16 * S, top + 20 * S, 13 * S,
+                pal.a(pal.DIM, 0.9))
+        end
+    end
+
+    -- One line at the foot of the stage: why something did not work, or what
+    -- the thing under the cursor is, or how to work the menu. In that order,
+    -- because that is the order they matter in.
+    local by = sy + sh - 4 * S
+    local foot = v.note or v.hint
+    if foot then
+        txt(foot, sx, by, 12 * S,
+            pal.a(v.note and pal.HURT or pal.DIM, 0.95))
+    elseif not narrow then
+        txt("up down  ·  enter  ·  esc", sx, by, 11 * S, pal.a(pal.DIM, 0.6))
     end
 end
 

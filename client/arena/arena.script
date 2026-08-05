@@ -1393,7 +1393,8 @@ function on_input(self, action_id, action)
                 -- pilot's row does not fall through to whatever is behind it.
                 if r.action == "scores" then return true end
                 if not menu.open then return false end
-                local act, moved = menu.click(r.value)
+                local act, moved = (r.action == "stage")
+                    and menu.click_stage(r.value) or menu.click(r.value)
                 if moved then sfx.ui(act and "ui_go" or "ui_move") end
                 if act then apply_menu(self, act) end
                 return true
