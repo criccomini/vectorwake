@@ -304,6 +304,7 @@ SHIP_GETTER(ShipXRaw, s->x / 256.0)
 SHIP_GETTER(ShipYRaw, s->y / 256.0)
 SHIP_GETTER(ShipHeadingRaw, s->heading)
 SHIP_GETTER(ShipAlive, s->alive)
+SHIP_GETTER(ShipActive, s->active)
 SHIP_GETTER(ShipTeam, s->team)
 SHIP_GETTER(ShipClass, s->cls)
 SHIP_GETTER(ShipEnergy, s->energy)
@@ -947,6 +948,7 @@ const luaL_reg kFunctions[] = {
     {"ship_y", ShipY},
     {"ship_heading", ShipHeading},
     {"ship_alive", ShipAlive},
+    {"ship_active", ShipActive},
     {"ship_team", ShipTeam},
     {"ship_class", ShipClass},
     {"ship_energy", ShipEnergy},
