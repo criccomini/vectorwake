@@ -984,6 +984,14 @@ impl Arena {
             let sh = &mut self.world.state.ships[ship as usize];
             sh.cls = class.min(7);
             sh.team = team;
+            // Occupied, as well as alive. A seat taken back from a bot arrives
+            // here inactive, because handing it over is `leave` followed by
+            // this rather than a spawn, and `leave` is what empties a seat.
+            // Only `alive` was set, so the new pilot sat in a chair the
+            // simulation considered nobody's: the core skips an inactive ship,
+            // and `sim_spawn` hands the first one it finds to the next arrival.
+            // Two people, one seat, and neither of them flying.
+            sh.active = 1;
             sh.alive = 1;
             // Everything a pilot carries, cleared. This was `up` alone, so a
             // seat handed on kept the last occupant's weapon levels, add-ons,
@@ -1064,20 +1072,49 @@ impl Arena {
         Some(id)
     }
 
-    /// Ask the newest bot to leave and hand back its seat.
+    /// Take a seat back from the bot fewest people are looking at.
     ///
-    /// Newest rather than any, because a bot that has been in the room a while
-    /// is in the middle of something and the one that arrived a moment ago is
-    /// not. This is the arena's half of yielding: the graceful half, choosing
-    /// the moment after a death and staying out of a fight, belongs to the bot
-    /// server, which is watching the same room and is not under time pressure.
-    /// This one is, so it takes the cheapest bot it has.
+    /// This is the arena's half of yielding, and it is the half under time
+    /// pressure: a human is at the door and the seat has to exist this tick,
+    /// so unlike the bot server's half there is no walking out. What it can do
+    /// is choose well. The room holds the whole simulation, so it knows which
+    /// bots are dead, which have nobody near them, and which are in the middle
+    /// of a fight somebody is watching.
+    ///
+    /// It used to take the newest, on the reasoning that a bot which just
+    /// arrived is not in the middle of anything. That is a proxy for the
+    /// question and not the question: the newest bot is as likely as any other
+    /// to be the one currently trading shots with a player, and vanishing out
+    /// of that is exactly the pop this ordering exists to avoid. Age only
+    /// breaks ties now.
     fn evict_bot(&mut self) -> Option<u8> {
+        // Lower is more expendable: dead, then alone, then anybody, and the
+        // newest of whichever band wins.
+        let cost = |p: &Player| -> u8 {
+            let me = &self.world.state.ships[p.ship as usize];
+            if me.alive == 0 {
+                return 0;
+            }
+            let (mx, my) = (me.x as f32 / 256.0, me.y as f32 / 256.0);
+            let watched = (0..self.world.state.ship_count as usize).any(|i| {
+                let o = &self.world.state.ships[i];
+                if i == p.ship as usize || o.active == 0 || o.alive == 0 {
+                    return false;
+                }
+                let (dx, dy) = (o.x as f32 / 256.0 - mx, o.y as f32 / 256.0 - my);
+                dx * dx + dy * dy < ai::SIGHT * ai::SIGHT
+            });
+            if watched {
+                2
+            } else {
+                1
+            }
+        };
         let (id, ship) = self
             .players
             .iter()
             .filter(|(_, p)| p.bot)
-            .max_by_key(|(id, _)| **id)
+            .min_by_key(|(id, p)| (cost(p), std::cmp::Reverse(**id)))
             .map(|(id, p)| (*id, p.ship))?;
         // Told, then removed. The message is a courtesy that lets a bot close
         // its own socket rather than work out from an empty simulation that it
@@ -3770,13 +3807,91 @@ mod tests {
             .expect("a room of bots is not full");
         assert_eq!(z.rooms[0].humans(), 1);
         assert_eq!(z.rooms[0].bot_count(), seats - 1, "exactly one bot gave way");
-        // The newest, because a bot that has been in the room a while is in the
-        // middle of something and the one that arrived a moment ago is not.
+        // Everybody here spawned on top of everybody else, so every bot is in
+        // somebody's sight and the ordering falls through to its tie-break,
+        // which is still the newest. Which bot is chosen when they are not all
+        // alike is `the_seat_taken_back_is_the_one_nobody_is_looking_at`.
         assert_eq!(
             z.rooms[0].players[&id].ship,
             *seated.last().unwrap(),
             "the seat taken is the newest bot's"
         );
+    }
+
+    #[test]
+    fn the_seat_taken_back_is_the_one_nobody_is_looking_at() {
+        // The arena's half of yielding is the half under time pressure: a
+        // person is at the door and the seat has to exist this tick, so there
+        // is no walking out the way the bot server's half does. What it can do
+        // is choose well, and it holds the whole simulation, so it knows which
+        // bots are dead and which have nobody near them.
+        //
+        // It used to take the newest, as a proxy for "least invested". That is
+        // not the question. The newest bot is as likely as any other to be the
+        // one currently trading shots with somebody, and vanishing out of that
+        // is the pop this ordering exists to avoid.
+        let mut z = serving(1, 4, 32);
+        let seats = z.rooms[0].world.cfg.max_ships as usize;
+        let seated = seat_bots(&mut z.rooms[0], seats);
+
+        // One bot sent to the far corner of the map, alone. It is not the
+        // newest, so newest-first cannot pick it by luck.
+        let lonely = seated[seats / 2];
+        {
+            let s = &mut z.rooms[0].world.state.ships[lonely as usize];
+            s.x = 60 * 16 * 256;
+            s.y = 60 * 16 * 256;
+        }
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = z.rooms[0]
+            .join(Seat::guest("latecomer", false), 0, 32, tx)
+            .expect("a room of bots is not full");
+        assert_eq!(
+            z.rooms[0].players[&id].ship, lonely,
+            "took a seat from the crowd while one stood alone"
+        );
+
+        // And a dead bot is cheaper still: it is between fights by definition,
+        // and nobody is watching a wreck.
+        let dead = seated[1];
+        z.rooms[0].world.state.ships[dead as usize].alive = 0;
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = z.rooms[0]
+            .join(Seat::guest("another", false), 0, 32, tx)
+            .expect("still not full");
+        assert_eq!(
+            z.rooms[0].players[&id].ship, dead,
+            "took a live bot's seat with a dead one sitting there"
+        );
+    }
+
+    #[test]
+    fn a_seat_taken_back_from_a_bot_is_a_seat_somebody_is_sitting_in() {
+        // Handing a seat over is `leave` followed by the rest of `join`, not a
+        // spawn, and `leave` is what empties a seat. So an inherited one
+        // arrived inactive: the core skips an inactive ship, and `sim_spawn`
+        // hands the first one it finds to whoever arrives next. Two people in
+        // one chair, neither of them being simulated, and nothing anywhere
+        // saying so: the roster is built from `players` and reads perfectly.
+        let mut z = serving(1, 4, 32);
+        let seats = z.rooms[0].world.cfg.max_ships as usize;
+        seat_bots(&mut z.rooms[0], seats);
+
+        let mut taken = Vec::new();
+        for who in ["first", "second"] {
+            let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+            let id = z.rooms[0]
+                .join(Seat::guest(who, false), 0, 32, tx)
+                .expect("a room of bots is not full");
+            let ship = z.rooms[0].players[&id].ship;
+            assert_eq!(
+                z.rooms[0].world.state.ships[ship as usize].active, 1,
+                "{who} joined into a seat the simulation thinks is empty"
+            );
+            taken.push(ship);
+        }
+        assert_ne!(taken[0], taken[1], "two pilots handed the same seat");
     }
 
     #[test]

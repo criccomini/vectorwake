@@ -663,6 +663,13 @@ function update(self, dt)
     local density = self.density or 1
     if ww == 0 or wh == 0 then return end
 
+    -- Wall clock for the interface, which has a few things on it that move on
+    -- their own. Not the simulation's, which stops with the simulation: the
+    -- menu is up before there is one and stays up over a game that has been
+    -- left, and a hull that turned only while a zone was stepping would look
+    -- like something had gone wrong with the zone.
+    self.clock = (self.clock or 0) + dt
+
     sfx.frame()
     -- The soundtrack wants to be running from the first frame and cannot be,
     -- so it is asked for repeatedly until it is. See sfx.music_tick.
@@ -1123,7 +1130,7 @@ function update(self, dt)
     glow:flush()
 
     -- --- the interface ---------------------------------------------------
-    ui.begin(layers.ui, ww, wh, density, touch.used)
+    ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0)
     -- The interface stays up under the menu. Nothing is paused, so hiding the
     -- scoreboard and the radar behind a panel would be a lie about what is
     -- happening: you can be shot while reading this.

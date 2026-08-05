@@ -43,12 +43,15 @@ pub struct Drill {
     /// How much of the map they covered, as the count of eight-tile cells any
     /// bot stood in. A roster that finds one room and stays in it reads here.
     pub cells: usize,
-    /// Bot-ticks spent idle, travelling and fighting. A roster that is nearly
-    /// all travel is a roster that never finds anybody.
-    pub doing: [u64; 3],
+    /// Bot-ticks spent idle, travelling, fighting and leaving. A roster that is
+    /// nearly all travel is a roster that never finds anybody, and one that is
+    /// any measurable share leaving is a roster spending its life walking out:
+    /// from the outside a departure looks exactly like a journey, which is why
+    /// it is counted rather than watched for.
+    pub doing: [u64; 4],
     /// And which of those the crawling ticks land in, so a slow roster can be
     /// told apart from a stuck one.
-    pub crawl_by: [u64; 3],
+    pub crawl_by: [u64; 4],
 }
 
 /// Half a pixel a tick. A hull under thrust does six times this.
@@ -76,10 +79,12 @@ impl Drill {
         println!("  ground   {} cells of eight tiles visited", self.cells);
         let t = self.flying.max(1) as f64;
         println!(
-            "  doing    {:.0}% idle, {:.0}% travelling, {:.0}% fighting",
+            "  doing    {:.0}% idle, {:.0}% travelling, {:.0}% fighting, \
+{:.0}% leaving",
             100.0 * self.doing[0] as f64 / t,
             100.0 * self.doing[1] as f64 / t,
-            100.0 * self.doing[2] as f64 / t
+            100.0 * self.doing[2] as f64 / t,
+            100.0 * self.doing[3] as f64 / t
         );
         let c = self.crawling.max(1) as f64;
         println!(
@@ -114,7 +119,7 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
 
     let mut d = Drill {
         ticks, bots, kills: 0, bounces: 0, shots: 0, hits: 0,
-        crawling: 0, flying: 0, speed: 0.0, cells: 0, doing: [0; 3], crawl_by: [0; 3],
+        crawling: 0, flying: 0, speed: 0.0, cells: 0, doing: [0; 4], crawl_by: [0; 4],
     };
     let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
     let brains_first = brains[0].ship;
