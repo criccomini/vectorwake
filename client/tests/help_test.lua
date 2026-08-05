@@ -101,6 +101,8 @@ local ui = require("arena.ui")
 
 local W, H = 1280, 800
 local ADVANCE = 1233 / 2048
+-- ui.lua's LINE, at the density this harness draws with.
+local LINE_H = 18
 
 -- A full feed, because the bar beside it is supposed to be as tall as the
 -- block and a single line would let a one-line bar pass for one.
@@ -177,20 +179,54 @@ local function find(lines, s)
     return nil
 end
 
--- Every line sharing a row with this one, itself excluded. Two texts are on a
--- row together when their baselines agree to within a pixel.
-local function row_of(lines, t)
-    local out = {}
-    for _, u in ipairs(lines) do
-        if u ~= t and math.abs(u.y - t.y) < 1 then out[#out + 1] = u end
+-- A card's sentence is wrapped across several drawn lines, and the lines of
+-- one block are drawn one after another, so the frame's text joined in order
+-- contains the sentence whole. Anything shorter than the wrap is found by
+-- `find` as before.
+local function says(f, s)
+    if not f.joined then
+        local parts = {}
+        for _, t in ipairs(f) do parts[#parts + 1] = t.s end
+        f.joined = table.concat(parts, " ")
     end
-    return out
+    return f.joined:find(s, 1, true) ~= nil
 end
 
-local GUN = "at its rung, and what is bolted on"
-local BOMB = "a rung buys blast, not damage"
-local CHG = "digits 1 to 4 spend these, top down"
-local BTY = "what a kill on you pays"
+-- Where a block's words came out: the top and bottom of the run of lines that
+-- carries this sentence, found by walking the drawn text for its first word.
+local function block_of(f, s)
+    -- Matched by consuming consecutive drawn lines until they rebuild the
+    -- sentence exactly. Anything looser mistakes a line of one card for a line
+    -- of another, since they share plenty of short words.
+    for i = 1, #f do
+        if s:find(f[i].s, 1, true) == 1 then
+            local acc, j = f[i].s, i
+            while acc ~= s and j < #f do
+                j = j + 1
+                acc = acc .. " " .. f[j].s
+                if s:find(acc, 1, true) ~= 1 then break end
+            end
+            if acc == s then
+                -- The block's extent, not its first and last baseline. Two
+                -- blocks whose baselines clear each other by less than a line
+                -- are still printing through each other.
+                local half = LINE_H / 2
+                return {top = f[i].y - half, bot = f[j].y + half,
+                        mid = (f[i].y + f[j].y) / 2,
+                        left = f[i].left, right = f[i].right}
+            end
+        end
+    end
+    return nil
+end
+
+-- The corner stack says what the card a dead pilot reads says, so the test
+-- reads them out of the same table rather than keeping a second copy to fall
+-- out of step with it.
+local GUN = ui.CARDS.bolt.text
+local BOMB = ui.CARDS.bomb.text
+local CHG = ui.CARDS.repel.text
+local BTY = ui.CARDS.bounty.text
 local RADAR = "near space. the rings are range."
 local MAP = "the whole arena, and you as the arrow"
 local FEED = "who paid whom"
@@ -209,7 +245,7 @@ local ALL = {GUN, BOMB, CHG, BTY, RADAR, FEED}
 local quiet = frame()
 local leaked = nil
 for _, s in ipairs(ALL) do
-    if find(quiet, s) then leaked = s end
+    if says(quiet, s) then leaked = s end
 end
 check("nothing of it is drawn until H is held", leaked == nil, leaked)
 
@@ -218,14 +254,14 @@ check("nothing of it is drawn until H is held", leaked == nil, leaked)
 local held = frame({help = true})
 local spoke = {}
 for _, s in ipairs(SILENT) do
-    if find(held, s) then spoke[#spoke + 1] = s end
+    if says(held, s) then spoke[#spoke + 1] = s end
 end
 check("what the instruments say for themselves is left unsaid", #spoke == 0,
       table.concat(spoke, "; "))
 
 local missing = {}
 for _, s in ipairs(ALL) do
-    if not find(held, s) then missing[#missing + 1] = s end
+    if not says(held, s) then missing[#missing + 1] = s end
 end
 check("holding H names every instrument", #missing == 0,
       table.concat(missing, "; "))
@@ -234,77 +270,76 @@ if #missing > 0 then
     os.exit(1)
 end
 
--- --- each word lands on the row it is about --------------------------------
+-- --- pointing at a row answers beside that row ---------------------------
 --
--- The row labels are what the player reads it against, so the test reads it
--- against them too.
+-- Held, the stack's sentences are a column: a card's worth of words is taller
+-- than the row it belongs to and five of them left on their rows would print
+-- through each other. Pointing at one is the case where the promise still
+-- holds exactly, because one block has nothing to collide with.
 
-for _, pair in ipairs({{"GUN", GUN}, {"BOMB", BOMB}, {"BOUNTY", BTY}}) do
-    local label, sentence = pair[1], pair[2]
-    local a, b = find(held, label), find(held, sentence)
-    check("the " .. label .. " line sits on the " .. label .. " row",
-          a and b and math.abs(a.y - b.y) < 1,
-          a and b and ("label y " .. a.y .. " vs word y " .. b.y) or "absent")
-end
-
--- The charge sentence is one line for however many charge rows there are, so
--- it is not on a row: it is between the first and the last of them.
-do
-    local rpl, chg = find(held, "REPEL"), find(held, CHG)
-    check("the charge line sits against the charge rows",
-          rpl and chg and math.abs(rpl.y - chg.y) <= 22,
-          rpl and chg and ("REPEL y " .. rpl.y .. " vs word y " .. chg.y)
-          or "absent")
-end
-
--- --- and clears what is already on that row --------------------------------
---
--- This is the one that breaks silently, and it broke: the column starts past
--- the widest row the corner stack drew, so a hull carrying add-ons pushes it
--- right, and the line about the connection was anchored to the left of `LINK`
--- when `LINK` is the right-hand end of a row that opens with `POS 382,360`.
--- Both faults print a sentence through the readout it is explaining, and
--- neither shows up in a check that only compares the help lines with each
--- other. So every one of them is measured against everything else sharing its
--- row, whichever side of it the instrument sits on.
-
-local overlap = nil
-for _, s in ipairs(ALL) do
-    local t = find(held, s)
-    for _, other in ipairs(row_of(held, t)) do
-        if t.left < other.right and other.left < t.right then
-            overlap = s .. " over " .. other.s
+for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"bounty", BTY}}) do
+    local key, sentence = pair[1], pair[2]
+    local px, py = nil, nil
+    for y = 0, H - 1, 3 do
+        for x = 0, W - 1, 3 do
+            if not px and ui.help_at(x, y) == key then px, py = x, y end
         end
     end
+    local f = frame({point_x = px, point_y = py})
+    local b = block_of(f, sentence)
+    check("pointing at " .. key .. " answers beside the " .. key .. " row",
+          b and math.abs(b.mid - py) < 40,
+          b and ("row " .. py .. ", words at " .. b.mid) or "absent")
 end
-check("no word is printed over anything already on its row",
-      overlap == nil, overlap)
+
+-- --- and held, the column does not print through itself ------------------
+--
+-- This is the one that breaks silently. Five wrapped blocks in the space four
+-- rows used to occupy will overlap unless they are laid out, and overlapping
+-- text is unreadable long before it looks wrong.
+
+do
+    local blocks = {}
+    for _, sentence in ipairs(ALL) do
+        local b = block_of(held, sentence)
+        if b then blocks[#blocks + 1] = {b = b, s = sentence} end
+    end
+    -- Only the stack's own column can collide with itself; the dial and the
+    -- feed sit off on the right and are checked below.
+    local clash = nil
+    for i = 1, #blocks do
+        for j = i + 1, #blocks do
+            local a, c = blocks[i], blocks[j]
+            if a.b.top < c.b.bot and c.b.top < a.b.bot then
+                clash = "two blocks share the rows " ..
+                        math.floor(a.b.top) .. ".." .. math.floor(a.b.bot) ..
+                        " and " .. math.floor(c.b.top) .. ".." ..
+                        math.floor(c.b.bot)
+            end
+        end
+    end
+    check("the held column lays itself out without overlapping", clash == nil,
+          clash)
+    check("and it has something in it", #blocks >= 4,
+          tostring(#blocks) .. " blocks")
+end
 
 -- --- nothing runs off the screen -------------------------------------------
+--
+-- Every drawn line, not only the ones this test knows the words of: a wrapped
+-- sentence is several lines and any one of them can be the one that hangs off
+-- the edge.
 
-local off = nil
-for _, s in ipairs(ALL) do
-    local t = find(held, s)
-    if t.left < 0 or t.right > W then
-        off = s .. " spans " .. math.floor(t.left) .. " to " ..
-              math.floor(t.right)
-    end
-end
-check("every word fits on the screen", off == nil, off)
-
--- --- and no two of them collide --------------------------------------------
-
-local clash = nil
-for i = 1, #ALL do
-    for j = i + 1, #ALL do
-        local a, b = find(held, ALL[i]), find(held, ALL[j])
-        if math.abs(a.y - b.y) < 12
-           and a.left < b.right and b.left < a.right then
-            clash = ALL[i] .. " over " .. ALL[j]
+do
+    local off = nil
+    for _, t in ipairs(held) do
+        if t.left < -1 or t.right > W + 1 or t.y < 0 or t.y > H then
+            off = string.format("%q spans %.0f..%.0f at y %.0f", t.s, t.left,
+                                t.right, t.y)
         end
     end
+    check("every line the overlay draws fits on the screen", off == nil, off)
 end
-check("no two of them land on each other", clash == nil, clash)
 
 -- --- the dial says which dial it is ----------------------------------------
 --
@@ -316,15 +351,8 @@ check("with the map up the dial is described as the map",
       find(mapped, MAP) and not find(mapped, RADAR))
 local mapped_clash = nil
 for _, s in ipairs({MAP, FEED, GUN, BOMB, CHG, BTY}) do
-    local t = find(mapped, s)
-    if not t then
+    if not says(mapped, s) then
         mapped_clash = s .. " went missing with the map up"
-    else
-        for _, other in ipairs(row_of(mapped, t)) do
-            if t.left < other.right and other.left < t.right then
-                mapped_clash = s .. " over " .. other.s
-            end
-        end
     end
 end
 check("and the rest of it still clears its row with the map up",
@@ -343,8 +371,8 @@ check("held under the menu it stays down", shown == nil, shown)
 
 local bare = frame({help = true, charges = {}})
 check("a hull carrying no charges is not told how to spend them",
-      not find(bare, CHG))
-check("and the rest of it is still there", find(bare, GUN) ~= nil)
+      not says(bare, CHG))
+check("and the rest of it is still there", says(bare, GUN))
 
 -- --- and the pointer names one thing at a time ----------------------------
 --
@@ -365,7 +393,9 @@ local function a_point_in(key)
     return nil
 end
 
-local KEYS = {"gun", "bomb", "charges", "bounty", "radar", "feed"}
+-- Each charge row is its own key now, since a repel and a burst have a card
+-- each; the harness gives the hull a repel.
+local KEYS = {"gun", "bomb", "charge:repel", "bounty", "radar", "feed"}
 local unreachable = {}
 for _, k in ipairs(KEYS) do
     if not a_point_in(k) then unreachable[#unreachable + 1] = k end
@@ -381,10 +411,10 @@ check("open space answers nothing", ui.help_at(W * 0.72, H * 0.55) == nil,
 -- Hovering draws that line and stops.
 local hx, hy = a_point_in("bounty")
 local hovered = frame({point_x = hx, point_y = hy})
-check("the pointer on a row draws that row's line", find(hovered, BTY) ~= nil)
+check("the pointer on a row draws that row's line", says(hovered, BTY))
 local extras = {}
 for _, s in ipairs({GUN, BOMB, CHG, RADAR, FEED}) do
-    if find(hovered, s) then extras[#extras + 1] = s end
+    if says(hovered, s) then extras[#extras + 1] = s end
 end
 check("and none of the others", #extras == 0, table.concat(extras, "; "))
 
@@ -394,8 +424,8 @@ for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"radar", RADAR},
     local key, want = pair[1], pair[2]
     local px, py = a_point_in(key)
     local f = frame({point_x = px, point_y = py})
-    check("pointing at " .. key .. " says its own line",
-          find(f, want) ~= nil, "absent")
+    check("pointing at " .. key .. " says its own line", says(f, want),
+          "absent")
 end
 
 -- Held beats hovered. A hand that happens to be resting on the dial must not
@@ -403,18 +433,18 @@ end
 local both = frame({help = true, point_x = hx, point_y = hy})
 local lost = {}
 for _, s in ipairs(ALL) do
-    if not find(both, s) then lost[#lost + 1] = s end
+    if not says(both, s) then lost[#lost + 1] = s end
 end
 check("holding H with the pointer resting still says everything",
       #lost == 0, table.concat(lost, "; "))
 
 -- And the menu is still a different screen.
 local hover_menu = frame({menu_open = true, point_x = hx, point_y = hy})
-check("hovering under the menu says nothing", find(hover_menu, BTY) == nil)
+check("hovering under the menu says nothing", not says(hover_menu, BTY))
 
 -- A pointer the client does not have names nothing.
 local none = frame()
-check("no pointer, no line", find(none, BTY) == nil)
+check("no pointer, no line", not says(none, BTY))
 
 -- --- a bar as tall as the thing it names ----------------------------------
 --

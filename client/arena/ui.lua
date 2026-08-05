@@ -189,6 +189,24 @@ local function text_w(s, px)
     return #s * px * ADVANCE
 end
 
+-- Broken into lines no wider than `measure`, at whitespace. Used by the card a
+-- dead pilot reads and by the help overlay, which say the same sentences and
+-- would otherwise break them in two different places.
+local function wrap(s, px, measure)
+    local out, line = {}, nil
+    for word in string.gmatch(s, "%S+") do
+        local try = line and (line .. " " .. word) or word
+        if line and text_w(try, px) > measure then
+            out[#out + 1] = line
+            line = word
+        else
+            line = try
+        end
+    end
+    if line then out[#out + 1] = line end
+    return out
+end
+
 -- Close, as a drawn mark rather than the letter x.
 --
 -- A letter is a letter: at this size an x reads as text somebody left in the
@@ -976,6 +994,9 @@ local function status(me, pickup, charges, lift)
     -- deal wider than one holding none, and a constant here would either crowd
     -- the wide case or strand the narrow one.
     local wide = val + 50 * S
+    -- The charge rows in the order they were drawn, so the overlay can walk
+    -- them down the stack the way a reader does.
+    anchor.charge_order = {}
 
     -- A level is the same weapon harder, so it is rungs; an add-on changes
     -- its character, so it is a word.
@@ -1029,15 +1050,16 @@ local function status(me, pickup, charges, lift)
             local slot_max = math.max(1, c.max or 3)
             pips(val + 3 * S, y + rows_h / 2, slot_max, c.count,
                  pal.CHARGE_COL, 2.7 * S, 9 * S)
-            -- First and last, because however many charge rows a hull carries
-            -- they are one idea and the overlay says it once.
-            anchor.chg_top = anchor.chg_top or (y + rows_h / 2)
-            anchor.chg_bot = y + rows_h / 2
             local pw = val + 3 * S + slot_max * 9 * S
             if pw > wide then wide = pw end
-            -- Every charge row answers to the one sentence, so they all point
-            -- at the same key.
-            zone("charges", x, y, pw - x, rows_h)
+            -- A row per charge rather than one bracket over all of them. A
+            -- repel and a burst are different things and each has a card of
+            -- its own; they shared a sentence only while that sentence was
+            -- about which digit spends them.
+            local key = "charge:" .. string.lower(c.name or c.short or "")
+            anchor[key] = y + rows_h / 2
+            anchor.charge_order[#anchor.charge_order + 1] = key
+            zone(key, x, y, pw - x, rows_h)
             y = y + rows_h
         end
     end
@@ -1387,20 +1409,7 @@ local function wait_layout(which)
     -- width ends flush against the padding, which reads as text that only
     -- just fitted rather than text that was laid out.
     local measure = inner - cell - gap - 6 * S
-    local lines = {}
-    do
-        local line = nil
-        for word in string.gmatch(card.text, "%S+") do
-            local try = line and (line .. " " .. word) or word
-            if line and text_w(try, fs) > measure then
-                lines[#lines + 1] = line
-                line = word
-            else
-                line = try
-            end
-        end
-        if line then lines[#lines + 1] = line end
-    end
+    local lines = wrap(card.text, fs, measure)
 
     local rule = 12 * S              -- the clock rule, at the top of the box
     local rowh = 15 * S
@@ -1710,35 +1719,43 @@ end
 local function help_lines(o)
     local out = {}
     -- `top` and `bot` are the run of the bar. Given, it is as tall as the
-    -- instrument; left out, it is one line of type tall and the sentence's own
-    -- height is the whole of it.
+    -- instrument; left out, it is as tall as the sentence, which is now often
+    -- more than one line.
+    --
+    -- Wrapped against the room actually left beside the thing, and never wider
+    -- than a measure somebody can read across. A card's worth of words set as
+    -- one line runs most of the way over the arena.
     local function add(key, x, y, s, col, align, top, bot)
-        local e = {key = key, x = x, y = y, s = s, col = col, align = align,
-                   top = top, bot = bot}
+        local px = (FONT - 1) * S
+        local room = (align == "right") and (x - 22 * S) or (W - x - 22 * S)
+        local e = {key = key, x = x, y = y, col = col, align = align,
+                   top = top, bot = bot,
+                   lines = wrap(s, px, math.min(room, 640 * S))}
+        e.h = #e.lines * LINE * S
         out[#out + 1] = e
         return e
     end
+    -- The corner stack says what the card a dead pilot reads says, word for
+    -- word, out of CARDS. One sentence per thing, wherever a player meets it:
+    -- learning what a bomb is from the wait after it killed you and then
+    -- pointing at the BOMB row should not be learning it twice in two
+    -- different sets of words.
     local sx = anchor.stack_x
     if sx then
-        if anchor.gun then
-            add("gun", sx, anchor.gun, "at its rung, and what is bolted on",
-                pal.FRIEND)
+        local function card(key, at, which, col)
+            local c = CARDS[which]
+            if not at or not c then return end
+            add(key, sx, at, c.text, col)
         end
-        if anchor.bomb then
-            add("bomb", sx, anchor.bomb, "a rung buys blast, not damage",
-                pal.BOMB)
+        card("gun", anchor.gun, "bolt", pal.FRIEND)
+        card("bomb", anchor.bomb, "bomb", pal.BOMB)
+        for _, key in ipairs(anchor.charge_order or {}) do
+            -- The slot's own name is the card's name: repel and burst each
+            -- have one. A slot with no card is a charge this build has not
+            -- described yet, and it says nothing rather than guessing.
+            card(key, anchor[key], key:match("^charge:(.*)$"), pal.CHARGE_COL)
         end
-        -- One bar down the side of however many charge rows there are, and one
-        -- sentence against the middle of it.
-        if anchor.chg_top then
-            add("charges", sx, (anchor.chg_top + anchor.chg_bot) / 2,
-                "digits 1 to 4 spend these, top down", pal.CHARGE_COL, nil,
-                anchor.chg_top - 6.5 * S, anchor.chg_bot + 6.5 * S)
-        end
-        if anchor.bounty then
-            add("bounty", sx, anchor.bounty, "what a kill on you pays",
-                pal.PRIZE)
-        end
+        card("bounty", anchor.bounty, "bounty", pal.PRIZE)
     end
     -- Beside the dial and as tall as it, whichever dial it is. The map is four
     -- times the radar and a bar sized to the sentence would read as a note
@@ -1761,20 +1778,63 @@ end
 -- A bar in the thing's own colour, then the sentence. The bar sits on the side
 -- facing whatever is being named, so it points without a line.
 local function help_draw(e)
-    local top = e.top or (e.y - 6.5 * S)
-    local bot = e.bot or (e.y + 6.5 * S)
     local f = (FONT - 1) * S
-    if e.align == "right" then
-        rect(e.x - 3 * S, top, 3 * S, bot - top, pal.a(e.col, 0.85))
-        txt(e.s, e.x - 11 * S, e.y, f, pal.a(pal.INK, 0.95), "right")
-    else
-        rect(e.x, top, 3 * S, bot - top, pal.a(e.col, 0.85))
-        txt(e.s, e.x + 11 * S, e.y, f, pal.a(pal.INK, 0.95))
+    local lh = LINE * S
+    -- The words are centred on the row; the bar is as tall as the instrument
+    -- when it was given one, and otherwise as tall as the words.
+    local ttop = e.y - e.h / 2
+    local top = e.top or ttop
+    local bot = e.bot or (ttop + e.h)
+    local dir = (e.align == "right") and -1 or 1
+    rect(e.x + (dir < 0 and -3 * S or 0), top, 3 * S, bot - top,
+         pal.a(e.col, 0.85))
+    for i, line in ipairs(e.lines) do
+        txt(line, e.x + dir * 11 * S, ttop + (i - 0.5) * lh, f,
+            pal.a(pal.INK, 0.95), e.align)
+    end
+end
+
+-- A block that would hang off the bottom or the top is moved back on, since
+-- the corner stack sits against the bottom of the screen and the sentence
+-- beside its last row is taller than the row is.
+local function help_fit(e)
+    local half = e.h / 2
+    if e.y + half > H - 8 * S then e.y = H - 8 * S - half end
+    if e.y - half < 8 * S then e.y = 8 * S + half end
+end
+
+-- Held, the four or five lines off the corner stack are a column rather than
+-- four or five marks beside four or five rows: a card's worth of words is
+-- taller than the row it belongs to, and left on their rows they would print
+-- through each other. Laid out bottom up from where the stack ends, so the
+-- order still matches the order of the rows and the colours still say which
+-- is which.
+local function help_column(list)
+    if #list == 0 then return end
+    local gap = 7 * S
+    local total = 0
+    for i, e in ipairs(list) do
+        total = total + e.h + (i > 1 and gap or 0)
+    end
+    local bottom = math.min(list[#list].y + list[#list].h / 2, H - 8 * S)
+    local top = math.max(bottom - total, 8 * S)
+    for _, e in ipairs(list) do
+        e.y = top + e.h / 2
+        top = top + e.h + gap
     end
 end
 
 local function help_overlay(o)
-    for _, e in ipairs(help_lines(o)) do help_draw(e) end
+    local all = help_lines(o)
+    local stack = {}
+    for _, e in ipairs(all) do
+        if e.align ~= "right" then stack[#stack + 1] = e end
+    end
+    help_column(stack)
+    for _, e in ipairs(all) do
+        help_fit(e)
+        help_draw(e)
+    end
 end
 
 -- The pointer resting on one instrument names that instrument, and nothing
@@ -1783,7 +1843,14 @@ end
 -- and has to cost about as much as looking at it.
 local function help_hover(o, key)
     for _, e in ipairs(help_lines(o)) do
-        if e.key == key then help_draw(e) return end
+        if e.key == key then
+            -- On its own row, not shuffled into a column: one block has
+            -- nothing to collide with and every reason to sit against the
+            -- thing being pointed at.
+            help_fit(e)
+            help_draw(e)
+            return
+        end
     end
 end
 
