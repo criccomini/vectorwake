@@ -3245,6 +3245,11 @@ function M.menu(v)
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
 
+    -- Which half the arrows are in. The two halves share one cursor and mark
+    -- it with the same blue field, so the half wearing the brighter one is the
+    -- answer to "what does up do here" without a word spent on saying it.
+    local focused = (v.focus == "stage")
+
     -- --- the rail
     local pitch = vertical and (rh / n) or (rw / n)
     for i, e in ipairs(rail) do
@@ -3262,17 +3267,21 @@ function M.menu(v)
         if sel then
             -- The lit one, and a rule reaching from it toward the stage, so
             -- the eye is told which mark the panel belongs to rather than
-            -- having to work it out from a highlight.
+            -- having to work it out from a highlight. Brighter while the
+            -- arrows are in the rail, down to the weight the stop keeps for
+            -- saying where you are once they have gone into the page.
+            local lit = pal.a(pal.FRIEND, focused and 0.06 or 0.22)
+            local bar = pal.a(pal.FRIEND, focused and 0.5 or 1)
             if vertical then
                 rect(rx - 6 * S, cy - pitch / 2 + 3 * S,
-                     rw + 6 * S, pitch - 6 * S, pal.a(pal.FRIEND, 0.08))
+                     rw + 6 * S, pitch - 6 * S, lit)
                 u:seg(rx - 6 * S, ry(cy - pitch / 2 + 3 * S), rx - 6 * S,
-                      ry(cy + pitch / 2 - 3 * S), 1.6 * S, pal.FRIEND, true)
+                      ry(cy + pitch / 2 - 3 * S), 1.6 * S, bar, true)
             else
                 rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, rh - 4 * S,
-                     pal.a(pal.FRIEND, 0.08))
+                     lit)
                 u:seg(cx - pitch / 2 + 3 * S, ry(ry_), cx + pitch / 2 - 3 * S,
-                      ry(ry_), 1.6 * S, pal.FRIEND, true)
+                      ry(ry_), 1.6 * S, bar, true)
             end
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
@@ -3299,7 +3308,6 @@ function M.menu(v)
     end
 
     -- --- the stage
-    local focused = (v.focus == "stage")
     local listy = not (v.board and not M.touching)
         and not (v.rows and #v.rows > 0 and v.rows[1].hull)
     -- Everything with type in it hangs off `tx`, a gutter in from the stage's
