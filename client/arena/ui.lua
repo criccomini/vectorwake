@@ -1869,7 +1869,13 @@ function M.menu(v)
         -- lands right on it: the rail's marks and the words GUN and BOMB in
         -- the same column read as one broken thing. The stack stays, because
         -- what you are carrying is worth knowing while you pick a hull.
-        if not home then x0 = math.max(x0, 124 * S) end
+        if not home then
+            x0 = math.max(x0, 124 * S)
+            -- And give back what moving right took: the block is as wide as
+            -- the room left of the far margin, or it hangs off the edge of
+            -- the screen carrying the end of the keyboard with it.
+            total = math.min(total, W - x0 - margin)
+        end
         rw = (labelled and 150 or 62) * S
         local pitch = math.min(math.max((H - head - 3 * margin) / n,
                                         38 * S), 58 * S)
