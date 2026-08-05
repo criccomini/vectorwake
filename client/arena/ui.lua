@@ -1105,7 +1105,7 @@ local function status(me, charges, lift)
                    40 * S, 4 * S)
             local at = val + 50 * S
             local off = sim.ship_multi_off and sim.ship_multi_off(me)
-            for m, mod in ipairs(pal.MODS) do
+            for m = 1, #pal.MODS do
                 local nn = sim.ship_mod(me, t, m - 1)
                 if nn > 0 then
                     -- A declined add-on is drawn dimmed rather than dropped.
@@ -1174,7 +1174,6 @@ local function status(me, charges, lift)
     local bw = val + text_w(tostring(bty), (FONT - 2) * S)
     if bw > wide then wide = bw end
     zone("bounty", x, y, bw - x, rows_h)
-    y = y + rows_h
 
     anchor.stack_x = wide + 26 * S
     return 0
@@ -2354,6 +2353,11 @@ local MENU_FONT = "menu"
 -- the list.
 local STAGE_TOP = 40
 
+-- The strip down the left of the stage that the type does not enter. The mark
+-- on the row you are already in sits there, off the column rather than in it,
+-- and it is what gives a lit row its left margin.
+local GUTTER = 22
+
 -- --- marks -----------------------------------------------------------------
 --
 -- Every destination gets a drawing rather than a word, in the same strokes
@@ -2514,17 +2518,17 @@ local function stage_row(x, y, w, h, r, hot)
     -- marks saying one thing, and the corners cut the row into a box in a
     -- panel that has no boxes anywhere else in it.
     if hot then rect(x, y, w, h, pal.a(pal.FRIEND, 0.16)) end
-    -- One text column, whatever the row is, and it is where it always was.
-    -- The wedge that says "this is the one you are already on" hangs off the
-    -- left of that column, in the margin the panel already had: drawn inline
-    -- it pushed its own label fifteen points right of every other label, so
-    -- the one row worth finding was the one out of line.
-    local tx = x + 16 * S
+    -- One text column, whatever the row is, and it is the column the title
+    -- above the list is set in. The wedge that says "this is the one you are
+    -- already on" lives in the gutter to the left of that column, off the type
+    -- entirely: drawn inline it pushed its own label right of every other
+    -- label, so the one row worth finding was the one out of line.
+    local tx = x + GUTTER * S
     if r.mark then
         -- A lit wedge, the same one the corner stack uses to say a slot is
         -- the ready one.
-        u:tri(x + 3 * S, ry(y + h / 2 - 4.5 * S), x + 10 * S, ry(y + h / 2),
-              x + 3 * S, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
+        u:tri(x + 7 * S, ry(y + h / 2 - 4.5 * S), x + 14 * S, ry(y + h / 2),
+              x + 7 * S, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
     end
     local sel = hot or r.mark
     local size = (M.compact and 17 or 18) * S
@@ -2809,8 +2813,14 @@ function M.menu(v)
     local title = v.stage_title or v.title or ""
     local listy = not (v.board and not M.touching)
         and not (v.rows and #v.rows > 0 and v.rows[1].hull)
-    local lw = listy and math.min(sw, 520 * S) or sw
-    txt(title, sx, sy + 14 * S, (M.compact and 19 or 22) * S,
+    -- Everything with type in it hangs off `tx`, a gutter in from the stage's
+    -- own left edge: the title, the rule under it, and every row's label. A
+    -- row's field starts back at `sx`, so what is lit reaches under the mark
+    -- and the words never sit against the edge of it.
+    local tx = sx + GUTTER * S
+    local avail = sw - GUTTER * S
+    local lw = listy and math.min(avail, 520 * S) or avail
+    txt(title, tx, sy + 14 * S, (M.compact and 19 or 22) * S,
         pal.a(pal.FRIEND, focused and 1 or 0.75), nil, MENU_FONT)
     -- The way out, where a way out goes, and only where there is one: with
     -- nothing behind the panel the menu is the screen and cannot be shut.
@@ -2820,8 +2830,8 @@ function M.menu(v)
     -- and a rail that navigates from every level had already taken the going
     -- back. What is left is shutting the panel, and everything shuts on an x.
     if v.closable then
-        close_mark(sx + lw - 8 * S, sy + 14 * S, pal.a(pal.DIM, 0.9), 11 * S)
-        hit(sx + lw - 30 * S, sy, 40 * S, 30 * S, "close")
+        close_mark(tx + lw - 8 * S, sy + 14 * S, pal.a(pal.DIM, 0.9), 11 * S)
+        hit(tx + lw - 30 * S, sy, 40 * S, 30 * S, "close")
     end
     local top = sy + STAGE_TOP * S
     local room = sh - (top - sy) - 26 * S
@@ -2829,15 +2839,15 @@ function M.menu(v)
     -- sits at the other, a screen apart, is two columns nobody reads as one
     -- line. The board and the hull grid are drawings and take everything.
     -- The rule introduces whatever is under it, so it is as wide as that.
-    ticks(sx, sy + 28 * S, lw, pal.a(pal.RADAR_TILE, 0.45), 12 * S)
+    ticks(tx, sy + 28 * S, lw, pal.a(pal.RADAR_TILE, 0.45), 12 * S)
     if v.board and not M.touching then
         -- The widest board the stage has the height for, backed off rather
         -- than solved, the same way the page used to do it.
-        local bw = sw
+        local bw = avail
         while bw > 240 * S and board_height(bw) > room do bw = bw * 0.94 end
-        board(sx, top, bw)
+        board(tx, top, bw)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
-        ship_grid(sx, top, sw, room, v, focused)
+        ship_grid(tx, top, avail, room, v, focused)
     else
         local rowh = math.min((M.compact and 46 or 40) * S,
                               math.max(30 * S, room / math.max(#v.rows, 1)))
@@ -2873,9 +2883,9 @@ function M.menu(v)
             -- second row, so `hover` only ever arrives on the home screen,
             -- where the cursor belongs to the rail and the stage is a preview
             -- of what the mark beside it holds.
-            stage_row(sx, y, lw, rowh, r, (focused and i == v.sel)
-                                          or i == v.hover)
-            if r.pick then hit(sx, y, lw, rowh, "stage", i) end
+            stage_row(sx, y, GUTTER * S + lw, rowh, r,
+                      (focused and i == v.sel) or i == v.hover)
+            if r.pick then hit(sx, y, GUTTER * S + lw, rowh, "stage", i) end
         end
         -- What is off the ends, as the same tick the map border uses. It says
         -- there is more without spending a row on saying so.
@@ -2883,11 +2893,11 @@ function M.menu(v)
             local bar = 3 * S
             local hgt = room * fits / #v.rows
             local at = room * (first - 1) / #v.rows
-            rect(sx + lw + 8 * S, ty, bar, room, pal.a(pal.DIM, 0.18))
-            rect(sx + lw + 8 * S, ty + at, bar, hgt, pal.a(pal.FRIEND, 0.6))
+            rect(tx + lw + 8 * S, ty, bar, room, pal.a(pal.DIM, 0.18))
+            rect(tx + lw + 8 * S, ty + at, bar, hgt, pal.a(pal.FRIEND, 0.6))
         end
         if #v.rows == 0 then
-            txt(v.note or "", sx + 16 * S, top + 20 * S, 13 * S,
+            txt(v.note or "", tx, top + 20 * S, 13 * S,
                 pal.a(pal.DIM, 0.9))
         end
     end
@@ -2900,7 +2910,7 @@ function M.menu(v)
     -- around by touching it.
     local foot = v.note or v.hint
     if foot then
-        txt(foot, sx, sy + sh - 4 * S, 12 * S,
+        txt(foot, tx, sy + sh - 4 * S, 12 * S,
             pal.a(v.note and pal.HURT or pal.DIM, 0.95))
     end
 end
