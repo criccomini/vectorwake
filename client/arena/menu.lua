@@ -1,10 +1,10 @@
 -- The menu, which is the home screen and the one you open while flying.
 --
--- The page opens on this, at the root, with nothing behind it: pick a hull,
--- take a different call sign if the one you were dealt is not to your taste,
--- and choose a game from the list the directory answers with. Escape opens the
--- same tree over a live arena, and every row means there what it meant on the
--- way in. One menu, learned once.
+-- The page opens on this with nothing behind it, and on the games: the list
+-- the directory answers with, cursor already in it, on the game you were in
+-- last. The rail beside it goes to a different hull, a different call sign,
+-- the settings. Escape opens the same tree over a live arena, and every row
+-- means there what it meant on the way in. One menu, learned once.
 --
 -- `home` is the only difference between the two. It says whether there is a
 -- game behind the panel, and when there is not the menu cannot be closed,
@@ -522,6 +522,11 @@ function M.tick()
     end
     if zone_synced or #directory.rows == 0 then return end
     zone_synced = true
+    -- Never over a cursor somebody has already moved. The client opens on this
+    -- list now, so a player can be arrowing down it while the directory is
+    -- still being asked, and a row that jumps out from under them a second
+    -- later is worse than one that never moved.
+    if M.sel.zones and M.sel.zones > 1 then return end
     if M.zone == "" then return end
     for i, r in ipairs(directory.rows) do
         if r.zone == M.zone then M.sel.zones = i return end

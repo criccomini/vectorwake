@@ -1552,7 +1552,29 @@ impl Bot {
                 let age = self.timer.saturating_sub(self.seen_at) as f32;
                 let (fx, fy) = (foe.x + foe.vx * age, foe.y + foe.vy * age);
                 let (dx, dy) = (fx - o.x, fy - o.y);
-                let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+                // Nose to nose, which a shared spawn hands out exactly: a
+                // respawn puts a ship back on its own `spawn_x, spawn_y`, so
+                // two pilots holding one spawn sit on the same coordinate to
+                // the pixel. A line of zero length has no direction, and
+                // everything below divides by it: the stand-off point collapses
+                // onto the pilot itself, the wanted velocity comes out zero,
+                // and the aim vector comes out zero too, which is the sentinel
+                // for "no shot". Both pilots then press nothing, neither moves,
+                // and nothing in the loop perturbs them: a heap of bots sitting
+                // on a spawn until somebody shoots one loose.
+                //
+                // So when there is no line, this pilot invents one. Per ship
+                // rather than per tick, because a bearing re-rolled every tick
+                // is a pilot shaking rather than leaving, and spread by the
+                // golden angle so that two who spawned together, facing the
+                // same way, with the same hull, still part.
+                let raw = (dx * dx + dy * dy).sqrt();
+                let (dx, dy, dist) = if raw < 1.0 {
+                    let a = self.ship as f32 * 2.399_963;
+                    (a.sin(), -a.cos(), 1.0)
+                } else {
+                    (dx, dy, raw)
+                };
                 self.dist = dist;
 
                 // Where to point. The shot inherits this ship's velocity, so
@@ -2132,6 +2154,66 @@ mod tests {
                 "a bot stood still in travel for {bad} ticks; the pin loop \
 is back");
     }
+
+    /// Two enemies at the same coordinate, which is what a shared spawn point
+    /// hands out: a respawn puts a ship back at exactly `spawn_x, spawn_y`, so
+    /// a pile at a spawn is the ordinary case rather than a freak one.
+    ///
+    /// The stand-off geometry divides the line to the target by its own
+    /// length. At zero length that line has no direction: the station point
+    /// collapses onto the pilot's own position, the wanted velocity is zero,
+    /// and the aim vector is zero too, which shuts the trigger. So both pilots
+    /// press nothing, neither moves, and nothing in the loop ever perturbs
+    /// them. A player watching sees a heap of bots sitting on the spawn until
+    /// a shot knocks one loose and the arithmetic starts working again.
+    #[test]
+    fn two_pilots_on_the_same_spot_do_not_freeze_each_other() {
+        let mut w = sim::World::new(0x5eed);
+        // Same tile, opposite sides, both alive and looking at each other.
+        let a = w.spawn(0, 0, 512, 512, 0);
+        let b = w.spawn(0, 1, 512, 512, 0);
+        assert!(a >= 0 && b >= 0, "two seats");
+        let (a, b) = (a as u8, b as u8);
+        for s in [a, b] {
+            let sh = &mut w.state.ships[s as usize];
+            sh.x = 512 * 16 * 256;
+            sh.y = 512 * 16 * 256;
+            sh.vx = 0;
+            sh.vy = 0;
+        }
+        let route = crate::nav::Nav::build(&w.map);
+        let mut bots = vec![Bot::new(a, 0.7), Bot::new(b, 0.7)];
+        bots[0].reseed(11);
+        bots[1].reseed(29);
+
+        let mut idle = 0u32;
+        for _ in 0..600u32 {
+            let mut inputs = Vec::new();
+            for bot in bots.iter_mut() {
+                let ship = bot.ship;
+                let fresh = bot.looks_due().then(|| scan(&w, ship));
+                let buttons = bot.think(&own(&w, ship), &route, fresh);
+                inputs.push(sim::sim_input { ship, buttons });
+            }
+            if inputs.iter().all(|i| i.buttons == 0) {
+                idle += 1;
+            }
+            w.step(&inputs);
+        }
+
+        let apart: f32 = {
+            let (p, q) = (&w.state.ships[a as usize], &w.state.ships[b as usize]);
+            let dx = (p.x - q.x) as f32 / 256.0;
+            let dy = (p.y - q.y) as f32 / 256.0;
+            (dx * dx + dy * dy).sqrt()
+        };
+        assert!(idle < 400,
+                "both pilots pressed nothing on {idle} of 600 ticks");
+        assert!(apart > 32.0,
+                "two pilots stacked on one spawn never separated: {apart:.0} px \
+apart after six seconds");
+    }
+
 
 }
 
