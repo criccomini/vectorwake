@@ -1976,10 +1976,52 @@ function M.shots(me, sfx)
     end
 end
 
+-- Rounds this client has already been drawing, so the ones that just arrived
+-- can be told from the ones in flight. A round has no id on the wire and needs
+-- none: its owner, its spec and the tick it was born on name it, and the birth
+-- falls out of how much life it has spent. A multifire fan shares one key and
+-- therefore one fade, which is what a fan launched together should do anyway.
+local flown = {}
+
+-- Enemy fire is known a round trip late, so it enters the state already well
+-- into its flight: one frame nothing, the next a round forty pixels out with
+-- its streak drawn whole. Two things soften the arrival into something the
+-- eye reads as "was already flying" rather than "appeared". It blooms in,
+-- from dim to full over a tenth of a second, never from invisible, because a
+-- live round the player could dodge must not be hidden for style. And for
+-- that tenth its streak reaches back toward where it was actually fired,
+-- easing down to the standard trail as it settles; the velocity is constant
+-- in flight, so age times velocity is the true path just flown.
+--
+-- Your own rounds are exempt by age rather than by ownership: anything first
+-- seen within a few ticks of birth left a muzzle on this screen, and a fade
+-- would only mute the trigger. Age keys the exemption because ownership
+-- would get the cull case wrong: an enemy round fired far away and flown
+-- into view was in the state the whole way, is found here long before it is
+-- drawn, and arrives with its fade already spent, which is correct.
+local FADE_S = 0.12
+local function arrival(spec, life, owner, t)
+    local age = spec_life(spec) - life
+    local born = owner * 16777216 + spec * 65536 + (sim.tick() - age) % 65536
+    local seen = flown[born]
+    if not seen then
+        seen = {t0 = t, late = age > 4}
+        flown[born] = seen
+    end
+    seen.t = t
+    local fade = 1
+    if seen.late then
+        fade = math.min(1, (t - seen.t0) / FADE_S)
+    end
+    return fade, age
+end
+
 function M.weapons(fill, glow, me_team, t, cull)
     local pulse = 0.72 + 0.28 * math.sin(t * 11)
     for i = 0, sim.weapon_count() - 1 do
-        local x, y, spec, vx, vy, team = sim.weapon_at(i)
+        local x, y, spec, vx, vy, team, life, owner = sim.weapon_at(i)
+        local fade, age = arrival(spec, life, owner, t)
+        local af = 0.45 + 0.55 * fade
         if outside(cull, x, y) then
             -- nothing: off screen
         elseif spec_blast(spec) > 0 then
@@ -1988,10 +2030,12 @@ function M.weapons(fill, glow, me_team, t, cull)
             -- its heading from across the arena. Its rung is its hue -- see
             -- the palette -- so what is coming says how hard it hits.
             local col = bomb_col(spec_level(spec))
-            glow:seg_fade(x - vx * 7, y - vy * 7, x, y, 1.5, 5.5, 0, 0.55, col)
-            glow:halo(x, y, 13 * pulse, 10, pal.a(col, 0.5))
-            glow:ring(x, y, 4.6, 1.4, 10, pal.a(col, 0.95))
-            fill:disc(x, y, 3.6, 8, pal.a(pal.hot(col, 0.8, 1), 0.9))
+            local reach = 7 + (math.min(age, 20) - 7) * (1 - fade)
+            glow:seg_fade(x - vx * reach, y - vy * reach, x, y,
+                          1.5, 5.5, 0, 0.55 * af, col)
+            glow:halo(x, y, 13 * pulse, 10, pal.a(col, 0.5 * af))
+            glow:ring(x, y, 4.6, 1.4, 10, pal.a(col, 0.95 * af))
+            fill:disc(x, y, 3.6, 8, pal.a(pal.hot(col, 0.8, 1), 0.9 * af))
         else
             -- A bolt: a streak along its own velocity with a hot head. The
             -- streak is what makes a stream of fire read as a direction
@@ -2008,12 +2052,23 @@ function M.weapons(fill, glow, me_team, t, cull)
                 local fam = (team == me_team) and pal.FRIEND_LVL or pal.ENEMY_LVL
                 col = fam[math.min(lvl + 1, #fam)]
             end
-            glow:seg_fade(x - vx * 14, y - vy * 14, x, y, 0.6, 4.5, 0, 0.30, col)
-            glow:seg_fade(x - vx * 6, y - vy * 6, x, y, 0.8, 2.6, 0, 0.85, col)
-            glow:seg_fade(x - vx * 2, y - vy * 2, x, y, 0.6, 1.6, 0, 1,
+            local reach = 14 + (math.min(age, 30) - 14) * (1 - fade)
+            glow:seg_fade(x - vx * reach, y - vy * reach, x, y,
+                          0.6, 4.5, 0, 0.30 * af, col)
+            glow:seg_fade(x - vx * 6, y - vy * 6, x, y, 0.8, 2.6, 0,
+                          0.85 * af, col)
+            glow:seg_fade(x - vx * 2, y - vy * 2, x, y, 0.6, 1.6, 0, af,
                           pal.hot(col, 0.9, 1))
-            glow:halo(x, y, 7, 8, pal.a(col, 0.55))
+            glow:halo(x, y, 7, 8, pal.a(col, 0.55 * af))
         end
+    end
+    -- Rounds that stopped existing take their fade state with them, or the
+    -- table holds one entry per shot ever fired. Anything not touched this
+    -- frame is gone from the simulation; a rollback that briefly removes and
+    -- restores a round re-arrives under the same key inside one frame, so it
+    -- never trips this.
+    for born, seen in pairs(flown) do
+        if seen.t ~= t then flown[born] = nil end
     end
 end
 
