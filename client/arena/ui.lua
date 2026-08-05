@@ -1574,6 +1574,75 @@ local function fig_green(cx, cy, k)
     u:outline(pts, 1.4 * S, pal.a(col, 0.95), true)
 end
 
+-- Fragments leaving the bomb that threw them.
+--
+-- Shrapnel wears the violet band in the arena, which it shares with the burst
+-- and the wormhole: the palette gives that band to everything answering to
+-- nobody's aim. Three violet cards would read as one, so this one keeps the
+-- dying bomb at its centre in the bomb's own red. That is also the honest
+-- picture, since a fragment is a thing a bomb becomes.
+--
+-- The angles are uneven on purpose. Shrapnel:Random is what the original's
+-- own arena file sets and what the baseline copies, so a ring of them is not
+-- a ring, and drawing it evenly would be drawing the burst again.
+local SHRAP_ANGLES = {0.35, 1.15, 1.95, 2.55, 3.55, 4.35, 5.05, 5.85}
+local function fig_shrap(cx, cy, k)
+    local col = pal.BURST
+    local bomb = pal.BOMB_LVL[2]
+    for _, a in ipairs(SHRAP_ANGLES) do
+        local dx, dy = math.cos(a), math.sin(a)
+        u:seg_fade(cx + dx * k * 0.34, ry(cy + dy * k * 0.34),
+                   cx + dx * k * 0.95, ry(cy + dy * k * 0.95),
+                   0.7 * S, 2.2 * S, 0, 0.85, col)
+        u:disc(cx + dx * k * 0.95, ry(cy + dy * k * 0.95), k * 0.07, 6,
+               pal.a(pal.hot(col, 0.9, 1), 1))
+    end
+    u:halo(cx, ry(cy), k * 0.3, 10, pal.a(bomb, 0.5))
+    u:ring(cx, ry(cy), k * 0.2, 1.2 * S, 10, pal.a(bomb, 0.9))
+end
+
+-- The floor a pilot cannot be shot on, drawn the way the arena draws it: a
+-- dashed edge round a hatched patch, in the friendly blue. The only square
+-- figure in the deck, which is most of what tells it apart at a glance.
+local function fig_safe(cx, cy, k)
+    local col = pal.FRIEND
+    local r = k * 0.82
+    u:rect(cx - r, ry(cy - r, 2 * r), 2 * r, 2 * r, pal.a(col, 0.10))
+    for i = -1, 1 do
+        local o = i * r * 0.66
+        u:seg(cx - r + math.max(0, o), ry(cy + r + math.min(0, o)),
+              cx + r + math.min(0, o), ry(cy - r + math.max(0, o)),
+              0.7 * S, pal.a(col, 0.3))
+    end
+    -- Dashed, the way a safe tile's face is: four to a side, so the gaps read
+    -- as gaps rather than as a broken line.
+    for i = 0, 3 do
+        local t0 = -r + (2 * r) * i / 4 + r * 0.06
+        local t1 = -r + (2 * r) * (i + 1) / 4 - r * 0.06
+        u:seg(cx + t0, ry(cy - r), cx + t1, ry(cy - r), 1.2 * S, pal.a(col, 0.75))
+        u:seg(cx + t0, ry(cy + r), cx + t1, ry(cy + r), 1.2 * S, pal.a(col, 0.75))
+        u:seg(cx - r, ry(cy + t0), cx - r, ry(cy + t1), 1.2 * S, pal.a(col, 0.75))
+        u:seg(cx + r, ry(cy + t0), cx + r, ry(cy + t1), 1.2 * S, pal.a(col, 0.75))
+    end
+end
+
+-- The well, standing still: rings closing on an eye, with the arms that turn
+-- against them out in the arena. Drawn falling inward rather than at even
+-- spacing, so it reads as a pull and not as the repel's push.
+local function fig_hole(cx, cy, k)
+    local col = pal.HOLE
+    for i = 1, 3 do
+        local rr = k * (0.98 - (i - 1) * 0.26)
+        u:ring(cx, ry(cy), rr, 1.0 * S, 18, pal.a(col, 0.18 + (i - 1) * 0.16))
+    end
+    for i = 0, 3 do
+        local a0 = i * math.pi / 2 + 0.4
+        u:arc(cx, ry(cy), k * 0.5, a0, a0 + 0.85, 1.2 * S, 5, pal.a(col, 0.75))
+    end
+    u:halo(cx, ry(cy), k * 0.3, 10, pal.a(col, 0.55))
+    u:disc(cx, ry(cy), k * 0.13, 8, pal.a(pal.hot(col, 0.6, 1), 0.95))
+end
+
 -- Twelve rounds where the arena throws twenty-four. A ring drawn at the real
 -- count closes into a disc at this size, and what the figure has to say is
 -- "every direction at once" rather than a number.
@@ -1632,6 +1701,15 @@ local CARDS = {
     bounty = {fig = fig_bounty,
               text = "Points earned for destroying an enemy. Your enemies " ..
                      "earn your bounty when they destroy you."},
+    shrap = {fig = fig_shrap,
+             text = "Fragments thrown by a bomb when it detonates. Each one " ..
+                    "hits as hard as a bullet, and they bounce off walls."},
+    safe = {fig = fig_safe,
+            text = "Nothing can hurt you inside one, and you cannot fire " ..
+                   "out. Pulling a trigger there stops your ship dead."},
+    hole = {fig = fig_hole,
+            text = "Pulls in anything that comes near. Fly into one and it " ..
+                   "throws you to a random start with your speed gone."},
 }
 M.CARDS = CARDS
 

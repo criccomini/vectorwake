@@ -14,10 +14,9 @@
 -- The pick is random. It chose by context once, your own blast earning the
 -- bomb and a lost loadout the green, and the cleverness was not worth what it
 -- cost: most deaths are ordinary, so most deaths reached the fallback anyway,
--- and the pool is six cards a player is meant to meet in any order. The one
--- rule kept is that a card never follows itself, because at six cards a true
--- roll doubles up every sixth death, and a repeat does not read as chance, it
--- reads as a box that failed to change.
+-- and the pool is cards a player is meant to meet in any order. The one rule
+-- kept is that a card never follows itself, because a repeat does not read as
+-- chance, it reads as a box that failed to change.
 --
 -- The generator is this module's own rather than math.random, whose global
 -- seed the arena pins for its own reasons, and it starts from the clock so
@@ -26,7 +25,8 @@
 local M = {}
 
 -- Keys into ui.CARDS, which holds the figure and the words.
-local POOL = {"bolt", "green", "bomb", "repel", "burst", "bounty"}
+local POOL = {"bolt", "green", "bomb", "shrap", "repel", "burst",
+              "hole", "safe", "bounty"}
 
 local seed = (os.time() % 65521) * 31
     + math.floor((os.clock() * 1000) % 997) + 7
