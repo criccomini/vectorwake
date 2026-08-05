@@ -3037,6 +3037,54 @@ local function stage_row(x, y, w, h, r, hot)
     end
 end
 
+-- What the games page draws when it has no games: the instrument that looks
+-- for them, with nothing on it.
+--
+-- The page is a list of places, so an empty one is a dial with no blips. Three
+-- range rings and a sweep going round say the client is still asking, which it
+-- is, every few seconds until something answers, and that nothing has. A line
+-- of type alone at the top of an empty panel said as much and read as a
+-- failure the player had caused and would have to do something about.
+--
+-- The heading is what happened, the line under it is what happens next, and
+-- the address under that is for whoever is running this rather than whoever is
+-- playing, which is why it is set small and dim.
+local function empty_state(x, y, w, h, e)
+    local cx = x + w / 2
+    local r = math.max(22 * S, math.min(56 * S, h * 0.26))
+    -- Centred in whatever room is left rather than hung off the top of it: on
+    -- an empty page there is nothing above to hang from.
+    local blockh = 2 * r + 96 * S
+    local cy = y + math.max(0, (h - blockh) / 2) + r + 8 * S
+    for k, f in ipairs({0.42, 0.72, 1.0}) do
+        u:ring(cx, ry(cy), r * f, 1.0 * S, 30,
+               pal.a(pal.RADAR_TILE, 0.55 - k * 0.12))
+    end
+    -- The sweep, and its trail behind it. Nothing else in this interface
+    -- turns for the sake of turning, and this one is telling the truth: the
+    -- list is being asked for again while it goes round.
+    local ang = -M.now * 0.8
+    for k = 0, 9 do
+        -- The trail is behind it, which for a sweep going round the way a
+        -- dial's hand goes is the side it has just left.
+        local a = ang + k * 0.05
+        local f = 1 - k / 10
+        u:seg(cx, ry(cy), cx + math.cos(a) * r * 0.98,
+              ry(cy - math.sin(a) * r * 0.98), 1.3 * S,
+              pal.a(pal.FRIEND, 0.32 * f * f), true)
+    end
+    u:disc(cx, ry(cy), 2.4 * S, 10, pal.a(pal.DIM, 0.9))
+    local ty = cy + r + 30 * S
+    txt(e.head or "", cx, ty, (M.compact and 17 or 19) * S,
+        pal.a(pal.INK, 0.85), "center", MENU_FONT)
+    if e.line and e.line ~= "" then
+        txt(e.line, cx, ty + 24 * S, 12 * S, pal.a(pal.DIM, 0.95), "center")
+    end
+    if e.at and e.at ~= "" then
+        txt(e.at, cx, ty + 46 * S, 11 * S, pal.a(pal.DIM, 0.45), "center")
+    end
+end
+
 -- The hulls, as hulls. A list of eight names is eight words about drawings
 -- the game already owns, and picking a ship from a menu that shows you the
 -- ships is the one page that does not need reading at all.
@@ -3449,9 +3497,11 @@ function M.menu(v)
             rect(tx + lw + 8 * S, ty, bar, room, pal.a(pal.DIM, 0.18))
             rect(tx + lw + 8 * S, ty + at, bar, hgt, pal.a(pal.FRIEND, 0.6))
         end
-        if #v.rows == 0 then
-            txt(v.note or "", tx, top + 20 * S, 13 * S,
-                pal.a(pal.DIM, 0.9))
+        -- Under whatever rows there are, which over a game is the one row
+        -- that leaves it.
+        if v.empty then
+            local ey = ty + used + 12 * S
+            empty_state(sx, ey, GUTTER * S + lw, top + room - ey, v.empty)
         end
     end
 
