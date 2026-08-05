@@ -30,9 +30,9 @@ end
 
 local layer = {n = 0, rects = {}}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"disc", "flush", "frame", "outline", "quad",
-                       "reset", "ring", "seg", "seg_fade", "skirt", "tri",
-                       "tri_fade"}) do
+for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline",
+                       "quad", "reset", "ring", "seg", "seg_fade",
+                       "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
 end
 -- Rectangles are kept rather than counted: a bar as tall as the instrument it
@@ -236,24 +236,41 @@ end
 
 -- --- each word lands on the row it is about --------------------------------
 --
--- The row labels are what the player reads it against, so the test reads it
--- against them too.
+-- The rows wear glyphs rather than words now, so the drawn text cannot say
+-- where a row is. The hover zones can: they are the row rectangles the
+-- interface itself publishes, and the sentence has to land inside the band
+-- of the zone it describes, which is also what a pointer resting there names.
 
-for _, pair in ipairs({{"GUN", GUN}, {"BOMB", BOMB}, {"BOUNTY", BTY}}) do
-    local label, sentence = pair[1], pair[2]
-    local a, b = find(held, label), find(held, sentence)
-    check("the " .. label .. " line sits on the " .. label .. " row",
-          a and b and math.abs(a.y - b.y) < 1,
-          a and b and ("label y " .. a.y .. " vs word y " .. b.y) or "absent")
+local function zone_band(key)
+    local x = 20            -- inside the stack's left column
+    local top, bot = nil, nil
+    for yy = 0, H, 2 do
+        if ui.help_at(x, yy) == key then
+            top = top or yy
+            bot = yy
+        end
+    end
+    return top, bot
+end
+
+for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"bounty", BTY}}) do
+    local key, sentence = pair[1], pair[2]
+    local top, bot = zone_band(key)
+    local b = find(held, sentence)
+    check("the " .. key .. " line sits on the " .. key .. " row",
+          top and b and b.y >= top and b.y <= bot,
+          b and top and ("word y " .. b.y .. " vs band " .. top .. ".." .. bot)
+          or "absent")
 end
 
 -- The charge sentence is one line for however many charge rows there are, so
--- it is not on a row: it is between the first and the last of them.
+-- it sits inside the band all of them share.
 do
-    local rpl, chg = find(held, "REPEL"), find(held, CHG)
+    local top, bot = zone_band("charges")
+    local chg = find(held, CHG)
     check("the charge line sits against the charge rows",
-          rpl and chg and math.abs(rpl.y - chg.y) <= 22,
-          rpl and chg and ("REPEL y " .. rpl.y .. " vs word y " .. chg.y)
+          top and chg and chg.y >= top - 11 and chg.y <= bot + 11,
+          chg and top and ("word y " .. chg.y .. " vs band " .. top .. ".." .. bot)
           or "absent")
 end
 
