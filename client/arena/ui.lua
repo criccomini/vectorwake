@@ -1172,6 +1172,125 @@ end
 -- the vignette says "you are being hit", the hull's pip says how much is
 -- left, and its colour says how urgent that is. Three channels, none of them
 -- a panel.
+-- --- the glossary ----------------------------------------------------------
+--
+-- Each card in the wait box draws the thing it is about and then says what it
+-- is. That is the whole idea: a sentence about bombs is a sentence, and the
+-- bomb that killed you is a shape you have seen a hundred times without ever
+-- being told what it was.
+--
+-- The figures are the arena's own, built the way world.lua builds them, at a
+-- smaller scale and standing still. Drawing a fresh icon for the purpose would
+-- teach a pilot to recognise something that is not out there.
+--
+-- They draw into the interface layer rather than the glow one, which is alpha
+-- blended and not additive, so the bloom comes from stacked translucent rings
+-- instead of from adding light. Close enough at this size, and it keeps the
+-- card in the layer that owns the rest of the box.
+
+-- The bomb's own rung colour, not the top of the ladder: the top rung is
+-- 0xffd166, which is also the charge colour, and a bomb drawn in it was a
+-- repel with a smaller middle. Two cards that look alike teach nothing.
+local function fig_bomb(cx, cy, k)
+    local col = pal.BOMB_LVL[2]
+    -- No trail, though it wears one in flight. Drawn inside the blast ring it
+    -- stopped short of the rim and read as a stray stroke rather than as
+    -- motion, and the card does not need it: against the repel below this is
+    -- already the red one with something burning in the middle.
+    --
+    -- The blast it would throw, faint, because the blast is what a rung buys
+    -- and it is what the card is about.
+    u:ring(cx, ry(cy), k * 0.92, 1.0 * S, 22, pal.a(col, 0.26))
+    u:halo(cx, ry(cy), k * 0.50, 12, pal.a(col, 0.45))
+    u:ring(cx, ry(cy), k * 0.32, 1.6 * S, 14, pal.a(col, 0.95))
+    u:disc(cx, ry(cy), k * 0.20, 10, pal.a(pal.hot(col, 0.85, 1), 0.95))
+end
+
+local function fig_bolt(cx, cy, k)
+    local col = pal.ENEMY_LVL[2]
+    -- Travelling left to right with its trail behind it, which is the only
+    -- way a bolt is ever seen: the streak is what says which way it is going.
+    --
+    -- Heavier than the arena's own. Out there a bolt is three overlapping
+    -- strokes on an additive layer and the light piles up; in here the layer
+    -- is alpha blended, so the same numbers drew a hairline with a dot on the
+    -- end. The look is matched rather than the arithmetic.
+    local x0, x1 = cx - k * 0.95, cx + k * 0.5
+    u:seg_fade(x0, ry(cy), x1, ry(cy), 1.0 * S, 6.5 * S, 0, 0.30, col)
+    u:seg_fade(cx - k * 0.45, ry(cy), x1, ry(cy), 1.4 * S, 3.6 * S, 0, 0.85,
+               col)
+    u:halo(x1, ry(cy), k * 0.42, 10, pal.a(col, 0.55))
+    u:disc(x1, ry(cy), k * 0.17, 8, pal.a(pal.hot(col, 0.9, 1), 1))
+end
+
+local function fig_green(cx, cy, k)
+    local col = pal.PRIZE
+    local r = k * 0.62
+    local pts = {cx, ry(cy - r), cx + r, ry(cy), cx, ry(cy + r), cx - r, ry(cy)}
+    u:halo(cx, ry(cy), k * 0.95, 10, pal.a(col, 0.16))
+    u:fan(pts, pal.a(col, 0.28))
+    u:outline(pts, 1.4 * S, pal.a(col, 0.95), true)
+end
+
+-- Twelve rounds where the arena throws twenty-four. A ring drawn at the real
+-- count closes into a disc at this size, and what the figure has to say is
+-- "every direction at once" rather than a number.
+local function fig_burst(cx, cy, k)
+    local col = pal.BURST
+    u:halo(cx, ry(cy), k * 0.45, 12, pal.a(col, 0.25))
+    for i = 0, 11 do
+        local a = i * math.pi / 6
+        local dx, dy = math.cos(a), math.sin(a)
+        local x0, y0 = cx + dx * k * 0.30, cy + dy * k * 0.30
+        local x1, y1 = cx + dx * k * 0.92, cy + dy * k * 0.92
+        u:seg_fade(x0, ry(y0), x1, ry(y1), 0.8 * S, 2.6 * S, 0, 0.85, col)
+        u:disc(x1, ry(y1), k * 0.075, 6, pal.a(pal.hot(col, 0.9, 1), 1))
+    end
+end
+
+local function fig_repel(cx, cy, k)
+    local col = pal.CHARGE_COL
+    -- Rings going out and nothing in the middle, which is a shove drawn
+    -- standing still. The empty centre is the point of difference from the
+    -- bomb: a repel is not an object, it is a thing that happened at a place.
+    u:ring(cx, ry(cy), k * 0.96, 1.1 * S, 22, pal.a(col, 0.22))
+    u:ring(cx, ry(cy), k * 0.68, 1.3 * S, 18, pal.a(col, 0.48))
+    u:ring(cx, ry(cy), k * 0.40, 1.5 * S, 14, pal.a(col, 0.9))
+end
+
+-- The nameplate, as a stranger wears it: a hull with a number under it. What
+-- the card is about is the number, so the hull is dim and small.
+local thumb    -- defined with the menu, which is the other thing that draws one
+local function fig_bounty(cx, cy, k)
+    thumb(cx, cy - k * 0.28, 5, pal.a(pal.ENEMY, 0.9), k * 0.042)
+    txt("42", cx, cy + k * 0.88, 12 * S, pal.a(pal.BOUNTY, 0.95), "center")
+end
+
+-- Every card: the figure, the word for it, and what it does. The order is the
+-- order they cycle in.
+local CARDS = {
+    bomb = {fig = fig_bomb, name = "BOMB",
+            text = "Heavy weapon that detonates on impact. Upgrades include " ..
+                   "shrapnel and proximity abilities. Proximity detonates on " ..
+                   "a near miss."},
+    bolt = {fig = fig_bolt, name = "BULLET",
+            text = "Bullets are your rapid fire weapon. Upgrades include " ..
+                   "spread and bouncing abilities."},
+    green = {fig = fig_green, name = "GREEN",
+             text = "Greens contain prizes that upgrade your ship. They also " ..
+                    "increase your bounty."},
+    repel = {fig = fig_repel, name = "REPEL",
+             text = "Pushes enemy fire and ships away from you. Does not " ..
+                    "affect you or your team."},
+    burst = {fig = fig_burst, name = "BURST",
+             text = "Fires bullets in every direction at once. Deadly at " ..
+                    "close range."},
+    bounty = {fig = fig_bounty, name = "BOUNTY",
+              text = "Points earned for destroying an enemy. Your enemies " ..
+                     "earn your bounty when they destroy you."},
+}
+M.CARDS = CARDS
+
 -- What is drawn under DESTROYED while a pilot waits to fly again.
 --
 -- The shape is the interface's own and nothing new: a wash to lift it off the
@@ -1195,24 +1314,28 @@ end
 -- drawing are separate for that reason alone: the box is drawn last, over
 -- everything, and a rectangle published then would be a frame stale, which is
 -- one frame of a stranger's name across the sentence at the moment it appears.
-local function wait_layout(tip)
-    if not tip or tip == "" then return nil end
+local function wait_layout(which)
+    local card = CARDS[which]
+    if not card then return nil end
     local fs = (M.compact and 10 or 12) * S
     local lab = (M.compact and 8 or 9) * S
     local pad = 14 * S
-    -- Wide enough to read, never wider than the screen it is on. The tip
-    -- wraps to whatever is left, so a phone gets two lines where a desktop
-    -- gets one rather than a sentence running off the edge.
+    -- Wide enough to read, never wider than the screen it is on.
     local w = math.min(430 * S, W - 40 * S)
     local inner = w - pad * 2
-    -- Wrapped to less than the box holds. A line broken at exactly the inner
+    -- The figure's cell, and what is left for the sentence beside it. Square,
+    -- because every shape in here is drawn around its own centre and a cell
+    -- that was not square would put the bomb and the flag on different axes.
+    local cell = (M.compact and 40 or 48) * S
+    local gap = 12 * S
+    -- Wrapped to less than the column holds. A line broken at exactly the
     -- width ends flush against the padding, which reads as text that only
     -- just fitted rather than text that was laid out.
-    local measure = inner - 10 * S
+    local measure = inner - cell - gap - 6 * S
     local lines = {}
     do
         local line = nil
-        for word in string.gmatch(tip, "%S+") do
+        for word in string.gmatch(card.text, "%S+") do
             local try = line and (line .. " " .. word) or word
             if line and text_w(try, fs) > measure then
                 lines[#lines + 1] = line
@@ -1227,14 +1350,16 @@ local function wait_layout(tip)
     local head = 16 * S              -- label baseline inside the box
     local rule = head + 9 * S        -- the tick rule under it
     local rowh = 15 * S
-    -- The last row clears the bottom arms rather than sitting on them: a
-    -- chamfered corner is a frame only while there is air inside it.
-    local h = rule + 9 * S + #lines * rowh + 9 * S
+    -- Tall enough for the figure or for the sentence, whichever asks for more,
+    -- so a one-line card is not a box with a bomb hanging out of the bottom.
+    local body = math.max(cell, #lines * rowh)
+    local h = rule + 11 * S + body + 11 * S
     return {
         x = (W - w) / 2, y = H * 0.46 + (M.compact and 22 or 30) * S,
         w = w, h = h, inner = inner, pad = pad,
         fs = fs, lab = lab, head = head, rule = rule, rowh = rowh,
-        lines = lines,
+        cell = cell, gap = gap, body = body,
+        card = card, lines = lines,
     }
 end
 
@@ -1248,7 +1373,9 @@ local function wait(b, me)
     -- read cannot afford to be shared with one.
     rect(x, y, b.w, b.h, pal.a(pal.BG, 0.86))
     bracket(x, y, b.w, b.h, pal.a(pal.DIM, 0.5), 12 * S, 4 * S)
-    txt("TIP", x + b.pad, y + b.head, b.lab, pal.a(pal.DIM, 0.85))
+    -- The word for the thing, where the panels put their row labels. It says
+    -- what the figure underneath it is, which is the one job a caption has.
+    txt(b.card.name, x + b.pad, y + b.head, b.lab, pal.a(pal.DIM, 0.85))
 
     -- The clock. `respawn_at` counts down in the core and is in every
     -- snapshot, so this is read rather than timed here: a local stopwatch
@@ -1264,9 +1391,17 @@ local function wait(b, me)
               1.2 * S, pal.a(pal.FRIEND, 0.7))
     end
 
-    local ty = y + b.rule + 9 * S + b.rowh / 2
+    -- The figure in its cell, then the sentence beside it. Both centred on
+    -- the body's own middle rather than hung from the top, so a one-line card
+    -- and a two-line card are both balanced against the shape.
+    local top = y + b.rule + 11 * S
+    local mid = top + b.body / 2
+    b.card.fig(x + b.pad + b.cell / 2, mid, b.cell / 2)
+
+    local tx = x + b.pad + b.cell + b.gap
+    local ty = mid - (#b.lines - 1) * b.rowh / 2
     for _, line in ipairs(b.lines) do
-        txt(line, W / 2, ty, b.fs, pal.a(pal.PANEL_INK, 0.92), "center")
+        txt(line, tx, ty, b.fs, pal.a(pal.PANEL_INK, 0.92))
         ty = ty + b.rowh
     end
 end
@@ -1682,7 +1817,7 @@ end
 -- A hull drawn small, inside its button. The silhouette is what picks a ship;
 -- the name only confirms it. The canopy comes along because at this size it is
 -- the only thing that says which end is the front.
-local function thumb(cx, cy, cls, col, scale)
+function thumb(cx, cy, cls, col, scale)
     local h = world.HULLS[cls + 1]
     if not h then return end
     local function trace(src, width, c)
