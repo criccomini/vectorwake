@@ -2760,6 +2760,68 @@ int main(void) {
         free(wm);
     }
 
+    /* A round faster than a hull is thick still hits it.
+     *
+     * The hit test used to sample once per tick, at the end of the tick's
+     * travel. A Cipher's flank is 12 px thick and a round can cross more than
+     * that in one tick, so a crossing could land entirely between two samples
+     * and pass through, deterministically, on both ends of the wire at once.
+     * The sweep walks the travel in 4 px samples instead. The velocity here
+     * is written onto the round directly, standing in for any zone that
+     * retunes its weapons faster than the baseline flies. */
+    {
+        const int CIPHER = 5;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, CIPHER, 0, 8192, 8192, 0, &cfg);
+
+        sim_weapon *w = &s.weapons[s.weapon_count++];
+        memset(w, 0, sizeof *w);
+        w->spec = gun_of(&cfg, APEX)->spec;
+        w->owner = 1;          /* nobody's round arrives at its owner */
+        w->team = 1;
+        w->life = 10;
+        /* 16 px a tick, eastward, from 8 px short of the near flank: the
+         * endpoint lands 2 px past the far one, so the old single sample
+         * would have seen empty space on both sides of the crossing. */
+        w->x = 8184 * 256;
+        w->y = 8192 * 256;
+        w->vx = 16 * 65536;
+
+        ev_counts c = step_counting(&s, &cfg, 0, 0, 1);
+        CHECK(c.hits == 1, "a 16 px/tick round cannot cross a 12 px flank");
+        CHECK(s.weapon_count == 0, "and it ended on the hull it hit");
+    }
+
+    /* And the same round cannot cross a wall one tile thick. */
+    {
+        for (int ty = 500; ty < 525; ty++)
+            m->tile[(size_t)ty * SIM_MAP_TILES + 512] = SIM_TILE_SOLID;
+        sim_map_index(m);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_weapon *w = &s.weapons[s.weapon_count++];
+        memset(w, 0, sizeof *w);
+        w->spec = gun_of(&cfg, APEX)->spec;
+        w->owner = 1;
+        w->team = 1;
+        w->life = 10;
+        /* The wall column covers x 8192..8208 px. From 8180 at 48 px a tick
+         * the endpoint is 8228, past the far face, so the endpoint sample
+         * alone would have read clear air. */
+        w->x = 8180 * 256;
+        w->y = 8072 * 256;   /* tile 504, inside the column's run */
+        w->vx = 48 * 65536;
+
+        step_n(&s, &cfg, 0, 0, 1);
+        CHECK(s.weapon_count == 0, "a 48 px/tick round cannot cross a wall");
+
+        for (int ty = 500; ty < 525; ty++)
+            m->tile[(size_t)ty * SIM_MAP_TILES + 512] = SIM_TILE_EMPTY;
+        sim_map_index(m);
+    }
+
     free(m);
     if (failures == 0) printf("all tests passed\n");
     return failures ? 1 : 0;

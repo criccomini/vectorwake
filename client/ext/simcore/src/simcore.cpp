@@ -108,11 +108,41 @@ int Step(lua_State* L) {
     return 0;
 }
 
+// The steering a remote pilot was last seen holding. Every ship's btn_prev
+// rides in the snapshot, so between snapshots the client can keep a thrusting
+// ship thrusting and a turning ship turning instead of letting everyone coast.
+// Coasting was the old rule, and it was the biggest single source of remote
+// hulls drawn in the wrong place: acceleration is exactly the part a ballistic
+// guess gets wrong, and it is also the part the pilot is most likely to be
+// sustaining across a fifty-millisecond gap.
+//
+// Movement bits only. Extrapolating a held trigger would fill the screen with
+// predicted shots the server never fired, and a phantom bullet is a worse lie
+// than a hull a few pixels off: the misplaced hull corrects quietly under the
+// render smoothing, the phantom shot has to visibly vanish.
+static const uint16_t HELD_MASK =
+    SIM_BTN_LEFT | SIM_BTN_RIGHT | SIM_BTN_THRUST | SIM_BTN_REVERSE;
+
 int Replay(lua_State* L) {
-    sim_input in;
-    in.ship = (uint8_t)luaL_checkinteger(L, 1);
-    in.buttons = (uint16_t)luaL_checkinteger(L, 2);
-    sim_step(g_nxt, g_cur, &in, 1, &g_cfg, &g_ev);
+    int me = (int)luaL_checkinteger(L, 1);
+    uint16_t mine = (uint16_t)luaL_checkinteger(L, 2);
+    sim_input in[SIM_MAX_SHIPS];
+    int n = 0;
+    for (int i = 0; i < g_cur->ship_count && n < SIM_MAX_SHIPS; i++) {
+        const sim_ship* sh = &g_cur->ships[i];
+        uint16_t b;
+        if (i == me) {
+            b = mine;
+        } else {
+            if (!sh->active || !sh->alive) continue;
+            b = (uint16_t)(sh->btn_prev & HELD_MASK);
+            if (!b) continue;
+        }
+        in[n].ship = (uint8_t)i;
+        in[n].buttons = b;
+        n++;
+    }
+    sim_step(g_nxt, g_cur, in, n, &g_cfg, &g_ev);
     sim_state* t = g_cur;
     g_cur = g_nxt;
     g_nxt = t;
@@ -171,7 +201,16 @@ const double SMOOTH_SNAP = 64.0;
 // And a ceiling on what the drawing may be lying by at any moment, so a stream
 // of corrections in one direction cannot accumulate into a ship drawn somewhere
 // it has never been.
-const double SMOOTH_MAX = 40.0;
+//
+// This was 40, chosen when remote hulls coasted between snapshots and repels
+// routinely produced corrections that size. It bounds the gap a shot can
+// visibly pass through: a bullet is drawn true while the hull is drawn wrong
+// by up to this many pixels, so the ceiling is priced against the thinnest
+// hull rather than against the largest correction. Sixteen is a Cipher's
+// flank plus a little; held-button extrapolation keeps ordinary corrections
+// well under it, and what still lands above it clamps to a shorter, faster
+// slide.
+const double SMOOTH_MAX = 16.0;
 
 // Whether the other buffer really holds the tick before this one.
 //
@@ -827,7 +866,11 @@ int SmoothSettle(lua_State* L) {
 // where the lie is largest and there is no moment at which it stops.
 int SmoothDecay(lua_State* L) {
     double dt = luaL_checknumber(L, 1);
-    double half = luaL_optnumber(L, 2, 0.08);
+    // 80 ms of half-life was tuned against coasting extrapolation's large
+    // corrections. Smaller lies can afford to die faster: at 50 ms a
+    // correction is gone by the second snapshot after it, which halves how
+    // long a hull is drawn somewhere shots pass through it.
+    double half = luaL_optnumber(L, 2, 0.05);
     if (dt <= 0.0 || half <= 0.0) return 0;
     float k = (float)pow(0.5, dt / half);
     for (int i = 0; i < SIM_MAX_SHIPS; i++) {
