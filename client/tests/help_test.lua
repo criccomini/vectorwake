@@ -28,12 +28,18 @@ end
 
 -- --- the engine, as much of it as ui.lua touches ---------------------------
 
-local layer = {n = 0}
+local layer = {n = 0, rects = {}}
 local function noop(self) self.n = self.n + 1 end
-for _, name in ipairs({"disc", "flush", "frame", "outline", "quad", "rect",
+for _, name in ipairs({"disc", "flush", "frame", "outline", "quad",
                        "reset", "ring", "seg", "seg_fade", "skirt", "tri",
                        "tri_fade"}) do
     layer[name] = noop
+end
+-- Rectangles are kept rather than counted: a bar as tall as the instrument it
+-- names is a rectangle, and its height is the thing under test.
+function layer:rect(x, y, w, h, col)
+    self.n = self.n + 1
+    self.rects[#self.rects + 1] = {x = x, y = y, w = w, h = h, col = col}
 end
 
 -- Two add-ons on the gun, because the overlay's column has to clear the widest
@@ -96,12 +102,22 @@ local ui = require("arena.ui")
 local W, H = 1280, 800
 local ADVANCE = 1233 / 2048
 
+-- A full feed, because the bar beside it is supposed to be as tall as the
+-- block and a single line would let a one-line bar pass for one.
+local FEED_LINES = {}
+for i = 1, 5 do
+    FEED_LINES[i] = {text = "someone killed nobody (+" .. (20 + i) .. ")",
+                     t = 0}
+end
+
 local function frame(o)
     o = o or {}
     ui.help = o.help or false
     ui.map = o.map or false
+    layer.rects = {}
     ui.begin(layer, W, H, 1, o.touching or false)
     ui.hud({
+        point_x = o.point_x, point_y = o.point_y,
         me = 0,
         class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher",
                        "Lattice", "Spire"},
@@ -111,7 +127,7 @@ local function frame(o)
         teams = {},
         -- A feed with lines in it, since an empty one draws nothing and has
         -- nothing to be named.
-        feed = {{text = "someone +9 you", t = 0}},
+        feed = FEED_LINES,
         hurt = 0,
         charges = o.charges or {{name = "repel", short = "RPL",
                                  max = 3, count = 2}},
@@ -136,7 +152,22 @@ local function frame(o)
         out[#out + 1] = {s = t.s, y = H - t.y, px = t.px,
                          left = left, right = left + w}
     end
+    out.rects = layer.rects
     return out
+end
+
+-- The tallest thin upright rectangle whose right edge sits at `x`, which is
+-- how a bar drawn beside a right-aligned line is found. Widths here are the
+-- bar's 3 points, never a panel's.
+local function bar_at(f, x, tol)
+    local best = nil
+    for _, r in ipairs(f.rects) do
+        if r.w < 6 and math.abs((r.x + r.w) - x) <= (tol or 3)
+           and (not best or r.h > best.h) then
+            best = r
+        end
+    end
+    return best
 end
 
 local function find(lines, s)
@@ -162,12 +193,16 @@ local CHG = "digits 1 to 4 spend these, top down"
 local BTY = "what a kill on you pays"
 local RADAR = "near space. the rings are range."
 local MAP = "the whole arena, and you as the arrow"
-local LINK = "your line to the arena"
 local FEED = "who paid whom"
-local NRG = "armour and ammunition, one pool"
-local LETGO = "let go and it is gone"
 
-local ALL = {GUN, BOMB, CHG, BTY, RADAR, LINK, FEED, NRG, LETGO}
+-- Three things this deliberately does not say, each because the instrument
+-- already says it. The energy pip empties when you are shot; four bars
+-- labelled LINK are a sentence about the connection; and a held overlay does
+-- not need to announce that letting go closes it.
+local SILENT = {"armour and ammunition, one pool", "your line to the arena",
+                "let go and it is gone"}
+
+local ALL = {GUN, BOMB, CHG, BTY, RADAR, FEED}
 
 -- --- it is off until it is held --------------------------------------------
 
@@ -181,6 +216,13 @@ check("nothing of it is drawn until H is held", leaked == nil, leaked)
 -- --- and then all of it is -------------------------------------------------
 
 local held = frame({help = true})
+local spoke = {}
+for _, s in ipairs(SILENT) do
+    if find(held, s) then spoke[#spoke + 1] = s end
+end
+check("what the instruments say for themselves is left unsaid", #spoke == 0,
+      table.concat(spoke, "; "))
+
 local missing = {}
 for _, s in ipairs(ALL) do
     if not find(held, s) then missing[#missing + 1] = s end
@@ -272,13 +314,8 @@ check("no two of them land on each other", clash == nil, clash)
 local mapped = frame({help = true, map = true})
 check("with the map up the dial is described as the map",
       find(mapped, MAP) and not find(mapped, RADAR))
--- The map is four times the dial, so the readouts along the top of it start
--- near the middle of the screen and there is no clear space left of them. The
--- line about the connection stands down rather than printing over the flags.
-check("and the line with nowhere left to go stands down",
-      not find(mapped, LINK))
 local mapped_clash = nil
-for _, s in ipairs({MAP, FEED, NRG, GUN, BOMB, CHG, BTY, LETGO}) do
+for _, s in ipairs({MAP, FEED, GUN, BOMB, CHG, BTY}) do
     local t = find(mapped, s)
     if not t then
         mapped_clash = s .. " went missing with the map up"
@@ -308,6 +345,126 @@ local bare = frame({help = true, charges = {}})
 check("a hull carrying no charges is not told how to spend them",
       not find(bare, CHG))
 check("and the rest of it is still there", find(bare, GUN) ~= nil)
+
+-- --- and the pointer names one thing at a time ----------------------------
+--
+-- Resting on an instrument is a question about that instrument. It answers
+-- with one line, no wash, and none of the other eight, so it costs about what
+-- looking at the thing costs.
+
+-- A point inside a given instrument, asked of the interface itself
+-- rather than worked out again here.
+-- One frame first, so the zones exist to be asked about.
+frame()
+local function a_point_in(key)
+    for y = 0, H - 1, 3 do
+        for x = 0, W - 1, 3 do
+            if ui.help_at(x, y) == key then return x, y end
+        end
+    end
+    return nil
+end
+
+local KEYS = {"gun", "bomb", "charges", "bounty", "radar", "feed"}
+local unreachable = {}
+for _, k in ipairs(KEYS) do
+    if not a_point_in(k) then unreachable[#unreachable + 1] = k end
+end
+check("every named instrument can be pointed at", #unreachable == 0,
+      table.concat(unreachable, "; "))
+
+-- The field of play is not a hover zone by accident: the middle of the screen
+-- belongs to flying, and only the pip over your own hull answers there.
+check("open space answers nothing", ui.help_at(W * 0.72, H * 0.55) == nil,
+      tostring(ui.help_at(W * 0.72, H * 0.55)))
+
+-- Hovering draws that line and stops.
+local hx, hy = a_point_in("bounty")
+local hovered = frame({point_x = hx, point_y = hy})
+check("the pointer on a row draws that row's line", find(hovered, BTY) ~= nil)
+local extras = {}
+for _, s in ipairs({GUN, BOMB, CHG, RADAR, FEED}) do
+    if find(hovered, s) then extras[#extras + 1] = s end
+end
+check("and none of the others", #extras == 0, table.concat(extras, "; "))
+
+-- Each instrument answers with its own sentence and not its neighbour's.
+for _, pair in ipairs({{"gun", GUN}, {"bomb", BOMB}, {"radar", RADAR},
+                       {"feed", FEED}}) do
+    local key, want = pair[1], pair[2]
+    local px, py = a_point_in(key)
+    local f = frame({point_x = px, point_y = py})
+    check("pointing at " .. key .. " says its own line",
+          find(f, want) ~= nil, "absent")
+end
+
+-- Held beats hovered. A hand that happens to be resting on the dial must not
+-- cut the other eight lines out of a mode the player deliberately opened.
+local both = frame({help = true, point_x = hx, point_y = hy})
+local lost = {}
+for _, s in ipairs(ALL) do
+    if not find(both, s) then lost[#lost + 1] = s end
+end
+check("holding H with the pointer resting still says everything",
+      #lost == 0, table.concat(lost, "; "))
+
+-- And the menu is still a different screen.
+local hover_menu = frame({menu_open = true, point_x = hx, point_y = hy})
+check("hovering under the menu says nothing", find(hover_menu, BTY) == nil)
+
+-- A pointer the client does not have names nothing.
+local none = frame()
+check("no pointer, no line", find(none, BTY) == nil)
+
+-- --- a bar as tall as the thing it names ----------------------------------
+--
+-- The dial is a square the size of a phone's screen and the feed is five
+-- lines. A mark the height of one line of type beside either of them reads as
+-- a note about whatever row it happened to land next to, so the bar runs the
+-- instrument's whole height.
+
+do
+    local f = frame({help = true})
+    local word = find(f, RADAR)
+    local bar = bar_at(f, word.right + 11 * 1)
+    check("the dial's bar is as tall as the dial",
+          bar and bar.h > 100, bar and ("height " .. bar.h) or "no bar")
+
+    local fw = find(f, FEED)
+    local fbar = bar_at(f, fw.right + 11 * 1)
+    -- Five lines at the interface's own line height, less a little slack.
+    check("the feed's bar is as tall as the feed",
+          fbar and fbar.h > 4 * 18, fbar and ("height " .. fbar.h) or "no bar")
+end
+
+-- --- and the feed is named beside itself, not beneath it -------------------
+--
+-- Under it the bar could only be a line tall and the sentence would read as a
+-- sixth kill.
+
+do
+    local f = frame({help = true})
+    local word = find(f, FEED)
+    local lowest, highest = 0, math.huge
+    for _, line in ipairs(FEED_LINES) do
+        local t = find(f, line.text)
+        if t then
+            if t.y > lowest then lowest = t.y end
+            if t.y < highest then highest = t.y end
+        end
+    end
+    check("the feed's line sits level with the feed, not under it",
+          word.y >= highest - 12 and word.y <= lowest + 12,
+          string.format("word %.0f, feed %.0f..%.0f", word.y, highest, lowest))
+    local feed_left = math.huge
+    for _, line in ipairs(FEED_LINES) do
+        local t = find(f, line.text)
+        if t and t.left < feed_left then feed_left = t.left end
+    end
+    check("and to the left of it", word.right <= feed_left,
+          string.format("word ends %.0f, feed starts %.0f", word.right,
+                        feed_left))
+end
 
 if fails > 0 then
     print(fails .. " failed")

@@ -252,6 +252,33 @@ M.help = false
 -- about one corner.
 local anchor = {}
 
+-- What the pointer can rest on to ask what it is, filed the same way and at
+-- the same time as the anchors.
+--
+-- Deliberately not `M.hits`. A hit box is a press: `on_input` takes the first
+-- one a press lands in, and the field of play holds none at all because left
+-- click is the gun and a box over a hull would eat the shot. These are read by
+-- the pointer and by nothing else, so naming a thing can never cost a trigger
+-- pull. See hud_hits_test for the rule they are staying out of the way of.
+local zones = {}
+local function zone(key, x, y, w, h)
+    zones[#zones + 1] = {key = key, x = x, y = y, w = w, h = h}
+end
+
+-- Which instrument the pointer is over, or nil. Last registered wins, so a
+-- row inside a panel beats the panel: the corner stack files a zone per row
+-- and hovering one names that row rather than the stack.
+function M.help_at(x, y)
+    if not x or not y then return nil end
+    local found = nil
+    for _, z in ipairs(zones) do
+        if x >= z.x and x <= z.x + z.w and y >= z.y and y <= z.y + z.h then
+            found = z.key
+        end
+    end
+    return found
+end
+
 function M.begin(layer, w, h, density, touching)
     u, W, H = layer, w, h
     -- Points of screen rather than pixels: a phone at two device pixels per
@@ -278,6 +305,7 @@ function M.begin(layer, w, h, density, touching)
     u:reset()
     M.hits = {}
     anchor = {}
+    zones = {}
 end
 
 function M.finish()
@@ -300,7 +328,7 @@ end
 -- The map is about a quarter of the frame, capped three ways: against the
 -- window's width so it cannot run off the left edge, against its height so
 -- there is still room for the feed under it, and against the corner the MENU
--- and INFO chips stand in, since a hit box over those is two controls a
+-- and PLAYERS chips stand in, since a hit box over those is two controls a
 -- pointer can no longer reach.
 local function dial()
     local pad = (M.compact and 8 or PAD) * S
@@ -319,7 +347,11 @@ local function dial()
     -- Filed here rather than in the two functions that draw into it, because
     -- the dial and the map are the same corner and want the same word beside
     -- them.
-    anchor.radar = {ix, iy + side * 0.5}
+    -- The left edge and the whole vertical run of it, because the word beside
+    -- the dial wears a bar as tall as the dial: an instrument this size is not
+    -- named by a mark the height of one line of type.
+    anchor.radar = {ix, iy, iy + side}
+    zone("radar", ix, iy, side, side)
     return ix, iy, side
 end
 
@@ -886,7 +918,22 @@ local function feed(lines, top)
             pal.a(f.col or pal.DIM, a), "right")
         y = y + LINE * S
     end
-    anchor.feed = {right, y + LINE * S / 2}
+    -- As wide as the widest line it drew rather than a guess, since a feed of
+    -- short names is a narrow block and a zone the width of the panel would
+    -- claim empty screen beside it.
+    local wide = 0
+    for i = 1, shown do
+        local w = text_w(lines[i].text, FONT * S)
+        if w > wide then wide = w end
+    end
+    local block_top = top + PANEL_Y * S
+    local block_bot = block_top + shown * LINE * S
+    -- Its left edge and its whole height. The word goes beside the block, not
+    -- under it: under it the bar could only be a line tall and the sentence
+    -- read as a sixth kill, and the feed is the one panel here that is already
+    -- a column of sentences.
+    anchor.feed = {right - wide, block_top, block_bot}
+    zone("feed", right - wide, block_top, wide, block_bot - block_top)
 end
 
 -- The corner stack: what the triggers do, what you carry and can spend, and
@@ -962,11 +1009,11 @@ local function status(me, pickup, charges, lift)
                     at = at + 46 * S
                 end
             end
-            if t == sim.TRIG_GUN then
-                anchor.gun = y + rows_h / 2
-            else
-                anchor.bomb = y + rows_h / 2
-            end
+            -- The row as far right as it actually drew, so the add-ons are
+            -- part of the thing you point at rather than dead space beside it.
+            local key = (t == sim.TRIG_GUN) and "gun" or "bomb"
+            anchor[key] = y + rows_h / 2
+            zone(key, x, y, math.max(at, val + 50 * S) - x, rows_h)
             y = y + rows_h
         end
     end
@@ -988,6 +1035,9 @@ local function status(me, pickup, charges, lift)
             anchor.chg_bot = y + rows_h / 2
             local pw = val + 3 * S + slot_max * 9 * S
             if pw > wide then wide = pw end
+            -- Every charge row answers to the one sentence, so they all point
+            -- at the same key.
+            zone("charges", x, y, pw - x, rows_h)
             y = y + rows_h
         end
     end
@@ -1001,6 +1051,7 @@ local function status(me, pickup, charges, lift)
     anchor.bounty = y + rows_h / 2
     local bw = val + text_w(tostring(bty), (FONT - 2) * S)
     if bw > wide then wide = bw end
+    zone("bounty", x, y, bw - x, rows_h)
     y = y + rows_h
 
     if pickup then
@@ -1270,26 +1321,28 @@ local function fig_bounty(cx, cy, k)
     txt("42", cx, cy + k * 0.88, 12 * S, pal.a(pal.BOUNTY, 0.95), "center")
 end
 
--- Every card: the figure, the word for it, and what it does. The order is the
--- order they cycle in.
+-- Every card: the figure and what it does, and no name. The box used to
+-- caption each figure with its word, and the word earned nothing: the
+-- sentence already names the thing where it needs naming, and the figure is
+-- the arena's own shape, which is the recognition this exists to build.
 local CARDS = {
-    bomb = {fig = fig_bomb, name = "BOMB",
+    bomb = {fig = fig_bomb,
             text = "Heavy weapon that detonates on impact. Upgrades include " ..
                    "shrapnel and proximity abilities. Proximity detonates on " ..
                    "a near miss."},
-    bolt = {fig = fig_bolt, name = "BULLET",
+    bolt = {fig = fig_bolt,
             text = "Bullets are your rapid fire weapon. Upgrades include " ..
                    "spread and bouncing abilities."},
-    green = {fig = fig_green, name = "GREEN",
+    green = {fig = fig_green,
              text = "Greens contain prizes that upgrade your ship. They also " ..
                     "increase your bounty."},
-    repel = {fig = fig_repel, name = "REPEL",
+    repel = {fig = fig_repel,
              text = "Pushes enemy fire and ships away from you. Does not " ..
                     "affect you or your team."},
-    burst = {fig = fig_burst, name = "BURST",
+    burst = {fig = fig_burst,
              text = "Fires bullets in every direction at once. Deadly at " ..
                     "close range."},
-    bounty = {fig = fig_bounty, name = "BOUNTY",
+    bounty = {fig = fig_bounty,
               text = "Points earned for destroying an enemy. Your enemies " ..
                      "earn your bounty when they destroy you."},
 }
@@ -1297,22 +1350,21 @@ M.CARDS = CARDS
 
 -- What is drawn under DESTROYED while a pilot waits to fly again.
 --
--- The shape is the interface's own and nothing new: a wash to lift it off the
--- arena, four chamfered corners instead of a border, a label in the small
--- grey the panels label their rows in, and the map border's tick as the rule
--- between the label and the line. Everything here is already on screen
--- somewhere else, which is the point. A death is not the moment to introduce
--- a new kind of box.
+-- The shape is the interface's own and nothing new: a wash to lift it off
+-- the arena, the map border's tick as a rule across the top, and under it a
+-- card. It had corner brackets and a caption once, and both went. A frame is
+-- for holding a cluster together against the panels around it, and this box
+-- shares the middle of the screen with nothing.
 --
--- The rule doubles as the clock. It is drawn twice, dim across the full width
--- and lit across what is left of the respawn, so the same element that
--- separates the label from the tip also says how long you have to read it.
--- A numeral counting down would be a thing to watch instead of the sentence,
--- and this game has one big centred readout already.
+-- The rule is the clock. It is drawn twice, dim across the full width and
+-- lit across what is left of the respawn, so the one line the box carries
+-- besides its card also says how long there is to read it. A numeral
+-- counting down would be a thing to watch instead of the sentence, and this
+-- game has one big centred readout already.
 --
--- Centred under the banner rather than in a corner, because for these three
+-- Centred under the banner rather than in a corner, because for these few
 -- seconds there is nothing to fly and nothing to look away from, and it goes
--- the instant the hull is back.
+-- the moment the hull is back.
 -- Where the box goes and what it holds, worked out before anything else is
 -- drawn so `nameplates` can step around it in the same frame. Measuring and
 -- drawing are separate for that reason alone: the box is drawn last, over
@@ -1322,7 +1374,6 @@ local function wait_layout(which)
     local card = CARDS[which]
     if not card then return nil end
     local fs = (M.compact and 10 or 12) * S
-    local lab = (M.compact and 8 or 9) * S
     local pad = 14 * S
     -- Wide enough to read, never wider than the screen it is on.
     local w = math.min(430 * S, W - 40 * S)
@@ -1351,8 +1402,7 @@ local function wait_layout(which)
         if line then lines[#lines + 1] = line end
     end
 
-    local head = 16 * S              -- label baseline inside the box
-    local rule = head + 9 * S        -- the tick rule under it
+    local rule = 12 * S              -- the clock rule, at the top of the box
     local rowh = 15 * S
     -- Tall enough for the figure or for the sentence, whichever asks for more,
     -- so a one-line card is not a box with a bomb hanging out of the bottom.
@@ -1361,7 +1411,7 @@ local function wait_layout(which)
     return {
         x = (W - w) / 2, y = H * 0.46 + (M.compact and 22 or 30) * S,
         w = w, h = h, inner = inner, pad = pad,
-        fs = fs, lab = lab, head = head, rule = rule, rowh = rowh,
+        fs = fs, rule = rule, rowh = rowh,
         cell = cell, gap = gap, body = body,
         card = card, lines = lines,
     }
@@ -1376,10 +1426,6 @@ local function wait(b, me)
     -- hull flies straight through it, and a line you have three seconds to
     -- read cannot afford to be shared with one.
     rect(x, y, b.w, b.h, pal.a(pal.BG, 0.86))
-    bracket(x, y, b.w, b.h, pal.a(pal.DIM, 0.5), 12 * S, 4 * S)
-    -- The word for the thing, where the panels put their row labels. It says
-    -- what the figure underneath it is, which is the one job a caption has.
-    txt(b.card.name, x + b.pad, y + b.head, b.lab, pal.a(pal.DIM, 0.85))
 
     -- The clock. `respawn_at` counts down in the core and is in every
     -- snapshot, so this is read rather than timed here: a local stopwatch
@@ -1434,22 +1480,37 @@ local function menu_button()
     -- one shape the rest of this game does not contain, and a control does not
     -- need one to be a control: the rule under the pair says they belong
     -- together, and the lit segment says which is on.
+    --
+    -- One colour between them, and the same rule for lighting it. MENU was
+    -- drawn in ink and PLAYERS in slate, which is two controls that do the
+    -- same kind of thing wearing two different states before either had been
+    -- pressed. What they wear now is off or on, and the panel each opens is
+    -- what turns it on.
     local x, y = PAD * S, PAD * S
-    local w, h = 52 * S, 26 * S
-    txt("MENU", x, y + h / 2, (FONT - 1) * S, pal.a(pal.INK, 0.9))
-    hit(x - 4 * S, y, w, h, "open")
-
-    local bx = x + w
-    txt("INFO", bx, y + h / 2, (FONT - 1) * S,
-        M.details and pal.FRIEND or pal.a(pal.DIM, 0.85))
-    hit(bx - 4 * S, y, w, h, "details")
-
+    local h = 26 * S
+    local size = (FONT - 1) * S
+    local gap = 16 * S
     local ruley = y + h - 6 * S
-    u:seg(x, ry(ruley), x + w * 2 - 16 * S, ry(ruley), 0.8 * S,
+    -- Each word is as wide as it is. A slot cut for four letters is a slot
+    -- the longer of the two runs out of.
+    local total = -gap
+    for _, c in ipairs({"MENU", "PLAYERS"}) do
+        total = total + text_w(c, size) + gap
+    end
+    u:seg(x, ry(ruley), x + total, ry(ruley), 0.8 * S,
           pal.a(pal.RADAR_TILE, 0.5))
-    if M.details then
-        u:seg(bx, ry(ruley), bx + w - 16 * S, ry(ruley), 1.4 * S,
-              pal.a(pal.FRIEND, 0.9))
+    local cx = x
+    for _, c in ipairs({{"MENU", "open", menu_up},
+                        {"PLAYERS", "details", M.details}}) do
+        local ww = text_w(c[1], size)
+        txt(c[1], cx, y + h / 2, size,
+            c[3] and pal.FRIEND or pal.a(pal.DIM, 0.85))
+        hit(cx - 4 * S, y, ww + 8 * S, h, c[2])
+        if c[3] then
+            u:seg(cx, ry(ruley), cx + ww, ry(ruley), 1.4 * S,
+                  pal.a(pal.FRIEND, 0.9))
+        end
+        cx = cx + ww + gap
     end
 end
 
@@ -1475,11 +1536,9 @@ local function link(lag)
     end
     txt("LINK", right - 34 * S, base - 4 * S, (FONT - 3) * S,
         pal.a(pal.DIM, 0.8), "right")
-    -- The dial's left edge, not the bars', because the bars are the right-hand
-    -- end of a row that starts with the position readout: a word set just left
-    -- of `LINK` is a word printed over `POS 382,360`. The same edge the dial's
-    -- own line is set against, so the two stack into one column.
-    anchor.link = {dial(), base - 4 * S}
+    -- The help overlay does not name this one. Four bars labelled LINK beside
+    -- a millisecond count are already a sentence about the connection, and a
+    -- word saying so is the interface reading its own label back.
     -- The bars are the readout a player wants and the whole of it. Everything
     -- behind them is for whoever is working on this, so it hides behind the
     -- one thing on screen that is already about the connection.
@@ -1657,76 +1716,90 @@ end
 -- wears, and only where the label on the row does not say it already: GUN and
 -- BOMB name themselves, so those lines explain the rung rather than the word.
 
--- A bar in the thing's own colour, then the sentence. The bar sits on the side
--- facing whatever is being named, so it points without a line.
-local function help_mark(x, y, s, col, align)
-    local f = (FONT - 1) * S
-    if align == "right" then
-        rect(x - 3 * S, y - 6.5 * S, 3 * S, 13 * S, pal.a(col, 0.85))
-        txt(s, x - 11 * S, y, f, pal.a(pal.INK, 0.95), "right")
-    else
-        rect(x, y - 6.5 * S, 3 * S, 13 * S, pal.a(col, 0.85))
-        txt(s, x + 11 * S, y, f, pal.a(pal.INK, 0.95))
+-- Every line the overlay can draw, and which instrument each one belongs to.
+--
+-- Built rather than drawn directly, because the same list answers two
+-- questions. Holding H draws all of it. Resting the pointer on one instrument
+-- draws that instrument's line and nothing else, and the key it is filed under
+-- is what makes "that one" a thing this file can say.
+local function help_lines(o)
+    local out = {}
+    -- `top` and `bot` are the run of the bar. Given, it is as tall as the
+    -- instrument; left out, it is one line of type tall and the sentence's own
+    -- height is the whole of it.
+    local function add(key, x, y, s, col, align, top, bot)
+        local e = {key = key, x = x, y = y, s = s, col = col, align = align,
+                   top = top, bot = bot}
+        out[#out + 1] = e
+        return e
     end
-end
-
-local function help_overlay(o)
     local sx = anchor.stack_x
     if sx then
         if anchor.gun then
-            help_mark(sx, anchor.gun, "at its rung, and what is bolted on",
-                      pal.FRIEND)
+            add("gun", sx, anchor.gun, "at its rung, and what is bolted on",
+                pal.FRIEND)
         end
         if anchor.bomb then
-            help_mark(sx, anchor.bomb, "a rung buys blast, not damage",
-                      pal.BOMB)
+            add("bomb", sx, anchor.bomb, "a rung buys blast, not damage",
+                pal.BOMB)
         end
         -- One bar down the side of however many charge rows there are, and one
         -- sentence against the middle of it.
         if anchor.chg_top then
-            rect(sx, anchor.chg_top - 6.5 * S, 3 * S,
-                 anchor.chg_bot - anchor.chg_top + 13 * S,
-                 pal.a(pal.CHARGE_COL, 0.85))
-            txt("digits 1 to 4 spend these, top down", sx + 11 * S,
-                (anchor.chg_top + anchor.chg_bot) / 2, (FONT - 1) * S,
-                pal.a(pal.INK, 0.95))
+            add("charges", sx, (anchor.chg_top + anchor.chg_bot) / 2,
+                "digits 1 to 4 spend these, top down", pal.CHARGE_COL, nil,
+                anchor.chg_top - 6.5 * S, anchor.chg_bot + 6.5 * S)
         end
         if anchor.bounty then
-            help_mark(sx, anchor.bounty, "what a kill on you pays", pal.PRIZE)
+            add("bounty", sx, anchor.bounty, "what a kill on you pays",
+                pal.PRIZE)
         end
     end
+    -- Beside the dial and as tall as it, whichever dial it is. The map is four
+    -- times the radar and a bar sized to the sentence would read as a note
+    -- attached to whatever row of the map it happened to land on.
     if anchor.radar then
-        help_mark(anchor.radar[1] - 16 * S, anchor.radar[2],
-                  M.map and "the whole arena, and you as the arrow"
-                  or "near space. the rings are range.",
-                  pal.RADAR_TILE, "right")
-    end
-    -- Not while the map is up. The readouts along the top right start at the
-    -- dial's left edge, and the map is four times the dial, so that edge lands
-    -- near the middle of the screen and the only space left beside `POS` is
-    -- the strip the flags fly in. A word with nowhere to go is not drawn: the
-    -- whole method here is space beside the thing, and when there is none the
-    -- honest answer is to say nothing rather than to print over the flags.
-    if anchor.link and not M.map then
-        help_mark(anchor.link[1] - 16 * S, anchor.link[2],
-                  "your line to the arena", pal.DIM, "right")
+        local top, bot = anchor.radar[2], anchor.radar[3]
+        add("radar", anchor.radar[1] - 16 * S, (top + bot) / 2,
+            M.map and "the whole arena, and you as the arrow"
+            or "near space. the rings are range.",
+            pal.RADAR_TILE, "right", top, bot)
     end
     if anchor.feed then
-        help_mark(anchor.feed[1], anchor.feed[2], "who paid whom",
-                  pal.BOUNTY, "right")
+        local top, bot = anchor.feed[2], anchor.feed[3]
+        add("feed", anchor.feed[1] - 16 * S, (top + bot) / 2, "who paid whom",
+            pal.BOUNTY, "right", top, bot)
     end
-    -- Your own hull is the one in the middle of the screen, and the pip above
-    -- it is the same pip every other hull wears. Projected the way nameplates
-    -- projects, off the half-extents the render script publishes, so the word
-    -- lands on the bar at any camera.
-    if o.half_w and o.half_w > 0 then
-        local scale = W / (2 * o.half_w)
-        help_mark(W / 2 + 13 * scale, H / 2 - 26 * scale,
-                  "armour and ammunition, one pool", pal.FRIEND)
+    return out
+end
+
+-- A bar in the thing's own colour, then the sentence. The bar sits on the side
+-- facing whatever is being named, so it points without a line.
+local function help_draw(e)
+    local top = e.top or (e.y - 6.5 * S)
+    local bot = e.bot or (e.y + 6.5 * S)
+    local f = (FONT - 1) * S
+    if e.align == "right" then
+        rect(e.x - 3 * S, top, 3 * S, bot - top, pal.a(e.col, 0.85))
+        txt(e.s, e.x - 11 * S, e.y, f, pal.a(pal.INK, 0.95), "right")
+    else
+        rect(e.x, top, 3 * S, bot - top, pal.a(e.col, 0.85))
+        txt(e.s, e.x + 11 * S, e.y, f, pal.a(pal.INK, 0.95))
     end
-    -- The one thing the overlay cannot say by pointing at it.
-    txt("let go and it is gone", W / 2, H - 20 * S, (FONT - 3) * S,
-        pal.a(pal.DIM, 0.8), "center")
+end
+
+local function help_overlay(o)
+    for _, e in ipairs(help_lines(o)) do help_draw(e) end
+end
+
+-- The pointer resting on one instrument names that instrument, and nothing
+-- else happens: no wash, no other lines, no key held. Holding H is the whole
+-- screen at once and reads as a mode; this is a question asked of one thing
+-- and has to cost about as much as looking at it.
+local function help_hover(o, key)
+    for _, e in ipairs(help_lines(o)) do
+        if e.key == key then help_draw(e) return end
+    end
 end
 
 function M.hud(o)
@@ -1797,8 +1870,22 @@ function M.hud(o)
     inspect(o, loadout(me, o.class_names, top))
     menu_button()
     vignette(o.hurt or 0)
+    -- The pip over your own hull is not named. A bar that empties as you are
+    -- shot and fills when you stop being shot is the one instrument here that
+    -- explains itself, and a word beside it in the middle of the screen is a
+    -- word in the middle of the fight.
     -- Last, so every word lands on top of the instrument it names.
-    if help then help_overlay(o) end
+    --
+    -- Held wins over hovered. H is a deliberate "explain the screen" and the
+    -- pointer is often somewhere by accident, so a hand resting on the dial
+    -- must not quietly cut the other eight lines out of a mode the player
+    -- asked for.
+    if help then
+        help_overlay(o)
+    elseif not o.menu_open then
+        local key = M.help_at(o.point_x, o.point_y)
+        if key then help_hover(o, key) end
+    end
 
     -- The two big centred lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
@@ -1864,7 +1951,7 @@ local BOARD = {
      {"3", 1, "charge"}, {"4", 1, "charge"}, {"5"}, {"6"}, {"7"}, {"8"},
      {"9"}, {"0"}},
     {{"tab", 1.7, "bomb"}, {"Q", 1, "multi"}, {"W"}, {"E"}, {"R"}, {"T"},
-     {"Y"}, {"U"}, {"I", 1, "scores"}, {"O"}, {"P"}},
+     {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
     {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H", 1, "labels"},
      {"J"}, {"K"}, {"L"}},
     {{"shift", 2.25, "gun"}, {"Z", 1, "gun"}, {"X", 1, "bomb"}, {"C"}, {"V"},
@@ -1897,7 +1984,7 @@ local BOARD_CATS = {
     {key = "multi", word = "multifire"},
     {key = "bomb", word = "bombs"},
     {key = "charge", word = "charges"},
-    {key = "scores", word = "scores"},
+    {key = "players", word = "players"},
     {key = "map", word = "map"},
     {key = "labels", word = "labels"},
     {key = "menu", word = "menu"},
@@ -1913,7 +2000,7 @@ local function board_col(cat)
     if cat == "bomb" then return pal.BOMB end
     if cat == "charge" then return pal.CHARGE_COL end
     if cat == "fly" then return pal.INK end
-    if cat == "scores" then return pal.DOOR end
+    if cat == "players" then return pal.DOOR end
     if cat == "map" then return pal.HOLE end
     if cat == "labels" then return pal.ENEMY end
     if cat == "menu" then return pal.a(pal.DIM, 1.0) end
@@ -2493,7 +2580,7 @@ function M.menu(v)
         rx = margin
         ry_ = H - margin - rh
         sx, sw = margin, W - 2 * margin
-        -- Under the chip row over a game: MENU and INFO hold the top left
+        -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and a title drawn into them is two
         -- words in one place.
         sy = margin + head + (home and 0 or 34 * S)

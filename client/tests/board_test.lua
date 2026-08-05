@@ -114,7 +114,7 @@ check("a touchscreen gets rows, not a picture of keys", #frames == 0,
 -- are the whole of the explanation now that the line of prose naming the
 -- interface keys is gone.
 local LEGEND_WORDS = {}
-for _, w in ipairs({"fly", "guns", "multifire", "bombs", "charges", "scores",
+for _, w in ipairs({"fly", "guns", "multifire", "bombs", "charges", "players",
                     "map", "labels", "menu"}) do
     LEGEND_WORDS[w] = true
 end

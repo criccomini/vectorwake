@@ -54,8 +54,10 @@ local accum = 0
 local feed = {}
 local hurt = 0
 local pickup = nil
--- The line drawn under DESTROYED, and how far up the ladders this hull had
--- climbed when it was still flying.
+-- The card drawn under DESTROYED, how far up the ladders this hull had
+-- climbed when it was still flying, and whether it has been dead since the
+-- card was set: the card is cleared on the way back up, so `was_dead` is the
+-- edge detector.
 --
 -- `carried` is sampled every frame rather than read at the death, because a
 -- death clears every rung and add-on in the same tick it lands: asking
@@ -63,6 +65,7 @@ local pickup = nil
 -- is what the corner panel already spends drawing the same numbers.
 local tip = nil
 local carried = 0
+local was_dead = false
 -- Per-seat bank state, described where it is used further down. Declared up
 -- here because go_home clears it, and a local declared below the function that
 -- reads it is not the same variable: the function closes over a global that is
@@ -390,9 +393,10 @@ function go_home(self, at)
     pickup = nil
     hurt = 0
     -- The next room is a fresh start for the tips as well: its first death
-    -- gets the first line rather than wherever the last room left the cycle.
+    -- gets the first card rather than wherever the last room left the cycle.
     tip = nil
     carried = 0
+    was_dead = false
     tips.reset()
     -- A box about somebody in the room you just left describes a seat number
     -- that the next room will have dealt to a stranger.
@@ -1093,11 +1097,18 @@ function update(self, dt)
         -- clear it. Rungs and add-ons together: both are greens, and a pilot
         -- who lost a fan and a level lost two things.
         --
-        -- Flying again is what takes the line down. The state says so
-        -- directly, so this needs no timer of its own and cannot leave a box
-        -- on screen over a living ship.
+        -- Flying again is what takes the card down, and it has to be the
+        -- edge of that, not the state. The zone announces a kill every tick
+        -- but packs a snapshot one tick in five, and a shot fired and landing
+        -- between snapshots is one this client never simulated, so the
+        -- announcement can arrive while the local hull is still alive. A
+        -- clear that ran on every living frame wiped the card in the same
+        -- frame drain_kills set it, and whether a death showed its card came
+        -- down to which of two messages won a forty millisecond race. Close
+        -- range lost it, which is why it looked intermittent.
         if sim.ship_alive(me) == 1 then
-            tip = nil
+            if was_dead then tip = nil end
+            was_dead = false
             local n = 0
             for t2 = 0, sim.TRIG_COUNT - 1 do
                 n = n + sim.ship_level(me, t2)
@@ -1106,6 +1117,8 @@ function update(self, dt)
                 end
             end
             carried = n
+        else
+            was_dead = true
         end
         -- Which charge slots this hull carries, and how many of each are in
         -- hand. The pads are built from this, so a hull with none draws none
@@ -1139,6 +1152,13 @@ function update(self, dt)
         ui.help = held[hash("help")] or false
         ui.hud({
             me = me, class_names = CLASS_NAMES, menu_open = menu.open,
+            -- Where the pointer is, in the interface's own coordinates, so an
+            -- instrument under it can name itself. A touchscreen has no
+            -- pointer and sends none; there is nothing to hover with and a
+            -- thumb is already busy being a control.
+            point_x = (not touch.used) and self.cursor_x or nil,
+            point_y = (not touch.used) and self.cursor_y
+                      and (wh - self.cursor_y) or nil,
             -- The server's roster, because those are other people's names and
             -- only it knows them.
             pilots = net.pilots,
@@ -1195,6 +1215,11 @@ function update(self, dt)
         local ok, out = pcall(html5.run, "window.vwPointerOut?1:0")
         local a = math.min(1, (CURSOR_HOLD + CURSOR_FADE - self.cursor_idle)
                               / CURSOR_FADE)
+        -- The word a hovered instrument shows lives and dies with the arrow.
+        -- Retiring the position is what takes it away, since the interface is
+        -- handed a pointer only while there is one: a hand that has gone still
+        -- has stopped asking, and the screen goes quiet with it. Moving the
+        -- mouse brings back the arrow and the word together.
         if (ok and out == "1") or a <= 0 then
             self.cursor_x, self.cursor_y = nil, nil
         else
