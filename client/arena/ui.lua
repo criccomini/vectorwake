@@ -45,6 +45,10 @@ local RADAR = 168
 
 M.hits = {}            -- clickable rectangles the menu published, top-left px
 M.map = false          -- the whole map, in the radar's corner
+-- How many hulls the ship page last drew across, for whoever moves a cursor
+-- around it. Set by the drawing, because how many fit is a fact about the
+-- window and nothing outside this file knows the window.
+M.stage_cols = 4
 -- Which pilot is being read about, by ship index, or nil. One at a time: this
 -- answers "who is that", and two of them open at once is a filing cabinet.
 M.inspect = nil
@@ -1958,15 +1962,15 @@ end
 -- Widths are in key units so the board scales with the panel. The rows are
 -- the standard board's, minus the function row nothing binds.
 local BOARD = {
-    {{"esc", 1.3, "ui"}, {"1", 1, "charge"}, {"2", 1, "charge"},
+    {{"esc", 1.3, "menu"}, {"1", 1, "charge"}, {"2", 1, "charge"},
      {"3", 1, "charge"}, {"4", 1, "charge"}, {"5"}, {"6"}, {"7"}, {"8"},
      {"9"}, {"0"}},
-    {{"tab", 1.7, "bomb"}, {"Q", 1, "ui"}, {"W"}, {"E"}, {"R"}, {"T"}, {"Y"},
-     {"U"}, {"I", 1, "ui"}, {"O"}, {"P"}},
-    {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H", 1, "ui"}, {"J"},
-     {"K"}, {"L"}},
+    {{"tab", 1.7, "bomb"}, {"Q", 1, "multi"}, {"W"}, {"E"}, {"R"}, {"T"},
+     {"Y"}, {"U"}, {"I", 1, "scores"}, {"O"}, {"P"}},
+    {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H", 1, "labels"},
+     {"J"}, {"K"}, {"L"}},
     {{"shift", 2.25, "gun"}, {"Z", 1, "gun"}, {"X", 1, "bomb"}, {"C"}, {"V"},
-     {"B"}, {"N"}, {"M", 1, "ui"}},
+     {"B"}, {"N"}, {"M", 1, "map"}},
     {{"ctrl", 1.6, "gun2"}, {"space", 6.2, "gun"}},
 }
 -- The board is 12.4 units across, and the arrow cluster hangs off its right
@@ -1985,36 +1989,108 @@ local CAP_SIZE = 0.30     -- the caption lines under the legend
 local CAP_PITCH = 0.46
 
 -- What each colour means, in the order the legend reads.
+--
+-- Every lit key is on this list, which is the point of it: the three keys
+-- that open something used to share one grey and a line of prose naming them
+-- one after another, so the picture said "these do interface things" and the
+-- caption did the actual work. A colour apiece and a word in the legend says
+-- it once.
 local BOARD_CATS = {
     {key = "fly", word = "fly"},
     {key = "gun", word = "guns"},
+    {key = "multi", word = "multifire"},
     {key = "bomb", word = "bombs"},
     {key = "charge", word = "charges"},
+    {key = "scores", word = "scores"},
+    {key = "map", word = "map"},
+    {key = "labels", word = "labels"},
+    {key = "menu", word = "menu"},
 }
 
--- What a drawing of a keyboard cannot say, in as few lines as it can be said.
+-- Hues nothing else in the legend is wearing, which is what a legend needs
+-- and all it needs. Multifire takes the colour the green that grants it is
+-- drawn in, so the one key that is a gun in a different mode reads as a
+-- relative of the guns rather than as a separate weapon.
+local function board_col(cat)
+    if cat == "gun" or cat == "gun2" then return pal.FRIEND end
+    if cat == "multi" then return pal.MOD_COL end
+    if cat == "bomb" then return pal.BOMB end
+    if cat == "charge" then return pal.CHARGE_COL end
+    if cat == "fly" then return pal.INK end
+    if cat == "scores" then return pal.DOOR end
+    if cat == "map" then return pal.HOLE end
+    if cat == "labels" then return pal.ENEMY end
+    if cat == "menu" then return pal.a(pal.DIM, 1.0) end
+    return nil
+end
+
+-- What a drawing cannot say, in as few lines as it can be said. Every key
+-- that does a thing has a colour and a word in the legend instead, so what
+-- is left here is the two facts a swatch cannot carry: which digit is which
+-- charge, and that a key is held rather than pressed.
+--
 -- Up here rather than inside `board` because the panel has to be sized before
--- it is drawn, and a count written twice is a count that goes stale: adding
--- the line about H to the list and leaving a 4 in the height is exactly the
--- kind of drift this file has been bitten by.
+-- it is drawn, and a count written twice is a count that goes stale.
+--
+-- No line longer than the longest already here: the captions are set off the
+-- key size, and at 700 points across a line of 69 characters runs off the
+-- right of the board. board_test measures exactly that.
 local BOARD_CAPS = {
-    "mouse: left guns, right bombs, wheel scrolls lists",
-    "Q holds a multifire gun to one shot; I scores, M map, esc menu",
     "1 to 4 spend the charges as the corner stack lists them",
-    -- No longer than the longest line already here: the captions are set off
-    -- the key size now, and at 700 points across a line of 69 characters runs
-    -- off the right of the board. board_test measures exactly that.
     "hold H and the screen names its own parts",
     "in fullscreen ctrl joins the guns, where the browser allows it",
 }
 
-local function board_col(cat)
-    if cat == "gun" then return pal.FRIEND end
-    if cat == "bomb" then return pal.BOMB end
-    if cat == "charge" then return pal.CHARGE_COL end
-    if cat == "fly" then return pal.INK end
-    if cat == "ui" then return pal.a(pal.DIM, 1.0) end
-    return nil
+-- The legend, sized off the key like everything else here so a wide board
+-- does not end up captioned in type meant for a narrow one.
+local LEG_GAP = 8         -- * S, between legend lines
+
+local function legend_size(kh)
+    return math.max((FONT - 3) * S, kh * 0.34)
+end
+
+local function entry_w(word, lsize)
+    return lsize * 0.7 + 6 * S + text_w(word, lsize) + 18 * S
+end
+
+local function pack_legend(w, lsize)
+    local lines, line, used = {}, {}, 0
+    for _, c in ipairs(BOARD_CATS) do
+        local ew = entry_w(c.word, lsize)
+        if #line > 0 and used + ew > w then
+            lines[#lines + 1] = line
+            line, used = {}, 0
+        end
+        line[#line + 1] = c
+        used = used + ew
+    end
+    if #line > 0 then lines[#lines + 1] = line end
+    return lines
+end
+
+-- How the legend falls into lines at this width, as a list of lines. Nine
+-- words and their swatches do not fit across every board, and one that ran off
+-- the edge would take the last of them with it, which are the ones nothing
+-- else on the page explains.
+--
+-- Filled to the edge and then wrapped, the ninth word sits alone under a full
+-- line and reads as a mistake, so the lines are evened out instead: pack to
+-- the share each line would carry, then let that share grow until it fits
+-- back into the number of lines the width allows.
+local function legend_lines(w, lsize)
+    local want = #pack_legend(w, lsize)
+    if want < 2 then return pack_legend(w, lsize) end
+    local total = 0
+    for _, c in ipairs(BOARD_CATS) do
+        total = total + entry_w(c.word, lsize)
+    end
+    local try = total / want
+    while try < w do
+        local lines = pack_legend(try, lsize)
+        if #lines <= want then return lines end
+        try = try * 1.04
+    end
+    return pack_legend(w, lsize)
 end
 
 -- One key: an outline in its function's colour with a hint of fill, or a
@@ -2083,24 +2159,26 @@ local function board(x, top, w)
         board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4], pal.a(fly, 0.95))
     end
 
-    -- The legend: a swatch per colour, one line. Sized off the key like
-    -- everything else here, so a wide board does not end up captioned in
-    -- type meant for a narrow one.
-    local lsize = math.max((FONT - 3) * S, kh * 0.34)
+    -- The legend, laid out where it was measured: same call, same answer, so
+    -- a page sized for two lines cannot be drawn with three.
+    local lsize = legend_size(kh)
     local sw = lsize * 0.7
     local ly = top + 5 * pitch + 10 * S
-    local lx = x
-    for _, c in ipairs(BOARD_CATS) do
-        local col = board_col(c.key)
-        rect(lx, ly + lsize * 0.2, sw, sw, pal.a(col, 0.9))
-        txt(c.word, lx + sw + 6 * S, ly + lsize / 2, lsize,
-            pal.a(pal.DIM, 0.95))
-        lx = lx + sw + 6 * S + text_w(c.word, lsize) + 18 * S
+    for _, line in ipairs(legend_lines(w, lsize)) do
+        local lx = x
+        for _, c in ipairs(line) do
+            local col = board_col(c.key)
+            rect(lx, ly + lsize * 0.2, sw, sw, pal.a(col, 0.9))
+            txt(c.word, lx + sw + 6 * S, ly + lsize / 2, lsize,
+                pal.a(pal.DIM, 0.95))
+            lx = lx + entry_w(c.word, lsize)
+        end
+        ly = ly + lsize + LEG_GAP * S
     end
 
     local csize = math.max((FONT - 3) * S, kh * CAP_SIZE)
     local cpitch = math.max(14 * S, kh * CAP_PITCH)
-    local cy = ly + lsize + 12 * S
+    local cy = ly + 4 * S
     for _, line in ipairs(BOARD_CAPS) do
         txt(line, x, cy, csize, pal.a(pal.DIM, 0.85))
         cy = cy + cpitch
@@ -2110,14 +2188,16 @@ end
 
 -- What the board will ask for, so the panel can be sized before drawing it.
 -- Every term here is one the drawing uses, in the same order it uses them:
--- five key rows, the gap to the legend, the legend, and the captions, counted
--- off the list itself rather than written down a second time.
+-- five key rows, the gap to the legend, however many lines the legend falls
+-- into at this width, and the captions, counted off the list itself rather
+-- than written down a second time.
 local function board_height(w)
     local kh = (w / BOARD_UNITS) * 0.82
-    local lsize = math.max((FONT - 3) * S, kh * 0.34)
+    local lsize = legend_size(kh)
     local cpitch = math.max(14 * S, kh * CAP_PITCH)
-    return 5 * (kh + 3 * S) + 10 * S + lsize + 12 * S
-           + #BOARD_CAPS * cpitch + 2 * S
+    return 5 * (kh + 3 * S) + 10 * S
+        + #legend_lines(w, lsize) * (lsize + LEG_GAP * S) + 4 * S
+        + #BOARD_CAPS * cpitch + 2 * S
 end
 
 -- --- the menu -------------------------------------------------------------
@@ -2149,7 +2229,8 @@ end
 -- The five inputs are unchanged, and so are the sounds: up and down move,
 -- right or enter goes in, left or escape comes back. A pointer may land on
 -- either half, which is the one thing the keyboard cannot do and the reason
--- the stage publishes its own hit boxes.
+-- the stage publishes its own hit boxes. Resting on a row is the other: it
+-- lights, because it moves the same cursor the arrows move.
 
 local MENU_FONT = "menu"
 
@@ -2162,11 +2243,30 @@ local MENU_FONT = "menu"
 -- shape has to carry a meaning on its own -- so each one is a picture of the
 -- thing it opens, not a symbol somebody has to learn.
 
-local function mark_play(cx, cy, r, col)
-    local pts = {cx - r * 0.55, ry(cy - r * 0.8), cx + r * 0.9, ry(cy),
-                 cx - r * 0.55, ry(cy + r * 0.8)}
-    u:fan(pts, pal.a(col, 0.16))
-    u:outline(pts, 1.3 * S, col, true)
+local function mark_zones(cx, cy, r, col)
+    -- Rooms, and the lines between them: the stop opens the list of games a
+    -- directory is relaying, so the mark is that list. Three of them, the one
+    -- you are in filled and holding the lines, the others open.
+    --
+    -- It wore a triangle before, which is the mark every media player in the
+    -- world puts on the thing that starts a video. It promised a button and
+    -- led to a list of places. A box with a cross in it was tried next and
+    -- read worse: a plus inside a frame is what every interface draws on the
+    -- control that makes a new one.
+    local n = {{-0.8, 0.5, 0.24}, {0.0, -0.8, 0.21}, {0.78, 0.46, 0.33}}
+    local hub = n[#n]
+    for i = 1, #n - 1 do
+        u:seg(cx + hub[1] * r, ry(cy + hub[2] * r), cx + n[i][1] * r,
+              ry(cy + n[i][2] * r), 1.1 * S, pal.a(col, 0.4), true)
+    end
+    for _, a in ipairs(n) do
+        local px, py, rad = cx + a[1] * r, cy + a[2] * r, a[3] * r
+        if a == hub then
+            u:disc(px, ry(py), rad, 12, col)
+        else
+            u:ring(px, ry(py), rad, 1.2 * S, 10, pal.a(col, 0.85))
+        end
+    end
 end
 
 local function mark_pilot(cx, cy, r, col)
@@ -2244,7 +2344,7 @@ local function mark_ship(cx, cy, r, col, cls)
     thumb(cx, cy, cls or 0, col, r / 17)
 end
 
-local MARKS = {play = mark_play, pilot = mark_pilot, team = mark_team,
+local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                settings = mark_settings, help = mark_help, about = mark_about,
                leave = mark_leave}
 
@@ -2282,22 +2382,28 @@ end
 
 -- One row of the stage: a mark for the one you are on, the name, and
 -- whatever the row has to say about itself on the right.
-local function stage_row(x, y, w, h, r, sel, focused, live)
+--
+-- `hot` is the cursor, from either hand: the row the arrows are on while the
+-- stage has them, or the row a pointer is resting on.
+local function stage_row(x, y, w, h, r, hot)
     local col = r.mark and pal.FRIEND or pal.INK
-    if sel and focused then
-        rect(x, y, w, h, pal.a(pal.FRIEND, 0.09))
-        bracket(x, y, w, h, pal.a(pal.FRIEND, 0.9), 12 * S, 4 * S)
-    elseif sel then
-        rect(x, y, w, h, pal.a(pal.INK, 0.04))
-    end
-    local tx = x + 16 * S
+    -- The cursor is a field of team blue across the row, and only that. It
+    -- was a field with a chamfered bracket drawn around it, which is two
+    -- marks saying one thing, and the corners cut the row into a box in a
+    -- panel that has no boxes anywhere else in it.
+    if hot then rect(x, y, w, h, pal.a(pal.FRIEND, 0.16)) end
+    -- One text column, whatever the row is. The wedge that says "this is the
+    -- one you are already on" hangs in the margin to the left of it: drawn
+    -- inline it pushed its own label fifteen points right of every other
+    -- label, so the one row worth finding was the one out of line.
+    local tx = x + 30 * S
     if r.mark then
-        -- Where you already are: a lit wedge, the same one the corner stack
-        -- uses to say a slot is the ready one.
-        u:tri(tx, ry(y + h / 2 - 4.5 * S), tx + 7 * S, ry(y + h / 2),
-              tx, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
-        tx = tx + 15 * S
+        -- A lit wedge, the same one the corner stack uses to say a slot is
+        -- the ready one.
+        u:tri(x + 11 * S, ry(y + h / 2 - 4.5 * S), x + 18 * S, ry(y + h / 2),
+              x + 11 * S, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
     end
+    local sel = hot or r.mark
     local size = (M.compact and 17 or 18) * S
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
@@ -2306,7 +2412,7 @@ local function stage_row(x, y, w, h, r, sel, focused, live)
         and text_w(r.detail, 12 * S) > w - 32 * S - (tx - x) - 12 * S
     if not two_line then
         txt(r.label or "", tx, y + h / 2, size,
-            pal.a(col, (sel or r.mark) and 1 or 0.82), nil, MENU_FONT)
+            pal.a(col, sel and 1 or 0.82), nil, MENU_FONT)
     end
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
@@ -2348,7 +2454,7 @@ local function stage_row(x, y, w, h, r, sel, focused, live)
         -- at all, the day somebody edits one of them.
         if two_line then
             txt(r.label or "", tx, y + h * 0.32, size,
-                pal.a(col, (sel or r.mark) and 1 or 0.82), nil, MENU_FONT)
+                pal.a(col, sel and 1 or 0.82), nil, MENU_FONT)
             txt(r.detail, tx, y + h * 0.70, 11 * S, pal.a(pal.DIM, 0.9))
         else
             txt(r.detail, x + w - 16 * S, y + h / 2, 12 * S,
@@ -2364,6 +2470,10 @@ local function ship_grid(x, y, w, h, v, focused)
     local n = #v.rows
     if n == 0 then return end
     local cols = (w / S >= 420) and 4 or 2
+    -- How wide the grid came out, for whoever has to move a cursor around it.
+    -- The arrows mean a column and a row, and only the drawing knows how many
+    -- columns a window of this width got.
+    M.stage_cols = cols
     local rowsn = math.ceil(n / cols)
     local cw = w / cols
     local ch = math.min(h / rowsn, (M.compact and 92 or 104) * S)
@@ -2374,20 +2484,22 @@ local function ship_grid(x, y, w, h, v, focused)
         local c, rr = (i - 1) % cols, math.floor((i - 1) / cols)
         local cx = x + c * cw + cw / 2
         local cy = y + rr * ch + ch / 2
-        local sel = (i == v.sel)
+        local hot = (focused and i == v.sel) or i == v.hover
         local col = r.mark and pal.FRIEND or pal.INK
-        if sel and focused then
-            bracket(x + c * cw + 4 * S, y + rr * ch + 2 * S, cw - 8 * S,
-                    ch - 4 * S, pal.a(pal.FRIEND, 0.9), 12 * S, 4 * S)
-        end
+        -- The hull you are flying keeps a wash of its own, so a cursor moved
+        -- off it does not take the answer to "which one am I in" with it.
         if r.mark then
             rect(x + c * cw + 4 * S, y + rr * ch + 2 * S, cw - 8 * S,
                  ch - 4 * S, pal.a(pal.FRIEND, 0.07))
         end
+        if hot then
+            rect(x + c * cw + 4 * S, y + rr * ch + 2 * S, cw - 8 * S,
+                 ch - 4 * S, pal.a(pal.FRIEND, 0.14))
+        end
         thumb(cx, cy - ch * 0.12, r.hull or 0,
-              pal.a(col, (sel or r.mark) and 1 or 0.7), ch / 116)
+              pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116)
         txt(r.label or "", cx, cy + ch * 0.30, (M.compact and 14 or 15) * S,
-            pal.a(col, (sel or r.mark) and 1 or 0.8), "center", MENU_FONT)
+            pal.a(col, (hot or r.mark) and 1 or 0.8), "center", MENU_FONT)
         if r.role then
             txt(r.role, cx, cy + ch * 0.44, 10 * S, pal.a(pal.DIM, 0.9),
                 "center")
@@ -2617,7 +2729,13 @@ function M.menu(v)
         for i = first, math.min(#v.rows, first + fits - 1) do
             local r = v.rows[i]
             local y = ty + (i - first) * rowh
-            stage_row(sx, y, lw, rowh, r, i == v.sel, focused)
+            -- The cursor, from whichever hand is on it. A pointer resting on
+            -- a row of a page moves the cursor there rather than lighting a
+            -- second row, so `hover` only ever arrives on the home screen,
+            -- where the cursor belongs to the rail and the stage is a preview
+            -- of what the mark beside it holds.
+            stage_row(sx, y, lw, rowh, r, (focused and i == v.sel)
+                                          or i == v.hover)
             if r.pick then hit(sx, y, lw, rowh, "stage", i) end
         end
         -- What is off the ends, as the same tick the map border uses. It says
@@ -2636,15 +2754,15 @@ function M.menu(v)
     end
 
     -- One line at the foot of the stage: why something did not work, or what
-    -- the thing under the cursor is, or how to work the menu. In that order,
-    -- because that is the order they matter in.
-    local by = sy + sh - 4 * S
+    -- the thing under the cursor is. Nothing when there is neither. It used to
+    -- fall back to naming the keys, which is a caption on a rail whose whole
+    -- argument is that a lit mark says where you are without one, and it was
+    -- drawn on a phone that has none of those keys, under a list you get
+    -- around by touching it.
     local foot = v.note or v.hint
     if foot then
-        txt(foot, sx, by, 12 * S,
+        txt(foot, sx, sy + sh - 4 * S, 12 * S,
             pal.a(v.note and pal.HURT or pal.DIM, 0.95))
-    elseif not narrow then
-        txt("up down  ·  enter  ·  esc", sx, by, 11 * S, pal.a(pal.DIM, 0.6))
     end
 end
 

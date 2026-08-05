@@ -33,8 +33,8 @@ end
 layer.frame = function(_, x, y, w, h)
     frames[#frames + 1] = {x = x, y = H - y - h, w = w, h = h}
 end
-layer.rect = function(_, x, y, w, h)
-    rects[#rects + 1] = {x = x, y = H - y - h, w = w, h = h}
+layer.rect = function(_, x, y, w, h, col)
+    rects[#rects + 1] = {x = x, y = H - y - h, w = w, h = h, col = col}
 end
 layer.seg = function(_, x0, y0, x1, y1)
     segs[#segs + 1] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1}
@@ -53,10 +53,26 @@ package.loaded["arena.world"] = {build_overview = noop, forget_overview = noop,
                                  end})}
 
 local ui = require("arena.ui")
+local pal = require("arena.palette")
 
 local RAIL = {}
-for i, n in ipairs({"play", "ship", "pilot", "settings", "help", "about"}) do
+for i, n in ipairs({"zones", "ship", "pilot", "settings", "help", "about"}) do
     RAIL[i] = {label = n, icon = n, index = i}
+end
+
+-- The cursor, as the drawing makes it: a field of team blue across the row it
+-- is on. Counted by colour, since the rail's own lit stop and the wash a
+-- marked row carries are the same blue at a lighter weight.
+local function cursors()
+    local n = 0
+    for _, r in ipairs(rects) do
+        local c = r.col
+        if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
+           and c[4] > 0.12 and c[4] < 0.2 then
+            n = n + 1
+        end
+    end
+    return n
 end
 
 local function draw(view, w, h, touching)
@@ -107,7 +123,7 @@ for _, h in ipairs(ui.hits) do
 end
 check("and not as a row of whatever page is showing", as_rows == 0,
       as_rows .. " rail stops published as rows")
-check("the rail names its stops", has(st, "play") and has(st, "about"))
+check("the rail names its stops", has(st, "zones") and has(st, "about"))
 check("the stage shows what the rail points at", has(st, "zone1"))
 
 -- --- the rail does not move when you go a level in ------------------------
@@ -150,22 +166,30 @@ end
 -- `sel` counts rail stops at this level. A stage that highlighted row `sel`
 -- put a cursor on the second hull while the arrow keys moved the rail.
 
--- The cursor is a bracket, and a bracket is segs. Drawing the same view
--- focused and unfocused must differ by exactly that.
-check("a previewed stage draws no cursor bracket",
-      (function()
-          -- with focus on the rail nothing in the stage may be bracketed:
-          -- the bracket is drawn only when `sel and focused`.
-          local view = {title = "v", stage_title = "ship", depth = 1, sel = 2,
-                        rail = RAIL, rail_sel = 2, focus = "rail",
-                        home = true, closable = false, rows = rows}
-          draw(view)
-          local a = #segs
-          view.focus = "stage"
-          view.sel = 2
-          draw(view)
-          return #segs > a
-      end)(), "focused and unfocused drew the same")
+local preview = {title = "v", stage_title = "ship", depth = 1, sel = 2,
+                 rail = RAIL, rail_sel = 2, focus = "rail",
+                 home = true, closable = false, rows = rows}
+draw(preview)
+check("a previewed stage draws no cursor", cursors() == 0,
+      cursors() .. " rows lit while the cursor is on the rail")
+preview.focus = "stage"
+draw(preview)
+check("and the page it opens draws exactly one", cursors() == 1,
+      cursors() .. " rows lit")
+preview.focus = "rail"
+
+-- --- a pointer resting on a row lights it ----------------------------------
+--
+-- The one thing the keyboard cannot say. In a preview the cursor belongs to
+-- the rail, so the row under the pointer is the only thing that can tell you
+-- what a click would land on; one level in the hover has already moved the
+-- cursor and `hover` never arrives.
+
+preview.hover = 3
+draw(preview)
+check("a pointer lights the row it rests on", cursors() == 1,
+      cursors() .. " rows lit")
+preview.hover = nil
 
 -- --- a long list scrolls rather than stopping -----------------------------
 
@@ -215,22 +239,56 @@ end
 
 -- --- settings draw as steps rather than words -----------------------------
 
-draw({title = "v", stage_title = "settings", depth = 2, sel = 1,
-      rail = RAIL, rail_sel = 4, focus = "stage", home = false,
-      closable = true,
-      rows = {{label = "sound", detail = "half", choice = 3, choices = 4,
-               index = 1, pick = true}}})
-local steps = 0
-for _, f in ipairs(frames) do
-    if math.abs(f.h - 10) < 0.01 then steps = steps + 1 end
+local function setting(choice, choices)
+    draw({title = "v", stage_title = "settings", depth = 2, sel = 1,
+          rail = RAIL, rail_sel = 4, focus = "stage", home = false,
+          closable = true,
+          rows = {{label = "sound", detail = "half", choice = choice,
+                   choices = choices, index = 1, pick = true}}})
+    local steps, lit = 0, 0
+    for _, f in ipairs(frames) do
+        if math.abs(f.h - 10) < 0.01 then steps = steps + 1 end
+    end
+    for _, r in ipairs(rects) do
+        if math.abs(r.h - 10) < 0.01 then lit = lit + 1 end
+    end
+    return steps, lit
 end
-local lit = 0
-for _, r in ipairs(rects) do
-    if math.abs(r.h - 10) < 0.01 then lit = lit + 1 end
-end
-check("a setting draws one step per value", steps + lit == 4,
+
+local steps, lit = setting(2, 3)
+check("a setting draws one step per value", steps + lit == 3,
       steps .. " outlined, " .. lit .. " filled")
-check("and lights the one it is on", lit == 3, lit .. " filled")
+check("and lights the one it is on", lit == 2, lit .. " filled")
+
+-- Off is an empty range rather than the first value of one. A control that
+-- lights a box for silence says it is doing a little of something while doing
+-- none of it, and that is the state somebody sets deliberately and then comes
+-- back to wondering about.
+steps, lit = setting(0, 3)
+check("a setting at nothing lights nothing", lit == 0 and steps == 3,
+      steps .. " outlined, " .. lit .. " filled")
+
+-- --- the mark hangs off the column rather than moving it ------------------
+--
+-- The wedge that says "this is the game you are in" used to be drawn inline
+-- and push its own label fifteen points right of every other label on the
+-- page, so the one row worth finding was the one out of line with the rest.
+
+local marked = draw({title = "v", stage_title = "zones", depth = 2, sel = 1,
+                     rail = RAIL, rail_sel = 1, focus = "stage", home = false,
+                     closable = true,
+                     rows = {{label = "alpha", index = 1, pick = true,
+                              mark = true},
+                             {label = "chaos", index = 2, pick = true}}})
+local ax, cx
+for i = 1, marked.n do
+    local t = marked.text[i]
+    if t.s == "alpha" then ax = t.x end
+    if t.s == "chaos" then cx = t.x end
+end
+check("a marked row keeps the column every other row is in",
+      ax and cx and math.abs(ax - cx) < 0.01,
+      string.format("marked at %s, plain at %s", tostring(ax), tostring(cx)))
 
 -- --- a long value does not run under the label it belongs to -------------
 --

@@ -19,6 +19,10 @@
 -- A two-pane menu reads better on a desktop and falls apart at 390 points
 -- wide.
 --
+-- The hulls are the one page laid out in two dimensions rather than one, so
+-- there the arrows mean a column and a row and only enter picks. See `grid`
+-- on the node and the branch it takes in `step`.
+--
 -- Selection only, still: this decides nothing and steps nothing. It reports
 -- an action and arena.script carries it out.
 
@@ -39,7 +43,13 @@ M.pending = nil         -- the hull a row just asked for
 M.chosen = nil          -- the game a row just asked for
 M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
+M.hover = nil           -- the stage row a pointer is resting on
 M.note = nil            -- set by the arena when a connection fails
+-- How many hulls the ship page is drawing across, set by whoever draws it.
+-- The page is a grid rather than a list and its arrows have to mean what a
+-- grid's arrows mean, which needs the one number this file cannot work out
+-- for itself: that depends on the width of a window.
+M.cols = 4
 
 -- Who you are, where the games are, and which one you were in last.
 --
@@ -262,7 +272,7 @@ end
 local NODES = {
     root = {title = "vectorwake", rows = function()
         local rows = {
-            {label = "play", icon = "play", detail = function()
+            {label = "zones", icon = "zones", detail = function()
                 if M.zone ~= "" then return M.zone end
                 return "choose a game"
             end, go = "zones"},
@@ -287,9 +297,13 @@ local NODES = {
         return rows
     end},
 
-    ship = {title = "ship", rows = hull_rows()},
+    -- A grid, not a list: the hulls are drawings laid out in rows and columns,
+    -- so left and right are a column apart and up and down are a row apart.
+    -- Nothing else in the tree is, which is why it is a flag on the node
+    -- rather than a rule about pages.
+    ship = {title = "ship", grid = true, rows = hull_rows()},
 
-    zones = {title = "games", rows = zone_rows},
+    zones = {title = "zones", rows = zone_rows},
 
     teams = {title = "team", rows = team_rows},
 
@@ -327,16 +341,24 @@ local NODES = {
         return rows
     end},
 
-    -- Settings carry a `choice` -- where a value sits along its range -- as
-    -- well as the word for it. The interface draws the range as steps and
-    -- lights the one it is on, which says "two of four" in the shape of the
-    -- thing rather than in a word that has to be read and compared against
-    -- the word on the row above.
+    -- Settings carry a `choice`, where a value sits along its range, as well
+    -- as the word for it. The interface draws the range as steps and lights
+    -- the one it is on, which says "two of three" in the shape of the thing
+    -- rather than in a word that has to be read and compared against the word
+    -- on the row above.
+    --
+    -- Sound and music count their steps from off rather than from their first
+    -- value, so silence is an empty range: three boxes with nothing in them.
+    -- Lighting a box for off is a control saying it is doing a little of
+    -- something while doing none of it, and that is the state somebody sets
+    -- deliberately and then comes back wondering about.
     settings = {title = "settings", rows = {
         {label = "sound", detail = function() return VOLUMES[M.volume][2] end,
-         choice = function() return M.volume, #VOLUMES end, act = "volume"},
+         choice = function() return M.volume - 1, #VOLUMES - 1 end,
+         act = "volume"},
         {label = "music", detail = function() return MUSICS[M.music][2] end,
-         choice = function() return M.music, #MUSICS end, act = "music"},
+         choice = function() return M.music - 1, #MUSICS - 1 end,
+         act = "music"},
         {label = "frames", detail = function()
             if not M.can_cap then return "as the display asks" end
             return CAPS[M.cap][2]
@@ -463,6 +485,7 @@ function M.close()
     if M.home then return false end
     M.open = false
     M.stack = {"root"}
+    M.hover = nil
     -- The row as well as the level. Resetting only the stack left the root
     -- sitting on whatever was last chosen there, so escape-then-enter went
     -- wherever you went last time rather than into the first row, the same
@@ -567,6 +590,12 @@ function M.view()
     if #M.stack == 1 then
         out.rail_sel = sel
         out.focus = "rail"
+        -- The row a pointer is resting on. Only here: one level in the stage
+        -- has the cursor, and a hover moves that cursor rather than lighting
+        -- a second row beside it. At the root the cursor is on the rail, so
+        -- the only thing that can say what a click would land on is the
+        -- pointer itself.
+        out.hover = M.hover
         -- What the destination under the cursor holds, drawn in the stage
         -- beside the rail rather than after a keystroke. Moving down a rail
         -- that shows you what each stop contains is one gesture; moving down
@@ -700,14 +729,49 @@ end
 function M.step(keys)
     if not M.open then return nil, false end
 
-    if keys.back or keys.left then return back() end
-
     local id = M.stack[#M.stack]
     -- Built once. A node's rows may be a function, and asking it three times
     -- to move a cursor one row is three lists allocated to answer one
     -- keystroke.
-    local rows = rows_of(node())
+    local nd = node()
+    local rows = rows_of(nd)
     local n = #rows
+
+    -- A grid reads its own arrows. Everywhere else right is enter, which is
+    -- what a one-column list wants and exactly wrong on a page laid out in
+    -- four: pressing right to look at the hull beside this one flew it
+    -- instead, and down, which should have gone to the row below, went one
+    -- ship to the right. Enter is still the only thing that picks.
+    if nd.grid and #M.stack > 1 and n > 0 then
+        local cols = math.max(1, math.min(M.cols, n))
+        local i = row_index(rows)
+        if keys.back then return back() end
+        -- Left off the first column is the way out, which is what left means
+        -- on every other page. Inside the grid it is one ship back.
+        if keys.left then
+            if (i - 1) % cols == 0 then return back() end
+            M.sel[id] = i - 1
+            return nil, true
+        end
+        if keys.right then
+            if (i - 1) % cols == cols - 1 or i >= n then return nil, false end
+            M.sel[id] = i + 1
+            return nil, true
+        end
+        if keys.up then
+            M.sel[id] = (i - 1 - cols) % n + 1
+            return nil, true
+        end
+        if keys.down then
+            M.sel[id] = (i - 1 + cols) % n + 1
+            return nil, true
+        end
+        if keys.go then return activate(), true end
+        return nil, false
+    end
+
+    if keys.back or keys.left then return back() end
+
     if keys.up then
         M.sel[id] = (row_index(rows) - 2) % n + 1
         return nil, true
@@ -737,6 +801,29 @@ function M.click_rail(index)
     M.sel.root = index
     M.note = nil
     return activate(), true
+end
+
+-- A pointer came to rest on a row of the stage, or on none. It moves the
+-- cursor, which is what up and down do, so the two hands are driving one
+-- highlight rather than lighting a row each.
+--
+-- Only on a change. A pointer left lying on a row would otherwise put the
+-- cursor back on it every frame, and the arrow keys would not be able to
+-- leave the row the mouse happens to be over.
+--
+-- Reports whether it landed somewhere, so the caller can make the same noise
+-- a key does. Leaving a row is silent: there is nothing to say about it.
+function M.hover_stage(index)
+    if index == M.hover then return false end
+    M.hover = index
+    -- At the root the cursor belongs to the rail and the stage is a preview,
+    -- so a hover there is drawn rather than moved. One level in, the stage has
+    -- the cursor and this is that cursor.
+    if index and M.open and #M.stack > 1 then
+        local rows = rows_of(node())
+        if rows[index] then M.sel[M.stack[#M.stack]] = index end
+    end
+    return index ~= nil
 end
 
 -- A pointer landed on a row of the stage, which is not always a row of the
