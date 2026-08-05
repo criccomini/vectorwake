@@ -3012,6 +3012,45 @@ local function population(x, y, players, bots, col)
     pilot_mark(right - text_w(tostring(players), 13 * S) - 12 * S, y, pc)
 end
 
+-- The dial that says something is being looked for, at whatever size it is
+-- handed: the page's own when the list has nothing in it at all, and a row's
+-- when the list has the zone but nothing is serving it. Everything about it is
+-- measured off its radius, so the small one is the large one rather than a
+-- second drawing that has to be kept in step with it.
+--
+-- Nothing else in this interface turns for the sake of turning, and this is
+-- telling the truth while it does: the directory is asked again every few
+-- seconds, and a zone with nobody running it is one an arena can come back to.
+local function sweep_dial(cx, cy, r)
+    local ring = math.max(0.8 * S, r * 0.022)
+    -- Three range rings where there is room for three. A dial the height of a
+    -- row has twenty points across it, and three rings in that are five points
+    -- apart, which is closer than the stroke drawing them: they close up into
+    -- a disc with a fringe. Two rings at that size is the same instrument,
+    -- read at the distance it is actually being read from.
+    local rings = (r > 24 * S) and {0.42, 0.72, 1.0} or {0.55, 1.0}
+    local sides = math.max(18, math.min(30, math.floor(r / S)))
+    for k, f in ipairs(rings) do
+        u:ring(cx, ry(cy), r * f, ring, sides,
+               pal.a(pal.RADAR_TILE, 0.55 - k * 0.12))
+    end
+    local ang = -M.now * 0.8
+    -- How much of the circle the tail covers. Fewer strokes on the small dial:
+    -- the same half radian of them, on something twenty points across, is a
+    -- quarter of the face filled in, and a sweep that wide is a pie chart.
+    local tail = (r > 24 * S) and 10 or 5
+    for k = 0, tail - 1 do
+        -- The trail is behind it, which for a sweep going round the way a
+        -- dial's hand goes is the side it has just left.
+        local a = ang + k * 0.05
+        local f = 1 - k / tail
+        u:seg(cx, ry(cy), cx + math.cos(a) * r * 0.98,
+              ry(cy - math.sin(a) * r * 0.98), math.max(1.0 * S, r * 0.028),
+              pal.a(pal.FRIEND, 0.32 * f * f), true)
+    end
+    u:disc(cx, ry(cy), math.max(1.2 * S, r * 0.05), 10, pal.a(pal.DIM, 0.9))
+end
+
 -- One row of the stage: a mark for the one you are on, the name, and
 -- whatever the row has to say about itself on the right.
 --
@@ -3037,6 +3076,9 @@ local function stage_row(x, y, w, h, r, hot)
               x + 7 * S, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
     end
     local sel = hot or r.mark
+    -- A row nothing is serving is a place that exists and cannot be flown to
+    -- yet, so it is written a shade back from the ones that can.
+    if r.waiting then col = pal.a(col, 0.6) end
     local size = (M.compact and 17 or 18) * S
     -- A row carrying a sentence of its own gives it the lower half and takes
     -- the upper for everything else. The games are the list that wants it:
@@ -3055,11 +3097,17 @@ local function stage_row(x, y, w, h, r, hot)
     end
     if r.note then
         txt(r.note, tx, y + h * 0.68, 11.5 * S,
-            pal.a(pal.DIM, hot and 1 or 0.75))
+            pal.a(pal.DIM, (hot and 1 or 0.75) * (r.waiting and 0.7 or 1)))
     end
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
-    if r.players and r.live then
+    if r.waiting then
+        -- No count, because there is nothing to count. The instrument that
+        -- looks for a game says what the words did, in the room the numbers
+        -- would have taken, and it keeps saying it while the list refreshes
+        -- underneath: an arena can come back and this row is where it lands.
+        sweep_dial(x + w - 16 * S - 11 * S, ly, 11 * S)
+    elseif r.players and r.live then
         population(x + w - 16 * S, ly, r.players, r.bots,
                    pal.a(pal.FRIEND, sel and 1 or 0.85))
     elseif r.choice then
@@ -3125,24 +3173,7 @@ local function empty_state(x, y, w, h, e)
     -- an empty page there is nothing above to hang from.
     local blockh = 2 * r + 96 * S
     local cy = y + math.max(0, (h - blockh) / 2) + r + 8 * S
-    for k, f in ipairs({0.42, 0.72, 1.0}) do
-        u:ring(cx, ry(cy), r * f, 1.0 * S, 30,
-               pal.a(pal.RADAR_TILE, 0.55 - k * 0.12))
-    end
-    -- The sweep, and its trail behind it. Nothing else in this interface
-    -- turns for the sake of turning, and this one is telling the truth: the
-    -- list is being asked for again while it goes round.
-    local ang = -M.now * 0.8
-    for k = 0, 9 do
-        -- The trail is behind it, which for a sweep going round the way a
-        -- dial's hand goes is the side it has just left.
-        local a = ang + k * 0.05
-        local f = 1 - k / 10
-        u:seg(cx, ry(cy), cx + math.cos(a) * r * 0.98,
-              ry(cy - math.sin(a) * r * 0.98), 1.3 * S,
-              pal.a(pal.FRIEND, 0.32 * f * f), true)
-    end
-    u:disc(cx, ry(cy), 2.4 * S, 10, pal.a(pal.DIM, 0.9))
+    sweep_dial(cx, cy, r)
     local ty = cy + r + 30 * S
     txt(e.head or "", cx, ty, (M.compact and 17 or 19) * S,
         pal.a(pal.INK, 0.85), "center", MENU_FONT)

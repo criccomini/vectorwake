@@ -1365,8 +1365,8 @@ function apply_menu(self, act)
         local r = menu.chosen
         if not r then return end
         if not r.live then
-            -- The row already says nobody is running it on its right-hand
-            -- side, so this only has to not be silent: a press that produces
+            -- The row is already wearing a dial that says it is being looked
+            -- for, so this only has to not be silent: a press that produces
             -- nothing reads as a dead screen. The zone is remembered so the
             -- note can be taken down when the list stops agreeing with it.
             menu.note = "nobody is running " .. r.name
