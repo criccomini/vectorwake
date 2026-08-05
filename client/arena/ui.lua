@@ -1495,10 +1495,10 @@ local function status(me, charges, lift)
 
     if show_charges then
         for _, c in ipairs(slots) do
-            -- No ready mark and no digit: there is no selection to show any
-            -- more, a key or a pad names its charge outright, and which
-            -- number is which row is the help page's job, not a label worn
-            -- in the corner of every fight.
+            -- No ready mark and no key letter: there is no selection to
+            -- show any more, a key or a pad names its charge outright, and
+            -- which key is which row is the help page's job, not a label
+            -- worn in the corner of every fight.
             local slot = string.lower(c.name or c.short or "")
             local gc = CHARGE_GLYPHS[slot] or gl_diamond
             gc(mid, y + rows_h / 2, 7 * z,
@@ -1511,7 +1511,7 @@ local function status(me, charges, lift)
             -- A row per charge rather than one bracket over all of them. A
             -- repel and a burst are different things and each has a card of
             -- its own; they shared a sentence only while that sentence was
-            -- about which digit spends them.
+            -- about which key spends them.
             local key = "charge:" .. string.lower(c.name or c.short or "")
             anchor[key] = y + rows_h / 2
             anchor.charge_order[#anchor.charge_order + 1] = key
@@ -2545,14 +2545,13 @@ end
 -- Widths are in key units so the board scales with the panel. The rows are
 -- the standard board's, minus the function row nothing binds.
 local BOARD = {
-    {{"esc", 1.3, "menu"}, {"1", 1, "charge"}, {"2", 1, "charge"},
-     {"3", 1, "charge"}, {"4", 1, "charge"}, {"5"}, {"6"}, {"7"}, {"8"},
-     {"9"}, {"0"}},
-    {{"tab", 1.7, "bomb"}, {"Q", 1, "multi"}, {"W"}, {"E"}, {"R"}, {"T"},
-     {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
-    {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H"},
-     {"J"}, {"K"}, {"L"}},
-    {{"shift", 2.25, "gun"}, {"Z", 1, "gun"}, {"X", 1, "bomb"}, {"C"}, {"V"},
+    {{"esc", 1.3, "menu"}, {"~", 1, "multi"}, {"1"}, {"2"}, {"3"}, {"4"},
+     {"5"}, {"6"}, {"7"}, {"8"}, {"9"}, {"0"}},
+    {{"tab", 1.7, "bomb"}, {"Q", 1, "charge"}, {"W", 1, "charge"}, {"E"},
+     {"R"}, {"T"}, {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
+    {{"caps", 2.0}, {"A", 1, "charge"}, {"S", 1, "charge"}, {"D"}, {"F"},
+     {"G"}, {"H"}, {"J"}, {"K"}, {"L"}},
+    {{"shift", 2.25}, {"Z"}, {"X"}, {"C"}, {"V"},
      {"B"}, {"N"}, {"M", 1, "map"}},
     {{"ctrl", 1.6, "gun2"}, {"space", 6.2, "gun"}},
 }
@@ -2591,6 +2590,12 @@ local BOARD_CATS = {
 -- and all it needs. Multifire takes the colour the green that grants it is
 -- drawn in, so the one key that is a gun in a different mode reads as a
 -- relative of the guns rather than as a separate weapon.
+--
+-- Menu had the grey every unbound key is drawn in, brighter. That is not a
+-- colour, it is the absence of one, and against a board of dead keys in the
+-- same hue the lit one did not read as lit at all: the swatch, the word
+-- under it and the key itself all looked switched off. Amber instead, which
+-- nothing else on this page is wearing.
 local function board_col(cat)
     if cat == "gun" or cat == "gun2" then return pal.FRIEND end
     if cat == "multi" then return pal.MOD_COL end
@@ -2599,7 +2604,7 @@ local function board_col(cat)
     if cat == "fly" then return pal.INK end
     if cat == "players" then return pal.DOOR end
     if cat == "map" then return pal.HOLE end
-    if cat == "menu" then return pal.a(pal.DIM, 1.0) end
+    if cat == "menu" then return pal.ENEMY end
     return nil
 end
 
@@ -2964,19 +2969,29 @@ local function stage_row(x, y, w, h, r, hot)
     end
     local sel = hot or r.mark
     local size = (M.compact and 17 or 18) * S
+    -- A row carrying a sentence of its own gives it the lower half and takes
+    -- the upper for everything else. The games are the list that wants it:
+    -- choosing between three of them is reading three sentences, and one at a
+    -- time at the foot of the panel, a screen away from the name it belongs
+    -- to, is not reading them.
+    local ly = r.note and (y + h * 0.36) or (y + h / 2)
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
     local two_line = r.detail and r.detail ~= "" and not r.players
-        and not r.choice
+        and not r.choice and not r.note
         and text_w(r.detail, 12 * S) > w - 32 * S - (tx - x) - 12 * S
     if not two_line then
-        txt(r.label or "", tx, y + h / 2, size,
+        txt(r.label or "", tx, ly, size,
             pal.a(col, sel and 1 or 0.82), nil, MENU_FONT)
+    end
+    if r.note then
+        txt(r.note, tx, y + h * 0.68, 11.5 * S,
+            pal.a(pal.DIM, hot and 1 or 0.75))
     end
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
     if r.players and r.live then
-        population(x + w - 16 * S, y + h / 2, r.players, r.bots,
+        population(x + w - 16 * S, ly, r.players, r.bots,
                    pal.a(pal.FRIEND, sel and 1 or 0.85))
     elseif r.choice then
         -- A setting drawn as its own range: one step per value, the one it
@@ -3016,7 +3031,7 @@ local function stage_row(x, y, w, h, r, hot)
                 pal.a(col, sel and 1 or 0.82), nil, MENU_FONT)
             txt(r.detail, tx, y + h * 0.70, 11 * S, pal.a(pal.DIM, 0.9))
         else
-            txt(r.detail, x + w - 16 * S, y + h / 2, 12 * S,
+            txt(r.detail, x + w - 16 * S, ly, 12 * S,
                 pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right")
         end
     end
@@ -3135,13 +3150,14 @@ function M.logo(cx, cy, s, alpha)
               LOGO_TILT + math.pi, s, pal.a(pal.ENEMY, alpha), w)
 end
 
--- The name, and the stroke under it that makes it a mark.
+-- The mark and the name, and nothing under them.
 --
 -- Not a logotype: the same face the menu is set in, at a size nothing else on
--- screen is. What makes it ours is the stroke beneath, which starts at
--- nothing on the left, swells under the word and is gone again by the end of
--- it, which is a wake. It was here before this layout and it stays: the one
--- piece of decoration in the whole interface that anybody has asked to keep.
+-- screen is, with the drawn mark beside it. A stroke ran under the pair for a
+-- while, a wake that swelled and faded across the width of the panel. It was
+-- decoration in an interface that has none anywhere else, and every shape of
+-- it that was tried, swelling from both ends and then solid into a tail, read
+-- as a rule somebody had left there rather than as part of the name.
 -- How tall the mark stands and how much room it wants, both against the type
 -- it sits beside. The pair measures 37.3 hull units from the highest nose to
 -- the lowest tail (see LOGO_SHIP and the two offsets in M.logo), so a height
@@ -3165,26 +3181,14 @@ end
 -- looked.
 local LOGO_EM, LOGO_SPAN, LOGO_DROP = 0.74, 37.31, 0.12
 
-local function wordmark(x, y, size, ww)
+local function wordmark(x, y, size)
     -- The mark stands to the left of the name, on the middle of the word
     -- rather than the middle of its line box, so the two read as one lockup.
     -- It takes the room it needs and the name starts after it.
     local s = size * LOGO_EM / LOGO_SPAN
     local lw = size * 0.95
     M.logo(x + lw / 2, y + size * LOGO_DROP, s)
-    x = x + lw
-    ww = ww - lw
-    txt("vectorwake", x, y, size, pal.INK, nil, MENU_FONT)
-    local wy = y + size * 0.78
-    local n = 40
-    for i = 0, n - 1 do
-        local t0, t1 = i / n, (i + 1) / n
-        local function swell(t) return math.sin(t * math.pi) ^ 1.6 end
-        local a0, a1 = swell(t0), swell(t1)
-        u:seg_fade(x + ww * t0, ry(wy), x + ww * t1, ry(wy),
-                   (0.7 + 2.6 * a0) * S, (0.7 + 2.6 * a1) * S,
-                   0.85 * a0, 0.85 * a1, pal.FRIEND)
-    end
+    txt("vectorwake", x + lw, y, size, pal.INK, nil, MENU_FONT)
 end
 
 -- --- the whole thing -------------------------------------------------------
@@ -3259,8 +3263,7 @@ function M.menu(v)
         sx = x0 + rw + 26 * S
         sy, sh = top, block
         sw = total - rw - 26 * S
-        wordmark(x0, top - head + 30 * S, (tall and 40 or 30) * S,
-                 math.min(sw, 420 * S))
+        wordmark(x0, top - head + 30 * S, (tall and 40 or 30) * S)
         -- What you are reading, laid over what you are not. A wash rather
         -- than a panel: no border, no corners, just enough that the type sits
         -- on something and the arena stays visible round the edges of it.
@@ -3281,7 +3284,7 @@ function M.menu(v)
         sy = margin + head + chip
         sh = ry_ - 20 * S - sy
         rect(0, sy - 16 * S, W, sh + rh + 46 * S, pal.rgb(0x03050a, 0.5))
-        wordmark(margin, margin + chip + 22 * S, 30 * S, math.min(sw, 300 * S))
+        wordmark(margin, margin + chip + 22 * S, 30 * S)
         u:seg(margin, ry(ry_ - 12 * S), W - margin, ry(ry_ - 12 * S),
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
@@ -3379,8 +3382,11 @@ function M.menu(v)
     -- A list is capped: a row whose name sits at one edge and whose count
     -- sits at the other, a screen apart, is two columns nobody reads as one
     -- line. The board and the hull grid are drawings and take everything.
-    -- The rule introduces whatever is under it, so it is as wide as that.
-    ticks(tx, sy + 22 * S, lw, pal.a(pal.RADAR_TILE, 0.45), 12 * S)
+    --
+    -- Nothing is drawn across the head of it. A ticked rule sat there, the
+    -- one the map border is made of, introducing a list that needs no
+    -- introducing: the rail says what the page is and the rows say what they
+    -- are, and the rule was a third line of furniture between them.
     if v.board and not M.touching then
         -- The widest board the stage has the height for, backed off rather
         -- than solved, the same way the page used to do it.
@@ -3390,7 +3396,13 @@ function M.menu(v)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else
-        local rowh = math.min((M.compact and 46 or 40) * S,
+        -- Two lines of room where the rows have two lines in them, held to
+        -- one height either way so nothing shifts as the cursor walks down.
+        local noted = false
+        for _, r in ipairs(v.rows) do
+            if r.note then noted = true break end
+        end
+        local rowh = math.min((noted and 58 or (M.compact and 46 or 40)) * S,
                               math.max(30 * S, room / math.max(#v.rows, 1)))
         -- A short list sits in the middle of the room rather than at the top
         -- of it: three games hung under a title on a tall phone leave the

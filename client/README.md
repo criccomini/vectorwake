@@ -183,9 +183,9 @@ await p.keyboard.down("m"); await p.waitForTimeout(90); await p.keyboard.up("m")
 ```
 
 No key is exempt, but not every key gets you into trouble. Flying and firing
-are held anyway, so a driver that holds the arrows and Shift is already doing
+are held anyway, so a driver that holds the arrows and Space is already doing
 the right thing without knowing why. It is the momentary ones that invite the
-one-shot helper and lose the press: Esc, M, P, Enter and the digits.
+one-shot helper and lose the press: Esc, M, P, Enter and the charge keys.
 
 A hand cannot press faster than a frame at 60 Hz, so this is a property of the
 harness rather than of the game, and it is Defold's input layer rather than

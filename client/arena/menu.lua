@@ -45,6 +45,10 @@ M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
 M.hover = nil           -- the stage row a pointer is resting on
 M.note = nil            -- set by the arena when a connection fails
+-- Whether the games list has worked out where its cursor belongs since it was
+-- last opened. Declared up here because opening the menu clears it and the
+-- opening is written above the asking.
+local zone_synced = false
 -- How many hulls the ship page is drawing across, set by whoever draws it.
 -- The page is a grid rather than a list and its arrows have to mean what a
 -- grid's arrows mean, which needs the one number this file cannot work out
@@ -158,7 +162,11 @@ end
 -- and one of: `go` to descend, or `act` for the arena to carry out. A row with
 -- neither is a line of text, which is what `about` is made of. A row may also
 -- carry a `hint`, which is a sentence about it drawn under the list while it
--- is the row selected.
+-- is the row selected, or a `note`, which is a sentence drawn in the row
+-- itself, under its name, whether or not the cursor is on it. A list whose
+-- rows are things to choose between wants notes; one whose rows are controls
+-- wants hints, because a sentence about what a control will do is only worth
+-- the room while you are on it.
 --
 -- A node's `rows` is a table, or a function returning one when what is in the
 -- list depends on the moment.
@@ -237,7 +245,12 @@ local function zone_rows()
     local rows = {}
     for i, r in ipairs(directory.rows) do
         rows[i] = {
-            label = r.name, detail = r.count, hint = r.detail,
+            label = r.name, detail = r.count,
+            -- What the game is, under its own name rather than at the foot of
+            -- the panel. Choosing between three games is reading three
+            -- sentences; one at a time, a long way from the name it belongs
+            -- to, is not reading them.
+            note = r.detail,
             -- What the meter draws, when the interface would rather show a
             -- room's population than spell it.
             players = r.players, bots = r.bots, live = r.live,
@@ -250,7 +263,7 @@ local function zone_rows()
     -- panel, since on the home screen there is nothing to leave.
     if not M.home then
         rows[#rows + 1] = {label = "leave this game", act = "leave",
-                           hint = "back to the home screen"}
+                           note = "back to the home screen"}
     end
     if #rows == 0 then
         -- Never an empty panel. Whatever the directory is doing, or failing to
@@ -457,7 +470,11 @@ function M.toggle()
     if M.open then
         M.close()
     else
-        M.open = true
+        -- Opened on the games, the page the client itself opens on, with the
+        -- cursor in the list rather than on the rail. Escape mid-fight is
+        -- somebody looking for another game as often as it is anything else,
+        -- and the rail is one press to the left of it either way.
+        M.show("zones")
         M.note = nil
     end
     return M.open
@@ -469,6 +486,10 @@ function M.show(...)
     M.stack = {"root"}
     for _, id in ipairs({...}) do M.stack[#M.stack + 1] = id end
     M.open = true
+    M.hover = nil
+    -- The games list works out where its cursor belongs the next time it is
+    -- looked at, so opening on it has to let it ask again.
+    zone_synced = false
 end
 
 -- Closing forgets where you were. A menu that reopens three levels down is a
@@ -504,6 +525,21 @@ local function back()
     return "cancel", false
 end
 
+-- Escape, from anywhere in here.
+--
+-- Over a game it shuts the panel and puts you back in the fight, whatever
+-- level you are on. One press put the menu up, so one press has to take it
+-- down: the menu opens on the games rather than at the root now, and walking
+-- back out a level at a time made leaving cost three presses where it used to
+-- cost two. Left is still what walks back through the tree.
+--
+-- With nothing behind the panel there is nothing to shut it onto, so escape
+-- walks back like left does and means at the root what it always meant.
+local function escape()
+    if M.close() then return nil, true end
+    return back()
+end
+
 -- Put the cursor on the game you were in last, once the directory has
 -- answered. Called by the arena rather than worked out during a draw, because
 -- the list arrives on its own schedule and moving a selection out from under a
@@ -514,8 +550,6 @@ end
 -- well, a lit wedge and a lit name on the game you were in, which is a second
 -- thing to read saying what the cursor already sits on, and on a list of three
 -- games two of them were the answer to different questions.
-local zone_synced = false
-
 function M.tick()
     if M.at() ~= "zones" then
         zone_synced = false
@@ -576,8 +610,9 @@ function M.view()
         local ci, cn
         if r.choice then ci, cn = r.choice() end
         out.rows[i] = {
-            label = r.label, detail = d, index = i, hull = r.hull,
-            role = r.role, players = r.players, bots = r.bots, live = r.live,
+            label = r.label, detail = d, note = r.note, index = i,
+            hull = r.hull, role = r.role,
+            players = r.players, bots = r.bots, live = r.live,
             choice = ci, choices = cn,
             pick = (r.go or r.act) ~= nil,
             mark = r.mark and r.mark() or false,
@@ -626,8 +661,8 @@ function M.view()
                 if type(d) == "function" then d = d() end
                 local ci, cn
                 if r.choice then ci, cn = r.choice() end
-                out.rows[i] = {label = r.label, detail = d, index = i,
-                               hull = r.hull, role = r.role,
+                out.rows[i] = {label = r.label, detail = d, note = r.note,
+                               index = i, hull = r.hull, role = r.role,
                                players = r.players, bots = r.bots,
                                live = r.live, choice = ci, choices = cn,
                                pick = (r.go or r.act) ~= nil,
@@ -758,7 +793,7 @@ function M.step(keys)
     if nd.grid and #M.stack > 1 and n > 0 then
         local cols = math.max(1, math.min(M.cols, n))
         local i = row_index(rows)
-        if keys.back then return back() end
+        if keys.back then return escape() end
         -- The edges wrap, along the row for right and through the list for up
         -- and down, so nothing on this page is out of reach in one press.
         --
@@ -789,7 +824,8 @@ function M.step(keys)
         return nil, false
     end
 
-    if keys.back or keys.left then return back() end
+    if keys.back then return escape() end
+    if keys.left then return back() end
 
     if keys.up then
         M.sel[id] = (row_index(rows) - 2) % n + 1

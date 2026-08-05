@@ -178,6 +178,36 @@ check("with the rail lit at the stop it belongs to",
           and opened.rail[opened.rail_sel].label == "zones",
       "rail on " .. tostring(opened.rail_sel))
 
+-- --- escape opens on the games, and escape leaves ------------------------
+--
+-- The key that puts the panel up over a fight has to take it down again, from
+-- wherever you have got to in it. It opens one level in now, so walking back
+-- out a level at a time would have made leaving cost three presses where it
+-- used to cost two.
+
+menu.home = false
+menu.open = false
+menu.toggle()
+check("escape over a game opens on the games",
+      menu.open and menu.at() == "zones" and menu.view().focus == "stage",
+      table.concat(menu.stack, "/"))
+menu.click_rail(settings_at)
+check("and the rail still goes where it says", menu.at() == "settings",
+      table.concat(menu.stack, "/"))
+menu.step({back = true})
+check("escape from a page inside it puts the fight back", not menu.open,
+      "still open at " .. table.concat(menu.stack, "/"))
+
+-- With nothing behind the panel there is nothing to shut it onto, so escape
+-- walks back a level and the menu stays up.
+menu.home = true
+menu.open = true
+menu.show("ship")
+menu.step({back = true})
+check("and with no game behind it, escape walks back instead",
+      menu.open and menu.at() == "root", table.concat(menu.stack, "/")
+          .. ", open " .. tostring(menu.open))
+
 -- --- a pointer resting on a row is the same cursor the arrows move --------
 
 menu.stack = {"root"}
