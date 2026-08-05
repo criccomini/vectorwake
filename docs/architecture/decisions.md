@@ -1208,3 +1208,34 @@ beats Mission Control's claim on Ctrl+arrows on a Mac.
 macOS anyway, at which point the fullscreen promise shrinks to Windows and
 Linux and the help text should say so. Or if a rebinding screen ever ships,
 at which point this whole layout becomes the default rather than the rule.
+
+**Amended: one key per job, and the charges move to the letters.** The layout
+above handed guns four keys and bombs two, on the theory that whichever one a
+player's hands already knew would be there waiting. What it built instead was a
+board where half the lit keys were aliases of each other, and a drawn keyboard
+that lights six keys for two weapons does not tell anybody what to press. Shift
+and Z are gone from the guns, leaving Space and, under the lock, Ctrl. X is gone
+from the bombs, leaving Tab. Sticky Keys stops being a hazard along with them,
+since nothing a fight needs sits on a modifier now.
+
+Charges moved off the digits and onto Q, W, A and S. A hand flying with the
+arrows has its other hand on the letters, and the number row is a reach away
+from there, so "press the number you can read" cost a glance down at the
+keyboard to find the number. The four letters are a square block under that
+hand: read across and then down, which is the order the corner stack lists its
+rows in, and the fingers never leave home.
+
+Multifire took the backquote key, Q having gone to the first charge. It is a
+switch you flip between fights rather than something pressed during one, so the
+far corner of the board suits it, and it is bound as both KEY_BACKQUOTE and
+KEY_TILDE because the two legends are one physical key and which of them the
+engine reports through a browser is not something we could check without
+hardware. The help page draws it, along with the rest of this: the key picture
+is now the whole answer to what the controls are.
+
+**Cost:** everyone who learned Shift or Z for guns and X for bombs has to
+unlearn them, and this is the second time that has happened. Q was multifire
+for a week and is a charge now, which is the same key changing hands rather
+than a key going away, so a habit that survives the change fires the wrong
+thing rather than nothing. And Space is the only gun a windowed player has,
+where there used to be three.

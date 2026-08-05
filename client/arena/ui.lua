@@ -1462,10 +1462,10 @@ local function status(me, charges, lift)
 
     if show_charges then
         for _, c in ipairs(slots) do
-            -- No ready mark and no digit: there is no selection to show any
-            -- more, a key or a pad names its charge outright, and which
-            -- number is which row is the help page's job, not a label worn
-            -- in the corner of every fight.
+            -- No ready mark and no key letter: there is no selection to
+            -- show any more, a key or a pad names its charge outright, and
+            -- which key is which row is the help page's job, not a label
+            -- worn in the corner of every fight.
             local slot = string.lower(c.name or c.short or "")
             local gc = CHARGE_GLYPHS[slot] or gl_diamond
             gc(mid, y + rows_h / 2, 7 * z,
@@ -1478,7 +1478,7 @@ local function status(me, charges, lift)
             -- A row per charge rather than one bracket over all of them. A
             -- repel and a burst are different things and each has a card of
             -- its own; they shared a sentence only while that sentence was
-            -- about which digit spends them.
+            -- about which key spends them.
             local key = "charge:" .. string.lower(c.name or c.short or "")
             anchor[key] = y + rows_h / 2
             anchor.charge_order[#anchor.charge_order + 1] = key
@@ -2512,14 +2512,13 @@ end
 -- Widths are in key units so the board scales with the panel. The rows are
 -- the standard board's, minus the function row nothing binds.
 local BOARD = {
-    {{"esc", 1.3, "menu"}, {"1", 1, "charge"}, {"2", 1, "charge"},
-     {"3", 1, "charge"}, {"4", 1, "charge"}, {"5"}, {"6"}, {"7"}, {"8"},
-     {"9"}, {"0"}},
-    {{"tab", 1.7, "bomb"}, {"Q", 1, "multi"}, {"W"}, {"E"}, {"R"}, {"T"},
-     {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
-    {{"caps", 2.0}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H"},
-     {"J"}, {"K"}, {"L"}},
-    {{"shift", 2.25, "gun"}, {"Z", 1, "gun"}, {"X", 1, "bomb"}, {"C"}, {"V"},
+    {{"esc", 1.3, "menu"}, {"~", 1, "multi"}, {"1"}, {"2"}, {"3"}, {"4"},
+     {"5"}, {"6"}, {"7"}, {"8"}, {"9"}, {"0"}},
+    {{"tab", 1.7, "bomb"}, {"Q", 1, "charge"}, {"W", 1, "charge"}, {"E"},
+     {"R"}, {"T"}, {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
+    {{"caps", 2.0}, {"A", 1, "charge"}, {"S", 1, "charge"}, {"D"}, {"F"},
+     {"G"}, {"H"}, {"J"}, {"K"}, {"L"}},
+    {{"shift", 2.25}, {"Z"}, {"X"}, {"C"}, {"V"},
      {"B"}, {"N"}, {"M", 1, "map"}},
     {{"ctrl", 1.6, "gun2"}, {"space", 6.2, "gun"}},
 }
@@ -2558,6 +2557,12 @@ local BOARD_CATS = {
 -- and all it needs. Multifire takes the colour the green that grants it is
 -- drawn in, so the one key that is a gun in a different mode reads as a
 -- relative of the guns rather than as a separate weapon.
+--
+-- Menu had the grey every unbound key is drawn in, brighter. That is not a
+-- colour, it is the absence of one, and against a board of dead keys in the
+-- same hue the lit one did not read as lit at all: the swatch, the word
+-- under it and the key itself all looked switched off. Amber instead, which
+-- nothing else on this page is wearing.
 local function board_col(cat)
     if cat == "gun" or cat == "gun2" then return pal.FRIEND end
     if cat == "multi" then return pal.MOD_COL end
@@ -2566,7 +2571,7 @@ local function board_col(cat)
     if cat == "fly" then return pal.INK end
     if cat == "players" then return pal.DOOR end
     if cat == "map" then return pal.HOLE end
-    if cat == "menu" then return pal.a(pal.DIM, 1.0) end
+    if cat == "menu" then return pal.ENEMY end
     return nil
 end
 

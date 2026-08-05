@@ -15,19 +15,7 @@ key_trigger {
   action: "reverse"
 }
 key_trigger {
-  input: KEY_LSHIFT
-  action: "guns"
-}
-key_trigger {
-  input: KEY_RSHIFT
-  action: "guns"
-}
-key_trigger {
   input: KEY_SPACE
-  action: "guns"
-}
-key_trigger {
-  input: KEY_Z
   action: "guns"
 }
 key_trigger {
@@ -40,10 +28,6 @@ key_trigger {
 }
 key_trigger {
   input: KEY_TAB
-  action: "bombs"
-}
-key_trigger {
-  input: KEY_X
   action: "bombs"
 }
 mouse_trigger {
@@ -67,19 +51,19 @@ touch_trigger {
   action: "touch"
 }
 key_trigger {
-  input: KEY_1
+  input: KEY_Q
   action: "charge_1"
 }
 key_trigger {
-  input: KEY_2
+  input: KEY_W
   action: "charge_2"
 }
 key_trigger {
-  input: KEY_3
+  input: KEY_A
   action: "charge_3"
 }
 key_trigger {
-  input: KEY_4
+  input: KEY_S
   action: "charge_4"
 }
 key_trigger {
@@ -103,6 +87,10 @@ key_trigger {
   action: "backspace"
 }
 key_trigger {
-  input: KEY_Q
+  input: KEY_BACKQUOTE
+  action: "multi"
+}
+key_trigger {
+  input: KEY_TILDE
   action: "multi"
 }
