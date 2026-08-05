@@ -156,6 +156,28 @@ menu.step({left = true})
 check("and left off the first column is the way out", menu.stack[2] == nil,
       table.concat(menu.stack, "/"))
 
+-- --- the client opens on the games, with the cursor in the list -----------
+--
+-- Startup shows the zones page rather than the root, so somebody who has just
+-- loaded the client is looking at the list of games with the cursor in it and
+-- one press from flying. What that rests on is `show` naming a level and the
+-- stage taking the cursor when it does.
+
+menu.hover_stage(nil)
+menu.home = true
+menu.show("zones")
+local opened = menu.view()
+check("showing a level puts the cursor in the stage",
+      opened.focus == "stage" and menu.at() == "zones",
+      tostring(opened.focus) .. " at " .. table.concat(menu.stack, "/"))
+check("and on a row of it", opened.sel >= 1 and opened.rows[opened.sel] ~= nil,
+      "row " .. tostring(opened.sel) .. " of " .. tostring(#opened.rows))
+-- And the rail still says which page that is, since nothing else does now.
+check("with the rail lit at the stop it belongs to",
+      opened.rail[opened.rail_sel]
+          and opened.rail[opened.rail_sel].label == "zones",
+      "rail on " .. tostring(opened.rail_sel))
+
 -- --- a pointer resting on a row is the same cursor the arrows move --------
 
 menu.stack = {"root"}

@@ -598,7 +598,12 @@ function init(self)
         return
     end
 
-    go_home(self)
+    -- Open on the games, with the cursor in the list rather than on the rail.
+    -- It is the one page a player who has just loaded the client is here for,
+    -- and the cursor lands on the game they were in last as soon as the
+    -- directory answers, so arriving and pressing enter is arriving and
+    -- flying. The rail is still beside it, one press left.
+    go_home(self, "zones")
 end
 
 function final(self)
