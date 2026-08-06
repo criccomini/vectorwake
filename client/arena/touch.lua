@@ -2,7 +2,7 @@
 --
 -- The question platforms.md asks is whether mobile is a playing client or a
 -- spectating one. This is the playing answer: a thumbstick that points where
--- you want the nose to go, and two pads for the two weapons.
+-- you want the nose to go, and pads for the weapons.
 --
 -- Pointing beats a rotate-left/rotate-right pair on glass. There is no tactile
 -- edge to feel for, so a player cannot hold a rotation and stop it on time;
@@ -12,8 +12,23 @@
 --
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
+--
+-- Every control wears the mark of the thing it does, from arena/marks.lua,
+-- which is the same drawing the corner stack uses. That was the whole fault
+-- of the layout this replaces: the two triggers were bare rings telling each
+-- other apart by being slightly different sizes, while the charges beside
+-- them carried pictures, so the control pressed most was the only one that
+-- did not say what it was.
+--
+-- It also settles what the corner stack is for on a phone. A pad can carry
+-- what a hull is holding -- a fan is three lines, a bounce is a ring on each
+-- dot, a proximity fuse is a ring outside the head -- so the stack drops its
+-- weapon rows on a touchscreen instead of repeating them at the far corner.
 
 local M = {}
+
+local marks = require("arena.marks")
+local pal = require("arena.palette")
 
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
 local THRUST_PX = 46      -- push past this and the engine lights
@@ -22,6 +37,8 @@ M.used = false            -- has this device ever reported a touch?
 M.scale = 1               -- drawable pixels per point
 -- How many of each charge slot are in hand, by slot. Set by the caller.
 M.counts = {}
+-- And how many of each the hull can hold, which is what the pips count out.
+M.maxes = {}
 
 -- Whether the hull flying has a bomb rack. Two of the eight do not, and a pad
 -- for a weapon that cannot exist is a pad that does nothing when pressed --
@@ -29,6 +46,19 @@ M.counts = {}
 -- and true until told otherwise so a missing update never removes a control
 -- somebody actually has.
 M.has_bomb = true
+
+-- Which ship is yours, so a pad can read its own weapon out of the core
+-- rather than have every fact about it copied into a field here. nil before
+-- the first frame, and the marks fall back to a plain gun and a plain bomb.
+M.me = nil
+
+-- How high the rail may climb, in drawable pixels from the bottom. The dial
+-- owns the top right corner and a pad that reaches it is a pad over an
+-- instrument, so the caller hands down where the dial ends. Passed rather
+-- than asked for: this file knows where a thumb goes and ui.lua knows where
+-- the instruments go, and neither reaching into the other is what let the two
+-- of them stop depending on each other at all.
+M.ceiling = math.huge
 
 local stick = nil         -- {id, ox, oy, x, y}
 local guns = nil          -- touch id holding the guns pad
@@ -51,8 +81,8 @@ local fired = nil
 M.charges = {}
 
 -- Where the controls are. One definition, used by the hit test and by the
--- drawing, because they were written out separately and had drifted: the pads
--- were drawn at one height and tested at another, so half of a pad did
+-- drawing, because they were written out separately once and had drifted: the
+-- pads were drawn at one height and tested at another, so half of a pad did
 -- nothing and the dead space beside it fired.
 --
 -- Coordinates are drawable pixels counting up from the bottom, which is the
@@ -62,44 +92,56 @@ M.charges = {}
 -- plate on a monitor, with the limits in points rather than pixels: a phone
 -- at two pixels per point would otherwise get pads half the size it needs.
 --
--- Everything the right thumb touches is one row along the bottom, walking
--- left from the corner: guns, then bombs, then a pad per charge. Stacking
--- them up the right edge instead cost the radar its corner and still did not
--- fit -- the band between the top weapon and the dial is about a fifth of a
--- landscape phone, and two pads want more than that. A row has the whole
--- width to spend and keeps every control inside one thumb's arc.
+-- The two triggers keep the corner, side by side along the bottom, and the
+-- charges go above them rather than beside them. They used to continue the
+-- triggers' own row leftward, which put a tap-once control inside the arc the
+-- trigger thumb sweeps and spent the whole width of the screen doing it.
+--
+-- Above means a column climbing the edge, and it stays a column for as long
+-- as there is edge to climb. On a phone held upright there is plenty. Held
+-- sideways the dial takes better than half the height and the answer is one
+-- cell, so the rail steps left and starts again -- which packs a full rack
+-- into the block over the triggers instead of stringing it along the bottom.
+-- Either way every cell is over the triggers and none is beside them, which
+-- is the part that matters: reaching the gun never crosses a charge.
 function M.layout(w, h, s)
     s = s or 1
     local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
-    local gap = r * 0.35
-    local row = r * 1.5
-    local gun_pad  = {x = w - r * 1.4, y = row, r = r}
-    local bomb_pad = {x = gun_pad.x - (r + gap + r * 0.8), y = row,
-                      r = r * 0.8}
+    local br = r * 0.82
+    -- Far enough in that the energy gauge outside the gun's rim clears the
+    -- edge of the screen.
+    local gun_pad  = {x = w - r * 1.4, y = r * 1.4, r = r}
+    local bomb_pad = {x = gun_pad.x - r - br - r * 0.34, y = gun_pad.y, r = br}
     local home  = {x = r * 1.6, y = r * 1.8, r = r * 1.15}
 
-    -- The charges continue the row, smaller: they are tapped once in a while
-    -- rather than held, and a target the size of a trigger would crowd the
-    -- one control a thumb must never miss. They start clear of whichever
-    -- weapon pad is actually drawn, so a hull with no rack closes the gap
-    -- instead of leaving a hole where the bomb pad would have been.
-    local cr = r * 0.55
-    local lead = M.has_bomb and bomb_pad or gun_pad
-    local x = lead.x - lead.r - gap - cr
-    local y = row
-    -- The stick's resting mark owns the other corner, and a pad that reaches
-    -- it is a pad the steering thumb presses by accident. Past that point the
-    -- row wraps upward instead -- which is what a narrow phone held upright
-    -- does, and it is why this is a limit rather than an assumption that the
-    -- width is always there.
-    local edge = home.x + home.r * 1.6
+    -- The charges, as square cells: which class a control belongs to reads
+    -- before the picture inside it does, and a round trigger beside a square
+    -- charge can never be mistaken for another trigger. Smaller than the
+    -- triggers, because they are tapped once in a while and a target the size
+    -- of a trigger would crowd the one control a thumb must never miss.
+    --
+    -- Sized to fit two of them under the dial on a phone held sideways, which
+    -- is the tightest case and the ordinary loadout. The drawing is a little
+    -- under the forty-odd points a finger wants; what answers a tap is not,
+    -- since `within` grows the cell by a third on every side.
+    local cw = r * 0.82
+    local x0 = gun_pad.x
+    -- Clear of the gauge, not just of the rim. The energy arc rides at a
+    -- fifth of a radius outside the gun and sweeps past straight up, so a
+    -- rail measured off the ring alone starts inside it -- which is what the
+    -- first build of this drew, and it took a screenshot to see.
+    local y0 = gun_pad.y + r * 1.25 + cw * 0.75
+    local x, y = x0, y0
     local charge = {}
     for i, k in ipairs(M.charges) do
-        if x - cr < edge then
-            x, y, edge = gun_pad.x, y + r + gap + cr, cr
+        -- Past the dial the rail steps left and starts again, which is what a
+        -- hull carrying four kinds on a short window does. A limit rather
+        -- than an assumption the height is always there.
+        if y + cw / 2 > M.ceiling then
+            x, y = x - cw * 1.14, y0
         end
-        charge[i] = {slot = k, x = x, y = y, r = cr}
-        x = x - (cr * 2 + gap)
+        charge[i] = {slot = k, x = x, y = y, w = cw, r = cw / 2}
+        y = y + cw * 1.14
     end
 
     return {r = r, guns = gun_pad, bombs = bomb_pad, home = home,
@@ -112,6 +154,14 @@ local function near(pad, x, y, slack)
     return dx * dx + dy * dy <= reach * reach
 end
 
+-- A cell is square, and so is what it answers to. Grown by the same margin a
+-- round pad is, because a thumb landing a few pixels outside a control meant
+-- to be hit is a thumb that meant to hit it.
+local function within(c, x, y)
+    local reach = c.w * 0.65
+    return math.abs(x - c.x) <= reach and math.abs(y - c.y) <= reach
+end
+
 -- Which control a finger landed on. The pads win over the stick wherever they
 -- overlap, and everything on the left half that is not a pad is the stick, so
 -- a thumb never has to find an exact spot to start steering.
@@ -122,7 +172,7 @@ local function zone(x, y, w, h, s)
     -- stick rather than being eaten by a control that is not drawn.
     if M.has_bomb and near(L.bombs, x, y) then return "bombs" end
     for _, c in ipairs(L.charge) do
-        if near(c, x, y) then return c.slot end     -- a number, not a name
+        if within(c, x, y) then return c.slot end   -- a number, not a name
     end
     if x < w * 0.55 then return "stick" end
     return nil
@@ -226,73 +276,130 @@ function M.steering()
     return stick ~= nil
 end
 
+-- --- what a pad has to say -------------------------------------------------
+
+-- A rung on the ladder the round climbs, so the colour a weapon wears on the
+-- pad is the colour it will be coming at somebody across the arena. A player
+-- who has learned one has learned the other.
+local function rung(ramp, lvl)
+    return ramp[math.max(1, math.min(lvl + 1, #ramp))]
+end
+
+-- Whether the hull carries an add-on, by its index in pal.MODS. Answered from
+-- the core so a pad and the corner stack cannot disagree about a loadout.
+local function has_mod(t, i)
+    return M.me and sim.ship_mod and sim.ship_mod(M.me, t, i) > 0
+end
+
+-- The gun, wearing what the greens did to it: one line or three when the fan
+-- is on, a ring on each dot when the rounds come back off walls. A declined
+-- fan is drawn dimmed rather than dropped -- you still hold it, and a weapon
+-- that quietly stopped fanning with nothing on screen to say so looks broken.
+local function gun_mark(pad, col)
+    local k = pad.r * 0.62
+    local fan = has_mod(sim.TRIG_GUN, 0)
+    local off = fan and sim.ship_multi_off and sim.ship_multi_off(M.me)
+    local bounce = has_mod(sim.TRIG_GUN, 1)
+    local ox = pad.x - k * (marks.BOLT_LEN - marks.BOLT_DOT) / 2
+    local angs = fan and {-marks.BOLT_FAN, 0, marks.BOLT_FAN} or {0}
+    for _, ang in ipairs(angs) do
+        local held = off and ang ~= 0
+        local c = held and pal.a(col, (col[4] or 1) * 0.35) or col
+        local dx, dy = marks.bolt_line(ox, pad.y, ang, k, c)
+        -- What is not firing does not bounce, and a ring on it says it does.
+        if bounce and not held then marks.bolt_bounce(dx, dy, k, c) end
+    end
+end
+
+-- The bomb: the round, and the fuse it goes off at if it has one.
+local function bomb_mark(pad, col)
+    local k = pad.r * 0.66
+    local hx = pad.x + k * marks.BOMB_LEN / 2 - k * marks.BOMB_R * 0.4
+    marks.bomb_body(hx, pad.y, k, col)
+    if has_mod(sim.TRIG_BOMB, 2) then
+        marks.bomb_prox(hx, pad.y, k * marks.BOMB_R * 1.75, k, col)
+    end
+end
+
 -- Drawn in the screen-space interface layer, which is where a control that
 -- follows the thumb belongs: touches and this layer are both in drawable
 -- pixels counting up from the bottom, so there is nothing to convert.
 function M.draw(u, w, h, s)
     if not M.used then return end
-    local pal = require("arena.palette")
     local dim = pal.a(pal.DIM, 0.45)
-    local live = pal.a(pal.FRIEND, 0.9)
     local L = M.layout(w, h, s)
 
-    local function ring(px, py, r, col, segments)
-        u:ring(px, py, r, 1.8 * s, segments or 26, col)
-    end
-    local function glow(pad, col)
-        u:halo(pad.x, pad.y, pad.r * 1.25, 18, pal.a(col, 0.17))
+    local function pad_ring(pad, col, lit)
+        u:ring(pad.x, pad.y, pad.r, 2.6 * s, 28, pal.a(col, lit and 0.95 or 0.5))
+        u:disc(pad.x, pad.y, pad.r, 24, pal.a(col, lit and 0.10 or 0.045))
     end
 
-    ring(L.guns.x, L.guns.y, L.guns.r, guns and live or dim)
-    if guns then glow(L.guns, pal.FRIEND) end
-    if M.has_bomb then
-        ring(L.bombs.x, L.bombs.y, L.bombs.r,
-             bombs and pal.a(pal.BOMB, 0.95) or dim)
-        if bombs then glow(L.bombs, pal.BOMB) end
+    -- The gun, in the colour of the round it fires.
+    local glvl = M.me and sim.ship_level and sim.ship_level(M.me, sim.TRIG_GUN)
+    local gcol = rung(pal.FRIEND_LVL, glvl or 0)
+    pad_ring(L.guns, gcol, guns)
+    gun_mark(L.guns, pal.a(gcol, 0.95))
+    -- Energy, on an arc outside the rim. Drawn on the ring itself it reads as
+    -- a second ring drawn badly, and inside it lands on the mark.
+    if M.me and sim.ship_max_energy then
+        local cap = sim.ship_max_energy(M.me)
+        if cap > 0 then
+            local frac = math.max(0, math.min(1, sim.ship_energy(M.me) / cap))
+            local a0 = math.pi * 1.22
+            u:arc(L.guns.x, L.guns.y, L.guns.r * 1.2, a0,
+                  a0 + math.pi * 1.56 * frac, 3.4 * s, 24,
+                  pal.a(gcol, 0.75))
+        end
     end
-    -- A pad per charge, each with a picture of what it does inside it, drawn
-    -- whether or not you hold any: the same reason the stat row shows the
-    -- upgrades you do not have.
-    --
-    -- The icon is drawn from the weapon's own behaviour rather than from a
-    -- second field that could disagree with it, which is the rule the client
-    -- already follows for projectiles: a repel shoves and hurts nobody, so it
-    -- is rings going outward; a burst is many rounds at once, so it is a
-    -- rosette. Anything a zone puts in the other two slots gets a plain disc
-    -- and ui.lua's short name over it, which says "a charge" honestly rather
-    -- than drawing a repel and being wrong.
-    --
-    -- The count is a numeral from ui.lua, because glyphs are the one thing a
-    -- bare mesh cannot do.
+
+    if M.has_bomb then
+        local blvl = M.me and sim.ship_level
+            and sim.ship_level(M.me, sim.TRIG_BOMB)
+        local bcol = rung(pal.BOMB_LVL, blvl or 0)
+        pad_ring(L.bombs, bcol, bombs)
+        bomb_mark(L.bombs, pal.a(bcol, 0.95))
+    end
+
+    -- A cell per charge, drawn whether or not you hold any: the same reason
+    -- the stat row shows the upgrades you do not have. What is left is pips
+    -- along the cell's floor rather than a numeral above it -- a charge is one
+    -- of three, and three marks is a quantity read without counting, where the
+    -- numeral sat in the gap between two pads and belonged to neither.
     for _, c in ipairs(L.charge) do
         local n = M.counts and M.counts[c.slot] or 0
+        local cap = (M.maxes and M.maxes[c.slot]) or 3
         local lit = n > 0
-        ring(c.x, c.y, c.r, lit and pal.a(pal.CHARGE_COL, 0.9) or dim)
-        local ic = pal.a(pal.CHARGE_COL, lit and 0.85 or 0.28)
-        if c.slot == 0 then                       -- repel: a shove outward
-            u:ring(c.x, c.y, c.r * 0.30, 1.4 * s, 14, ic)
-            u:ring(c.x, c.y, c.r * 0.52, 1.2 * s, 16, ic)
-        elseif c.slot == 1 then                   -- burst: a rosette
-            for i = 0, 7 do
-                local a = i * math.pi / 4
-                u:disc(c.x + math.cos(a) * c.r * 0.46,
-                       c.y + math.sin(a) * c.r * 0.46, 2.2 * s, 6, ic)
+        local edge = pal.a(pal.CHARGE_COL, lit and 0.55 or 0.22)
+        local half = c.w / 2
+        u:rect(c.x - half, c.y - half, c.w, c.w,
+               pal.a(pal.CHARGE_COL, lit and 0.05 or 0.02))
+        u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s, edge)
+        marks.charge(c.slot, c.x, c.y + c.w * 0.08, c.w * 0.42,
+                     pal.a(pal.CHARGE_COL, lit and 0.92 or 0.28))
+        local pitch = c.w * 0.19
+        local px = c.x - (cap - 1) * pitch / 2
+        for i = 1, cap do
+            local at = px + (i - 1) * pitch
+            if i <= n then
+                u:disc(at, c.y - c.w * 0.33, 2.4 * s, 8, pal.CHARGE_COL)
+            else
+                u:ring(at, c.y - c.w * 0.33, 2.4 * s, 1.4 * s, 8,
+                       pal.a(pal.CHARGE_COL, 0.3))
             end
-        else
-            u:disc(c.x, c.y, c.r * 0.22, 10, ic)
         end
     end
 
     if stick then
-        ring(stick.ox, stick.oy, L.home.r, dim)
-        ring(stick.x, stick.y, L.r * 0.42, live, 16)
+        local live = pal.a(pal.FRIEND, 0.9)
+        u:ring(stick.ox, stick.oy, L.home.r, 1.8 * s, 26, dim)
+        u:ring(stick.x, stick.y, L.r * 0.42, 1.8 * s, 16, live)
         u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, live)
     else
         -- A resting mark where a thumb should go. The stick itself is
         -- relative -- it appears wherever you press -- but a control that is
         -- invisible until you find it is a control nobody finds.
-        ring(L.home.x, L.home.y, L.home.r, pal.a(pal.DIM, 0.28))
-        ring(L.home.x, L.home.y, L.r * 0.3, pal.a(pal.DIM, 0.35), 16)
+        u:ring(L.home.x, L.home.y, L.home.r, 1.8 * s, 26, pal.a(pal.DIM, 0.28))
+        u:ring(L.home.x, L.home.y, L.r * 0.3, 1.8 * s, 16, pal.a(pal.DIM, 0.35))
     end
 end
 

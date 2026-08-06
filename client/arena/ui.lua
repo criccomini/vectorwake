@@ -18,7 +18,7 @@
 -- at the point of drawing.
 
 local pal = require("arena.palette")
-local touch = require("arena.touch")
+local marks = require("arena.marks")
 local state = require("arena.state")
 local world = require("arena.world")
 
@@ -75,9 +75,9 @@ end
 -- would have grown the shapes and left the lines where they were: a set of
 -- hairlines at twice the size, which is not the same drawing bigger. The floor
 -- is for the small end, where a stroke under a pixel disappears.
-local function pen(k, ratio)
-    return math.max(0.9 * S, k * ratio)
-end
+-- Strokes off the mark's own size. Shared with the pads, which draw the same
+-- marks and have to weight them the same way.
+local pen = marks.pen
 
 -- `font` names one of the faces the gui scene carries: nil for the mono
 -- everything in flight is set in, "menu" for the menu's own. It is passed
@@ -514,6 +514,9 @@ function M.begin(layer, w, h, density, touching, now)
     -- every frame would be the same as not having one.
     if S ~= density then wrap_cache = {} end
     S = density
+    -- The marks draw into the same layer, and the pads reach for them after
+    -- this returns, so they are handed it here rather than by each caller.
+    marks.begin(layer, density)
     M.touching = touching or false
     text = state.text
     nt = 0
@@ -1265,17 +1268,20 @@ local CHARGE_HUES = {repel = pal.CHARGE_COL, burst = pal.BURST}
 -- the bouncing runs is a question for colour to answer later. A shape that
 -- also has to carry a count is a shape doing two jobs at the size where it can
 -- barely do one.
-local BOLT_LEN, BOLT_DOT, BOLT_FAN = 1.4, 0.17, 0.47
+local BOLT_LEN, BOLT_DOT, BOLT_FAN =
+    marks.BOLT_LEN, marks.BOLT_DOT, marks.BOLT_FAN
 
 -- `held` is a barrel you have but are not firing: drawn, so the fan does not
 -- appear to vanish when it is declined, but not counted as a round. What is
 -- not firing does not bounce, and a ring on it says it does.
+-- The angle is negated on the way out and the dot flipped back on the way in.
+-- This file reckons y downward and the marks reckon it upward, so a fan
+-- handed over unturned comes back mirrored. It is a symmetric fan and nothing
+-- would have shown, which is exactly why it is done here rather than left to
+-- be noticed.
 local function bolt_line(m, ang, col, held)
-    local ca, sa = math.cos(ang), math.sin(ang)
-    local d = m.k * BOLT_LEN
-    local dx, dy = m.origin + ca * d, m.y + sa * d
-    u:seg(m.origin, ry(m.y), dx, ry(dy), pen(m.k, 0.075), col)
-    u:disc(dx, ry(dy), m.k * BOLT_DOT, 10, col)
+    local dx, dy = marks.bolt_line(m.origin, ry(m.y), -ang, m.k, col)
+    dy = ry(dy)
     if not held then m.dots[#m.dots + 1] = {dx, dy} end
     m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
 end
@@ -1292,15 +1298,11 @@ local function mk_bolt(hx, cy, k, col)
     return m
 end
 
-local BOMB_LEN, BOMB_R = 1.32, 0.46
+local BOMB_LEN, BOMB_R = marks.BOMB_LEN, marks.BOMB_R
 
 local function mk_bomb(hx, cy, k, col)
-    local tail = hx - k * BOMB_LEN
-    u:seg_fade(tail, ry(cy), hx, ry(cy), pen(k, 0.078), pen(k, 0.244), 0,
-               (col[4] or 1) * 0.6, col)
-    u:ring(hx, ry(cy), k * BOMB_R, pen(k, 0.122), 12, col)
-    u:disc(hx, ry(cy), k * 0.19, 8, col)
-    return {x = hx, y = cy, k = k, tail = tail,
+    marks.bomb_body(hx, ry(cy), k, col)
+    return {x = hx, y = cy, k = k, tail = hx - k * BOMB_LEN,
             out = k * BOMB_R, far = k * BOMB_R}
 end
 
@@ -1377,9 +1379,8 @@ local function dec_bounce(m, col, n)
     -- dot; one that carries on off the wall is a dot with something still
     -- around it.
     if m.bolt then
-        local r = m.k * (BOLT_DOT + 0.16)
         for _, d in ipairs(m.dots) do
-            u:ring(d[1], ry(d[2]), r, pen(m.k, 0.065), 12, col)
+            local r = marks.bolt_bounce(d[1], ry(d[2]), m.k, col)
             m.far = math.max(m.far, d[1] - m.x + r)
         end
         return
@@ -1405,11 +1406,7 @@ end
 -- sharing the mark with the fragments that hang outside it.
 local function dec_prox(m, col, n)
     local r = m.out + m.step * (0.52 + 0.14 * math.min(n, 3))
-    for i = 0, 3 do
-        local a0 = i * math.pi / 2 + 0.17
-        u:arc(m.x, ry(m.y), r, a0, a0 + math.pi / 2 - 0.34,
-              pen(m.k, 0.106), 5, pal.a(col, (col[4] or 1) * 0.9))
-    end
+    marks.bomb_prox(m.x, ry(m.y), r, m.k, pal.a(col, (col[4] or 1) * 0.9))
     m.out = m.out + m.step
     m.far = math.max(m.far, r)
 end
@@ -1574,12 +1571,18 @@ local STACK, STACK_SHARE = 1.5, 0.34
 
 local function status(me, charges, lift)
     local slots = charges or {}
-    -- The pad carries the charge counts on a touchscreen, so those rows would
-    -- be the same thing twice at opposite corners.
-    local show_charges = #slots > 0 and not M.touching
+    -- On a touchscreen every one of these rows is drawn again on a pad, in the
+    -- same marks, at the far corner of the same screen. The pads win: they are
+    -- where a thumb already is, they carry the add-ons in the mark itself, and
+    -- a control that describes itself does not need a legend. What is left
+    -- here is the bounty, which is the one line no pad has anywhere to put.
+    local show_rows = not M.touching
+    local show_charges = #slots > 0 and show_rows
     local trigs = 0
-    for t = 0, SIM_TRIGGERS - 1 do
-        if sim.has_trigger(me, t) then trigs = trigs + 1 end
+    if show_rows then
+        for t = 0, SIM_TRIGGERS - 1 do
+            if sim.has_trigger(me, t) then trigs = trigs + 1 end
+        end
     end
     local n = trigs + (show_charges and #slots or 0) + 1
 
@@ -1614,7 +1617,7 @@ local function status(me, charges, lift)
 
     -- A level is the same weapon harder, so it is rungs on a ladder; an
     -- add-on changes what the round is, so it is drawn onto the round.
-    for t = 0, SIM_TRIGGERS - 1 do
+    for t = 0, show_rows and SIM_TRIGGERS - 1 or -1 do
         if sim.has_trigger(me, t) then
             local lvl = sim.ship_level(me, t)
             local reach = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
@@ -2362,34 +2365,6 @@ local function coords(me)
         x + 26 * S, base - 4 * S, (FONT - 3) * S, pal.a(pal.INK, 0.85))
 end
 
--- The count in each charge pad.
---
--- The pad and its icon are drawn by touch.lua, which owns where a pad is and
--- tests taps against the same arithmetic -- the two were written out
--- separately once and drifted, so half a pad did nothing and the dead space
--- beside it fired. This adds the one thing a mesh cannot: a numeral.
---
--- A kind you hold none of still shows its zero rather than vanishing. The
--- pad is a control, and a control that disappears when it has nothing to do
--- is a control a player stops believing in.
-local function pad_charges(charges)
-    if not M.touching then return end
-    local L = touch.layout(W, H, S)
-    for i, pad in ipairs(L.charge or {}) do
-        local c = charges and charges[i]
-        if c then
-            -- Above the pad, not inside it. A pad is a thumb's worth of ring
-            -- with a picture already in it, and a numeral in there lands on
-            -- the picture or on the stroke; there is nothing above it.
-            -- touch.lua counts up from the bottom; text counts down from the
-            -- top.
-            txt(tostring(c.count), pad.x, H - (pad.y + pad.r * 1.5),
-                (FONT - 1) * S,
-                c.count > 0 and pal.CHARGE_COL or pal.a(pal.DIM, 0.5), "center")
-        end
-    end
-end
-
 -- The flags, as flags.
 --
 -- This was a sentence -- "flags  you 2 - 1 them   1 loose" -- which is three
@@ -2622,7 +2597,6 @@ function M.hud(o)
     -- The two big centred lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
-    pad_charges(o.charges)
     flag_strip(me)
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,

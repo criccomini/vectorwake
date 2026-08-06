@@ -1148,6 +1148,14 @@ function update(self, dt)
         -- change, because a zone can hand you a different ship than the one
         -- you asked for.
         touch.has_bomb = sim.has_trigger(me, sim.TRIG_BOMB)
+        -- Which hull is yours, so a pad can read its own weapon's level and
+        -- add-ons out of the core instead of having each of them copied into
+        -- a field here and kept in step.
+        touch.me = me
+        -- Where the dial ends, so the charge rail knows what it may not climb
+        -- into. ui.lua owns that metric and cannot be asked from touch.lua,
+        -- which it requires.
+        touch.ceiling = wh - ui.radar_span()
         -- Flying again is what takes the card down, and it has to be the
         -- edge of that, not the state. The zone announces a kill every tick
         -- but packs a snapshot one tick in five, and a shot fired and landing
@@ -1168,8 +1176,10 @@ function update(self, dt)
         -- and a zone that fills all four gets four.
         touch.charges = my_slots()
         touch.counts = {}
+        touch.maxes = {}
         for _, k in ipairs(touch.charges) do
             touch.counts[k] = sim.ship_charge(me, k)
+            touch.maxes[k] = sim.charge_max(me, k)
         end
 
         -- Doors and wormholes: world geometry that moves, so it cannot live in

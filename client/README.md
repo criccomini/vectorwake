@@ -54,6 +54,7 @@ in `sim/`.
 | `arena/arena.script` | The frame loop: input, stepping, drawing |
 | `arena/net.lua` | Connect, predict, reconcile. Decides nothing |
 | `arena/touch.lua` | Thumbstick and weapon pads; emits the same button bits |
+| `arena/marks.lua` | The gun and the bomb, drawn once for the corner and the pads |
 | `arena/menu.lua` | The menu tree and the settings it saves |
 | `arena/directory.lua` | Asks a directory what games are running |
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
@@ -378,6 +379,38 @@ and read clearly, and the six-add-on hull that no zone in the catalog hands
 out gets a sixth each and reads as a dense mark, which is the right way round.
 Spending the room as it was asked for instead would put a Spire's fragments
 through the row above.
+
+On a touchscreen the weapon rows are not drawn at all, and the bounty is the
+whole of the corner. The pads carry them instead: `arena/marks.lua` holds the
+gun and the bomb as one drawing, `arena/touch.lua` puts each in the middle of
+the control that fires it, and the add-ons go into the mark the same way they
+go into a row. A player who has learned the corner has learned the pads, which
+is the only reason it is worth having the marks in a third file rather than in
+whichever one drew them first.
+
+## What a thumb gets
+
+The two triggers own the bottom right corner, side by side, sized so the gun
+is the larger of them. Round, because the charges are square: which class of
+control a thing is reads before the picture inside it does, and a round pad
+beside a square cell can never be taken for another trigger.
+
+The gun wears its energy on an arc outside its rim. On the rim it read as a
+second ring drawn badly, and inside it landed on the mark.
+
+The charges go above the triggers rather than beside them, so reaching the gun
+never crosses one. They climb the edge as a column while there is edge to
+climb, and step sideways when there is not: on a phone held upright there is
+most of a screen of it, and held sideways the dial takes better than half the
+height and leaves room for one cell. `M.ceiling` is where the dial ends,
+handed down by the caller -- `touch.lua` knows where a thumb goes and `ui.lua`
+knows where the instruments go, and neither reaching into the other is what
+lets the two of them not depend on each other at all.
+
+How many of a charge are in hand is pips along the cell's floor, one per slot
+the hull can hold, filled as far as it is. It was a numeral floating above the
+pad, which is the one thing on this screen a bare mesh cannot draw, and it sat
+in the gap between two controls belonging to neither.
 
 `lua5.1 client/tests/stack_test.lua` runs the real `M.hud` against a stubbed
 engine and measures: every add-on draws something, a third rung looks
