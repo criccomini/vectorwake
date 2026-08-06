@@ -475,9 +475,11 @@ check("and the row covers everything its mark drew",
 -- actually carrying rather than the add-ons weapons have in general, or a
 -- player who just picked up their first proximity is looking at a new ring
 -- with nothing on the screen connecting the two.
+-- Upper cased, because the interface sets what it says in capitals and what
+-- these checks are about is which words it says.
 local function said()
     local out = {}
-    for k = 1, state.n do out[#out + 1] = state.text[k].s end
+    for k = 1, state.n do out[#out + 1] = string.upper(state.text[k].s) end
     return table.concat(out, "\n")
 end
 
@@ -501,19 +503,19 @@ frame()
 frame(point_in("bomb"))
 local words = said()
 check("pointing at the bomb names the add-ons it is carrying",
-      words:find("Carrying prox, shrapnel x3.", 1, true) ~= nil, words)
+      words:find("CARRYING PROX, SHRAPNEL X3.", 1, true) ~= nil, words)
 
 mods = {[0] = {[0] = 2}}
 frame()
 frame(point_in("gun"))
 check("and names the gun's separately",
-      said():find("Carrying multi x2.", 1, true) ~= nil, said())
+      said():find("CARRYING MULTI X2.", 1, true) ~= nil, said())
 
 mods = {}
 frame()
 frame(point_in("gun"))
 check("a bare weapon is not described as carrying anything",
-      said():find("Carrying", 1, true) == nil, said())
+      said():find("CARRYING", 1, true) == nil, said())
 
 -- --- the block is sized to the window it is in ----------------------------
 

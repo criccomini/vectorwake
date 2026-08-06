@@ -116,7 +116,9 @@ check("a touchscreen gets rows, not a picture of keys", #frames == 0,
 local LEGEND_WORDS = {}
 for _, w in ipairs({"fly", "guns", "multifire", "bombs", "charges", "players",
                     "map", "menu"}) do
-    LEGEND_WORDS[w] = true
+    -- Keyed in one case: the interface sets what it says in capitals, and
+    -- what this is looking for is the words.
+    LEGEND_WORDS[string.upper(w)] = true
 end
 
 -- The page takes the room a desktop window has, and gives it back when the
@@ -150,7 +152,9 @@ local function draw_at(w, h)
         y1 = math.max(y1, h - t.y + t.px)
         local reach = t.x + (t.pivot ~= "right" and #t.s * t.px * 0.62 or 0)
         x1 = math.max(x1, reach)
-        if LEGEND_WORDS[t.s] then legend = math.max(legend, reach) end
+        if LEGEND_WORDS[string.upper(t.s)] then
+            legend = math.max(legend, reach)
+        end
     end
     return {x0 = x0, x1 = x1, y0 = y0, y1 = y1, keyx1 = keyx1,
             legend = legend, keyh = frames[1] and frames[1].h}

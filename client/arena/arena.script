@@ -429,6 +429,13 @@ local function pilot_name(i)
     return (p and p.name) or ("ship " .. i)
 end
 
+-- The same name, wrapped so a feed line knows which of its parts is a name.
+-- The interface says its own words in capitals and quotes everybody else's:
+-- a call sign is upper, lower and numeric exactly as its owner has it.
+local function pilot_named(i)
+    return {pilot_name(i)}
+end
+
 -- One line in the notification feed. Kills are what it was built for and are
 -- still most of what it carries, but anything worth telling the player about
 -- in a sentence belongs here rather than in a second widget: it is already
@@ -449,7 +456,7 @@ end
 -- paid, and that message is already how ratings arrive.
 local function drain_kills()
     for _, k in ipairs(net.kills) do
-        local vn = pilot_name(k.victim)
+        local vn = pilot_named(k.victim)
         -- Your own bomb counts as your kill in the ledger, which is correct
         -- and reads as nonsense in a feed line.
         -- The payout is shown when there is one. A pilot who was carrying
@@ -471,9 +478,9 @@ local function drain_kills()
         elseif k.victim == me then
             col = pal.HURT
         end
-        notify((k.victim == k.killer) and (vn .. " was caught in it")
-            or (k.killer == 255) and (vn .. " flew into the wall")
-            or (pilot_name(k.killer) .. " killed " .. vn .. paid), col)
+        notify((k.victim == k.killer) and {vn, " was caught in it"}
+            or (k.killer == 255) and {vn, " flew into the wall"}
+            or {pilot_named(k.killer), " killed ", vn, paid}, col)
         -- Your own death deals the card shown under DESTROYED. Set from the
         -- zone's announcement rather than from the local simulation, which
         -- can be up to four ticks behind the news. See the clear below.
@@ -517,9 +524,9 @@ local function drain_events()
         elseif ty == sim.EV_FLAG_TAKE or ty == sim.EV_FLAG_DROP then
             local col = (sim.ship_team(a) == sim.ship_team(me))
                 and pal.FRIEND or pal.ENEMY
-            notify(pilot_name(a) ..
-                (ty == sim.EV_FLAG_TAKE and " took a flag" or " dropped a flag"),
-                col)
+            notify({pilot_named(a),
+                (ty == sim.EV_FLAG_TAKE and " took a flag"
+                 or " dropped a flag")}, col)
         end
     end
 end
