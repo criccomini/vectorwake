@@ -4266,6 +4266,7 @@ mod tests {
         let stuck_on = ai::Scan {
             prize: Some((px(511), px(506))),
             foe: Some(ai::Foe { x: px(503), y: px(517), vx: 0.0, vy: 0.0, clear: true }),
+            company: true,
             flag: None,
             threat: None,
             // Hand-built, so the whiskers say open on purpose: this test is

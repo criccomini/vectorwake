@@ -224,6 +224,14 @@ pub struct Threat {
 #[derive(Clone, Default)]
 pub struct Scan {
     pub foe: Option<Foe>,
+    /// Anybody at all inside sight, either side. The fights only care about
+    /// `foe`, but a departure holds the door for everyone: a pilot that logs
+    /// off in front of a teammate has popped out of their world exactly as
+    /// rudely as in front of an enemy. This went unenforced while the router
+    /// could fail: a leaver often could not reach the best corner, took a
+    /// nearer one, and the test that asserts a quiet exit stayed green on
+    /// where the roamers happened to be.
+    pub company: bool,
     pub flag: Option<(f32, f32)>,
     pub prize: Option<(f32, f32)>,
     pub threat: Option<Threat>,
@@ -367,7 +375,17 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     let mut best = SIGHT * SIGHT;
     for i in 0..w.state.ship_count as usize {
         let o = &w.state.ships[i];
-        if i == ship as usize || o.active == 0 || o.alive == 0 || o.team == me.team {
+        if i == ship as usize || o.active == 0 || o.alive == 0 {
+            continue;
+        }
+        {
+            let (ox, oy) = (o.x as f32 / 256.0, o.y as f32 / 256.0);
+            let d2 = (ox - mx) * (ox - mx) + (oy - my) * (oy - my);
+            if d2 < SIGHT * SIGHT {
+                out.company = true;
+            }
+        }
+        if o.team == me.team {
             continue;
         }
         // Somebody standing in a safe zone is not a target. Nothing can be
@@ -907,7 +925,7 @@ impl Bot {
     }
 
     pub fn horizon_clear(&self) -> bool {
-        self.seen.foe.is_none() && self.seen.flag.is_none()
+        !self.seen.company && self.seen.flag.is_none()
     }
 
     fn rand(&mut self) -> f32 {
@@ -1102,19 +1120,10 @@ impl Bot {
             self.drop_route();
             return straight;
         }
-        // How far the destination may drift before the route is replanned,
-        // scaled by how far away it is. A fixed threshold made a distant foe
-        // a metronome for the router: at five decides a second a target two
-        // thousand pixels off re-bought a cross-map search every time it
-        // flew a hundred and twenty-eight, and the first nine-tenths of the
-        // replacement was the path already held. The far half of a route
-        // barely moves when the far end wobbles; the near half is corrected
-        // every tick by the waypoint chase and the clear-line skip anyway.
-        let drift = REROUTE_PX.max(straight * 0.15);
         let stale = self.path.is_empty()
             || self.at >= self.path.len()
-            || (self.path_to.0 - dest.0).abs() > drift
-            || (self.path_to.1 - dest.1).abs() > drift;
+            || (self.path_to.0 - dest.0).abs() > REROUTE_PX
+            || (self.path_to.1 - dest.1).abs() > REROUTE_PX;
         if stale {
             let route = nav.route(me, dest);
             self.store_route(me, route, dest);

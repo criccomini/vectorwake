@@ -496,14 +496,13 @@ impl Scratch {
         self.heap.clear();
         self.stamp[start] = gen;
         self.g[start] = 0;
-        self.heap.push(std::cmp::Reverse((0, u32::MAX, start as u32)));
+        self.heap.push(std::cmp::Reverse((0, start as u32, 0)));
 
         let (gx, gy) = ((goal % W) as i32, (goal / W) as i32);
         let gl: Vec<u32> = nav.land.iter().map(|d| d[goal]).collect();
         let mut expanded = 0u32;
         let mut found = false;
-        while let Some(std::cmp::Reverse((_, ginv, cur))) = self.heap.pop() {
-            let g_then = u32::MAX - ginv;
+        while let Some(std::cmp::Reverse((_, cur, g_then))) = self.heap.pop() {
             let cur = cur as usize;
             if cur == goal {
                 found = true;
@@ -574,12 +573,7 @@ impl Scratch {
                         h = h.max(dn.abs_diff(dg));
                     }
                 }
-                // Ties on f break toward the larger g: the block field
-                // offers many equal-priced corridors, and breadth-first over
-                // that plateau visits all of them abreast where depth-first
-                // walks one to its end. The third element keeps the pop's g
-                // readable for the superseded-entry check above.
-                self.heap.push(std::cmp::Reverse((ng + h, u32::MAX - ng, n as u32)));
+                self.heap.push(std::cmp::Reverse((ng + h, n as u32, ng)));
             }
         }
         if !found {
