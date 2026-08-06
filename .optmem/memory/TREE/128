@@ -1,1 +1,2 @@
 vectorwake (criccomini, push to main): a Subspace-inspired MMO with its own art, on a deterministic C99 core, a Rust server and a Defold client, now live on Vultr and being debugged by playing it.                                                                                           
+vectorwake went from a quietly broken fleet to a real, legible game: live bots and teams, a self-explaining interface, honest kills and motion, converted maps, and a roster that routes everywhere for a sixth of the CPU, with every change measured on both sides.                          
