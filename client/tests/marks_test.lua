@@ -149,17 +149,21 @@ end
 -- A machine's helmet, found by its crown: a horizontal run with a vertical
 -- dropping from each of its two ends. That is the shape a flat top and two
 -- straight sides make and nothing else in these screens draws one.
+--
+-- The sides are allowed to start a line width below the crown rather than on
+-- it. They butt into it instead of meeting it, so that four capped strokes do
+-- not overlap in four bright corners.
 local function boxes(list)
     local out = {}
     for _, sh in ipairs(list) do
         if horizontal(sh) then
             local left, right, drop
             for _, o in ipairs(list) do
-                if vertical(o) and math.abs(o.ay - sh.ay) < 0.01
-                    and o.by > o.ay then
+                if vertical(o) and o.by > o.ay
+                    and o.ay >= sh.ay - 0.01 and o.ay <= sh.ay + sh.w then
                     if math.abs(o.ax - sh.ax) < 0.01 then left = o end
                     if math.abs(o.ax - sh.bx) < 0.01 then right = o end
-                    drop = o.by - o.ay
+                    drop = o.by - sh.ay
                 end
             end
             if left and right then
@@ -232,9 +236,11 @@ if rail_only[1] then
     check("the person wears a visor", #band >= 4,
           #band .. " slices of band")
     if #band >= 4 then
-        -- Curved: the slices at the ends of the band start lower than the
-        -- ones in the middle. A ruled band draws them all level.
-        local mid_top, end_top = math.huge, -math.huge
+        -- Curved, and curved the one way: the slices at the ends of the band
+        -- ride higher than the ones in the middle. A ruled band draws them
+        -- all level, and struck the other way round they hang lower, which is
+        -- a brow rather than a visor.
+        local mid_top, end_top = -math.huge, math.huge
         local lo, hi = math.huge, -math.huge
         for _, sh in ipairs(band) do
             lo = math.min(lo, sh.x0)
@@ -243,8 +249,8 @@ if rail_only[1] then
         local span = hi - lo
         for _, sh in ipairs(band) do
             local t = ((sh.x0 + sh.x1) / 2 - lo) / span
-            if t > 0.4 and t < 0.6 then mid_top = math.min(mid_top, sh.top) end
-            if t < 0.08 or t > 0.92 then end_top = math.max(end_top, sh.top) end
+            if t > 0.4 and t < 0.6 then mid_top = math.max(mid_top, sh.top) end
+            if t < 0.08 or t > 0.92 then end_top = math.min(end_top, sh.top) end
         end
         -- Thick enough to be a band, measured on one slice at the middle. The
         -- whole band's extent counts the bend as well as the depth, so a
@@ -258,9 +264,9 @@ if rail_only[1] then
         end
         check("of some depth", deep > bowl.r * 0.3,
               string.format("%.3f of a radius deep", deep / bowl.r))
-        check("and it is curved rather than ruled across",
-              end_top - mid_top > bowl.r * 0.02,
-              string.format("%.3f of a radius of bend", (end_top - mid_top)
+        check("and it curves up at the ends, not down",
+              mid_top - end_top > bowl.r * 0.02,
+              string.format("%.3f of a radius of bend", (mid_top - end_top)
                             / bowl.r))
         -- Inside the glass, with the gap kept. Measured at the corners, which
         -- is where a band run to the mark's nominal width escapes.

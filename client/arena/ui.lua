@@ -230,9 +230,14 @@ end
 -- whole of the difference and all it needs to be.
 --
 -- Three sides and a collar rather than a closed outline. Closing it lays the
--- box's own base under the collar, and two lines of the same colour on one
--- pixel row is a brighter line wherever these marks draw at part alpha, which
--- is every nameplate in the arena. The round caps fill the top corners.
+-- box's own base under the collar, and two lines of one colour on one pixel
+-- row is a brighter line wherever these marks draw at part alpha, which is
+-- every nameplate in the arena.
+--
+-- The same reasoning decides the corners. A capped stroke runs half a width
+-- past each end, so four capped sides overlap in four squares and light every
+-- corner. The crown is capped and covers them; the sides butt into it and
+-- into the collar, each drawing its own length and no more.
 local function hull_helm(cx, cy, k, col)
     local w = k
     local h = w * HELM_TALL
@@ -242,8 +247,8 @@ local function hull_helm(cx, cy, k, col)
     local neck = mid + r * HELM_NECK
     local line = pen(k, 0.11)
     u:seg(x0, ry(y0), x0 + w, ry(y0), line, col, true)
-    u:seg(x0, ry(y0), x0, ry(neck), line, col, true)
-    u:seg(x0 + w, ry(y0), x0 + w, ry(neck), line, col, true)
+    u:seg(x0, ry(y0 + line / 2), x0, ry(neck - line / 2), line, col)
+    u:seg(x0 + w, ry(y0 + line / 2), x0 + w, ry(neck - line / 2), line, col)
     collar(cx, neck, w / 2, line, col)
     return x0, y0, w, h, mid, r
 end
@@ -270,27 +275,35 @@ local VISOR_TOP, VISOR_BOT = 0.34, 0.10
 -- unbroken and the face behind it is left alone.
 --
 -- Curved rather than ruled. A straight band across a round shell reads as a
--- slot cut through it; a band that bends the way the shell bends reads as
--- something wrapped around the front of it. The ends stop short of the glass
--- rather than touching, which is what keeps it a visor in a helmet instead of
--- a helmet in two pieces.
+-- slot cut through it; a band that bends reads as something wrapped around
+-- the front of it. The ends stop short of the glass rather than touching,
+-- which is what keeps it a visor in a helmet instead of a helmet in two
+-- pieces.
+--
+-- It bends the other way from the crown: the ends ride up and the middle sits
+-- low. Struck the same way round as the dome it fell away at both ends, which
+-- is the line a brow makes, and a brow drawn across the eyes is a frown. This
+-- way the shell and the band disagree, and the shape between them is what
+-- reads as glass rather than as a second outline.
 --
 -- Drawn as a strip of quads rather than one fan, because the band is not
--- convex: its top and bottom both fall away at the ends, and a fan struck
--- from one corner of a shape like that folds over itself.
+-- convex: its top and bottom both curve the same way, and a fan struck from
+-- one corner of a shape like that folds over itself.
 local function pilot_mark(cx, cy, col, k)
     k = k or MARK_K * S
     local w, h, mid, r = select(3, helm(cx, cy, k, col))
     local _ = h
     -- The glass, less the line it is drawn with and the gap held off it.
     local rin = r - (pen(k, 0.11) + w * 0.045)
-    local pivot = mid + r * VISOR_PIVOT
-    -- Both edges are arcs about that pivot, so the band is a slice of a ring
-    -- much larger than the helmet: a gentle bend rather than a crescent.
-    local top = pivot - (mid - r * VISOR_TOP)
-    local bot = pivot - (mid + r * VISOR_BOT)
+    -- A pivot above the helmet, so both edges are arcs hanging from it: the
+    -- band is a slice of a ring much larger than the shell, lowest where it
+    -- crosses the middle. Below the helmet instead and the same arithmetic
+    -- gives the brow.
+    local pivot = mid - r * VISOR_PIVOT
+    local top = (mid - r * VISOR_TOP) - pivot
+    local bot = (mid + r * VISOR_BOT) - pivot
     local function edge(rad, x)
-        return pivot - math.sqrt(math.max(0, rad * rad - x * x))
+        return pivot + math.sqrt(math.max(0, rad * rad - x * x))
     end
     -- How far out the band runs before it would leave the glass. Solved by
     -- halving rather than in closed form: the answer is a couple of pixels
