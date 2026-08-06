@@ -1574,12 +1574,18 @@ local STACK, STACK_SHARE = 1.5, 0.34
 
 local function status(me, charges, lift)
     local slots = charges or {}
-    -- The pad carries the charge counts on a touchscreen, so those rows would
-    -- be the same thing twice at opposite corners.
+    -- On a touchscreen the pads carry all of this: the counts sit over the
+    -- charge pads and the weapon marks sit inside the trigger pads, drawn by
+    -- pad_weapons below, so any row here would be the same thing twice at
+    -- opposite corners of a screen that has no room for once. What is left
+    -- of the stack on glass is the one row no pad speaks for: the bounty.
     local show_charges = #slots > 0 and not M.touching
+    local show_trigs = not M.touching
     local trigs = 0
-    for t = 0, SIM_TRIGGERS - 1 do
-        if sim.has_trigger(me, t) then trigs = trigs + 1 end
+    if show_trigs then
+        for t = 0, SIM_TRIGGERS - 1 do
+            if sim.has_trigger(me, t) then trigs = trigs + 1 end
+        end
     end
     local n = trigs + (show_charges and #slots or 0) + 1
 
@@ -1614,7 +1620,7 @@ local function status(me, charges, lift)
 
     -- A level is the same weapon harder, so it is rungs on a ladder; an
     -- add-on changes what the round is, so it is drawn onto the round.
-    for t = 0, SIM_TRIGGERS - 1 do
+    for t = 0, show_trigs and SIM_TRIGGERS - 1 or -1 do
         if sim.has_trigger(me, t) then
             local lvl = sim.ship_level(me, t)
             local reach = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
@@ -2362,6 +2368,45 @@ local function coords(me)
         x + 26 * S, base - 4 * S, (FONT - 3) * S, pal.a(pal.INK, 0.85))
 end
 
+-- The weapon marks, inside the trigger pads.
+--
+-- On a touchscreen the corner stack's weapon rows were the pads' information
+-- at the opposite corner of the screen: the pad is where the thumb and the
+-- eye already are, and the stack row was a second copy in the one place a
+-- phone cannot spare. So the mark the stack drew for a trigger is drawn
+-- inside the trigger's own pad, the same picture from the same function,
+-- with the rung ladder under it. The pad itself, the ring and the glow of a
+-- held trigger, stays touch.lua's; this is the loadout worn on top of it,
+-- the way the charge counts already ride the charge pads.
+local function pad_weapons(me)
+    if not M.touching then return end
+    local L = touch.layout(W, H, S)
+    for t = 0, SIM_TRIGGERS - 1 do
+        local pad = (t == sim.TRIG_GUN) and L.guns
+            or (touch.has_bomb and L.bombs or nil)
+        if pad and sim.has_trigger(me, t) then
+            -- The mark composes rightward from its subject and trails back
+            -- left of it, so the subject sits a little left of centre for
+            -- the whole drawing to land centred. Sized so the widest
+            -- loadout's reach, MARK_REACH of k plus the fragments that hang
+            -- outside it, stays inside the ring; pads_test measures exactly
+            -- that with everything worn at once.
+            local k = pad.r * 0.40
+            local cx = pad.x - k * 0.30
+            -- touch.lua counts up from the bottom, marks count down from
+            -- the top, the same flip pad_charges does. The mark rides a
+            -- little high so the ladder can sit under it and both read as
+            -- one drawing.
+            local cy = (H - pad.y) - pad.r * 0.10
+            weapon_mark(cx, cy, k, me, t)
+            local lvl = sim.ship_level(me, t)
+            local lw = pad.r * 0.9
+            ladder(pad.x - lw / 2, (H - pad.y) + pad.r * 0.42, 3, lvl + 1,
+                   pal.FRIEND, lw, 2.6 * S)
+        end
+    end
+end
+
 -- The count in each charge pad.
 --
 -- The pad and its icon are drawn by touch.lua, which owns where a pad is and
@@ -2622,6 +2667,7 @@ function M.hud(o)
     -- The two big centred lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
+    pad_weapons(me)
     pad_charges(o.charges)
     flag_strip(me)
     if o.banner and o.banner ~= "" then
