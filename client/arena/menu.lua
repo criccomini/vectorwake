@@ -45,6 +45,12 @@ M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
 M.hover = nil           -- the stage row a pointer is resting on
 M.note = nil            -- set by the arena when a connection fails
+-- A question the menu wants answered before it will do anything else, and
+-- nothing while there is none. Whoever raises it fills in the words and what
+-- each answer is worth; this file knows only that the last answer is the one
+-- that changes nothing, which is the one escape gives and the one the cursor
+-- starts on.
+M.ask = nil             -- {head = "...", keys = {{label, act}}, sel = n}
 -- Whether the games list has worked out where its cursor belongs since it was
 -- last opened. Declared up here because opening the menu clears it and the
 -- opening is written above the asking.
@@ -263,14 +269,11 @@ local function zone_rows()
             act = "join", value = i,
         }
     end
-    -- Leaving is not a destination, so it is not a stop on the rail: it is
-    -- the last thing in the list of games, which is where you are when you
-    -- are thinking about which game you are in. Only with one behind the
-    -- panel, since on the home screen there is nothing to leave.
-    if not M.home then
-        rows[#rows + 1] = {label = "leave this game", act = "leave",
-                           note = "back to the home screen"}
-    end
+    -- Nothing about leaving down here. The way out of a game is the game's own
+    -- row: choosing the one you are already in asks whether that is what you
+    -- meant. A row at the foot of the list was a way out written a long way
+    -- from the thing it was a way out of, and it stood in a list that is
+    -- otherwise entirely places to go.
     return rows
 end
 
@@ -481,6 +484,70 @@ function M.toggle()
     return M.open
 end
 
+-- The acts this file settles on its own: they change something the menu owns
+-- and nothing outside it has to hear about them. Anything else is handed back
+-- to the arena by name.
+--
+-- Out here rather than inline in `activate` because an answer to a question
+-- settles the same way a row does. Rolling a call sign is now a question, and
+-- the answer that rolls one has to land where the row that used to would have,
+-- not travel out to the arena and back for something the menu can do itself.
+local function settle(act)
+    if act == "reroll" then
+        M.reroll()
+    elseif act == "claim" then
+        account.claim(function(ok)
+            if not ok then M.note = account.note end
+        end)
+    elseif act == "key_seen" then
+        -- Off the screen and out of memory. It was never written to disk: a
+        -- key kept beside the secret it protects is a second copy of the same
+        -- thing.
+        account.key = ""
+    elseif act == "link" then
+        account.link(function(ok)
+            if not ok then M.note = account.note end
+        end)
+    elseif act == "volume" then
+        M.volume = M.volume % #VOLUMES + 1
+        M.apply_settings()
+        M.save_identity()
+    elseif act == "music" then
+        M.music = M.music % #MUSICS + 1
+        M.apply_settings()
+        M.save_identity()
+    elseif act == "cap" then
+        M.cap = M.cap % #CAPS + 1
+        M.apply_settings()
+        M.save_identity()
+    else
+        return act
+    end
+    return nil
+end
+
+-- Raise a question. `keys` is the answers in the order they are drawn, each a
+-- label and the action answering it returns, and the last of them is the one
+-- that changes nothing: it is where the cursor starts and what escape gives,
+-- so a question can always be got out of by the key that gets out of anything.
+function M.confirm(head, keys)
+    M.ask = {head = head, keys = keys, sel = #keys}
+end
+
+-- Answer the one that is up, and hand back what that answer is worth. Cleared
+-- before the action is returned, so whatever acts on it is acting with the
+-- question already down.
+local function answer(i)
+    local k = M.ask and M.ask.keys[i]
+    M.ask = nil
+    if not k or not k.act then return nil, true end
+    return settle(k.act), true
+end
+
+function M.click_answer(i)
+    return answer(i)
+end
+
 -- Open the menu at a particular level, which is what a failed connection
 -- wants: the reason belongs next to the thing that would fix it.
 function M.show(...)
@@ -488,6 +555,7 @@ function M.show(...)
     for _, id in ipairs({...}) do M.stack[#M.stack + 1] = id end
     M.open = true
     M.hover = nil
+    M.ask = nil
     -- The games list works out where its cursor belongs the next time it is
     -- looked at, so opening on it has to let it ask again.
     zone_synced = false
@@ -504,6 +572,10 @@ function M.close()
     M.open = false
     M.stack = {"root"}
     M.hover = nil
+    -- A question belongs to the panel it was asked in. Left standing, it would
+    -- be waiting on the next thing to open the menu, which is a player pressing
+    -- escape mid-fight and being asked something they have forgotten.
+    M.ask = nil
     -- The row as well as the level. Resetting only the stack left the root
     -- sitting on whatever was last chosen there, so escape-then-enter went
     -- wherever you went last time rather than into the first row, the same
@@ -585,6 +657,10 @@ function M.view()
     local out = {depth = #M.stack, sel = sel,
                  -- What the page has to say when it has nothing to list.
                  empty = nd.empty and nd.empty() or nil,
+                 -- The question, if one is up. Everything else in the view is
+                 -- still filled in: the panel is drawn and then stood down
+                 -- under it, rather than replaced by it.
+                 ask = M.ask,
                  -- The hull you are in, so the rail can draw it as its mark.
                  class = M.class,
                  -- Whether there is anything to shut, which is whether there
@@ -731,47 +807,46 @@ local function activate()
         return "team"
     elseif r.act == "found" then
         return "found"
-    elseif r.act == "join" then
-        -- Likewise a request. Which address serves this game, and whether it
-        -- answers, is the arena's business.
-        M.chosen = directory.rows[r.value]
-        return "join"
     elseif r.act == "reroll" then
-        M.reroll()
+        -- The one row on the pilot page that throws something away. A call
+        -- sign is the only name anybody has here, it is the name on the
+        -- scoreboard of every game this pilot has flown, and the row that
+        -- shows it used to replace it on the press with nothing said.
+        M.confirm("your call sign is " .. M.name,
+                  {{label = "roll", act = "reroll"}, {label = "keep"}})
         return nil
-    elseif r.act == "claim" then
-        account.claim(function(ok)
-            if not ok then M.note = account.note end
-        end)
-        return nil
-    elseif r.act == "key_seen" then
-        -- Off the screen and out of memory. It was never written to disk: a
-        -- key kept beside the secret it protects is a second copy of the same
-        -- thing.
-        account.key = ""
-        return nil
-    elseif r.act == "link" then
-        account.link(function(ok)
-            if not ok then M.note = account.note end
-        end)
-        return nil
-    elseif r.act == "volume" then
-        M.volume = M.volume % #VOLUMES + 1
-        M.apply_settings()
-        M.save_identity()
-        return nil
-    elseif r.act == "music" then
-        M.music = M.music % #MUSICS + 1
-        M.apply_settings()
-        M.save_identity()
-        return nil
-    elseif r.act == "cap" then
-        M.cap = M.cap % #CAPS + 1
-        M.apply_settings()
-        M.save_identity()
-        return nil
+    elseif r.act == "join" then
+        local pick = directory.rows[r.value]
+        -- Likewise a request. Which address serves this game, and whether it
+        -- answers, is the arena's business. Held before the question is asked
+        -- as well as without one, since the answer that joins carries a word
+        -- rather than a row.
+        M.chosen = pick
+        -- Every press on this list while you are in a game costs you the game
+        -- you are in, so every one of them asks first. Not on the home screen,
+        -- where there is nothing behind the panel to lose, and not on a game
+        -- nothing is serving, which has its own answer already.
+        if pick and not M.home and M.zone ~= "" then
+            if pick.name == M.zone then
+                -- The game you are already in. Joining it again is a
+                -- disconnect and a handshake to arrive where you already are,
+                -- so the press means the other thing it could mean. This is
+                -- the whole of how a player leaves now: the list used to carry
+                -- a "leave this game" row at its foot, a long way from the
+                -- game it was about, in a list otherwise all places to go.
+                M.confirm("you are already flying " .. pick.name,
+                          {{label = "leave", act = "leave"}, {label = "stay"}})
+                return nil
+            elseif pick.live then
+                M.confirm("leave " .. M.zone .. " for " .. pick.name .. "?",
+                          {{label = "switch", act = "join"},
+                           {label = "stay"}})
+                return nil
+            end
+        end
+        return "join"
     end
-    return r.act
+    return settle(r.act)
 end
 
 -- keys: {left, right, up, down, go, back} as booleans, already edge-detected
@@ -782,6 +857,25 @@ end
 -- can make a noise about it.
 function M.step(keys)
     if not M.open then return nil, false end
+
+    -- A question owns the keys while it is up, which is the whole of what
+    -- makes it a question rather than a notice: the list underneath cannot be
+    -- walked, and nothing behind it can be pressed by accident.
+    if M.ask then
+        local n = #M.ask.keys
+        -- Escape is the last answer, which is the one that changes nothing.
+        if keys.back then return answer(n) end
+        if keys.left or keys.up then
+            M.ask.sel = (M.ask.sel - 2) % n + 1
+            return nil, true
+        end
+        if keys.right or keys.down then
+            M.ask.sel = M.ask.sel % n + 1
+            return nil, true
+        end
+        if keys.go then return answer(M.ask.sel) end
+        return nil, false
+    end
 
     local id = M.stack[#M.stack]
     -- Built once. A node's rows may be a function, and asking it three times

@@ -28,3 +28,6 @@ cc = "1"
 
 [profile.release]
 opt-level = 2
+
+[profile.test]
+opt-level = 1

@@ -35,7 +35,15 @@ package.loaded["arena.net"] = {
     my_team_name = function() return "" end,
     protocol = 5, invite = function() end,
 }
-package.loaded["arena.callsign"] = {roll = function() return "Probe 1" end}
+local rolled = 0
+package.loaded["arena.callsign"] = {
+    roll = function() return "Probe 1" end,
+    seed = function() end,
+    generate = function()
+        rolled = rolled + 1
+        return "Probe " .. rolled
+    end,
+}
 package.loaded["arena.directory"] = {
     rows = {{zone = "chaos", name = "chaos", detail = "a brawl",
              count = "0 playing", players = 0, bots = 51, live = true}},
@@ -54,6 +62,12 @@ _G.html5 = nil
 _G.hash = function(s) return s end
 
 local menu = require("arena.menu")
+
+local function texts_of(v)
+    local out = {}
+    for _, r in ipairs(v.rows) do out[#out + 1] = r.label end
+    return out
+end
 
 local function top_index(name)
     -- Which stop on the rail carries this destination.
@@ -207,6 +221,115 @@ menu.step({back = true})
 check("and with no game behind it, escape walks back instead",
       menu.open and menu.at() == "root", table.concat(menu.stack, "/")
           .. ", open " .. tostring(menu.open))
+
+-- --- choosing the game you are already in asks rather than rejoins --------
+--
+-- The list used to carry a "leave this game" row at its foot, which is a way
+-- out written a long way from the thing it was a way out of, in a list that is
+-- otherwise entirely places to go. Leaving is the game's own row now: pressing
+-- enter on the one you are in cannot mean join, so it means the other thing it
+-- could mean and asks first.
+
+menu.hover_stage(nil)
+menu.home = false
+menu.zone = "chaos"
+menu.ask = nil
+menu.show("zones")
+local zones = menu.view()
+check("nothing at the foot of the list leaves the game",
+      #zones.rows == 1 and zones.rows[1].label == "chaos",
+      table.concat(texts_of(zones), ", "))
+
+local act2 = menu.step({go = true})
+check("enter on the game you are in asks instead of joining",
+      act2 == nil and menu.ask ~= nil,
+      tostring(act2) .. ", ask " .. tostring(menu.ask))
+check("with the answer that changes nothing under the cursor",
+      menu.ask.sel == #menu.ask.keys and menu.ask.keys[menu.ask.sel].act == nil,
+      "on " .. tostring(menu.ask.sel) .. " of " .. tostring(#menu.ask.keys))
+check("and the view carries it", menu.view().ask == menu.ask)
+
+-- The question owns the keys while it is up. Anything else and the list walks
+-- under a card that is asking about the row it walked off.
+local before = menu.sel.zones
+menu.step({down = true})
+check("the list underneath cannot be walked", menu.sel.zones == before,
+      tostring(before) .. " -> " .. tostring(menu.sel.zones))
+-- Down moved between the answers instead. The answers sit side by side, so
+-- left and right are what they are laid out along, but a hand that has been
+-- walking a list all the way here reaches for down first.
+check("the arrows move between the answers, whichever pair", menu.ask.sel == 1,
+      "on " .. tostring(menu.ask.sel))
+
+menu.ask.sel = 2
+menu.step({left = true})
+check("left moves to the other answer", menu.ask.sel == 1,
+      "on " .. tostring(menu.ask.sel))
+local act3 = menu.step({go = true})
+check("and enter is worth what that answer is worth",
+      act3 == "leave" and menu.ask == nil,
+      tostring(act3) .. ", ask " .. tostring(menu.ask))
+
+-- Escape answers it rather than shutting the panel, and answers it with the
+-- one that changes nothing: the key that gets out of everything else in here
+-- has to get out of this without leaving the game by accident.
+menu.step({go = true})
+local act4, moved4 = menu.step({back = true})
+check("escape answers the question instead of shutting the menu",
+      act4 == nil and moved4 and menu.ask == nil and menu.open,
+      tostring(act4) .. ", open " .. tostring(menu.open))
+
+-- A different game asks as well, because arriving there costs the game you
+-- are in just the same, and the press that costs it is the same press.
+menu.zone = "elsewhere"
+menu.chosen = nil
+local act5 = menu.step({go = true})
+check("a different game asks before it takes the one you are in",
+      act5 == nil and menu.ask ~= nil, tostring(act5))
+menu.ask.sel = 1
+local act6 = menu.step({go = true})
+check("and the answer that switches is a join",
+      act6 == "join" and menu.chosen ~= nil and menu.ask == nil,
+      tostring(act6))
+
+-- With nothing behind the panel there is nothing to lose, so nothing to ask.
+menu.home = true
+menu.ask = nil
+local act7 = menu.step({go = true})
+check("and from the home screen it just joins",
+      act7 == "join" and menu.ask == nil, tostring(act7))
+
+-- --- and the one row on the pilot page that throws something away ---------
+--
+-- A call sign is the only name anybody here has, and it is the name on the
+-- scoreboard of every game this pilot has flown. The row showed it and
+-- replaced it on the press, with nothing said and nothing to say no to.
+
+menu.zone = ""
+menu.chosen = nil
+menu.ask = nil
+menu.stack = {"root"}
+menu.sel = {}
+menu.click_rail(top_index("pilot"))
+local was = menu.name
+local act8 = menu.step({go = true})
+check("rolling a call sign asks first",
+      act8 == nil and menu.ask ~= nil and menu.name == was,
+      tostring(act8) .. ", name " .. tostring(menu.name))
+menu.step({back = true})
+check("and escape keeps the one you have",
+      menu.name == was and menu.ask == nil, tostring(menu.name))
+menu.step({go = true})
+menu.ask.sel = 1
+local act9, moved9 = menu.step({go = true})
+check("rolling rolls, and the arena is never told",
+      menu.name ~= was and act9 == nil and moved9,
+      tostring(was) .. " -> " .. tostring(menu.name) .. ", act "
+          .. tostring(act9))
+
+menu.ask = nil
+menu.stack = {"root"}
+menu.sel = {}
 
 -- --- a pointer resting on a row is the same cursor the arrows move --------
 

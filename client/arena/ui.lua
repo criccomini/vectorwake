@@ -2187,38 +2187,48 @@ end
 -- a phone they were a line of text laid over the thumbs. They are in the
 -- menu now, under `help`, which is where a thing you consult belongs.
 
+-- One thing to press, wherever the thing to press turns up: a frame with a
+-- hint of fill, lit in the colour of what it does, and its word in capitals in
+-- the face the numbers are set in. The corner keys and a question's answers
+-- are the same object, so they are one drawing rather than two functions
+-- agreeing on seven numbers by hand.
+--
+-- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
+-- so they live out here with it rather than being repeated at each call.
+local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
+local function key_size() return (FONT - 1) * S end
+local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * S end
+local function key_cap(x, y, w, label, on)
+    local col = on and pal.FRIEND or pal.DIM
+    local h = KEY_H * S
+    rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
+    u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
+    txt(label, x + w / 2, y + h / 2, key_size(), pal.a(col, on and 1 or 0.85),
+        "center")
+end
+
 local function menu_button()
-    -- Two keys, drawn the way the help page draws a key: a frame with a hint
-    -- of fill, lit in the colour of what it does. They were two bare words
-    -- over a shared rule, which asked a player to know that a word in that
-    -- corner was a thing to press, and the board has taught the same hand what
-    -- a key looks like already.
+    -- Two keys, drawn the way the help page draws a key. They were two bare
+    -- words over a shared rule, which asked a player to know that a word in
+    -- that corner was a thing to press, and the board has taught the same hand
+    -- what a key looks like already.
     --
     -- One colour between them, and one rule for lighting it. MENU was drawn in
     -- ink and PLAYERS in slate, which is two controls that do the same kind of
     -- thing wearing two different states before either had been pressed. What
     -- they wear now is off or on, and the panel each opens is what turns it on.
     local x, y = PAD * S, PAD * S
-    local h = 26 * S
-    local size = (FONT - 1) * S
     -- Each key is as wide as its own word. A slot cut for four letters is a
     -- slot the longer of the two runs out of.
-    local padx = 9 * S
-    local gap = 6 * S
     local cx = x
     for _, c in ipairs({{"MENU", "open", menu_up},
                         {"PLAYERS", "details", M.details}}) do
-        local on = c[3]
-        local ww = text_w(c[1], size) + 2 * padx
-        local col = on and pal.FRIEND or pal.DIM
-        rect(cx, y, ww, h, pal.a(col, on and 0.16 or 0.07))
-        u:frame(cx, ry(y, h), ww, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
-        txt(c[1], cx + ww / 2, y + h / 2, size,
-            pal.a(col, on and 1 or 0.85), "center")
-        hit(cx, y, ww, h, c[2])
-        cx = cx + ww + gap
+        local ww = key_w(c[1])
+        key_cap(cx, y, ww, c[1], c[3])
+        hit(cx, y, ww, KEY_H * S, c[2])
+        cx = cx + ww + KEY_GAP * S
     end
-    chip_right = cx - gap
+    chip_right = cx - KEY_GAP * S
 end
 
 -- How good the line is, above the dial. It belongs up here with the
@@ -3255,6 +3265,52 @@ local function empty_state(x, y, w, h, e)
     end
 end
 
+-- A question the menu wants answered before anything else, over the page that
+-- asked it.
+--
+-- The panel stays where it is and stands down: the answer is about the row the
+-- cursor is on, and losing sight of that row to answer for it is how the wrong
+-- game gets left. Standing down is a wash for the shapes and a tenth of the
+-- alpha for the type, since glyphs come from the gui and draw over every mesh,
+-- so a label is quieted where it is written or not at all.
+--
+-- One line, one face, and the answers underneath as the keys the corner of the
+-- screen already wears. The line under the heading used to read "leave it and
+-- go back to the home screen?", which is the answers written out as a
+-- sentence: a card that asks twice is a card somebody reads twice.
+local function ask_card(x, y, w, h, a)
+    rect(0, 0, W, H, pal.a(pal.BG, 0.62))
+    -- Nothing behind this is listening, and hit boxes are first come first
+    -- served, so the ones already published go: a tap on the rail or on a row
+    -- under the wash would otherwise answer a question it cannot see.
+    M.hits = {}
+    text_dim = 1
+    local cw = math.min(340 * S, w - 24 * S)
+    local ch = 110 * S
+    local cx = x + (w - cw) / 2
+    local cy = y + (h - ch) / 2
+    rect(cx, cy, cw, ch, pal.a(pal.BTN_BG, 0.98))
+    u:frame(cx, ry(cy, ch), cw, ch, 1.1 * S, pal.a(pal.BORDER, 1))
+    local mid = cx + cw / 2
+    txt(a.head or "", mid, cy + 36 * S, (M.compact and 15 or 16) * S,
+        pal.a(pal.INK, 0.95), "center", MENU_FONT)
+    -- Laid out from the middle out rather than from an edge in, so the row of
+    -- answers stays centred whatever the words are.
+    local ws, total = {}, 0
+    for i, k in ipairs(a.keys) do
+        ws[i] = key_w(string.upper(k.label))
+        total = total + ws[i]
+    end
+    total = total + KEY_GAP * S * (#a.keys - 1)
+    local kx = mid - total / 2
+    local ky = cy + ch - 22 * S - KEY_H * S
+    for i, k in ipairs(a.keys) do
+        key_cap(kx, ky, ws[i], string.upper(k.label), i == a.sel)
+        hit(kx, ky, ws[i], KEY_H * S, "answer", i)
+        kx = kx + ws[i] + KEY_GAP * S
+    end
+end
+
 -- The hulls, as hulls. A list of eight names is eight words about drawings
 -- the game already owns, and picking a ship from a menu that shows you the
 -- ships is the one page that does not need reading at all.
@@ -3412,7 +3468,11 @@ end
 -- --- the whole thing -------------------------------------------------------
 
 function M.menu(v)
-    text_dim = 1
+    -- A question takes the keys off whatever asked it, and the panel says so
+    -- by standing down. It has to be set before a word of it is written: a
+    -- glyph carries the alpha it was queued with, and the gui draws it over
+    -- every mesh whatever is laid on top afterwards.
+    text_dim = v.ask and 0.1 or 1
     local pts_w, pts_h = W / S, H / S
     -- One rule about the window, three layouts. 620 points is where a rail
     -- with its labels and a stage worth reading stop fitting side by side;
@@ -3686,6 +3746,9 @@ function M.menu(v)
         txt(foot, tx, sy + sh - 4 * S, 12 * S,
             pal.a(v.note and pal.HURT or pal.DIM, 0.95))
     end
+
+    -- Last, over all of it, because it is the only thing being read.
+    if v.ask then ask_card(sx, sy, GUTTER * S + lw, sh, v.ask) end
 end
 
 -- --- cursor ----------------------------------------------------------------
