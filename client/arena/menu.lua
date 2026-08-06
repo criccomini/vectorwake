@@ -484,6 +484,48 @@ function M.toggle()
     return M.open
 end
 
+-- The acts this file settles on its own: they change something the menu owns
+-- and nothing outside it has to hear about them. Anything else is handed back
+-- to the arena by name.
+--
+-- Out here rather than inline in `activate` because an answer to a question
+-- settles the same way a row does. Rolling a call sign is now a question, and
+-- the answer that rolls one has to land where the row that used to would have,
+-- not travel out to the arena and back for something the menu can do itself.
+local function settle(act)
+    if act == "reroll" then
+        M.reroll()
+    elseif act == "claim" then
+        account.claim(function(ok)
+            if not ok then M.note = account.note end
+        end)
+    elseif act == "key_seen" then
+        -- Off the screen and out of memory. It was never written to disk: a
+        -- key kept beside the secret it protects is a second copy of the same
+        -- thing.
+        account.key = ""
+    elseif act == "link" then
+        account.link(function(ok)
+            if not ok then M.note = account.note end
+        end)
+    elseif act == "volume" then
+        M.volume = M.volume % #VOLUMES + 1
+        M.apply_settings()
+        M.save_identity()
+    elseif act == "music" then
+        M.music = M.music % #MUSICS + 1
+        M.apply_settings()
+        M.save_identity()
+    elseif act == "cap" then
+        M.cap = M.cap % #CAPS + 1
+        M.apply_settings()
+        M.save_identity()
+    else
+        return act
+    end
+    return nil
+end
+
 -- Raise a question. `keys` is the answers in the order they are drawn, each a
 -- label and the action answering it returns, and the last of them is the one
 -- that changes nothing: it is where the cursor starts and what escape gives,
@@ -498,7 +540,8 @@ end
 local function answer(i)
     local k = M.ask and M.ask.keys[i]
     M.ask = nil
-    return k and k.act or nil, true
+    if not k or not k.act then return nil, true end
+    return settle(k.act), true
 end
 
 function M.click_answer(i)
@@ -764,59 +807,46 @@ local function activate()
         return "team"
     elseif r.act == "found" then
         return "found"
+    elseif r.act == "reroll" then
+        -- The one row on the pilot page that throws something away. A call
+        -- sign is the only name anybody has here, it is the name on the
+        -- scoreboard of every game this pilot has flown, and the row that
+        -- shows it used to replace it on the press with nothing said.
+        M.confirm("your call sign is " .. M.name,
+                  {{label = "roll", act = "reroll"}, {label = "keep"}})
+        return nil
     elseif r.act == "join" then
         local pick = directory.rows[r.value]
-        -- The game you are already in. Joining it again is a disconnect and a
-        -- handshake to arrive where you already are, so the press means the
-        -- other thing it could mean, and it asks rather than assumes. This is
-        -- also the whole of how a player leaves: the list used to carry a
-        -- "leave this game" row at its foot, a long way from the game it was
-        -- about, on every page of a list that is otherwise all places to go.
-        if pick and not M.home and pick.name == M.zone then
-            M.confirm("you are already flying " .. pick.name,
-                      {{label = "leave", act = "leave"}, {label = "stay"}})
-            return nil
-        end
         -- Likewise a request. Which address serves this game, and whether it
-        -- answers, is the arena's business.
+        -- answers, is the arena's business. Held before the question is asked
+        -- as well as without one, since the answer that joins carries a word
+        -- rather than a row.
         M.chosen = pick
+        -- Every press on this list while you are in a game costs you the game
+        -- you are in, so every one of them asks first. Not on the home screen,
+        -- where there is nothing behind the panel to lose, and not on a game
+        -- nothing is serving, which has its own answer already.
+        if pick and not M.home and M.zone ~= "" then
+            if pick.name == M.zone then
+                -- The game you are already in. Joining it again is a
+                -- disconnect and a handshake to arrive where you already are,
+                -- so the press means the other thing it could mean. This is
+                -- the whole of how a player leaves now: the list used to carry
+                -- a "leave this game" row at its foot, a long way from the
+                -- game it was about, in a list otherwise all places to go.
+                M.confirm("you are already flying " .. pick.name,
+                          {{label = "leave", act = "leave"}, {label = "stay"}})
+                return nil
+            elseif pick.live then
+                M.confirm("leave " .. M.zone .. " for " .. pick.name .. "?",
+                          {{label = "switch", act = "join"},
+                           {label = "stay"}})
+                return nil
+            end
+        end
         return "join"
-    elseif r.act == "reroll" then
-        M.reroll()
-        return nil
-    elseif r.act == "claim" then
-        account.claim(function(ok)
-            if not ok then M.note = account.note end
-        end)
-        return nil
-    elseif r.act == "key_seen" then
-        -- Off the screen and out of memory. It was never written to disk: a
-        -- key kept beside the secret it protects is a second copy of the same
-        -- thing.
-        account.key = ""
-        return nil
-    elseif r.act == "link" then
-        account.link(function(ok)
-            if not ok then M.note = account.note end
-        end)
-        return nil
-    elseif r.act == "volume" then
-        M.volume = M.volume % #VOLUMES + 1
-        M.apply_settings()
-        M.save_identity()
-        return nil
-    elseif r.act == "music" then
-        M.music = M.music % #MUSICS + 1
-        M.apply_settings()
-        M.save_identity()
-        return nil
-    elseif r.act == "cap" then
-        M.cap = M.cap % #CAPS + 1
-        M.apply_settings()
-        M.save_identity()
-        return nil
     end
-    return r.act
+    return settle(r.act)
 end
 
 -- keys: {left, right, up, down, go, back} as booleans, already edge-detected
