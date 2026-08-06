@@ -87,14 +87,21 @@ local function draw(view, w, h, touching)
     return st
 end
 
+-- Upper cased on the way out, because the interface sets every word it says
+-- in capitals and what these checks are about is which words it says and
+-- where they land.
 local function texts(st)
     local out = {}
-    for i = 1, st.n do out[#out + 1] = st.text[i].s end
+    for i = 1, st.n do out[#out + 1] = string.upper(st.text[i].s) end
     return out
 end
 
+local function is(t, s) return string.upper(t.s) == string.upper(s) end
+
 local function has(st, s)
-    for _, t in ipairs(texts(st)) do if t == s then return true end end
+    for _, t in ipairs(texts(st)) do
+        if t == string.upper(s) then return true end
+    end
     return false
 end
 
@@ -339,9 +346,9 @@ local marked = draw({depth = 2, sel = 1,
 local ax, cx, hx
 for i = 1, marked.n do
     local t = marked.text[i]
-    if t.s == "alpha" then ax = t.x end
-    if t.s == "chaos" then cx = t.x end
-    if t.s == "zones" then hx = t.x end
+    if is(t, "alpha") then ax = t.x end
+    if is(t, "chaos") then cx = t.x end
+    if is(t, "zones") then hx = t.x end
 end
 check("a marked row keeps the column every other row is in",
       ax and cx and math.abs(ax - cx) < 0.01,
@@ -350,7 +357,7 @@ check("a marked row keeps the column every other row is in",
 -- same word twice on one screen, in the place the list could have used.
 local names = 0
 for i = 1, marked.n do
-    if marked.text[i].s == "zones" then names = names + 1 end
+    if is(marked.text[i], "zones") then names = names + 1 end
 end
 check("the page is named on the rail and nowhere else", names == 1,
       names .. " times, at " .. tostring(hx))
@@ -370,9 +377,9 @@ local noted = draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
 local name_x, name_y, note_x, note_y, count_y
 for i = 1, noted.n do
     local t = noted.text[i]
-    if t.s == "chaos" then name_x, name_y = t.x, t.y end
-    if t.s == "everybody against everybody" then note_x, note_y = t.x, t.y end
-    if t.s == "4" then count_y = t.y end
+    if is(t, "chaos") then name_x, name_y = t.x, t.y end
+    if is(t, "everybody against everybody") then note_x, note_y = t.x, t.y end
+    if is(t, "4") then count_y = t.y end
 end
 -- `state` counts y up from the bottom, so under means a smaller number.
 check("a row's sentence sits under its name",
@@ -401,8 +408,8 @@ local st2 = draw({depth = 2, sel = 1,
 local lab, det
 for i = 1, st2.n do
     local t = st2.text[i]
-    if t.s == "steer" then lab = t end
-    if t.s:find("left thumb") then det = t end
+    if is(t, "steer") then lab = t end
+    if string.upper(t.s):find("LEFT THUMB") then det = t end
 end
 -- A right-aligned string reports its right edge, so its left edge is that
 -- less its width. Reading `x` as the left edge is how this check passed

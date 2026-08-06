@@ -224,6 +224,22 @@ check("the feed is capped at FEED_MAX", ui.FEED_MAX == 5,
       "FEED_MAX is " .. tostring(ui.FEED_MAX))
 check("a long feed still draws something", lines > 0 and before ~= nil)
 
+-- A line is words with names in it, and the two are not set the same way: the
+-- interface says its own words in capitals and quotes everybody else's. A call
+-- sign is upper, lower and numeric exactly as its owner has it, and a feed
+-- that shouted it back was the one place this pass got it wrong.
+frame({feed = {{text = {{"Probe 7"}, " killed ", {"vX-9"}, " (+12)"}, t = 0}}})
+local st_feed = package.loaded["arena.state"]
+local said_line
+for i = 1, st_feed.n do
+    if st_feed.text[i].s:find("killed", 1, true)
+       or st_feed.text[i].s:find("KILLED", 1, true) then
+        said_line = st_feed.text[i].s
+    end
+end
+check("a feed line shouts its own words and quotes the names",
+      said_line == "Probe 7 KILLED vX-9 (+12)", tostring(said_line))
+
 -- --- the info box ----------------------------------------------------------
 
 -- It belongs to the scoreboard, which is the only thing that opens it.
@@ -257,10 +273,14 @@ check("and takes its close box with it", box("uninspect") == nil)
 local function drawn()
     local st = package.loaded["arena.state"]
     local out = {}
-    for k = 1, st.n do out[#out + 1] = st.text[k].s end
+    for k = 1, st.n do out[#out + 1] = string.upper(st.text[k].s) end
     return table.concat(out, "\n")
 end
-local function says(word) return drawn():find(word, 1, true) ~= nil end
+-- Case is typography, not content: what these ask is which words reach a
+-- player, and the interface sets every one of them in capitals.
+local function says(word)
+    return drawn():find(string.upper(word), 1, true) ~= nil
+end
 
 room.teams = {[0] = 1, 1, 1, 9}
 ui.details = true
