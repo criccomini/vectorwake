@@ -2,22 +2,21 @@
 --
 --     lua5.1 client/tests/marks_test.lua
 --
--- A person and a machine are cut from one helmet and differ only in what is
--- inside it. That is not decoration: the games list sets a count of people
--- beside a count of machines, and the pair only reads as one question with two
--- answers while the shells match. Let one drift and the row goes back to being
--- two unrelated pictures, which is what it was when the people were a plain
--- dot.
+-- A person wears a round helmet with a curved visor. A machine wears a
+-- squared one with lamps in it and an antenna over the top. The difference is
+-- the message: the games list sets a count of people beside a count of
+-- machines, and round-against-square is what answers that at a glance, at a
+-- size where a lamp is two pixels.
 --
--- Everywhere else the machine is alone, with no person beside it to be read
--- against, so it also has to say machine by itself. The antenna is what does
--- that, and it is the one part of the drawing that must never be shared.
+-- So this measures the two things that must stay apart and the three that
+-- must stay together. Apart: the person's shell turns and the machine's does
+-- not, and only the machine reaches above its crown. Together: one collar,
+-- one width, one baseline, because a pair that does not sit level reads as
+-- two unrelated pictures however different their shapes are.
 --
 -- Neither mark is public, and neither is exported for this: they are drawn
 -- through the screens that use them, so what is measured is what a player is
--- shown. The shells are compared by shape rather than by position, since the
--- two are drawn at different sizes in different corners and it is the drawing
--- that has to match, not the arithmetic that placed it.
+-- shown.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -40,25 +39,21 @@ local function put(kind, x0, y0, x1, y1)
     if y1 < y0 then y0, y1 = y1, y0 end
     shapes[#shapes + 1] = {kind = kind, x0 = x0, y0 = H - y1, x1 = x1,
                            y1 = H - y0}
+    return shapes[#shapes]
 end
 
 local layer = {}
 function layer:seg(x1, y1, x2, y2, w)
-    put("seg", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2)
-    shapes[#shapes].ax, shapes[#shapes].ay = x1, H - y1
-    shapes[#shapes].bx, shapes[#shapes].by = x2, H - y2
+    local s = put("seg", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2)
+    s.ax, s.ay, s.bx, s.by, s.w = x1, H - y1, x2, H - y2, w
 end
 function layer:disc(x, y, r) put("disc", x - r, y - r, x + r, y + r) end
 function layer:rect(x, y, w, h) put("rect", x, y, x + w, y + h) end
--- Outlines are kept whole, with their corners: whether two marks share a
--- shell is a question about vertices, not about ink.
 function layer:outline(pts, w)
     local o = {kind = "outline", pts = {}, w = w}
     for i = 1, #pts, 2 do
         o.pts[#o.pts + 1] = {pts[i], H - pts[i + 1]}
     end
-    -- A box as well as the corners, so anything walking the frame can treat
-    -- every record the same way.
     for _, pt in ipairs(o.pts) do
         o.x0 = math.min(o.x0 or pt[1], pt[1])
         o.x1 = math.max(o.x1 or pt[1], pt[1])
@@ -67,16 +62,22 @@ function layer:outline(pts, w)
     end
     shapes[#shapes + 1] = o
 end
--- The shell is arcs now, so they are kept with their geometry rather than
--- thrown away: a curve's centre, radius and sweep are what say two marks were
--- struck from one drawing.
+-- Arcs keep their geometry: a curve's centre, radius and sweep are how a
+-- round shell is told from a square one.
 function layer:arc(x, y, r, a0, a1)
-    put("arc", x - r, y - r, x + r, y + r)
-    local sh = shapes[#shapes]
-    sh.cx, sh.cy, sh.r, sh.a0, sh.a1 = x, H - y, r, a0, a1
+    local s = put("arc", x - r, y - r, x + r, y + r)
+    s.cx, s.cy, s.r, s.a0, s.a1 = x, H - y, r, a0, a1
 end
-for _, n in ipairs({"fan", "flush", "frame", "halo", "quad", "reset",
-                    "ring", "ring_fade", "seg_fade", "skirt", "tri",
+-- The visor is a strip of these. Only its extent is wanted, so they collapse
+-- into one running box rather than being kept individually.
+function layer:quad(x1, y1, x2, y2, x3, y3, x4, y4)
+    local xs, ys = {x1, x2, x3, x4}, {y1, y2, y3, y4}
+    local s = put("quad", math.min(unpack(xs)), math.min(unpack(ys)),
+                  math.max(unpack(xs)), math.max(unpack(ys)))
+    s.top = H - math.max(unpack(ys))
+end
+for _, n in ipairs({"fan", "flush", "frame", "halo", "reset", "ring",
+                    "ring_fade", "seg_fade", "skirt", "tri",
                     "tri_fade"}) do
     layer[n] = function() end
 end
@@ -116,14 +117,11 @@ local function frame(f)
     return shapes
 end
 
--- A helmet, found by its glass: the one arc in this interface that turns more
--- than half a revolution. Nothing else drawn on either of these screens does,
--- and the marks' own bowl runs from one end of the neck cut, up over the
--- crown, to the other.
---
--- The shell used to be a six cornered polygon and this used to count corners.
--- It is a turn of a circle now, because a chamfered approximation of a curve
--- is a chamfer, and at count size it is the corners the eye finds.
+-- --- finding the marks -----------------------------------------------------
+
+-- A person's helmet, found by its glass: the one arc in this interface that
+-- turns more than half a revolution. Nothing else on these screens does, and
+-- the bowl runs from one end of the neck cut, over the crown, to the other.
 local function crowns(list)
     local out = {}
     for _, sh in ipairs(list) do
@@ -135,46 +133,54 @@ local function crowns(list)
     return out
 end
 
--- Everything a mark is made of: what falls inside the box its crown implies,
--- give or take a helmet's height, so the antenna over it is caught too.
-local function parts(list, crown)
+local function horizontal(sh)
+    return sh.kind == "seg" and math.abs(sh.ay - sh.by) < 0.01
+end
+-- A collar is a run of line, not a point. Asked for by length because setting
+-- its reach to zero still draws a segment, and a degenerate one counted as a
+-- collar for as long as this only counted them.
+local function collar_of(sh, span)
+    return horizontal(sh) and math.abs(sh.bx - sh.ax) > span
+end
+local function vertical(sh)
+    return sh.kind == "seg" and math.abs(sh.ax - sh.bx) < 0.01
+end
+
+-- A machine's helmet, found by its crown: a horizontal run with a vertical
+-- dropping from each of its two ends. That is the shape a flat top and two
+-- straight sides make and nothing else in these screens draws one.
+local function boxes(list)
     local out = {}
-    local r = crown.r
     for _, sh in ipairs(list) do
-        if sh.x0 > crown.cx - r * 1.6 and sh.x1 < crown.cx + r * 1.6
-            and sh.y1 > crown.cy - r * 1.8 and sh.y0 < crown.cy + r * 2.4 then
-            out[#out + 1] = sh
+        if horizontal(sh) then
+            local left, right, drop
+            for _, o in ipairs(list) do
+                if vertical(o) and math.abs(o.ay - sh.ay) < 0.01
+                    and o.by > o.ay then
+                    if math.abs(o.ax - sh.ax) < 0.01 then left = o end
+                    if math.abs(o.ax - sh.bx) < 0.01 then right = o end
+                    drop = o.by - o.ay
+                end
+            end
+            if left and right then
+                out[#out + 1] = {cx = (sh.ax + sh.bx) / 2, top = sh.ay,
+                                 w = math.abs(sh.bx - sh.ax), h = drop,
+                                 crown = sh}
+            end
         end
     end
     return out
 end
 
--- The shell, as a shape and nothing else: every arc and every straight run
--- that belongs to the outline, put on the crown and divided by its radius, so
--- two marks drawn at different sizes in different corners can be held against
--- each other. The antenna is left out, being the one thing the machine has
--- that the person must not.
-local function shell_of(list, crown)
+-- Everything drawn near a mark, so what sits over its crown is caught too.
+local function near(list, cx, cy, r)
     local out = {}
-    for _, sh in ipairs(parts(list, crown)) do
-        local rel
-        if sh.kind == "arc" then
-            rel = string.format("arc %.3f %.3f %.3f %.3f %.3f",
-                                (sh.cx - crown.cx) / crown.r,
-                                (sh.cy - crown.cy) / crown.r,
-                                sh.r / crown.r, sh.a0, sh.a1)
-        elseif sh.kind == "seg" and sh.ay > crown.cy - crown.r * 0.05 then
-            -- Straight runs at or below the crown's own centre: the sides and
-            -- the chin. Anything above it is the antenna.
-            rel = string.format("seg %.3f %.3f %.3f %.3f",
-                                (sh.ax - crown.cx) / crown.r,
-                                (sh.ay - crown.cy) / crown.r,
-                                (sh.bx - crown.cx) / crown.r,
-                                (sh.by - crown.cy) / crown.r)
+    for _, sh in ipairs(list) do
+        if sh.x0 > cx - r * 1.6 and sh.x1 < cx + r * 1.6
+            and sh.y1 > cy - r * 1.8 and sh.y0 < cy + r * 2.4 then
+            out[#out + 1] = sh
         end
-        if rel then out[#out + 1] = rel end
     end
-    table.sort(out)
     return out
 end
 
@@ -191,7 +197,7 @@ local function menu(rows)
     end)
 end
 
--- --- one shell -------------------------------------------------------------
+-- --- the person is round ---------------------------------------------------
 
 -- The rail's pilot stop, alone: no games list, so the only helmet on screen
 -- is the one that names the player.
@@ -200,6 +206,79 @@ local rail_only = crowns(rail_frame)
 check("the rail's pilot stop is a helmet", #rail_only == 1,
       #rail_only .. " helmets with no games listed")
 local RAIL_HELMETS = #rail_only
+
+if rail_only[1] then
+    local bowl = rail_only[1]
+    local parts = near(rail_frame, bowl.cx, bowl.cy, bowl.r)
+    -- One straight run under the glass: the collar. The bowl is otherwise all
+    -- curve, which is the whole difference from the box this replaced.
+    local straight, worn = 0, 0
+    for _, sh in ipairs(parts) do
+        if horizontal(sh) and sh.ay > bowl.cy then
+            straight = straight + 1
+            if collar_of(sh, bowl.r) then worn = worn + 1 end
+        end
+    end
+    check("the person's shell is a turn of glass on one collar",
+          straight == 1 and worn == 1,
+          straight .. " straight runs under the glass, " .. worn
+          .. " of them long enough to stand on")
+
+    -- The visor: drawn, curved, and clear of the glass at every point.
+    local band = {}
+    for _, sh in ipairs(parts) do
+        if sh.kind == "quad" then band[#band + 1] = sh end
+    end
+    check("the person wears a visor", #band >= 4,
+          #band .. " slices of band")
+    if #band >= 4 then
+        -- Curved: the slices at the ends of the band start lower than the
+        -- ones in the middle. A ruled band draws them all level.
+        local mid_top, end_top = math.huge, -math.huge
+        local lo, hi = math.huge, -math.huge
+        for _, sh in ipairs(band) do
+            lo = math.min(lo, sh.x0)
+            hi = math.max(hi, sh.x1)
+        end
+        local span = hi - lo
+        for _, sh in ipairs(band) do
+            local t = ((sh.x0 + sh.x1) / 2 - lo) / span
+            if t > 0.4 and t < 0.6 then mid_top = math.min(mid_top, sh.top) end
+            if t < 0.08 or t > 0.92 then end_top = math.max(end_top, sh.top) end
+        end
+        -- Thick enough to be a band, measured on one slice at the middle. The
+        -- whole band's extent counts the bend as well as the depth, so a
+        -- visor squashed towards a hairline passes on curvature alone.
+        local deep = 0
+        for _, sh in ipairs(band) do
+            local t = ((sh.x0 + sh.x1) / 2 - lo) / span
+            if t > 0.4 and t < 0.6 then
+                deep = math.max(deep, sh.y1 - sh.y0)
+            end
+        end
+        check("of some depth", deep > bowl.r * 0.3,
+              string.format("%.3f of a radius deep", deep / bowl.r))
+        check("and it is curved rather than ruled across",
+              end_top - mid_top > bowl.r * 0.02,
+              string.format("%.3f of a radius of bend", (end_top - mid_top)
+                            / bowl.r))
+        -- Inside the glass, with the gap kept. Measured at the corners, which
+        -- is where a band run to the mark's nominal width escapes.
+        local worst = 0
+        for _, sh in ipairs(band) do
+            for _, x in ipairs({sh.x0, sh.x1}) do
+                for _, y in ipairs({sh.y0, sh.y1}) do
+                    local d = math.sqrt((x - bowl.cx) ^ 2 + (y - bowl.cy) ^ 2)
+                    worst = math.max(worst, d / bowl.r)
+                end
+            end
+        end
+        check("and stays inside the glass with the gap kept", worst < 0.97,
+              string.format("reaches %.3f of the radius", worst))
+    end
+end
+
+-- --- the machine is square -------------------------------------------------
 
 -- The scoreboard's bot column, and the nameplate over the bot's own hull,
 -- which is on screen in this room.
@@ -218,36 +297,11 @@ local board_frame = frame(function()
     })
 end)
 ui.details = false
-local board = crowns(board_frame)
-check("the scoreboard and the nameplate both mark the bot", #board == 2,
-      #board .. " helmets beside one bot")
-
-if #rail_only == 1 and #board >= 1 then
-    local a = shell_of(rail_frame, rail_only[1])
-    local b = shell_of(board_frame, board[1])
-    check("the person and the machine draw the same number of pieces",
-          #a == #b, #a .. " against " .. #b)
-    local same = #a == #b and #a > 0
-    local worst = nil
-    for i = 1, math.min(#a, #b) do
-        if a[i] ~= b[i] then same = false worst = worst or (a[i] .. "  |  " .. b[i]) end
-    end
-    -- The whole design rests on this: drawn anywhere, at any size, the person
-    -- and the machine are struck from one shell.
-    check("and every piece of it is the same shape", same, worst)
-    -- And it is a helmet rather than a circle: the crown turns through half a
-    -- revolution and the sides below it are straight.
-    local straight = 0
-    for _, piece in ipairs(a) do
-        if piece:sub(1, 3) == "seg" then straight = straight + 1 end
-    end
-    -- One straight run: the collar the glass sits in. The bowl is otherwise
-    -- all curve, which is the whole difference from the box this replaced.
-    check("the glass turns and only the collar is straight", straight == 1,
-          straight .. " straight runs under the glass")
-end
-
--- --- and two faces ---------------------------------------------------------
+local board = boxes(board_frame)
+check("the scoreboard and the nameplate both box the bot", #board == 2,
+      #board .. " boxes beside one bot")
+check("and neither of them is round", #crowns(board_frame) == 0,
+      #crowns(board_frame) .. " turns of glass on a screen with no people")
 
 -- The antenna is what the machine says with nothing beside it, so it has to
 -- reach above the crown, and the person must not.
@@ -255,36 +309,76 @@ end
 -- Measured against the mark rather than against the frame. An earlier cut
 -- looked for the highest thing drawn anywhere and found the top of the
 -- screen, so deleting the antenna outright still passed.
-local function over_crown(list, crown)
-    local best = crown.cy - crown.r
-    for _, sh in ipairs(parts(list, crown)) do
-        if sh.kind ~= "arc" and sh.x1 > crown.cx - crown.r * 0.3
-            and sh.x0 < crown.cx + crown.r * 0.3 then
+local function over(list, cx, top, r)
+    local best = top
+    for _, sh in ipairs(near(list, cx, top + r, r)) do
+        if sh.x1 > cx - r * 0.3 and sh.x0 < cx + r * 0.3
+            and not (horizontal(sh) and math.abs(sh.ay - top) < 0.01) then
             best = math.min(best, sh.y0)
         end
     end
-    return (crown.cy - crown.r - best) / crown.r
+    return (top - best) / r
 end
 
-local machine_over = board[1] and over_crown(board_frame, board[1])
+local machine_over = board[1]
+    and over(board_frame, board[1].cx, board[1].top, board[1].w / 2)
 check("the bot's antenna stands above its crown",
       machine_over and machine_over > 0.1,
-      string.format("%.3f of a radius above", machine_over or 0))
+      string.format("%.3f of a half width above", machine_over or 0))
 
-local person_over = rail_only[1] and over_crown(rail_frame, rail_only[1])
+local person_over = rail_only[1]
+    and over(rail_frame, rail_only[1].cx, rail_only[1].cy - rail_only[1].r,
+             rail_only[1].r)
 check("and the pilot puts nothing above hers",
       person_over and person_over < 0.02,
       string.format("%.3f of a radius above", person_over or 0))
 
--- --- the games list counts both --------------------------------------------
+-- --- and the pair sits level -----------------------------------------------
 
--- The row that made them a pair. People were a bare disc here, which is why
--- this checks the shape rather than that something was drawn at all.
-local listed = crowns(menu({{label = "chaos", players = 3, bots = 48,
-                             live = true}}))
+-- What is left of the family after the shells stopped matching. A row that
+-- reads as one question needs the two answers on one line, at one size, on
+-- one collar: shape carries the meaning, but position is what makes them a
+-- pair rather than two pictures that happen to be adjacent.
+local list_frame = menu({{label = "chaos", players = 3, bots = 48,
+                          live = true}})
+local listed_round = crowns(list_frame)
+local listed_square = boxes(list_frame)
 check("the games list counts people with a helmet, not a dot",
-      #listed == RAIL_HELMETS + 2,
-      #listed .. " helmets against " .. (RAIL_HELMETS + 2) .. " expected")
+      #listed_round == RAIL_HELMETS + 1,
+      #listed_round .. " helmets against " .. (RAIL_HELMETS + 1)
+      .. " expected")
+check("and counts machines with a box", #listed_square == 1,
+      #listed_square .. " boxes in the row")
+
+if #listed_round == RAIL_HELMETS + 1 and #listed_square == 1 then
+    -- The row's own helmet is the one that is not the rail's.
+    local rail_x = rail_only[1] and rail_only[1].cx
+    local person
+    for _, sh in ipairs(listed_round) do
+        if not rail_x or math.abs(sh.cx - rail_x) > 1 then person = sh end
+    end
+    local machine = listed_square[1]
+    check("the pair in the row is drawn to one width",
+          person and math.abs(person.r * 2 - machine.w) < 0.51,
+          person and string.format("%.2f against %.2f", person.r * 2,
+                                   machine.w) or "no row helmet")
+    -- One baseline: both collars on the same line, within half a pixel.
+    local function collar_y(list, cx, cy, r)
+        local best
+        for _, sh in ipairs(near(list, cx, cy, r)) do
+            if collar_of(sh, r) and sh.ay > cy then
+                best = math.max(best or -math.huge, sh.ay)
+            end
+        end
+        return best
+    end
+    local py = person and collar_y(list_frame, person.cx, person.cy, person.r)
+    local my = collar_y(list_frame, machine.cx, machine.top + machine.h / 2,
+                        machine.w / 2)
+    check("and they stand on one collar", py and my
+          and math.abs(py - my) < 0.51,
+          string.format("%.2f against %.2f", py or -1, my or -1))
+end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)
