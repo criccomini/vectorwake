@@ -20,11 +20,15 @@
 //! What it costs is on the arena rather than here: a snapshot stream per bot
 //! where the in-process roster needed none. See docs/architecture/ai-runtime.md.
 //!
-//! One economy inside the process, invisible on the wire: the fifty pilots an
-//! arena wants are all being sent the same room, so they predict it in one
-//! shared `Rig` rather than fifty private copies. Each connection still joins,
-//! receives and answers as an ordinary client; where the bytes land is this
-//! process's own business.
+//! Two economies inside the process, both invisible on the wire. The fifty
+//! pilots an arena wants are all being sent the same room, so they predict it
+//! in one shared `Rig` rather than fifty private copies. And that rig has one
+//! clock: a single driver task advances the world and runs every seated brain,
+//! where each pilot used to carry a 100 Hz ticker of its own, which at fifty
+//! pilots was most of this process's CPU spent waking up and contending for
+//! the lock rather than flying. Each connection still joins, receives and
+//! answers as an ordinary client; where the bytes land, and who does the
+//! thinking, is this process's own business.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
@@ -137,22 +141,47 @@ static PILOT_ID: AtomicU64 = AtomicU64::new(1);
 /// Sound only while any one bot's snapshot is the whole room's truth, which
 /// the arena now guarantees for declared bots: see the prize radius note in
 /// `broadcast_snapshot`.
+/// What the driver tells a connection task. Frames are this pilot's own
+/// input messages, sent on its own socket so the wire holds one client per
+/// bot exactly as decision 29 requires; Leave is a departure that finished,
+/// however it finished.
+enum Ctl {
+    Frame(Vec<u8>),
+    Leave,
+}
+
+/// One pilot's standing in the shared rig: its brain and everything the
+/// driver needs to fly it. The connection task holds the socket; this holds
+/// the mind. Constructed at welcome, removed at release or departure.
+struct Seat {
+    id: u64,
+    name: String,
+    addr: String,
+    brain: ai::Bot,
+    route: Arc<nav::Nav>,
+    yielding: Arc<AtomicBool>,
+    asked: Option<std::time::Instant>,
+    sent: Option<u16>,
+    tx: tokio::sync::mpsc::Sender<Ctl>,
+}
+
 struct Rig {
     world: Mutex<sim::World>,
-    /// The last buttons each seat sent its arena, read by the pen holder when
-    /// it steps. Meaningful only while `seats` says a live pilot is in it.
+    /// The last buttons each seat produced, read when the driver steps.
+    /// Meaningful only while `crew` holds a pilot in that seat.
     buttons: [AtomicU16; sim::MAX_SHIPS],
-    /// Which pilot holds each seat, zero for nobody. A claim that finds the
-    /// seat taken has found a second room: ship indices are unique within a
-    /// room and nothing on the wire says which room a welcome came from, so
-    /// the claimer flies a private world rather than somebody else's picture.
-    /// No shipped zone opens a second room today; when one does, the honest
-    /// fix is a room id in the protocol, and this fallback is what keeps the
-    /// population correct rather than fast until then.
-    seats: Mutex<[u64; sim::MAX_SHIPS]>,
-    /// The pilot applying snapshots and stepping, zero while the role is
-    /// open. Taken by compare-and-swap on the tick, released on the way out,
-    /// so losing the holder costs the rig one tick of standstill at most.
+    /// Everybody flying this rig, by seat. A claim that finds the seat held
+    /// by a live pilot has found a second room: ship indices are unique
+    /// within a room and nothing on the wire says which room a welcome came
+    /// from, so the claimer flies a private world rather than somebody
+    /// else's picture. No shipped zone opens a second room today; when one
+    /// does, the honest fix is a room id in the protocol, and this fallback
+    /// is what keeps the population correct rather than fast until then.
+    crew: Mutex<HashMap<u8, Seat>>,
+    /// The connection feeding snapshots into the shared world, zero while
+    /// the role is open. Taken by compare-and-swap when a snapshot arrives,
+    /// released on the way out, so losing the feeder costs the rig a
+    /// snapshot of staleness at most.
     pen: AtomicU64,
 }
 
@@ -161,30 +190,31 @@ impl Rig {
         Rig {
             world: Mutex::new(world),
             buttons: std::array::from_fn(|_| AtomicU16::new(0)),
-            seats: Mutex::new([0; sim::MAX_SHIPS]),
+            crew: Mutex::new(HashMap::new()),
             pen: AtomicU64::new(0),
         }
     }
 
     /// Take a seat, or refuse it because a live pilot already has it, which is
-    /// the second-room signal described on `seats`.
-    fn claim(&self, ship: u8, id: u64) -> bool {
-        let Ok(mut s) = self.seats.lock() else { return false };
-        let seat = &mut s[ship as usize];
-        if *seat != 0 && *seat != id {
-            return false;
+    /// the second-room signal described on `crew`.
+    fn claim(&self, ship: u8, seat: Seat) -> bool {
+        let Ok(mut c) = self.crew.lock() else { return false };
+        if let Some(held) = c.get(&ship) {
+            if held.id != seat.id {
+                return false;
+            }
         }
-        *seat = id;
         self.buttons[ship as usize].store(0, Ordering::Relaxed);
+        c.insert(ship, seat);
         true
     }
 
     /// Give back whatever this pilot held: its seat if it had one, the pen if
     /// it was writing. Safe to call however the flight ended.
     fn release(&self, ship: u8, id: u64) {
-        if let Ok(mut s) = self.seats.lock() {
-            if s[ship as usize] == id {
-                s[ship as usize] = 0;
+        if let Ok(mut c) = self.crew.lock() {
+            if c.get(&ship).is_some_and(|s| s.id == id) {
+                c.remove(&ship);
                 self.buttons[ship as usize].store(0, Ordering::Relaxed);
             }
         }
@@ -192,22 +222,111 @@ impl Rig {
     }
 
     /// One tick of shared prediction: every seated pilot's last buttons, one
-    /// step. The pen holder calls this with the world lock already held.
-    fn advance(&self, w: &mut sim::World) {
+    /// step. The driver calls this with both locks already held.
+    fn advance(&self, w: &mut sim::World, crew: &HashMap<u8, Seat>) {
         let mut inputs = [sim::sim_input { ship: 0, buttons: 0 }; sim::MAX_SHIPS];
         let mut n = 0;
-        if let Ok(s) = self.seats.lock() {
-            for (i, holder) in s.iter().enumerate() {
-                if *holder != 0 {
-                    inputs[n] = sim::sim_input {
-                        ship: i as u8,
-                        buttons: self.buttons[i].load(Ordering::Relaxed),
-                    };
-                    n += 1;
+        for &ship in crew.keys() {
+            inputs[n] = sim::sim_input {
+                ship,
+                buttons: self.buttons[ship as usize].load(Ordering::Relaxed),
+            };
+            n += 1;
+        }
+        w.step(&inputs[..n]);
+    }
+}
+
+/// The rig's one clock. Fifty pilots used to carry a 100 Hz ticker each,
+/// which was four thousand eight hundred scheduler wake-ups a second spent
+/// mostly contending for the same world lock; the profile of the running
+/// process was scheduler and locks, not flying. One task ticks the rig
+/// instead: it advances the world once, runs every seated brain against the
+/// same picture, and hands each pilot's input frame to its own connection to
+/// send. The wire is untouched by any of this: every bot still joins,
+/// receives and answers as its own client, per decision 29.
+async fn drive(rig: std::sync::Weak<Rig>) {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_micros(10_000));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        ticker.tick().await;
+        let Some(rig) = rig.upgrade() else { return };
+        let Ok(mut crew) = rig.crew.lock() else { return };
+        if crew.is_empty() {
+            continue;
+        }
+        // The look happens under the world lock so a scan and the step it
+        // reads cannot interleave; the thinking happens after it is dropped,
+        // because a route or a refuge search is not something to hold the
+        // room's picture for.
+        let mut views = Vec::with_capacity(crew.len());
+        {
+            let Ok(mut w) = rig.world.lock() else { return };
+            rig.advance(&mut w, &crew);
+            for (&ship, seat) in crew.iter_mut() {
+                let own = ai::own(&w, ship);
+                let fresh = seat.brain.looks_due().then(|| ai::scan(&w, ship));
+                let crowd = seat.brain.wants_refuge().then(|| {
+                    let mut c = ai::crowd(&w, ship);
+                    c.extend_from_slice(seat.brain.avoid());
+                    c
+                });
+                views.push((ship, own, fresh, w.state.tick, crowd));
+            }
+        }
+        let mut gone: Vec<u8> = Vec::new();
+        for (ship, own, fresh, tick, crowd) in views {
+            let Some(seat) = crew.get_mut(&ship) else { continue };
+            if let Some(crowd) = crowd {
+                seat.brain.refuge(seat.route.refuge(
+                    (own.x, own.y), &crowd, ai::REFUGE_PX, true));
+            }
+            // Asked to stand down. The endings and their names are unchanged
+            // from when every pilot judged its own: they are not equally
+            // good, and nothing else can tell them apart.
+            if seat.yielding.load(Ordering::Relaxed) {
+                seat.brain.stand_down();
+                let since = *seat.asked
+                    .get_or_insert_with(std::time::Instant::now);
+                let how = if !own.alive {
+                    Some("died")
+                } else if seat.brain.departed() {
+                    Some("clear")
+                } else if since.elapsed().as_millis() as u64 > DEPART_MAX_MS {
+                    Some("gave up")
+                } else {
+                    None
+                };
+                if let Some(how) = how {
+                    println!("{}: {} left ({how}, {:.1}s)",
+                             seat.addr, seat.name, since.elapsed().as_secs_f32());
+                    // The seat outlives a full channel: removal waits for the
+                    // Leave to be accepted, so a pilot is never marooned with
+                    // a mind already gone.
+                    if seat.tx.try_send(Ctl::Leave).is_ok() {
+                        gone.push(ship);
+                    }
+                    continue;
+                }
+            }
+            let buttons = seat.brain.think(&own, &seat.route, fresh);
+            rig.buttons[ship as usize].store(buttons, Ordering::Relaxed);
+            if seat.sent != Some(buttons) {
+                let mut m = vec![crate::C2S_INPUT];
+                m.extend_from_slice(&buttons.to_le_bytes());
+                // The tick this input produces, not the last one finished,
+                // which is what `net.lua` stamps and what the arena's queue
+                // reads: an input naming a tick waits for it.
+                m.extend_from_slice(&(tick + 1).to_le_bytes());
+                if seat.tx.try_send(Ctl::Frame(m)).is_ok() {
+                    seat.sent = Some(buttons);
                 }
             }
         }
-        w.step(&inputs[..n]);
+        for ship in gone {
+            crew.remove(&ship);
+            rig.buttons[ship as usize].store(0, Ordering::Relaxed);
+        }
     }
 }
 
@@ -224,6 +343,7 @@ impl Rigs {
         }
         g.retain(|_, w| w.strong_count() > 0);
         let rig = Arc::new(Rig::new(sim::World::on_shared_map(key as u32, Arc::clone(map))));
+        tokio::spawn(drive(Arc::downgrade(&rig)));
         g.insert((addr.to_string(), key), Arc::downgrade(&rig));
         Some(rig)
     }
@@ -568,13 +688,13 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
         return;
     }
 
-    // The two ways this pilot can see the room: the rig it shares with every
-    // other pilot on this arena, or a private world of its own when a seat
-    // collision says the rig is describing a different room than its own.
+    // How this pilot sees the room: the rig it shares with every other
+    // pilot on this arena, or nothing yet. A seat collision at welcome is
+    // the second-room signal, and that pilot leaves this loop to fly a
+    // private world at the old per-connection cost.
     enum Sight {
         Dark,
         Shared(Arc<Rig>),
-        Private(sim::World),
     }
     let me = PILOT_ID.fetch_add(1, Ordering::Relaxed);
     let mut sight = Sight::Dark;
@@ -583,17 +703,19 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
     let mut map: Option<Arc<sim::sim_map>> = None;
     let mut cfg_bytes: Vec<u8> = Vec::new();
     let mut route: Option<Arc<nav::Nav>> = None;
-    let mut brain: Option<ai::Bot> = None;
     let mut ship: u8 = 0;
-    let mut buttons: u16 = 0;
-    let mut sent: Option<u16> = None;
-    let mut ticker = tokio::time::interval(std::time::Duration::from_micros(10_000));
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut asked: Option<std::time::Instant> = None;
-    // Checked on the tick rather than by wrapping the read in a timeout: the
-    // two arms below race every ten milliseconds, and a timeout rebuilt on each
-    // pass of that race is a timeout that never expires.
+    // The mind flies in the rig's driver; what this task keeps is the
+    // socket. Frames arrive here to be sent because the socket is this
+    // task's and nobody else's, which is what keeps one client per bot on
+    // the wire.
+    let (ctl_tx, mut ctl_rx) = tokio::sync::mpsc::channel::<Ctl>(16);
+    // A pilot the driver flies needs no clock of its own; one slow tick
+    // watches for a connection that has gone quiet.
+    let mut quiet = tokio::time::interval(std::time::Duration::from_secs(1));
+    quiet.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut heard = std::time::Instant::now();
+    // Set at a seat collision; flown after this loop ends.
+    let mut go_private: Option<(sim::World, ai::Bot)> = None;
 
     loop {
         tokio::select! {
@@ -627,16 +749,10 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
                         // Every pilot applies on arrival. The bytes are the
                         // zone's one answer, so on the shared rig this is the
                         // same settings written again, which is idempotent.
-                        match &mut sight {
-                            Sight::Shared(rig) => {
-                                if let Ok(mut w) = rig.world.lock() {
-                                    w.apply_settings(&cfg_bytes);
-                                }
-                            }
-                            Sight::Private(w) => {
+                        if let Sight::Shared(rig) = &sight {
+                            if let Ok(mut w) = rig.world.lock() {
                                 w.apply_settings(&cfg_bytes);
                             }
-                            Sight::Dark => {}
                         }
                     }
                     Some(crate::S2C_WELCOME) if data.len() >= 2 => {
@@ -645,9 +761,20 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
                         // Luck of its own, so two pilots of one skill in one
                         // room do not fly the same match.
                         b.reseed(fingerprint(who.name.as_bytes()) as u32);
-                        brain = Some(b);
                         if let Sight::Shared(rig) = &sight {
-                            if !rig.claim(ship, me) {
+                            let Some(r) = route.clone() else { break };
+                            let seat = Seat {
+                                id: me,
+                                name: who.name.clone(),
+                                addr: addr.clone(),
+                                brain: b,
+                                route: r,
+                                yielding: Arc::clone(&yielding),
+                                asked: None,
+                                sent: None,
+                                tx: ctl_tx.clone(),
+                            };
+                            if !rig.claim(ship, seat) {
                                 // Somebody live already answers to this ship
                                 // index, so this welcome came from a second
                                 // room. Fly it privately, at the old cost.
@@ -658,27 +785,26 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
                                     w.apply_settings(&cfg_bytes);
                                 }
                                 println!("{addr}: seat {ship} is taken; {} flies a private world", who.name);
-                                sight = Sight::Private(w);
+                                let mut b = ai::Bot::new(ship, who.skill);
+                                b.reseed(seed);
+                                go_private = Some((w, b));
+                                break;
                             }
                         }
                     }
                     Some(crate::S2C_SNAPSHOT) if data.len() > 6 => {
-                        match &mut sight {
-                            // The pen holder applies for the room; everybody
+                        if let Sight::Shared(rig) = &sight {
+                            // One connection feeds the room; everybody
                             // else's copy of the same truth is dropped here,
-                            // unread, which is most of what a snapshot used to
-                            // cost this process.
-                            Sight::Shared(rig) => {
-                                if rig.pen.load(Ordering::Relaxed) == me {
-                                    if let Ok(mut w) = rig.world.lock() {
-                                        w.apply_snapshot(&data[6..]);
-                                    }
+                            // unread, which is most of what a snapshot used
+                            // to cost this process.
+                            let _ = rig.pen.compare_exchange(
+                                0, me, Ordering::Relaxed, Ordering::Relaxed);
+                            if rig.pen.load(Ordering::Relaxed) == me {
+                                if let Ok(mut w) = rig.world.lock() {
+                                    w.apply_snapshot(&data[6..]);
                                 }
                             }
-                            Sight::Private(w) => {
-                                w.apply_snapshot(&data[6..]);
-                            }
-                            Sight::Dark => {}
                         }
                     }
                     Some(crate::S2C_YIELD) => break,
@@ -690,132 +816,110 @@ async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs
                     _ => {}
                 }
             }
-            _ = ticker.tick() => {
+            ctl = ctl_rx.recv() => {
+                match ctl {
+                    Some(Ctl::Frame(m)) => {
+                        if sink.send(Message::Binary(m)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ctl::Leave) | None => break,
+                }
+            }
+            _ = quiet.tick() => {
                 if heard.elapsed().as_millis() as u64 > QUIET_MS {
                     break;
-                }
-                let Some(b) = brain.as_mut() else { continue };
-                if ship as usize >= sim::MAX_SHIPS {
-                    break;
-                }
-                // One pass against the current picture, whichever kind this
-                // pilot holds. The look happens here too, inside the same
-                // lock, so a scan and the step it reads cannot interleave.
-                let (own, fresh, tick, crowd) = match &mut sight {
-                    Sight::Shared(rig) => {
-                        // The pen is claimed on the tick rather than at
-                        // welcome, so whoever is flying picks it up within
-                        // 10 ms of the last holder leaving.
-                        let _ = rig.pen.compare_exchange(0, me, Ordering::Relaxed, Ordering::Relaxed);
-                        let Ok(mut w) = rig.world.lock() else { break };
-                        if rig.pen.load(Ordering::Relaxed) == me {
-                            rig.advance(&mut w);
-                        }
-                        let own = ai::own(&w, ship);
-                        let fresh = b.looks_due().then(|| ai::scan(&w, ship));
-                        let crowd = b.wants_refuge().then(|| {
-                            let mut c = ai::crowd(&w, ship);
-                            c.extend_from_slice(b.avoid());
-                            c
-                        });
-                        (own, fresh, w.state.tick, crowd)
-                    }
-                    Sight::Private(w) => {
-                        let own = ai::own(w, ship);
-                        let fresh = b.looks_due().then(|| ai::scan(w, ship));
-                        let crowd = b.wants_refuge().then(|| {
-                            let mut c = ai::crowd(w, ship);
-                            c.extend_from_slice(b.avoid());
-                            c
-                        });
-                        (own, fresh, w.state.tick, crowd)
-                    }
-                    Sight::Dark => continue,
-                };
-                // Somewhere to go, answered out here because it needs the
-                // whole room and `ai` is only ever handed one pilot's view of
-                // it. Deliberately outside the lock above: on the shared rig
-                // that lock is held by every bot predicting the same arena,
-                // and a few hundred candidate cells is not something to do
-                // while holding it.
-                if let Some(crowd) = crowd {
-                    b.refuge(route.as_deref().and_then(|r| {
-                        r.refuge((own.x, own.y), &crowd, ai::REFUGE_PX, true)
-                    }));
-                }
-                // Asked to stand down. From here the pilot is leaving rather
-                // than waiting to be allowed to: it sees out the fight it is
-                // in, flies somewhere nobody is, and stops there. Dying is
-                // still the cleanest ending and takes it at once.
-                //
-                // The ceiling is for a departure that cannot finish, with no
-                // route or a corner that filled up behind it, and is long
-                // enough that reaching it means something went wrong. The ten
-                // seconds it replaces were not that: in a busy room nobody is
-                // ever out of sight, so the timer was the ordinary way out and
-                // what a player saw was an opponent blinking out of a duel.
-                if yielding.load(Ordering::Relaxed) {
-                    b.stand_down();
-                    let since = *asked.get_or_insert_with(std::time::Instant::now);
-                    // Which of the three endings this was, because they are not
-                    // equally good and nothing else can tell them apart. A
-                    // roster mostly ending on `gave up` is a roster still
-                    // popping out of fights, and from the outside that looks
-                    // exactly like a roster leaving politely.
-                    let how = if !own.alive {
-                        Some("died")
-                    } else if b.departed() {
-                        Some("clear")
-                    } else if since.elapsed().as_millis() as u64 > DEPART_MAX_MS {
-                        Some("gave up")
-                    } else {
-                        None
-                    };
-                    if let Some(how) = how {
-                        println!("{addr}: {} left ({how}, {:.1}s)",
-                                 who.name, since.elapsed().as_secs_f32());
-                        break;
-                    }
-                }
-                buttons = match route.as_deref() {
-                    Some(r) => b.think(&own, r, fresh),
-                    None => 0,
-                };
-                if sent != Some(buttons) {
-                    let mut m = vec![crate::C2S_INPUT];
-                    m.extend_from_slice(&buttons.to_le_bytes());
-                    // The tick this input produces, not the last one finished,
-                    // which is what `net.lua` stamps and what the arena's queue
-                    // reads: an input naming a tick waits for it. Stamping the
-                    // completed tick instead would land every bot's input one
-                    // tick early, and a bot walking a different path through the
-                    // wire than a player does is half the point given away.
-                    m.extend_from_slice(&(tick + 1).to_le_bytes());
-                    if sink.send(Message::Binary(m)).await.is_err() {
-                        break;
-                    }
-                    sent = Some(buttons);
-                }
-                // Forward on our own input, so a later tick's `own` is this
-                // tick's answer rather than the last snapshot's. The arena's
-                // next snapshot overwrites all of it, which is the point: a bot
-                // predicts to stay steerable and defers to the server for
-                // everything that matters. On the rig the forwarding is a note
-                // for the pen holder, whose next step carries it.
-                match &mut sight {
-                    Sight::Shared(rig) => {
-                        rig.buttons[ship as usize].store(buttons, Ordering::Relaxed);
-                    }
-                    Sight::Private(w) => {
-                        w.step(&[sim::sim_input { ship, buttons }]);
-                    }
-                    Sight::Dark => {}
                 }
             }
         }
     }
-    // Whatever was held against the rig goes back: the seat, and the pen if
-    // this pilot was the one writing. The next pilot's tick picks the pen up.
+
+    // The second-room pilot, flown the way every pilot used to be: its own
+    // world, its own clock, its own hands. Correct rather than fast, and
+    // rare enough that fast does not matter.
+    if let Some((mut w, mut b)) = go_private {
+        let mut buttons: u16;
+        let mut sent: Option<u16> = None;
+        let mut asked: Option<std::time::Instant> = None;
+        let mut ticker = tokio::time::interval(std::time::Duration::from_micros(10_000));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                biased;
+                msg = source.next() => {
+                    let Some(Ok(Message::Binary(data))) = msg else { break };
+                    heard = std::time::Instant::now();
+                    if data.is_empty() {
+                        continue;
+                    }
+                    match data.first().copied() {
+                        Some(crate::S2C_SETTINGS) => {
+                            w.apply_settings(&data[1..]);
+                        }
+                        Some(crate::S2C_SNAPSHOT) if data.len() > 6 => {
+                            w.apply_snapshot(&data[6..]);
+                        }
+                        Some(crate::S2C_YIELD) => break,
+                        _ => {}
+                    }
+                }
+                _ = ticker.tick() => {
+                    if heard.elapsed().as_millis() as u64 > QUIET_MS {
+                        break;
+                    }
+                    if ship as usize >= sim::MAX_SHIPS {
+                        break;
+                    }
+                    let own = ai::own(&w, ship);
+                    let fresh = b.looks_due().then(|| ai::scan(&w, ship));
+                    if b.wants_refuge() {
+                        let mut c = ai::crowd(&w, ship);
+                        c.extend_from_slice(b.avoid());
+                        if let Some(r) = route.as_deref() {
+                            b.refuge(r.refuge((own.x, own.y), &c, ai::REFUGE_PX, true));
+                        }
+                    }
+                    let tick = w.state.tick;
+                    if yielding.load(Ordering::Relaxed) {
+                        b.stand_down();
+                        let since = *asked.get_or_insert_with(std::time::Instant::now);
+                        let how = if !own.alive {
+                            Some("died")
+                        } else if b.departed() {
+                            Some("clear")
+                        } else if since.elapsed().as_millis() as u64 > DEPART_MAX_MS {
+                            Some("gave up")
+                        } else {
+                            None
+                        };
+                        if let Some(how) = how {
+                            println!("{addr}: {} left ({how}, {:.1}s)",
+                                     who.name, since.elapsed().as_secs_f32());
+                            break;
+                        }
+                    }
+                    buttons = match route.as_deref() {
+                        Some(r) => b.think(&own, r, fresh),
+                        None => 0,
+                    };
+                    if sent != Some(buttons) {
+                        let mut m = vec![crate::C2S_INPUT];
+                        m.extend_from_slice(&buttons.to_le_bytes());
+                        m.extend_from_slice(&(tick + 1).to_le_bytes());
+                        if sink.send(Message::Binary(m)).await.is_err() {
+                            break;
+                        }
+                        sent = Some(buttons);
+                    }
+                    w.step(&[sim::sim_input { ship, buttons }]);
+                }
+            }
+        }
+    }
+
+    // Whatever was held against the rig goes back: the seat with the mind in
+    // it, and the pen if this connection was the one feeding. The driver's
+    // next tick simply finds one fewer pilot.
     if let Sight::Shared(rig) = &sight {
         rig.release(ship, me);
     }

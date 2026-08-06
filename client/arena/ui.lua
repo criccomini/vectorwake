@@ -163,60 +163,200 @@ local function pips(x, y, n, filled, col, r, pitch)
     end
 end
 
--- Who is in a seat, in two marks cut from one helmet.
+-- Who is in a seat, in two marks that answer one question.
 --
--- A flat crown, straight sides, and the jaw taken off at the chamfer this
--- interface cuts everything with. Both marks are that shell and differ only
--- in what is inside it: a person gets a brow and a visor, a machine gets two
--- lamps and an antenna. Drawn rather than spelled, because "AI" beside a name
--- is two letters that read as part of the name until you have learned they
--- are not, and these lists are scanned rather than read.
+-- A person wears a round helmet with a curved visor across it. A machine
+-- wears a squared one with two lamps in it and an antenna over the top.
+-- Drawn rather than spelled, because "AI" beside a name is two letters that
+-- read as part of the name until you have learned they are not, and these
+-- lists are scanned rather than read.
 --
--- One shell because of one row. The games list puts a count of people beside
--- a count of machines, and there the pair has to read as one question with
--- two answers rather than as two unrelated pictures. Everywhere else each is
--- alone, which is what the antenna is for: it says machine with nothing to
--- compare against.
+-- The two shells differ on purpose. They were one shell for a while, on the
+-- reasoning that the games list sets a count of people beside a count of
+-- machines and the pair should read as one question. It does read as one
+-- question, but the round-against-square difference is what answers it at a
+-- glance: curved is grown, boxed is built, and that is legible at a size
+-- where a lamp is two pixels and an antenna is three. What holds the pair
+-- together is the collar, the height, and the baseline, all of which they
+-- still share.
+--
+-- Everywhere but that row each mark is alone, so each has to say what it is
+-- with nothing to compare against. The box does that for the machine, and
+-- the antenna over it says it twice.
 --
 -- `k` is the width of the shell. `y` is the middle of the line it sits on, so
 -- a caller can hand it a row's centre without knowing the height.
-local HELM_TALL, HELM_CUT = 0.82, 0.24
+--
+-- HELM_NECK is how far below the centre the collar cuts, in radii. Both
+-- shells are cut off there and sit on the same run of line, so the mark's
+-- height is what it actually draws rather than a box of air around it.
+local HELM_NECK, HELM_COLLAR = 0.68, 1.26
+local HELM_TALL = 0.5 * (1 + HELM_NECK)
 
+-- The collar, under either shell. `half` is the shell's own half width where
+-- the cut lands; the line runs a little past it so the helmet sits in
+-- something rather than ending in mid air.
+local function collar(cx, neck, half, line, col)
+    u:seg(cx - half * HELM_COLLAR, ry(neck), cx + half * HELM_COLLAR, ry(neck),
+          line, col, true)
+end
+
+-- A person's shell: a bowl of glass, one turn of a circle cut off at the
+-- neckline. The chamfer the rest of this interface is built from went here
+-- first and made a box with a face in it, and straight sides after that made
+-- a bucket. A helmet is the one object in this game that is not machined, and
+-- it reads as one once its edges stop being edges.
 local function helm(cx, cy, k, col)
     local w = k
     local h = w * HELM_TALL
     local x0, y0 = cx - w / 2, cy - h / 2
-    local cut = w * HELM_CUT
-    u:outline({x0, ry(y0), x0 + w, ry(y0),
-               x0 + w, ry(y0 + h - cut), x0 + w - cut, ry(y0 + h),
-               x0 + cut, ry(y0 + h), x0, ry(y0 + h - cut)},
-              pen(k, 0.12), col, true)
-    return x0, y0, w, h
+    local r = w * 0.5
+    local mid = y0 + r                 -- the centre of the bowl
+    local neck = mid + r * HELM_NECK   -- where the collar cuts it off
+    local half = math.sqrt(math.max(0, r * r - (neck - mid) ^ 2))
+    local line = pen(k, 0.11)
+    local segs = math.max(8, math.floor(k * 0.8))
+    -- The angle the cut meets the circle at, measured off the horizontal.
+    local a = math.asin((neck - mid) / r)
+    u:arc(cx, ry(mid), r, -a, math.pi + a, line, segs, col)
+    collar(cx, neck, half, line, col)
+    return x0, y0, w, h, mid, r
 end
 
--- A person: the brow under the crown, and the visor below it.
+-- A machine's shell: the same envelope with the curve taken out of it.
+--
+-- Squared to the same width and the same neckline as the bowl, so the two sit
+-- level in a row. Its crown is flat where the person's is domed, which is the
+-- whole of the difference and all it needs to be.
+--
+-- Three sides and a collar rather than a closed outline. Closing it lays the
+-- box's own base under the collar, and two lines of one colour on one pixel
+-- row is a brighter line wherever these marks draw at part alpha, which is
+-- every nameplate in the arena.
+--
+-- The same reasoning decides the corners. A capped stroke runs half a width
+-- past each end, so four capped sides overlap in four squares and light every
+-- corner. The crown is capped and covers them; the sides butt into it and
+-- into the collar, each drawing its own length and no more.
+local function hull_helm(cx, cy, k, col)
+    local w = k
+    local h = w * HELM_TALL
+    local x0, y0 = cx - w / 2, cy - h / 2
+    local r = w * 0.5
+    local mid = y0 + r
+    local neck = mid + r * HELM_NECK
+    local line = pen(k, 0.11)
+    u:seg(x0, ry(y0), x0 + w, ry(y0), line, col, true)
+    u:seg(x0, ry(y0 + line / 2), x0, ry(neck - line / 2), line, col)
+    u:seg(x0 + w, ry(y0 + line / 2), x0 + w, ry(neck - line / 2), line, col)
+    collar(cx, neck, w / 2, line, col)
+    return x0, y0, w, h, mid, r
+end
+
+-- A bowl on a collar with a visor in it has more parts than the box it
+-- replaced, and parts are what die first when a mark is drawn small. Eleven
+-- points rather than nine: still a mark beside a number rather than a picture
+-- in a row, and enough for the glass, the collar and the band to survive.
+local MARK_K = 11
+
+-- How far off the bowl's centre the visor's two edges are struck from, in
+-- radii, and where each sits when it crosses the middle. The two pivots are
+-- that distance either side of the centre, which is what makes the band swell
+-- rather than bend: bigger is flatter, and at a few radii the arcs are gentle
+-- enough to read as a swelling instead of as a lens.
+local VISOR_PIVOT = 2.8
+local VISOR_TOP, VISOR_BOT = 0.34, 0.10
+
+-- A person: the visor, one curved band across the glass.
+--
+-- It was a pair of shades with a wedge of nose between them, and the nose was
+-- the part doing the work: two lenses without it close into a band with a
+-- nick, and with it they read as a face rather than as a helmet. A visor is
+-- the simpler object and the one a space helmet actually has, so the band is
+-- unbroken and the face behind it is left alone.
+--
+-- Swelled rather than ruled or bent. Two earlier cuts curved both edges the
+-- same way, which slides the whole band up or down without changing its
+-- shape: struck like the dome it was a brow, and struck against the dome it
+-- was a frown, and either way it read as a line that had been pushed around
+-- rather than as an object.
+--
+-- This bows the edges apart instead. The top rises over the middle and the
+-- bottom drops under it, so the band is deepest where it crosses the face and
+-- narrows towards each end, which is what a curved pane does when you look at
+-- it head on. The ends stop short of the glass rather than touching, which is
+-- what keeps it a visor in a helmet instead of a helmet in two pieces.
+--
+-- Drawn as a strip of quads, walking the two edges together. A fan would
+-- serve, the swelled band being convex where the bent one was not, but the
+-- strip does not care either way and this shape has now changed three times.
 local function pilot_mark(cx, cy, col, k)
-    k = k or 9 * S
-    local x0, y0, w, h = helm(cx, cy, k, col)
-    u:seg(x0 + w * 0.30, ry(y0 + h * 0.18), x0 + w * 0.70,
-          ry(y0 + h * 0.18), pen(k, 0.09),
-          pal.a(col, (col[4] or 1) * 0.55), true)
-    rect(x0 + w * 0.14, y0 + h * 0.36, w * 0.72, h * 0.26, col)
+    k = k or MARK_K * S
+    local w, h, mid, r = select(3, helm(cx, cy, k, col))
+    local _ = h
+    -- The glass, less the line it is drawn with and the gap held off it.
+    local rin = r - (pen(k, 0.11) + w * 0.045)
+    -- One pivot under the helmet and one over it, each carrying the edge
+    -- furthest from it. The top's arc therefore stands on its pivot and the
+    -- bottom's hangs from its own, and the two part company away from the
+    -- middle.
+    local under, over = mid + r * VISOR_PIVOT, mid - r * VISOR_PIVOT
+    local top = under - (mid - r * VISOR_TOP)
+    local bot = (mid + r * VISOR_BOT) - over
+    local function upper(x)
+        return under - math.sqrt(math.max(0, top * top - x * x))
+    end
+    local function lower(x)
+        return over + math.sqrt(math.max(0, bot * bot - x * x))
+    end
+    -- How far out the band runs before it would leave the glass. Solved by
+    -- halving rather than in closed form: the answer is a couple of pixels
+    -- and the arithmetic for it is a page.
+    local lo, hi = 0, rin
+    for _ = 1, 24 do
+        local m = (lo + hi) / 2
+        local ty, by = upper(m) - mid, lower(m) - mid
+        if m * m + math.max(ty * ty, by * by) <= rin * rin then
+            lo = m
+        else
+            hi = m
+        end
+    end
+    local reach = lo
+    local n = math.max(4, math.floor(k / 2))
+    local px, pty, pby
+    for i = 0, n do
+        local x = -reach + 2 * reach * i / n
+        local ty, by = upper(x), lower(x)
+        if px then
+            u:quad(cx + px, ry(pty), cx + x, ry(ty),
+                   cx + x, ry(by), cx + px, ry(pby), col)
+        end
+        px, pty, pby = x, ty, by
+    end
     return w
 end
 
--- A machine: two lamps where the visor goes, and the antenna over the crown.
+-- A machine: the boxed shell, two lamps, and the antenna over the crown.
+--
 -- `x` is its left edge rather than its centre, because every caller of this
 -- one is laying a row out left to right and knows where the mark starts.
+--
+-- Lamps rather than a visor, and a flat crown to stand them under. The
+-- antenna says the same thing a second time, which is worth the two points it
+-- costs: three of this mark's four uses are solo.
 local function bot_mark(x, y, col, k)
-    k = k or 9 * S
+    k = k or MARK_K * S
     local cx = x + k / 2
-    local x0, y0, w, h = helm(cx, y, k, col)
-    local ey = y0 + h * 0.49
-    u:disc(x0 + w * 0.30, ry(ey), w * 0.115, 8, col)
-    u:disc(x0 + w * 0.70, ry(ey), w * 0.115, 8, col)
-    u:seg(cx, ry(y0), cx, ry(y0 - h * 0.34), pen(k, 0.09), col, true)
-    u:disc(cx, ry(y0 - h * 0.44), w * 0.12, 8, col)
+    local x0, y0, w, _, mid, r = hull_helm(cx, y, k, col)
+    -- The middle of the box rather than the middle of the circle it used to
+    -- be: a flat crown puts the room the dome was using back into the shell,
+    -- and lamps left where they were sat in the bottom third of it.
+    local eye = mid - r * 0.16
+    u:disc(x0 + w * 0.31, ry(eye), w * 0.115, 8, col)
+    u:disc(x0 + w * 0.69, ry(eye), w * 0.115, 8, col)
+    u:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), pen(k, 0.09), col, true)
+    u:disc(cx, ry(y0 - r * 0.48), w * 0.11, 8, col)
     return w
 end
 
@@ -739,7 +879,7 @@ local function nameplates(o)
                         -- it, and a call sign is exactly the kind of string
                         -- somebody will end in a bracket or a dot.
                         bot_mark(sx + 12 * S + text_w(nm, 11 * S) + 9 * S,
-                                 sy + 13 * S, pal.a(col, 0.45), 8 * S)
+                                 sy + 13 * S, pal.a(col, 0.45), 10 * S)
                     end
                     if bty > 0 then
                         txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
@@ -2047,38 +2187,48 @@ end
 -- a phone they were a line of text laid over the thumbs. They are in the
 -- menu now, under `help`, which is where a thing you consult belongs.
 
+-- One thing to press, wherever the thing to press turns up: a frame with a
+-- hint of fill, lit in the colour of what it does, and its word in capitals in
+-- the face the numbers are set in. The corner keys and a question's answers
+-- are the same object, so they are one drawing rather than two functions
+-- agreeing on seven numbers by hand.
+--
+-- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
+-- so they live out here with it rather than being repeated at each call.
+local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
+local function key_size() return (FONT - 1) * S end
+local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * S end
+local function key_cap(x, y, w, label, on)
+    local col = on and pal.FRIEND or pal.DIM
+    local h = KEY_H * S
+    rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
+    u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
+    txt(label, x + w / 2, y + h / 2, key_size(), pal.a(col, on and 1 or 0.85),
+        "center")
+end
+
 local function menu_button()
-    -- Two keys, drawn the way the help page draws a key: a frame with a hint
-    -- of fill, lit in the colour of what it does. They were two bare words
-    -- over a shared rule, which asked a player to know that a word in that
-    -- corner was a thing to press, and the board has taught the same hand what
-    -- a key looks like already.
+    -- Two keys, drawn the way the help page draws a key. They were two bare
+    -- words over a shared rule, which asked a player to know that a word in
+    -- that corner was a thing to press, and the board has taught the same hand
+    -- what a key looks like already.
     --
     -- One colour between them, and one rule for lighting it. MENU was drawn in
     -- ink and PLAYERS in slate, which is two controls that do the same kind of
     -- thing wearing two different states before either had been pressed. What
     -- they wear now is off or on, and the panel each opens is what turns it on.
     local x, y = PAD * S, PAD * S
-    local h = 26 * S
-    local size = (FONT - 1) * S
     -- Each key is as wide as its own word. A slot cut for four letters is a
     -- slot the longer of the two runs out of.
-    local padx = 9 * S
-    local gap = 6 * S
     local cx = x
     for _, c in ipairs({{"MENU", "open", menu_up},
                         {"PLAYERS", "details", M.details}}) do
-        local on = c[3]
-        local ww = text_w(c[1], size) + 2 * padx
-        local col = on and pal.FRIEND or pal.DIM
-        rect(cx, y, ww, h, pal.a(col, on and 0.16 or 0.07))
-        u:frame(cx, ry(y, h), ww, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
-        txt(c[1], cx + ww / 2, y + h / 2, size,
-            pal.a(col, on and 1 or 0.85), "center")
-        hit(cx, y, ww, h, c[2])
-        cx = cx + ww + gap
+        local ww = key_w(c[1])
+        key_cap(cx, y, ww, c[1], c[3])
+        hit(cx, y, ww, KEY_H * S, c[2])
+        cx = cx + ww + KEY_GAP * S
     end
-    chip_right = cx - gap
+    chip_right = cx - KEY_GAP * S
 end
 
 -- How good the line is, above the dial. It belongs up here with the
@@ -2929,8 +3079,8 @@ local function population(x, y, players, bots, col)
     local right = x
     if bots and bots > 0 then
         txt(tostring(bots), right, y, 12 * S, pal.a(pal.DIM, 0.9), "right")
-        bot_mark(right - text_w(tostring(bots), 12 * S) - 14 * S, y,
-                 pal.a(pal.DIM, 0.75), 9 * S)
+        bot_mark(right - text_w(tostring(bots), 12 * S) - 16 * S, y,
+                 pal.a(pal.DIM, 0.75))
         right = right - text_w(tostring(bots), 12 * S) - 26 * S
     end
     local pc = players > 0 and col or pal.a(pal.DIM, 0.8)
@@ -2939,8 +3089,46 @@ local function population(x, y, players, bots, col)
     -- "some number of somethings" and left the row's two counts looking like
     -- a bullet and a picture; the pair is one shell now, and which of them a
     -- player is looking at is the face in it.
-    pilot_mark(right - text_w(tostring(players), 13 * S) - 11 * S, y, pc,
-               9 * S)
+    pilot_mark(right - text_w(tostring(players), 13 * S) - 12 * S, y, pc)
+end
+
+-- The dial that says something is being looked for, at whatever size it is
+-- handed: the page's own when the list has nothing in it at all, and a row's
+-- when the list has the zone but nothing is serving it. Everything about it is
+-- measured off its radius, so the small one is the large one rather than a
+-- second drawing that has to be kept in step with it.
+--
+-- Nothing else in this interface turns for the sake of turning, and this is
+-- telling the truth while it does: the directory is asked again every few
+-- seconds, and a zone with nobody running it is one an arena can come back to.
+local function sweep_dial(cx, cy, r)
+    local ring = math.max(0.8 * S, r * 0.022)
+    -- Three range rings where there is room for three. A dial the height of a
+    -- row has twenty points across it, and three rings in that are five points
+    -- apart, which is closer than the stroke drawing them: they close up into
+    -- a disc with a fringe. Two rings at that size is the same instrument,
+    -- read at the distance it is actually being read from.
+    local rings = (r > 24 * S) and {0.42, 0.72, 1.0} or {0.55, 1.0}
+    local sides = math.max(18, math.min(30, math.floor(r / S)))
+    for k, f in ipairs(rings) do
+        u:ring(cx, ry(cy), r * f, ring, sides,
+               pal.a(pal.RADAR_TILE, 0.55 - k * 0.12))
+    end
+    local ang = -M.now * 0.8
+    -- How much of the circle the tail covers. Fewer strokes on the small dial:
+    -- the same half radian of them, on something twenty points across, is a
+    -- quarter of the face filled in, and a sweep that wide is a pie chart.
+    local tail = (r > 24 * S) and 10 or 5
+    for k = 0, tail - 1 do
+        -- The trail is behind it, which for a sweep going round the way a
+        -- dial's hand goes is the side it has just left.
+        local a = ang + k * 0.05
+        local f = 1 - k / tail
+        u:seg(cx, ry(cy), cx + math.cos(a) * r * 0.98,
+              ry(cy - math.sin(a) * r * 0.98), math.max(1.0 * S, r * 0.028),
+              pal.a(pal.FRIEND, 0.32 * f * f), true)
+    end
+    u:disc(cx, ry(cy), math.max(1.2 * S, r * 0.05), 10, pal.a(pal.DIM, 0.9))
 end
 
 -- One row of the stage: a mark for the one you are on, the name, and
@@ -2968,6 +3156,9 @@ local function stage_row(x, y, w, h, r, hot)
               x + 7 * S, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
     end
     local sel = hot or r.mark
+    -- A row nothing is serving is a place that exists and cannot be flown to
+    -- yet, so it is written a shade back from the ones that can.
+    if r.waiting then col = pal.a(col, 0.6) end
     local size = (M.compact and 17 or 18) * S
     -- A row carrying a sentence of its own gives it the lower half and takes
     -- the upper for everything else. The games are the list that wants it:
@@ -2986,11 +3177,17 @@ local function stage_row(x, y, w, h, r, hot)
     end
     if r.note then
         txt(r.note, tx, y + h * 0.68, 11.5 * S,
-            pal.a(pal.DIM, hot and 1 or 0.75))
+            pal.a(pal.DIM, (hot and 1 or 0.75) * (r.waiting and 0.7 or 1)))
     end
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
-    if r.players and r.live then
+    if r.waiting then
+        -- No count, because there is nothing to count. The instrument that
+        -- looks for a game says what the words did, in the room the numbers
+        -- would have taken, and it keeps saying it while the list refreshes
+        -- underneath: an arena can come back and this row is where it lands.
+        sweep_dial(x + w - 16 * S - 11 * S, ly, 11 * S)
+    elseif r.players and r.live then
         population(x + w - 16 * S, ly, r.players, r.bots,
                    pal.a(pal.FRIEND, sel and 1 or 0.85))
     elseif r.choice then
@@ -3056,24 +3253,7 @@ local function empty_state(x, y, w, h, e)
     -- an empty page there is nothing above to hang from.
     local blockh = 2 * r + 96 * S
     local cy = y + math.max(0, (h - blockh) / 2) + r + 8 * S
-    for k, f in ipairs({0.42, 0.72, 1.0}) do
-        u:ring(cx, ry(cy), r * f, 1.0 * S, 30,
-               pal.a(pal.RADAR_TILE, 0.55 - k * 0.12))
-    end
-    -- The sweep, and its trail behind it. Nothing else in this interface
-    -- turns for the sake of turning, and this one is telling the truth: the
-    -- list is being asked for again while it goes round.
-    local ang = -M.now * 0.8
-    for k = 0, 9 do
-        -- The trail is behind it, which for a sweep going round the way a
-        -- dial's hand goes is the side it has just left.
-        local a = ang + k * 0.05
-        local f = 1 - k / 10
-        u:seg(cx, ry(cy), cx + math.cos(a) * r * 0.98,
-              ry(cy - math.sin(a) * r * 0.98), 1.3 * S,
-              pal.a(pal.FRIEND, 0.32 * f * f), true)
-    end
-    u:disc(cx, ry(cy), 2.4 * S, 10, pal.a(pal.DIM, 0.9))
+    sweep_dial(cx, cy, r)
     local ty = cy + r + 30 * S
     txt(e.head or "", cx, ty, (M.compact and 17 or 19) * S,
         pal.a(pal.INK, 0.85), "center", MENU_FONT)
@@ -3082,6 +3262,52 @@ local function empty_state(x, y, w, h, e)
     end
     if e.at and e.at ~= "" then
         txt(e.at, cx, ty + 46 * S, 11 * S, pal.a(pal.DIM, 0.45), "center")
+    end
+end
+
+-- A question the menu wants answered before anything else, over the page that
+-- asked it.
+--
+-- The panel stays where it is and stands down: the answer is about the row the
+-- cursor is on, and losing sight of that row to answer for it is how the wrong
+-- game gets left. Standing down is a wash for the shapes and a tenth of the
+-- alpha for the type, since glyphs come from the gui and draw over every mesh,
+-- so a label is quieted where it is written or not at all.
+--
+-- One line, one face, and the answers underneath as the keys the corner of the
+-- screen already wears. The line under the heading used to read "leave it and
+-- go back to the home screen?", which is the answers written out as a
+-- sentence: a card that asks twice is a card somebody reads twice.
+local function ask_card(x, y, w, h, a)
+    rect(0, 0, W, H, pal.a(pal.BG, 0.62))
+    -- Nothing behind this is listening, and hit boxes are first come first
+    -- served, so the ones already published go: a tap on the rail or on a row
+    -- under the wash would otherwise answer a question it cannot see.
+    M.hits = {}
+    text_dim = 1
+    local cw = math.min(340 * S, w - 24 * S)
+    local ch = 110 * S
+    local cx = x + (w - cw) / 2
+    local cy = y + (h - ch) / 2
+    rect(cx, cy, cw, ch, pal.a(pal.BTN_BG, 0.98))
+    u:frame(cx, ry(cy, ch), cw, ch, 1.1 * S, pal.a(pal.BORDER, 1))
+    local mid = cx + cw / 2
+    txt(a.head or "", mid, cy + 36 * S, (M.compact and 15 or 16) * S,
+        pal.a(pal.INK, 0.95), "center", MENU_FONT)
+    -- Laid out from the middle out rather than from an edge in, so the row of
+    -- answers stays centred whatever the words are.
+    local ws, total = {}, 0
+    for i, k in ipairs(a.keys) do
+        ws[i] = key_w(string.upper(k.label))
+        total = total + ws[i]
+    end
+    total = total + KEY_GAP * S * (#a.keys - 1)
+    local kx = mid - total / 2
+    local ky = cy + ch - 22 * S - KEY_H * S
+    for i, k in ipairs(a.keys) do
+        key_cap(kx, ky, ws[i], string.upper(k.label), i == a.sel)
+        hit(kx, ky, ws[i], KEY_H * S, "answer", i)
+        kx = kx + ws[i] + KEY_GAP * S
     end
 end
 
@@ -3242,7 +3468,11 @@ end
 -- --- the whole thing -------------------------------------------------------
 
 function M.menu(v)
-    text_dim = 1
+    -- A question takes the keys off whatever asked it, and the panel says so
+    -- by standing down. It has to be set before a word of it is written: a
+    -- glyph carries the alpha it was queued with, and the gui draws it over
+    -- every mesh whatever is laid on top afterwards.
+    text_dim = v.ask and 0.1 or 1
     local pts_w, pts_h = W / S, H / S
     -- One rule about the window, three layouts. 620 points is where a rail
     -- with its labels and a stage worth reading stop fitting side by side;
@@ -3516,6 +3746,9 @@ function M.menu(v)
         txt(foot, tx, sy + sh - 4 * S, 12 * S,
             pal.a(v.note and pal.HURT or pal.DIM, 0.95))
     end
+
+    -- Last, over all of it, because it is the only thing being read.
+    if v.ask then ask_card(sx, sy, GUTTER * S + lw, sh, v.ask) end
 end
 
 -- --- cursor ----------------------------------------------------------------
