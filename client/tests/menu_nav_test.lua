@@ -35,7 +35,15 @@ package.loaded["arena.net"] = {
     my_team_name = function() return "" end,
     protocol = 5, invite = function() end,
 }
-package.loaded["arena.callsign"] = {roll = function() return "Probe 1" end}
+local rolled = 0
+package.loaded["arena.callsign"] = {
+    roll = function() return "Probe 1" end,
+    seed = function() end,
+    generate = function()
+        rolled = rolled + 1
+        return "Probe " .. rolled
+    end,
+}
 package.loaded["arena.directory"] = {
     rows = {{zone = "chaos", name = "chaos", detail = "a brawl",
              count = "0 playing", players = 0, bots = 51, live = true}},
@@ -234,7 +242,7 @@ check("nothing at the foot of the list leaves the game",
 
 local act2 = menu.step({go = true})
 check("enter on the game you are in asks instead of joining",
-      act2 == nil and menu.ask ~= nil and menu.chosen == nil,
+      act2 == nil and menu.ask ~= nil,
       tostring(act2) .. ", ask " .. tostring(menu.ask))
 check("with the answer that changes nothing under the cursor",
       menu.ask.sel == #menu.ask.keys and menu.ask.keys[menu.ask.sel].act == nil,
@@ -271,15 +279,55 @@ check("escape answers the question instead of shutting the menu",
       act4 == nil and moved4 and menu.ask == nil and menu.open,
       tostring(act4) .. ", open " .. tostring(menu.open))
 
--- And a different game is still a join.
+-- A different game asks as well, because arriving there costs the game you
+-- are in just the same, and the press that costs it is the same press.
 menu.zone = "elsewhere"
+menu.chosen = nil
 local act5 = menu.step({go = true})
-check("any other game is still a join",
-      act5 == "join" and menu.ask == nil and menu.chosen ~= nil,
-      tostring(act5))
+check("a different game asks before it takes the one you are in",
+      act5 == nil and menu.ask ~= nil, tostring(act5))
+menu.ask.sel = 1
+local act6 = menu.step({go = true})
+check("and the answer that switches is a join",
+      act6 == "join" and menu.chosen ~= nil and menu.ask == nil,
+      tostring(act6))
+
+-- With nothing behind the panel there is nothing to lose, so nothing to ask.
+menu.home = true
+menu.ask = nil
+local act7 = menu.step({go = true})
+check("and from the home screen it just joins",
+      act7 == "join" and menu.ask == nil, tostring(act7))
+
+-- --- and the one row on the pilot page that throws something away ---------
+--
+-- A call sign is the only name anybody here has, and it is the name on the
+-- scoreboard of every game this pilot has flown. The row showed it and
+-- replaced it on the press, with nothing said and nothing to say no to.
+
 menu.zone = ""
 menu.chosen = nil
-menu.home = true
+menu.ask = nil
+menu.stack = {"root"}
+menu.sel = {}
+menu.click_rail(top_index("pilot"))
+local was = menu.name
+local act8 = menu.step({go = true})
+check("rolling a call sign asks first",
+      act8 == nil and menu.ask ~= nil and menu.name == was,
+      tostring(act8) .. ", name " .. tostring(menu.name))
+menu.step({back = true})
+check("and escape keeps the one you have",
+      menu.name == was and menu.ask == nil, tostring(menu.name))
+menu.step({go = true})
+menu.ask.sel = 1
+local act9, moved9 = menu.step({go = true})
+check("rolling rolls, and the arena is never told",
+      menu.name ~= was and act9 == nil and moved9,
+      tostring(was) .. " -> " .. tostring(menu.name) .. ", act "
+          .. tostring(act9))
+
+menu.ask = nil
 menu.stack = {"root"}
 menu.sel = {}
 
