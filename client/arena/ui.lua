@@ -2170,9 +2170,13 @@ local function wait(b, me)
     -- The clock. `respawn_at` counts down in the core and is in every
     -- snapshot, so this is read rather than timed here: a local stopwatch
     -- would drift off the tick that actually puts the hull back.
+    --
+    -- The bar and nothing else. It used to run over a ticked rule, which is a
+    -- ruler under a thing nobody is measuring: the wait is over when the bar
+    -- runs out, and how much of a second each tick stood for was never a
+    -- question anybody had while they were dead.
     local left, delay = 0, 0
     if sim.ship_respawn then left, delay = sim.ship_respawn(me) end
-    ticks(x + b.pad, y + b.rule, b.inner, pal.a(pal.DIM, 0.5), 16 * S)
     if delay > 0 and left > 0 then
         local frac = left / delay
         if frac > 1 then frac = 1 end
