@@ -259,11 +259,12 @@ end
 -- in a row, and enough for the glass, the collar and the band to survive.
 local MARK_K = 11
 
--- How far below the bowl's centre the visor's two edges are struck from, in
--- radii, and where the band sits when it crosses the middle. A pivot below
--- the helmet bends both edges the way the crown bends: highest at the centre,
--- falling away to either side.
-local VISOR_PIVOT = 2.2
+-- How far off the bowl's centre the visor's two edges are struck from, in
+-- radii, and where each sits when it crosses the middle. The two pivots are
+-- that distance either side of the centre, which is what makes the band swell
+-- rather than bend: bigger is flatter, and at a few radii the arcs are gentle
+-- enough to read as a swelling instead of as a lens.
+local VISOR_PIVOT = 2.8
 local VISOR_TOP, VISOR_BOT = 0.34, 0.10
 
 -- A person: the visor, one curved band across the glass.
@@ -274,36 +275,39 @@ local VISOR_TOP, VISOR_BOT = 0.34, 0.10
 -- the simpler object and the one a space helmet actually has, so the band is
 -- unbroken and the face behind it is left alone.
 --
--- Curved rather than ruled. A straight band across a round shell reads as a
--- slot cut through it; a band that bends reads as something wrapped around
--- the front of it. The ends stop short of the glass rather than touching,
--- which is what keeps it a visor in a helmet instead of a helmet in two
--- pieces.
+-- Swelled rather than ruled or bent. Two earlier cuts curved both edges the
+-- same way, which slides the whole band up or down without changing its
+-- shape: struck like the dome it was a brow, and struck against the dome it
+-- was a frown, and either way it read as a line that had been pushed around
+-- rather than as an object.
 --
--- It bends the other way from the crown: the ends ride up and the middle sits
--- low. Struck the same way round as the dome it fell away at both ends, which
--- is the line a brow makes, and a brow drawn across the eyes is a frown. This
--- way the shell and the band disagree, and the shape between them is what
--- reads as glass rather than as a second outline.
+-- This bows the edges apart instead. The top rises over the middle and the
+-- bottom drops under it, so the band is deepest where it crosses the face and
+-- narrows towards each end, which is what a curved pane does when you look at
+-- it head on. The ends stop short of the glass rather than touching, which is
+-- what keeps it a visor in a helmet instead of a helmet in two pieces.
 --
--- Drawn as a strip of quads rather than one fan, because the band is not
--- convex: its top and bottom both curve the same way, and a fan struck from
--- one corner of a shape like that folds over itself.
+-- Drawn as a strip of quads, walking the two edges together. A fan would
+-- serve, the swelled band being convex where the bent one was not, but the
+-- strip does not care either way and this shape has now changed three times.
 local function pilot_mark(cx, cy, col, k)
     k = k or MARK_K * S
     local w, h, mid, r = select(3, helm(cx, cy, k, col))
     local _ = h
     -- The glass, less the line it is drawn with and the gap held off it.
     local rin = r - (pen(k, 0.11) + w * 0.045)
-    -- A pivot above the helmet, so both edges are arcs hanging from it: the
-    -- band is a slice of a ring much larger than the shell, lowest where it
-    -- crosses the middle. Below the helmet instead and the same arithmetic
-    -- gives the brow.
-    local pivot = mid - r * VISOR_PIVOT
-    local top = (mid - r * VISOR_TOP) - pivot
-    local bot = (mid + r * VISOR_BOT) - pivot
-    local function edge(rad, x)
-        return pivot + math.sqrt(math.max(0, rad * rad - x * x))
+    -- One pivot under the helmet and one over it, each carrying the edge
+    -- furthest from it. The top's arc therefore stands on its pivot and the
+    -- bottom's hangs from its own, and the two part company away from the
+    -- middle.
+    local under, over = mid + r * VISOR_PIVOT, mid - r * VISOR_PIVOT
+    local top = under - (mid - r * VISOR_TOP)
+    local bot = (mid + r * VISOR_BOT) - over
+    local function upper(x)
+        return under - math.sqrt(math.max(0, top * top - x * x))
+    end
+    local function lower(x)
+        return over + math.sqrt(math.max(0, bot * bot - x * x))
     end
     -- How far out the band runs before it would leave the glass. Solved by
     -- halving rather than in closed form: the answer is a couple of pixels
@@ -311,7 +315,7 @@ local function pilot_mark(cx, cy, col, k)
     local lo, hi = 0, rin
     for _ = 1, 24 do
         local m = (lo + hi) / 2
-        local ty, by = edge(top, m) - mid, edge(bot, m) - mid
+        local ty, by = upper(m) - mid, lower(m) - mid
         if m * m + math.max(ty * ty, by * by) <= rin * rin then
             lo = m
         else
@@ -323,7 +327,7 @@ local function pilot_mark(cx, cy, col, k)
     local px, pty, pby
     for i = 0, n do
         local x = -reach + 2 * reach * i / n
-        local ty, by = edge(top, x), edge(bot, x)
+        local ty, by = upper(x), lower(x)
         if px then
             u:quad(cx + px, ry(pty), cx + x, ry(ty),
                    cx + x, ry(by), cx + px, ry(pby), col)

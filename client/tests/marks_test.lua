@@ -236,11 +236,12 @@ if rail_only[1] then
     check("the person wears a visor", #band >= 4,
           #band .. " slices of band")
     if #band >= 4 then
-        -- Curved, and curved the one way: the slices at the ends of the band
-        -- ride higher than the ones in the middle. A ruled band draws them
-        -- all level, and struck the other way round they hang lower, which is
-        -- a brow rather than a visor.
-        local mid_top, end_top = -math.huge, math.huge
+        -- Swelled, which is two separate facts about two separate edges. Both
+        -- have to hold: curve them the same way and the band slides bodily up
+        -- or down without changing shape at all, which is what the two cuts
+        -- before this one did.
+        local mid_top, end_top = math.huge, -math.huge
+        local mid_bot, end_bot = -math.huge, math.huge
         local lo, hi = math.huge, -math.huge
         for _, sh in ipairs(band) do
             lo = math.min(lo, sh.x0)
@@ -249,8 +250,14 @@ if rail_only[1] then
         local span = hi - lo
         for _, sh in ipairs(band) do
             local t = ((sh.x0 + sh.x1) / 2 - lo) / span
-            if t > 0.4 and t < 0.6 then mid_top = math.max(mid_top, sh.top) end
-            if t < 0.08 or t > 0.92 then end_top = math.min(end_top, sh.top) end
+            if t > 0.4 and t < 0.6 then
+                mid_top = math.min(mid_top, sh.top)
+                mid_bot = math.max(mid_bot, sh.y1)
+            end
+            if t < 0.08 or t > 0.92 then
+                end_top = math.max(end_top, sh.top)
+                end_bot = math.min(end_bot, sh.y1)
+            end
         end
         -- Thick enough to be a band, measured on one slice at the middle. The
         -- whole band's extent counts the bend as well as the depth, so a
@@ -264,10 +271,12 @@ if rail_only[1] then
         end
         check("of some depth", deep > bowl.r * 0.3,
               string.format("%.3f of a radius deep", deep / bowl.r))
-        check("and it curves up at the ends, not down",
-              mid_top - end_top > bowl.r * 0.02,
-              string.format("%.3f of a radius of bend", (mid_top - end_top)
-                            / bowl.r))
+        check("its top rises over the middle",
+              end_top - mid_top > bowl.r * 0.02,
+              string.format("%.3f of a radius", (end_top - mid_top) / bowl.r))
+        check("and its bottom drops under it",
+              mid_bot - end_bot > bowl.r * 0.02,
+              string.format("%.3f of a radius", (mid_bot - end_bot) / bowl.r))
         -- Inside the glass, with the gap kept. Measured at the corners, which
         -- is where a band run to the mark's nominal width escapes.
         local worst = 0
