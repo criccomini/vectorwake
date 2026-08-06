@@ -323,9 +323,21 @@ phone, and that is an advantage in a game about who saw whom first.
 cap the visible extent per zone rather than rescale the world per player,
 which keeps a pixel a pixel and puts the limit where an operator can set it.
 
----
-
-## 14. AI opponents are in-process bots that emit inputs and nothing else
+**Amended: small windows stand back.** The cost above landed hardest where
+nobody was looking. A phone in landscape holds under four hundred points on
+its short side, so under the fixed zoom it saw a third of the world a
+desktop window did while rounds crossed it at the same speed: less a
+disadvantage than a different game about being surprised. So the short axis
+of the view is now guaranteed 640 world pixels. A window already showing
+that keeps zoom one, untouched, and a smaller one backs the camera off
+until it holds 640, down to a floor of 0.6 past which the hulls stop being
+readable and the shrink stops. The rule reads only the window's size, the
+same fact the fixed zoom already read, so there is no device sniffing and a
+desktop browser squeezed to phone proportions gets the same relief. Ships
+on a phone draw at about two thirds of authored size, which the vector art
+survives; it is the trade the whole amendment is, sharpness of one ship
+against sight of the room. The rule lives in `client/render/zoom.lua`, and
+`zoom_test.lua` pins what each kind of window sees.
 
 **Status:** accepted
 

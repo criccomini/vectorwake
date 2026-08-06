@@ -15,7 +15,12 @@
 --
 -- The camera holds a fixed zoom. A bigger window shows more of the arena
 -- rather than the same arena drawn larger, which is what the original did and
--- what stops a resize from stretching the world.
+-- what stops a resize from stretching the world. Small windows are the one
+-- exception: below a threshold the camera stands back so a phone is not
+-- fighting with a third of a desktop's sight. The rule lives in zoom.lua,
+-- where a test can reach it.
+
+local zoom = require("render.zoom")
 
 -- Screen pixels per world pixel. One means the hulls draw at the size they
 -- were authored in, which is the reason for that default.
@@ -70,7 +75,7 @@ function update(self)
     local ok, cw = pcall(window.get_size)
     if ok and cw and cw > 0 and w / cw > density then density = w / cw end
     if density < 1 then density = 1 end
-    local z = ZOOM * density
+    local z = ZOOM * density * zoom.factor(w, h, density)
     local half_w = w * 0.5 / z
     local half_h = h * 0.5 / z
     local cam = self.camera or vmath.vector3(512 * 16, 512 * 16, 0)

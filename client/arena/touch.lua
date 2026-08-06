@@ -10,6 +10,13 @@
 -- its own rate, so nothing about the flight model changes -- this only decides
 -- which way the turn is applied, exactly as the AI does it.
 --
+-- One course is not a turn: dead astern. A thumb pulled straight behind the
+-- ship holds the nose and backs away, which is the fight's own gesture, since
+-- backing off the thing you are shooting at is most of what reverse is for.
+-- The cone is generous enough to land in and narrow enough that turning
+-- around survives: ask anywhere outside it and the ship comes about as it
+-- always did. See REAR below, and the chevrons in draw that say it took.
+--
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
 
@@ -17,6 +24,11 @@ local M = {}
 
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
 local THRUST_PX = 46      -- push past this and the engine lights
+-- How far either side of dead astern still reads as "back up" rather than as
+-- a course to turn to, in radians. Wide enough that a thumb aiming for
+-- behind lands in it, narrow enough that a player asking for a turnaround,
+-- who sweeps or asks off-axis, never falls in by accident.
+local REAR = 0.61
 
 M.used = false            -- has this device ever reported a touch?
 M.scale = 1               -- drawable pixels per point
@@ -176,6 +188,7 @@ end
 -- a lost touch has to be forgettable.
 function M.release_all()
     stick, guns, bombs = nil, nil, nil
+    M.reversing = false
 end
 
 -- Which charge slot was tapped since this was last asked, or nil. Consumed by
@@ -191,15 +204,25 @@ end
 -- A list rather than a bitfield, because the caller merges this with the
 -- keyboard and HTML5 builds run Lua 5.1, which has no bitwise or. Summing a
 -- set of distinct bits is exact and needs no library.
+-- Whether the stick is asking for reverse this frame, for the chevrons in
+-- draw: the arithmetic lives in bits and the drawing must not repeat it.
+M.reversing = false
+
 function M.bits(heading)
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
     if bombs then out[#out + 1] = sim.BTN_BOMB end
-    if not stick then return out end
+    if not stick then
+        M.reversing = false
+        return out
+    end
 
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
     local mag = math.sqrt(dx * dx + dy * dy)
-    if mag < DEAD_PX * M.scale then return out end
+    if mag < DEAD_PX * M.scale then
+        M.reversing = false
+        return out
+    end
 
     -- Screen +y is up and the simulation's +y is down, which is why this is
     -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
@@ -208,6 +231,20 @@ function M.bits(heading)
     local diff = want - head
     while diff > math.pi do diff = diff - math.pi * 2 end
     while diff < -math.pi do diff = diff + math.pi * 2 end
+
+    -- Dead astern, and a cone either side of it: hold the nose and back
+    -- toward the thumb rather than turning to it. The rudder stays out of it
+    -- entirely, because a retreat that slewed the nose would take the guns
+    -- off the thing being retreated from, and keeping them on it is the
+    -- point of backing up. The cone tracks the live heading, so a course
+    -- asked outside it can never wander in: the nose only ever turns toward
+    -- the ask, and the gap between them only shrinks.
+    if math.abs(diff) > math.pi - REAR then
+        M.reversing = mag > THRUST_PX * M.scale
+        if M.reversing then out[#out + 1] = sim.BTN_REVERSE end
+        return out
+    end
+    M.reversing = false
 
     if diff > 0.06 then out[#out + 1] = sim.BTN_RIGHT
     elseif diff < -0.06 then out[#out + 1] = sim.BTN_LEFT end
@@ -287,6 +324,27 @@ function M.draw(u, w, h, s)
         ring(stick.ox, stick.oy, L.home.r, dim)
         ring(stick.x, stick.y, L.r * 0.42, live, 16)
         u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, live)
+        -- Backing up, said at the thumb: chevrons past the head, pointing the
+        -- way the ship is actually going, which is toward the thumb and tail
+        -- first. Without them a reverse the player fell into by accident is
+        -- a ship that stopped obeying the stick.
+        if M.reversing then
+            local dx, dy = stick.x - stick.ox, stick.y - stick.oy
+            local m = math.sqrt(dx * dx + dy * dy)
+            if m > 0 then
+                local ux, uy = dx / m, dy / m
+                local hr = L.r * 0.42
+                for i = 1, 2 do
+                    local bx = stick.x + ux * hr * (0.9 + 0.6 * i)
+                    local by = stick.y + uy * hr * (0.9 + 0.6 * i)
+                    local tx, ty = bx + ux * hr * 0.4, by + uy * hr * 0.4
+                    u:seg(bx - uy * hr * 0.45, by + ux * hr * 0.45,
+                          tx, ty, 1.8 * s, live)
+                    u:seg(bx + uy * hr * 0.45, by - ux * hr * 0.45,
+                          tx, ty, 1.8 * s, live)
+                end
+            end
+        end
     else
         -- A resting mark where a thumb should go. The stick itself is
         -- relative -- it appears wherever you press -- but a control that is
