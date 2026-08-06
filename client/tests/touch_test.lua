@@ -3,11 +3,13 @@
 --     lua5.1 client/tests/touch_test.lua
 --
 -- The stick turns a thumb's position into the same buttons a keyboard
--- sends, and the rear cone makes that mapping worth a test: dead astern is
--- reverse with the nose held, a course outside the cone turns as it always
--- did, and the boundary between them decides whether a player can still
--- come about. All of it is angles, so it is checked as angles, through the
--- real on_touch path rather than by poking the module's internals.
+-- sends, and this pins that mapping: ahead thrusts, a course to the side
+-- turns toward it, and a course behind the nose is a turn like any other.
+-- That last one is a decision, not an accident. A rear cone that held the
+-- nose and backed up shipped and was taken out within the day because it
+-- did not feel good under a thumb, so glass has no reverse at all, and
+-- this test is where that stays true on purpose rather than by nobody
+-- having touched the file.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -83,50 +85,21 @@ b = ask(-90, 60)
 check("a course to the left turns left",
       has(b, sim.BTN_LEFT) and not has(b, sim.BTN_RIGHT))
 
--- Dead astern, committed: reverse, with the nose held. No rudder, because
--- a retreat that slewed the nose would take the guns off what it is
--- retreating from.
-b = ask(180, 60)
-check("dead astern reverses", has(b, sim.BTN_REVERSE))
-check("with the nose held",
-      not (has(b, sim.BTN_LEFT) or has(b, sim.BTN_RIGHT)))
-check("and no forward thrust", not has(b, sim.BTN_THRUST))
-check("the stick reports it for the chevrons", touch.reversing == true)
+-- A resting thumb inside the dead zone asks nothing.
+b = ask(180, 8)
+check("a thumb that barely moved does nothing", #b == 0, #b .. " bits")
 
--- Astern but not committed: inside the thrust ring nothing fires, the same
--- rule the forward gesture has always had.
-b = ask(180, 30)
-check("a timid pull astern does nothing", #b == 0, #b .. " bits")
-check("and does not claim reverse", touch.reversing == false)
+-- Courses behind the nose, at and around dead astern: every one is a turn
+-- toward the ask, and none is a reverse. Glass has no reverse.
+for _, deg in ipairs({150, 170, 179, -170, -150}) do
+    b = ask(deg, 60)
+    local turning = has(b, sim.BTN_LEFT) or has(b, sim.BTN_RIGHT)
+    check(deg .. " degrees astern is a turn like any other",
+          turning and not has(b, sim.BTN_REVERSE))
+end
 
--- The cone's edges, both sides. REAR is 0.61 radians, just under 35
--- degrees, so 150 is inside it and 140 is a turn.
-b = ask(150, 60)
-check("well inside the cone still reverses", has(b, sim.BTN_REVERSE))
-b = ask(-150, 60)
-check("on either side", has(b, sim.BTN_REVERSE))
-b = ask(140, 60)
-check("outside the cone the ship comes about",
-      has(b, sim.BTN_RIGHT) and not has(b, sim.BTN_REVERSE))
-b = ask(-140, 60)
-check("in both directions",
-      has(b, sim.BTN_LEFT) and not has(b, sim.BTN_REVERSE))
-
--- A turnaround cannot fall into the cone: the cone tracks the heading, and
--- the nose only ever closes on the ask. With the nose already halfway
--- round, the same world-fixed thumb reads as an ordinary turn.
-press()
-drag(math.sin(math.rad(140)) * 60, math.cos(math.rad(140)) * 60)
-local mid = touch.bits(math.floor(70 / 360 * 65536))
-lift()
-check("a turn in progress stays a turn",
-      has(mid, sim.BTN_RIGHT) and not has(mid, sim.BTN_REVERSE))
-
--- Lifting the thumb clears everything, including the claim to be backing
--- up. The ask itself reverses; what matters is what is left after it.
-ask(180, 60)
+-- Lifting the thumb clears the ask.
 check("after the lift the stick is quiet", #touch.bits(0) == 0)
-check("and reverse is withdrawn", touch.reversing == false)
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)
