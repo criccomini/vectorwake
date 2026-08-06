@@ -420,5 +420,40 @@ check("a long value clears the label it belongs to", lab and det and (
           lab.x + #lab.s * lab.px * 0.602, left_of(det), math.abs(lab.y - det.y))
           or "not drawn")
 
+-- --- a question stands the panel down and takes the taps with it ----------
+--
+-- The card is drawn last and the gui draws every glyph over every mesh, so
+-- nothing laid on top of the list can cover it: the list is quieted where it
+-- is written or not at all. And a hit box published before the card is a hit
+-- box under it, which is a tap on a row nobody can see answering a question
+-- about a different one.
+
+local ask = {head = "you are already flying chaos", sel = 2,
+             keys = {{label = "leave", act = "leave"}, {label = "stay"}}}
+local st3 = draw({depth = 2, sel = 2, rail = RAIL, rail_sel = 1,
+                  focus = "stage", home = false, closable = true,
+                  rows = rows, ask = ask})
+
+check("the question is drawn", has(st3, "you are already flying chaos"))
+check("and its answers wear the keys the corner wears",
+      has(st3, "LEAVE") and has(st3, "STAY"),
+      table.concat(texts(st3), " "))
+
+local loud, quiet = 0, 0
+for i = 1, st3.n do
+    local t = st3.text[i]
+    if t.dim and t.dim < 0.2 then quiet = quiet + 1 else loud = loud + 1 end
+end
+check("the panel behind it is quieted, glyph by glyph", quiet > 4,
+      quiet .. " quieted, " .. loud .. " left lit")
+check("and the card itself is not", loud == 3, loud .. " lit")
+
+local answers, others = 0, 0
+for _, h in ipairs(ui.hits) do
+    if h.action == "answer" then answers = answers + 1 else others = others + 1 end
+end
+check("only the answers can be pressed", answers == 2 and others == 0,
+      answers .. " answers, " .. others .. " other boxes")
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)
