@@ -55,6 +55,10 @@ const SAFE_WORTH: f32 = 480.0;
 
 pub struct Nav {
     cost: Box<[u8]>,
+    /// True shortest-path distance from each landmark to every cell, in the
+    /// same tenth-of-a-cell units the search steps in, `u32::MAX` where a
+    /// landmark cannot reach. See the landmark paragraph in `build`.
+    land: Vec<Box<[u32]>>,
     /// Whether each cell is a safe zone, recorded on the same pass that reads
     /// the tiles for walls because the bytes are already in cache.
     safe: Box<[bool]>,
@@ -96,6 +100,47 @@ pub struct Nav {
 
 fn cell_of(px: f32) -> usize {
     (px / CELL_PX).clamp(0.0, (W - 1) as f32) as usize
+}
+
+/// Every cell's true distance from one, by the search's own movement rules,
+/// relaxed to completion. This is the price list a landmark publishes.
+fn relax(cost: &[u8], from: usize) -> Box<[u32]> {
+    let mut d = vec![u32::MAX; W * W].into_boxed_slice();
+    let mut heap: std::collections::BinaryHeap<std::cmp::Reverse<(u32, u32)>> =
+        std::collections::BinaryHeap::new();
+    d[from] = 0;
+    heap.push(std::cmp::Reverse((0, from as u32)));
+    while let Some(std::cmp::Reverse((g, cur))) = heap.pop() {
+        let cur = cur as usize;
+        if g != d[cur] {
+            continue;
+        }
+        let (cx, cy) = ((cur % W) as i32, (cur / W) as i32);
+        for &(dx, dy) in STEPS.iter() {
+            let (nx, ny) = (cx + dx, cy + dy);
+            if nx < 1 || ny < 1 || nx >= W as i32 - 1 || ny >= W as i32 - 1 {
+                continue;
+            }
+            let n = ny as usize * W + nx as usize;
+            if cost[n] == BLOCKED {
+                continue;
+            }
+            if dx != 0
+                && dy != 0
+                && (cost[cy as usize * W + (cx + dx) as usize] == BLOCKED
+                    || cost[(cy + dy) as usize * W + cx as usize] == BLOCKED)
+            {
+                continue;
+            }
+            let step = if dx != 0 && dy != 0 { 14 } else { 10 };
+            let ng = g + step * cost[n] as u32;
+            if ng < d[n] {
+                d[n] = ng;
+                heap.push(std::cmp::Reverse((ng, n as u32)));
+            }
+        }
+    }
+    d
 }
 
 fn centre(c: usize) -> f32 {
@@ -180,8 +225,52 @@ impl Nav {
                 }
             }
         }
+        // Landmarks, for the heuristic. Six cells chosen far apart by
+        // farthest-point sampling, each carrying its true search-graph
+        // distance to every cell it can reach: the same steps, the same
+        // corner rule, the same wall-hugging prices the search itself pays,
+        // because the triangle inequality only holds over distances in the
+        // graph being searched. Six full relaxations cost tens of
+        // milliseconds once per map, against milliseconds per route forever
+        // after; the first landmark seeds from the far end of the map's
+        // largest room, which is where the sampling naturally spreads from.
+        let mut land: Vec<Box<[u32]>> = Vec::new();
+        if let Some(seed) = (0..W * W).find(|&c| out[c] != BLOCKED) {
+            let d0 = relax(&out, seed);
+            let far = |d: &[u32]| {
+                let mut best = seed;
+                let mut bd = 0u32;
+                for c in 0..W * W {
+                    if d[c] != u32::MAX && d[c] > bd {
+                        bd = d[c];
+                        best = c;
+                    }
+                }
+                best
+            };
+            let mut at = far(&d0);
+            for _ in 0..6 {
+                let d = relax(&out, at);
+                // The next landmark is the cell the chosen ones serve worst.
+                let mut best = at;
+                let mut bd = 0u32;
+                for c in 0..W * W {
+                    let mut near = d[c];
+                    for l in &land {
+                        near = near.min(l[c]);
+                    }
+                    if near != u32::MAX && near > bd {
+                        bd = near;
+                        best = c;
+                    }
+                }
+                land.push(d);
+                at = best;
+            }
+        }
         Nav {
             cost: out,
+            land,
             safe,
             comp,
             failed: std::sync::Mutex::new(std::collections::HashSet::new()),
@@ -391,10 +480,14 @@ thread_local! {
     });
 }
 
-/// A cap on one search, so a route asked for across a map with no way through
-/// costs a bounded amount rather than a quarter of a million cells. Measured on
-/// the three shipped maps, a route right across one expands a few thousand.
-const MAX_EXPAND: u32 = 40_000;
+/// A cap on one search, a backstop rather than a budget. With the landmark
+/// heuristic the worst measured route on the shipped maps, a corner spawn to
+/// the middle of Chaos, expands thirty-three thousand cells; this sits far
+/// enough above that no real route hits it, because a capped search returns
+/// empty and an empty answer is not cheap: the caller flies at the wall,
+/// gives up, and asks again, which is how a 40,000 cap turned into 855
+/// full-price failures a minute before the landmarks existed.
+const MAX_EXPAND: u32 = 60_000;
 
 impl Scratch {
     fn solve(&mut self, nav: &Nav, start: usize, goal: usize, to: (f32, f32)) -> Vec<(f32, f32)> {
@@ -403,12 +496,14 @@ impl Scratch {
         self.heap.clear();
         self.stamp[start] = gen;
         self.g[start] = 0;
-        self.heap.push(std::cmp::Reverse((0, start as u32, 0)));
+        self.heap.push(std::cmp::Reverse((0, u32::MAX, start as u32)));
 
         let (gx, gy) = ((goal % W) as i32, (goal / W) as i32);
+        let gl: Vec<u32> = nav.land.iter().map(|d| d[goal]).collect();
         let mut expanded = 0u32;
         let mut found = false;
-        while let Some(std::cmp::Reverse((_, cur, g_then))) = self.heap.pop() {
+        while let Some(std::cmp::Reverse((_, ginv, cur))) = self.heap.pop() {
+            let g_then = u32::MAX - ginv;
             let cur = cur as usize;
             if cur == goal {
                 found = true;
@@ -458,11 +553,33 @@ impl Scratch {
                 self.stamp[n] = gen;
                 self.g[n] = ng;
                 self.came[n] = k as u8;
-                // Octile, admissible on an eight-neighbour grid and tight
-                // enough that the search does not fan out over the map.
+                // Octile knows direction; the landmarks know the detours.
+                // Octile alone assumes open ground at unit cost, and on these
+                // maps a corner-to-centre route's true cost is several times
+                // that promise, so plain A* expanded the whole under-promised
+                // ellipse: 133,000 cells for a 449-cell path, which put a
+                // roster of forty-eight bots at four and a half seconds of
+                // CPU per simulated minute, nearly all of it here, most of
+                // that in searches the old 40,000-expansion cap then killed.
+                // The landmark bound |d(L, goal) - d(L, n)| is the triangle
+                // inequality over true distances measured through the walls, so
+                // it prices the detour in. Taking the largest of the bounds
+                // keeps it admissible and consistent, which is what lets
+                // every node still be expanded at most once.
                 let (ax, ay) = ((nx - gx).abs(), (ny - gy).abs());
-                let h = 10 * (ax + ay) - 6 * ax.min(ay);
-                self.heap.push(std::cmp::Reverse((ng + h as u32, n as u32, ng)));
+                let mut h = (10 * (ax + ay) - 6 * ax.min(ay)) as u32;
+                for (li, d) in nav.land.iter().enumerate() {
+                    let (dn, dg) = (d[n], gl[li]);
+                    if dn != u32::MAX && dg != u32::MAX {
+                        h = h.max(dn.abs_diff(dg));
+                    }
+                }
+                // Ties on f break toward the larger g: the block field
+                // offers many equal-priced corridors, and breadth-first over
+                // that plateau visits all of them abreast where depth-first
+                // walks one to its end. The third element keeps the pop's g
+                // readable for the superseded-entry check above.
+                self.heap.push(std::cmp::Reverse((ng + h, u32::MAX - ng, n as u32)));
             }
         }
         if !found {

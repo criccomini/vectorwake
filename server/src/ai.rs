@@ -1102,10 +1102,19 @@ impl Bot {
             self.drop_route();
             return straight;
         }
+        // How far the destination may drift before the route is replanned,
+        // scaled by how far away it is. A fixed threshold made a distant foe
+        // a metronome for the router: at five decides a second a target two
+        // thousand pixels off re-bought a cross-map search every time it
+        // flew a hundred and twenty-eight, and the first nine-tenths of the
+        // replacement was the path already held. The far half of a route
+        // barely moves when the far end wobbles; the near half is corrected
+        // every tick by the waypoint chase and the clear-line skip anyway.
+        let drift = REROUTE_PX.max(straight * 0.15);
         let stale = self.path.is_empty()
             || self.at >= self.path.len()
-            || (self.path_to.0 - dest.0).abs() > REROUTE_PX
-            || (self.path_to.1 - dest.1).abs() > REROUTE_PX;
+            || (self.path_to.0 - dest.0).abs() > drift
+            || (self.path_to.1 - dest.1).abs() > drift;
         if stale {
             let route = nav.route(me, dest);
             self.store_route(me, route, dest);

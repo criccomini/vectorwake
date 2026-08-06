@@ -25,7 +25,7 @@ local W, H = 1280, 800
 local frames, rects, segs = {}, {}, {}
 local layer = {}
 local function noop() end
-for _, name in ipairs({"disc", "flush", "outline", "quad", "reset", "ring",
+for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset", "ring",
                        "skirt", "tri", "tri_fade", "fan", "seg_glow",
                        "glow_band", "halo", "ring_fade", "seg_fade"}) do
     layer[name] = noop
