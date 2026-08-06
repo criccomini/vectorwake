@@ -21,21 +21,6 @@
 # VW_DOMAIN=localhost gives play.localhost, which Caddy signs with its own
 # internal CA and browsers resolve to loopback.
 
-# The password on the metrics routes below.
-#
-# A default that is a valid hash of a password nobody has, so a deployment that
-# has not set one fails closed rather than failing to start. That distinction
-# is the whole point: an unset variable that made this file unparseable would
-# take the certificate, the client and every arena down with it, which is a
-# much worse outcome than a metrics endpoint nobody can open.
-#
-# Set VW_METRICS_HASH from `caddy hash-password` to actually use them.
-(metrics_auth) {
-	basic_auth {
-		{$VW_METRICS_USER:metrics} {$VW_METRICS_HASH:$2a$14$aR/L0A/FhAV.CioV4bvl8e71L8eWnYNF08TV6AbjOekZ6Kaw0Wfcu}
-	}
-}
-
 # Reachable by raw IP over plain http, which is the only thing that works before
 # DNS has propagated and a certificate exists. That window is exactly when a
 # fresh host is least diagnosable, so provisioning writes coarse progress here
@@ -77,42 +62,33 @@ play.{$VW_DOMAIN} {
 		reverse_proxy 127.0.0.1:9400
 	}
 
-	# What each process says it costs, one path per process, behind a
-	# password. Loopback ports, so nothing here is reachable except through
-	# this route and its `basic_auth`.
-	#
-	# Read views are the dangerous kind to publish, because they are useful
-	# without a token: population, capacity and the build a process is
-	# running are all things a stranger would rather like. Hence the password
-	# on a read, which the admin surface avoids needing by not being routed
-	# at all.
+	# What each process says it costs, one path per process, open to
+	# anyone. These carried a password once; it came off because nobody
+	# reading a dashboard wants to keep one, and what these expose is
+	# population, capacity and build stamps, none of which is a secret this
+	# fleet is keeping. The ports themselves stay on loopback, so this
+	# route is still the only way in.
 	handle /metrics/a1* {
-		import metrics_auth
 		rewrite * /metrics
 		reverse_proxy 127.0.0.1:9101
 	}
 	handle /metrics/a2* {
-		import metrics_auth
 		rewrite * /metrics
 		reverse_proxy 127.0.0.1:9102
 	}
 	handle /metrics/a3* {
-		import metrics_auth
 		rewrite * /metrics
 		reverse_proxy 127.0.0.1:9103
 	}
 	handle /metrics/bots* {
-		import metrics_auth
 		rewrite * /metrics
 		reverse_proxy 127.0.0.1:9105
 	}
 	handle /metrics/dir* {
-		import metrics_auth
 		rewrite * /metrics
 		reverse_proxy 127.0.0.1:9106
 	}
 	handle /metrics/meta* {
-		import metrics_auth
 		rewrite * /metrics
 		reverse_proxy 127.0.0.1:9107
 	}

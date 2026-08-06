@@ -183,37 +183,49 @@ local function pips(x, y, n, filled, col, r, pitch)
     end
 end
 
--- Who is in a seat, in two marks cut from one helmet.
+-- Who is in a seat, in two marks that answer one question.
 --
--- A flat crown, straight sides, and the jaw taken off at the chamfer this
--- interface cuts everything with. Both marks are that shell and differ only
--- in what is inside it: a person gets a brow and a visor, a machine gets two
--- lamps and an antenna. Drawn rather than spelled, because "AI" beside a name
--- is two letters that read as part of the name until you have learned they
--- are not, and these lists are scanned rather than read.
+-- A person wears a round helmet with a curved visor across it. A machine
+-- wears a squared one with two lamps in it and an antenna over the top.
+-- Drawn rather than spelled, because "AI" beside a name is two letters that
+-- read as part of the name until you have learned they are not, and these
+-- lists are scanned rather than read.
 --
--- One shell because of one row. The games list puts a count of people beside
--- a count of machines, and there the pair has to read as one question with
--- two answers rather than as two unrelated pictures. Everywhere else each is
--- alone, which is what the antenna is for: it says machine with nothing to
--- compare against.
+-- The two shells differ on purpose. They were one shell for a while, on the
+-- reasoning that the games list sets a count of people beside a count of
+-- machines and the pair should read as one question. It does read as one
+-- question, but the round-against-square difference is what answers it at a
+-- glance: curved is grown, boxed is built, and that is legible at a size
+-- where a lamp is two pixels and an antenna is three. What holds the pair
+-- together is the collar, the height, and the baseline, all of which they
+-- still share.
+--
+-- Everywhere but that row each mark is alone, so each has to say what it is
+-- with nothing to compare against. The box does that for the machine, and
+-- the antenna over it says it twice.
 --
 -- `k` is the width of the shell. `y` is the middle of the line it sits on, so
 -- a caller can hand it a row's centre without knowing the height.
--- A bowl of glass on a collar: one turn of a circle, cut off at the bottom by
--- the neckline it sits in. The chamfer the rest of this interface is built
--- from went here first and made a box with a face in it, and straight sides
--- after that made a bucket. A helmet is the one object in this game that is
--- not machined, and it reads as one once its edges stop being edges.
 --
--- HELM_NECK is how far below the centre the collar cuts. The arc runs from
--- one end of that cut, up over the crown, to the other.
--- The neck cut is high enough that the collar is a run of line rather than a
--- foot under a ball, and the mark's height is what the two of them actually
--- draw, so it sits on a row's middle rather than high in a box of air.
+-- HELM_NECK is how far below the centre the collar cuts, in radii. Both
+-- shells are cut off there and sit on the same run of line, so the mark's
+-- height is what it actually draws rather than a box of air around it.
 local HELM_NECK, HELM_COLLAR = 0.68, 1.26
 local HELM_TALL = 0.5 * (1 + HELM_NECK)
 
+-- The collar, under either shell. `half` is the shell's own half width where
+-- the cut lands; the line runs a little past it so the helmet sits in
+-- something rather than ending in mid air.
+local function collar(cx, neck, half, line, col)
+    u:seg(cx - half * HELM_COLLAR, ry(neck), cx + half * HELM_COLLAR, ry(neck),
+          line, col, true)
+end
+
+-- A person's shell: a bowl of glass, one turn of a circle cut off at the
+-- neckline. The chamfer the rest of this interface is built from went here
+-- first and made a box with a face in it, and straight sides after that made
+-- a bucket. A helmet is the one object in this game that is not machined, and
+-- it reads as one once its edges stop being edges.
 local function helm(cx, cy, k, col)
     local w = k
     local h = w * HELM_TALL
@@ -227,20 +239,55 @@ local function helm(cx, cy, k, col)
     -- The angle the cut meets the circle at, measured off the horizontal.
     local a = math.asin((neck - mid) / r)
     u:arc(cx, ry(mid), r, -a, math.pi + a, line, segs, col)
-    -- The collar: the cut itself, run a little past the glass either side, so
-    -- the helmet sits in something rather than ending in mid air.
-    u:seg(cx - half * HELM_COLLAR, ry(neck), cx + half * HELM_COLLAR, ry(neck),
-          line, col, true)
+    collar(cx, neck, half, line, col)
     return x0, y0, w, h, mid, r
 end
 
--- A bowl on a collar with a visor in it has more parts than the box this
+-- A machine's shell: the same envelope with the curve taken out of it.
+--
+-- Squared to the same width and the same neckline as the bowl, so the two sit
+-- level in a row. Its crown is flat where the person's is domed, which is the
+-- whole of the difference and all it needs to be.
+--
+-- Three sides and a collar rather than a closed outline. Closing it lays the
+-- box's own base under the collar, and two lines of one colour on one pixel
+-- row is a brighter line wherever these marks draw at part alpha, which is
+-- every nameplate in the arena.
+--
+-- The same reasoning decides the corners. A capped stroke runs half a width
+-- past each end, so four capped sides overlap in four squares and light every
+-- corner. The crown is capped and covers them; the sides butt into it and
+-- into the collar, each drawing its own length and no more.
+local function hull_helm(cx, cy, k, col)
+    local w = k
+    local h = w * HELM_TALL
+    local x0, y0 = cx - w / 2, cy - h / 2
+    local r = w * 0.5
+    local mid = y0 + r
+    local neck = mid + r * HELM_NECK
+    local line = pen(k, 0.11)
+    u:seg(x0, ry(y0), x0 + w, ry(y0), line, col, true)
+    u:seg(x0, ry(y0 + line / 2), x0, ry(neck - line / 2), line, col)
+    u:seg(x0 + w, ry(y0 + line / 2), x0 + w, ry(neck - line / 2), line, col)
+    collar(cx, neck, w / 2, line, col)
+    return x0, y0, w, h, mid, r
+end
+
+-- A bowl on a collar with a visor in it has more parts than the box it
 -- replaced, and parts are what die first when a mark is drawn small. Eleven
 -- points rather than nine: still a mark beside a number rather than a picture
 -- in a row, and enough for the glass, the collar and the band to survive.
 local MARK_K = 11
 
--- A person: the visor, one band straight across the glass.
+-- How far off the bowl's centre the visor's two edges are struck from, in
+-- radii, and where each sits when it crosses the middle. The two pivots are
+-- that distance either side of the centre, which is what makes the band swell
+-- rather than bend: bigger is flatter, and at a few radii the arcs are gentle
+-- enough to read as a swelling instead of as a lens.
+local VISOR_PIVOT = 2.8
+local VISOR_TOP, VISOR_BOT = 0.34, 0.10
+
+-- A person: the visor, one curved band across the glass.
 --
 -- It was a pair of shades with a wedge of nose between them, and the nose was
 -- the part doing the work: two lenses without it close into a band with a
@@ -248,65 +295,88 @@ local MARK_K = 11
 -- the simpler object and the one a space helmet actually has, so the band is
 -- unbroken and the face behind it is left alone.
 --
--- Cut to the bowl at both ends rather than to the mark's width. A circle is
--- narrower at the eyes than at its widest, and a band run to the nominal half
--- width sits on top of the glass instead of behind it.
+-- Swelled rather than ruled or bent. Two earlier cuts curved both edges the
+-- same way, which slides the whole band up or down without changing its
+-- shape: struck like the dome it was a brow, and struck against the dome it
+-- was a frown, and either way it read as a line that had been pushed around
+-- rather than as an object.
+--
+-- This bows the edges apart instead. The top rises over the middle and the
+-- bottom drops under it, so the band is deepest where it crosses the face and
+-- narrows towards each end, which is what a curved pane does when you look at
+-- it head on. The ends stop short of the glass rather than touching, which is
+-- what keeps it a visor in a helmet instead of a helmet in two pieces.
+--
+-- Drawn as a strip of quads, walking the two edges together. A fan would
+-- serve, the swelled band being convex where the bent one was not, but the
+-- strip does not care either way and this shape has now changed three times.
 local function pilot_mark(cx, cy, col, k)
     k = k or MARK_K * S
     local w, h, mid, r = select(3, helm(cx, cy, k, col))
     local _ = h
-    -- Sat above the middle of the glass, where a face is.
-    local top = mid - r * 0.32
-    local bot = mid + r * 0.12
-    local inset = pen(k, 0.11) + w * 0.045
-    local function reach(y)
-        return math.max(0, math.sqrt(math.max(0, r * r - (y - mid) ^ 2))
-                        - inset)
+    -- The glass, less the line it is drawn with and the gap held off it.
+    local rin = r - (pen(k, 0.11) + w * 0.045)
+    -- One pivot under the helmet and one over it, each carrying the edge
+    -- furthest from it. The top's arc therefore stands on its pivot and the
+    -- bottom's hangs from its own, and the two part company away from the
+    -- middle.
+    local under, over = mid + r * VISOR_PIVOT, mid - r * VISOR_PIVOT
+    local top = under - (mid - r * VISOR_TOP)
+    local bot = (mid + r * VISOR_BOT) - over
+    local function upper(x)
+        return under - math.sqrt(math.max(0, top * top - x * x))
     end
-    -- Straight along the top and the bottom, and bowed at both ends: the band
-    -- is bounded by the glass, held off it by the gap, and pulled in a little
-    -- further at its own corners than at the eyeline. Held to the glass exactly
-    -- the ends are a copy of the outline a few points inside it, which reads
-    -- as a cut rather than as a thing with a shape of its own. The bow is what
-    -- makes it look like it was made to fit.
-    --
-    -- Two or three samples a side left the ends reading as cut corners rather
-    -- than as a curve, which is the same fault the shell had before it stopped
-    -- being a polygon, so the count follows the size the mark is drawn at.
-    local bow = w * 0.028
-    local n = math.max(3, math.floor(k / 3))
-    local pts = {}
-    local function edge(side, from, to)
-        for i = 0, n do
-            local y = from + (to - from) * i / n
-            local t = (y - top) / (bot - top)
-            local pull = bow * (1 - math.sin(t * math.pi) ^ 0.55)
-            pts[#pts + 1] = cx + side * (reach(y) - pull)
-            pts[#pts + 1] = ry(y)
+    local function lower(x)
+        return over + math.sqrt(math.max(0, bot * bot - x * x))
+    end
+    -- How far out the band runs before it would leave the glass. Solved by
+    -- halving rather than in closed form: the answer is a couple of pixels
+    -- and the arithmetic for it is a page.
+    local lo, hi = 0, rin
+    for _ = 1, 24 do
+        local m = (lo + hi) / 2
+        local ty, by = upper(m) - mid, lower(m) - mid
+        if m * m + math.max(ty * ty, by * by) <= rin * rin then
+            lo = m
+        else
+            hi = m
         end
     end
-    edge(1, top, bot)
-    edge(-1, bot, top)
-    u:fan(pts, col)
+    local reach = lo
+    local n = math.max(4, math.floor(k / 2))
+    local px, pty, pby
+    for i = 0, n do
+        local x = -reach + 2 * reach * i / n
+        local ty, by = upper(x), lower(x)
+        if px then
+            u:quad(cx + px, ry(pty), cx + x, ry(ty),
+                   cx + x, ry(by), cx + px, ry(pby), col)
+        end
+        px, pty, pby = x, ty, by
+    end
     return w
 end
 
--- A machine: the same helmet, two lamps, and the antenna over the crown.
+-- A machine: the boxed shell, two lamps, and the antenna over the crown.
 --
 -- `x` is its left edge rather than its centre, because every caller of this
 -- one is laying a row out left to right and knows where the mark starts.
 --
--- The antenna is the part that cannot be shared. Three of this mark's four
--- uses are solo, with no person beside them to be read against, so the shell
--- carries the family and the antenna carries the meaning.
+-- Lamps rather than a visor, and a flat crown to stand them under. The
+-- antenna says the same thing a second time, which is worth the two points it
+-- costs: three of this mark's four uses are solo.
 local function bot_mark(x, y, col, k)
     k = k or MARK_K * S
     local cx = x + k / 2
-    local x0, _, w, _, mid, r = helm(cx, y, k, col)
-    u:disc(x0 + w * 0.31, ry(mid + r * 0.10), w * 0.115, 8, col)
-    u:disc(x0 + w * 0.69, ry(mid + r * 0.10), w * 0.115, 8, col)
-    u:seg(cx, ry(mid - r), cx, ry(mid - r * 1.30), pen(k, 0.09), col, true)
-    u:disc(cx, ry(mid - r * 1.40), w * 0.11, 8, col)
+    local x0, y0, w, _, mid, r = hull_helm(cx, y, k, col)
+    -- The middle of the box rather than the middle of the circle it used to
+    -- be: a flat crown puts the room the dome was using back into the shell,
+    -- and lamps left where they were sat in the bottom third of it.
+    local eye = mid - r * 0.16
+    u:disc(x0 + w * 0.31, ry(eye), w * 0.115, 8, col)
+    u:disc(x0 + w * 0.69, ry(eye), w * 0.115, 8, col)
+    u:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), pen(k, 0.09), col, true)
+    u:disc(cx, ry(y0 - r * 0.48), w * 0.11, 8, col)
     return w
 end
 
@@ -1540,12 +1610,18 @@ local STACK, STACK_SHARE = 1.5, 0.34
 
 local function status(me, charges, lift)
     local slots = charges or {}
-    -- The pad carries the charge counts on a touchscreen, so those rows would
-    -- be the same thing twice at opposite corners.
+    -- On a touchscreen the pads carry all of this: the counts sit over the
+    -- charge pads and the weapon marks sit inside the trigger pads, drawn by
+    -- pad_weapons below, so any row here would be the same thing twice at
+    -- opposite corners of a screen that has no room for once. What is left
+    -- of the stack on glass is the one row no pad speaks for: the bounty.
     local show_charges = #slots > 0 and not M.touching
+    local show_trigs = not M.touching
     local trigs = 0
-    for t = 0, SIM_TRIGGERS - 1 do
-        if sim.has_trigger(me, t) then trigs = trigs + 1 end
+    if show_trigs then
+        for t = 0, SIM_TRIGGERS - 1 do
+            if sim.has_trigger(me, t) then trigs = trigs + 1 end
+        end
     end
     local n = trigs + (show_charges and #slots or 0) + 1
 
@@ -1580,7 +1656,7 @@ local function status(me, charges, lift)
 
     -- A level is the same weapon harder, so it is rungs on a ladder; an
     -- add-on changes what the round is, so it is drawn onto the round.
-    for t = 0, SIM_TRIGGERS - 1 do
+    for t = 0, show_trigs and SIM_TRIGGERS - 1 or -1 do
         if sim.has_trigger(me, t) then
             local lvl = sim.ship_level(me, t)
             local reach = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
@@ -2333,6 +2409,45 @@ local function coords(me)
         x + 26 * S, base - 4 * S, (FONT - 3) * S, pal.a(pal.INK, 0.85))
 end
 
+-- The weapon marks, inside the trigger pads.
+--
+-- On a touchscreen the corner stack's weapon rows were the pads' information
+-- at the opposite corner of the screen: the pad is where the thumb and the
+-- eye already are, and the stack row was a second copy in the one place a
+-- phone cannot spare. So the mark the stack drew for a trigger is drawn
+-- inside the trigger's own pad, the same picture from the same function,
+-- with the rung ladder under it. The pad itself, the ring and the glow of a
+-- held trigger, stays touch.lua's; this is the loadout worn on top of it,
+-- the way the charge counts already ride the charge pads.
+local function pad_weapons(me)
+    if not M.touching then return end
+    local L = touch.layout(W, H, S)
+    for t = 0, SIM_TRIGGERS - 1 do
+        local pad = (t == sim.TRIG_GUN) and L.guns
+            or (touch.has_bomb and L.bombs or nil)
+        if pad and sim.has_trigger(me, t) then
+            -- The mark composes rightward from its subject and trails back
+            -- left of it, so the subject sits a little left of centre for
+            -- the whole drawing to land centred. Sized so the widest
+            -- loadout's reach, MARK_REACH of k plus the fragments that hang
+            -- outside it, stays inside the ring; pads_test measures exactly
+            -- that with everything worn at once.
+            local k = pad.r * 0.40
+            local cx = pad.x - k * 0.30
+            -- touch.lua counts up from the bottom, marks count down from
+            -- the top, the same flip pad_charges does. The mark rides a
+            -- little high so the ladder can sit under it and both read as
+            -- one drawing.
+            local cy = (H - pad.y) - pad.r * 0.10
+            weapon_mark(cx, cy, k, me, t)
+            local lvl = sim.ship_level(me, t)
+            local lw = pad.r * 0.9
+            ladder(pad.x - lw / 2, (H - pad.y) + pad.r * 0.42, 3, lvl + 1,
+                   pal.FRIEND, lw, 2.6 * S)
+        end
+    end
+end
+
 -- The count in each charge pad.
 --
 -- The pad and its icon are drawn by touch.lua, which owns where a pad is and
@@ -2594,6 +2709,7 @@ function M.hud(o)
     -- The two big centred lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
+    pad_weapons(me)
     pad_charges(o.charges)
     flag_strip(me)
     if o.banner and o.banner ~= "" then
