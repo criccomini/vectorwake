@@ -2202,10 +2202,19 @@ local function wait(b, me)
     -- things with, so the eye takes the word first and then reads why.
     txt(b.card.name, tx, ty, b.lab, pal.a(pal.INK, 0.9))
     ty = ty + b.headh - b.lab / 2 + b.rowh / 2
-    for _, line in ipairs(b.lines) do
-        txt(line, tx, ty, b.fs, pal.a(pal.PANEL_INK, 0.92))
+    -- The word above is a label and shouts with the rest of the HUD. What is
+    -- under it is prose: three seconds of reading rather than a glance, and a
+    -- paragraph in capitals is a paragraph nobody finishes.
+    --
+    -- The capital is taken once, on the first line. Cased line by line, a
+    -- sentence that wrapped onto three of them would start three times.
+    local was = case
+    case = "sentence"
+    for i, line in ipairs(b.lines) do
+        txt(line, tx, ty, b.fs, pal.a(pal.PANEL_INK, 0.92), nil, nil, i > 1)
         ty = ty + b.rowh
     end
+    case = was
 
     -- Centred in what the text column left, against the box's right padding,
     -- so the shape has air round it rather than being pushed against a wall.
@@ -2608,10 +2617,15 @@ local function help_draw(e)
     local dir = (e.align == "right") and -1 or 1
     rect(e.x + (dir < 0 and -3 * S or 0), top, 3 * S, bot - top,
          pal.a(e.col, 0.85))
+    -- The same sentences the dead read, so they are set the same way: prose,
+    -- with its capital taken once on the first line.
+    local was = case
+    case = "sentence"
     for i, line in ipairs(e.lines) do
         txt(line, e.x + dir * 11 * S, ttop + (i - 0.5) * lh, f,
-            pal.a(pal.INK, 0.95), e.align)
+            pal.a(pal.INK, 0.95), e.align, nil, i > 1)
     end
+    case = was
 end
 
 -- A block that would hang off the bottom or the top is moved back on, since
