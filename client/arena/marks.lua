@@ -227,17 +227,40 @@ local function dec_prox(m, col, n)
 end
 
 -- What is left of it afterwards, thrown clear of everything else the mark
--- wears. Two more fragments a rung, which is the one add-on whose count a
--- player can read straight off the arena.
+-- wears: one tick per fragment, counted off the zone rather than off a ramp
+-- written in here.
+--
+-- Shrapnel is the one add-on whose magnitude is another weapon rather than a
+-- number, so a zone says how many by naming a pattern per rung. The baseline
+-- doubles, 2 then 4 then 8, where this drawing said 6 then 8 then 10: close
+-- enough to look deliberate, wrong at every rung, and free to be wrong by any
+-- amount at all in a zone that puts its own patterns on those rungs. The one
+-- add-on whose count a player can read straight off the arena was the one the
+-- corner was making up.
+--
+-- The ticks thin as they multiply, because thirty-one of them at the width six
+-- want is a filled ring, and a filled ring is what the fuse already is. Down
+-- to the stroke floor and no further: a hairline under a pixel blinks as the
+-- mark moves, so a count that cannot be drawn as separate ticks at this size
+-- is drawn as a dense ring instead, which is the same thing the eye would have
+-- made of it anyway.
+--
+-- What stays fixed is how far out they sit. That is the mark's share of the
+-- room, and it belongs to the add-on rather than to how deep it runs.
 local function dec_shrap(m, col, n)
     local r0 = m.out + m.step * 0.28
     local r1 = m.out + m.step
-    local c = 4 + 2 * math.min(n, 3)
+    local c = sim.shrap_count and sim.shrap_count(n) or 0
+    -- A rung the zone put no pattern on throws nothing, and drawing nothing is
+    -- the honest answer. The share of room is spent either way, so a hull that
+    -- picks the pattern up later does not shove its other add-ons outward.
     for i = 0, c - 1 do
         local a = (i + 0.5) * 2 * math.pi / c
         local dx, dy = math.cos(a), math.sin(a)
         u:seg(m.x + dx * r0, m.y + dy * r0,
-              m.x + dx * r1, m.y + dy * r1, M.pen(m.k, 0.100), col)
+              m.x + dx * r1, m.y + dy * r1,
+              M.pen(m.k, math.min(0.100,
+                                  2 * math.pi * r1 * 0.42 / (c * m.k))), col)
     end
     m.out = r1
     m.far = math.max(m.far, r1)

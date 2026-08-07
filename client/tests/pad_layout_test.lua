@@ -148,6 +148,9 @@ _G.sim = setmetatable({
     ship_energy = function() return ENERGY end,
     ship_max_energy = function() return CAP end,
     ship_multi_off = function() return false end,
+    -- The zone's own shrapnel ladder. See stack_test for why a mark asks
+    -- rather than works it out.
+    shrap_count = function(n) return ({2, 4, 8})[math.min(n, 3)] or 0 end,
 }, {__index = function() return function() return 0 end end})
 
 local touch = require("arena.touch")

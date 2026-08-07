@@ -537,6 +537,32 @@ int ChargeSpec(lua_State* L) {
     return 1;
 }
 
+// How many fragments a bomb breaks into at this many rungs of shrapnel.
+//
+// Shrapnel is the one add-on whose magnitude is another weapon rather than a
+// number, so the zone says how many by naming a pattern per rung and the count
+// lives on the pattern. The corner and the pads draw one tick per fragment,
+// and the alternative was a ramp written into the drawing: the baseline
+// doubles 2, 4, 8 while the drawing said 6, 8, 10, and a zone free to put any
+// pattern on a rung could disagree with it by any amount.
+//
+// The clamp matches `compose` in sim.c exactly, so what a mark counts and what
+// a bomb throws come off the same shelf.
+int ShrapCount(lua_State* L) {
+    int n = (int)luaL_checkinteger(L, 1);
+    if (n <= 0) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    uint8_t pat = g_cfg.mod_splinter[n < SIM_MAX_RUNGS ? n : SIM_MAX_RUNGS - 1];
+    if (pat == SIM_NO_PATTERN || pat >= g_cfg.pattern_count) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    lua_pushinteger(L, g_cfg.patterns[pat].count);
+    return 1;
+}
+
 // Which rung of the tech tree fires this spec, learned from the ladders. A
 // spec deliberately carries no level -- it says what a projectile does, not
 // where it came from -- but every hull's trigger ladder says which rung each
@@ -973,6 +999,7 @@ const luaL_reg kFunctions[] = {
     {"spec_blast", SpecBlast},
     {"spec_life", SpecLife},
     {"spec_level", SpecLevel},
+    {"shrap_count", ShrapCount},
     {"charge_spec", ChargeSpec},
     {"tick", Tick},
     {"weapon_count", WeaponCount},

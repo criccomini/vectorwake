@@ -393,12 +393,21 @@ biasing it into place all landed somewhere a screenshot said was still off.
 `world.lua` still draws one on a bomb that is actually going somewhere.
 
 Rungs are in the shape rather than in a number beside it, and they are the
-zone's own arithmetic: one rung of multifire is two more barrels, one rung of
-shrapnel is two more fragments, a rung of proximity is a wider reach. Read
-`mod_step` in a `zone.toml` and then read `dec_multi` and the rest in
-`marks.lua`; they say the same thing twice on purpose. Bouncing is the one that
-does not count: a ring or no ring, on both marks, because a ring three points
-across cannot carry a count as well as an identity.
+zone's own arithmetic: one rung of multifire is two more barrels, a rung of
+proximity is a wider reach. Read `mod_step` in a `zone.toml` and then read
+`dec_multi` and the rest in `marks.lua`; they say the same thing twice on
+purpose. Bouncing is the one that does not count: a ring or no ring, on both
+marks, because a ring three points across cannot carry a count as well as an
+identity.
+
+Shrapnel says it once, not twice. Its magnitude is a whole pattern per rung
+rather than a number to scale, so the mark asks `sim.shrap_count` how many
+fragments the zone throws and draws one tick each. It used to work the count
+out instead, six then eight then ten against a baseline that throws two, four
+and eight, and against a zone free to put any pattern on those rungs it could
+be wrong by any amount. The ticks thin as they multiply, down to the stroke
+floor and no further, so thirty-one of them stay ticks rather than becoming a
+filled ring or a row of blinking hairlines.
 
 The room outside the round is shared out before anything draws rather than
 spent first come. A row is 22 points tall and the mark has to live inside it
