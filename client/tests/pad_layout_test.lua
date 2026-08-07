@@ -45,57 +45,87 @@ local function put(kind, x0, y0, x1, y1, col)
     return shapes[#shapes]
 end
 
--- How much of a shape there is, and where its weight sits. A bounding box
--- answers neither: a bomb's trail counts for its whole length in a box and
--- fades to nothing on the screen, which is how the mark came to sit a quarter
--- of a pad radius off centre while every measurement said it was fine.
+-- How much of a shape there is, where its weight sits, and how far it reaches.
+--
+-- Both of the last two, because neither one is where a mark looks centred and
+-- the answer is between them. Weighing a drawing by how much of it there is
+-- puts a gun's centre near the dot, since a solid disc outweighs the hairline
+-- that reaches it. Taking its extent puts the centre near the middle of the
+-- line, since the far tip of a hairline counts for as much as the dot. A strip
+-- of the mark drawn at biases either side agrees with the midpoint, so the
+-- midpoint is what is checked, and marks.BOLT_BIAS is the number that came
+-- out of the same measurement.
+--
 -- `rad` is the radius of the circle a piece belongs to, where it has one.
 -- That is what tells the mark from the furniture: the pad's own ring and the
 -- gauge outside it are circles the size of the pad, and weighing them buries
 -- the mark's own offset under a much larger, perfectly centred mass.
 local ink = {}
-local function weigh(area, x, y, rad)
+local function weigh(area, x, y, rad, x0, x1, alpha)
     if area > 0 then
-        ink[#ink + 1] = {a = area, x = x, y = y, rad = rad}
+        ink[#ink + 1] = {a = area, x = x, y = y, rad = rad,
+                         -- A piece counts toward the extent only where it can
+                         -- be seen. That is the whole reason a box and an eye
+                         -- ever disagreed here.
+                         x0 = (alpha or 1) >= 0.35 and x0 or nil, x1 = x1}
     end
 end
 
 local layer = {}
 function layer:seg(x1, y1, x2, y2, w, c)
-    put("seg", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2, c)
+    -- The ends of the stroke as well as the box round it, because two of a
+    -- box's four corners are not on the stroke at all and asking how far a
+    -- diagonal reaches is exactly where that matters.
+    local sh = put("seg", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2, c)
+    local a = c and c[4] or 1
+    sh.tips = {{x1, y1, w / 2, a}, {x2, y2, w / 2, a}}
     local len = math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2)
-    weigh(len * w, (x1 + x2) / 2, (y1 + y2) / 2)
+    weigh(len * w, (x1 + x2) / 2, (y1 + y2) / 2, nil,
+          math.min(x1, x2) - w / 2, math.max(x1, x2) + w / 2, c and c[4])
 end
 function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2, c)
     local w = math.max(w1, w2)
-    put("trail", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2, c)
-    -- Sliced, and each slice weighed by how visible it is. This is the whole
-    -- difference between what a box says and what an eye says.
+    local sh = put("trail", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2, c)
+    -- Each end with its own width and its own alpha: a fade is thin and
+    -- invisible at one end and neither of those is true at the other.
+    sh.tips = {{x1, y1, w1 / 2, (c[4] or 1) * a1},
+               {x2, y2, w2 / 2, (c[4] or 1) * a2}}
+    -- Sliced, and each slice weighed by how visible it is.
     local n = 12
     local len = math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2) / n
     for i = 1, n do
         local t = (i - 0.5) / n
-        weigh(len * (w1 + (w2 - w1) * t) * (a1 + (a2 - a1) * t),
-              x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)
+        local px, py = x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
+        weigh(len * (w1 + (w2 - w1) * t) * (a1 + (a2 - a1) * t), px, py, nil,
+              px - len / 2, px + len / 2,
+              (c[4] or 1) * (a1 + (a2 - a1) * t))
     end
 end
 function layer:disc(x, y, r, _, c)
     put("disc", x - r, y - r, x + r, y + r, c)
-    weigh(math.pi * r * r, x, y, r)
+    weigh(math.pi * r * r, x, y, r, x - r, x + r, c and c[4])
 end
 function layer:ring(x, y, r, w, _, c)
     put("ring", x - r - w, y - r - w, x + r + w, y + r + w, c).r = r
-    weigh(2 * math.pi * r * w, x, y, r)
+    weigh(2 * math.pi * r * w, x, y, r, x - r - w / 2, x + r + w / 2,
+          c and c[4])
 end
 function layer:arc(x, y, r, a0, a1, w, _, c)
     put("arc", x - r - w, y - r - w, x + r + w, y + r + w, c).r = r
-    -- An arc's weight sits at the middle of its own sweep, not at its centre.
+    -- An arc's weight sits at the middle of its own sweep, not at its centre,
+    -- and it reaches only as far as its own sweep carries it.
     local d = a1 - a0
-    if math.abs(d) > 1e-6 then
-        weigh(r * math.abs(d) * w,
-              x + r * (math.sin(a1) - math.sin(a0)) / d,
-              y - r * (math.cos(a1) - math.cos(a0)) / d, r)
+    if math.abs(d) < 1e-6 then return end
+    local x0, x1 = math.huge, -math.huge
+    for i = 0, 24 do
+        local t = a0 + d * i / 24
+        x0 = math.min(x0, x + math.cos(t) * r)
+        x1 = math.max(x1, x + math.cos(t) * r)
     end
+    weigh(r * math.abs(d) * w,
+          x + r * (math.sin(a1) - math.sin(a0)) / d,
+          y - r * (math.cos(a1) - math.cos(a0)) / d, r,
+          x0 - w / 2, x1 + w / 2, c and c[4])
 end
 function layer:rect(x, y, w, h, c) put("rect", x, y, x + w, y + h, c) end
 function layer:frame(x, y, w, h, _, c) put("frame", x, y, x + w, y + h, c) end
@@ -122,6 +152,7 @@ _G.sim = setmetatable({
 
 local touch = require("arena.touch")
 local marks = require("arena.marks")
+local pal = require("arena.palette")
 
 local function draw(w, h, s)
     shapes = {}
@@ -208,35 +239,45 @@ end
 
 -- --- and each mark sits in the middle of its pad ---------------------------
 
--- Measured as ink, because a box gets this wrong and got it wrong in the
--- shipped build: a bomb is a fading trail into a solid head, so its box
--- straddles the pad while everything you can see crowds one side. The mark
--- was a quarter of a pad radius off centre and the box said four pixels.
+-- Half way between where the drawing's weight sits and where the drawing
+-- reaches, which is where it looks centred. A box alone got this wrong in the
+-- shipped build, when a bomb was a fading trail into a solid head: the box
+-- straddled the pad while everything you could see crowded one side, and the
+-- mark sat a quarter of a pad radius off while every measurement said fine.
+-- Weight alone gets it wrong the other way, and centres a gun on its dot with
+-- the barrel hanging off the left of the pad.
 --
 -- Every loadout, because the pieces an add-on hangs on a mark are not
--- symmetric either: a fan pulls the weight left and a bounce ring pulls it
--- right, and the placement is the mean of what they do rather than whichever
--- one was drawn the day it was set.
-local function ink_centre(pad, other)
-    local sum, sx = 0, 0
-    for _, w in ipairs(ink) do
-        -- Level with the pad, which keeps the rail of charge cells above it
-        -- out of the sum; within a mark's reach of it and nearer it than the
-        -- trigger beside it, which keeps the other weapon and the stick's
-        -- resting mark out; and no bigger than a mark can be, which keeps the
-        -- pad's own ring and its gauge out. What is left is the drawing,
-        -- whole -- tail included, because the tail is exactly what a box got
-        -- wrong.
-        local mine = (not other
-                      or math.abs(w.x - pad.x) < math.abs(w.x - other.x))
+-- symmetric either: a fan pulls the weight back toward the muzzle and a bounce
+-- ring pulls it forward, and the placement is the mean of what they do rather
+-- than whichever one was drawn the day it was set.
+local function mark_centre(pad, other)
+    -- Level with the pad, which keeps the rail of charge cells above it out of
+    -- the sum; within a mark's reach of it and nearer it than the trigger
+    -- beside it, which keeps the other weapon and the stick's resting mark
+    -- out; and no bigger than a mark can be, which keeps the pad's own ring
+    -- and its gauge out.
+    local function mine(w)
+        return (not other
+                or math.abs(w.x - pad.x) < math.abs(w.x - other.x))
             and math.abs(w.x - pad.x) <= pad.r * 1.6
-        if mine and math.abs(w.y - pad.y) <= pad.r
-            and not (w.rad and w.rad > pad.r * 0.7) then
+            and math.abs(w.y - pad.y) <= pad.r
+            and not (w.rad and w.rad > pad.r * 0.7)
+    end
+    local sum, sx = 0, 0
+    local lo, hi = math.huge, -math.huge
+    for _, w in ipairs(ink) do
+        if mine(w) then
             sum = sum + w.a
             sx = sx + w.a * w.x
+            if w.x0 then
+                lo = math.min(lo, w.x0)
+                hi = math.max(hi, w.x1)
+            end
         end
     end
-    return sum > 0 and (sx / sum - pad.x) or nil
+    if sum <= 0 or lo > hi then return nil end
+    return ((sx / sum) + (lo + hi) / 2) / 2 - pad.x
 end
 
 for _, load in ipairs({
@@ -244,12 +285,14 @@ for _, load in ipairs({
     {"a fan", {[0] = {[0] = 1}}},
     {"a fan and bouncing rounds", {[0] = {[0] = 1, [1] = 1}}},
     {"a proximity fuse", {[1] = {[2] = 1}}},
+    -- What 22 of the 24 hulls in the shipped zones are actually holding.
+    {"a fuse and fragments", {[1] = {[2] = 1, [3] = 2}}},
 }) do
     local w, h, s = reset(unpack(LAND))
     MODS = load[2]
     local l = draw(w, h, s)
     for _, pad in ipairs({{"gun", l.guns, l.bombs}, {"bomb", l.bombs, l.guns}}) do
-        local off = ink_centre(pad[2], pad[3])
+        local off = mark_centre(pad[2], pad[3])
         check("the " .. pad[1] .. " mark is centred with " .. load[1],
               off and math.abs(off) < pad[2].r * 0.10,
               off and string.format("%.1f off, %.0f%% of the radius", off,
@@ -257,25 +300,42 @@ for _, load in ipairs({
     end
 end
 
--- A pad draws no trail. The tail is what put the bomb off centre in the first
--- place: it fades to nothing along its length, so a box straddles the pad
--- while everything visible crowds one side. It belongs to a round in flight
--- and to the row in the corner stack that stands beside a gun's; a control is
--- not showing a round going anywhere.
+-- No round wears a trail. The tail is what put the bomb off centre in the
+-- first place: it faded to nothing along its length, so a box straddled the
+-- pad while everything visible crowded one side. It belongs to a round in
+-- flight, and a control is not showing a round going anywhere.
 --
--- Checked as its own thing rather than left to the centring above, because a
--- trail could be added back symmetrically -- one either side, say -- and pass
--- every measurement here while being wrong for the same reason.
-do
+-- Checked over every loadout the catalog hands out rather than at one, because
+-- a trail could come back through an add-on rather than through the body, and
+-- through the body it could come back symmetrically, one either side say, and
+-- pass every centring measurement while being wrong for the same reason.
+-- Multifire is the exception and is why this is a list rather than a sweep of
+-- all sixty-four: several rounds leaving together are several strokes, which
+-- is that add-on's whole mark and is what a gun draws for it too. No zone in
+-- the catalog puts it on a bomb.
+local SHIPPED = {
+    {"bare", {}},
+    {"a fan and bouncing rounds", {[0] = {[0] = 2, [1] = 1}}},
+    {"a fuse and fragments", {[1] = {[2] = 1, [3] = 2}}},
+    {"a fuse, fragments, bouncing and a shove",
+     {[1] = {[2] = 1, [3] = 2, [1] = 1, [5] = 2}}},
+}
+for _, load in ipairs(SHIPPED) do
     local w, h, s = reset(unpack(LAND))
-    MODS = {[1] = {[2] = 1}}
-    local l = draw(w, h, s)
+    MODS = load[2]
+    draw(w, h, s)
     local n = 0
     for _, sh in ipairs(shapes) do
         if sh.kind == "trail" then n = n + 1 end
     end
-    check("no pad draws a trail behind its round", n == 0,
+    check("no round trails on a pad with " .. load[1], n == 0,
           n .. " fading strokes on the controls")
+end
+
+do
+    local w, h, s = reset(unpack(LAND))
+    MODS = {[1] = {[2] = 1}}
+    local l = draw(w, h, s)
     -- And with the tail gone the head is free to be drawn larger, which is
     -- the point of taking it off rather than merely a consequence.
     local span = 0
@@ -466,37 +526,81 @@ do
     touch.release_all()
 end
 
--- --- the pads carry the loadout --------------------------------------------
+-- --- the pads carry the whole loadout ---------------------------------------
 
--- The reason the corner stack can drop its weapon rows on a phone. If the
--- pads do not actually draw the add-ons, that trade is a straight loss.
-do
+-- The reason the corner stack can drop its weapon rows on a phone. If the pads
+-- do not draw the add-ons, that trade is a straight loss, and for a while it
+-- was one: the pads knew about a fan, a bounce and a fuse, and nothing else.
+-- Shrapnel is on 22 of the 24 hulls the catalog ships, so the common bomb
+-- upgrade in this game was the one a phone could not see, with the corner that
+-- would have said so switched off on the grounds that the pads had it covered.
+--
+-- The same loop stack_test runs against the corner, against the same six, so
+-- neither surface can quietly grow a vocabulary the other lacks.
+for _, trig in ipairs({{0, "gun", "guns"}, {1, "bomb", "bombs"}}) do
     local w, h, s = reset(unpack(LAND))
-    draw(w, h, s)
-    local plain = marked(touch.layout(w, h, s).guns)
-    reset(w, h, s)
-    MODS = {[0] = {[0] = 1}}                    -- a fan on the gun
-    draw(w, h, s)
-    local fanned = marked(touch.layout(w, h, s).guns)
-    check("a fan draws more gun than no fan", fanned > plain,
-          fanned .. " against " .. plain)
+    local l = draw(w, h, s)
+    local bare = marked(l[trig[3]])
+    for i = 1, #pal.MODS do
+        reset(w, h, s)
+        MODS = {[trig[1]] = {[i - 1] = 2}}
+        l = draw(w, h, s)
+        local n = marked(l[trig[3]])
+        check(pal.MODS[i].name .. " draws on the " .. trig[2] .. " pad",
+              n > bare, n .. " shapes inside the rim, bare is " .. bare)
+    end
+end
 
-    reset(w, h, s)
-    MODS = {[0] = {[0] = 1, [1] = 1}}           -- and it bounces
-    draw(w, h, s)
-    check("and bouncing rounds draw more still",
-          marked(touch.layout(w, h, s).guns) > fanned,
-          marked(touch.layout(w, h, s).guns) .. " against " .. fanned)
-
-    reset(w, h, s)
-    draw(w, h, s)
-    local bare = marked(touch.layout(w, h, s).bombs)
-    reset(w, h, s)
-    MODS = {[1] = {[2] = 1}}                    -- a proximity fuse
-    draw(w, h, s)
-    check("a fuse draws more bomb than no fuse",
-          marked(touch.layout(w, h, s).bombs) > bare,
-          marked(touch.layout(w, h, s).bombs) .. " against " .. bare)
+-- And however loaded it is, it stays inside the control it belongs to. Every
+-- combination at full depth, which is a hull no zone hands out and a size this
+-- has to survive anyway: the room around the round is shared out ahead of the
+-- drawing so that it does.
+do
+    local worst, worst_case = 0, nil
+    for _, trig in ipairs({{0, "guns"}, {1, "bombs"}}) do
+        for bits = 0, 63 do
+            local set = {}
+            for i = 1, 6 do
+                if math.floor(bits / 2 ^ (i - 1)) % 2 == 1 then set[i - 1] = 3 end
+            end
+            local w, h, s = reset(unpack(LAND))
+            MODS = {[trig[1]] = set}
+            local l = draw(w, h, s)
+            local pad = l[trig[2]]
+            for _, sh in ipairs(shapes) do
+                local cx, cy = (sh.x0 + sh.x1) / 2, (sh.y0 + sh.y1) / 2
+                local hw = math.max((sh.x1 - sh.x0) / 2, (sh.y1 - sh.y0) / 2)
+                -- The mark's own pieces: near the pad, and smaller than it.
+                -- The rim and the gauge are the size of the pad and would
+                -- answer for themselves otherwise.
+                if math.abs(cx - pad.x) < pad.r and math.abs(cy - pad.y) < pad.r
+                    and hw < pad.r * 0.9 then
+                    -- A round piece reaches its own radius from its own
+                    -- centre, and a stroke reaches its far end. Neither
+                    -- reaches a corner of the box drawn round it, which is
+                    -- what a box-only reading of this said and why a mark
+                    -- inside its pad measured as a mark over the rim.
+                    local d = math.sqrt((cx - pad.x) ^ 2 + (cy - pad.y) ^ 2)
+                        + hw
+                    if sh.tips then
+                        d = 0
+                        for _, t in ipairs(sh.tips) do
+                            if t[4] >= 0.35 then
+                                d = math.max(d, t[3] + math.sqrt(
+                                    (t[1] - pad.x) ^ 2 + (t[2] - pad.y) ^ 2))
+                            end
+                        end
+                    end
+                    if d / pad.r > worst then
+                        worst, worst_case = d / pad.r, bits
+                    end
+                end
+            end
+        end
+    end
+    check("no loadout draws a mark outside its own pad", worst < 1.0,
+          string.format("reaches %.2f of the radius, loadout %s",
+                        worst, tostring(worst_case)))
 end
 
 -- --- and what is in hand ---------------------------------------------------

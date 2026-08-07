@@ -358,13 +358,15 @@ local function measure(key)
     return #c, x0 or 0, y0 or 0, x1 or 0, y1 or 0
 end
 
--- The gun draws one line or three, and a ring or no ring, at any depth. That
--- is a decision rather than an oversight: how deep the fan or the bouncing
--- runs is for colour to carry, and a shape at this size cannot hold a count as
--- well as an identity. Pinned here rather than left out, so that adding depth
--- back into the shape reads as contradicting a decision instead of passing
+-- Bouncing is the exception, on both triggers: a ring or no ring, at any
+-- depth. That is a decision rather than an oversight. How many walls deep it
+-- runs is for the ladder beside the row to carry, and a ring three points
+-- across cannot hold a count as well as an identity. The gun's fan goes the
+-- same way, since the alternative is answering "how many barrels" with a
+-- count of strokes. Pinned here rather than left out, so that putting depth
+-- back into either shape reads as contradicting a decision instead of passing
 -- quietly.
-local FIXED = {[0] = {[0] = true, [1] = true}, [1] = {}}
+local FIXED = {[0] = {[0] = true, [1] = true}, [1] = {[1] = true}}
 
 for _, t in ipairs({{0, "gun"}, {1, "bomb"}}) do
     for i = 1, #pal.MODS do

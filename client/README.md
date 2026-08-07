@@ -54,13 +54,14 @@ in `sim/`.
 | `arena/arena.script` | The frame loop: input, stepping, drawing |
 | `arena/net.lua` | Connect, predict, reconcile. Decides nothing |
 | `arena/touch.lua` | Thumbstick and weapon pads; emits the same button bits |
-| `arena/marks.lua` | The gun and the bomb, drawn once for the corner and the pads |
+| `arena/marks.lua` | Every weapon mark, add-ons and all, for the corner and the pads |
 | `arena/menu.lua` | The menu tree and the settings it saves |
 | `arena/directory.lua` | Asks a directory what games are running |
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `tools/sfxdump.c` | Writes the kit out as wav files, for listening to |
 | `tests/sfx_test.lua` | Which sound each weapon rung reaches |
 | `tests/rung_test.lua` | That a rung's colour is legible and unlike anything else |
+| `tests/pad_layout_test.lua` | Where a thumb's controls are, and what they draw |
 | `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
 | `arena/world.lua` | Ships, weapons, flags, prizes, terrain, in triangles |
@@ -375,17 +376,28 @@ what a player holds is one gun and one bomb that greens have been changing all
 match. So a bolt with bouncing on it is a bolt with a ball on each end of it,
 and a bomb with proximity is a bomb inside a broken ring.
 
-Both marks are the same skeleton, a path with a head on the end of it, because
-that is what each looks like in the arena and it lets one set of add-on marks
-fit both. Every add-on is something that happens either to the path (multifire
-fans it, freeze rimes it) or to the head (proximity rings it, shrapnel throws
-fragments off it, the repel add-on stands a wave in front of it).
+A gun is a line into a dot and a bomb is a ringed head, which is what each is
+in the arena, and one set of add-on marks fits both because every add-on is
+something that happens either to the round's body (multifire sends more of
+them, freeze rimes it) or to the round itself (proximity rings it, shrapnel
+throws fragments off it, bouncing rings it too, the repel add-on stands a wave
+in front of it).
+
+The bomb had a fading trail behind it until it did not. An icon is not a round
+in flight, so a streak of motion on a thing sitting still in a corner was a
+picture of the wrong moment, and a fade cannot be centred: it reaches its full
+length at almost none of its brightness, so a bounding box put it square in the
+middle of a pad while everything visible crowded one side. Three passes at
+biasing it into place all landed somewhere a screenshot said was still off.
+`world.lua` still draws one on a bomb that is actually going somewhere.
 
 Rungs are in the shape rather than in a number beside it, and they are the
 zone's own arithmetic: one rung of multifire is two more barrels, one rung of
 shrapnel is two more fragments, a rung of proximity is a wider reach. Read
 `mod_step` in a `zone.toml` and then read `dec_multi` and the rest in
-`ui.lua`; they say the same thing twice on purpose.
+`marks.lua`; they say the same thing twice on purpose. Bouncing is the one that
+does not count: a ring or no ring, on both marks, because a ring three points
+across cannot carry a count as well as an identity.
 
 The room outside the round is shared out before anything draws rather than
 spent first come. A row is 22 points tall and the mark has to live inside it
@@ -398,11 +410,22 @@ through the row above.
 
 On a touchscreen the weapon rows are not drawn at all, and the bounty is the
 whole of the corner. The pads carry them instead: `arena/marks.lua` holds the
-gun and the bomb as one drawing, `arena/touch.lua` puts each in the middle of
-the control that fires it, and the add-ons go into the mark the same way they
-go into a row. A player who has learned the corner has learned the pads, which
-is the only reason it is worth having the marks in a third file rather than in
-whichever one drew them first.
+whole mark, add-ons and all, behind one `marks.weapon` that `ui.lua` and
+`touch.lua` both call. Neither draws a stroke of a weapon itself. That is the
+only reason it is worth having the marks in a third file, and it was worth it:
+the pads once knew about a fan, a bounce ring and a fuse and nothing else, so a
+hull carrying shrapnel (22 of the 24 in the shipped zones) carried it invisibly
+on a phone, with the corner that would have said so switched off on the grounds
+that the pads had it covered.
+
+What each caller still owns is where a mark goes and how big it is. `ui.lua`
+hangs one off each row of a column and flips y on the way in, since it reckons
+downward and the marks reckon upward. `touch.lua` centres one in a round pad
+and sizes it off the pad's own radius, derived rather than picked: a mark
+reaches `MARK_REACH` of its own size out from the round and a gun's round sits
+`BOLT_BIAS` forward of centre, so the two triggers have different worst cases
+and one ratio for both would either spill a gun's fragments over the rim or
+draw a bomb head a third smaller than the pad it has to itself.
 
 ## What a thumb gets
 
@@ -427,6 +450,22 @@ How many of a charge are in hand is pips along the cell's floor, one per slot
 the hull can hold, filled as far as it is. It was a numeral floating above the
 pad, which is the one thing on this screen a bare mesh cannot draw, and it sat
 in the gap between two controls belonging to neither.
+
+`lua5.1 client/tests/pad_layout_test.lua` draws the real controls through a
+recording layer and measures where a tap lands against where the ink went,
+because the layout and the hit test were written out separately once and had
+drifted, so half a pad did nothing and the dead space beside it fired. It also
+runs stack_test's own add-on loop against the pads, walks all 64 combinations
+looking for a mark that leaves its control, and checks that no round wears a
+trail.
+
+Where a mark looks centred is measured as the midpoint of two answers that
+disagree. Weighing a drawing by how much of it there is centres a gun on its
+dot, since a solid disc outweighs the hairline reaching it; taking the
+drawing's extent centres it near the middle of the line, since the far tip of a
+hairline counts for as much as the dot. The eye lands between them, a strip of
+the mark drawn at biases either side agrees, and `marks.BOLT_BIAS` came out of
+that measurement rather than off a screenshot.
 
 `lua5.1 client/tests/stack_test.lua` runs the real `M.hud` against a stubbed
 engine and measures: every add-on draws something, a third rung looks

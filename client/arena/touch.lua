@@ -20,10 +20,10 @@
 -- them carried pictures, so the control pressed most was the only one that
 -- did not say what it was.
 --
--- It also settles what the corner stack is for on a phone. A pad can carry
--- what a hull is holding -- a fan is three lines, a bounce is a ring on each
--- dot, a proximity fuse is a ring outside the head -- so the stack drops its
--- weapon rows on a touchscreen instead of repeating them at the far corner.
+-- It also settles what the corner stack is for on a phone. A pad draws the
+-- whole mark, add-ons and all, by calling the same marks.weapon the stack
+-- calls, so the stack drops its weapon rows on a touchscreen instead of
+-- repeating them at the far corner.
 
 local M = {}
 
@@ -278,56 +278,41 @@ end
 
 -- --- what a pad has to say -------------------------------------------------
 
--- Whether the hull carries an add-on, by its index in pal.MODS. Answered from
--- the core so a pad and the corner stack cannot disagree about a loadout.
-local function has_mod(t, i)
-    return M.me and sim.ship_mod and sim.ship_mod(M.me, t, i) > 0
+-- How big a mark is drawn, which is as big as its own worst loadout fits.
+--
+-- Derived rather than picked. A mark reaches marks.MARK_REACH of its own size
+-- out from the round when a hull wears every add-on there is, and a gun's
+-- round sits marks.BOLT_BIAS forward of the middle, so the two triggers have
+-- different worst cases and a single ratio would either spill the gun's
+-- fragments over the rim or draw a bomb head a third smaller than the pad it
+-- has to itself.
+--
+-- RIM is what it stays inside, and it is not the ring. The ring is a stroke
+-- rather than a line, so its inner edge is already inside the radius, and ink
+-- that stops at the inner edge reads as ink touching it. This leaves a gap you
+-- can see: at 0.95 a loaded bomb's fragments ended a pixel off the rim on a
+-- phone, which looked like a drawing that had outgrown its control.
+local RIM = 0.90
+local function mark_k(pad, t)
+    -- Half a mark's width in its own units, plus the heaviest stroke drawn out
+    -- there. A gun is the wider one: its muzzle is a hull and a half behind
+    -- the round and its add-ons ring the round itself.
+    local half = marks.MARK_REACH + 0.05
+    if t == sim.TRIG_GUN then
+        half = math.max(marks.BOLT_LEN - marks.BOLT_BIAS,
+                        marks.BOLT_BIAS + half)
+    end
+    return pad.r * RIM / half
 end
 
--- Where the gun's muzzle goes so that the drawing looks centred in its pad,
--- in units of the mark's own size.
---
--- A gun is not symmetric about anything a box can find: a thin line into a
--- solid dot, with the dot carrying half the ink in a fortieth of the width.
--- So this is measured off rendered pixels rather than worked out -- the ink
--- centroid of the mark, with every loadout it can wear, put on the pad's
--- centre. It is the mean of the three, since a fan pulls the weight left and
--- a bounce ring pulls it right and no one of them is the case to favour.
---
--- The bomb needs no such number. It is a ring about a point on a pad, so its
--- centre is its centre.
-local BOLT_HOME = 1.0
-
--- The gun, wearing what the greens did to it: one line or three when the fan
--- is on, a ring on each dot when the rounds come back off walls. A declined
--- fan is drawn dimmed rather than dropped -- you still hold it, and a weapon
--- that quietly stopped fanning with nothing on screen to say so looks broken.
-local function gun_mark(pad, col)
-    local k = pad.r * 0.62
-    local fan = has_mod(sim.TRIG_GUN, 0)
-    local off = fan and sim.ship_multi_off and sim.ship_multi_off(M.me)
-    local bounce = has_mod(sim.TRIG_GUN, 1)
-    local ox = pad.x - k * BOLT_HOME
-    local angs = fan and {-marks.BOLT_FAN, 0, marks.BOLT_FAN} or {0}
-    for _, ang in ipairs(angs) do
-        local held = off and ang ~= 0
-        local c = held and pal.a(col, (col[4] or 1) * 0.35) or col
-        local dx, dy = marks.bolt_line(ox, pad.y, ang, k, c)
-        -- What is not firing does not bounce, and a ring on it says it does.
-        if bounce and not held then marks.bolt_bounce(dx, dy, k, c) end
-    end
-end
-
--- The bomb: the round, and the fuse it goes off at if it has one. The head
--- only -- see marks.bomb_head for why a pad leaves the trail off -- which
--- also frees the mark to be drawn larger, since it no longer has to leave a
--- hull and a half of room behind it for a tail.
-local function bomb_mark(pad, col)
-    local k = pad.r * 0.85
-    marks.bomb_head(pad.x, pad.y, k, col)
-    if has_mod(sim.TRIG_BOMB, 2) then
-        marks.bomb_prox(pad.x, pad.y, k * marks.BOMB_R * 1.75, k, col)
-    end
+-- The mark itself is marks.weapon, the same call the corner stack makes, so a
+-- pad shows the whole loadout rather than the two add-ons this file used to
+-- know about. It drew a fan, a bounce ring and a fuse and nothing else, so a
+-- hull carrying shrapnel, which is 22 of the 24 in the shipped zones, was
+-- carrying it invisibly on a phone, and the corner stack that would have said
+-- so is exactly what a touchscreen switches off.
+local function pad_mark(pad, t)
+    marks.weapon(pad.x, pad.y, mark_k(pad, t), M.me, t)
 end
 
 -- Drawn in the screen-space interface layer, which is where a control that
@@ -351,7 +336,7 @@ function M.draw(u, w, h, s)
     local glvl = M.me and sim.ship_level and sim.ship_level(M.me, sim.TRIG_GUN)
     local gcol = pal.rung(glvl or 0)
     pad_ring(L.guns, gcol, guns)
-    gun_mark(L.guns, pal.a(gcol, 0.95))
+    pad_mark(L.guns, sim.TRIG_GUN)
     -- Energy, on an arc outside the rim. Drawn on the ring itself it reads as
     -- a second ring drawn badly, and inside it lands on the mark.
     if M.me and sim.ship_max_energy then
@@ -370,7 +355,7 @@ function M.draw(u, w, h, s)
             and sim.ship_level(M.me, sim.TRIG_BOMB)
         local bcol = pal.rung(blvl or 0)
         pad_ring(L.bombs, bcol, bombs)
-        bomb_mark(L.bombs, pal.a(bcol, 0.95))
+        pad_mark(L.bombs, sim.TRIG_BOMB)
     end
 
     -- A cell per charge, drawn whether or not you hold any: the same reason
