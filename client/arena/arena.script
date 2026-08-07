@@ -1089,7 +1089,7 @@ function update(self, dt)
         -- a ship passing in front of one.
         world.draw_rocks(fill, glow, t, cull)
         world.prizes(fill, glow, t, cull)
-        world.weapons(fill, glow, my_team, t, cull)
+        world.weapons(fill, glow, t, cull)
 
         for i = 0, sim.ship_count() - 1 do
             -- Yours is always drawn: the camera is on it, so it cannot be off

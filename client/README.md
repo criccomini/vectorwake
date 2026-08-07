@@ -60,6 +60,7 @@ in `sim/`.
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `tools/sfxdump.c` | Writes the kit out as wav files, for listening to |
 | `tests/sfx_test.lua` | Which sound each weapon rung reaches |
+| `tests/rung_test.lua` | That a rung's colour is legible and unlike anything else |
 | `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
 | `arena/world.lua` | Ships, weapons, flags, prizes, terrain, in triangles |
@@ -350,6 +351,21 @@ Bottom left: a row for the gun, a row for the bomb, a row per charge, and your
 bounty. Each row is a mark, a count, and nothing else. The marks used to be
 words, which made the one corner a pilot only ever glances at into a column of
 reading.
+
+Every round in the game is coloured by one thing: the rung it was fired at.
+Green, yellow, orange, red, from `pal.RUNG`, and a bullet, a bomb, yours and
+theirs all read off it. There were three ramps before, with hue carrying the
+team and lightness the rung, and it failed at both jobs: ten units of colour
+between rungs is not a call anybody makes on a three-pixel object crossing the
+screen, and blending toward white converged the two teams as they climbed, so
+the deadliest rounds were the hardest to attribute. It also put a rung 3 bomb
+on the charge colour exactly. `tests/rung_test.lua` measures all of that.
+
+What it gives up is that a round no longer says whose it is. Ships, names and
+plates still carry the team, and in a free-for-all every round was worth
+dodging anyway. The price of borrowing a scale everybody already knows is that
+rung 1 sits nearer the prize green and rung 2 nearer the charge gold than a
+ramp of unused hues would.
 
 There is one mark per trigger, and an add-on is drawn onto it rather than set
 out beside it. That is the correction to the first version of this, which gave

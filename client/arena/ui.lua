@@ -1474,11 +1474,11 @@ local MARK_REACH = 1.05
 -- A trigger's mark: the round it fires, wearing what the greens did to it.
 --
 -- In the round's own colour, which is the colour it will be when it leaves the
--- gun. A bolt runs up the team's ladder and a bomb up its own band, so the
--- rung a weapon has climbed is legible in the corner the same way it is
--- legible coming at you across the arena, and a player who has learned one has
--- learned the other. The mark was grey before, which said "weapon" and nothing
--- else, and left the level to be read off the ladder beside it.
+-- gun: one ramp for every round in the game, so the rung a weapon has climbed
+-- is legible in the corner exactly as it is legible coming at you across the
+-- arena, and a player who has learned one has learned the other. The mark was
+-- grey before, which said "weapon" and nothing else, and left the level to be
+-- read off the ladder beside it.
 --
 -- The add-ons are the same colour run hot, so what a green added reads as part
 -- of the round rather than as a separate object parked next to it. Shrapnel is
@@ -1495,15 +1495,10 @@ local MARK_REACH = 1.05
 -- Returns how far right the whole thing reached, since a hull holding three
 -- add-ons draws a good deal wider than one holding none and the row is
 -- measured by what it drew rather than by a constant.
-local function rung_col(ramp, lvl)
-    return ramp[math.max(1, math.min(lvl + 1, #ramp))]
-end
-
 local function weapon_mark(cx, cy, k, me, t)
     local gun = t == sim.TRIG_GUN
     local lvl = sim.ship_level(me, t)
-    local hue = rung_col(gun and pal.FRIEND_LVL or pal.BOMB_LVL, lvl)
-    local base = pal.a(hue, 0.9)
+    local base = pal.a(pal.rung(lvl), 0.9)
     local at = cx + k * (gun and BOLT_BIAS or BOMB_BIAS)
     local m = gun and mk_bolt(at, cy, k, base) or mk_bomb(at, cy, k, base)
     -- Which add-ons want a ring of room is a fact about the mark, not about
@@ -1525,7 +1520,7 @@ local function weapon_mark(cx, cy, k, me, t)
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a
     -- different colour stuck on the side of it.
-    local add = pal.a(pal.hot(hue, 0.45), 0.95)
+    local add = pal.a(pal.hot(pal.rung(lvl), 0.45), 0.95)
     for i = 1, #pal.MODS do
         local n = sim.ship_mod(me, t, i - 1)
         if n > 0 then
@@ -1860,11 +1855,13 @@ end
 -- instead of from adding light. Close enough at this size, and it keeps the
 -- card in the layer that owns the rest of the box.
 
--- The bomb's own rung colour, not the top of the ladder: the top rung is
--- 0xffd166, which is also the charge colour, and a bomb drawn in it was a
--- repel with a smaller middle. Two cards that look alike teach nothing.
+-- The weapon's own colour rather than a rung's. These figures say what
+-- killed you, not how far up its ladder it was, and they used to borrow the
+-- second entry of a ramp because it happened to look right -- which stopped
+-- being true the moment one ramp meant one thing. Naming them is also what
+-- keeps two cards from coming out the same colour.
 local function fig_bomb(cx, cy, k)
-    local col = pal.BOMB_LVL[2]
+    local col = pal.BOMB
     -- No trail, though it wears one in flight. Drawn inside the blast ring it
     -- stopped short of the rim and read as a stray stroke rather than as
     -- motion, and the card does not need it: against the repel below this is
@@ -1879,7 +1876,7 @@ local function fig_bomb(cx, cy, k)
 end
 
 local function fig_bolt(cx, cy, k)
-    local col = pal.ENEMY_LVL[2]
+    local col = pal.ENEMY
     -- Travelling left to right with its trail behind it, which is the only
     -- way a bolt is ever seen: the streak is what says which way it is going.
     --
@@ -1918,7 +1915,7 @@ end
 local SHRAP_ANGLES = {0.35, 1.15, 1.95, 2.55, 3.55, 4.35, 5.05, 5.85}
 local function fig_shrap(cx, cy, k)
     local col = pal.BURST
-    local bomb = pal.BOMB_LVL[2]
+    local bomb = pal.BOMB
     for _, a in ipairs(SHRAP_ANGLES) do
         local dx, dy = math.cos(a), math.sin(a)
         u:seg_fade(cx + dx * k * 0.34, ry(cy + dy * k * 0.34),

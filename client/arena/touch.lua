@@ -278,13 +278,6 @@ end
 
 -- --- what a pad has to say -------------------------------------------------
 
--- A rung on the ladder the round climbs, so the colour a weapon wears on the
--- pad is the colour it will be coming at somebody across the arena. A player
--- who has learned one has learned the other.
-local function rung(ramp, lvl)
-    return ramp[math.max(1, math.min(lvl + 1, #ramp))]
-end
-
 -- Whether the hull carries an add-on, by its index in pal.MODS. Answered from
 -- the core so a pad and the corner stack cannot disagree about a loadout.
 local function has_mod(t, i)
@@ -335,8 +328,12 @@ function M.draw(u, w, h, s)
     end
 
     -- The gun, in the colour of the round it fires.
+    -- The rung the round is fired at, which is the colour it will be coming
+    -- at somebody across the arena. A player who has learned one has learned
+    -- the other, and the two pads tell each other apart by their marks now
+    -- rather than by their colour.
     local glvl = M.me and sim.ship_level and sim.ship_level(M.me, sim.TRIG_GUN)
-    local gcol = rung(pal.FRIEND_LVL, glvl or 0)
+    local gcol = pal.rung(glvl or 0)
     pad_ring(L.guns, gcol, guns)
     gun_mark(L.guns, pal.a(gcol, 0.95))
     -- Energy, on an arc outside the rim. Drawn on the ring itself it reads as
@@ -355,7 +352,7 @@ function M.draw(u, w, h, s)
     if M.has_bomb then
         local blvl = M.me and sim.ship_level
             and sim.ship_level(M.me, sim.TRIG_BOMB)
-        local bcol = rung(pal.BOMB_LVL, blvl or 0)
+        local bcol = pal.rung(blvl or 0)
         pad_ring(L.bombs, bcol, bombs)
         bomb_mark(L.bombs, pal.a(bcol, 0.95))
     end

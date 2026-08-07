@@ -1846,7 +1846,7 @@ end
 
 local function bomb_col(lvl)
     if lvl < 0 then return pal.BURST end
-    return pal.BOMB_LVL[math.min(lvl + 1, #pal.BOMB_LVL)]
+    return pal.rung(lvl)
 end
 
 -- Somebody else's repel, drawn from the only evidence there is: the count in
@@ -2016,10 +2016,10 @@ local function arrival(spec, life, owner, t)
     return fade, age
 end
 
-function M.weapons(fill, glow, me_team, t, cull)
+function M.weapons(fill, glow, t, cull)
     local pulse = 0.72 + 0.28 * math.sin(t * 11)
     for i = 0, sim.weapon_count() - 1 do
-        local x, y, spec, vx, vy, team, life, owner = sim.weapon_at(i)
+        local x, y, spec, vx, vy, _, life, owner = sim.weapon_at(i)
         local fade, age = arrival(spec, life, owner, t)
         local af = 0.45 + 0.55 * fade
         if outside(cull, x, y) then
@@ -2041,17 +2041,15 @@ function M.weapons(fill, glow, me_team, t, cull)
             -- streak is what makes a stream of fire read as a direction
             -- rather than as a scatter of dots, and it is the whole reason
             -- the core reports weapon velocity to the client at all. The
-            -- team's colour, run hotter with the rung; a bolt from no ladder
-            -- -- a burst's, a shrapnel fragment -- is violet, because it
-            -- answers to nobody's aim.
+            -- The rung it was fired at, and nothing else: a round's colour
+            -- says how hard it hits, not who sent it. It said the team once,
+            -- climbing toward white with the rung, and the two facts fought
+            -- -- the ramps converged at the top, so the deadliest rounds were
+            -- the ones hardest to read either way. A bolt from no ladder --
+            -- a burst's, a shrapnel fragment -- is violet, because it answers
+            -- to nobody's aim.
             local lvl = spec_level(spec)
-            local col
-            if lvl < 0 then
-                col = pal.BURST
-            else
-                local fam = (team == me_team) and pal.FRIEND_LVL or pal.ENEMY_LVL
-                col = fam[math.min(lvl + 1, #fam)]
-            end
+            local col = lvl < 0 and pal.BURST or pal.rung(lvl)
             local reach = 14 + (math.min(age, 30) - 14) * (1 - fade)
             glow:seg_fade(x - vx * reach, y - vy * reach, x, y,
                           0.6, 4.5, 0, 0.30 * af, col)
