@@ -59,6 +59,7 @@ in `sim/`.
 | `arena/directory.lua` | Asks a directory what games are running |
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `tools/sfxdump.c` | Writes the kit out as wav files, for listening to |
+| `tools/sfxladder.c` | Whether a pilot can hear which rung fired |
 | `tests/sfx_test.lua` | Which sound each weapon rung reaches |
 | `tests/rung_test.lua` | That a rung's colour is legible and unlike anything else |
 | `tests/pad_layout_test.lua` | Where a thumb's controls are, and what they draw |
@@ -662,29 +663,44 @@ then starts.
 
 ## No audio ships in the page
 
-The kit is fifteen sounds and about a megabyte of 16-bit PCM, which compresses
-to almost exactly a megabyte because that is what PCM does. None of it is in
-the download. `ext/simcore/src/sfx.c` synthesises all of it on the player's
+The kit is twenty-four sounds and 1.1 MB of 16-bit PCM, which compresses to
+almost exactly that because that is what PCM does. None of it is in the
+download. `ext/simcore/src/sfx.c` synthesises all of it on the player's
 machine at boot, `arena/sfx.lua` hands each buffer to `resource.set_sound`, and
 the page is 1.4 MB smaller for it, or 1.0 MB over the wire, which is 40% of the
 compressed build.
 
-What is in `sounds/` is fifteen wav files of silence, 172 bytes each. A sound
-component has to point at a resource at build time and `resource.set_sound`
+What is in `sounds/` is twenty-four wav files of silence, 172 bytes each. A
+sound component has to point at a resource at build time and `resource.set_sound`
 needs its own resource per component to write into, so there is one placeholder
 per sound, named after the component that claims it. The `.sound` files beside
 them are real: gain, mixer group and looping live there and are maintained by
 hand.
 
-The gun and the bomb have one sound per rung of their ladder, `gun0` to `gun3`
-and `bomb0` to `bomb3`, picked by `sfx.play` from the rung the firing ship is
-on. A rung is the same weapon harder rather than a different weapon, which is
-what the panel says and what the core does, so the rungs share their character
-and differ in weight. Since every buffer is normalised to one peak, the buffer
-decides timbre only and the loudness climb lives in the `.sound` gains. A rung
-past the end of a family plays the top of it, and the ceiling is read off the
-kit rather than written down, so adding `gun4` to `sfx.c` and wiring a
-component for it is the whole change.
+Twelve of the twenty-four are the weapon ladders: `gun0` to `gun3`, `bomb0` to
+`bomb3` and `blast0` to `blast3`. `sfx.play` takes a rung as a fourth argument
+and appends it to the family name, so `gun` plus rung 2 is the component
+`gun2`. The budget stays keyed on the family, because four rungs of one gun are
+still guns. A rung past the end of a family plays the top of it, and the ceiling
+is read off the kit rather than written down, so adding `gun4` to `sfx.c` and
+wiring a component for it is the whole change.
+
+Where the rung comes from is different for each. A shot reads it off the ship
+that pulled the trigger, because a spec says what a projectile does and not
+which rung fired it, and the firing tick is the one tick the two cannot have
+drifted apart on. A detonation reads it off the blast radius instead: for a bomb
+that is the same answer, since a rung is exactly a wider blast, and for a repel
+it is the only answer there is, its 512 pixels being wider than any bomb while
+its level comes back -1. Since every buffer is normalised to one peak, the
+buffer decides timbre only and the loudness climb lives in the `.sound` gains.
+
+`make -C client/tools check` is the one client test that cannot be Lua: it
+renders the kit with this same C and measures whether the rungs can be told
+apart, in third-octave bands over hundredths of a second, failing when two of
+them have collapsed into one sound. `client/tools/sfxladder.c` says what it
+measures and why each floor sits where it does. It also builds the synth as C
+rather than the C++ Defold's build server makes of it, which is what catches the
+dialect drift.
 
 `lua5.1 client/tests/sfx_test.lua` checks which component each rung reaches and
 that every sound the kit renders has a component behind it. It runs under plain
@@ -692,19 +708,20 @@ Lua 5.1 with the engine stubbed, because the path it covers needs an arena, an
 opponent and a climbed tech tree to reach in a browser, where a wrong component
 id sounds like nothing rather than like a failure.
 
-Rendering costs 259 ms in a debug wasm build, seven eighths of it the
-soundtrack, and it is spent in `init` rather than spread over frames because
-`init` is behind the menu the client opens on. `sfx.init` prints one line when
-it is done, `SOUND: 15 sounds, 997 KB, 259 ms`, which is how you tell a client
-that generated its audio from a client that is quiet for some other reason.
-Only in a debug build: a release engine compiles `print` out, so this line and
-the complaint in `sfx.fire` are both invisible on the published page.
+Rendering costs about a fifth of a second, seven eighths of it the soundtrack,
+and it is spent in `init` rather than spread over frames because `init` is
+behind the menu the client opens on. `sfx.init` prints one line when it is done,
+`SOUND: 24 sounds, 1145 KB, 259 ms`, which is how you tell a client that
+generated its audio from a client that is quiet for some other reason. Only in a
+debug build: a release engine compiles `print` out, so this line and the
+complaint in `sfx.fire` are both invisible on the published page.
 
 The synth was a Python script until it moved into the client, and the port
 reproduces CPython's Mersenne Twister so it could be checked against the files
-it replaced rather than judged by ear. All fifteen came out byte for byte
-identical. That property is worth keeping: it means a sound changing is
-somebody changing it.
+it replaced rather than judged by ear. All fifteen of them at the time came out
+byte for byte identical. That property is worth keeping: it means a sound
+changing is somebody changing it, and it is why `gun0` is still those bytes
+exactly after the ladders were redrawn around it.
 
 To hear the kit without running the game:
 

@@ -1849,6 +1849,28 @@ local function bomb_col(lvl)
     return pal.rung(lvl)
 end
 
+-- One bomb rung of blast radius, in world pixels: BombExplodePixels for a
+-- rung one bomb, and every rung above it is a multiple of that.
+local BLAST_STEP = 80
+
+-- Which of the four detonation sounds a blast of this radius gets.
+--
+-- Off the radius rather than off the rung that fired it, though for a bomb
+-- the two say the same thing, since a bomb rung is exactly a wider blast.
+-- The radius answers the rest as well. A repel is a detonation on no ladder
+-- at all, so it has no rung to read, and its shove clears 512 pixels, wider
+-- than a top rung bomb; asked for its level it would come back with -1 and be
+-- played as the smallest thing in the kit. Sizing every detonation by the
+-- hole it makes is one rule for all of them, and it is the hole the player is
+-- watching.
+--
+-- A zone that moves BombExplodePixels moves how loud its detonations sound
+-- and nothing else, which is a drift worth having over a second mechanism.
+local function blast_rung(r)
+    local k = math.floor(r / BLAST_STEP) - 1
+    return k > 0 and k or 0
+end
+
 -- Somebody else's repel, drawn from the only evidence there is: the count in
 -- their charge slot going down.
 --
@@ -1891,7 +1913,7 @@ function M.charges(me, sfx)
                 if spec >= 0 and blast > 0 and spec_life(spec) <= 1 then
                     local x, y = sim.ship_x(i), sim.ship_y(i)
                     fx.detonate(x, y, blast, bomb_col(spec_level(spec)))
-                    sfx("blast", x, y)
+                    sfx("blast", x, y, blast_rung(blast))
                 end
             end
             seen[k] = held
@@ -2150,8 +2172,9 @@ function M.corpse(i, vx, vy, me, sfx)
 end
 
 function M.late_blast(w, sfx)
-    fx.detonate(w.x, w.y, spec_blast(w.spec), bomb_col(spec_level(w.spec)))
-    sfx("blast", w.x, w.y)
+    local r = spec_blast(w.spec)
+    fx.detonate(w.x, w.y, r, bomb_col(spec_level(w.spec)))
+    sfx("blast", w.x, w.y, blast_rung(r))
 end
 
 function M.events(me, sfx)
@@ -2193,7 +2216,7 @@ function M.events(me, sfx)
             local r = spec_blast(a)
             if r > 0 then
                 fx.detonate(x, y, r, bomb_col(spec_level(a)))
-                sfx("blast", x, y)
+                sfx("blast", x, y, blast_rung(r))
             else
                 fx.burst(x, y, 4, 90, 0.22, 1.5, pal.a(pal.INK, 0.9))
             end
