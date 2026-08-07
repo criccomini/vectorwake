@@ -211,7 +211,9 @@ local function team_rows()
     for _, t in ipairs(net.teams) do
         local mine = t.team == net.my_team
         rows[#rows + 1] = {
-            label = t.name,
+            -- Somebody named this side, so it is drawn the way they named it
+            -- rather than the way this interface says its own words.
+            label = t.name, named = true,
             detail = t.bots > 0 and (t.humans .. " + " .. t.bots .. " AI")
                 or tostring(t.humans),
             act = "team", value = t.team,
@@ -330,14 +332,20 @@ local NODES = {
             -- sentence in the value column of a row with no label floated in
             -- the middle of the panel attached to nothing.
             {label = "call sign", detail = function() return M.name end,
-             act = "reroll",
+             -- A call sign is upper, lower and numeric as its owner has it.
+             verbatim = true, act = "reroll",
              hint = function() return account.status() end},
 
         }
         -- A claim is offered rather than demanded, and never while a key is
         -- still on screen waiting to be written down.
         if account.key ~= "" then
+            -- Set as it is, not as the interface would say it. Every word
+            -- in here is drawn in capitals, and a key is not a word: it is a
+            -- string somebody types on another machine, character for
+            -- character, and the case is part of it.
             rows[#rows + 1] = {label = "your key", detail = account.key,
+                verbatim = true,
                 hint = "write it down: this is the only way back in"}
             rows[#rows + 1] = {label = "done", act = "key_seen",
                 hint = "clears the key from this screen"}
@@ -348,6 +356,7 @@ local NODES = {
         if account.claimed and account.key == "" then
             if account.link_code ~= "" then
                 rows[#rows + 1] = {label = "code", detail = account.link_code,
+                    verbatim = true,
                     hint = "type this on the other device within ten minutes"}
             else
                 rows[#rows + 1] = {label = "add a device", act = "link",
@@ -421,7 +430,8 @@ local NODES = {
                 -- the GPU. That is why `about` looked like a menu that did
                 -- nothing rather than a page that crashed.
                 return sys.get_config_string("project.version", "dev")
-            end, hint = "the commit this page was built from; + means it was dirty"},
+            end, verbatim = true,
+            hint = "the commit this page was built from; + means it was dirty"},
             {label = "wire", detail = function()
                 return "protocol " .. tostring(net.PROTOCOL)
             end, hint = "a zone speaking a different one refuses the join and says so"},
@@ -690,6 +700,10 @@ function M.view()
         if r.choice then ci, cn = r.choice() end
         out.rows[i] = {
             label = r.label, detail = d, note = r.note, waiting = r.waiting,
+            -- Whether this row's value is a string to be quoted rather than a
+            -- word to be said, and whether its label is somebody's name. See
+            -- the key on the pilot page and the sides on the team page.
+            verbatim = r.verbatim, named = r.named,
             index = i,
             hull = r.hull, role = r.role,
             players = r.players, bots = r.bots, live = r.live,
@@ -743,7 +757,8 @@ function M.view()
                 local ci, cn
                 if r.choice then ci, cn = r.choice() end
                 out.rows[i] = {label = r.label, detail = d, note = r.note,
-                               waiting = r.waiting,
+                               waiting = r.waiting, verbatim = r.verbatim,
+                               named = r.named,
                                index = i, hull = r.hull, role = r.role,
                                players = r.players, bots = r.bots,
                                live = r.live, choice = ci, choices = cn,

@@ -173,9 +173,13 @@ local function bar_at(f, x, tol)
     return best
 end
 
+-- Case is typography, not content: the interface sets every word it says in
+-- capitals, and what these checks are about is which words it says.
+local function same(a, b) return string.upper(a) == string.upper(b) end
+
 local function find(lines, s)
     for _, t in ipairs(lines) do
-        if t.s == s then return t end
+        if same(t.s, s) then return t end
     end
     return nil
 end
@@ -187,24 +191,28 @@ end
 local function says(f, s)
     if not f.joined then
         local parts = {}
-        for _, t in ipairs(f) do parts[#parts + 1] = t.s end
+        for _, t in ipairs(f) do parts[#parts + 1] = string.upper(t.s) end
         f.joined = table.concat(parts, " ")
     end
-    return f.joined:find(s, 1, true) ~= nil
+    return f.joined:find(string.upper(s), 1, true) ~= nil
 end
 
 -- Where a block's words came out: the top and bottom of the run of lines that
 -- carries this sentence, found by walking the drawn text for its first word.
-local function block_of(f, s)
+local function block_of(f, sentence)
     -- Matched by consuming consecutive drawn lines until they rebuild the
     -- sentence exactly. Anything looser mistakes a line of one card for a line
-    -- of another, since they share plenty of short words.
+    -- of another, since they share plenty of short words. Compared in one
+    -- case, since the interface sets what it says in capitals and what is
+    -- being matched here is the words.
+    local s = string.upper(sentence)
     for i = 1, #f do
-        if s:find(f[i].s, 1, true) == 1 then
-            local acc, j = f[i].s, i
+        local first = string.upper(f[i].s)
+        if s:find(first, 1, true) == 1 then
+            local acc, j = first, i
             while acc ~= s and j < #f do
                 j = j + 1
-                acc = acc .. " " .. f[j].s
+                acc = acc .. " " .. string.upper(f[j].s)
                 if s:find(acc, 1, true) ~= 1 then break end
             end
             if acc == s then

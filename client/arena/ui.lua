@@ -89,7 +89,27 @@ local pen = marks.pen
 -- and the only way to quiet a label is to quiet the label.
 local text_dim = 1
 
-local function txt(s, x, y, px, col, pivot, font)
+-- Which voice the interface is speaking in. The HUD is read at a glance, over
+-- a fight, out of the corner of an eye, and capitals are the case an
+-- instrument is labelled in. The menu is read rather than glanced at, and a
+-- page of capitals is a page nobody reads twice, so it takes a sentence's
+-- case: one capital at the front and nothing else shouting.
+--
+-- Set by whichever of the two is drawing. Done here rather than in the
+-- strings themselves, because case is how a thing is set rather than what it
+-- says, and the model has no business shouting.
+local case = "upper"
+local function cased(s)
+    if case == "upper" then return string.upper(s) end
+    return (string.gsub(s, "^%l", string.upper))
+end
+
+-- `raw` is for the handful of strings the interface is quoting rather than
+-- saying: somebody's name, a key they have to type on another machine, the
+-- address an operator has to read back, the commit a build was made from, and
+-- the wordmark, which is a drawing of a name rather than a label.
+local function txt(s, x, y, px, col, pivot, font, raw)
+    if not raw then s = cased(s) end
     nt = nt + 1
     local t = text[nt]
     if not t then t = {} text[nt] = t end
@@ -868,7 +888,11 @@ local function nameplates(o)
                     and sx + 90 * S > b.x and sy + 28 * S > b.y
                     and sy + 4 * S < b.y + b.h)
                 if clear then
-                    txt(nm, sx + 12 * S, sy + 13 * S, 11 * S, pal.a(col, 0.7))
+                    -- A call sign is a name somebody was given, not a
+                    -- word this interface is saying, so it keeps its own
+                    -- case wherever it is drawn.
+                    txt(nm, sx + 12 * S, sy + 13 * S, 11 * S, pal.a(col, 0.7),
+                        nil, nil, true)
                     -- The same mark the scoreboard and the info box wear, on
                     -- the hull itself: who is flying a ship is worth knowing
                     -- while you are deciding whether to chase it, and that
@@ -1051,7 +1075,7 @@ local function scores(me, pilots)
         local name = string.sub(r.name, 1, 14)
         local cy = y + LINE * S / 2
         txt(name, x + 12 * S, cy, (FONT - 2) * S,
-            pal.a(col, mine and 1.0 or 0.8))
+            pal.a(col, mine and 1.0 or 0.8), nil, nil, true)
         -- The mark goes at a fixed column rather than after the name, so a
         -- scan down the list finds them in a line instead of at fourteen
         -- different indents.
@@ -1130,6 +1154,18 @@ local FEED_FADE = 1.6
 -- running down the side of the screen; a phone gets fewer again.
 M.FEED_MAX = 5
 
+-- A feed line is words with names in it, so it is given as words with names
+-- in it: plain strings are the interface talking and go to capitals, and a
+-- table is a name, which is drawn as whoever owns it wrote it.
+local function line_text(t)
+    if type(t) == "string" then return string.upper(t) end
+    local out = {}
+    for _, part in ipairs(t) do
+        out[#out + 1] = type(part) == "table" and part[1] or string.upper(part)
+    end
+    return table.concat(out)
+end
+
 local function feed(lines, top)
     local shown = math.min(#lines, M.compact and 4 or M.FEED_MAX)
     if shown == 0 then return end
@@ -1142,8 +1178,8 @@ local function feed(lines, top)
         local a = 1 - (i - 1) * 0.07
         local left = M.FEED_LIFE - f.t
         if left < FEED_FADE then a = a * math.max(0, left / FEED_FADE) end
-        txt(f.text, right, y + LINE * S / 2, FONT * S,
-            pal.a(f.col or pal.DIM, a), "right")
+        txt(line_text(f.text), right, y + LINE * S / 2, FONT * S,
+            pal.a(f.col or pal.DIM, a), "right", nil, true)
         y = y + LINE * S
     end
     -- As wide as the widest line it drew rather than a guess, since a feed of
@@ -1151,7 +1187,7 @@ local function feed(lines, top)
     -- claim empty screen beside it.
     local wide = 0
     for i = 1, shown do
-        local w = text_w(lines[i].text, FONT * S)
+        local w = text_w(line_text(lines[i].text), FONT * S)
         if w > wide then wide = w end
     end
     local block_top = top + PANEL_Y * S
@@ -1275,10 +1311,10 @@ local BOLT_LEN, BOLT_DOT, BOLT_FAN =
 -- appear to vanish when it is declined, but not counted as a round. What is
 -- not firing does not bounce, and a ring on it says it does.
 -- The angle is negated on the way out and the dot flipped back on the way in.
--- This file reckons y downward and the marks reckon it upward, so a fan
--- handed over unturned comes back mirrored. It is a symmetric fan and nothing
--- would have shown, which is exactly why it is done here rather than left to
--- be noticed.
+-- This file reckons y downward and the marks reckon it upward, so a fan handed
+-- over unturned comes back mirrored. It is a symmetric fan and nothing would
+-- have shown, which is exactly why it is done here rather than left to be
+-- noticed.
 local function bolt_line(m, ang, col, held)
     local dx, dy = marks.bolt_line(m.origin, ry(m.y), -ang, m.k, col)
     dy = ry(dy)
@@ -1566,15 +1602,15 @@ local STACK, STACK_SHARE = 1.5, 0.34
 
 local function status(me, charges, lift)
     local slots = charges or {}
-    -- On a touchscreen every one of these rows is drawn again on a pad, in the
-    -- same marks, at the far corner of the same screen. The pads win: they are
-    -- where a thumb already is, they carry the add-ons in the mark itself, and
-    -- a control that describes itself does not need a legend. What is left
-    -- here is the bounty, which is the one line no pad has anywhere to put.
-    local show_rows = not M.touching
-    local show_charges = #slots > 0 and show_rows
+    -- On a touchscreen the pads carry all of this: the counts sit over the
+    -- charge pads and the weapon marks sit inside the trigger pads, drawn by
+    -- touch.lua draws them, so any row here would be the same thing twice at
+    -- opposite corners of a screen that has no room for once. What is left
+    -- of the stack on glass is the one row no pad speaks for: the bounty.
+    local show_charges = #slots > 0 and not M.touching
+    local show_trigs = not M.touching
     local trigs = 0
-    if show_rows then
+    if show_trigs then
         for t = 0, SIM_TRIGGERS - 1 do
             if sim.has_trigger(me, t) then trigs = trigs + 1 end
         end
@@ -1612,7 +1648,7 @@ local function status(me, charges, lift)
 
     -- A level is the same weapon harder, so it is rungs on a ladder; an
     -- add-on changes what the round is, so it is drawn onto the round.
-    for t = 0, show_rows and SIM_TRIGGERS - 1 or -1 do
+    for t = 0, show_trigs and SIM_TRIGGERS - 1 or -1 do
         if sim.has_trigger(me, t) then
             local lvl = sim.ship_level(me, t)
             local reach = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
@@ -1774,7 +1810,8 @@ local function inspect(o, top)
 
     local col = same_team and pal.FRIEND or pal.ENEMY
     local nm = (p and p.name) or ("ship " .. i)
-    txt(nm, x + 12 * S, y + 17 * S, (FONT - 1) * S, pal.a(col, 0.95))
+    txt(nm, x + 12 * S, y + 17 * S, (FONT - 1) * S, pal.a(col, 0.95),
+        nil, nil, true)
     -- The mark rides after the name here, not in a column: there is one line
     -- and nothing to line it up with.
     if p and p.ai then
@@ -1788,19 +1825,20 @@ local function inspect(o, top)
     local ry_ = y + 30 * S
     local lab = (FONT - 4) * S
     local val = (FONT - 2) * S
-    local function row(k, v, vcol)
+    local function row(k, v, vcol, raw)
         txt(k, x + 12 * S, ry_ + rowh / 2, lab, pal.a(pal.DIM, 0.8))
         txt(v, x + w - 12 * S, ry_ + rowh / 2, val, vcol or pal.a(pal.INK, 0.9),
-            "right")
+            "right", nil, raw)
         ry_ = ry_ + rowh
     end
     if side then
-        row("SIDE", side, pal.a(col, 0.9))
+        -- A side somebody founded and named is a name as well.
+        row("SIDE", side, pal.a(col, 0.9), true)
     end
     -- What the zone is willing to say this seat is, which is the honest
     -- version of the question: the client cannot tell, and the server's label
     -- is the only answer anybody has. A guest is not an accusation.
-    row("SEAT", string.upper((p and p.label) or "unknown"))
+    row("SEAT", (p and p.label) or "unknown")
     -- A line each, rather than one line of "21K 20D 748P". Three numbers
     -- packed into a row with their units stuck to them is a thing to decode;
     -- three labelled rows are three numbers to read, and this panel already
@@ -1855,11 +1893,11 @@ end
 -- instead of from adding light. Close enough at this size, and it keeps the
 -- card in the layer that owns the rest of the box.
 
--- The weapon's own colour rather than a rung's. These figures say what
--- killed you, not how far up its ladder it was, and they used to borrow the
--- second entry of a ramp because it happened to look right -- which stopped
--- being true the moment one ramp meant one thing. Naming them is also what
--- keeps two cards from coming out the same colour.
+-- The weapon's own colour rather than a rung's. These figures say what killed
+-- you, not how far up its ladder it was, and they used to borrow the second
+-- entry of a ramp because it happened to look right -- which stopped being
+-- true the moment one ramp meant one thing. Naming them is also what keeps two
+-- cards from coming out the same colour.
 local function fig_bomb(cx, cy, k)
     local col = pal.BOMB
     -- No trail, though it wears one in flight. Drawn inside the blast ring it
@@ -2126,9 +2164,13 @@ local function wait(b, me)
     -- The clock. `respawn_at` counts down in the core and is in every
     -- snapshot, so this is read rather than timed here: a local stopwatch
     -- would drift off the tick that actually puts the hull back.
+    --
+    -- The bar and nothing else. It used to run over a ticked rule, which is a
+    -- ruler under a thing nobody is measuring: the wait is over when the bar
+    -- runs out, and how much of a second each tick stood for was never a
+    -- question anybody had while they were dead.
     local left, delay = 0, 0
     if sim.ship_respawn then left, delay = sim.ship_respawn(me) end
-    ticks(x + b.pad, y + b.rule, b.inner, pal.a(pal.DIM, 0.5), 16 * S)
     if delay > 0 and left > 0 then
         local frac = left / delay
         if frac > 1 then frac = 1 end
@@ -2158,10 +2200,19 @@ local function wait(b, me)
     -- things with, so the eye takes the word first and then reads why.
     txt(b.card.name, tx, ty, b.lab, pal.a(pal.INK, 0.9))
     ty = ty + b.headh - b.lab / 2 + b.rowh / 2
-    for _, line in ipairs(b.lines) do
-        txt(line, tx, ty, b.fs, pal.a(pal.PANEL_INK, 0.92))
+    -- The word above is a label and shouts with the rest of the HUD. What is
+    -- under it is prose: three seconds of reading rather than a glance, and a
+    -- paragraph in capitals is a paragraph nobody finishes.
+    --
+    -- The capital is taken once, on the first line. Cased line by line, a
+    -- sentence that wrapped onto three of them would start three times.
+    local was = case
+    case = "sentence"
+    for i, line in ipairs(b.lines) do
+        txt(line, tx, ty, b.fs, pal.a(pal.PANEL_INK, 0.92), nil, nil, i > 1)
         ty = ty + b.rowh
     end
+    case = was
 
     -- Centred in what the text column left, against the box's right padding,
     -- so the shape has air round it rather than being pushed against a wall.
@@ -2203,8 +2254,11 @@ local function key_cap(x, y, w, label, on)
     local h = KEY_H * S
     rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
     u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
-    txt(label, x + w / 2, y + h / 2, key_size(), pal.a(col, on and 1 or 0.85),
-        "center")
+    -- A key is shouted wherever it turns up, menu or corner: it is a thing to
+    -- press rather than something the interface is saying, and the two of them
+    -- are the same object.
+    txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
+        pal.a(col, on and 1 or 0.85), "center", nil, true)
 end
 
 local function menu_button()
@@ -2494,10 +2548,15 @@ local function help_draw(e)
     local dir = (e.align == "right") and -1 or 1
     rect(e.x + (dir < 0 and -3 * S or 0), top, 3 * S, bot - top,
          pal.a(e.col, 0.85))
+    -- The same sentences the dead read, so they are set the same way: prose,
+    -- with its capital taken once on the first line.
+    local was = case
+    case = "sentence"
     for i, line in ipairs(e.lines) do
         txt(line, e.x + dir * 11 * S, ttop + (i - 0.5) * lh, f,
-            pal.a(pal.INK, 0.95), e.align)
+            pal.a(pal.INK, 0.95), e.align, nil, i > 1)
     end
+    case = was
 end
 
 -- A block that would hang off the bottom or the top is moved back on, since
@@ -2522,6 +2581,7 @@ local function help_hover(key)
 end
 
 function M.hud(o)
+    case = "upper"
     if sim.ship_count() == 0 then return end
     local me = o.me
     menu_up = o.menu_open
@@ -3144,7 +3204,7 @@ local function stage_row(x, y, w, h, r, hot)
         and text_w(r.detail, 12 * S) > w - 32 * S - (tx - x) - 12 * S
     if not two_line then
         txt(r.label or "", tx, ly, size,
-            pal.a(col, sel and 1 or 0.82), nil, MENU_FONT)
+            pal.a(col, sel and 1 or 0.82), nil, MENU_FONT, r.named)
     end
     if r.note then
         txt(r.note, tx, y + h * 0.68, 11.5 * S,
@@ -3196,11 +3256,13 @@ local function stage_row(x, y, w, h, r, hot)
         -- at all, the day somebody edits one of them.
         if two_line then
             txt(r.label or "", tx, y + h * 0.32, size,
-                pal.a(col, sel and 1 or 0.82), nil, MENU_FONT)
-            txt(r.detail, tx, y + h * 0.70, 11 * S, pal.a(pal.DIM, 0.9))
+                pal.a(col, sel and 1 or 0.82), nil, MENU_FONT, r.named)
+            txt(r.detail, tx, y + h * 0.70, 11 * S, pal.a(pal.DIM, 0.9),
+                nil, nil, r.verbatim)
         else
             txt(r.detail, x + w - 16 * S, ly, 12 * S,
-                pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right")
+                pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right",
+                nil, r.verbatim)
         end
     end
 end
@@ -3232,7 +3294,8 @@ local function empty_state(x, y, w, h, e)
         txt(e.line, cx, ty + 24 * S, 12 * S, pal.a(pal.DIM, 0.95), "center")
     end
     if e.at and e.at ~= "" then
-        txt(e.at, cx, ty + 46 * S, 11 * S, pal.a(pal.DIM, 0.45), "center")
+        txt(e.at, cx, ty + 46 * S, 11 * S, pal.a(pal.DIM, 0.45), "center",
+            nil, true)
     end
 end
 
@@ -3269,14 +3332,14 @@ local function ask_card(x, y, w, h, a)
     -- answers stays centred whatever the words are.
     local ws, total = {}, 0
     for i, k in ipairs(a.keys) do
-        ws[i] = key_w(string.upper(k.label))
+        ws[i] = key_w(k.label)
         total = total + ws[i]
     end
     total = total + KEY_GAP * S * (#a.keys - 1)
     local kx = mid - total / 2
     local ky = cy + ch - 22 * S - KEY_H * S
     for i, k in ipairs(a.keys) do
-        key_cap(kx, ky, ws[i], string.upper(k.label), i == a.sel)
+        key_cap(kx, ky, ws[i], k.label, i == a.sel)
         hit(kx, ky, ws[i], KEY_H * S, "answer", i)
         kx = kx + ws[i] + KEY_GAP * S
     end
@@ -3433,12 +3496,14 @@ local function wordmark(x, y, size)
     local s = size * LOGO_EM / LOGO_SPAN
     local lw = size * 0.95
     M.logo(x + lw / 2, y + size * LOGO_DROP, s)
-    txt("vectorwake", x + lw, y, size, pal.INK, nil, MENU_FONT)
+    txt("vectorwake", x + lw, y, size, pal.INK, nil, MENU_FONT, true)
 end
 
 -- --- the whole thing -------------------------------------------------------
 
 function M.menu(v)
+    case = "sentence"
+
     -- A question takes the keys off whatever asked it, and the panel says so
     -- by standing down. It has to be set before a word of it is written: a
     -- glyph carries the alpha it was queued with, and the gui draws it over
@@ -3720,6 +3785,7 @@ function M.menu(v)
 
     -- Last, over all of it, because it is the only thing being read.
     if v.ask then ask_card(sx, sy, GUTTER * S + lw, sh, v.ask) end
+    case = "upper"
 end
 
 -- --- cursor ----------------------------------------------------------------

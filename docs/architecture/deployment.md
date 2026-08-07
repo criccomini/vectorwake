@@ -17,7 +17,7 @@ host is a compose service and a DNS record away.
       /dir   ──────────────────────►  directory :9000
       /a1    ──────────────────────►  arena     :9001
       /a2    ──────────────────────►  arena     :9002
-      /metrics/* ──────────────────►  each process     behind basic_auth
+      /metrics/* ──────────────────►  each process     open, loopback ports
       (none) ──────────────────────►  admin     :9100   no route in, by design
 ```
 
@@ -296,26 +296,15 @@ names an address, and opens no port at all when it does not.
 9100 is missing from the list because the admin surface has it.
 
 Caddy publishes them at `/metrics/a1`, `/metrics/a2`, `/metrics/a3`,
-`/metrics/bots`, `/metrics/dir` and `/metrics/meta`, behind `basic_auth`. The
-ports themselves stay on loopback, so that route and its password are the only
-way in.
+`/metrics/bots`, `/metrics/dir` and `/metrics/meta`, open to anyone. The ports
+themselves stay on loopback, so those routes are the only way in.
 
-A password on a read view, which the admin surface avoids needing by not being
-routed at all. A read is the dangerous kind to publish precisely because it is
-useful without a token: population, capacity, and the build a process is running
-are all things a stranger would rather like to have.
-
-The credential is `VW_METRICS_USER` and `VW_METRICS_HASH`, the latter from
-`caddy hash-password`. Both are optional, and the default is a hash of a
-password nobody holds, so an unconfigured deployment serves the routes and lets
-nobody through.
-
-That default is not a nicety. Caddy refuses to parse `basic_auth` with a blank
-hash, and a Caddyfile that will not parse takes the certificate, the client and
-every arena down with it. Measured rather than assumed: `caddy validate` with
-the variable unset is a valid configuration, and with it set to an empty string
-is an adapter error. So the value is defaulted twice, once in compose where the
-`:-` form also catches an empty one, and once in the Caddyfile.
+They carried a `basic_auth` once, on the argument that a read view is the
+dangerous kind to publish because it is useful without a token. The password
+came off: what these expose is population, capacity and build stamps, which the
+games list already hands to any client, and a credential nobody uses is pure
+friction against pointing a dashboard at them. The admin surface remains the
+line that matters, and it is not routed at all.
 
 The reason it is per process rather than per host is an afternoon spent on the
 wrong question. A host graph showed a pegged core and could not say which of
