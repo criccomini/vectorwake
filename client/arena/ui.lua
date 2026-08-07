@@ -3685,6 +3685,22 @@ function M.menu(v)
 
     -- --- the rail
     local pitch = vertical and (rh / n) or (rw / n)
+    -- Along the bottom, every stop says its name, and the words are sized so
+    -- the longest of them fits the room one stop has. Only the lit one used to
+    -- carry a word, because "settings" and "about" at the desktop's size run
+    -- into each other with eight of them across a phone; a row of marks you
+    -- have to learn by tapping is worse than a row of small words.
+    local label_px = 11 * S
+    if not vertical then
+        local longest = 0
+        for _, e in ipairs(rail) do
+            longest = math.max(longest, #(e.label or ""))
+        end
+        if longest > 0 then
+            label_px = math.max(8 * S, math.min(label_px,
+                                (pitch - 5 * S) / (longest * ADVANCE)))
+        end
+    end
     for i, e in ipairs(rail) do
         local sel = (i == v.rail_sel)
         local cx, cy
@@ -3711,10 +3727,12 @@ function M.menu(v)
                 u:seg(rx - 6 * S, ry(cy - pitch / 2 + 3 * S), rx - 6 * S,
                       ry(cy + pitch / 2 - 3 * S), 1.6 * S, bar, true)
             else
+                -- The field alone. It wore a lit bar along its top edge as
+                -- well, which is the vertical rail's own mark turned on its
+                -- side: there it points at the stage beside it, and here it
+                -- points at nothing and reads as a tab that has come loose.
                 rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, rh - 4 * S,
                      lit)
-                u:seg(cx - pitch / 2 + 3 * S, ry(ry_), cx + pitch / 2 - 3 * S,
-                      ry(ry_), 1.6 * S, bar, true)
             end
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
@@ -3722,12 +3740,8 @@ function M.menu(v)
             txt(e.label, rx + 48 * S, cy, 16 * S,
                 pal.a(sel and pal.INK or pal.DIM, sel and 1 or 0.85),
                 nil, MENU_FONT)
-        elseif not vertical and (sel or n <= 6) then
-            -- Every stop is labelled while there is room for it. With eight
-            -- of them on a phone there is not: "settings" and "about" run
-            -- into each other, so only the one you are on says its name and
-            -- the rest are marks, which is what they were drawn to be.
-            txt(e.label, cx, cy + 24 * S, 11 * S,
+        elseif not vertical then
+            txt(e.label, cx, cy + 24 * S, label_px,
                 pal.a(sel and pal.FRIEND or pal.DIM, sel and 1 or 0.8),
                 "center", MENU_FONT)
         end
