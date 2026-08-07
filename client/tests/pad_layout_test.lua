@@ -45,20 +45,57 @@ local function put(kind, x0, y0, x1, y1, col)
     return shapes[#shapes]
 end
 
+-- How much of a shape there is, and where its weight sits. A bounding box
+-- answers neither: a bomb's trail counts for its whole length in a box and
+-- fades to nothing on the screen, which is how the mark came to sit a quarter
+-- of a pad radius off centre while every measurement said it was fine.
+-- `rad` is the radius of the circle a piece belongs to, where it has one.
+-- That is what tells the mark from the furniture: the pad's own ring and the
+-- gauge outside it are circles the size of the pad, and weighing them buries
+-- the mark's own offset under a much larger, perfectly centred mass.
+local ink = {}
+local function weigh(area, x, y, rad)
+    if area > 0 then
+        ink[#ink + 1] = {a = area, x = x, y = y, rad = rad}
+    end
+end
+
 local layer = {}
 function layer:seg(x1, y1, x2, y2, w, c)
     put("seg", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2, c)
+    local len = math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2)
+    weigh(len * w, (x1 + x2) / 2, (y1 + y2) / 2)
 end
-function layer:seg_fade(x1, y1, x2, y2, w1, w2, _, _, c)
+function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2, c)
     local w = math.max(w1, w2)
     put("seg", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2, c)
+    -- Sliced, and each slice weighed by how visible it is. This is the whole
+    -- difference between what a box says and what an eye says.
+    local n = 12
+    local len = math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2) / n
+    for i = 1, n do
+        local t = (i - 0.5) / n
+        weigh(len * (w1 + (w2 - w1) * t) * (a1 + (a2 - a1) * t),
+              x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)
+    end
 end
-function layer:disc(x, y, r, _, c) put("disc", x - r, y - r, x + r, y + r, c) end
+function layer:disc(x, y, r, _, c)
+    put("disc", x - r, y - r, x + r, y + r, c)
+    weigh(math.pi * r * r, x, y, r)
+end
 function layer:ring(x, y, r, w, _, c)
     put("ring", x - r - w, y - r - w, x + r + w, y + r + w, c).r = r
+    weigh(2 * math.pi * r * w, x, y, r)
 end
-function layer:arc(x, y, r, _, _, w, _, c)
+function layer:arc(x, y, r, a0, a1, w, _, c)
     put("arc", x - r - w, y - r - w, x + r + w, y + r + w, c).r = r
+    -- An arc's weight sits at the middle of its own sweep, not at its centre.
+    local d = a1 - a0
+    if math.abs(d) > 1e-6 then
+        weigh(r * math.abs(d) * w,
+              x + r * (math.sin(a1) - math.sin(a0)) / d,
+              y - r * (math.cos(a1) - math.cos(a0)) / d, r)
+    end
 end
 function layer:rect(x, y, w, h, c) put("rect", x, y, x + w, y + h, c) end
 function layer:frame(x, y, w, h, _, c) put("frame", x, y, x + w, y + h, c) end
@@ -88,6 +125,7 @@ local marks = require("arena.marks")
 
 local function draw(w, h, s)
     shapes = {}
+    ink = {}
     marks.begin(layer, s)
     touch.draw(layer, w, h, s)
     return touch.layout(w, h, s)
@@ -166,6 +204,57 @@ check("the bomb's head is ringed and the gun's is not",
 for i, c in ipairs(L.charge) do
     check("charge " .. i .. " wears its own mark", marked(c) > 0,
           "nothing inside the cell")
+end
+
+-- --- and each mark sits in the middle of its pad ---------------------------
+
+-- Measured as ink, because a box gets this wrong and got it wrong in the
+-- shipped build: a bomb is a fading trail into a solid head, so its box
+-- straddles the pad while everything you can see crowds one side. The mark
+-- was a quarter of a pad radius off centre and the box said four pixels.
+--
+-- Every loadout, because the pieces an add-on hangs on a mark are not
+-- symmetric either: a fan pulls the weight left and a bounce ring pulls it
+-- right, and the placement is the mean of what they do rather than whichever
+-- one was drawn the day it was set.
+local function ink_centre(pad, other)
+    local sum, sx = 0, 0
+    for _, w in ipairs(ink) do
+        -- Level with the pad, which keeps the rail of charge cells above it
+        -- out of the sum; within a mark's reach of it and nearer it than the
+        -- trigger beside it, which keeps the other weapon and the stick's
+        -- resting mark out; and no bigger than a mark can be, which keeps the
+        -- pad's own ring and its gauge out. What is left is the drawing,
+        -- whole -- tail included, because the tail is exactly what a box got
+        -- wrong.
+        local mine = (not other
+                      or math.abs(w.x - pad.x) < math.abs(w.x - other.x))
+            and math.abs(w.x - pad.x) <= pad.r * 1.6
+        if mine and math.abs(w.y - pad.y) <= pad.r
+            and not (w.rad and w.rad > pad.r * 0.7) then
+            sum = sum + w.a
+            sx = sx + w.a * w.x
+        end
+    end
+    return sum > 0 and (sx / sum - pad.x) or nil
+end
+
+for _, load in ipairs({
+    {"bare", {}},
+    {"a fan", {[0] = {[0] = 1}}},
+    {"a fan and bouncing rounds", {[0] = {[0] = 1, [1] = 1}}},
+    {"a proximity fuse", {[1] = {[2] = 1}}},
+}) do
+    local w, h, s = reset(unpack(LAND))
+    MODS = load[2]
+    local l = draw(w, h, s)
+    for _, pad in ipairs({{"gun", l.guns, l.bombs}, {"bomb", l.bombs, l.guns}}) do
+        local off = ink_centre(pad[2], pad[3])
+        check("the " .. pad[1] .. " mark is centred with " .. load[1],
+              off and math.abs(off) < pad[2].r * 0.10,
+              off and string.format("%.1f off, %.0f%% of the radius", off,
+                                    100 * off / pad[2].r) or "no ink")
+    end
 end
 
 -- --- nothing overlaps anything ---------------------------------------------

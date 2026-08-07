@@ -284,6 +284,22 @@ local function has_mod(t, i)
     return M.me and sim.ship_mod and sim.ship_mod(M.me, t, i) > 0
 end
 
+-- Where each mark's muzzle or head goes so that the drawing looks centred in
+-- its pad, in units of the mark's own size.
+--
+-- Neither mark is symmetric about anything a box can find. A gun is a thin
+-- line into a solid dot, and the dot is half the ink in a fortieth of the
+-- width; a bomb trails, and the trail fades to nothing along its length, so
+-- most of what a box measures is not on the screen. Centred by box the bomb
+-- sat a quarter of a pad radius right of the middle, which is what it looked
+-- like -- the head crowding one side and the tail running out the other.
+--
+-- Measured off rendered pixels rather than worked out: the ink centroid of
+-- each mark, with every loadout it can wear, put on the pad's centre. The gun
+-- takes the mean of its three, since a fan pulls left and a bounce ring
+-- pulls right and no single one of them is the case to favour.
+local BOLT_HOME, BOMB_HOME = 1.0, 0.08
+
 -- The gun, wearing what the greens did to it: one line or three when the fan
 -- is on, a ring on each dot when the rounds come back off walls. A declined
 -- fan is drawn dimmed rather than dropped -- you still hold it, and a weapon
@@ -293,7 +309,7 @@ local function gun_mark(pad, col)
     local fan = has_mod(sim.TRIG_GUN, 0)
     local off = fan and sim.ship_multi_off and sim.ship_multi_off(M.me)
     local bounce = has_mod(sim.TRIG_GUN, 1)
-    local ox = pad.x - k * (marks.BOLT_LEN - marks.BOLT_DOT) / 2
+    local ox = pad.x - k * BOLT_HOME
     local angs = fan and {-marks.BOLT_FAN, 0, marks.BOLT_FAN} or {0}
     for _, ang in ipairs(angs) do
         local held = off and ang ~= 0
@@ -307,7 +323,7 @@ end
 -- The bomb: the round, and the fuse it goes off at if it has one.
 local function bomb_mark(pad, col)
     local k = pad.r * 0.66
-    local hx = pad.x + k * marks.BOMB_LEN / 2 - k * marks.BOMB_R * 0.4
+    local hx = pad.x + k * BOMB_HOME
     marks.bomb_body(hx, pad.y, k, col)
     if has_mod(sim.TRIG_BOMB, 2) then
         marks.bomb_prox(hx, pad.y, k * marks.BOMB_R * 1.75, k, col)
