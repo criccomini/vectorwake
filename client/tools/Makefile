@@ -12,7 +12,16 @@ sfx: sfxdump
 sfxdump: sfxdump.c ../ext/simcore/src/sfx.c ../ext/simcore/src/sfx.h
 	$(CC) $(CFLAGS) -o $@ sfxdump.c ../ext/simcore/src/sfx.c $(LDLIBS)
 
-clean:
-	rm -f sfxdump
+sfxladder: sfxladder.c ../ext/simcore/src/sfx.c ../ext/simcore/src/sfx.h
+	$(CC) $(CFLAGS) -o $@ sfxladder.c ../ext/simcore/src/sfx.c $(LDLIBS)
 
-.PHONY: sfx clean
+# Whether a pilot can hear which rung fired. The client's Lua tests cannot
+# reach this: the kit is C, and what it renders is the only honest evidence
+# about what it sounds like.
+check: sfxladder
+	./sfxladder
+
+clean:
+	rm -f sfxdump sfxladder
+
+.PHONY: sfx check clean
