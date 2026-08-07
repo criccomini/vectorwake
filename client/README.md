@@ -54,11 +54,13 @@ in `sim/`.
 | `arena/arena.script` | The frame loop: input, stepping, drawing |
 | `arena/net.lua` | Connect, predict, reconcile. Decides nothing |
 | `arena/touch.lua` | Thumbstick and weapon pads; emits the same button bits |
+| `arena/marks.lua` | The gun and the bomb, drawn once for the corner and the pads |
 | `arena/menu.lua` | The menu tree and the settings it saves |
 | `arena/directory.lua` | Asks a directory what games are running |
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `tools/sfxdump.c` | Writes the kit out as wav files, for listening to |
 | `tests/sfx_test.lua` | Which sound each weapon rung reaches |
+| `tests/rung_test.lua` | That a rung's colour is legible and unlike anything else |
 | `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
 | `arena/world.lua` | Ships, weapons, flags, prizes, terrain, in triangles |
@@ -350,6 +352,21 @@ bounty. Each row is a mark, a count, and nothing else. The marks used to be
 words, which made the one corner a pilot only ever glances at into a column of
 reading.
 
+Every round in the game is coloured by one thing: the rung it was fired at.
+Green, yellow, orange, red, from `pal.RUNG`, and a bullet, a bomb, yours and
+theirs all read off it. There were three ramps before, with hue carrying the
+team and lightness the rung, and it failed at both jobs: ten units of colour
+between rungs is not a call anybody makes on a three-pixel object crossing the
+screen, and blending toward white converged the two teams as they climbed, so
+the deadliest rounds were the hardest to attribute. It also put a rung 3 bomb
+on the charge colour exactly. `tests/rung_test.lua` measures all of that.
+
+What it gives up is that a round no longer says whose it is. Ships, names and
+plates still carry the team, and in a free-for-all every round was worth
+dodging anyway. The price of borrowing a scale everybody already knows is that
+rung 1 sits nearer the prize green and rung 2 nearer the charge gold than a
+ramp of unused hues would.
+
 There is one mark per trigger, and an add-on is drawn onto it rather than set
 out beside it. That is the correction to the first version of this, which gave
 every add-on a symbol of its own and lined them up to the right of the ladder:
@@ -378,6 +395,38 @@ and read clearly, and the six-add-on hull that no zone in the catalog hands
 out gets a sixth each and reads as a dense mark, which is the right way round.
 Spending the room as it was asked for instead would put a Spire's fragments
 through the row above.
+
+On a touchscreen the weapon rows are not drawn at all, and the bounty is the
+whole of the corner. The pads carry them instead: `arena/marks.lua` holds the
+gun and the bomb as one drawing, `arena/touch.lua` puts each in the middle of
+the control that fires it, and the add-ons go into the mark the same way they
+go into a row. A player who has learned the corner has learned the pads, which
+is the only reason it is worth having the marks in a third file rather than in
+whichever one drew them first.
+
+## What a thumb gets
+
+The two triggers own the bottom right corner, side by side, sized so the gun
+is the larger of them. Round, because the charges are square: which class of
+control a thing is reads before the picture inside it does, and a round pad
+beside a square cell can never be taken for another trigger.
+
+The gun wears its energy on an arc outside its rim. On the rim it read as a
+second ring drawn badly, and inside it landed on the mark.
+
+The charges go above the triggers rather than beside them, so reaching the gun
+never crosses one. They climb the edge as a column while there is edge to
+climb, and step sideways when there is not: on a phone held upright there is
+most of a screen of it, and held sideways the dial takes better than half the
+height and leaves room for one cell. `M.ceiling` is where the dial ends,
+handed down by the caller -- `touch.lua` knows where a thumb goes and `ui.lua`
+knows where the instruments go, and neither reaching into the other is what
+lets the two of them not depend on each other at all.
+
+How many of a charge are in hand is pips along the cell's floor, one per slot
+the hull can hold, filled as far as it is. It was a numeral floating above the
+pad, which is the one thing on this screen a bare mesh cannot draw, and it sat
+in the gap between two controls belonging to neither.
 
 `lua5.1 client/tests/stack_test.lua` runs the real `M.hud` against a stubbed
 engine and measures: every add-on draws something, a third rung looks

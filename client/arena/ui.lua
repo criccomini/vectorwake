@@ -18,7 +18,7 @@
 -- at the point of drawing.
 
 local pal = require("arena.palette")
-local touch = require("arena.touch")
+local marks = require("arena.marks")
 local state = require("arena.state")
 local world = require("arena.world")
 
@@ -75,9 +75,9 @@ end
 -- would have grown the shapes and left the lines where they were: a set of
 -- hairlines at twice the size, which is not the same drawing bigger. The floor
 -- is for the small end, where a stroke under a pixel disappears.
-local function pen(k, ratio)
-    return math.max(0.9 * S, k * ratio)
-end
+-- Strokes off the mark's own size. Shared with the pads, which draw the same
+-- marks and have to weight them the same way.
+local pen = marks.pen
 
 -- `font` names one of the faces the gui scene carries: nil for the mono
 -- everything in flight is set in, "menu" for the menu's own. It is passed
@@ -534,6 +534,9 @@ function M.begin(layer, w, h, density, touching, now)
     -- every frame would be the same as not having one.
     if S ~= density then wrap_cache = {} end
     S = density
+    -- The marks draw into the same layer, and the pads reach for them after
+    -- this returns, so they are handed it here rather than by each caller.
+    marks.begin(layer, density)
     M.touching = touching or false
     text = state.text
     nt = 0
@@ -1301,17 +1304,20 @@ local CHARGE_HUES = {repel = pal.CHARGE_COL, burst = pal.BURST}
 -- the bouncing runs is a question for colour to answer later. A shape that
 -- also has to carry a count is a shape doing two jobs at the size where it can
 -- barely do one.
-local BOLT_LEN, BOLT_DOT, BOLT_FAN = 1.4, 0.17, 0.47
+local BOLT_LEN, BOLT_DOT, BOLT_FAN =
+    marks.BOLT_LEN, marks.BOLT_DOT, marks.BOLT_FAN
 
 -- `held` is a barrel you have but are not firing: drawn, so the fan does not
 -- appear to vanish when it is declined, but not counted as a round. What is
 -- not firing does not bounce, and a ring on it says it does.
+-- The angle is negated on the way out and the dot flipped back on the way in.
+-- This file reckons y downward and the marks reckon it upward, so a fan handed
+-- over unturned comes back mirrored. It is a symmetric fan and nothing would
+-- have shown, which is exactly why it is done here rather than left to be
+-- noticed.
 local function bolt_line(m, ang, col, held)
-    local ca, sa = math.cos(ang), math.sin(ang)
-    local d = m.k * BOLT_LEN
-    local dx, dy = m.origin + ca * d, m.y + sa * d
-    u:seg(m.origin, ry(m.y), dx, ry(dy), pen(m.k, 0.075), col)
-    u:disc(dx, ry(dy), m.k * BOLT_DOT, 10, col)
+    local dx, dy = marks.bolt_line(m.origin, ry(m.y), -ang, m.k, col)
+    dy = ry(dy)
     if not held then m.dots[#m.dots + 1] = {dx, dy} end
     m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
 end
@@ -1328,15 +1334,11 @@ local function mk_bolt(hx, cy, k, col)
     return m
 end
 
-local BOMB_LEN, BOMB_R = 1.32, 0.46
+local BOMB_LEN, BOMB_R = marks.BOMB_LEN, marks.BOMB_R
 
 local function mk_bomb(hx, cy, k, col)
-    local tail = hx - k * BOMB_LEN
-    u:seg_fade(tail, ry(cy), hx, ry(cy), pen(k, 0.078), pen(k, 0.244), 0,
-               (col[4] or 1) * 0.6, col)
-    u:ring(hx, ry(cy), k * BOMB_R, pen(k, 0.122), 12, col)
-    u:disc(hx, ry(cy), k * 0.19, 8, col)
-    return {x = hx, y = cy, k = k, tail = tail,
+    marks.bomb_body(hx, ry(cy), k, col)
+    return {x = hx, y = cy, k = k, tail = hx - k * BOMB_LEN,
             out = k * BOMB_R, far = k * BOMB_R}
 end
 
@@ -1413,9 +1415,8 @@ local function dec_bounce(m, col, n)
     -- dot; one that carries on off the wall is a dot with something still
     -- around it.
     if m.bolt then
-        local r = m.k * (BOLT_DOT + 0.16)
         for _, d in ipairs(m.dots) do
-            u:ring(d[1], ry(d[2]), r, pen(m.k, 0.065), 12, col)
+            local r = marks.bolt_bounce(d[1], ry(d[2]), m.k, col)
             m.far = math.max(m.far, d[1] - m.x + r)
         end
         return
@@ -1441,11 +1442,7 @@ end
 -- sharing the mark with the fragments that hang outside it.
 local function dec_prox(m, col, n)
     local r = m.out + m.step * (0.52 + 0.14 * math.min(n, 3))
-    for i = 0, 3 do
-        local a0 = i * math.pi / 2 + 0.17
-        u:arc(m.x, ry(m.y), r, a0, a0 + math.pi / 2 - 0.34,
-              pen(m.k, 0.106), 5, pal.a(col, (col[4] or 1) * 0.9))
-    end
+    marks.bomb_prox(m.x, ry(m.y), r, m.k, pal.a(col, (col[4] or 1) * 0.9))
     m.out = m.out + m.step
     m.far = math.max(m.far, r)
 end
@@ -1513,11 +1510,11 @@ local MARK_REACH = 1.05
 -- A trigger's mark: the round it fires, wearing what the greens did to it.
 --
 -- In the round's own colour, which is the colour it will be when it leaves the
--- gun. A bolt runs up the team's ladder and a bomb up its own band, so the
--- rung a weapon has climbed is legible in the corner the same way it is
--- legible coming at you across the arena, and a player who has learned one has
--- learned the other. The mark was grey before, which said "weapon" and nothing
--- else, and left the level to be read off the ladder beside it.
+-- gun: one ramp for every round in the game, so the rung a weapon has climbed
+-- is legible in the corner exactly as it is legible coming at you across the
+-- arena, and a player who has learned one has learned the other. The mark was
+-- grey before, which said "weapon" and nothing else, and left the level to be
+-- read off the ladder beside it.
 --
 -- The add-ons are the same colour run hot, so what a green added reads as part
 -- of the round rather than as a separate object parked next to it. Shrapnel is
@@ -1534,15 +1531,10 @@ local MARK_REACH = 1.05
 -- Returns how far right the whole thing reached, since a hull holding three
 -- add-ons draws a good deal wider than one holding none and the row is
 -- measured by what it drew rather than by a constant.
-local function rung_col(ramp, lvl)
-    return ramp[math.max(1, math.min(lvl + 1, #ramp))]
-end
-
 local function weapon_mark(cx, cy, k, me, t)
     local gun = t == sim.TRIG_GUN
     local lvl = sim.ship_level(me, t)
-    local hue = rung_col(gun and pal.FRIEND_LVL or pal.BOMB_LVL, lvl)
-    local base = pal.a(hue, 0.9)
+    local base = pal.a(pal.rung(lvl), 0.9)
     local at = cx + k * (gun and BOLT_BIAS or BOMB_BIAS)
     local m = gun and mk_bolt(at, cy, k, base) or mk_bomb(at, cy, k, base)
     -- Which add-ons want a ring of room is a fact about the mark, not about
@@ -1564,7 +1556,7 @@ local function weapon_mark(cx, cy, k, me, t)
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a
     -- different colour stuck on the side of it.
-    local add = pal.a(pal.hot(hue, 0.45), 0.95)
+    local add = pal.a(pal.hot(pal.rung(lvl), 0.45), 0.95)
     for i = 1, #pal.MODS do
         local n = sim.ship_mod(me, t, i - 1)
         if n > 0 then
@@ -1612,7 +1604,7 @@ local function status(me, charges, lift)
     local slots = charges or {}
     -- On a touchscreen the pads carry all of this: the counts sit over the
     -- charge pads and the weapon marks sit inside the trigger pads, drawn by
-    -- pad_weapons below, so any row here would be the same thing twice at
+    -- touch.lua draws them, so any row here would be the same thing twice at
     -- opposite corners of a screen that has no room for once. What is left
     -- of the stack on glass is the one row no pad speaks for: the bounty.
     local show_charges = #slots > 0 and not M.touching
@@ -1901,11 +1893,13 @@ end
 -- instead of from adding light. Close enough at this size, and it keeps the
 -- card in the layer that owns the rest of the box.
 
--- The bomb's own rung colour, not the top of the ladder: the top rung is
--- 0xffd166, which is also the charge colour, and a bomb drawn in it was a
--- repel with a smaller middle. Two cards that look alike teach nothing.
+-- The weapon's own colour rather than a rung's. These figures say what killed
+-- you, not how far up its ladder it was, and they used to borrow the second
+-- entry of a ramp because it happened to look right -- which stopped being
+-- true the moment one ramp meant one thing. Naming them is also what keeps two
+-- cards from coming out the same colour.
 local function fig_bomb(cx, cy, k)
-    local col = pal.BOMB_LVL[2]
+    local col = pal.BOMB
     -- No trail, though it wears one in flight. Drawn inside the blast ring it
     -- stopped short of the rim and read as a stray stroke rather than as
     -- motion, and the card does not need it: against the repel below this is
@@ -1920,7 +1914,7 @@ local function fig_bomb(cx, cy, k)
 end
 
 local function fig_bolt(cx, cy, k)
-    local col = pal.ENEMY_LVL[2]
+    local col = pal.ENEMY
     -- Travelling left to right with its trail behind it, which is the only
     -- way a bolt is ever seen: the streak is what says which way it is going.
     --
@@ -1959,7 +1953,7 @@ end
 local SHRAP_ANGLES = {0.35, 1.15, 1.95, 2.55, 3.55, 4.35, 5.05, 5.85}
 local function fig_shrap(cx, cy, k)
     local col = pal.BURST
-    local bomb = pal.BOMB_LVL[2]
+    local bomb = pal.BOMB
     for _, a in ipairs(SHRAP_ANGLES) do
         local dx, dy = math.cos(a), math.sin(a)
         u:seg_fade(cx + dx * k * 0.34, ry(cy + dy * k * 0.34),
@@ -2422,73 +2416,6 @@ local function coords(me)
         x + 26 * S, base - 4 * S, (FONT - 3) * S, pal.a(pal.INK, 0.85))
 end
 
--- The weapon marks, inside the trigger pads.
---
--- On a touchscreen the corner stack's weapon rows were the pads' information
--- at the opposite corner of the screen: the pad is where the thumb and the
--- eye already are, and the stack row was a second copy in the one place a
--- phone cannot spare. So the mark the stack drew for a trigger is drawn
--- inside the trigger's own pad, the same picture from the same function,
--- with the rung ladder under it. The pad itself, the ring and the glow of a
--- held trigger, stays touch.lua's; this is the loadout worn on top of it,
--- the way the charge counts already ride the charge pads.
-local function pad_weapons(me)
-    if not M.touching then return end
-    local L = touch.layout(W, H, S)
-    for t = 0, SIM_TRIGGERS - 1 do
-        local pad = (t == sim.TRIG_GUN) and L.guns
-            or (touch.has_bomb and L.bombs or nil)
-        if pad and sim.has_trigger(me, t) then
-            -- The mark composes rightward from its subject and trails back
-            -- left of it, so the subject sits a little left of centre for
-            -- the whole drawing to land centred. Sized so the widest
-            -- loadout's reach, MARK_REACH of k plus the fragments that hang
-            -- outside it, stays inside the ring; pads_test measures exactly
-            -- that with everything worn at once.
-            local k = pad.r * 0.40
-            local cx = pad.x - k * 0.30
-            -- touch.lua counts up from the bottom, marks count down from
-            -- the top, the same flip pad_charges does. The mark rides a
-            -- little high so the ladder can sit under it and both read as
-            -- one drawing.
-            local cy = (H - pad.y) - pad.r * 0.10
-            weapon_mark(cx, cy, k, me, t)
-            local lvl = sim.ship_level(me, t)
-            local lw = pad.r * 0.9
-            ladder(pad.x - lw / 2, (H - pad.y) + pad.r * 0.42, 3, lvl + 1,
-                   pal.FRIEND, lw, 2.6 * S)
-        end
-    end
-end
-
--- The count in each charge pad.
---
--- The pad and its icon are drawn by touch.lua, which owns where a pad is and
--- tests taps against the same arithmetic -- the two were written out
--- separately once and drifted, so half a pad did nothing and the dead space
--- beside it fired. This adds the one thing a mesh cannot: a numeral.
---
--- A kind you hold none of still shows its zero rather than vanishing. The
--- pad is a control, and a control that disappears when it has nothing to do
--- is a control a player stops believing in.
-local function pad_charges(charges)
-    if not M.touching then return end
-    local L = touch.layout(W, H, S)
-    for i, pad in ipairs(L.charge or {}) do
-        local c = charges and charges[i]
-        if c then
-            -- Above the pad, not inside it. A pad is a thumb's worth of ring
-            -- with a picture already in it, and a numeral in there lands on
-            -- the picture or on the stroke; there is nothing above it.
-            -- touch.lua counts up from the bottom; text counts down from the
-            -- top.
-            txt(tostring(c.count), pad.x, H - (pad.y + pad.r * 1.5),
-                (FONT - 1) * S,
-                c.count > 0 and pal.CHARGE_COL or pal.a(pal.DIM, 0.5), "center")
-        end
-    end
-end
-
 -- The flags, as flags.
 --
 -- This was a sentence -- "flags  you 2 - 1 them   1 loose" -- which is three
@@ -2727,8 +2654,6 @@ function M.hud(o)
     -- The two big centred lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
-    pad_weapons(me)
-    pad_charges(o.charges)
     flag_strip(me)
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
