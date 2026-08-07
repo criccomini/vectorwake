@@ -68,7 +68,7 @@ function layer:seg(x1, y1, x2, y2, w, c)
 end
 function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2, c)
     local w = math.max(w1, w2)
-    put("seg", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2, c)
+    put("trail", x1 - w / 2, y1 - w / 2, x2 + w / 2, y2 + w / 2, c)
     -- Sliced, and each slice weighed by how visible it is. This is the whole
     -- difference between what a box says and what an eye says.
     local n = 12
@@ -255,6 +255,38 @@ for _, load in ipairs({
               off and string.format("%.1f off, %.0f%% of the radius", off,
                                     100 * off / pad[2].r) or "no ink")
     end
+end
+
+-- A pad draws no trail. The tail is what put the bomb off centre in the first
+-- place: it fades to nothing along its length, so a box straddles the pad
+-- while everything visible crowds one side. It belongs to a round in flight
+-- and to the row in the corner stack that stands beside a gun's; a control is
+-- not showing a round going anywhere.
+--
+-- Checked as its own thing rather than left to the centring above, because a
+-- trail could be added back symmetrically -- one either side, say -- and pass
+-- every measurement here while being wrong for the same reason.
+do
+    local w, h, s = reset(unpack(LAND))
+    MODS = {[1] = {[2] = 1}}
+    local l = draw(w, h, s)
+    local n = 0
+    for _, sh in ipairs(shapes) do
+        if sh.kind == "trail" then n = n + 1 end
+    end
+    check("no pad draws a trail behind its round", n == 0,
+          n .. " fading strokes on the controls")
+    -- And with the tail gone the head is free to be drawn larger, which is
+    -- the point of taking it off rather than merely a consequence.
+    local span = 0
+    for _, sh in ipairs(shapes) do
+        if sh.kind == "ring" and math.abs((sh.x0 + sh.x1) / 2 - l.bombs.x) < 1
+            and sh.r < l.bombs.r * 0.7 then
+            span = math.max(span, sh.r)
+        end
+    end
+    check("and the bomb fills its pad", span > l.bombs.r * 0.3,
+          string.format("head reaches %.2f of the radius", span / l.bombs.r))
 end
 
 -- --- nothing overlaps anything ---------------------------------------------

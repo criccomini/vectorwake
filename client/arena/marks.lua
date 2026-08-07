@@ -73,11 +73,26 @@ function M.bomb_prox(hx, hy, r, k, col)
     end
 end
 
+-- The head alone, without the trail behind it.
+--
+-- A trail is something a round has while it is going somewhere, and a pad is
+-- not showing a round in flight -- it is showing which weapon a thumb is
+-- about to fire. It also cannot be centred: it fades to nothing along its
+-- length, so it drags the drawing to one side of the pad while a bounding box
+-- reports the mark as square in the middle. The head is a ring about a point
+-- and needs no bias at all.
+function M.bomb_head(hx, hy, k, col)
+    u:ring(hx, hy, k * M.BOMB_R, M.pen(k, 0.122), 12, col)
+    u:disc(hx, hy, k * 0.19, 8, col)
+end
+
+-- And with it, which is what a row in the corner stack draws: there the mark
+-- stands beside a gun's, and the trail is what says at a glance that one of
+-- them is a streak and the other a thing that arrives.
 function M.bomb_body(hx, hy, k, col)
     u:seg_fade(hx - k * M.BOMB_LEN, hy, hx, hy, M.pen(k, 0.078),
                M.pen(k, 0.244), 0, (col[4] or 1) * 0.6, col)
-    u:ring(hx, hy, k * M.BOMB_R, M.pen(k, 0.122), 12, col)
-    u:disc(hx, hy, k * 0.19, 8, col)
+    M.bomb_head(hx, hy, k, col)
 end
 
 -- The charges, drawn from what the thing does rather than from a name that

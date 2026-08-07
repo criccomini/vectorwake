@@ -284,21 +284,19 @@ local function has_mod(t, i)
     return M.me and sim.ship_mod and sim.ship_mod(M.me, t, i) > 0
 end
 
--- Where each mark's muzzle or head goes so that the drawing looks centred in
--- its pad, in units of the mark's own size.
+-- Where the gun's muzzle goes so that the drawing looks centred in its pad,
+-- in units of the mark's own size.
 --
--- Neither mark is symmetric about anything a box can find. A gun is a thin
--- line into a solid dot, and the dot is half the ink in a fortieth of the
--- width; a bomb trails, and the trail fades to nothing along its length, so
--- most of what a box measures is not on the screen. Centred by box the bomb
--- sat a quarter of a pad radius right of the middle, which is what it looked
--- like -- the head crowding one side and the tail running out the other.
+-- A gun is not symmetric about anything a box can find: a thin line into a
+-- solid dot, with the dot carrying half the ink in a fortieth of the width.
+-- So this is measured off rendered pixels rather than worked out -- the ink
+-- centroid of the mark, with every loadout it can wear, put on the pad's
+-- centre. It is the mean of the three, since a fan pulls the weight left and
+-- a bounce ring pulls it right and no one of them is the case to favour.
 --
--- Measured off rendered pixels rather than worked out: the ink centroid of
--- each mark, with every loadout it can wear, put on the pad's centre. The gun
--- takes the mean of its three, since a fan pulls left and a bounce ring
--- pulls right and no single one of them is the case to favour.
-local BOLT_HOME, BOMB_HOME = 1.0, 0.08
+-- The bomb needs no such number. It is a ring about a point on a pad, so its
+-- centre is its centre.
+local BOLT_HOME = 1.0
 
 -- The gun, wearing what the greens did to it: one line or three when the fan
 -- is on, a ring on each dot when the rounds come back off walls. A declined
@@ -320,13 +318,15 @@ local function gun_mark(pad, col)
     end
 end
 
--- The bomb: the round, and the fuse it goes off at if it has one.
+-- The bomb: the round, and the fuse it goes off at if it has one. The head
+-- only -- see marks.bomb_head for why a pad leaves the trail off -- which
+-- also frees the mark to be drawn larger, since it no longer has to leave a
+-- hull and a half of room behind it for a tail.
 local function bomb_mark(pad, col)
-    local k = pad.r * 0.66
-    local hx = pad.x + k * BOMB_HOME
-    marks.bomb_body(hx, pad.y, k, col)
+    local k = pad.r * 0.85
+    marks.bomb_head(pad.x, pad.y, k, col)
     if has_mod(sim.TRIG_BOMB, 2) then
-        marks.bomb_prox(hx, pad.y, k * marks.BOMB_R * 1.75, k, col)
+        marks.bomb_prox(pad.x, pad.y, k * marks.BOMB_R * 1.75, k, col)
     end
 end
 
