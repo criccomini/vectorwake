@@ -2260,6 +2260,18 @@ local function debug_hud(o, top)
         txt(l[2], cx + colw - 10 * S, ly + rowh / 2, size,
             pal.a(pal.INK, 0.9), "right")
     end
+    -- The way out is the thing itself. What opens this is the LINK bars in
+    -- the far corner, which is a fine place to keep a switch nobody needs
+    -- and a poor place to look for one: on a phone the readout lands under
+    -- the dial, a screen's width from the four bars that put it there, and a
+    -- player who has finished reading it has no reason to think the answer
+    -- is back up in the corner. So a press anywhere on the panel closes it,
+    -- which is what every other slab of text in this interface does.
+    --
+    -- Filed here rather than beside the bars, because it is this rectangle,
+    -- and it is this rectangle only once the wrapping above has decided how
+    -- many columns the window can hold.
+    if not menu_up then hit(x, y, w, h, "debug") end
 end
 
 -- Where you are, over the dial's other top corner from the link readout.
