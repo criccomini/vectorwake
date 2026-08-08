@@ -874,7 +874,7 @@ function update(self, dt)
     menu.watching = net.watching
 
     if menu.open then
-        menu.tick()
+        menu.tick(dt)
         if hover_menu(self.cursor_x, self.cursor_y, self.vh or 0) then
             sfx.ui("ui_move")
         end
@@ -891,6 +891,7 @@ function update(self, dt)
             -- the keyboard does not have to make.
             go = tapped[hash("select")] or tapped[hash("guns")],
             back = tapped[hash("menu")] or tapped[hash("cancel")],
+            rub = tapped[hash("backspace")],
         })
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
         if act then apply_menu(self, act) end
@@ -1429,6 +1430,10 @@ end
 -- knows what any of them mean, which is what keeps the tree a description of
 -- itself rather than a second copy of the game.
 function apply_menu(self, act)
+    -- The menu started a clipboard read and is waiting for the browser. There
+    -- is nothing for this file to do about it; the action exists so the press
+    -- makes the noise a press makes.
+    if act == "pasting" then return end
     if act == "ship" then
         -- With no game on, this is simply the hull you will arrive in.
         if not self.online then
@@ -1644,6 +1649,20 @@ function on_message(self, message_id, message)
 end
 
 function on_input(self, action_id, action)
+    -- What a keyboard typed, while something is waiting to be typed into.
+    -- This is the only text entry in the client and it exists for exactly one
+    -- string: an account key, twelve characters of an alphabet with no
+    -- lowercase and no punctuation in it. The filtering is the menu's, so a
+    -- key that arrives from the clipboard is cleaned the same way.
+    if action_id == hash("text") and action.text then
+        local moved = false
+        for ch in string.gmatch(action.text, ".") do
+            if menu.type_key(ch) then moved = true end
+        end
+        if moved then sfx.ui("ui_move") end
+        return moved
+    end
+
     -- A press is a press on whatever it landed on. The interface publishes its
     -- own hit boxes in the pixel space it drew them in, so this needs no
     -- second copy of the layout.
@@ -1729,6 +1748,10 @@ function on_input(self, action_id, action)
                     act, moved = menu.click_close()
                 elseif r.action == "answer" then
                     act, moved = menu.click_answer(r.value)
+                elseif r.action == "letter" then
+                    moved = menu.type_key(r.value)
+                elseif r.action == "rub" then
+                    moved = menu.rub_key()
                 else
                     act, moved = menu.click(r.value)
                 end

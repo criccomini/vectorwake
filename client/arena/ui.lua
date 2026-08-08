@@ -3120,6 +3120,61 @@ local function empty_state(x, y, w, h, e)
     end
 end
 
+-- Twelve slots for a key, filled left to right, the next one lit. Drawn as
+-- rules rather than boxes: a row of empty boxes reads as a form, and this
+-- interface has no forms in it.
+local function key_slots(cx, y, typed, n)
+    local sw, gap, group = 20 * S, 4 * S, 12 * S
+    local total = n * sw + (n - 1) * gap + 2 * (group - gap)
+    local x = cx - total / 2
+    for i = 1, n do
+        local ch = string.sub(typed, i, i)
+        local here = (i == #typed + 1)
+        local col = (ch ~= "" or here) and pal.FRIEND or pal.DIM
+        if here then rect(x, y, sw, 26 * S, pal.a(pal.FRIEND, 0.16)) end
+        u:seg(x, ry(y + 26 * S), x + sw, ry(y + 26 * S), 1.2 * S,
+              pal.a(col, here and 0.95 or (ch ~= "" and 0.6 or 0.35)), true)
+        if ch ~= "" then
+            txt(ch, x + sw / 2, y + 13 * S, 16 * S, pal.FRIEND, "center",
+                nil, true)
+        end
+        x = x + sw + gap
+        -- Four to a group, which is how the key is written wherever it is
+        -- shown, so what is typed looks like what is being copied.
+        if i % 4 == 0 then x = x + group - gap end
+    end
+    return 26 * S
+end
+
+-- The alphabet, for a machine with no keyboard to raise. Every cell is a tap
+-- target, and the last one rubs a character out: a thumb needs somewhere to
+-- put a mistake.
+local function key_grid(cx, y, alphabet)
+    -- Eleven across, which is the one width where the alphabet and the cell
+    -- that rubs a character out come to exactly three rows: thirty two letters
+    -- laid out eight to a row leave the thirty third alone on a row of its
+    -- own, under the answers, looking like a typo.
+    local cols, cw, chh, gap = 11, 28 * S, 26 * S, 3 * S
+    local total = cols * cw + (cols - 1) * gap
+    local x0 = cx - total / 2
+    local n = #alphabet
+    for i = 1, n + 1 do
+        local ch = (i <= n) and string.sub(alphabet, i, i) or "<"
+        local r0 = math.floor((i - 1) / cols)
+        local c0 = (i - 1) % cols
+        local x = x0 + c0 * (cw + gap)
+        local yy = y + r0 * (chh + gap)
+        txt(ch, x + cw / 2, yy + chh / 2, 14 * S, pal.a(pal.DIM, 0.85),
+            "center", nil, true)
+        if i <= n then
+            hit(x, yy, cw, chh, "letter", ch)
+        else
+            hit(x, yy, cw, chh, "rub")
+        end
+    end
+    return math.ceil((n + 1) / cols) * (chh + gap) - gap
+end
+
 -- A question the menu wants answered before anything else, over the page that
 -- asked it.
 --
@@ -3140,9 +3195,12 @@ local function ask_card(x, y, w, h, a)
     -- under the wash would otherwise answer a question it cannot see.
     M.hits = {}
     text_dim = 1
-    local cw = math.min(340 * S, w - 24 * S)
-    -- A card with a code in it is taller by the line the code takes.
+    local grid = a.entry and M.touching
+    local cw = math.min((a.entry and 380 or 340) * S, w - 24 * S)
+    -- A card with a code in it is taller by the line the code takes, and one
+    -- being typed into is taller by its slots and whatever fills them.
     local ch = (a.code and 152 or 110) * S
+    if a.entry then ch = (grid and 248 or 152) * S end
     local cx = x + (w - cw) / 2
     local cy = y + (h - ch) / 2
     rect(cx, cy, cw, ch, pal.a(pal.BTN_BG, 0.98))
@@ -3156,6 +3214,16 @@ local function ask_card(x, y, w, h, a)
     -- card anybody has to get right.
     if a.code then
         txt(a.code, mid, cy + 72 * S, 30 * S, pal.FRIEND, "center", nil, true)
+    end
+    if a.entry then
+        local ey = cy + 58 * S
+        local eh = key_slots(mid, ey, a.entry.typed or "", a.entry.n or 12)
+        -- The alphabet only where there is no keyboard to raise. On a desktop
+        -- the keyboard is the input and a drawn one would be a picture of the
+        -- thing under the player's hands.
+        if grid then
+            key_grid(mid, ey + eh + 16 * S, a.entry.alphabet or "")
+        end
     end
     -- Laid out from the middle out rather than from an edge in, so the row of
     -- answers stays centred whatever the words are.

@@ -31,6 +31,11 @@ local account = {
     key = "", name = "", claim = function() end, aim = function() end,
     claimed = true, base = "https://meta", link_code = "",
 }
+account.redeemed = nil
+function account.redeem_key(key, cb)
+    account.redeemed = key
+    if cb then cb(key == "VW7KQ4M2XP9BHT") end
+end
 function account.link(cb)
     account.link_code = "408317"
     if cb then cb(true) end
@@ -355,6 +360,64 @@ menu.ask = nil
 local act7 = menu.step({go = true})
 check("and from the home screen it just joins",
       act7 == "join" and menu.ask == nil, tostring(act7))
+
+-- --- a key is typed into the card, twelve slots and nothing else ---------
+--
+-- The only text entry in this client, and it exists for one string. What fills
+-- the slots is a keyboard, a clipboard, or the alphabet drawn under them; all
+-- three arrive here, so all three are filtered here.
+
+menu.hover_stage(nil)
+menu.ask = nil
+menu.home = true
+menu.stack = {"root"}
+menu.sel = {}
+menu.ask_key()
+check("the card asks for a key with empty slots",
+      menu.ask ~= nil and menu.ask.entry ~= nil
+          and menu.ask.entry.typed == "" and menu.ask.entry.n == 12,
+      tostring(menu.ask and menu.ask.entry and menu.ask.entry.typed))
+
+check("a letter of the alphabet lands in a slot", menu.type_key("7")
+          and menu.ask.entry.typed == "7", menu.ask.entry.typed)
+-- Lowercase is the same letter: nobody types a key twice to find that out.
+check("and lower case is the same letter", menu.type_key("k")
+          and menu.ask.entry.typed == "7K", menu.ask.entry.typed)
+-- The four letters the alphabet drops are dropped rather than shown wrong.
+check("a letter that is not in the alphabet is refused",
+      menu.type_key("I") == false and menu.type_key("-") == false
+          and menu.ask.entry.typed == "7K", menu.ask.entry.typed)
+check("backspace takes one back",
+      menu.rub_key() and menu.ask.entry.typed == "7", menu.ask.entry.typed)
+check("and stops at empty", menu.rub_key() and menu.rub_key() == false,
+      menu.ask.entry.typed)
+
+-- Pressing paste is a hand reaching past the words rather than an answer, so
+-- the card has to still be there when the clipboard comes back.
+menu.ask_key()
+menu.ask.keys[#menu.ask.keys + 1] = {label = "paste", act = "paste"}
+local act_p = menu.click_answer(#menu.ask.keys)
+check("pressing paste leaves the card up",
+      act_p == "pasting" and menu.ask ~= nil and menu.ask.entry ~= nil,
+      tostring(act_p) .. ", ask " .. tostring(menu.ask))
+
+-- A paste carries whatever was on the clipboard, which is usually the whole
+-- line: prefix, dashes and all.
+menu.paste_key("vw-7kq4-m2xp-9bht")
+check("a paste fills the slots and sends the key",
+      account.redeemed == "VW7KQ4M2XP9BHT" and menu.ask == nil,
+      tostring(account.redeemed) .. ", ask " .. tostring(menu.ask))
+
+-- Twelve typed characters send themselves; there is no key to press.
+account.redeemed = nil
+menu.ask_key()
+for ch in string.gmatch("7KQ4M2XP9BHZ", ".") do menu.type_key(ch) end
+check("twelve typed characters send themselves",
+      account.redeemed == "VW7KQ4M2XP9BHZ", tostring(account.redeemed))
+check("and a key the server refuses empties the slots and stays up",
+      menu.ask ~= nil and menu.ask.entry.typed == "",
+      tostring(menu.ask and menu.ask.entry.typed))
+menu.ask = nil
 
 -- --- the device code is a card, and answering it never takes the code away -
 --
