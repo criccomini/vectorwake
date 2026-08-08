@@ -157,6 +157,11 @@ local sim = {
     ship_charge = function() return 2 end,
     ship_mod = function(_, t, m) return (mods[t] and mods[t][m]) or 0 end,
     ship_multi_off = function() return multi_off end,
+    -- The zone's own shrapnel ladder, which is what the mark counts ticks
+    -- off. The baseline's numbers: a rung buys a pattern, and the pattern
+    -- says how many fragments. Nothing here doubles 4, 8, 16 by arithmetic,
+    -- because the drawing must not either.
+    shrap_count = function(n) return ({2, 4, 8})[math.min(n, 3)] or 0 end,
     charge_max = function() return 3 end,
     has_trigger = function() return true end,
     trigger_rate = function() return 1 end,
@@ -334,6 +339,36 @@ for i = 1, #pal.MODS do
     end
 end
 
+-- Shrapnel counts the zone's fragments rather than a ramp of its own.
+--
+-- Every other add-on's magnitude is a number the zone scales with `mod_step`.
+-- Shrapnel's is a whole pattern per rung, so the only way for a drawing to
+-- know how many fragments a rung buys is to ask, and the drawing that worked
+-- it out instead said six, eight and ten against a baseline that throws two,
+-- four and eight. Driven off a ladder this file makes up, so what is measured
+-- is that the mark follows the zone rather than that it agrees with one.
+for _, ladder in ipairs({{2, 4, 8}, {3, 5, 31}}) do
+    sim.shrap_count = function(n) return ladder[math.min(n, 3)] or 0 end
+    for rungs = 1, 3 do
+        mods = {[1] = {[3] = rungs}}
+        frame()
+        local b = row_box("bomb")
+        local drew = b and (#cell(b) - bare_n) or 0
+        check(string.format("%d rung(s) of shrapnel draws %d fragments",
+                            rungs, ladder[rungs]),
+              drew == ladder[rungs],
+              string.format("%d ticks for %d fragments", drew, ladder[rungs]))
+    end
+end
+-- A rung the zone put no pattern on throws nothing, and the mark says so.
+sim.shrap_count = function() return 0 end
+mods = {[1] = {[3] = 2}}
+frame()
+check("a rung with no pattern behind it draws no fragments",
+      #cell(row_box("bomb")) == bare_n,
+      "ticks for fragments the zone does not throw")
+sim.shrap_count = function(n) return ({2, 4, 8})[math.min(n, 3)] or 0 end
+
 -- And on the gun, which wears the same six against a different round.
 mods = {}
 frame()
@@ -358,13 +393,15 @@ local function measure(key)
     return #c, x0 or 0, y0 or 0, x1 or 0, y1 or 0
 end
 
--- The gun draws one line or three, and a ring or no ring, at any depth. That
--- is a decision rather than an oversight: how deep the fan or the bouncing
--- runs is for colour to carry, and a shape at this size cannot hold a count as
--- well as an identity. Pinned here rather than left out, so that adding depth
--- back into the shape reads as contradicting a decision instead of passing
+-- Bouncing is the exception, on both triggers: a ring or no ring, at any
+-- depth. That is a decision rather than an oversight. How many walls deep it
+-- runs is for the ladder beside the row to carry, and a ring three points
+-- across cannot hold a count as well as an identity. The gun's fan goes the
+-- same way, since the alternative is answering "how many barrels" with a
+-- count of strokes. Pinned here rather than left out, so that putting depth
+-- back into either shape reads as contradicting a decision instead of passing
 -- quietly.
-local FIXED = {[0] = {[0] = true, [1] = true}, [1] = {}}
+local FIXED = {[0] = {[0] = true, [1] = true}, [1] = {[1] = true}}
 
 for _, t in ipairs({{0, "gun"}, {1, "bomb"}}) do
     for i = 1, #pal.MODS do

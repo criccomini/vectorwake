@@ -506,6 +506,20 @@ function M.help_at(x, y)
     return found
 end
 
+-- The screen's unsafe margins, in drawable pixels: what an iPhone's island,
+-- notch, and rounded corners cover at the left, right, and top edges. The
+-- page runs edge to edge under them on purpose (viewport-fit=cover in the
+-- template), so the world draws everywhere and only the furniture anchored
+-- to an edge steps inside. Set by the caller from what the page measures;
+-- zero everywhere hardware covers nothing, which is every desktop and most
+-- of the phones. There is deliberately no bottom inset: the home indicator
+-- overlays the pads the way it overlays every full-screen game's controls,
+-- and lifting them a further 21 points bought nothing but reach.
+local SL, SR, ST = 0, 0, 0
+function M.safe(l, r, t)
+    SL, SR, ST = l or 0, r or 0, t or 0
+end
+
 -- `now` is the frame's clock in seconds, for the few things on screen that
 -- move on their own. Nothing that is laid out depends on it, so a caller with
 -- no clock draws the same interface at rest.
@@ -579,14 +593,15 @@ local function dial()
     if M.map then
         side = math.max(side,
                         math.min(math.min(W, H) * 0.66, H * 0.66,
-                                 W - pad - math.max(chip_right + 8 * S,
-                                                    124 * S)))
+                                 W - SR - pad - math.max(chip_right + 8 * S,
+                                                         124 * S)))
     end
     -- Whole pixels. The dial snaps its contents to its own origin, so an
     -- origin landing on a half pixel would put the fraction back into every
     -- blip it was taken out of. Density is not always a whole number and
     -- neither, then, is the padding.
-    local ix, iy = math.floor(W - pad - side), math.floor(pad + 18 * S)
+    local ix, iy = math.floor(W - SR - pad - side),
+                   math.floor(ST + pad + 18 * S)
     side = math.floor(side)
     -- Filed here rather than in the two functions that draw into it, because
     -- the dial and the map are the same corner and want the same word beside
@@ -603,7 +618,7 @@ end
 -- than guess.
 function M.radar_span()
     local _, _, side = dial()
-    return PAD * S * 2 + side + 18 * S
+    return ST + PAD * S * 2 + side + 18 * S
 end
 
 -- You, as an arrow. On any view of the arena the one thing worth knowing
@@ -946,7 +961,7 @@ local SHOWN = 9
 -- Where the scoreboard starts: under the menu chip when there is one, since
 -- the chip owns the corner.
 local function top_y()
-    return PAD * S + 32 * S
+    return ST + PAD * S + 32 * S
 end
 
 local function scores(me, pilots)
@@ -1022,7 +1037,7 @@ local function scores(me, pilots)
     -- Header, rows, and a line of totals under them.
     local foot = 16 * S
     local h = head + shown * LINE * S + foot + 8 * S
-    local x = PAD * S
+    local x = SL + PAD * S
     -- Enough behind it to read over a starfield, and no border: a rule down
     -- the left is what holds the column, the way it holds a wall face.
     rect(x, top_y(), w, h, pal.a(pal.BG, 0.62))
@@ -1169,7 +1184,7 @@ end
 local function feed(lines, top)
     local shown = math.min(#lines, M.compact and 4 or M.FEED_MAX)
     if shown == 0 then return end
-    local right = W - PAD * S - PANEL_X * S
+    local right = W - SR - PAD * S - PANEL_X * S
     local y = top + PANEL_Y * S
     for i = 1, shown do
         local f = lines[i]
@@ -1265,309 +1280,21 @@ local CHARGE_HUES = {repel = pal.CHARGE_COL, burst = pal.BURST}
 
 -- --- the two weapon marks --------------------------------------------------
 --
--- Both are one drawing done twice: a path with a head on the end of it,
--- travelling right. A bolt is a long streak ending in a hot point, a bomb a
--- shorter trail around a ringed core, which is what each of them looks like
--- out in the arena. Drawing them to the same skeleton is what lets one set of
--- add-on marks fit both, because every add-on in this game is something that
--- happens either to the path or to the head.
+-- Both live in arena/marks.lua, which is also where the trigger pads get
+-- theirs, so a phone and a desktop cannot end up showing a hull two different
+-- loadouts. All this end does is hand over a point in its own coordinates.
+
+-- A trigger's mark, standing its round on the stack's axis. Returns how far
+-- right the whole thing reached, since a hull holding three add-ons draws a
+-- good deal wider than one holding none and the row is measured by what it
+-- drew rather than by a constant.
 --
--- Each returns the mark it drew: where the head is, where the trail begins,
--- and how far out from the head anything has reached so far. Add-ons hang off
--- those three numbers, so a mark can grow without any of them being told a
--- size in advance.
-
--- Both are given where the round itself goes, not where its cell is, and the
--- trail is drawn backwards from there. That is what lets the rows line up: a
--- bolt is a long streak with a small head and a bomb a short one with a big
--- head, so hanging them off a shared left edge or a shared cell centre puts
--- the round in a different place on each row, and the round is the thing the
--- eye lands on. Every mark in this stack now stands its own subject on one
--- axis: the two heads, the repel's rings, the burst's hub, the green.
--- The gun is a line with a dot on the end of it, and that is the whole mark.
--- One line, or three when the fan is on; a ring round each dot when the rounds
--- come back off walls. It was a tapered streak before, drawn the way the arena
--- draws a bolt in flight, and at the size a corner allows that came out as a
--- grey smudge with a speck on it. What survives being drawn small is a line
--- and a dot.
---
--- The lines all leave from one point, because that point is the gun. A fan
--- that starts from three places is three guns.
--- The fan is as wide as it can be without the outer dots leaving the row: at
--- this length the spread works out to two thirds of a hull unit, which puts
--- the outermost ring on MARK_REACH, the same edge every other mark stops at.
--- Narrower than this and the three dots and their rings sit on top of each
--- other, which is what the first cut did.
---
--- None of it moves with how deep an add-on is. One line or three, and a ring
--- or no ring: that is the whole vocabulary, and how many rungs deep the fan or
--- the bouncing runs is a question for colour to answer later. A shape that
--- also has to carry a count is a shape doing two jobs at the size where it can
--- barely do one.
-local BOLT_LEN, BOLT_DOT, BOLT_FAN =
-    marks.BOLT_LEN, marks.BOLT_DOT, marks.BOLT_FAN
-
--- `held` is a barrel you have but are not firing: drawn, so the fan does not
--- appear to vanish when it is declined, but not counted as a round. What is
--- not firing does not bounce, and a ring on it says it does.
--- The angle is negated on the way out and the dot flipped back on the way in.
--- This file reckons y downward and the marks reckon it upward, so a fan handed
--- over unturned comes back mirrored. It is a symmetric fan and nothing would
--- have shown, which is exactly why it is done here rather than left to be
--- noticed.
-local function bolt_line(m, ang, col, held)
-    local dx, dy = marks.bolt_line(m.origin, ry(m.y), -ang, m.k, col)
-    dy = ry(dy)
-    if not held then m.dots[#m.dots + 1] = {dx, dy} end
-    m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
-end
-
-local function mk_bolt(hx, cy, k, col)
-    local m = {x = hx, y = cy, k = k, bolt = true,
-               tail = hx - k * BOLT_LEN, origin = hx - k * BOLT_LEN,
-               dots = {}, out = k * BOLT_DOT, far = k * BOLT_DOT,
-               -- Nothing on this mark rings the head except the add-ons that
-               -- ring any mark. The fan hangs off the muzzle and the bounce
-               -- ring sits on a dot, so neither takes a share of the room.
-               radial = {false, false, true, true, false, true}}
-    bolt_line(m, 0, col)
-    return m
-end
-
-local BOMB_LEN, BOMB_R = marks.BOMB_LEN, marks.BOMB_R
-
-local function mk_bomb(hx, cy, k, col)
-    marks.bomb_body(hx, ry(cy), k, col)
-    return {x = hx, y = cy, k = k, tail = hx - k * BOMB_LEN,
-            out = k * BOMB_R, far = k * BOMB_R}
-end
-
--- Where to put the round so that the mark reads as centred on the stack's
--- axis, which is not the same as putting the round there.
---
--- Neither mark is symmetric about its own round. A gun's three lines all leave
--- from a muzzle a hull and a half behind the dot; a bomb trails. Stand the
--- round on the axis and the whole drawing hangs off to the left of it, which
--- is exactly what it looked like. So the round is offset by half the mark's
--- own reach, and what lines up down the stack is the drawing.
---
--- Measured off the drawing rather than worked out from it, because the two
--- disagree and the eye follows the drawing. A bounding box counts a bomb's
--- trail at its full length; the trail fades to nothing along that length, so
--- most of what the box measures is not on the screen. Centring the box
--- therefore shoves the bomb bodily right of the three rows under it.
---
--- These are the offsets that put each mark's ink where the repel's rings, the
--- burst's hub and the green already sit, read off a screenshot of the corner
--- at four times size. The bomb wants none, its ring being nearly all of what
--- shows; the gun wants a little under a third of a hull unit, its three solid
--- lines pulling left of the dots that end them.
-local BOLT_BIAS, BOMB_BIAS = 0.285, 0
-
--- Every add-on takes the mark, a colour and how many rungs deep it is, and
--- draws its rungs rather than reporting them. A number beside a symbol was
--- what the stack did before, and it made a corner of arithmetic out of six
--- facts a shape can carry: one rung of multifire is two more barrels, one
--- rung of bouncing is one more wall, a rung of proximity is a wider reach.
--- The zone says so in mod_step, and this draws what the zone said.
---
--- Four of the six ring the head, and those share out `m.step`: one ring of
--- room each, decided before any of them draws. See weapon_mark for why. Depth
--- moves a mark inside its own ring rather than pushing past it, so a third
--- rung of proximity never costs shrapnel the room it was given.
---
--- `m.out` is the cursor through those shares and `m.far` is how far anything
--- actually got drawn. They are not the same number: a mark that spends less
--- than its share should not claim the width it did not use.
-
-local function dec_multi(m, col, n)
-    -- On a gun, two more barrels off the same muzzle and that is all: one line
-    -- or three, never five. The rungs widen the fan instead of adding lines,
-    -- because a corner that answers "how many barrels" with a count of strokes
-    -- stops being a shape and starts being a tally.
-    if m.bolt then
-        -- Two more barrels off the same muzzle, at any depth. Declined, they
-        -- stay on the mark and stop being rounds: see bolt_line.
-        bolt_line(m, -BOLT_FAN, col, m.off)
-        bolt_line(m, BOLT_FAN, col, m.off)
-        return
-    end
-    local len = m.x - m.tail
-    for i = 1, math.min(n, 3) do
-        local a = 0.26 * i
-        local d = len * (1 - 0.14 * i)
-        for _, s in ipairs({-1, 1}) do
-            u:seg_fade(m.tail, ry(m.y),
-                       m.tail + math.cos(a) * d,
-                       ry(m.y + s * math.sin(a) * d),
-                       pen(m.k, 0.078), pen(m.k, 0.222), 0,
-                       (col[4] or 1) * 0.85, col)
-        end
-    end
-end
-
--- A ball on each end of the path. A stroke that runs off into nothing is a
--- shot that stops where it lands, and one stopped at both ends is a shot that
--- comes back; a rung is one more wall, so it is one more ball back along the
--- trail.
-local function dec_bounce(m, col, n)
-    -- On a gun, a ring round every dot. A round that stops where it lands is a
-    -- dot; one that carries on off the wall is a dot with something still
-    -- around it.
-    if m.bolt then
-        for _, d in ipairs(m.dots) do
-            local r = marks.bolt_bounce(d[1], ry(d[2]), m.k, col)
-            m.far = math.max(m.far, d[1] - m.x + r)
-        end
-        return
-    end
-    local r = math.min(m.step * 0.42, m.k * 0.16)
-    local len = m.x - m.tail
-    -- Sitting against the head rather than out in the middle of its share.
-    -- A ball with clear sky between it and the round it belongs to reads as a
-    -- second object in the row, not as the end of the first one.
-    local at = m.out + r * 1.2
-    u:disc(m.x + at, ry(m.y), r, 8, col)
-    for i = 1, math.min(n, 3) do
-        u:disc(m.tail + (i - 1) * len * 0.17, ry(m.y), r, 8,
-               pal.a(col, (col[4] or 1) * (1 - (i - 1) * 0.22)))
-    end
-    m.out = m.out + m.step
-    m.far = math.max(m.far, at + r)
-end
-
--- A fuse: the reach it goes off at, broken because nothing is there yet, and
--- a rung further out because a rung is another tile of reach. Broken by a
--- quarter rather than by half, so that it still reads as a ring when it is
--- sharing the mark with the fragments that hang outside it.
-local function dec_prox(m, col, n)
-    local r = m.out + m.step * (0.52 + 0.14 * math.min(n, 3))
-    marks.bomb_prox(m.x, ry(m.y), r, m.k, pal.a(col, (col[4] or 1) * 0.9))
-    m.out = m.out + m.step
-    m.far = math.max(m.far, r)
-end
-
--- What is left of it afterwards, thrown clear of everything else the mark
--- wears. Two more fragments a rung, which is the one add-on whose count a
--- player can read straight off the arena.
-local function dec_shrap(m, col, n)
-    local r0 = m.out + m.step * 0.28
-    local r1 = m.out + m.step
-    local c = 4 + 2 * math.min(n, 3)
-    for i = 0, c - 1 do
-        local a = (i + 0.5) * 2 * math.pi / c
-        local dx, dy = math.cos(a), math.sin(a)
-        u:seg(m.x + dx * r0, ry(m.y + dy * r0),
-              m.x + dx * r1, ry(m.y + dy * r1), pen(m.k, 0.100), col)
-    end
-    m.out = r1
-    m.far = math.max(m.far, r1)
-end
-
--- Rime across the trail. Freeze is the one add-on that does nothing to the
--- round and everything to whoever it reaches, so it is drawn on the path
--- rather than around the head: the shot is unchanged, and it is carrying
--- something.
-local function dec_freeze(m, col, n)
-    local len = m.x - m.tail
-    local t = m.k * 0.24
-    for i = 1, 2 + math.min(n, 2) do
-        local px = m.tail + len * (0.28 + 0.15 * (i - 1))
-        u:seg(px, ry(m.y - t), px, ry(m.y + t), pen(m.k, 0.100), col)
-    end
-end
-
--- A shove standing off the head, and a rung is another wave of it. The repel
--- wears rings closed all the way round because it happens at a place; this
--- one opens forward, because it is a shove a round is carrying somewhere.
-local function dec_push(m, col, n)
-    local rungs = math.min(n, 3)
-    for i = 1, rungs do
-        u:arc(m.x, ry(m.y), m.out + m.step * (i / rungs), -0.85, 0.85,
-              pen(m.k, 0.100), 6,
-              pal.a(col, (col[4] or 1) * (1 - 0.2 * (i - 1))))
-    end
-    m.out = m.out + m.step
-    m.far = math.max(m.far, m.out)
-end
-
--- In pal.MODS order, which is also the order they draw in: each of the ones
--- that rings the head takes the next ring of room out from the last, so the
--- fuse sits inside the fragments and the fragments inside the shove. Reorder
--- this list and they land on top of each other.
-local MOD_DECOR = {dec_multi, dec_bounce, dec_prox, dec_shrap, dec_freeze,
-                   dec_push}
--- Which of them ring the head, and so want a share of the room around it.
--- Multifire hangs off the tail and freeze sits on the trail; neither costs
--- the mark any width. This is the bomb's answer; a bolt carries its own, since
--- it draws its fan and its bounce into the mark itself.
-local MOD_RADIAL = {false, true, true, true, false, true}
--- How far out from the head a mark may reach, against its own size. The row
--- is 22 points tall and a mark has to live inside it however loaded it is,
--- so this is what the shares are shares of.
-local MARK_REACH = 1.05
-
--- A trigger's mark: the round it fires, wearing what the greens did to it.
---
--- In the round's own colour, which is the colour it will be when it leaves the
--- gun: one ramp for every round in the game, so the rung a weapon has climbed
--- is legible in the corner exactly as it is legible coming at you across the
--- arena, and a player who has learned one has learned the other. The mark was
--- grey before, which said "weapon" and nothing else, and left the level to be
--- read off the ladder beside it.
---
--- The add-ons are the same colour run hot, so what a green added reads as part
--- of the round rather than as a separate object parked next to it. Shrapnel is
--- the exception and keeps the violet the arena throws fragments in: they sit
--- on no ladder and answer to no aim, and that is a fact about the weapon worth
--- carrying over.
---
--- The room outside the round is shared out before anything draws rather than
--- spent first come. Two add-ons take half of it each and read clearly; six
--- take a sixth each and read as a dense mark, which is the right way round,
--- and no loadout can push a mark into the row above it. Nothing in the
--- catalog gives one trigger more than three.
---
--- Returns how far right the whole thing reached, since a hull holding three
--- add-ons draws a good deal wider than one holding none and the row is
--- measured by what it drew rather than by a constant.
+-- The y flip is the one thing that cannot move into the shared file. This one
+-- reckons y downward and marks.lua reckons it upward, and every earlier
+-- attempt to let the shared drawing decide for itself put a second flip
+-- somewhere and mirrored a mark.
 local function weapon_mark(cx, cy, k, me, t)
-    local gun = t == sim.TRIG_GUN
-    local lvl = sim.ship_level(me, t)
-    local base = pal.a(pal.rung(lvl), 0.9)
-    local at = cx + k * (gun and BOLT_BIAS or BOMB_BIAS)
-    local m = gun and mk_bolt(at, cy, k, base) or mk_bomb(at, cy, k, base)
-    -- Which add-ons want a ring of room is a fact about the mark, not about
-    -- the add-on: the fan and the bounce ring cost a gun nothing, and cost a
-    -- bomb a share each.
-    local radial = m.radial or MOD_RADIAL
-    local rings = 0
-    for i = 1, #pal.MODS do
-        if radial[i] and sim.ship_mod(me, t, i - 1) > 0 then
-            rings = rings + 1
-        end
-    end
-    m.step = rings > 0 and (k * MARK_REACH - m.out) / rings or 0
-    -- A declined add-on is drawn dimmed rather than dropped. You still hold
-    -- it, and a fan that quietly stopped fanning with nothing on screen to
-    -- say so is a weapon that looks broken.
-    local off = sim.ship_multi_off and sim.ship_multi_off(me)
-    m.off = off and true or false
-    -- The round's hue run toward white, which is how this palette makes
-    -- anything hotter, so an add-on is the same weapon louder rather than a
-    -- different colour stuck on the side of it.
-    local add = pal.a(pal.hot(pal.rung(lvl), 0.45), 0.95)
-    for i = 1, #pal.MODS do
-        local n = sim.ship_mod(me, t, i - 1)
-        if n > 0 then
-            local col = add
-            -- Fragments answer to nobody's aim, in the arena and here.
-            if i == 4 then col = pal.a(pal.BURST, 0.95) end
-            if off and i == 1 then col = pal.a(pal.DIM, 0.45) end
-            MOD_DECOR[i](m, col, n)
-        end
-    end
-    return m.x + m.far
+    return marks.weapon(cx, ry(cy), k, me, t)
 end
 
 -- What those marks mean, in words, for the hover and the held H. The
@@ -1623,14 +1350,14 @@ local function status(me, charges, lift)
     local z = S * math.max(1, math.min(STACK,
                                        (H / S) * STACK_SHARE / (n * 22)))
     local rows_h = 22 * z
-    local x = PAD * S
+    local x = SL + PAD * S
     -- The axis every mark stands its subject on: the head of each round, the
     -- centre of the repel's rings and the burst's hub, the middle of the
     -- green. Far enough in that a bolt's trail, which runs a hull and a half
     -- back from its head, still starts inside the margin.
     local mid = x + 15 * z
     -- Where the counting starts. Close in, because a mark cannot run into it:
-    -- MARK_REACH bounds how far past its own subject the widest loadout
+    -- marks.MARK_REACH bounds how far past its subject the widest loadout
     -- draws, and this clears that. The column used to sit far enough out for
     -- a row of separate add-on symbols that no longer exists, which left every
     -- ordinary row reading as two stacks with a hole between them.
@@ -1721,7 +1448,7 @@ end
 local function loadout(me, class_names, top)
     if not M.details then return top or 0 end
     local w = COL_W * S
-    local x = PAD * S
+    local x = SL + PAD * S
     local h = 54 * S
     local y = (top or 0) + 6 * S
     rect(x, y, w, h, pal.a(pal.BG, 0.62))
@@ -1771,7 +1498,7 @@ local function inspect(o, top)
     end
     local p = o.pilots[i]
     local w = COL_W * S
-    local x = PAD * S
+    local x = SL + PAD * S
     local rowh = 15 * S
     -- Name, then the rows that always exist, then the team when it means
     -- something. Counted rather than guessed so the panel is exactly as tall
@@ -2271,7 +1998,7 @@ local function menu_button()
     -- ink and PLAYERS in slate, which is two controls that do the same kind of
     -- thing wearing two different states before either had been pressed. What
     -- they wear now is off or on, and the panel each opens is what turns it on.
-    local x, y = PAD * S, PAD * S
+    local x, y = SL + PAD * S, ST + PAD * S
     -- Each key is as wide as its own word. A slot cut for four letters is a
     -- slot the longer of the two runs out of.
     local cx = x
@@ -2297,8 +2024,8 @@ local function link(lag)
     local q = 4
     if lag > 24 then q = 1 elseif lag > 12 then q = 2 elseif lag > 6 then q = 3 end
     local pad = (M.compact and 8 or PAD) * S
-    local right = W - pad
-    local base = pad + 13 * S
+    local right = W - SR - pad
+    local base = ST + pad + 13 * S
     for k = 0, 3 do
         local bh = (3 + k * 2.6) * S
         local bx = right - (26 - k * 6) * S
@@ -2381,7 +2108,7 @@ local function debug_hud(o, top)
     size = size * k
     local h = 24 * S + per * rowh + 6 * S
     local w = colw * cols
-    local x = W - PAD * S - w
+    local x = W - SR - PAD * S - w
     rect(x, y, w, h, pal.a(pal.BG, 0.78))
     vrule(x, y, h, pal.a(pal.PRIZE, 0.8))
     txt("DEBUG", x + 10 * S, y + 15 * S, size, pal.a(pal.PRIZE, 0.9))
@@ -2409,7 +2136,7 @@ end
 local function coords(me)
     local pad = (M.compact and 8 or PAD) * S
     local x = dial()
-    local base = pad + 13 * S
+    local base = ST + pad + 13 * S
     txt("POS", x, base - 4 * S, (FONT - 3) * S, pal.a(pal.DIM, 0.8))
     txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
                       math.floor(sim.ship_y(me) / 16)),
@@ -2429,7 +2156,7 @@ local function flag_strip(me)
     local my_team = sim.ship_team(me)
     local pitch = 15 * S
     local x0 = W / 2 - (n - 1) * pitch / 2
-    local y = 30 * S
+    local y = ST + 30 * S
     for i = 0, n - 1 do
         local _, _, team = sim.flag_at(i)
         local col = (team == 255) and pal.a(pal.DIM, 0.55)
@@ -3542,19 +3269,19 @@ function M.menu(v)
     local vertical = not narrow
 
     if vertical then
-        local total = math.min(W - 2 * margin, 940 * S)
-        local x0 = (W - total) / 2
+        local total = math.min(W - SL - SR - 2 * margin, 940 * S)
+        local x0 = SL + (W - SL - SR - total) / 2
         -- Clear of what the ship is carrying. Over a game the corner stack
         -- holds the left edge, and on a phone held sideways a centred block
         -- lands right on it: the rail's marks and the words GUN and BOMB in
         -- the same column read as one broken thing. The stack stays, because
         -- what you are carrying is worth knowing while you pick a hull.
         if not home then
-            x0 = math.max(x0, 124 * S)
+            x0 = math.max(x0, SL + 124 * S)
             -- And give back what moving right took: the block is as wide as
             -- the room left of the far margin, or it hangs off the edge of
             -- the screen carrying the end of the keyboard with it.
-            total = math.min(total, W - x0 - margin)
+            total = math.min(total, W - SR - x0 - margin)
         end
         -- Wide enough for the words, at any height. A rail of marks alone
         -- was the short window's layout, on the argument that eight labelled
@@ -3587,19 +3314,19 @@ function M.menu(v)
         vrule(x0 + rw + 1 * S, top, block, pal.a(pal.RADAR_TILE, 0.75), 30 * S)
     else
         rh = (home and 78 or 84) * S
-        rw = W - 2 * margin
-        rx = margin
+        rw = W - SL - SR - 2 * margin
+        rx = SL + margin
         ry_ = H - margin - rh
-        sx, sw = margin, W - 2 * margin
+        sx, sw = SL + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two
         -- things in one place.
         local chip = home and 0 or 34 * S
-        sy = margin + head + chip
+        sy = ST + margin + head + chip
         sh = ry_ - 20 * S - sy
         rect(0, sy - 16 * S, W, sh + rh + 46 * S, pal.rgb(0x03050a, 0.5))
-        wordmark(margin, margin + chip + 22 * S, 30 * S)
-        u:seg(margin, ry(ry_ - 12 * S), W - margin, ry(ry_ - 12 * S),
+        wordmark(rx, ST + margin + chip + 22 * S, 30 * S)
+        u:seg(rx, ry(ry_ - 12 * S), W - SR - margin, ry(ry_ - 12 * S),
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
 

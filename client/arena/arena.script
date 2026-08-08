@@ -916,6 +916,19 @@ function update(self, dt)
         if html5 then
             local ok, r = pcall(html5.run, "window.vwLocked and '1' or ''")
             kb_locked = ok and r == "1"
+            -- What the hardware covers: the island, the notch, the rounded
+            -- corners, published by the template's reconciler as CSS pixels.
+            -- Once a second like the lock, because the values move only on
+            -- rotation and a second of a chip under the island is well
+            -- inside what a rotation already costs the eyes.
+            local ok2, ins = pcall(html5.run, "window.vwInsets || ''")
+            if ok2 and ins and ins ~= "" then
+                local l, rr, t = string.match(ins,
+                    "^([%d%.]+) ([%d%.]+) ([%d%.]+)")
+                self.safe_l = tonumber(l) or 0
+                self.safe_r = tonumber(rr) or 0
+                self.safe_t = tonumber(t) or 0
+            end
         end
     end
 
@@ -1201,6 +1214,13 @@ function update(self, dt)
     glow:flush()
 
     -- --- the interface ---------------------------------------------------
+    -- The page measures the insets in CSS pixels; the interface and the pads
+    -- lay out in drawable ones, so the density converts here, in the one
+    -- place both readers are told.
+    ui.safe((self.safe_l or 0) * density, (self.safe_r or 0) * density,
+            (self.safe_t or 0) * density)
+    touch.safe_l = (self.safe_l or 0) * density
+    touch.safe_r = (self.safe_r or 0) * density
     ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0)
     -- The interface stays up under the menu. Nothing is paused, so hiding the
     -- scoreboard and the radar behind a panel would be a lie about what is
