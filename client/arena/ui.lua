@@ -1235,13 +1235,19 @@ local function scores(me, pilots, watchers)
             -- own box below, which takes the wheel and would otherwise
             -- swallow the press: first box in wins.
             hit(x, y, w - 6 * S, LINE * S, "pilot", r.i)
+            -- Kills, deaths and points all in ink. Deaths read dimmer than
+            -- the two beside them for a while, which was a judgement about
+            -- the number rather than a fact about it: a column is either a
+            -- score this board keeps or it is not on the board, and greying
+            -- one of the three says the reader should care less about it
+            -- while still making them read past it.
             txt(tostring(r.k), kx, cy, num, pal.a(pal.INK, 0.85), "right")
-            txt(tostring(r.d), dx, cy, num, pal.a(pal.DIM, 0.85), "right")
-            -- Points in ink and the bounty in gold, which is the colour it
-            -- wears on a nameplate, in the corner stack and in the box this
-            -- row opens. Points held the gold while it was the only score
-            -- here; with both on the row, one of them has to be the one that
-            -- means bounty everywhere else.
+            txt(tostring(r.d), dx, cy, num, pal.a(pal.INK, 0.85), "right")
+            -- The bounty in gold, which is the colour it wears on a
+            -- nameplate, in the corner stack and in the box this row opens.
+            -- Points held the gold while it was the only score here; with
+            -- both on the row, one of them has to be the one that means
+            -- bounty everywhere else.
             txt(tostring(r.p), px, cy, num, pal.a(pal.INK, 0.85), "right")
             txt(tostring(r.b), bx, cy, num, pal.a(pal.BOUNTY, 0.9), "right")
         end
