@@ -30,6 +30,14 @@ M.counts = {}
 -- somebody actually has.
 M.has_bomb = true
 
+-- What an iPhone's island or notch covers at the sides, in drawable pixels,
+-- set by the caller from what the page measures. The pads and the stick's
+-- resting mark step inside them; the bottom is deliberately not represented,
+-- because the home indicator overlays every full-screen game's controls and
+-- lifting the whole row past it bought nothing but reach.
+M.safe_l = 0
+M.safe_r = 0
+
 local stick = nil         -- {id, ox, oy, x, y}
 local guns = nil          -- touch id holding the guns pad
 local bombs = nil
@@ -73,10 +81,10 @@ function M.layout(w, h, s)
     local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
     local gap = r * 0.35
     local row = r * 1.5
-    local gun_pad  = {x = w - r * 1.4, y = row, r = r}
+    local gun_pad  = {x = w - M.safe_r - r * 1.4, y = row, r = r}
     local bomb_pad = {x = gun_pad.x - (r + gap + r * 0.8), y = row,
                       r = r * 0.8}
-    local home  = {x = r * 1.6, y = r * 1.8, r = r * 1.15}
+    local home  = {x = M.safe_l + r * 1.6, y = r * 1.8, r = r * 1.15}
 
     -- The charges continue the row, smaller: they are tapped once in a while
     -- rather than held, and a target the size of a trigger would crowd the

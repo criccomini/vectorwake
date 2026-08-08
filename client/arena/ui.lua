@@ -506,6 +506,20 @@ function M.help_at(x, y)
     return found
 end
 
+-- The screen's unsafe margins, in drawable pixels: what an iPhone's island,
+-- notch, and rounded corners cover at the left, right, and top edges. The
+-- page runs edge to edge under them on purpose (viewport-fit=cover in the
+-- template), so the world draws everywhere and only the furniture anchored
+-- to an edge steps inside. Set by the caller from what the page measures;
+-- zero everywhere hardware covers nothing, which is every desktop and most
+-- of the phones. There is deliberately no bottom inset: the home indicator
+-- overlays the pads the way it overlays every full-screen game's controls,
+-- and lifting them a further 21 points bought nothing but reach.
+local SL, SR, ST = 0, 0, 0
+function M.safe(l, r, t)
+    SL, SR, ST = l or 0, r or 0, t or 0
+end
+
 -- `now` is the frame's clock in seconds, for the few things on screen that
 -- move on their own. Nothing that is laid out depends on it, so a caller with
 -- no clock draws the same interface at rest.
@@ -576,14 +590,15 @@ local function dial()
     if M.map then
         side = math.max(side,
                         math.min(math.min(W, H) * 0.66, H * 0.66,
-                                 W - pad - math.max(chip_right + 8 * S,
-                                                    124 * S)))
+                                 W - SR - pad - math.max(chip_right + 8 * S,
+                                                         124 * S)))
     end
     -- Whole pixels. The dial snaps its contents to its own origin, so an
     -- origin landing on a half pixel would put the fraction back into every
     -- blip it was taken out of. Density is not always a whole number and
     -- neither, then, is the padding.
-    local ix, iy = math.floor(W - pad - side), math.floor(pad + 18 * S)
+    local ix, iy = math.floor(W - SR - pad - side),
+                   math.floor(ST + pad + 18 * S)
     side = math.floor(side)
     -- Filed here rather than in the two functions that draw into it, because
     -- the dial and the map are the same corner and want the same word beside
@@ -600,7 +615,7 @@ end
 -- than guess.
 function M.radar_span()
     local _, _, side = dial()
-    return PAD * S * 2 + side + 18 * S
+    return ST + PAD * S * 2 + side + 18 * S
 end
 
 -- You, as an arrow. On any view of the arena the one thing worth knowing
@@ -943,7 +958,7 @@ local SHOWN = 9
 -- Where the scoreboard starts: under the menu chip when there is one, since
 -- the chip owns the corner.
 local function top_y()
-    return PAD * S + 32 * S
+    return ST + PAD * S + 32 * S
 end
 
 local function scores(me, pilots)
@@ -1019,7 +1034,7 @@ local function scores(me, pilots)
     -- Header, rows, and a line of totals under them.
     local foot = 16 * S
     local h = head + shown * LINE * S + foot + 8 * S
-    local x = PAD * S
+    local x = SL + PAD * S
     -- Enough behind it to read over a starfield, and no border: a rule down
     -- the left is what holds the column, the way it holds a wall face.
     rect(x, top_y(), w, h, pal.a(pal.BG, 0.62))
@@ -1166,7 +1181,7 @@ end
 local function feed(lines, top)
     local shown = math.min(#lines, M.compact and 4 or M.FEED_MAX)
     if shown == 0 then return end
-    local right = W - PAD * S - PANEL_X * S
+    local right = W - SR - PAD * S - PANEL_X * S
     local y = top + PANEL_Y * S
     for i = 1, shown do
         local f = lines[i]
@@ -1631,7 +1646,7 @@ local function status(me, charges, lift)
     local z = S * math.max(1, math.min(STACK,
                                        (H / S) * STACK_SHARE / (n * 22)))
     local rows_h = 22 * z
-    local x = PAD * S
+    local x = SL + PAD * S
     -- The axis every mark stands its subject on: the head of each round, the
     -- centre of the repel's rings and the burst's hub, the middle of the
     -- green. Far enough in that a bolt's trail, which runs a hull and a half
@@ -1729,7 +1744,7 @@ end
 local function loadout(me, class_names, top)
     if not M.details then return top or 0 end
     local w = COL_W * S
-    local x = PAD * S
+    local x = SL + PAD * S
     local h = 54 * S
     local y = (top or 0) + 6 * S
     rect(x, y, w, h, pal.a(pal.BG, 0.62))
@@ -1779,7 +1794,7 @@ local function inspect(o, top)
     end
     local p = o.pilots[i]
     local w = COL_W * S
-    local x = PAD * S
+    local x = SL + PAD * S
     local rowh = 15 * S
     -- Name, then the rows that always exist, then the team when it means
     -- something. Counted rather than guessed so the panel is exactly as tall
@@ -2264,7 +2279,7 @@ local function menu_button()
     -- ink and PLAYERS in slate, which is two controls that do the same kind of
     -- thing wearing two different states before either had been pressed. What
     -- they wear now is off or on, and the panel each opens is what turns it on.
-    local x, y = PAD * S, PAD * S
+    local x, y = SL + PAD * S, ST + PAD * S
     -- Each key is as wide as its own word. A slot cut for four letters is a
     -- slot the longer of the two runs out of.
     local cx = x
@@ -2290,8 +2305,8 @@ local function link(lag)
     local q = 4
     if lag > 24 then q = 1 elseif lag > 12 then q = 2 elseif lag > 6 then q = 3 end
     local pad = (M.compact and 8 or PAD) * S
-    local right = W - pad
-    local base = pad + 13 * S
+    local right = W - SR - pad
+    local base = ST + pad + 13 * S
     for k = 0, 3 do
         local bh = (3 + k * 2.6) * S
         local bx = right - (26 - k * 6) * S
@@ -2374,7 +2389,7 @@ local function debug_hud(o, top)
     size = size * k
     local h = 24 * S + per * rowh + 6 * S
     local w = colw * cols
-    local x = W - PAD * S - w
+    local x = W - SR - PAD * S - w
     rect(x, y, w, h, pal.a(pal.BG, 0.78))
     vrule(x, y, h, pal.a(pal.PRIZE, 0.8))
     txt("DEBUG", x + 10 * S, y + 15 * S, size, pal.a(pal.PRIZE, 0.9))
@@ -2402,7 +2417,7 @@ end
 local function coords(me)
     local pad = (M.compact and 8 or PAD) * S
     local x = dial()
-    local base = pad + 13 * S
+    local base = ST + pad + 13 * S
     txt("POS", x, base - 4 * S, (FONT - 3) * S, pal.a(pal.DIM, 0.8))
     txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
                       math.floor(sim.ship_y(me) / 16)),
@@ -2489,7 +2504,7 @@ local function flag_strip(me)
     local my_team = sim.ship_team(me)
     local pitch = 15 * S
     local x0 = W / 2 - (n - 1) * pitch / 2
-    local y = 30 * S
+    local y = ST + 30 * S
     for i = 0, n - 1 do
         local _, _, team = sim.flag_at(i)
         local col = (team == 255) and pal.a(pal.DIM, 0.55)
@@ -3599,19 +3614,19 @@ function M.menu(v)
     local vertical = not narrow
 
     if vertical then
-        local total = math.min(W - 2 * margin, 940 * S)
-        local x0 = (W - total) / 2
+        local total = math.min(W - SL - SR - 2 * margin, 940 * S)
+        local x0 = SL + (W - SL - SR - total) / 2
         -- Clear of what the ship is carrying. Over a game the corner stack
         -- holds the left edge, and on a phone held sideways a centred block
         -- lands right on it: the rail's marks and the words GUN and BOMB in
         -- the same column read as one broken thing. The stack stays, because
         -- what you are carrying is worth knowing while you pick a hull.
         if not home then
-            x0 = math.max(x0, 124 * S)
+            x0 = math.max(x0, SL + 124 * S)
             -- And give back what moving right took: the block is as wide as
             -- the room left of the far margin, or it hangs off the edge of
             -- the screen carrying the end of the keyboard with it.
-            total = math.min(total, W - x0 - margin)
+            total = math.min(total, W - SR - x0 - margin)
         end
         -- Wide enough for the words, at any height. A rail of marks alone
         -- was the short window's layout, on the argument that eight labelled
@@ -3644,19 +3659,19 @@ function M.menu(v)
         vrule(x0 + rw + 1 * S, top, block, pal.a(pal.RADAR_TILE, 0.75), 30 * S)
     else
         rh = (home and 78 or 84) * S
-        rw = W - 2 * margin
-        rx = margin
+        rw = W - SL - SR - 2 * margin
+        rx = SL + margin
         ry_ = H - margin - rh
-        sx, sw = margin, W - 2 * margin
+        sx, sw = SL + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two
         -- things in one place.
         local chip = home and 0 or 34 * S
-        sy = margin + head + chip
+        sy = ST + margin + head + chip
         sh = ry_ - 20 * S - sy
         rect(0, sy - 16 * S, W, sh + rh + 46 * S, pal.rgb(0x03050a, 0.5))
-        wordmark(margin, margin + chip + 22 * S, 30 * S)
-        u:seg(margin, ry(ry_ - 12 * S), W - margin, ry(ry_ - 12 * S),
+        wordmark(rx, ST + margin + chip + 22 * S, 30 * S)
+        u:seg(rx, ry(ry_ - 12 * S), W - SR - margin, ry(ry_ - 12 * S),
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
 
