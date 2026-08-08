@@ -39,11 +39,21 @@ end
 -- about a row is two chances to get the arithmetic wrong.
 local shapes = {}
 local kind = nil       -- what primitive is being recorded, for `subject`
+local tint = nil       -- the colour it was drawn in, where that is the question
 local function box(x0, y0, x1, y1, col, w)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
     shapes[#shapes + 1] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1, col = col,
-                           w = w, kind = kind}
+                           w = w, kind = kind, tint = tint}
+end
+
+-- Kept apart from `col`, which the ladder search used to match against. A
+-- mark's own colours have no business deciding where the counting column is,
+-- and putting them in the same field would make the column's position depend
+-- on what the hull is carrying.
+local function hue(c)
+    if not c then return "?" end
+    return string.format("%.3f,%.3f,%.3f", c[1], c[2], c[3])
 end
 
 -- How much of the row a shape actually darkens, and where that ink sits.
@@ -64,15 +74,19 @@ local function len(x1, y1, x2, y2)
     return math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2)
 end
 
-function layer:seg(x1, y1, x2, y2, w)
+function layer:seg(x1, y1, x2, y2, w, c)
+    tint = c
     box(x1 - w, y1 - w, x2 + w, y2 + w, nil, w)
+    tint = nil
     mark(len(x1, y1, x2, y2) * w, (x1 + x2) / 2, (y1 + y2) / 2)
 end
 -- Sampled along its length rather than taken whole, because the point of a
 -- fade is that one end of it is not there.
-function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2)
+function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2, c)
     local w = math.max(w1, w2)
+    tint = c
     box(x1 - w, y1 - w, x2 + w, y2 + w, nil, w)
+    tint = nil
     local n = 8
     for i = 0, n - 1 do
         local t = (i + 0.5) / n
@@ -81,10 +95,10 @@ function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2)
              y1 + (y2 - y1) * t)
     end
 end
-function layer:disc(x, y, r)
-    kind = "disc"
+function layer:disc(x, y, r, _, c)
+    kind, tint = "disc", c
     box(x - r, y - r, x + r, y + r)
-    kind = nil
+    kind, tint = nil, nil
     mark(math.pi * r * r, x, y)
 end
 function layer:halo(x, y, r) box(x - r, y - r, x + r, y + r) end
@@ -137,6 +151,11 @@ end
 local mods = {}
 -- Whether the fan is declined, which Q toggles in flight.
 local multi_off = false
+-- The rung this hull's triggers are on, which the mark carries as a colour.
+local level = 1
+-- What is in hand, by slot, which is what decides whether a charge gets a row
+-- at all. The list handed to the interface is built from it below.
+local in_hand = {repel = 2, burst = 1}
 
 local sim = {
     ship_count = function() return 1 end,
@@ -153,7 +172,7 @@ local sim = {
     ship_points = function() return 0 end,
     ship_bounty = function() return 40 end,
     ship_up = function() return 0 end,
-    ship_level = function() return 1 end,
+    ship_level = function() return level end,
     ship_charge = function() return 2 end,
     ship_mod = function(_, t, m) return (mods[t] and mods[t][m]) or 0 end,
     ship_multi_off = function() return multi_off end,
@@ -217,8 +236,10 @@ local function frame(px, py)
         teams = {},
         feed = {},
         hurt = 0,
-        charges = {{name = "repel", short = "RPL", count = 2, max = 3},
-                   {name = "burst", short = "BST", count = 1, max = 3}},
+        charges = {{name = "repel", short = "RPL",
+                    count = in_hand.repel or 0, max = 3},
+                   {name = "burst", short = "BST",
+                    count = in_hand.burst or 0, max = 3}},
         cam_x = 400, cam_y = 400,
         half_w = 640, half_h = 400,
         banner = "",
@@ -257,25 +278,40 @@ end
 -- short window, so a constant in this file is a constant that goes stale the
 -- first time the block is resized and takes the checks below with it.
 --
--- The ladder is the run of rungs in the team colour on a weapon row: lit ones
--- are filled rects and spent ones are frames, both in FRIEND.
-local function ladder_x(b)
+-- Read off a charge row, because a weapon row has nothing in that column any
+-- more: the level was three rungs in the team colour there, and the round's
+-- own hue says it now. What is left counting is the pips, which are the
+-- leftmost thing in the charge colour on a row that has any.
+local function column_at(b)
     local at = nil
     for _, s in ipairs(shapes) do
         local mid = (s.y0 + s.y1) / 2
-        if mid > b.y0 and mid < b.y1 and s.col
-            and s.col[1] == pal.FRIEND[1] and s.col[2] == pal.FRIEND[2]
-            and s.col[3] == pal.FRIEND[3] then
+        if mid > b.y0 and mid < b.y1 and s.tint
+            and s.tint[1] == pal.CHARGE_COL[1]
+            and s.tint[2] == pal.CHARGE_COL[2]
+            and s.tint[3] == pal.CHARGE_COL[3] then
             at = math.min(at or s.x0, s.x0)
         end
     end
     return at
 end
 
+-- And cached, since finding it costs a probe of the whole corner and the
+-- answer does not move: the column is a function of the block's scale, and
+-- the scale is a function of how many rows there are.
+local column_cache = nil
+local function column()
+    if not column_cache then
+        local b = row_box("charge:repel")
+        column_cache = b and column_at(b) or nil
+    end
+    return column_cache
+end
+
 -- What the mark cell holds: everything drawn left of that column, at this
 -- row's height.
 local function cell(b)
-    local edge = ladder_x(b) or (W / 2)
+    local edge = column() or (W / 2)
     local out = {}
     for _, s in ipairs(shapes) do
         local mid = (s.y0 + s.y1) / 2
@@ -468,7 +504,7 @@ check("no loadout pushes a mark out of its own row", worst_over <= 2,
                     tostring(worst_case)))
 
 -- The counting column is the other edge. A mark that reaches it is drawn over
--- the ladder that says what level the weapon is.
+-- the pips the rows below it count in.
 mods = {[0] = {[0] = 3, [1] = 3, [2] = 3, [3] = 3, [4] = 3, [5] = 3},
         [1] = {[0] = 3, [1] = 3, [2] = 3, [3] = 3, [4] = 3, [5] = 3}}
 frame()
@@ -480,10 +516,10 @@ for _, key in ipairs({"gun", "bomb"}) do
         reach = math.max(reach, x1 or 0)
     end
 end
-local column = ladder_x(row_box("gun")) or 0
+local col_x = column() or 0
 check("a fully loaded mark stops short of the counting column",
-      reach > 0 and column > 0 and reach < column,
-      string.format("reached %.0f, column is at %.0f", reach, column))
+      reach > 0 and col_x > 0 and reach < col_x,
+      string.format("reached %.0f, column is at %.0f", reach, col_x))
 
 -- --- the row grows with what it carries ------------------------------------
 
@@ -514,10 +550,16 @@ check("and the row covers everything its mark drew",
 -- with nothing on the screen connecting the two.
 -- Upper cased, because the interface sets what it says in capitals and what
 -- these checks are about is which words it says.
+--
+-- Joined by spaces rather than by newlines, because a hover sentence is
+-- wrapped to whatever room is left beside the block and the block's width is
+-- what a loadout decides. Matching across the wrap made a phrase check fail
+-- for the reason a phrase check exists to ignore: the corner got narrower, the
+-- label got wider, and "carrying prox" broke across two lines.
 local function said()
     local out = {}
     for k = 1, state.n do out[#out + 1] = string.upper(state.text[k].s) end
-    return table.concat(out, "\n")
+    return table.concat(out, " ")
 end
 
 -- A point inside a row, asked of the interface rather than worked out here.
@@ -561,18 +603,20 @@ check("a bare weapon is not described as carrying anything",
 -- desktop and a bad one on a phone held sideways, where five rows at full
 -- size are most of the height, so the scale backs off against the room there
 -- is. Neither end of that is visible without measuring it.
-local function block(w, h, dens)
+local function block(w, h, dens, touching)
     shapes = {}
     ink = {}
     state.n = 0
     ui.help = false
-    ui.begin(layer, w, h, dens, false)
+    ui.begin(layer, w, h, dens, touching or false)
     ui.hud({
         me = 0, class_names = {"Apex"}, menu_open = false,
         pilots = {[0] = {name = "you", label = "human"}},
         teams = {}, feed = {}, hurt = 0,
-        charges = {{name = "repel", short = "RPL", count = 2, max = 3},
-                   {name = "burst", short = "BST", count = 1, max = 3}},
+        charges = {{name = "repel", short = "RPL",
+                    count = in_hand.repel or 0, max = 3},
+                   {name = "burst", short = "BST",
+                    count = in_hand.burst or 0, max = 3}},
         cam_x = 400, cam_y = 400, half_w = w / 2, half_h = h / 2,
         banner = "", lag = 4,
         stats = {lag = 4, lead = 2, err = 1, err_max = 9, rewind = 0,
@@ -695,7 +739,7 @@ local ROWS = {"gun", "bomb", "charge:repel", "charge:burst", "bounty"}
 
 mods = {}
 frame()
-local counting = ladder_x(row_box("gun"))
+local counting = column()
 local axis = {}
 for _, key in ipairs(ROWS) do
     axis[key] = mark_box(key, counting or W)
@@ -731,8 +775,43 @@ mods = {}
 frame()
 local gap = (counting or 0) - (axis.gun or 0)
 check("the counting column sits close to the marks",
-      gap > 8 * SCALE and gap < 26 * SCALE,
-      string.format("%.0f px from the subject to the ladder", gap))
+      gap > 8 * SCALE and gap < 30 * SCALE,
+      string.format("%.0f px from the subject to the column", gap))
+
+-- --- the level is a colour, not a ladder -----------------------------------
+
+-- A weapon row was a mark and three cyan rungs beside it saying which rung of
+-- the ladder the trigger was on. The round carries that now, in the hue it
+-- will be when it leaves the gun, on the one ramp every round in the game is
+-- drawn from. Two answers to one question, and the second one in the team's
+-- colour, which a weapon's level has nothing to do with.
+--
+-- Measured as "no team colour on a weapon row" rather than "no rects": the
+-- fault would be somebody putting the count back some other way, and the tell
+-- is the colour it was counted in.
+for _, lvl in ipairs({0, 1, 3}) do
+    level = lvl
+    mods = {}
+    frame()
+    for _, key in ipairs({"gun", "bomb"}) do
+        local b = row_box(key)
+        local n = 0
+        if b then
+            for _, sh in ipairs(shapes) do
+                local mid = (sh.y0 + sh.y1) / 2
+                local c = sh.col or sh.tint
+                if mid > b.y0 and mid < b.y1 and c
+                    and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
+                    and c[3] == pal.FRIEND[3] then
+                    n = n + 1
+                end
+            end
+        end
+        check(string.format("the %s row at level %d draws no ladder", key, lvl),
+              n == 0, n .. " shapes in the team colour beside the mark")
+    end
+end
+level = 1
 
 -- --- a barrel you are not firing ------------------------------------------
 
@@ -786,6 +865,173 @@ check("the barrels themselves stay on the mark when declined",
           local plain = #cell(row_box("gun"))
           return n > plain
       end)(), "a declined fan should still be drawn")
+
+-- --- the fan is the round, not a thing hung on it -------------------------
+
+-- Every other add-on is a decoration, so it is drawn in the round's hue run
+-- hot: what a green added reads as part of the round rather than as a separate
+-- object beside it. Multifire decorates nothing. Its extra barrels fire the
+-- same round out of the same muzzle on the same spec, which is why world.lua
+-- gives all three bullets one colour in flight. Drawn hot with the rest, the
+-- corner said the middle bullet was a different weapon from the two either
+-- side and disagreed with the arena about the one fact this ramp carries.
+local function dots_on_gun()
+    local b = row_box("gun")
+    local out = {}
+    if not b then return out end
+    for _, sh in ipairs(shapes) do
+        local mid = (sh.y0 + sh.y1) / 2
+        if sh.kind == "disc" and mid > b.y0 and mid < b.y1 then
+            out[#out + 1] = hue(sh.tint)
+        end
+    end
+    return out
+end
+
+local function distinct(list)
+    local seen, n = {}, 0
+    for _, v in ipairs(list) do
+        if not seen[v] then seen[v] = true n = n + 1 end
+    end
+    return n
+end
+
+mods = {[0] = {}}
+frame()
+local plain_dot = dots_on_gun()[1]
+mods = {[0] = {[0] = 2}}
+frame()
+local fanned = dots_on_gun()
+check("a fan draws three rounds", #fanned == 3, #fanned .. " dots")
+check("and all three are the round the gun fires", distinct(fanned) == 1
+      and fanned[1] == plain_dot,
+      table.concat(fanned, "  vs plain ") .. " " .. tostring(plain_dot))
+
+-- The one time they really are not the round you are firing.
+multi_off = true
+frame()
+local off_dots = dots_on_gun()
+multi_off = false
+check("a declined fan tells the two apart", distinct(off_dots) == 2,
+      distinct(off_dots) .. " colours across " .. #off_dots .. " dots")
+
+-- The bomb's fan is the same argument: rounds leaving together, in the colour
+-- of the round. Measured on the strokes, since a bomb's fan has no dots.
+local function bomb_hues()
+    local b = row_box("bomb")
+    local out = {}
+    if not b then return out end
+    for _, sh in ipairs(shapes) do
+        local mid = (sh.y0 + sh.y1) / 2
+        if sh.tint and sh.kind ~= "disc" and mid > b.y0 and mid < b.y1 then
+            out[hue(sh.tint)] = true
+        end
+    end
+    return out
+end
+mods = {[1] = {[0] = 1}}
+frame()
+local bomb_fan = bomb_hues()
+mods = {[1] = {}}
+frame()
+local bare_bomb = nil
+for _, sh in ipairs(shapes) do
+    local b = row_box("bomb")
+    local mid = (sh.y0 + sh.y1) / 2
+    if b and sh.kind == "disc" and mid > b.y0 and mid < b.y1 then
+        bare_bomb = hue(sh.tint)
+    end
+end
+check("a bomb's fan is drawn in the round's own colour",
+      bare_bomb ~= nil and bomb_fan[bare_bomb] == true,
+      "fan hues: " .. (next(bomb_fan) or "none") .. ", round: " ..
+      tostring(bare_bomb))
+
+-- --- a charge row is a charge you have -------------------------------------
+
+-- The stack showed a row for every slot the hull could carry and drew the
+-- empties as unlit pips, on the argument the stat panel makes for showing
+-- upgrades you do not have. The stat panel is a thing you stop and read. This
+-- corner is read in a fight, where the only question is what a key would spend
+-- if you pressed it, and a row that answers "nothing" is a row costing height
+-- the rows above it could have had.
+local function rows_drawn()
+    local n = 0
+    for _, key in ipairs({"gun", "bomb", "charge:repel", "charge:burst",
+                          "bounty"}) do
+        if row_box(key) then n = n + 1 end
+    end
+    return n
+end
+
+mods = {}
+in_hand = {repel = 2, burst = 1}
+frame()
+local full_rows = rows_drawn()
+local full_top = row_box("gun")
+local full_foot = row_box("bounty")
+check("both charges in hand draw both rows", full_rows == 5,
+      full_rows .. " rows")
+
+in_hand = {repel = 2}
+frame()
+check("a spent slot draws no row", rows_drawn() == 4 and not row_box("charge:burst"),
+      rows_drawn() .. " rows with one charge in hand")
+
+in_hand = {}
+frame()
+check("and an empty hand draws neither", rows_drawn() == 3
+      and not row_box("charge:repel") and not row_box("charge:burst"),
+      rows_drawn() .. " rows with an empty hand")
+
+-- And the block shrinks rather than leaving the gap. It hangs off the bottom
+-- of the window, so what a dropped row costs comes off the top: the bounty
+-- stays where it was and everything above it comes down.
+local short_top = row_box("gun")
+local short_foot = row_box("bounty")
+-- Within the probe's own step, which walks the corner two pixels at a time.
+check("the stack keeps its footing", full_foot and short_foot
+      and math.abs(short_foot.y0 - full_foot.y0) <= 4,
+      string.format("bottom at %.0f against %.0f",
+                    short_foot and short_foot.y0 or -1,
+                    full_foot and full_foot.y0 or -1))
+check("and shrinks by what it dropped",
+      full_top and short_top and short_top.y1 < full_top.y1,
+      string.format("top at %.0f against %.0f",
+                    short_top and short_top.y1 or -1,
+                    full_top and full_top.y1 or -1))
+in_hand = {repel = 2, burst = 1}
+
+-- --- and none of it on glass ------------------------------------------------
+
+-- A touchscreen draws no corner stack at all. The pads carry the weapons and
+-- the charges, and the last thing left here was the bounty, which is a number
+-- you read between fights rather than during one and which the scoreboard has.
+-- One figure in the corner of a phone is furniture for the sake of the corner
+-- not being empty, and that corner is where a thumb rests.
+--
+-- Measured by asking the interface what answers a point rather than by
+-- counting shapes, because the whole bottom left is drawn over by the stick
+-- and its resting mark, which this harness does not draw and a phone does.
+do
+    in_hand = {repel = 2, burst = 1}
+    mods = {[0] = {[0] = 2}, [1] = {[2] = 1, [3] = 2}}
+    block(844 * 2, 390 * 2, 2, true)
+    local answered = {}
+    for py = 0, 780, 6 do
+        for px = 0, 400, 6 do
+            local k = ui.help_at(px, py)
+            if k then answered[k] = true end
+        end
+    end
+    local left = {}
+    for _, key in ipairs({"gun", "bomb", "charge:repel", "charge:burst",
+                          "bounty"}) do
+        if answered[key] then left[#left + 1] = key end
+    end
+    check("a touchscreen draws no corner stack", #left == 0,
+          table.concat(left, ", ") .. " still in the corner")
+end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

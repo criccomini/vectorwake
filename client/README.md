@@ -369,13 +369,20 @@ dodging anyway. The price of borrowing a scale everybody already knows is that
 rung 1 sits nearer the prize green and rung 2 nearer the charge gold than a
 ramp of unused hues would.
 
-There is one mark per trigger, and an add-on is drawn onto it rather than set
-out beside it. That is the correction to the first version of this, which gave
-every add-on a symbol of its own and lined them up to the right of the ladder:
-six shapes beside a seventh read as seven things the ship is carrying, when
-what a player holds is one gun and one bomb that greens have been changing all
-match. So a bolt with bouncing on it is a bolt with a ball on each end of it,
-and a bomb with proximity is a bomb inside a broken ring.
+There is one mark per trigger and nothing else on the row. An add-on is drawn
+onto the mark rather than set out beside it, which is the correction to the
+first version of this: it gave every add-on a symbol of its own and lined them
+up in a column, and six shapes beside a seventh read as seven things the ship
+is carrying, when what a player holds is one gun and one bomb that greens have
+been changing all match. So a bolt with bouncing on it is a bolt with a ball on
+each end of it, and a bomb with proximity is a bomb inside a broken ring.
+
+The level was three cyan rungs beside the mark, and that went the same way. It
+was there before the round had a colour of its own, and the round has one now:
+it is drawn in the hue of the rung it is fired at, on the ramp above, so the
+corner already answers the question the ladder answered and answers it in the
+terms the arena uses. Two answers to one question, the second of them in the
+team's colour, which a weapon's level has nothing to do with.
 
 A gun is a line into a dot and a bomb is a ringed head, which is what each is
 in the arena, and one set of add-on marks fits both because every add-on is
@@ -418,8 +425,8 @@ out gets a sixth each and reads as a dense mark, which is the right way round.
 Spending the room as it was asked for instead would put a Spire's fragments
 through the row above.
 
-On a touchscreen the weapon rows are not drawn at all, and the bounty is the
-whole of the corner. The pads carry them instead: `arena/marks.lua` holds the
+On a touchscreen the corner is not drawn at all. The pads carry it instead:
+`arena/marks.lua` holds the
 whole mark, add-ons and all, behind one `marks.weapon` that `ui.lua` and
 `touch.lua` both call. Neither draws a stroke of a weapon itself. That is the
 only reason it is worth having the marks in a third file, and it was worth it:
@@ -444,8 +451,11 @@ is the larger of them. Round, because the charges are square: which class of
 control a thing is reads before the picture inside it does, and a round pad
 beside a square cell can never be taken for another trigger.
 
-The gun wears its energy on an arc outside its rim. On the rim it read as a
-second ring drawn badly, and inside it landed on the mark.
+One ring per control and nothing outside it. The gun wore its energy on a
+second arc past the rim for a while, so it had two rings where the bomb has
+one, and the outer one was a copy of an instrument thirty degrees of eye travel
+away: every hull in the game carries a bar above it saying the same thing,
+yours included, and that one is where you are already looking.
 
 The charges go above the triggers rather than beside them, so reaching the gun
 never crosses one. They climb the edge as a column while there is edge to
@@ -460,6 +470,20 @@ How many of a charge are in hand is pips along the cell's floor, one per slot
 the hull can hold, filled as far as it is. It was a numeral floating above the
 pad, which is the one thing on this screen a bare mesh cannot draw, and it sat
 in the gap between two controls belonging to neither.
+
+The bounty went the same way. It was the last row the corner had left on
+glass, and it is a number you read between fights rather than during one, which
+the scoreboard has: one figure in the corner of a phone is furniture for the
+sake of the corner not being empty, and that corner is where a thumb rests.
+
+A charge you have spent out gets no cell, and the rail closes up behind it.
+Both surfaces do this: the corner drops the row and the block shrinks by it,
+since the block hangs off the bottom of the window and what a row costs comes
+off the top. A control that does nothing when pressed is bad enough with a
+keyboard, and on glass there is no travel and no cursor, so the only way to
+learn a cell is dead is to tap it in a fight and get nothing back. Q, W, A and
+S stay bound to the hull's slots rather than to the rows drawn: binding them to
+the drawing would move Q onto your burst the moment your last repel went.
 
 `lua5.1 client/tests/pad_layout_test.lua` draws the real controls through a
 recording layer and measures where a tap lands against where the ink went,
@@ -479,10 +503,12 @@ that measurement rather than off a screenshot.
 
 `lua5.1 client/tests/stack_test.lua` runs the real `M.hud` against a stubbed
 engine and measures: every add-on draws something, a third rung looks
-different from a first, the row's hover box covers everything its mark drew,
-and no combination of the six at full depth leaves its own row or reaches the
-column the ladders count in. That last one walks all 64 combinations, because
-the case that overflows is never the one somebody thought to try.
+different from a first, a fan's rounds are the colour of the round the gun
+fires, the row's hover box covers everything its mark drew, no team colour
+appears beside a mark at any level, and no combination of the six at full depth
+leaves its own row or reaches the column the rows below it count in. That last
+one walks all 64 combinations, because the case that overflows is never the one
+somebody thought to try.
 
 Since the shapes are the row now, pointing at one names what this hull is
 actually carrying rather than what weapons can carry in general. A shape drawn

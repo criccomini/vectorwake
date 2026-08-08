@@ -32,6 +32,7 @@ local account = require("arena.account")
 local net = require("arena.net")
 local callsign = require("arena.callsign")
 local directory = require("arena.directory")
+local clip = require("arena.clip")
 local sfx = require("arena.sfx")
 
 local M = {}
@@ -39,12 +40,25 @@ local M = {}
 M.open = true           -- the page opens on it
 M.home = true           -- no game behind the panel
 M.class = 0             -- the hull you are flying, kept in step with the sim
+M.watching = false      -- sitting out, set by the arena each frame
+-- What you will arrive as, which the ship page sets and a join carries. It is
+-- remembered like the hull is, because it is the same choice: a player who
+-- came to watch is still there to watch after a reload.
+M.spectate = false
 M.pending = nil         -- the hull a row just asked for
 M.chosen = nil          -- the game a row just asked for
 M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
 M.hover = nil           -- the stage row a pointer is resting on
 M.note = nil            -- set by the arena when a connection fails
+M.screen = nil          -- the drawable and its insets, for the about page
+-- What a key is made of, and how long one is. Both are the server's, written
+-- down here because the slots are drawn against them and what a keyboard hands
+-- us is filtered against them. Crockford's alphabet without the letters that
+-- get misread by hand: no I, L, O or U.
+local KEY_CHARS = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+local KEY_LEN = 12
+
 -- A question the menu wants answered before it will do anything else, and
 -- nothing while there is none. Whoever raises it fills in the words and what
 -- each answer is worth; this file knows only that the last answer is the one
@@ -84,6 +98,14 @@ M.music = 3             -- index into MUSICS
 M.cap = 1               -- index into CAPS
 M.can_cap = false       -- whether this engine can be asked to cap frames
 
+-- Whether the ship page's answer is currently "no hull". In a game that is
+-- what the connection says you are; on the home screen it is what you have
+-- asked to arrive as. One question, two places it can be answered from.
+function M.spectating()
+    if M.home then return M.spectate end
+    return M.watching
+end
+
 local VOLUMES = {{0, "off"}, {0.3, "quiet"}, {0.6, "half"}, {1.0, "full"}}
 -- The soundtrack is its own mixer group and its own row, because wanting the
 -- game loud and the music off is the commonest thing anybody wants out of a
@@ -98,7 +120,7 @@ local SAVE = sys.get_save_file("vectorwake", "pilot")
 function M.save_identity()
     pcall(sys.save, SAVE, {
         name = M.name, class = M.class, volume = M.volume, music = M.music,
-        cap = M.cap, zone = M.zone,
+        cap = M.cap, zone = M.zone, spectate = M.spectate,
     })
 end
 
@@ -116,6 +138,9 @@ function M.load_identity()
         -- The game you were in last, so coming back puts the cursor on it and
         -- a returning player is one press from flying.
         if type(d.zone) == "string" then M.zone = d.zone end
+        -- What you last chose to arrive as. Saved beside the hull because it
+        -- is an answer to the same question the hull answers.
+        M.spectate = d.spectate == true
     else
         M.name = callsign.generate()
         M.save_identity()
@@ -194,9 +219,29 @@ local function hull_rows()
         rows[i] = {
             label = h[1], detail = h[3], act = "ship", value = i - 1,
             hull = i - 1, role = h[2],
-            mark = function() return M.class == i - 1 end,
+            -- Not while the answer is "none of them". A watcher is in no
+            -- hull, so marking the one they would fly back in would put the
+            -- "you are here" wash on a ship nobody is sitting in.
+            mark = function() return not M.spectating() and M.class == i - 1 end,
         }
     end
+    -- Sitting out is the ninth thing you can be flying, so it is the ninth
+    -- cell rather than a row somewhere else. Picking a hull is already how a
+    -- pilot says what they want to be; "nothing, I am watching" is an answer
+    -- to that question and belongs beside the other eight.
+    --
+    -- On the home screen too, where this page is what you will arrive as
+    -- rather than what you are. Arriving to watch is a thing the wire has
+    -- always been able to say, so picking it here is a choice that carries
+    -- into the join rather than a control that waits for a game to exist.
+    rows[#rows + 1] = {
+        label = "Spectate", detail = "watch the room from nobody's cockpit",
+        act = "spectate", role = "no hull",
+        -- The helmet, not a ship: the cell is about the pilot rather than
+        -- about anything they are flying.
+        figure = "pilot",
+        mark = function() return M.spectating() end,
+    }
     return rows
 end
 
@@ -295,7 +340,10 @@ local NODES = {
                 return "choose a game"
             end, go = "zones"},
             {label = "ship", icon = "ship",
-             detail = function() return HULLS[M.class + 1][1] end,
+             detail = function()
+                 if M.spectating() then return "spectating" end
+                 return HULLS[M.class + 1][1]
+             end,
              go = "ship"},
             {label = "pilot", icon = "pilot",
              detail = function() return M.name end, go = "pilot"},
@@ -319,7 +367,10 @@ local NODES = {
     -- so left and right are a column apart and up and down are a row apart.
     -- Nothing else in the tree is, which is why it is a flag on the node
     -- rather than a rule about pages.
-    ship = {grid = true, rows = hull_rows()},
+    -- A function rather than a table: the page is eight cells on the home
+    -- screen and nine with a game behind it, so it has to be asked each time
+    -- rather than built once at load.
+    ship = {grid = true, rows = hull_rows},
 
     zones = {rows = zone_rows, empty = zone_empty},
 
@@ -337,26 +388,23 @@ local NODES = {
              hint = function() return account.status() end},
 
         }
-        -- A claim is offered rather than demanded, and never while a key is
-        -- still on screen waiting to be written down.
+        -- A claim is offered rather than demanded. The key it produces is
+        -- shown on a card rather than in a row: it is twelve characters
+        -- somebody has to copy onto another machine, and the value column of
+        -- a list is the smallest place on the page to put it.
         if account.key ~= "" then
-            -- Set as it is, not as the interface would say it. Every word
-            -- in here is drawn in capitals, and a key is not a word: it is a
-            -- string somebody types on another machine, character for
-            -- character, and the case is part of it.
-            rows[#rows + 1] = {label = "your key", detail = account.key,
-                verbatim = true,
-                hint = "write it down: this is the only way back in"}
-            rows[#rows + 1] = {label = "done", act = "key_seen",
-                hint = "clears the key from this screen"}
+            rows[#rows + 1] = {label = "show my key", act = "show_key",
+                hint = "shown once, and never written to this device"}
         elseif account.base ~= "" and not account.claimed then
             rows[#rows + 1] = {label = "keep this pilot", act = "claim",
                 hint = "a key that brings this pilot back elsewhere"}
+            rows[#rows + 1] = {label = "log in with a key", act = "enter_key",
+                hint = "brings a claimed pilot back onto this device"}
         end
         if account.claimed and account.key == "" then
             if account.link_code ~= "" then
                 rows[#rows + 1] = {label = "code", detail = account.link_code,
-                    verbatim = true,
+                    verbatim = true, act = "code",
                     hint = "type this on the other device within ten minutes"}
             else
                 rows[#rows + 1] = {label = "add a device", act = "link",
@@ -438,6 +486,15 @@ local NODES = {
             {label = "engine", detail = function()
                 return "defold " .. (sys.get_engine_info().version or "?")
             end},
+            -- The drawable, and what the hardware says it is covering. Set
+            -- by the arena every frame from the page's own measurements.
+            {label = "screen", detail = function()
+                local s = M.screen
+                if not s then return "?" end
+                return string.format("%dx%d @%g  safe %g %g %g %g",
+                                     s.w, s.h, s.d, s.l, s.r, s.t, s.b)
+            end, verbatim = true,
+            hint = "drawable, density, then the insets left right top bottom"},
             {label = "zone", detail = function()
                 if M.zone == "" then return "not in one" end
                 return M.zone
@@ -463,6 +520,39 @@ local function rows_of(nd)
     local r = nd.rows
     if type(r) == "function" then return r() end
     return r
+end
+
+-- One row of a page, flattened for drawing: everything a live value gets
+-- asked for its answer, and everything else copied across.
+--
+-- Two callers, and that is why this is a function. The stage draws the page
+-- you are inside, and it also draws a preview of the page the rail stop under
+-- the cursor leads to, so a row is flattened in two places. They were two
+-- lists of fields, and the second one had been written before the spectate
+-- cell existed and never learned about `figure`. What that looked like was a
+-- cell whose figure changed depending on how you had arrived at the page: the
+-- helmet once the cursor was in the grid, an Apex while it was still on the
+-- rail, since a cell naming no figure falls back to hull zero.
+local function view_row(r, i)
+    local d = r.detail
+    if type(d) == "function" then d = d() end
+    local ci, cn
+    if r.choice then ci, cn = r.choice() end
+    return {
+        label = r.label, detail = d, note = r.note, waiting = r.waiting,
+        -- Whether this row's value is a string to be quoted rather than a
+        -- word to be said, and whether its label is somebody's name. See the
+        -- key on the pilot page and the sides on the team page.
+        verbatim = r.verbatim, named = r.named,
+        index = i,
+        -- `hull` names a ship to draw and `figure` overrides it with something
+        -- that is not one.
+        hull = r.hull, figure = r.figure, role = r.role,
+        players = r.players, bots = r.bots, live = r.live,
+        choice = ci, choices = cn,
+        pick = (r.go or r.act) ~= nil,
+        mark = r.mark and r.mark() or false,
+    }
 end
 
 local function row_index(rows)
@@ -507,17 +597,44 @@ local function settle(act)
         M.reroll()
     elseif act == "claim" then
         account.claim(function(ok)
-            if not ok then M.note = account.note end
+            if not ok then M.note = account.note return end
+            M.show_key()
         end)
+    elseif act == "enter_key" then
+        M.ask_key()
+    elseif act == "paste" then
+        -- Started here, picked up in `tick`: the browser answers a clipboard
+        -- read on its own schedule and this engine's bridge does not wait.
+        clip.ask()
+        M.pasting = 2.0
+        return "pasting"
+    elseif act == "show_key" then
+        M.show_key()
+    elseif act == "copy" then
+        clip.copy(M.ask and M.ask.code or account.key)
+        -- The card stays up. A card that vanishes on copy is a card that ate
+        -- the thing somebody was reading.
+        M.confirm("Copied to the clipboard.",
+                  {{label = "copy", act = "copy"},
+                   {label = "done", act = "key_seen"}}, account.key)
     elseif act == "key_seen" then
         -- Off the screen and out of memory. It was never written to disk: a
         -- key kept beside the secret it protects is a second copy of the same
         -- thing.
         account.key = ""
     elseif act == "link" then
+        -- The code arrives from the meta-layer a moment later, and the moment
+        -- it does it is the only thing on this page worth looking at.
         account.link(function(ok)
-            if not ok then M.note = account.note end
+            if not ok then M.note = account.note return end
+            M.show_code()
         end)
+    elseif act == "code" then
+        -- The row that holds it, pressed again. Answering the card never
+        -- clears the code: it is live for ten minutes whatever this screen is
+        -- showing, and somebody who dismissed it and walked to the other
+        -- machine should not have to make a second one.
+        M.show_code()
     elseif act == "volume" then
         M.volume = M.volume % #VOLUMES + 1
         M.apply_settings()
@@ -540,17 +657,124 @@ end
 -- label and the action answering it returns, and the last of them is the one
 -- that changes nothing: it is where the cursor starts and what escape gives,
 -- so a question can always be got out of by the key that gets out of anything.
-function M.confirm(head, keys)
-    M.ask = {head = head, keys = keys, sel = #keys}
+-- `code` is a string the question is about rather than something it says: a
+-- link code is read off this screen and typed into another machine, so it is
+-- drawn large and in its own case, and the heading above it is the sentence.
+function M.confirm(head, keys, code)
+    M.ask = {head = head, keys = keys, sel = #keys, code = code}
+end
+
+-- The key, as big as it can be drawn, with the clipboard offered beside it
+-- where there is one. Shown once: it is never written to disk, because a key
+-- kept beside the secret it protects is a second copy of the same thing.
+function M.show_key()
+    if account.key == "" then return end
+    local keys = {}
+    if clip.have() then keys[#keys + 1] = {label = "copy", act = "copy"} end
+    keys[#keys + 1] = {label = "done", act = "key_seen"}
+    M.confirm("Write this down. It is the way back in.", keys, account.key)
+end
+
+-- Ask for a key. The card carries twelve empty slots, and what fills them is
+-- a keyboard where there is one, the clipboard where there is one, and the
+-- alphabet drawn under the slots where there is neither.
+function M.ask_key()
+    local keys = {}
+    if clip.have() then keys[#keys + 1] = {label = "paste", act = "paste"} end
+    keys[#keys + 1] = {label = "cancel"}
+    M.ask = {head = "Type your key", keys = keys, sel = #keys,
+             entry = {typed = "", n = KEY_LEN, alphabet = KEY_CHARS}}
+end
+
+-- One character into the slots, from whichever hand. Anything the alphabet
+-- does not contain is dropped rather than shown: a key has no lowercase and no
+-- dashes to type, so a hand that types them is not making a mistake worth
+-- reporting.
+function M.type_key(ch)
+    local e = M.ask and M.ask.entry
+    if not e or e.sending or #e.typed >= e.n then return false end
+    ch = string.upper(ch or "")
+    if #ch ~= 1 or not string.find(KEY_CHARS, ch, 1, true) then return false end
+    e.typed = e.typed .. ch
+    if #e.typed >= e.n then M.send_key() end
+    return true
+end
+
+-- And one back out.
+function M.rub_key()
+    local e = M.ask and M.ask.entry
+    if not e or e.sending or e.typed == "" then return false end
+    e.typed = string.sub(e.typed, 1, #e.typed - 1)
+    return true
+end
+
+-- A full set of slots, sent. The answer comes back on the account layer's own
+-- schedule, so the card stays up saying so rather than closing on a promise.
+function M.send_key()
+    local e = M.ask and M.ask.entry
+    if not e or #e.typed < e.n then return end
+    e.sending = true
+    M.ask.head = "Signing in"
+    account.redeem_key("VW" .. e.typed, function(ok)
+        if ok then
+            M.ask = nil
+            M.note = nil
+            M.adopt_account_name()
+            return
+        end
+        -- Wrong key, or a meta-layer that did not answer. Either way the slots
+        -- empty and the card stays, because the next thing anybody does is try
+        -- again.
+        if M.ask and M.ask.entry then
+            M.ask.entry.typed = ""
+            M.ask.entry.sending = false
+            M.ask.head = "That key was not recognised"
+        end
+    end)
+end
+
+-- Whatever the clipboard had, filtered to what a key is made of. A player who
+-- copied the whole line, dashes and prefix and all, gets what they meant.
+function M.paste_key(text)
+    local e = M.ask and M.ask.entry
+    if not e or e.sending or not text then return false end
+    local out = ""
+    for ch in string.gmatch(string.upper(text), ".") do
+        if string.find(KEY_CHARS, ch, 1, true) then out = out .. ch end
+    end
+    -- The prefix is not part of the secret and is not typed, so a paste that
+    -- carries it drops it rather than filling two slots with it.
+    out = string.gsub(out, "^VW", "")
+    if out == "" then return false end
+    e.typed = string.sub(out, 1, e.n)
+    if #e.typed >= e.n then M.send_key() end
+    return true
+end
+
+-- The device code, as big as it can be drawn. Raised when one arrives and
+-- again whenever its row is pressed.
+function M.show_code()
+    if account.link_code == "" then return end
+    M.confirm("Type this on the other device", {{label = "done"}},
+              account.link_code)
 end
 
 -- Answer the one that is up, and hand back what that answer is worth. Cleared
 -- before the action is returned, so whatever acts on it is acting with the
 -- question already down.
+-- The answers that do something to the card rather than to the question:
+-- copying what is on it and pasting into it both leave it standing, because
+-- neither is an answer, they are hands reaching past the words.
+local STAY = {copy = true, paste = true}
+
 local function answer(i)
     local k = M.ask and M.ask.keys[i]
+    if not k or not k.act then
+        M.ask = nil
+        return nil, true
+    end
+    if STAY[k.act] then return settle(k.act), true end
     M.ask = nil
-    if not k or not k.act then return nil, true end
     return settle(k.act), true
 end
 
@@ -633,7 +857,20 @@ end
 -- well, a lit wedge and a lit name on the game you were in, which is a second
 -- thing to read saying what the cursor already sits on, and on a list of three
 -- games two of them were the answer to different questions.
-function M.tick()
+function M.tick(dt)
+    -- A clipboard read started a moment ago, answered whenever the browser
+    -- gets round to it. Given up on after a couple of seconds rather than
+    -- polled for ever: a refused read never answers at all.
+    if M.pasting then
+        M.pasting = M.pasting - (dt or 0)
+        local text = clip.take()
+        if text then
+            M.pasting = nil
+            M.paste_key(text)
+        elseif M.pasting <= 0 then
+            M.pasting = nil
+        end
+    end
     if M.at() ~= "zones" then
         zone_synced = false
         -- And forget where the cursor was. Every other page is a place you
@@ -694,23 +931,7 @@ function M.view()
                  board = nd.board or false,
                  rows = {}}
     for i, r in ipairs(rows) do
-        local d = r.detail
-        if type(d) == "function" then d = d() end
-        local ci, cn
-        if r.choice then ci, cn = r.choice() end
-        out.rows[i] = {
-            label = r.label, detail = d, note = r.note, waiting = r.waiting,
-            -- Whether this row's value is a string to be quoted rather than a
-            -- word to be said, and whether its label is somebody's name. See
-            -- the key on the pilot page and the sides on the team page.
-            verbatim = r.verbatim, named = r.named,
-            index = i,
-            hull = r.hull, role = r.role,
-            players = r.players, bots = r.bots, live = r.live,
-            choice = ci, choices = cn,
-            pick = (r.go or r.act) ~= nil,
-            mark = r.mark and r.mark() or false,
-        }
+        out.rows[i] = view_row(r, i)
     end
     -- The sentence about whatever is under the cursor, drawn once under the
     -- list rather than squeezed onto every row.
@@ -752,18 +973,7 @@ function M.view()
             out.empty = nd2.empty and nd2.empty() or nil
             out.rows = {}
             for i, r in ipairs(rows_of(nd2)) do
-                local d = r.detail
-                if type(d) == "function" then d = d() end
-                local ci, cn
-                if r.choice then ci, cn = r.choice() end
-                out.rows[i] = {label = r.label, detail = d, note = r.note,
-                               waiting = r.waiting, verbatim = r.verbatim,
-                               named = r.named,
-                               index = i, hull = r.hull, role = r.role,
-                               players = r.players, bots = r.bots,
-                               live = r.live, choice = ci, choices = cn,
-                               pick = (r.go or r.act) ~= nil,
-                               mark = r.mark and r.mark() or false}
+                out.rows[i] = view_row(r, i)
             end
             out.hint = nil
             -- Nothing in the preview is selected, because the cursor is on
@@ -849,8 +1059,15 @@ local function activate()
                 -- the whole of how a player leaves now: the list used to carry
                 -- a "leave this game" row at its foot, a long way from the
                 -- game it was about, in a list otherwise all places to go.
-                M.confirm("you are already flying " .. pick.name,
-                          {{label = "leave", act = "leave"}, {label = "stay"}})
+                -- Two answers, not three. Sitting out used to live here as a
+                -- third, and it was in the wrong room: this card is about the
+                -- game you are in, and watching is about what you are flying,
+                -- which is the ship page's question. It is the ninth cell
+                -- there now.
+                M.confirm((M.watching and "you are watching "
+                           or "you are already flying ") .. pick.name,
+                          {{label = "leave", act = "leave"},
+                           {label = "stay"}})
                 return nil
             elseif pick.live then
                 M.confirm("leave " .. M.zone .. " for " .. pick.name .. "?",
@@ -878,6 +1095,8 @@ function M.step(keys)
     -- walked, and nothing behind it can be pressed by accident.
     if M.ask then
         local n = #M.ask.keys
+        -- Backspace belongs to the slots when there are slots.
+        if keys.rub and M.rub_key() then return nil, true end
         -- Escape is the last answer, which is the one that changes nothing.
         if keys.back then return answer(n) end
         if keys.left or keys.up then
@@ -974,8 +1193,28 @@ end
 -- navigating: a tap on `settings` from inside `ship` picked the fourth hull.
 -- On a phone, where the rail is the only way to move, that is the whole of
 -- navigation not working.
+-- Which stop the panel is currently inside, or nil at the root, where the
+-- stage is a preview of the stop under the cursor rather than the stop
+-- itself. Worked out the way the view works it out.
+local function rail_inside()
+    if #M.stack < 2 then return nil end
+    for i, r in ipairs(rows_of(NODES.root)) do
+        if r.go == M.stack[2] then return i end
+    end
+    return nil
+end
+
 function M.click_rail(index)
     if not M.open then return nil, false end
+    -- The lit stop, tapped while you are already in it, with a game behind
+    -- the panel: that is the way back to the game. A phone's rail is the
+    -- whole of its navigation and there is no outside to press, so without
+    -- this the only way out is one small x; and re-entering the page you are
+    -- already reading is the one thing a rail stop could do that is nothing.
+    --
+    -- At the root the same stop is lit while the stage only previews it, and
+    -- there the tap goes in, which is what it has always done.
+    if index == rail_inside() and M.close() then return nil, true end
     M.stack = {"root"}
     M.sel.root = index
     M.note = nil

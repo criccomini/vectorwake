@@ -94,3 +94,7 @@ key_trigger {
   input: KEY_TILDE
   action: "multi"
 }
+text_trigger {
+  input: TEXT
+  action: "text"
+}

@@ -116,8 +116,9 @@ function M.layout(w, h, s)
     s = s or 1
     local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
     local br = r * 0.82
-    -- Far enough in that the energy gauge outside the gun's rim clears the
-    -- edge of the screen.
+    -- Far enough in that the rim clears the edge of the screen with a thumb's
+    -- worth of margin: a control hard against the bezel is one a hand has to
+    -- curl round to reach.
     local gun_pad  = {x = w - M.safe_r - r * 1.4, y = r * 1.4, r = r}
     local bomb_pad = {x = gun_pad.x - r - br - r * 0.34, y = gun_pad.y, r = br}
     local home  = {x = M.safe_l + r * 1.6, y = r * 1.8, r = r * 1.15}
@@ -134,22 +135,29 @@ function M.layout(w, h, s)
     -- since `within` grows the cell by a third on every side.
     local cw = r * 0.82
     local x0 = gun_pad.x
-    -- Clear of the gauge, not just of the rim. The energy arc rides at a
-    -- fifth of a radius outside the gun and sweeps past straight up, so a
-    -- rail measured off the ring alone starts inside it -- which is what the
-    -- first build of this drew, and it took a screenshot to see.
-    local y0 = gun_pad.y + r * 1.25 + cw * 0.75
+    -- Clear of the rim with a gap you can see. It used to have to clear the
+    -- energy arc riding a fifth of a radius outside the gun as well, and the
+    -- first build of this cleared neither, which took a screenshot to see.
+    local y0 = gun_pad.y + r * 1.08 + cw * 0.75
     local x, y = x0, y0
     local charge = {}
-    for i, k in ipairs(M.charges) do
-        -- Past the dial the rail steps left and starts again, which is what a
-        -- hull carrying four kinds on a short window does. A limit rather
-        -- than an assumption the height is always there.
-        if y + cw / 2 > M.ceiling then
-            x, y = x - cw * 1.14, y0
+    for _, k in ipairs(M.charges) do
+        -- Only what is in hand. A cell for a slot you have spent out is a
+        -- control that does nothing when pressed, and glass gives no way to
+        -- tell that before pressing it: there is no travel, no resistance and
+        -- no cursor that could have hovered first. The rail closes up as they
+        -- go, so what is under a thumb is always something it can spend.
+        if (M.counts and M.counts[k] or 0) > 0 then
+            -- Past the dial the rail steps left and starts again, which is
+            -- what a hull carrying four kinds on a short window does. A limit
+            -- rather than an assumption the height is always there.
+            if y + cw / 2 > M.ceiling then
+                x, y = x - cw * 1.14, y0
+            end
+            charge[#charge + 1] = {slot = k, x = x, y = y, w = cw,
+                                   r = cw / 2}
+            y = y + cw * 1.14
         end
-        charge[i] = {slot = k, x = x, y = y, w = cw, r = cw / 2}
-        y = y + cw * 1.14
     end
 
     return {r = r, guns = gun_pad, bombs = bomb_pad, home = home,
@@ -341,47 +349,36 @@ function M.draw(u, w, h, s)
     -- at somebody across the arena. A player who has learned one has learned
     -- the other, and the two pads tell each other apart by their marks now
     -- rather than by their colour.
-    local glvl = M.me and sim.ship_level and sim.ship_level(M.me, sim.TRIG_GUN)
-    local gcol = pal.rung(glvl or 0)
+    local gcol = pal.rung(marks.level(M.me, sim.TRIG_GUN))
     pad_ring(L.guns, gcol, guns)
     pad_mark(L.guns, sim.TRIG_GUN)
-    -- Energy, on an arc outside the rim. Drawn on the ring itself it reads as
-    -- a second ring drawn badly, and inside it lands on the mark.
-    if M.me and sim.ship_max_energy then
-        local cap = sim.ship_max_energy(M.me)
-        if cap > 0 then
-            local frac = math.max(0, math.min(1, sim.ship_energy(M.me) / cap))
-            local a0 = math.pi * 1.22
-            u:arc(L.guns.x, L.guns.y, L.guns.r * 1.2, a0,
-                  a0 + math.pi * 1.56 * frac, 3.4 * s, 24,
-                  pal.a(gcol, 0.75))
-        end
-    end
+    -- The gun wore its energy on a second arc outside the rim for a while.
+    -- Every hull in the game already carries a bar above it saying the same
+    -- thing, yours included, and that one is where you are looking: at the
+    -- ship, in the middle of the screen, rather than under the thumb in the
+    -- corner. So the gun had two rings where the bomb has one, and the outer
+    -- one was a copy of an instrument thirty degrees of eye travel away.
 
     if M.has_bomb then
-        local blvl = M.me and sim.ship_level
-            and sim.ship_level(M.me, sim.TRIG_BOMB)
-        local bcol = pal.rung(blvl or 0)
+        local bcol = pal.rung(marks.level(M.me, sim.TRIG_BOMB))
         pad_ring(L.bombs, bcol, bombs)
         pad_mark(L.bombs, sim.TRIG_BOMB)
     end
 
-    -- A cell per charge, drawn whether or not you hold any: the same reason
-    -- the stat row shows the upgrades you do not have. What is left is pips
-    -- along the cell's floor rather than a numeral above it -- a charge is one
-    -- of three, and three marks is a quantity read without counting, where the
-    -- numeral sat in the gap between two pads and belonged to neither.
+    -- A cell per charge in hand, and none for one that is spent out. What
+    -- says how many is pips along the cell's floor rather than a numeral above
+    -- it: a charge is one of three, and three marks is a quantity read without
+    -- counting, where the numeral sat in the gap between two pads and belonged
+    -- to neither.
     for _, c in ipairs(L.charge) do
         local n = M.counts and M.counts[c.slot] or 0
         local cap = (M.maxes and M.maxes[c.slot]) or 3
-        local lit = n > 0
-        local edge = pal.a(pal.CHARGE_COL, lit and 0.55 or 0.22)
         local half = c.w / 2
-        u:rect(c.x - half, c.y - half, c.w, c.w,
-               pal.a(pal.CHARGE_COL, lit and 0.05 or 0.02))
-        u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s, edge)
+        u:rect(c.x - half, c.y - half, c.w, c.w, pal.a(pal.CHARGE_COL, 0.05))
+        u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s,
+                pal.a(pal.CHARGE_COL, 0.55))
         marks.charge(c.slot, c.x, c.y + c.w * 0.08, c.w * 0.42,
-                     pal.a(pal.CHARGE_COL, lit and 0.92 or 0.28))
+                     pal.a(pal.CHARGE_COL, 0.92))
         local pitch = c.w * 0.19
         local px = c.x - (cap - 1) * pitch / 2
         for i = 1, cap do

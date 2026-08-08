@@ -390,6 +390,22 @@ local function text_w(s, px)
     return #s * px * ADVANCE
 end
 
+
+local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
+local function key_size() return (FONT - 1) * S end
+local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * S end
+local function key_cap(x, y, w, label, on)
+    local col = on and pal.FRIEND or pal.DIM
+    local h = KEY_H * S
+    rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
+    u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
+    -- A key is shouted wherever it turns up, menu or corner: it is a thing to
+    -- press rather than something the interface is saying, and the two of them
+    -- are the same object.
+    txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
+        pal.a(col, on and 1 or 0.85), "center", nil, true)
+end
+
 -- Broken into lines no wider than `measure`, at whitespace. Used by the card a
 -- dead pilot reads and by the label the pointer raises, which say the same
 -- sentences and would otherwise break them in two different places.
@@ -436,24 +452,6 @@ local function close_mark(x, y, col, k)
         local dx, dy = s[1] * d, s[2] * d
         u:seg(x + dx * inn, ry(y + dy * inn),
               x + dx * out, ry(y + dy * out), 1.25 * S, col, true)
-    end
-end
-
--- A weapon level, as filled rungs. Three rungs and how many are lit, which is
--- a rung count read without reading a numeral.
-local function ladder(x, y, rungs, level, col, w, h)
-    w = w or 34 * S
-    h = h or 3.4 * S
-    local step = w / rungs
-    for k = 0, rungs - 1 do
-        local px = x + k * step
-        local wk = step - 2 * S
-        if k < level then
-            rect(px, y, wk, h, col)
-        else
-            u:frame(px, ry(y, h), wk, h, 0.8 * S,
-                    pal.a(col, (col[4] or 1) * 0.32))
-        end
     end
 end
 
@@ -512,12 +510,21 @@ end
 -- template), so the world draws everywhere and only the furniture anchored
 -- to an edge steps inside. Set by the caller from what the page measures;
 -- zero everywhere hardware covers nothing, which is every desktop and most
--- of the phones. There is deliberately no bottom inset: the home indicator
--- overlays the pads the way it overlays every full-screen game's controls,
--- and lifting them a further 21 points bought nothing but reach.
-local SL, SR, ST = 0, 0, 0
-function M.safe(l, r, t)
-    SL, SR, ST = l or 0, r or 0, t or 0
+-- of the phones.
+--
+-- The bottom is a special case, and it is two things at once. The pads and
+-- the stick ignore it: the home indicator overlays them the way it overlays
+-- every full-screen game's controls, and lifting the row bought nothing but
+-- reach. The menu's rail does not ignore it, because a rail is a row of
+-- buttons a thumb presses and the indicator is a bar the system swallows
+-- presses under, which is what a tab bar steps over on every phone.
+--
+-- What arrives here is already net of whatever the canvas does not cover:
+-- under a browser's bottom toolbar the strip is spoken for, and stepping up
+-- by the inset as well would be stepping over the same thing twice.
+local SL, SR, ST, SB = 0, 0, 0, 0
+function M.safe(l, r, t, b)
+    SL, SR, ST, SB = l or 0, r or 0, t or 0, b or 0
 end
 
 -- `now` is the frame's clock in seconds, for the few things on screen that
@@ -626,6 +633,26 @@ end
 -- map draw the same mark because they are the same statement about the same
 -- ship. Clamped rather than dropped when it falls outside the frame it is
 -- given: a view without you on it is a view with no origin.
+-- The team a perspective seat is on, guarded: the hud's `me` is the watched
+-- subject while spectating and nil when the channel has nobody, and 255 is
+-- the byte that belongs to no side, so an absent eye colours everybody
+-- hostile the way a free-for-all already colours everyone who is not you.
+local function team_of(i)
+    if not i or i < 0 or i >= sim.ship_count() then return 255 end
+    return sim.ship_team(i)
+end
+
+-- The side this screen belongs to, which is not always the side of the hull
+-- it is centred on.
+--
+-- Flying they are the same and it never mattered. Watching they come apart:
+-- the camera stands behind whoever the channel picked, and deriving "my team"
+-- from that repainted your own side as hostile every time the camera crossed
+-- the line, and told the info box that a teammate of the pilot you happen to
+-- be watching is a teammate of yours. Set once per frame from what the zone
+-- told this client its side is.
+local view_team = 255
+
 local function own_arrow(ax, ay, ox, oy, side, me)
     local edge = 5 * S
     if ax < ox + edge then ax = ox + edge end
@@ -734,7 +761,7 @@ local function radar(cx, cy, me)
         end
     end
 
-    local my_team = sim.ship_team(me)
+    local my_team = view_team
     for i = 0, sim.flag_count() - 1 do
         local fx, fy, team = sim.flag_at(i)
         local px, py = put(fx, fy)
@@ -783,9 +810,12 @@ local function radar(cx, cy, me)
     -- for anything off the edge: right for a contact and wrong for the pilot
     -- reading the thing, because the dial is drawn around the camera, the
     -- camera is not the ship, and on a wide window it leads far enough that
-    -- the arrow simply went missing.
-    own_arrow(ix + (sim.ship_x(me) - cx + SPAN) * k,
-              iy + (sim.ship_y(me) - cy + SPAN) * k, ix, iy, r, me)
+    -- the arrow simply went missing. A watcher with no subject has no arrow
+    -- to place: a view can have no origin after all, when it is nobody's.
+    if me then
+        own_arrow(ix + (sim.ship_x(me) - cx + SPAN) * k,
+                  iy + (sim.ship_y(me) - cy + SPAN) * k, ix, iy, r, me)
+    end
 end
 
 -- --- the map ---------------------------------------------------------------
@@ -839,7 +869,7 @@ local function overview(me)
     --
     -- A cell is OVERVIEW_CELL tiles of sixteen pixels, so the world divides
     -- by that to land in the same coordinates the rectangles above use.
-    if ov.grid > 0 then
+    if ov.grid > 0 and me then
         local cell = 4 * 16
         local k = side / ov.grid
         own_arrow(ix + (sim.ship_x(me) / cell) * k,
@@ -874,12 +904,18 @@ local function nameplates(o)
     -- the view_tiles setting put every name adrift the moment the camera
     -- stopped being driven by that setting -- which it already had.
     local scale = W / (2 * o.half_w)
-    local my_team = sim.ship_team(o.me)
+    local my_team = view_team
+    -- The one hull that goes unlabelled is your own, and a watcher has none.
+    -- The pilot being observed therefore wears their name and their bounty
+    -- exactly like everybody else on screen: "who am I looking at" is the
+    -- question a spectator has most of, and the answer belongs on the hull
+    -- rather than in a caption at the foot of the screen. Written as a
+    -- separate value because `o.me` is the perspective seat while watching,
+    -- which is precisely the hull that must keep its label.
+    local own = -1
+    if not o.watch then own = o.me end
     for i = 0, sim.ship_count() - 1 do
-        -- Not your own. You know which ship is yours -- it is the one in the
-        -- middle of the screen with the marker on it -- and a label saying so
-        -- is a word following the thing you are actually looking at.
-        if i ~= o.me and sim.ship_alive(i) == 1 then
+        if i ~= own and sim.ship_alive(i) == 1 then
             local sx = W / 2 + (sim.ship_x(i) - o.cam_x) * scale
             local sy = H / 2 + (sim.ship_y(i) - o.cam_y) * scale
             -- A name for a ship nobody can see is a name in the corner of
@@ -952,11 +988,23 @@ local rows = {}
 -- column here has an obvious direction, and a name that sorts Z to A or a
 -- kill count that puts the worst first is a state somebody reaches by accident
 -- and then has to work out how to leave.
-M.sort = "points"
+-- Which column the scoreboard is ordered by. Alphabetical to begin with: the
+-- question a player has of this list most often is "is that name in the
+-- room", and a name is found in a list sorted by name. The score columns are
+-- still a click away for whoever is asking the other question.
+M.sort = "name"
 M.scroll = 0
 -- Rows on screen at once. The list was capped at nine with no way to see the
 -- tenth, which in a room of sixty-four is most of it.
 local SHOWN = 9
+
+-- How tall one row is, in the pixels a press arrives in. Published because a
+-- finger dragging the list has to be turned into rows and only this file knows
+-- what a row measures. The wheel never needed it: a notch is one row by
+-- definition, which is why the list could only ever be scrolled by a mouse.
+function M.row_pitch()
+    return LINE * S
+end
 
 -- Where the scoreboard starts: under the menu chip when there is one, since
 -- the chip owns the corner.
@@ -964,7 +1012,18 @@ local function top_y()
     return ST + PAD * S + 32 * S
 end
 
-local function scores(me, pilots)
+-- Two names, in the order a person reads them. Lowercased for the comparison
+-- so a capital cannot jump a pilot to the top of the room, and the raw name
+-- breaks a tie so the order is total and the list cannot flicker between two
+-- pilots who differ only in case. The games list orders itself the same way.
+local function ahead(a, b)
+    local la, lb = string.lower(a.name), string.lower(b.name)
+    if la ~= lb then return la < lb, true end
+    if a.name ~= b.name then return a.name < b.name, true end
+    return false, false
+end
+
+local function scores(me, pilots, watchers)
     -- Asked for, not assumed. Mid-fight this is the least useful thing on the
     -- screen and the feed still says who is killing whom, so it lives behind
     -- the same toggle your own loadout does.
@@ -978,6 +1037,10 @@ local function scores(me, pilots)
         r.k = sim.ship_kills(i)
         r.d = sim.ship_deaths(i)
         r.p = sim.ship_points(i)
+        -- What killing them pays right now, which is the one number on this
+        -- row that is about the next thirty seconds rather than about the
+        -- last hour.
+        r.b = sim.ship_bounty(i)
         local p = pilots[i]
         r.name = (p and p.name) or ("ship " .. i)
         -- The roster's own flag. This used to look for a local bot object,
@@ -987,7 +1050,25 @@ local function scores(me, pilots)
         -- What the zone is willing to say this seat is, which is a stronger
         -- statement than "AI" and is what the counts below are made of.
         r.label = (p and p.label) or "unknown"
-        r.mine = sim.ship_team(i) == sim.ship_team(me)
+        r.mine = sim.ship_team(i) == view_team
+        r.watch = false
+    end
+    -- Then whoever is watching. They are in the room without being in the
+    -- game, so they are in the list without being in the sort: no seat, no
+    -- side, no score, and nothing to ask about, since the box a row opens is
+    -- about a hull. Being here at all is the point. A watcher is a pair of
+    -- eyes on the fight and the room deserves to know whose.
+    for _, w in ipairs(watchers or {}) do
+        n = n + 1
+        local r = rows[n]
+        if not r then r = {} rows[n] = r end
+        r.i = nil
+        r.k, r.d, r.p, r.b = 0, 0, 0, 0
+        r.name = w.name
+        r.ai = w.label == "bot" or w.label == "bot?"
+        r.label = w.label
+        r.mine = false
+        r.watch = true
     end
     for i = n + 1, #rows do rows[i] = nil end
     -- Your own team first, whatever the column says.
@@ -998,17 +1079,25 @@ local function scores(me, pilots)
     -- name is only worth reading once you know which end of the gun it is on.
     -- So the sort runs inside each side rather than across both.
     --
-    -- Points is the default, because points are the score. Kills stay on the
-    -- row: they are what a player counts in their head, and the two numbers
-    -- say different things, since a pilot who kills loaded ships outscores one
-    -- who kills more of the empty.
+    -- Alphabetical inside each side by default. Kills stay on the row: they
+    -- are what a player counts in their head, and they say something points
+    -- do not, since a pilot who kills loaded ships outscores one who kills
+    -- more of the empty.
     local key = M.sort
     table.sort(rows, function(a, b)
+        -- Watchers last, under everybody who is actually flying, whatever
+        -- column is chosen. They have no score to sort by and sorting them
+        -- into the middle of a scoreboard by a zero would read as a pilot
+        -- doing badly rather than as somebody not playing.
+        if a.watch ~= b.watch then return b.watch end
         if a.mine ~= b.mine then return a.mine end
         if key == "name" then
-            if a.name ~= b.name then return a.name < b.name end
+            local first, differ = ahead(a, b)
+            if differ then return first end
         elseif key == "kills" then
             if a.k ~= b.k then return a.k > b.k end
+        elseif key == "bounty" then
+            if a.b ~= b.b then return a.b > b.b end
         elseif key == "deaths" then
             -- Fewest first: on every other column the top of the list is the
             -- pilot doing best, and this is the one where that means less.
@@ -1018,7 +1107,7 @@ local function scores(me, pilots)
         end
         if a.p ~= b.p then return a.p > b.p end
         if a.k ~= b.k then return a.k > b.k end
-        return a.name < b.name
+        return (ahead(a, b))
     end)
 
     if n == 0 then
@@ -1043,10 +1132,46 @@ local function scores(me, pilots)
     rect(x, top_y(), w, h, pal.a(pal.BG, 0.62))
     vrule(x, top_y(), h, pal.a(pal.RADAR_TILE, 0.7))
 
-    local kx = x + w - 74 * S
-    local dx = x + w - 44 * S
-    local px = x + w - 12 * S
+    -- Four columns, right aligned off the panel's own edge, in the order a
+    -- row is read: what you have done, then what you are worth. Bounty is
+    -- outermost because it is the one number here about the next thirty
+    -- seconds rather than about the last hour.
+    --
+    -- Each is as wide as the widest thing actually in it, measured every
+    -- frame against the heading as well as the numbers. Fixed offsets do not
+    -- survive four columns in 248 points: a pilot on twelve thousand points
+    -- needs five digits and nobody else needs any of them, so a column sized
+    -- for the worst case eats the names in every room where the worst case
+    -- has not happened.
     local small = (FONT - 3) * S
+    local num = (FONT - 2) * S
+    local GAP = 7 * S
+    local function col_w(field, label)
+        -- Floored, because a column of single digits collapses to six points
+        -- and its heading is the control that sorts by it: a target that
+        -- narrow cannot be hit with a mouse, let alone a thumb.
+        local wide = math.max(text_w(label, small), 16 * S)
+        for i = 1, n do
+            local r = rows[i]
+            if not r.watch then
+                wide = math.max(wide, text_w(tostring(r[field]), num))
+            end
+        end
+        return wide
+    end
+    local bw, pw, dw, kw =
+        col_w("b", "BTY"), col_w("p", "PTS"), col_w("d", "D"), col_w("k", "K")
+    local bx = x + w - 12 * S
+    local px = bx - bw - GAP
+    local dx = px - pw - GAP
+    local kx = dx - dw - GAP
+    -- The marks sit in their own column left of the numbers rather than after
+    -- each name, so a scan down the list finds them in a line instead of at a
+    -- dozen different indents. The names end where that column begins.
+    local mark_x = kx - kw - GAP - MARK_K * S
+    local name_x = x + 12 * S
+    local name_n = math.max(3, math.floor((mark_x - GAP - name_x) /
+                                          (num * ADVANCE)))
     -- A heading is a control now, so the one in use is lit and the rest are
     -- not: the same way every other toggle in this interface says which way it
     -- is set.
@@ -1056,27 +1181,34 @@ local function scores(me, pilots)
             on and pal.a(pal.FRIEND, 0.95) or pal.a(pal.DIM, 0.7), align)
         return on
     end
-    head_col("name", "PILOTS", x + 12 * S, nil)
+    head_col("name", "PILOTS", name_x, nil)
     head_col("kills", "K", kx, "right")
     head_col("deaths", "D", dx, "right")
     head_col("points", "PTS", px, "right")
-    -- Hit boxes over the headings. Generous, and to the left of each label,
-    -- because the labels are right-aligned one or three characters wide and a
-    -- box the size of the glyphs is a target nobody can hit.
+    head_col("bounty", "BTY", bx, "right")
+    -- Hit boxes over the headings. Each takes its whole column and the gap to
+    -- its left, so the four tile without overlapping and the labels, which
+    -- are one or three characters wide, are not the target.
     hit(x + 8 * S, top_y() + 4 * S, 60 * S, 18 * S, "sort_name")
-    hit(kx - 24 * S, top_y() + 4 * S, 28 * S, 18 * S, "sort_kills")
-    hit(dx - 24 * S, top_y() + 4 * S, 28 * S, 18 * S, "sort_deaths")
-    hit(px - 26 * S, top_y() + 4 * S, 30 * S, 18 * S, "sort_points")
+    hit(kx - kw - GAP, top_y() + 4 * S, kw + GAP, 18 * S, "sort_kills")
+    hit(dx - dw - GAP, top_y() + 4 * S, dw + GAP, 18 * S, "sort_deaths")
+    hit(px - pw - GAP, top_y() + 4 * S, pw + GAP, 18 * S, "sort_points")
+    hit(bx - bw - GAP, top_y() + 4 * S, bw + GAP, 18 * S, "sort_bounty")
     ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
           pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
-    local my_team = sim.ship_team(me)
+    local my_team = view_team
     local y = top_y() + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
-        local mine = r.i == me
-        local reading = M.inspect == r.i
-        local col = (sim.ship_team(r.i) == my_team) and pal.FRIEND or pal.ENEMY
+        local mine = r.i ~= nil and r.i == me
+        local reading = r.i ~= nil and M.inspect == r.i
+        -- A watcher is on nobody's side, so it is drawn in neither side's
+        -- colour: the neutral ink, dimmer than a pilot, which is the reading.
+        local col = pal.DIM
+        if not r.watch then
+            col = (sim.ship_team(r.i) == my_team) and pal.FRIEND or pal.ENEMY
+        end
         if mine or reading then
             -- Your row, marked the way a selected row is marked everywhere
             -- else in this interface: a lit rule and a wash off it, not a
@@ -1087,24 +1219,38 @@ local function scores(me, pilots)
             wash(x, y, w, LINE * S, pal.a(mark, 0.13))
             u:seg(x, ry(y), x, ry(y + LINE * S), 1.6 * S, pal.a(mark, 0.95))
         end
-        local name = string.sub(r.name, 1, 14)
+        local name = string.sub(r.name, 1, name_n)
         local cy = y + LINE * S / 2
-        txt(name, x + 12 * S, cy, (FONT - 2) * S,
-            pal.a(col, mine and 1.0 or 0.8), nil, nil, true)
-        -- The mark goes at a fixed column rather than after the name, so a
-        -- scan down the list finds them in a line instead of at fourteen
-        -- different indents.
-        if r.ai then bot_mark(kx - 42 * S, cy, pal.a(pal.DIM, 0.75)) end
-        -- The one way to ask about a pilot. Published before the panel's own
-        -- box below, which takes the wheel and would otherwise swallow the
-        -- press: first box in wins.
-        hit(x, y, w - 6 * S, LINE * S, "pilot", r.i)
-        txt(tostring(r.k), kx, y + LINE * S / 2, (FONT - 2) * S,
-            pal.a(pal.INK, 0.85), "right")
-        txt(tostring(r.d), dx, y + LINE * S / 2, (FONT - 2) * S,
-            pal.a(pal.DIM, 0.85), "right")
-        txt(tostring(r.p), px, y + LINE * S / 2, (FONT - 2) * S,
-            pal.a(pal.BOUNTY, 0.9), "right")
+        txt(name, name_x, cy, num, pal.a(col, mine and 1.0 or 0.8),
+            nil, nil, true)
+        if r.ai then bot_mark(mark_x, cy, pal.a(pal.DIM, 0.75)) end
+        if r.watch then
+            -- No seat, so no box to open about them, and no numbers: a
+            -- watcher has not scored anything and three zeroes would say they
+            -- had. One word instead, in the columns the numbers would have
+            -- used, so the row is plainly a different kind of row.
+            txt("watching", bx, cy, small, pal.a(pal.DIM, 0.7), "right")
+        else
+            -- The one way to ask about a pilot. Published before the panel's
+            -- own box below, which takes the wheel and would otherwise
+            -- swallow the press: first box in wins.
+            hit(x, y, w - 6 * S, LINE * S, "pilot", r.i)
+            -- Kills, deaths and points all in ink. Deaths read dimmer than
+            -- the two beside them for a while, which was a judgement about
+            -- the number rather than a fact about it: a column is either a
+            -- score this board keeps or it is not on the board, and greying
+            -- one of the three says the reader should care less about it
+            -- while still making them read past it.
+            txt(tostring(r.k), kx, cy, num, pal.a(pal.INK, 0.85), "right")
+            txt(tostring(r.d), dx, cy, num, pal.a(pal.INK, 0.85), "right")
+            -- The bounty in gold, which is the colour it wears on a
+            -- nameplate, in the corner stack and in the box this row opens.
+            -- Points held the gold while it was the only score here; with
+            -- both on the row, one of them has to be the one that means
+            -- bounty everywhere else.
+            txt(tostring(r.p), px, cy, num, pal.a(pal.INK, 0.85), "right")
+            txt(tostring(r.b), bx, cy, num, pal.a(pal.BOUNTY, 0.9), "right")
+        end
         y = y + LINE * S
     end
 
@@ -1120,17 +1266,24 @@ local function scores(me, pilots)
     -- Spelled out rather than punched into "0/2/50". Three bare numbers in a
     -- corner are a code, and this line is read once by somebody deciding
     -- whether a room is worth joining.
-    local claimed, guests, bots = 0, 0, 0
+    local claimed, guests, bots, watching = 0, 0, 0, 0
     for i = 1, n do
-        local l = rows[i].label
-        if l == "bot" or l == "bot?" then bots = bots + 1
-        elseif l == "human" then claimed = claimed + 1
+        local r = rows[i]
+        if r.watch then watching = watching + 1
+        elseif r.label == "bot" or r.label == "bot?" then bots = bots + 1
+        elseif r.label == "human" then claimed = claimed + 1
         else guests = guests + 1 end
     end
     local fy = y + foot / 2
-    txt(string.format("%d HERE: %d SIGNED, %d GUEST, %d AI",
-                      n, claimed, guests, bots),
-        x + 12 * S, fy, (FONT - 4) * S, pal.a(pal.DIM, 0.8))
+    -- The head count is people in the game. Watchers are counted apart and
+    -- only when there are any, because a zero on the end of every room's
+    -- line would be a column about nothing most of the time.
+    local line = string.format("%d HERE: %d SIGNED, %d GUEST, %d AI",
+                               n - watching, claimed, guests, bots)
+    if watching > 0 then
+        line = line .. string.format(", %d WATCHING", watching)
+    end
+    txt(line, x + 12 * S, fy, (FONT - 4) * S, pal.a(pal.DIM, 0.8))
 
     -- Only when there is something to scroll to. A bar on a list that fits is
     -- a control that does nothing.
@@ -1328,21 +1481,25 @@ end
 local STACK, STACK_SHARE = 1.5, 0.34
 
 local function status(me, charges, lift)
-    local slots = charges or {}
-    -- On a touchscreen the pads carry all of this: the counts sit over the
-    -- charge pads and the weapon marks sit inside the trigger pads, drawn by
-    -- touch.lua draws them, so any row here would be the same thing twice at
-    -- opposite corners of a screen that has no room for once. What is left
-    -- of the stack on glass is the one row no pad speaks for: the bounty.
-    local show_charges = #slots > 0 and not M.touching
-    local show_trigs = not M.touching
-    local trigs = 0
-    if show_trigs then
-        for t = 0, SIM_TRIGGERS - 1 do
-            if sim.has_trigger(me, t) then trigs = trigs + 1 end
-        end
+    -- Only the charges you are holding. A row for a slot you have spent out
+    -- is a row that answers a question nobody asked: what a hull could carry
+    -- belongs to picking the hull, and this corner is read in a fight, where
+    -- the only thing worth knowing is what a key would spend if you pressed
+    -- it. The empties used to draw, on the argument that the stat panel shows
+    -- upgrades you do not have, and the stat panel is a thing you stop and
+    -- read.
+    --
+    -- The count still says how many, so a row appearing is the same event as
+    -- a pip lighting and reads as one.
+    local slots = {}
+    for _, c in ipairs(charges or {}) do
+        if (c.count or 0) > 0 then slots[#slots + 1] = c end
     end
-    local n = trigs + (show_charges and #slots or 0) + 1
+    local trigs = 0
+    for t = 0, SIM_TRIGGERS - 1 do
+        if sim.has_trigger(me, t) then trigs = trigs + 1 end
+    end
+    local n = trigs + #slots + 1
 
     -- One number the whole block is measured in, so it grows as a drawing
     -- rather than as a pile of separately tuned constants. Everything below
@@ -1368,57 +1525,58 @@ local function status(me, charges, lift)
     -- label beside it starts. A hull holding three add-ons is a good deal
     -- wider than one holding none, and a constant here would either crowd the
     -- wide case or strand the narrow one.
-    local wide = val + 44 * z
+    local wide = val
     -- The charge rows in the order they were drawn, so a reader of this list
     -- walks them down the stack the way a reader of the stack does.
     anchor.charge_order = {}
 
-    -- A level is the same weapon harder, so it is rungs on a ladder; an
-    -- add-on changes what the round is, so it is drawn onto the round.
-    for t = 0, show_trigs and SIM_TRIGGERS - 1 or -1 do
+    -- A weapon row is the mark and nothing else.
+    --
+    -- The level was three cyan rungs in the counting column beside it, which
+    -- is where the number lived before the round had a colour of its own. It
+    -- has one now: a round is drawn in the hue of the rung it is fired at, on
+    -- one ramp for the whole game, so the corner already says what the ladder
+    -- said and says it in the same terms the arena does. Two answers to one
+    -- question, and the second one in the team's colour, which the level is
+    -- nothing to do with.
+    for t = 0, SIM_TRIGGERS - 1 do
         if sim.has_trigger(me, t) then
-            local lvl = sim.ship_level(me, t)
-            local reach = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
-            ladder(val, y + rows_h / 2 - 2 * z, 3, lvl + 1, pal.FRIEND,
-                   40 * z, 4 * z)
+            local right = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
             local key = (t == sim.TRIG_GUN) and "gun" or "bomb"
             anchor[key] = y + rows_h / 2
             anchor[key .. "_mods"] = mod_words(me, t)
             -- The row as far right as it actually drew. A loaded bomb wears
             -- fragments a third of the mark's width clear of it, and pointing
             -- at one of those is still pointing at the bomb.
-            local right = math.max(reach, val + 40 * z)
             if right > wide then wide = right end
             zone(key, x, y, right - x, rows_h)
             y = y + rows_h
         end
     end
 
-    if show_charges then
-        for _, c in ipairs(slots) do
-            -- No ready mark and no key letter: there is no selection to
-            -- show any more, a key or a pad names its charge outright, and
-            -- which key is which row is the help page's job, not a label
-            -- worn in the corner of every fight.
-            local slot = string.lower(c.name or c.short or "")
-            local gc = CHARGE_GLYPHS[slot] or gl_diamond
-            gc(mid, y + rows_h / 2, 7 * z,
-               pal.a(CHARGE_HUES[slot] or pal.PRIZE, 0.85))
-            local slot_max = math.max(1, c.max or 3)
-            pips(val + 3 * z, y + rows_h / 2, slot_max, c.count,
-                 pal.CHARGE_COL, 2.7 * z, 9 * z)
-            local pw = val + 3 * z + slot_max * 9 * z
-            if pw > wide then wide = pw end
-            -- A row per charge rather than one bracket over all of them. A
-            -- repel and a burst are different things and each has a card of
-            -- its own; they shared a sentence only while that sentence was
-            -- about which key spends them.
-            local key = "charge:" .. string.lower(c.name or c.short or "")
-            anchor[key] = y + rows_h / 2
-            anchor.charge_order[#anchor.charge_order + 1] = key
-            zone(key, x, y, pw - x, rows_h)
-            y = y + rows_h
-        end
+    for _, c in ipairs(slots) do
+        -- No ready mark and no key letter: there is no selection to
+        -- show any more, a key or a pad names its charge outright, and
+        -- which key is which row is the help page's job, not a label
+        -- worn in the corner of every fight.
+        local slot = string.lower(c.name or c.short or "")
+        local gc = CHARGE_GLYPHS[slot] or gl_diamond
+        gc(mid, y + rows_h / 2, 7 * z,
+           pal.a(CHARGE_HUES[slot] or pal.PRIZE, 0.85))
+        local slot_max = math.max(1, c.max or 3)
+        pips(val + 3 * z, y + rows_h / 2, slot_max, c.count,
+             pal.CHARGE_COL, 2.7 * z, 9 * z)
+        local pw = val + 3 * z + slot_max * 9 * z
+        if pw > wide then wide = pw end
+        -- A row per charge rather than one bracket over all of them. A
+        -- repel and a burst are different things and each has a card of
+        -- its own; they shared a sentence only while that sentence was
+        -- about which key spends them.
+        local key = "charge:" .. string.lower(c.name or c.short or "")
+        anchor[key] = y + rows_h / 2
+        anchor.charge_order[#anchor.charge_order + 1] = key
+        zone(key, x, y, pw - x, rows_h)
+        y = y + rows_h
     end
 
     -- What you are worth, which is the number that decides who comes for you,
@@ -1504,7 +1662,7 @@ local function inspect(o, top)
     -- something. Counted rather than guessed so the panel is exactly as tall
     -- as what it holds.
     local theirs = sim.ship_team(i)
-    local same_team = theirs == sim.ship_team(o.me)
+    local same_team = theirs == view_team
     -- Which side they are on, and whether this pilot is allowed to be told.
     --
     -- The zone decides. A side it marks public is one anybody may see and name;
@@ -1526,8 +1684,17 @@ local function inspect(o, top)
     -- menu. Drawn only when it would do something: you are on a private side,
     -- and this is somebody other than you who is not already on it.
     local invite = o.may_invite and i ~= o.me and not same_team
+    -- The other thing this panel can offer, and it belongs here for the same
+    -- reason the invitation does: you opened it by picking a person, and
+    -- borrowing their eyes is a thing you do to a person rather than to a
+    -- seat number. Drawn only where it would work, which is a teammate: the
+    -- zone grants live sight of your own side and refuses it of anybody
+    -- else's, so offering it on an enemy would be a control that quietly
+    -- dropped you back on the room channel.
+    local follow = o.watch and same_team and o.watch.subject ~= i
     local rows_n = 5 + (side and 1 or 0)
-    local h = 30 * S + rows_n * rowh + (invite and 26 * S or 0) + 10 * S
+    local h = 30 * S + rows_n * rowh
+        + ((invite or follow) and (KEY_H + 12) * S or 0) + 10 * S
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
     -- at the top of the screen lands on the menu chip.
@@ -1582,16 +1749,34 @@ local function inspect(o, top)
     -- clicks: the zone answers an invitation with a team list that does not
     -- name the invitee, so this mark is the only acknowledgement there is, and
     -- a button that stayed pressable would invite an anxious second tap.
+    -- Drawn as a key, the way everything else in this interface that is a
+    -- thing to press is drawn: the corner's MENU and PLAYERS, the answers on
+    -- a confirm card, every key on the help board. They were a word over a
+    -- rule, which is what a control looked like here before the board taught
+    -- the same hand what a key looks like, and a panel keeping the old idiom
+    -- asks a player to know that this particular word is pressable.
+    --
+    -- Both verbs use the same slot, since a panel with two possible actions
+    -- should put them where the eye already found the first one. They never
+    -- appear together: inviting wants somebody who is not on your side and
+    -- following wants somebody who is.
+    local label, action = nil, nil
     if invite then
-        local sent = o.invited and o.invited[i]
+        -- Once it is sent it says so and stops taking clicks: the zone answers
+        -- an invitation with a team list that does not name the invitee, so
+        -- this is the only acknowledgement there is, and a button that stayed
+        -- pressable would invite an anxious second tap.
+        label = (o.invited and o.invited[i]) and "INVITED" or "INVITE"
+        action = (o.invited and o.invited[i]) and nil or "invite"
+    elseif follow then
+        label, action = "WATCH", "watch"
+    end
+    if label then
         local by = ry_ + 4 * S
-        local c = pal.a(sent and pal.DIM or pal.FRIEND, sent and 0.7 or 0.95)
-        txt(sent and "INVITED" or "INVITE", x + 12 * S, by + 9 * S,
-            (FONT - 2) * S, c)
-        local uy = ry(by + 17 * S)
-        u:seg(x + 12 * S, uy, x + 12 * S + 46 * S, uy, 0.8 * S, pal.a(c, 0.5))
-        if not sent then
-            hit(x, by - 2 * S, w, 24 * S, "invite", i)
+        local bw = key_w(label)
+        key_cap(x + 12 * S, by, bw, label, action ~= nil)
+        if action then
+            hit(x + 12 * S, by, bw, KEY_H * S, action, i)
         end
     end
     return y + h
@@ -1973,22 +2158,7 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
-local function key_size() return (FONT - 1) * S end
-local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * S end
-local function key_cap(x, y, w, label, on)
-    local col = on and pal.FRIEND or pal.DIM
-    local h = KEY_H * S
-    rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
-    u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
-    -- A key is shouted wherever it turns up, menu or corner: it is a thing to
-    -- press rather than something the interface is saying, and the two of them
-    -- are the same object.
-    txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
-        pal.a(col, on and 1 or 0.85), "center", nil, true)
-end
-
-local function menu_button()
+local function menu_button(on_air, watch)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
     -- that corner was a thing to press, and the board has taught the same hand
@@ -2008,6 +2178,54 @@ local function menu_button()
         key_cap(cx, y, ww, c[1], c[3])
         hit(cx, y, ww, KEY_H * S, c[2])
         cx = cx + ww + KEY_GAP * S
+    end
+    -- The tally, when the room channel is pointed at you.
+    --
+    -- It sits on this row rather than at the top of the middle, which is where
+    -- it started and where it could not stay: that strip already carries the
+    -- flag pennants and the round's banner, both of them centred, and a notice
+    -- laid over them read as a fault in the flags. Those two are about the
+    -- round. This is about you, like the keys beside it, and it is chrome
+    -- rather than anything happening in the arena.
+    --
+    -- Counted into `chip_right` like the keys are, so the map that opens
+    -- across this corner keeps clear of it by the rule that already keeps it
+    -- clear of them.
+    if on_air then
+        local mid = y + KEY_H * S / 2
+        -- A slow swell rather than a blink. It has to hold attention for as
+        -- long as the camera holds you, which is minutes, and a blink that
+        -- long is something a player learns to stop seeing.
+        local beat = 0.55 + 0.45 * math.sin(M.now * 3.2)
+        local r = 3.4 * S
+        u:disc(cx + r, ry(mid, 0), r, 10, pal.a(pal.HURT, beat))
+        local label = "ON AIR"
+        local size = key_size()
+        txt(label, cx + 2 * r + 5 * S, mid, size, pal.a(pal.HURT, 0.9))
+        cx = cx + 2 * r + 5 * S + text_w(label, size) + KEY_GAP * S
+    elseif watch then
+        -- Watching, and what of. The same slot, because the two are the same
+        -- kind of fact about the connection and a watcher is never on air.
+        --
+        -- Green and a play mark rather than the tally's red dot: the red one
+        -- is a warning about you and this is a statement about what you are
+        -- looking at, which is the difference between being filmed and
+        -- holding the camera.
+        local mid = y + KEY_H * S / 2
+        local h = 4.6 * S
+        local wsym = h * 1.5
+        local col = pal.a(pal.PRIZE, 0.92)
+        u:tri(cx, ry(mid - h, 0), cx, ry(mid + h, 0),
+              cx + wsym, ry(mid, 0), col)
+        local size = key_size()
+        -- The room's feed says so in the interface's own word; a pilot says
+        -- their own call sign, in their own case, the way a name is written
+        -- everywhere else here.
+        local named = watch.name ~= nil
+        txt(named and watch.name or "CHANNEL",
+            cx + wsym + 6 * S, mid, size, col, nil, nil, named)
+        cx = cx + wsym + 6 * S
+            + text_w(named and watch.name or "CHANNEL", size) + KEY_GAP * S
     end
     chip_right = cx - KEY_GAP * S
 end
@@ -2040,8 +2258,27 @@ local function link(lag)
     -- The bars are the readout a player wants and the whole of it. Everything
     -- behind them is for whoever is working on this, so it hides behind the
     -- one thing on screen that is already about the connection.
+    --
+    -- What answers that press is the whole cluster and the strip it stands
+    -- in. It was 46 by 20 points hung off the right edge, which covered the
+    -- four bars and the last quarter of the word beside them: three quarters
+    -- of the only thing on screen labelled LINK did nothing when pressed,
+    -- and twenty points is half the height a thumb is usually given. It also
+    -- took its top from the window while the drawing took it from the safe
+    -- area, so a phone with an island drew the readout below the box meant
+    -- to open it.
+    --
+    -- The strip above the dial is reserved for this readout already, so the
+    -- box takes all of it: from the word's left edge to the screen's own,
+    -- and from the top of the safe area down to where the dial starts. The
+    -- corner does as much work as the size, since a thumb aimed there cannot
+    -- overshoot upward or to the right off the screen. Taller would mean
+    -- taking a strip off the dial, which is the control that opens the map,
+    -- and one control does not get to eat another.
     if not menu_up then
-        hit(right - 40 * S, pad, 46 * S, 20 * S, "debug")
+        local _, dial_y = dial()
+        local x0 = right - 34 * S - text_w("LINK", (FONT - 3) * S) - 6 * S
+        hit(x0, ST, W - x0, math.max(dial_y - ST, 24 * S), "debug")
     end
 end
 
@@ -2126,6 +2363,18 @@ local function debug_hud(o, top)
         txt(l[2], cx + colw - 10 * S, ly + rowh / 2, size,
             pal.a(pal.INK, 0.9), "right")
     end
+    -- The way out is the thing itself. What opens this is the LINK bars in
+    -- the far corner, which is a fine place to keep a switch nobody needs
+    -- and a poor place to look for one: on a phone the readout lands under
+    -- the dial, a screen's width from the four bars that put it there, and a
+    -- player who has finished reading it has no reason to think the answer
+    -- is back up in the corner. So a press anywhere on the panel closes it,
+    -- which is what every other slab of text in this interface does.
+    --
+    -- Filed here rather than beside the bars, because it is this rectangle,
+    -- and it is this rectangle only once the wrapping above has decided how
+    -- many columns the window can hold.
+    if not menu_up then hit(x, y, w, h, "debug") end
 end
 
 -- Where you are, over the dial's other top corner from the link readout.
@@ -2134,6 +2383,7 @@ end
 -- player says out loud. Pixels would be the same place in numbers six digits
 -- long that nobody can hold in their head or call across a room.
 local function coords(me)
+    if not me then return end
     local pad = (M.compact and 8 or PAD) * S
     local x = dial()
     local base = ST + pad + 13 * S
@@ -2153,7 +2403,7 @@ end
 local function flag_strip(me)
     local n = sim.flag_count()
     if n == 0 then return end
-    local my_team = sim.ship_team(me)
+    local my_team = view_team
     local pitch = 15 * S
     local x0 = W / 2 - (n - 1) * pitch / 2
     local y = ST + 30 * S
@@ -2311,6 +2561,9 @@ function M.hud(o)
     case = "upper"
     if sim.ship_count() == 0 then return end
     local me = o.me
+    -- Before anything draws: every instrument that separates a friend from an
+    -- enemy reads this, and while watching it is not the subject's side.
+    view_team = o.side or team_of(o.me)
     menu_up = o.menu_open
     -- Under the menu the instruments stay -- you can still be shot while you
     -- are reading -- but they stop competing with it. A third of their light
@@ -2324,7 +2577,7 @@ function M.hud(o)
     -- alive, or under the menu, which takes the centre of the screen for
     -- itself and puts both of these away.
     wait_box = nil
-    if not o.menu_open and sim.ship_alive(me) == 0 then
+    if not o.menu_open and not o.watch and sim.ship_alive(me) == 0 then
         wait_box = wait_layout(o.tip)
     end
 
@@ -2334,7 +2587,7 @@ function M.hud(o)
     -- everything else moves up out of the way of them.
     local lift = M.touching and 150 * S or 0
 
-    local top = scores(me, o.pilots)
+    local top = scores(me, o.pilots, o.watchers)
     -- Names hanging off ships, but not under the menu. Glyphs come from the
     -- gui and the gui draws over every mesh, so nothing the menu lays down
     -- can cover them: a panel with six pilots' names scattered through it
@@ -2361,10 +2614,22 @@ function M.hud(o)
         feed(o.feed, M.radar_span())
     end
     -- Stacked, not overlaid: the panel that is always there sits at the
-    -- bottom and the one you asked for sits on top of it.
-    status(me, o.charges, lift)
-    inspect(o, loadout(me, o.class_names, top))
-    menu_button()
+    -- bottom and the one you asked for sits on top of it. A watcher has no
+    -- hull, so the hull's furniture -- the corner stack, the loadout -- is
+    -- not drawn at all; the room's instruments stay.
+    --
+    -- Nor on a touchscreen, where the pads carry the weapons and the charges
+    -- and the last thing left in the corner was your bounty. That is a number
+    -- you read between fights rather than during one, the scoreboard has it,
+    -- and one figure in a corner of a phone is furniture for the sake of a
+    -- corner not being empty.
+    if not (o.watch or M.touching) then
+        status(me, o.charges, lift)
+    end
+    inspect(o, o.watch and top or loadout(me, o.class_names, top))
+    -- A watcher is never the subject, so the tally can only be about a pilot
+    -- who is flying, and the two never contend for the slot.
+    menu_button(o.on_air and not o.watch, o.watch)
     vignette(o.hurt or 0)
     -- The pip over your own hull is not named. A bar that empties as you are
     -- shot and fills when you stop being shot is the one instrument here that
@@ -2386,7 +2651,7 @@ function M.hud(o)
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
             pal.a(pal.INK, 0.92), "center")
     end
-    if sim.ship_alive(me) == 0 then
+    if not o.watch and sim.ship_alive(me) == 0 then
         txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
             pal.ENEMY, "center")
         wait(wait_box, me)
@@ -3026,6 +3291,61 @@ local function empty_state(x, y, w, h, e)
     end
 end
 
+-- Twelve slots for a key, filled left to right, the next one lit. Drawn as
+-- rules rather than boxes: a row of empty boxes reads as a form, and this
+-- interface has no forms in it.
+local function key_slots(cx, y, typed, n)
+    local sw, gap, group = 20 * S, 4 * S, 12 * S
+    local total = n * sw + (n - 1) * gap + 2 * (group - gap)
+    local x = cx - total / 2
+    for i = 1, n do
+        local ch = string.sub(typed, i, i)
+        local here = (i == #typed + 1)
+        local col = (ch ~= "" or here) and pal.FRIEND or pal.DIM
+        if here then rect(x, y, sw, 26 * S, pal.a(pal.FRIEND, 0.16)) end
+        u:seg(x, ry(y + 26 * S), x + sw, ry(y + 26 * S), 1.2 * S,
+              pal.a(col, here and 0.95 or (ch ~= "" and 0.6 or 0.35)), true)
+        if ch ~= "" then
+            txt(ch, x + sw / 2, y + 13 * S, 16 * S, pal.FRIEND, "center",
+                nil, true)
+        end
+        x = x + sw + gap
+        -- Four to a group, which is how the key is written wherever it is
+        -- shown, so what is typed looks like what is being copied.
+        if i % 4 == 0 then x = x + group - gap end
+    end
+    return 26 * S
+end
+
+-- The alphabet, for a machine with no keyboard to raise. Every cell is a tap
+-- target, and the last one rubs a character out: a thumb needs somewhere to
+-- put a mistake.
+local function key_grid(cx, y, alphabet)
+    -- Eleven across, which is the one width where the alphabet and the cell
+    -- that rubs a character out come to exactly three rows: thirty two letters
+    -- laid out eight to a row leave the thirty third alone on a row of its
+    -- own, under the answers, looking like a typo.
+    local cols, cw, chh, gap = 11, 28 * S, 26 * S, 3 * S
+    local total = cols * cw + (cols - 1) * gap
+    local x0 = cx - total / 2
+    local n = #alphabet
+    for i = 1, n + 1 do
+        local ch = (i <= n) and string.sub(alphabet, i, i) or "<"
+        local r0 = math.floor((i - 1) / cols)
+        local c0 = (i - 1) % cols
+        local x = x0 + c0 * (cw + gap)
+        local yy = y + r0 * (chh + gap)
+        txt(ch, x + cw / 2, yy + chh / 2, 14 * S, pal.a(pal.DIM, 0.85),
+            "center", nil, true)
+        if i <= n then
+            hit(x, yy, cw, chh, "letter", ch)
+        else
+            hit(x, yy, cw, chh, "rub")
+        end
+    end
+    return math.ceil((n + 1) / cols) * (chh + gap) - gap
+end
+
 -- A question the menu wants answered before anything else, over the page that
 -- asked it.
 --
@@ -3046,8 +3366,12 @@ local function ask_card(x, y, w, h, a)
     -- under the wash would otherwise answer a question it cannot see.
     M.hits = {}
     text_dim = 1
-    local cw = math.min(340 * S, w - 24 * S)
-    local ch = 110 * S
+    local grid = a.entry and M.touching
+    local cw = math.min((a.entry and 380 or 340) * S, w - 24 * S)
+    -- A card with a code in it is taller by the line the code takes, and one
+    -- being typed into is taller by its slots and whatever fills them.
+    local ch = (a.code and 152 or 110) * S
+    if a.entry then ch = (grid and 248 or 152) * S end
     local cx = x + (w - cw) / 2
     local cy = y + (h - ch) / 2
     rect(cx, cy, cw, ch, pal.a(pal.BTN_BG, 0.98))
@@ -3055,6 +3379,23 @@ local function ask_card(x, y, w, h, a)
     local mid = cx + cw / 2
     txt(a.head or "", mid, cy + 36 * S, (M.compact and 15 or 16) * S,
         pal.a(pal.INK, 0.95), "center", MENU_FONT)
+    -- What the question is about, when it is about a string rather than a
+    -- choice: big enough to read off one machine and type into another,
+    -- quoted rather than said, and lit, because it is the one thing on the
+    -- card anybody has to get right.
+    if a.code then
+        txt(a.code, mid, cy + 72 * S, 30 * S, pal.FRIEND, "center", nil, true)
+    end
+    if a.entry then
+        local ey = cy + 58 * S
+        local eh = key_slots(mid, ey, a.entry.typed or "", a.entry.n or 12)
+        -- The alphabet only where there is no keyboard to raise. On a desktop
+        -- the keyboard is the input and a drawn one would be a picture of the
+        -- thing under the player's hands.
+        if grid then
+            key_grid(mid, ey + eh + 16 * S, a.entry.alphabet or "")
+        end
+    end
     -- Laid out from the middle out rather than from an edge in, so the row of
     -- answers stays centred whatever the words are.
     local ws, total = {}, 0
@@ -3112,9 +3453,18 @@ local function ship_grid(x, y, w, h, v, focused)
         -- The one under the cursor turns, and nothing else on the page does.
         -- Eight hulls all revolving is a screensaver; one of them turning is
         -- the one you are looking at, answering.
-        thumb(cx, cy - ch * 0.17, r.hull or 0,
-              pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116,
-              hot and M.now * 1.7 or nil)
+        -- A cell about a hull draws the hull. The one that is about not having
+        -- one draws the pilot instead, at the size the helmet reads at rather
+        -- than at the hull's, since the two figures are built to different
+        -- scales and matching their boxes would shrink the helmet to a dot.
+        if r.figure == "pilot" then
+            pilot_mark(cx, cy - ch * 0.17,
+                       pal.a(col, (hot or r.mark) and 1 or 0.7), ch * 0.30)
+        else
+            thumb(cx, cy - ch * 0.17, r.hull or 0,
+                  pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116,
+                  hot and M.now * 1.7 or nil)
+        end
         txt(r.label or "", cx, cy + ch * 0.20, (M.compact and 14 or 15) * S,
             pal.a(col, (hot or r.mark) and 1 or 0.8), "center", MENU_FONT)
         if r.role then
@@ -3265,7 +3615,13 @@ function M.menu(v)
     local head = (narrow and 54 or 76) * S
 
     local rx, ry_, rw, rh          -- the rail
+    local icon_dy                  -- the icon's drop inside it, narrow only
     local sx, sy, sw, sh           -- the stage
+    local logo_y                   -- the middle of the name, both layouts
+    -- What the panel covers, name included: everything a press may land on
+    -- without meaning to leave. Published as one box at the end, so the
+    -- gaps between rows are not a way out of the menu.
+    local px0, py0, px1, py1
     local vertical = not narrow
 
     if vertical then
@@ -3304,19 +3660,36 @@ function M.menu(v)
         sx = x0 + rw + 26 * S
         sy, sh = top, block
         sw = total - rw - 26 * S
-        wordmark(x0, top - head + 30 * S, (tall and 40 or 30) * S)
+        logo_y = top - head + 30 * S
+        wordmark(x0, logo_y, (tall and 40 or 30) * S)
         -- What you are reading, laid over what you are not. A wash rather
         -- than a panel: no border, no corners, just enough that the type sits
         -- on something and the arena stays visible round the edges of it.
         rect(x0 - 18 * S, top - 16 * S, total + 36 * S, block + 30 * S,
              pal.rgb(0x03050a, 0.5))
+        -- Up to the name, which stands above the wash and is part of the
+        -- panel to anybody looking at it.
+        px0, py0 = x0 - 18 * S, top - head
+        px1, py1 = px0 + total + 36 * S, top - 16 * S + block + 30 * S
         -- The rule the whole thing hangs off, between the rail and the stage.
         vrule(x0 + rw + 1 * S, top, block, pal.a(pal.RADAR_TILE, 0.75), 30 * S)
     else
         rh = (home and 78 or 84) * S
         rw = W - SL - SR - 2 * margin
         rx = SL + margin
-        ry_ = H - margin - rh
+        -- A tab bar, sitting where one sits: on the bottom edge, with the
+        -- surface running under the home indicator and only the icons and
+        -- words held clear of it.
+        --
+        -- The inset stands in for the padding the block already keeps rather
+        -- than stacking on top of it. Stepping the whole rail up by the whole
+        -- inset put the words 56 points off the bottom of a phone, which is
+        -- the same interface-come-loose-from-the-edge the page margin used to
+        -- give, and is what a hardware inset looks like when it is added to a
+        -- gap that was already there.
+        icon_dy = (home and 30 or 32) * S
+        local under = rh - icon_dy - 24 * S
+        ry_ = H - rh - math.max(0, SB - under)
         sx, sw = SL + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two
@@ -3324,8 +3697,18 @@ function M.menu(v)
         local chip = home and 0 or 34 * S
         sy = ST + margin + head + chip
         sh = ry_ - 20 * S - sy
-        rect(0, sy - 16 * S, W, sh + rh + 46 * S, pal.rgb(0x03050a, 0.5))
-        wordmark(rx, ST + margin + chip + 22 * S, 30 * S)
+        -- Down to the bottom edge, rather than to the rail plus a margin
+        -- that is no longer there: the wash is what the panel sits on, and a
+        -- strip of bare arena under the rail reads as the panel having come
+        -- loose from the screen.
+        rect(0, sy - 16 * S, W, H - (sy - 16 * S), pal.rgb(0x03050a, 0.5))
+        logo_y = ST + margin + chip + 22 * S
+        wordmark(rx, logo_y, 30 * S)
+        -- The whole screen from the name down. A phone's menu is the screen,
+        -- so there is next to nothing outside it, which is the right answer
+        -- there: the way out is the x and the lit rail stop.
+        px0, py0 = 0, logo_y - 20 * S
+        px1, py1 = W, H
         u:seg(rx, ry(ry_ - 12 * S), W - SR - margin, ry(ry_ - 12 * S),
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
@@ -3361,7 +3744,7 @@ function M.menu(v)
             cy = ry_ + (i - 0.5) * pitch
         else
             cx = rx + (i - 0.5) * pitch
-            cy = ry_ + (home and 30 or 32) * S
+            cy = ry_ + icon_dy
         end
         local col = sel and pal.FRIEND or pal.a(pal.DIM, 0.9)
         local r = 13 * S
@@ -3383,8 +3766,11 @@ function M.menu(v)
                 -- well, which is the vertical rail's own mark turned on its
                 -- side: there it points at the stage beside it, and here it
                 -- points at nothing and reads as a tab that has come loose.
-                rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, rh - 4 * S,
-                     lit)
+                --
+                -- Down to the edge of the screen rather than to the end of
+                -- the block, so the lit stop is a tab reaching the bottom of
+                -- the phone and not a panel floating above the indicator.
+                rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, H - ry_, lit)
             end
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
@@ -3402,7 +3788,7 @@ function M.menu(v)
         if vertical then
             hit(rx - 6 * S, cy - pitch / 2, rw + 10 * S, pitch, "rail", i)
         else
-            hit(cx - pitch / 2, ry_ - 8 * S, pitch, rh + 8 * S, "rail", i)
+            hit(cx - pitch / 2, ry_ - 8 * S, pitch, H - ry_ + 8 * S, "rail", i)
         end
     end
 
@@ -3428,9 +3814,19 @@ function M.menu(v)
     -- "close" at the top, which is one control with two jobs and two names,
     -- and a rail that navigates from every level had already taken the going
     -- back. What is left is shutting the panel, and everything shuts on an x.
+    --
+    -- On the name's own line, at the far end of it. It sat at the top of the
+    -- stage, which on the desktop layout is a third of the way down the panel
+    -- and level with nothing: a dialog's x belongs on the dialog's title, and
+    -- here the title is the name. Same line in both layouts, since the name is
+    -- in both.
+    -- At the far end of that line, which is the block's own edge rather than
+    -- the list's: the list is capped at 520 points and the x hung off the end
+    -- of it, which was the right place under a heading and is a mark adrift
+    -- in the middle of a title.
     if v.closable then
-        close_mark(tx + lw - 8 * S, sy + 11 * S, pal.a(pal.DIM, 0.9), 11 * S)
-        hit(tx + lw - 30 * S, sy, 40 * S, 24 * S, "close")
+        close_mark(sx + sw - 8 * S, logo_y, pal.a(pal.DIM, 0.9), 11 * S)
+        hit(sx + sw - 30 * S, logo_y - 12 * S, 40 * S, 24 * S, "close")
     end
     local top = sy + STAGE_TOP * S
     local room = sh - (top - sy) - 26 * S
@@ -3524,7 +3920,24 @@ function M.menu(v)
             pal.a(v.note and pal.HURT or pal.DIM, 0.95))
     end
 
+    -- A press that missed everything is a press on the arena behind, and over
+    -- a game that means put me back in it, which is what escape does and what
+    -- a hand reaches for after opening this by accident. Two boxes: the panel
+    -- swallows its own, so the space between two rows is not a way out, and
+    -- everything left over is one.
+    --
+    -- Published here because the first box a press lands in wins and every
+    -- control on the panel has already had its turn. The instruments behind
+    -- are published before the menu is drawn at all, so a dimmed scoreboard
+    -- row still answers to a click rather than being a hole in the way out.
+    if v.closable then
+        hit(px0, py0, px1 - px0, py1 - py0, "panel")
+        hit(0, 0, W, H, "close")
+    end
+
     -- Last, over all of it, because it is the only thing being read.
+    -- It takes the screen, boxes included: a question is answered, not
+    -- clicked past.
     if v.ask then ask_card(sx, sy, GUTTER * S + lw, sh, v.ask) end
     case = "upper"
 end

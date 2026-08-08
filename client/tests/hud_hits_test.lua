@@ -45,6 +45,16 @@ for _, name in ipairs({"arc", "disc", "flush", "frame", "outline", "quad", "rect
     layer[name] = noop
 end
 
+-- Rectangles are kept as well as counted, because one question here is
+-- whether a box covers a drawing rather than whether a drawing happened:
+-- the LINK bars are rects, and a toggle that misses them is the fault.
+-- Bottom-up, the way the mesh takes them.
+local rects = {}
+layer.rect = function(self, x, y, w, h)
+    self.n = self.n + 1
+    rects[#rects + 1] = {x = x, y = y, w = w, h = h}
+end
+
 -- The room. Ship 0 is us; the rest are strangers, all on one other team so
 -- that the free-for-all test can hand out a team per seat instead.
 local room = {count = 4, teams = {[0] = 1, 1, 1, 1}, alive = {}}
@@ -109,6 +119,8 @@ local W, H = 1280, 800
 -- One frame, with whatever the caller wants to be true about the room.
 local function frame(o)
     o = o or {}
+    rects = {}
+    package.loaded["arena.state"].n = 0
     ui.begin(layer, W, H, 1, false)
     ui.hud({
         me = 0,
@@ -189,11 +201,117 @@ for i = 1, 3 do
 end
 check("the sweep found ships to press on", tested > 0)
 
+-- --- the debug readout closes itself ---------------------------------------
+
+-- What opens it is the LINK bars in the far corner, and on a phone the
+-- readout lands under the dial a screen's width away from them. So the panel
+-- itself has to be the way out, or a player who opened it has nothing to
+-- press but the four bars they have no reason to look back at.
+-- Both boxes carry the same action, so they are told apart by size: the
+-- bars are a chip in the corner and the panel is a slab under the dial.
+local function debug_boxes()
+    local out = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "debug" then out[#out + 1] = r end
+    end
+    return out
+end
+
+ui.debug = false
+frame()
+check("shut, only the bars answer", #debug_boxes() == 1,
+      #debug_boxes() .. " boxes")
+
+-- And what that one box has to cover is the thing it looks like: the whole
+-- word LINK and all four of its bars. It used to be a rectangle hung off the
+-- right edge that took the bars and the last quarter of the word, so most of
+-- the only label on screen saying LINK did nothing when pressed, which is
+-- what made it hard to hit on a phone.
+do
+    local chip = debug_boxes()[1]
+    -- The word, from the text the interface published. Right-pivoted, so it
+    -- runs leftward from where it was placed, and stored bottom-up.
+    local st = package.loaded["arena.state"]
+    local wx0, wx1, wy
+    for k = 1, st.n do
+        local t = st.text[k]
+        if t.s == "LINK" then
+            wx1 = t.x
+            wx0 = t.x - #t.s * t.px * (1233 / 2048)
+            wy = H - t.y
+        end
+    end
+    check("the readout draws its word", wx0 ~= nil)
+    if wx0 and chip then
+        check("the toggle covers the whole word",
+              wx0 >= chip.x and wx1 <= chip.x + chip.w
+              and wy >= chip.y and wy <= chip.y + chip.h,
+              string.format("word %.0f..%.0f at %.0f, box %.0f..%.0f y %.0f..%.0f",
+                            wx0, wx1, wy, chip.x, chip.x + chip.w,
+                            chip.y, chip.y + chip.h))
+        -- The bars: the four small rects in the same strip.
+        local bars = 0
+        for _, r in ipairs(rects) do
+            local top = H - (r.y + r.h)
+            if r.w < 8 and top < chip.y + chip.h + 8 and r.x > W / 2 then
+                bars = bars + 1
+                check("bar at x " .. math.floor(r.x) .. " is inside the toggle",
+                      r.x >= chip.x and r.x + r.w <= chip.x + chip.w
+                      and top >= chip.y and H - r.y <= chip.y + chip.h)
+            end
+        end
+        check("all four bars were found", bars == 4, bars .. " bars")
+        -- And it is a target rather than a hairline. A thumb wants about
+        -- forty points; the strip above the dial is what the layout leaves,
+        -- so the width makes up what the height cannot.
+        check("the toggle is a thumb's worth of screen",
+              chip.w >= 60 and chip.h >= 24 and chip.w * chip.h >= 44 * 44 * 0.9,
+              string.format("%.0fx%.0f", chip.w, chip.h))
+        -- Anchored at the very top, so a thumb aiming for the corner cannot
+        -- overshoot upward past it.
+        check("it starts at the top edge", chip.y <= 0.01,
+              string.format("y %.1f", chip.y))
+        -- And it stops where the dial starts, because the dial is the
+        -- control that opens the map and one control does not eat another.
+        local mapbox = box("map")
+        check("it does not reach into the dial",
+              mapbox ~= nil and chip.y + chip.h <= mapbox.y + 0.01,
+              mapbox and string.format("box ends %.0f, dial starts %.0f",
+                                       chip.y + chip.h, mapbox.y) or "no map box")
+    end
+end
+
+ui.debug = true
+frame()
+local dbg = debug_boxes()
+check("open, the readout publishes a box of its own", #dbg == 2,
+      #dbg .. " boxes")
+local panel = dbg[#dbg]
+if #dbg == 2 then
+    check("and it is a slab rather than a chip",
+          panel.w > 100 and panel.h > 40,
+          string.format("%.0fx%.0f", panel.w, panel.h))
+    -- Pressed in the middle, which is where a thumb finishing a read lands,
+    -- and nowhere near the four bars that opened it.
+    local act = press(panel.x + panel.w / 2, panel.y + panel.h / 2)
+    check("a press in the middle of it closes it", act == "debug",
+          "landed on " .. tostring(act))
+    -- The corner it came from is a long way off, which is the whole reason
+    -- this box exists.
+    check("the bars are nowhere near it",
+          math.abs((panel.y + panel.h / 2) - (dbg[1].y + dbg[1].h / 2)) > 40)
+end
+ui.debug = false
+
 -- --- the menu takes the screen ---------------------------------------------
 
 frame({menu_open = true})
 check("the map is not clickable under the menu", box("map") == nil)
 check("the debug readout is not clickable under the menu", box("debug") == nil)
+ui.debug = true
+frame({menu_open = true})
+check("nor is the open readout under the menu", box("debug") == nil)
+ui.debug = false
 
 -- --- the scoreboard is where you ask ---------------------------------------
 
@@ -209,6 +327,98 @@ check("a row's click reaches the pilot rather than the list",
 check("every row is tested before the panel that holds them",
       rank("pilot") ~= nil and rank("scores") ~= nil
       and rank("pilot") < rank("scores"))
+ui.details = false
+
+-- --- the roster is a list of names, ordered like one -----------------------
+--
+-- Your own side first, then everybody else as one group, and inside each of
+-- them alphabetical without case deciding anything: a pilot who capitalises
+-- their call sign does not get the top of the room for it.
+
+ui.details = true
+ui.sort = "name"
+room.teams = {[0] = 1, 1, 9, 9}
+frame({pilots = {[0] = {name = "zulu", label = "human"},
+                 [1] = {name = "Alpha", label = "human"},
+                 [2] = {name = "bravo", label = "human"},
+                 [3] = {name = "Charlie", label = "human"}}})
+-- Read out of the scoreboard's own column rather than off the whole screen:
+-- the same names are drawn again over the hulls they belong to.
+local order = {}
+for k = 1, package.loaded["arena.state"].n do
+    local t = package.loaded["arena.state"].text[k]
+    for _, nm in ipairs({"zulu", "Alpha", "bravo", "Charlie"}) do
+        if t.s == nm and t.x < 300 then order[#order + 1] = nm end
+    end
+end
+check("your side comes first, then the rest, each alphabetical",
+      table.concat(order, ",") == "Alpha,zulu,bravo,Charlie",
+      table.concat(order, ","))
+ui.details = false
+
+-- --- and it carries four numbers in 248 points ------------------------------
+--
+-- Kills, deaths, points and bounty, right-aligned off the panel's edge, with a
+-- name and a bot mark to the left of them. Points is the wide one: five digits
+-- after a long session, where the rest are two or three. Fixed offsets fitted
+-- three columns and could not fit four, so the widths are measured off the
+-- numbers in the room, and this is the question a fixed offset got wrong.
+--
+-- Asked with the widest row a room can produce. Everything on it is either
+-- left- or right-pivoted text, so the spans are exact, and none of them may
+-- touch: a scoreboard whose columns collide reads as one long number.
+
+ui.details = true
+ui.sort = "name"
+room.teams = {[0] = 1, 1, 1, 1}
+local kills, deaths, points, bounty =
+    sim.ship_kills, sim.ship_deaths, sim.ship_points, sim.ship_bounty
+sim.ship_kills = function(i) return i == 1 and 137 or 1 end
+sim.ship_deaths = function(i) return i == 1 and 118 or 1 end
+sim.ship_points = function(i) return i == 1 and 12750 or 1 end
+sim.ship_bounty = function(i) return i == 1 and 812 or 1 end
+frame({pilots = {[0] = {name = "aaa", label = "human"},
+                 [1] = {name = "Wintermute-99", label = "bot", ai = true},
+                 [2] = {name = "ccc", label = "human"},
+                 [3] = {name = "ddd", label = "human"}}})
+do
+    local st = package.loaded["arena.state"]
+    -- The widest row, found by its points, and then everything sharing its
+    -- baseline inside the panel. Bottom-up, so one y is one row.
+    local row_y
+    for k = 1, st.n do
+        local t = st.text[k]
+        if t.s == "12750" and t.x < 300 then row_y = t.y end
+    end
+    local span = {}
+    for k = 1, st.n do
+        local t = st.text[k]
+        if t.y == row_y and t.x < 300 then
+            local wide = #t.s * t.px * (1233 / 2048)
+            local x0 = t.pivot == "right" and (t.x - wide) or t.x
+            span[#span + 1] = {s = t.s, x0 = x0, x1 = x0 + wide}
+        end
+    end
+    table.sort(span, function(a, b) return a.x0 < b.x0 end)
+    check("the widest row draws a name and four numbers", #span == 5,
+          "drew " .. #span)
+    for k = 2, #span do
+        check(string.format("%s clears %s", span[k].s, span[k - 1].s),
+              span[k].x0 >= span[k - 1].x1,
+              string.format("%.1f into %.1f", span[k].x0, span[k - 1].x1))
+    end
+    -- The bot mark has a column of its own between the name and the kills, so
+    -- the marks line up down the list rather than trailing each name. It is
+    -- drawn rather than written, so what is measurable here is the gap the
+    -- name gives up for it: MARK_K plus the gap either side.
+    if #span == 5 then
+        check("the name leaves the mark its column",
+              span[2].x0 - span[1].x1 >= 11 + 7,
+              string.format("%.1f of gap", span[2].x0 - span[1].x1))
+    end
+end
+sim.ship_kills, sim.ship_deaths = kills, deaths
+sim.ship_points, sim.ship_bounty = points, bounty
 ui.details = false
 
 -- --- the feed is bounded ---------------------------------------------------

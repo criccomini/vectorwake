@@ -554,8 +554,11 @@ of one zone can now rate the same pilot without disagreeing, which was the
 blocker on a zone ever being served by more than one arena server at once. See
 [meta-layer.md](meta-layer.md).
 
-**Deferred: spectators.** The design is in the join path above and stands; it is
-simply not being built yet. Two things wait on it. The duel queue needs pilots
-present but not playing, which is one reason duels stay out. And lag response's
-force-to-spectator is the gentlest of ASSS's four thresholds, so until
-spectating exists, the only lag actions available are the harsher ones.
+**Closed: spectators.** Built as designed above: a watcher is a connection with
+a seat in the roster and no ship in the simulation, and the sim gained no
+field. What the build added is the sight rules, which the join-path sketch
+never had to answer: live follow is your own side only, everyone else gets the
+room channel, one shared feed per room running a zone-set delay behind, and
+the subject is told they are on air. [design/spectating.md](../design/spectating.md)
+says why each of those is load-bearing. The duel queue and lag response's
+force-to-spectator now have the state they were waiting on.
