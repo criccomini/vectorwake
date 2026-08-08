@@ -603,12 +603,12 @@ check("a bare weapon is not described as carrying anything",
 -- desktop and a bad one on a phone held sideways, where five rows at full
 -- size are most of the height, so the scale backs off against the room there
 -- is. Neither end of that is visible without measuring it.
-local function block(w, h, dens)
+local function block(w, h, dens, touching)
     shapes = {}
     ink = {}
     state.n = 0
     ui.help = false
-    ui.begin(layer, w, h, dens, false)
+    ui.begin(layer, w, h, dens, touching or false)
     ui.hud({
         me = 0, class_names = {"Apex"}, menu_open = false,
         pilots = {[0] = {name = "you", label = "human"}},
@@ -1001,6 +1001,37 @@ check("and shrinks by what it dropped",
                     short_top and short_top.y1 or -1,
                     full_top and full_top.y1 or -1))
 in_hand = {repel = 2, burst = 1}
+
+-- --- and none of it on glass ------------------------------------------------
+
+-- A touchscreen draws no corner stack at all. The pads carry the weapons and
+-- the charges, and the last thing left here was the bounty, which is a number
+-- you read between fights rather than during one and which the scoreboard has.
+-- One figure in the corner of a phone is furniture for the sake of the corner
+-- not being empty, and that corner is where a thumb rests.
+--
+-- Measured by asking the interface what answers a point rather than by
+-- counting shapes, because the whole bottom left is drawn over by the stick
+-- and its resting mark, which this harness does not draw and a phone does.
+do
+    in_hand = {repel = 2, burst = 1}
+    mods = {[0] = {[0] = 2}, [1] = {[2] = 1, [3] = 2}}
+    block(844 * 2, 390 * 2, 2, true)
+    local answered = {}
+    for py = 0, 780, 6 do
+        for px = 0, 400, 6 do
+            local k = ui.help_at(px, py)
+            if k then answered[k] = true end
+        end
+    end
+    local left = {}
+    for _, key in ipairs({"gun", "bomb", "charge:repel", "charge:burst",
+                          "bounty"}) do
+        if answered[key] then left[#left + 1] = key end
+    end
+    check("a touchscreen draws no corner stack", #left == 0,
+          table.concat(left, ", ") .. " still in the corner")
+end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

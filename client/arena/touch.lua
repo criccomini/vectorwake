@@ -116,8 +116,9 @@ function M.layout(w, h, s)
     s = s or 1
     local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
     local br = r * 0.82
-    -- Far enough in that the energy gauge outside the gun's rim clears the
-    -- edge of the screen.
+    -- Far enough in that the rim clears the edge of the screen with a thumb's
+    -- worth of margin: a control hard against the bezel is one a hand has to
+    -- curl round to reach.
     local gun_pad  = {x = w - M.safe_r - r * 1.4, y = r * 1.4, r = r}
     local bomb_pad = {x = gun_pad.x - r - br - r * 0.34, y = gun_pad.y, r = br}
     local home  = {x = M.safe_l + r * 1.6, y = r * 1.8, r = r * 1.15}
@@ -134,11 +135,10 @@ function M.layout(w, h, s)
     -- since `within` grows the cell by a third on every side.
     local cw = r * 0.82
     local x0 = gun_pad.x
-    -- Clear of the gauge, not just of the rim. The energy arc rides at a
-    -- fifth of a radius outside the gun and sweeps past straight up, so a
-    -- rail measured off the ring alone starts inside it -- which is what the
-    -- first build of this drew, and it took a screenshot to see.
-    local y0 = gun_pad.y + r * 1.25 + cw * 0.75
+    -- Clear of the rim with a gap you can see. It used to have to clear the
+    -- energy arc riding a fifth of a radius outside the gun as well, and the
+    -- first build of this cleared neither, which took a screenshot to see.
+    local y0 = gun_pad.y + r * 1.08 + cw * 0.75
     local x, y = x0, y0
     local charge = {}
     for _, k in ipairs(M.charges) do
@@ -352,18 +352,12 @@ function M.draw(u, w, h, s)
     local gcol = pal.rung(marks.level(M.me, sim.TRIG_GUN))
     pad_ring(L.guns, gcol, guns)
     pad_mark(L.guns, sim.TRIG_GUN)
-    -- Energy, on an arc outside the rim. Drawn on the ring itself it reads as
-    -- a second ring drawn badly, and inside it lands on the mark.
-    if M.me and sim.ship_max_energy then
-        local cap = sim.ship_max_energy(M.me)
-        if cap > 0 then
-            local frac = math.max(0, math.min(1, sim.ship_energy(M.me) / cap))
-            local a0 = math.pi * 1.22
-            u:arc(L.guns.x, L.guns.y, L.guns.r * 1.2, a0,
-                  a0 + math.pi * 1.56 * frac, 3.4 * s, 24,
-                  pal.a(gcol, 0.75))
-        end
-    end
+    -- The gun wore its energy on a second arc outside the rim for a while.
+    -- Every hull in the game already carries a bar above it saying the same
+    -- thing, yours included, and that one is where you are looking: at the
+    -- ship, in the middle of the screen, rather than under the thumb in the
+    -- corner. So the gun had two rings where the bomb has one, and the outer
+    -- one was a copy of an instrument thirty degrees of eye travel away.
 
     if M.has_bomb then
         local bcol = pal.rung(marks.level(M.me, sim.TRIG_BOMB))

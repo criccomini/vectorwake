@@ -1489,20 +1489,11 @@ local function status(me, charges, lift)
     for _, c in ipairs(charges or {}) do
         if (c.count or 0) > 0 then slots[#slots + 1] = c end
     end
-    -- On a touchscreen the pads carry all of this: the counts sit over the
-    -- charge pads and the weapon marks sit inside the trigger pads, drawn by
-    -- touch.lua draws them, so any row here would be the same thing twice at
-    -- opposite corners of a screen that has no room for once. What is left
-    -- of the stack on glass is the one row no pad speaks for: the bounty.
-    local show_charges = #slots > 0 and not M.touching
-    local show_trigs = not M.touching
     local trigs = 0
-    if show_trigs then
-        for t = 0, SIM_TRIGGERS - 1 do
-            if sim.has_trigger(me, t) then trigs = trigs + 1 end
-        end
+    for t = 0, SIM_TRIGGERS - 1 do
+        if sim.has_trigger(me, t) then trigs = trigs + 1 end
     end
-    local n = trigs + (show_charges and #slots or 0) + 1
+    local n = trigs + #slots + 1
 
     -- One number the whole block is measured in, so it grows as a drawing
     -- rather than as a pile of separately tuned constants. Everything below
@@ -1542,7 +1533,7 @@ local function status(me, charges, lift)
     -- said and says it in the same terms the arena does. Two answers to one
     -- question, and the second one in the team's colour, which the level is
     -- nothing to do with.
-    for t = 0, show_trigs and SIM_TRIGGERS - 1 or -1 do
+    for t = 0, SIM_TRIGGERS - 1 do
         if sim.has_trigger(me, t) then
             local right = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
             local key = (t == sim.TRIG_GUN) and "gun" or "bomb"
@@ -1557,31 +1548,29 @@ local function status(me, charges, lift)
         end
     end
 
-    if show_charges then
-        for _, c in ipairs(slots) do
-            -- No ready mark and no key letter: there is no selection to
-            -- show any more, a key or a pad names its charge outright, and
-            -- which key is which row is the help page's job, not a label
-            -- worn in the corner of every fight.
-            local slot = string.lower(c.name or c.short or "")
-            local gc = CHARGE_GLYPHS[slot] or gl_diamond
-            gc(mid, y + rows_h / 2, 7 * z,
-               pal.a(CHARGE_HUES[slot] or pal.PRIZE, 0.85))
-            local slot_max = math.max(1, c.max or 3)
-            pips(val + 3 * z, y + rows_h / 2, slot_max, c.count,
-                 pal.CHARGE_COL, 2.7 * z, 9 * z)
-            local pw = val + 3 * z + slot_max * 9 * z
-            if pw > wide then wide = pw end
-            -- A row per charge rather than one bracket over all of them. A
-            -- repel and a burst are different things and each has a card of
-            -- its own; they shared a sentence only while that sentence was
-            -- about which key spends them.
-            local key = "charge:" .. string.lower(c.name or c.short or "")
-            anchor[key] = y + rows_h / 2
-            anchor.charge_order[#anchor.charge_order + 1] = key
-            zone(key, x, y, pw - x, rows_h)
-            y = y + rows_h
-        end
+    for _, c in ipairs(slots) do
+        -- No ready mark and no key letter: there is no selection to
+        -- show any more, a key or a pad names its charge outright, and
+        -- which key is which row is the help page's job, not a label
+        -- worn in the corner of every fight.
+        local slot = string.lower(c.name or c.short or "")
+        local gc = CHARGE_GLYPHS[slot] or gl_diamond
+        gc(mid, y + rows_h / 2, 7 * z,
+           pal.a(CHARGE_HUES[slot] or pal.PRIZE, 0.85))
+        local slot_max = math.max(1, c.max or 3)
+        pips(val + 3 * z, y + rows_h / 2, slot_max, c.count,
+             pal.CHARGE_COL, 2.7 * z, 9 * z)
+        local pw = val + 3 * z + slot_max * 9 * z
+        if pw > wide then wide = pw end
+        -- A row per charge rather than one bracket over all of them. A
+        -- repel and a burst are different things and each has a card of
+        -- its own; they shared a sentence only while that sentence was
+        -- about which key spends them.
+        local key = "charge:" .. string.lower(c.name or c.short or "")
+        anchor[key] = y + rows_h / 2
+        anchor.charge_order[#anchor.charge_order + 1] = key
+        zone(key, x, y, pw - x, rows_h)
+        y = y + rows_h
     end
 
     -- What you are worth, which is the number that decides who comes for you,
@@ -2622,7 +2611,13 @@ function M.hud(o)
     -- bottom and the one you asked for sits on top of it. A watcher has no
     -- hull, so the hull's furniture -- the corner stack, the loadout -- is
     -- not drawn at all; the room's instruments stay.
-    if not o.watch then
+    --
+    -- Nor on a touchscreen, where the pads carry the weapons and the charges
+    -- and the last thing left in the corner was your bounty. That is a number
+    -- you read between fights rather than during one, the scoreboard has it,
+    -- and one figure in a corner of a phone is furniture for the sake of a
+    -- corner not being empty.
+    if not (o.watch or M.touching) then
         status(me, o.charges, lift)
     end
     inspect(o, o.watch and top or loadout(me, o.class_names, top))

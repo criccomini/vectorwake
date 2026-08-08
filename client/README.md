@@ -425,8 +425,8 @@ out gets a sixth each and reads as a dense mark, which is the right way round.
 Spending the room as it was asked for instead would put a Spire's fragments
 through the row above.
 
-On a touchscreen the weapon rows are not drawn at all, and the bounty is the
-whole of the corner. The pads carry them instead: `arena/marks.lua` holds the
+On a touchscreen the corner is not drawn at all. The pads carry it instead:
+`arena/marks.lua` holds the
 whole mark, add-ons and all, behind one `marks.weapon` that `ui.lua` and
 `touch.lua` both call. Neither draws a stroke of a weapon itself. That is the
 only reason it is worth having the marks in a third file, and it was worth it:
@@ -451,8 +451,11 @@ is the larger of them. Round, because the charges are square: which class of
 control a thing is reads before the picture inside it does, and a round pad
 beside a square cell can never be taken for another trigger.
 
-The gun wears its energy on an arc outside its rim. On the rim it read as a
-second ring drawn badly, and inside it landed on the mark.
+One ring per control and nothing outside it. The gun wore its energy on a
+second arc past the rim for a while, so it had two rings where the bomb has
+one, and the outer one was a copy of an instrument thirty degrees of eye travel
+away: every hull in the game carries a bar above it saying the same thing,
+yours included, and that one is where you are already looking.
 
 The charges go above the triggers rather than beside them, so reaching the gun
 never crosses one. They climb the edge as a column while there is edge to
@@ -467,6 +470,11 @@ How many of a charge are in hand is pips along the cell's floor, one per slot
 the hull can hold, filled as far as it is. It was a numeral floating above the
 pad, which is the one thing on this screen a bare mesh cannot draw, and it sat
 in the gap between two controls belonging to neither.
+
+The bounty went the same way. It was the last row the corner had left on
+glass, and it is a number you read between fights rather than during one, which
+the scoreboard has: one figure in the corner of a phone is furniture for the
+sake of the corner not being empty, and that corner is where a thumb rests.
 
 A charge you have spent out gets no cell, and the rail closes up behind it.
 Both surfaces do this: the corner drops the row and the block shrinks by it,
