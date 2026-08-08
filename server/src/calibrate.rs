@@ -9,7 +9,7 @@
 //! rating math. Nothing here models an outcome, because a model of a fight is
 //! exactly the thing that would drift away from the fight.
 
-use crate::{ai, ingest_damage, nav, rating, sim};
+use crate::{ai, config, ingest_damage, nav, rating, sim};
 
 /// A match ends at this many kills, or this many ticks if the two are too
 /// evenly matched to settle it. 100 ticks is a second.
@@ -285,11 +285,31 @@ fn spec_triggers(cfg: &sim::sim_settings, class: u8) -> std::collections::HashMa
 
 /// One bout between two kits. The returned sides are in the order passed in,
 /// whichever end of the pit each of them actually flew.
-pub fn stage_bout(kits: [&Stage; 2], class: u8, skill: f32, salt: u32) -> Bout {
+///
+/// `tuning` is a zone's arena block, or `None` for the roster as this binary
+/// compiled it. It matters more than it sounds: a zone owns its weapon table
+/// and its add-on steps, so what multifire costs is a zone's answer rather
+/// than the core's, and a price measured on the baseline is a price for a room
+/// nobody is necessarily running.
+///
+/// The map stays the pit whatever the zone says. A zone's own map would put
+/// routing, corridors and a thousand tiles of separation into a measurement
+/// that exists to isolate the kit, and two pilots on Alpha's map would spend
+/// most of a bout looking for each other.
+pub fn stage_bout(kits: [&Stage; 2], class: u8, skill: f32, salt: u32,
+                  tuning: Option<&config::ArenaConfig>) -> Bout {
     let mut world = sim::World::with_map(0x5ea1 ^ salt, sim::build_pit);
     let route = nav::Nav::build(&world.map);
+    if let Some(c) = tuning {
+        // The arena's own path, so a setting this harness reads is a setting a
+        // room would read. It rebuilds the baseline first, which is why it
+        // comes before the two lines below rather than after.
+        crate::Arena::apply_config(&mut world, c);
+    }
     // The same two settings the ladder holds still, for the same reason: a
     // green landing mid-bout would be a kit this harness did not hand out.
+    // Held even against a zone that asks for thirty, since the whole point is
+    // that the kit is the only difference between the two pilots.
     world.cfg.spawn_prizes = 0;
     world.cfg.prize_max = 0;
 
@@ -428,7 +448,8 @@ impl StageRow {
 /// counting it would drag every rate toward a half and hide the thing it is
 /// actually good for: a mirror that does not come out even says the harness is
 /// biased, and a mirror that never resolves says the pair is too dull to score.
-pub fn run_stages(class: u8, skill: f32, bouts: u32, verbose: bool) -> Vec<StageRow> {
+pub fn run_stages(class: u8, skill: f32, bouts: u32, tuning: Option<&config::ArenaConfig>,
+                  verbose: bool) -> Vec<StageRow> {
     let n = STAGES.len();
     let mut rows: Vec<StageRow> = STAGES
         .iter()
@@ -455,7 +476,7 @@ pub fn run_stages(class: u8, skill: f32, bouts: u32, verbose: bool) -> Vec<Stage
             let (mut wi, mut wj, mut drew) = (0u32, 0u32, 0u32);
             let mut stale = 0u32;
             for _ in 0..bouts {
-                let b = stage_bout([&STAGES[i], &STAGES[j]], class, skill, salt);
+                let b = stage_bout([&STAGES[i], &STAGES[j]], class, skill, salt, tuning);
                 salt = salt.wrapping_add(1);
 
                 // Worn is a property of the kit and the hull rather than of a
@@ -504,10 +525,15 @@ pub fn run_stages(class: u8, skill: f32, bouts: u32, verbose: bool) -> Vec<Stage
 }
 
 /// Print the tournament, and hand back the document worth keeping.
-pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32) -> serde_json::Value {
+pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
+                     zone: &str) -> serde_json::Value {
+    // Whose numbers these are, said at the top. A price for multifire is a
+    // price under some zone's `multi_energy` and `mod_spread`, and a report
+    // that did not name the tuning would invite being carried to a room that
+    // does not use it.
     println!(
-        "\nloadout tournament: {hull}, skill {skill:.2}, {bouts} bouts a pair, \
-{} stages",
+        "\nloadout tournament: {hull}, {zone} tuning, skill {skill:.2}, \
+{bouts} bouts a pair, {} stages",
         rows.len()
     );
     println!(
@@ -603,6 +629,7 @@ so that is the noise floor: read no gap narrower than it.",
 
     serde_json::json!({
         "hull": hull,
+        "tuning": zone,
         "skill": skill,
         "bouts_per_pair": bouts,
         /* Percentage points of spread across the rows wearing nothing. A
@@ -768,7 +795,7 @@ mod tests {
         // property under test would go unexercised.
         let (a, b) = (&STAGES[2], &STAGES[1]);
         assert_eq!((a.name, b.name), ("gun 2", "gun 1"), "the stage list moved");
-        let bout = stage_bout([a, b], 0, 0.5, 3);
+        let bout = stage_bout([a, b], 0, 0.5, 3, None);
 
         assert!(bout.sides[0].regrants + bout.sides[1].regrants > 0,
                 "nobody was re-outfitted in a bout with {} deaths in it",
@@ -785,12 +812,43 @@ mod tests {
         }
     }
 
+    /// A zone's tuning has to actually reach the bout, or the report names a
+    /// zone over numbers that came from the compiled baseline. Nothing else
+    /// would show it: the tournament runs, prints and looks entirely normal.
+    #[test]
+    fn a_zone_s_tuning_reaches_the_pit() {
+        let mut c = config::ArenaConfig::default();
+        // Two settings a zone plausibly moves, chosen because the baseline's
+        // values are known here and neither is what this asks for.
+        c.mod_spread = Some(5); // degrees, against the baseline's fifteen
+        c.respawn_delay = Some(123);
+
+        let mut world = sim::World::with_map(1, sim::build_pit);
+        assert_ne!(world.cfg.respawn_delay, 123, "pick a value the baseline lacks");
+        let spread_before = world.cfg.mod_spread;
+
+        crate::Arena::apply_config(&mut world, &c);
+        assert_eq!(world.cfg.respawn_delay, 123);
+        assert_ne!(world.cfg.mod_spread, spread_before,
+                   "a five-degree fan is not a fifteen-degree one");
+
+        // And the harness still overrides the two it must, whatever the zone
+        // asked for: Alpha ships thirty spawn greens, which is exactly the
+        // thing that would erase what is being measured.
+        c.spawn_prizes = Some(30);
+        c.prize_max = Some(42);
+        let b = stage_bout([&STAGES[1], &STAGES[0]], 0, 0.5, 1, Some(&c));
+        assert!(b.ticks > 0, "the bout ran");
+        assert_eq!(b.sides[1].worn, 0, "the bare side stayed bare under a zone \
+                                        that hands out thirty greens");
+    }
+
     /// The matrix has to agree with itself: if one stage took three of eight,
     /// the other took five, and a bout counted once on one side and not the
     /// other would show up here before it showed up as a balance conclusion.
     #[test]
     fn the_matrix_is_the_same_read_either_way() {
-        let rows = run_stages(0, 0.5, 2, false);
+        let rows = run_stages(0, 0.5, 2, None, false);
         for (i, r) in rows.iter().enumerate() {
             for (j, cell) in r.vs.iter().enumerate() {
                 match cell {

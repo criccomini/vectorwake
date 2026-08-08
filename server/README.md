@@ -100,7 +100,7 @@ different hulls, and a rating measures the individual, hull included.
 ## Pricing the tech tree
 
 ```sh
-vectorwake-server calibrate stages 24 Apex .   # writes ./stages.json
+vectorwake-server calibrate stages 24 Apex alpha .   # writes ./stages.json
 ```
 
 The ladder holds the tech tree at zero so it can rank pilots, which means it can
@@ -108,6 +108,22 @@ never price one. This is the same harness with the pilots held still instead:
 one hull, one skill on both sides, and a fixed kit as the only difference
 between them. What comes out is a win rate for each stage of the tree against
 every other.
+
+The fourth argument names a zone in the catalog and takes its arena block. That
+matters more than it sounds, because a zone owns its weapon table and its
+add-on steps: Alpha fans multifire to five degrees where the compiled baseline
+fans it to fifteen, which moves the hit rate of the stage being priced from 65%
+to 80%. Pass `baseline`, or leave it off, to measure the roster as this binary
+compiled it. A named zone that is not in the catalog stops the run rather than
+falling back, since silently pricing the baseline under a zone's name is the one
+outcome worse than not running.
+
+The map stays the pit whichever zone you name. A zone's own map would put
+routing, corridors and a thousand tiles of looking for each other into a
+measurement that exists to isolate the kit. Two settings are also held against
+the zone's wishes, `spawn_prizes` and `prize_max`, for the same reason the
+ladder holds them: Alpha opens with thirty greens, which is precisely what would
+erase the thing being measured.
 
 The argument for it is the one the ladder's own comments make, read backwards.
 Thirty spawn greens flatten a two-to-one gap between skill levels, so somewhere
