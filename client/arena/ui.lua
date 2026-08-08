@@ -390,6 +390,22 @@ local function text_w(s, px)
     return #s * px * ADVANCE
 end
 
+
+local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
+local function key_size() return (FONT - 1) * S end
+local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * S end
+local function key_cap(x, y, w, label, on)
+    local col = on and pal.FRIEND or pal.DIM
+    local h = KEY_H * S
+    rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
+    u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
+    -- A key is shouted wherever it turns up, menu or corner: it is a thing to
+    -- press rather than something the interface is saying, and the two of them
+    -- are the same object.
+    txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
+        pal.a(col, on and 1 or 0.85), "center", nil, true)
+end
+
 -- Broken into lines no wider than `measure`, at whitespace. Used by the card a
 -- dead pilot reads and by the label the pointer raises, which say the same
 -- sentences and would otherwise break them in two different places.
@@ -635,6 +651,17 @@ local function team_of(i)
     return sim.ship_team(i)
 end
 
+-- The side this screen belongs to, which is not always the side of the hull
+-- it is centred on.
+--
+-- Flying they are the same and it never mattered. Watching they come apart:
+-- the camera stands behind whoever the channel picked, and deriving "my team"
+-- from that repainted your own side as hostile every time the camera crossed
+-- the line, and told the info box that a teammate of the pilot you happen to
+-- be watching is a teammate of yours. Set once per frame from what the zone
+-- told this client its side is.
+local view_team = 255
+
 local function own_arrow(ax, ay, ox, oy, side, me)
     local edge = 5 * S
     if ax < ox + edge then ax = ox + edge end
@@ -743,7 +770,7 @@ local function radar(cx, cy, me)
         end
     end
 
-    local my_team = team_of(me)
+    local my_team = view_team
     for i = 0, sim.flag_count() - 1 do
         local fx, fy, team = sim.flag_at(i)
         local px, py = put(fx, fy)
@@ -886,7 +913,7 @@ local function nameplates(o)
     -- the view_tiles setting put every name adrift the moment the camera
     -- stopped being driven by that setting -- which it already had.
     local scale = W / (2 * o.half_w)
-    local my_team = team_of(o.me)
+    local my_team = view_team
     -- The one hull that goes unlabelled is your own, and a watcher has none.
     -- The pilot being observed therefore wears their name and their bounty
     -- exactly like everybody else on screen: "who am I looking at" is the
@@ -976,6 +1003,14 @@ M.scroll = 0
 -- tenth, which in a room of sixty-four is most of it.
 local SHOWN = 9
 
+-- How tall one row is, in the pixels a press arrives in. Published because a
+-- finger dragging the list has to be turned into rows and only this file knows
+-- what a row measures. The wheel never needed it: a notch is one row by
+-- definition, which is why the list could only ever be scrolled by a mouse.
+function M.row_pitch()
+    return LINE * S
+end
+
 -- Where the scoreboard starts: under the menu chip when there is one, since
 -- the chip owns the corner.
 local function top_y()
@@ -1005,7 +1040,7 @@ local function scores(me, pilots, watchers)
         -- What the zone is willing to say this seat is, which is a stronger
         -- statement than "AI" and is what the counts below are made of.
         r.label = (p and p.label) or "unknown"
-        r.mine = sim.ship_team(i) == team_of(me)
+        r.mine = sim.ship_team(i) == view_team
         r.watch = false
     end
     -- Then whoever is watching. They are in the room without being in the
@@ -1111,7 +1146,7 @@ local function scores(me, pilots, watchers)
     ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
           pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
-    local my_team = team_of(me)
+    local my_team = view_team
     local y = top_y() + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
@@ -1566,7 +1601,7 @@ local function inspect(o, top)
     -- something. Counted rather than guessed so the panel is exactly as tall
     -- as what it holds.
     local theirs = sim.ship_team(i)
-    local same_team = theirs == team_of(o.me)
+    local same_team = theirs == view_team
     -- Which side they are on, and whether this pilot is allowed to be told.
     --
     -- The zone decides. A side it marks public is one anybody may see and name;
@@ -1588,8 +1623,17 @@ local function inspect(o, top)
     -- menu. Drawn only when it would do something: you are on a private side,
     -- and this is somebody other than you who is not already on it.
     local invite = o.may_invite and i ~= o.me and not same_team
+    -- The other thing this panel can offer, and it belongs here for the same
+    -- reason the invitation does: you opened it by picking a person, and
+    -- borrowing their eyes is a thing you do to a person rather than to a
+    -- seat number. Drawn only where it would work, which is a teammate: the
+    -- zone grants live sight of your own side and refuses it of anybody
+    -- else's, so offering it on an enemy would be a control that quietly
+    -- dropped you back on the room channel.
+    local follow = o.watch and same_team and o.watch.subject ~= i
     local rows_n = 5 + (side and 1 or 0)
-    local h = 30 * S + rows_n * rowh + (invite and 26 * S or 0) + 10 * S
+    local h = 30 * S + rows_n * rowh
+        + ((invite or follow) and (KEY_H + 12) * S or 0) + 10 * S
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
     -- at the top of the screen lands on the menu chip.
@@ -1644,16 +1688,34 @@ local function inspect(o, top)
     -- clicks: the zone answers an invitation with a team list that does not
     -- name the invitee, so this mark is the only acknowledgement there is, and
     -- a button that stayed pressable would invite an anxious second tap.
+    -- Drawn as a key, the way everything else in this interface that is a
+    -- thing to press is drawn: the corner's MENU and PLAYERS, the answers on
+    -- a confirm card, every key on the help board. They were a word over a
+    -- rule, which is what a control looked like here before the board taught
+    -- the same hand what a key looks like, and a panel keeping the old idiom
+    -- asks a player to know that this particular word is pressable.
+    --
+    -- Both verbs use the same slot, since a panel with two possible actions
+    -- should put them where the eye already found the first one. They never
+    -- appear together: inviting wants somebody who is not on your side and
+    -- following wants somebody who is.
+    local label, action = nil, nil
     if invite then
-        local sent = o.invited and o.invited[i]
+        -- Once it is sent it says so and stops taking clicks: the zone answers
+        -- an invitation with a team list that does not name the invitee, so
+        -- this is the only acknowledgement there is, and a button that stayed
+        -- pressable would invite an anxious second tap.
+        label = (o.invited and o.invited[i]) and "INVITED" or "INVITE"
+        action = (o.invited and o.invited[i]) and nil or "invite"
+    elseif follow then
+        label, action = "WATCH", "watch"
+    end
+    if label then
         local by = ry_ + 4 * S
-        local c = pal.a(sent and pal.DIM or pal.FRIEND, sent and 0.7 or 0.95)
-        txt(sent and "INVITED" or "INVITE", x + 12 * S, by + 9 * S,
-            (FONT - 2) * S, c)
-        local uy = ry(by + 17 * S)
-        u:seg(x + 12 * S, uy, x + 12 * S + 46 * S, uy, 0.8 * S, pal.a(c, 0.5))
-        if not sent then
-            hit(x, by - 2 * S, w, 24 * S, "invite", i)
+        local bw = key_w(label)
+        key_cap(x + 12 * S, by, bw, label, action ~= nil)
+        if action then
+            hit(x + 12 * S, by, bw, KEY_H * S, action, i)
         end
     end
     return y + h
@@ -2035,21 +2097,6 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
-local function key_size() return (FONT - 1) * S end
-local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * S end
-local function key_cap(x, y, w, label, on)
-    local col = on and pal.FRIEND or pal.DIM
-    local h = KEY_H * S
-    rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
-    u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
-    -- A key is shouted wherever it turns up, menu or corner: it is a thing to
-    -- press rather than something the interface is saying, and the two of them
-    -- are the same object.
-    txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
-        pal.a(col, on and 1 or 0.85), "center", nil, true)
-end
-
 local function menu_button(on_air)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
@@ -2241,7 +2288,7 @@ end
 local function flag_strip(me)
     local n = sim.flag_count()
     if n == 0 then return end
-    local my_team = team_of(me)
+    local my_team = view_team
     local pitch = 15 * S
     local x0 = W / 2 - (n - 1) * pitch / 2
     local y = ST + 30 * S
@@ -2399,6 +2446,9 @@ function M.hud(o)
     case = "upper"
     if sim.ship_count() == 0 then return end
     local me = o.me
+    -- Before anything draws: every instrument that separates a friend from an
+    -- enemy reads this, and while watching it is not the subject's side.
+    view_team = o.side or team_of(o.me)
     menu_up = o.menu_open
     -- Under the menu the instruments stay -- you can still be shot while you
     -- are reading -- but they stop competing with it. A third of their light

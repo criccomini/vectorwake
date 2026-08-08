@@ -158,16 +158,15 @@ check("enter is the only thing that picks",
 -- card elsewhere, so it is picked the same way a hull is: move to it, press
 -- enter, and the action names itself. What it must not do is come back as a
 -- hull change, which would fly you in ship number eight.
--- On the home screen this page is the hull you will arrive in, and there is
--- no room to watch, so the cell is not offered at all rather than offered and
--- then refused with a sentence.
-check("no game behind the panel means eight cells",
-      #menu.view().rows == 8, tostring(#menu.view().rows))
+-- On both screens, because on the home screen this page is what you will
+-- arrive as and arriving to watch is a thing the wire can say. It is the same
+-- page and the same nine answers whether or not there is a game behind it.
+check("the cell is there with nothing behind the panel",
+      #menu.view().rows == 9, tostring(#menu.view().rows))
 
 menu.home = false
 local ship_rows = menu.view().rows
-check("with a game there are nine",
-      #ship_rows == 9, tostring(#ship_rows))
+check("and there with a game", #ship_rows == 9, tostring(#ship_rows))
 menu.sel.ship = 9
 local act_w = menu.step({go = true})
 check("the ninth cell asks to spectate", act_w == "spectate",
@@ -180,10 +179,36 @@ check("and it is not a hull", ship_rows[9].hull == nil,
 check("so it says what to draw instead", ship_rows[9].figure == "pilot",
       tostring(ship_rows[9].figure))
 
+-- On the home screen the same page answers a different tense: not what you
+-- are, which is nothing, but what you will arrive as. So the wash follows the
+-- remembered choice there and the live connection in a game, and the two are
+-- read through one question rather than by each caller checking `home`.
+menu.home = true
+menu.watching = false
+menu.class = 2
+menu.spectate = false
+check("at home, no choice made yet marks the hull you will arrive in",
+      menu.view().rows[3].mark and not menu.view().rows[9].mark)
+menu.spectate = true
+check("and choosing to watch moves the wash to the ninth",
+      menu.view().rows[9].mark and not menu.view().rows[3].mark)
+check("which is what the root row says too",
+      menu.view().rail[2].detail == "spectating",
+      tostring(menu.view().rail[2].detail))
+-- In a game the connection is the truth, whatever was remembered: the server
+-- can refuse a hull and the page must not claim you got it.
+menu.home = false
+check("in a game the connection wins over what was remembered",
+      menu.view().rows[3].mark and not menu.view().rows[9].mark,
+      "spectate remembered but watching is false")
+menu.spectate = false
+menu.home = true
+
 -- Which cell wears the "you are here" wash follows the connection, not the
 -- last hull picked: a watcher is in no hull, so none of the eight is marked.
 -- Read off a fresh view each time, since that is where a mark stops being a
 -- question and becomes an answer.
+menu.home = false
 menu.class = 2
 menu.watching = false
 local flying_view = menu.view().rows

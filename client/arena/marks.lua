@@ -348,12 +348,48 @@ M.BOLT_BIAS, M.BOMB_BIAS = 0.46, 0
 -- Reading a hull's loadout without minding whether there is a hull yet. A pad
 -- draws before the first snapshot lands, and a plain gun and a plain bomb are
 -- the right thing to show while nobody has told us otherwise.
+-- The loadout to draw while there is no hull to read one off.
+--
+-- Dying strips a ship of everything at once: levels, add-ons and charges are
+-- memset in the same instruction that takes the last of the energy. So a mark
+-- read straight off the core the moment you die drops to a plain green round
+-- and stays there for the whole respawn wait, which is four seconds of the
+-- interface rearranging itself while the player is reading the card that says
+-- what killed them. It is a true statement about a ship that does not exist.
+--
+-- The frame loop keeps a copy of the last loadout actually flown and hands it
+-- over while the hull is gone. The marks go back to reading the live ship the
+-- moment there is one, which is where the change belongs: a fresh hull is
+-- visibly a fresh hull, and the kit it does not have reads as new rather than
+-- as something that quietly drained away while nothing was happening.
+local held = nil
+function M.hold(h)
+    held = h
+end
+
 local function ship_lvl(me, t)
+    if held then return held.level[t] or 0 end
     return (me and sim.ship_level) and sim.ship_level(me, t) or 0
 end
 
 local function ship_mod(me, t, i)
+    if held then return (held.mods[t] and held.mods[t][i]) or 0 end
     return (me and sim.ship_mod) and sim.ship_mod(me, t, i) or 0
+end
+
+local function ship_multi_off(me)
+    if held then return held.multi_off end
+    return me and sim.ship_multi_off and sim.ship_multi_off(me)
+end
+
+-- The rung a trigger is on, for a caller that colours something around a
+-- mark rather than drawing the mark itself. Exported because the pads ring
+-- themselves in the round's own colour, and reading the core for that while
+-- the mark read the held copy is exactly the split this module exists to
+-- prevent: it put an orange fan inside a green ring for the length of a
+-- respawn wait.
+function M.level(me, t)
+    return ship_lvl(me, t)
 end
 
 -- A trigger's mark: the round it fires, wearing what the greens did to it.
@@ -364,10 +400,18 @@ end
 -- a player who has learned one has learned the other.
 --
 -- The add-ons are the same colour run hot, so what a green added reads as part
--- of the round rather than as a separate object parked next to it. Shrapnel is
--- the exception and keeps the violet the arena throws fragments in: they sit
--- on no ladder and answer to no aim, and that is a fact about the weapon worth
+-- of the round rather than as a separate object parked next to it. Two of the
+-- six are not that.
+--
+-- Shrapnel keeps the violet the arena throws fragments in: they sit on no
+-- ladder and answer to no aim, and that is a fact about the weapon worth
 -- carrying over.
+--
+-- Multifire is the one add-on that decorates nothing. Its extra barrels are
+-- the round itself, fired from the same muzzle on the same spec, which is why
+-- the arena draws all three bullets in one colour. Run hot with the rest, the
+-- mark said the middle bullet was a different weapon from the two beside it,
+-- and disagreed with the arena about the only fact this ramp exists to carry.
 --
 -- The room outside the round is shared out before anything draws rather than
 -- spent first come. Two add-ons take half of it each and read clearly; four
@@ -394,7 +438,7 @@ function M.weapon(cx, cy, k, me, t)
     -- A declined add-on is drawn dimmed rather than dropped. You still hold
     -- it, and a fan that quietly stopped fanning with nothing on screen to say
     -- so is a weapon that looks broken.
-    local off = me and sim.ship_multi_off and sim.ship_multi_off(me)
+    local off = ship_multi_off(me)
     m.off = off and true or false
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a
@@ -403,9 +447,13 @@ function M.weapon(cx, cy, k, me, t)
     for i = 1, #pal.MODS do
         local n = ship_mod(me, t, i - 1)
         if n > 0 then
-            local col = add
+            -- More of the round is the round's own colour; everything else is
+            -- the round run hot. See above.
+            local col = (i == 1) and base or add
             -- Fragments answer to nobody's aim, in the arena and here.
             if i == 4 then col = pal.a(pal.BURST, 0.95) end
+            -- Except when you have declined it, which is the one time the
+            -- barrels either side really are not the round you are firing.
             if off and i == 1 then col = pal.a(pal.DIM, 0.45) end
             MOD_DECOR[i](m, col, n)
         end
