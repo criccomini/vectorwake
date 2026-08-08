@@ -3614,6 +3614,7 @@ function M.menu(v)
     local head = (narrow and 54 or 76) * S
 
     local rx, ry_, rw, rh          -- the rail
+    local icon_dy                  -- the icon's drop inside it, narrow only
     local sx, sy, sw, sh           -- the stage
     local vertical = not narrow
 
@@ -3665,11 +3666,19 @@ function M.menu(v)
         rh = (home and 78 or 84) * S
         rw = W - SL - SR - 2 * margin
         rx = SL + margin
-        -- Hard against the bottom, less whatever the hardware covers. It
-        -- used to hold a page margin under it as well, which on a phone put
-        -- 42 points of nothing under a row of labels and read as an interface
-        -- that had come loose from the edge of the screen.
-        ry_ = H - SB - rh
+        -- A tab bar, sitting where one sits: on the bottom edge, with the
+        -- surface running under the home indicator and only the icons and
+        -- words held clear of it.
+        --
+        -- The inset stands in for the padding the block already keeps rather
+        -- than stacking on top of it. Stepping the whole rail up by the whole
+        -- inset put the words 56 points off the bottom of a phone, which is
+        -- the same interface-come-loose-from-the-edge the page margin used to
+        -- give, and is what a hardware inset looks like when it is added to a
+        -- gap that was already there.
+        icon_dy = (home and 30 or 32) * S
+        local under = rh - icon_dy - 24 * S
+        ry_ = H - rh - math.max(0, SB - under)
         sx, sw = SL + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two
@@ -3718,7 +3727,7 @@ function M.menu(v)
             cy = ry_ + (i - 0.5) * pitch
         else
             cx = rx + (i - 0.5) * pitch
-            cy = ry_ + (home and 30 or 32) * S
+            cy = ry_ + icon_dy
         end
         local col = sel and pal.FRIEND or pal.a(pal.DIM, 0.9)
         local r = 13 * S
@@ -3740,8 +3749,11 @@ function M.menu(v)
                 -- well, which is the vertical rail's own mark turned on its
                 -- side: there it points at the stage beside it, and here it
                 -- points at nothing and reads as a tab that has come loose.
-                rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, rh - 4 * S,
-                     lit)
+                --
+                -- Down to the edge of the screen rather than to the end of
+                -- the block, so the lit stop is a tab reaching the bottom of
+                -- the phone and not a panel floating above the indicator.
+                rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, H - ry_, lit)
             end
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
@@ -3759,7 +3771,7 @@ function M.menu(v)
         if vertical then
             hit(rx - 6 * S, cy - pitch / 2, rw + 10 * S, pitch, "rail", i)
         else
-            hit(cx - pitch / 2, ry_ - 8 * S, pitch, rh + 8 * S, "rail", i)
+            hit(cx - pitch / 2, ry_ - 8 * S, pitch, H - ry_ + 8 * S, "rail", i)
         end
     end
 

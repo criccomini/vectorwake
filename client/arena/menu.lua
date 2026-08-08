@@ -51,6 +51,7 @@ M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
 M.hover = nil           -- the stage row a pointer is resting on
 M.note = nil            -- set by the arena when a connection fails
+M.screen = nil          -- the drawable and its insets, for the about page
 -- What a key is made of, and how long one is. Both are the server's, written
 -- down here because the slots are drawn against them and what a keyboard hands
 -- us is filtered against them. Crockford's alphabet without the letters that
@@ -485,6 +486,15 @@ local NODES = {
             {label = "engine", detail = function()
                 return "defold " .. (sys.get_engine_info().version or "?")
             end},
+            -- The drawable, and what the hardware says it is covering. Set
+            -- by the arena every frame from the page's own measurements.
+            {label = "screen", detail = function()
+                local s = M.screen
+                if not s then return "?" end
+                return string.format("%dx%d @%g  safe %g %g %g %g",
+                                     s.w, s.h, s.d, s.l, s.r, s.t, s.b)
+            end, verbatim = true,
+            hint = "drawable, density, then the insets left right top bottom"},
             {label = "zone", detail = function()
                 if M.zone == "" then return "not in one" end
                 return M.zone
