@@ -12,8 +12,15 @@ buffer, so there is one file per sound and each keeps the name its component
 uses.
 
 Twelve of them are the weapon ladders, four rungs each of `gun`, `bomb` and
-`blast`. Their gains climb with the rung, since every buffer is normalised to
-one peak and a heavier weapon has to get its loudness from somewhere.
+`blast`. Every buffer is normalised to one peak, so a heavier weapon has to get
+its loudness from the gain here.
+
+Those gains are not in ascending order and that is not a mistake to fix. The
+eight launch sounds are built differently from each other rather than tuned from
+one recipe, and a dense buffer is louder than a sparse one at the same peak, so
+the numbers that make the heard climb even are not themselves a ladder. They come
+from measuring each sound's loudest 300 ms window and solving for two decibels a
+rung. Changing one by ear puts a step back in the ladder that nobody meant.
 
 The `.sound` files beside them are real and hand maintained. Gain, mixer group
 and whether a sound loops live there, not in the synth.

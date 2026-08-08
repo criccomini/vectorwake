@@ -3,9 +3,9 @@
 //     make -C client/tools check
 //
 // The gun, the bomb and the detonation have one sound per rung, and the point
-// of that is lost if two of them are one sound twice. This measures the gap, in units of
-// audible difference rather than in synth parameters, and fails when a rung
-// stops being its own.
+// of that is lost if two of them are one sound twice. This measures the gap in
+// units of audible difference rather than in synth parameters, and fails when
+// a rung stops being its own.
 //
 // It is the audio half of client/tests/rung_test.lua, which does the same job
 // for the colours those rounds are drawn in: a ramp is only a ramp if the
@@ -33,24 +33,38 @@
 //
 // --- what is required ------------------------------------------------------
 //
-// Adjacent rungs have to differ. The ladder these replaced moved weight only,
-// on the argument that a rung is the same weapon harder and so must not sound
-// like a different weapon. Measured this way its steps were 2.5 to 4.5 dB
-// apart and its ends 5.0 and 9.4, and what ended it was a player asking for a
-// sound per rung after flying the whole ladder. So the floors sit past the
-// widest step and the longer span that were not good enough, and the kit
-// clears both by a decibel or more.
+// Adjacent rungs have to differ on two axes at once, register and everything
+// else, because either alone has already been shown to be satisfiable while
+// the rungs still sound the same.
 //
-// The ladder has to climb one way. Four sounds that differ from their
-// neighbours but wander up and down carry no information about which is
-// heavier, so the spectral centroid falls monotonically: deeper is bigger,
-// every rung.
+// The first ladder here moved weight only and measured 2.5 to 4.5 dB apart. A
+// player flew it and asked for a sound per rung. The second widened every
+// parameter it had and reached 7.6 to 8.4, and the same player flew that and
+// called the rungs slight alterations of each other. So a dB figure alone is
+// not the question being answered, and the floor of 6 below is only a guard
+// against collapse rather than a claim that 6 is enough.
 //
-// And a rung must not cross a family. A gun that has climbed far enough to be
-// mistaken for a bomb is worse than a gun that all sounds the same, because
-// the mistake it invites is about what is coming at you rather than about how
-// hard it will land. So the nearest gun-to-bomb pair has to stay further apart
-// than the widest step inside any of the ladders.
+// The centroid step is the other axis and it is the one that carries the
+// brief: a light weapon is meant to be higher than a heavy one, by enough to
+// name without comparing. Six semitones is a tritone, which nobody mistakes.
+//
+// Downward, every rung, because four sounds that differ from their neighbours
+// but wander up and down carry no information about which is heavier.
+//
+// --- and a rung must not cross a family ------------------------------------
+//
+// This used to hold the nearest gun-to-bomb pair further apart than the widest
+// step inside any ladder, on the theory that two weapons should differ more
+// than two rungs of one weapon do. That theory is dead, killed by the brief:
+// the lightest bomb is tinny, which is high, and the heaviest bolt is nasty,
+// which is low, so the two of them are meant to meet in the middle. They sit
+// two or three semitones apart now, and no distance measure is going to call
+// them far apart again.
+//
+// What still separates them is the front, so that is what is measured. A bolt
+// cracks and a charge heaves. Every bomb has to take longer to arrive than
+// every gun, with room to spare, and that holds however far either ladder
+// climbs because neither ladder touches it.
 
 #include "../ext/simcore/src/sfx.h"
 
@@ -87,8 +101,42 @@ typedef struct {
     double db[BANDS][FRAMES];
     int frames;                     // how many of them the sound reaches
     double centroid;                // Hz, over the whole sound
+    double rise;                    // ms to reach most of its peak
     double dur;                     // seconds
 } grid;
+
+// How long the sound takes to arrive, in milliseconds.
+//
+// This is the one measurement here that is not about the ladders at all. It is
+// about which family a sound belongs to, and it exists because the families
+// can no longer be told apart by register: the lightest bomb is meant to be
+// tinny, which is to say high, and the heaviest bolt is meant to be nasty,
+// which is to say low, so the two of them meet in the middle by design.
+//
+// What still separates them is the front. A bolt cracks and a charge heaves,
+// and no amount of climbing changes that for either. Measured in millisecond
+// windows rather than the grid's hundredths, because four milliseconds and
+// twelve are the difference being asked about and the grid cannot see it.
+static double rise_ms(const double *x, int n) {
+    int w = (int)(RATE / 1000.0), i, k, best = 0;
+    double hi = 0.0;
+    double *e;
+    int nw = n / w;
+    if (nw < 2) return 0.0;
+    e = (double *)malloc((size_t)nw * sizeof(double));
+    if (!e) return 0.0;
+    for (i = 0; i < nw; i++) {
+        double s2 = 0.0;
+        for (k = 0; k < w; k++) s2 += x[i * w + k] * x[i * w + k];
+        e[i] = s2 / w;
+        if (e[i] > hi) hi = e[i];
+    }
+    for (i = 0; i < nw; i++) {
+        if (e[i] >= 0.7 * hi) { best = i; break; }
+    }
+    free(e);
+    return best + 0.5;
+}
 
 // One band of a filter bank: the cookbook constant-peak bandpass, run over the
 // whole sound and its output squared into frames. A bandpass rather than a
@@ -135,6 +183,7 @@ static int measure(const char *name, grid *g) {
 
     g->name = name;
     g->dur = n / RATE;
+    g->rise = rise_ms(x, n);
     g->frames = (n + HOP - 1) / HOP;
     if (g->frames > FRAMES) g->frames = FRAMES;
     for (b = 0; b < BANDS; b++) {
@@ -184,10 +233,17 @@ static double semitones(double f0, double f1) {
     return 12.0 * log2(f1 / f0);
 }
 
-// Past what the ladder that was not good enough managed, on every step.
+// A guard against two rungs collapsing into one, not a claim that this much is
+// enough. See above: 8.4 was not.
 #define ADJACENT 6.0
-// The ends of a ladder are four sounds apart and should be obvious.
+// A tritone between neighbours, and an octave and a half end to end.
+#define ADJACENT_ST 6.0
 #define SPAN 11.0
+#define SPAN_ST 18.0
+// A bomb has to take at least this many times as long to arrive as the slowest
+// gun, and at least this many milliseconds longer.
+#define FAMILY_RATIO 2.0
+#define FAMILY_MS 5.0
 
 static const char *const GUN[] = {"gun0", "gun1", "gun2", "gun3"};
 static const char *const BOMB[] = {"bomb0", "bomb1", "bomb2", "bomb3"};
@@ -217,8 +273,8 @@ static double ladder(const char *family, const char *const *names, int n,
             printf("FAIL %s cannot be rendered\n", names[i]);
             return 0.0;
         }
-        printf("     %-7s %6.0f Hz  %3.0f ms\n", names[i], out[i].centroid,
-               out[i].dur * 1000.0);
+        printf("     %-7s %6.0f Hz  %3.0f ms long  %4.1f ms to arrive\n",
+               names[i], out[i].centroid, out[i].dur * 1000.0, out[i].rise);
     }
     for (i = 1; i < n; i++) {
         double d = distance(&out[i - 1], &out[i]);
@@ -228,46 +284,46 @@ static double ladder(const char *family, const char *const *names, int n,
                names[i - 1], names[i], d, st);
         snprintf(line, sizeof(line), "%s rung %d is its own sound", family, i);
         check(line, d >= ADJACENT, "too near the rung below it");
-        snprintf(line, sizeof(line), "%s rung %d is heavier than rung %d",
+        snprintf(line, sizeof(line), "%s rung %d sits below rung %d",
                  family, i, i - 1);
-        check(line, st < 0.0, "its centroid did not fall");
+        check(line, st <= -ADJACENT_ST, "not far enough below it");
     }
     {
         double d = distance(&out[0], &out[n - 1]);
-        printf("     %s -> %s  %.1f dB apart end to end\n", names[0],
-               names[n - 1], d);
+        double st = semitones(out[0].centroid, out[n - 1].centroid);
+        printf("     %s -> %s  %.1f dB apart, %+.1f semitones end to end\n",
+               names[0], names[n - 1], d, st);
         snprintf(line, sizeof(line), "%s ends nowhere near where it starts",
                  family);
-        check(line, d >= SPAN, "the ladder is short");
+        check(line, d >= SPAN && st <= -SPAN_ST, "the ladder is short");
     }
     return widest;
 }
 
 int main(void) {
     grid gun[4], bomb[4], blast[4];
-    double widest = 0.0, near = 1e9, w;
-    int i, j;
+    double slowest_gun = 0.0, quickest_bomb = 1e9;
+    const char *sg = "", *qb = "";
+    int i;
 
-    widest = ladder("gun", GUN, 4, gun);
-    w = ladder("bomb", BOMB, 4, bomb); if (w > widest) widest = w;
-    w = ladder("blast", BLAST, 4, blast); if (w > widest) widest = w;
+    ladder("gun", GUN, 4, gun);
+    ladder("bomb", BOMB, 4, bomb);
+    ladder("blast", BLAST, 4, blast);
 
-    // A rung is the same weapon harder. However far a ladder climbs, its top
-    // has to stay further from the other weapon than its own rungs are from
-    // each other, or the ladder has stopped being one weapon.
-    {
-        const char *a = "", *b = "";
-        for (i = 0; i < 4; i++) {
-            for (j = 0; j < 4; j++) {
-                double d = distance(&gun[i], &bomb[j]);
-                if (d < near) { near = d; a = GUN[i]; b = BOMB[j]; }
-            }
+    // A bolt cracks and a charge heaves, at every rung of both.
+    for (i = 0; i < 4; i++) {
+        if (gun[i].rise > slowest_gun) { slowest_gun = gun[i].rise; sg = GUN[i]; }
+        if (bomb[i].rise < quickest_bomb) {
+            quickest_bomb = bomb[i].rise;
+            qb = BOMB[i];
         }
-        printf("     nearest gun to bomb %.1f dB (%s, %s), "
-               "widest rung step %.1f dB\n", near, a, b, widest);
     }
-    check("no rung crosses from gun to bomb", near > widest,
-          "a gun and a bomb are nearer than two rungs of one ladder");
+    printf("     slowest gun %s at %.1f ms, quickest bomb %s at %.1f ms\n",
+           sg, slowest_gun, qb, quickest_bomb);
+    check("no bomb cracks the way a gun does",
+          quickest_bomb >= slowest_gun * FAMILY_RATIO &&
+          quickest_bomb >= slowest_gun + FAMILY_MS,
+          "a bomb arrives as fast as a bolt");
 
     printf("%s\n", fails == 0 ? "ALL PASS" : "FAILED");
     return fails == 0 ? 0 : 1;

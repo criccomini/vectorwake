@@ -24,15 +24,14 @@ is accepted without complaint and is silent, which was found the slow way.
 
 ## The vocabulary is deliberately narrow
 
-Weapons are short and bright with a hard transient. Explosions are noise under a
-descending sine, which is what gives a blast a body rather than a hiss. The
-interface ticks.
+Bolts crack and charges heave. Explosions are noise under a descending sine,
+which is what gives a blast a body rather than a hiss. The interface ticks.
 
 | Sound | Length | What it is |
 |---|---|---|
-| `gun0` to `gun3` | 80 to 148 ms | a bolt leaving the rail, one per rung |
-| `bomb0` to `bomb3` | 260 to 700 ms | a heavier charge leaving the tube |
-| `blast0` to `blast3` | 320 to 850 ms | a bomb going off, sized by the hole |
+| `gun0` to `gun3` | 70 to 155 ms | a bolt leaving the rail, a weenie up to something nasty |
+| `bomb0` to `bomb3` | 200 to 780 ms | a charge leaving the tube, tinny up to throaty |
+| `blast0` to `blast3` | 280 to 850 ms | a bomb going off, sized by the hole |
 | `death` | 950 ms | a ship coming apart, the one event allowed a full second |
 | `hit` | 70 ms | something struck your hull: a crack, not a tone |
 | `bounce` | 75 ms | a wall |
@@ -53,67 +52,92 @@ cannot read it off anything: the round is three pixels wide and its colour, whic
 does carry the rung, is behind them as often as in front. So each rung is its own
 sound, and it has to be one you can name after hearing it once.
 
-The ladder used to work the other way, on the argument that a rung is the same
-weapon harder and so must not sound like a different weapon: the weight climbed
-and nothing else moved. The argument is right about the mechanic and it was wrong about
-what came out. `client/tools/sfxladder` measures the gap between two sounds as
-the difference across third-octave bands and hundredths of a second, and the old
-rungs landed 2.5 to 4.5 dB apart, ends 5.0 and 9.4 apart, which is a number you
-can print and not a difference anybody hears. What ended it was somebody who had
-flown the whole ladder asking for a sound per rung.
+That took three tries and the first two were the same mistake. Both wrote one
+recipe and walked its numbers, the first moving weight alone and the second
+moving every parameter it had. They measured 2.5 to 4.5 dB apart and then 7.6 to
+8.4, and the player who flew both called the first one sound and the second
+slight alterations of each other. The lesson is that a recipe stretched far
+enough is still a recipe: every rung of it arrives as the same event slightly
+off, which is not the question a pilot is asking.
 
-They are 6.2 to 8.4 apart now, ends 12.1 to 17.4, and each ladder climbs on every
-axis at once. One axis moving is heard as the same sound slightly off; all of
-them moving together is heard as a different thing. So the pitch falls, weight
-arrives underneath, the drive comes up, and the sound runs longer. Deeper reads
-as bigger without anybody having to learn it, and the check holds the fall
-monotonic so a rung is never heavier and brighter at the same time.
+So the rungs are built differently rather than tuned differently. Eight
+functions, no shared table, and a brief for each of them.
 
-What each family climbs on differs, because what a rung buys differs. A gun rung
-is flat damage on an identical bolt, so the bolt drops an octave over three rungs
-and takes nearly twice as long to do it, its pulse widening from a reedy quarter
-of a cycle to a true square while the shrill partial over the top gives way to a
-low-mid body and then to sub. A bomb rung is blast radius, so the charge leaves a
-bigger tube: the fall goes down and slows, the saw gives way to the round body
-under it, the sub arrives and then dominates, and the whole thing takes nearly
-three times as long to clear.
+| Rung | Gun | Bomb |
+|---|---|---|
+| 0 | a weenie: a pulse an eighth of a cycle wide, high, no drive at all | tinny and hollow: a square rung through a narrow resonance up at 1.4 kHz |
+| 1 | a crack: the first one that is a gun rather than a toy | a real charge, the tin now a ring over the top rather than the whole of it |
+| 2 | a snarl: two pulses beating, dragged off the harmonic series | throaty: the resonance has come down out of the tin and into the chest |
+| 3 | nasty: sub, a throat, and folded past the point of damage | throaty and bass heavy, almost nothing above two hundred hertz |
 
-The gun is the widest of the three, at 7.6 to 8.4, because it was asked for twice.
-The first pass kept rung zero byte for byte identical to the one sound this family
-had before the rungs were told apart, on the grounds that a fresh spawn should
-hear what it always had. With the bottom pinned, the three rungs above it were
-crowded into what was left. Unpinning it and making rung zero a genuine
-peashooter, thin and reedy and gone in eighty milliseconds, is what bought the
-room.
+Three tools arrived with them, because none of this can be built out of
+oscillators and lowpasses. A resonator gives a sound a body to have come out of,
+which is the whole difference between the tin and the throat. Ring modulation
+moves every partial off the harmonic series, which is what makes metal sound
+like metal rather than like a low note. And a wavefolder turns a peak back on
+itself instead of rounding it off, so what it throws up was never in the source:
+drive sounds like loudness and folding sounds like damage.
 
-The other bound is the one that cannot be traded away. A rung must still belong
-to its family: a gun that has climbed into a bomb's register tells a pilot
-something false about what is coming at them, which is worse than a gun that all
-sounds the same. The gun's air stays bright and gets brighter as the bombs go
-dark. And no bomb cracks: every one of them swells out of the tube, sixteen to
-seventy-five milliseconds by rung, where nothing in the gun ladder swells at all.
-The check holds the nearest gun-to-bomb pair further apart than the widest step
-inside any ladder, and it is what set the ceiling on the gun: at 170 ms the top
-bolt measured nearer the lightest shell than its own neighbour, so it sits at 148
-and the bombs moved down to make the room. The pair is 9.3 apart against a widest
-step of 8.4.
+The ladders are steep now. The gun falls two octaves from rung zero to rung
+three and the bomb falls two and a half, and each step is at least a tritone,
+which is an interval nobody has to compare two sounds to notice.
 
-Loudness cannot come from the buffer. Every one is normalised to the same peak
-before it is written, so a fatter buffer is a different timbre at the same level.
-The climb lives in the per-sound gains instead: 0.30 to 0.40 for the gun, 0.55 to
-0.70 for the bomb, 0.62 to 0.84 for the detonation, which stops under a death's
-0.85.
+## What still tells a gun from a bomb
+
+Not register, any more. A tinny bomb is a high one and a nasty bolt is a low
+one, so the brief that made the rungs distinct also drove the lightest bomb and
+the heaviest bolt into the same octave. They sit two semitones apart.
+
+What separates them is the front. Every bolt cracks, reaching full level in four
+and a half milliseconds at every rung. Every charge heaves out of the tube:
+twenty-six milliseconds at the lightest and fifty-eight at the heaviest, and the
+check requires the quickest bomb to take at least twice as long to arrive as the
+slowest bolt. Neither ladder touches that, so it holds however far either one
+climbs.
+
+It replaced a rule that did not survive the brief. The check used to hold the
+nearest gun-to-bomb pair further apart than the widest step inside either
+ladder, on the theory that two weapons should differ more than two rungs of one
+weapon do. That theory is what capped the second attempt: the gun could not be
+widened without the top bolt measuring nearer the lightest shell than its own
+neighbour.
+
+## Loudness is not in the buffer, and the gains are no longer a ladder
+
+Every buffer is normalised to the same peak before it is written, so the buffer
+decides timbre and nothing else. The climb has always lived in the per-sound
+gains instead.
+
+What changed is that the gains no longer look like a climb. A folded bolt is a
+dense buffer and a resonant one is a sparse one, so eight sounds at the same
+peak are eight different loudnesses, and the numbers that make the heard climb
+even are not themselves in order: the gun runs 0.30, 0.26, 0.38, 0.43 and the
+bomb runs 0.55, 0.58, 0.50, 0.39. Reading those as a mistake is the obvious
+error and this paragraph is here to stop it.
+
+They come from a measurement rather than an ear. Each sound's loudest 300
+millisecond window is what a loudness meter integrates, and it is the right
+window here for two reasons: a short sound is not credited for the silence
+around it, and a long one is not credited twice for lasting. Solving for an even
+two decibels a rung gives the numbers above; the detonations get three a rung
+instead, since the rung is bought for the blast and that is where it should be
+felt.
+
+Total energy was tried first and is wrong, because it makes a 780 millisecond
+bomb four times the event a 200 millisecond one is. A-weighting is wrong in the
+other direction: it discounts bass so hard that an even climb wanted a gain of
+3.1 on the heaviest bomb, which is not a number a gain can be.
 
 ## What a bomb rung buys is audible when it goes off
 
-The detonation was one sound for every rung until now, which is the odd half of
-the ladder above: a bomb level is bought for the blast, and the blast was where
-it could not be heard. The reason was real. A shell in flight carries a spec,
-which says what a projectile does and not which rung fired it.
+A bomb level is bought for the blast, so the blast is where it has to be heard.
+It was one sound for every rung for a long time, and the reason was real: a shell
+in flight carries a spec, which says what a projectile does and not which rung
+fired it.
 
-The rung turned out to be readable off the spec anyway, by the same route that
-colours the round. But the four detonations are picked by radius instead, which
-answers one more case. For a bomb the two say the same thing, since a rung is
+The rung is readable off the spec after all, by the same route that colours the
+round. But the four detonations are picked by radius instead, which answers one
+more case. For a bomb the two say the same thing, since a rung is
 exactly a wider blast. A repel is on no ladder at all: its shove clears 512
 pixels against a top rung bomb's 320, and asked for its level it answers -1, so
 by rung it would have been played as the smallest thing in the kit. The size of
