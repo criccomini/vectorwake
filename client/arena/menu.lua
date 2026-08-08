@@ -1193,8 +1193,28 @@ end
 -- navigating: a tap on `settings` from inside `ship` picked the fourth hull.
 -- On a phone, where the rail is the only way to move, that is the whole of
 -- navigation not working.
+-- Which stop the panel is currently inside, or nil at the root, where the
+-- stage is a preview of the stop under the cursor rather than the stop
+-- itself. Worked out the way the view works it out.
+local function rail_inside()
+    if #M.stack < 2 then return nil end
+    for i, r in ipairs(rows_of(NODES.root)) do
+        if r.go == M.stack[2] then return i end
+    end
+    return nil
+end
+
 function M.click_rail(index)
     if not M.open then return nil, false end
+    -- The lit stop, tapped while you are already in it, with a game behind
+    -- the panel: that is the way back to the game. A phone's rail is the
+    -- whole of its navigation and there is no outside to press, so without
+    -- this the only way out is one small x; and re-entering the page you are
+    -- already reading is the one thing a rail stop could do that is nothing.
+    --
+    -- At the root the same stop is lit while the stage only previews it, and
+    -- there the tap goes in, which is what it has always done.
+    if index == rail_inside() and M.close() then return nil, true end
     M.stack = {"root"}
     M.sel.root = index
     M.note = nil

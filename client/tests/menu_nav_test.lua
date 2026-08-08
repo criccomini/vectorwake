@@ -117,6 +117,30 @@ menu.click_rail(ship_at)
 check("and again, the other way", menu.stack[2] == "ship",
       table.concat(menu.stack, "/"))
 
+-- The stop you are already standing in. On a phone the rail is the whole of
+-- the navigation and there is nothing outside the panel to press, so tapping
+-- the lit stop is the way back into the game. Re-entering the page you are
+-- already reading is the only other thing it could mean, and that is nothing.
+menu.click_rail(ship_at)
+check("the lit stop with nothing behind the panel stays put",
+      menu.open and menu.stack[2] == "ship", table.concat(menu.stack, "/"))
+
+menu.home = false
+menu.click_rail(ship_at)
+check("the lit stop over a game is the way back to it", not menu.open)
+
+-- At the root the same stop is lit while the stage is only previewing it, so
+-- a tap there goes in, which is what it has always done.
+menu.open = true
+menu.stack = {"root"}
+menu.sel = {}
+menu.click_rail(ship_at)
+check("the lit stop at the root still goes in",
+      menu.open and menu.stack[2] == "ship", table.concat(menu.stack, "/"))
+menu.home = true
+menu.stack = {"root"}
+menu.sel = {}
+
 -- --- a tap on a row is still a tap on a row -------------------------------
 
 menu.stack = {"root"}
