@@ -1789,7 +1789,7 @@ local function inspect(o, top)
     -- something. Counted rather than guessed so the panel is exactly as tall
     -- as what it holds.
     local theirs = sim.ship_team(i)
-    local same_team = theirs == sim.ship_team(o.me)
+    local same_team = theirs == team_of(o.me)
     -- Which side they are on, and whether this pilot is allowed to be told.
     --
     -- The zone decides. A side it marks public is one anybody may see and name;

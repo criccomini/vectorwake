@@ -1294,11 +1294,17 @@ function update(self, dt)
     -- happening: you can be shot while reading this.
     if live then
         local e = eye()
+        -- The perspective seat: yours, or the watched subject's, and nil when
+        -- the channel has nobody to stand behind. Written out rather than as
+        -- `watching and e or me`, which is the same shape as every other
+        -- branch in this file and wrong for exactly one case: an `and` whose
+        -- right side is nil falls through to the `or`, so a watcher with no
+        -- subject was handed 255 and the interface spent the whole warm-up of
+        -- the delayed channel asking the core about a seat that cannot exist.
+        local hud_me = me
+        if watching then hud_me = e end
         ui.hud({
-            -- The perspective seat: yours, or the watched subject's. Nil when
-            -- the channel has nobody, and the interface skips everything that
-            -- reads a hull.
-            me = watching and e or me,
+            me = hud_me,
             -- Watching, and who, for the line that says so. The name comes
             -- from the roster because that is where names come from.
             watch = watching and {
