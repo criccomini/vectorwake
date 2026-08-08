@@ -47,12 +47,26 @@ with the frame they belong to, or the feed would announce a death the delayed
 picture has not shown yet. A duel zone sets the dial to zero on purpose: there
 the audience is the mode and both pilots are equally exposed.
 
-**The subject is told.** The channel's camera picks a pilot without asking, so
-the room owes them the fact: `S2C_ONAIR` when the camera lands and again when
-it moves on, drawn as a red tally beside the MENU and PLAYERS keys, swelling
-slowly rather than blinking, since it has to hold attention for minutes and a
-blink that long is something a player stops seeing. Two minutes on air is
-something a pilot can play around, and only if they know.
+**The subject is told, when somebody is actually looking.** The tally means a
+person is seeing you, not that a camera is pointed at you, and those are two
+different facts here. The channel picks a subject and fills its ring whether
+or not anybody is on it, so an arriving watcher lands in a warm picture rather
+than staring at the delay; and the channel runs behind, so a pilot the camera
+has just landed on is seconds away from being shown. So `S2C_ONAIR` is derived
+from the audience: the channel is showing you and at least one watcher is on
+it, or somebody is following your hull directly. Edges only, recomputed every
+snapshot.
+
+It is a red tally beside the MENU and PLAYERS keys, swelling slowly rather
+than blinking, since it has to hold attention for minutes and a blink that
+long is something a player stops seeing. Two minutes on air is something a
+pilot can play around, and only if they know.
+
+Staff following you light it like anybody else, because they are already
+named in the roster: hiding them here would let a room see that somebody is
+watching without being able to tell they are watching you. Covert observation
+is the invisibility capability, and when it arrives it should take the roster
+row and the tally together rather than half of each.
 
 It sat at the top of the middle first, and could not stay: that strip carries
 the flag pennants and the round's banner, both centred, and a notice laid over

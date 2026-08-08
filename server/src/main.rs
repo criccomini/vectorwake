@@ -271,6 +271,11 @@ struct Watcher {
 /// has not shown yet.
 struct ChannelFrame {
     tick: u32,
+    /// Whose hull this frame is centred on, 255 for an empty room. Kept
+    /// beside the bytes because it is the answer to "who is being seen right
+    /// now", which is a question about the frame going out rather than about
+    /// the camera: with a delay on the channel those are seconds apart.
+    subject: u8,
     kills: Vec<Vec<u8>>,
     msg: Vec<u8>,
 }
@@ -282,6 +287,10 @@ struct ChannelFrame {
 /// that does show them film rather than targeting data.
 struct Channel {
     subject: Option<u8>,
+    /// The subject of the newest frame actually served, which is what channel
+    /// watchers are looking at. Behind `subject` by the delay, and None until
+    /// the ring is warm enough to have served anything.
+    showing: Option<u8>,
     /// Ticks left before the subject is re-picked. Also re-picked early when
     /// the subject leaves.
     hold: u32,
@@ -298,6 +307,7 @@ impl Channel {
     fn new() -> Self {
         Channel {
             subject: None,
+            showing: None,
             hold: 0,
             ring: std::collections::VecDeque::new(),
             pending_kills: Vec::new(),
@@ -493,6 +503,9 @@ struct Arena {
     /// The most watchers this room admits, the zone's number.
     max_watchers: usize,
     channel: Channel,
+    /// Ships somebody is currently looking at, as last announced. Held so the
+    /// tally can be recomputed every snapshot and only its edges sent.
+    on_air: std::collections::HashSet<u8>,
     names: HashMap<u8, Seat>,
     /// Where rated events go on their way out of this process. Shared with
     /// every other room here, because the spool is a property of the process
@@ -987,6 +1000,7 @@ impl Arena {
             watchers: HashMap::new(),
             max_watchers: DEFAULT_MAX_WATCHERS,
             channel: Channel::new(),
+            on_air: std::collections::HashSet::new(),
             names: HashMap::new(),
             accounts: HashMap::new(),
             // Replaced by the process's own the moment a Zone takes ownership
@@ -1596,6 +1610,10 @@ impl Arena {
             // of this one was invited nowhere. And a private side whose last
             // member just left stops existing.
             self.invites.remove(&p.ship);
+            // The tally belongs to the pilot, not to the seat. Left set, the
+            // next occupant would inherit a lit state nobody ever sent them
+            // and never see it go out.
+            self.on_air.remove(&p.ship);
             self.reap_teams();
             // Here rather than at each of the several callers -- a quit, an
             // eviction, a kick, a drain -- because every one of them changes
@@ -2024,21 +2042,10 @@ impl Arena {
             } else {
                 Some(pool[(self.channel.next_rand() % pool.len() as u64) as usize])
             };
-            if pick != self.channel.subject {
-                // The subject does not choose to be watched, so they are told:
-                // on air, and off again when the camera moves on.
-                if let Some(old) = self.channel.subject {
-                    if let Some(p) = self.players.values().find(|p| p.ship == old) {
-                        let _ = p.tx.try_send(Message::Binary(vec![S2C_ONAIR, 0]));
-                    }
-                }
-                if let Some(new) = pick {
-                    if let Some(p) = self.players.values().find(|p| p.ship == new) {
-                        let _ = p.tx.try_send(Message::Binary(vec![S2C_ONAIR, 1]));
-                    }
-                }
-                self.channel.subject = pick;
-            }
+            // Who the camera is on. Nobody is told anything here: being
+            // picked is not being seen, and what a pilot is owed is the
+            // second one. See `refresh_on_air`.
+            self.channel.subject = pick;
             self.channel.hold = CHANNEL_HOLD;
         }
         self.channel.hold = self.channel.hold.saturating_sub(SNAPSHOT_EVERY as u32);
@@ -2064,6 +2071,7 @@ impl Arena {
             msg.extend_from_slice(&buf[..n as usize]);
             self.channel.ring.push_back(ChannelFrame {
                 tick: self.world.state.tick,
+                subject,
                 kills: std::mem::take(&mut self.channel.pending_kills),
                 msg,
             });
@@ -2081,6 +2089,10 @@ impl Arena {
             .is_some_and(|f| f.tick + delay <= now)
         {
             let f = self.channel.ring.pop_front().unwrap();
+            // What the channel is showing, whether or not anybody is on it:
+            // the ring runs regardless so an arriving watcher lands in a warm
+            // picture, and this follows the picture rather than the audience.
+            self.channel.showing = if f.subject == 255 { None } else { Some(f.subject) };
             for w in self.watchers.values() {
                 if w.mode != WatchMode::Channel {
                     continue;
@@ -2094,6 +2106,54 @@ impl Arena {
                 }
             }
         }
+
+        self.refresh_on_air();
+    }
+
+    /// Who is being looked at, and telling them when that changes.
+    ///
+    /// The tally has to mean "somebody is seeing you", so it is derived from
+    /// the audience rather than from the camera. Two ways to be seen: the
+    /// channel is showing you and at least one watcher is on the channel, or
+    /// somebody is following your hull directly. Neither is the same as the
+    /// channel having picked you, which is what this used to announce: a
+    /// pilot alone in a room with no watchers at all wore the tally, and a
+    /// pilot the camera had just landed on wore it for the whole delay before
+    /// a single frame of them was served.
+    ///
+    /// Staff following you light it like anybody else. They are already named
+    /// in the roster, so hiding them here would let a room see that somebody
+    /// is watching without being able to tell they are watching you. Covert
+    /// observation is the invisibility capability, and when that arrives it
+    /// takes the roster row and this together rather than half of each.
+    fn refresh_on_air(&mut self) {
+        let mut lit: std::collections::HashSet<u8> = std::collections::HashSet::new();
+        if self.watchers.values().any(|w| w.mode == WatchMode::Channel) {
+            if let Some(s) = self.channel.showing {
+                lit.insert(s);
+            }
+        }
+        for w in self.watchers.values() {
+            if let WatchMode::Follow(t) = w.mode {
+                lit.insert(t);
+            }
+        }
+        if lit == self.on_air {
+            return;
+        }
+        // Edges only. A player who is still being watched hears nothing,
+        // which is what makes this safe to run every snapshot.
+        for ship in self.on_air.difference(&lit) {
+            if let Some(p) = self.players.values().find(|p| p.ship == *ship) {
+                let _ = p.tx.try_send(Message::Binary(vec![S2C_ONAIR, 0]));
+            }
+        }
+        for ship in lit.difference(&self.on_air) {
+            if let Some(p) = self.players.values().find(|p| p.ship == *ship) {
+                let _ = p.tx.try_send(Message::Binary(vec![S2C_ONAIR, 1]));
+            }
+        }
+        self.on_air = lit;
     }
 
     /// Names and labels, sent on every join and leave and then every two
@@ -5513,18 +5573,80 @@ mod tests {
     }
 
     #[test]
-    fn the_subject_is_told_they_are_on_air() {
+    fn the_tally_means_somebody_is_looking_not_that_a_camera_is_pointed() {
+        // The distinction this pins is the whole of what the mark is worth. A
+        // channel with no audience still picks a subject and still fills its
+        // ring, because a watcher arriving should land in a warm picture; a
+        // pilot alone in that room is being seen by nobody and must be told
+        // nothing. And the channel runs behind, so being picked is seconds
+        // away from being shown.
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        let (_, _, mut rx) = seat_rx(&mut a, "starred");
+        let (ship, _, mut rx) = seat_rx(&mut a, "starred");
+        a.channel.delay = 10;
+        let mut buf = vec![0u8; sim::PACK_MAX];
+
+        // Drained as we go: the outbound queue is bounded and drops rather
+        // than waits, so a test that only looked at the end would be reading
+        // whatever survived instead of what was sent.
+        let mut said: Vec<u8> = Vec::new();
+        let mut run = |a: &mut Arena, rx: &mut mpsc::Receiver<Message>,
+                       said: &mut Vec<u8>, n: usize| {
+            for _ in 0..n {
+                for _ in 0..SNAPSHOT_EVERY {
+                    a.tick();
+                }
+                a.broadcast_snapshot(&mut buf);
+                for m in drain(rx) {
+                    if m.first() == Some(&S2C_ONAIR) {
+                        said.push(m[1]);
+                    }
+                }
+            }
+        };
+
+        run(&mut a, &mut rx, &mut said, 20);
+        assert_eq!(a.channel.subject, Some(ship), "the camera did pick them");
+        assert_eq!(a.channel.showing, Some(ship), "and the ring is serving them");
+        assert!(a.on_air.is_empty(), "but there is no audience");
+        assert!(said.is_empty(), "so they were told nothing: {said:?}");
+
+        // Somebody arrives on the channel.
+        let (tx, _keep) = mpsc::channel(OUT_QUEUE);
+        let w = a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        run(&mut a, &mut rx, &mut said, 5);
+        assert!(a.on_air.contains(&ship), "now somebody is looking");
+        assert_eq!(said, vec![1], "told once, on the edge");
+
+        // And leaves.
+        a.watchers.remove(&w);
+        run(&mut a, &mut rx, &mut said, 5);
+        assert!(a.on_air.is_empty());
+        assert_eq!(said, vec![1, 0], "and told once when it stopped");
+    }
+
+    #[test]
+    fn a_follower_lights_the_tally_on_the_hull_they_follow() {
+        // The other way to be seen. This one is not delayed and not shared:
+        // one teammate, one hull, live.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (target, _, mut rx) = seat_rx(&mut a, "flown");
+        let (_, wid, _w) = seat_rx(&mut a, "watching");
+        assert!(a.sit_out(wid, target, false));
+        assert_eq!(a.watchers[&wid].mode, WatchMode::Follow(target));
+
         let mut buf = vec![0u8; sim::PACK_MAX];
         a.broadcast_snapshot(&mut buf);
+        assert!(a.on_air.contains(&target));
         assert!(
-            drain(&mut rx)
-                .iter()
-                .any(|m| m.as_slice() == [S2C_ONAIR, 1]),
-            "the camera landing on you is something you are told"
+            drain(&mut rx).iter().any(|m| m.as_slice() == [S2C_ONAIR, 1]),
+            "a teammate on your shoulder is somebody looking at you"
         );
-        assert_eq!(a.channel.subject, Some(a.players.values().next().unwrap().ship));
+
+        // Their view moves off you, and so does the tally.
+        a.set_watch(wid, 255);
+        a.broadcast_snapshot(&mut buf);
+        assert!(!a.on_air.contains(&target));
+        assert!(drain(&mut rx).iter().any(|m| m.as_slice() == [S2C_ONAIR, 0]));
     }
 
     #[test]
