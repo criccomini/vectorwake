@@ -1323,13 +1323,19 @@ local FEED_FADE = 1.6
 M.FEED_MAX = 5
 
 -- A feed line is words with names in it, so it is given as words with names
--- in it: plain strings are the interface talking and go to capitals, and a
--- table is a name, which is drawn as whoever owns it wrote it.
+-- in it: a table part is a name and is drawn as whoever owns it wrote it,
+-- and everything else is the interface talking.
+--
+-- The interface talks in capitals everywhere else and does not here. A label
+-- shouts because it is a thing to find at a glance; this is a sentence about
+-- people, and "OZONE KILLED KESTREL" reads as an announcement rather than as
+-- something that happened. Lower case leaves the names as the only capitals
+-- on the line, which is also what the eye is looking for.
 local function line_text(t)
-    if type(t) == "string" then return string.upper(t) end
+    if type(t) == "string" then return t end
     local out = {}
     for _, part in ipairs(t) do
-        out[#out + 1] = type(part) == "table" and part[1] or string.upper(part)
+        out[#out + 1] = type(part) == "table" and part[1] or part
     end
     return table.concat(out)
 end
