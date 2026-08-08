@@ -230,8 +230,8 @@ local menu = require("arena.menu")
 menu.show("zones")
 
 dir.rows = {}
-dir.note = "no directory answered"
-dir.why = "still asking, every few seconds"
+dir.note = "no servers found"
+dir.why = "retrying"
 dir.at = "wss://dir.example/x"
 local view = menu.view()
 check("an empty list draws no rows at all", #view.rows == 0,

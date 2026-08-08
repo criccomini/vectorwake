@@ -70,7 +70,7 @@ local function on_message(s)
     local ok, reply = pcall(json.decode, string.sub(s, 2))
     if not ok or type(reply) ~= "table" or type(reply.zones) ~= "table" then
         M.note = "the directory sent something unreadable"
-        M.why = "still asking, every few seconds"
+        M.why = "retrying"
         return
     end
     -- Where accounts live, if this deployment has any. It rides the games list
@@ -157,8 +157,13 @@ local function dial()
                 or data.event == websocket.EVENT_ERROR then
                 conn = nil
                 if #M.rows == 0 then
-                    M.note = "no directory answered"
-                    M.why = "still asking, every few seconds"
+                    -- What a player can see from where they are sitting. It
+                    -- said "no directory answered", which names a piece of
+                    -- this fleet nobody playing has heard of and reads as
+                    -- something they have done wrong; the address under it
+                    -- is still there for whoever is running the thing.
+                    M.note = "no servers found"
+                    M.why = "retrying"
                 end
             end
         end)
