@@ -1846,7 +1846,29 @@ end
 
 local function bomb_col(lvl)
     if lvl < 0 then return pal.BURST end
-    return pal.BOMB_LVL[math.min(lvl + 1, #pal.BOMB_LVL)]
+    return pal.rung(lvl)
+end
+
+-- One bomb rung of blast radius, in world pixels: BombExplodePixels for a
+-- rung one bomb, and every rung above it is a multiple of that.
+local BLAST_STEP = 80
+
+-- Which of the four detonation sounds a blast of this radius gets.
+--
+-- Off the radius rather than off the rung that fired it, though for a bomb
+-- the two say the same thing, since a bomb rung is exactly a wider blast.
+-- The radius answers the rest as well. A repel is a detonation on no ladder
+-- at all, so it has no rung to read, and its shove clears 512 pixels, wider
+-- than a top rung bomb; asked for its level it would come back with -1 and be
+-- played as the smallest thing in the kit. Sizing every detonation by the
+-- hole it makes is one rule for all of them, and it is the hole the player is
+-- watching.
+--
+-- A zone that moves BombExplodePixels moves how loud its detonations sound
+-- and nothing else, which is a drift worth having over a second mechanism.
+local function blast_rung(r)
+    local k = math.floor(r / BLAST_STEP) - 1
+    return k > 0 and k or 0
 end
 
 -- Somebody else's repel, drawn from the only evidence there is: the count in
@@ -1891,7 +1913,7 @@ function M.charges(me, sfx)
                 if spec >= 0 and blast > 0 and spec_life(spec) <= 1 then
                     local x, y = sim.ship_x(i), sim.ship_y(i)
                     fx.detonate(x, y, blast, bomb_col(spec_level(spec)))
-                    sfx("blast", x, y)
+                    sfx("blast", x, y, blast_rung(blast))
                 end
             end
             seen[k] = held
@@ -2016,10 +2038,10 @@ local function arrival(spec, life, owner, t)
     return fade, age
 end
 
-function M.weapons(fill, glow, me_team, t, cull)
+function M.weapons(fill, glow, t, cull)
     local pulse = 0.72 + 0.28 * math.sin(t * 11)
     for i = 0, sim.weapon_count() - 1 do
-        local x, y, spec, vx, vy, team, life, owner = sim.weapon_at(i)
+        local x, y, spec, vx, vy, _, life, owner = sim.weapon_at(i)
         local fade, age = arrival(spec, life, owner, t)
         local af = 0.45 + 0.55 * fade
         if outside(cull, x, y) then
@@ -2041,17 +2063,15 @@ function M.weapons(fill, glow, me_team, t, cull)
             -- streak is what makes a stream of fire read as a direction
             -- rather than as a scatter of dots, and it is the whole reason
             -- the core reports weapon velocity to the client at all. The
-            -- team's colour, run hotter with the rung; a bolt from no ladder
-            -- -- a burst's, a shrapnel fragment -- is violet, because it
-            -- answers to nobody's aim.
+            -- The rung it was fired at, and nothing else: a round's colour
+            -- says how hard it hits, not who sent it. It said the team once,
+            -- climbing toward white with the rung, and the two facts fought
+            -- -- the ramps converged at the top, so the deadliest rounds were
+            -- the ones hardest to read either way. A bolt from no ladder --
+            -- a burst's, a shrapnel fragment -- is violet, because it answers
+            -- to nobody's aim.
             local lvl = spec_level(spec)
-            local col
-            if lvl < 0 then
-                col = pal.BURST
-            else
-                local fam = (team == me_team) and pal.FRIEND_LVL or pal.ENEMY_LVL
-                col = fam[math.min(lvl + 1, #fam)]
-            end
+            local col = lvl < 0 and pal.BURST or pal.rung(lvl)
             local reach = 14 + (math.min(age, 30) - 14) * (1 - fade)
             glow:seg_fade(x - vx * reach, y - vy * reach, x, y,
                           0.6, 4.5, 0, 0.30 * af, col)
@@ -2152,8 +2172,9 @@ function M.corpse(i, vx, vy, me, sfx)
 end
 
 function M.late_blast(w, sfx)
-    fx.detonate(w.x, w.y, spec_blast(w.spec), bomb_col(spec_level(w.spec)))
-    sfx("blast", w.x, w.y)
+    local r = spec_blast(w.spec)
+    fx.detonate(w.x, w.y, r, bomb_col(spec_level(w.spec)))
+    sfx("blast", w.x, w.y, blast_rung(r))
 end
 
 function M.events(me, sfx)
@@ -2195,7 +2216,7 @@ function M.events(me, sfx)
             local r = spec_blast(a)
             if r > 0 then
                 fx.detonate(x, y, r, bomb_col(spec_level(a)))
-                sfx("blast", x, y)
+                sfx("blast", x, y, blast_rung(r))
             else
                 fx.burst(x, y, 4, 90, 0.22, 1.5, pal.a(pal.INK, 0.9))
             end

@@ -11,9 +11,9 @@ way to keep it is to build every sound out of arithmetic rather than source one.
 
 ## Every sound is arithmetic, and it runs on the player's machine
 
-The kit is twenty-one sounds and about a megabyte of 16-bit PCM. None of it is
-in the download. `client/ext/simcore/src/sfx.c` synthesises all of it at boot,
-in about a fifth of a second, and hands the buffers to the engine.
+The kit is twenty-four sounds and a little over a megabyte of 16-bit PCM. None
+of it is in the download. `client/ext/simcore/src/sfx.c` synthesises all of it
+at boot, in about a fifth of a second, and hands the buffers to the engine.
 
 That saves the download, but the reason it matters more is that a sound becomes
 a thing with parameters instead of a file. A bomb can be pitched by its rung
@@ -30,9 +30,9 @@ interface ticks.
 
 | Sound | Length | What it is |
 |---|---|---|
-| `gun0` to `gun3` | 85 to 106 ms | a bolt leaving the rail, one per rung |
-| `bomb0` to `bomb3` | 240 to 300 ms | a heavier charge leaving the tube |
-| `blast` | 550 ms | a bomb going off |
+| `gun0` to `gun3` | 85 to 132 ms | a bolt leaving the rail, one per rung |
+| `bomb0` to `bomb3` | 220 to 660 ms | a heavier charge leaving the tube |
+| `blast0` to `blast3` | 320 to 850 ms | a bomb going off, sized by the hole |
 | `death` | 950 ms | a ship coming apart, the one event allowed a full second |
 | `hit` | 70 ms | something struck your hull: a crack, not a tone |
 | `bounce` | 75 ms | a wall |
@@ -45,26 +45,75 @@ interface ticks.
 | `ui_move`, `ui_go` | 35 and 160 ms | the interface |
 | `music` | 19.2 s, held | the soundtrack |
 
-## A level is the same weapon harder
+## Every rung is its own sound
 
-The panel says it and the core does it: a gun rung adds flat damage to an
-identical bolt fired at an identical rate, and a bomb rung leaves the shell alone
-and widens the blast. So the rungs are not four weapons, and they must not sound
-like four weapons.
+A rung is the most useful thing about an incoming round. It is the whole of the
+damage a bolt carries and the whole of the radius a bomb clears, and a pilot
+cannot read it off anything: the round is three pixels wide and its colour, which
+does carry the rung, is behind them as often as in front. So each rung is its own
+sound, and it has to be one you can name after hearing it once.
 
-The square and the sine that make a bolt sound like a bolt do not move between
-rungs at all. What climbs is weight. Measured across the four, the 200 to 800
-hertz band carries 0.9, 2.0, 4.4 and 6.8 per cent of the energy, roughly a
-doubling a rung. The bomb pitches its whole fall down instead, its sub going from
-13.5 to 20.8 per cent.
+The ladder used to work the other way, on the argument that a rung is the same
+weapon harder and so must not sound like a different weapon: the weight climbed
+and nothing else moved. The argument is right about the mechanic and it was wrong about
+what came out. `client/tools/sfxladder` measures the gap between two sounds as
+the difference across third-octave bands and hundredths of a second, and the old
+rungs landed 2.5 to 4.5 dB apart, ends 5.0 and 9.4 apart, which is a number you
+can print and not a difference anybody hears. What ended it was somebody who had
+flown the whole ladder asking for a sound per rung.
+
+They are 6.4 to 7.3 apart now, ends 12.1 to 14.9, and each ladder climbs on every
+axis at once. One axis moving is heard as the same sound slightly off; all of
+them moving together is heard as a different thing. So the pitch falls, weight
+arrives underneath, the drive comes up, and the sound runs longer. Deeper reads
+as bigger without anybody having to learn it, and the check holds the fall
+monotonic so a rung is never heavier and brighter at the same time.
+
+What each family climbs on differs, because what a rung buys differs. A gun rung
+is flat damage on an identical bolt, so the bolt drops a sixth over three rungs,
+grows a low-mid body, and picks up a second square slightly flat of the first
+that beats against it into a snarl; the top rung is a slam with sub under it. A
+bomb rung is blast radius, so the charge leaves a bigger tube: the fall goes down
+and slows, the saw gives way to the round body under it, the sub arrives and then
+dominates, and the whole thing takes three times as long to clear.
+
+Two things bound the climb. Rung zero of the gun is byte for byte the sound that
+was there before the rungs were told apart, so nothing about a fresh spawn moves.
+And a rung must still belong to its family: a gun that has climbed into a bomb's
+register tells a pilot something false about what is coming at them, which is
+worse than a gun that all sounds the same. The gun's air stays bright and gets
+brighter as the bombs go dark. And no bomb cracks: every one of them swells out
+of the tube, five to sixty-six milliseconds by rung, where nothing in the gun
+ladder swells at all. The check holds the nearest gun-to-bomb pair further apart
+than the widest step inside any ladder; it is 9.5 against 7.3.
 
 Loudness cannot come from the buffer. Every one is normalised to the same peak
 before it is written, so a fatter buffer is a different timbre at the same level.
 The climb lives in the per-sound gains instead: 0.30 to 0.40 for the gun, 0.55 to
-0.70 for the bomb.
+0.70 for the bomb, 0.62 to 0.84 for the detonation, which stops under a death's
+0.85.
 
-Rung zero is byte for byte the sound that was there before rungs existed, so
-nothing changes for a fresh spawn.
+## What a bomb rung buys is audible when it goes off
+
+The detonation was one sound for every rung until now, which is the odd half of
+the ladder above: a bomb level is bought for the blast, and the blast was where
+it could not be heard. The reason was real. A shell in flight carries a spec,
+which says what a projectile does and not which rung fired it.
+
+The rung turned out to be readable off the spec anyway, by the same route that
+colours the round. But the four detonations are picked by radius instead, which
+answers one more case. For a bomb the two say the same thing, since a rung is
+exactly a wider blast. A repel is on no ladder at all: its shove clears 512
+pixels against a top rung bomb's 320, and asked for its level it answers -1, so
+by rung it would have been played as the smallest thing in the kit. The size of
+the hole covers both, and it is the hole the player is watching.
+
+A bigger charge is duller, longer and later rather than louder. The crack at the
+front is the same fifty milliseconds at every rung, because that is the
+detonation itself. Behind it a rumble arrives, and how long it waits, how dark it
+is and how long it rolls is the rung: nothing at all at the bottom, ninety
+milliseconds behind the crack at the top, where it also runs three times as
+long.
 
 ## Nothing rings longer than the thing that caused it
 
@@ -79,6 +128,11 @@ bounces, blasts, deaths and bombs, one of everything else. A fourth gun in the
 same frame is dropped rather than mixed. The budget counts the family and not the
 component, or a pilot at the top of the ladder would be four times as loud as one
 at the bottom.
+
+Length is the one axis the rungs climb only as far as the arena allows. A gun
+fires every 250 ms whatever rung it is on, so a bolt that grew with the rung
+would start overlapping its own repeat at the top; 132 ms is where that stops.
+A bomb is thrown every 1.5 seconds and can have the room.
 
 Distance falls off fast. Nothing beyond 760 world pixels is audible at all,
 attenuation is the square of what is left, and anything under about 3.5 per cent
@@ -195,7 +249,10 @@ like, on purpose.
 
 We do not sample, and we do not intend to. A recorded kit would be a decision
 that could not be tuned, and a bomb that cannot be pitched by its rung is a bomb
-that has to be recorded four times.
+that has to be recorded four times. It is also what makes the claim above
+checkable: `make -C client/tools check` renders the kit with the synth the
+browser runs and fails the build when two rungs have collapsed into one sound,
+which is not a thing you can ask of a folder of wav files.
 
 No sound plays because a moment felt important. Every one of them reports
 something that happened in the arena.

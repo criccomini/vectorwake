@@ -27,16 +27,9 @@ M.ENEMY     = rgb(0xffa552)
 M.BOMB      = rgb(0xff5ea8)
 M.WHITE     = rgb(0xffffff)
 
--- A weapon's rung is a hue. Pink is the bomb everybody meets first; a
--- levelled bomb goes crimson and then gold, which keeps the family in the
--- hot band away from team cyan-and-amber and door green. Bolts keep their
--- team's colour -- friend or foe is the first read under fire -- and climb
--- toward white heat with the rung instead of changing family; those ramps
--- are built below M.hot. Violet is the spray weapons': a burst's bolts and
--- a bomb's shrapnel sit on no hull's ladder and answer to no aim, so they
--- share the wormhole's band, the one that already means "a place, not a
--- player".
-M.BOMB_LVL  = {M.BOMB, rgb(0xff4855), rgb(0xffd166), rgb(0xfff0d0)}
+-- Violet is the spray weapons': a burst's bolts and a bomb's shrapnel sit on
+-- no hull's ladder and answer to no aim, so they share the wormhole's band,
+-- the one that already means "a place, not a player".
 M.BURST     = rgb(0xc27bff)
 
 M.PANEL     = rgb(0x05080e, 0.72)
@@ -172,12 +165,37 @@ function M.hot(col, k, alpha)
     }
 end
 
--- The bolt ramps: the team's colour at rung zero, hotter with each rung.
--- Built once here rather than in the draw loop, which runs per projectile
--- per frame and must not allocate.
-M.FRIEND_LVL = {M.FRIEND, M.hot(M.FRIEND, 0.30), M.hot(M.FRIEND, 0.58),
-                M.hot(M.FRIEND, 0.80)}
-M.ENEMY_LVL  = {M.ENEMY, M.hot(M.ENEMY, 0.30), M.hot(M.ENEMY, 0.58),
-                M.hot(M.ENEMY, 0.80)}
+-- The rung ramp. One colour a rung, and colour on a round says nothing else:
+-- the same four for a bullet and a bomb, for yours and for theirs.
+--
+-- There were three ramps before this, one per team plus one for bombs, with
+-- hue carrying the owner and lightness the rung. Two things were wrong with
+-- it. The rungs were ten units of colour apart, which is not a call anybody
+-- makes on a three-pixel object crossing the screen; and blending toward
+-- white converged the teams as they climbed, so the rounds that matter most
+-- were the ones hardest to tell apart, twenty units at the top against a
+-- hundred at the bottom. It also put a rung 3 bomb on 0xffd166, which is the
+-- charge colour exactly, and a rung 4 bolt within seven of the HUD's own
+-- text.
+--
+-- Green, yellow, orange, red: the one scale nobody has to be taught. Thirty
+-- nine apart rung to rung, and thirty one clear of the nearest thing already
+-- on screen -- which is the prize green against rung 1 and the charge gold
+-- against rung 2, the price of borrowing a scale everybody already knows.
+--
+-- What it gives up is that a round no longer says whose it is. That is not a
+-- side effect; it is what one ramp means. Ships, names and plates still carry
+-- the team, and in a free-for-all -- which is what most of this game is --
+-- every round was worth dodging anyway.
+--
+-- Built once here rather than in the draw loop, which runs per projectile per
+-- frame and must not allocate.
+M.RUNG = {rgb(0x62cc35), rgb(0xf7dd0b), rgb(0xff7000), rgb(0xf42e3d)}
+
+-- The colour of a round at a rung, clamped, since a zone may hand out a
+-- ladder longer than the ramp.
+function M.rung(lvl)
+    return M.RUNG[math.max(1, math.min(lvl + 1, #M.RUNG))]
+end
 
 return M
