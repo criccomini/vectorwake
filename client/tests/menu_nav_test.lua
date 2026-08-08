@@ -147,8 +147,15 @@ check("enter is the only thing that picks",
 -- card elsewhere, so it is picked the same way a hull is: move to it, press
 -- enter, and the action names itself. What it must not do is come back as a
 -- hull change, which would fly you in ship number eight.
+-- On the home screen this page is the hull you will arrive in, and there is
+-- no room to watch, so the cell is not offered at all rather than offered and
+-- then refused with a sentence.
+check("no game behind the panel means eight cells",
+      #menu.view().rows == 8, tostring(#menu.view().rows))
+
+menu.home = false
 local ship_rows = menu.view().rows
-check("the ship page carries the eight hulls and one more thing",
+check("with a game there are nine",
       #ship_rows == 9, tostring(#ship_rows))
 menu.sel.ship = 9
 local act_w = menu.step({go = true})

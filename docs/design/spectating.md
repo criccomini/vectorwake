@@ -134,6 +134,20 @@ wash the hull you are flying wears. Going back is any of the other eight
 cells, which is the same page and the same press; a room that filled while you
 sat out refuses, and the refusal is staying exactly where you are.
 
+Only with a game behind the panel. On the home screen the ship page is the
+hull you will arrive in, and there is nothing there to watch, so the cell is
+not drawn at all: a control whose entire effect is a sentence explaining why
+it did nothing is worse than no control. The page is eight cells at home and
+nine in a room, which is why its rows are asked for rather than built once at
+load.
+
+Touch gets it on the same terms, because the page is one grid at every size.
+Two columns on a phone held upright, where the ninth cell starts a row of its
+own and the whole page still fits. Four across a phone held sideways, where it
+lands on a third row against a screen with room for about two and a half:
+tight rather than broken, and worth a look whenever the ship page is next
+opened up.
+
 It briefly lived as a third answer on the games-list card that asks whether
 you meant to leave. That card is about the game you are in, and what you are
 flying is a different question, so it is back to two answers.

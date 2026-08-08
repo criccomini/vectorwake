@@ -205,14 +205,21 @@ local function hull_rows()
     -- cell rather than a row somewhere else. Picking a hull is already how a
     -- pilot says what they want to be; "nothing, I am watching" is an answer
     -- to that question and belongs beside the other eight.
-    rows[#rows + 1] = {
-        label = "Spectate", detail = "watch the room from nobody's cockpit",
-        act = "spectate", role = "no hull",
-        -- The helmet, not a ship: the cell is about the pilot rather than
-        -- about anything they are flying.
-        figure = "pilot",
-        mark = function() return M.watching end,
-    }
+    --
+    -- Only with a game behind the panel. On the home screen this page is the
+    -- hull you will arrive in, and there is nothing to watch yet: the cell
+    -- would be a control whose whole effect is a sentence explaining why it
+    -- did nothing.
+    if not M.home then
+        rows[#rows + 1] = {
+            label = "Spectate", detail = "watch the room from nobody's cockpit",
+            act = "spectate", role = "no hull",
+            -- The helmet, not a ship: the cell is about the pilot rather than
+            -- about anything they are flying.
+            figure = "pilot",
+            mark = function() return M.watching end,
+        }
+    end
     return rows
 end
 
@@ -338,7 +345,10 @@ local NODES = {
     -- so left and right are a column apart and up and down are a row apart.
     -- Nothing else in the tree is, which is why it is a flag on the node
     -- rather than a rule about pages.
-    ship = {grid = true, rows = hull_rows()},
+    -- A function rather than a table: the page is eight cells on the home
+    -- screen and nine with a game behind it, so it has to be asked each time
+    -- rather than built once at load.
+    ship = {grid = true, rows = hull_rows},
 
     zones = {rows = zone_rows, empty = zone_empty},
 
