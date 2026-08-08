@@ -1002,6 +1002,73 @@ check("and shrinks by what it dropped",
                     full_top and full_top.y1 or -1))
 in_hand = {repel = 2, burst = 1}
 
+-- --- the fuse is ground, not a ring ----------------------------------------
+
+-- A proximity fuse is a circle a round goes off inside of, and every drawing
+-- of its boundary was a ring on a mark that already had rings: the head is
+-- one, bouncing is one, and a bare bomb with neither read as a loaded one.
+-- It is the filled area now, in the round's own hue taken right down, drawn
+-- before the round so the round and everything worn on it stand on top of it.
+--
+-- Three things have to hold and none of them is visible in a screenshot of one
+-- loadout, which is how the old mark survived as long as it did.
+do
+    mods = {[1] = {[2] = 1}}
+    frame()
+    local b = row_box("bomb")
+    local first, big, alpha = nil, 0, nil
+    for _, sh in ipairs(shapes) do
+        local mid = (sh.y0 + sh.y1) / 2
+        if b and mid > b.y0 and mid < b.y1 then
+            first = first or sh
+            local r = (sh.x1 - sh.x0) / 2
+            if sh.kind == "disc" and r > big then
+                big, alpha = r, sh.tint and sh.tint[4]
+            end
+        end
+    end
+    check("the fuse is a disc and not a ring",
+          first and first.kind == "disc" and first.w == nil,
+          "the row opens with a " .. tostring(first and first.kind))
+    -- The widest thing on the row is what was drawn first, which is the whole
+    -- of "under": anything drawn after it is drawn over it.
+    check("and it is drawn before the round it belongs to",
+          first and (first.x1 - first.x0) / 2 == big,
+          "the first shape is not the widest")
+    check("and it is faint enough to be ground",
+          alpha ~= nil and alpha > 0.05 and alpha < 0.5,
+          "alpha " .. tostring(alpha))
+end
+
+-- And it costs the marks beside it nothing. A share of the room is for
+-- something that rings the round and has to be told from the ring outside it;
+-- ground is not a ring, so a hull with a fuse and fragments splits the width
+-- two ways rather than three, and its fragments reach exactly as far as they
+-- would with no fuse at all.
+local function frag_span()
+    mods = mods
+    frame()
+    local b = row_box("bomb")
+    local left, right = math.huge, 0
+    for _, sh in ipairs(shapes) do
+        local mid = (sh.y0 + sh.y1) / 2
+        if b and mid > b.y0 and mid < b.y1 and sh.tint
+            and sh.tint[1] == pal.BURST[1] and sh.tint[2] == pal.BURST[2] then
+            local cx = (sh.x0 + sh.x1) / 2
+            left = math.min(left, cx)
+            right = math.max(right, cx)
+        end
+    end
+    return right - left
+end
+mods = {[1] = {[3] = 2}}
+local alone = frag_span()
+mods = {[1] = {[2] = 1, [3] = 2}}
+local fused = frag_span()
+check("a fuse costs the fragments beside it nothing",
+      alone > 0 and math.abs(fused - alone) < 1,
+      string.format("%.1f across with a fuse, %.1f without", fused, alone))
+
 -- --- and none of it on glass ------------------------------------------------
 
 -- A touchscreen draws no corner stack at all. The pads carry the weapons and

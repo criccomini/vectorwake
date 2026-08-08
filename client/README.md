@@ -375,7 +375,8 @@ first version of this: it gave every add-on a symbol of its own and lined them
 up in a column, and six shapes beside a seventh read as seven things the ship
 is carrying, when what a player holds is one gun and one bomb that greens have
 been changing all match. So a bolt with bouncing on it is a bolt with a ball on
-each end of it, and a bomb with proximity is a bomb inside a broken ring.
+each end of it, and a bomb with proximity is a bomb standing on the area its
+fuse reaches.
 
 The level was three cyan rungs beside the mark, and that went the same way. It
 was there before the round had a colour of its own, and the round has one now:
@@ -387,9 +388,25 @@ team's colour, which a weapon's level has nothing to do with.
 A gun is a line into a dot and a bomb is a ringed head, which is what each is
 in the arena, and one set of add-on marks fits both because every add-on is
 something that happens either to the round's body (multifire sends more of
-them, freeze rimes it) or to the round itself (proximity rings it, shrapnel
-throws fragments off it, bouncing rings it too, the repel add-on stands a wave
-in front of it).
+them, freeze rimes it) or to the round itself (shrapnel throws fragments off
+it, bouncing rings it, the repel add-on stands a wave in front of it).
+
+The bomb's head is a core filling most of its ring, which is the proportion the
+arena draws one in flight at: a 3.6 core inside a 4.6 ring, so the two read as
+one object with a lit rim. It was a fifth of that for a while, a small dot a
+long way inside a ring, which is the picture the proximity fuse used to draw,
+so a bare bomb read as a loaded one.
+
+Proximity is the exception to all of it, and is drawn as ground rather than as
+a mark. A fuse is a circle a round goes off inside of, so every drawing of its
+boundary is a ring, and this mark already has rings on it. Cutting the ring
+finer, squaring it into a reticle and breaking it on the flanks were all drawn
+and all still asked a reader to tell one circle from another at three points
+across. It is the filled area now, in the round's own hue taken right down and
+laid under everything, so the head and the fragments and the bounce ring stand
+on it. Nothing else on any mark is filled, and because ground is not a ring it
+takes no share of the room: a hull with a fuse and fragments splits the width
+two ways rather than three.
 
 The bomb had a fading trail behind it until it did not. An icon is not a round
 in flight, so a streak of motion on a thing sitting still in a corner was a

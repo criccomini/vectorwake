@@ -68,15 +68,26 @@ end
 -- knowing a single number.
 M.BOMB_R = 0.46
 
--- A fuse: the reach it goes off at, broken because nothing is there yet. The
--- radius comes from the caller, since the stack shares the room round a head
--- among every add-on and a pad has the room to itself, but the four arcs and
--- the gaps between them are the drawing and belong here.
-function M.bomb_prox(hx, hy, r, k, col)
-    for i = 0, 3 do
-        local a0 = i * math.pi / 2 + 0.17
-        u:arc(hx, hy, r, a0, a0 + math.pi / 2 - 0.34, M.pen(k, 0.106), 5, col)
-    end
+-- A fuse: the reach it goes off at, drawn as the area rather than as its edge.
+--
+-- It was that edge for a long time, a ring broken into four arcs, and every
+-- version of that had the same fault. A proximity fuse is a circle a round
+-- goes off inside of, so a drawing of its boundary is a ring, and the mark
+-- already had rings on it: the head is one, bouncing is one, and a bare bomb
+-- with neither read as a loaded one. Cutting the ring finer, squaring it off
+-- and breaking it in other places were all drawn and all still asked a reader
+-- to tell one circle from another at three points across.
+--
+-- Filled, nothing else on any mark is, so it cannot be mistaken for anything.
+-- In the round's own hue taken right down rather than in the add-on's hot one,
+-- because a fuse is not a thing stuck on the round: it is how far the round
+-- reaches, so it is the round, faintly, over the area it reaches.
+--
+-- And under everything, which is the other half of why it works. A field the
+-- fragments and the bounce ring stand on is ground; the same disc over them
+-- would be a wash.
+function M.bomb_prox(hx, hy, r, col)
+    u:disc(hx, hy, r, 28, pal.a(col, (col[4] or 1) * 0.24))
 end
 
 -- The head, and the whole of the round.
@@ -90,9 +101,15 @@ end
 -- in the middle. Three separate attempts to bias it into place all landed
 -- somewhere a screenshot said was still off. A ring about a point is centred
 -- where it is drawn.
+-- The core fills most of the ring, which is the proportion the arena draws a
+-- bomb in flight at: a 3.6 core inside a 4.6 ring, so the two read as one
+-- object with a lit rim. It was a fifth of that for a while, a small dot a
+-- long way inside a ring, and a small dot a long way inside a ring is the
+-- picture a proximity fuse used to draw, so a bare bomb looked loaded and a
+-- loaded one looked doubly so.
 function M.bomb_head(hx, hy, k, col)
-    u:ring(hx, hy, k * M.BOMB_R, M.pen(k, 0.122), 12, col)
-    u:disc(hx, hy, k * 0.19, 8, col)
+    u:ring(hx, hy, k * M.BOMB_R, M.pen(k, 0.122), 14, col)
+    u:disc(hx, hy, k * 0.34, 12, col)
 end
 
 -- The charges, drawn from what the thing does rather than from a name that
@@ -130,25 +147,30 @@ local function barrel(m, ang, col, held)
     m.far = math.max(m.far, dx - m.x + m.k * M.BOLT_DOT)
 end
 
-local function mk_bolt(hx, cy, k, col)
-    local m = {x = hx, y = cy, k = k, bolt = true,
-               tail = hx - k * M.BOLT_LEN, origin = hx - k * M.BOLT_LEN,
-               dots = {}, out = k * M.BOLT_DOT, far = k * M.BOLT_DOT,
-               -- Nothing on this mark rings the head except the add-ons that
-               -- ring any mark. The fan hangs off the muzzle and the bounce
-               -- ring sits on a dot, so neither takes a share of the room.
-               radial = {false, false, true, true, false, true}}
-    barrel(m, 0, col)
-    return m
+-- The two builders work out a mark's numbers and draw nothing, because one
+-- add-on draws underneath the round and a builder that drew as it measured
+-- would have put the round down first. See M.weapon.
+local function mk_bolt(hx, cy, k)
+    return {x = hx, y = cy, k = k, bolt = true,
+            tail = hx - k * M.BOLT_LEN, origin = hx - k * M.BOLT_LEN,
+            dots = {}, out = k * M.BOLT_DOT, far = k * M.BOLT_DOT,
+            -- Nothing on this mark rings the head except the add-ons that
+            -- ring any mark. The fan hangs off the muzzle and the bounce
+            -- ring sits on a dot, so neither takes a share of the room.
+            radial = {false, false, false, true, false, true}}
 end
 
-local function mk_bomb(hx, cy, k, col)
-    M.bomb_head(hx, cy, k, col)
-    -- Where a fan of them leaves from, which is the only thing behind the head
-    -- on this mark and so is set at the edge the mark may reach rather than at
-    -- a length of its own.
+local function mk_bomb(hx, cy, k)
+    -- `tail` is where a fan of them leaves from, which is the only thing
+    -- behind the head on this mark and so is set at the edge the mark may
+    -- reach rather than at a length of its own.
     return {x = hx, y = cy, k = k, tail = hx - k * M.MARK_REACH,
             out = k * M.BOMB_R, far = k * M.BOMB_R}
+end
+
+-- The round itself, once whatever it stands on has been drawn.
+local function draw_round(m, col)
+    if m.bolt then barrel(m, 0, col) else M.bomb_head(m.x, m.y, m.k, col) end
 end
 
 -- Every add-on takes the mark, a colour and how many rungs deep it is, and
@@ -211,17 +233,6 @@ local function dec_bounce(m, col, n)
     end
     local r = m.out + m.step * 0.5
     u:ring(m.x, m.y, r, M.pen(m.k, 0.075), 16, col)
-    m.out = m.out + m.step
-    m.far = math.max(m.far, r)
-end
-
--- A fuse: the reach it goes off at, broken because nothing is there yet, and
--- a rung further out because a rung is another tile of reach. Broken by a
--- quarter rather than by half, so that it still reads as a ring when it is
--- sharing the mark with the fragments that hang outside it.
-local function dec_prox(m, col, n)
-    local r = m.out + m.step * (0.52 + 0.14 * math.min(n, 3))
-    M.bomb_prox(m.x, m.y, r, m.k, pal.a(col, (col[4] or 1) * 0.9))
     m.out = m.out + m.step
     m.far = math.max(m.far, r)
 end
@@ -306,22 +317,43 @@ local function dec_push(m, col, n)
     m.far = math.max(m.far, m.out)
 end
 
+-- The fuse, drawn before the round and under it. A rung is another tile of
+-- reach, so the field grows with depth; it starts at the width the rest of the
+-- mark may use, so at any depth everything else on the mark stands on it.
+--
+-- It takes no share of the room. A share is for something that rings the round
+-- and has to be told from the ring outside it, and this is not a ring: what it
+-- costs the marks beside it is nothing, so a hull with a fuse and fragments
+-- splits the width two ways rather than three.
+local function ground_prox(m, col, n)
+    local r = m.k * (M.MARK_REACH + 0.05 * (math.min(n, 3) - 1))
+    M.bomb_prox(m.x, m.y, r, col)
+    m.far = math.max(m.far, r)
+end
+
 -- In pal.MODS order, which is also the order they draw in: each of the ones
 -- that rings the head takes the next ring of room out from the last, so the
--- fuse sits inside the fragments and the fragments inside the shove. Reorder
--- this list and they land on top of each other.
-local MOD_DECOR = {dec_multi, dec_bounce, dec_prox, dec_shrap, dec_freeze,
-                   dec_push}
+-- fragments sit inside the shove. Reorder this list and they land on top of
+-- each other.
+local MOD_DECOR = {dec_multi, dec_bounce, nil, dec_shrap, dec_freeze, dec_push}
+-- And the one that goes down before the round rather than onto it.
+local MOD_GROUND = {nil, nil, ground_prox}
 -- Which of them ring the head, and so want a share of the room around it.
--- Multifire leaves from the tail and freeze sits on the body; neither costs
--- the mark any width. This is the bomb's answer; a bolt carries its own, since
--- it draws its fan and its bounce into the mark itself.
-local MOD_RADIAL = {false, true, true, true, false, true}
+-- Multifire leaves from the tail, freeze sits on the body and the fuse is
+-- ground; none of the three costs the mark any width. This is the bomb's
+-- answer; a bolt carries its own, since it draws its fan and its bounce into
+-- the mark itself.
+local MOD_RADIAL = {false, true, false, true, false, true}
 -- How far out from the head a mark may reach, against its own size. In the
 -- stack the row is 22 points tall and a mark has to live inside it however
 -- loaded it is; on a pad the ring is what it has to live inside. Each caller
 -- picks `k` to suit its own room, and this is what the shares are shares of.
 M.MARK_REACH = 1.05
+-- And how far the one add-on that is not bounded by it goes: a fuse is the
+-- only one whose magnitude is a distance, so it grows past the rest with
+-- depth. A caller sizing a mark against a round control wants this number, not
+-- the one above.
+M.FIELD_MAX = M.MARK_REACH + 0.10
 
 -- Where to put the round so that the mark reads as centred on the point it was
 -- given, which is not the same as putting the round there.
@@ -425,7 +457,7 @@ function M.weapon(cx, cy, k, me, t)
     local lvl = ship_lvl(me, t)
     local base = pal.a(pal.rung(lvl), 0.9)
     local at = cx + k * (gun and M.BOLT_BIAS or M.BOMB_BIAS)
-    local m = gun and mk_bolt(at, cy, k, base) or mk_bomb(at, cy, k, base)
+    local m = gun and mk_bolt(at, cy, k) or mk_bomb(at, cy, k)
     -- Which add-ons want a ring of room is a fact about the mark, not about
     -- the add-on: the fan and the bounce ring cost a gun nothing, and cost a
     -- bomb a share each.
@@ -440,6 +472,15 @@ function M.weapon(cx, cy, k, me, t)
     -- so is a weapon that looks broken.
     local off = ship_multi_off(me)
     m.off = off and true or false
+    -- What goes under the round goes down first, in the round's own colour
+    -- rather than the add-on's hot one: a fuse is not a thing stuck on a bomb,
+    -- it is how far the bomb reaches, so it is the bomb faintly over the area
+    -- it reaches. Then the round, then everything worn on it.
+    for i = 1, #pal.MODS do
+        local n = ship_mod(me, t, i - 1)
+        if n > 0 and MOD_GROUND[i] then MOD_GROUND[i](m, base, n) end
+    end
+    draw_round(m, base)
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a
     -- different colour stuck on the side of it.
@@ -455,7 +496,7 @@ function M.weapon(cx, cy, k, me, t)
             -- Except when you have declined it, which is the one time the
             -- barrels either side really are not the round you are firing.
             if off and i == 1 then col = pal.a(pal.DIM, 0.45) end
-            MOD_DECOR[i](m, col, n)
+            if MOD_DECOR[i] then MOD_DECOR[i](m, col, n) end
         end
     end
     return m.x + m.far
