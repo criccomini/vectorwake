@@ -630,9 +630,30 @@ do
     local f1, e1 = pips(l.charge[1])
     check("a cell counts what is in hand", f1 == 2 and e1 == 1,
           f1 .. " held, " .. e1 .. " spent")
-    local f2, e2 = pips(l.charge[2])
-    check("and an empty one still counts its room", f2 == 0 and e2 == 3,
-          f2 .. " held, " .. e2 .. " spent")
+    -- And a slot spent out has no cell at all. A control that does nothing
+    -- when pressed is bad enough with a keyboard; on glass there is no travel
+    -- and no cursor, so the only way to learn a cell is dead is to tap it in
+    -- the middle of a fight and get nothing back.
+    check("and a spent slot draws no cell", #l.charge == 1,
+          #l.charge .. " cells for one charge in hand")
+    -- The rail closes up rather than leaving the gap. Two in hand puts the
+    -- second cell where the first sits when only one is held, which is the
+    -- shrink that keeps the block over the triggers the same shape.
+    local low = l.charge[1].y
+    touch.counts = {[0] = 2, [1] = 1}
+    local both = draw(w, h, s)
+    check("and the rail closes the gap", #both.charge == 2
+          and math.abs(both.charge[1].y - low) < 1,
+          #both.charge .. " cells, first at " ..
+          string.format("%.0f against %.0f", both.charge[1].y, low))
+
+    -- A hull holding nothing draws no rail, and nothing above the triggers
+    -- answers a tap.
+    reset(unpack(LAND))
+    touch.counts = {}
+    local none = draw(w, h, s)
+    check("a hull holding no charges draws no rail", #none.charge == 0,
+          #none.charge .. " cells with an empty hand")
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

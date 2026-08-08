@@ -455,24 +455,6 @@ local function close_mark(x, y, col, k)
     end
 end
 
--- A weapon level, as filled rungs. Three rungs and how many are lit, which is
--- a rung count read without reading a numeral.
-local function ladder(x, y, rungs, level, col, w, h)
-    w = w or 34 * S
-    h = h or 3.4 * S
-    local step = w / rungs
-    for k = 0, rungs - 1 do
-        local px = x + k * step
-        local wk = step - 2 * S
-        if k < level then
-            rect(px, y, wk, h, col)
-        else
-            u:frame(px, ry(y, h), wk, h, 0.8 * S,
-                    pal.a(col, (col[4] or 1) * 0.32))
-        end
-    end
-end
-
 -- --- frame -----------------------------------------------------------------
 
 -- True when the screen is too narrow for the desktop layout: three columns of
@@ -1493,7 +1475,20 @@ end
 local STACK, STACK_SHARE = 1.5, 0.34
 
 local function status(me, charges, lift)
-    local slots = charges or {}
+    -- Only the charges you are holding. A row for a slot you have spent out
+    -- is a row that answers a question nobody asked: what a hull could carry
+    -- belongs to picking the hull, and this corner is read in a fight, where
+    -- the only thing worth knowing is what a key would spend if you pressed
+    -- it. The empties used to draw, on the argument that the stat panel shows
+    -- upgrades you do not have, and the stat panel is a thing you stop and
+    -- read.
+    --
+    -- The count still says how many, so a row appearing is the same event as
+    -- a pip lighting and reads as one.
+    local slots = {}
+    for _, c in ipairs(charges or {}) do
+        if (c.count or 0) > 0 then slots[#slots + 1] = c end
+    end
     -- On a touchscreen the pads carry all of this: the counts sit over the
     -- charge pads and the weapon marks sit inside the trigger pads, drawn by
     -- touch.lua draws them, so any row here would be the same thing twice at
@@ -1533,26 +1528,29 @@ local function status(me, charges, lift)
     -- label beside it starts. A hull holding three add-ons is a good deal
     -- wider than one holding none, and a constant here would either crowd the
     -- wide case or strand the narrow one.
-    local wide = val + 44 * z
+    local wide = val
     -- The charge rows in the order they were drawn, so a reader of this list
     -- walks them down the stack the way a reader of the stack does.
     anchor.charge_order = {}
 
-    -- A level is the same weapon harder, so it is rungs on a ladder; an
-    -- add-on changes what the round is, so it is drawn onto the round.
+    -- A weapon row is the mark and nothing else.
+    --
+    -- The level was three cyan rungs in the counting column beside it, which
+    -- is where the number lived before the round had a colour of its own. It
+    -- has one now: a round is drawn in the hue of the rung it is fired at, on
+    -- one ramp for the whole game, so the corner already says what the ladder
+    -- said and says it in the same terms the arena does. Two answers to one
+    -- question, and the second one in the team's colour, which the level is
+    -- nothing to do with.
     for t = 0, show_trigs and SIM_TRIGGERS - 1 or -1 do
         if sim.has_trigger(me, t) then
-            local lvl = sim.ship_level(me, t)
-            local reach = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
-            ladder(val, y + rows_h / 2 - 2 * z, 3, lvl + 1, pal.FRIEND,
-                   40 * z, 4 * z)
+            local right = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
             local key = (t == sim.TRIG_GUN) and "gun" or "bomb"
             anchor[key] = y + rows_h / 2
             anchor[key .. "_mods"] = mod_words(me, t)
             -- The row as far right as it actually drew. A loaded bomb wears
             -- fragments a third of the mark's width clear of it, and pointing
             -- at one of those is still pointing at the bomb.
-            local right = math.max(reach, val + 40 * z)
             if right > wide then wide = right end
             zone(key, x, y, right - x, rows_h)
             y = y + rows_h

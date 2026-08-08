@@ -47,10 +47,10 @@ local function box(x0, y0, x1, y1, col, w)
                            w = w, kind = kind, tint = tint}
 end
 
--- Kept apart from `col`, which `ladder_x` matches against the team colour to
--- find the counting column. A mark's own colours have no business in that
--- search, and putting them there would make the column's position depend on
--- what the hull is carrying.
+-- Kept apart from `col`, which the ladder search used to match against. A
+-- mark's own colours have no business deciding where the counting column is,
+-- and putting them in the same field would make the column's position depend
+-- on what the hull is carrying.
 local function hue(c)
     if not c then return "?" end
     return string.format("%.3f,%.3f,%.3f", c[1], c[2], c[3])
@@ -151,6 +151,11 @@ end
 local mods = {}
 -- Whether the fan is declined, which Q toggles in flight.
 local multi_off = false
+-- The rung this hull's triggers are on, which the mark carries as a colour.
+local level = 1
+-- What is in hand, by slot, which is what decides whether a charge gets a row
+-- at all. The list handed to the interface is built from it below.
+local in_hand = {repel = 2, burst = 1}
 
 local sim = {
     ship_count = function() return 1 end,
@@ -167,7 +172,7 @@ local sim = {
     ship_points = function() return 0 end,
     ship_bounty = function() return 40 end,
     ship_up = function() return 0 end,
-    ship_level = function() return 1 end,
+    ship_level = function() return level end,
     ship_charge = function() return 2 end,
     ship_mod = function(_, t, m) return (mods[t] and mods[t][m]) or 0 end,
     ship_multi_off = function() return multi_off end,
@@ -231,8 +236,10 @@ local function frame(px, py)
         teams = {},
         feed = {},
         hurt = 0,
-        charges = {{name = "repel", short = "RPL", count = 2, max = 3},
-                   {name = "burst", short = "BST", count = 1, max = 3}},
+        charges = {{name = "repel", short = "RPL",
+                    count = in_hand.repel or 0, max = 3},
+                   {name = "burst", short = "BST",
+                    count = in_hand.burst or 0, max = 3}},
         cam_x = 400, cam_y = 400,
         half_w = 640, half_h = 400,
         banner = "",
@@ -271,25 +278,40 @@ end
 -- short window, so a constant in this file is a constant that goes stale the
 -- first time the block is resized and takes the checks below with it.
 --
--- The ladder is the run of rungs in the team colour on a weapon row: lit ones
--- are filled rects and spent ones are frames, both in FRIEND.
-local function ladder_x(b)
+-- Read off a charge row, because a weapon row has nothing in that column any
+-- more: the level was three rungs in the team colour there, and the round's
+-- own hue says it now. What is left counting is the pips, which are the
+-- leftmost thing in the charge colour on a row that has any.
+local function column_at(b)
     local at = nil
     for _, s in ipairs(shapes) do
         local mid = (s.y0 + s.y1) / 2
-        if mid > b.y0 and mid < b.y1 and s.col
-            and s.col[1] == pal.FRIEND[1] and s.col[2] == pal.FRIEND[2]
-            and s.col[3] == pal.FRIEND[3] then
+        if mid > b.y0 and mid < b.y1 and s.tint
+            and s.tint[1] == pal.CHARGE_COL[1]
+            and s.tint[2] == pal.CHARGE_COL[2]
+            and s.tint[3] == pal.CHARGE_COL[3] then
             at = math.min(at or s.x0, s.x0)
         end
     end
     return at
 end
 
+-- And cached, since finding it costs a probe of the whole corner and the
+-- answer does not move: the column is a function of the block's scale, and
+-- the scale is a function of how many rows there are.
+local column_cache = nil
+local function column()
+    if not column_cache then
+        local b = row_box("charge:repel")
+        column_cache = b and column_at(b) or nil
+    end
+    return column_cache
+end
+
 -- What the mark cell holds: everything drawn left of that column, at this
 -- row's height.
 local function cell(b)
-    local edge = ladder_x(b) or (W / 2)
+    local edge = column() or (W / 2)
     local out = {}
     for _, s in ipairs(shapes) do
         local mid = (s.y0 + s.y1) / 2
@@ -482,7 +504,7 @@ check("no loadout pushes a mark out of its own row", worst_over <= 2,
                     tostring(worst_case)))
 
 -- The counting column is the other edge. A mark that reaches it is drawn over
--- the ladder that says what level the weapon is.
+-- the pips the rows below it count in.
 mods = {[0] = {[0] = 3, [1] = 3, [2] = 3, [3] = 3, [4] = 3, [5] = 3},
         [1] = {[0] = 3, [1] = 3, [2] = 3, [3] = 3, [4] = 3, [5] = 3}}
 frame()
@@ -494,10 +516,10 @@ for _, key in ipairs({"gun", "bomb"}) do
         reach = math.max(reach, x1 or 0)
     end
 end
-local column = ladder_x(row_box("gun")) or 0
+local col_x = column() or 0
 check("a fully loaded mark stops short of the counting column",
-      reach > 0 and column > 0 and reach < column,
-      string.format("reached %.0f, column is at %.0f", reach, column))
+      reach > 0 and col_x > 0 and reach < col_x,
+      string.format("reached %.0f, column is at %.0f", reach, col_x))
 
 -- --- the row grows with what it carries ------------------------------------
 
@@ -528,10 +550,16 @@ check("and the row covers everything its mark drew",
 -- with nothing on the screen connecting the two.
 -- Upper cased, because the interface sets what it says in capitals and what
 -- these checks are about is which words it says.
+--
+-- Joined by spaces rather than by newlines, because a hover sentence is
+-- wrapped to whatever room is left beside the block and the block's width is
+-- what a loadout decides. Matching across the wrap made a phrase check fail
+-- for the reason a phrase check exists to ignore: the corner got narrower, the
+-- label got wider, and "carrying prox" broke across two lines.
 local function said()
     local out = {}
     for k = 1, state.n do out[#out + 1] = string.upper(state.text[k].s) end
-    return table.concat(out, "\n")
+    return table.concat(out, " ")
 end
 
 -- A point inside a row, asked of the interface rather than worked out here.
@@ -585,8 +613,10 @@ local function block(w, h, dens)
         me = 0, class_names = {"Apex"}, menu_open = false,
         pilots = {[0] = {name = "you", label = "human"}},
         teams = {}, feed = {}, hurt = 0,
-        charges = {{name = "repel", short = "RPL", count = 2, max = 3},
-                   {name = "burst", short = "BST", count = 1, max = 3}},
+        charges = {{name = "repel", short = "RPL",
+                    count = in_hand.repel or 0, max = 3},
+                   {name = "burst", short = "BST",
+                    count = in_hand.burst or 0, max = 3}},
         cam_x = 400, cam_y = 400, half_w = w / 2, half_h = h / 2,
         banner = "", lag = 4,
         stats = {lag = 4, lead = 2, err = 1, err_max = 9, rewind = 0,
@@ -709,7 +739,7 @@ local ROWS = {"gun", "bomb", "charge:repel", "charge:burst", "bounty"}
 
 mods = {}
 frame()
-local counting = ladder_x(row_box("gun"))
+local counting = column()
 local axis = {}
 for _, key in ipairs(ROWS) do
     axis[key] = mark_box(key, counting or W)
@@ -745,8 +775,43 @@ mods = {}
 frame()
 local gap = (counting or 0) - (axis.gun or 0)
 check("the counting column sits close to the marks",
-      gap > 8 * SCALE and gap < 26 * SCALE,
-      string.format("%.0f px from the subject to the ladder", gap))
+      gap > 8 * SCALE and gap < 30 * SCALE,
+      string.format("%.0f px from the subject to the column", gap))
+
+-- --- the level is a colour, not a ladder -----------------------------------
+
+-- A weapon row was a mark and three cyan rungs beside it saying which rung of
+-- the ladder the trigger was on. The round carries that now, in the hue it
+-- will be when it leaves the gun, on the one ramp every round in the game is
+-- drawn from. Two answers to one question, and the second one in the team's
+-- colour, which a weapon's level has nothing to do with.
+--
+-- Measured as "no team colour on a weapon row" rather than "no rects": the
+-- fault would be somebody putting the count back some other way, and the tell
+-- is the colour it was counted in.
+for _, lvl in ipairs({0, 1, 3}) do
+    level = lvl
+    mods = {}
+    frame()
+    for _, key in ipairs({"gun", "bomb"}) do
+        local b = row_box(key)
+        local n = 0
+        if b then
+            for _, sh in ipairs(shapes) do
+                local mid = (sh.y0 + sh.y1) / 2
+                local c = sh.col or sh.tint
+                if mid > b.y0 and mid < b.y1 and c
+                    and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
+                    and c[3] == pal.FRIEND[3] then
+                    n = n + 1
+                end
+            end
+        end
+        check(string.format("the %s row at level %d draws no ladder", key, lvl),
+              n == 0, n .. " shapes in the team colour beside the mark")
+    end
+end
+level = 1
 
 -- --- a barrel you are not firing ------------------------------------------
 
@@ -881,6 +946,61 @@ check("a bomb's fan is drawn in the round's own colour",
       bare_bomb ~= nil and bomb_fan[bare_bomb] == true,
       "fan hues: " .. (next(bomb_fan) or "none") .. ", round: " ..
       tostring(bare_bomb))
+
+-- --- a charge row is a charge you have -------------------------------------
+
+-- The stack showed a row for every slot the hull could carry and drew the
+-- empties as unlit pips, on the argument the stat panel makes for showing
+-- upgrades you do not have. The stat panel is a thing you stop and read. This
+-- corner is read in a fight, where the only question is what a key would spend
+-- if you pressed it, and a row that answers "nothing" is a row costing height
+-- the rows above it could have had.
+local function rows_drawn()
+    local n = 0
+    for _, key in ipairs({"gun", "bomb", "charge:repel", "charge:burst",
+                          "bounty"}) do
+        if row_box(key) then n = n + 1 end
+    end
+    return n
+end
+
+mods = {}
+in_hand = {repel = 2, burst = 1}
+frame()
+local full_rows = rows_drawn()
+local full_top = row_box("gun")
+local full_foot = row_box("bounty")
+check("both charges in hand draw both rows", full_rows == 5,
+      full_rows .. " rows")
+
+in_hand = {repel = 2}
+frame()
+check("a spent slot draws no row", rows_drawn() == 4 and not row_box("charge:burst"),
+      rows_drawn() .. " rows with one charge in hand")
+
+in_hand = {}
+frame()
+check("and an empty hand draws neither", rows_drawn() == 3
+      and not row_box("charge:repel") and not row_box("charge:burst"),
+      rows_drawn() .. " rows with an empty hand")
+
+-- And the block shrinks rather than leaving the gap. It hangs off the bottom
+-- of the window, so what a dropped row costs comes off the top: the bounty
+-- stays where it was and everything above it comes down.
+local short_top = row_box("gun")
+local short_foot = row_box("bounty")
+-- Within the probe's own step, which walks the corner two pixels at a time.
+check("the stack keeps its footing", full_foot and short_foot
+      and math.abs(short_foot.y0 - full_foot.y0) <= 4,
+      string.format("bottom at %.0f against %.0f",
+                    short_foot and short_foot.y0 or -1,
+                    full_foot and full_foot.y0 or -1))
+check("and shrinks by what it dropped",
+      full_top and short_top and short_top.y1 < full_top.y1,
+      string.format("top at %.0f against %.0f",
+                    short_top and short_top.y1 or -1,
+                    full_top and full_top.y1 or -1))
+in_hand = {repel = 2, burst = 1}
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

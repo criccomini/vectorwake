@@ -821,13 +821,20 @@ function update(self, dt)
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
     -- timestep, and Defold's physics is off entirely.
-    -- Q, W, A and S spend rows of the corner stack directly, the way a charge
-    -- pad already does on a touchscreen: a block of four under the left hand,
-    -- read across and then down, against a stack read top to bottom. By row
-    -- rather than by absolute slot, so a hull that carries only some slots
-    -- still puts Q on the first thing listed. Latched like the pad's tap, and
-    -- for the same reason: the press has to survive until a simulation step
-    -- spends it.
+    -- Q, W, A and S spend a hull's charge slots in order, the way a charge pad
+    -- already does on a touchscreen: a block of four under the left hand, read
+    -- across and then down, against a stack read top to bottom. By the slots
+    -- the hull carries rather than by absolute slot number, so a hull that
+    -- carries only some still puts Q on the first of them.
+    --
+    -- The hull's slots, not the rows drawn: the corner shows only what is in
+    -- hand now, so binding to the drawing would move Q onto your burst the
+    -- moment your last repel went, which is a key that spends the wrong thing
+    -- exactly when a fight is going badly. Pressing Q with nothing to spend
+    -- does nothing, which is what it would have done anyway.
+    --
+    -- Latched like the pad's tap, and for the same reason: the press has to
+    -- survive until a simulation step spends it.
     if not menu.open then
         for i = 1, 4 do
             if tapped[hash("charge_" .. i)] then
