@@ -65,6 +65,10 @@ M.watching = false
 -- Whose eyes the last snapshot was: the followed hull, or whoever the room
 -- channel is on. 255 when the room is empty and the camera holds the middle.
 M.subject = nil
+-- The last hull this client asked to follow, 255 for the room channel. The
+-- subject alone cannot say which of the two you are on, since the channel is
+-- usually pointed at somebody too; asked-for and got, together, can.
+M.want = 255
 -- Whether this pilot is the channel's subject right now, for the mark that
 -- says so.
 M.on_air = false
@@ -639,6 +643,7 @@ M.snap_blasts = {}
     M.on_air = false
     M.watchers = {}
     watch_want = 255
+    M.want = 255
     keepalive = 0
     M.zone = ""
     M.banner = ""
@@ -761,6 +766,7 @@ end
 -- refuse lands on the channel rather than erroring.
 function M.watch(ship)
     watch_want = ship or 255
+    M.want = watch_want
     keepalive = 0
     return ask(string.char(C2S_WATCH, watch_want))
 end
