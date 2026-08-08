@@ -39,6 +39,7 @@ local M = {}
 M.open = true           -- the page opens on it
 M.home = true           -- no game behind the panel
 M.class = 0             -- the hull you are flying, kept in step with the sim
+M.watching = false      -- sitting out, set by the arena each frame
 M.pending = nil         -- the hull a row just asked for
 M.chosen = nil          -- the game a row just asked for
 M.stack = {"root"}
@@ -849,8 +850,20 @@ local function activate()
                 -- the whole of how a player leaves now: the list used to carry
                 -- a "leave this game" row at its foot, a long way from the
                 -- game it was about, in a list otherwise all places to go.
-                M.confirm("you are already flying " .. pick.name,
-                          {{label = "leave", act = "leave"}, {label = "stay"}})
+                -- Sitting out lives on the same card, because it is the third
+                -- thing a press on your own game can mean; and while already
+                -- watching, its place is taken by the way back in.
+                if M.watching then
+                    M.confirm("you are watching " .. pick.name,
+                              {{label = "fly", act = "fly"},
+                               {label = "leave", act = "leave"},
+                               {label = "stay"}})
+                else
+                    M.confirm("you are already flying " .. pick.name,
+                              {{label = "watch", act = "watch"},
+                               {label = "leave", act = "leave"},
+                               {label = "stay"}})
+                end
                 return nil
             elseif pick.live then
                 M.confirm("leave " .. M.zone .. " for " .. pick.name .. "?",

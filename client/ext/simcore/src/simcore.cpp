@@ -41,6 +41,20 @@ sim_state* g_nxt = &g_b;
 sim_events g_ev;
 uint8_t g_net[SIM_PACK_MAX];
 
+// A ship index a caller may actually use. The ships array is SIM_MAX_SHIPS
+// wide and 255 is the wire's "nobody", so an unguarded accessor read whatever
+// memory sat past the array and said nothing -- and this client's worst bugs
+// are the quiet ones. A watcher's code paths never index the sim with their
+// 255; this is the backstop that makes the next such bug loud instead.
+static int CheckShip(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= SIM_MAX_SHIPS) {
+        return luaL_error(L, "ship index %d out of range", i);
+    }
+    return i;
+}
+
+
 // The arenas are built by the core. They used to be these same magic numbers
 // written out here and again in the server's Rust, which is one edit away
 // from a client predicting collisions against a wall the server has not got.
@@ -128,7 +142,7 @@ int Step(lua_State* L) {
 // snapshot gap.
 int Replay(lua_State* L) {
     sim_input in;
-    in.ship = (uint8_t)luaL_checkinteger(L, 1);
+    in.ship = (uint8_t)CheckShip(L);
     in.buttons = (uint16_t)luaL_checkinteger(L, 2);
     sim_step(g_nxt, g_cur, &in, 1, &g_cfg, &g_ev);
     sim_state* t = g_cur;
@@ -259,7 +273,7 @@ bool ship_continuous(const sim_ship* p, const sim_ship* c) {
 // Read-only views. Rendering asks; it never writes.
 #define SHIP_GETTER(NAME, EXPR)                          \
     int NAME(lua_State* L) {                             \
-        int i = (int)luaL_checkinteger(L, 1);            \
+        int i = CheckShip(L);                            \
         const sim_ship* s = &g_cur->ships[i];            \
         (void)s;                                         \
         lua_pushnumber(L, (EXPR));                       \
@@ -271,7 +285,7 @@ bool ship_continuous(const sim_ship* p, const sim_ship* c) {
 // Everything that draws asks for this, which is why it is the plain name.
 #define SHIP_SEEN(NAME, AXIS, OFF)                                     \
     int NAME(lua_State* L) {                                           \
-        int i = (int)luaL_checkinteger(L, 1);                          \
+        int i = CheckShip(L);                                          \
         const sim_ship* c = &g_cur->ships[i];                          \
         const sim_ship* p = &g_nxt->ships[i];                          \
         double v = ship_continuous(p, c) ? blend(p->AXIS, c->AXIS)     \
@@ -283,7 +297,7 @@ SHIP_SEEN(ShipX, x, g_off_x)
 SHIP_SEEN(ShipY, y, g_off_y)
 
 int ShipHeading(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     const sim_ship* c = &g_cur->ships[i];
     const sim_ship* p = &g_nxt->ships[i];
     double h = ship_continuous(p, c) ? blend_turn(p->heading, c->heading)
@@ -315,7 +329,7 @@ SHIP_GETTER(ShipDeaths, s->deaths)
 // and the HUD reports speed, so both would otherwise have to difference
 // positions across frames and get it wrong whenever a snapshot lands.
 int ShipVel(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     const sim_ship* s = &g_cur->ships[i];
     lua_pushnumber(L, s->vx / 65536.0);
     lua_pushnumber(L, s->vy / 65536.0);
@@ -324,7 +338,7 @@ int ShipVel(lua_State* L) {
 
 // Upgrades held, by sim_upgrade index.
 int ShipUp(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     int k = (int)luaL_checkinteger(L, 2);
     lua_pushnumber(L, (k >= 0 && k < SIM_UP_COUNT) ? g_cur->ships[i].up[k] : 0);
     return 1;
@@ -334,14 +348,14 @@ int ShipUp(lua_State* L) {
 // it. Both are per trigger, so bullets that freeze and bombs that do not is
 // a thing the panel has to be able to say.
 int ShipLevel(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     int t = (int)luaL_checkinteger(L, 2);
     lua_pushnumber(L, (t >= 0 && t < SIM_TRIG_COUNT) ? g_cur->ships[i].level[t] : 0);
     return 1;
 }
 
 int ShipMod(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     int t = (int)luaL_checkinteger(L, 2);
     int m = (int)luaL_checkinteger(L, 3);
     if (t < 0 || t >= SIM_TRIG_COUNT || m < 0 || m >= SIM_MOD_COUNT) {
@@ -357,7 +371,7 @@ int ShipMod(lua_State* L) {
 // says which way it is set because a fan that stopped fanning is otherwise a
 // weapon that looks broken.
 int ShipMultiOff(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     lua_pushboolean(L, g_cur->ships[i].multi_off != 0);
     return 1;
 }
@@ -370,7 +384,7 @@ int ShipMultiOff(lua_State* L) {
 // remote pilot's cooldown going *up* therefore came from the wire, and means
 // they fired. See world.shots.
 int ShipCooldown(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     lua_pushnumber(L, g_cur->ships[i].fire_cooldown);
     return 1;
 }
@@ -381,7 +395,7 @@ int ShipCooldown(lua_State* L) {
 // on its own. The delay is the zone's setting rather than a constant here:
 // rooms run it anywhere from two seconds to three.
 int ShipRespawn(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     lua_pushnumber(L, g_cur->ships[i].respawn_at);
     lua_pushnumber(L, g_cfg.respawn_delay);
     return 2;
@@ -391,7 +405,7 @@ int ShipRespawn(lua_State* L) {
 // ever hold. The second is the roster's rule, and the panel needs it to know
 // which slots to draw at all.
 int ShipCharge(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     int k = (int)luaL_checkinteger(L, 2);
     lua_pushnumber(L, (k >= 0 && k < SIM_MAX_CHARGES) ? g_cur->ships[i].charge[k] : 0);
     return 1;
@@ -403,7 +417,7 @@ int ShipCharge(lua_State* L) {
 // interface has to tell them apart, because a control for a weapon that cannot
 // exist is a control that does nothing when pressed.
 int HasTrigger(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     int t = (int)luaL_checkinteger(L, 2);
     if (t < 0 || t >= SIM_TRIG_COUNT) { lua_pushboolean(L, 0); return 1; }
     const sim_ship_class* c = &g_cfg.classes[g_cur->ships[i].cls];
@@ -452,7 +466,7 @@ int TriggerRate(lua_State* L) {
 }
 
 int ChargeMax(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     int k = (int)luaL_checkinteger(L, 2);
     if (k < 0 || k >= SIM_MAX_CHARGES) { lua_pushnumber(L, 0); return 1; }
     lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].charge_max[k]);
@@ -463,13 +477,13 @@ int ChargeMax(lua_State* L) {
 // from what they hold, so it costs the wire nothing: the client already has
 // every count it is a sum over.
 int ShipBounty(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     lua_pushnumber(L, sim_bounty(&g_cur->ships[i]));
     return 1;
 }
 
 int ShipPoints(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     lua_pushnumber(L, (double)g_cur->ships[i].points);
     return 1;
 }
@@ -479,7 +493,7 @@ int ShipPoints(lua_State* L) {
 // they were measured off -- but a debug overlay or a test wants the numbers
 // the zone is actually colliding with.
 int ShipExtents(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     const sim_ship_class* c = &g_cfg.classes[g_cur->ships[i].cls];
     lua_pushnumber(L, c->fore / 256.0);
     lua_pushnumber(L, c->aft / 256.0);
@@ -565,7 +579,7 @@ int SpecLevel(lua_State* L) {
 // The blast a ship's own bomb makes, for the effects that have to be sized
 // before anything has been fired.
 int ShipBombRadius(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     const sim_ship* sh = &g_cur->ships[i];
     /* The rung this pilot is actually on: a levelled bomb is a wider one. */
     const sim_ship_class* c = &g_cfg.classes[sh->cls];
@@ -591,7 +605,7 @@ int ShipCount(lua_State* L) {
 }
 
 int ShipMaxEnergy(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     lua_pushnumber(L, sim_eff_max_energy(&g_cfg.classes[g_cur->ships[i].cls],
                                          &g_cur->ships[i]));
     return 1;
@@ -740,7 +754,7 @@ int DoorOpen(lua_State* L) {
 }
 
 int InSafe(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
+    int i = CheckShip(L);
     lua_pushboolean(L, sim_in_safe(&g_map, g_cur->ships[i].x, g_cur->ships[i].y));
     return 1;
 }

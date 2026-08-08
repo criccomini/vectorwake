@@ -611,6 +611,15 @@ end
 -- map draw the same mark because they are the same statement about the same
 -- ship. Clamped rather than dropped when it falls outside the frame it is
 -- given: a view without you on it is a view with no origin.
+-- The team a perspective seat is on, guarded: the hud's `me` is the watched
+-- subject while spectating and nil when the channel has nobody, and 255 is
+-- the byte that belongs to no side, so an absent eye colours everybody
+-- hostile the way a free-for-all already colours everyone who is not you.
+local function team_of(i)
+    if not i or i < 0 or i >= sim.ship_count() then return 255 end
+    return sim.ship_team(i)
+end
+
 local function own_arrow(ax, ay, ox, oy, side, me)
     local edge = 5 * S
     if ax < ox + edge then ax = ox + edge end
@@ -719,7 +728,7 @@ local function radar(cx, cy, me)
         end
     end
 
-    local my_team = sim.ship_team(me)
+    local my_team = team_of(me)
     for i = 0, sim.flag_count() - 1 do
         local fx, fy, team = sim.flag_at(i)
         local px, py = put(fx, fy)
@@ -768,9 +777,12 @@ local function radar(cx, cy, me)
     -- for anything off the edge: right for a contact and wrong for the pilot
     -- reading the thing, because the dial is drawn around the camera, the
     -- camera is not the ship, and on a wide window it leads far enough that
-    -- the arrow simply went missing.
-    own_arrow(ix + (sim.ship_x(me) - cx + SPAN) * k,
-              iy + (sim.ship_y(me) - cy + SPAN) * k, ix, iy, r, me)
+    -- the arrow simply went missing. A watcher with no subject has no arrow
+    -- to place: a view can have no origin after all, when it is nobody's.
+    if me then
+        own_arrow(ix + (sim.ship_x(me) - cx + SPAN) * k,
+                  iy + (sim.ship_y(me) - cy + SPAN) * k, ix, iy, r, me)
+    end
 end
 
 -- --- the map ---------------------------------------------------------------
@@ -824,7 +836,7 @@ local function overview(me)
     --
     -- A cell is OVERVIEW_CELL tiles of sixteen pixels, so the world divides
     -- by that to land in the same coordinates the rectangles above use.
-    if ov.grid > 0 then
+    if ov.grid > 0 and me then
         local cell = 4 * 16
         local k = side / ov.grid
         own_arrow(ix + (sim.ship_x(me) / cell) * k,
@@ -859,7 +871,7 @@ local function nameplates(o)
     -- the view_tiles setting put every name adrift the moment the camera
     -- stopped being driven by that setting -- which it already had.
     local scale = W / (2 * o.half_w)
-    local my_team = sim.ship_team(o.me)
+    local my_team = team_of(o.me)
     for i = 0, sim.ship_count() - 1 do
         -- Not your own. You know which ship is yours -- it is the one in the
         -- middle of the screen with the marker on it -- and a label saying so
@@ -972,7 +984,7 @@ local function scores(me, pilots)
         -- What the zone is willing to say this seat is, which is a stronger
         -- statement than "AI" and is what the counts below are made of.
         r.label = (p and p.label) or "unknown"
-        r.mine = sim.ship_team(i) == sim.ship_team(me)
+        r.mine = sim.ship_team(i) == team_of(me)
     end
     for i = n + 1, #rows do rows[i] = nil end
     -- Your own team first, whatever the column says.
@@ -1055,7 +1067,7 @@ local function scores(me, pilots)
     ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
           pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
-    local my_team = sim.ship_team(me)
+    local my_team = team_of(me)
     local y = top_y() + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
@@ -2407,6 +2419,7 @@ end
 -- player says out loud. Pixels would be the same place in numbers six digits
 -- long that nobody can hold in their head or call across a room.
 local function coords(me)
+    if not me then return end
     local pad = (M.compact and 8 or PAD) * S
     local x = dial()
     local base = pad + 13 * S
@@ -2426,7 +2439,7 @@ end
 local function flag_strip(me)
     local n = sim.flag_count()
     if n == 0 then return end
-    local my_team = sim.ship_team(me)
+    local my_team = team_of(me)
     local pitch = 15 * S
     local x0 = W / 2 - (n - 1) * pitch / 2
     local y = 30 * S
@@ -2597,7 +2610,7 @@ function M.hud(o)
     -- alive, or under the menu, which takes the centre of the screen for
     -- itself and puts both of these away.
     wait_box = nil
-    if not o.menu_open and sim.ship_alive(me) == 0 then
+    if not o.menu_open and not o.watch and sim.ship_alive(me) == 0 then
         wait_box = wait_layout(o.tip)
     end
 
@@ -2634,9 +2647,13 @@ function M.hud(o)
         feed(o.feed, M.radar_span())
     end
     -- Stacked, not overlaid: the panel that is always there sits at the
-    -- bottom and the one you asked for sits on top of it.
-    status(me, o.charges, lift)
-    inspect(o, loadout(me, o.class_names, top))
+    -- bottom and the one you asked for sits on top of it. A watcher has no
+    -- hull, so the hull's furniture -- the corner stack, the loadout -- is
+    -- not drawn at all; the room's instruments stay.
+    if not o.watch then
+        status(me, o.charges, lift)
+    end
+    inspect(o, o.watch and top or loadout(me, o.class_names, top))
     menu_button()
     vignette(o.hurt or 0)
     -- The pip over your own hull is not named. A bar that empties as you are
@@ -2659,7 +2676,31 @@ function M.hud(o)
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
             pal.a(pal.INK, 0.92), "center")
     end
-    if sim.ship_alive(me) == 0 then
+    -- On air: the room channel's camera is on you. You did not ask to be
+    -- watched, so the mark that says so never comes off while it is true --
+    -- a slow pulse, in the colour the interface already uses for "this
+    -- concerns you".
+    if o.on_air and not o.watch then
+        local beat = 0.6 + 0.4 * math.sin(M.now * 3.2)
+        u:disc(W / 2 - 24 * S, ry(44 * S, 0), 3.2 * S, 10,
+               pal.a(pal.HURT, beat))
+        txt("ON AIR", W / 2 - 14 * S, 38 * S, 12 * S,
+            pal.a(pal.HURT, 0.85))
+    end
+    -- Which life this is, and whose eyes. The name is quoted raw, the way
+    -- every call sign is; the sentence around it is the interface's own.
+    if o.watch then
+        local y = H - 34 * S - (M.touching and 116 * S or 0)
+        if o.watch.name then
+            txt("WATCHING", W / 2, y, 13 * S, pal.a(pal.DIM, 0.9), "center")
+            txt(o.watch.name, W / 2, y + 17 * S, 13 * S,
+                pal.a(pal.INK, 0.95), "center", nil, true)
+        else
+            txt("WATCHING", W / 2, y + 8 * S, 13 * S,
+                pal.a(pal.DIM, 0.9), "center")
+        end
+    end
+    if not o.watch and sim.ship_alive(me) == 0 then
         txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
             pal.ENEMY, "center")
         wait(wait_box, me)

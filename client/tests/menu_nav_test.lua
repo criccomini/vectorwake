@@ -261,9 +261,14 @@ check("the list underneath cannot be walked", menu.sel.zones == before,
 check("the arrows move between the answers, whichever pair", menu.ask.sel == 1,
       "on " .. tostring(menu.ask.sel))
 
-menu.ask.sel = 2
+-- Three answers on your own game now: sitting out, leaving, staying. The
+-- safe one still sits last, under the cursor as it opens.
+check("watching is offered on the game you are flying",
+      menu.ask.keys[1].act == "watch",
+      tostring(menu.ask.keys[1].act))
+menu.ask.sel = 3
 menu.step({left = true})
-check("left moves to the other answer", menu.ask.sel == 1,
+check("left moves to the answer beside it", menu.ask.sel == 2,
       "on " .. tostring(menu.ask.sel))
 local act3 = menu.step({go = true})
 check("and enter is worth what that answer is worth",
