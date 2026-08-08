@@ -226,7 +226,17 @@ pub struct Side {
     /// Trigger pulls, by trigger, so a stage nobody used can be told from a
     /// stage that was used and lost.
     pub shots: [u32; sim::TRIG_COUNT],
+    /// Damaging impacts on somebody else, and what they came to. A count alone
+    /// cannot tell a fuse that lands more often from one that lands harder,
+    /// and a blast falls off to nothing at its rim: a proximity round that
+    /// goes off early connects exactly as often and arrives spent.
     pub hits: u32,
+    pub damage: u64,
+    /// And the same, landed on yourself. A bomb's blast has no owner test, so
+    /// this is the count that says whether a stage is losing because the pilot
+    /// flying it keeps standing in it.
+    pub self_hits: u32,
+    pub self_damage: u64,
     /// Grants that landed at the first spawn. Zero on a hull that cannot wear
     /// the kit at all, which makes the row a control rather than a mystery.
     pub worn: u32,
@@ -364,9 +374,18 @@ pub fn stage_bout(kits: [&Stage; 2], class: u8, skill: f32, salt: u32,
                             }
                         }
                     }
+                    // Victim in `a`, attacker in `b`, damage in `v`. The two
+                    // are the same ship when a blast catches whoever set it
+                    // off, which the core allows on purpose.
                     sim::EV_HIT => {
                         if let Some(k) = ships.iter().position(|&s| s == e.b) {
-                            out[k].hits += 1;
+                            if e.a == e.b {
+                                out[k].self_hits += 1;
+                                out[k].self_damage += e.v.max(0) as u64;
+                            } else {
+                                out[k].hits += 1;
+                                out[k].damage += e.v.max(0) as u64;
+                            }
                         }
                     }
                     _ => {}
@@ -416,6 +435,9 @@ pub struct StageRow {
     pub kills: u32,
     pub shots: [u32; sim::TRIG_COUNT],
     pub hits: u32,
+    pub damage: u64,
+    pub self_hits: u32,
+    pub self_damage: u64,
     /// Kit re-issued after a death, summed over the tournament.
     pub regrants: u32,
     /// Win rate against each stage, indexed as `STAGES` is. `None` where the
@@ -463,6 +485,9 @@ pub fn run_stages(class: u8, skill: f32, bouts: u32, tuning: Option<&config::Are
             kills: 0,
             shots: [0; sim::TRIG_COUNT],
             hits: 0,
+            damage: 0,
+            self_hits: 0,
+            self_damage: 0,
             regrants: 0,
             vs: vec![None; n],
             mirror: 0.0,
@@ -487,6 +512,9 @@ pub fn run_stages(class: u8, skill: f32, bouts: u32, tuning: Option<&config::Are
                 for (k, side) in [(i, b.sides[0]), (j, b.sides[1])] {
                     rows[k].kills += side.kills;
                     rows[k].hits += side.hits;
+                    rows[k].damage += side.damage;
+                    rows[k].self_hits += side.self_hits;
+                    rows[k].self_damage += side.self_damage;
                     rows[k].regrants += side.regrants;
                     for t in 0..sim::TRIG_COUNT {
                         rows[k].shots[t] += side.shots[t];
@@ -537,8 +565,8 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
         rows.len()
     );
     println!(
-        "\n{:<14} {:>5} {:>7} {:>6} {:>7} {:>7} {:>6} {:>7}",
-        "stage", "worn", "win%", "bouts", "guns", "bombs", "hit%", "mirror"
+        "\n{:<14} {:>5} {:>7} {:>7} {:>7} {:>6} {:>7} {:>6} {:>7}",
+        "stage", "worn", "win%", "guns", "bombs", "hit%", "dmg/hit", "self%", "mirror"
     );
     for r in rows {
         let fired: u32 = r.shots.iter().sum();
@@ -547,14 +575,21 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
             _ => r.worn.to_string(),
         };
         println!(
-            "{:<14} {:>5} {:>7.1} {:>6} {:>7} {:>7} {:>6.1} {:>7.1}",
+            "{:<14} {:>5} {:>7.1} {:>7} {:>7} {:>6.1} {:>7.0} {:>6.1} {:>7.1}",
             r.name,
             worn,
             100.0 * r.win_rate(),
-            r.bouts(),
             r.shots[sim::TRIG_GUN],
             r.shots[sim::TRIG_BOMB],
             100.0 * r.hits as f64 / fired.max(1) as f64,
+            // What one impact actually arrives with. A blast falls off to
+            // nothing at its rim, so a fuse that goes off early lands the same
+            // count for a fraction of the damage, and only this column says so.
+            r.damage as f64 / r.hits.max(1) as f64,
+            // The share of everything this stage dealt that it dealt to
+            // itself.
+            100.0 * r.self_damage as f64
+                / (r.damage + r.self_damage).max(1) as f64,
             100.0 * r.mirror,
         );
     }
@@ -647,6 +682,9 @@ so that is the noise floor: read no gap narrower than it.",
             "gun_shots": r.shots[sim::TRIG_GUN],
             "bomb_shots": r.shots[sim::TRIG_BOMB],
             "hits": r.hits,
+            "damage": r.damage,
+            "self_hits": r.self_hits,
+            "self_damage": r.self_damage,
             "regrants": r.regrants,
             "mirror": r.mirror,
             "stalemates": r.stalemates,

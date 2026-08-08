@@ -150,6 +150,16 @@ correct, since they are also bare. Read no gap narrower than the floor. At eight
 bouts a pair it is around fifteen points, which is wide enough that only the
 largest effects are real.
 
+**`dmg/hit` and `self%`** are why a stage won or lost, where the win column only
+says that it did. A blast falls off to nothing at its rim, so a fuse that goes
+off early lands the same count of impacts for a fraction of the damage, and the
+hit rate alone reads that as an improvement. Proximity is the case: it lifts the
+hit rate three points and cuts damage per impact, which is a losing trade the
+win column cannot explain on its own. `self%` is the share of a stage's damage
+it dealt to itself, since a bomb's blast has no owner test. It answers "is this
+stage losing because the pilot keeps standing in it" with a number rather than
+a theory: proximity sits at bare's 1.7%, and the bomb rungs at 5.6%.
+
 The **mirror column** is each stage against itself, kept out of the win column
 on purpose. Folding it in would credit one win and one loss to the same row
 whatever happened and drag every rate toward a half. Left out, it is a second
