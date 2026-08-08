@@ -1055,6 +1055,10 @@ local function scores(me, pilots, watchers)
         r.k = sim.ship_kills(i)
         r.d = sim.ship_deaths(i)
         r.p = sim.ship_points(i)
+        -- What killing them pays right now, which is the one number on this
+        -- row that is about the next thirty seconds rather than about the
+        -- last hour.
+        r.b = sim.ship_bounty(i)
         local p = pilots[i]
         r.name = (p and p.name) or ("ship " .. i)
         -- The roster's own flag. This used to look for a local bot object,
@@ -1077,7 +1081,7 @@ local function scores(me, pilots, watchers)
         local r = rows[n]
         if not r then r = {} rows[n] = r end
         r.i = nil
-        r.k, r.d, r.p = 0, 0, 0
+        r.k, r.d, r.p, r.b = 0, 0, 0, 0
         r.name = w.name
         r.ai = w.label == "bot" or w.label == "bot?"
         r.label = w.label
@@ -1110,6 +1114,8 @@ local function scores(me, pilots, watchers)
             if differ then return first end
         elseif key == "kills" then
             if a.k ~= b.k then return a.k > b.k end
+        elseif key == "bounty" then
+            if a.b ~= b.b then return a.b > b.b end
         elseif key == "deaths" then
             -- Fewest first: on every other column the top of the list is the
             -- pilot doing best, and this is the one where that means less.
@@ -1144,10 +1150,46 @@ local function scores(me, pilots, watchers)
     rect(x, top_y(), w, h, pal.a(pal.BG, 0.62))
     vrule(x, top_y(), h, pal.a(pal.RADAR_TILE, 0.7))
 
-    local kx = x + w - 74 * S
-    local dx = x + w - 44 * S
-    local px = x + w - 12 * S
+    -- Four columns, right aligned off the panel's own edge, in the order a
+    -- row is read: what you have done, then what you are worth. Bounty is
+    -- outermost because it is the one number here about the next thirty
+    -- seconds rather than about the last hour.
+    --
+    -- Each is as wide as the widest thing actually in it, measured every
+    -- frame against the heading as well as the numbers. Fixed offsets do not
+    -- survive four columns in 248 points: a pilot on twelve thousand points
+    -- needs five digits and nobody else needs any of them, so a column sized
+    -- for the worst case eats the names in every room where the worst case
+    -- has not happened.
     local small = (FONT - 3) * S
+    local num = (FONT - 2) * S
+    local GAP = 7 * S
+    local function col_w(field, label)
+        -- Floored, because a column of single digits collapses to six points
+        -- and its heading is the control that sorts by it: a target that
+        -- narrow cannot be hit with a mouse, let alone a thumb.
+        local wide = math.max(text_w(label, small), 16 * S)
+        for i = 1, n do
+            local r = rows[i]
+            if not r.watch then
+                wide = math.max(wide, text_w(tostring(r[field]), num))
+            end
+        end
+        return wide
+    end
+    local bw, pw, dw, kw =
+        col_w("b", "BTY"), col_w("p", "PTS"), col_w("d", "D"), col_w("k", "K")
+    local bx = x + w - 12 * S
+    local px = bx - bw - GAP
+    local dx = px - pw - GAP
+    local kx = dx - dw - GAP
+    -- The marks sit in their own column left of the numbers rather than after
+    -- each name, so a scan down the list finds them in a line instead of at a
+    -- dozen different indents. The names end where that column begins.
+    local mark_x = kx - kw - GAP - MARK_K * S
+    local name_x = x + 12 * S
+    local name_n = math.max(3, math.floor((mark_x - GAP - name_x) /
+                                          (num * ADVANCE)))
     -- A heading is a control now, so the one in use is lit and the rest are
     -- not: the same way every other toggle in this interface says which way it
     -- is set.
@@ -1157,17 +1199,19 @@ local function scores(me, pilots, watchers)
             on and pal.a(pal.FRIEND, 0.95) or pal.a(pal.DIM, 0.7), align)
         return on
     end
-    head_col("name", "PILOTS", x + 12 * S, nil)
+    head_col("name", "PILOTS", name_x, nil)
     head_col("kills", "K", kx, "right")
     head_col("deaths", "D", dx, "right")
     head_col("points", "PTS", px, "right")
-    -- Hit boxes over the headings. Generous, and to the left of each label,
-    -- because the labels are right-aligned one or three characters wide and a
-    -- box the size of the glyphs is a target nobody can hit.
+    head_col("bounty", "BTY", bx, "right")
+    -- Hit boxes over the headings. Each takes its whole column and the gap to
+    -- its left, so the four tile without overlapping and the labels, which
+    -- are one or three characters wide, are not the target.
     hit(x + 8 * S, top_y() + 4 * S, 60 * S, 18 * S, "sort_name")
-    hit(kx - 24 * S, top_y() + 4 * S, 28 * S, 18 * S, "sort_kills")
-    hit(dx - 24 * S, top_y() + 4 * S, 28 * S, 18 * S, "sort_deaths")
-    hit(px - 26 * S, top_y() + 4 * S, 30 * S, 18 * S, "sort_points")
+    hit(kx - kw - GAP, top_y() + 4 * S, kw + GAP, 18 * S, "sort_kills")
+    hit(dx - dw - GAP, top_y() + 4 * S, dw + GAP, 18 * S, "sort_deaths")
+    hit(px - pw - GAP, top_y() + 4 * S, pw + GAP, 18 * S, "sort_points")
+    hit(bx - bw - GAP, top_y() + 4 * S, bw + GAP, 18 * S, "sort_bounty")
     ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
           pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
@@ -1193,32 +1237,31 @@ local function scores(me, pilots, watchers)
             wash(x, y, w, LINE * S, pal.a(mark, 0.13))
             u:seg(x, ry(y), x, ry(y + LINE * S), 1.6 * S, pal.a(mark, 0.95))
         end
-        local name = string.sub(r.name, 1, 14)
+        local name = string.sub(r.name, 1, name_n)
         local cy = y + LINE * S / 2
-        txt(name, x + 12 * S, cy, (FONT - 2) * S,
-            pal.a(col, mine and 1.0 or 0.8), nil, nil, true)
-        -- The mark goes at a fixed column rather than after the name, so a
-        -- scan down the list finds them in a line instead of at fourteen
-        -- different indents.
-        if r.ai then bot_mark(kx - 42 * S, cy, pal.a(pal.DIM, 0.75)) end
+        txt(name, name_x, cy, num, pal.a(col, mine and 1.0 or 0.8),
+            nil, nil, true)
+        if r.ai then bot_mark(mark_x, cy, pal.a(pal.DIM, 0.75)) end
         if r.watch then
             -- No seat, so no box to open about them, and no numbers: a
             -- watcher has not scored anything and three zeroes would say they
             -- had. One word instead, in the columns the numbers would have
             -- used, so the row is plainly a different kind of row.
-            txt("watching", px, y + LINE * S / 2, (FONT - 3) * S,
-                pal.a(pal.DIM, 0.7), "right")
+            txt("watching", bx, cy, small, pal.a(pal.DIM, 0.7), "right")
         else
             -- The one way to ask about a pilot. Published before the panel's
             -- own box below, which takes the wheel and would otherwise
             -- swallow the press: first box in wins.
             hit(x, y, w - 6 * S, LINE * S, "pilot", r.i)
-            txt(tostring(r.k), kx, y + LINE * S / 2, (FONT - 2) * S,
-                pal.a(pal.INK, 0.85), "right")
-            txt(tostring(r.d), dx, y + LINE * S / 2, (FONT - 2) * S,
-                pal.a(pal.DIM, 0.85), "right")
-            txt(tostring(r.p), px, y + LINE * S / 2, (FONT - 2) * S,
-                pal.a(pal.BOUNTY, 0.9), "right")
+            txt(tostring(r.k), kx, cy, num, pal.a(pal.INK, 0.85), "right")
+            txt(tostring(r.d), dx, cy, num, pal.a(pal.DIM, 0.85), "right")
+            -- Points in ink and the bounty in gold, which is the colour it
+            -- wears on a nameplate, in the corner stack and in the box this
+            -- row opens. Points held the gold while it was the only score
+            -- here; with both on the row, one of them has to be the one that
+            -- means bounty everywhere else.
+            txt(tostring(r.p), px, cy, num, pal.a(pal.INK, 0.85), "right")
+            txt(tostring(r.b), bx, cy, num, pal.a(pal.BOUNTY, 0.9), "right")
         end
         y = y + LINE * S
     end
