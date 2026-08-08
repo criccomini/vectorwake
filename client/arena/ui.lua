@@ -1003,6 +1003,14 @@ M.scroll = 0
 -- tenth, which in a room of sixty-four is most of it.
 local SHOWN = 9
 
+-- How tall one row is, in the pixels a press arrives in. Published because a
+-- finger dragging the list has to be turned into rows and only this file knows
+-- what a row measures. The wheel never needed it: a notch is one row by
+-- definition, which is why the list could only ever be scrolled by a mouse.
+function M.row_pitch()
+    return LINE * S
+end
+
 -- Where the scoreboard starts: under the menu chip when there is one, since
 -- the chip owns the corner.
 local function top_y()
