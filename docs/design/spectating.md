@@ -114,9 +114,34 @@ same-side subjects only; the wire carries them regardless, but wire-reading is
 the modified-client tier, and the interface should not hand the number to the
 two-tab tier. The arrows walk the camera along the occupied seats, one step
 past the end is the channel, and on glass a tap on either half of the screen
-does the same. Entry is the confirm card on the game you are in, which now
-offers watch beside leave and stay; the way back is picking a hull, and a room
-that filled while you sat out refuses and leaves you watching.
+does the same.
+
+Nothing on screen says the word "watching". The pilot being observed wears
+their call sign and their bounty at their hull's lower right, exactly as every
+other pilot on screen does, because the one hull that goes unlabelled is your
+own and a watcher has none. That is also the answer to the only question a
+spectator has constantly, and it belongs on the hull rather than in a caption
+at the foot of the screen.
+
+## Where the door is
+
+Spectating is a hull you can be in, so it is the ninth cell of the ship page.
+Picking a hull is already how a pilot says what they want to be, and "nothing,
+I am watching" is an answer to that question rather than a separate act. The
+cell draws the pilot helmet instead of a ship, since it is about the person
+and not about anything they are flying, and it wears the same "you are here"
+wash the hull you are flying wears. Going back is any of the other eight
+cells, which is the same page and the same press; a room that filled while you
+sat out refuses, and the refusal is staying exactly where you are.
+
+It briefly lived as a third answer on the games-list card that asks whether
+you meant to leave. That card is about the game you are in, and what you are
+flying is a different question, so it is back to two answers.
+
+The player list carries the gallery under the pilots: no seat, no side, no
+score, the word "watching" where the numbers would be, and a count of its own
+in the line under the board. The roster exists so you know who is in the room
+with you, and somebody watching the fight is in the room.
 
 ## What waits
 

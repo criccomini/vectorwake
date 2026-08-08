@@ -195,9 +195,24 @@ local function hull_rows()
         rows[i] = {
             label = h[1], detail = h[3], act = "ship", value = i - 1,
             hull = i - 1, role = h[2],
-            mark = function() return M.class == i - 1 end,
+            -- Not while watching. A watcher is in no hull, so marking the one
+            -- they would fly back in would put the "you are here" wash on a
+            -- ship nobody is sitting in.
+            mark = function() return not M.watching and M.class == i - 1 end,
         }
     end
+    -- Sitting out is the ninth thing you can be flying, so it is the ninth
+    -- cell rather than a row somewhere else. Picking a hull is already how a
+    -- pilot says what they want to be; "nothing, I am watching" is an answer
+    -- to that question and belongs beside the other eight.
+    rows[#rows + 1] = {
+        label = "Spectate", detail = "watch the room from nobody's cockpit",
+        act = "spectate", role = "no hull",
+        -- The helmet, not a ship: the cell is about the pilot rather than
+        -- about anything they are flying.
+        figure = "pilot",
+        mark = function() return M.watching end,
+    }
     return rows
 end
 
@@ -296,7 +311,10 @@ local NODES = {
                 return "choose a game"
             end, go = "zones"},
             {label = "ship", icon = "ship",
-             detail = function() return HULLS[M.class + 1][1] end,
+             detail = function()
+                 if M.watching then return "spectating" end
+                 return HULLS[M.class + 1][1]
+             end,
              go = "ship"},
             {label = "pilot", icon = "pilot",
              detail = function() return M.name end, go = "pilot"},
@@ -706,7 +724,11 @@ function M.view()
             -- the key on the pilot page and the sides on the team page.
             verbatim = r.verbatim, named = r.named,
             index = i,
-            hull = r.hull, role = r.role,
+            -- `hull` names a ship to draw and `figure` overrides it with
+            -- something that is not one. Both travel, because a cell with
+            -- neither would fall back to hull zero and draw an Apex, which is
+            -- exactly what the spectate cell did before this line existed.
+            hull = r.hull, figure = r.figure, role = r.role,
             players = r.players, bots = r.bots, live = r.live,
             choice = ci, choices = cn,
             pick = (r.go or r.act) ~= nil,
@@ -850,20 +872,15 @@ local function activate()
                 -- the whole of how a player leaves now: the list used to carry
                 -- a "leave this game" row at its foot, a long way from the
                 -- game it was about, in a list otherwise all places to go.
-                -- Sitting out lives on the same card, because it is the third
-                -- thing a press on your own game can mean; and while already
-                -- watching, its place is taken by the way back in.
-                if M.watching then
-                    M.confirm("you are watching " .. pick.name,
-                              {{label = "fly", act = "fly"},
-                               {label = "leave", act = "leave"},
-                               {label = "stay"}})
-                else
-                    M.confirm("you are already flying " .. pick.name,
-                              {{label = "watch", act = "watch"},
-                               {label = "leave", act = "leave"},
-                               {label = "stay"}})
-                end
+                -- Two answers, not three. Sitting out used to live here as a
+                -- third, and it was in the wrong room: this card is about the
+                -- game you are in, and watching is about what you are flying,
+                -- which is the ship page's question. It is the ninth cell
+                -- there now.
+                M.confirm((M.watching and "you are watching "
+                           or "you are already flying ") .. pick.name,
+                          {{label = "leave", act = "leave"},
+                           {label = "stay"}})
                 return nil
             elseif pick.live then
                 M.confirm("leave " .. M.zone .. " for " .. pick.name .. "?",

@@ -143,6 +143,42 @@ check("enter is the only thing that picks",
       act == "ship" and menu.pending == 1,
       tostring(act) .. ", asked for " .. tostring(menu.pending))
 
+-- Sitting out is the ninth cell of this page rather than an answer on some
+-- card elsewhere, so it is picked the same way a hull is: move to it, press
+-- enter, and the action names itself. What it must not do is come back as a
+-- hull change, which would fly you in ship number eight.
+local ship_rows = menu.view().rows
+check("the ship page carries the eight hulls and one more thing",
+      #ship_rows == 9, tostring(#ship_rows))
+menu.sel.ship = 9
+local act_w = menu.step({go = true})
+check("the ninth cell asks to spectate", act_w == "spectate",
+      tostring(act_w))
+check("and it is not a hull", ship_rows[9].hull == nil,
+      tostring(ship_rows[9].hull))
+-- A cell with no hull and no figure falls back to hull zero and draws an
+-- Apex, which is what this one did until `figure` was carried through the
+-- view. The drawing reads this field; nothing else can say what it gets.
+check("so it says what to draw instead", ship_rows[9].figure == "pilot",
+      tostring(ship_rows[9].figure))
+
+-- Which cell wears the "you are here" wash follows the connection, not the
+-- last hull picked: a watcher is in no hull, so none of the eight is marked.
+-- Read off a fresh view each time, since that is where a mark stops being a
+-- question and becomes an answer.
+menu.class = 2
+menu.watching = false
+local flying_view = menu.view().rows
+check("flying marks the hull you are in",
+      flying_view[3].mark and not flying_view[9].mark,
+      tostring(flying_view[3].mark) .. "/" .. tostring(flying_view[9].mark))
+menu.watching = true
+local watching_view = menu.view().rows
+check("watching marks the ninth instead, and no hull",
+      watching_view[9].mark and not watching_view[3].mark,
+      tostring(watching_view[3].mark) .. "/" .. tostring(watching_view[9].mark))
+menu.watching = false
+
 -- The edges wrap, so nothing on the page is out of reach in one press and an
 -- arrow never does nothing, which is what right at the last column did.
 menu.sel.ship = 6
@@ -154,10 +190,12 @@ menu.sel.ship = 8
 menu.step({right = true})
 check("right off the last column comes back to the first",
       menu.sel.ship == 5, "cursor " .. tostring(menu.sel.ship))
+-- Nine cells, not eight: the page carries the eight hulls and the answer
+-- "none of them, I am watching", so the wrap runs through nine.
 menu.sel.ship = 3
 menu.step({up = true})
 check("up from the top row is the bottom row, same column",
-      menu.sel.ship == 7, "cursor " .. tostring(menu.sel.ship))
+      menu.sel.ship == 8, "cursor " .. tostring(menu.sel.ship))
 menu.step({down = true})
 check("and down from the bottom is the top again", menu.sel.ship == 3,
       "cursor " .. tostring(menu.sel.ship))
@@ -261,14 +299,15 @@ check("the list underneath cannot be walked", menu.sel.zones == before,
 check("the arrows move between the answers, whichever pair", menu.ask.sel == 1,
       "on " .. tostring(menu.ask.sel))
 
--- Three answers on your own game now: sitting out, leaving, staying. The
--- safe one still sits last, under the cursor as it opens.
-check("watching is offered on the game you are flying",
-      menu.ask.keys[1].act == "watch",
-      tostring(menu.ask.keys[1].act))
-menu.ask.sel = 3
+-- Two answers, and watching is not one of them: this card is about the game
+-- you are in, and what you are flying is the ship page's question.
+check("the card offers leaving and staying, nothing else",
+      #menu.ask.keys == 2 and menu.ask.keys[1].act == "leave",
+      #menu.ask.keys .. " answers, first is "
+          .. tostring(menu.ask.keys[1].act))
+menu.ask.sel = 2
 menu.step({left = true})
-check("left moves to the answer beside it", menu.ask.sel == 2,
+check("left moves to the answer beside it", menu.ask.sel == 1,
       "on " .. tostring(menu.ask.sel))
 local act3 = menu.step({go = true})
 check("and enter is worth what that answer is worth",

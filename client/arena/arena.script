@@ -1539,25 +1539,16 @@ function apply_menu(self, act)
         return
     end
 
-    -- Sitting out: the hull despawns and the same socket watches, landing on
-    -- the room channel. Flying again is picking a hull, one page over.
-    if act == "watch" then
-        if self.online and not watching then
-            net.watch(255)
-            menu.close()
-            sfx.ui("ui_go")
+    -- The ninth cell of the ship page: sit out. The hull despawns and the same
+    -- socket watches, landing on the room channel. Coming back is any of the
+    -- other eight cells, which is the same page and the same press.
+    if act == "spectate" then
+        if not self.online then
+            menu.note = "nothing to watch yet"
+            return
         end
-        return
-    end
-
-    -- Back into the game, in the hull the menu already shows. The long way
-    -- round is the ships page, which does the same thing with a choice in it.
-    if act == "fly" then
-        if self.online and watching then
-            net.set_class(menu.class)
-            menu.close()
-            sfx.ui("ui_go")
-        end
+        if not watching then net.watch(255) end
+        menu.close()
         return
     end
 
