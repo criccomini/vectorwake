@@ -11,12 +11,15 @@
 -- Every earlier attempt to let a shared drawing decide that for itself put a
 -- second flip somewhere and mirrored the mark.
 --
--- What is not here is how a mark is laid out. The stack hangs its marks off
--- one axis and shares the room around a head among as many as six add-ons; a
--- pad puts one in the middle of a ring with at most two. That part differs
--- and stays with each caller. This is the part that must not differ.
+-- What is not here is where a mark goes: the stack hangs one off each row of a
+-- column, a pad puts one in the middle of a ring. Everything else is, down to
+-- which add-ons a hull is wearing, because the pads drew two of the six for a
+-- while and the stack drew all of them, so a phone showed a bomb with a fuse
+-- and no fragments while the desktop showed the fragments.
 
 local M = {}
+
+local pal = require("arena.palette")
 
 local u, S = nil, 1
 
@@ -58,9 +61,12 @@ function M.bolt_bounce(dx, dy, k, col)
     return r
 end
 
--- A bomb is a short trail into a ringed head, which is a good deal more
--- object than a bolt gets, and is why the two never read as the same weapon.
-M.BOMB_LEN, M.BOMB_R = 1.32, 0.46
+-- A bomb is a ringed head, which is a good deal more object than a bolt gets,
+-- and is why the two never read as the same weapon. It is also the whole of
+-- the mark: nothing on a bomb reaches further than MARK_REACH in any
+-- direction, which is what lets a caller size one against a round pad by
+-- knowing a single number.
+M.BOMB_R = 0.46
 
 -- A fuse: the reach it goes off at, broken because nothing is there yet. The
 -- radius comes from the caller, since the stack shares the room round a head
@@ -73,9 +79,18 @@ function M.bomb_prox(hx, hy, r, k, col)
     end
 end
 
-function M.bomb_body(hx, hy, k, col)
-    u:seg_fade(hx - k * M.BOMB_LEN, hy, hx, hy, M.pen(k, 0.078),
-               M.pen(k, 0.244), 0, (col[4] or 1) * 0.6, col)
+-- The head, and the whole of the round.
+--
+-- It had a fading trail behind it for a while, drawn the way the arena draws a
+-- bomb in flight. Two things were wrong with that. An icon is not a round in
+-- flight: it says which weapon a trigger fires, and a streak of motion on a
+-- thing sitting still in a corner is a picture of the wrong moment. And it
+-- cannot be centred, because it fades to nothing along its length, so it drags
+-- the drawing off to one side while a bounding box reports the mark as square
+-- in the middle. Three separate attempts to bias it into place all landed
+-- somewhere a screenshot said was still off. A ring about a point is centred
+-- where it is drawn.
+function M.bomb_head(hx, hy, k, col)
     u:ring(hx, hy, k * M.BOMB_R, M.pen(k, 0.122), 12, col)
     u:disc(hx, hy, k * 0.19, 8, col)
 end
@@ -98,6 +113,304 @@ function M.charge(slot, cx, cy, k, col)
     else
         u:disc(cx, cy, k * 0.28, 10, col)
     end
+end
+
+-- --- a whole weapon, wearing what the greens did to it ---------------------
+
+-- One barrel on a mark under construction, rather than on bare coordinates:
+-- the mark remembers where the dots landed, because the bounce rings them, and
+-- how far right anything got, because the caller sizes a row off that.
+--
+-- `held` is a barrel you have but are not firing: drawn, so the fan does not
+-- appear to vanish when it is declined, but not counted as a round. What is
+-- not firing does not bounce, and a ring on it says it does.
+local function barrel(m, ang, col, held)
+    local dx, dy = M.bolt_line(m.origin, m.y, ang, m.k, col)
+    if not held then m.dots[#m.dots + 1] = {dx, dy} end
+    m.far = math.max(m.far, dx - m.x + m.k * M.BOLT_DOT)
+end
+
+local function mk_bolt(hx, cy, k, col)
+    local m = {x = hx, y = cy, k = k, bolt = true,
+               tail = hx - k * M.BOLT_LEN, origin = hx - k * M.BOLT_LEN,
+               dots = {}, out = k * M.BOLT_DOT, far = k * M.BOLT_DOT,
+               -- Nothing on this mark rings the head except the add-ons that
+               -- ring any mark. The fan hangs off the muzzle and the bounce
+               -- ring sits on a dot, so neither takes a share of the room.
+               radial = {false, false, true, true, false, true}}
+    barrel(m, 0, col)
+    return m
+end
+
+local function mk_bomb(hx, cy, k, col)
+    M.bomb_head(hx, cy, k, col)
+    -- Where a fan of them leaves from, which is the only thing behind the head
+    -- on this mark and so is set at the edge the mark may reach rather than at
+    -- a length of its own.
+    return {x = hx, y = cy, k = k, tail = hx - k * M.MARK_REACH,
+            out = k * M.BOMB_R, far = k * M.BOMB_R}
+end
+
+-- Every add-on takes the mark, a colour and how many rungs deep it is, and
+-- draws its rungs rather than reporting them. A number beside a symbol was
+-- what the stack did before, and it made a corner of arithmetic out of six
+-- facts a shape can carry: one rung of multifire is two more barrels, one rung
+-- of bouncing is one more wall, a rung of proximity is a wider reach. The zone
+-- says so in mod_step, and this draws what the zone said.
+--
+-- Most of the six ring the head, and those share out `m.step`: one ring of
+-- room each, decided before any of them draws. See M.weapon for why. Depth
+-- moves a mark inside its own ring rather than pushing past it, so a third
+-- rung of proximity never costs shrapnel the room it was given.
+--
+-- `m.out` is the cursor through those shares and `m.far` is how far anything
+-- actually got drawn. They are not the same number: a mark that spends less
+-- than its share should not claim the width it did not use.
+
+local function dec_multi(m, col, n)
+    -- On a gun, two more barrels off the same muzzle and that is all: one line
+    -- or three, never five. The rungs widen the fan instead of adding lines,
+    -- because a corner that answers "how many barrels" with a count of strokes
+    -- stops being a shape and starts being a tally.
+    if m.bolt then
+        -- Declined, the extra barrels stay on the mark and stop being rounds:
+        -- see barrel.
+        barrel(m, -M.BOLT_FAN, col, m.off)
+        barrel(m, M.BOLT_FAN, col, m.off)
+        return
+    end
+    -- On a bomb, rounds leaving together from where this one came from. These
+    -- are the only strokes a bomb mark has now that the body is gone, and that
+    -- is the right way round: a lone bomb is a thing, and several of them are
+    -- several things going somewhere at once.
+    local len = m.x - m.tail
+    for i = 1, math.min(n, 3) do
+        local a = 0.26 * i
+        local d = len * (1 - 0.14 * i)
+        for _, s in ipairs({-1, 1}) do
+            u:seg_fade(m.tail, m.y,
+                       m.tail + math.cos(a) * d,
+                       m.y + s * math.sin(a) * d,
+                       M.pen(m.k, 0.078), M.pen(m.k, 0.222), 0,
+                       (col[4] or 1) * 0.85, col)
+        end
+    end
+end
+
+-- A round that stops where it lands is a round; one that carries on off the
+-- wall is a round with something still around it. Both marks say it the same
+-- way, and neither counts the walls: how many bounces deep the add-on runs is
+-- a question for the ladder beside the row, not for a ring three points wide.
+local function dec_bounce(m, col, n)
+    if m.bolt then
+        for _, d in ipairs(m.dots) do
+            local r = M.bolt_bounce(d[1], d[2], m.k, col)
+            m.far = math.max(m.far, d[1] - m.x + r)
+        end
+        return
+    end
+    local r = m.out + m.step * 0.5
+    u:ring(m.x, m.y, r, M.pen(m.k, 0.075), 16, col)
+    m.out = m.out + m.step
+    m.far = math.max(m.far, r)
+end
+
+-- A fuse: the reach it goes off at, broken because nothing is there yet, and
+-- a rung further out because a rung is another tile of reach. Broken by a
+-- quarter rather than by half, so that it still reads as a ring when it is
+-- sharing the mark with the fragments that hang outside it.
+local function dec_prox(m, col, n)
+    local r = m.out + m.step * (0.52 + 0.14 * math.min(n, 3))
+    M.bomb_prox(m.x, m.y, r, m.k, pal.a(col, (col[4] or 1) * 0.9))
+    m.out = m.out + m.step
+    m.far = math.max(m.far, r)
+end
+
+-- What is left of it afterwards, thrown clear of everything else the mark
+-- wears: one tick per fragment, counted off the zone rather than off a ramp
+-- written in here.
+--
+-- Shrapnel is the one add-on whose magnitude is another weapon rather than a
+-- number, so a zone says how many by naming a pattern per rung. The baseline
+-- doubles, 2 then 4 then 8, where this drawing said 6 then 8 then 10: close
+-- enough to look deliberate, wrong at every rung, and free to be wrong by any
+-- amount at all in a zone that puts its own patterns on those rungs. The one
+-- add-on whose count a player can read straight off the arena was the one the
+-- corner was making up.
+--
+-- The ticks thin as they multiply, because thirty-one of them at the width six
+-- want is a filled ring, and a filled ring is what the fuse already is. Down
+-- to the stroke floor and no further: a hairline under a pixel blinks as the
+-- mark moves, so a count that cannot be drawn as separate ticks at this size
+-- is drawn as a dense ring instead, which is the same thing the eye would have
+-- made of it anyway.
+--
+-- What stays fixed is how far out they sit. That is the mark's share of the
+-- room, and it belongs to the add-on rather than to how deep it runs.
+local function dec_shrap(m, col, n)
+    local r0 = m.out + m.step * 0.28
+    local r1 = m.out + m.step
+    local c = sim.shrap_count and sim.shrap_count(n) or 0
+    -- A rung the zone put no pattern on throws nothing, and drawing nothing is
+    -- the honest answer. The share of room is spent either way, so a hull that
+    -- picks the pattern up later does not shove its other add-ons outward.
+    for i = 0, c - 1 do
+        local a = (i + 0.5) * 2 * math.pi / c
+        local dx, dy = math.cos(a), math.sin(a)
+        u:seg(m.x + dx * r0, m.y + dy * r0,
+              m.x + dx * r1, m.y + dy * r1,
+              M.pen(m.k, math.min(0.100,
+                                  2 * math.pi * r1 * 0.42 / (c * m.k))), col)
+    end
+    m.out = r1
+    m.far = math.max(m.far, r1)
+end
+
+-- Rime on the round itself. Freeze is the one add-on that does nothing to the
+-- round and everything to whoever it reaches, so it is drawn on the body
+-- rather than around it: the shot is unchanged, and it is carrying something.
+-- A bolt's body is its streak and a bomb's is its shell, so the ticks cross
+-- the streak on one and the shell on the other, and neither takes a ring of
+-- room from anything that does.
+local function dec_freeze(m, col, n)
+    local rungs = 2 + math.min(n, 2)
+    if m.bolt then
+        local len = m.x - m.tail
+        local t = m.k * 0.24
+        for i = 1, rungs do
+            local px = m.tail + len * (0.28 + 0.15 * (i - 1))
+            u:seg(px, m.y - t, px, m.y + t, M.pen(m.k, 0.100), col)
+        end
+        return
+    end
+    local r0, r1 = m.k * M.BOMB_R * 0.58, m.k * M.BOMB_R * 1.0
+    for i = 0, rungs * 2 - 1 do
+        local a = (i + 0.5) * math.pi / rungs
+        local dx, dy = math.cos(a), math.sin(a)
+        u:seg(m.x + dx * r0, m.y + dy * r0,
+              m.x + dx * r1, m.y + dy * r1, M.pen(m.k, 0.085), col)
+    end
+end
+
+-- A shove standing off the head, and a rung is another wave of it. The repel
+-- wears rings closed all the way round because it happens at a place; this
+-- one opens forward, because it is a shove a round is carrying somewhere.
+local function dec_push(m, col, n)
+    local rungs = math.min(n, 3)
+    for i = 1, rungs do
+        u:arc(m.x, m.y, m.out + m.step * (i / rungs), -0.85, 0.85,
+              M.pen(m.k, 0.100), 6,
+              pal.a(col, (col[4] or 1) * (1 - 0.2 * (i - 1))))
+    end
+    m.out = m.out + m.step
+    m.far = math.max(m.far, m.out)
+end
+
+-- In pal.MODS order, which is also the order they draw in: each of the ones
+-- that rings the head takes the next ring of room out from the last, so the
+-- fuse sits inside the fragments and the fragments inside the shove. Reorder
+-- this list and they land on top of each other.
+local MOD_DECOR = {dec_multi, dec_bounce, dec_prox, dec_shrap, dec_freeze,
+                   dec_push}
+-- Which of them ring the head, and so want a share of the room around it.
+-- Multifire leaves from the tail and freeze sits on the body; neither costs
+-- the mark any width. This is the bomb's answer; a bolt carries its own, since
+-- it draws its fan and its bounce into the mark itself.
+local MOD_RADIAL = {false, true, true, true, false, true}
+-- How far out from the head a mark may reach, against its own size. In the
+-- stack the row is 22 points tall and a mark has to live inside it however
+-- loaded it is; on a pad the ring is what it has to live inside. Each caller
+-- picks `k` to suit its own room, and this is what the shares are shares of.
+M.MARK_REACH = 1.05
+
+-- Where to put the round so that the mark reads as centred on the point it was
+-- given, which is not the same as putting the round there.
+--
+-- A gun is not symmetric about its own round: three lines leaving a muzzle a
+-- hull and a half behind the dot that ends them. So the round is offset, and
+-- what lines up is the drawing.
+--
+-- Measured rather than worked out, and measured as the mean of two answers
+-- that disagree. Weighing the drawing by how much of it there is puts the
+-- centre near the dot, because a solid disc outweighs the hairline that
+-- reaches it; taking the drawing's extent puts the centre near the middle of
+-- the line, because the far tip of a hairline counts for as much as the dot.
+-- Both are wrong in a direction, the eye lands between them, and a strip of
+-- the mark drawn at biases either side of the midpoint agrees with it. Then
+-- averaged over the loadouts a trigger can wear, since a fan pulls the weight
+-- back toward the muzzle and a bounce ring pulls it forward and no one case is
+-- the one to favour.
+--
+-- The bomb wants nothing. It is a ring about a point, so the two answers are
+-- the same answer and both are zero.
+M.BOLT_BIAS, M.BOMB_BIAS = 0.46, 0
+
+-- Reading a hull's loadout without minding whether there is a hull yet. A pad
+-- draws before the first snapshot lands, and a plain gun and a plain bomb are
+-- the right thing to show while nobody has told us otherwise.
+local function ship_lvl(me, t)
+    return (me and sim.ship_level) and sim.ship_level(me, t) or 0
+end
+
+local function ship_mod(me, t, i)
+    return (me and sim.ship_mod) and sim.ship_mod(me, t, i) or 0
+end
+
+-- A trigger's mark: the round it fires, wearing what the greens did to it.
+--
+-- In the round's own colour, which is the colour it will be when it leaves the
+-- gun: one ramp for every round in the game, so the rung a weapon has climbed
+-- is legible here exactly as it is legible coming at you across the arena, and
+-- a player who has learned one has learned the other.
+--
+-- The add-ons are the same colour run hot, so what a green added reads as part
+-- of the round rather than as a separate object parked next to it. Shrapnel is
+-- the exception and keeps the violet the arena throws fragments in: they sit
+-- on no ladder and answer to no aim, and that is a fact about the weapon worth
+-- carrying over.
+--
+-- The room outside the round is shared out before anything draws rather than
+-- spent first come. Two add-ons take half of it each and read clearly; four
+-- take a quarter each and read as a dense mark, which is the right way round,
+-- and no loadout can push a mark past the reach its caller sized for.
+--
+-- Returns how far right the whole thing reached, since a hull holding three
+-- add-ons draws a good deal wider than one holding none.
+function M.weapon(cx, cy, k, me, t)
+    local gun = t == sim.TRIG_GUN
+    local lvl = ship_lvl(me, t)
+    local base = pal.a(pal.rung(lvl), 0.9)
+    local at = cx + k * (gun and M.BOLT_BIAS or M.BOMB_BIAS)
+    local m = gun and mk_bolt(at, cy, k, base) or mk_bomb(at, cy, k, base)
+    -- Which add-ons want a ring of room is a fact about the mark, not about
+    -- the add-on: the fan and the bounce ring cost a gun nothing, and cost a
+    -- bomb a share each.
+    local radial = m.radial or MOD_RADIAL
+    local rings = 0
+    for i = 1, #pal.MODS do
+        if radial[i] and ship_mod(me, t, i - 1) > 0 then rings = rings + 1 end
+    end
+    m.step = rings > 0 and (k * M.MARK_REACH - m.out) / rings or 0
+    -- A declined add-on is drawn dimmed rather than dropped. You still hold
+    -- it, and a fan that quietly stopped fanning with nothing on screen to say
+    -- so is a weapon that looks broken.
+    local off = me and sim.ship_multi_off and sim.ship_multi_off(me)
+    m.off = off and true or false
+    -- The round's hue run toward white, which is how this palette makes
+    -- anything hotter, so an add-on is the same weapon louder rather than a
+    -- different colour stuck on the side of it.
+    local add = pal.a(pal.hot(pal.rung(lvl), 0.45), 0.95)
+    for i = 1, #pal.MODS do
+        local n = ship_mod(me, t, i - 1)
+        if n > 0 then
+            local col = add
+            -- Fragments answer to nobody's aim, in the arena and here.
+            if i == 4 then col = pal.a(pal.BURST, 0.95) end
+            if off and i == 1 then col = pal.a(pal.DIM, 0.45) end
+            MOD_DECOR[i](m, col, n)
+        end
+    end
+    return m.x + m.far
 end
 
 return M

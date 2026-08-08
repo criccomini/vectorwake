@@ -24,8 +24,10 @@ deploy/.env
 deploy/deploy-log/
 sandbox-ca.crt
 
-# Built by hand when somebody wants to hear the kit outside the game.
+# Built by hand when somebody wants to hear the kit outside the game, and by
+# `make -C client/tools check` when CI wants to measure it.
 client/tools/sfxdump
+client/tools/sfxladder
 # Whatever the tools next to it leave behind.
 client/tools/__pycache__/
 tools/pilot/libvwprobe.so

@@ -82,6 +82,14 @@ jobs:
       - name: client tests
         run: for t in client/tests/*_test.lua; do echo "== $t"; lua5.1 "$t" || exit 1; done
 
+      # The one client test that cannot be Lua, because the thing it measures is
+      # C: whether a pilot can hear which rung fired. It renders the kit with
+      # the same synth the browser runs and fails if two rungs have collapsed
+      # into one sound. Building the synth as C here is also what catches the
+      # dialect drift, since Defold's build server compiles it as C++.
+      - name: the weapon ladders can be told apart
+        run: make -C client/tools check
+
   bundle:
     needs: lint
     runs-on: ubuntu-latest

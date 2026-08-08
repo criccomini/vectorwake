@@ -54,13 +54,15 @@ in `sim/`.
 | `arena/arena.script` | The frame loop: input, stepping, drawing |
 | `arena/net.lua` | Connect, predict, reconcile. Decides nothing |
 | `arena/touch.lua` | Thumbstick and weapon pads; emits the same button bits |
-| `arena/marks.lua` | The gun and the bomb, drawn once for the corner and the pads |
+| `arena/marks.lua` | Every weapon mark, add-ons and all, for the corner and the pads |
 | `arena/menu.lua` | The menu tree and the settings it saves |
 | `arena/directory.lua` | Asks a directory what games are running |
 | `tools/single_file.py` | Folds a bundle into one self-contained page |
 | `tools/sfxdump.c` | Writes the kit out as wav files, for listening to |
+| `tools/sfxladder.c` | Whether a pilot can hear which rung fired |
 | `tests/sfx_test.lua` | Which sound each weapon rung reaches |
 | `tests/rung_test.lua` | That a rung's colour is legible and unlike anything else |
+| `tests/pad_layout_test.lua` | Where a thumb's controls are, and what they draw |
 | `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
 | `arena/world.lua` | Ships, weapons, flags, prizes, terrain, in triangles |
@@ -375,17 +377,37 @@ what a player holds is one gun and one bomb that greens have been changing all
 match. So a bolt with bouncing on it is a bolt with a ball on each end of it,
 and a bomb with proximity is a bomb inside a broken ring.
 
-Both marks are the same skeleton, a path with a head on the end of it, because
-that is what each looks like in the arena and it lets one set of add-on marks
-fit both. Every add-on is something that happens either to the path (multifire
-fans it, freeze rimes it) or to the head (proximity rings it, shrapnel throws
-fragments off it, the repel add-on stands a wave in front of it).
+A gun is a line into a dot and a bomb is a ringed head, which is what each is
+in the arena, and one set of add-on marks fits both because every add-on is
+something that happens either to the round's body (multifire sends more of
+them, freeze rimes it) or to the round itself (proximity rings it, shrapnel
+throws fragments off it, bouncing rings it too, the repel add-on stands a wave
+in front of it).
+
+The bomb had a fading trail behind it until it did not. An icon is not a round
+in flight, so a streak of motion on a thing sitting still in a corner was a
+picture of the wrong moment, and a fade cannot be centred: it reaches its full
+length at almost none of its brightness, so a bounding box put it square in the
+middle of a pad while everything visible crowded one side. Three passes at
+biasing it into place all landed somewhere a screenshot said was still off.
+`world.lua` still draws one on a bomb that is actually going somewhere.
 
 Rungs are in the shape rather than in a number beside it, and they are the
-zone's own arithmetic: one rung of multifire is two more barrels, one rung of
-shrapnel is two more fragments, a rung of proximity is a wider reach. Read
-`mod_step` in a `zone.toml` and then read `dec_multi` and the rest in
-`ui.lua`; they say the same thing twice on purpose.
+zone's own arithmetic: one rung of multifire is two more barrels, a rung of
+proximity is a wider reach. Read `mod_step` in a `zone.toml` and then read
+`dec_multi` and the rest in `marks.lua`; they say the same thing twice on
+purpose. Bouncing is the one that does not count: a ring or no ring, on both
+marks, because a ring three points across cannot carry a count as well as an
+identity.
+
+Shrapnel says it once, not twice. Its magnitude is a whole pattern per rung
+rather than a number to scale, so the mark asks `sim.shrap_count` how many
+fragments the zone throws and draws one tick each. It used to work the count
+out instead, six then eight then ten against a baseline that throws two, four
+and eight, and against a zone free to put any pattern on those rungs it could
+be wrong by any amount. The ticks thin as they multiply, down to the stroke
+floor and no further, so thirty-one of them stay ticks rather than becoming a
+filled ring or a row of blinking hairlines.
 
 The room outside the round is shared out before anything draws rather than
 spent first come. A row is 22 points tall and the mark has to live inside it
@@ -398,11 +420,22 @@ through the row above.
 
 On a touchscreen the weapon rows are not drawn at all, and the bounty is the
 whole of the corner. The pads carry them instead: `arena/marks.lua` holds the
-gun and the bomb as one drawing, `arena/touch.lua` puts each in the middle of
-the control that fires it, and the add-ons go into the mark the same way they
-go into a row. A player who has learned the corner has learned the pads, which
-is the only reason it is worth having the marks in a third file rather than in
-whichever one drew them first.
+whole mark, add-ons and all, behind one `marks.weapon` that `ui.lua` and
+`touch.lua` both call. Neither draws a stroke of a weapon itself. That is the
+only reason it is worth having the marks in a third file, and it was worth it:
+the pads once knew about a fan, a bounce ring and a fuse and nothing else, so a
+hull carrying shrapnel (22 of the 24 in the shipped zones) carried it invisibly
+on a phone, with the corner that would have said so switched off on the grounds
+that the pads had it covered.
+
+What each caller still owns is where a mark goes and how big it is. `ui.lua`
+hangs one off each row of a column and flips y on the way in, since it reckons
+downward and the marks reckon upward. `touch.lua` centres one in a round pad
+and sizes it off the pad's own radius, derived rather than picked: a mark
+reaches `MARK_REACH` of its own size out from the round and a gun's round sits
+`BOLT_BIAS` forward of centre, so the two triggers have different worst cases
+and one ratio for both would either spill a gun's fragments over the rim or
+draw a bomb head a third smaller than the pad it has to itself.
 
 ## What a thumb gets
 
@@ -427,6 +460,22 @@ How many of a charge are in hand is pips along the cell's floor, one per slot
 the hull can hold, filled as far as it is. It was a numeral floating above the
 pad, which is the one thing on this screen a bare mesh cannot draw, and it sat
 in the gap between two controls belonging to neither.
+
+`lua5.1 client/tests/pad_layout_test.lua` draws the real controls through a
+recording layer and measures where a tap lands against where the ink went,
+because the layout and the hit test were written out separately once and had
+drifted, so half a pad did nothing and the dead space beside it fired. It also
+runs stack_test's own add-on loop against the pads, walks all 64 combinations
+looking for a mark that leaves its control, and checks that no round wears a
+trail.
+
+Where a mark looks centred is measured as the midpoint of two answers that
+disagree. Weighing a drawing by how much of it there is centres a gun on its
+dot, since a solid disc outweighs the hairline reaching it; taking the
+drawing's extent centres it near the middle of the line, since the far tip of a
+hairline counts for as much as the dot. The eye lands between them, a strip of
+the mark drawn at biases either side agrees, and `marks.BOLT_BIAS` came out of
+that measurement rather than off a screenshot.
 
 `lua5.1 client/tests/stack_test.lua` runs the real `M.hud` against a stubbed
 engine and measures: every add-on draws something, a third rung looks
@@ -623,29 +672,60 @@ then starts.
 
 ## No audio ships in the page
 
-The kit is fifteen sounds and about a megabyte of 16-bit PCM, which compresses
-to almost exactly a megabyte because that is what PCM does. None of it is in
-the download. `ext/simcore/src/sfx.c` synthesises all of it on the player's
+The kit is twenty-four sounds and 1.15 MB of 16-bit PCM, which compresses to
+almost exactly that because that is what PCM does. None of it is in the
+download. `ext/simcore/src/sfx.c` synthesises all of it on the player's
 machine at boot, `arena/sfx.lua` hands each buffer to `resource.set_sound`, and
 the page is 1.4 MB smaller for it, or 1.0 MB over the wire, which is 40% of the
 compressed build.
 
-What is in `sounds/` is fifteen wav files of silence, 172 bytes each. A sound
-component has to point at a resource at build time and `resource.set_sound`
+What is in `sounds/` is twenty-four wav files of silence, 172 bytes each. A
+sound component has to point at a resource at build time and `resource.set_sound`
 needs its own resource per component to write into, so there is one placeholder
 per sound, named after the component that claims it. The `.sound` files beside
 them are real: gain, mixer group and looping live there and are maintained by
 hand.
 
-The gun and the bomb have one sound per rung of their ladder, `gun0` to `gun3`
-and `bomb0` to `bomb3`, picked by `sfx.play` from the rung the firing ship is
-on. A rung is the same weapon harder rather than a different weapon, which is
-what the panel says and what the core does, so the rungs share their character
-and differ in weight. Since every buffer is normalised to one peak, the buffer
-decides timbre only and the loudness climb lives in the `.sound` gains. A rung
-past the end of a family plays the top of it, and the ceiling is read off the
-kit rather than written down, so adding `gun4` to `sfx.c` and wiring a
-component for it is the whole change.
+Twelve of the twenty-four are the weapon ladders: `gun0` to `gun3`, `bomb0` to
+`bomb3` and `blast0` to `blast3`. `sfx.play` takes a rung as a fourth argument
+and appends it to the family name, so `gun` plus rung 2 is the component
+`gun2`. The budget stays keyed on the family, because four rungs of one gun are
+still guns. A rung past the end of a family plays the top of it, and the ceiling
+is read off the kit rather than written down, so adding `gun4` to `sfx.c` and
+wiring a component for it is the whole change.
+
+The eight launch sounds are eight functions with nothing shared between them but
+the tools they call, which is the third design and the first that worked. Twice
+before they were one recipe with a table of numbers per rung, and both times a
+player who flew the whole ladder reported the rungs as one sound. What each of
+them is meant to be, and the three synthesis tools that arrived to build them,
+are in [docs/design/audio.md](../docs/design/audio.md).
+
+Where the rung comes from is different for each. A shot reads it off the ship
+that pulled the trigger, because a spec says what a projectile does and not
+which rung fired it, and the firing tick is the one tick the two cannot have
+drifted apart on. A detonation reads it off the blast radius instead: for a bomb
+that is the same answer, since a rung is exactly a wider blast, and for a repel
+it is the only answer there is, its 512 pixels being wider than any bomb while
+its level comes back -1.
+
+Every buffer is normalised to one peak, so the buffer decides timbre only and
+the loudness climb lives in the `.sound` gains. Those gains are not in order and
+that is not a mistake: a folded bolt is a dense buffer and a resonant one is
+sparse, so equal peaks are unequal loudnesses. The numbers come from solving each
+sound's loudest 300 ms window for an even climb, two decibels a rung and three
+for the detonations.
+
+`make -C client/tools check` is the one client test that cannot be Lua: it
+renders the kit with this same C and measures whether the rungs can be told
+apart. Two axes, because either alone has been satisfied by a kit that still
+sounded the same: a spectral distance across third-octave bands over hundredths
+of a second, and a step in register of at least a tritone. It also measures how
+long each sound takes to arrive, which is what tells a gun from a bomb now that
+the tinny end of one ladder and the nasty end of the other share an octave.
+`client/tools/sfxladder.c` says what it measures and why each floor sits where it
+does. It also builds the synth as C rather than the C++ Defold's build server
+makes of it, which is what catches the dialect drift.
 
 `lua5.1 client/tests/sfx_test.lua` checks which component each rung reaches and
 that every sound the kit renders has a component behind it. It runs under plain
@@ -653,19 +733,19 @@ Lua 5.1 with the engine stubbed, because the path it covers needs an arena, an
 opponent and a climbed tech tree to reach in a browser, where a wrong component
 id sounds like nothing rather than like a failure.
 
-Rendering costs 259 ms in a debug wasm build, seven eighths of it the
-soundtrack, and it is spent in `init` rather than spread over frames because
-`init` is behind the menu the client opens on. `sfx.init` prints one line when
-it is done, `SOUND: 15 sounds, 997 KB, 259 ms`, which is how you tell a client
-that generated its audio from a client that is quiet for some other reason.
-Only in a debug build: a release engine compiles `print` out, so this line and
-the complaint in `sfx.fire` are both invisible on the published page.
+Rendering costs about a fifth of a second, seven eighths of it the soundtrack,
+and it is spent in `init` rather than spread over frames because `init` is
+behind the menu the client opens on. `sfx.init` prints one line when it is done,
+`SOUND: 24 sounds, 1154 KB, 259 ms`, which is how you tell a client that
+generated its audio from a client that is quiet for some other reason. Only in a
+debug build: a release engine compiles `print` out, so this line and the
+complaint in `sfx.fire` are both invisible on the published page.
 
 The synth was a Python script until it moved into the client, and the port
 reproduces CPython's Mersenne Twister so it could be checked against the files
-it replaced rather than judged by ear. All fifteen came out byte for byte
-identical. That property is worth keeping: it means a sound changing is
-somebody changing it.
+it replaced rather than judged by ear. All fifteen of them at the time came out
+byte for byte identical. The generator stays for that reason: a sound changing
+should be somebody changing it, not the noise moving underneath.
 
 To hear the kit without running the game:
 

@@ -17,6 +17,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [rating.md](rating.md) | Skill rating across humans and AI, and how credit for a kill is split among everyone who caused it |
 | [accounts.md](accounts.md) | Guest-first accounts, claiming, generated names, the human/bot/unknown label, and bots as account holders |
 | [teams.md](teams.md) | Named public and private teams, invitations instead of passwords, three caps instead of a balance rule, and bots as the ballast |
+| [spectating.md](spectating.md) | Watching without flying: same-side live follow, the shared delayed room channel, the on-air mark, and why hostile live sight is never for sale |
 
 ## The one-line version
 
