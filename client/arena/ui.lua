@@ -390,6 +390,22 @@ local function text_w(s, px)
     return #s * px * ADVANCE
 end
 
+
+local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
+local function key_size() return (FONT - 1) * S end
+local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * S end
+local function key_cap(x, y, w, label, on)
+    local col = on and pal.FRIEND or pal.DIM
+    local h = KEY_H * S
+    rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
+    u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
+    -- A key is shouted wherever it turns up, menu or corner: it is a thing to
+    -- press rather than something the interface is saying, and the two of them
+    -- are the same object.
+    txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
+        pal.a(col, on and 1 or 0.85), "center", nil, true)
+end
+
 -- Broken into lines no wider than `measure`, at whitespace. Used by the card a
 -- dead pilot reads and by the label the pointer raises, which say the same
 -- sentences and would otherwise break them in two different places.
@@ -1609,7 +1625,7 @@ local function inspect(o, top)
     local follow = o.watch and same_team and o.watch.subject ~= i
     local rows_n = 5 + (side and 1 or 0)
     local h = 30 * S + rows_n * rowh
-        + ((invite or follow) and 26 * S or 0) + 10 * S
+        + ((invite or follow) and (KEY_H + 12) * S or 0) + 10 * S
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
     -- at the top of the screen lands on the menu chip.
@@ -1664,29 +1680,35 @@ local function inspect(o, top)
     -- clicks: the zone answers an invitation with a team list that does not
     -- name the invitee, so this mark is the only acknowledgement there is, and
     -- a button that stayed pressable would invite an anxious second tap.
+    -- Drawn as a key, the way everything else in this interface that is a
+    -- thing to press is drawn: the corner's MENU and PLAYERS, the answers on
+    -- a confirm card, every key on the help board. They were a word over a
+    -- rule, which is what a control looked like here before the board taught
+    -- the same hand what a key looks like, and a panel keeping the old idiom
+    -- asks a player to know that this particular word is pressable.
+    --
+    -- Both verbs use the same slot, since a panel with two possible actions
+    -- should put them where the eye already found the first one. They never
+    -- appear together: inviting wants somebody who is not on your side and
+    -- following wants somebody who is.
+    local label, action = nil, nil
     if invite then
-        local sent = o.invited and o.invited[i]
-        local by = ry_ + 4 * S
-        local c = pal.a(sent and pal.DIM or pal.FRIEND, sent and 0.7 or 0.95)
-        txt(sent and "INVITED" or "INVITE", x + 12 * S, by + 9 * S,
-            (FONT - 2) * S, c)
-        local uy = ry(by + 17 * S)
-        u:seg(x + 12 * S, uy, x + 12 * S + 46 * S, uy, 0.8 * S, pal.a(c, 0.5))
-        if not sent then
-            hit(x, by - 2 * S, w, 24 * S, "invite", i)
-        end
+        -- Once it is sent it says so and stops taking clicks: the zone answers
+        -- an invitation with a team list that does not name the invitee, so
+        -- this is the only acknowledgement there is, and a button that stayed
+        -- pressable would invite an anxious second tap.
+        label = (o.invited and o.invited[i]) and "INVITED" or "INVITE"
+        action = (o.invited and o.invited[i]) and nil or "invite"
+    elseif follow then
+        label, action = "WATCH", "watch"
     end
-    -- The same control in the same place, because a panel with two possible
-    -- verbs should put them where the eye already found the first one. The
-    -- two never appear together: inviting wants somebody who is not on your
-    -- side and following wants somebody who is.
-    if follow then
+    if label then
         local by = ry_ + 4 * S
-        local c = pal.a(pal.FRIEND, 0.95)
-        txt("WATCH", x + 12 * S, by + 9 * S, (FONT - 2) * S, c)
-        local uy = ry(by + 17 * S)
-        u:seg(x + 12 * S, uy, x + 12 * S + 46 * S, uy, 0.8 * S, pal.a(c, 0.5))
-        hit(x, by - 2 * S, w, 24 * S, "watch", i)
+        local bw = key_w(label)
+        key_cap(x + 12 * S, by, bw, label, action ~= nil)
+        if action then
+            hit(x + 12 * S, by, bw, KEY_H * S, action, i)
+        end
     end
     return y + h
 end
@@ -2067,21 +2089,6 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
-local function key_size() return (FONT - 1) * S end
-local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * S end
-local function key_cap(x, y, w, label, on)
-    local col = on and pal.FRIEND or pal.DIM
-    local h = KEY_H * S
-    rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
-    u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
-    -- A key is shouted wherever it turns up, menu or corner: it is a thing to
-    -- press rather than something the interface is saying, and the two of them
-    -- are the same object.
-    txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
-        pal.a(col, on and 1 or 0.85), "center", nil, true)
-end
-
 local function menu_button(on_air)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in

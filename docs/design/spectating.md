@@ -141,8 +141,8 @@ does the same.
 
 Picking a particular pilot is the info box. You open it by tapping a name in
 the player list, which is already how you ask who somebody is, and while
-watching it carries a WATCH control at its foot beside where an invitation
-would go. The two never appear together: inviting wants somebody who is not
+watching it carries a WATCH key at its foot, in the slot an invitation would
+use and drawn as a key like every other thing in this interface you can press. The two never appear together: inviting wants somebody who is not
 on your side, following wants somebody who is. It is drawn only on a
 teammate, because the zone grants live sight of your own side and refuses it
 of anybody else's, and a control that quietly dropped you back on the channel
@@ -179,12 +179,16 @@ wash the hull you are flying wears. Going back is any of the other eight
 cells, which is the same page and the same press; a room that filled while you
 sat out refuses, and the refusal is staying exactly where you are.
 
-Only with a game behind the panel. On the home screen the ship page is the
-hull you will arrive in, and there is nothing there to watch, so the cell is
-not drawn at all: a control whose entire effect is a sentence explaining why
-it did nothing is worse than no control. The page is eight cells at home and
-nine in a room, which is why its rows are asked for rather than built once at
-load.
+On the home screen too, where the page answers a different tense: not what you
+are, which is nothing, but what you will arrive as. Arriving to watch is a
+thing the wire has always been able to say and the client simply never said,
+so picking the cell there sets the join's watch flag rather than waiting for a
+game to exist. It is remembered like the hull is, because it is an answer to
+the same question, and picking any of the other eight is what takes it back.
+
+The cell was briefly hidden at home, on the grounds that it did nothing there.
+That was the wrong repair: it did nothing because the join never carried the
+choice, and hiding it made the page mean two different things on two screens.
 
 Touch gets it on the same terms, because the page is one grid at every size.
 Two columns on a phone held upright, where the ninth cell starts a row of its

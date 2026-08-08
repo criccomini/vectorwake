@@ -40,6 +40,10 @@ M.open = true           -- the page opens on it
 M.home = true           -- no game behind the panel
 M.class = 0             -- the hull you are flying, kept in step with the sim
 M.watching = false      -- sitting out, set by the arena each frame
+-- What you will arrive as, which the ship page sets and a join carries. It is
+-- remembered like the hull is, because it is the same choice: a player who
+-- came to watch is still there to watch after a reload.
+M.spectate = false
 M.pending = nil         -- the hull a row just asked for
 M.chosen = nil          -- the game a row just asked for
 M.stack = {"root"}
@@ -85,6 +89,14 @@ M.music = 3             -- index into MUSICS
 M.cap = 1               -- index into CAPS
 M.can_cap = false       -- whether this engine can be asked to cap frames
 
+-- Whether the ship page's answer is currently "no hull". In a game that is
+-- what the connection says you are; on the home screen it is what you have
+-- asked to arrive as. One question, two places it can be answered from.
+function M.spectating()
+    if M.home then return M.spectate end
+    return M.watching
+end
+
 local VOLUMES = {{0, "off"}, {0.3, "quiet"}, {0.6, "half"}, {1.0, "full"}}
 -- The soundtrack is its own mixer group and its own row, because wanting the
 -- game loud and the music off is the commonest thing anybody wants out of a
@@ -99,7 +111,7 @@ local SAVE = sys.get_save_file("vectorwake", "pilot")
 function M.save_identity()
     pcall(sys.save, SAVE, {
         name = M.name, class = M.class, volume = M.volume, music = M.music,
-        cap = M.cap, zone = M.zone,
+        cap = M.cap, zone = M.zone, spectate = M.spectate,
     })
 end
 
@@ -117,6 +129,9 @@ function M.load_identity()
         -- The game you were in last, so coming back puts the cursor on it and
         -- a returning player is one press from flying.
         if type(d.zone) == "string" then M.zone = d.zone end
+        -- What you last chose to arrive as. Saved beside the hull because it
+        -- is an answer to the same question the hull answers.
+        M.spectate = d.spectate == true
     else
         M.name = callsign.generate()
         M.save_identity()
@@ -195,10 +210,10 @@ local function hull_rows()
         rows[i] = {
             label = h[1], detail = h[3], act = "ship", value = i - 1,
             hull = i - 1, role = h[2],
-            -- Not while watching. A watcher is in no hull, so marking the one
-            -- they would fly back in would put the "you are here" wash on a
-            -- ship nobody is sitting in.
-            mark = function() return not M.watching and M.class == i - 1 end,
+            -- Not while the answer is "none of them". A watcher is in no
+            -- hull, so marking the one they would fly back in would put the
+            -- "you are here" wash on a ship nobody is sitting in.
+            mark = function() return not M.spectating() and M.class == i - 1 end,
         }
     end
     -- Sitting out is the ninth thing you can be flying, so it is the ninth
@@ -206,20 +221,18 @@ local function hull_rows()
     -- pilot says what they want to be; "nothing, I am watching" is an answer
     -- to that question and belongs beside the other eight.
     --
-    -- Only with a game behind the panel. On the home screen this page is the
-    -- hull you will arrive in, and there is nothing to watch yet: the cell
-    -- would be a control whose whole effect is a sentence explaining why it
-    -- did nothing.
-    if not M.home then
-        rows[#rows + 1] = {
-            label = "Spectate", detail = "watch the room from nobody's cockpit",
-            act = "spectate", role = "no hull",
-            -- The helmet, not a ship: the cell is about the pilot rather than
-            -- about anything they are flying.
-            figure = "pilot",
-            mark = function() return M.watching end,
-        }
-    end
+    -- On the home screen too, where this page is what you will arrive as
+    -- rather than what you are. Arriving to watch is a thing the wire has
+    -- always been able to say, so picking it here is a choice that carries
+    -- into the join rather than a control that waits for a game to exist.
+    rows[#rows + 1] = {
+        label = "Spectate", detail = "watch the room from nobody's cockpit",
+        act = "spectate", role = "no hull",
+        -- The helmet, not a ship: the cell is about the pilot rather than
+        -- about anything they are flying.
+        figure = "pilot",
+        mark = function() return M.spectating() end,
+    }
     return rows
 end
 
@@ -319,7 +332,7 @@ local NODES = {
             end, go = "zones"},
             {label = "ship", icon = "ship",
              detail = function()
-                 if M.watching then return "spectating" end
+                 if M.spectating() then return "spectating" end
                  return HULLS[M.class + 1][1]
              end,
              go = "ship"},

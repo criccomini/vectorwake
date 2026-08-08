@@ -1495,6 +1495,7 @@ function apply_menu(self, act)
         -- With no game on, this is simply the hull you will arrive in.
         if not self.online then
             menu.class = menu.pending
+            menu.spectate = false
             menu.save_identity()
             return
         end
@@ -1505,6 +1506,7 @@ function apply_menu(self, act)
         -- are, watching.
         if watching then
             net.set_class(menu.pending)
+            menu.spectate = false
             menu.save_identity()
             menu.close()
             return
@@ -1618,7 +1620,7 @@ function apply_menu(self, act)
         net.connect(r.address, menu.class, menu.name, function(why)
             menu.note = why
             go_home(self, "zones")
-        end, r.zone)
+        end, r.zone, menu.spectate)
         self.online = true
         self.joining = 0
         return
@@ -1628,10 +1630,12 @@ function apply_menu(self, act)
     -- socket watches, landing on the room channel. Coming back is any of the
     -- other eight cells, which is the same page and the same press.
     if act == "spectate" then
-        if not self.online then
-            menu.note = "nothing to watch yet"
-            return
-        end
+        -- Off the home screen this is what you will arrive as, exactly as
+        -- picking a hull there is: remembered, carried into the join, and the
+        -- page stays open so the wash moving is the answer.
+        menu.spectate = true
+        menu.save_identity()
+        if not self.online then return end
         if not watching then net.watch(255) end
         menu.close()
         return
