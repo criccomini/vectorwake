@@ -32,6 +32,7 @@ local account = require("arena.account")
 local net = require("arena.net")
 local callsign = require("arena.callsign")
 local directory = require("arena.directory")
+local clip = require("arena.clip")
 local sfx = require("arena.sfx")
 
 local M = {}
@@ -50,6 +51,13 @@ M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
 M.hover = nil           -- the stage row a pointer is resting on
 M.note = nil            -- set by the arena when a connection fails
+-- What a key is made of, and how long one is. Both are the server's, written
+-- down here because the slots are drawn against them and what a keyboard hands
+-- us is filtered against them. Crockford's alphabet without the letters that
+-- get misread by hand: no I, L, O or U.
+local KEY_CHARS = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+local KEY_LEN = 12
+
 -- A question the menu wants answered before it will do anything else, and
 -- nothing while there is none. Whoever raises it fills in the words and what
 -- each answer is worth; this file knows only that the last answer is the one
@@ -379,21 +387,18 @@ local NODES = {
              hint = function() return account.status() end},
 
         }
-        -- A claim is offered rather than demanded, and never while a key is
-        -- still on screen waiting to be written down.
+        -- A claim is offered rather than demanded. The key it produces is
+        -- shown on a card rather than in a row: it is twelve characters
+        -- somebody has to copy onto another machine, and the value column of
+        -- a list is the smallest place on the page to put it.
         if account.key ~= "" then
-            -- Set as it is, not as the interface would say it. Every word
-            -- in here is drawn in capitals, and a key is not a word: it is a
-            -- string somebody types on another machine, character for
-            -- character, and the case is part of it.
-            rows[#rows + 1] = {label = "your key", detail = account.key,
-                verbatim = true,
-                hint = "write it down: this is the only way back in"}
-            rows[#rows + 1] = {label = "done", act = "key_seen",
-                hint = "clears the key from this screen"}
+            rows[#rows + 1] = {label = "show my key", act = "show_key",
+                hint = "shown once, and never written to this device"}
         elseif account.base ~= "" and not account.claimed then
             rows[#rows + 1] = {label = "keep this pilot", act = "claim",
                 hint = "a key that brings this pilot back elsewhere"}
+            rows[#rows + 1] = {label = "log in with a key", act = "enter_key",
+                hint = "brings a claimed pilot back onto this device"}
         end
         if account.claimed and account.key == "" then
             if account.link_code ~= "" then
@@ -549,8 +554,26 @@ local function settle(act)
         M.reroll()
     elseif act == "claim" then
         account.claim(function(ok)
-            if not ok then M.note = account.note end
+            if not ok then M.note = account.note return end
+            M.show_key()
         end)
+    elseif act == "enter_key" then
+        M.ask_key()
+    elseif act == "paste" then
+        -- Started here, picked up in `tick`: the browser answers a clipboard
+        -- read on its own schedule and this engine's bridge does not wait.
+        clip.ask()
+        M.pasting = 2.0
+        return "pasting"
+    elseif act == "show_key" then
+        M.show_key()
+    elseif act == "copy" then
+        clip.copy(M.ask and M.ask.code or account.key)
+        -- The card stays up. A card that vanishes on copy is a card that ate
+        -- the thing somebody was reading.
+        M.confirm("Copied to the clipboard.",
+                  {{label = "copy", act = "copy"},
+                   {label = "done", act = "key_seen"}}, account.key)
     elseif act == "key_seen" then
         -- Off the screen and out of memory. It was never written to disk: a
         -- key kept beside the secret it protects is a second copy of the same
@@ -598,6 +621,93 @@ function M.confirm(head, keys, code)
     M.ask = {head = head, keys = keys, sel = #keys, code = code}
 end
 
+-- The key, as big as it can be drawn, with the clipboard offered beside it
+-- where there is one. Shown once: it is never written to disk, because a key
+-- kept beside the secret it protects is a second copy of the same thing.
+function M.show_key()
+    if account.key == "" then return end
+    local keys = {}
+    if clip.have() then keys[#keys + 1] = {label = "copy", act = "copy"} end
+    keys[#keys + 1] = {label = "done", act = "key_seen"}
+    M.confirm("Write this down. It is the way back in.", keys, account.key)
+end
+
+-- Ask for a key. The card carries twelve empty slots, and what fills them is
+-- a keyboard where there is one, the clipboard where there is one, and the
+-- alphabet drawn under the slots where there is neither.
+function M.ask_key()
+    local keys = {}
+    if clip.have() then keys[#keys + 1] = {label = "paste", act = "paste"} end
+    keys[#keys + 1] = {label = "cancel"}
+    M.ask = {head = "Type your key", keys = keys, sel = #keys,
+             entry = {typed = "", n = KEY_LEN, alphabet = KEY_CHARS}}
+end
+
+-- One character into the slots, from whichever hand. Anything the alphabet
+-- does not contain is dropped rather than shown: a key has no lowercase and no
+-- dashes to type, so a hand that types them is not making a mistake worth
+-- reporting.
+function M.type_key(ch)
+    local e = M.ask and M.ask.entry
+    if not e or e.sending or #e.typed >= e.n then return false end
+    ch = string.upper(ch or "")
+    if #ch ~= 1 or not string.find(KEY_CHARS, ch, 1, true) then return false end
+    e.typed = e.typed .. ch
+    if #e.typed >= e.n then M.send_key() end
+    return true
+end
+
+-- And one back out.
+function M.rub_key()
+    local e = M.ask and M.ask.entry
+    if not e or e.sending or e.typed == "" then return false end
+    e.typed = string.sub(e.typed, 1, #e.typed - 1)
+    return true
+end
+
+-- A full set of slots, sent. The answer comes back on the account layer's own
+-- schedule, so the card stays up saying so rather than closing on a promise.
+function M.send_key()
+    local e = M.ask and M.ask.entry
+    if not e or #e.typed < e.n then return end
+    e.sending = true
+    M.ask.head = "Signing in"
+    account.redeem_key("VW" .. e.typed, function(ok)
+        if ok then
+            M.ask = nil
+            M.note = nil
+            M.adopt_account_name()
+            return
+        end
+        -- Wrong key, or a meta-layer that did not answer. Either way the slots
+        -- empty and the card stays, because the next thing anybody does is try
+        -- again.
+        if M.ask and M.ask.entry then
+            M.ask.entry.typed = ""
+            M.ask.entry.sending = false
+            M.ask.head = "That key was not recognised"
+        end
+    end)
+end
+
+-- Whatever the clipboard had, filtered to what a key is made of. A player who
+-- copied the whole line, dashes and prefix and all, gets what they meant.
+function M.paste_key(text)
+    local e = M.ask and M.ask.entry
+    if not e or e.sending or not text then return false end
+    local out = ""
+    for ch in string.gmatch(string.upper(text), ".") do
+        if string.find(KEY_CHARS, ch, 1, true) then out = out .. ch end
+    end
+    -- The prefix is not part of the secret and is not typed, so a paste that
+    -- carries it drops it rather than filling two slots with it.
+    out = string.gsub(out, "^VW", "")
+    if out == "" then return false end
+    e.typed = string.sub(out, 1, e.n)
+    if #e.typed >= e.n then M.send_key() end
+    return true
+end
+
 -- The device code, as big as it can be drawn. Raised when one arrives and
 -- again whenever its row is pressed.
 function M.show_code()
@@ -609,10 +719,19 @@ end
 -- Answer the one that is up, and hand back what that answer is worth. Cleared
 -- before the action is returned, so whatever acts on it is acting with the
 -- question already down.
+-- The answers that do something to the card rather than to the question:
+-- copying what is on it and pasting into it both leave it standing, because
+-- neither is an answer, they are hands reaching past the words.
+local STAY = {copy = true, paste = true}
+
 local function answer(i)
     local k = M.ask and M.ask.keys[i]
+    if not k or not k.act then
+        M.ask = nil
+        return nil, true
+    end
+    if STAY[k.act] then return settle(k.act), true end
     M.ask = nil
-    if not k or not k.act then return nil, true end
     return settle(k.act), true
 end
 
@@ -695,7 +814,20 @@ end
 -- well, a lit wedge and a lit name on the game you were in, which is a second
 -- thing to read saying what the cursor already sits on, and on a list of three
 -- games two of them were the answer to different questions.
-function M.tick()
+function M.tick(dt)
+    -- A clipboard read started a moment ago, answered whenever the browser
+    -- gets round to it. Given up on after a couple of seconds rather than
+    -- polled for ever: a refused read never answers at all.
+    if M.pasting then
+        M.pasting = M.pasting - (dt or 0)
+        local text = clip.take()
+        if text then
+            M.pasting = nil
+            M.paste_key(text)
+        elseif M.pasting <= 0 then
+            M.pasting = nil
+        end
+    end
     if M.at() ~= "zones" then
         zone_synced = false
         -- And forget where the cursor was. Every other page is a place you
@@ -951,6 +1083,8 @@ function M.step(keys)
     -- walked, and nothing behind it can be pressed by accident.
     if M.ask then
         local n = #M.ask.keys
+        -- Backspace belongs to the slots when there are slots.
+        if keys.rub and M.rub_key() then return nil, true end
         -- Escape is the last answer, which is the one that changes nothing.
         if keys.back then return answer(n) end
         if keys.left or keys.up then

@@ -125,12 +125,20 @@ fn new_secret() -> String {
 /// expected to copy down.
 const KEY_ALPHABET: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/// The account key: 20 characters of base32 in five groups, which is 100 bits
-/// of entropy in a shape that fits a password manager or a sticky note.
+/// The account key: 12 characters of base32 in three groups, which is 60 bits
+/// of entropy in a shape that fits a password manager, a sticky note, or the
+/// twelve slots the client draws for it.
+///
+/// It was 20 characters and 100 bits. Nothing needs that: the attack is
+/// guessing against `/v1/redeem`, where a hit on any account counts, so the
+/// odds per guess are accounts over keyspace. At 60 bits that is centuries of
+/// sustained guessing with a million accounts registered, which is two orders
+/// of magnitude more headroom than systems already shipping on a 16 digit
+/// number, and eight characters less to copy down by hand.
 fn new_account_key() -> String {
     let mut rng = rand::thread_rng();
     let mut out = String::from("VW");
-    for group in 0..5 {
+    for group in 0..3 {
         let _ = group;
         out.push('-');
         for _ in 0..4 {
@@ -909,11 +917,11 @@ mod tests {
     fn an_account_key_is_readable_and_case_insensitive() {
         let k = new_account_key();
         assert!(k.starts_with("VW-"), "{k} names the game it belongs to");
-        assert_eq!(k.len(), 2 + 5 * 5, "five groups of four");
+        assert_eq!(k.len(), 2 + 3 * 5, "three groups of four");
         // A person types this, so it has to survive lowercase and lost dashes.
         assert_eq!(normalize_key(&k), normalize_key(&k.to_lowercase()));
         assert_eq!(normalize_key(&k), normalize_key(&k.replace('-', "")));
-        assert_eq!(normalize_key(&k).len(), 22);
+        assert_eq!(normalize_key(&k).len(), 14);
     }
 
     #[test]

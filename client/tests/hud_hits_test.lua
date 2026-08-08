@@ -189,11 +189,58 @@ for i = 1, 3 do
 end
 check("the sweep found ships to press on", tested > 0)
 
+-- --- the debug readout closes itself ---------------------------------------
+
+-- What opens it is the LINK bars in the far corner, and on a phone the
+-- readout lands under the dial a screen's width away from them. So the panel
+-- itself has to be the way out, or a player who opened it has nothing to
+-- press but the four bars they have no reason to look back at.
+-- Both boxes carry the same action, so they are told apart by size: the
+-- bars are a chip in the corner and the panel is a slab under the dial.
+local function debug_boxes()
+    local out = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "debug" then out[#out + 1] = r end
+    end
+    return out
+end
+
+ui.debug = false
+frame()
+check("shut, only the bars answer", #debug_boxes() == 1,
+      #debug_boxes() .. " boxes")
+
+ui.debug = true
+frame()
+local dbg = debug_boxes()
+check("open, the readout publishes a box of its own", #dbg == 2,
+      #dbg .. " boxes")
+local panel = dbg[#dbg]
+if #dbg == 2 then
+    check("and it is a slab rather than a chip",
+          panel.w > 100 and panel.h > 40,
+          string.format("%.0fx%.0f", panel.w, panel.h))
+    -- Pressed in the middle, which is where a thumb finishing a read lands,
+    -- and nowhere near the four bars that opened it.
+    local act = press(panel.x + panel.w / 2, panel.y + panel.h / 2)
+    check("a press in the middle of it closes it", act == "debug",
+          "landed on " .. tostring(act))
+    -- The corner it came from is a long way off, which is the whole reason
+    -- this box exists.
+    check("the bars are nowhere near it",
+          math.abs((panel.y + panel.h / 2) - (dbg[1].y + dbg[1].h / 2)) > 40)
+end
+ui.debug = false
+
 -- --- the menu takes the screen ---------------------------------------------
 
 frame({menu_open = true})
 check("the map is not clickable under the menu", box("map") == nil)
 check("the debug readout is not clickable under the menu", box("debug") == nil)
+ui.debug = true
+frame({menu_open = true})
+check("nor is the open readout under the menu", box("debug") == nil)
+ui.debug = false
 
 -- --- the scoreboard is where you ask ---------------------------------------
 
@@ -209,6 +256,33 @@ check("a row's click reaches the pilot rather than the list",
 check("every row is tested before the panel that holds them",
       rank("pilot") ~= nil and rank("scores") ~= nil
       and rank("pilot") < rank("scores"))
+ui.details = false
+
+-- --- the roster is a list of names, ordered like one -----------------------
+--
+-- Your own side first, then everybody else as one group, and inside each of
+-- them alphabetical without case deciding anything: a pilot who capitalises
+-- their call sign does not get the top of the room for it.
+
+ui.details = true
+ui.sort = "name"
+room.teams = {[0] = 1, 1, 9, 9}
+frame({pilots = {[0] = {name = "zulu", label = "human"},
+                 [1] = {name = "Alpha", label = "human"},
+                 [2] = {name = "bravo", label = "human"},
+                 [3] = {name = "Charlie", label = "human"}}})
+-- Read out of the scoreboard's own column rather than off the whole screen:
+-- the same names are drawn again over the hulls they belong to.
+local order = {}
+for k = 1, package.loaded["arena.state"].n do
+    local t = package.loaded["arena.state"].text[k]
+    for _, nm in ipairs({"zulu", "Alpha", "bravo", "Charlie"}) do
+        if t.s == nm and t.x < 300 then order[#order + 1] = nm end
+    end
+end
+check("your side comes first, then the rest, each alphabetical",
+      table.concat(order, ",") == "Alpha,zulu,bravo,Charlie",
+      table.concat(order, ","))
 ui.details = false
 
 -- --- the feed is bounded ---------------------------------------------------
