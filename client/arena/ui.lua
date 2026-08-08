@@ -3793,15 +3793,24 @@ function M.menu(v)
     end
 
     -- --- the stage
-    local listy = not (v.board and not M.touching)
-        and not (v.rows and #v.rows > 0 and v.rows[1].hull)
     -- Everything with type in it hangs off `tx`, a gutter in from the stage's
     -- own left edge: the rule at the head of it, and every row's label. A
     -- row's field starts back at `sx`, so what is lit reaches under the mark
     -- and the words never sit against the edge of it.
     local tx = sx + GUTTER * S
     local avail = sw - GUTTER * S
-    local lw = listy and math.min(avail, 520 * S) or avail
+    -- The stage is the stage, whatever is on it. A list used to be capped at
+    -- 520 points against a row reading as two columns a screen apart, which
+    -- was a rule written for a window rather than for this panel: the block
+    -- is already held to 940, so the widest a row can ever be is about 740,
+    -- and the cap bought nothing but a ragged right edge. It ended a couple
+    -- of hundred points short of the x, the rule and the scrollbar, and the
+    -- pages that are drawings rather than lists went to the edge beside it.
+    --
+    -- What is kept is a column at the right for the scroll tick, whether or
+    -- not there is one to draw, so a list does not shift sideways the moment
+    -- it outgrows the page. It puts a row's count directly under the x.
+    local lw = avail - 14 * S
     -- No title over the stage. The rail is lit at the stop you are inside and
     -- says its name there, so a heading repeating it is the same answer
     -- written twice, in the one place a list of games could have used the
