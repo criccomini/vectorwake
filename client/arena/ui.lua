@@ -997,7 +997,11 @@ local rows = {}
 -- column here has an obvious direction, and a name that sorts Z to A or a
 -- kill count that puts the worst first is a state somebody reaches by accident
 -- and then has to work out how to leave.
-M.sort = "points"
+-- Which column the scoreboard is ordered by. Alphabetical to begin with: the
+-- question a player has of this list most often is "is that name in the
+-- room", and a name is found in a list sorted by name. The score columns are
+-- still a click away for whoever is asking the other question.
+M.sort = "name"
 M.scroll = 0
 -- Rows on screen at once. The list was capped at nine with no way to see the
 -- tenth, which in a room of sixty-four is most of it.
@@ -1015,6 +1019,17 @@ end
 -- the chip owns the corner.
 local function top_y()
     return ST + PAD * S + 32 * S
+end
+
+-- Two names, in the order a person reads them. Lowercased for the comparison
+-- so a capital cannot jump a pilot to the top of the room, and the raw name
+-- breaks a tie so the order is total and the list cannot flicker between two
+-- pilots who differ only in case. The games list orders itself the same way.
+local function ahead(a, b)
+    local la, lb = string.lower(a.name), string.lower(b.name)
+    if la ~= lb then return la < lb, true end
+    if a.name ~= b.name then return a.name < b.name, true end
+    return false, false
 end
 
 local function scores(me, pilots, watchers)
@@ -1069,10 +1084,10 @@ local function scores(me, pilots, watchers)
     -- name is only worth reading once you know which end of the gun it is on.
     -- So the sort runs inside each side rather than across both.
     --
-    -- Points is the default, because points are the score. Kills stay on the
-    -- row: they are what a player counts in their head, and the two numbers
-    -- say different things, since a pilot who kills loaded ships outscores one
-    -- who kills more of the empty.
+    -- Alphabetical inside each side by default. Kills stay on the row: they
+    -- are what a player counts in their head, and they say something points
+    -- do not, since a pilot who kills loaded ships outscores one who kills
+    -- more of the empty.
     local key = M.sort
     table.sort(rows, function(a, b)
         -- Watchers last, under everybody who is actually flying, whatever
@@ -1082,7 +1097,8 @@ local function scores(me, pilots, watchers)
         if a.watch ~= b.watch then return b.watch end
         if a.mine ~= b.mine then return a.mine end
         if key == "name" then
-            if a.name ~= b.name then return a.name < b.name end
+            local first, differ = ahead(a, b)
+            if differ then return first end
         elseif key == "kills" then
             if a.k ~= b.k then return a.k > b.k end
         elseif key == "deaths" then
@@ -1094,7 +1110,7 @@ local function scores(me, pilots, watchers)
         end
         if a.p ~= b.p then return a.p > b.p end
         if a.k ~= b.k then return a.k > b.k end
-        return a.name < b.name
+        return (ahead(a, b))
     end)
 
     if n == 0 then

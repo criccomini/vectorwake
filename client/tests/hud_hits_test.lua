@@ -258,6 +258,33 @@ check("every row is tested before the panel that holds them",
       and rank("pilot") < rank("scores"))
 ui.details = false
 
+-- --- the roster is a list of names, ordered like one -----------------------
+--
+-- Your own side first, then everybody else as one group, and inside each of
+-- them alphabetical without case deciding anything: a pilot who capitalises
+-- their call sign does not get the top of the room for it.
+
+ui.details = true
+ui.sort = "name"
+room.teams = {[0] = 1, 1, 9, 9}
+frame({pilots = {[0] = {name = "zulu", label = "human"},
+                 [1] = {name = "Alpha", label = "human"},
+                 [2] = {name = "bravo", label = "human"},
+                 [3] = {name = "Charlie", label = "human"}}})
+-- Read out of the scoreboard's own column rather than off the whole screen:
+-- the same names are drawn again over the hulls they belong to.
+local order = {}
+for k = 1, package.loaded["arena.state"].n do
+    local t = package.loaded["arena.state"].text[k]
+    for _, nm in ipairs({"zulu", "Alpha", "bravo", "Charlie"}) do
+        if t.s == nm and t.x < 300 then order[#order + 1] = nm end
+    end
+end
+check("your side comes first, then the rest, each alphabetical",
+      table.concat(order, ",") == "Alpha,zulu,bravo,Charlie",
+      table.concat(order, ","))
+ui.details = false
+
 -- --- the feed is bounded ---------------------------------------------------
 
 -- Twelve lines offered, five drawn. The cap is the interface's, and the arena
