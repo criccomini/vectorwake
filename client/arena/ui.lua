@@ -528,12 +528,21 @@ end
 -- template), so the world draws everywhere and only the furniture anchored
 -- to an edge steps inside. Set by the caller from what the page measures;
 -- zero everywhere hardware covers nothing, which is every desktop and most
--- of the phones. There is deliberately no bottom inset: the home indicator
--- overlays the pads the way it overlays every full-screen game's controls,
--- and lifting them a further 21 points bought nothing but reach.
-local SL, SR, ST = 0, 0, 0
-function M.safe(l, r, t)
-    SL, SR, ST = l or 0, r or 0, t or 0
+-- of the phones.
+--
+-- The bottom is a special case, and it is two things at once. The pads and
+-- the stick ignore it: the home indicator overlays them the way it overlays
+-- every full-screen game's controls, and lifting the row bought nothing but
+-- reach. The menu's rail does not ignore it, because a rail is a row of
+-- buttons a thumb presses and the indicator is a bar the system swallows
+-- presses under, which is what a tab bar steps over on every phone.
+--
+-- What arrives here is already net of whatever the canvas does not cover:
+-- under a browser's bottom toolbar the strip is spoken for, and stepping up
+-- by the inset as well would be stepping over the same thing twice.
+local SL, SR, ST, SB = 0, 0, 0, 0
+function M.safe(l, r, t, b)
+    SL, SR, ST, SB = l or 0, r or 0, t or 0, b or 0
 end
 
 -- `now` is the frame's clock in seconds, for the few things on screen that
@@ -3573,7 +3582,11 @@ function M.menu(v)
         rh = (home and 78 or 84) * S
         rw = W - SL - SR - 2 * margin
         rx = SL + margin
-        ry_ = H - margin - rh
+        -- Hard against the bottom, less whatever the hardware covers. It
+        -- used to hold a page margin under it as well, which on a phone put
+        -- 42 points of nothing under a row of labels and read as an interface
+        -- that had come loose from the edge of the screen.
+        ry_ = H - SB - rh
         sx, sw = SL + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two
@@ -3581,7 +3594,11 @@ function M.menu(v)
         local chip = home and 0 or 34 * S
         sy = ST + margin + head + chip
         sh = ry_ - 20 * S - sy
-        rect(0, sy - 16 * S, W, sh + rh + 46 * S, pal.rgb(0x03050a, 0.5))
+        -- Down to the bottom edge, rather than to the rail plus a margin
+        -- that is no longer there: the wash is what the panel sits on, and a
+        -- strip of bare arena under the rail reads as the panel having come
+        -- loose from the screen.
+        rect(0, sy - 16 * S, W, H - (sy - 16 * S), pal.rgb(0x03050a, 0.5))
         wordmark(rx, ST + margin + chip + 22 * S, 30 * S)
         u:seg(rx, ry(ry_ - 12 * S), W - SR - margin, ry(ry_ - 12 * S),
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)

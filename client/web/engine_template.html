@@ -210,8 +210,30 @@
 				buttonHeight = 42;
 {{/html5.show_made_with_defold}}
 				var vp = window.visualViewport;
+				var layoutH = document.documentElement.clientHeight || 0;
 				var width = Math.round(vp ? vp.width : window.innerWidth);
-				var height = Math.round(vp ? vp.height : window.innerHeight) - buttonHeight;
+				var visible = Math.round(vp ? vp.height : window.innerHeight);
+				// Installed to the home screen there is no browser furniture
+				// to hide behind, and iOS answers the visual viewport short of
+				// the screen by the home indicator's strip: the canvas then
+				// stopped above it and the page's own background showed
+				// through, which on a phone reads as an interface floating
+				// off the bottom of the screen. The layout viewport covers the
+				// whole screen under viewport-fit=cover, so that is what the
+				// canvas is sized to; the client steps its own furniture up by
+				// the inset published below.
+				//
+				// In a browser the visual viewport stays the measure, because
+				// there the space below it is a toolbar rather than a strip of
+				// glass, and a rail drawn under a toolbar is a rail nobody can
+				// press.
+				var standalone = window.navigator.standalone === true
+					|| (window.matchMedia
+						&& window.matchMedia('(display-mode: standalone)').matches);
+				if (standalone && layoutH > visible) {
+					visible = layoutH;
+				}
+				var height = visible - buttonHeight;
 				if (width < 1 || height < 1) {
 					return;
 				}
@@ -222,11 +244,21 @@
 				var probe = document.getElementById('vw-safe');
 				if (probe) {
 					var cs = getComputedStyle(probe);
+					// The bottom one is published net of whatever the canvas
+					// already fails to cover. env() answers for the screen,
+					// and the canvas is not always the screen: under a
+					// browser's bottom toolbar the strip is spoken for
+					// already, and furniture stepping up by the inset as well
+					// would be stepping over something twice.
+					var uncovered = Math.max(0, layoutH
+						- ((vp ? vp.offsetTop + vp.height : layoutH)));
+					var bottom = Math.max(0,
+						(parseFloat(cs.paddingBottom) || 0) - uncovered);
 					window.vwInsets =
 						(parseFloat(cs.paddingLeft) || 0) + ' ' +
 						(parseFloat(cs.paddingRight) || 0) + ' ' +
 						(parseFloat(cs.paddingTop) || 0) + ' ' +
-						(parseFloat(cs.paddingBottom) || 0);
+						bottom;
 				}
 				var dpi = 1;
 {{#display.high_dpi}}
