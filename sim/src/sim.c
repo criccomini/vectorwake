@@ -1719,10 +1719,14 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
              * fuse at 48 px inside an 80 px blast, which turned a 562 damage
              * hit into 112 and made proximity the one thing in the tech tree
              * worth less than carrying nothing. Measured, at 27% against a
-             * bare hull's 34%. Waiting costs the round nothing: it can still
-             * only end once, a bomb on a collision course now flies to
-             * contact and lands what it always would, and a near miss that
-             * used to sail past detonates at the point it was nearest. */
+             * bare hull's 34%, and 51% against 32% once it waited.
+             *
+             * Waiting costs the round nothing: it can still only end once, a
+             * bomb on a collision course flies to contact and lands what it
+             * always would, and a near miss that used to sail past detonates
+             * at the point it was nearest. Which is why the fuse now lands
+             * both more often and harder than no fuse at all, where before it
+             * bought the first by giving up the second. */
             for (int i = 0; i < next->ship_count && !ended; i++) {
                 const sim_ship *sh = &next->ships[i];
                 if (!sh->active || !sh->alive) continue;
