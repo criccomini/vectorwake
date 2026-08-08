@@ -2174,8 +2174,27 @@ local function link(lag)
     -- The bars are the readout a player wants and the whole of it. Everything
     -- behind them is for whoever is working on this, so it hides behind the
     -- one thing on screen that is already about the connection.
+    --
+    -- What answers that press is the whole cluster and the strip it stands
+    -- in. It was 46 by 20 points hung off the right edge, which covered the
+    -- four bars and the last quarter of the word beside them: three quarters
+    -- of the only thing on screen labelled LINK did nothing when pressed,
+    -- and twenty points is half the height a thumb is usually given. It also
+    -- took its top from the window while the drawing took it from the safe
+    -- area, so a phone with an island drew the readout below the box meant
+    -- to open it.
+    --
+    -- The strip above the dial is reserved for this readout already, so the
+    -- box takes all of it: from the word's left edge to the screen's own,
+    -- and from the top of the safe area down to where the dial starts. The
+    -- corner does as much work as the size, since a thumb aimed there cannot
+    -- overshoot upward or to the right off the screen. Taller would mean
+    -- taking a strip off the dial, which is the control that opens the map,
+    -- and one control does not get to eat another.
     if not menu_up then
-        hit(right - 40 * S, pad, 46 * S, 20 * S, "debug")
+        local _, dial_y = dial()
+        local x0 = right - 34 * S - text_w("LINK", (FONT - 3) * S) - 6 * S
+        hit(x0, ST, W - x0, math.max(dial_y - ST, 24 * S), "debug")
     end
 end
 

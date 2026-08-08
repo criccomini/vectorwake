@@ -45,6 +45,16 @@ for _, name in ipairs({"arc", "disc", "flush", "frame", "outline", "quad", "rect
     layer[name] = noop
 end
 
+-- Rectangles are kept as well as counted, because one question here is
+-- whether a box covers a drawing rather than whether a drawing happened:
+-- the LINK bars are rects, and a toggle that misses them is the fault.
+-- Bottom-up, the way the mesh takes them.
+local rects = {}
+layer.rect = function(self, x, y, w, h)
+    self.n = self.n + 1
+    rects[#rects + 1] = {x = x, y = y, w = w, h = h}
+end
+
 -- The room. Ship 0 is us; the rest are strangers, all on one other team so
 -- that the free-for-all test can hand out a team per seat instead.
 local room = {count = 4, teams = {[0] = 1, 1, 1, 1}, alive = {}}
@@ -109,6 +119,8 @@ local W, H = 1280, 800
 -- One frame, with whatever the caller wants to be true about the room.
 local function frame(o)
     o = o or {}
+    rects = {}
+    package.loaded["arena.state"].n = 0
     ui.begin(layer, W, H, 1, false)
     ui.hud({
         me = 0,
@@ -209,6 +221,65 @@ ui.debug = false
 frame()
 check("shut, only the bars answer", #debug_boxes() == 1,
       #debug_boxes() .. " boxes")
+
+-- And what that one box has to cover is the thing it looks like: the whole
+-- word LINK and all four of its bars. It used to be a rectangle hung off the
+-- right edge that took the bars and the last quarter of the word, so most of
+-- the only label on screen saying LINK did nothing when pressed, which is
+-- what made it hard to hit on a phone.
+do
+    local chip = debug_boxes()[1]
+    -- The word, from the text the interface published. Right-pivoted, so it
+    -- runs leftward from where it was placed, and stored bottom-up.
+    local st = package.loaded["arena.state"]
+    local wx0, wx1, wy
+    for k = 1, st.n do
+        local t = st.text[k]
+        if t.s == "LINK" then
+            wx1 = t.x
+            wx0 = t.x - #t.s * t.px * (1233 / 2048)
+            wy = H - t.y
+        end
+    end
+    check("the readout draws its word", wx0 ~= nil)
+    if wx0 and chip then
+        check("the toggle covers the whole word",
+              wx0 >= chip.x and wx1 <= chip.x + chip.w
+              and wy >= chip.y and wy <= chip.y + chip.h,
+              string.format("word %.0f..%.0f at %.0f, box %.0f..%.0f y %.0f..%.0f",
+                            wx0, wx1, wy, chip.x, chip.x + chip.w,
+                            chip.y, chip.y + chip.h))
+        -- The bars: the four small rects in the same strip.
+        local bars = 0
+        for _, r in ipairs(rects) do
+            local top = H - (r.y + r.h)
+            if r.w < 8 and top < chip.y + chip.h + 8 and r.x > W / 2 then
+                bars = bars + 1
+                check("bar at x " .. math.floor(r.x) .. " is inside the toggle",
+                      r.x >= chip.x and r.x + r.w <= chip.x + chip.w
+                      and top >= chip.y and H - r.y <= chip.y + chip.h)
+            end
+        end
+        check("all four bars were found", bars == 4, bars .. " bars")
+        -- And it is a target rather than a hairline. A thumb wants about
+        -- forty points; the strip above the dial is what the layout leaves,
+        -- so the width makes up what the height cannot.
+        check("the toggle is a thumb's worth of screen",
+              chip.w >= 60 and chip.h >= 24 and chip.w * chip.h >= 44 * 44 * 0.9,
+              string.format("%.0fx%.0f", chip.w, chip.h))
+        -- Anchored at the very top, so a thumb aiming for the corner cannot
+        -- overshoot upward past it.
+        check("it starts at the top edge", chip.y <= 0.01,
+              string.format("y %.1f", chip.y))
+        -- And it stops where the dial starts, because the dial is the
+        -- control that opens the map and one control does not eat another.
+        local mapbox = box("map")
+        check("it does not reach into the dial",
+              mapbox ~= nil and chip.y + chip.h <= mapbox.y + 0.01,
+              mapbox and string.format("box ends %.0f, dial starts %.0f",
+                                       chip.y + chip.h, mapbox.y) or "no map box")
+    end
+end
 
 ui.debug = true
 frame()
