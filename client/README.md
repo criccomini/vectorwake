@@ -733,13 +733,22 @@ Lua 5.1 with the engine stubbed, because the path it covers needs an arena, an
 opponent and a climbed tech tree to reach in a browser, where a wrong component
 id sounds like nothing rather than like a failure.
 
-Rendering costs about a fifth of a second, seven eighths of it the soundtrack,
-and it is spent in `init` rather than spread over frames because `init` is
-behind the menu the client opens on. `sfx.init` prints one line when it is done,
-`SOUND: 24 sounds, 1154 KB, 259 ms`, which is how you tell a client that
-generated its audio from a client that is quiet for some other reason. Only in a
-debug build: a release engine compiles `print` out, so this line and the
-complaint in `sfx.fire` are both invisible on the published page.
+Rendering costs about a sixth of a second, four fifths of it the one soundtrack
+that boot needs, and it is spent in `init` rather than spread over frames
+because `init` is behind the menu the client opens on. `sfx.init` prints one
+line when it is done, of the shape `SOUND: 24 sounds, 1153 KB, 210 ms, 22
+direct, track 5`, which is how you tell a client that generated its audio from a
+client that is quiet for some other reason. Only in a debug build: a release engine compiles
+`print` out, so this line and the complaint in `sfx.fire` are both invisible on
+the published page.
+
+There are eight soundtracks and the game rotates through them, three minutes
+each, so `music` is the one component the kit does not render from a name.
+`sfx_music_begin` starts a track and `sfx_music_step` builds it in pieces small
+enough to hide inside a frame; `sfx.music_tick` spends one piece at a time on
+frames that had room, which is why a rotation costs nothing when it lands. The
+rotation, and why it is not eight components, are in
+[docs/design/audio.md](../docs/design/audio.md).
 
 The synth was a Python script until it moved into the client, and the port
 reproduces CPython's Mersenne Twister so it could be checked against the files

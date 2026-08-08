@@ -703,7 +703,10 @@ function update(self, dt)
 
     sfx.frame()
     -- The soundtrack wants to be running from the first frame and cannot be,
-    -- so it is asked for repeatedly until it is. See sfx.music_tick.
+    -- so it is asked for repeatedly until it is. It keeps being asked after
+    -- that too: there are eight tracks and this is what rotates them, and what
+    -- builds the next one in whatever room a frame has to spare. See
+    -- sfx.music_tick.
     sfx.music_tick(dt)
 
     -- Is there a game to look at? A zone that has taken the connection but not

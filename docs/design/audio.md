@@ -13,7 +13,9 @@ way to keep it is to build every sound out of arithmetic rather than source one.
 
 The kit is twenty-four sounds and a little over a megabyte of 16-bit PCM. None
 of it is in the download. `client/ext/simcore/src/sfx.c` synthesises all of it
-at boot, in about a fifth of a second, and hands the buffers to the engine.
+at boot, in about a sixth of a second, and hands the buffers to the engine. The
+seven soundtracks that are not playing yet are not among them: those are built
+while the game runs, a few milliseconds at a time.
 
 That saves the download, but the reason it matters more is that a sound becomes
 a thing with parameters instead of a file. A bomb can be pitched by its rung
@@ -42,7 +44,7 @@ which is what gives a blast a body rather than a hiss. The interface ticks.
 | `flag` | 300 ms | a flag changing hands |
 | `thrust` | 500 ms, held | a rocket, not an engine |
 | `ui_move`, `ui_go` | 35 and 160 ms | the interface |
-| `music` | 19.2 s, held | the soundtrack |
+| `music` | 15 to 23 s, held | whichever of the eight tracks is playing |
 
 ## Every rung is its own sound
 
@@ -249,16 +251,58 @@ engineering for latency, and a sound that describes a state is not.
 
 ## The soundtrack is furniture
 
-One track, eight bars, A minor, i-VI-III-VII, a hundred beats a minute, playing
-under everything for as long as the game is open. It has to come round without a
-seam and it has to stay welcome after the fortieth pass, which are different
-problems: the first is arithmetic and the second is restraint. So there is no
-melody doing anything clever, and nothing in it arrives more often than the ear
-stops noticing.
+Eight tracks, eight bars each, one playing under everything for as long as the
+game is open. Each has to come round without a seam and stay welcome after the
+fortieth pass, which are different problems: the first is arithmetic and the
+second is restraint. So there is no melody doing anything clever, and nothing in
+any of them arrives more often than the ear stops noticing.
+
+| | Key | Chords | Tempo |
+|---|---|---|---|
+| Neon wake | A minor | i-VI-III-VII | 100 |
+| Long dark | D minor | i-VII-VI-VII | 84 |
+| Coast road | E minor | i-III-VII-VI | 90 |
+| Cold open | C minor | i-VI-VII-VI | 105 |
+| Undertow | F minor | i-VII-VI-V | 98 |
+| Overdrive | G minor | i-VI-III-VII | 120 |
+| Low ceiling | B minor | i-VII-VI-VII | 108 |
+| Redline | F# minor | i-VI-VII-i | 126 |
+
+Neon wake is the one that was here when there was only one, unchanged to the
+byte. i-VI-III-VII is the progression the whole style is built on and the reason
+every track in it sounds like every other, so two of the eight use it and the
+other six do not.
+
+A tempo is not free to be any number. A beat is 22050 * 60 / BPM samples and the
+loop only closes if that divides exactly, so the tempo has to be a divisor of
+1323000. The eight above are; 96 and 112 are not, which is worth knowing before
+wondering why they are absent.
 
 There is no combat music and there will not be. The music does not know what is
 happening, does not swell, and never competes with the thing a pilot is trying to
 hear.
+
+## Three minutes each, and the next one built in the gaps
+
+The game plays a track for three minutes and moves to the next. That is long
+enough that nobody hears a rotation as a change of subject, and short enough
+that an hour at the game is not one loop over and over for an hour. Where a session starts is random, so
+two people in the same arena are not listening in step and somebody who plays for
+ten minutes has not heard only the first three.
+
+Building a track is about an eighth of a second of arithmetic. Spending that on
+the frame a rotation falls due is a frozen frame in the middle of a fight, so it
+is not spent there: the synth cuts a track into forty-two steps, none longer than
+about eight milliseconds, and the client spends one step at a time on frames that
+had room, starting as soon as the previous rotation lands. An eighth of a second
+of work with three minutes to find room in is never in a hurry, so a frame that
+already ran long is not asked to carry a step as well.
+
+One sound component holds whichever track is playing. Eight components would
+mean eight buffers of about a megabyte each, seven of them silent, which is most
+of a page's worth of memory to save a copy. Swapping the buffer is a copy and
+costs nothing; only a build that somehow did not finish costs anything at the
+rotation, and it costs a hitch rather than a silence.
 
 It gets its own mixer group and its own row in the menu, because wanting the game
 loud and the music off is the commonest thing anybody wants from a game's audio
@@ -271,7 +315,7 @@ was for nothing.
 | Volume | 0 | 0.3 | 0.6 | 1.0 |
 | Music | 0 | 0.2 | 0.45 | 0.75 |
 
-The track waits for the browser's audio to be awake before it starts, rather than
+A track waits for the browser's audio to be awake before it starts, rather than
 starting into a page that cannot make sound yet. Audio mixed into a suspended
 context is discarded rather than held, so a track started at boot runs on
 silently and a player joins it in the middle.

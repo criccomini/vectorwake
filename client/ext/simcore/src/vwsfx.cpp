@@ -115,10 +115,68 @@ int IsLoop(lua_State* L) {
     return 1;
 }
 
+// --- the soundtrack, built a step at a time --------------------------------
+//
+// A track takes about an eighth of a second to render, which the client cannot
+// spend in one frame, so sfx.c builds one in steps and this hands Lua the
+// three calls that drive it. One job at a time: the client is building the
+// next track and there is never a second thing it wants at once. Beginning a
+// new one throws away whatever was half built, which is what should happen
+// when the rotation is cut short.
+sfx_music_job* g_job = 0;
+
+int MusicCount(lua_State* L) {
+    int top = lua_gettop(L);
+    lua_pushinteger(L, sfx_music_count());
+    assert(top + 1 == lua_gettop(L));
+    return 1;
+}
+
+// Tracks are numbered from one in Lua, like everything else there.
+int MusicBegin(lua_State* L) {
+    int top = lua_gettop(L);
+    int i = (int)luaL_checkinteger(L, 1) - 1;
+    if (g_job) sfx_music_cancel(g_job);
+    g_job = sfx_music_begin(i);
+    lua_pushboolean(L, g_job != 0);
+    assert(top + 1 == lua_gettop(L));
+    return 1;
+}
+
+// True when there is nothing left to do, including when there was no job.
+int MusicStep(lua_State* L) {
+    int top = lua_gettop(L);
+    lua_pushboolean(L, g_job ? sfx_music_step(g_job) : 1);
+    assert(top + 1 == lua_gettop(L));
+    return 1;
+}
+
+// The finished track as the bytes of a wav, or nil. The job is spent either
+// way, so a caller that gets nil should begin another rather than step again.
+int MusicTake(lua_State* L) {
+    int top = lua_gettop(L);
+    size_t len = 0;
+    unsigned char* wav = g_job ? sfx_music_take(g_job, &len) : 0;
+    g_job = 0;
+    if (!wav) {
+        lua_pushnil(L);
+        assert(top + 1 == lua_gettop(L));
+        return 1;
+    }
+    lua_pushlstring(L, (const char*)wav, len);
+    free(wav);
+    assert(top + 1 == lua_gettop(L));
+    return 1;
+}
+
 const luaL_reg kFunctions[] = {{"names", Names},
                                {"render", Render},
                                {"b64", B64},
                                {"is_loop", IsLoop},
+                               {"music_count", MusicCount},
+                               {"music_begin", MusicBegin},
+                               {"music_step", MusicStep},
+                               {"music_take", MusicTake},
                                {0, 0}};
 
 }  // namespace
