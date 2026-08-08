@@ -997,7 +997,11 @@ local rows = {}
 -- column here has an obvious direction, and a name that sorts Z to A or a
 -- kill count that puts the worst first is a state somebody reaches by accident
 -- and then has to work out how to leave.
-M.sort = "points"
+-- Which column the scoreboard is ordered by. Alphabetical to begin with: the
+-- question a player has of this list most often is "is that name in the
+-- room", and a name is found in a list sorted by name. The score columns are
+-- still a click away for whoever is asking the other question.
+M.sort = "name"
 M.scroll = 0
 -- Rows on screen at once. The list was capped at nine with no way to see the
 -- tenth, which in a room of sixty-four is most of it.
@@ -1015,6 +1019,17 @@ end
 -- the chip owns the corner.
 local function top_y()
     return ST + PAD * S + 32 * S
+end
+
+-- Two names, in the order a person reads them. Lowercased for the comparison
+-- so a capital cannot jump a pilot to the top of the room, and the raw name
+-- breaks a tie so the order is total and the list cannot flicker between two
+-- pilots who differ only in case. The games list orders itself the same way.
+local function ahead(a, b)
+    local la, lb = string.lower(a.name), string.lower(b.name)
+    if la ~= lb then return la < lb, true end
+    if a.name ~= b.name then return a.name < b.name, true end
+    return false, false
 end
 
 local function scores(me, pilots, watchers)
@@ -1069,10 +1084,10 @@ local function scores(me, pilots, watchers)
     -- name is only worth reading once you know which end of the gun it is on.
     -- So the sort runs inside each side rather than across both.
     --
-    -- Points is the default, because points are the score. Kills stay on the
-    -- row: they are what a player counts in their head, and the two numbers
-    -- say different things, since a pilot who kills loaded ships outscores one
-    -- who kills more of the empty.
+    -- Alphabetical inside each side by default. Kills stay on the row: they
+    -- are what a player counts in their head, and they say something points
+    -- do not, since a pilot who kills loaded ships outscores one who kills
+    -- more of the empty.
     local key = M.sort
     table.sort(rows, function(a, b)
         -- Watchers last, under everybody who is actually flying, whatever
@@ -1082,7 +1097,8 @@ local function scores(me, pilots, watchers)
         if a.watch ~= b.watch then return b.watch end
         if a.mine ~= b.mine then return a.mine end
         if key == "name" then
-            if a.name ~= b.name then return a.name < b.name end
+            local first, differ = ahead(a, b)
+            if differ then return first end
         elseif key == "kills" then
             if a.k ~= b.k then return a.k > b.k end
         elseif key == "deaths" then
@@ -1094,7 +1110,7 @@ local function scores(me, pilots, watchers)
         end
         if a.p ~= b.p then return a.p > b.p end
         if a.k ~= b.k then return a.k > b.k end
-        return a.name < b.name
+        return (ahead(a, b))
     end)
 
     if n == 0 then
@@ -2097,7 +2113,7 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local function menu_button(on_air)
+local function menu_button(on_air, watch)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
     -- that corner was a thing to press, and the board has taught the same hand
@@ -2142,6 +2158,29 @@ local function menu_button(on_air)
         local size = key_size()
         txt(label, cx + 2 * r + 5 * S, mid, size, pal.a(pal.HURT, 0.9))
         cx = cx + 2 * r + 5 * S + text_w(label, size) + KEY_GAP * S
+    elseif watch then
+        -- Watching, and what of. The same slot, because the two are the same
+        -- kind of fact about the connection and a watcher is never on air.
+        --
+        -- Green and a play mark rather than the tally's red dot: the red one
+        -- is a warning about you and this is a statement about what you are
+        -- looking at, which is the difference between being filmed and
+        -- holding the camera.
+        local mid = y + KEY_H * S / 2
+        local h = 4.6 * S
+        local wsym = h * 1.5
+        local col = pal.a(pal.PRIZE, 0.92)
+        u:tri(cx, ry(mid - h, 0), cx, ry(mid + h, 0),
+              cx + wsym, ry(mid, 0), col)
+        local size = key_size()
+        -- The room's feed says so in the interface's own word; a pilot says
+        -- their own call sign, in their own case, the way a name is written
+        -- everywhere else here.
+        local named = watch.name ~= nil
+        txt(named and watch.name or "CHANNEL",
+            cx + wsym + 6 * S, mid, size, col, nil, nil, named)
+        cx = cx + wsym + 6 * S
+            + text_w(named and watch.name or "CHANNEL", size) + KEY_GAP * S
     end
     chip_right = cx - KEY_GAP * S
 end
@@ -2538,8 +2577,8 @@ function M.hud(o)
     end
     inspect(o, o.watch and top or loadout(me, o.class_names, top))
     -- A watcher is never the subject, so the tally can only be about a pilot
-    -- who is flying.
-    menu_button(o.on_air and not o.watch)
+    -- who is flying, and the two never contend for the slot.
+    menu_button(o.on_air and not o.watch, o.watch)
     vignette(o.hurt or 0)
     -- The pip over your own hull is not named. A bar that empties as you are
     -- shot and fills when you stop being shot is the one instrument here that
@@ -3201,6 +3240,61 @@ local function empty_state(x, y, w, h, e)
     end
 end
 
+-- Twelve slots for a key, filled left to right, the next one lit. Drawn as
+-- rules rather than boxes: a row of empty boxes reads as a form, and this
+-- interface has no forms in it.
+local function key_slots(cx, y, typed, n)
+    local sw, gap, group = 20 * S, 4 * S, 12 * S
+    local total = n * sw + (n - 1) * gap + 2 * (group - gap)
+    local x = cx - total / 2
+    for i = 1, n do
+        local ch = string.sub(typed, i, i)
+        local here = (i == #typed + 1)
+        local col = (ch ~= "" or here) and pal.FRIEND or pal.DIM
+        if here then rect(x, y, sw, 26 * S, pal.a(pal.FRIEND, 0.16)) end
+        u:seg(x, ry(y + 26 * S), x + sw, ry(y + 26 * S), 1.2 * S,
+              pal.a(col, here and 0.95 or (ch ~= "" and 0.6 or 0.35)), true)
+        if ch ~= "" then
+            txt(ch, x + sw / 2, y + 13 * S, 16 * S, pal.FRIEND, "center",
+                nil, true)
+        end
+        x = x + sw + gap
+        -- Four to a group, which is how the key is written wherever it is
+        -- shown, so what is typed looks like what is being copied.
+        if i % 4 == 0 then x = x + group - gap end
+    end
+    return 26 * S
+end
+
+-- The alphabet, for a machine with no keyboard to raise. Every cell is a tap
+-- target, and the last one rubs a character out: a thumb needs somewhere to
+-- put a mistake.
+local function key_grid(cx, y, alphabet)
+    -- Eleven across, which is the one width where the alphabet and the cell
+    -- that rubs a character out come to exactly three rows: thirty two letters
+    -- laid out eight to a row leave the thirty third alone on a row of its
+    -- own, under the answers, looking like a typo.
+    local cols, cw, chh, gap = 11, 28 * S, 26 * S, 3 * S
+    local total = cols * cw + (cols - 1) * gap
+    local x0 = cx - total / 2
+    local n = #alphabet
+    for i = 1, n + 1 do
+        local ch = (i <= n) and string.sub(alphabet, i, i) or "<"
+        local r0 = math.floor((i - 1) / cols)
+        local c0 = (i - 1) % cols
+        local x = x0 + c0 * (cw + gap)
+        local yy = y + r0 * (chh + gap)
+        txt(ch, x + cw / 2, yy + chh / 2, 14 * S, pal.a(pal.DIM, 0.85),
+            "center", nil, true)
+        if i <= n then
+            hit(x, yy, cw, chh, "letter", ch)
+        else
+            hit(x, yy, cw, chh, "rub")
+        end
+    end
+    return math.ceil((n + 1) / cols) * (chh + gap) - gap
+end
+
 -- A question the menu wants answered before anything else, over the page that
 -- asked it.
 --
@@ -3221,9 +3315,12 @@ local function ask_card(x, y, w, h, a)
     -- under the wash would otherwise answer a question it cannot see.
     M.hits = {}
     text_dim = 1
-    local cw = math.min(340 * S, w - 24 * S)
-    -- A card with a code in it is taller by the line the code takes.
+    local grid = a.entry and M.touching
+    local cw = math.min((a.entry and 380 or 340) * S, w - 24 * S)
+    -- A card with a code in it is taller by the line the code takes, and one
+    -- being typed into is taller by its slots and whatever fills them.
     local ch = (a.code and 152 or 110) * S
+    if a.entry then ch = (grid and 248 or 152) * S end
     local cx = x + (w - cw) / 2
     local cy = y + (h - ch) / 2
     rect(cx, cy, cw, ch, pal.a(pal.BTN_BG, 0.98))
@@ -3237,6 +3334,16 @@ local function ask_card(x, y, w, h, a)
     -- card anybody has to get right.
     if a.code then
         txt(a.code, mid, cy + 72 * S, 30 * S, pal.FRIEND, "center", nil, true)
+    end
+    if a.entry then
+        local ey = cy + 58 * S
+        local eh = key_slots(mid, ey, a.entry.typed or "", a.entry.n or 12)
+        -- The alphabet only where there is no keyboard to raise. On a desktop
+        -- the keyboard is the input and a drawn one would be a picture of the
+        -- thing under the player's hands.
+        if grid then
+            key_grid(mid, ey + eh + 16 * S, a.entry.alphabet or "")
+        end
     end
     -- Laid out from the middle out rather than from an edge in, so the row of
     -- answers stays centred whatever the words are.
