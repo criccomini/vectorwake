@@ -462,5 +462,22 @@ end
 check("only the answers can be pressed", answers == 2 and others == 0,
       answers .. " answers, " .. others .. " other boxes")
 
+-- A question may be about a string rather than a choice. A device code is
+-- read off this screen and typed into another machine, so it is drawn as
+-- itself: big, lit, and in the case it was given.
+local st4 = draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
+                  focus = "stage", home = true, closable = false,
+                  rows = rows,
+                  ask = {head = "Type this on the other device", sel = 1,
+                         code = "408317", keys = {{label = "done"}}}})
+local code_t
+for i = 1, st4.n do
+    if st4.text[i].s == "408317" then code_t = st4.text[i] end
+end
+check("a question can carry a code, drawn as given", code_t ~= nil,
+      table.concat(texts(st4), " "))
+check("and drawn larger than what it is about",
+      code_t and code_t.px > 20, code_t and tostring(code_t.px))
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

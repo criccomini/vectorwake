@@ -3320,7 +3320,8 @@ local function ask_card(x, y, w, h, a)
     M.hits = {}
     text_dim = 1
     local cw = math.min(340 * S, w - 24 * S)
-    local ch = 110 * S
+    -- A card with a code in it is taller by the line the code takes.
+    local ch = (a.code and 152 or 110) * S
     local cx = x + (w - cw) / 2
     local cy = y + (h - ch) / 2
     rect(cx, cy, cw, ch, pal.a(pal.BTN_BG, 0.98))
@@ -3328,6 +3329,13 @@ local function ask_card(x, y, w, h, a)
     local mid = cx + cw / 2
     txt(a.head or "", mid, cy + 36 * S, (M.compact and 15 or 16) * S,
         pal.a(pal.INK, 0.95), "center", MENU_FONT)
+    -- What the question is about, when it is about a string rather than a
+    -- choice: big enough to read off one machine and type into another,
+    -- quoted rather than said, and lit, because it is the one thing on the
+    -- card anybody has to get right.
+    if a.code then
+        txt(a.code, mid, cy + 72 * S, 30 * S, pal.FRIEND, "center", nil, true)
+    end
     -- Laid out from the middle out rather than from an edge in, so the row of
     -- answers stays centred whatever the words are.
     local ws, total = {}, 0

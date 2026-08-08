@@ -26,10 +26,16 @@ local function check(name, ok, detail)
 end
 
 -- The world the menu talks to, as little of it as it asks for.
-package.loaded["arena.account"] = {
+local account = {
     status = function() return "flying as a guest" end,
     key = "", name = "", claim = function() end, aim = function() end,
+    claimed = true, base = "https://meta", link_code = "",
 }
+function account.link(cb)
+    account.link_code = "408317"
+    if cb then cb(true) end
+end
+package.loaded["arena.account"] = account
 package.loaded["arena.net"] = {
     teams = {}, my_team = 0, may_found = false,
     my_team_name = function() return "" end,
@@ -298,6 +304,51 @@ menu.ask = nil
 local act7 = menu.step({go = true})
 check("and from the home screen it just joins",
       act7 == "join" and menu.ask == nil, tostring(act7))
+
+-- --- the device code is a card, and answering it never takes the code away -
+--
+-- The code is live for ten minutes whatever this screen is showing. Answering
+-- the card that carries it is somebody saying they have read it, not somebody
+-- giving it back, and a player who dismissed it and walked to the other
+-- machine should not have to come back and make a second one.
+
+menu.hover_stage(nil)
+menu.ask = nil
+menu.home = true
+menu.stack = {"root"}
+menu.sel = {}
+menu.click_rail(top_index("pilot"))
+local rows_before = #menu.view().rows
+menu.sel.pilot = rows_before          -- "add a device", the last row
+local act_link = menu.step({go = true})
+check("pressing add a device puts the code on a card",
+      act_link == nil and menu.ask ~= nil
+          and menu.ask.code == account.link_code,
+      tostring(act_link) .. ", code " .. tostring(menu.ask and menu.ask.code))
+check("and the card has one answer", #menu.ask.keys == 1,
+      tostring(#menu.ask.keys))
+
+menu.step({go = true})
+check("answering it takes the card down and leaves the code alone",
+      menu.ask == nil and account.link_code == "408317",
+      "code " .. tostring(account.link_code))
+
+-- And the row that holds it opens the card again, since the whole point of
+-- keeping the code is being able to look at it.
+local v_code = menu.view()
+local code_row
+for i, r in ipairs(v_code.rows) do
+    if r.label == "code" then code_row = i end
+end
+check("the code has a row of its own", code_row ~= nil,
+      table.concat(texts_of(v_code), ", "))
+menu.sel.pilot = code_row
+menu.step({go = true})
+check("and pressing it shows the code again",
+      menu.ask ~= nil and menu.ask.code == "408317",
+      tostring(menu.ask and menu.ask.code))
+menu.ask = nil
+account.link_code = ""
 
 -- --- and the one row on the pilot page that throws something away ---------
 --
