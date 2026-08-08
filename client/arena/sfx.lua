@@ -3,8 +3,8 @@
 -- Every sound is synthesised on the player's machine at boot, by the C in
 -- client/ext/simcore/src/sfx.c. Nothing here was recorded, sampled or sourced,
 -- which is the rule in docs/design/identity.md, and no audio ships in the
--- page: what is in client/sounds/ is fifteen wav files of silence, which exist
--- only to give the sound components something to point at until M.init
+-- page: what is in client/sounds/ is a wav file of silence per sound, which
+-- exists only to give the sound components something to point at until M.init
 -- replaces them.
 --
 -- The job of this module is restraint. A nine-ship arena fires several

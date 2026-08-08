@@ -78,6 +78,22 @@
 		vertical-align: bottom;
 	}
 
+	/* A zero-size probe wearing the safe-area insets as padding, because
+	   env() is CSS-only and the game needs the numbers: the page runs
+	   edge to edge under the island and the notch (viewport-fit=cover
+	   above), and the client moves its own controls out from under the
+	   hardware. Read by the reconciler below, published as vwInsets. */
+	#vw-safe {
+		position: fixed;
+		visibility: hidden;
+		pointer-events: none;
+		width: 0;
+		height: 0;
+		padding-top: env(safe-area-inset-top);
+		padding-right: env(safe-area-inset-right);
+		padding-bottom: env(safe-area-inset-bottom);
+		padding-left: env(safe-area-inset-left);
+	}
 	#canvas-container {
 		position: relative;
 	}
@@ -113,6 +129,7 @@
 
 <body>
 
+	<div id="vw-safe"></div>
 	<div id="app-container" class="canvas-app-container">
 		<div id="running-from-file-warning" style="display: none; margin: 3em;">
 			<h1>Running from local file ⚠️</h1>
@@ -197,6 +214,19 @@
 				var height = Math.round(vp ? vp.height : window.innerHeight) - buttonHeight;
 				if (width < 1 || height < 1) {
 					return;
+				}
+				// The safe-area insets, in CSS pixels, in the reconciler for
+				// the reconciler's reason: iOS moves them on rotation with
+				// the same unreliable timing as everything else here. The
+				// client polls the string; "l r t b".
+				var probe = document.getElementById('vw-safe');
+				if (probe) {
+					var cs = getComputedStyle(probe);
+					window.vwInsets =
+						(parseFloat(cs.paddingLeft) || 0) + ' ' +
+						(parseFloat(cs.paddingRight) || 0) + ' ' +
+						(parseFloat(cs.paddingTop) || 0) + ' ' +
+						(parseFloat(cs.paddingBottom) || 0);
 				}
 				var dpi = 1;
 {{#display.high_dpi}}

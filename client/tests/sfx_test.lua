@@ -92,9 +92,14 @@ try("gun at rung 7, past the kit", "#gun3",
     function() sfx.play("gun", 0, 0, 7) end)
 try("gun at rung -1", "#gun0", function() sfx.play("gun", 0, 0, -1) end)
 
+for rung = 0, 3 do
+    try("blast at rung " .. rung, "#blast" .. rung,
+        function() sfx.play("blast", 0, 0, rung) end)
+end
+
 -- A family with no variants ignores the rung rather than inventing one.
-try("blast with a rung", "#blast", function() sfx.play("blast", 0, 0, 2) end)
-try("blast with no rung", "#blast", function() sfx.play("blast", 0, 0) end)
+try("death with a rung", "#death", function() sfx.play("death", 0, 0, 2) end)
+try("death with no rung", "#death", function() sfx.play("death", 0, 0) end)
 
 -- Distance still culls, whatever the rung.
 try("gun at 900px, out of range", nil,

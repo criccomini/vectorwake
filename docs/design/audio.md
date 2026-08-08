@@ -11,9 +11,9 @@ way to keep it is to build every sound out of arithmetic rather than source one.
 
 ## Every sound is arithmetic, and it runs on the player's machine
 
-The kit is twenty-one sounds and about a megabyte of 16-bit PCM. None of it is
-in the download. `client/ext/simcore/src/sfx.c` synthesises all of it at boot,
-in about a fifth of a second, and hands the buffers to the engine.
+The kit is twenty-four sounds and a little over a megabyte of 16-bit PCM. None
+of it is in the download. `client/ext/simcore/src/sfx.c` synthesises all of it
+at boot, in about a fifth of a second, and hands the buffers to the engine.
 
 That saves the download, but the reason it matters more is that a sound becomes
 a thing with parameters instead of a file. A bomb can be pitched by its rung
@@ -24,15 +24,14 @@ is accepted without complaint and is silent, which was found the slow way.
 
 ## The vocabulary is deliberately narrow
 
-Weapons are short and bright with a hard transient. Explosions are noise under a
-descending sine, which is what gives a blast a body rather than a hiss. The
-interface ticks.
+Bolts crack and charges heave. Explosions are noise under a descending sine,
+which is what gives a blast a body rather than a hiss. The interface ticks.
 
 | Sound | Length | What it is |
 |---|---|---|
-| `gun0` to `gun3` | 85 to 106 ms | a bolt leaving the rail, one per rung |
-| `bomb0` to `bomb3` | 240 to 300 ms | a heavier charge leaving the tube |
-| `blast` | 550 ms | a bomb going off |
+| `gun0` to `gun3` | 70 to 155 ms | a bolt leaving the rail, a weenie up to something nasty |
+| `bomb0` to `bomb3` | 200 to 780 ms | a charge leaving the tube, tinny up to throaty |
+| `blast0` to `blast3` | 280 to 850 ms | a bomb going off, sized by the hole |
 | `death` | 950 ms | a ship coming apart, the one event allowed a full second |
 | `hit` | 70 ms | something struck your hull: a crack, not a tone |
 | `bounce` | 75 ms | a wall |
@@ -45,26 +44,111 @@ interface ticks.
 | `ui_move`, `ui_go` | 35 and 160 ms | the interface |
 | `music` | 19.2 s, held | the soundtrack |
 
-## A level is the same weapon harder
+## Every rung is its own sound
 
-The panel says it and the core does it: a gun rung adds flat damage to an
-identical bolt fired at an identical rate, and a bomb rung leaves the shell alone
-and widens the blast. So the rungs are not four weapons, and they must not sound
-like four weapons.
+A rung is the most useful thing about an incoming round. It is the whole of the
+damage a bolt carries and the whole of the radius a bomb clears, and a pilot
+cannot read it off anything: the round is three pixels wide and its colour, which
+does carry the rung, is behind them as often as in front. So each rung is its own
+sound, and it has to be one you can name after hearing it once.
 
-The square and the sine that make a bolt sound like a bolt do not move between
-rungs at all. What climbs is weight. Measured across the four, the 200 to 800
-hertz band carries 0.9, 2.0, 4.4 and 6.8 per cent of the energy, roughly a
-doubling a rung. The bomb pitches its whole fall down instead, its sub going from
-13.5 to 20.8 per cent.
+That took three tries and the first two were the same mistake. Both wrote one
+recipe and walked its numbers, the first moving weight alone and the second
+moving every parameter it had. They measured 2.5 to 4.5 dB apart and then 7.6 to
+8.4, and the player who flew both called the first one sound and the second
+slight alterations of each other. The lesson is that a recipe stretched far
+enough is still a recipe: every rung of it arrives as the same event slightly
+off, which is not the question a pilot is asking.
 
-Loudness cannot come from the buffer. Every one is normalised to the same peak
-before it is written, so a fatter buffer is a different timbre at the same level.
-The climb lives in the per-sound gains instead: 0.30 to 0.40 for the gun, 0.55 to
-0.70 for the bomb.
+So the rungs are built differently rather than tuned differently. Eight
+functions, no shared table, and a brief for each of them.
 
-Rung zero is byte for byte the sound that was there before rungs existed, so
-nothing changes for a fresh spawn.
+| Rung | Gun | Bomb |
+|---|---|---|
+| 0 | a weenie: a pulse an eighth of a cycle wide, high, no drive at all | tinny and hollow: a square rung through a narrow resonance up at 1.4 kHz |
+| 1 | a crack: the first one that is a gun rather than a toy | a real charge, the tin now a ring over the top rather than the whole of it |
+| 2 | a snarl: two pulses beating, dragged off the harmonic series | throaty: the resonance has come down out of the tin and into the chest |
+| 3 | nasty: sub, a throat, and folded past the point of damage | throaty and bass heavy, almost nothing above two hundred hertz |
+
+Three tools arrived with them, because none of this can be built out of
+oscillators and lowpasses. A resonator gives a sound a body to have come out of,
+which is the whole difference between the tin and the throat. Ring modulation
+moves every partial off the harmonic series, which is what makes metal sound
+like metal rather than like a low note. And a wavefolder turns a peak back on
+itself instead of rounding it off, so what it throws up was never in the source:
+drive sounds like loudness and folding sounds like damage.
+
+The ladders are steep now. The gun falls two octaves from rung zero to rung
+three and the bomb falls two and a half, and each step is at least a tritone,
+which is an interval nobody has to compare two sounds to notice.
+
+## What still tells a gun from a bomb
+
+Not register, any more. A tinny bomb is a high one and a nasty bolt is a low
+one, so the brief that made the rungs distinct also drove the lightest bomb and
+the heaviest bolt into the same octave. They sit two semitones apart.
+
+What separates them is the front. Every bolt cracks, reaching full level in four
+and a half milliseconds at every rung. Every charge heaves out of the tube:
+twenty-six milliseconds at the lightest and fifty-eight at the heaviest, and the
+check requires the quickest bomb to take at least twice as long to arrive as the
+slowest bolt. Neither ladder touches that, so it holds however far either one
+climbs.
+
+It replaced a rule that did not survive the brief. The check used to hold the
+nearest gun-to-bomb pair further apart than the widest step inside either
+ladder, on the theory that two weapons should differ more than two rungs of one
+weapon do. That theory is what capped the second attempt: the gun could not be
+widened without the top bolt measuring nearer the lightest shell than its own
+neighbour.
+
+## Loudness is not in the buffer, and the gains are no longer a ladder
+
+Every buffer is normalised to the same peak before it is written, so the buffer
+decides timbre and nothing else. The climb has always lived in the per-sound
+gains instead.
+
+What changed is that the gains no longer look like a climb. A folded bolt is a
+dense buffer and a resonant one is a sparse one, so eight sounds at the same
+peak are eight different loudnesses, and the numbers that make the heard climb
+even are not themselves in order: the gun runs 0.30, 0.26, 0.38, 0.43 and the
+bomb runs 0.55, 0.58, 0.50, 0.39. Reading those as a mistake is the obvious
+error and this paragraph is here to stop it.
+
+They come from a measurement rather than an ear. Each sound's loudest 300
+millisecond window is what a loudness meter integrates, and it is the right
+window here for two reasons: a short sound is not credited for the silence
+around it, and a long one is not credited twice for lasting. Solving for an even
+two decibels a rung gives the numbers above; the detonations get three a rung
+instead, since the rung is bought for the blast and that is where it should be
+felt.
+
+Total energy was tried first and is wrong, because it makes a 780 millisecond
+bomb four times the event a 200 millisecond one is. A-weighting is wrong in the
+other direction: it discounts bass so hard that an even climb wanted a gain of
+3.1 on the heaviest bomb, which is not a number a gain can be.
+
+## What a bomb rung buys is audible when it goes off
+
+A bomb level is bought for the blast, so the blast is where it has to be heard.
+It was one sound for every rung for a long time, and the reason was real: a shell
+in flight carries a spec, which says what a projectile does and not which rung
+fired it.
+
+The rung is readable off the spec after all, by the same route that colours the
+round. But the four detonations are picked by radius instead, which answers one
+more case. For a bomb the two say the same thing, since a rung is
+exactly a wider blast. A repel is on no ladder at all: its shove clears 512
+pixels against a top rung bomb's 320, and asked for its level it answers -1, so
+by rung it would have been played as the smallest thing in the kit. The size of
+the hole covers both, and it is the hole the player is watching.
+
+A bigger charge is duller, longer and later rather than louder. The crack at the
+front is the same fifty milliseconds at every rung, because that is the
+detonation itself. Behind it a rumble arrives, and how long it waits, how dark it
+is and how long it rolls is the rung: nothing at all at the bottom, ninety
+milliseconds behind the crack at the top, where it also runs three times as
+long.
 
 ## Nothing rings longer than the thing that caused it
 
@@ -79,6 +163,11 @@ bounces, blasts, deaths and bombs, one of everything else. A fourth gun in the
 same frame is dropped rather than mixed. The budget counts the family and not the
 component, or a pilot at the top of the ladder would be four times as loud as one
 at the bottom.
+
+Length is the one axis the rungs climb only as far as the arena allows. A gun
+fires every 250 ms whatever rung it is on, so a bolt that grew with the rung
+would start overlapping its own repeat at the top. A bomb is thrown every 1.5
+seconds and can have the room.
 
 Distance falls off fast. Nothing beyond 760 world pixels is audible at all,
 attenuation is the square of what is left, and anything under about 3.5 per cent
@@ -137,7 +226,10 @@ aimed raises one now.
 
 ## Held sounds and answered sounds are different problems
 
-Two sounds are held: thrust and the soundtrack. Everything else answers
+Two sounds are held: thrust and the soundtrack. Both are mixed under
+everything else because both are always there. Thrust in particular is the
+sound a pilot hears most, since it runs for as long as a finger is on the key,
+and it sat at 0.26 until somebody flew with it and said so; it is 0.18 now. Everything else answers
 something, an input or an impact, and has to arrive with it.
 
 That distinction decides more than how the two are mixed. It decides how a sound
@@ -195,7 +287,10 @@ like, on purpose.
 
 We do not sample, and we do not intend to. A recorded kit would be a decision
 that could not be tuned, and a bomb that cannot be pitched by its rung is a bomb
-that has to be recorded four times.
+that has to be recorded four times. It is also what makes the claim above
+checkable: `make -C client/tools check` renders the kit with the synth the
+browser runs and fails the build when two rungs have collapsed into one sound,
+which is not a thing you can ask of a folder of wav files.
 
 No sound plays because a moment felt important. Every one of them reports
 something that happened in the arena.

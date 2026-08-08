@@ -40,6 +40,8 @@ local SPECS = {
     [10] = {blast = 512, life = 1, level = -1},
     [11] = {blast = 0, life = 550, level = -1},
     [12] = {blast = 200, life = 500, level = -1},
+    -- A charge whose blast is exactly a rung two bomb's, for the mapping.
+    [13] = {blast = 240, life = 1, level = -1},
 }
 local CHARGE_SPEC = {[0] = 10, [1] = 11}
 
@@ -72,7 +74,9 @@ package.loaded["arena.fx"] = setmetatable({
 }, {__index = function() return function() end end})
 
 local world = require("arena.world")
-local function sfx(name, x, y) heard[#heard + 1] = {name = name, x = x, y = y} end
+local function sfx(name, x, y, lvl)
+    heard[#heard + 1] = {name = name, x = x, y = y, lvl = lvl}
+end
 
 -- One pass, with the counts as they stand.
 local ME = 0
@@ -95,8 +99,29 @@ check("at their hull", drawn[1] and drawn[1].x == 110 and drawn[1].y == 200)
 check("at the blast's own size", drawn[1] and drawn[1].r == 512,
       "radius " .. tostring(drawn[1] and drawn[1].r))
 check("and heard", #heard == 1 and heard[1].name == "blast")
+-- The four detonation sounds are sized by radius rather than by the rung that
+-- fired, and this is why. A repel is on no ladder, so its level is -1, and a
+-- level is what every other sound in the arena is picked by. Played that way
+-- the widest shove in the game, 512 pixels against a top rung bomb's 320,
+-- would come out as the smallest thing in the kit.
+check("and at the size of the hole it makes",
+      heard[1] and heard[1].lvl and heard[1].lvl >= 3,
+      "rung " .. tostring(heard[1] and heard[1].lvl))
 
 check("and only once", look() == 0, "drew " .. #drawn)
+
+-- And the mapping is the bomb ladder's own radii, not a guess: 80 pixels a
+-- rung, so a 240 pixel hole is the one a rung two bomb makes and gets that
+-- rung's sound.
+CHARGE_SPEC[0] = 13
+hold(1, 0, 3)
+look()
+hold(1, 0, 2)
+look()
+check("a blast the size of a rung two bomb sounds like one",
+      #heard == 1 and heard[1].lvl == 2,
+      "rung " .. tostring(heard[1] and heard[1].lvl))
+CHARGE_SPEC[0] = 10
 
 -- --- what must not draw ----------------------------------------------------
 
