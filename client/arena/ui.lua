@@ -3268,9 +3268,10 @@ end
 -- of type alone at the top of an empty panel said as much and read as a
 -- failure the player had caused and would have to do something about.
 --
--- The heading is what happened, the line under it is what happens next, and
--- the address under that is for whoever is running this rather than whoever is
--- playing, which is why it is set small and dim.
+-- The heading is what happened and the line under it is what happens next.
+-- The address being asked used to sit under those two, small and dim, for
+-- whoever is running this rather than whoever is playing. Whoever is running
+-- it reads logs.
 local function empty_state(x, y, w, h, e)
     local cx = x + w / 2
     local r = math.max(22 * S, math.min(56 * S, h * 0.26))
@@ -3284,10 +3285,6 @@ local function empty_state(x, y, w, h, e)
         pal.a(pal.INK, 0.85), "center", MENU_FONT)
     if e.line and e.line ~= "" then
         txt(e.line, cx, ty + 24 * S, 12 * S, pal.a(pal.DIM, 0.95), "center")
-    end
-    if e.at and e.at ~= "" then
-        txt(e.at, cx, ty + 46 * S, 11 * S, pal.a(pal.DIM, 0.45), "center",
-            nil, true)
     end
 end
 

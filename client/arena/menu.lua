@@ -329,7 +329,7 @@ end
 -- pretending to be a game and a sentence pretending to be a name.
 local function zone_empty()
     if #directory.rows > 0 then return nil end
-    return {head = directory.note, line = directory.why, at = directory.at}
+    return {head = directory.note, line = directory.why}
 end
 
 local NODES = {
