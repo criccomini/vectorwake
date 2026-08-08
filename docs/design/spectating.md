@@ -49,8 +49,17 @@ the audience is the mode and both pilots are equally exposed.
 
 **The subject is told.** The channel's camera picks a pilot without asking, so
 the room owes them the fact: `S2C_ONAIR` when the camera lands and again when
-it moves on, drawn as a mark in their interface. Two minutes on air is
+it moves on, drawn as a red tally beside the MENU and PLAYERS keys, swelling
+slowly rather than blinking, since it has to hold attention for minutes and a
+blink that long is something a player stops seeing. Two minutes on air is
 something a pilot can play around, and only if they know.
+
+It sat at the top of the middle first, and could not stay: that strip carries
+the flag pennants and the round's banner, both centred, and a notice laid over
+them read as a fault in the flags rather than as a fact about you. Those are
+about the round; this is about you, like the keys it now sits with. Being on
+that row also means the map opening across the corner keeps clear of it under
+the rule that already keeps it clear of the keys.
 
 **Staff is the exception that is written down.** The `watch` capability in the
 catalog's staff list grants live follow of anybody, and it requires the

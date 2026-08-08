@@ -2323,7 +2323,7 @@ local function key_cap(x, y, w, label, on)
         pal.a(col, on and 1 or 0.85), "center", nil, true)
 end
 
-local function menu_button()
+local function menu_button(on_air)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
     -- that corner was a thing to press, and the board has taught the same hand
@@ -2343,6 +2343,31 @@ local function menu_button()
         key_cap(cx, y, ww, c[1], c[3])
         hit(cx, y, ww, KEY_H * S, c[2])
         cx = cx + ww + KEY_GAP * S
+    end
+    -- The tally, when the room channel is pointed at you.
+    --
+    -- It sits on this row rather than at the top of the middle, which is where
+    -- it started and where it could not stay: that strip already carries the
+    -- flag pennants and the round's banner, both of them centred, and a notice
+    -- laid over them read as a fault in the flags. Those two are about the
+    -- round. This is about you, like the keys beside it, and it is chrome
+    -- rather than anything happening in the arena.
+    --
+    -- Counted into `chip_right` like the keys are, so the map that opens
+    -- across this corner keeps clear of it by the rule that already keeps it
+    -- clear of them.
+    if on_air then
+        local mid = y + KEY_H * S / 2
+        -- A slow swell rather than a blink. It has to hold attention for as
+        -- long as the camera holds you, which is minutes, and a blink that
+        -- long is something a player learns to stop seeing.
+        local beat = 0.55 + 0.45 * math.sin(M.now * 3.2)
+        local r = 3.4 * S
+        u:disc(cx + r, ry(mid, 0), r, 10, pal.a(pal.HURT, beat))
+        local label = "ON AIR"
+        local size = key_size()
+        txt(label, cx + 2 * r + 5 * S, mid, size, pal.a(pal.HURT, 0.9))
+        cx = cx + 2 * r + 5 * S + text_w(label, size) + KEY_GAP * S
     end
     chip_right = cx - KEY_GAP * S
 end
@@ -2704,7 +2729,9 @@ function M.hud(o)
         status(me, o.charges, lift)
     end
     inspect(o, o.watch and top or loadout(me, o.class_names, top))
-    menu_button()
+    -- A watcher is never the subject, so the tally can only be about a pilot
+    -- who is flying.
+    menu_button(o.on_air and not o.watch)
     vignette(o.hurt or 0)
     -- The pip over your own hull is not named. A bar that empties as you are
     -- shot and fills when you stop being shot is the one instrument here that
@@ -2725,17 +2752,6 @@ function M.hud(o)
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
             pal.a(pal.INK, 0.92), "center")
-    end
-    -- On air: the room channel's camera is on you. You did not ask to be
-    -- watched, so the mark that says so never comes off while it is true --
-    -- a slow pulse, in the colour the interface already uses for "this
-    -- concerns you".
-    if o.on_air and not o.watch then
-        local beat = 0.6 + 0.4 * math.sin(M.now * 3.2)
-        u:disc(W / 2 - 24 * S, ry(44 * S, 0), 3.2 * S, 10,
-               pal.a(pal.HURT, beat))
-        txt("ON AIR", W / 2 - 14 * S, 38 * S, 12 * S,
-            pal.a(pal.HURT, 0.85))
     end
     if not o.watch and sim.ship_alive(me) == 0 then
         txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
