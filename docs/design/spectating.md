@@ -139,6 +139,28 @@ two-tab tier. The arrows walk the camera along the occupied seats, one step
 past the end is the channel, and on glass a tap on either half of the screen
 does the same.
 
+Picking a particular pilot is the info box. You open it by tapping a name in
+the player list, which is already how you ask who somebody is, and while
+watching it carries a WATCH control at its foot beside where an invitation
+would go. The two never appear together: inviting wants somebody who is not
+on your side, following wants somebody who is. It is drawn only on a
+teammate, because the zone grants live sight of your own side and refuses it
+of anybody else's, and a control that quietly dropped you back on the channel
+would be worse than no control. The box shuts behind the press, unlike an
+invitation, since the answer is the whole screen becoming their view.
+
+That needs the watcher to know their own side, so the team list goes to
+watchers too: the side they sat out from, and no open doors, because a watcher
+crosses nothing until they take a hull again. Somebody who arrived to watch
+sat out from nowhere and gets 255, a side no hull is on, so the box offers
+them nobody.
+
+And the screen is coloured from that side rather than from the subject's.
+Deriving it from the hull the camera is behind is the obvious reading and the
+wrong one, because the camera moves: it repainted your own side as hostile
+whenever the channel crossed the line, and told the info box that a teammate
+of the pilot you happen to be watching is a teammate of yours.
+
 Nothing on screen says the word "watching". The pilot being observed wears
 their call sign and their bounty at their hull's lower right, exactly as every
 other pilot on screen does, because the one hull that goes unlabelled is your

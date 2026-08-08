@@ -635,6 +635,17 @@ local function team_of(i)
     return sim.ship_team(i)
 end
 
+-- The side this screen belongs to, which is not always the side of the hull
+-- it is centred on.
+--
+-- Flying they are the same and it never mattered. Watching they come apart:
+-- the camera stands behind whoever the channel picked, and deriving "my team"
+-- from that repainted your own side as hostile every time the camera crossed
+-- the line, and told the info box that a teammate of the pilot you happen to
+-- be watching is a teammate of yours. Set once per frame from what the zone
+-- told this client its side is.
+local view_team = 255
+
 local function own_arrow(ax, ay, ox, oy, side, me)
     local edge = 5 * S
     if ax < ox + edge then ax = ox + edge end
@@ -743,7 +754,7 @@ local function radar(cx, cy, me)
         end
     end
 
-    local my_team = team_of(me)
+    local my_team = view_team
     for i = 0, sim.flag_count() - 1 do
         local fx, fy, team = sim.flag_at(i)
         local px, py = put(fx, fy)
@@ -886,7 +897,7 @@ local function nameplates(o)
     -- the view_tiles setting put every name adrift the moment the camera
     -- stopped being driven by that setting -- which it already had.
     local scale = W / (2 * o.half_w)
-    local my_team = team_of(o.me)
+    local my_team = view_team
     -- The one hull that goes unlabelled is your own, and a watcher has none.
     -- The pilot being observed therefore wears their name and their bounty
     -- exactly like everybody else on screen: "who am I looking at" is the
@@ -1005,7 +1016,7 @@ local function scores(me, pilots, watchers)
         -- What the zone is willing to say this seat is, which is a stronger
         -- statement than "AI" and is what the counts below are made of.
         r.label = (p and p.label) or "unknown"
-        r.mine = sim.ship_team(i) == team_of(me)
+        r.mine = sim.ship_team(i) == view_team
         r.watch = false
     end
     -- Then whoever is watching. They are in the room without being in the
@@ -1111,7 +1122,7 @@ local function scores(me, pilots, watchers)
     ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
           pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
-    local my_team = team_of(me)
+    local my_team = view_team
     local y = top_y() + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
@@ -1566,7 +1577,7 @@ local function inspect(o, top)
     -- something. Counted rather than guessed so the panel is exactly as tall
     -- as what it holds.
     local theirs = sim.ship_team(i)
-    local same_team = theirs == team_of(o.me)
+    local same_team = theirs == view_team
     -- Which side they are on, and whether this pilot is allowed to be told.
     --
     -- The zone decides. A side it marks public is one anybody may see and name;
@@ -1588,8 +1599,17 @@ local function inspect(o, top)
     -- menu. Drawn only when it would do something: you are on a private side,
     -- and this is somebody other than you who is not already on it.
     local invite = o.may_invite and i ~= o.me and not same_team
+    -- The other thing this panel can offer, and it belongs here for the same
+    -- reason the invitation does: you opened it by picking a person, and
+    -- borrowing their eyes is a thing you do to a person rather than to a
+    -- seat number. Drawn only where it would work, which is a teammate: the
+    -- zone grants live sight of your own side and refuses it of anybody
+    -- else's, so offering it on an enemy would be a control that quietly
+    -- dropped you back on the room channel.
+    local follow = o.watch and same_team and o.watch.subject ~= i
     local rows_n = 5 + (side and 1 or 0)
-    local h = 30 * S + rows_n * rowh + (invite and 26 * S or 0) + 10 * S
+    local h = 30 * S + rows_n * rowh
+        + ((invite or follow) and 26 * S or 0) + 10 * S
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
     -- at the top of the screen lands on the menu chip.
@@ -1655,6 +1675,18 @@ local function inspect(o, top)
         if not sent then
             hit(x, by - 2 * S, w, 24 * S, "invite", i)
         end
+    end
+    -- The same control in the same place, because a panel with two possible
+    -- verbs should put them where the eye already found the first one. The
+    -- two never appear together: inviting wants somebody who is not on your
+    -- side and following wants somebody who is.
+    if follow then
+        local by = ry_ + 4 * S
+        local c = pal.a(pal.FRIEND, 0.95)
+        txt("WATCH", x + 12 * S, by + 9 * S, (FONT - 2) * S, c)
+        local uy = ry(by + 17 * S)
+        u:seg(x + 12 * S, uy, x + 12 * S + 46 * S, uy, 0.8 * S, pal.a(c, 0.5))
+        hit(x, by - 2 * S, w, 24 * S, "watch", i)
     end
     return y + h
 end
@@ -2241,7 +2273,7 @@ end
 local function flag_strip(me)
     local n = sim.flag_count()
     if n == 0 then return end
-    local my_team = team_of(me)
+    local my_team = view_team
     local pitch = 15 * S
     local x0 = W / 2 - (n - 1) * pitch / 2
     local y = ST + 30 * S
@@ -2399,6 +2431,9 @@ function M.hud(o)
     case = "upper"
     if sim.ship_count() == 0 then return end
     local me = o.me
+    -- Before anything draws: every instrument that separates a friend from an
+    -- enemy reads this, and while watching it is not the subject's side.
+    view_team = o.side or team_of(o.me)
     menu_up = o.menu_open
     -- Under the menu the instruments stay -- you can still be shot while you
     -- are reading -- but they stop competing with it. A third of their light

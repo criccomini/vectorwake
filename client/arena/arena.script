@@ -66,10 +66,19 @@ local function eye()
     return nil
 end
 
--- The same, as a team byte for hostility colouring. 255 belongs to no side,
--- so an empty channel colours everybody hostile, which is what a free-for-all
--- already does to everyone who is not you.
+-- The side everything on screen is coloured against.
+--
+-- Your own while flying. Also your own while watching, which is the side you
+-- sat out from and the zone tells a watcher what it is: colouring from the
+-- subject's side instead was the obvious reading and the wrong one, because
+-- the camera moves. It would have repainted your own teammates as enemies the
+-- moment the channel picked somebody from the other side, and it would have
+-- put the card's WATCH on a hull drawn in the hostile colour.
+--
+-- 255 belongs to no side, which is what a stranger who arrived to watch gets:
+-- nobody out there is theirs, and nothing reads as friendly.
 local function eye_team()
+    if watching then return net.my_team end
     local e = eye()
     return e and sim.ship_team(e) or 255
 end
@@ -1331,6 +1340,11 @@ function update(self, dt)
                 subject = e,
                 name = e and net.pilots[e] and net.pilots[e].name or nil,
             } or nil,
+            -- The side this screen belongs to. Not the subject's: watching,
+            -- the camera stands behind whoever the channel picked, and the
+            -- question every instrument asks is which end of the gun you are
+            -- on rather than which end they are.
+            side = eye_team(),
             -- You are the channel's subject: the camera is on you, and the
             -- mark that says so is the one courtesy the channel owes.
             on_air = net.on_air,
@@ -1692,6 +1706,17 @@ function on_input(self, action_id, action)
                 -- closing it would take that away before it could be read.
                 if r.action == "invite" then
                     net.invite(r.value)
+                    sfx.ui("ui_go")
+                    return true
+                end
+                -- Borrow this pilot's eyes. The box shuts behind it, unlike
+                -- an invitation: the answer to this one is the whole screen
+                -- changing to their view, and a panel about them left
+                -- standing over it would be describing what you are now
+                -- looking through.
+                if r.action == "watch" then
+                    net.watch(r.value)
+                    ui.inspect = nil
                     sfx.ui("ui_go")
                     return true
                 end
