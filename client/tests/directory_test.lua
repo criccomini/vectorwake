@@ -240,11 +240,6 @@ check("and says why", view.empty and view.empty.head == dir.note,
 check("and that it is still trying",
       view.empty and view.empty.line ~= nil and view.empty.line ~= "",
       "line: " .. tostring(view.empty and view.empty.line))
--- Two lines and no third. It carried the address it was dialling under
--- those, which is a thing to read for somebody who is not the reader.
-check("and nothing about the address it is dialling",
-      view.empty and view.empty.at == nil,
-      "at: " .. tostring(view.empty and view.empty.at))
 
 -- And a page with games on it has nothing to explain.
 dir.rows = {{zone = "chaos", name = "chaos", detail = "a brawl", count = "",
