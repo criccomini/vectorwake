@@ -260,6 +260,65 @@ int main(void) {
         CHECK(c.fires > 1, "bombs actually leave the ship");
     }
 
+    /* A proximity fuse waits for the closest approach.
+     *
+     * Going off on entry is what this used to do, and it is the worst moment
+     * available: a blast falls off to nothing at its rim, so a bomb that
+     * triggers at the outer edge of its own reach arrives spent. The two
+     * checks below are the two halves of the rule, and the first is the one
+     * that was wrong.
+     */
+    {
+        const int32_t GAP = 200;
+        /* Straight at a stationary target: the fuse must change nothing.
+         * A bomb on a collision course has its closest approach at contact,
+         * so the fused round and the plain one land the same blow. */
+        int32_t dealt[2];
+        for (int fused = 0; fused < 2; fused++) {
+            sim_settings w = cfg;
+            sim_state s;
+            sim_init(&s, 1);
+            sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+            sim_spawn(&s, APEX, 1, 8192, 8192 - GAP, 0, &w);
+            if (fused) {
+                s.ships[0].mods[SIM_TRIG_BOMB] =
+                    sim_mod_set(s.ships[0].mods[SIM_TRIG_BOMB], SIM_MOD_PROX, 1);
+            }
+            int32_t e0 = s.ships[1].energy;
+            step_n(&s, &w, SIM_BTN_BOMB, 0, 200);
+            dealt[fused] = e0 - s.ships[1].energy;
+        }
+        CHECK(dealt[0] > 0, "a plain bomb reaches a target dead ahead");
+        /* Within a hair rather than exactly: the fused round still ends a
+         * sample earlier where the hull box and the fuse box disagree. What
+         * it may not do is arrive at a fraction of the damage, which is what
+         * detonating on entry did: 112 against 562 on the shipped numbers. */
+        CHECK(dealt[1] * 4 > dealt[0] * 3,
+              "and a fused one lands what the plain one would, not a fifth");
+
+        /* Past the flank: this is what the fuse is for. A bomb thrown wide
+         * enough to miss the hull entirely still goes off beside it, where
+         * an unfused one sails on. */
+        int32_t wide[2];
+        for (int fused = 0; fused < 2; fused++) {
+            sim_settings w = cfg;
+            sim_state s;
+            sim_init(&s, 1);
+            sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+            /* Offset sideways by more than the hull's half width, so nothing
+             * touches, and less than the fuse's reach. */
+            sim_spawn(&s, APEX, 1, 8192 + 40, 8192 - GAP, 0, &w);
+            if (fused) {
+                s.ships[0].mods[SIM_TRIG_BOMB] =
+                    sim_mod_set(s.ships[0].mods[SIM_TRIG_BOMB], SIM_MOD_PROX, 1);
+            }
+            int32_t e0 = s.ships[1].energy;
+            step_n(&s, &w, SIM_BTN_BOMB, 0, 200);
+            wide[fused] = e0 - s.ships[1].energy;
+        }
+        CHECK(wide[1] > wide[0], "a fuse catches the near miss a plain bomb misses");
+    }
+
     /* --- tiles ------------------------------------------------------- */
 
     /* A safe zone is the only brake in the game. Everywhere else momentum is
@@ -936,22 +995,33 @@ int main(void) {
     }
 
     {
-        /* A proximity fuse: it never touches the hull. */
+        /* A proximity fuse goes off at the closest approach.
+         *
+         * This asserted the opposite, that a fuse never touches the hull,
+         * which is true of a round going past and false of one aimed dead on,
+         * and the difference is the whole worth of the add-on. Stopping short
+         * of a target it was about to hit is not caution, it is throwing the
+         * damage away: a blast falls off to nothing at its rim, so a round
+         * that triggers at the outer edge of its own reach arrives spent.
+         */
         sim_settings w = cfg;
         sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
-        sp.trigger = 60 * 256;
+        const int32_t REACH = 60;
+        sp.trigger = REACH * 256;
         sim_fire_pattern fp = *gun_of(&w, APEX);
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
+        /* Dead on. It closes the whole way, because the nearest it will ever
+         * be to a target in its path is the moment it arrives. */
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 140, 0, &w);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
         /* Where it was on the last tick it existed. Read rather than
-         * predicted: the claim is that it stopped short, and a computed
-         * answer would only be restating the arithmetic under test. */
+         * predicted: the claim is about where it stopped, and a computed
+         * answer would only restate the arithmetic under test. */
         int32_t last = s.weapons[0].y;
         for (int t = 0; t < 60 && s.weapon_count; t++) {
             last = s.weapons[0].y;
@@ -960,9 +1030,25 @@ int main(void) {
         CHECK(s.weapon_count == 0, "it went off");
         CHECK(s.ships[1].energy
               < sim_eff_max_energy(&w.classes[APEX], &s.ships[1]),
-              "close enough counted");
-        CHECK(last - s.ships[1].y > w.classes[APEX].fore,
-              "without ever reaching the hull");
+              "and it counted");
+        /* Both sides Q8, which is what `trigger` is already in. */
+        CHECK(last - s.ships[1].y < sp.trigger,
+              "a fuse aimed dead on does not stop at its own rim");
+
+        /* Beside it. Offset by more than the hull's half width so nothing can
+         * touch, and less than the reach so the fuse still has something to
+         * find: here it does go off without contact, at the point it drew
+         * level, which is what a fuse is for. */
+        sim_state p;
+        sim_init(&p, 1);
+        sim_spawn(&p, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&p, APEX, 1, 8192 + 40, 8192 - 140, 0, &w);
+        step_n(&p, &w, SIM_BTN_FIRE, 0, 1);
+        for (int t = 0; t < 60 && p.weapon_count; t++) step_n(&p, &w, 0, 0, 1);
+        CHECK(p.weapon_count == 0, "the near miss went off too");
+        CHECK(p.ships[1].energy
+              < sim_eff_max_energy(&w.classes[APEX], &p.ships[1]),
+              "close enough counted, without ever reaching the hull");
     }
 
     {
