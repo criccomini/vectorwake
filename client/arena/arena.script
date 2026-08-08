@@ -1886,6 +1886,11 @@ function on_input(self, action_id, action)
                     act, moved = menu.click_rail(r.value)
                 elseif r.action == "close" then
                     act, moved = menu.click_close()
+                elseif r.action == "panel" then
+                    -- The panel's own ground. It exists to stop a press on
+                    -- the space between two rows falling through to the box
+                    -- behind it, which is the one that shuts the menu.
+                    return true
                 elseif r.action == "answer" then
                     act, moved = menu.click_answer(r.value)
                 elseif r.action == "letter" then

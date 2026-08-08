@@ -3617,6 +3617,11 @@ function M.menu(v)
     local rx, ry_, rw, rh          -- the rail
     local icon_dy                  -- the icon's drop inside it, narrow only
     local sx, sy, sw, sh           -- the stage
+    local logo_y                   -- the middle of the name, both layouts
+    -- What the panel covers, name included: everything a press may land on
+    -- without meaning to leave. Published as one box at the end, so the
+    -- gaps between rows are not a way out of the menu.
+    local px0, py0, px1, py1
     local vertical = not narrow
 
     if vertical then
@@ -3655,12 +3660,17 @@ function M.menu(v)
         sx = x0 + rw + 26 * S
         sy, sh = top, block
         sw = total - rw - 26 * S
-        wordmark(x0, top - head + 30 * S, (tall and 40 or 30) * S)
+        logo_y = top - head + 30 * S
+        wordmark(x0, logo_y, (tall and 40 or 30) * S)
         -- What you are reading, laid over what you are not. A wash rather
         -- than a panel: no border, no corners, just enough that the type sits
         -- on something and the arena stays visible round the edges of it.
         rect(x0 - 18 * S, top - 16 * S, total + 36 * S, block + 30 * S,
              pal.rgb(0x03050a, 0.5))
+        -- Up to the name, which stands above the wash and is part of the
+        -- panel to anybody looking at it.
+        px0, py0 = x0 - 18 * S, top - head
+        px1, py1 = px0 + total + 36 * S, top - 16 * S + block + 30 * S
         -- The rule the whole thing hangs off, between the rail and the stage.
         vrule(x0 + rw + 1 * S, top, block, pal.a(pal.RADAR_TILE, 0.75), 30 * S)
     else
@@ -3692,7 +3702,13 @@ function M.menu(v)
         -- strip of bare arena under the rail reads as the panel having come
         -- loose from the screen.
         rect(0, sy - 16 * S, W, H - (sy - 16 * S), pal.rgb(0x03050a, 0.5))
-        wordmark(rx, ST + margin + chip + 22 * S, 30 * S)
+        logo_y = ST + margin + chip + 22 * S
+        wordmark(rx, logo_y, 30 * S)
+        -- The whole screen from the name down. A phone's menu is the screen,
+        -- so there is next to nothing outside it, which is the right answer
+        -- there: the way out is the x and the lit rail stop.
+        px0, py0 = 0, logo_y - 20 * S
+        px1, py1 = W, H
         u:seg(rx, ry(ry_ - 12 * S), W - SR - margin, ry(ry_ - 12 * S),
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
     end
@@ -3798,9 +3814,19 @@ function M.menu(v)
     -- "close" at the top, which is one control with two jobs and two names,
     -- and a rail that navigates from every level had already taken the going
     -- back. What is left is shutting the panel, and everything shuts on an x.
+    --
+    -- On the name's own line, at the far end of it. It sat at the top of the
+    -- stage, which on the desktop layout is a third of the way down the panel
+    -- and level with nothing: a dialog's x belongs on the dialog's title, and
+    -- here the title is the name. Same line in both layouts, since the name is
+    -- in both.
+    -- At the far end of that line, which is the block's own edge rather than
+    -- the list's: the list is capped at 520 points and the x hung off the end
+    -- of it, which was the right place under a heading and is a mark adrift
+    -- in the middle of a title.
     if v.closable then
-        close_mark(tx + lw - 8 * S, sy + 11 * S, pal.a(pal.DIM, 0.9), 11 * S)
-        hit(tx + lw - 30 * S, sy, 40 * S, 24 * S, "close")
+        close_mark(sx + sw - 8 * S, logo_y, pal.a(pal.DIM, 0.9), 11 * S)
+        hit(sx + sw - 30 * S, logo_y - 12 * S, 40 * S, 24 * S, "close")
     end
     local top = sy + STAGE_TOP * S
     local room = sh - (top - sy) - 26 * S
@@ -3894,7 +3920,24 @@ function M.menu(v)
             pal.a(v.note and pal.HURT or pal.DIM, 0.95))
     end
 
+    -- A press that missed everything is a press on the arena behind, and over
+    -- a game that means put me back in it, which is what escape does and what
+    -- a hand reaches for after opening this by accident. Two boxes: the panel
+    -- swallows its own, so the space between two rows is not a way out, and
+    -- everything left over is one.
+    --
+    -- Published here because the first box a press lands in wins and every
+    -- control on the panel has already had its turn. The instruments behind
+    -- are published before the menu is drawn at all, so a dimmed scoreboard
+    -- row still answers to a click rather than being a hole in the way out.
+    if v.closable then
+        hit(px0, py0, px1 - px0, py1 - py0, "panel")
+        hit(0, 0, W, H, "close")
+    end
+
     -- Last, over all of it, because it is the only thing being read.
+    -- It takes the screen, boxes included: a question is answered, not
+    -- clicked past.
     if v.ask then ask_card(sx, sy, GUTTER * S + lw, sh, v.ask) end
     case = "upper"
 end
