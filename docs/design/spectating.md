@@ -150,10 +150,30 @@ would be worse than no control. The box shuts behind the press, unlike an
 invitation, since the answer is the whole screen becoming their view.
 
 That needs the watcher to know their own side, so the team list goes to
-watchers too: the side they sat out from, and no open doors, because a watcher
-crosses nothing until they take a hull again. Somebody who arrived to watch
-sat out from nowhere and gets 255, a side no hull is on, so the box offers
-them nobody.
+watchers too: their side, and no open doors, because a watcher crosses nothing
+until they take a hull again.
+
+Every watcher has one, including somebody who never flew here. They are seated
+at the door by the rule that seats a pilot, on the emptiest of the zone's own
+sides, because watching is a way of being in this room rather than a lobby
+beside it. The first cut handed an arrival nothing, on the reasoning that they
+had sat out from nowhere, and what that produced in Alpha was a spectator
+alone off the edge of a ten-team zone: every hull on screen drawn as an
+enemy's, and no live sight offered of any of them, while the same person
+joining in a hull and then sitting out kept their side and everything that
+came with it.
+
+A watcher weighs nothing while they sit there, since they hold no seat, so the
+balance the caps measure cannot see them. Room is checked when they fly, which
+is the moment it starts to mean anything, and the side they watched with goes
+in as a preference rather than being re-picked from scratch: it was theirs the
+whole time they were watching. It is a preference and not a demand, so a side
+that took on its last permitted pilot while they sat there puts them somewhere
+else instead of holding them in the gallery.
+
+The exception is a free-for-all, where the answer really is none. Every pilot
+is a private side of one, so there is no side for an arrival to share and the
+channel is the whole of what anybody watching can see.
 
 And the screen is coloured from that side rather than from the subject's.
 Deriving it from the hull the camera is behind is the obvious reading and the
@@ -201,8 +221,8 @@ It briefly lived as a third answer on the games-list card that asks whether
 you meant to leave. That card is about the game you are in, and what you are
 flying is a different question, so it is back to two answers.
 
-The player list carries the gallery under the pilots: no seat, no side, no
-score, the word "watching" where the numbers would be, and a count of its own
+The player list carries the gallery under the pilots: no seat, no score, the
+word "watching" where the numbers would be, and a count of its own
 in the line under the board. The roster exists so you know who is in the room
 with you, and somebody watching the fight is in the room.
 
