@@ -39,11 +39,21 @@ end
 -- about a row is two chances to get the arithmetic wrong.
 local shapes = {}
 local kind = nil       -- what primitive is being recorded, for `subject`
+local tint = nil       -- the colour it was drawn in, where that is the question
 local function box(x0, y0, x1, y1, col, w)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
     shapes[#shapes + 1] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1, col = col,
-                           w = w, kind = kind}
+                           w = w, kind = kind, tint = tint}
+end
+
+-- Kept apart from `col`, which `ladder_x` matches against the team colour to
+-- find the counting column. A mark's own colours have no business in that
+-- search, and putting them there would make the column's position depend on
+-- what the hull is carrying.
+local function hue(c)
+    if not c then return "?" end
+    return string.format("%.3f,%.3f,%.3f", c[1], c[2], c[3])
 end
 
 -- How much of the row a shape actually darkens, and where that ink sits.
@@ -64,15 +74,19 @@ local function len(x1, y1, x2, y2)
     return math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2)
 end
 
-function layer:seg(x1, y1, x2, y2, w)
+function layer:seg(x1, y1, x2, y2, w, c)
+    tint = c
     box(x1 - w, y1 - w, x2 + w, y2 + w, nil, w)
+    tint = nil
     mark(len(x1, y1, x2, y2) * w, (x1 + x2) / 2, (y1 + y2) / 2)
 end
 -- Sampled along its length rather than taken whole, because the point of a
 -- fade is that one end of it is not there.
-function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2)
+function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2, c)
     local w = math.max(w1, w2)
+    tint = c
     box(x1 - w, y1 - w, x2 + w, y2 + w, nil, w)
+    tint = nil
     local n = 8
     for i = 0, n - 1 do
         local t = (i + 0.5) / n
@@ -81,10 +95,10 @@ function layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2)
              y1 + (y2 - y1) * t)
     end
 end
-function layer:disc(x, y, r)
-    kind = "disc"
+function layer:disc(x, y, r, _, c)
+    kind, tint = "disc", c
     box(x - r, y - r, x + r, y + r)
-    kind = nil
+    kind, tint = nil, nil
     mark(math.pi * r * r, x, y)
 end
 function layer:halo(x, y, r) box(x - r, y - r, x + r, y + r) end
@@ -786,6 +800,87 @@ check("the barrels themselves stay on the mark when declined",
           local plain = #cell(row_box("gun"))
           return n > plain
       end)(), "a declined fan should still be drawn")
+
+-- --- the fan is the round, not a thing hung on it -------------------------
+
+-- Every other add-on is a decoration, so it is drawn in the round's hue run
+-- hot: what a green added reads as part of the round rather than as a separate
+-- object beside it. Multifire decorates nothing. Its extra barrels fire the
+-- same round out of the same muzzle on the same spec, which is why world.lua
+-- gives all three bullets one colour in flight. Drawn hot with the rest, the
+-- corner said the middle bullet was a different weapon from the two either
+-- side and disagreed with the arena about the one fact this ramp carries.
+local function dots_on_gun()
+    local b = row_box("gun")
+    local out = {}
+    if not b then return out end
+    for _, sh in ipairs(shapes) do
+        local mid = (sh.y0 + sh.y1) / 2
+        if sh.kind == "disc" and mid > b.y0 and mid < b.y1 then
+            out[#out + 1] = hue(sh.tint)
+        end
+    end
+    return out
+end
+
+local function distinct(list)
+    local seen, n = {}, 0
+    for _, v in ipairs(list) do
+        if not seen[v] then seen[v] = true n = n + 1 end
+    end
+    return n
+end
+
+mods = {[0] = {}}
+frame()
+local plain_dot = dots_on_gun()[1]
+mods = {[0] = {[0] = 2}}
+frame()
+local fanned = dots_on_gun()
+check("a fan draws three rounds", #fanned == 3, #fanned .. " dots")
+check("and all three are the round the gun fires", distinct(fanned) == 1
+      and fanned[1] == plain_dot,
+      table.concat(fanned, "  vs plain ") .. " " .. tostring(plain_dot))
+
+-- The one time they really are not the round you are firing.
+multi_off = true
+frame()
+local off_dots = dots_on_gun()
+multi_off = false
+check("a declined fan tells the two apart", distinct(off_dots) == 2,
+      distinct(off_dots) .. " colours across " .. #off_dots .. " dots")
+
+-- The bomb's fan is the same argument: rounds leaving together, in the colour
+-- of the round. Measured on the strokes, since a bomb's fan has no dots.
+local function bomb_hues()
+    local b = row_box("bomb")
+    local out = {}
+    if not b then return out end
+    for _, sh in ipairs(shapes) do
+        local mid = (sh.y0 + sh.y1) / 2
+        if sh.tint and sh.kind ~= "disc" and mid > b.y0 and mid < b.y1 then
+            out[hue(sh.tint)] = true
+        end
+    end
+    return out
+end
+mods = {[1] = {[0] = 1}}
+frame()
+local bomb_fan = bomb_hues()
+mods = {[1] = {}}
+frame()
+local bare_bomb = nil
+for _, sh in ipairs(shapes) do
+    local b = row_box("bomb")
+    local mid = (sh.y0 + sh.y1) / 2
+    if b and sh.kind == "disc" and mid > b.y0 and mid < b.y1 then
+        bare_bomb = hue(sh.tint)
+    end
+end
+check("a bomb's fan is drawn in the round's own colour",
+      bare_bomb ~= nil and bomb_fan[bare_bomb] == true,
+      "fan hues: " .. (next(bomb_fan) or "none") .. ", round: " ..
+      tostring(bare_bomb))
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)
