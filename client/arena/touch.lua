@@ -341,8 +341,7 @@ function M.draw(u, w, h, s)
     -- at somebody across the arena. A player who has learned one has learned
     -- the other, and the two pads tell each other apart by their marks now
     -- rather than by their colour.
-    local glvl = M.me and sim.ship_level and sim.ship_level(M.me, sim.TRIG_GUN)
-    local gcol = pal.rung(glvl or 0)
+    local gcol = pal.rung(marks.level(M.me, sim.TRIG_GUN))
     pad_ring(L.guns, gcol, guns)
     pad_mark(L.guns, sim.TRIG_GUN)
     -- Energy, on an arc outside the rim. Drawn on the ring itself it reads as
@@ -359,9 +358,7 @@ function M.draw(u, w, h, s)
     end
 
     if M.has_bomb then
-        local blvl = M.me and sim.ship_level
-            and sim.ship_level(M.me, sim.TRIG_BOMB)
-        local bcol = pal.rung(blvl or 0)
+        local bcol = pal.rung(marks.level(M.me, sim.TRIG_BOMB))
         pad_ring(L.bombs, bcol, bombs)
         pad_mark(L.bombs, sim.TRIG_BOMB)
     end
