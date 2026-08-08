@@ -83,6 +83,26 @@ local function eye_team()
     local e = eye()
     return e and sim.ship_team(e) or 255
 end
+
+-- What the interface should say this connection is looking at, or nil while
+-- flying: the hull the camera stands behind, and a name for it only when that
+-- hull is one this client asked to follow and the zone could have granted it.
+-- Otherwise it is the room's own feed, which is pointed at somebody too and
+-- is not the same thing as having picked them.
+--
+-- Written as a branch rather than `a and b or c`, because the middle can be
+-- nil here and that shape falls through to the wrong answer when it is.
+local function watch_state()
+    if not watching then return nil end
+    local e = eye()
+    local name = nil
+    if e and net.want ~= 255 and net.subject == net.want
+        and sim.ship_team(e) == net.my_team then
+        local p = net.pilots[e]
+        if p then name = p.name end
+    end
+    return {subject = e, name = name}
+end
 local accum = 0
 local feed = {}
 local hurt = 0
@@ -1382,12 +1402,16 @@ function update(self, dt)
         if watching then hud_me = e end
         ui.hud({
             me = hud_me,
-            -- Watching, and who, for the line that says so. The name comes
-            -- from the roster because that is where names come from.
-            watch = watching and {
-                subject = e,
-                name = e and net.pilots[e] and net.pilots[e].name or nil,
-            } or nil,
+            -- Watching, and what of: a particular hull, or the room's own
+            -- feed. The subject alone cannot say, because the channel is
+            -- usually pointed at somebody too. What separates them is whether
+            -- the hull on screen is the one this client asked for and whether
+            -- the zone could have granted it, which is your own side.
+            --
+            -- Written as a branch rather than `a and b or c`: the middle can
+            -- be nil here, and that shape falls through to the wrong answer
+            -- when it is.
+            watch = watch_state(),
             -- The side this screen belongs to. Not the subject's: watching,
             -- the camera stands behind whoever the channel picked, and the
             -- question every instrument asks is which end of the gun you are

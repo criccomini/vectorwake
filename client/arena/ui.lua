@@ -2097,7 +2097,7 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local function menu_button(on_air)
+local function menu_button(on_air, watch)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
     -- that corner was a thing to press, and the board has taught the same hand
@@ -2142,6 +2142,29 @@ local function menu_button(on_air)
         local size = key_size()
         txt(label, cx + 2 * r + 5 * S, mid, size, pal.a(pal.HURT, 0.9))
         cx = cx + 2 * r + 5 * S + text_w(label, size) + KEY_GAP * S
+    elseif watch then
+        -- Watching, and what of. The same slot, because the two are the same
+        -- kind of fact about the connection and a watcher is never on air.
+        --
+        -- Green and a play mark rather than the tally's red dot: the red one
+        -- is a warning about you and this is a statement about what you are
+        -- looking at, which is the difference between being filmed and
+        -- holding the camera.
+        local mid = y + KEY_H * S / 2
+        local h = 4.6 * S
+        local wsym = h * 1.5
+        local col = pal.a(pal.PRIZE, 0.92)
+        u:tri(cx, ry(mid - h, 0), cx, ry(mid + h, 0),
+              cx + wsym, ry(mid, 0), col)
+        local size = key_size()
+        -- The room's feed says so in the interface's own word; a pilot says
+        -- their own call sign, in their own case, the way a name is written
+        -- everywhere else here.
+        local named = watch.name ~= nil
+        txt(named and watch.name or "CHANNEL",
+            cx + wsym + 6 * S, mid, size, col, nil, nil, named)
+        cx = cx + wsym + 6 * S
+            + text_w(named and watch.name or "CHANNEL", size) + KEY_GAP * S
     end
     chip_right = cx - KEY_GAP * S
 end
@@ -2507,8 +2530,8 @@ function M.hud(o)
     end
     inspect(o, o.watch and top or loadout(me, o.class_names, top))
     -- A watcher is never the subject, so the tally can only be about a pilot
-    -- who is flying.
-    menu_button(o.on_air and not o.watch)
+    -- who is flying, and the two never contend for the slot.
+    menu_button(o.on_air and not o.watch, o.watch)
     vignette(o.hurt or 0)
     -- The pip over your own hull is not named. A bar that empties as you are
     -- shot and fills when you stop being shot is the one instrument here that
