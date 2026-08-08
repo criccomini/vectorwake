@@ -1000,6 +1000,14 @@ static int rust_one(sim_ship *sh, const sim_ship_class *c, uint32_t *rng,
     return 1;
 }
 
+int sim_grant(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
+    if (type >= SIM_PRIZE_COUNT) return 0;
+    const sim_ship_class *c = &cfg->classes[sh->cls];
+    uint8_t was = held(sh, type);
+    move_count(sh, c, type, 1);
+    return held(sh, type) != was;
+}
+
 uint8_t sim_take_prize(sim_ship *sh, const sim_settings *cfg, uint32_t *rng,
                        int *delta) {
     const sim_ship_class *c = &cfg->classes[sh->cls];
@@ -1701,26 +1709,65 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
              * hull, which is a bullet, and anything larger is a proximity
              * fuse. A hit ends the walk where it landed, which puts a blast
              * at the point of impact rather than at wherever the tick would
-             * have carried the round. */
+             * have carried the round.
+             *
+             * A fuse waits for the closest approach rather than firing where
+             * it first reaches. Going off on entry is what this did, and it
+             * is the worst point available: a blast falls off to nothing at
+             * its rim, so a bomb that triggers at the outer edge of its own
+             * reach arrives already spent. On the shipped numbers that is a
+             * fuse at 48 px inside an 80 px blast, which turned a 562 damage
+             * hit into 112 and made proximity the one thing in the tech tree
+             * worth less than carrying nothing. Measured, at 27% against a
+             * bare hull's 34%, and 51% against 32% once it waited.
+             *
+             * Waiting costs the round nothing: it can still only end once, a
+             * bomb on a collision course flies to contact and lands what it
+             * always would, and a near miss that used to sail past detonates
+             * at the point it was nearest. Which is why the fuse now lands
+             * both more often and harder than no fuse at all, where before it
+             * bought the first by giving up the second. */
             for (int i = 0; i < next->ship_count && !ended; i++) {
                 const sim_ship *sh = &next->ships[i];
                 if (!sh->active || !sh->alive) continue;
                 if ((uint8_t)i == w->owner || sh->team == w->team) continue;
                 /* The hull's own rectangle, not a circle drawn around it: a
-                 * round into a Cipher's flank has to reach the knife. The
-                 * weapon's trigger distance pads every face, so a proximity
-                 * fuse still goes off near rather than on. */
+                 * round into a Cipher's flank has to reach the knife. */
                 int64_t ddx = (int64_t)w->x - hull[i].x;
                 int64_t ddy = (int64_t)w->y - hull[i].y;
                 int64_t along = (ddx * hull[i].fx + ddy * hull[i].fy) >> 15;
                 int64_t across = (ddy * hull[i].fx - ddx * hull[i].fy) >> 15;
                 if (across < 0) across = -across;
-                if (along >= -((int64_t)hull[i].aft + spec->trigger)
-                    && along <= (int64_t)hull[i].fore + spec->trigger
-                    && across <= (int64_t)hull[i].halfw + spec->trigger) {
+                /* Contact ends everything, fuse or no fuse, so nothing can
+                 * fly through a hull while it waits for a better moment. */
+                if (along >= -(int64_t)hull[i].aft
+                    && along <= (int64_t)hull[i].fore
+                    && across <= (int64_t)hull[i].halfw) {
                     ended = 1;
                     hit_ship = i;
+                    continue;
                 }
+                if (spec->trigger == 0) continue;
+                /* The fuse's reach pads every face of that same box. */
+                if (along < -((int64_t)hull[i].aft + spec->trigger)
+                    || along > (int64_t)hull[i].fore + spec->trigger
+                    || across > (int64_t)hull[i].halfw + spec->trigger) {
+                    continue;
+                }
+                /* Still closing? Then the best moment is still ahead. The
+                 * gap shrinks exactly while the separation and the relative
+                 * velocity point against each other, so their dot product is
+                 * the whole test, and it needs no state on the projectile
+                 * and nothing on the wire: both halves are already in the
+                 * state this tick, which is what keeps it the same answer on
+                 * every machine. Zero counts as arrived, so a round that
+                 * enters the reach already opening away goes off at once,
+                 * that being its closest approach. */
+                int64_t rvx = (int64_t)w->vx - sh->vx;
+                int64_t rvy = (int64_t)w->vy - sh->vy;
+                if (ddx * rvx + ddy * rvy < 0) continue;
+                ended = 1;
+                hit_ship = i;
             }
         }
 

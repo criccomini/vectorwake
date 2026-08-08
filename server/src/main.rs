@@ -3263,6 +3263,71 @@ fn run_calibration() {
     }
 }
 
+/// Price each stage of the tech tree, in win probability.
+///
+///     vectorwake-server calibrate stages [bouts] [hull] [zone] [dir]
+///
+/// `zone` names a room in the catalog beside the binary and takes its arena
+/// block, because a zone owns its weapon table and its add-on steps: what
+/// multifire costs is Alpha's answer, not the core's. Omit it, or pass
+/// `baseline`, to measure the roster as this binary compiled it. Either way the
+/// map stays the pit, since the zone's own map would put a thousand tiles of
+/// looking for each other into a measurement of a loadout.
+///
+/// Unlike the ladder, this writes nothing anybody loads. `stages.json` is a
+/// measurement to diff a tuning change against, which is why it lands wherever
+/// you point it rather than in the zone directory beside `ladder.json`: that
+/// file is an input, and a reader should not have to work out which is which.
+fn run_stage_tournament() {
+    let bouts: u32 = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(6);
+    let hull = std::env::args().nth(4).unwrap_or_else(|| "Apex".into());
+    let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
+    let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
+    let Some(class) = ai::class_index(&hull) else {
+        println!("no hull named {hull:?}; the roster is {}", ai::CLASS_NAMES.join(", "));
+        std::process::exit(1);
+    };
+
+    // A named zone that cannot be found is a stop rather than a fallback. The
+    // whole reason to name one is that its numbers differ from the baseline's,
+    // so quietly measuring the baseline instead would answer a question nobody
+    // asked and label the answer with the zone.
+    let tuning = if zone == "baseline" {
+        None
+    } else {
+        let cat = match catalog::load("catalog") {
+            Ok(c) => c,
+            Err(e) => {
+                println!("stages: {e}");
+                std::process::exit(1);
+            }
+        };
+        let Some(def) = cat.zone(&zone) else {
+            println!("stages: no zone named {zone:?} in the catalog");
+            std::process::exit(1);
+        };
+        Some(def.arena.clone())
+    };
+
+    // One skill on both sides. Which value hardly matters while the parameter
+    // does not separate pilots (see the ignored test in calibrate.rs), and the
+    // middle of the roster's range is the honest place to stand until it does.
+    const SKILL: f32 = 0.50;
+    println!(
+        "pricing {} stages on a {hull} under {zone} tuning: {} pairs, {bouts} bouts each",
+        calibrate::STAGES.len(),
+        calibrate::STAGES.len() * (calibrate::STAGES.len() + 1) / 2
+    );
+    let rows = calibrate::run_stages(class as u8, SKILL, bouts, tuning.as_ref(), true);
+    let doc = calibrate::report_stages(&rows, &hull, SKILL, bouts, &zone);
+
+    let path = format!("{dir}/stages.json");
+    match std::fs::write(&path, serde_json::to_string_pretty(&doc).expect("serialize")) {
+        Ok(()) => println!("\nwrote {path}"),
+        Err(e) => println!("\ncould not write {path}: {e}"),
+    }
+}
+
 /// Where the directories are. `VW_DIRECTORY` names a host, which is resolved,
 /// so one hostname with several records is a whole deployment and a directory can
 /// be added or moved without touching an arena server. That is the DNS decision
@@ -3376,7 +3441,14 @@ async fn main() {
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("calibrate") {
-        run_calibration();
+        // What the ladder holds still is the tech tree, so it can never price
+        // one. That is this, the same harness with the pilots held still and
+        // the kit varying instead.
+        if std::env::args().nth(2).as_deref() == Some("stages") {
+            run_stage_tournament();
+        } else {
+            run_calibration();
+        }
         return;
     }
     // What the ladder cannot see: the roster on a real map, with walls in it.

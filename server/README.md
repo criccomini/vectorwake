@@ -97,6 +97,80 @@ a local calibration takes effect on restart rather than on rebuild.
 The ladder is not sorted by skill and should not be: these pilots fly
 different hulls, and a rating measures the individual, hull included.
 
+## Pricing the tech tree
+
+```sh
+vectorwake-server calibrate stages 24 Apex alpha .   # writes ./stages.json
+```
+
+The ladder holds the tech tree at zero so it can rank pilots, which means it can
+never price one. This is the same harness with the pilots held still instead:
+one hull, one skill on both sides, and a fixed kit as the only difference
+between them. What comes out is a win rate for each stage of the tree against
+every other.
+
+The fourth argument names a zone in the catalog and takes its arena block. That
+matters more than it sounds, because a zone owns its weapon table and its
+add-on steps: Alpha fans multifire to five degrees where the compiled baseline
+fans it to fifteen, which moves the hit rate of the stage being priced from 65%
+to 80%. Pass `baseline`, or leave it off, to measure the roster as this binary
+compiled it. A named zone that is not in the catalog stops the run rather than
+falling back, since silently pricing the baseline under a zone's name is the one
+outcome worse than not running.
+
+The map stays the pit whichever zone you name. A zone's own map would put
+routing, corridors and a thousand tiles of looking for each other into a
+measurement that exists to isolate the kit. Two settings are also held against
+the zone's wishes, `spawn_prizes` and `prize_max`, for the same reason the
+ladder holds them: Alpha opens with thirty greens, which is precisely what would
+erase the thing being measured.
+
+The argument for it is the one the ladder's own comments make, read backwards.
+Thirty spawn greens flatten a two-to-one gap between skill levels, so somewhere
+between nothing and thirty the kit stops garnishing the flying and becomes the
+whole result. This says where.
+
+A kit is granted through `sim_grant`, the core's own prize machinery with the
+dice taken out, and it is re-granted at every spawn: death clears the tech tree,
+a bout runs to five kills, and a kit issued once would measure one loaded life
+and four bare ones.
+
+Three things in the report are worth knowing before reading the matrix.
+
+The **wear column** says what actually went on. Ladders differ per hull, so
+`bomb 2` reads `1/2` on anything but an Anvil, and an add-on the roster does not
+give that hull reads `0/1`. Those rows are bare hulls under another name, and
+the report names them rather than leaving them to be spotted.
+
+The **control** is a second bare kit. It is identical to the first, so the gap
+between the two is this harness reporting a difference between two identical
+things: the noise floor, measured on the hull and bout count you just ran rather
+than assumed. Unwearable stages land in the same bucket and widen it, which is
+correct, since they are also bare. Read no gap narrower than the floor. At eight
+bouts a pair it is around fifteen points, which is wide enough that only the
+largest effects are real.
+
+**`dmg/hit` and `self%`** are why a stage won or lost, where the win column only
+says that it did. A blast falls off to nothing at its rim, so a fuse that goes
+off early lands the same count of impacts for a fraction of the damage, and the
+hit rate alone reads that as an improvement. Proximity is the case: it lifts the
+hit rate three points and cuts damage per impact, which is a losing trade the
+win column cannot explain on its own. `self%` is the share of a stage's damage
+it dealt to itself, since a bomb's blast has no owner test. It answers "is this
+stage losing because the pilot keeps standing in it" with a number rather than
+a theory: proximity sits at bare's 1.7%, and the bomb rungs at 5.6%.
+
+The **mirror column** is each stage against itself, kept out of the win column
+on purpose. Folding it in would credit one win and one loss to the same row
+whatever happened and drag every rate toward a half. Left out, it is a second
+check on the harness: a mirror far from fifty says the bouts are biased, not
+that the kit is good.
+
+Nothing loads `stages.json`. It is a measurement to diff a tuning change
+against, which is why it lands wherever you point it instead of in the zone
+directory beside `ladder.json`, where a reader would reasonably assume the
+server reads it.
+
 ## Serving a zone strangers can reach
 
 A client delivered over `https` may only open a `wss` socket. Browsers refuse
