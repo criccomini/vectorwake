@@ -179,6 +179,24 @@ check("and it is not a hull", ship_rows[9].hull == nil,
 check("so it says what to draw instead", ship_rows[9].figure == "pilot",
       tostring(ship_rows[9].figure))
 
+-- The same cell, seen from the rail. The stage previews the page a rail stop
+-- leads to before you go in, and that preview flattens rows down its own
+-- path, so a field the grid reads has to survive both. `figure` survived only
+-- one: escape into the menu and arrow left onto the rail, and the ninth cell
+-- was an Apex; step into the page and it was the helmet again.
+local was_stack, was_sel = menu.stack, menu.sel
+menu.stack = {"root"}
+menu.sel = {root = ship_at}
+local peek = menu.view()
+check("the rail previews the page it points at",
+      #peek.rows == 9 and peek.sel == 0,
+      #peek.rows .. " rows, cursor " .. tostring(peek.sel))
+check("flattened, not handed over as it was written",
+      type(peek.rows[9].mark) ~= "function")
+check("and the ninth cell is a pilot there too",
+      peek.rows[9].figure == "pilot", tostring(peek.rows[9].figure))
+menu.stack, menu.sel = was_stack, was_sel
+
 -- On the home screen the same page answers a different tense: not what you
 -- are, which is nothing, but what you will arrive as. So the wash follows the
 -- remembered choice there and the live connection in a game, and the two are

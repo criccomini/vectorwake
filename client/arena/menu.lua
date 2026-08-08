@@ -512,6 +512,39 @@ local function rows_of(nd)
     return r
 end
 
+-- One row of a page, flattened for drawing: everything a live value gets
+-- asked for its answer, and everything else copied across.
+--
+-- Two callers, and that is why this is a function. The stage draws the page
+-- you are inside, and it also draws a preview of the page the rail stop under
+-- the cursor leads to, so a row is flattened in two places. They were two
+-- lists of fields, and the second one had been written before the spectate
+-- cell existed and never learned about `figure`. What that looked like was a
+-- cell whose figure changed depending on how you had arrived at the page: the
+-- helmet once the cursor was in the grid, an Apex while it was still on the
+-- rail, since a cell naming no figure falls back to hull zero.
+local function view_row(r, i)
+    local d = r.detail
+    if type(d) == "function" then d = d() end
+    local ci, cn
+    if r.choice then ci, cn = r.choice() end
+    return {
+        label = r.label, detail = d, note = r.note, waiting = r.waiting,
+        -- Whether this row's value is a string to be quoted rather than a
+        -- word to be said, and whether its label is somebody's name. See the
+        -- key on the pilot page and the sides on the team page.
+        verbatim = r.verbatim, named = r.named,
+        index = i,
+        -- `hull` names a ship to draw and `figure` overrides it with something
+        -- that is not one.
+        hull = r.hull, figure = r.figure, role = r.role,
+        players = r.players, bots = r.bots, live = r.live,
+        choice = ci, choices = cn,
+        pick = (r.go or r.act) ~= nil,
+        mark = r.mark and r.mark() or false,
+    }
+end
+
 local function row_index(rows)
     local id = M.stack[#M.stack]
     local n = #rows
@@ -888,27 +921,7 @@ function M.view()
                  board = nd.board or false,
                  rows = {}}
     for i, r in ipairs(rows) do
-        local d = r.detail
-        if type(d) == "function" then d = d() end
-        local ci, cn
-        if r.choice then ci, cn = r.choice() end
-        out.rows[i] = {
-            label = r.label, detail = d, note = r.note, waiting = r.waiting,
-            -- Whether this row's value is a string to be quoted rather than a
-            -- word to be said, and whether its label is somebody's name. See
-            -- the key on the pilot page and the sides on the team page.
-            verbatim = r.verbatim, named = r.named,
-            index = i,
-            -- `hull` names a ship to draw and `figure` overrides it with
-            -- something that is not one. Both travel, because a cell with
-            -- neither would fall back to hull zero and draw an Apex, which is
-            -- exactly what the spectate cell did before this line existed.
-            hull = r.hull, figure = r.figure, role = r.role,
-            players = r.players, bots = r.bots, live = r.live,
-            choice = ci, choices = cn,
-            pick = (r.go or r.act) ~= nil,
-            mark = r.mark and r.mark() or false,
-        }
+        out.rows[i] = view_row(r, i)
     end
     -- The sentence about whatever is under the cursor, drawn once under the
     -- list rather than squeezed onto every row.
@@ -950,18 +963,7 @@ function M.view()
             out.empty = nd2.empty and nd2.empty() or nil
             out.rows = {}
             for i, r in ipairs(rows_of(nd2)) do
-                local d = r.detail
-                if type(d) == "function" then d = d() end
-                local ci, cn
-                if r.choice then ci, cn = r.choice() end
-                out.rows[i] = {label = r.label, detail = d, note = r.note,
-                               waiting = r.waiting, verbatim = r.verbatim,
-                               named = r.named,
-                               index = i, hull = r.hull, role = r.role,
-                               players = r.players, bots = r.bots,
-                               live = r.live, choice = ci, choices = cn,
-                               pick = (r.go or r.act) ~= nil,
-                               mark = r.mark and r.mark() or false}
+                out.rows[i] = view_row(r, i)
             end
             out.hint = nil
             -- Nothing in the preview is selected, because the cursor is on
