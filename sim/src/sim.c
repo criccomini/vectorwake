@@ -1000,6 +1000,14 @@ static int rust_one(sim_ship *sh, const sim_ship_class *c, uint32_t *rng,
     return 1;
 }
 
+int sim_grant(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
+    if (type >= SIM_PRIZE_COUNT) return 0;
+    const sim_ship_class *c = &cfg->classes[sh->cls];
+    uint8_t was = held(sh, type);
+    move_count(sh, c, type, 1);
+    return held(sh, type) != was;
+}
+
 uint8_t sim_take_prize(sim_ship *sh, const sim_settings *cfg, uint32_t *rng,
                        int *delta) {
     const sim_ship_class *c = &cfg->classes[sh->cls];

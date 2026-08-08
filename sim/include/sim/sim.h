@@ -549,6 +549,25 @@ int sim_prize_pool(const sim_ship_class *c, uint8_t *out);
 uint8_t sim_take_prize(sim_ship *sh, const sim_settings *cfg, uint32_t *rng,
                        int *delta);
 
+/* Hand a pilot one named thing from the prize space, with no roll in it.
+ *
+ * A green is a roll and a grant welded together, and something that measures
+ * what a kit is worth needs the second half without the first: the server's
+ * loadout tournament fights fixed kits against each other, so the only thing
+ * varying between two pilots is what they are carrying rather than what the
+ * dice said. Nothing in a live arena calls this, and nothing should: greens
+ * are how the tech tree is reached in a game.
+ *
+ * Ceilings still hold, because holding them is `move_count`'s job either way:
+ * a hull with no rack cannot be granted a bomb level any more than it can be
+ * handed one. Returns 1 if the count moved and 0 if it did not, which is how a
+ * caller tells "this hull is wearing the kit" from "this hull cannot".
+ *
+ * `earned` is left alone. That is a green's consolation for landing on a count
+ * already at its ceiling, and paying it here would make a hull more dangerous
+ * for being handed something it cannot hold. */
+int sim_grant(sim_ship *sh, const sim_settings *cfg, uint8_t type);
+
 /* Flags. The core owns pickup, carry, and drop, exactly as the original's
  * flagcore did; which arrangement of flags wins a round is a game mode's
  * business and lives outside the simulation. */

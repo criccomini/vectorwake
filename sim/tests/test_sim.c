@@ -1333,6 +1333,50 @@ int main(void) {
         for (int i = 0; i < n; i++)
             if (pool[i] == SIM_PRIZE_MOD(SIM_TRIG_BOMB, SIM_MOD_PUSH)) has_push = 1;
         CHECK(has_push, "the denial hull is the one whose bombs shove");
+
+        /* A kit handed over rather than rolled for. The loadout tournament
+         * hands both sides of a bout a fixed list of these, so what it is
+         * measuring is the kit and not the dice. */
+        sim_ship sh;
+        memset(&sh, 0, sizeof sh);
+        sh.cls = (uint8_t)APEX;
+        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_LEVEL(SIM_TRIG_GUN)) == 1
+              && sh.level[SIM_TRIG_GUN] == 1, "a granted rung is a rung climbed");
+        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)) == 1
+              && sim_mod_get(sh.mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
+              "and a granted add-on is an add-on held");
+
+        /* Up the ladder until it refuses. A stage asking for more rungs than
+         * a hull has is a stage that hull cannot wear, and the harness has to
+         * read that off the return: a silent refusal would report a loadout
+         * fighting itself as a loadout that is worth nothing. */
+        int granted = 1;
+        for (int i = 0; i < SIM_MAX_RUNGS + 4 && granted; i++)
+            granted = sim_grant(&sh, &cfg, SIM_PRIZE_LEVEL(SIM_TRIG_GUN));
+        CHECK(granted == 0, "the ladder ends and the grant says so");
+        uint8_t top = sh.level[SIM_TRIG_GUN];
+        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_LEVEL(SIM_TRIG_GUN)) == 0
+              && sh.level[SIM_TRIG_GUN] == top, "and it stays refused there");
+        CHECK(sh.earned == 0, "a grant is not a green and pays no bounty");
+
+        /* A trigger the hull does not have refuses outright, at rung zero,
+         * where a green would never have offered it in the first place. */
+        sim_settings *rackless = malloc(sizeof *rackless);
+        *rackless = cfg;
+        for (int r = 0; r < SIM_MAX_RUNGS; r++)
+            rackless->classes[SPIRE].trigger[SIM_TRIG_BOMB][r] = SIM_NO_PATTERN;
+        sim_ship gunner;
+        memset(&gunner, 0, sizeof gunner);
+        gunner.cls = (uint8_t)SPIRE;
+        CHECK(sim_grant(&gunner, rackless, SIM_PRIZE_LEVEL(SIM_TRIG_BOMB)) == 0
+              && gunner.level[SIM_TRIG_BOMB] == 0,
+              "a hull with no rack cannot be granted a bomb rung");
+        free(rackless);
+
+        /* Out of the space entirely is refused rather than written past the
+         * end of the counts it would have indexed. */
+        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_COUNT) == 0, "no such prize");
+        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_NONE) == 0, "and none is not one");
     }
 
     {

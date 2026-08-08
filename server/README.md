@@ -97,6 +97,54 @@ a local calibration takes effect on restart rather than on rebuild.
 The ladder is not sorted by skill and should not be: these pilots fly
 different hulls, and a rating measures the individual, hull included.
 
+## Pricing the tech tree
+
+```sh
+vectorwake-server calibrate stages 24 Apex .   # writes ./stages.json
+```
+
+The ladder holds the tech tree at zero so it can rank pilots, which means it can
+never price one. This is the same harness with the pilots held still instead:
+one hull, one skill on both sides, and a fixed kit as the only difference
+between them. What comes out is a win rate for each stage of the tree against
+every other.
+
+The argument for it is the one the ladder's own comments make, read backwards.
+Thirty spawn greens flatten a two-to-one gap between skill levels, so somewhere
+between nothing and thirty the kit stops garnishing the flying and becomes the
+whole result. This says where.
+
+A kit is granted through `sim_grant`, the core's own prize machinery with the
+dice taken out, and it is re-granted at every spawn: death clears the tech tree,
+a bout runs to five kills, and a kit issued once would measure one loaded life
+and four bare ones.
+
+Three things in the report are worth knowing before reading the matrix.
+
+The **wear column** says what actually went on. Ladders differ per hull, so
+`bomb 2` reads `1/2` on anything but an Anvil, and an add-on the roster does not
+give that hull reads `0/1`. Those rows are bare hulls under another name, and
+the report names them rather than leaving them to be spotted.
+
+The **control** is a second bare kit. It is identical to the first, so the gap
+between the two is this harness reporting a difference between two identical
+things: the noise floor, measured on the hull and bout count you just ran rather
+than assumed. Unwearable stages land in the same bucket and widen it, which is
+correct, since they are also bare. Read no gap narrower than the floor. At eight
+bouts a pair it is around fifteen points, which is wide enough that only the
+largest effects are real.
+
+The **mirror column** is each stage against itself, kept out of the win column
+on purpose. Folding it in would credit one win and one loss to the same row
+whatever happened and drag every rate toward a half. Left out, it is a second
+check on the harness: a mirror far from fifty says the bouts are biased, not
+that the kit is good.
+
+Nothing loads `stages.json`. It is a measurement to diff a tuning change
+against, which is why it lands wherever you point it instead of in the zone
+directory beside `ladder.json`, where a reader would reasonably assume the
+server reads it.
+
 ## Serving a zone strangers can reach
 
 A client delivered over `https` may only open a `wss` socket. Browsers refuse
