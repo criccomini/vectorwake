@@ -672,7 +672,7 @@ then starts.
 
 ## No audio ships in the page
 
-The kit is twenty-four sounds and 1.1 MB of 16-bit PCM, which compresses to
+The kit is twenty-four sounds and 1.15 MB of 16-bit PCM, which compresses to
 almost exactly that because that is what PCM does. None of it is in the
 download. `ext/simcore/src/sfx.c` synthesises all of it on the player's
 machine at boot, `arena/sfx.lua` hands each buffer to `resource.set_sound`, and
@@ -694,22 +694,38 @@ still guns. A rung past the end of a family plays the top of it, and the ceiling
 is read off the kit rather than written down, so adding `gun4` to `sfx.c` and
 wiring a component for it is the whole change.
 
+The eight launch sounds are eight functions with nothing shared between them but
+the tools they call, which is the third design and the first that worked. Twice
+before they were one recipe with a table of numbers per rung, and both times a
+player who flew the whole ladder reported the rungs as one sound. What each of
+them is meant to be, and the three synthesis tools that arrived to build them,
+are in [docs/design/audio.md](../docs/design/audio.md).
+
 Where the rung comes from is different for each. A shot reads it off the ship
 that pulled the trigger, because a spec says what a projectile does and not
 which rung fired it, and the firing tick is the one tick the two cannot have
 drifted apart on. A detonation reads it off the blast radius instead: for a bomb
 that is the same answer, since a rung is exactly a wider blast, and for a repel
 it is the only answer there is, its 512 pixels being wider than any bomb while
-its level comes back -1. Since every buffer is normalised to one peak, the
-buffer decides timbre only and the loudness climb lives in the `.sound` gains.
+its level comes back -1.
+
+Every buffer is normalised to one peak, so the buffer decides timbre only and
+the loudness climb lives in the `.sound` gains. Those gains are not in order and
+that is not a mistake: a folded bolt is a dense buffer and a resonant one is
+sparse, so equal peaks are unequal loudnesses. The numbers come from solving each
+sound's loudest 300 ms window for an even climb, two decibels a rung and three
+for the detonations.
 
 `make -C client/tools check` is the one client test that cannot be Lua: it
 renders the kit with this same C and measures whether the rungs can be told
-apart, in third-octave bands over hundredths of a second, failing when two of
-them have collapsed into one sound. `client/tools/sfxladder.c` says what it
-measures and why each floor sits where it does. It also builds the synth as C
-rather than the C++ Defold's build server makes of it, which is what catches the
-dialect drift.
+apart. Two axes, because either alone has been satisfied by a kit that still
+sounded the same: a spectral distance across third-octave bands over hundredths
+of a second, and a step in register of at least a tritone. It also measures how
+long each sound takes to arrive, which is what tells a gun from a bomb now that
+the tinny end of one ladder and the nasty end of the other share an octave.
+`client/tools/sfxladder.c` says what it measures and why each floor sits where it
+does. It also builds the synth as C rather than the C++ Defold's build server
+makes of it, which is what catches the dialect drift.
 
 `lua5.1 client/tests/sfx_test.lua` checks which component each rung reaches and
 that every sound the kit renders has a component behind it. It runs under plain
@@ -720,7 +736,7 @@ id sounds like nothing rather than like a failure.
 Rendering costs about a fifth of a second, seven eighths of it the soundtrack,
 and it is spent in `init` rather than spread over frames because `init` is
 behind the menu the client opens on. `sfx.init` prints one line when it is done,
-`SOUND: 24 sounds, 1145 KB, 259 ms`, which is how you tell a client that
+`SOUND: 24 sounds, 1154 KB, 259 ms`, which is how you tell a client that
 generated its audio from a client that is quiet for some other reason. Only in a
 debug build: a release engine compiles `print` out, so this line and the
 complaint in `sfx.fire` are both invisible on the published page.
@@ -728,9 +744,8 @@ complaint in `sfx.fire` are both invisible on the published page.
 The synth was a Python script until it moved into the client, and the port
 reproduces CPython's Mersenne Twister so it could be checked against the files
 it replaced rather than judged by ear. All fifteen of them at the time came out
-byte for byte identical. That property is worth keeping: it means a sound
-changing is somebody changing it, and it is why `gun0` is still those bytes
-exactly after the ladders were redrawn around it.
+byte for byte identical. The generator stays for that reason: a sound changing
+should be somebody changing it, not the noise moving underneath.
 
 To hear the kit without running the game:
 

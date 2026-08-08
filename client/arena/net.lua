@@ -14,14 +14,22 @@ local M = {}
 local C2S_JOIN, C2S_INPUT = 1, 2
 local C2S_SHIP = 5
 local C2S_TEAM, C2S_FOUND, C2S_INVITE = 6, 7, 8
+-- Whose eyes to borrow. From a player it means sit out; from a watcher, look
+-- somewhere else. A request like the team asks: the subject byte of the next
+-- snapshot is the answer, and an unlawful ask lands on the room channel.
+local C2S_WATCH = 9
 local S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER = 1, 2, 3
 local S2C_KILL, S2C_BANNER, S2C_ZONE, S2C_DENIED = 4, 5, 6, 7
 local S2C_MAP, S2C_SETTINGS, S2C_YIELD, S2C_TEAMS = 9, 10, 11, 12
+-- You are the room channel's subject, or you have stopped being it. The
+-- channel's camera picks you without asking, so being told is the one
+-- courtesy it owes: two minutes on air is something a pilot can play around.
+local S2C_ONAIR = 13
 
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 5
+local CLIENT_PROTOCOL = 6
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -44,6 +52,20 @@ local RETRYABLE = {
 
 M.connected = false
 M.me = 0
+-- Watching rather than flying. 255 in the welcome is a watcher's ship, and
+-- everything below branches on this rather than on `me`, because 255 must
+-- never be handed to a `sim.*` accessor: the ships array is narrower than
+-- that, and the extension now refuses the read loudly rather than serving
+-- whatever memory sits past it.
+M.watching = false
+-- Whose eyes the last snapshot was: the followed hull, or whoever the room
+-- channel is on. 255 when the room is empty and the camera holds the middle.
+M.subject = nil
+-- Whether this pilot is the channel's subject right now, for the mark that
+-- says so.
+M.on_air = false
+-- Everybody watching this room, by name, from the roster's second section.
+M.watchers = {}
 M.banner = ""
 M.zone = ""
 M.denied = nil
@@ -120,6 +142,12 @@ M.settings_epoch = 0
 local conn = nil
 local on_lost_cb = nil
 local input_log = {}
+-- The last thing this watcher asked to look at, so the keepalive in `step`
+-- repeats the ask rather than quietly resetting a follow to the channel.
+-- Declared up here because `connect` resets them and Lua scopes a local from
+-- its declaration down: assigned any later, these would be globals.
+local watch_want = 255
+local keepalive = 0
 -- Which connection this module is listening to.
 --
 -- One set of state serves whatever is live, and a socket that has been left
@@ -206,7 +234,25 @@ local function on_roster(s)
         ratings[ship] = rating
         o = o + 6 + len
     end
-    M.pilots, M.ratings = pilots, ratings
+    -- The watchers, after the ships: count, then label and name per row. No
+    -- ship index and no rating, since a watcher is not fighting in this room.
+    -- Bailing on a short read keeps the ships that already parsed, which is
+    -- the roster's own rule.
+    local watchers = {}
+    local wn = string.byte(s, o)
+    if wn then
+        o = o + 1
+        for _ = 1, wn do
+            local len = string.byte(s, o + 1)
+            if not len or #s < o + 1 + len then break end
+            watchers[#watchers + 1] = {
+                label = LABEL[string.byte(s, o)] or "unknown",
+                name = string.sub(s, o + 2, o + 1 + len),
+            }
+            o = o + 2 + len
+        end
+    end
+    M.pilots, M.ratings, M.watchers = pilots, ratings, watchers
 end
 
 -- The team list. Walked with a cursor exactly as the roster is, and it bails
@@ -297,8 +343,57 @@ local function on_kill(s)
 end
 
 local function on_snapshot(s)
-    -- header: type, our ship, acked input tick
+    -- header: type, subject ship, acked input tick
     local body = string.sub(s, 7)
+
+    -- Watching. No prediction to reconcile, no clock to steer, no inputs to
+    -- replay: capture what the screen asserts, take the truth whole, and let
+    -- the smoothing walk the drawing to it, exactly as a remote hull is
+    -- already treated while flying. The subject byte is the one thing the
+    -- header says that flying never needed: whose eyes these are.
+    if M.watching then
+        M.subject = string.byte(s, 2)
+        M.stats.snaps = M.stats.snaps + 1
+        sim.smooth_capture()
+        local was_alive, was_vx, was_vy = {}, {}, {}
+        for i = 0, sim.ship_count() - 1 do
+            was_alive[i] = sim.ship_alive(i)
+            was_vx[i], was_vy[i] = sim.ship_vel(i)
+        end
+        local flying = {}
+        local pre_tick = sim.tick()
+        for i = 0, sim.weapon_count() - 1 do
+            local x, y, spec, _, _, _, life, owner = sim.weapon_at(i)
+            local born = owner * 16777216 + spec * 65536
+                + (pre_tick - (sim.spec_life(spec) - life)) % 65536
+            flying[born] = {x = x, y = y, spec = spec, life = life}
+        end
+        if sim.apply_snapshot(body) ~= 0 then return end
+        sim.smooth_settle()
+        -- Kills and detonations the free-run never lived through still owe
+        -- their light and noise; a watcher is here for the explosions.
+        for i = 0, sim.ship_count() - 1 do
+            if was_alive[i] == 1 and sim.ship_active(i) == 1
+                and sim.ship_alive(i) ~= 1 then
+                M.snap_deaths[#M.snap_deaths + 1] =
+                    {ship = i, vx = was_vx[i] or 0, vy = was_vy[i] or 0}
+            end
+        end
+        local post_tick = sim.tick()
+        for i = 0, sim.weapon_count() - 1 do
+            local _, _, spec, _, _, _, life, owner = sim.weapon_at(i)
+            local born = owner * 16777216 + spec * 65536
+                + (post_tick - (sim.spec_life(spec) - life)) % 65536
+            flying[born] = nil
+        end
+        for _, w in pairs(flying) do
+            if w.life > 20 and sim.spec_blast(w.spec) > 0 then
+                M.snap_blasts[#M.snap_blasts + 1] = w
+            end
+        end
+        predicted_tick = sim.tick()
+        return
+    end
     -- The newest input tick the server has received from us. It rode in this
     -- header from the beginning and was skipped over for as long; it is what
     -- says whether our clock is running early enough for an input to reach the
@@ -445,7 +540,25 @@ local function on_message(s)
             M.settings_epoch = M.settings_epoch + 1
         end
     elseif kind == S2C_WELCOME then
+        -- Which of this connection's two lives it is in: a ship, or 255 for
+        -- watching. Sitting out and flying again arrive as fresh welcomes on
+        -- the same socket, so this is also the view switch, and it gets the
+        -- reconnect treatment: the input log and the clock lead belong to the
+        -- life that ended, and a channel view can move the tick backwards
+        -- across the delay, which the rollback machinery must never see.
         M.me = string.byte(s, 2)
+        local watching = M.me == 255
+        if watching ~= M.watching then
+            input_log = {}
+            predicted_tick = 0
+            sim.smooth_reset()
+            M.stats.lag, M.stats.lead = 0, 0
+        end
+        M.watching = watching
+        if not watching then
+            M.subject = nil
+            M.on_air = false
+        end
         M.connected = true
     elseif kind == S2C_SNAPSHOT then
         on_snapshot(s)
@@ -467,6 +580,8 @@ local function on_message(s)
         if RETRYABLE[M.deny_code] then
             M.denied = M.denied .. " (another server for this game may have room)"
         end
+    elseif kind == S2C_ONAIR then
+        M.on_air = string.byte(s, 2) == 1
     elseif kind == S2C_YIELD then
         -- The zone wants this seat back. Only ever sent to a client that
         -- declared itself a bot, so a player never sees it; handled anyway,
@@ -515,6 +630,12 @@ M.snap_blasts = {}
     -- The zone we came from should not have its name or its banner still on
     -- screen while the next one is being reached.
     M.me = 0
+    M.watching = false
+    M.subject = nil
+    M.on_air = false
+    M.watchers = {}
+    watch_want = 255
+    keepalive = 0
     M.zone = ""
     M.banner = ""
     -- And its rollback state is worse than useless here, because tick numbers
@@ -627,11 +748,47 @@ function M.invite(ship)
     return true
 end
 
+-- Watch somebody, or 255 for the room channel. From a flying pilot this is
+-- sitting out; from a watcher it is looking somewhere else. Either way the
+-- next snapshot's subject byte is the answer, and an ask the sight rules
+-- refuse lands on the channel rather than erroring.
+function M.watch(ship)
+    watch_want = ship or 255
+    keepalive = 0
+    return ask(string.char(C2S_WATCH, watch_want))
+end
+
+-- How often a watcher repeats its ask, in steps. The server drops a socket
+-- that says nothing for 75 seconds, because a flying client sends buttons
+-- every frame and silence means the network ate it. A watcher has no buttons,
+-- so the ask itself is the heartbeat: it repeats what is already true, and
+-- the simulation does not move for it. Counted in this client's own steps
+-- rather than in ticks, because a channel snapshot can move the tick
+-- backwards across the delay.
+local WATCH_KEEPALIVE = 3000
+
 function M.step(buttons)
     if not M.connected or not conn then return false end
     -- The welcome arrives before the first snapshot. Until one lands there is
     -- no ship to predict, so hold the frame rather than step an empty world.
     if M.stats.snaps == 0 then return true end
+    -- Watching: no input log, no send, no replay of a ship this connection
+    -- does not have. The world still steps, with nobody's hands on anything,
+    -- because `sim.replay` is the step in this client and skipping it froze
+    -- the room into a snapshot-rate slideshow. Stepped with no buttons the
+    -- room coasts exactly the way remote hulls already do while flying, and
+    -- each snapshot corrects it.
+    if M.watching then
+        sim.step({})
+        keepalive = keepalive + 1
+        if keepalive >= WATCH_KEEPALIVE then
+            keepalive = 0
+            local msg = string.char(C2S_WATCH, watch_want)
+            pcall(websocket.send, conn, msg, {type = websocket.DATA_TYPE_BINARY})
+            M.stats.tx = M.stats.tx + #msg
+        end
+        return true
+    end
     predicted_tick = sim.tick() + 1
     input_log[predicted_tick] = buttons
     local t = predicted_tick

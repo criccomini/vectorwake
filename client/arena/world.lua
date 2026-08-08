@@ -1891,6 +1891,15 @@ end
 -- and a drop is a charge spent. Only for a charge that leaves nothing behind
 -- to look at, which is what the life test is: a burst puts twenty-four rounds
 -- in the air and draws itself.
+-- The perspective seat's team, guarded. The arena hands these functions 255
+-- while watching a room through nobody's eyes, and 255 is a byte that indexes
+-- no seat: it belongs to no side, so everything reads as hostile, which is
+-- what a stranger's fight should look like.
+local function team_of(i)
+    if not i or i < 0 or i >= sim.ship_count() then return 255 end
+    return sim.ship_team(i)
+end
+
 function M.charges(me, sfx)
     local n = sim.ship_count()
     for i = 0, n - 1 do
@@ -2165,7 +2174,7 @@ end
 -- event would have. See the comment on the queues in net.lua.
 function M.corpse(i, vx, vy, me, sfx)
     local x, y = sim.ship_x(i), sim.ship_y(i)
-    local col = (sim.ship_team(i) == sim.ship_team(me)) and pal.FRIEND
+    local col = (sim.ship_team(i) == team_of(me)) and pal.FRIEND
         or pal.ENEMY
     fx.destroy(x, y, vx, vy, col)
     sfx("death", x, y)
@@ -2185,7 +2194,7 @@ function M.events(me, sfx)
             local ang = sim.ship_heading(a) / 65536 * TAU
             local bomb = spec_blast(b) > 0
             local col = bomb and pal.BOMB
-                or (sim.ship_team(a) == sim.ship_team(me) and pal.FRIEND or pal.ENEMY)
+                or (sim.ship_team(a) == team_of(me) and pal.FRIEND or pal.ENEMY)
             fx.cone(x + math.sin(ang) * 10, y - math.cos(ang) * 10, ang,
                     bomb and 0.9 or 0.35, bomb and 7 or 3,
                     bomb and 120 or 190, 0.14, bomb and 2.2 or 1.4, col)
@@ -2222,7 +2231,7 @@ function M.events(me, sfx)
             end
         elseif ty == sim.EV_HIT then
             local x, y = sim.ship_x(a), sim.ship_y(a)
-            local col = (sim.ship_team(a) == sim.ship_team(me)) and pal.FRIEND or pal.ENEMY
+            local col = (sim.ship_team(a) == team_of(me)) and pal.FRIEND or pal.ENEMY
             fx.burst(x, y, 5, 130, 0.26, 1.8, pal.hot(col, 0.6, 1))
             -- The screen shakes by what it cost you, not by what hit you.
             -- A blast falls off linearly from its centre, so the damage is
@@ -2240,7 +2249,7 @@ function M.events(me, sfx)
         elseif ty == sim.EV_DEATH then
             local x, y = sim.ship_x(a), sim.ship_y(a)
             local vx, vy = sim.ship_vel(a)
-            local col = (sim.ship_team(a) == sim.ship_team(me)) and pal.FRIEND or pal.ENEMY
+            local col = (sim.ship_team(a) == team_of(me)) and pal.FRIEND or pal.ENEMY
             fx.destroy(x, y, vx, vy, col)
             sfx("death", x, y)
         elseif ty == sim.EV_SPAWN then
@@ -2286,7 +2295,7 @@ function M.events(me, sfx)
             end
         elseif ty == sim.EV_FLAG_TAKE then
             local x, y = sim.ship_x(a), sim.ship_y(a)
-            local col = (sim.ship_team(a) == sim.ship_team(me)) and pal.FRIEND or pal.ENEMY
+            local col = (sim.ship_team(a) == team_of(me)) and pal.FRIEND or pal.ENEMY
             fx.wave(x, y, 6, 30, 0.45, 5, pal.a(col, 0.55))
             fx.burst(x, y, 5, 55, 0.4, 1.4, pal.a(col, 0.8))
             sfx("flag", x, y)

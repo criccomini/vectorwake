@@ -626,6 +626,15 @@ end
 -- map draw the same mark because they are the same statement about the same
 -- ship. Clamped rather than dropped when it falls outside the frame it is
 -- given: a view without you on it is a view with no origin.
+-- The team a perspective seat is on, guarded: the hud's `me` is the watched
+-- subject while spectating and nil when the channel has nobody, and 255 is
+-- the byte that belongs to no side, so an absent eye colours everybody
+-- hostile the way a free-for-all already colours everyone who is not you.
+local function team_of(i)
+    if not i or i < 0 or i >= sim.ship_count() then return 255 end
+    return sim.ship_team(i)
+end
+
 local function own_arrow(ax, ay, ox, oy, side, me)
     local edge = 5 * S
     if ax < ox + edge then ax = ox + edge end
@@ -734,7 +743,7 @@ local function radar(cx, cy, me)
         end
     end
 
-    local my_team = sim.ship_team(me)
+    local my_team = team_of(me)
     for i = 0, sim.flag_count() - 1 do
         local fx, fy, team = sim.flag_at(i)
         local px, py = put(fx, fy)
@@ -783,9 +792,12 @@ local function radar(cx, cy, me)
     -- for anything off the edge: right for a contact and wrong for the pilot
     -- reading the thing, because the dial is drawn around the camera, the
     -- camera is not the ship, and on a wide window it leads far enough that
-    -- the arrow simply went missing.
-    own_arrow(ix + (sim.ship_x(me) - cx + SPAN) * k,
-              iy + (sim.ship_y(me) - cy + SPAN) * k, ix, iy, r, me)
+    -- the arrow simply went missing. A watcher with no subject has no arrow
+    -- to place: a view can have no origin after all, when it is nobody's.
+    if me then
+        own_arrow(ix + (sim.ship_x(me) - cx + SPAN) * k,
+                  iy + (sim.ship_y(me) - cy + SPAN) * k, ix, iy, r, me)
+    end
 end
 
 -- --- the map ---------------------------------------------------------------
@@ -839,7 +851,7 @@ local function overview(me)
     --
     -- A cell is OVERVIEW_CELL tiles of sixteen pixels, so the world divides
     -- by that to land in the same coordinates the rectangles above use.
-    if ov.grid > 0 then
+    if ov.grid > 0 and me then
         local cell = 4 * 16
         local k = side / ov.grid
         own_arrow(ix + (sim.ship_x(me) / cell) * k,
@@ -874,12 +886,18 @@ local function nameplates(o)
     -- the view_tiles setting put every name adrift the moment the camera
     -- stopped being driven by that setting -- which it already had.
     local scale = W / (2 * o.half_w)
-    local my_team = sim.ship_team(o.me)
+    local my_team = team_of(o.me)
+    -- The one hull that goes unlabelled is your own, and a watcher has none.
+    -- The pilot being observed therefore wears their name and their bounty
+    -- exactly like everybody else on screen: "who am I looking at" is the
+    -- question a spectator has most of, and the answer belongs on the hull
+    -- rather than in a caption at the foot of the screen. Written as a
+    -- separate value because `o.me` is the perspective seat while watching,
+    -- which is precisely the hull that must keep its label.
+    local own = -1
+    if not o.watch then own = o.me end
     for i = 0, sim.ship_count() - 1 do
-        -- Not your own. You know which ship is yours -- it is the one in the
-        -- middle of the screen with the marker on it -- and a label saying so
-        -- is a word following the thing you are actually looking at.
-        if i ~= o.me and sim.ship_alive(i) == 1 then
+        if i ~= own and sim.ship_alive(i) == 1 then
             local sx = W / 2 + (sim.ship_x(i) - o.cam_x) * scale
             local sy = H / 2 + (sim.ship_y(i) - o.cam_y) * scale
             -- A name for a ship nobody can see is a name in the corner of
@@ -964,7 +982,7 @@ local function top_y()
     return ST + PAD * S + 32 * S
 end
 
-local function scores(me, pilots)
+local function scores(me, pilots, watchers)
     -- Asked for, not assumed. Mid-fight this is the least useful thing on the
     -- screen and the feed still says who is killing whom, so it lives behind
     -- the same toggle your own loadout does.
@@ -987,7 +1005,25 @@ local function scores(me, pilots)
         -- What the zone is willing to say this seat is, which is a stronger
         -- statement than "AI" and is what the counts below are made of.
         r.label = (p and p.label) or "unknown"
-        r.mine = sim.ship_team(i) == sim.ship_team(me)
+        r.mine = sim.ship_team(i) == team_of(me)
+        r.watch = false
+    end
+    -- Then whoever is watching. They are in the room without being in the
+    -- game, so they are in the list without being in the sort: no seat, no
+    -- side, no score, and nothing to ask about, since the box a row opens is
+    -- about a hull. Being here at all is the point. A watcher is a pair of
+    -- eyes on the fight and the room deserves to know whose.
+    for _, w in ipairs(watchers or {}) do
+        n = n + 1
+        local r = rows[n]
+        if not r then r = {} rows[n] = r end
+        r.i = nil
+        r.k, r.d, r.p = 0, 0, 0
+        r.name = w.name
+        r.ai = w.label == "bot" or w.label == "bot?"
+        r.label = w.label
+        r.mine = false
+        r.watch = true
     end
     for i = n + 1, #rows do rows[i] = nil end
     -- Your own team first, whatever the column says.
@@ -1004,6 +1040,11 @@ local function scores(me, pilots)
     -- who kills more of the empty.
     local key = M.sort
     table.sort(rows, function(a, b)
+        -- Watchers last, under everybody who is actually flying, whatever
+        -- column is chosen. They have no score to sort by and sorting them
+        -- into the middle of a scoreboard by a zero would read as a pilot
+        -- doing badly rather than as somebody not playing.
+        if a.watch ~= b.watch then return b.watch end
         if a.mine ~= b.mine then return a.mine end
         if key == "name" then
             if a.name ~= b.name then return a.name < b.name end
@@ -1070,13 +1111,18 @@ local function scores(me, pilots)
     ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
           pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
-    local my_team = sim.ship_team(me)
+    local my_team = team_of(me)
     local y = top_y() + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
-        local mine = r.i == me
-        local reading = M.inspect == r.i
-        local col = (sim.ship_team(r.i) == my_team) and pal.FRIEND or pal.ENEMY
+        local mine = r.i ~= nil and r.i == me
+        local reading = r.i ~= nil and M.inspect == r.i
+        -- A watcher is on nobody's side, so it is drawn in neither side's
+        -- colour: the neutral ink, dimmer than a pilot, which is the reading.
+        local col = pal.DIM
+        if not r.watch then
+            col = (sim.ship_team(r.i) == my_team) and pal.FRIEND or pal.ENEMY
+        end
         if mine or reading then
             -- Your row, marked the way a selected row is marked everywhere
             -- else in this interface: a lit rule and a wash off it, not a
@@ -1095,16 +1141,25 @@ local function scores(me, pilots)
         -- scan down the list finds them in a line instead of at fourteen
         -- different indents.
         if r.ai then bot_mark(kx - 42 * S, cy, pal.a(pal.DIM, 0.75)) end
-        -- The one way to ask about a pilot. Published before the panel's own
-        -- box below, which takes the wheel and would otherwise swallow the
-        -- press: first box in wins.
-        hit(x, y, w - 6 * S, LINE * S, "pilot", r.i)
-        txt(tostring(r.k), kx, y + LINE * S / 2, (FONT - 2) * S,
-            pal.a(pal.INK, 0.85), "right")
-        txt(tostring(r.d), dx, y + LINE * S / 2, (FONT - 2) * S,
-            pal.a(pal.DIM, 0.85), "right")
-        txt(tostring(r.p), px, y + LINE * S / 2, (FONT - 2) * S,
-            pal.a(pal.BOUNTY, 0.9), "right")
+        if r.watch then
+            -- No seat, so no box to open about them, and no numbers: a
+            -- watcher has not scored anything and three zeroes would say they
+            -- had. One word instead, in the columns the numbers would have
+            -- used, so the row is plainly a different kind of row.
+            txt("watching", px, y + LINE * S / 2, (FONT - 3) * S,
+                pal.a(pal.DIM, 0.7), "right")
+        else
+            -- The one way to ask about a pilot. Published before the panel's
+            -- own box below, which takes the wheel and would otherwise
+            -- swallow the press: first box in wins.
+            hit(x, y, w - 6 * S, LINE * S, "pilot", r.i)
+            txt(tostring(r.k), kx, y + LINE * S / 2, (FONT - 2) * S,
+                pal.a(pal.INK, 0.85), "right")
+            txt(tostring(r.d), dx, y + LINE * S / 2, (FONT - 2) * S,
+                pal.a(pal.DIM, 0.85), "right")
+            txt(tostring(r.p), px, y + LINE * S / 2, (FONT - 2) * S,
+                pal.a(pal.BOUNTY, 0.9), "right")
+        end
         y = y + LINE * S
     end
 
@@ -1120,17 +1175,24 @@ local function scores(me, pilots)
     -- Spelled out rather than punched into "0/2/50". Three bare numbers in a
     -- corner are a code, and this line is read once by somebody deciding
     -- whether a room is worth joining.
-    local claimed, guests, bots = 0, 0, 0
+    local claimed, guests, bots, watching = 0, 0, 0, 0
     for i = 1, n do
-        local l = rows[i].label
-        if l == "bot" or l == "bot?" then bots = bots + 1
-        elseif l == "human" then claimed = claimed + 1
+        local r = rows[i]
+        if r.watch then watching = watching + 1
+        elseif r.label == "bot" or r.label == "bot?" then bots = bots + 1
+        elseif r.label == "human" then claimed = claimed + 1
         else guests = guests + 1 end
     end
     local fy = y + foot / 2
-    txt(string.format("%d HERE: %d SIGNED, %d GUEST, %d AI",
-                      n, claimed, guests, bots),
-        x + 12 * S, fy, (FONT - 4) * S, pal.a(pal.DIM, 0.8))
+    -- The head count is people in the game. Watchers are counted apart and
+    -- only when there are any, because a zero on the end of every room's
+    -- line would be a column about nothing most of the time.
+    local line = string.format("%d HERE: %d SIGNED, %d GUEST, %d AI",
+                               n - watching, claimed, guests, bots)
+    if watching > 0 then
+        line = line .. string.format(", %d WATCHING", watching)
+    end
+    txt(line, x + 12 * S, fy, (FONT - 4) * S, pal.a(pal.DIM, 0.8))
 
     -- Only when there is something to scroll to. A bar on a list that fits is
     -- a control that does nothing.
@@ -1504,7 +1566,7 @@ local function inspect(o, top)
     -- something. Counted rather than guessed so the panel is exactly as tall
     -- as what it holds.
     local theirs = sim.ship_team(i)
-    local same_team = theirs == sim.ship_team(o.me)
+    local same_team = theirs == team_of(o.me)
     -- Which side they are on, and whether this pilot is allowed to be told.
     --
     -- The zone decides. A side it marks public is one anybody may see and name;
@@ -1988,7 +2050,7 @@ local function key_cap(x, y, w, label, on)
         pal.a(col, on and 1 or 0.85), "center", nil, true)
 end
 
-local function menu_button()
+local function menu_button(on_air)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
     -- that corner was a thing to press, and the board has taught the same hand
@@ -2008,6 +2070,31 @@ local function menu_button()
         key_cap(cx, y, ww, c[1], c[3])
         hit(cx, y, ww, KEY_H * S, c[2])
         cx = cx + ww + KEY_GAP * S
+    end
+    -- The tally, when the room channel is pointed at you.
+    --
+    -- It sits on this row rather than at the top of the middle, which is where
+    -- it started and where it could not stay: that strip already carries the
+    -- flag pennants and the round's banner, both of them centred, and a notice
+    -- laid over them read as a fault in the flags. Those two are about the
+    -- round. This is about you, like the keys beside it, and it is chrome
+    -- rather than anything happening in the arena.
+    --
+    -- Counted into `chip_right` like the keys are, so the map that opens
+    -- across this corner keeps clear of it by the rule that already keeps it
+    -- clear of them.
+    if on_air then
+        local mid = y + KEY_H * S / 2
+        -- A slow swell rather than a blink. It has to hold attention for as
+        -- long as the camera holds you, which is minutes, and a blink that
+        -- long is something a player learns to stop seeing.
+        local beat = 0.55 + 0.45 * math.sin(M.now * 3.2)
+        local r = 3.4 * S
+        u:disc(cx + r, ry(mid, 0), r, 10, pal.a(pal.HURT, beat))
+        local label = "ON AIR"
+        local size = key_size()
+        txt(label, cx + 2 * r + 5 * S, mid, size, pal.a(pal.HURT, 0.9))
+        cx = cx + 2 * r + 5 * S + text_w(label, size) + KEY_GAP * S
     end
     chip_right = cx - KEY_GAP * S
 end
@@ -2134,6 +2221,7 @@ end
 -- player says out loud. Pixels would be the same place in numbers six digits
 -- long that nobody can hold in their head or call across a room.
 local function coords(me)
+    if not me then return end
     local pad = (M.compact and 8 or PAD) * S
     local x = dial()
     local base = ST + pad + 13 * S
@@ -2153,7 +2241,7 @@ end
 local function flag_strip(me)
     local n = sim.flag_count()
     if n == 0 then return end
-    local my_team = sim.ship_team(me)
+    local my_team = team_of(me)
     local pitch = 15 * S
     local x0 = W / 2 - (n - 1) * pitch / 2
     local y = ST + 30 * S
@@ -2324,7 +2412,7 @@ function M.hud(o)
     -- alive, or under the menu, which takes the centre of the screen for
     -- itself and puts both of these away.
     wait_box = nil
-    if not o.menu_open and sim.ship_alive(me) == 0 then
+    if not o.menu_open and not o.watch and sim.ship_alive(me) == 0 then
         wait_box = wait_layout(o.tip)
     end
 
@@ -2334,7 +2422,7 @@ function M.hud(o)
     -- everything else moves up out of the way of them.
     local lift = M.touching and 150 * S or 0
 
-    local top = scores(me, o.pilots)
+    local top = scores(me, o.pilots, o.watchers)
     -- Names hanging off ships, but not under the menu. Glyphs come from the
     -- gui and the gui draws over every mesh, so nothing the menu lays down
     -- can cover them: a panel with six pilots' names scattered through it
@@ -2361,10 +2449,16 @@ function M.hud(o)
         feed(o.feed, M.radar_span())
     end
     -- Stacked, not overlaid: the panel that is always there sits at the
-    -- bottom and the one you asked for sits on top of it.
-    status(me, o.charges, lift)
-    inspect(o, loadout(me, o.class_names, top))
-    menu_button()
+    -- bottom and the one you asked for sits on top of it. A watcher has no
+    -- hull, so the hull's furniture -- the corner stack, the loadout -- is
+    -- not drawn at all; the room's instruments stay.
+    if not o.watch then
+        status(me, o.charges, lift)
+    end
+    inspect(o, o.watch and top or loadout(me, o.class_names, top))
+    -- A watcher is never the subject, so the tally can only be about a pilot
+    -- who is flying.
+    menu_button(o.on_air and not o.watch)
     vignette(o.hurt or 0)
     -- The pip over your own hull is not named. A bar that empties as you are
     -- shot and fills when you stop being shot is the one instrument here that
@@ -2386,7 +2480,7 @@ function M.hud(o)
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
             pal.a(pal.INK, 0.92), "center")
     end
-    if sim.ship_alive(me) == 0 then
+    if not o.watch and sim.ship_alive(me) == 0 then
         txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
             pal.ENEMY, "center")
         wait(wait_box, me)
@@ -3047,7 +3141,8 @@ local function ask_card(x, y, w, h, a)
     M.hits = {}
     text_dim = 1
     local cw = math.min(340 * S, w - 24 * S)
-    local ch = 110 * S
+    -- A card with a code in it is taller by the line the code takes.
+    local ch = (a.code and 152 or 110) * S
     local cx = x + (w - cw) / 2
     local cy = y + (h - ch) / 2
     rect(cx, cy, cw, ch, pal.a(pal.BTN_BG, 0.98))
@@ -3055,6 +3150,13 @@ local function ask_card(x, y, w, h, a)
     local mid = cx + cw / 2
     txt(a.head or "", mid, cy + 36 * S, (M.compact and 15 or 16) * S,
         pal.a(pal.INK, 0.95), "center", MENU_FONT)
+    -- What the question is about, when it is about a string rather than a
+    -- choice: big enough to read off one machine and type into another,
+    -- quoted rather than said, and lit, because it is the one thing on the
+    -- card anybody has to get right.
+    if a.code then
+        txt(a.code, mid, cy + 72 * S, 30 * S, pal.FRIEND, "center", nil, true)
+    end
     -- Laid out from the middle out rather than from an edge in, so the row of
     -- answers stays centred whatever the words are.
     local ws, total = {}, 0
@@ -3112,9 +3214,18 @@ local function ship_grid(x, y, w, h, v, focused)
         -- The one under the cursor turns, and nothing else on the page does.
         -- Eight hulls all revolving is a screensaver; one of them turning is
         -- the one you are looking at, answering.
-        thumb(cx, cy - ch * 0.17, r.hull or 0,
-              pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116,
-              hot and M.now * 1.7 or nil)
+        -- A cell about a hull draws the hull. The one that is about not having
+        -- one draws the pilot instead, at the size the helmet reads at rather
+        -- than at the hull's, since the two figures are built to different
+        -- scales and matching their boxes would shrink the helmet to a dot.
+        if r.figure == "pilot" then
+            pilot_mark(cx, cy - ch * 0.17,
+                       pal.a(col, (hot or r.mark) and 1 or 0.7), ch * 0.30)
+        else
+            thumb(cx, cy - ch * 0.17, r.hull or 0,
+                  pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116,
+                  hot and M.now * 1.7 or nil)
+        end
         txt(r.label or "", cx, cy + ch * 0.20, (M.compact and 14 or 15) * S,
             pal.a(col, (hot or r.mark) and 1 or 0.8), "center", MENU_FONT)
         if r.role then

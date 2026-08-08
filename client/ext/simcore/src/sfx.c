@@ -264,6 +264,65 @@ static void v_drive(voice *v, double k) {
     for (i = 0; i < v->n; i++) v->buf[i] = tanh(v->buf[i] * k) / tanh(k);
 }
 
+// A resonant bandpass whose centre sweeps, mixed over the dry signal.
+//
+// Resonance is what gives a sound a body to have come out of. A narrow peak
+// that rings up around 1.5 kHz is a tin can; the same peak down at 200 and
+// sliding is a throat. Neither can be had from the lowpasses above, which only
+// take things away: a resonator hands some of it back, louder, at one place.
+//
+// The cookbook bandpass with constant peak gain, coefficients rebuilt every
+// sample because the centre is moving. That is a transcendental or three per
+// sample, which is nothing against how rarely this runs.
+static void v_reson(voice *v, double f0, double f1, double q, double wet) {
+    double x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0;
+    int i;
+    for (i = 0; i < v->n; i++) {
+        double fc = f0 + (f1 - f0) * ((double)i / v->n);
+        double w, alpha, a0, b0, a1, a2, x, y;
+        if (fc < 20.0) fc = 20.0;
+        if (fc > RATE * 0.45) fc = RATE * 0.45;
+        w = 2.0 * SFX_PI * fc / RATE;
+        alpha = sin(w) / (2.0 * q);
+        a0 = 1.0 + alpha;
+        b0 = alpha / a0;
+        a1 = -2.0 * cos(w) / a0;
+        a2 = (1.0 - alpha) / a0;
+        x = v->buf[i];
+        y = b0 * x - b0 * x2 - a1 * y1 - a2 * y2;
+        x2 = x1; x1 = x;
+        y2 = y1; y1 = y;
+        v->buf[i] = x * (1.0 - wet) + y * wet;
+    }
+}
+
+// Ring modulation: everything already in the buffer, multiplied by a sine.
+//
+// It moves every partial to the sum and difference of itself and the
+// modulator, which lands them off the harmonic series. That is the whole
+// difference between a note and a clang, and it is how a shell reads as metal
+// rather than as a low instrument.
+static void v_ring(voice *v, double f0, double f1, double depth) {
+    double ph = 0.0;
+    int i;
+    for (i = 0; i < v->n; i++) {
+        double f = f0 + (f1 - f0) * ((double)i / v->n);
+        ph += 2.0 * SFX_PI * f / RATE;
+        v->buf[i] *= 1.0 - depth + depth * sin(ph);
+    }
+}
+
+// A wavefolder, where v_drive is a limiter.
+//
+// Drive rounds a peak off and adds a little of the odd harmonics. This turns
+// the peak back on itself, so the harmonics it throws up were never in the
+// source at all and do not fall where the ear expects them. Loudness is what
+// drive sounds like; this sounds like something being damaged.
+static void v_fold(voice *v, double k) {
+    int i;
+    for (i = 0; i < v->n; i++) v->buf[i] = sin(v->buf[i] * k);
+}
+
 // A slow front, in place of the hard one every other sound here has.
 //
 // It is what separates a bomb from a gun at any rung. A bolt cracks off a rail
@@ -312,135 +371,154 @@ static void v_normalise(voice *v) {
 // thing there is to know about an incoming round: it is the whole of the damage
 // a bolt carries and the whole of the radius a bomb clears.
 //
-// It used to be four takes of one sound. The rungs moved weight only, on the
-// argument that a rung is the same weapon harder and so must not sound like a
-// different weapon, and the argument was right about the mechanic and wrong
-// about what came out. Measured with client/tools/sfxladder, adjacent rungs
-// landed 2.5 to 4.5 dB apart, and a player who had flown the whole ladder
-// asked for a sound per rung. They are 6.4 to 7.3 apart now.
+// Two designs failed at this before the one below, and they failed the same
+// way. Both wrote one recipe and walked its numbers per rung, the first moving
+// weight alone and the second moving every parameter it had. Measured with
+// client/tools/sfxladder they came out 2.5 to 4.5 dB apart and then 7.6 to 8.4,
+// and the player who flew both called the first one sound and the second slight
+// alterations of each other. A recipe stretched far enough is still a recipe.
+// Every rung of it arrives as the same event slightly off, and which of four
+// events it is remains the thing that was asked and not answered.
 //
-// So each ladder climbs on every axis at once, because one axis moving is what
-// a listener hears as the same sound slightly off, and all of them moving
-// together is what a listener hears as a different thing. Pitch falls, weight
-// arrives underneath, the drive comes up, and every rung runs longer than the
-// one below it. Deeper reads as bigger without anybody having to learn it.
+// So the eight launch sounds below share no table and no parameters, only the
+// tools they call. Each is written to a brief: the bolts run from a weenie to
+// something nasty and the charges from tinny and hollow to throaty and bass
+// heavy. The ladders are steep for it, two octaves and two and a half, every
+// step at least a tritone.
 //
-// The tables below are one row per axis and one column per rung, so a ladder is
-// a ladder in the source as well as in the ear.
+// The detonations further down are still a table, because their brief is one
+// thing getting bigger rather than four things being different.
 //
-// Two things bound how far this can go. A rung must still belong to its family,
-// since a gun that has climbed into a bomb's register tells a pilot something
-// false about what is coming; sfxladder holds the nearest gun-to-bomb pair
-// further apart than the widest step inside any of the three. And loudness
-// cannot come from here at all: every buffer is normalised to the same peak
-// before it is written, so these decide timbre only, and the rungs get louder
-// through the gain in their .sound files.
+// Loudness is not decided here. Every buffer is normalised to the same peak
+// before it is written, so these decide timbre only, and the gains in the
+// .sound files carry the climb. Those gains are not in order and are not meant
+// to be: a folded buffer is dense and a resonant one is sparse, so eight sounds
+// at one peak are eight loudnesses, and the numbers that even them out are
+// solved from each sound's loudest 300 ms window rather than chosen.
 
-// A bolt leaving the rail: bright, over before it registers.
+// A bolt leaving the rail. Rung zero is a toy and rung three is a weapon that
+// is hurting itself to fire.
 //
-// Rung zero is a tack: thin, bright, and byte for byte the sound this family
-// had before the rungs were told apart, so nothing about a fresh spawn's gun
-// moves. Above it the bolt drops a sixth over three rungs, grows a low-mid
-// body, and picks up a second square a little flat of the first, which beats
-// against it into a snarl. The top rung is a slam with real sub under it, and
-// it is short enough that the sub is a thump rather than a note.
-//
-// The air over all four stays bright and gets brighter, which is the one thing
-// that does not follow the weight down. It is what keeps a gun a gun: the
-// bombs go dark as they climb, and without this the heaviest bolt and the
-// lightest shell end up nearer each other than either is to its own neighbour.
-static const double GUN_FALL[2][4] = {{1750, 1440, 1200, 1010},
-                                      { 460,  380,  315,  265}};
-static const double GUN_TOP[2][4] = {{2400, 2050, 1750, 1500},
-                                     { 700,  600,  510,  440}};
-static const double GUN_BODY[3][4] = {{   0,  380,  260,  190},
-                                      {   0,  150,  110,   80},
-                                      {0.00, 0.32, 0.46, 0.62}};
-static const double GUN_SUB[3][4] = {{   0,    0,   95,   66},
-                                     {   0,    0,   46,   30},
-                                     {0.00, 0.00, 0.28, 0.60}};
-// How flat the second square sits, as a fraction. Zero is no second square.
-static const double GUN_SNARL[4] = {0.000, 0.000, 0.016, 0.032};
-static const double GUN_HISS [3][4]    = {{0.16, 0.21, 0.24, 0.28},
-                                          {7000, 7200, 7600, 8000},
-                                          { 900, 1000, 1150, 1300}};
-static const double GUN_DRIVE[4] = {1.60, 2.00, 2.45, 3.00};
+// What the four share is the shape of the gesture, and that is the whole of
+// what keeps them one family: a pulse falling fast, bright air over it, and a
+// crack at the front that reaches full level in four and a half milliseconds
+// however heavy the rung. Nothing here swells, and every charge does.
 
-static void gun_at(voice *v, int lvl) {
-    v_square(v, GUN_FALL[0][lvl], GUN_FALL[1][lvl], 0.55, 0.32, 0.45);
-    if (GUN_SNARL[lvl] > 0.0) {
-        double k = 1.0 - GUN_SNARL[lvl];
-        v_square(v, GUN_FALL[0][lvl] * k, GUN_FALL[1][lvl] * k, 0.30, 0.38,
-                 0.45);
-    }
-    v_sine(v, GUN_TOP[0][lvl], GUN_TOP[1][lvl], 0.30, 0.4);
-    if (GUN_BODY[2][lvl] > 0.0)
-        v_sine(v, GUN_BODY[0][lvl], GUN_BODY[1][lvl], GUN_BODY[2][lvl], 0.55);
-    if (GUN_SUB[2][lvl] > 0.0)
-        v_sine(v, GUN_SUB[0][lvl], GUN_SUB[1][lvl], GUN_SUB[2][lvl], 0.7);
-    // One seed across the four, so the air leaving the rail is the same air.
-    v_noise(v, GUN_HISS[0][lvl], GUN_HISS[1][lvl], GUN_HISS[2][lvl], 2.0, 11);
-    v_drive(v, GUN_DRIVE[lvl]);
+// A weenie. Thin, high, narrow, and gone: a pulse an eighth of a cycle wide
+// has almost nothing under a kilohertz to it, and there is no drive here at
+// all, so nothing is added that the oscillators did not put there.
+static void k_gun0(voice *v) {
+    v_square(v, 3000, 1250, 0.50, 0.13, 0.40);
+    v_sine(v, 3600, 1550, 0.26, 0.40);
+    v_noise(v, 0.07, 9000, 4200, 3.0, 11);
 }
 
-static void k_gun0(voice *v) { gun_at(v, 0); }
-static void k_gun1(voice *v) { gun_at(v, 1); }
-static void k_gun2(voice *v) { gun_at(v, 2); }
-static void k_gun3(voice *v) { gun_at(v, 3); }
-
-// Heavier and slower than a gun, so the ear knows which one fired.
-//
-// The rungs mean something different here. A bomb level leaves the shell alone
-// and buys blast radius, doubling and tripling it, and it costs more energy to
-// fire. So the ladder is the sound of a heavier charge leaving a bigger tube:
-// the fall goes down and slows as it goes, the sub arrives and then dominates,
-// and the air over it darkens as the charge stops being something a hull can
-// throw quickly.
-static const double BOMB_FALL[2][4] = {{ 300,  232,  176,  128},
-                                       {  94,   68,   48,   32}};
-static const double BOMB_BODY[3][4] = {{ 180,  128,   90,   58},
-                                       {  54,   38,   26,   17},
-                                       {0.38, 0.52, 0.66, 0.82}};
-static const double BOMB_SUB[3][4] = {{   0,   76,   50,   30},
-                                      {   0,   34,   25,   18},
-                                      {0.00, 0.32, 0.68, 1.25}};
-static const double BOMB_HISS[3][4] = {{0.24, 0.19, 0.11, 0.08},
-                                       {2800, 2100, 1450,  950},
-                                       { 330,  230,  155,   95}};
-// How much of the fall is spent at the top of it. A heavier charge leaves
-// slowly, so the higher rungs hang before they drop.
-static const double BOMB_CURVE[4] = {0.50, 0.76, 1.02, 1.60};
-static const double BOMB_DRIVE[4] = {1.85, 2.10, 2.35, 2.55};
-// How long the charge takes to clear the tube, in seconds. Nothing in the gun
-// ladder swells, so this is the family's own mark as well as a rung's: it is
-// what keeps a heavy bomb from arriving as a heavy bolt.
-static const double BOMB_SWELL[4] = {0.009, 0.019, 0.038, 0.066};
-
-// How much of the charge is the buzzing saw rather than the round sine under
-// it. A small one is all rasp and a big one is nearly all body, which is the
-// other half of why the top rungs read as deeper: a saw's own harmonics reach
-// a long way up, and leaning off it lets the fall be heard.
-static const double BOMB_SAW[4] = {0.52, 0.46, 0.34, 0.24};
-
-static void bomb_at(voice *v, int lvl) {
-    v_saw(v, BOMB_FALL[0][lvl], BOMB_FALL[1][lvl], BOMB_SAW[lvl],
-          BOMB_CURVE[lvl]);
-    v_sine(v, BOMB_BODY[0][lvl], BOMB_BODY[1][lvl], BOMB_BODY[2][lvl],
-           BOMB_CURVE[lvl] + 0.1);
-    if (BOMB_SUB[2][lvl] > 0.0)
-        v_sine(v, BOMB_SUB[0][lvl], BOMB_SUB[1][lvl], BOMB_SUB[2][lvl], 0.6);
-    v_noise(v, BOMB_HISS[0][lvl], BOMB_HISS[1][lvl], BOMB_HISS[2][lvl], 2.0,
-            23);
-    v_drive(v, BOMB_DRIVE[lvl]);
-    // After the drive, so the front is the length the table says rather than
-    // whatever length soft clipping leaves of it.
-    v_swell(v, BOMB_SWELL[lvl]);
+// A crack. The first rung that sounds like a gun rather than a toy: the pulse
+// has widened, a body has arrived under it, and the air is loud enough to be
+// the front of the sound rather than a detail of it.
+static void k_gun1(voice *v) {
+    v_square(v, 1700, 620, 0.52, 0.28, 0.42);
+    v_sine(v, 2300, 900, 0.22, 0.40);
+    v_sine(v, 320, 170, 0.20, 0.60);
+    v_noise(v, 0.17, 7000, 1400, 2.2, 11);
+    v_drive(v, 1.7);
 }
 
-static void k_bomb0(voice *v) { bomb_at(v, 0); }
-static void k_bomb1(voice *v) { bomb_at(v, 1); }
-static void k_bomb2(voice *v) { bomb_at(v, 2); }
-static void k_bomb3(voice *v) { bomb_at(v, 3); }
+// A snarl. Two pulses a fiftieth apart beat against each other, and a ring
+// modulator down at speaking pitch drags the partials off the harmonic series
+// so the beating reads as a growl rather than as chorus. Folded, not driven.
+static void k_gun2(voice *v) {
+    v_square(v, 1150, 380, 0.46, 0.42, 0.30);
+    v_square(v, 1127, 372, 0.30, 0.46, 0.30);
+    v_sine(v, 240, 130, 0.42, 0.55);
+    v_ring(v, 245, 150, 0.30);
+    v_noise(v, 0.22, 6200, 900, 2.0, 11);
+    v_fold(v, 1.6);
+}
+
+// Nasty. Everything the rung below does, harder, plus the two things it does
+// not: real sub under the pulse, and a throat. The resonance sweeping from
+// nine hundred down to three is what turns a loud bolt into a bolt coming out
+// of something, and the fold past two is the sound of a rail that is not
+// enjoying this.
+static void k_gun3(voice *v) {
+    v_square(v, 820, 235, 0.46, 0.50, 0.22);
+    v_square(v, 791, 227, 0.34, 0.50, 0.22);
+    v_sine(v, 175, 88, 0.50, 0.55);
+    v_sine(v, 70, 34, 0.55, 0.70);
+    v_ring(v, 240, 150, 0.42);
+    v_noise(v, 0.30, 5200, 700, 1.8, 11);
+    v_reson(v, 900, 300, 3.0, 0.40);
+    v_fold(v, 2.4);
+}
+
+// A charge leaving the tube.
+//
+// Built apart from each other for the same reason the bolts are, and the
+// distance to travel is further: a rung zero bomb is a tin of something going
+// off and a rung three bomb clears four times the room. So the bottom of this
+// ladder is hollow and metallic, all shell and no charge, and the top is
+// nearly all charge, a throat opening under a wall of sub.
+//
+// Every one of them swells rather than cracks. That is the family's mark and
+// it is not decoration: without it the heaviest bolt and the lightest shell
+// arrive as the same kind of event, which is the one confusion here that
+// costs a pilot something.
+
+// Tinny and hollow. A square is hollow by construction, having only the odd
+// harmonics, and a narrow resonance up at 1.4 kHz with a clang ring-modulated
+// through it is the tin. There is no sub at all: this is the shell, and there
+// is hardly anything in it.
+static void k_bomb0(voice *v) {
+    v_square(v, 330, 145, 0.44, 0.50, 0.45);
+    v_sine(v, 190, 74, 0.26, 0.55);
+    v_noise(v, 0.22, 4200, 800, 2.4, 23);
+    v_ring(v, 430, 330, 0.30);
+    v_reson(v, 1450, 900, 7.0, 0.62);
+    v_drive(v, 1.7);
+    v_swell(v, 0.024);
+}
+
+// A real charge. The tin is still audible but it is a ring over the top now
+// rather than the whole sound, and a saw underneath gives it something to
+// throw.
+static void k_bomb1(voice *v) {
+    v_saw(v, 245, 82, 0.46, 0.70);
+    v_sine(v, 150, 52, 0.44, 0.80);
+    v_sine(v, 78, 34, 0.24, 0.60);
+    v_noise(v, 0.26, 3000, 320, 2.2, 23);
+    v_reson(v, 900, 420, 4.5, 0.44);
+    v_drive(v, 2.0);
+    v_swell(v, 0.024);
+}
+
+// Throaty. The resonance has come down out of the tin and into the chest,
+// where it sweeps while the sound is still going, which is what a throat is.
+// The saw is backed off to let it be heard: a saw's own harmonics reach a long
+// way up and they sit exactly where this needs to be quiet.
+static void k_bomb2(voice *v) {
+    v_saw(v, 172, 56, 0.30, 0.95);
+    v_sine(v, 104, 34, 0.56, 1.05);
+    v_sine(v, 54, 25, 0.52, 0.60);
+    v_noise(v, 0.19, 1900, 210, 2.0, 23);
+    v_reson(v, 500, 180, 5.0, 0.52);
+    v_drive(v, 2.3);
+    v_swell(v, 0.040);
+}
+
+// Throaty and bass heavy. Almost none of this is above two hundred hertz. The
+// sub is the loudest thing in the buffer, the throat is down at the bottom of
+// its range, and what little air there is has been shut down to a rumble, so
+// the whole seven hundred milliseconds is weight arriving and then leaving.
+static void k_bomb3(voice *v) {
+    v_saw(v, 118, 33, 0.20, 1.30);
+    v_sine(v, 70, 22, 0.72, 1.40);
+    v_sine(v, 40, 18, 1.25, 0.60);
+    v_noise(v, 0.08, 900, 95, 1.9, 23);
+    v_reson(v, 240, 72, 6.0, 0.62);
+    v_drive(v, 2.6);
+    v_swell(v, 0.072);
+}
 
 // A bomb going off: noise for the air, a falling sine for the body.
 //
@@ -457,15 +535,15 @@ static void k_bomb3(voice *v) { bomb_at(v, 3); }
 // third of a second to nearly a whole one. Loudness still comes from the
 // .sound gains, which climb 0.62 to 0.84 and stop under a death.
 static const double BLAST_AIR[3][4] = {{0.62, 0.72, 0.86, 1.00},
-                                       {2600, 1900, 1400,  650},
-                                       { 280,  180,  115,   42}};
+                                       {3000, 2800, 1500,  480},
+                                       { 320,  270,  128,   30}};
 static const double BLAST_BODY[3][4] = {{ 235,  180,  132,   80},
                                         {  52,   40,   28,   17},
                                         {0.44, 0.54, 0.67, 0.94}};
 static const double BLAST_SUB[3][4] = {{ 122,   92,   64,   32},
                                        {  36,   29,   20,   12},
                                        {0.22, 0.38, 0.64, 1.40}};
-static const double BLAST_DRIVE[4] = {1.95, 2.10, 2.30, 2.60};
+static const double BLAST_DRIVE[4] = {1.90, 2.10, 2.30, 2.40};
 
 // How fast the air stops moving. A small charge is a crack that is over; a big
 // one keeps rolling, so the top rungs hold their noise up long after the crack
@@ -943,21 +1021,21 @@ typedef struct {
     void (*make)(voice *);
 } entry;
 
-// Length is the last axis the rungs climb, and the gun climbs it least: the
-// delay between shots does not change with the ladder, so a bolt that grew
-// with the rung would start overlapping its own repeat at the top of it. A
-// bomb is thrown rarely enough to be allowed the room, and a detonation is
-// allowed twice what a bomb leaving the tube is.
+// Length is an axis the rungs climb only as far as the arena allows. A gun
+// fires every 250 ms whatever rung it is on, so a bolt that grew freely with
+// the rung would start overlapping its own repeat at the top, and 155 ms
+// leaves the gap that stops it. A bomb is thrown every 1.5 seconds and can
+// have the room.
 static const entry KIT[] = {
-    {"gun0",    0.085, 0, k_gun0},
-    {"gun1",    0.098, 0, k_gun1},
-    {"gun2",    0.112, 0, k_gun2},
-    {"gun3",    0.132, 0, k_gun3},
-    {"bomb0",   0.22,  0, k_bomb0},
-    {"bomb1",   0.31,  0, k_bomb1},
-    {"bomb2",   0.43,  0, k_bomb2},
-    {"bomb3",   0.66,  0, k_bomb3},
-    {"blast0",  0.32,  0, k_blast0},
+    {"gun0",   0.070, 0, k_gun0},
+    {"gun1",   0.095, 0, k_gun1},
+    {"gun2",   0.125, 0, k_gun2},
+    {"gun3",   0.155, 0, k_gun3},
+    {"bomb0",  0.20,  0, k_bomb0},
+    {"bomb1",  0.32,  0, k_bomb1},
+    {"bomb2",  0.50,  0, k_bomb2},
+    {"bomb3",  0.78,  0, k_bomb3},
+    {"blast0", 0.28,  0, k_blast0},
     {"blast1",  0.46,  0, k_blast1},
     {"blast2",  0.64,  0, k_blast2},
     {"blast3",  0.85,  0, k_blast3},

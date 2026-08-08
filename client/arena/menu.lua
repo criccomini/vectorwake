@@ -39,6 +39,7 @@ local M = {}
 M.open = true           -- the page opens on it
 M.home = true           -- no game behind the panel
 M.class = 0             -- the hull you are flying, kept in step with the sim
+M.watching = false      -- sitting out, set by the arena each frame
 M.pending = nil         -- the hull a row just asked for
 M.chosen = nil          -- the game a row just asked for
 M.stack = {"root"}
@@ -194,7 +195,29 @@ local function hull_rows()
         rows[i] = {
             label = h[1], detail = h[3], act = "ship", value = i - 1,
             hull = i - 1, role = h[2],
-            mark = function() return M.class == i - 1 end,
+            -- Not while watching. A watcher is in no hull, so marking the one
+            -- they would fly back in would put the "you are here" wash on a
+            -- ship nobody is sitting in.
+            mark = function() return not M.watching and M.class == i - 1 end,
+        }
+    end
+    -- Sitting out is the ninth thing you can be flying, so it is the ninth
+    -- cell rather than a row somewhere else. Picking a hull is already how a
+    -- pilot says what they want to be; "nothing, I am watching" is an answer
+    -- to that question and belongs beside the other eight.
+    --
+    -- Only with a game behind the panel. On the home screen this page is the
+    -- hull you will arrive in, and there is nothing to watch yet: the cell
+    -- would be a control whose whole effect is a sentence explaining why it
+    -- did nothing.
+    if not M.home then
+        rows[#rows + 1] = {
+            label = "Spectate", detail = "watch the room from nobody's cockpit",
+            act = "spectate", role = "no hull",
+            -- The helmet, not a ship: the cell is about the pilot rather than
+            -- about anything they are flying.
+            figure = "pilot",
+            mark = function() return M.watching end,
         }
     end
     return rows
@@ -295,7 +318,10 @@ local NODES = {
                 return "choose a game"
             end, go = "zones"},
             {label = "ship", icon = "ship",
-             detail = function() return HULLS[M.class + 1][1] end,
+             detail = function()
+                 if M.watching then return "spectating" end
+                 return HULLS[M.class + 1][1]
+             end,
              go = "ship"},
             {label = "pilot", icon = "pilot",
              detail = function() return M.name end, go = "pilot"},
@@ -319,7 +345,10 @@ local NODES = {
     -- so left and right are a column apart and up and down are a row apart.
     -- Nothing else in the tree is, which is why it is a flag on the node
     -- rather than a rule about pages.
-    ship = {grid = true, rows = hull_rows()},
+    -- A function rather than a table: the page is eight cells on the home
+    -- screen and nine with a game behind it, so it has to be asked each time
+    -- rather than built once at load.
+    ship = {grid = true, rows = hull_rows},
 
     zones = {rows = zone_rows, empty = zone_empty},
 
@@ -356,7 +385,7 @@ local NODES = {
         if account.claimed and account.key == "" then
             if account.link_code ~= "" then
                 rows[#rows + 1] = {label = "code", detail = account.link_code,
-                    verbatim = true,
+                    verbatim = true, act = "code",
                     hint = "type this on the other device within ten minutes"}
             else
                 rows[#rows + 1] = {label = "add a device", act = "link",
@@ -515,9 +544,18 @@ local function settle(act)
         -- thing.
         account.key = ""
     elseif act == "link" then
+        -- The code arrives from the meta-layer a moment later, and the moment
+        -- it does it is the only thing on this page worth looking at.
         account.link(function(ok)
-            if not ok then M.note = account.note end
+            if not ok then M.note = account.note return end
+            M.show_code()
         end)
+    elseif act == "code" then
+        -- The row that holds it, pressed again. Answering the card never
+        -- clears the code: it is live for ten minutes whatever this screen is
+        -- showing, and somebody who dismissed it and walked to the other
+        -- machine should not have to make a second one.
+        M.show_code()
     elseif act == "volume" then
         M.volume = M.volume % #VOLUMES + 1
         M.apply_settings()
@@ -540,8 +578,19 @@ end
 -- label and the action answering it returns, and the last of them is the one
 -- that changes nothing: it is where the cursor starts and what escape gives,
 -- so a question can always be got out of by the key that gets out of anything.
-function M.confirm(head, keys)
-    M.ask = {head = head, keys = keys, sel = #keys}
+-- `code` is a string the question is about rather than something it says: a
+-- link code is read off this screen and typed into another machine, so it is
+-- drawn large and in its own case, and the heading above it is the sentence.
+function M.confirm(head, keys, code)
+    M.ask = {head = head, keys = keys, sel = #keys, code = code}
+end
+
+-- The device code, as big as it can be drawn. Raised when one arrives and
+-- again whenever its row is pressed.
+function M.show_code()
+    if account.link_code == "" then return end
+    M.confirm("Type this on the other device", {{label = "done"}},
+              account.link_code)
 end
 
 -- Answer the one that is up, and hand back what that answer is worth. Cleared
@@ -705,7 +754,11 @@ function M.view()
             -- the key on the pilot page and the sides on the team page.
             verbatim = r.verbatim, named = r.named,
             index = i,
-            hull = r.hull, role = r.role,
+            -- `hull` names a ship to draw and `figure` overrides it with
+            -- something that is not one. Both travel, because a cell with
+            -- neither would fall back to hull zero and draw an Apex, which is
+            -- exactly what the spectate cell did before this line existed.
+            hull = r.hull, figure = r.figure, role = r.role,
             players = r.players, bots = r.bots, live = r.live,
             choice = ci, choices = cn,
             pick = (r.go or r.act) ~= nil,
@@ -849,8 +902,15 @@ local function activate()
                 -- the whole of how a player leaves now: the list used to carry
                 -- a "leave this game" row at its foot, a long way from the
                 -- game it was about, in a list otherwise all places to go.
-                M.confirm("you are already flying " .. pick.name,
-                          {{label = "leave", act = "leave"}, {label = "stay"}})
+                -- Two answers, not three. Sitting out used to live here as a
+                -- third, and it was in the wrong room: this card is about the
+                -- game you are in, and watching is about what you are flying,
+                -- which is the ship page's question. It is the ninth cell
+                -- there now.
+                M.confirm((M.watching and "you are watching "
+                           or "you are already flying ") .. pick.name,
+                          {{label = "leave", act = "leave"},
+                           {label = "stay"}})
                 return nil
             elseif pick.live then
                 M.confirm("leave " .. M.zone .. " for " .. pick.name .. "?",
