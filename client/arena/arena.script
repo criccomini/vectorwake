@@ -67,10 +67,19 @@ local function eye()
     return nil
 end
 
--- The same, as a team byte for hostility colouring. 255 belongs to no side,
--- so an empty channel colours everybody hostile, which is what a free-for-all
--- already does to everyone who is not you.
+-- The side everything on screen is coloured against.
+--
+-- Your own while flying. Also your own while watching, which is the side you
+-- sat out from and the zone tells a watcher what it is: colouring from the
+-- subject's side instead was the obvious reading and the wrong one, because
+-- the camera moves. It would have repainted your own teammates as enemies the
+-- moment the channel picked somebody from the other side, and it would have
+-- put the card's WATCH on a hull drawn in the hostile colour.
+--
+-- 255 belongs to no side, which is what a stranger who arrived to watch gets:
+-- nobody out there is theirs, and nothing reads as friendly.
 local function eye_team()
+    if watching then return net.my_team end
     local e = eye()
     return e and sim.ship_team(e) or 255
 end
@@ -1379,6 +1388,11 @@ function update(self, dt)
                 subject = e,
                 name = e and net.pilots[e] and net.pilots[e].name or nil,
             } or nil,
+            -- The side this screen belongs to. Not the subject's: watching,
+            -- the camera stands behind whoever the channel picked, and the
+            -- question every instrument asks is which end of the gun you are
+            -- on rather than which end they are.
+            side = eye_team(),
             -- You are the channel's subject: the camera is on you, and the
             -- mark that says so is the one courtesy the channel owes.
             on_air = net.on_air,
@@ -1481,6 +1495,7 @@ function apply_menu(self, act)
         -- With no game on, this is simply the hull you will arrive in.
         if not self.online then
             menu.class = menu.pending
+            menu.spectate = false
             menu.save_identity()
             return
         end
@@ -1491,6 +1506,7 @@ function apply_menu(self, act)
         -- are, watching.
         if watching then
             net.set_class(menu.pending)
+            menu.spectate = false
             menu.save_identity()
             menu.close()
             return
@@ -1604,7 +1620,7 @@ function apply_menu(self, act)
         net.connect(r.address, menu.class, menu.name, function(why)
             menu.note = why
             go_home(self, "zones")
-        end, r.zone)
+        end, r.zone, menu.spectate)
         self.online = true
         self.joining = 0
         return
@@ -1614,10 +1630,12 @@ function apply_menu(self, act)
     -- socket watches, landing on the room channel. Coming back is any of the
     -- other eight cells, which is the same page and the same press.
     if act == "spectate" then
-        if not self.online then
-            menu.note = "nothing to watch yet"
-            return
-        end
+        -- Off the home screen this is what you will arrive as, exactly as
+        -- picking a hull there is: remembered, carried into the join, and the
+        -- page stays open so the wash moving is the answer.
+        menu.spectate = true
+        menu.save_identity()
+        if not self.online then return end
         if not watching then net.watch(255) end
         menu.close()
         return
@@ -1694,6 +1712,26 @@ function on_message(self, message_id, message)
     end
 end
 
+-- The finger currently dragging the player list, if there is one: which touch
+-- it is, where it went down, and what the list was scrolled to then, so the
+-- scroll follows the whole gesture rather than accumulating rounding from
+-- each frame's step.
+local list_drag = nil
+
+-- Whether a press landed on the player list. The panel publishes one box over
+-- its whole area for exactly this, and it is the last of its boxes, so the row
+-- boxes over it still win a tap.
+local function in_list(self, sx, sy)
+    local px, py = sx, (self.vh or 0) - sy
+    for _, r in ipairs(ui.hits) do
+        if r.action == "scores" then
+            return px >= r.x and px <= r.x + r.w
+                and py >= r.y and py <= r.y + r.h
+        end
+    end
+    return false
+end
+
 function on_input(self, action_id, action)
     -- A press is a press on whatever it landed on. The interface publishes its
     -- own hit boxes in the pixel space it drew them in, so this needs no
@@ -1743,6 +1781,17 @@ function on_input(self, action_id, action)
                 -- closing it would take that away before it could be read.
                 if r.action == "invite" then
                     net.invite(r.value)
+                    sfx.ui("ui_go")
+                    return true
+                end
+                -- Borrow this pilot's eyes. The box shuts behind it, unlike
+                -- an invitation: the answer to this one is the whole screen
+                -- changing to their view, and a panel about them left
+                -- standing over it would be describing what you are now
+                -- looking through.
+                if r.action == "watch" then
+                    net.watch(r.value)
+                    ui.inspect = nil
                     sfx.ui("ui_go")
                     return true
                 end
@@ -1809,9 +1858,58 @@ function on_input(self, action_id, action)
         -- engine decided was primary: on a phone the finger that reaches the
         -- button is often the second one down.
         if action.touch then touch.note_used() end
+
+        -- The player list, dragged. It could only ever be scrolled by a wheel,
+        -- and a phone has no wheel, so on glass the list simply stopped at
+        -- whatever fitted and a room of sixty-four showed nine of them.
+        --
+        -- A finger that lands on the list might mean either of two things and
+        -- there is no telling which until it moves, so the choice is made on
+        -- release: one that travelled was a scroll, one that did not was a tap
+        -- on the row it landed on. That is why this runs ahead of the hit
+        -- boxes, rather than letting a row open a card under a finger that was
+        -- on its way somewhere.
+        --
+        -- `dragged` is the one finger the list took, so the rest of the frame
+        -- leaves it alone and nothing else. The other thumb may be flying, and
+        -- swallowing the whole action would stop the stick mid-turn for as
+        -- long as somebody was reading the scoreboard.
+        local dragged = nil
         if action.touch then
             for _, t in ipairs(action.touch) do
-                if t.pressed and hit(t.screen_x or t.x, t.screen_y or t.y) then
+                local sx, sy = t.screen_x or t.x, t.screen_y or t.y
+                if t.pressed and in_list(self, sx, sy) then
+                    list_drag = {id = t.id, y = sy, at = ui.scroll,
+                                 moved = false}
+                    dragged = t.id
+                elseif list_drag and t.id == list_drag.id then
+                    dragged = t.id
+                    -- screen_y counts up from the bottom, so a finger moving
+                    -- up the screen raises it, and dragging up should bring
+                    -- the rows below into view.
+                    --
+                    -- Measured from where the finger went down rather than
+                    -- from the last frame, so the rounding to whole rows
+                    -- happens once over the gesture instead of accumulating
+                    -- a lost pixel per frame.
+                    local dy = sy - list_drag.y
+                    local pitch = math.max(1, ui.row_pitch())
+                    -- Better than half a row before it counts as travel,
+                    -- which is the width of the wobble in a tap.
+                    if math.abs(dy) > pitch * 0.6 then list_drag.moved = true end
+                    ui.scroll = list_drag.at + math.floor(dy / pitch)
+                    if t.released then
+                        if not list_drag.moved then hit(sx, sy) end
+                        list_drag = nil
+                    end
+                end
+            end
+        end
+
+        if action.touch then
+            for _, t in ipairs(action.touch) do
+                if t.id ~= dragged and t.pressed
+                   and hit(t.screen_x or t.x, t.screen_y or t.y) then
                     return
                 end
             end
@@ -1822,7 +1920,10 @@ function on_input(self, action_id, action)
         if net.watching then
             if action.touch then
                 for _, t in ipairs(action.touch) do
-                    if t.pressed then
+                    -- Not the finger reading the scoreboard. Walking the
+                    -- camera off a scroll is the same mistake as opening a
+                    -- card under it, one screen further out.
+                    if t.pressed and t.id ~= dragged then
                         local x = t.screen_x or t.x
                         local half = (self.vw or 0) / 2
                         tapped[x < half and hash("turn_left")

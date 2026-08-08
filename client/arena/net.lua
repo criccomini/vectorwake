@@ -18,6 +18,10 @@ local C2S_TEAM, C2S_FOUND, C2S_INVITE = 6, 7, 8
 -- somewhere else. A request like the team asks: the subject byte of the next
 -- snapshot is the answer, and an unlawful ask lands on the room channel.
 local C2S_WATCH = 9
+-- The one flag a player sets in a join: this client came to watch, not to
+-- fly. The class byte is ignored, no ship is spawned, and the seat taken is a
+-- watcher's. The other bit is JOIN_BOT, which a player never sets.
+local JOIN_WATCH = 2
 local S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER = 1, 2, 3
 local S2C_KILL, S2C_BANNER, S2C_ZONE, S2C_DENIED = 4, 5, 6, 7
 local S2C_MAP, S2C_SETTINGS, S2C_YIELD, S2C_TEAMS = 9, 10, 11, 12
@@ -595,7 +599,7 @@ end
 -- the player is looking at a start screen they just left, and "nothing
 -- happened" is the one thing the client must never say. `on_lost` is called
 -- once, with a reason fit to print.
-function M.connect(url, class, name, on_lost, zone)
+function M.connect(url, class, name, on_lost, zone, watch)
     -- Whatever we were in, we are leaving. This module holds one arena's
     -- worth of state and the core holds one arena, so a second connection is
     -- not a second game, it is two servers writing over each other.
@@ -669,18 +673,21 @@ M.snap_blasts = {}
                 -- then the name. An empty zone means "whatever you are
                 -- running", which is what typing an address directly means.
                 --
-                -- Flags is zero here and always will be: its one bit says "I
-                -- am a bot", the zone takes a client at its word, and what a
-                -- declared bot gets is a label on the scoreboard, a seat
-                -- outside the human cap, and first call to give that seat up.
-                -- A player wants none of the three. See JOIN_BOT in the server.
+                -- The bot bit is never set here: the zone takes a client at
+                -- its word, and what a declared bot gets is a label on the
+                -- scoreboard, a seat outside the human cap, and first call to
+                -- give that seat up. A player wants none of the three. See
+                -- JOIN_BOT in the server. The watch bit is the ship page's
+                -- answer carried into the join, so arriving to watch costs no
+                -- seat and no spawn.
                 local want = zone or ""
                 -- The session token runs to the end, so the name needs a
                 -- length of its own now. An empty token is a pilot who has
                 -- never reached the meta-layer, or reached it while it was
                 -- down, and they fly as a guest rather than being turned away.
                 local session = account.token or ""
-                local msg = string.char(C2S_JOIN, class, CLIENT_PROTOCOL, 0,
+                local flags = watch and JOIN_WATCH or 0
+                local msg = string.char(C2S_JOIN, class, CLIENT_PROTOCOL, flags,
                                         #want, #name)
                     .. want .. name .. session
                 -- The callback's own handle, not the module's: this can fire

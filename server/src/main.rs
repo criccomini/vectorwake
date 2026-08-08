@@ -1667,6 +1667,10 @@ impl Arena {
         w.extend_from_slice(&self.world.state.tick.to_le_bytes());
         let _ = tx.try_send(Message::Binary(w));
         self.broadcast_roster();
+        // After the watcher row exists, not before: `leave` above broadcast a
+        // list this pilot was no longer on, and the side they sat out from is
+        // what the interface needs to know whose hull it may offer to follow.
+        self.broadcast_teams();
         true
     }
 
@@ -1699,6 +1703,10 @@ impl Arena {
             id,
             Watcher { seat, team: None, any, mode: WatchMode::Channel, tx },
         );
+        // A side of 255, which is the honest answer for somebody who arrived
+        // to watch: they sat out from nowhere, so no hull here is theirs to
+        // follow and the interface offers none.
+        self.broadcast_teams();
         Some(id)
     }
 
@@ -2251,11 +2259,53 @@ impl Arena {
         m
     }
 
+    /// The same list as a watcher sees it.
+    ///
+    /// They need it for one thing the flying version is also for: knowing
+    /// which side is theirs. A watcher sat out from somewhere, and that side
+    /// is what decides whose hull they may ask to follow, so without this the
+    /// interface cannot tell a lawful ask from one that will fall to the
+    /// channel and has to either offer every pilot or none.
+    ///
+    /// No doors in it. Every `may_join` is zero and so is the found byte,
+    /// because a watcher crosses nothing while watching: taking a hull again
+    /// is what puts them back on a side.
+    fn watcher_teams_msg(&self, w: &Watcher) -> Vec<u8> {
+        let mine = w.team.unwrap_or(255);
+        let shown: Vec<u8> = self
+            .teams
+            .iter()
+            .filter(|(b, t)| t.public || Some(**b) == w.team)
+            .map(|(b, _)| *b)
+            .collect();
+        let mut m = vec![S2C_TEAMS];
+        m.push(mine);
+        m.push(0);
+        m.push(shown.len().min(255) as u8);
+        for byte in shown {
+            let team = &self.teams[&byte];
+            let (humans, bots) = self.team_census(byte, None);
+            m.push(byte);
+            m.push(u8::from(team.public));
+            m.push(0);
+            m.push(humans.min(255) as u8);
+            m.push(bots.min(255) as u8);
+            let bytes = team.name.as_bytes();
+            let len = bytes.len().min(24) as u8;
+            m.push(len);
+            m.extend_from_slice(&bytes[..len as usize]);
+        }
+        m
+    }
+
     /// Sent on every change to who is where, and to whom. Cheap enough to send
     /// whole rather than diffed: a room holds a handful of sides.
     fn broadcast_teams(&self) {
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(self.teams_msg(p.ship)));
+        }
+        for w in self.watchers.values() {
+            let _ = w.tx.try_send(Message::Binary(self.watcher_teams_msg(w)));
         }
     }
 
@@ -5622,6 +5672,37 @@ mod tests {
         run(&mut a, &mut rx, &mut said, 5);
         assert!(a.on_air.is_empty());
         assert_eq!(said, vec![1, 0], "and told once when it stopped");
+    }
+
+    #[test]
+    fn a_watcher_is_told_which_side_they_sat_out_from() {
+        // The interface offers to follow a hull only where the zone would
+        // grant it, which is your own side, so a watcher who does not know
+        // their own side has to offer every pilot or none. Walked the way
+        // client/arena/net.lua walks it, and landing on the end.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let (ship, id, _rx) = seat_rx(&mut a, "sat-out");
+        let mine = a.world.state.ships[ship as usize].team;
+        assert!(a.sit_out(id, 255, false));
+
+        let m = a.watcher_teams_msg(&a.watchers[&id]);
+        assert_eq!(m[0], S2C_TEAMS);
+        assert_eq!(m[1], mine, "the side they were on when they sat out");
+        assert_eq!(m[2], 0, "and no founding from the gallery");
+        let count = m[3] as usize;
+        let mut o = 4;
+        for _ in 0..count {
+            assert_eq!(m[o + 2], 0, "no door is open to a watcher");
+            let len = m[o + 5] as usize;
+            o += 6 + len;
+        }
+        assert_eq!(o, m.len(), "the reader lands on the end, not near it");
+
+        // Somebody who arrived to watch sat out from nowhere, and 255 is a
+        // side no hull is on, so the interface offers them nobody.
+        let (tx, _keep) = mpsc::channel(OUT_QUEUE);
+        let w = a.watch_join(Seat::guest("stranger", false), false, tx).unwrap();
+        assert_eq!(a.watcher_teams_msg(&a.watchers[&w])[1], 255);
     }
 
     #[test]
