@@ -672,7 +672,7 @@ id sounds like nothing rather than like a failure.
 Rendering costs about a fifth of a second, seven eighths of it the soundtrack,
 and it is spent in `init` rather than spread over frames because `init` is
 behind the menu the client opens on. `sfx.init` prints one line when it is done,
-`SOUND: 24 sounds, 1145 KB, 259 ms`, which is how you tell a client that
+`SOUND: 24 sounds, 1154 KB, 259 ms`, which is how you tell a client that
 generated its audio from a client that is quiet for some other reason. Only in a
 debug build: a release engine compiles `print` out, so this line and the
 complaint in `sfx.fire` are both invisible on the published page.
@@ -680,9 +680,8 @@ complaint in `sfx.fire` are both invisible on the published page.
 The synth was a Python script until it moved into the client, and the port
 reproduces CPython's Mersenne Twister so it could be checked against the files
 it replaced rather than judged by ear. All fifteen of them at the time came out
-byte for byte identical. That property is worth keeping: it means a sound
-changing is somebody changing it, and it is why `gun0` is still those bytes
-exactly after the ladders were redrawn around it.
+byte for byte identical. The generator stays for that reason: a sound changing
+should be somebody changing it, not the noise moving underneath.
 
 To hear the kit without running the game:
 

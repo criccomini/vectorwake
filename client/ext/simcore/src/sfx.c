@@ -317,7 +317,9 @@ static void v_normalise(voice *v) {
 // different weapon, and the argument was right about the mechanic and wrong
 // about what came out. Measured with client/tools/sfxladder, adjacent rungs
 // landed 2.5 to 4.5 dB apart, and a player who had flown the whole ladder
-// asked for a sound per rung. They are 6.4 to 7.3 apart now.
+// asked for a sound per rung. They are 6.2 to 8.4 apart now, and the gun,
+// which was asked for a second time, is the widest of the three at 7.6 to
+// 8.4.
 //
 // So each ladder climbs on every axis at once, because one axis moving is what
 // a listener hears as the same sound slightly off, and all of them moving
@@ -338,21 +340,32 @@ static void v_normalise(voice *v) {
 
 // A bolt leaving the rail: bright, over before it registers.
 //
-// Rung zero is a tack: thin, bright, and byte for byte the sound this family
-// had before the rungs were told apart, so nothing about a fresh spawn's gun
-// moves. Above it the bolt drops a sixth over three rungs, grows a low-mid
-// body, and picks up a second square a little flat of the first, which beats
-// against it into a snarl. The top rung is a slam with real sub under it, and
-// it is short enough that the sub is a thump rather than a note.
+// Rung zero is a tack, thin and reedy and gone in eighty milliseconds. Above
+// it the bolt drops an octave over three rungs and takes nearly twice as long
+// to do it, the pulse widens toward a true square, the shrill partial over the
+// top recedes as a low-mid body arrives under it, and a second square a little
+// flat of the first beats against it into a snarl. The top rung is a slam with
+// real sub under it, short enough that the sub is a thump and not a note.
+//
+// Rung zero used to be the one sound this family had before the rungs were
+// told apart, kept byte for byte so a fresh spawn heard what it always had.
+// That is gone, and deliberately: with the bottom of the ladder pinned the
+// rungs above it were crowded into what was left, and the player who asked for
+// the rungs to be told apart asked again for more room between them. A rung
+// zero that is genuinely a peashooter is what buys it.
 //
 // The air over all four stays bright and gets brighter, which is the one thing
 // that does not follow the weight down. It is what keeps a gun a gun: the
 // bombs go dark as they climb, and without this the heaviest bolt and the
 // lightest shell end up nearer each other than either is to its own neighbour.
-static const double GUN_FALL[2][4] = {{1750, 1440, 1200, 1010},
-                                      { 460,  380,  315,  265}};
-static const double GUN_TOP[2][4] = {{2400, 2050, 1750, 1500},
-                                     { 700,  600,  510,  440}};
+static const double GUN_FALL[2][4] = {{1900, 1480, 1160,  900},
+                                      { 520,  400,  310,  240}};
+// The sine riding over the square, and how much of it. It recedes as the rungs
+// climb: the shrill partial is most of what a light bolt is, and a heavy one
+// wants that room for its body.
+static const double GUN_TOP[3][4] = {{2650, 2100, 1720, 1420},
+                                     { 780,  620,  500,  410},
+                                     {0.36, 0.26, 0.18, 0.11}};
 static const double GUN_BODY[3][4] = {{   0,  380,  260,  190},
                                       {   0,  150,  110,   80},
                                       {0.00, 0.32, 0.46, 0.62}};
@@ -361,19 +374,30 @@ static const double GUN_SUB[3][4] = {{   0,    0,   95,   66},
                                      {0.00, 0.00, 0.28, 0.60}};
 // How flat the second square sits, as a fraction. Zero is no second square.
 static const double GUN_SNARL[4] = {0.000, 0.000, 0.016, 0.032};
-static const double GUN_HISS [3][4]    = {{0.16, 0.21, 0.24, 0.28},
-                                          {7000, 7200, 7600, 8000},
-                                          { 900, 1000, 1150, 1300}};
-static const double GUN_DRIVE[4] = {1.60, 2.00, 2.45, 3.00};
+// How much of a cycle the square spends high. A third is reedy and nasal,
+// because a narrow pulse is thick with harmonics; a half is a true square,
+// which has only the odd ones and is warmer for it. Walking one to the other
+// is a large change in what a bolt sounds like and no change at all in where
+// it sits, which is what this axis is for: the pitch ladder has to stop short
+// of the bombs, and this does not.
+static const double GUN_DUTY[4] = {0.24, 0.34, 0.42, 0.50};
+// How long the bolt holds its opening pitch before it falls. A light one is
+// gone at once and a heavy one is a peow.
+static const double GUN_SWEEP[4] = {0.50, 0.38, 0.28, 0.20};
+static const double GUN_HISS[3][4] = {{0.20, 0.26, 0.32, 0.42},
+                                      {8000, 8200, 8400, 8600},
+                                      {1100, 1200, 1350, 1500}};
+static const double GUN_DRIVE[4] = {1.45, 1.95, 2.45, 3.00};
 
 static void gun_at(voice *v, int lvl) {
-    v_square(v, GUN_FALL[0][lvl], GUN_FALL[1][lvl], 0.55, 0.32, 0.45);
+    v_square(v, GUN_FALL[0][lvl], GUN_FALL[1][lvl], 0.55, GUN_DUTY[lvl],
+             GUN_SWEEP[lvl]);
     if (GUN_SNARL[lvl] > 0.0) {
         double k = 1.0 - GUN_SNARL[lvl];
-        v_square(v, GUN_FALL[0][lvl] * k, GUN_FALL[1][lvl] * k, 0.30, 0.38,
-                 0.45);
+        v_square(v, GUN_FALL[0][lvl] * k, GUN_FALL[1][lvl] * k, 0.30,
+                 GUN_DUTY[lvl] + 0.06, GUN_SWEEP[lvl]);
     }
-    v_sine(v, GUN_TOP[0][lvl], GUN_TOP[1][lvl], 0.30, 0.4);
+    v_sine(v, GUN_TOP[0][lvl], GUN_TOP[1][lvl], GUN_TOP[2][lvl], 0.4);
     if (GUN_BODY[2][lvl] > 0.0)
         v_sine(v, GUN_BODY[0][lvl], GUN_BODY[1][lvl], GUN_BODY[2][lvl], 0.55);
     if (GUN_SUB[2][lvl] > 0.0)
@@ -396,17 +420,17 @@ static void k_gun3(voice *v) { gun_at(v, 3); }
 // the fall goes down and slows as it goes, the sub arrives and then dominates,
 // and the air over it darkens as the charge stops being something a hull can
 // throw quickly.
-static const double BOMB_FALL[2][4] = {{ 300,  232,  176,  128},
-                                       {  94,   68,   48,   32}};
+static const double BOMB_FALL[2][4] = {{ 280,  220,  168,  124},
+                                       {  86,   66,   47,   32}};
 static const double BOMB_BODY[3][4] = {{ 180,  128,   90,   58},
                                        {  54,   38,   26,   17},
                                        {0.38, 0.52, 0.66, 0.82}};
 static const double BOMB_SUB[3][4] = {{   0,   76,   50,   30},
                                       {   0,   34,   25,   18},
                                       {0.00, 0.32, 0.68, 1.25}};
-static const double BOMB_HISS[3][4] = {{0.24, 0.19, 0.11, 0.08},
-                                       {2800, 2100, 1450,  950},
-                                       { 330,  230,  155,   95}};
+static const double BOMB_HISS[3][4] = {{0.22, 0.18, 0.13, 0.08},
+                                       {2300, 1900, 1350,  900},
+                                       { 280,  205,  145,   95}};
 // How much of the fall is spent at the top of it. A heavier charge leaves
 // slowly, so the higher rungs hang before they drop.
 static const double BOMB_CURVE[4] = {0.50, 0.76, 1.02, 1.60};
@@ -414,7 +438,7 @@ static const double BOMB_DRIVE[4] = {1.85, 2.10, 2.35, 2.55};
 // How long the charge takes to clear the tube, in seconds. Nothing in the gun
 // ladder swells, so this is the family's own mark as well as a rung's: it is
 // what keeps a heavy bomb from arriving as a heavy bolt.
-static const double BOMB_SWELL[4] = {0.009, 0.019, 0.038, 0.066};
+static const double BOMB_SWELL[4] = {0.016, 0.028, 0.046, 0.075};
 
 // How much of the charge is the buzzing saw rather than the round sine under
 // it. A small one is all rasp and a big one is nearly all body, which is the
@@ -943,20 +967,21 @@ typedef struct {
     void (*make)(voice *);
 } entry;
 
-// Length is the last axis the rungs climb, and the gun climbs it least: the
-// delay between shots does not change with the ladder, so a bolt that grew
-// with the rung would start overlapping its own repeat at the top of it. A
-// bomb is thrown rarely enough to be allowed the room, and a detonation is
-// allowed twice what a bomb leaving the tube is.
+// Length is an axis the rungs climb only as far as the arena allows. A gun
+// fires every 250 ms whatever rung it is on, so a bolt that grew freely with
+// the rung would start overlapping its own repeat at the top; 148 ms is where
+// that stops, and it is also where the top bolt stops measuring nearer the
+// lightest shell than its own neighbour. A bomb is thrown every 1.5 seconds
+// and can have the room.
 static const entry KIT[] = {
-    {"gun0",    0.085, 0, k_gun0},
-    {"gun1",    0.098, 0, k_gun1},
-    {"gun2",    0.112, 0, k_gun2},
-    {"gun3",    0.132, 0, k_gun3},
-    {"bomb0",   0.22,  0, k_bomb0},
-    {"bomb1",   0.31,  0, k_bomb1},
-    {"bomb2",   0.43,  0, k_bomb2},
-    {"bomb3",   0.66,  0, k_bomb3},
+    {"gun0",    0.080, 0, k_gun0},
+    {"gun1",    0.102, 0, k_gun1},
+    {"gun2",    0.126, 0, k_gun2},
+    {"gun3",    0.148, 0, k_gun3},
+    {"bomb0",   0.26,  0, k_bomb0},
+    {"bomb1",   0.35,  0, k_bomb1},
+    {"bomb2",   0.48,  0, k_bomb2},
+    {"bomb3",   0.70,  0, k_bomb3},
     {"blast0",  0.32,  0, k_blast0},
     {"blast1",  0.46,  0, k_blast1},
     {"blast2",  0.64,  0, k_blast2},

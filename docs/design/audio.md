@@ -30,8 +30,8 @@ interface ticks.
 
 | Sound | Length | What it is |
 |---|---|---|
-| `gun0` to `gun3` | 85 to 132 ms | a bolt leaving the rail, one per rung |
-| `bomb0` to `bomb3` | 220 to 660 ms | a heavier charge leaving the tube |
+| `gun0` to `gun3` | 80 to 148 ms | a bolt leaving the rail, one per rung |
+| `bomb0` to `bomb3` | 260 to 700 ms | a heavier charge leaving the tube |
 | `blast0` to `blast3` | 320 to 850 ms | a bomb going off, sized by the hole |
 | `death` | 950 ms | a ship coming apart, the one event allowed a full second |
 | `hit` | 70 ms | something struck your hull: a crack, not a tone |
@@ -62,7 +62,7 @@ rungs landed 2.5 to 4.5 dB apart, ends 5.0 and 9.4 apart, which is a number you
 can print and not a difference anybody hears. What ended it was somebody who had
 flown the whole ladder asking for a sound per rung.
 
-They are 6.4 to 7.3 apart now, ends 12.1 to 14.9, and each ladder climbs on every
+They are 6.2 to 8.4 apart now, ends 12.1 to 17.4, and each ladder climbs on every
 axis at once. One axis moving is heard as the same sound slightly off; all of
 them moving together is heard as a different thing. So the pitch falls, weight
 arrives underneath, the drive comes up, and the sound runs longer. Deeper reads
@@ -70,22 +70,33 @@ as bigger without anybody having to learn it, and the check holds the fall
 monotonic so a rung is never heavier and brighter at the same time.
 
 What each family climbs on differs, because what a rung buys differs. A gun rung
-is flat damage on an identical bolt, so the bolt drops a sixth over three rungs,
-grows a low-mid body, and picks up a second square slightly flat of the first
-that beats against it into a snarl; the top rung is a slam with sub under it. A
-bomb rung is blast radius, so the charge leaves a bigger tube: the fall goes down
-and slows, the saw gives way to the round body under it, the sub arrives and then
-dominates, and the whole thing takes three times as long to clear.
+is flat damage on an identical bolt, so the bolt drops an octave over three rungs
+and takes nearly twice as long to do it, its pulse widening from a reedy quarter
+of a cycle to a true square while the shrill partial over the top gives way to a
+low-mid body and then to sub. A bomb rung is blast radius, so the charge leaves a
+bigger tube: the fall goes down and slows, the saw gives way to the round body
+under it, the sub arrives and then dominates, and the whole thing takes nearly
+three times as long to clear.
 
-Two things bound the climb. Rung zero of the gun is byte for byte the sound that
-was there before the rungs were told apart, so nothing about a fresh spawn moves.
-And a rung must still belong to its family: a gun that has climbed into a bomb's
-register tells a pilot something false about what is coming at them, which is
-worse than a gun that all sounds the same. The gun's air stays bright and gets
-brighter as the bombs go dark. And no bomb cracks: every one of them swells out
-of the tube, five to sixty-six milliseconds by rung, where nothing in the gun
-ladder swells at all. The check holds the nearest gun-to-bomb pair further apart
-than the widest step inside any ladder; it is 9.5 against 7.3.
+The gun is the widest of the three, at 7.6 to 8.4, because it was asked for twice.
+The first pass kept rung zero byte for byte identical to the one sound this family
+had before the rungs were told apart, on the grounds that a fresh spawn should
+hear what it always had. With the bottom pinned, the three rungs above it were
+crowded into what was left. Unpinning it and making rung zero a genuine
+peashooter, thin and reedy and gone in eighty milliseconds, is what bought the
+room.
+
+The other bound is the one that cannot be traded away. A rung must still belong
+to its family: a gun that has climbed into a bomb's register tells a pilot
+something false about what is coming at them, which is worse than a gun that all
+sounds the same. The gun's air stays bright and gets brighter as the bombs go
+dark. And no bomb cracks: every one of them swells out of the tube, sixteen to
+seventy-five milliseconds by rung, where nothing in the gun ladder swells at all.
+The check holds the nearest gun-to-bomb pair further apart than the widest step
+inside any ladder, and it is what set the ceiling on the gun: at 170 ms the top
+bolt measured nearer the lightest shell than its own neighbour, so it sits at 148
+and the bombs moved down to make the room. The pair is 9.3 apart against a widest
+step of 8.4.
 
 Loudness cannot come from the buffer. Every one is normalised to the same peak
 before it is written, so a fatter buffer is a different timbre at the same level.
@@ -131,8 +142,8 @@ at the bottom.
 
 Length is the one axis the rungs climb only as far as the arena allows. A gun
 fires every 250 ms whatever rung it is on, so a bolt that grew with the rung
-would start overlapping its own repeat at the top; 132 ms is where that stops.
-A bomb is thrown every 1.5 seconds and can have the room.
+would start overlapping its own repeat at the top. A bomb is thrown every 1.5
+seconds and can have the room.
 
 Distance falls off fast. Nothing beyond 760 world pixels is audible at all,
 attenuation is the square of what is left, and anything under about 3.5 per cent
@@ -191,7 +202,10 @@ aimed raises one now.
 
 ## Held sounds and answered sounds are different problems
 
-Two sounds are held: thrust and the soundtrack. Everything else answers
+Two sounds are held: thrust and the soundtrack. Both are mixed under
+everything else because both are always there. Thrust in particular is the
+sound a pilot hears most, since it runs for as long as a finger is on the key,
+and it sat at 0.26 until somebody flew with it and said so; it is 0.18 now. Everything else answers
 something, an input or an impact, and has to arrive with it.
 
 That distinction decides more than how the two are mixed. It decides how a sound
