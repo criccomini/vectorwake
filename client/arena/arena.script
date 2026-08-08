@@ -23,6 +23,7 @@ local account = require("arena.account")
 local directory = require("arena.directory")
 local menu = require("arena.menu")
 local pal = require("arena.palette")
+local marks = require("arena.marks")
 local world = require("arena.world")
 local fx = require("arena.fx")
 local sfx = require("arena.sfx")
@@ -50,6 +51,58 @@ local held = {}
 -- which is how the menu gets a keystroke that flight does not need.
 local tapped = {}
 local me = 0
+-- Watching rather than flying. While this is set, `me` is 255 and must never
+-- reach a `sim.*` accessor: the extension refuses an index that wide, loudly,
+-- which is the backstop under every branch below that goes through `eye()`
+-- instead.
+local watching = false
+
+-- The ship whose perspective drives the camera, the colours and the sounds:
+-- your own hull, or the snapshot's subject while watching. Nil when there is
+-- nobody to stand behind, which is an empty room's channel.
+local function eye()
+    if not watching then return me end
+    local s = net.subject
+    if s and s ~= 255 and s < sim.ship_count() then return s end
+    return nil
+end
+
+-- The side everything on screen is coloured against.
+--
+-- Your own while flying. Also your own while watching, which is the side you
+-- sat out from and the zone tells a watcher what it is: colouring from the
+-- subject's side instead was the obvious reading and the wrong one, because
+-- the camera moves. It would have repainted your own teammates as enemies the
+-- moment the channel picked somebody from the other side, and it would have
+-- put the card's WATCH on a hull drawn in the hostile colour.
+--
+-- 255 belongs to no side, which is what a stranger who arrived to watch gets:
+-- nobody out there is theirs, and nothing reads as friendly.
+local function eye_team()
+    if watching then return net.my_team end
+    local e = eye()
+    return e and sim.ship_team(e) or 255
+end
+
+-- What the interface should say this connection is looking at, or nil while
+-- flying: the hull the camera stands behind, and a name for it only when that
+-- hull is one this client asked to follow and the zone could have granted it.
+-- Otherwise it is the room's own feed, which is pointed at somebody too and
+-- is not the same thing as having picked them.
+--
+-- Written as a branch rather than `a and b or c`, because the middle can be
+-- nil here and that shape falls through to the wrong answer when it is.
+local function watch_state()
+    if not watching then return nil end
+    local e = eye()
+    local name = nil
+    if e and net.want ~= 255 and net.subject == net.want
+        and sim.ship_team(e) == net.my_team then
+        local p = net.pilots[e]
+        if p then name = p.name end
+    end
+    return {subject = e, name = name}
+end
 local accum = 0
 local feed = {}
 local hurt = 0
@@ -62,6 +115,40 @@ local was_dead = false
 -- hear that it landed. Nil until a hull has been read once: a seat this
 -- client has not looked at yet has no previous state to have changed from.
 local multi_was = nil
+-- The last loadout this pilot actually flew: levels, add-ons, the fan's
+-- switch and what was in hand, refreshed every living frame and drawn while
+-- the hull is gone. Death strips a ship in one instruction, so without this
+-- the pads and the corner stack drop to plain green rounds and empty racks
+-- the moment you die and stay that way for the whole respawn wait, which is
+-- the interface rearranging itself over the card that says what killed you.
+--
+-- One table, filled in place rather than built per frame: this runs on every
+-- frame of every game and a fresh table sixty times a second is garbage the
+-- collector has to walk in the middle of a fight.
+local flown = {level = {}, mods = {}, charge = {}, multi_off = false}
+local flown_ok = false
+-- This frame's answer, set once in update before anything draws: charge_row
+-- and the pads both read it, so the two cannot disagree about what is held.
+local held_kit = nil
+-- What the interface should draw from this frame: nil while the hull is
+-- there to be asked, the copy while it is not.
+local function loadout_held()
+    if sim.ship_alive(me) == 1 then
+        for t = 0, sim.TRIG_COUNT - 1 do
+            flown.level[t] = sim.ship_level(me, t)
+            local m = flown.mods[t]
+            if not m then m = {} flown.mods[t] = m end
+            for i = 0, sim.MOD_COUNT - 1 do m[i] = sim.ship_mod(me, t, i) end
+        end
+        for k = 0, sim.MAX_CHARGES - 1 do
+            flown.charge[k] = sim.ship_charge(me, k)
+        end
+        flown.multi_off = sim.ship_multi_off(me)
+        flown_ok = true
+        return nil
+    end
+    return flown_ok and flown or nil
+end
 -- Which zone the "nobody is running X" note is about, so the note can be
 -- withdrawn when the games list shows that zone live again.
 local note_zone = nil
@@ -164,6 +251,7 @@ local kb_locked = false
 -- hull with no charges at all, and the row simply is not drawn.
 local function my_slots()
     local out = {}
+    if watching then return out end
     for k = 0, sim.MAX_CHARGES - 1 do
         if sim.charge_max(me, k) > 0 then out[#out + 1] = k end
     end
@@ -184,6 +272,9 @@ local key_charge = nil
 
 local function my_buttons()
     if menu.open then return 0 end
+    -- A watcher has no ship to press anything into, and the arrow keys have a
+    -- different job while watching: they move the camera between teammates.
+    if watching then return 0 end
     -- Collected as a set of distinct bits and summed, rather than or-ed:
     -- HTML5 builds run Lua 5.1, which has no bitwise operators, and a bit
     -- contributed by both the keyboard and the stick must still count once.
@@ -233,6 +324,7 @@ end
 -- hand, and which one the use key would spend.
 local function charge_row()
     local out = {}
+    if watching then return out end
     for _, k in ipairs(my_slots()) do
         local c = pal.CHARGES[k + 1]
         out[#out + 1] = {
@@ -240,7 +332,7 @@ local function charge_row()
             -- The full word, because the corner stack has room for it and
             -- "RPL" is three letters nobody has been taught.
             name = c and c.name or "charge",
-            count = sim.ship_charge(me, k),
+            count = held_kit and held_kit.charge[k] or sim.ship_charge(me, k),
             -- How many this hull can hold, so the row can draw the empties
             -- as well as the full ones.
             max = sim.charge_max(me, k),
@@ -332,9 +424,10 @@ local function rebuild_static(tx, ty)
     if not layers then return end
     if not tx then
         -- Whatever is on screen, or the middle of the map before anything is.
-        if sim.ship_count() > 0 then
-            tx = math.floor(sim.ship_x(me) / 16)
-            ty = math.floor(sim.ship_y(me) / 16)
+        local e = eye()
+        if e then
+            tx = math.floor(sim.ship_x(e) / 16)
+            ty = math.floor(sim.ship_y(e) / 16)
         else
             tx, ty = 512, 512
         end
@@ -343,7 +436,7 @@ local function rebuild_static(tx, ty)
     -- Spawns and goals are drawn in the colour of whoever owns them, and the
     -- terrain is built long before the frame that draws a ship, so the team
     -- goes in here rather than being passed down every call.
-    world.my_team = (sim.ship_count() > 0) and sim.ship_team(me) or 0
+    world.my_team = (sim.ship_count() > 0) and eye_team() or 0
     -- Whatever the last build asked for, before this one writes anything.
     if bg_want then layers.bg:resize(bg_want); bg_want = nil end
     if bgglow_want then layers.bgglow:resize(bgglow_want); bgglow_want = nil end
@@ -392,9 +485,14 @@ function go_home(self, at)
     hurt = 0
     tip = nil
     was_dead = false
+    watching = false
     -- The next seat is a different pilot's switch, and inheriting this one's
-    -- would click on arrival.
+    -- would click on arrival. The kit goes with it: a pad wearing the last
+    -- zone's add-ons is a drawing of somebody else's ship.
     multi_was = nil
+    flown_ok = false
+    held_kit = nil
+    marks.hold(nil)
     -- A box about somebody in the room you just left describes a seat number
     -- that the next room will have dealt to a stranger.
     ui.inspect = nil
@@ -492,18 +590,23 @@ local function drain_kills()
 end
 
 local function drain_events()
-    world.events(me, sfx.play)
+    -- The perspective every colour and sound is judged from. While watching
+    -- it is the subject, and 255 when the channel has nobody: a ship index
+    -- that matches no one, which the world code treats as "none of these are
+    -- yours", the reading a watcher wants.
+    local view = eye() or 255
+    world.events(view, sfx.play)
     -- What the events cannot say, because they are this client's own
     -- simulation talking and it simulates one pilot. Both of these read the
     -- state instead, so they go here rather than in the loop below.
-    world.charges(me, sfx.play)
-    world.shots(me, sfx.play)
+    world.charges(view, sfx.play)
+    world.shots(view, sfx.play)
     -- And what the events never got to say: kills and detonations that
     -- arrived as a snapshot's state change rather than as anything the local
     -- simulation lived through. Without these a mistimed kill is a hull that
     -- vanishes mid-flight with the bomb still drawn beside it.
     for _, d in ipairs(net.snap_deaths) do
-        world.corpse(d.ship, d.vx, d.vy, me, sfx.play)
+        world.corpse(d.ship, d.vx, d.vy, view, sfx.play)
     end
     for _, w in ipairs(net.snap_blasts) do
         world.late_blast(w, sfx.play)
@@ -522,7 +625,7 @@ local function drain_events()
             if not up then col = pal.RUST end
             notify((up and "+ " or "- ") .. name, col)
         elseif ty == sim.EV_FLAG_TAKE or ty == sim.EV_FLAG_DROP then
-            local col = (sim.ship_team(a) == sim.ship_team(me))
+            local col = (sim.ship_team(a) == eye_team())
                 and pal.FRIEND or pal.ENEMY
             notify({pilot_named(a),
                 (ty == sim.EV_FLAG_TAKE and " took a flag"
@@ -718,13 +821,20 @@ function update(self, dt)
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
     -- timestep, and Defold's physics is off entirely.
-    -- Q, W, A and S spend rows of the corner stack directly, the way a charge
-    -- pad already does on a touchscreen: a block of four under the left hand,
-    -- read across and then down, against a stack read top to bottom. By row
-    -- rather than by absolute slot, so a hull that carries only some slots
-    -- still puts Q on the first thing listed. Latched like the pad's tap, and
-    -- for the same reason: the press has to survive until a simulation step
-    -- spends it.
+    -- Q, W, A and S spend a hull's charge slots in order, the way a charge pad
+    -- already does on a touchscreen: a block of four under the left hand, read
+    -- across and then down, against a stack read top to bottom. By the slots
+    -- the hull carries rather than by absolute slot number, so a hull that
+    -- carries only some still puts Q on the first of them.
+    --
+    -- The hull's slots, not the rows drawn: the corner shows only what is in
+    -- hand now, so binding to the drawing would move Q onto your burst the
+    -- moment your last repel went, which is a key that spends the wrong thing
+    -- exactly when a fight is going badly. Pressing Q with nothing to spend
+    -- does nothing, which is what it would have done anyway.
+    --
+    -- Latched like the pad's tap, and for the same reason: the press has to
+    -- survive until a simulation step spends it.
     if not menu.open then
         for i = 1, 4 do
             if tapped[hash("charge_" .. i)] then
@@ -833,8 +943,13 @@ function update(self, dt)
     -- one would be showing a name nobody else can see.
     menu.adopt_account_name()
 
+    -- What the confirm card on your own game offers depends on which of your
+    -- two lives this is, so the menu is told every frame, like the class.
+    -- From the connection rather than the local, which syncs further down.
+    menu.watching = net.watching
+
     if menu.open then
-        menu.tick()
+        menu.tick(dt)
         if hover_menu(self.cursor_x, self.cursor_y, self.vh or 0) then
             sfx.ui("ui_move")
         end
@@ -851,13 +966,44 @@ function update(self, dt)
             -- the keyboard does not have to make.
             go = tapped[hash("select")] or tapped[hash("guns")],
             back = tapped[hash("menu")] or tapped[hash("cancel")],
+            rub = tapped[hash("backspace")],
         })
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
         if act then apply_menu(self, act) end
     end
+
+    -- While watching, the arrows move the camera between seats: left and
+    -- right walk the occupied ones, and one step past the end is the room
+    -- channel. The server enforces the sight rules, so this asks for whatever
+    -- is next and takes the answer from the snapshot's subject byte -- an
+    -- unlawful stop lands on the channel, which is also what the wrap is.
+    if net.watching and not menu.open and sim.ship_count() > 0 then
+        local dir = (tapped[hash("turn_right")] and 1)
+            or (tapped[hash("turn_left")] and -1)
+        if dir then
+            tapped[hash("turn_left")] = nil
+            tapped[hash("turn_right")] = nil
+            local stops = {}
+            for i = 0, sim.ship_count() - 1 do
+                if sim.ship_active(i) == 1 then stops[#stops + 1] = i end
+            end
+            stops[#stops + 1] = 255
+            local at = #stops
+            local now = net.subject or 255
+            for k, s in ipairs(stops) do
+                if s == now then at = k break end
+            end
+            local pick = stops[(at - 1 + dir) % #stops + 1]
+            net.watch(pick)
+            sfx.ui("ui_move")
+        end
+    end
     tapped = {}
 
-    if self.online and net.connected then me = net.me end
+    if self.online and net.connected then
+        me = net.me
+        watching = net.watching
+    end
 
     -- A zone that accepts the socket but never sends a snapshot is as broken
     -- as one that refuses it, and on the web a connection to a dead port can
@@ -923,11 +1069,12 @@ function update(self, dt)
             -- inside what a rotation already costs the eyes.
             local ok2, ins = pcall(html5.run, "window.vwInsets || ''")
             if ok2 and ins and ins ~= "" then
-                local l, rr, t = string.match(ins,
-                    "^([%d%.]+) ([%d%.]+) ([%d%.]+)")
+                local l, rr, t, b = string.match(ins,
+                    "^([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+)")
                 self.safe_l = tonumber(l) or 0
                 self.safe_r = tonumber(rr) or 0
                 self.safe_t = tonumber(t) or 0
+                self.safe_b = tonumber(b) or 0
             end
         end
     end
@@ -960,9 +1107,17 @@ function update(self, dt)
     if live then
         -- What the menu calls your hull is whatever you are flying, asked
         -- every frame rather than remembered: the server decides, and it can
-        -- refuse a change the menu has already drawn as chosen.
-        menu.class = sim.ship_class(me)
-        cx, cy = sim.ship_x(me), sim.ship_y(me)
+        -- refuse a change the menu has already drawn as chosen. A watcher has
+        -- no hull; the menu keeps showing the one they would fly back in.
+        if not watching then menu.class = sim.ship_class(me) end
+        -- The camera stands behind the eye: your hull, or the subject the
+        -- snapshot named. An empty channel holds the middle of the map.
+        local e = eye()
+        if e then
+            cx, cy = sim.ship_x(e), sim.ship_y(e)
+        else
+            cx, cy = 512 * 16, 512 * 16
+        end
         -- Terrain follows the camera. A map this size cannot be meshed whole,
         -- so the window is rebuilt once the camera has walked far enough that
         -- its edge is getting close to the screen.
@@ -1056,13 +1211,14 @@ function update(self, dt)
         end
 
         local t = sim.tick() / TICK_HZ
-        local my_team = sim.ship_team(me)
+        local my_team = eye_team()
         local mine_buttons = my_buttons()
 
         -- Held thrust is the one sound with a duration rather than an instant,
         -- so it is a loop the frame turns on and off rather than an event.
         -- Edges only: playing a looping component again starts a second voice.
-        sfx.loop("thrust", sim.ship_alive(me) == 1 and not menu.open
+        sfx.loop("thrust", not watching and sim.ship_alive(me) == 1
+            and not menu.open
             and (has(mine_buttons, sim.BTN_THRUST)
                  or has(mine_buttons, sim.BTN_REVERSE)))
 
@@ -1083,17 +1239,19 @@ function update(self, dt)
         -- about their weapons on the way out. So the sound needs a fan in
         -- hand as well as a change, which the press always has and the
         -- clearing never does.
-        local multi_now = sim.ship_multi_off(me)
-        local have_fan =
-            sim.ship_mod(me, sim.TRIG_GUN, sim.MOD_MULTI) > 0
-            or sim.ship_mod(me, sim.TRIG_BOMB, sim.MOD_MULTI) > 0
-        if multi_was ~= nil and multi_now ~= multi_was and have_fan then
-            -- The two interface sounds this client already has, used the way
-            -- the menu uses them: the rising one for taking something, the
-            -- tick for stepping a control along.
-            sfx.ui(multi_now and "ui_move" or "ui_go")
+        if not watching then
+            local multi_now = sim.ship_multi_off(me)
+            local have_fan =
+                sim.ship_mod(me, sim.TRIG_GUN, sim.MOD_MULTI) > 0
+                or sim.ship_mod(me, sim.TRIG_BOMB, sim.MOD_MULTI) > 0
+            if multi_was ~= nil and multi_now ~= multi_was and have_fan then
+                -- The two interface sounds this client already has, used the
+                -- way the menu uses them: the rising one for taking something,
+                -- the tick for stepping a control along.
+                sfx.ui(multi_now and "ui_move" or "ui_go")
+            end
+            multi_was = multi_now
         end
-        multi_was = multi_now
 
         world.flags(fill, glow, my_team, t)
         -- What is on screen, grown by enough that nothing pops at the edge: a
@@ -1167,11 +1325,20 @@ function update(self, dt)
         -- has nothing to fire. Told every frame rather than on the hull
         -- change, because a zone can hand you a different ship than the one
         -- you asked for.
-        touch.has_bomb = sim.has_trigger(me, sim.TRIG_BOMB)
+        -- What the marks read this frame. Set before anything draws one,
+        -- because the pads, the corner stack and the charge rows all ask and
+        -- a frame where some of them had the live ship and some the copy
+        -- would be the disagreement this exists to prevent. Never while
+        -- watching: the hull under the camera is somebody else's, and its
+        -- kit is theirs to lose rather than yours to keep.
+        held_kit = not watching and loadout_held() or nil
+        marks.hold(held_kit)
+        touch.has_bomb = not watching and sim.has_trigger(me, sim.TRIG_BOMB)
         -- Which hull is yours, so a pad can read its own weapon's level and
         -- add-ons out of the core instead of having each of them copied into
-        -- a field here and kept in step.
-        touch.me = me
+        -- a field here and kept in step. Nil while watching: every touch.lua
+        -- read of it already guards, and the pads it feeds are not drawn.
+        touch.me = not watching and me or nil
         -- Where the dial ends, so the charge rail knows what it may not climb
         -- into. ui.lua owns that metric and cannot be asked from touch.lua,
         -- which it requires.
@@ -1185,7 +1352,12 @@ function update(self, dt)
         -- frame drain_kills set it, and whether a death showed its card came
         -- down to which of two messages won a forty millisecond race. Close
         -- range lost it, which is why it looked intermittent.
-        if sim.ship_alive(me) == 1 then
+        if watching then
+            -- No hull to be dead in. The card machinery would otherwise read
+            -- seat 255 and conclude you had died.
+            tip = nil
+            was_dead = false
+        elseif sim.ship_alive(me) == 1 then
             if was_dead then tip = nil end
             was_dead = false
         else
@@ -1198,7 +1370,8 @@ function update(self, dt)
         touch.counts = {}
         touch.maxes = {}
         for _, k in ipairs(touch.charges) do
-            touch.counts[k] = sim.ship_charge(me, k)
+            touch.counts[k] = held_kit and held_kit.charge[k]
+                or sim.ship_charge(me, k)
             touch.maxes[k] = sim.charge_max(me, k)
         end
 
@@ -1218,16 +1391,54 @@ function update(self, dt)
     -- lay out in drawable ones, so the density converts here, in the one
     -- place both readers are told.
     ui.safe((self.safe_l or 0) * density, (self.safe_r or 0) * density,
-            (self.safe_t or 0) * density)
+            (self.safe_t or 0) * density, (self.safe_b or 0) * density)
     touch.safe_l = (self.safe_l or 0) * density
     touch.safe_r = (self.safe_r or 0) * density
+    -- The same four numbers, kept for the about page to print. Every device
+    -- that has ever got this wrong has been a phone, and a phone is exactly
+    -- where they cannot be read off a console: the emulator answers zero to
+    -- all four, so the only place the real ones exist is a screen in
+    -- somebody's hand.
+    menu.screen = {w = ww, h = wh, d = density,
+                   l = self.safe_l or 0, r = self.safe_r or 0,
+                   t = self.safe_t or 0, b = self.safe_b or 0}
     ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0)
     -- The interface stays up under the menu. Nothing is paused, so hiding the
     -- scoreboard and the radar behind a panel would be a lie about what is
     -- happening: you can be shot while reading this.
     if live then
+        local e = eye()
+        -- The perspective seat: yours, or the watched subject's, and nil when
+        -- the channel has nobody to stand behind. Written out rather than as
+        -- `watching and e or me`, which is the same shape as every other
+        -- branch in this file and wrong for exactly one case: an `and` whose
+        -- right side is nil falls through to the `or`, so a watcher with no
+        -- subject was handed 255 and the interface spent the whole warm-up of
+        -- the delayed channel asking the core about a seat that cannot exist.
+        local hud_me = me
+        if watching then hud_me = e end
         ui.hud({
-            me = me, class_names = CLASS_NAMES, menu_open = menu.open,
+            me = hud_me,
+            -- Watching, and what of: a particular hull, or the room's own
+            -- feed. The subject alone cannot say, because the channel is
+            -- usually pointed at somebody too. What separates them is whether
+            -- the hull on screen is the one this client asked for and whether
+            -- the zone could have granted it, which is your own side.
+            --
+            -- Written as a branch rather than `a and b or c`: the middle can
+            -- be nil here, and that shape falls through to the wrong answer
+            -- when it is.
+            watch = watch_state(),
+            -- The side this screen belongs to. Not the subject's: watching,
+            -- the camera stands behind whoever the channel picked, and the
+            -- question every instrument asks is which end of the gun you are
+            -- on rather than which end they are.
+            side = eye_team(),
+            -- You are the channel's subject: the camera is on you, and the
+            -- mark that says so is the one courtesy the channel owes.
+            on_air = net.on_air,
+            watchers = net.watchers,
+            class_names = CLASS_NAMES, menu_open = menu.open,
             -- Where the pointer is, in the interface's own coordinates, so an
             -- instrument under it can name itself. A touchscreen has no
             -- pointer and sends none; there is nothing to hover with and a
@@ -1268,8 +1479,9 @@ function update(self, dt)
     end
     if menu.open then ui.menu(menu.view()) end
     -- Not over the menu: the stick and the pads belong to flight, and drawn
-    -- under a panel they read as buttons that do nothing.
-    if live and not menu.open then
+    -- under a panel they read as buttons that do nothing. Not while watching
+    -- either, for the same reason: there is nothing for them to drive.
+    if live and not menu.open and not watching then
         touch.draw(layers.ui, ww, wh, density)
     end
     -- The pointer, last, so it rides over everything it points at. The page
@@ -1320,11 +1532,28 @@ end
 -- knows what any of them mean, which is what keeps the tree a description of
 -- itself rather than a second copy of the game.
 function apply_menu(self, act)
+    -- The menu started a clipboard read and is waiting for the browser. There
+    -- is nothing for this file to do about it; the action exists so the press
+    -- makes the noise a press makes.
+    if act == "pasting" then return end
     if act == "ship" then
         -- With no game on, this is simply the hull you will arrive in.
         if not self.online then
             menu.class = menu.pending
+            menu.spectate = false
             menu.save_identity()
+            return
+        end
+
+        -- Watching, a hull ask means the other thing it can mean: put me back
+        -- in, flying this. The server's caps answer; a room that filled while
+        -- you sat out refuses, and the refusal is staying exactly where you
+        -- are, watching.
+        if watching then
+            net.set_class(menu.pending)
+            menu.spectate = false
+            menu.save_identity()
+            menu.close()
             return
         end
 
@@ -1416,6 +1645,9 @@ function apply_menu(self, act)
         feed = {}
         hurt = 0
         multi_was = nil
+        flown_ok = false
+        held_kit = nil
+        marks.hold(nil)
         fx.reset()
         world.forget_specs()
         sim.init(0x5eed)
@@ -1433,9 +1665,24 @@ function apply_menu(self, act)
         net.connect(r.address, menu.class, menu.name, function(why)
             menu.note = why
             go_home(self, "zones")
-        end, r.zone)
+        end, r.zone, menu.spectate)
         self.online = true
         self.joining = 0
+        return
+    end
+
+    -- The ninth cell of the ship page: sit out. The hull despawns and the same
+    -- socket watches, landing on the room channel. Coming back is any of the
+    -- other eight cells, which is the same page and the same press.
+    if act == "spectate" then
+        -- Off the home screen this is what you will arrive as, exactly as
+        -- picking a hull there is: remembered, carried into the join, and the
+        -- page stays open so the wash moving is the answer.
+        menu.spectate = true
+        menu.save_identity()
+        if not self.online then return end
+        if not watching then net.watch(255) end
+        menu.close()
         return
     end
 
@@ -1510,7 +1757,41 @@ function on_message(self, message_id, message)
     end
 end
 
+-- The finger currently dragging the player list, if there is one: which touch
+-- it is, where it went down, and what the list was scrolled to then, so the
+-- scroll follows the whole gesture rather than accumulating rounding from
+-- each frame's step.
+local list_drag = nil
+
+-- Whether a press landed on the player list. The panel publishes one box over
+-- its whole area for exactly this, and it is the last of its boxes, so the row
+-- boxes over it still win a tap.
+local function in_list(self, sx, sy)
+    local px, py = sx, (self.vh or 0) - sy
+    for _, r in ipairs(ui.hits) do
+        if r.action == "scores" then
+            return px >= r.x and px <= r.x + r.w
+                and py >= r.y and py <= r.y + r.h
+        end
+    end
+    return false
+end
+
 function on_input(self, action_id, action)
+    -- What a keyboard typed, while something is waiting to be typed into.
+    -- This is the only text entry in the client and it exists for exactly one
+    -- string: an account key, twelve characters of an alphabet with no
+    -- lowercase and no punctuation in it. The filtering is the menu's, so a
+    -- key that arrives from the clipboard is cleaned the same way.
+    if action_id == hash("text") and action.text then
+        local moved = false
+        for ch in string.gmatch(action.text, ".") do
+            if menu.type_key(ch) then moved = true end
+        end
+        if moved then sfx.ui("ui_move") end
+        return moved
+    end
+
     -- A press is a press on whatever it landed on. The interface publishes its
     -- own hit boxes in the pixel space it drew them in, so this needs no
     -- second copy of the layout.
@@ -1562,6 +1843,17 @@ function on_input(self, action_id, action)
                     sfx.ui("ui_go")
                     return true
                 end
+                -- Borrow this pilot's eyes. The box shuts behind it, unlike
+                -- an invitation: the answer to this one is the whole screen
+                -- changing to their view, and a panel about them left
+                -- standing over it would be describing what you are now
+                -- looking through.
+                if r.action == "watch" then
+                    net.watch(r.value)
+                    ui.inspect = nil
+                    sfx.ui("ui_go")
+                    return true
+                end
                 if r.action == "debug" then
                     ui.debug = not ui.debug
                     sfx.ui("ui_move")
@@ -1596,6 +1888,10 @@ function on_input(self, action_id, action)
                     act, moved = menu.click_close()
                 elseif r.action == "answer" then
                     act, moved = menu.click_answer(r.value)
+                elseif r.action == "letter" then
+                    moved = menu.type_key(r.value)
+                elseif r.action == "rub" then
+                    moved = menu.rub_key()
                 else
                     act, moved = menu.click(r.value)
                 end
@@ -1625,12 +1921,80 @@ function on_input(self, action_id, action)
         -- engine decided was primary: on a phone the finger that reaches the
         -- button is often the second one down.
         if action.touch then touch.note_used() end
+
+        -- The player list, dragged. It could only ever be scrolled by a wheel,
+        -- and a phone has no wheel, so on glass the list simply stopped at
+        -- whatever fitted and a room of sixty-four showed nine of them.
+        --
+        -- A finger that lands on the list might mean either of two things and
+        -- there is no telling which until it moves, so the choice is made on
+        -- release: one that travelled was a scroll, one that did not was a tap
+        -- on the row it landed on. That is why this runs ahead of the hit
+        -- boxes, rather than letting a row open a card under a finger that was
+        -- on its way somewhere.
+        --
+        -- `dragged` is the one finger the list took, so the rest of the frame
+        -- leaves it alone and nothing else. The other thumb may be flying, and
+        -- swallowing the whole action would stop the stick mid-turn for as
+        -- long as somebody was reading the scoreboard.
+        local dragged = nil
         if action.touch then
             for _, t in ipairs(action.touch) do
-                if t.pressed and hit(t.screen_x or t.x, t.screen_y or t.y) then
+                local sx, sy = t.screen_x or t.x, t.screen_y or t.y
+                if t.pressed and in_list(self, sx, sy) then
+                    list_drag = {id = t.id, y = sy, at = ui.scroll,
+                                 moved = false}
+                    dragged = t.id
+                elseif list_drag and t.id == list_drag.id then
+                    dragged = t.id
+                    -- screen_y counts up from the bottom, so a finger moving
+                    -- up the screen raises it, and dragging up should bring
+                    -- the rows below into view.
+                    --
+                    -- Measured from where the finger went down rather than
+                    -- from the last frame, so the rounding to whole rows
+                    -- happens once over the gesture instead of accumulating
+                    -- a lost pixel per frame.
+                    local dy = sy - list_drag.y
+                    local pitch = math.max(1, ui.row_pitch())
+                    -- Better than half a row before it counts as travel,
+                    -- which is the width of the wobble in a tap.
+                    if math.abs(dy) > pitch * 0.6 then list_drag.moved = true end
+                    ui.scroll = list_drag.at + math.floor(dy / pitch)
+                    if t.released then
+                        if not list_drag.moved then hit(sx, sy) end
+                        list_drag = nil
+                    end
+                end
+            end
+        end
+
+        if action.touch then
+            for _, t in ipairs(action.touch) do
+                if t.id ~= dragged and t.pressed
+                   and hit(t.screen_x or t.x, t.screen_y or t.y) then
                     return
                 end
             end
+        end
+        -- Watching on glass: the stick and the pads have nothing to drive, so
+        -- a tap on either half of the screen walks the camera instead, through
+        -- the same latch the arrow keys use.
+        if net.watching then
+            if action.touch then
+                for _, t in ipairs(action.touch) do
+                    -- Not the finger reading the scoreboard. Walking the
+                    -- camera off a scroll is the same mistake as opening a
+                    -- card under it, one screen further out.
+                    if t.pressed and t.id ~= dragged then
+                        local x = t.screen_x or t.x
+                        local half = (self.vw or 0) / 2
+                        tapped[x < half and hash("turn_left")
+                               or hash("turn_right")] = true
+                    end
+                end
+            end
+            return
         end
         touch.on_touch(action, self.vw or 0, self.vh or 0, self.density or 1)
         return

@@ -26,10 +26,21 @@ local function check(name, ok, detail)
 end
 
 -- The world the menu talks to, as little of it as it asks for.
-package.loaded["arena.account"] = {
+local account = {
     status = function() return "flying as a guest" end,
     key = "", name = "", claim = function() end, aim = function() end,
+    claimed = true, base = "https://meta", link_code = "",
 }
+account.redeemed = nil
+function account.redeem_key(key, cb)
+    account.redeemed = key
+    if cb then cb(key == "VW7KQ4M2XP9BHT") end
+end
+function account.link(cb)
+    account.link_code = "408317"
+    if cb then cb(true) end
+end
+package.loaded["arena.account"] = account
 package.loaded["arena.net"] = {
     teams = {}, my_team = 0, may_found = false,
     my_team_name = function() return "" end,
@@ -143,6 +154,92 @@ check("enter is the only thing that picks",
       act == "ship" and menu.pending == 1,
       tostring(act) .. ", asked for " .. tostring(menu.pending))
 
+-- Sitting out is the ninth cell of this page rather than an answer on some
+-- card elsewhere, so it is picked the same way a hull is: move to it, press
+-- enter, and the action names itself. What it must not do is come back as a
+-- hull change, which would fly you in ship number eight.
+-- On both screens, because on the home screen this page is what you will
+-- arrive as and arriving to watch is a thing the wire can say. It is the same
+-- page and the same nine answers whether or not there is a game behind it.
+check("the cell is there with nothing behind the panel",
+      #menu.view().rows == 9, tostring(#menu.view().rows))
+
+menu.home = false
+local ship_rows = menu.view().rows
+check("and there with a game", #ship_rows == 9, tostring(#ship_rows))
+menu.sel.ship = 9
+local act_w = menu.step({go = true})
+check("the ninth cell asks to spectate", act_w == "spectate",
+      tostring(act_w))
+check("and it is not a hull", ship_rows[9].hull == nil,
+      tostring(ship_rows[9].hull))
+-- A cell with no hull and no figure falls back to hull zero and draws an
+-- Apex, which is what this one did until `figure` was carried through the
+-- view. The drawing reads this field; nothing else can say what it gets.
+check("so it says what to draw instead", ship_rows[9].figure == "pilot",
+      tostring(ship_rows[9].figure))
+
+-- The same cell, seen from the rail. The stage previews the page a rail stop
+-- leads to before you go in, and that preview flattens rows down its own
+-- path, so a field the grid reads has to survive both. `figure` survived only
+-- one: escape into the menu and arrow left onto the rail, and the ninth cell
+-- was an Apex; step into the page and it was the helmet again.
+local was_stack, was_sel = menu.stack, menu.sel
+menu.stack = {"root"}
+menu.sel = {root = ship_at}
+local peek = menu.view()
+check("the rail previews the page it points at",
+      #peek.rows == 9 and peek.sel == 0,
+      #peek.rows .. " rows, cursor " .. tostring(peek.sel))
+check("flattened, not handed over as it was written",
+      type(peek.rows[9].mark) ~= "function")
+check("and the ninth cell is a pilot there too",
+      peek.rows[9].figure == "pilot", tostring(peek.rows[9].figure))
+menu.stack, menu.sel = was_stack, was_sel
+
+-- On the home screen the same page answers a different tense: not what you
+-- are, which is nothing, but what you will arrive as. So the wash follows the
+-- remembered choice there and the live connection in a game, and the two are
+-- read through one question rather than by each caller checking `home`.
+menu.home = true
+menu.watching = false
+menu.class = 2
+menu.spectate = false
+check("at home, no choice made yet marks the hull you will arrive in",
+      menu.view().rows[3].mark and not menu.view().rows[9].mark)
+menu.spectate = true
+check("and choosing to watch moves the wash to the ninth",
+      menu.view().rows[9].mark and not menu.view().rows[3].mark)
+check("which is what the root row says too",
+      menu.view().rail[2].detail == "spectating",
+      tostring(menu.view().rail[2].detail))
+-- In a game the connection is the truth, whatever was remembered: the server
+-- can refuse a hull and the page must not claim you got it.
+menu.home = false
+check("in a game the connection wins over what was remembered",
+      menu.view().rows[3].mark and not menu.view().rows[9].mark,
+      "spectate remembered but watching is false")
+menu.spectate = false
+menu.home = true
+
+-- Which cell wears the "you are here" wash follows the connection, not the
+-- last hull picked: a watcher is in no hull, so none of the eight is marked.
+-- Read off a fresh view each time, since that is where a mark stops being a
+-- question and becomes an answer.
+menu.home = false
+menu.class = 2
+menu.watching = false
+local flying_view = menu.view().rows
+check("flying marks the hull you are in",
+      flying_view[3].mark and not flying_view[9].mark,
+      tostring(flying_view[3].mark) .. "/" .. tostring(flying_view[9].mark))
+menu.watching = true
+local watching_view = menu.view().rows
+check("watching marks the ninth instead, and no hull",
+      watching_view[9].mark and not watching_view[3].mark,
+      tostring(watching_view[3].mark) .. "/" .. tostring(watching_view[9].mark))
+menu.watching = false
+
 -- The edges wrap, so nothing on the page is out of reach in one press and an
 -- arrow never does nothing, which is what right at the last column did.
 menu.sel.ship = 6
@@ -154,10 +251,12 @@ menu.sel.ship = 8
 menu.step({right = true})
 check("right off the last column comes back to the first",
       menu.sel.ship == 5, "cursor " .. tostring(menu.sel.ship))
+-- Nine cells, not eight: the page carries the eight hulls and the answer
+-- "none of them, I am watching", so the wrap runs through nine.
 menu.sel.ship = 3
 menu.step({up = true})
 check("up from the top row is the bottom row, same column",
-      menu.sel.ship == 7, "cursor " .. tostring(menu.sel.ship))
+      menu.sel.ship == 8, "cursor " .. tostring(menu.sel.ship))
 menu.step({down = true})
 check("and down from the bottom is the top again", menu.sel.ship == 3,
       "cursor " .. tostring(menu.sel.ship))
@@ -261,9 +360,15 @@ check("the list underneath cannot be walked", menu.sel.zones == before,
 check("the arrows move between the answers, whichever pair", menu.ask.sel == 1,
       "on " .. tostring(menu.ask.sel))
 
+-- Two answers, and watching is not one of them: this card is about the game
+-- you are in, and what you are flying is the ship page's question.
+check("the card offers leaving and staying, nothing else",
+      #menu.ask.keys == 2 and menu.ask.keys[1].act == "leave",
+      #menu.ask.keys .. " answers, first is "
+          .. tostring(menu.ask.keys[1].act))
 menu.ask.sel = 2
 menu.step({left = true})
-check("left moves to the other answer", menu.ask.sel == 1,
+check("left moves to the answer beside it", menu.ask.sel == 1,
       "on " .. tostring(menu.ask.sel))
 local act3 = menu.step({go = true})
 check("and enter is worth what that answer is worth",
@@ -298,6 +403,109 @@ menu.ask = nil
 local act7 = menu.step({go = true})
 check("and from the home screen it just joins",
       act7 == "join" and menu.ask == nil, tostring(act7))
+
+-- --- a key is typed into the card, twelve slots and nothing else ---------
+--
+-- The only text entry in this client, and it exists for one string. What fills
+-- the slots is a keyboard, a clipboard, or the alphabet drawn under them; all
+-- three arrive here, so all three are filtered here.
+
+menu.hover_stage(nil)
+menu.ask = nil
+menu.home = true
+menu.stack = {"root"}
+menu.sel = {}
+menu.ask_key()
+check("the card asks for a key with empty slots",
+      menu.ask ~= nil and menu.ask.entry ~= nil
+          and menu.ask.entry.typed == "" and menu.ask.entry.n == 12,
+      tostring(menu.ask and menu.ask.entry and menu.ask.entry.typed))
+
+check("a letter of the alphabet lands in a slot", menu.type_key("7")
+          and menu.ask.entry.typed == "7", menu.ask.entry.typed)
+-- Lowercase is the same letter: nobody types a key twice to find that out.
+check("and lower case is the same letter", menu.type_key("k")
+          and menu.ask.entry.typed == "7K", menu.ask.entry.typed)
+-- The four letters the alphabet drops are dropped rather than shown wrong.
+check("a letter that is not in the alphabet is refused",
+      menu.type_key("I") == false and menu.type_key("-") == false
+          and menu.ask.entry.typed == "7K", menu.ask.entry.typed)
+check("backspace takes one back",
+      menu.rub_key() and menu.ask.entry.typed == "7", menu.ask.entry.typed)
+check("and stops at empty", menu.rub_key() and menu.rub_key() == false,
+      menu.ask.entry.typed)
+
+-- Pressing paste is a hand reaching past the words rather than an answer, so
+-- the card has to still be there when the clipboard comes back.
+menu.ask_key()
+menu.ask.keys[#menu.ask.keys + 1] = {label = "paste", act = "paste"}
+local act_p = menu.click_answer(#menu.ask.keys)
+check("pressing paste leaves the card up",
+      act_p == "pasting" and menu.ask ~= nil and menu.ask.entry ~= nil,
+      tostring(act_p) .. ", ask " .. tostring(menu.ask))
+
+-- A paste carries whatever was on the clipboard, which is usually the whole
+-- line: prefix, dashes and all.
+menu.paste_key("vw-7kq4-m2xp-9bht")
+check("a paste fills the slots and sends the key",
+      account.redeemed == "VW7KQ4M2XP9BHT" and menu.ask == nil,
+      tostring(account.redeemed) .. ", ask " .. tostring(menu.ask))
+
+-- Twelve typed characters send themselves; there is no key to press.
+account.redeemed = nil
+menu.ask_key()
+for ch in string.gmatch("7KQ4M2XP9BHZ", ".") do menu.type_key(ch) end
+check("twelve typed characters send themselves",
+      account.redeemed == "VW7KQ4M2XP9BHZ", tostring(account.redeemed))
+check("and a key the server refuses empties the slots and stays up",
+      menu.ask ~= nil and menu.ask.entry.typed == "",
+      tostring(menu.ask and menu.ask.entry.typed))
+menu.ask = nil
+
+-- --- the device code is a card, and answering it never takes the code away -
+--
+-- The code is live for ten minutes whatever this screen is showing. Answering
+-- the card that carries it is somebody saying they have read it, not somebody
+-- giving it back, and a player who dismissed it and walked to the other
+-- machine should not have to come back and make a second one.
+
+menu.hover_stage(nil)
+menu.ask = nil
+menu.home = true
+menu.stack = {"root"}
+menu.sel = {}
+menu.click_rail(top_index("pilot"))
+local rows_before = #menu.view().rows
+menu.sel.pilot = rows_before          -- "add a device", the last row
+local act_link = menu.step({go = true})
+check("pressing add a device puts the code on a card",
+      act_link == nil and menu.ask ~= nil
+          and menu.ask.code == account.link_code,
+      tostring(act_link) .. ", code " .. tostring(menu.ask and menu.ask.code))
+check("and the card has one answer", #menu.ask.keys == 1,
+      tostring(#menu.ask.keys))
+
+menu.step({go = true})
+check("answering it takes the card down and leaves the code alone",
+      menu.ask == nil and account.link_code == "408317",
+      "code " .. tostring(account.link_code))
+
+-- And the row that holds it opens the card again, since the whole point of
+-- keeping the code is being able to look at it.
+local v_code = menu.view()
+local code_row
+for i, r in ipairs(v_code.rows) do
+    if r.label == "code" then code_row = i end
+end
+check("the code has a row of its own", code_row ~= nil,
+      table.concat(texts_of(v_code), ", "))
+menu.sel.pilot = code_row
+menu.step({go = true})
+check("and pressing it shows the code again",
+      menu.ask ~= nil and menu.ask.code == "408317",
+      tostring(menu.ask and menu.ask.code))
+menu.ask = nil
+account.link_code = ""
 
 -- --- and the one row on the pilot page that throws something away ---------
 --

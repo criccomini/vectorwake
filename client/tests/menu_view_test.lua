@@ -462,5 +462,59 @@ end
 check("only the answers can be pressed", answers == 2 and others == 0,
       answers .. " answers, " .. others .. " other boxes")
 
+-- A question may be about a string rather than a choice. A device code is
+-- read off this screen and typed into another machine, so it is drawn as
+-- itself: big, lit, and in the case it was given.
+local st4 = draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
+                  focus = "stage", home = true, closable = false,
+                  rows = rows,
+                  ask = {head = "Type this on the other device", sel = 1,
+                         code = "408317", keys = {{label = "done"}}}})
+local code_t
+for i = 1, st4.n do
+    if st4.text[i].s == "408317" then code_t = st4.text[i] end
+end
+check("a question can carry a code, drawn as given", code_t ~= nil,
+      table.concat(texts(st4), " "))
+check("and drawn larger than what it is about",
+      code_t and code_t.px > 20, code_t and tostring(code_t.px))
+
+-- A question can also be a thing to type into. On a keyboard that is twelve
+-- slots and nothing else, since a drawn keyboard would be a picture of the
+-- one under the player's hands. On a touchscreen the alphabet comes with it,
+-- every letter a tap target, and one cell to rub a mistake out.
+local ask_entry = {head = "Type your key", sel = 1,
+                   entry = {typed = "7KQ4M2", n = 12,
+                            alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"},
+                   keys = {{label = "cancel"}}}
+draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+      home = true, closable = false, rows = rows, ask = ask_entry})
+local letters, rubs = 0, 0
+for _, h in ipairs(ui.hits) do
+    if h.action == "letter" then letters = letters + 1 end
+    if h.action == "rub" then rubs = rubs + 1 end
+end
+check("a keyboard gets slots and no drawn alphabet", letters == 0 and rubs == 0,
+      letters .. " letters, " .. rubs .. " rubs")
+
+local st5 = draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
+                  focus = "stage", home = true, closable = false,
+                  rows = rows, ask = ask_entry}, 390, 844, true)
+letters, rubs = 0, 0
+for _, h in ipairs(ui.hits) do
+    if h.action == "letter" then letters = letters + 1 end
+    if h.action == "rub" then rubs = rubs + 1 end
+end
+check("a touchscreen gets one target per letter", letters == 32,
+      tostring(letters))
+check("and somewhere to put a mistake", rubs == 1, tostring(rubs))
+-- What has been typed is drawn as itself, character by character, in the case
+-- the alphabet is written in.
+local typed = 0
+for i = 1, st5.n do
+    if st5.text[i].s == "7" or st5.text[i].s == "K" then typed = typed + 1 end
+end
+check("and the slots show what is in them", typed >= 2, tostring(typed))
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

@@ -73,17 +73,34 @@ const C2S_SHIP: u8 = 5;
 const C2S_TEAM: u8 = 6;
 const C2S_FOUND: u8 = 7;
 const C2S_INVITE: u8 = 8;
+/// `[C2S_WATCH, ship]`: whose eyes to borrow. From a player it means sit out,
+/// from a watcher it means look somewhere else. 255 asks for the room channel.
+///
+/// A request like the team asks, not an assertion: the answer is the subject
+/// byte of the next snapshot. Asking for a hostile or absent ship is not an
+/// error, it lands the asker on the channel, because live sight of a stranger
+/// is the one thing this mode must never hand out. A watcher tailing the pilot
+/// they are hunting from a second tab is a wallhack with a menu entry, and the
+/// scout team it imitates pays for a seat, shows on radar, and can be shot.
+const C2S_WATCH: u8 = 9;
 /// This client is a bot and says so. Everything that follows from the
 /// declaration is in the arena's favour, which is why a well-behaved bot sets
 /// it: a declared bot is labeled in the roster, sits outside the human cap, and
 /// is asked to leave before a human is ever refused a seat. Anybody may set it.
 /// See docs/architecture/ai-runtime.md.
 const JOIN_BOT: u8 = 1;
+/// This client came to watch, not to fly. The class byte is ignored, no ship
+/// is spawned, and the seat taken is a watcher's: outside `max_players`,
+/// outside the bot arithmetic, invisible to the simulation.
+const JOIN_WATCH: u8 = 2;
 /// The client wire, which versions separately from the arena-to-directory one in
 /// `fleet.rs`: they change for different reasons and are spoken by different
 /// programs. Bump when a message's layout changes, so a stale build is told its
 /// build is stale rather than left to misparse a snapshot.
-const CLIENT_PROTOCOL: u8 = 5;
+///
+/// 6 added spectating: the watcher section on the roster, the subject byte's
+/// wider meaning, and `S2C_ONAIR`.
+const CLIENT_PROTOCOL: u8 = 6;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -156,6 +173,23 @@ const S2C_YIELD: u8 = 11;
 /// as one buffer, because the last of those is a different answer for every
 /// pilot: a private side is a door only the invited can see open.
 const S2C_TEAMS: u8 = 12;
+/// `[S2C_ONAIR, 0|1]`: you are the room channel's subject, or you have stopped
+/// being it. Sent to the subject and nobody else. The channel is a shared feed
+/// whose subject does not choose to be watched, so the least the room owes
+/// them is knowing it: two minutes on camera is something a pilot can play
+/// around, and only if they are told.
+const S2C_ONAIR: u8 = 13;
+
+/// Watchers a room admits when its zone says nothing. Deliberately low: a
+/// watcher is a full player's egress, and egress is the fleet's whole bill.
+const DEFAULT_MAX_WATCHERS: usize = 8;
+/// How far the room channel runs behind when the zone does not say: five
+/// seconds. Enough that what a second tab sees is film rather than targeting
+/// data, short enough to still read as the fight it is.
+const DEFAULT_CHANNEL_DELAY: u32 = 500;
+/// How long the channel holds one subject, in ticks. Long enough to catch a
+/// fight's arc, short enough that a room's whole cast comes round.
+const CHANNEL_HOLD: u32 = 9000;
 
 struct Player {
     ship: u8,
@@ -198,6 +232,100 @@ const INPUT_LEAD_MAX: u32 = 100;
 /// under the cap this is never near full; it exists so a client that floods
 /// cannot grow the arena's memory.
 const INPUT_QUEUE_MAX: usize = 128;
+
+/// What a watcher is looking at.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum WatchMode {
+    /// One pilot's eyes, live. Granted only for a ship on the watcher's own
+    /// side, or to a holder of the `watch` capability, because same-side sight
+    /// is information the side already has and staff sight is a grant the
+    /// catalog wrote down. Everybody else gets the channel.
+    Follow(u8),
+    /// The room channel: the shared, delayed feed. The default, and the floor
+    /// every unlawful ask falls to.
+    Channel,
+}
+
+/// A connection with a seat in the roster and no ship in the simulation.
+/// The sim never hears about these; `sim_state` gains no field.
+struct Watcher {
+    /// Everything needed to put this pilot back in the game: `fly` hands this
+    /// straight back to `join`, so watching and returning is a despawn and a
+    /// spawn rather than a reconnect.
+    seat: Seat,
+    /// The side they sat out from, which is what a follow ask is checked
+    /// against. None for a client that arrived watching: no side, no live
+    /// follow, channel only.
+    team: Option<u8>,
+    /// Holder of the `watch` capability, checked once at the door against the
+    /// catalog's staff list. A live view of anybody, which is the operator's
+    /// reason to be here at all.
+    any: bool,
+    mode: WatchMode,
+    tx: mpsc::Sender<Message>,
+}
+
+/// One frame of the room channel: the snapshot message as every channel
+/// watcher will receive it, and the kills announced since the frame before,
+/// which ride with it so the feed cannot spoil a death the delayed picture
+/// has not shown yet.
+struct ChannelFrame {
+    tick: u32,
+    /// Whose hull this frame is centred on, 255 for an empty room. Kept
+    /// beside the bytes because it is the answer to "who is being seen right
+    /// now", which is a question about the frame going out rather than about
+    /// the camera: with a delay on the channel those are seconds apart.
+    subject: u8,
+    kills: Vec<Vec<u8>>,
+    msg: Vec<u8>,
+}
+
+/// The room channel: one shared feed per room, subject picked by the server on
+/// its own clock, same bytes for every watcher on it. Shared is what makes it
+/// safe: reconnecting lands on the same channel everyone else is watching, so
+/// there is no re-rolling for a victim, and the delay is what makes the frame
+/// that does show them film rather than targeting data.
+struct Channel {
+    subject: Option<u8>,
+    /// The subject of the newest frame actually served, which is what channel
+    /// watchers are looking at. Behind `subject` by the delay, and None until
+    /// the ring is warm enough to have served anything.
+    showing: Option<u8>,
+    /// Ticks left before the subject is re-picked. Also re-picked early when
+    /// the subject leaves.
+    hold: u32,
+    ring: std::collections::VecDeque<ChannelFrame>,
+    /// Kills waiting for the next frame.
+    pending_kills: Vec<Vec<u8>>,
+    delay: u32,
+    /// Its own generator, not the simulation's: the pick must not perturb the
+    /// state the golden traces hash.
+    rng: u64,
+}
+
+impl Channel {
+    fn new() -> Self {
+        Channel {
+            subject: None,
+            showing: None,
+            hold: 0,
+            ring: std::collections::VecDeque::new(),
+            pending_kills: Vec::new(),
+            delay: DEFAULT_CHANNEL_DELAY,
+            rng: 0x9e3779b97f4a7c15,
+        }
+    }
+
+    fn next_rand(&mut self) -> u64 {
+        // xorshift64. Quality does not matter here; not being the sim's rng does.
+        let mut x = self.rng;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.rng = x;
+        x
+    }
+}
 
 impl Player {
     /// File an input for the tick it names.
@@ -367,6 +495,17 @@ struct Arena {
     /// list: a bot is a client, so it is a row here with a flag on it, and
     /// nothing in the tick can tell the two apart.
     players: HashMap<u64, Player>,
+    /// Everybody watching. Beside `players` rather than inside it, because
+    /// every rule that reads `players` -- the human cap, the fill target, the
+    /// drain, the tick's input loop -- is a rule about people in the game, and
+    /// a watcher is in the room without being in the game.
+    watchers: HashMap<u64, Watcher>,
+    /// The most watchers this room admits, the zone's number.
+    max_watchers: usize,
+    channel: Channel,
+    /// Ships somebody is currently looking at, as last announced. Held so the
+    /// tally can be recomputed every snapshot and only its edges sent.
+    on_air: std::collections::HashSet<u8>,
     names: HashMap<u8, Seat>,
     /// Where rated events go on their way out of this process. Shared with
     /// every other room here, because the spool is a property of the process
@@ -858,6 +997,10 @@ impl Arena {
         Arena {
             world,
             players: HashMap::new(),
+            watchers: HashMap::new(),
+            max_watchers: DEFAULT_MAX_WATCHERS,
+            channel: Channel::new(),
+            on_air: std::collections::HashSet::new(),
             names: HashMap::new(),
             accounts: HashMap::new(),
             // Replaced by the process's own the moment a Zone takes ownership
@@ -931,12 +1074,24 @@ impl Arena {
         }
     }
 
+    /// An arrival with nothing to say about which side they land on, which is
+    /// every arrival that did not just get up out of a chair in this room.
+    fn join(&mut self, seat: Seat, class: u8, max_players: usize,
+            tx: mpsc::Sender<Message>) -> Option<u64> {
+        self.join_on(seat, class, max_players, None, tx)
+    }
+
     /// `max_players` is the zone's, which used to be a constant here while the
     /// key in the file was read by nobody. It bounds humans; the room's own size
     /// is `arena.max_ships` and the two are different questions, since a wide
     /// room with a small player cap is a zone that wants mostly bots.
-    fn join(&mut self, seat: Seat, class: u8, max_players: usize,
-            tx: mpsc::Sender<Message>) -> Option<u64> {
+    ///
+    /// `prefer` is a side this pilot already belongs to, which a watcher taking
+    /// a hull has and nobody else does. It is honoured while the side exists and
+    /// has room, and ignored otherwise rather than refused: a watcher whose side
+    /// filled up while they sat out is still a player who wants to fly.
+    fn join_on(&mut self, seat: Seat, class: u8, max_players: usize,
+               prefer: Option<u8>, tx: mpsc::Sender<Message>) -> Option<u64> {
         let name = seat.name.clone();
         let bot = seat.bot;
         // The cap is on people. A declared bot passes it by, which is the whole
@@ -971,10 +1126,15 @@ impl Arena {
         self.world.state.ships[ship as usize].deaths = 0;
 
         // Which side an arrival lands on is the room's answer, not the
-        // client's: the emptiest of the zone's own that has room, or a side of
-        // their own where the zone names none. Moving is then one selection
-        // away in the team list, and only a full side can refuse it.
-        let team = self.seat_team(ship, seat.bot);
+        // client's: the side they already hold if they hold one, else the
+        // emptiest of the zone's own that has room, or a side of their own
+        // where the zone names none. Moving is then one selection away in the
+        // team list, and only a full side can refuse it.
+        let team = match prefer {
+            Some(t) if self.teams.contains_key(&t)
+                && self.team_has_room(t, bot, Some(ship)) => t,
+            _ => self.seat_team(ship, seat.bot),
+        };
         // Where a fresh pilot starts, worked out before anything about them is
         // set: a seat is furniture, and its last occupant does not come with
         // it.
@@ -1248,6 +1408,19 @@ impl Arena {
         self.found_team(joining).unwrap_or(0)
     }
 
+    /// Where a watcher belongs. The same question `seat_team` answers for a
+    /// pilot, asked by somebody holding no hull: a watcher occupies no seat, so
+    /// the per-side caps have nothing to weigh here and the emptiest of the
+    /// zone's own sides is the whole rule. Room is checked when they fly, which
+    /// is the moment it starts to mean anything.
+    ///
+    /// A free-for-all has no such sides, and the answer there is none. Every
+    /// pilot is a private side of one, so there is no side for an arrival to
+    /// share and nothing but the room channel to see.
+    fn watch_team(&self) -> Option<u8> {
+        (0..self.public_teams).min_by_key(|t| self.team_census(*t, None).0)
+    }
+
     /// A new private side, named and empty, or none when the room already
     /// holds as many as it may. The founder is not moved here; the caller
     /// does that, because moving is gated and founding is not.
@@ -1467,12 +1640,154 @@ impl Arena {
             // of this one was invited nowhere. And a private side whose last
             // member just left stops existing.
             self.invites.remove(&p.ship);
+            // The tally belongs to the pilot, not to the seat. Left set, the
+            // next occupant would inherit a lit state nobody ever sent them
+            // and never see it go out.
+            self.on_air.remove(&p.ship);
             self.reap_teams();
             // Here rather than at each of the several callers -- a quit, an
             // eviction, a kick, a drain -- because every one of them changes
             // who is on what.
             self.broadcast_teams();
         }
+    }
+
+    /// What a watch ask resolves to. The one rule of the whole mode: live
+    /// sight is your own side or the written-down capability, and everything
+    /// else is the channel. Never an error, because "watch that stranger" is
+    /// an ask whose lawful answer exists; it is just not the live one.
+    fn watch_mode(&self, team: Option<u8>, any: bool, want: u8) -> WatchMode {
+        if want == 255 || !self.names.contains_key(&want) {
+            return WatchMode::Channel;
+        }
+        if any {
+            return WatchMode::Follow(want);
+        }
+        match team {
+            Some(t) if self.world.state.ships[want as usize].team == t => {
+                WatchMode::Follow(want)
+            }
+            _ => WatchMode::Channel,
+        }
+    }
+
+    /// A flying pilot becomes a watcher on the same socket. A despawn and a
+    /// seat change, not a reconnect: map, settings and socket all stay. The
+    /// side they sat out from is remembered, and it is what their follow asks
+    /// are checked against until they fly again.
+    fn sit_out(&mut self, id: u64, want: u8, any: bool) -> bool {
+        let Some(p) = self.players.get(&id) else {
+            return false;
+        };
+        let ship = p.ship;
+        let tx = p.tx.clone();
+        let Some(seat) = self.names.get(&ship).cloned() else {
+            return false;
+        };
+        let team = self.world.state.ships[ship as usize].team;
+        self.leave(id);
+        let mode = self.watch_mode(Some(team), any, want);
+        self.watchers.insert(
+            id,
+            Watcher { seat, team: Some(team), any, mode, tx: tx.clone() },
+        );
+        // The client learns which of its two lives this is from the welcome:
+        // 255 is a watcher's ship.
+        let mut w = vec![S2C_WELCOME, 255];
+        w.extend_from_slice(&self.world.state.tick.to_le_bytes());
+        let _ = tx.try_send(Message::Binary(w));
+        self.broadcast_roster();
+        // After the watcher row exists, not before: `leave` above broadcast a
+        // list this pilot was no longer on, and the side they sat out from is
+        // what the interface needs to know whose hull it may offer to follow.
+        self.broadcast_teams();
+        true
+    }
+
+    /// A watcher looks somewhere else. The resolver does the law; this only
+    /// files the answer.
+    fn set_watch(&mut self, id: u64, want: u8) {
+        let Some(w) = self.watchers.get(&id) else {
+            return;
+        };
+        let mode = self.watch_mode(w.team, w.any, want);
+        if let Some(w) = self.watchers.get_mut(&id) {
+            w.mode = mode;
+        }
+    }
+
+    /// A client that arrived to watch. They are seated on a side at the door,
+    /// the same as anybody else who walks in: watching is a way of being in
+    /// this room rather than a lobby beside it. So the sight rule has a side to
+    /// check a follow against, and the team list has one to call theirs.
+    ///
+    /// Arriving to watch used to hand out no side at all, on the reasoning that
+    /// somebody who never flew here sat out from nowhere. What that produced
+    /// was a spectator alone off the edge of a room's two teams, shown every
+    /// hull as an enemy's and offered no live sight of any of them, while the
+    /// same person joining in a hull and then sitting out kept their side and
+    /// everything that came with it.
+    fn watch_join(
+        &mut self,
+        seat: Seat,
+        any: bool,
+        tx: mpsc::Sender<Message>,
+    ) -> Option<u64> {
+        if self.watchers.len() >= self.max_watchers {
+            return None;
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        let team = self.watch_team();
+        self.watchers.insert(
+            id,
+            Watcher { seat, team, any, mode: WatchMode::Channel, tx },
+        );
+        // The room feed is still what they open on, since they have asked to
+        // watch nobody in particular yet. Their side is what makes the asking
+        // possible.
+        self.broadcast_teams();
+        Some(id)
+    }
+
+    /// A watcher takes a hull again. Everything is `join`: the caps, the bot
+    /// eviction, the spawn kit, the team seating. The watcher row goes only
+    /// once the seat is real, so a room that filled while they sat out
+    /// refuses and leaves them watching.
+    ///
+    /// The side they were watching with goes in as a preference rather than
+    /// being re-picked from scratch, because it was theirs the whole time they
+    /// sat there: the team list said so and the follow rule enforced it. Losing
+    /// it on the way back into a cockpit would move a pilot across the room for
+    /// having watched a minute of it.
+    fn fly(&mut self, id: u64, class: u8, max_players: usize) -> Option<u64> {
+        let seat = self.watchers.get(&id)?.seat.clone();
+        let tx = self.watchers.get(&id)?.tx.clone();
+        let back = self.watchers.get(&id)?.team;
+        let new_id = self.join_on(seat, class, max_players, back, tx.clone())?;
+        self.watchers.remove(&id);
+        let ship = self.players[&new_id].ship;
+        let mut m = vec![S2C_WELCOME, ship];
+        m.extend_from_slice(&self.world.state.tick.to_le_bytes());
+        let _ = tx.try_send(Message::Binary(m));
+        self.broadcast_roster();
+        self.broadcast_teams();
+        Some(new_id)
+    }
+
+    /// Every watcher out, told the way a yielded bot is told. A drain empties
+    /// the room of players, and a watcher with nobody to watch is a socket
+    /// holding a picture of an empty map open.
+    fn drop_watchers(&mut self) -> usize {
+        let n = self.watchers.len();
+        for w in self.watchers.values() {
+            let _ = w.tx.try_send(Message::Binary(vec![S2C_YIELD]));
+        }
+        self.watchers.clear();
+        if n > 0 {
+            self.broadcast_roster();
+        }
+        n
     }
 
     fn tick(&mut self) {
@@ -1580,6 +1895,15 @@ impl Arena {
             for p in self.players.values() {
                 let _ = p.tx.try_send(Message::Binary(m.clone()));
             }
+            // Live to anyone riding a pilot's shoulder; the channel's copy
+            // waits in the ring with the frame it belongs to, or the feed
+            // would announce a death the delayed picture has not shown yet.
+            for w in self.watchers.values() {
+                if matches!(w.mode, WatchMode::Follow(_)) {
+                    let _ = w.tx.try_send(Message::Binary(m.clone()));
+                }
+            }
+            self.channel.pending_kills.push(m.clone());
             let assists = rated.as_ref().map_or(0, |r| r.credits.len());
             if assists > 1 {
                 println!(
@@ -1652,9 +1976,14 @@ impl Arena {
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
         }
+        // Watchers read the round too. The banner is coarse -- a flag tally,
+        // a countdown -- so it does not ride the channel's delay.
+        for w in self.watchers.values() {
+            let _ = w.tx.try_send(Message::Binary(m.clone()));
+        }
     }
 
-    fn broadcast_snapshot(&self, buf: &mut [u8]) {
+    fn broadcast_snapshot(&mut self, buf: &mut [u8]) {
         for p in self.players.values() {
             // Packed per player rather than once for everybody, so each is
             // sent only the prizes near its own ship. Prizes are most of a
@@ -1688,6 +2017,198 @@ impl Arena {
                 metrics::SEND_DROPPED.inc();
             }
         }
+
+        // Watchers riding one pilot's eyes, live. Packed at the followed hull
+        // with the human radius whatever the target's own stream gets: a
+        // declared bot is sent the whole prize table, and a watcher who
+        // inherited that would hold sight no human lawfully has.
+        let mut fallen: Vec<u64> = Vec::new();
+        for (id, w) in self.watchers.iter() {
+            let WatchMode::Follow(t) = w.mode else { continue };
+            let lawful = self.names.contains_key(&t)
+                && (w.any || w.team == Some(self.world.state.ships[t as usize].team));
+            if !lawful {
+                fallen.push(*id);
+                continue;
+            }
+            let sh = &self.world.state.ships[t as usize];
+            let n = self.world.pack_around(buf, sh.x, sh.y, PRIZE_INTEREST);
+            if n <= 0 {
+                continue;
+            }
+            let mut msg = Vec::with_capacity(n as usize + 6);
+            msg.push(S2C_SNAPSHOT);
+            // Whose eyes these are, which is what the watcher's camera reads.
+            msg.push(t);
+            // No input to acknowledge: a watcher sends none.
+            msg.extend_from_slice(&0u32.to_le_bytes());
+            msg.extend_from_slice(&buf[..n as usize]);
+            metrics::SNAPSHOT_BYTES.add(msg.len() as u64);
+            if w.tx.try_send(Message::Binary(msg)).is_err() {
+                metrics::SEND_DROPPED.inc();
+            }
+        }
+        // A follow whose ground fell away: the seat emptied, or its pilot
+        // crossed to another side. The floor is the channel, never an error
+        // and never a stale stream.
+        for id in fallen {
+            if let Some(w) = self.watchers.get_mut(&id) {
+                w.mode = WatchMode::Channel;
+            }
+        }
+
+        self.channel_frame(buf);
+    }
+
+    /// One frame of the room channel: pick the subject if its hold expired,
+    /// pack once, push into the delay ring, and serve everything old enough.
+    /// Runs whether or not anybody is on the channel, so a watcher arriving
+    /// lands in a warm ring instead of staring at nothing for the delay.
+    fn channel_frame(&mut self, buf: &mut [u8]) {
+        // Re-pick when the hold runs out or the seat empties. Live humans
+        // first, because a random camera in a bot-filled room is a bot
+        // documentary five frames out of six; then any human, then any seat.
+        let valid = self
+            .channel
+            .subject
+            .is_some_and(|s| self.names.contains_key(&s));
+        if !valid || self.channel.hold == 0 {
+            let mut pool: Vec<u8> = self
+                .names
+                .iter()
+                .filter(|(s, k)| {
+                    !k.bot && self.world.state.ships[**s as usize].alive == 1
+                })
+                .map(|(s, _)| *s)
+                .collect();
+            if pool.is_empty() {
+                pool = self
+                    .names
+                    .iter()
+                    .filter(|(_, k)| !k.bot)
+                    .map(|(s, _)| *s)
+                    .collect();
+            }
+            if pool.is_empty() {
+                pool = self.names.keys().copied().collect();
+            }
+            let pick = if pool.is_empty() {
+                None
+            } else {
+                Some(pool[(self.channel.next_rand() % pool.len() as u64) as usize])
+            };
+            // Who the camera is on. Nobody is told anything here: being
+            // picked is not being seen, and what a pilot is owed is the
+            // second one. See `refresh_on_air`.
+            self.channel.subject = pick;
+            self.channel.hold = CHANNEL_HOLD;
+        }
+        self.channel.hold = self.channel.hold.saturating_sub(SNAPSHOT_EVERY as u32);
+
+        // Packed once, same bytes for everybody on the channel. The human
+        // radius always; an empty room points the camera at the map's middle.
+        let (cx, cy, subject) = match self.channel.subject {
+            Some(s) => {
+                let sh = &self.world.state.ships[s as usize];
+                (sh.x, sh.y, s)
+            }
+            None => {
+                let mid = 512 * sim::TILE_PX * 256;
+                (mid, mid, 255u8)
+            }
+        };
+        let n = self.world.pack_around(buf, cx, cy, PRIZE_INTEREST);
+        if n > 0 {
+            let mut msg = Vec::with_capacity(n as usize + 6);
+            msg.push(S2C_SNAPSHOT);
+            msg.push(subject);
+            msg.extend_from_slice(&0u32.to_le_bytes());
+            msg.extend_from_slice(&buf[..n as usize]);
+            self.channel.ring.push_back(ChannelFrame {
+                tick: self.world.state.tick,
+                subject,
+                kills: std::mem::take(&mut self.channel.pending_kills),
+                msg,
+            });
+        }
+
+        // Serve everything old enough: one frame per snapshot once the ring
+        // is warm, each with the kills it was holding, so the feed cannot
+        // spoil a death the picture has not shown.
+        let now = self.world.state.tick;
+        let delay = self.channel.delay;
+        while self
+            .channel
+            .ring
+            .front()
+            .is_some_and(|f| f.tick + delay <= now)
+        {
+            let f = self.channel.ring.pop_front().unwrap();
+            // What the channel is showing, whether or not anybody is on it:
+            // the ring runs regardless so an arriving watcher lands in a warm
+            // picture, and this follows the picture rather than the audience.
+            self.channel.showing = if f.subject == 255 { None } else { Some(f.subject) };
+            for w in self.watchers.values() {
+                if w.mode != WatchMode::Channel {
+                    continue;
+                }
+                for k in &f.kills {
+                    let _ = w.tx.try_send(Message::Binary(k.clone()));
+                }
+                metrics::SNAPSHOT_BYTES.add(f.msg.len() as u64);
+                if w.tx.try_send(Message::Binary(f.msg.clone())).is_err() {
+                    metrics::SEND_DROPPED.inc();
+                }
+            }
+        }
+
+        self.refresh_on_air();
+    }
+
+    /// Who is being looked at, and telling them when that changes.
+    ///
+    /// The tally has to mean "somebody is seeing you", so it is derived from
+    /// the audience rather than from the camera. Two ways to be seen: the
+    /// channel is showing you and at least one watcher is on the channel, or
+    /// somebody is following your hull directly. Neither is the same as the
+    /// channel having picked you, which is what this used to announce: a
+    /// pilot alone in a room with no watchers at all wore the tally, and a
+    /// pilot the camera had just landed on wore it for the whole delay before
+    /// a single frame of them was served.
+    ///
+    /// Staff following you light it like anybody else. They are already named
+    /// in the roster, so hiding them here would let a room see that somebody
+    /// is watching without being able to tell they are watching you. Covert
+    /// observation is the invisibility capability, and when that arrives it
+    /// takes the roster row and this together rather than half of each.
+    fn refresh_on_air(&mut self) {
+        let mut lit: std::collections::HashSet<u8> = std::collections::HashSet::new();
+        if self.watchers.values().any(|w| w.mode == WatchMode::Channel) {
+            if let Some(s) = self.channel.showing {
+                lit.insert(s);
+            }
+        }
+        for w in self.watchers.values() {
+            if let WatchMode::Follow(t) = w.mode {
+                lit.insert(t);
+            }
+        }
+        if lit == self.on_air {
+            return;
+        }
+        // Edges only. A player who is still being watched hears nothing,
+        // which is what makes this safe to run every snapshot.
+        for ship in self.on_air.difference(&lit) {
+            if let Some(p) = self.players.values().find(|p| p.ship == *ship) {
+                let _ = p.tx.try_send(Message::Binary(vec![S2C_ONAIR, 0]));
+            }
+        }
+        for ship in lit.difference(&self.on_air) {
+            if let Some(p) = self.players.values().find(|p| p.ship == *ship) {
+                let _ = p.tx.try_send(Message::Binary(vec![S2C_ONAIR, 1]));
+            }
+        }
+        self.on_air = lit;
     }
 
     /// Names and labels, sent on every join and leave and then every two
@@ -1711,6 +2232,19 @@ impl Arena {
             // not be shown as if it had been.
             m.push(self.rating.games_of(&seat.rid).min(255) as u8);
             let bytes = seat.name.as_bytes();
+            let len = bytes.len().min(24) as u8;
+            m.push(len);
+            m.extend_from_slice(&bytes[..len as usize]);
+        }
+        // The watchers, after the ships: label, then the name. No ship index
+        // and no rating, because a watcher is not fighting in this room. Named
+        // on purpose: the roster exists so you know who is in the room with
+        // you, and an unnamed watcher is exactly the scout the sight rules
+        // are pricing. Invisibility is a capability someday, not a default.
+        m.push(self.watchers.len().min(255) as u8);
+        for w in self.watchers.values() {
+            m.push(w.seat.label);
+            let bytes = w.seat.name.as_bytes();
             let len = bytes.len().min(24) as u8;
             m.push(len);
             m.extend_from_slice(&bytes[..len as usize]);
@@ -1772,11 +2306,55 @@ impl Arena {
         m
     }
 
+    /// The same list as a watcher sees it.
+    ///
+    /// They need it for one thing the flying version is also for: knowing
+    /// which side is theirs. Every watcher has one, whether they sat out from
+    /// it or were seated on it at the door, and it is what decides whose hull
+    /// they may ask to follow, so without this the interface cannot tell a
+    /// lawful ask from one that will fall to the channel and has to either
+    /// offer every pilot or none. The exception is a free-for-all, where there
+    /// are no shared sides to be on and 255 is the truth.
+    ///
+    /// No doors in it. Every `may_join` is zero and so is the found byte,
+    /// because a watcher crosses nothing while watching: taking a hull again
+    /// is what puts them back on a side.
+    fn watcher_teams_msg(&self, w: &Watcher) -> Vec<u8> {
+        let mine = w.team.unwrap_or(255);
+        let shown: Vec<u8> = self
+            .teams
+            .iter()
+            .filter(|(b, t)| t.public || Some(**b) == w.team)
+            .map(|(b, _)| *b)
+            .collect();
+        let mut m = vec![S2C_TEAMS];
+        m.push(mine);
+        m.push(0);
+        m.push(shown.len().min(255) as u8);
+        for byte in shown {
+            let team = &self.teams[&byte];
+            let (humans, bots) = self.team_census(byte, None);
+            m.push(byte);
+            m.push(u8::from(team.public));
+            m.push(0);
+            m.push(humans.min(255) as u8);
+            m.push(bots.min(255) as u8);
+            let bytes = team.name.as_bytes();
+            let len = bytes.len().min(24) as u8;
+            m.push(len);
+            m.extend_from_slice(&bytes[..len as usize]);
+        }
+        m
+    }
+
     /// Sent on every change to who is where, and to whom. Cheap enough to send
     /// whole rather than diffed: a room holds a handful of sides.
     fn broadcast_teams(&self) {
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(self.teams_msg(p.ship)));
+        }
+        for w in self.watchers.values() {
+            let _ = w.tx.try_send(Message::Binary(self.watcher_teams_msg(w)));
         }
     }
 
@@ -1789,6 +2367,11 @@ impl Arena {
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
         }
+        // A watcher decodes snapshots through the same core, so stale rules
+        // would have it drawing a different game than the one it is shown.
+        for w in self.watchers.values() {
+            let _ = w.tx.try_send(Message::Binary(m.clone()));
+        }
     }
 
     /// Called on every change, and on a two-second clock from the tick loop so a
@@ -1798,6 +2381,9 @@ impl Arena {
         let m = self.roster_msg();
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
+        }
+        for w in self.watchers.values() {
+            let _ = w.tx.try_send(Message::Binary(m.clone()));
         }
     }
 }
@@ -2169,6 +2755,8 @@ impl Zone {
         arena.set_teams(&def);
         arena.mode = modes::build(&z.mode, def.arena.flags, arena.public_teams);
         arena.bot_fill = def.bot_fill();
+        arena.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
+        arena.channel.delay = def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
         if z.mode == "warzone" {
             arena.add_default_flags();
         }
@@ -2219,6 +2807,10 @@ impl Zone {
                         if let Some(m) = def.max_ships {
                             r.world.cfg.max_ships = m;
                         }
+                        r.max_watchers =
+                            def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
+                        r.channel.delay =
+                            def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
                         r.broadcast_settings();
                     }
                 }
@@ -2366,6 +2958,29 @@ impl Zone {
         self.wire_zone()
             .map(|z| z.max_players as usize)
             .unwrap_or(DEFAULT_MAX_PLAYERS)
+    }
+
+    /// Whether this pilot may watch anybody, live. A named grant in the
+    /// catalog's staff list, and it needs the account as well as the name: a
+    /// guest can claim any name, and a grant a claim could hold would be no
+    /// grant at all.
+    fn watch_any(&self, seat: &Seat) -> bool {
+        seat.account.is_some()
+            && self
+                .catalog
+                .as_ref()
+                .is_some_and(|c| c.has_capability(&seat.name, "watch"))
+    }
+
+    /// Which room a watcher lands in: the fullest, because they came to see
+    /// people. Rooms is never empty, so the fallback is never taken.
+    fn room_to_watch(&self) -> usize {
+        self.rooms
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, a)| (a.humans(), a.players.len()))
+            .map(|(i, _)| i)
+            .unwrap_or(0)
     }
 
     /// Bans come from the catalog when there is one, because they are
@@ -3022,6 +3637,12 @@ async fn main() {
                 if n % 100 == 0 {
                     z.reclaim_rooms();
                     if z.draining && z.total_players() == 0 {
+                        // The last player is gone, so the watchers go too: a
+                        // watcher of an empty room is a socket holding a
+                        // picture of a map open.
+                        for a in z.rooms.iter_mut() {
+                            a.drop_watchers();
+                        }
                         println!("drain complete");
                         z.draining = false;
                         if let Some((want, who, _)) = z.pinned.clone() {
@@ -3088,6 +3709,14 @@ async fn main() {
             // This connection's id in the arena, once it has joined.
             // Which room, and which id within it.
             let mut seat: Option<(usize, u64)> = None;
+            // The same, for a connection that is watching rather than flying.
+            // At most one of the two is set; sitting out and taking a hull
+            // again move between them on the same socket.
+            let mut watch: Option<(usize, u64)> = None;
+            // Whether this pilot holds the `watch` capability, decided once at
+            // the door where the token was checked, because the ask arrives
+            // later on a message that carries no identity.
+            let mut watch_any = false;
             // A connection that says nothing for this long is gone. A joined
             // client sends its buttons every frame whatever the player is doing,
             // even sitting in the menu, so silence is not idleness. Without this
@@ -3128,7 +3757,7 @@ async fn main() {
                         m.extend_from_slice(z.status_json().as_bytes());
                         let _ = tx.try_send(Message::Binary(m));
                     }
-                    C2S_JOIN if seat.is_none() => {
+                    C2S_JOIN if seat.is_none() && watch.is_none() => {
                         let class = data.get(1).copied().unwrap_or(0);
                         let proto = data.get(2).copied().unwrap_or(0);
                         let flags = data.get(3).copied().unwrap_or(0);
@@ -3219,6 +3848,46 @@ async fn main() {
                             break;
                         }
                         let _ = tx.try_send(Message::Binary(z.zone_msg()));
+                        watch_any = z.watch_any(&seat_of);
+                        // Arrived to watch. No seat, no side, no live follow:
+                        // the channel is the whole of what a stranger at the
+                        // door can see, and the staff capability is the
+                        // written-down exception. Checked before the bot flag
+                        // on purpose; a client claiming both came to watch.
+                        if flags & JOIN_WATCH != 0 {
+                            // The fullest room: a watcher came to see people.
+                            let idx = z.room_to_watch();
+                            let joined =
+                                z.rooms[idx].watch_join(seat_of, watch_any, tx.clone());
+                            match joined {
+                                Some(id) => {
+                                    watch = Some((idx, id));
+                                    let a = &z.rooms[idx];
+                                    let mut m = vec![S2C_MAP];
+                                    m.extend_from_slice(&a.world.packed_map());
+                                    let _ = tx.try_send(Message::Binary(m));
+                                    let mut c = vec![S2C_SETTINGS];
+                                    c.extend_from_slice(&a.world.packed_settings());
+                                    let _ = tx.try_send(Message::Binary(c));
+                                    // 255 is a watcher's ship: the client
+                                    // learns which of its two lives this is
+                                    // from the welcome.
+                                    let mut w = vec![S2C_WELCOME, 255];
+                                    w.extend_from_slice(&a.world.state.tick.to_le_bytes());
+                                    let _ = tx.try_send(Message::Binary(w));
+                                    a.broadcast_roster();
+                                }
+                                None => {
+                                    let _ = tx.try_send(Message::Binary(deny(
+                                        DENY_FULL,
+                                        "this room has all the watchers it wants",
+                                    )));
+                                }
+                            }
+                            // No push_status: a watcher moves no count a
+                            // directory reports.
+                            continue;
+                        }
                         let cap = z.max_players();
                         // A bot goes where a bot is short, and nowhere when every
                         // room has the population it asked for. It never opens a
@@ -3274,15 +3943,68 @@ async fn main() {
                         // ship is a fresh bar. Nothing is sent back: the next
                         // snapshot carries the new class, and a refusal leaves
                         // the old one, which is the same answer either way.
+                        //
+                        // From a watcher it is the other thing a hull ask can
+                        // mean: put me back in the game, in this one. Refused
+                        // by the caps if the room filled while they sat out,
+                        // and a refusal leaves them watching.
                         if data.len() >= 2 {
+                            let cls = data[1];
                             if let Some((room, pid)) = seat {
-                                let cls = data[1];
                                 let mut z = zone.lock().await;
                                 if let Some(a) = z.rooms.get_mut(room) {
                                     let ship = a.players.get(&pid).map(|p| p.ship);
                                     if let Some(ship) = ship {
                                         a.world.set_ship_class(ship, cls);
                                     }
+                                }
+                            } else if let Some((room, wid)) = watch {
+                                let mut z = zone.lock().await;
+                                let cap = z.max_players();
+                                // The rating they carried in comes back with
+                                // them, exactly as it would at the door.
+                                let carried = z
+                                    .rooms
+                                    .get(room)
+                                    .and_then(|a| a.watchers.get(&wid))
+                                    .map(|w| w.seat.clone());
+                                if let Some(s) = carried.as_ref() {
+                                    z.restore_pilot(room, s);
+                                }
+                                if let Some(a) = z.rooms.get_mut(room) {
+                                    if let Some(new_id) = a.fly(wid, cls, cap) {
+                                        watch = None;
+                                        seat = Some((room, new_id));
+                                    }
+                                }
+                                // A human entered the game count.
+                                z.push_status();
+                            }
+                        }
+                    }
+                    C2S_WATCH => {
+                        // Whose eyes to borrow. From a player: sit out. From a
+                        // watcher: look somewhere else. Both are requests; the
+                        // subject byte of the next snapshot is the answer, and
+                        // an unlawful ask falls to the channel rather than
+                        // erroring. Also the watcher's keepalive: a client
+                        // with no inputs to send repeats its ask so the quiet
+                        // timeout knows the socket is alive.
+                        if data.len() >= 2 {
+                            let want = data[1];
+                            let mut z = zone.lock().await;
+                            if let Some((room, pid)) = seat {
+                                if let Some(a) = z.rooms.get_mut(room) {
+                                    if a.sit_out(pid, want, watch_any) {
+                                        watch = Some((room, pid));
+                                        seat = None;
+                                    }
+                                }
+                                // A human left the game count.
+                                z.push_status();
+                            } else if let Some((room, wid)) = watch {
+                                if let Some(a) = z.rooms.get_mut(room) {
+                                    a.set_watch(wid, want);
                                 }
                             }
                         }
@@ -3372,6 +4094,15 @@ async fn main() {
                 // matches end rather than holding its high-water mark.
                 z.reclaim_rooms();
                 z.push_status();
+            }
+            if let Some((room, wid)) = watch {
+                let mut z = zone.lock().await;
+                if let Some(a) = z.rooms.get_mut(room) {
+                    if a.watchers.remove(&wid).is_some() {
+                        a.broadcast_roster();
+                    }
+                }
+                // No push_status: a watcher was never in the counts.
             }
 
             // Let the writer drain before it goes. A refusal is enqueued and then
@@ -4791,6 +5522,19 @@ mod tests {
             o += 6 + len;
             assert!(read.insert(ship, (name, label)).is_none(), "ship {ship} twice");
         }
+        // The watcher section: count, then label and name per watcher. Walked
+        // even when empty, because the count byte is part of the wire and a
+        // reader that stops before it lands one short of the end.
+        assert!(o < m.len(), "the watcher count byte is missing");
+        let wn = m[o] as usize;
+        o += 1;
+        assert_eq!(wn, a.watchers.len());
+        for _ in 0..wn {
+            assert!(o + 2 <= m.len(), "a watcher header ran off the end");
+            let len = m[o + 1] as usize;
+            assert!(o + 2 + len <= m.len(), "a watcher name ran off the end");
+            o += 2 + len;
+        }
         assert_eq!(o, m.len(), "the reader has to land on the end, not near it");
         let want: HashMap<u8, (String, u8)> = a
             .names
@@ -4807,6 +5551,391 @@ mod tests {
             read.values().any(|(_, l)| *l == token::Label::ThirdPartyBot.to_byte()),
             "a bot that declared itself without an account is somebody else's"
         );
+    }
+
+    /// A seat whose messages the test keeps, unlike `seat_human`, because
+    /// most of what spectating promises is promises about bytes.
+    fn seat_rx(a: &mut Arena, name: &str) -> (u8, u64, mpsc::Receiver<Message>) {
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        let id = a
+            .join(Seat::guest(name.to_string(), false), 0, 32, tx)
+            .expect("a seat");
+        (a.players[&id].ship, id, rx)
+    }
+
+    fn drain(rx: &mut mpsc::Receiver<Message>) -> Vec<Vec<u8>> {
+        let mut out = Vec::new();
+        while let Ok(m) = rx.try_recv() {
+            if let Message::Binary(b) = m {
+                out.push(b);
+            }
+        }
+        out
+    }
+
+    fn snapshots(msgs: &[Vec<u8>]) -> Vec<Vec<u8>> {
+        msgs.iter()
+            .filter(|m| m.first() == Some(&S2C_SNAPSHOT))
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn a_watchers_snapshot_is_the_followed_pilots_sight_exactly() {
+        // Bound sight's whole guarantee, as bytes: what a same-side watcher
+        // receives is a human-radius pack at the followed hull, nothing more.
+        // If these ever differ, the mode has started leaking.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let target = seat_human(&mut a, "flown");
+        let (_, wid, mut rx) = seat_rx(&mut a, "watching");
+        assert!(a.sit_out(wid, target, false), "a pilot can sit out");
+        assert_eq!(
+            a.watchers[&wid].mode,
+            WatchMode::Follow(target),
+            "same side, so the follow is granted"
+        );
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        a.broadcast_snapshot(&mut buf);
+
+        let got = snapshots(&drain(&mut rx));
+        let last = got.last().expect("a follow snapshot arrived");
+        assert_eq!(last[1], target, "the subject byte names the followed hull");
+
+        let sh = &a.world.state.ships[target as usize];
+        let mut fresh = vec![0u8; sim::PACK_MAX];
+        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, PRIZE_INTEREST);
+        assert!(n > 0);
+        assert_eq!(&last[6..], &fresh[..n as usize], "byte for byte");
+    }
+
+    #[test]
+    fn following_a_bot_never_inherits_its_whole_room_stream() {
+        // A declared bot is sent radius -1, the whole prize table. The watcher
+        // behind it gets the human radius at the bot's position, or the
+        // channel's economics leak through the one seat that sees everything.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let bots = seat_bots(&mut a, 1);
+        let (_, wid, mut rx) = seat_rx(&mut a, "watching");
+        assert!(a.sit_out(wid, bots[0], false));
+        assert_eq!(a.watchers[&wid].mode, WatchMode::Follow(bots[0]));
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        a.broadcast_snapshot(&mut buf);
+        let got = snapshots(&drain(&mut rx));
+        let last = got.last().expect("a follow snapshot");
+        let sh = &a.world.state.ships[bots[0] as usize];
+        let mut fresh = vec![0u8; sim::PACK_MAX];
+        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, PRIZE_INTEREST);
+        assert_eq!(&last[6..], &fresh[..n as usize], "human radius, always");
+    }
+
+    #[test]
+    fn a_hostile_ask_lands_on_the_channel_and_moves_no_state() {
+        // Live sight of a stranger is the one thing the mode never hands out:
+        // the ask is not an error, it is the channel. And nothing a watcher
+        // sends perturbs the simulation.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let keel = seat_human(&mut a, "keel");
+        let (vantage, wid, _rx) = seat_rx(&mut a, "vantage");
+        assert_ne!(
+            a.world.state.ships[keel as usize].team,
+            a.world.state.ships[vantage as usize].team,
+            "the arrivals spread over the two sides"
+        );
+        assert!(a.sit_out(wid, keel, false), "sitting out succeeds");
+        assert_eq!(
+            a.watchers[&wid].mode,
+            WatchMode::Channel,
+            "but the hostile follow fell to the channel"
+        );
+
+        let h0 = a.world.hash();
+        a.set_watch(wid, keel);
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        a.broadcast_snapshot(&mut buf);
+        assert_eq!(a.watchers[&wid].mode, WatchMode::Channel, "asked again, same floor");
+        assert_eq!(a.world.hash(), h0, "watching is read-only on the world");
+    }
+
+    #[test]
+    fn the_channel_is_one_set_of_bytes_running_the_dial_behind() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        seat_human(&mut a, "flown");
+        a.channel.delay = 20;
+        let (tx1, mut rx1) = mpsc::channel(OUT_QUEUE);
+        let (tx2, mut rx2) = mpsc::channel(OUT_QUEUE);
+        let w1 = a.watch_join(Seat::guest("one", false), false, tx1).unwrap();
+        let _w2 = a.watch_join(Seat::guest("two", false), false, tx2).unwrap();
+        assert_eq!(a.watchers[&w1].mode, WatchMode::Channel, "arrivals get the channel");
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for _ in 0..12 {
+            for _ in 0..SNAPSHOT_EVERY {
+                a.tick();
+            }
+            a.broadcast_snapshot(&mut buf);
+        }
+
+        let s1 = snapshots(&drain(&mut rx1));
+        let s2 = snapshots(&drain(&mut rx2));
+        assert!(!s1.is_empty(), "the ring warmed up and served");
+        assert_eq!(s1, s2, "every channel watcher gets identical bytes");
+        for m in &s1 {
+            let frame = u32::from_le_bytes([m[6], m[7], m[8], m[9]]);
+            assert!(
+                frame + a.channel.delay <= a.world.state.tick,
+                "a served frame is at least the dial behind the room: \
+                 frame {frame}, now {}",
+                a.world.state.tick
+            );
+        }
+    }
+
+    #[test]
+    fn watchers_move_none_of_the_counts_the_room_polices() {
+        let mut z = serving(1, 9, 16);
+        seat(&mut z, 0, 2);
+        let a = &mut z.rooms[0];
+        let humans = a.humans();
+        let bots_wanted = a.bots_wanted();
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        assert_eq!(a.humans(), humans, "not a human in the cap's sense");
+        assert_eq!(a.bots_wanted(), bots_wanted, "and no ballast moves for one");
+        assert_eq!(z.total_players(), 2, "the directory count is people flying");
+    }
+
+    #[test]
+    fn sitting_out_and_flying_again_is_a_despawn_and_a_spawn() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (ship, id, mut rx) = seat_rx(&mut a, "pilot");
+        assert!(a.sit_out(id, 255, false));
+        assert_eq!(a.world.state.ships[ship as usize].active, 0, "the hull despawned");
+        assert_eq!(a.humans(), 0);
+        assert!(a.names.is_empty(), "the seat is genuinely empty");
+
+        let new_id = a.fly(id, 0, 16).expect("a seat was free");
+        assert_eq!(a.humans(), 1);
+        assert!(a.watchers.is_empty(), "the watcher row went with the spawn");
+
+        // The client is told which of its two lives each is: welcome 255 on
+        // the way out, welcome with a ship on the way back.
+        let welcomes: Vec<u8> = drain(&mut rx)
+            .iter()
+            .filter(|m| m.first() == Some(&S2C_WELCOME))
+            .map(|m| m[1])
+            .collect();
+        assert_eq!(welcomes.first(), Some(&255));
+        assert_eq!(*welcomes.last().unwrap(), a.players[&new_id].ship);
+    }
+
+    #[test]
+    fn a_room_full_of_watchers_refuses_the_next_one() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        a.max_watchers = 1;
+        let (tx, _r1) = mpsc::channel(OUT_QUEUE);
+        assert!(a.watch_join(Seat::guest("one", false), false, tx).is_some());
+        let (tx, _r2) = mpsc::channel(OUT_QUEUE);
+        assert!(
+            a.watch_join(Seat::guest("two", false), false, tx).is_none(),
+            "the cap is a bandwidth number and it holds"
+        );
+    }
+
+    #[test]
+    fn the_tally_means_somebody_is_looking_not_that_a_camera_is_pointed() {
+        // The distinction this pins is the whole of what the mark is worth. A
+        // channel with no audience still picks a subject and still fills its
+        // ring, because a watcher arriving should land in a warm picture; a
+        // pilot alone in that room is being seen by nobody and must be told
+        // nothing. And the channel runs behind, so being picked is seconds
+        // away from being shown.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (ship, _, mut rx) = seat_rx(&mut a, "starred");
+        a.channel.delay = 10;
+        let mut buf = vec![0u8; sim::PACK_MAX];
+
+        // Drained as we go: the outbound queue is bounded and drops rather
+        // than waits, so a test that only looked at the end would be reading
+        // whatever survived instead of what was sent.
+        let mut said: Vec<u8> = Vec::new();
+        let mut run = |a: &mut Arena, rx: &mut mpsc::Receiver<Message>,
+                       said: &mut Vec<u8>, n: usize| {
+            for _ in 0..n {
+                for _ in 0..SNAPSHOT_EVERY {
+                    a.tick();
+                }
+                a.broadcast_snapshot(&mut buf);
+                for m in drain(rx) {
+                    if m.first() == Some(&S2C_ONAIR) {
+                        said.push(m[1]);
+                    }
+                }
+            }
+        };
+
+        run(&mut a, &mut rx, &mut said, 20);
+        assert_eq!(a.channel.subject, Some(ship), "the camera did pick them");
+        assert_eq!(a.channel.showing, Some(ship), "and the ring is serving them");
+        assert!(a.on_air.is_empty(), "but there is no audience");
+        assert!(said.is_empty(), "so they were told nothing: {said:?}");
+
+        // Somebody arrives on the channel.
+        let (tx, _keep) = mpsc::channel(OUT_QUEUE);
+        let w = a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        run(&mut a, &mut rx, &mut said, 5);
+        assert!(a.on_air.contains(&ship), "now somebody is looking");
+        assert_eq!(said, vec![1], "told once, on the edge");
+
+        // And leaves.
+        a.watchers.remove(&w);
+        run(&mut a, &mut rx, &mut said, 5);
+        assert!(a.on_air.is_empty());
+        assert_eq!(said, vec![1, 0], "and told once when it stopped");
+    }
+
+    #[test]
+    fn a_watcher_is_told_which_side_is_theirs() {
+        // The interface offers to follow a hull only where the zone would
+        // grant it, which is your own side, so a watcher who does not know
+        // their own side has to offer every pilot or none. Walked the way
+        // client/arena/net.lua walks it, and landing on the end.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let (ship, id, _rx) = seat_rx(&mut a, "sat-out");
+        let mine = a.world.state.ships[ship as usize].team;
+        assert!(a.sit_out(id, 255, false));
+
+        let m = a.watcher_teams_msg(&a.watchers[&id]);
+        assert_eq!(m[0], S2C_TEAMS);
+        assert_eq!(m[1], mine, "the side they were on when they sat out");
+        assert_eq!(m[2], 0, "and no founding from the gallery");
+        let count = m[3] as usize;
+        let mut o = 4;
+        for _ in 0..count {
+            assert_eq!(m[o + 2], 0, "no door is open to a watcher");
+            let len = m[o + 5] as usize;
+            o += 6 + len;
+        }
+        assert_eq!(o, m.len(), "the reader lands on the end, not near it");
+
+        // And somebody who arrived to watch gets the same message with a real
+        // side in it, because they were seated on one at the door.
+        let (tx, _keep) = mpsc::channel(OUT_QUEUE);
+        let w = a.watch_join(Seat::guest("stranger", false), false, tx).unwrap();
+        let theirs = a.watcher_teams_msg(&a.watchers[&w])[1];
+        assert!(a.teams.get(&theirs).is_some_and(|t| t.public));
+    }
+
+    #[test]
+    fn arriving_to_watch_seats_you_the_way_arriving_to_fly_does() {
+        // Reported from Alpha: joining as a spectator left you off the sides
+        // entirely, while joining in a hull and then sitting out kept the side
+        // you were on. Two doors into the same room, two different answers to
+        // "whose side am I on", and the one the spectator got made every hull
+        // in the room read as an enemy's.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let one = seat_human(&mut a, "one");
+        let taken = a.world.state.ships[one as usize].team;
+
+        let (tx, _keep) = mpsc::channel(OUT_QUEUE);
+        let w = a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        let side = a.watchers[&w].team.expect("a side, the same as any arrival");
+        assert!(a.teams[&side].public, "one of the zone's own, not a private one");
+        assert_ne!(side, taken, "the emptier one, which is how a pilot lands too");
+        // And they weigh nothing while they sit there: a watcher holds no seat,
+        // so the balance the caps measure cannot see them.
+        assert_eq!(a.team_census(side, None), (0, 0));
+
+        // Which is what the side is for. A hull arriving on it is now theirs to
+        // follow live, where before the ask fell through to the room channel.
+        let mate = seat_human(&mut a, "mate");
+        assert_eq!(a.world.state.ships[mate as usize].team, side);
+        a.set_watch(w, mate);
+        assert_eq!(a.watchers[&w].mode, WatchMode::Follow(mate));
+    }
+
+    #[test]
+    fn a_free_for_all_still_seats_a_watcher_nowhere() {
+        // The one room where having no side is the truth rather than a hole:
+        // every pilot is a private side of one, so there is nothing to share
+        // and the channel is the whole of what anybody watching can see.
+        let mut a = room_with_teams("teams = []\n");
+        assert!(a.free_for_all());
+        let target = seat_human(&mut a, "flying");
+        let (tx, _keep) = mpsc::channel(OUT_QUEUE);
+        let w = a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        assert_eq!(a.watchers[&w].team, None);
+        assert_eq!(a.watcher_teams_msg(&a.watchers[&w])[1], 255);
+        a.set_watch(w, target);
+        assert_eq!(a.watchers[&w].mode, WatchMode::Channel, "and no live sight");
+    }
+
+    #[test]
+    fn taking_a_hull_again_lands_you_back_on_the_side_you_watched_with() {
+        // Sitting out and flying again used to move you across the room: `fly`
+        // went through the same seating an arrival gets, so it re-picked the
+        // emptiest side and the side you had spent the last minute watching
+        // with counted for nothing.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let (ship, id, _rx) = seat_rx(&mut a, "pilot");
+        // On the second side, which is the one a fresh arrival into this room
+        // would not pick: a tie goes to the first.
+        a.world.state.ships[ship as usize].team = 1;
+
+        assert!(a.sit_out(id, 255, false));
+        assert_eq!(a.watchers[&id].team, Some(1));
+        assert_eq!(a.seat_team(ship, false), 0, "what a re-pick would have said");
+
+        let new_id = a.fly(id, 0, 16).expect("a seat was free");
+        let back = a.players[&new_id].ship;
+        assert_eq!(a.world.state.ships[back as usize].team, 1, "their own side");
+    }
+
+    #[test]
+    fn a_side_that_filled_up_while_you_watched_does_not_refuse_you_the_room() {
+        // The preference is a preference. A watcher whose side took on its last
+        // permitted pilot while they sat there is still somebody who wants to
+        // fly, so the seating falls back to the ordinary rule rather than
+        // holding them in the gallery.
+        let mut a = room_with_teams(
+            "teams = [\"Keel\", \"Vantage\"]\nmax_humans_per_team = 1\n",
+        );
+        let (ship, id, _rx) = seat_rx(&mut a, "pilot");
+        let mine = a.world.state.ships[ship as usize].team;
+        assert!(a.sit_out(id, 255, false));
+
+        let taker = seat_human(&mut a, "taker");
+        assert_eq!(a.world.state.ships[taker as usize].team, mine, "their chair");
+
+        let new_id = a.fly(id, 0, 16).expect("a seat was free");
+        let back = a.players[&new_id].ship;
+        assert_ne!(a.world.state.ships[back as usize].team, mine, "the other side");
+    }
+
+    #[test]
+    fn a_follower_lights_the_tally_on_the_hull_they_follow() {
+        // The other way to be seen. This one is not delayed and not shared:
+        // one teammate, one hull, live.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (target, _, mut rx) = seat_rx(&mut a, "flown");
+        let (_, wid, _w) = seat_rx(&mut a, "watching");
+        assert!(a.sit_out(wid, target, false));
+        assert_eq!(a.watchers[&wid].mode, WatchMode::Follow(target));
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        a.broadcast_snapshot(&mut buf);
+        assert!(a.on_air.contains(&target));
+        assert!(
+            drain(&mut rx).iter().any(|m| m.as_slice() == [S2C_ONAIR, 1]),
+            "a teammate on your shoulder is somebody looking at you"
+        );
+
+        // Their view moves off you, and so does the tally.
+        a.set_watch(wid, 255);
+        a.broadcast_snapshot(&mut buf);
+        assert!(!a.on_air.contains(&target));
+        assert!(drain(&mut rx).iter().any(|m| m.as_slice() == [S2C_ONAIR, 0]));
     }
 
     #[test]
