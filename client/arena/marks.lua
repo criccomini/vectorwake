@@ -348,12 +348,48 @@ M.BOLT_BIAS, M.BOMB_BIAS = 0.46, 0
 -- Reading a hull's loadout without minding whether there is a hull yet. A pad
 -- draws before the first snapshot lands, and a plain gun and a plain bomb are
 -- the right thing to show while nobody has told us otherwise.
+-- The loadout to draw while there is no hull to read one off.
+--
+-- Dying strips a ship of everything at once: levels, add-ons and charges are
+-- memset in the same instruction that takes the last of the energy. So a mark
+-- read straight off the core the moment you die drops to a plain green round
+-- and stays there for the whole respawn wait, which is four seconds of the
+-- interface rearranging itself while the player is reading the card that says
+-- what killed them. It is a true statement about a ship that does not exist.
+--
+-- The frame loop keeps a copy of the last loadout actually flown and hands it
+-- over while the hull is gone. The marks go back to reading the live ship the
+-- moment there is one, which is where the change belongs: a fresh hull is
+-- visibly a fresh hull, and the kit it does not have reads as new rather than
+-- as something that quietly drained away while nothing was happening.
+local held = nil
+function M.hold(h)
+    held = h
+end
+
 local function ship_lvl(me, t)
+    if held then return held.level[t] or 0 end
     return (me and sim.ship_level) and sim.ship_level(me, t) or 0
 end
 
 local function ship_mod(me, t, i)
+    if held then return (held.mods[t] and held.mods[t][i]) or 0 end
     return (me and sim.ship_mod) and sim.ship_mod(me, t, i) or 0
+end
+
+local function ship_multi_off(me)
+    if held then return held.multi_off end
+    return me and sim.ship_multi_off and sim.ship_multi_off(me)
+end
+
+-- The rung a trigger is on, for a caller that colours something around a
+-- mark rather than drawing the mark itself. Exported because the pads ring
+-- themselves in the round's own colour, and reading the core for that while
+-- the mark read the held copy is exactly the split this module exists to
+-- prevent: it put an orange fan inside a green ring for the length of a
+-- respawn wait.
+function M.level(me, t)
+    return ship_lvl(me, t)
 end
 
 -- A trigger's mark: the round it fires, wearing what the greens did to it.
@@ -394,7 +430,7 @@ function M.weapon(cx, cy, k, me, t)
     -- A declined add-on is drawn dimmed rather than dropped. You still hold
     -- it, and a fan that quietly stopped fanning with nothing on screen to say
     -- so is a weapon that looks broken.
-    local off = me and sim.ship_multi_off and sim.ship_multi_off(me)
+    local off = ship_multi_off(me)
     m.off = off and true or false
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a

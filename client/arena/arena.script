@@ -23,6 +23,7 @@ local account = require("arena.account")
 local directory = require("arena.directory")
 local menu = require("arena.menu")
 local pal = require("arena.palette")
+local marks = require("arena.marks")
 local world = require("arena.world")
 local fx = require("arena.fx")
 local sfx = require("arena.sfx")
@@ -94,6 +95,40 @@ local was_dead = false
 -- hear that it landed. Nil until a hull has been read once: a seat this
 -- client has not looked at yet has no previous state to have changed from.
 local multi_was = nil
+-- The last loadout this pilot actually flew: levels, add-ons, the fan's
+-- switch and what was in hand, refreshed every living frame and drawn while
+-- the hull is gone. Death strips a ship in one instruction, so without this
+-- the pads and the corner stack drop to plain green rounds and empty racks
+-- the moment you die and stay that way for the whole respawn wait, which is
+-- the interface rearranging itself over the card that says what killed you.
+--
+-- One table, filled in place rather than built per frame: this runs on every
+-- frame of every game and a fresh table sixty times a second is garbage the
+-- collector has to walk in the middle of a fight.
+local flown = {level = {}, mods = {}, charge = {}, multi_off = false}
+local flown_ok = false
+-- This frame's answer, set once in update before anything draws: charge_row
+-- and the pads both read it, so the two cannot disagree about what is held.
+local held_kit = nil
+-- What the interface should draw from this frame: nil while the hull is
+-- there to be asked, the copy while it is not.
+local function loadout_held()
+    if sim.ship_alive(me) == 1 then
+        for t = 0, sim.TRIG_COUNT - 1 do
+            flown.level[t] = sim.ship_level(me, t)
+            local m = flown.mods[t]
+            if not m then m = {} flown.mods[t] = m end
+            for i = 0, sim.MOD_COUNT - 1 do m[i] = sim.ship_mod(me, t, i) end
+        end
+        for k = 0, sim.MAX_CHARGES - 1 do
+            flown.charge[k] = sim.ship_charge(me, k)
+        end
+        flown.multi_off = sim.ship_multi_off(me)
+        flown_ok = true
+        return nil
+    end
+    return flown_ok and flown or nil
+end
 -- Which zone the "nobody is running X" note is about, so the note can be
 -- withdrawn when the games list shows that zone live again.
 local note_zone = nil
@@ -277,7 +312,7 @@ local function charge_row()
             -- The full word, because the corner stack has room for it and
             -- "RPL" is three letters nobody has been taught.
             name = c and c.name or "charge",
-            count = sim.ship_charge(me, k),
+            count = held_kit and held_kit.charge[k] or sim.ship_charge(me, k),
             -- How many this hull can hold, so the row can draw the empties
             -- as well as the full ones.
             max = sim.charge_max(me, k),
@@ -432,8 +467,12 @@ function go_home(self, at)
     was_dead = false
     watching = false
     -- The next seat is a different pilot's switch, and inheriting this one's
-    -- would click on arrival.
+    -- would click on arrival. The kit goes with it: a pad wearing the last
+    -- zone's add-ons is a drawing of somebody else's ship.
     multi_was = nil
+    flown_ok = false
+    held_kit = nil
+    marks.hold(nil)
     -- A box about somebody in the room you just left describes a seat number
     -- that the next room will have dealt to a stranger.
     ui.inspect = nil
@@ -1257,6 +1296,14 @@ function update(self, dt)
         -- has nothing to fire. Told every frame rather than on the hull
         -- change, because a zone can hand you a different ship than the one
         -- you asked for.
+        -- What the marks read this frame. Set before anything draws one,
+        -- because the pads, the corner stack and the charge rows all ask and
+        -- a frame where some of them had the live ship and some the copy
+        -- would be the disagreement this exists to prevent. Never while
+        -- watching: the hull under the camera is somebody else's, and its
+        -- kit is theirs to lose rather than yours to keep.
+        held_kit = not watching and loadout_held() or nil
+        marks.hold(held_kit)
         touch.has_bomb = not watching and sim.has_trigger(me, sim.TRIG_BOMB)
         -- Which hull is yours, so a pad can read its own weapon's level and
         -- add-ons out of the core instead of having each of them copied into
@@ -1294,7 +1341,8 @@ function update(self, dt)
         touch.counts = {}
         touch.maxes = {}
         for _, k in ipairs(touch.charges) do
-            touch.counts[k] = sim.ship_charge(me, k)
+            touch.counts[k] = held_kit and held_kit.charge[k]
+                or sim.ship_charge(me, k)
             touch.maxes[k] = sim.charge_max(me, k)
         end
 
@@ -1550,6 +1598,9 @@ function apply_menu(self, act)
         feed = {}
         hurt = 0
         multi_was = nil
+        flown_ok = false
+        held_kit = nil
+        marks.hold(nil)
         fx.reset()
         world.forget_specs()
         sim.init(0x5eed)

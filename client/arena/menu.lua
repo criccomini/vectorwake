@@ -385,7 +385,7 @@ local NODES = {
         if account.claimed and account.key == "" then
             if account.link_code ~= "" then
                 rows[#rows + 1] = {label = "code", detail = account.link_code,
-                    verbatim = true,
+                    verbatim = true, act = "code",
                     hint = "type this on the other device within ten minutes"}
             else
                 rows[#rows + 1] = {label = "add a device", act = "link",
@@ -544,9 +544,18 @@ local function settle(act)
         -- thing.
         account.key = ""
     elseif act == "link" then
+        -- The code arrives from the meta-layer a moment later, and the moment
+        -- it does it is the only thing on this page worth looking at.
         account.link(function(ok)
-            if not ok then M.note = account.note end
+            if not ok then M.note = account.note return end
+            M.show_code()
         end)
+    elseif act == "code" then
+        -- The row that holds it, pressed again. Answering the card never
+        -- clears the code: it is live for ten minutes whatever this screen is
+        -- showing, and somebody who dismissed it and walked to the other
+        -- machine should not have to make a second one.
+        M.show_code()
     elseif act == "volume" then
         M.volume = M.volume % #VOLUMES + 1
         M.apply_settings()
@@ -569,8 +578,19 @@ end
 -- label and the action answering it returns, and the last of them is the one
 -- that changes nothing: it is where the cursor starts and what escape gives,
 -- so a question can always be got out of by the key that gets out of anything.
-function M.confirm(head, keys)
-    M.ask = {head = head, keys = keys, sel = #keys}
+-- `code` is a string the question is about rather than something it says: a
+-- link code is read off this screen and typed into another machine, so it is
+-- drawn large and in its own case, and the heading above it is the sentence.
+function M.confirm(head, keys, code)
+    M.ask = {head = head, keys = keys, sel = #keys, code = code}
+end
+
+-- The device code, as big as it can be drawn. Raised when one arrives and
+-- again whenever its row is pressed.
+function M.show_code()
+    if account.link_code == "" then return end
+    M.confirm("Type this on the other device", {{label = "done"}},
+              account.link_code)
 end
 
 -- Answer the one that is up, and hand back what that answer is worth. Cleared
