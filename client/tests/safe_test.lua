@@ -114,6 +114,11 @@ package.loaded["arena.world"] = {
     radar_tiles = {},
     radar_safe = {},
     radar_doors = {},
+    -- The menu draws hulls on its ship page and marks; the rail below needs
+    -- the module to answer for one rather than to be right about it.
+    HULLS = setmetatable({}, {__index = function()
+        return {poly = {0, 0, 1, 1, 2, 0}, mid = 0}
+    end}),
 }
 
 local touch = require("arena.touch")
@@ -186,6 +191,47 @@ check("the rightmost steps in by the right inset",
 check("the topmost steps down by the top inset",
       math.abs((b.y0 - a.y0) - T_INS) < 1,
       string.format("%.1f then %.1f", a.y0, b.y0))
+
+-- The menu's rail is the one thing that steps up from the bottom. It is a
+-- row of buttons a thumb presses and the indicator is a bar the system
+-- swallows presses under, which is what a tab bar steps over on every phone;
+-- the pads below are the opposite case and keep their ground.
+local B_INS = 34
+local MENU_RAIL = {}
+for i, nm in ipairs({"zones", "ship", "pilot", "settings", "help", "about"}) do
+    MENU_RAIL[i] = {label = nm, icon = nm, index = i}
+end
+
+-- How far the lowest ink sits above the bottom edge. The mesh counts up from
+-- there, so this is simply the smallest lower edge any shape was given.
+local function rail_gap(inset)
+    shapes = {}
+    state.n = 0
+    ui.safe(0, 0, 0, inset)
+    -- Portrait, where the rail is a row along the bottom.
+    ui.begin(layer, 390, 844, 1, true)
+    ui.menu({depth = 2, sel = 1, rail = MENU_RAIL, rail_sel = 1,
+             focus = "stage", home = true, closable = false,
+             rows = {{label = "chaos", index = 1, pick = true,
+                      players = 2, bots = 4, live = true}}})
+    ui.finish()
+    -- The panel's wash paints to the bottom edge whatever the inset is, the
+    -- way the vignette does, so the measure skips anything as wide as the
+    -- screen and asks where the furniture stopped.
+    local gap = math.huge
+    for _, sh in ipairs(shapes) do
+        if sh.x1 - sh.x0 < 380 then gap = math.min(gap, sh.y0) end
+    end
+    return gap
+end
+local flat = rail_gap(0)
+local stepped = rail_gap(B_INS)
+check("the rail steps up from the bottom by the bottom inset",
+      math.abs((stepped - flat) - B_INS) < 1,
+      string.format("%.1f then %.1f", flat, stepped))
+check("and sits within a few points of the edge when nothing covers it",
+      flat < 6, string.format("%.1f", flat))
+ui.safe(0, 0, 0, 0)
 
 -- The pads and the stick's resting mark, against the real layout: sides
 -- step in, and the bottom stays put because the home indicator is allowed

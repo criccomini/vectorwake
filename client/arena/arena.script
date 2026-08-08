@@ -1062,11 +1062,12 @@ function update(self, dt)
             -- inside what a rotation already costs the eyes.
             local ok2, ins = pcall(html5.run, "window.vwInsets || ''")
             if ok2 and ins and ins ~= "" then
-                local l, rr, t = string.match(ins,
-                    "^([%d%.]+) ([%d%.]+) ([%d%.]+)")
+                local l, rr, t, b = string.match(ins,
+                    "^([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+)")
                 self.safe_l = tonumber(l) or 0
                 self.safe_r = tonumber(rr) or 0
                 self.safe_t = tonumber(t) or 0
+                self.safe_b = tonumber(b) or 0
             end
         end
     end
@@ -1383,7 +1384,7 @@ function update(self, dt)
     -- lay out in drawable ones, so the density converts here, in the one
     -- place both readers are told.
     ui.safe((self.safe_l or 0) * density, (self.safe_r or 0) * density,
-            (self.safe_t or 0) * density)
+            (self.safe_t or 0) * density, (self.safe_b or 0) * density)
     touch.safe_l = (self.safe_l or 0) * density
     touch.safe_r = (self.safe_r or 0) * density
     ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0)

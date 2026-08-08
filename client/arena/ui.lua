@@ -528,12 +528,21 @@ end
 -- template), so the world draws everywhere and only the furniture anchored
 -- to an edge steps inside. Set by the caller from what the page measures;
 -- zero everywhere hardware covers nothing, which is every desktop and most
--- of the phones. There is deliberately no bottom inset: the home indicator
--- overlays the pads the way it overlays every full-screen game's controls,
--- and lifting them a further 21 points bought nothing but reach.
-local SL, SR, ST = 0, 0, 0
-function M.safe(l, r, t)
-    SL, SR, ST = l or 0, r or 0, t or 0
+-- of the phones.
+--
+-- The bottom is a special case, and it is two things at once. The pads and
+-- the stick ignore it: the home indicator overlays them the way it overlays
+-- every full-screen game's controls, and lifting the row bought nothing but
+-- reach. The menu's rail does not ignore it, because a rail is a row of
+-- buttons a thumb presses and the indicator is a bar the system swallows
+-- presses under, which is what a tab bar steps over on every phone.
+--
+-- What arrives here is already net of whatever the canvas does not cover:
+-- under a browser's bottom toolbar the strip is spoken for, and stepping up
+-- by the inset as well would be stepping over the same thing twice.
+local SL, SR, ST, SB = 0, 0, 0, 0
+function M.safe(l, r, t, b)
+    SL, SR, ST, SB = l or 0, r or 0, t or 0, b or 0
 end
 
 -- `now` is the frame's clock in seconds, for the few things on screen that
@@ -2213,8 +2222,27 @@ local function link(lag)
     -- The bars are the readout a player wants and the whole of it. Everything
     -- behind them is for whoever is working on this, so it hides behind the
     -- one thing on screen that is already about the connection.
+    --
+    -- What answers that press is the whole cluster and the strip it stands
+    -- in. It was 46 by 20 points hung off the right edge, which covered the
+    -- four bars and the last quarter of the word beside them: three quarters
+    -- of the only thing on screen labelled LINK did nothing when pressed,
+    -- and twenty points is half the height a thumb is usually given. It also
+    -- took its top from the window while the drawing took it from the safe
+    -- area, so a phone with an island drew the readout below the box meant
+    -- to open it.
+    --
+    -- The strip above the dial is reserved for this readout already, so the
+    -- box takes all of it: from the word's left edge to the screen's own,
+    -- and from the top of the safe area down to where the dial starts. The
+    -- corner does as much work as the size, since a thumb aimed there cannot
+    -- overshoot upward or to the right off the screen. Taller would mean
+    -- taking a strip off the dial, which is the control that opens the map,
+    -- and one control does not get to eat another.
     if not menu_up then
-        hit(right - 40 * S, pad, 46 * S, 20 * S, "debug")
+        local _, dial_y = dial()
+        local x0 = right - 34 * S - text_w("LINK", (FONT - 3) * S) - 6 * S
+        hit(x0, ST, W - x0, math.max(dial_y - ST, 24 * S), "debug")
     end
 end
 
@@ -3596,7 +3624,11 @@ function M.menu(v)
         rh = (home and 78 or 84) * S
         rw = W - SL - SR - 2 * margin
         rx = SL + margin
-        ry_ = H - margin - rh
+        -- Hard against the bottom, less whatever the hardware covers. It
+        -- used to hold a page margin under it as well, which on a phone put
+        -- 42 points of nothing under a row of labels and read as an interface
+        -- that had come loose from the edge of the screen.
+        ry_ = H - SB - rh
         sx, sw = SL + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two
@@ -3604,7 +3636,11 @@ function M.menu(v)
         local chip = home and 0 or 34 * S
         sy = ST + margin + head + chip
         sh = ry_ - 20 * S - sy
-        rect(0, sy - 16 * S, W, sh + rh + 46 * S, pal.rgb(0x03050a, 0.5))
+        -- Down to the bottom edge, rather than to the rail plus a margin
+        -- that is no longer there: the wash is what the panel sits on, and a
+        -- strip of bare arena under the rail reads as the panel having come
+        -- loose from the screen.
+        rect(0, sy - 16 * S, W, H - (sy - 16 * S), pal.rgb(0x03050a, 0.5))
         wordmark(rx, ST + margin + chip + 22 * S, 30 * S)
         u:seg(rx, ry(ry_ - 12 * S), W - SR - margin, ry(ry_ - 12 * S),
               1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
