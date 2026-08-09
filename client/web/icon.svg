@@ -1,10 +1,15 @@
 <!-- vectorwake's mark: six strokes, \|\|\|, read as the V of
      vector and the W of wake. Each wedge is a wake falling into a vertical and
      meeting it on the baseline; one gap throughout, so nothing marks where one
-     letter stops and the next starts. A wake thickens and brightens as it
-     falls, the way a round's own trail does, which is why it is a filled taper
-     under a gradient rather than a stroke: SVG cannot vary a stroke's width
-     along its length. The template embeds a heavier favicon cut of this and
-     two PNGs as data URIs, and ui.lua draws the same six strokes beside the
-     wordmark. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="w0" gradientUnits="userSpaceOnUse" x1="20.8" y1="116.0" x2="160.8" y2="396.0"><stop offset="0" stop-color="#ffa552" stop-opacity="0"/><stop offset="1" stop-color="#ffa552" stop-opacity="1"/></linearGradient><linearGradient id="w1" gradientUnits="userSpaceOnUse" x1="186.0" y1="116.0" x2="326.0" y2="396.0"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff" stop-opacity="1"/></linearGradient><linearGradient id="w2" gradientUnits="userSpaceOnUse" x1="351.2" y1="116.0" x2="491.2" y2="396.0"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff" stop-opacity="1"/></linearGradient></defs><path d="M92,0H512V420L420,512H0V92Z" fill="#05070c"/><path d="M18.4,117.2 L152.7,400.1 L168.9,391.9 L23.2,114.8 Z" fill="url(#w0)"/><path d="M160.8,396.0 L160.8,116.0" fill="none" stroke="#ffa552" stroke-width="18.2" stroke-linecap="square"/><path d="M183.6,117.2 L317.9,400.1 L334.1,391.9 L188.4,114.8 Z" fill="url(#w1)"/><path d="M326.0,396.0 L326.0,116.0" fill="none" stroke="#4fd6ff" stroke-width="18.2" stroke-linecap="square"/><path d="M348.8,117.2 L483.1,400.1 L499.3,391.9 L353.6,114.8 Z" fill="url(#w2)"/><path d="M491.2,396.0 L491.2,116.0" fill="none" stroke="#4fd6ff" stroke-width="18.2" stroke-linecap="square"/></svg>
+     letter stops and the next starts. A wake is the same width as the vertical
+     it lands on and fades in as it falls, the way a round arriving does
+     everywhere else in this game, so what changes along it is the light and
+     not the line. It stands left of the tile's centre because its weight does
+     not: the wakes arrive out of nothing and weigh almost none of what they
+     cover, so centring the box it fills leaves the last vertical looking like
+     it fell against the right edge. The bias is the midpoint of centring the
+     box and centring the ink, which is the same split marks.BOLT_BIAS settles
+     for the gun.
+     The template embeds a heavier favicon cut of this and two PNGs as data
+     URIs, and ui.lua draws the same six strokes beside the wordmark. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="w0" gradientUnits="userSpaceOnUse" x1="7.6" y1="124.0" x2="139.6" y2="388.0"><stop offset="0" stop-color="#ffa552" stop-opacity="0"/><stop offset="1" stop-color="#ffa552" stop-opacity="1"/></linearGradient><linearGradient id="w1" gradientUnits="userSpaceOnUse" x1="163.4" y1="124.0" x2="295.4" y2="388.0"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff" stop-opacity="1"/></linearGradient><linearGradient id="w2" gradientUnits="userSpaceOnUse" x1="319.1" y1="124.0" x2="451.1" y2="388.0"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff" stop-opacity="1"/></linearGradient></defs><path d="M92,0H512V420L420,512H0V92Z" fill="#05070c"/><path d="M7.6,124.0 L139.6,388.0" fill="none" stroke="url(#w0)" stroke-width="8.7"/><path d="M139.6,388.0 L139.6,124.0" fill="none" stroke="#ffa552" stroke-width="8.7" stroke-linecap="square"/><path d="M163.4,124.0 L295.4,388.0" fill="none" stroke="url(#w1)" stroke-width="8.7"/><path d="M295.4,388.0 L295.4,124.0" fill="none" stroke="#4fd6ff" stroke-width="8.7" stroke-linecap="square"/><path d="M319.1,124.0 L451.1,388.0" fill="none" stroke="url(#w2)" stroke-width="8.7"/><path d="M451.1,388.0 L451.1,124.0" fill="none" stroke="#4fd6ff" stroke-width="8.7" stroke-linecap="square"/></svg>

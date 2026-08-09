@@ -53,7 +53,7 @@ layer.seg = function(_, x1, y1, x2, y2, w, col)
                        w = w, col = col, kind = "seg"}
 end
 layer.seg_fade = function(_, x1, y1, x2, y2, w1, w2, a1, a2, col)
-    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2,
+    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2, w0 = w1,
                        w = w2, col = col, a = a2, kind = "fade"}
 end
 layer.outline = noop
@@ -76,7 +76,7 @@ local ui = require("arena.ui")
 -- the size the icon is cut at: the mark is wider than it is tall, so this is
 -- what stands it in a square tile with room on every side.
 local pal = require("arena.palette")
-local MK = 280
+local MK = 264
 ui.begin(layer, W, H, 1, false, 0)
 ui.logo(W / 2, H / 2, MK, 1, true)
 ui.finish()
@@ -124,6 +124,18 @@ check("the three wedges are evenly spaced",
       #gaps == 2 and math.abs(gaps[1] - gaps[2]) < 0.5,
       string.format("%.1f then %.1f", gaps[1] or -1, gaps[2] or -1))
 
+-- One width across the whole mark, the wakes' two ends included. A wake drawn
+-- thinner than the vertical it lands on reads as a different kind of stroke,
+-- and small enough it reads as a shadow behind the letters.
+local thin, thick = math.huge, 0
+for _, sg in ipairs(segs) do
+    for _, wd in ipairs({sg.w, sg.w0 or sg.w}) do
+        thin, thick = math.min(thin, wd), math.max(thick, wd)
+    end
+end
+check("every stroke is the same width", thick - thin < 0.01,
+      string.format("%.2f to %.2f px", thin, thick))
+
 -- The V is the other side's colour and the W is yours, which is the only
 -- thing in the mark that says where one letter stops.
 local function hue(c) return c and string.format("%.3f,%.3f", c[1], c[2]) end
@@ -144,33 +156,17 @@ f:close()
 -- Every stroke the icon draws, as its two endpoints, in the order the file
 -- lists them. The tile is the one path with no L in it.
 --
--- The two kinds are written differently, because the wakes taper and fade and
--- a stroke in SVG can do neither: a vertical is a line with a width, and a
--- wake is a four-cornered taper filled with a gradient. Both come back as a
--- centre line, the wake's by pairing its corners off.
-local function nums(d)
-    local out = {}
-    for a, b in d:gmatch("([%-%d%.]+),([%-%d%.]+)") do
-        out[#out + 1] = {tonumber(a), tonumber(b)}
-    end
-    return out
-end
+-- All six are strokes of one width. What tells a wake from a vertical in the
+-- file is what paints it: a wake takes a gradient and a vertical takes a
+-- colour. The tile takes neither, which is how it is left out.
 local want = {}
 for d, rest in svg:gmatch('<path d="(M[^"]-)"([^>]*)>') do
-    local p = nums(d)
-    local ink = rest:find("url%(#") or rest:find('stroke="#')
-    if not ink then
-        p = {}  -- the tile the mark stands on
-    end
-    if #p == 2 then
-        want[#want + 1] = {p[1][1], p[1][2], p[2][1], p[2][2],
-                           fade = rest:find("url%(#")}
-    elseif #p == 4 then
-        -- Corner one pairs with corner four and corner two with corner three,
-        -- which is the order vec's own seg_fade lays a taper out in.
-        want[#want + 1] = {(p[1][1] + p[4][1]) / 2, (p[1][2] + p[4][2]) / 2,
-                           (p[2][1] + p[3][1]) / 2, (p[2][2] + p[3][2]) / 2,
-                           fade = rest:find("url%(#")}
+    local x1, y1, x2, y2 =
+        d:match("^M([%-%d%.]+),([%-%d%.]+) L([%-%d%.]+),([%-%d%.]+)$")
+    local grad = rest:find("url%(#")
+    if x1 and (grad or rest:find('stroke="#')) then
+        want[#want + 1] = {tonumber(x1), tonumber(y1), tonumber(x2),
+                           tonumber(y2), fade = grad}
     end
 end
 check("the icon holds the same six strokes", #want == 6, "strokes: " .. #want)
@@ -197,13 +193,66 @@ check("the icon fades the strokes the mark fades",
       faded == 3 and drawn_fade == 3,
       faded .. " in the file, " .. drawn_fade .. " drawn")
 
+-- And the file draws them all at one width too.
+local widths = {}
+for wd in svg:gmatch('stroke%-width="([%d%.]+)"') do widths[#widths + 1] = wd end
+local same = #widths == 6
+for _, wd in ipairs(widths) do same = same and wd == widths[1] end
+check("at one width in the file as well", same,
+      table.concat(widths, " "))
+
+-- Where it stands in the tile, which nothing above checks any more now that
+-- the two drawings are compared on shape alone. Both ends matter and for
+-- different reasons: the mark shipped once with its last vertical 12 px off
+-- the right edge and read as having fallen against it, and biasing left far
+-- enough to fix that will eventually run the first wake's thin end off the
+-- left edge, which is a hard cut across a gradient.
+local sw = tonumber(widths[1]) or 0
+local lo, hi = math.huge, -math.huge
+for _, a in ipairs(want) do
+    lo, hi = math.min(lo, a[1], a[3]), math.max(hi, a[1], a[3])
+end
+-- The wake ends square across its own direction and the vertical wears a
+-- square cap, so the two ends of the drawing reach different distances.
+local pad_l, pad_r = lo - sw * 0.447, 512 - (hi + sw * 0.5)
+check("the mark clears both edges of the tile", pad_l > 2 and pad_r > 2,
+      string.format("%.1f left, %.1f right", pad_l, pad_r))
+check("and sits left of centre in it, where its weight is not",
+      pad_r > pad_l * 3 and pad_r < pad_l * 25,
+      string.format("%.1f left, %.1f right", pad_l, pad_r))
+
 -- The file reckons y downward, as SVG does. What the layer is handed has been
 -- flipped into the layer's own upward y, so one of the two has to come back.
+--
+-- Compared after each is moved to its own origin, because the two are the same
+-- shape in two different places and only the shape is shared. The icon stands
+-- in a square tile and is biased left inside it, since the wakes arrive out of
+-- nothing and the drawing weighs to the right of the box it fills. The
+-- wordmark stands next to a word and is placed against that instead.
+local function moved(pts)
+    local x, y = math.huge, math.huge
+    for _, p in ipairs(pts) do
+        x, y = math.min(x, p[1], p[3]), math.min(y, p[2], p[4])
+    end
+    local out = {}
+    for i, p in ipairs(pts) do
+        out[i] = {p[1] - x, p[2] - y, p[3] - x, p[4] - y}
+    end
+    return out
+end
+local from_file, from_lua = {}, {}
+for i, a in ipairs(want) do
+    from_file[i] = {a[1], 512 - a[2], a[3], 512 - a[4]}
+end
+for i, sg in ipairs(segs) do
+    from_lua[i] = {sg.x1, sg.y1, sg.x2, sg.y2}
+end
+from_file, from_lua = moved(from_file), moved(from_lua)
 local worst = 0
-for i = 1, math.min(#want, #segs) do
-    local a, b = want[i], segs[i]
-    worst = math.max(worst, math.abs(a[1] - b.x1), math.abs(512 - a[2] - b.y1),
-                     math.abs(a[3] - b.x2), math.abs(512 - a[4] - b.y2))
+for i = 1, math.min(#from_file, #from_lua) do
+    for k = 1, 4 do
+        worst = math.max(worst, math.abs(from_file[i][k] - from_lua[i][k]))
+    end
 end
 -- A tenth is what the file rounds to, so anything inside a quarter of a pixel
 -- is the same drawing written two ways.

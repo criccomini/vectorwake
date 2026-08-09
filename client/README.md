@@ -642,11 +642,14 @@ third together are the W, in yours. One gap throughout, so nothing marks where
 one letter stops and the next starts and the run reads as one gesture: you get
 the letters out of it the way you get them out of the name.
 
-The diagonals are wakes, thin and clear where they leave and full where they
-land, which is what a thing arriving looks like everywhere else in this game.
-The verticals stand. That is the whole vocabulary, and it is the same one the
-weapon marks are drawn in, which is the argument for it: a wordmark made of
-strokes belongs to an interface that has nothing else in it.
+The diagonals are wakes, dark where they leave and full where they land, which
+is what a thing arriving looks like everywhere else in this game. The verticals
+stand. Every one of the six is the same hairline, so what changes along a wake
+is the light in it and not the line: drawn at two weights the wakes read as
+shadows cast by the verticals rather than as strokes of the same word. That is
+the whole vocabulary, and it is the same one the weapon marks are drawn in,
+which is the argument for it: a wordmark made of strokes belongs to an
+interface that has nothing else in it.
 
 What it replaced was two hulls passing on a course off vertical. That was a
 picture of the game; this is the name, which is what a wordmark is for.
@@ -672,11 +675,21 @@ into the shape itself rather than into an approximation of it.
 The favicon is its own cut rather than the logo shrunk: a heavier line and a
 wider gap, since at sixteen pixels the logo's hairline is a hairline and the
 three wedges run together into one smudge. What does not change between the
-cuts is the wake: it tapers and fades exactly as `seg_fade` draws it in the
-interface, which in SVG means a filled four-cornered taper under a gradient
-rather than a stroke, because a stroke there cannot vary its width along its
-length. Drawn flat, as it was at first, the icon is three bars and a colour
-change, and the thing the shape is about stops happening.
+cuts is the wake: it fades exactly as `seg_fade` draws it in the interface,
+which in SVG is a stroke painted with a `linearGradient` running end to end.
+Drawn flat, as it was at first, the icon is three bars and a colour change, and
+the thing the shape is about stops happening. At the logo's own weight it also
+stops happening, because a stroke that fine sits under a pixel on a tab: the
+whole reason the favicon is cut separately.
+
+Both cuts stand left of centre in the tile. Centred on the box they fill, they
+look shoved right, because a wake arrives out of nothing and weighs almost none
+of the width it covers: the drawn box wants the mark 3 px left and the drawn
+ink wants it 47, on a tile 512 across. It sits at the midpoint of the two,
+which is how `marks.BOLT_BIAS` was settled for the gun and for the same reason.
+Past about 36 px the first wake's thin end runs off the left edge, and a hard
+cut across a gradient is worse than the thing being fixed. `logo_test` holds
+both ends: clear of both edges, and biased the way the weight is not.
 
 ## The repel nobody could see
 

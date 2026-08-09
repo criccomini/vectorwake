@@ -3617,7 +3617,7 @@ end
 --
 -- What it replaces is two hulls passing on a course off the vertical. That was
 -- a picture of the game; this is the name, which is what a wordmark is for.
-local MK_WD, MK_GAP, MK_WEIGHT = 0.50, 0.09, 0.065
+local MK_WD, MK_GAP, MK_WEIGHT = 0.50, 0.09, 0.033
 
 -- How wide the mark stands, against its own height.
 function M.logo_width(h)
@@ -3658,8 +3658,11 @@ local function mk_stroke(st, ox, oy, h, w, col, p)
     local ex, ey = x1 + (x2 - x1) * p, y1 + (y2 - y1) * p
     local a = (col[4] or 1)
     if st.fade then
-        u:seg_fade(x1, ry(y1), ex, ry(ey), w * 0.3, w * (0.3 + 0.7 * p),
-                   0, a * p, col)
+        -- One width the whole way, so a wake and a vertical are the same line
+        -- and only the light in it changes. Tapering the wake as well made the
+        -- two read as different strokes, and at favicon size it read as three
+        -- bars with something faint behind them.
+        u:seg_fade(x1, ry(y1), ex, ry(ey), w, w, 0, a * p, col)
     else
         u:seg(x1, ry(y1), ex, ry(ey), w, col, true)
     end
@@ -3673,9 +3676,11 @@ function M.logo(cx, cy, h, alpha, still)
     local ox = cx - M.logo_width(h) / 2
     local oy = cy + h / 2
     -- Against the mark's own height, so the weight travels with it rather than
-    -- with the window. The floor is what draws it at favicon size, where a
-    -- stroke this fine is under a pixel.
-    local w = math.max(1.2 * S, h * MK_WEIGHT)
+    -- with the window. One drawable pixel is the floor, and at this weight the
+    -- menu's own two sizes are close enough to it that they mostly sit on it:
+    -- anything finer is not a lighter line, it is a line drawn some of the
+    -- time.
+    local w = math.max(1 * S, h * MK_WEIGHT)
     local hue = {pal.a(pal.ENEMY, alpha), pal.a(pal.FRIEND, alpha),
                  pal.a(pal.FRIEND, alpha)}
 
