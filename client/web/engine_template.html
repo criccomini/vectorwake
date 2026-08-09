@@ -266,12 +266,10 @@
 				// The safe-area insets, in CSS pixels, in the reconciler for
 				// the reconciler's reason: iOS moves them on rotation with
 				// the same unreliable timing as everything else here. The
-				// client polls the string; "l r t b app", where the last is
-				// whether this is a home-screen app rather than a tab. The
-				// difference is a strip of glass at the bottom: a tab has a
-				// toolbar sitting on it and an app has the home indicator,
-				// and a rail belongs above the first and can run under the
-				// second.
+				// client polls the string; "l r t b bare", where the last is
+				// whether the bottom of the canvas is the bottom of the
+				// screen. A rail belongs above a toolbar and can run under
+				// the home indicator, so that one bit decides where it sits.
 				var probe = document.getElementById('vw-safe');
 				if (probe) {
 					var cs = getComputedStyle(probe);
@@ -281,15 +279,34 @@
 					// browser's bottom toolbar the strip is spoken for
 					// already, and furniture stepping up by the inset as well
 					// would be stepping over something twice.
-					var uncovered = Math.max(0, layoutH
-						- ((vp ? vp.offsetTop + vp.height : layoutH)));
-					var bottom = Math.max(0,
-						(parseFloat(cs.paddingBottom) || 0) - uncovered);
+					//
+					// Against the canvas rather than against the visual
+					// viewport, which is the same number in a tab and not the
+					// same number installed: the override above hands the
+					// canvas the whole layout viewport, and measuring the
+					// gap from a viewport that stops short of the indicator
+					// then reported a strip as covered by furniture that is
+					// not there. That netted the inset to nothing on exactly
+					// the phones it was written for.
+					var uncovered = Math.max(0, layoutH - visible);
+					var pad = parseFloat(cs.paddingBottom) || 0;
+					var bottom = Math.max(0, pad - uncovered);
+					// Asked of the geometry rather than of the browser. The
+					// question the rail has is "is there anything between me
+					// and the glass", and a hardware inset with nothing
+					// covering it is exactly that, whatever launched the
+					// page. navigator.standalone answers a narrower question
+					// and answers it only on iOS, and a rail that sat high
+					// because one flag came back false would look like a
+					// layout bug rather than a detection one. This also
+					// follows a browser that has scrolled its toolbar away,
+					// which is the same screen by then.
+					var bare = standalone || (pad > 0 && uncovered < 1);
 					window.vwInsets =
 						(parseFloat(cs.paddingLeft) || 0) + ' ' +
 						(parseFloat(cs.paddingRight) || 0) + ' ' +
 						(parseFloat(cs.paddingTop) || 0) + ' ' +
-						bottom + ' ' + (standalone ? 1 : 0);
+						bottom + ' ' + (bare ? 1 : 0);
 				}
 				var dpi = 1;
 {{#display.high_dpi}}

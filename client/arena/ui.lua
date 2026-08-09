@@ -3903,7 +3903,21 @@ function M.menu(v)
         -- gap that was already there.
         icon_dy = (home and 30 or 32) * S
         local under = rh - icon_dy - 24 * S
-        ry_ = H - rh - (SAPP and 0 or math.max(0, SB - under))
+        if SAPP then
+            -- Installed, the padding under the words is measured against the
+            -- indicator rather than against the rail, because the indicator
+            -- is the only thing down there and the rail's own idea of a
+            -- bottom margin was written for a row with a toolbar under it.
+            -- Two thirds of the strip is what the bar and its own margin
+            -- take; the rest was the row sitting higher than it had to, and
+            -- it goes back. On a large phone the rail's padding grows with
+            -- the interface while the indicator stays 34 points whatever the
+            -- screen, so this gives back more the bigger the phone, which is
+            -- where the gap looked worst.
+            ry_ = H - rh + math.max(0, under - SB * 0.56)
+        else
+            ry_ = H - rh - math.max(0, SB - under)
+        end
         sx, sw = SL + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two
