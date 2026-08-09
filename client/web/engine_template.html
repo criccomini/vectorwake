@@ -266,15 +266,31 @@
 				if (standalone && layoutH > visible) {
 					visible = layoutH;
 				}
-				// The canvas is deliberately not grown to window.screen here,
-				// though installed on a 402x874 point iPhone it comes out 812
-				// and the missing 62 is exactly the top inset. Which end of
-				// the screen that strip is at decides whether the fix grows
-				// the canvas or stops insetting the top twice, and growing it
-				// under the wrong reading puts the rail below the glass,
-				// where nothing can be pressed and no menu can be reached to
-				// undo it. outerHeight is published below to settle it: the
-				// window is the whole screen or it is not.
+				// And the layout viewport is not the window either.
+				//
+				// Installed on a 402x874 point iPhone this file measured the
+				// canvas at 402x812 and was right about every number in it:
+				// layout 812, visual 812, inner 812, and a top inset of 62,
+				// which is exactly the difference. The interface still sat 62
+				// points off the bottom of the phone, and three rounds went
+				// into moving it four and then ten, which is what tuning a
+				// margin does while a whole status bar is missing underneath.
+				//
+				// outerHeight is what settled it, because it answers for the
+				// window rather than for the page: 874. So the window is the
+				// screen, the viewport is inset inside it, and the strip is
+				// below the viewport rather than above it, since a viewport
+				// that started under the status bar would report a top inset
+				// of nothing and this one reports the whole 62.
+				//
+				// Bounded to a shortfall no larger than the inset that
+				// explains it, and only installed, because in a tab the space
+				// under the viewport is a toolbar and drawing a rail beneath
+				// one is drawing it where nobody can press it.
+				if (standalone && outerH > visible
+						&& outerH - visible <= padT + 1) {
+					visible = outerH;
+				}
 				var height = visible - buttonHeight;
 				if (width < 1 || height < 1) {
 					return;
