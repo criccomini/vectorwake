@@ -176,6 +176,11 @@ SHIM = """
   // guessing: "the runtime initialised" is several seconds before "there is
   // an arena on screen", and fading out at the wrong one of those is how a
   // seamless hand-off becomes a black flash.
+  //
+  // The name is the lockup ui.lua draws on the menu, down to the numbers, so
+  // the hand-off changes nothing about it either. It was the letters of
+  // "vectorwake" spaced out in whatever monospace the browser had, which is a
+  // placeholder that outlived the mark being drawn.
   (function () {
     var cv = document.createElement("canvas");
     cv.id = "vw-preboot";
@@ -185,6 +190,64 @@ SHIM = """
     document.body.appendChild(cv);
     var g = cv.getContext("2d");
     var w = 0, h = 0, t0 = Date.now(), done = false, progress = 0;
+
+    // The menu's own face. Defold bakes it into a distance-field atlas that
+    // only the engine can read, so the page carries the file itself and drops
+    // back to a monospace until it has decoded. The loader redraws every
+    // frame, so there is nothing to wait for: the name simply arrives.
+    //
+    // Copyright 2018 The Chakra Petch Project Authors
+    // (https://github.com/m4rc1e/Chakra-Petch.git), licensed under the SIL
+    // Open Font License 1.1, whose second condition is that this notice
+    // travels with the font. client/ui/menu-LICENSE.txt is the full text.
+    var FACE = '"vwmenu",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+    try {
+      var ff = new FontFace("vwmenu",
+                            "url(data:font/ttf;base64,__MENU_FONT__)");
+      ff.load().then(function (f) { document.fonts.add(f); },
+                     function () {});
+    } catch (e) {}
+
+    // The mark, in the units ui.lua keeps it in: three wedges of a diagonal
+    // landing on the baseline where a vertical stands, one gap throughout, the
+    // first wedge in the enemy's amber and the other two in the friendly cyan.
+    // Every number here has a twin in ui.lua, and logo_test holds that one to
+    // client/web/icon.svg, so all three drawings of the mark are one shape.
+    var MK_WD = 0.50, MK_GAP = 0.09, MK_WEIGHT = 0.033;
+    var LOGO_EM = 0.74, LOGO_GAP = 0.30, LOGO_DROP = 0.12;
+    var MK_SPAN = 3 * MK_WD + 2 * MK_GAP;
+    var INK = "#dfe9f5", FRIEND = "#4fd6ff", ENEMY = "#ffa552";
+
+    // `ox` is the mark's left edge and `oy` its baseline, which is how
+    // mk_stroke reads them.
+    function mark(ox, oy, mh) {
+      var lw = Math.max(1, mh * MK_WEIGHT);
+      g.lineWidth = lw;
+      for (var i = 0; i < 3; i++) {
+        var x = ox + i * (MK_WD + MK_GAP) * mh;
+        var col = i === 0 ? ENEMY : FRIEND;
+        // The wake. One width the whole way and only the light in it changes,
+        // which is what seg_fade draws: nothing at the top, full at the
+        // baseline. Tapering it as well made it read as a different stroke.
+        var gr = g.createLinearGradient(x, oy - mh, x + MK_WD * mh, oy);
+        gr.addColorStop(0, col + "00");
+        gr.addColorStop(1, col);
+        g.strokeStyle = gr;
+        g.lineCap = "butt";
+        g.beginPath();
+        g.moveTo(x, oy - mh);
+        g.lineTo(x + MK_WD * mh, oy);
+        g.stroke();
+        // And the vertical it lands on, square-capped, which is what `cap`
+        // does to a seg.
+        g.strokeStyle = col;
+        g.lineCap = "square";
+        g.beginPath();
+        g.moveTo(x + MK_WD * mh, oy);
+        g.lineTo(x + MK_WD * mh, oy - mh);
+        g.stroke();
+      }
+    }
 
     // The same three depths world.lua uses, and the same colours, so the
     // moment the engine takes over nothing about the sky changes.
@@ -226,20 +289,42 @@ SHIM = """
       }
       g.globalAlpha = 1;
 
+      // The lockup. `cy` is the middle of the name's line box, which is what
+      // wordmark() is handed, and everything else hangs off it.
       var cx = w / 2, cy = h / 2;
-      g.fillStyle = "#4fd6ff";
-      g.font = "300 " + Math.round(Math.min(w / 16, 40)) + "px ui-monospace," +
-               "SFMono-Regular,Menlo,Consolas,monospace";
-      g.textAlign = "center";
-      g.textBaseline = "middle";
-      g.fillText("v e c t o r w a k e", cx, cy - 10);
+      var size = Math.min(w / 11, 44);
+      g.textAlign = "left";
+      g.textBaseline = "alphabetic";
+      g.font = "300 " + size + "px " + FACE;
+      var m = g.measureText("vectorwake");
+      // Width scales with the size, so one measurement is enough to know what
+      // size fits a phone held upright.
+      var span = size * (LOGO_EM * MK_SPAN + LOGO_GAP) + m.width;
+      if (span > w * 0.8) {
+        size = size * w * 0.8 / span;
+        g.font = "300 " + size + "px " + FACE;
+        m = g.measureText("vectorwake");
+        span = size * (LOGO_EM * MK_SPAN + LOGO_GAP) + m.width;
+      }
+      var mh = size * LOGO_EM;
+      var x0 = cx - span / 2;
 
-      // One hairline, as wide as the wordmark, that only ever grows.
-      var bw = Math.min(w * 0.5, 380);
+      // Defold centres a string in its line box and canvas draws from a
+      // baseline, so the box is measured and centred by hand. Old browsers do
+      // not report it; the ratios below are what this face measures.
+      var asc = m.fontBoundingBoxAscent || size * 0.99;
+      var desc = m.fontBoundingBoxDescent || size * 0.31;
+      g.fillStyle = INK;
+      g.fillText("vectorwake", x0 + size * (LOGO_EM * MK_SPAN + LOGO_GAP),
+                 cy + (asc - desc) / 2);
+      mark(x0, cy + size * LOGO_DROP + mh / 2, mh);
+
+      // One hairline, as wide as the lockup, that only ever grows.
+      var by = cy + size * 0.95;
       g.fillStyle = "#1d2838";
-      g.fillRect(cx - bw / 2, cy + 30, bw, 2);
-      g.fillStyle = "#4fd6ff";
-      g.fillRect(cx - bw / 2, cy + 30, bw * progress, 2);
+      g.fillRect(x0, by, span, 2);
+      g.fillStyle = FRIEND;
+      g.fillRect(x0, by, span * progress, 2);
 
       if (!done) requestAnimationFrame(frame);
     }
@@ -417,6 +502,16 @@ def fill_window(html):
 # injection point. This checks it is still there, because the rule lived here
 # for a while, only ran for --fragment, and prod serves the whole document: the
 # page opened on somebody else's brand for a year of pushes and nothing said so.
+# The face the loading screen sets the name in, which is the face the menu is
+# set in. Found beside this script rather than in the bundle: what the bundle
+# holds is a distance-field atlas of the glyphs, which is the engine's business
+# and unreadable to a browser.
+def menu_font():
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "..", "ui", "menu.ttf"), "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
 def check_ground(html):
     if "defold-logo-html5-splash" not in html:
         return
@@ -468,6 +563,7 @@ def main():
         sys.exit("could not find the engine-loader script tag")
 
     shim = SHIM.replace("__ASSETS__", json.dumps(assets))
+    shim = shim.replace("__MENU_FONT__", menu_font())
     html = html.replace(
         "<script id='engine-start'",
         "<script id='engine-inline'>\n" + shim + "\n</script>\n\t<script id='engine-start'",
