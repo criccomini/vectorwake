@@ -33,6 +33,7 @@ local net = require("arena.net")
 local callsign = require("arena.callsign")
 local directory = require("arena.directory")
 local clip = require("arena.clip")
+local install = require("arena.install")
 local sfx = require("arena.sfx")
 
 local M = {}
@@ -431,23 +432,41 @@ local NODES = {
     -- Lighting a box for off is a control saying it is doing a little of
     -- something while doing none of it, and that is the state somebody sets
     -- deliberately and then comes back wondering about.
-    settings = {rows = {
-        {label = "sound", detail = function() return VOLUMES[M.volume][2] end,
-         choice = function() return M.volume - 1, #VOLUMES - 1 end,
-         act = "volume"},
-        {label = "music", detail = function() return MUSICS[M.music][2] end,
-         choice = function() return M.music - 1, #MUSICS - 1 end,
-         act = "music"},
-        {label = "frames", detail = function()
-            if not M.can_cap then return "as the display asks" end
-            return CAPS[M.cap][2]
-        end, choice = function()
-            if not M.can_cap then return nil end
-            return M.cap, #CAPS
-        end, act = "cap"},
-        {label = "fullscreen", detail = "fill the screen", act = "fullscreen",
-         hint = "locks the keyboard where it can, and ctrl becomes a gun"},
-    }},
+    settings = {rows = function()
+        local rows = {
+            {label = "sound",
+             detail = function() return VOLUMES[M.volume][2] end,
+             choice = function() return M.volume - 1, #VOLUMES - 1 end,
+             act = "volume"},
+            {label = "music", detail = function() return MUSICS[M.music][2] end,
+             choice = function() return M.music - 1, #MUSICS - 1 end,
+             act = "music"},
+            {label = "frames", detail = function()
+                if not M.can_cap then return "as the display asks" end
+                return CAPS[M.cap][2]
+            end, choice = function()
+                if not M.can_cap then return nil end
+                return M.cap, #CAPS
+            end, act = "cap"},
+            {label = "fullscreen", detail = "fill the screen",
+             act = "fullscreen",
+             hint = "locks the keyboard where it can, and ctrl becomes a gun"},
+        }
+        -- Only where there is somewhere to add it to and it is not there
+        -- already. A row offering to install an app you are running inside is
+        -- a row that makes the menu look like it is not paying attention.
+        local how = install.state()
+        if how == "tap" then
+            rows[#rows + 1] = {label = "add to home screen",
+                               detail = "one tap", act = "install",
+                               hint = "it opens without the browser round it"}
+        elseif how == "share" then
+            rows[#rows + 1] = {label = "add to home screen",
+                               detail = "how to", act = "install",
+                               hint = "iphones keep this behind the share button"}
+        end
+        return rows
+    end},
 
     -- The controls used to be a line of text across the bottom of the screen
     -- in every frame of every game. They are read once and never again, and
@@ -888,6 +907,10 @@ end
 -- thing to read saying what the cursor already sits on, and on a list of three
 -- games two of them were the answer to different questions.
 function M.tick(dt)
+    -- Whether this can be added to a home screen, which the browser decides a
+    -- second or two after the page loads rather than at the moment it is
+    -- asked.
+    install.tick(dt)
     -- A clipboard read started a moment ago, answered whenever the browser
     -- gets round to it. Given up on after a couple of seconds rather than
     -- polled for ever: a refused read never answers at all.
@@ -1062,6 +1085,17 @@ local function activate()
         return "team"
     elseif r.act == "found" then
         return "found"
+    elseif r.act == "install" then
+        -- One tap where the browser allows one. Where it does not, the row
+        -- says where the button is, which is all anybody needs and is what
+        -- everybody who has ever installed one of these had to be told.
+        if install.state() == "tap" then
+            install.go()
+            return nil
+        end
+        M.confirm("Tap the share button, then Add to Home Screen.",
+                  {{label = "ok", act = "ok"}})
+        return nil
     elseif r.act == "reroll" then
         -- The one row on the pilot page that throws something away. A call
         -- sign is the only name anybody has here, it is the name on the
