@@ -1328,6 +1328,84 @@ local function feed(lines, top)
     zone("feed", right - wide, block_top, wide, block_bot - block_top)
 end
 
+-- The one line a phone shows.
+--
+-- The feed is a column of five short lines hung off the right edge under the
+-- dial, and on a touchscreen it was drawn not at all: that corner is where a
+-- thumb flies the ship, and a running log nobody can pause is not what a
+-- player wants there. Which left a phone with no way at all to learn that
+-- somebody had just killed them, or that the green they flew through was a
+-- rung of bomb rather than a rung of gun.
+--
+-- So the phone gets the same feed, filtered to one line. Only lines the arena
+-- marked as being about this pilot: their kills, their deaths, and what they
+-- picked up. A stranger killing a stranger is news, and it is news a player
+-- in a fight cannot use. And only the newest of those at once, because two
+-- lines stacked over the middle of the screen is a panel, and a panel over
+-- the fight is the thing the corner feed was moved out of the way to avoid.
+--
+-- Shorter-lived than a feed line, too. Nine seconds is right for a column
+-- that is read at a glance and scrolls; the same nine seconds in the middle
+-- of the screen is a caption that lives there.
+local TOAST_LIFE = 3.6
+local TOAST_FADE = 0.9
+
+-- Where it sits, which is the far side of the screen from the thumbs in
+-- whichever way the phone is being held.
+-- `reach` is how far up the screen the controls climb, in drawable pixels
+-- from the bottom, handed down by the frame loop. Asked for rather than
+-- worked out here: touch.lua owns where a thumb's controls go, this file owns
+-- where the instruments go, and the two stopped requiring each other on
+-- purpose.
+local function toast_y(reach)
+    if W >= H then
+        -- Landscape: under the flags, in the band across the top that the
+        -- corner chips and the dial leave empty between them.
+        return ST + 62 * S
+    end
+    -- Portrait: two thirds of the way down, the empty band between the ship
+    -- and the controls. Clamped clear of what the pads actually reach rather
+    -- than trusting the fraction, since a hull carrying four kinds of charge
+    -- builds a taller rail than one carrying none, and the rail is the thing
+    -- this must not land on.
+    local floor = reach and (H - reach - 22 * S) or H
+    return math.min(H * 0.66, floor)
+end
+
+local function toast(lines, reach)
+    local f = nil
+    for i = 1, #lines do
+        if lines[i].mine and lines[i].t < TOAST_LIFE then
+            f = lines[i]
+            break
+        end
+    end
+    if not f then return end
+    local a = 1
+    local left = TOAST_LIFE - f.t
+    if left < TOAST_FADE then a = math.max(0, left / TOAST_FADE) end
+    local words = line_text(f.text)
+    local size = (FONT + 1) * S
+    local y = toast_y(reach)
+    -- A wash under it rather than a box round it, the width of the words and
+    -- no wider. Mid-screen over a starfield the type needs something to sit
+    -- on; a border would be the one shape this interface does not draw.
+    local w = text_w(words, size) + 26 * S
+    local h = LINE * S + 6 * S
+    -- The card a dead pilot reads is the one other slab that lands near the
+    -- middle, and in both orientations it lands clear of this. Both cannot
+    -- grow forever though, so the check is the overlap itself rather than
+    -- "are they dead": a death line is exactly the kind this exists to show,
+    -- and refusing to draw it whenever a card is up would be refusing the
+    -- commonest one.
+    if wait_box and y - h / 2 < wait_box.y + wait_box.h
+       and y + h / 2 > wait_box.y then
+        return
+    end
+    rect(W / 2 - w / 2, y - h / 2, w, h, pal.rgb(0x03050a, 0.62 * a))
+    txt(words, W / 2, y, size, pal.a(f.col or pal.INK, a), "center", nil, true)
+end
+
 -- The corner stack: what the triggers do, what you carry and can spend, and
 -- what you are worth. Five rows, no panel and no rules between them.
 --
@@ -2568,6 +2646,10 @@ function M.hud(o)
     elseif not M.touching then
         feed(o.feed, M.radar_span())
     end
+    -- The phone's own reading of that same feed, and not in the same place:
+    -- this one is over the middle of the screen rather than in the corner the
+    -- debug readout took, so the two do not argue about a strip.
+    if M.touching then toast(o.feed, o.pad_top) end
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it. A watcher has no
     -- hull, so the hull's furniture -- the corner stack, the loadout -- is
