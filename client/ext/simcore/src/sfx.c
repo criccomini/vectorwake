@@ -1279,10 +1279,13 @@ static const entry KIT[] = {
     {"thrust",  0.5,   1, k_thrust},
     {"ui_move", 0.035, 0, k_ui_move},
     {"ui_go",   0.16,  0, k_ui_go},
-    // The soundtrack has a component and no maker: which of the eight tracks
-    // is in it changes while the game runs, so it is built through
-    // sfx_music_begin rather than rendered from a name.
-    {"music",   0.0,   1, NULL},
+    // The soundtrack has two components and no maker. Which of the eight
+    // tracks is in one changes while the game runs, so they are built through
+    // sfx_music_begin rather than rendered from a name, and there are two of
+    // them because a crossfade needs both tracks audible at once and a
+    // component holds one buffer.
+    {"music_a", 0.0,   1, NULL},
+    {"music_b", 0.0,   1, NULL},
 };
 
 #define KIT_COUNT ((int)(sizeof(KIT) / sizeof(KIT[0])))
@@ -1292,7 +1295,8 @@ const char *const sfx_names[] = {
     "bomb0", "bomb1", "bomb2", "bomb3",
     "blast0", "blast1", "blast2", "blast3",
     "death", "hit", "bounce", "spawn", "prize",
-    "rust", "charge", "flag", "thrust", "ui_move", "ui_go", "music", NULL,
+    "rust", "charge", "flag", "thrust", "ui_move", "ui_go",
+    "music_a", "music_b", NULL,
 };
 
 int sfx_is_loop(const char *name) {

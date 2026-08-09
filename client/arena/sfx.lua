@@ -130,20 +130,34 @@ local master = 1
 -- --- eight tracks, one at a time ------------------------------------------
 --
 -- There are eight of them and the game plays each for three minutes before
--- moving to the next, which is long enough that nobody hears a rotation as a
--- change of subject and short enough that a long session is not one loop
+-- crossfading into the next, which is long enough that nobody hears a rotation
+-- as a change of subject and short enough that a long session is not one loop
 -- forty times over.
 --
 -- Where a session starts is random, so two people in the same arena are not
 -- listening in step and a player who quits after ten minutes has not heard
 -- only the first three.
 --
--- One component holds whichever track is playing. Eight components would cost
--- eight buffers of about a megabyte each, all but one of them silent, which is
--- most of a page's worth of memory to save a copy.
+-- Two components hold the music, and the tracks alternate between them. That
+-- is what a crossfade costs: a component holds one buffer, so two of them have
+-- to be audible at once for one to give way to the other. Two is also where it
+-- stops. Eight would be eight buffers of about a megabyte each, six of them
+-- silent at any moment, which is most of a page's worth of memory to save a
+-- copy.
+local SLOT = {"music_a", "music_b"}
+local live = 1                  -- which slot is playing
 M.track = 1
 local ROTATE = 180              -- seconds a track holds the floor
+
+-- Two seconds, which is a crossfade and not a blend.
+--
+-- These eight are in eight different keys at eight different tempos, so an
+-- overlap is a clash however it is shaped and the only question is how long it
+-- lasts. Two seconds is long enough that neither track is cut off and short
+-- enough that the clash reads as a turn rather than as a passage.
+local FADE = 2.0
 local rotate_left = ROTATE
+local fading = nil              -- seconds into the fade, or nil
 
 -- The next track, built while this one is still playing.
 --
@@ -161,7 +175,18 @@ local build = {track = nil, wav = nil, wait = 0}
 local BUILD_EVERY = 0.25        -- seconds between steps
 local BUILD_ROOM = 0.020        -- a frame longer than this carries nothing
 
--- Put a track into the sound component, building it here and now.
+-- Put a wav into a slot's component.
+local function fill(slot, wav)
+    local ok, err = pcall(function()
+        resource.set_sound(go.get("#" .. SLOT[slot], "sound"), wav)
+    end)
+    if not ok then
+        print("SOUND: cannot install the soundtrack: " .. tostring(err))
+    end
+    return ok
+end
+
+-- Put a track into the live slot, building it here and now.
 --
 -- Used at boot, where a tenth of a second behind the menu is invisible, and as
 -- the fallback whenever a rotation comes due with nothing built: better a
@@ -178,13 +203,7 @@ function M.music_install(i)
         print("SOUND: track " .. M.track .. " did not build")
         return nil
     end
-    local ok, err = pcall(function()
-        resource.set_sound(go.get("#music", "sound"), wav)
-    end)
-    if not ok then
-        print("SOUND: cannot install the soundtrack: " .. tostring(err))
-        return nil
-    end
+    if not fill(live, wav) then return nil end
     return #wav
 end
 
@@ -231,13 +250,18 @@ function M.init()
             idx = tonumber(idx)
             if idx > (top[fam] or -1) then top[fam] = idx end
         end
-        -- The soundtrack is the one component the kit does not render from a
-        -- name, because which of the eight tracks is in it changes while the
-        -- game runs. M.music_install fills it, here and every rotation after.
-        local wav = name ~= "music" and vwsfx.render(name) or nil
-        if name == "music" then
-            local built = M.music_install(nil)
-            if built then n = n + 1 bytes = bytes + built end
+        -- The two soundtrack slots are the components the kit does not render
+        -- from a name, because which of the eight tracks is in one changes
+        -- while the game runs. M.music_install fills the live one, here and
+        -- at every rotation after; the other stays empty until the first
+        -- crossfade needs it.
+        local slot = name:match("^music_")
+        local wav = not slot and vwsfx.render(name) or nil
+        if slot then
+            if name == "music_a" then
+                local built = M.music_install(nil)
+                if built then n = n + 1 bytes = bytes + built end
+            end
         elseif not wav then
             print("SOUND: no sound named '" .. name .. "'")
         else
@@ -376,7 +400,10 @@ local music = {want = false, settled = false}
 function M.music(on)
     music.want = on and true or false
     music.settled = false
-    if not music.want then pcall(sound.stop, "#music") end
+    if not music.want then
+        fading = nil
+        for _, name in ipairs(SLOT) do pcall(sound.stop, "#" .. name) end
+    end
 end
 
 -- Is the browser's audio actually awake?
@@ -422,7 +449,7 @@ function M.music_tick(dt)
     if not music.settled then
         if not audio_awake() then return end
         music.settled = true
-        M.fire("music", {gain = 1, pan = 0, speed = 1})
+        M.fire(SLOT[live], {gain = 1, pan = 0, speed = 1})
         rotate_left = ROTATE
         build.track = M.track % vwsfx.music_count() + 1
         build.wav, build.wait = nil, 0
@@ -442,24 +469,61 @@ function M.music_tick(dt)
         end
     end
 
+    -- Mid-crossfade: one slot going up, the other coming down.
+    --
+    -- Sine against cosine rather than a straight ramp either way. Two tracks
+    -- have nothing to do with each other, so their power adds rather than
+    -- their amplitude, and two straight ramps crossing at a half leave a hole
+    -- three decibels deep in the middle of every rotation. Squares of a sine
+    -- and a cosine sum to one at every point of the fade, which is the whole
+    -- reason for the curve.
+    if fading then
+        fading = fading + dt
+        local x = fading / FADE
+        if x >= 1 then
+            pcall(sound.stop, "#" .. SLOT[3 - live])
+            fading = nil
+        else
+            local a = x * math.pi / 2
+            pcall(sound.set_gain, "#" .. SLOT[live], math.sin(a))
+            pcall(sound.set_gain, "#" .. SLOT[3 - live], math.cos(a))
+        end
+    end
+
     rotate_left = rotate_left - dt
     if rotate_left > 0 then return end
 
-    -- The rotation falls due. The buffer swap is a copy rather than a render,
-    -- so it is cheap enough to do outright; only a build that never finished
-    -- costs anything here, and it costs a hitch rather than a silence.
+    -- The rotation falls due. Filling the other slot is a copy rather than a
+    -- render, so it is cheap enough to do outright; only a build that never
+    -- finished costs anything here, and it costs a hitch rather than a
+    -- silence.
     rotate_left = ROTATE
     local next_track = build.track or (M.track % vwsfx.music_count() + 1)
-    pcall(sound.stop, "#music")
-    local installed = false
-    if build.wav then
-        local ok = pcall(function()
-            resource.set_sound(go.get("#music", "sound"), build.wav)
-        end)
-        if ok then M.track = next_track installed = true end
+    local into = 3 - live
+
+    if build.wav and fill(into, build.wav) then
+        -- Both audible, the new one from nothing. A fade already running is
+        -- taken over rather than waited for: three minutes apart, that can
+        -- only happen if ROTATE were set shorter than FADE, and a half-faded
+        -- track left playing under two others is a worse answer than a
+        -- slightly abrupt one.
+        if fading then pcall(sound.stop, "#" .. SLOT[3 - live]) end
+        M.track = next_track
+        live = into
+        -- Started at nothing and brought up by the fade below. The gain here
+        -- is the one the fade moves; the level the track sits at is the .sound
+        -- file's, which the engine multiplies by it.
+        M.fire(SLOT[live], {gain = 0, pan = 0, speed = 1})
+        fading = 0
+    else
+        -- Nothing built, so there is nothing to fade into. Build it into the
+        -- slot that is already playing and cut, which is what this did before
+        -- there were two slots.
+        fading = nil
+        pcall(sound.stop, "#" .. SLOT[live])
+        M.music_install(next_track)
+        M.fire(SLOT[live], {gain = 1, pan = 0, speed = 1})
     end
-    if not installed then M.music_install(next_track) end
-    M.fire("music", {gain = 1, pan = 0, speed = 1})
 
     build.track = M.track % vwsfx.music_count() + 1
     build.wav, build.wait = nil, 0

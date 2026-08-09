@@ -1,9 +1,10 @@
 # These wav files are silent on purpose
 
 Every one of them is 64 samples of nothing. They are not the game's sounds and
-replacing them by hand does nothing: `arena/sfx.lua` overwrites all twenty-four
-at boot with buffers rendered by `ext/simcore/src/sfx.c`, which is where the kit
-actually lives.
+replacing them by hand does nothing: `arena/sfx.lua` overwrites them at boot
+with buffers rendered by `ext/simcore/src/sfx.c`, which is where the kit actually
+lives. All but `music_b`, which stays silent until the first crossfade needs
+it.
 
 They exist because a Defold sound component has to point at a sound resource at
 build time, and `resource.set_sound` needs a distinct resource per component to

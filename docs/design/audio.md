@@ -11,8 +11,8 @@ way to keep it is to build every sound out of arithmetic rather than source one.
 
 ## Every sound is arithmetic, and it runs on the player's machine
 
-The kit is twenty-four sounds and a little over a megabyte of 16-bit PCM. None
-of it is in the download. `client/ext/simcore/src/sfx.c` synthesises all of it
+The kit is twenty-five components and a little over a megabyte of 16-bit PCM.
+None of it is in the download. `client/ext/simcore/src/sfx.c` synthesises all of it
 at boot, in about a sixth of a second, and hands the buffers to the engine. The
 seven soundtracks that are not playing yet are not among them: those are built
 while the game runs, a few milliseconds at a time.
@@ -44,7 +44,7 @@ which is what gives a blast a body rather than a hiss. The interface ticks.
 | `flag` | 300 ms | a flag changing hands |
 | `thrust` | 500 ms, held | a rocket, not an engine |
 | `ui_move`, `ui_go` | 35 and 160 ms | the interface |
-| `music` | 15 to 23 s, held | whichever of the eight tracks is playing |
+| `music_a`, `music_b` | 15 to 23 s, held | the two slots the eight tracks alternate between |
 
 ## Every rung is its own sound
 
@@ -282,11 +282,11 @@ There is no combat music and there will not be. The music does not know what is
 happening, does not swell, and never competes with the thing a pilot is trying to
 hear.
 
-## Three minutes each, and the next one built in the gaps
+## Three minutes each, crossfaded, with the next one built in the gaps
 
-The game plays a track for three minutes and moves to the next. That is long
-enough that nobody hears a rotation as a change of subject, and short enough
-that an hour at the game is not one loop over and over for an hour. Where a session starts is random, so
+The game plays a track for three minutes and crossfades into the next. That is
+long enough that nobody hears a rotation as a change of subject, and short
+enough that an hour at the game is not one loop over and over for an hour. Where a session starts is random, so
 two people in the same arena are not listening in step and somebody who plays for
 ten minutes has not heard only the first three.
 
@@ -298,11 +298,33 @@ had room, starting as soon as the previous rotation lands. An eighth of a second
 of work with three minutes to find room in is never in a hurry, so a frame that
 already ran long is not asked to carry a step as well.
 
-One sound component holds whichever track is playing. Eight components would
-mean eight buffers of about a megabyte each, seven of them silent, which is most
-of a page's worth of memory to save a copy. Swapping the buffer is a copy and
-costs nothing; only a build that somehow did not finish costs anything at the
-rotation, and it costs a hitch rather than a silence.
+Two sound components hold the music and the tracks alternate between them. That
+is what the crossfade costs: a component holds one buffer, so two have to be
+audible at once for one to give way to the other. Two is also where it stops.
+Eight would be eight buffers of about a megabyte each, six of them silent at any
+moment, which is most of a page's worth of memory to save a copy. Filling the
+idle slot is a copy and costs nothing; only a build that somehow did not finish
+costs anything at a rotation, and then it falls back to the hard cut this used to
+do.
+
+The fade is two seconds. These eight are in eight keys at eight tempos, so an
+overlap is a clash however it is shaped and the only question is how long it
+lasts: two seconds is long enough that neither track is cut off and short enough
+that the clash reads as a turn rather than as a passage.
+
+Its shape is a sine against a cosine rather than two straight ramps. Two tracks
+have nothing to do with each other, so what adds across the fade is their power
+rather than their amplitude, and two straight ramps crossing at a half leave a
+hole three decibels deep in the middle of every rotation. A sine and a cosine
+have squares that sum to one at every point of the fade, so the level holds. That
+is a thing a player would hear as the music ducking at the change and would have
+no way to describe, which is why it has a test rather than an opinion behind it.
+
+The level is moved with `sound.set_gain`, which the engine documents as setting
+the gain on all active playing voices of a sound. That is the one documented way
+to move something already playing, and it matters because the alternative was
+guessing whether changing a component's gain property reaches a voice that has
+already started.
 
 It gets its own mixer group and its own row in the menu, because wanting the game
 loud and the music off is the commonest thing anybody wants from a game's audio

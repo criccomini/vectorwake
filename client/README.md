@@ -698,21 +698,22 @@ then starts.
 
 ## No audio ships in the page
 
-The kit is twenty-four sounds and 1.15 MB of 16-bit PCM, which compresses to
-almost exactly that because that is what PCM does. None of it is in the
-download. `ext/simcore/src/sfx.c` synthesises all of it on the player's
+The kit is twenty-five components and 1.15 MB of 16-bit PCM at boot, which
+compresses to almost exactly that because that is what PCM does, and about 2.2 MB
+once a crossfade has put a second track in the other music slot. None of it is in
+the download. `ext/simcore/src/sfx.c` synthesises all of it on the player's
 machine at boot, `arena/sfx.lua` hands each buffer to `resource.set_sound`, and
 the page is 1.4 MB smaller for it, or 1.0 MB over the wire, which is 40% of the
 compressed build.
 
-What is in `sounds/` is twenty-four wav files of silence, 172 bytes each. A
+What is in `sounds/` is twenty-five wav files of silence, 172 bytes each. A
 sound component has to point at a resource at build time and `resource.set_sound`
 needs its own resource per component to write into, so there is one placeholder
 per sound, named after the component that claims it. The `.sound` files beside
 them are real: gain, mixer group and looping live there and are maintained by
 hand.
 
-Twelve of the twenty-four are the weapon ladders: `gun0` to `gun3`, `bomb0` to
+Twelve of the twenty-five are the weapon ladders: `gun0` to `gun3`, `bomb0` to
 `bomb3` and `blast0` to `blast3`. `sfx.play` takes a rung as a fourth argument
 and appends it to the family name, so `gun` plus rung 2 is the component
 `gun2`. The budget stays keyed on the family, because four rungs of one gun are
@@ -769,12 +770,16 @@ client that is quiet for some other reason. Only in a debug build: a release eng
 the published page.
 
 There are eight soundtracks and the game rotates through them, three minutes
-each, so `music` is the one component the kit does not render from a name.
+each with a two second crossfade, so `music_a` and `music_b` are the components
+the kit does not render from a name. There are two because a component holds one
+buffer and a crossfade needs both tracks audible at once; the tracks alternate
+between the slots, and `sound.set_gain` moves the level of each, that being the
+one call the engine documents as reaching a voice that has already started.
 `sfx_music_begin` starts a track and `sfx_music_step` builds it in pieces small
 enough to hide inside a frame; `sfx.music_tick` spends one piece at a time on
 frames that had room, which is why a rotation costs nothing when it lands. The
-rotation, and why it is not eight components, are in
-[docs/design/audio.md](../docs/design/audio.md).
+rotation, the shape of the crossfade and why there are two components rather
+than eight are in [docs/design/audio.md](../docs/design/audio.md).
 
 The synth was a Python script until it moved into the client, and the port
 reproduces CPython's Mersenne Twister so it could be checked against the files

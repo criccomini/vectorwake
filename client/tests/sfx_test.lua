@@ -33,7 +33,7 @@ do
     for name, loop in kit:gmatch('{"([%w_]+)",%s*[^,]+,%s*(%d),') do
         LOOPS[name] = loop == "1"
     end
-    assert(LOOPS.music and LOOPS.thrust, "the loops did not parse")
+    assert(LOOPS.music_a and LOOPS.thrust, "the loops did not parse")
 end
 
 local played = {}
@@ -78,9 +78,18 @@ end}
 -- and a stub that invented one is how the soundtrack came to restart twelve
 -- times a session without a test noticing: the code called it, the call raised
 -- every frame under pcall, and here it cheerfully returned true.
+--
+-- set_gain is real and is what the crossfade rides on: "set gain on all active
+-- playing voices of a sound", which is the one documented way to move the
+-- level of something already playing.
+local voice = {}
 _G.sound = {
-    play = function(url) played[#played + 1] = url end,
-    stop = function() end,
+    play = function(url, opts)
+        played[#played + 1] = url
+        voice[url] = (opts and opts.gain) or 1
+    end,
+    stop = function(url) voice[url] = nil end,
+    set_gain = function(url, g) voice[url] = g end,
     set_group_gain = function() end,
 }
 
@@ -226,6 +235,70 @@ do
     s2.music(false)
 end
 
+-- --- the crossfade --------------------------------------------------------
+--
+-- Two tracks are audible while one gives way to the other, and the thing that
+-- can go wrong quietly is the shape of it. Two straight ramps crossing at a
+-- half leave a hole three decibels deep in the middle of every rotation, which
+-- a player would hear as the music ducking at the change and would have no way
+-- to describe.
+
+do
+    package.loaded["arena.sfx"] = nil
+    local s3 = require("arena.sfx")
+    local function run(seconds)
+        for _ = 1, math.floor(seconds / 0.016) do s3.music_tick(0.016) end
+    end
+    s3.init()
+    s3.music(true)
+    run(1)
+    local from = "#music_a"
+    local ok_one = voice[from] == 1 and voice["#music_b"] == nil
+    if not ok_one then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "one slot plays to begin with",
+                        tostring(voice[from]), ok_one and "ok" or "FAIL"))
+
+    run(179)                              -- up to the rotation
+    local worst, samples = 0, 0
+    for _ = 1, 60 do                        -- a second into the fade
+        s3.music_tick(0.016)
+        local a, b = voice["#music_a"], voice["#music_b"]
+        if a and b then
+            samples = samples + 1
+            local power = a * a + b * b
+            if math.abs(power - 1) > worst then worst = math.abs(power - 1) end
+        end
+    end
+    local ok_both = samples > 30
+    if not ok_both then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "both are audible through it",
+                        samples .. " frames", ok_both and "ok" or "FAIL"))
+
+    -- Equal power: the squares sum to one at every point, so nothing dips.
+    local ok_power = worst < 0.001
+    if not ok_power then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "and the level never dips",
+                        string.format("%.4f off", worst),
+                        ok_power and "ok" or "FAIL"))
+
+    run(2)                                -- past the end of the fade
+    local ok_done = voice["#music_a"] == nil and voice["#music_b"] ~= nil
+    if not ok_done then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "and the old one is let go",
+                        tostring(voice["#music_a"]),
+                        ok_done and "ok" or "FAIL"))
+
+    -- And back, so the slots alternate rather than one of them being the
+    -- soundtrack and the other a place tracks go to fade out.
+    run(182)
+    local ok_swap = voice["#music_a"] ~= nil and voice["#music_b"] == nil
+    if not ok_swap then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "the next rotation goes back",
+                        tostring(voice["#music_a"]),
+                        ok_swap and "ok" or "FAIL"))
+    s3.music(false)
+end
+
 -- --- and again on the web, where one-shots leave the mixer ---------------
 --
 -- The split is the whole point of the browser path: a one-shot goes straight
@@ -262,7 +335,7 @@ web_try("a UI bleep does too", "ui_go", false, function() web.ui("ui_go") end)
 web_try("thrust stays on the mixer", nil, true,
         function() web.loop("thrust", true) end)
 web_try("and so does the soundtrack", nil, true,
-        function() web.fire("music", {gain = 1, pan = 0, speed = 1}) end)
+        function() web.fire("music_a", {gain = 1, pan = 0, speed = 1}) end)
 
 -- The component's own gain has to reach the browser, or the mix that the
 -- .sound files carry is lost the moment a sound stops going through them.
@@ -306,9 +379,9 @@ do
     local s = require("arena.sfx")
     s.init()
     local realplay = _G.sound.play
-    _G.sound.play = function(url)
-        if url == "#music" then starts = starts + 1 end
-        return realplay(url)
+    _G.sound.play = function(url, opts)
+        if url:match("^#music_") then starts = starts + 1 end
+        return realplay(url, opts)
     end
 
     s.music(true)

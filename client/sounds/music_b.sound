@@ -1,4 +1,4 @@
-sound: "/sounds/music.wav"
+sound: "/sounds/music_b.wav"
 looping: 1
 group: "music"
 gain: 0.70
