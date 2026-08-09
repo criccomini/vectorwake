@@ -653,6 +653,20 @@ end
 -- told this client its side is.
 local view_team = 255
 
+-- What colour to write a side's name in.
+--
+-- Yours is cyan, always, whichever byte it happens to be: "mine" is a reading
+-- a pilot makes before they read anything, and a side that changed colour on
+-- you when the zone shuffled the numbers would break it. Everybody else wears
+-- the colour their byte generates.
+--
+-- Only words go through this. Hulls, plates, rounds and the radar keep the two
+-- colours, because those are glanced at and a glance holds one bit.
+local function team_col(t)
+    if t == view_team then return pal.FRIEND end
+    return pal.team(t)
+end
+
 local function own_arrow(ax, ay, ox, oy, side, me)
     local edge = 5 * S
     if ax < ox + edge then ax = ox + edge end
@@ -904,7 +918,6 @@ local function nameplates(o)
     -- the view_tiles setting put every name adrift the moment the camera
     -- stopped being driven by that setting -- which it already had.
     local scale = W / (2 * o.half_w)
-    local my_team = view_team
     -- The one hull that goes unlabelled is your own, and a watcher has none.
     -- The pilot being observed therefore wears their name and their bounty
     -- exactly like everybody else on screen: "who am I looking at" is the
@@ -923,8 +936,12 @@ local function nameplates(o)
             if sx > -40 and sx < W + 40 and sy > -30 and sy < H + 30 then
                 local p = o.pilots[i]
                 local nm = (p and p.name) or ("ship " .. i)
-                local col = (sim.ship_team(i) == my_team) and pal.FRIEND
-                    or pal.ENEMY
+                -- The plate is where the sides come apart. The hull under it
+                -- stays cyan or orange, which is the call a pilot makes at
+                -- speed; the name says which orange, which is the call they
+                -- make when they have a moment to read one. Three hulls
+                -- converging is a different problem if they are one squad.
+                local col = team_col(sim.ship_team(i))
                 -- The bounty rides with the name, always. It is what killing
                 -- them pays, so it is the one number that says which of two
                 -- ships in front of you is worth the risk.
@@ -960,8 +977,15 @@ local function nameplates(o)
                                  sy + 13 * S, pal.a(col, 0.45), 10 * S)
                     end
                     if bty > 0 then
+                        -- In the side's colour rather than the bounty gold,
+                        -- so the name and the number under it read as one
+                        -- label belonging to one squad. Gold said "this is a
+                        -- bounty", which the position under a name already
+                        -- says, and it said it identically for every pilot on
+                        -- screen: the one thing a colour here can carry is
+                        -- whose they are.
                         txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
-                            pal.a(pal.BOUNTY, 0.85))
+                            pal.a(col, 0.85))
                     end
                 end
             end
@@ -1197,7 +1221,6 @@ local function scores(me, pilots, watchers)
     ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
           pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
-    local my_team = view_team
     local y = top_y() + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
@@ -1207,7 +1230,10 @@ local function scores(me, pilots, watchers)
         -- colour: the neutral ink, dimmer than a pilot, which is the reading.
         local col = pal.DIM
         if not r.watch then
-            col = (sim.ship_team(r.i) == my_team) and pal.FRIEND or pal.ENEMY
+            -- The same colour their plate wears out in the arena. A key is
+            -- only a key if it reads the same in both places: a name orange
+            -- here and violet on the hull is two facts about one pilot.
+            col = team_col(sim.ship_team(r.i))
         end
         if mine or reading then
             -- Your row, marked the way a selected row is marked everywhere
@@ -1676,13 +1702,17 @@ local function inspect(o, top)
     -- would hand the room a roster the zone deliberately did not send. Your own
     -- side is always yours to know, whatever it is marked, since you are in it.
     --
-    -- Falling back to the raw number when the zone has sent no team list at all
-    -- would be the same leak by a duller instrument, so an unknown side simply
-    -- has no row: this box says what it is told and infers nothing.
-    local side = nil
+    -- What is withheld is the *name*. Which side somebody is on is on their
+    -- hull, in the colour of their plate, and has been since the plates
+    -- started carrying it, so a row that said nothing at all would be keeping
+    -- a secret the screen has already given away. The row is always drawn, in
+    -- the side's colour; a side this pilot may not have named reads as
+    -- "private", which is the honest answer and the one the zone intends.
+    local side, side_named = nil, false
     for _, t in ipairs(o.teams or {}) do
         if t.team == theirs and (t.public or same_team) then
             side = (t.name ~= "" and t.name) or ("team " .. t.team)
+            side_named = t.name ~= ""
         end
     end
     -- The invitation lives here because this is already the panel you open by
@@ -1698,7 +1728,8 @@ local function inspect(o, top)
     -- else's, so offering it on an enemy would be a control that quietly
     -- dropped you back on the room channel.
     local follow = o.watch and same_team and o.watch.subject ~= i
-    local rows_n = 5 + (side and 1 or 0)
+    -- The team row always exists now, so the count is fixed.
+    local rows_n = 6
     local h = 30 * S + rows_n * rowh
         + ((invite or follow) and (KEY_H + 12) * S or 0) + 10 * S
     -- Under whatever is in the column, and never above where the column
@@ -1731,10 +1762,10 @@ local function inspect(o, top)
             "right", nil, raw)
         ry_ = ry_ + rowh
     end
-    if side then
-        -- A side somebody founded and named is a name as well.
-        row("SIDE", side, pal.a(col, 0.9), true)
-    end
+    -- In the side's own colour, which is the same colour their plate wears
+    -- out in the arena: this box is where a player learns what that colour
+    -- on the hull they are looking at means.
+    row("TEAM", side or "private", pal.a(team_col(theirs), 0.95), side_named)
     -- What the zone is willing to say this seat is, which is the honest
     -- version of the question: the client cannot tell, and the server's label
     -- is the only answer anybody has. A guest is not an accusation.
@@ -3167,6 +3198,11 @@ end
 -- stage has them, or the row a pointer is resting on.
 local function stage_row(x, y, w, h, r, hot)
     local col = r.mark and pal.FRIEND or pal.INK
+    -- A row that stands for a side is written in that side's colour, which is
+    -- what makes this list the key to every plate in the arena. It outranks
+    -- the mark's cyan because your own side generates cyan anyway, so the two
+    -- rules agree on the one row where they could disagree.
+    if r.tint then col = team_col(r.tint) end
     -- The cursor is a field of team blue across the row, and only that. It
     -- was a field with a chamfered bracket drawn around it, which is two
     -- marks saying one thing, and the corners cut the row into a box in a

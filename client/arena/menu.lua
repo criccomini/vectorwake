@@ -259,6 +259,12 @@ local function team_rows()
             -- Somebody named this side, so it is drawn the way they named it
             -- rather than the way this interface says its own words.
             label = t.name, named = true,
+            -- And in the colour that side wears on every plate in the arena,
+            -- so this list is where the colours get their names. Yours is
+            -- cyan here as it is everywhere: `tint` is the byte, and ui.lua
+            -- decides what "yours" means, since it is the side the camera is
+            -- behind rather than the one this menu belongs to.
+            tint = t.team,
             detail = t.bots > 0 and (t.humans .. " + " .. t.bots .. " AI")
                 or tostring(t.humans),
             act = "team", value = t.team,
@@ -544,6 +550,10 @@ local function view_row(r, i)
         -- word to be said, and whether its label is somebody's name. See the
         -- key on the pilot page and the sides on the team page.
         verbatim = r.verbatim, named = r.named,
+        -- The side this row stands for, so the renderer can write it in that
+        -- side's colour. The byte rather than the colour: which side counts
+        -- as yours is the camera's business, and the camera is ui.lua's.
+        tint = r.tint,
         index = i,
         -- `hull` names a ship to draw and `figure` overrides it with something
         -- that is not one.
