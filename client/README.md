@@ -635,32 +635,43 @@ flying, on a build that takes six minutes to publish.
 
 ## The mark
 
-Two hulls passing on a course tilted off vertical, each nose a little past the
-other's tail, in the two team colours. The silhouette is the simulation's own:
-`hull_extent` in `sim/src/baseline.c` gives the Apex 20 forward, 11 back and 10
-to a side with the tail cut flat, so the shape in the tab is the shape people
-fly. Outline only, no canopy and no fill, because the interface draws
-everything else in the same thin strokes.
+Six strokes, `\|\|\|`, read as the V of vector and the W of wake. Each wedge
+is a diagonal falling into a vertical and meeting it on the baseline; the first
+is the V, in the colour the interface gives the other side, and the second and
+third together are the W, in yours. One gap throughout, so nothing marks where
+one letter stops and the next starts and the run reads as one gesture: you get
+the letters out of it the way you get them out of the name.
 
-What makes it the mark is the arrangement rather than the ship. Two hulls at
-rest, symmetric about a point, is the swap glyph every icon set already ships;
-two hulls passing is a moment out of the game, and nothing in a tab bar looks
-like it. The angle is deliberately off the 45 degrees the tile's own chamfer
-cuts: at 45 the tails lined up with the corners and the pair read as a shape
-fitted to its box rather than as two craft on a course.
+The diagonals are wakes, thin and clear where they leave and full where they
+land, which is what a thing arriving looks like everywhere else in this game.
+The verticals stand. That is the whole vocabulary, and it is the same one the
+weapon marks are drawn in, which is the argument for it: a wordmark made of
+strokes belongs to an interface that has nothing else in it.
+
+What it replaced was two hulls passing on a course off vertical. That was a
+picture of the game; this is the name, which is what a wordmark is for.
+
+On the menu it draws itself. A bullet falls down the first diagonal, bounces
+off the baseline where the vertical stands, runs up it, hops to the next wedge
+and does it again, six strokes in about a second, and the mark is left standing
+when it finishes. Nothing tells it the menu opened: the run restarts whenever
+the mark has not been drawn for a moment, so every way into the menu replays it
+and nothing has to remember to ask.
 
 It exists twice, which is the risk worth knowing about. `client/web/icon.svg`
 is the source the page template carries as three data URIs, and `ui.logo` in
-`arena/ui.lua` draws the same pair as strokes beside the wordmark, because the
+`arena/ui.lua` draws the same six strokes beside the wordmark, because the
 interface has no way to put a picture on screen and would not want one.
 `lua5.1 client/tests/logo_test.lua` reads the shipped SVG's own coordinates and
 holds the Lua to them, so the two cannot drift apart without CI saying so. It
-also checks the property the mark depends on, that each nose reaches past the
-other's tail.
+also checks what makes the mark a word rather than a pattern, that each wake
+lands where its vertical stands and that the three wedges are evenly spaced,
+and it drives the animation to make sure it starts from nothing and finishes
+into the shape itself rather than into an approximation of it.
 
-The favicon is its own cut rather than the logo shrunk: wider apart and a
-heavier line, since at sixteen pixels two outlines at logo weight share pixels
-and read as one knot.
+The favicon is its own cut rather than the logo shrunk: a heavier line and a
+shorter mark, since at sixteen pixels the logo's hairline is a hairline and the
+three wedges read as smudges.
 
 ## The repel nobody could see
 

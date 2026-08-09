@@ -1,7 +1,7 @@
-<!-- vectorwake's mark: two hulls passing on a course tilted off
-     vertical, each nose a little past the other's tail, drawn as the
-     silhouette the simulation flies (hull_extent's 20 fore, 11 aft,
-     10 half width, chamfered tail) and nothing else. The template
-     embeds a favicon cut of this and two PNGs as data URIs, and
-     ui.lua draws the same pair beside the wordmark. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path d="M92,0H512V420L420,512H0V92Z" fill="#05070c"/><path d="M105.6,180.4L289.6,310.6L270.6,352.4L210.9,394.3L165.1,397.8Z" fill="none" stroke="#4fd6ff" stroke-width="19" stroke-linejoin="miter"/><path d="M406.4,331.6L222.4,201.4L241.4,159.6L301.1,117.7L346.9,114.2Z" fill="none" stroke="#ffa552" stroke-width="19" stroke-linejoin="miter"/></svg>
+<!-- vectorwake's mark: six strokes, \|\|\|, read as the V of
+     vector and the W of wake. Each wedge is a diagonal falling into a
+     vertical and meeting it on the baseline; one gap throughout, so
+     nothing marks where one letter stops and the next starts. The
+     template embeds a favicon cut of this and two PNGs as data URIs,
+     and ui.lua draws the same six strokes beside the wordmark. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path d="M92,0H512V420L420,512H0V92Z" fill="#05070c"/><path d="M4.0,106.0 L154.0,406.0" fill="none" stroke="#ffa552" stroke-width="19.5" stroke-linecap="square"/><path d="M154.0,406.0 L154.0,106.0" fill="none" stroke="#ffa552" stroke-width="19.5" stroke-linecap="square"/><path d="M181.0,106.0 L331.0,406.0" fill="none" stroke="#4fd6ff" stroke-width="19.5" stroke-linecap="square"/><path d="M331.0,406.0 L331.0,106.0" fill="none" stroke="#4fd6ff" stroke-width="19.5" stroke-linecap="square"/><path d="M358.0,106.0 L508.0,406.0" fill="none" stroke="#4fd6ff" stroke-width="19.5" stroke-linecap="square"/><path d="M508.0,406.0 L508.0,106.0" fill="none" stroke="#4fd6ff" stroke-width="19.5" stroke-linecap="square"/></svg>

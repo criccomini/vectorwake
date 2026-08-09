@@ -8,8 +8,13 @@
 -- tab would quietly stop matching the home screen. So this reads the shipped
 -- SVG's own coordinates and holds the Lua to them.
 --
--- It also checks the thing that makes the mark what it is rather than a swap
--- glyph: the two hulls pass, each nose reaching beyond the other's tail.
+-- It also checks the thing that makes the mark a word rather than a pattern:
+-- six strokes in three wedges, each a diagonal landing on the baseline where a
+-- vertical stands, one gap throughout so no space says where the V stops and
+-- the W starts, and the V in one team's colour with the W in the other's.
+--
+-- And it drives the animation, because the mark draws itself stroke by stroke
+-- on the menu and a mark that never finishes is a mark nobody sees.
 --
 -- And it checks the lockup, which is the third place the mark appears and the
 -- one nothing was watching. The mark shipped a full em and a bit tall and
@@ -35,26 +40,23 @@ local W, H = 512, 512
 local segs = {}
 local layer = {}
 local function noop() end
-for _, n in ipairs({"arc", "disc", "flush", "frame", "quad", "rect", "reset", "ring",
-                    "seg_fade", "skirt", "tri", "tri_fade", "fan"}) do
+for _, n in ipairs({"arc", "flush", "frame", "quad", "rect", "reset", "ring",
+                    "skirt", "tri", "tri_fade", "fan"}) do
     layer[n] = noop
 end
-layer.seg = function(_, x1, y1, x2, y2)
-    segs[#segs + 1] = {x1 = x1, y1 = H - y1, x2 = x2, y2 = H - y2}
+-- The bullet, which is the one thing on the mark that is not a stroke.
+local dots = {}
+layer.disc = function(_, x, y, r) dots[#dots + 1] = {x = x, y = y, r = r} end
+layer.halo = noop
+layer.seg = function(_, x1, y1, x2, y2, w, col)
+    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2,
+                       w = w, col = col, kind = "seg"}
 end
--- Outlines are kept whole as well as broken into segments. The whole menu
--- draws over this layer, so picking the mark back out of a frame means
--- recognising it, and what it is is two closed five point hulls in the two
--- team colours: see M.logo.
-local outlines = {}
-layer.outline = function(self, pts, w, col, cap)
-    local n = #pts
-    outlines[#outlines + 1] = {pts = pts, col = col}
-    for i = 1, n, 2 do
-        local j = (i + 1 < n) and i + 2 or 1
-        self:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], w, col, cap)
-    end
+layer.seg_fade = function(_, x1, y1, x2, y2, w1, w2, a1, a2, col)
+    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2,
+                       w = w2, col = col, a = a2, kind = "fade"}
 end
+layer.outline = noop
 
 _G.sim = setmetatable({}, {__index = function() return function() return 0 end end})
 package.loaded["arena.state"] = {text = {}, n = 0, version = 0}
@@ -70,14 +72,65 @@ package.loaded["arena.world"] = {build_overview = noop, forget_overview = noop,
 
 local ui = require("arena.ui")
 
--- The shipped icon, at the scale it is drawn in: one hull unit is 7.6 units
--- of its 512 box, which is the number the mark was cut at.
-local SCALE = 7.6
-ui.begin(layer, W, H, 1, false)
-ui.logo(W / 2, H / 2, SCALE)
+-- The mark, drawn still at a size that leaves the stroke floor out of it.
+local pal = require("arena.palette")
+local MK = 300
+ui.begin(layer, W, H, 1, false, 0)
+ui.logo(W / 2, H / 2, MK, 1, true)
 ui.finish()
 
-check("the mark is two closed hulls", #segs == 10, "segments: " .. #segs)
+check("the mark is six strokes", #segs == 6, "segments: " .. #segs)
+
+-- Three wedges: a diagonal and a vertical meeting on the baseline.
+local function wedges()
+    local out = {}
+    for i = 1, #segs, 2 do
+        local d, v = segs[i], segs[i + 1]
+        if not d or not v then return out end
+        out[#out + 1] = {d = d, v = v}
+    end
+    return out
+end
+local W3 = wedges()
+check("in three wedges", #W3 == 3, #W3 .. " wedges")
+
+local worst_join, worst_vert = 0, 0
+for _, wg in ipairs(W3) do
+    -- The diagonal ends where the vertical stands. That shared point is what
+    -- makes a pair read as a letter rather than as two marks near each other.
+    worst_join = math.max(worst_join,
+                          math.abs(wg.d.x2 - wg.v.x1) + math.abs(wg.d.y2 - wg.v.y1))
+    worst_vert = math.max(worst_vert, math.abs(wg.v.x1 - wg.v.x2))
+    -- And the diagonal is a diagonal.
+    check("the wake falls across as well as down",
+          math.abs(wg.d.x2 - wg.d.x1) > MK * 0.3,
+          string.format("%.1f px across", math.abs(wg.d.x2 - wg.d.x1)))
+end
+check("each wake lands where its vertical stands", worst_join < 0.5,
+      string.format("%.2f px apart", worst_join))
+check("and the verticals are vertical", worst_vert < 0.01,
+      string.format("%.2f px of lean", worst_vert))
+
+-- One gap throughout. A word space between the V and the W would make the
+-- mark two letters set beside each other; there isn't one, and the reader
+-- gets V and W out of the run by reading it.
+local gaps = {}
+for i = 2, #W3 do
+    gaps[#gaps + 1] = W3[i].d.x1 - W3[i - 1].v.x1
+end
+check("the three wedges are evenly spaced",
+      #gaps == 2 and math.abs(gaps[1] - gaps[2]) < 0.5,
+      string.format("%.1f then %.1f", gaps[1] or -1, gaps[2] or -1))
+
+-- The V is the other side's colour and the W is yours, which is the only
+-- thing in the mark that says where one letter stops.
+local function hue(c) return c and string.format("%.3f,%.3f", c[1], c[2]) end
+check("the V wears one side and the W the other",
+      hue(W3[1].d.col) == hue(pal.ENEMY)
+      and hue(W3[2].d.col) == hue(pal.FRIEND)
+      and hue(W3[3].d.col) == hue(pal.FRIEND),
+      table.concat({tostring(hue(W3[1].d.col)), tostring(hue(W3[2].d.col)),
+                    tostring(hue(W3[3].d.col))}, " "))
 
 -- --- against the file the page actually carries ----------------------------
 
@@ -86,68 +139,89 @@ local f = assert(io.open("client/web/icon.svg", "r"),
 local svg = f:read("*a")
 f:close()
 
--- Every point of both paths, in the order the file lists them.
+-- Every stroke the icon draws, as its two endpoints, in the order the file
+-- lists them. The tile is the one path with no L in it.
 local want = {}
-for d in svg:gmatch('<path d="M([^"]-)Z"') do
-    -- The tile is the one path with no decimal point in it; the hulls are
-    -- drawn to a tenth.
-    if d:find("%.") then
-        for x, y in d:gmatch("(%-?%d+%.%d+),(%-?%d+%.%d+)") do
-            want[#want + 1] = {tonumber(x), tonumber(y)}
-        end
+for d in svg:gmatch('<path d="(M[^"]-)"') do
+    local x1, y1, x2, y2 = d:match("^M([%-%d%.]+),([%-%d%.]+) L([%-%d%.]+),([%-%d%.]+)$")
+    if x1 then
+        want[#want + 1] = {tonumber(x1), tonumber(y1), tonumber(x2),
+                           tonumber(y2)}
     end
 end
-check("the icon holds two hulls of five points", #want == 10,
-      "points: " .. #want)
+check("the icon holds the same six strokes", #want == 6, "strokes: " .. #want)
 
--- The Lua draws each hull as five segments; the start of each is a vertex, in
--- the same order.
-local got = {}
-for _, s in ipairs(segs) do got[#got + 1] = {s.x1, s.y1} end
+-- Drawn at the icon's own scale and centre, so the two can be compared
+-- outright rather than through a transform this file would have to invent.
+segs = {}
+ui.begin(layer, 512, 512, 1, false, 0)
+ui.logo(256, 256, MK, 1, true)
+ui.finish()
 
+-- The file reckons y downward, as SVG does. What the layer is handed has been
+-- flipped into the layer's own upward y, so one of the two has to come back.
 local worst = 0
-for i = 1, math.min(#want, #got) do
-    worst = math.max(worst, math.abs(want[i][1] - got[i][1]),
-                     math.abs(want[i][2] - got[i][2]))
+for i = 1, math.min(#want, #segs) do
+    local a, b = want[i], segs[i]
+    worst = math.max(worst, math.abs(a[1] - b.x1), math.abs(512 - a[2] - b.y1),
+                     math.abs(a[3] - b.x2), math.abs(512 - a[4] - b.y2))
 end
 -- A tenth is what the file rounds to, so anything inside a quarter of a pixel
 -- is the same drawing written two ways.
 check("the drawn mark matches the shipped icon", worst < 0.25,
-      string.format("worst corner off by %.2f px", worst))
+      string.format("worst end off by %.2f px", worst))
 
--- --- what makes it the mark rather than a glyph ----------------------------
+-- --- and it draws itself ---------------------------------------------------
 
--- Hull one's nose is its first vertex; hull two's is its sixth. Their tails
--- are the midpoint of the flat cut, which is between the third and fourth
--- vertex of each.
-local function mid(a, b) return {(a[1] + b[1]) / 2, (a[2] + b[2]) / 2} end
-local nose1, nose2 = got[1], got[6]
-local tail1, tail2 = mid(got[3], got[4]), mid(got[8], got[9])
+-- On the menu the mark is drawn stroke by stroke by a bullet that bounces off
+-- the baseline. Two things have to hold and neither is visible in the finished
+-- shape: it starts from nothing, and it ends as the shape rather than as an
+-- approximation of it.
+-- Stepped like a frame loop rather than jumped, because the run restarts when
+-- the mark has not been drawn for a moment and that is deliberate: it is how
+-- opening the menu replays it without anything having to say so.
+local function animated(from, to)
+    local ink, ndots = 0, 0
+    local t = from
+    while t <= to + 1e-9 do
+        segs, dots = {}, {}
+        ui.begin(layer, W, H, 1, false, t)
+        ui.logo(W / 2, H / 2, MK)
+        ui.finish()
+        ink = 0
+        for _, sg in ipairs(segs) do
+            ink = ink + math.sqrt((sg.x2 - sg.x1) ^ 2 + (sg.y2 - sg.y1) ^ 2)
+        end
+        ndots = #dots
+        t = t + 0.05
+    end
+    return ink, ndots
+end
 
--- The course is the direction a hull points, tail to nose. Taking it from one
--- tail to the other instead is a different line entirely -- the two hulls are
--- offset across the course as well as along it -- and reading the pass off
--- that axis reports the two hulls in the wrong order.
-local ax, ay = nose1[1] - tail1[1], nose1[2] - tail1[2]
-local m = math.sqrt(ax * ax + ay * ay)
-ax, ay = ax / m, ay / m
-local function along(p) return (p[1] - tail1[1]) * ax + (p[2] - tail1[2]) * ay end
-check("hull one's nose reaches past hull two's tail", along(nose1) > along(tail2),
-      string.format("nose at %.1f, tail at %.1f", along(nose1), along(tail2)))
-check("hull two's nose reaches past hull one's tail", along(nose2) < 0,
-      string.format("nose at %.1f, tail at 0", along(nose2)))
+local early, early_dots = animated(100, 100.05)
+local mid_ink = animated(100, 100.5)
+local late, late_dots = animated(100, 104)
+check("the mark starts from almost nothing", early < late * 0.2,
+      string.format("%.0f px of %.0f", early, late))
+check("and is under way in the middle", mid_ink > early and mid_ink < late,
+      string.format("%.0f px against %.0f and %.0f", mid_ink, early, late))
+check("a bullet leads it while it draws", early_dots > 0,
+      early_dots .. " dots")
+check("and is gone once it has finished", late_dots == 0,
+      late_dots .. " dots")
 
--- And they pass rather than collide: measured across the course, which is the
--- perpendicular of the same axis.
-local sep = math.abs((tail2[1] - tail1[1]) * ay - (tail2[2] - tail1[2]) * ax)
-check("the two fly clear of each other", sep > SCALE * 4,
-      string.format("%.1f px apart", sep))
-
--- The axis is off vertical, which is what stops the pair reading as the swap
--- glyph it would be at rest.
-local tilt = math.deg(math.atan2(ax, -ay))
-check("the course is well off vertical", math.abs(tilt) > 20
-      and math.abs(tilt) < 70, string.format("%.0f degrees", tilt))
+-- Finished means finished: the same ink the still mark draws.
+segs = {}
+ui.begin(layer, W, H, 1, false, 0)
+ui.logo(W / 2, H / 2, MK, 1, true)
+ui.finish()
+local still = 0
+for _, sg in ipairs(segs) do
+    still = still + math.sqrt((sg.x2 - sg.x1) ^ 2 + (sg.y2 - sg.y1) ^ 2)
+end
+check("and it finishes into the shape itself",
+      math.abs(late - still) < 0.5,
+      string.format("%.1f px against %.1f", late, still))
 
 -- --- the lockup ------------------------------------------------------------
 
@@ -159,20 +233,18 @@ check("the course is well off vertical", math.abs(tilt) > 20
 -- what is measured is what a player is shown.
 local state = package.loaded["arena.state"]
 
-local pal = require("arena.palette")
-
--- One hull of the mark, or nil: a closed five point outline in one of the two
--- team colours, at full strength. Nothing else the menu draws is all three of
--- those, and if that ever stops being true this returns two candidates and the
--- caller says so rather than measuring the wrong shape.
-local function mark_hulls()
+-- The mark's own strokes, picked back out of a whole menu: the two team
+-- colours at full strength, and nothing else the menu draws is that.
+local function mark_segs()
     local found = {}
-    for _, o in ipairs(outlines) do
-        if #o.pts == 10 and o.col and (o.col[4] or 1) > 0.99 then
+    for _, sg in ipairs(segs) do
+        local c = sg.col
+        -- At full strength: the menu marks a selected row with a rule in the
+        -- team colour too, and that one is drawn at 0.95.
+        if c and (c[4] or 1) > 0.99 then
             for _, team in ipairs({pal.FRIEND, pal.ENEMY}) do
-                if o.col[1] == team[1] and o.col[2] == team[2]
-                    and o.col[3] == team[3] then
-                    found[#found + 1] = o.pts
+                if c[1] == team[1] and c[2] == team[2] and c[3] == team[3] then
+                    found[#found + 1] = sg
                 end
             end
         end
@@ -180,42 +252,68 @@ local function mark_hulls()
     return found
 end
 
+-- Run enough frames for the mark to finish drawing itself, then measure the
+-- last one. A lockup is where the finished mark sits, not where the bullet is.
 local function lockup(w, h)
-    segs = {}
-    outlines = {}
-    state.n = 0
-    ui.begin(layer, w, h, 1, false)
     local rail = {}
     for i, n in ipairs({"zones", "ship", "pilot", "settings", "help",
                         "about"}) do
         rail[i] = {label = n, icon = n, index = i}
     end
-    ui.menu({depth = 1, sel = 0, rail = rail, rail_sel = 1, focus = "rail",
-             home = true, closable = false,
-             rows = {{label = "chaos", kind = "row"}}})
-    ui.finish()
+    local t = 200
+    for _ = 1, 60 do
+        segs = {}
+        state.n = 0
+        ui.begin(layer, w, h, 1, false, t)
+        ui.menu({depth = 1, sel = 0, rail = rail, rail_sel = 1,
+                 focus = "rail", home = true, closable = false,
+                 rows = {{label = "chaos", kind = "row"}}})
+        ui.finish()
+        t = t + 0.05
+    end
     -- The name, and the box the two hulls occupy beside it.
     local word = nil
     for i = 1, state.n do
         if state.text[i].s == "vectorwake" then word = state.text[i] end
     end
-    local hulls = mark_hulls()
-    if not word or #hulls ~= 2 then
-        return nil, string.format("word %s, %d hulls", tostring(word ~= nil),
-                                  #hulls)
+    -- The menu can put the mark on screen more than once: the panel's own
+    -- lockup, and whatever the stage happens to be previewing. What is under
+    -- test is the one beside this word, so the strokes are grouped by the
+    -- width they were drawn at, which is a mark's own size, and the group that
+    -- ends nearest the left of the name wins.
+    local by_w = {}
+    for _, sg in ipairs(mark_segs()) do
+        local k = string.format("%.3f", sg.w or 0)
+        by_w[k] = by_w[k] or {}
+        table.insert(by_w[k], sg)
+    end
+    local mk, best
+    for _, group in pairs(by_w) do
+        if #group == 6 and word then
+            local right = 0
+            for _, sg in ipairs(group) do
+                right = math.max(right, sg.x1, sg.x2)
+            end
+            local d = word.x - right
+            if d > 0 and (not best or d < best) then mk, best = group, d end
+        end
+    end
+    if not word or not mk then
+        return nil, string.format("word %s, no mark beside it",
+                                  tostring(word ~= nil))
     end
     local x0, y0, x1, y1
-    for _, pts in ipairs(hulls) do
-        for i = 1, #pts, 2 do
-            local px, py = pts[i], h - pts[i + 1]
+    for _, sg in ipairs(mk) do
+        for _, p in ipairs({{sg.x1, sg.y1}, {sg.x2, sg.y2}}) do
+            local px, py = p[1], h - p[2]
             x0 = math.min(x0 or px, px)
             x1 = math.max(x1 or px, px)
             y0 = math.min(y0 or py, py)
             y1 = math.max(y1 or py, py)
         end
     end
-    -- state.text holds y already flipped into the layer's space; put it back
-    -- into the top-down coordinates the mark was measured in.
+    -- Both come out of the layer's upward y and go back into the interface's
+    -- own downward one, so "below" means what it says.
     return {size = word.px, wx = word.x, wy = h - word.y,
             x0 = x0, y0 = y0, x1 = x1, y1 = y1}
 end

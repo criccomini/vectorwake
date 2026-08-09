@@ -3478,64 +3478,141 @@ local function ship_grid(x, y, w, h, v, focused)
     end
 end
 
--- The mark: two hulls passing, each nose a little past the other's tail.
+-- The mark: six strokes, \|\|\|, read as a V and then a W.
 --
--- The same drawing the page carries as its icon, and drawn here rather than
--- imported, because the interface has no way to put a picture on screen and
--- would not want one: everything else here is strokes into a mesh layer, and
--- a mark that arrived as pixels would be the only thing in the client that
--- could not be drawn at any size.
+-- Each wedge is a diagonal falling into a vertical and meeting it on the
+-- baseline. The first wedge is the V of vector, in the colour the interface
+-- gives the other side; the second and third together are the W of wake, in
+-- yours. One gap throughout, so nothing marks where one letter stops and the
+-- next starts and the run reads as one gesture: you get the letters out of it
+-- the way you get them out of the name.
 --
--- The silhouette is the simulation's own. `hull_extent` in sim/src/baseline.c
--- gives the Apex 20 forward, 11 back and 10 to a side, with the tail cut flat
--- rather than pointed, so the shape in the tab is the shape people fly.
+-- The diagonals are wakes, thin and clear where they leave and full where they
+-- land, which is what a thing arriving looks like everywhere else in this
+-- game. The verticals stand.
 --
--- What makes it ours is the arrangement rather than the ship. Two hulls at
--- rest, symmetric about a point, is the swap glyph every icon set already
--- has; two hulls passing on a course off the vertical is a moment out of the
--- game, and nothing in a tab bar looks like it. The angle is off the diagonal
--- the tile's own chamfer cuts, on purpose: at forty five the tails lined up
--- with the corners and the pair read as a shape fitted to its box.
-local LOGO_FORE, LOGO_AFT, LOGO_HALF = 20, 11, 10
-local LOGO_SHIP = {
-    {0, -LOGO_FORE}, {LOGO_HALF, LOGO_AFT * 0.72}, {LOGO_HALF * 0.48, LOGO_AFT},
-    {-LOGO_HALF * 0.48, LOGO_AFT}, {-LOGO_HALF, LOGO_AFT * 0.72},
-}
--- Tilt off vertical, how far apart the two fly, and how far each nose reaches
--- past the other's tail. All three in hull units, so the mark scales by one
--- number.
-local LOGO_TILT = -35 * math.pi / 180
-local LOGO_SEP, LOGO_PASS = 21, 8
+-- Drawn here rather than imported, because the interface has no way to put a
+-- picture on screen and would not want one: everything else is strokes into a
+-- mesh layer, and a mark that arrived as pixels would be the only thing in the
+-- client that could not be drawn at any size. The page carries the same shape
+-- as `client/web/icon.svg`, and logo_test holds the two to each other.
+--
+-- What it replaces is two hulls passing on a course off the vertical. That was
+-- a picture of the game; this is the name, which is what a wordmark is for.
+local MK_WD, MK_GAP, MK_WEIGHT = 0.50, 0.09, 0.065
 
-local function logo_hull(cx, cy, ang, s, col, w)
-    local ca, sa = math.cos(ang), math.sin(ang)
-    local pts = {}
-    for _, p in ipairs(LOGO_SHIP) do
-        local x, y = p[1] * s, p[2] * s
-        pts[#pts + 1] = cx + x * ca - y * sa
-        pts[#pts + 1] = ry(cy + x * sa + y * ca)
-    end
-    u:outline(pts, w, col, true)
+-- How wide the mark stands, against its own height.
+function M.logo_width(h)
+    return h * (3 * MK_WD + 2 * MK_GAP)
 end
 
--- `s` is one hull unit, so the pair stands about 31 of them long.
-function M.logo(cx, cy, s, alpha)
+-- Where each stroke starts and ends, in units of the mark's height, with the
+-- mark's left edge and baseline at the origin and y up. Six of them, in the
+-- order a bullet would draw them: down the diagonal, bounce, up the vertical,
+-- across to the next.
+local function mk_strokes()
+    local out = {}
+    for i = 0, 2 do
+        local x = i * (MK_WD + MK_GAP)
+        out[#out + 1] = {x, 1, x + MK_WD, 0, wedge = i, fade = true}
+        out[#out + 1] = {x + MK_WD, 0, x + MK_WD, 1, wedge = i}
+    end
+    return out
+end
+local MK_STROKES = mk_strokes()
+
+-- How long the bullet spends on each piece, and how long a bounce shows for.
+local MK_FALL, MK_RISE, MK_HOP, MK_FLASH = 0.17, 0.12, 0.07, 0.22
+
+-- When the run started. Reset whenever the mark has not been drawn for a
+-- moment, which is the honest reading of "the menu just opened": nothing has
+-- to tell the mark that it did, and every way in gets the same animation.
+local logo_seen, logo_t0 = -1, 0
+
+-- One stroke, drawn to `p` of its length. At p = 1 this is exactly what the
+-- still mark draws, which is what lets the animation finish into the shape
+-- rather than into an approximation of it.
+-- `oy` is the baseline, in this file's own downward y, and a stroke's second
+-- and fourth numbers are heights above it. One flip, at the point of drawing.
+local function mk_stroke(st, ox, oy, h, w, col, p)
+    local x1, y1 = ox + st[1] * h, oy - st[2] * h
+    local x2, y2 = ox + st[3] * h, oy - st[4] * h
+    local ex, ey = x1 + (x2 - x1) * p, y1 + (y2 - y1) * p
+    local a = (col[4] or 1)
+    if st.fade then
+        u:seg_fade(x1, ry(y1), ex, ry(ey), w * 0.3, w * (0.3 + 0.7 * p),
+                   0, a * p, col)
+    else
+        u:seg(x1, ry(y1), ex, ry(ey), w, col, true)
+    end
+    return ex, ey
+end
+
+-- `h` is the mark's height and (cx, cy) its centre. `still` draws the finished
+-- shape and nothing else, which is what anything not on the menu wants.
+function M.logo(cx, cy, h, alpha, still)
     alpha = alpha or 1
-    local along = (LOGO_FORE - LOGO_AFT - LOGO_PASS) / 2
-    local ux, uy = math.sin(LOGO_TILT), -math.cos(LOGO_TILT)
-    local px, py = math.cos(LOGO_TILT), math.sin(LOGO_TILT)
-    -- Against the hull unit, so the weight travels with the mark rather than
-    -- with the window. It used to be a tenth of this and the floor underneath
-    -- did all the work, which meant the mark drew a hairline at every size it
-    -- was ever asked for and got thinner the smaller it was set. The floor is
-    -- still here for the sizes where a stroke under a pixel disappears.
-    local w = math.max(1.2 * S, s * 1.1)
-    logo_hull(cx - px * LOGO_SEP / 2 * s - ux * along * s,
-              cy - py * LOGO_SEP / 2 * s - uy * along * s,
-              LOGO_TILT, s, pal.a(pal.FRIEND, alpha), w)
-    logo_hull(cx + px * LOGO_SEP / 2 * s + ux * along * s,
-              cy + py * LOGO_SEP / 2 * s + uy * along * s,
-              LOGO_TILT + math.pi, s, pal.a(pal.ENEMY, alpha), w)
+    local ox = cx - M.logo_width(h) / 2
+    local oy = cy + h / 2
+    -- Against the mark's own height, so the weight travels with it rather than
+    -- with the window. The floor is what draws it at favicon size, where a
+    -- stroke this fine is under a pixel.
+    local w = math.max(1.2 * S, h * MK_WEIGHT)
+    local hue = {pal.a(pal.ENEMY, alpha), pal.a(pal.FRIEND, alpha),
+                 pal.a(pal.FRIEND, alpha)}
+
+    if not still and M.now - logo_seen > 0.25 then logo_t0 = M.now end
+    if not still then logo_seen = M.now end
+    local t = still and math.huge or (M.now - logo_t0)
+
+    -- Walk the strokes in the order they are drawn, spending the clock as we
+    -- go. What is behind the bullet is drawn whole, what it is on is drawn as
+    -- far as it has got, and what is ahead of it is not there yet.
+    local bx, by, bcol
+    for i, st in ipairs(MK_STROKES) do
+        local span = st.fade and MK_FALL or MK_RISE
+        local col = hue[st.wedge + 1]
+        if t >= span then
+            mk_stroke(st, ox, oy, h, w, col, 1)
+            t = t - span
+            -- A bounce off the baseline, and the hop across to the next wedge
+            -- at the top. Neither draws any of the mark; the first is a flash
+            -- where the bullet turned and the second is the bullet in transit.
+            if st.fade then
+                if t < MK_FLASH then
+                    local f = 1 - t / MK_FLASH
+                    u:ring(ox + st[3] * h, ry(oy), h * 0.10 * (1.6 - f),
+                           math.max(1 * S, w * 0.5 * f), 12,
+                           pal.a(pal.hot(col, 0.5), alpha * f * 0.9))
+                end
+            elseif i < #MK_STROKES then
+                if t < MK_HOP then
+                    local nx = MK_STROKES[i + 1][1]
+                    local f = t / MK_HOP
+                    bx = ox + (st[3] + (nx - st[3]) * f) * h
+                    by = oy - h
+                    bcol = pal.a(pal.DIM, alpha * 0.7)
+                    break
+                end
+                t = t - MK_HOP
+            end
+        else
+            bx, by = mk_stroke(st, ox, oy, h, w, col, math.max(0, t) / span)
+            bcol = pal.a(pal.hot(col, 0.65), alpha)
+            break
+        end
+    end
+    -- The bullet: the same dot the corner draws on the end of a gun's line,
+    -- with its glow stepped out of discs rather than taken from `halo`. A
+    -- halo would read a shade softer and costs the mark the one property that
+    -- makes it portable, which is that it is drawn out of the two primitives
+    -- every surface in this client already has.
+    if bx then
+        local a = bcol[4] or 1
+        u:disc(bx, ry(by), w * 3.0, 12, pal.a(bcol, a * 0.16))
+        u:disc(bx, ry(by), w * 1.9, 10, pal.a(bcol, a * 0.30))
+        u:disc(bx, ry(by), w * 1.15, 10, bcol)
+    end
 end
 
 -- The mark and the name, and nothing under them.
@@ -3546,10 +3623,8 @@ end
 -- decoration in an interface that has none anywhere else, and every shape of
 -- it that was tried, swelling from both ends and then solid into a tail, read
 -- as a rule somebody had left there rather than as part of the name.
--- How tall the mark stands and how much room it wants, both against the type
--- it sits beside. The pair measures 37.3 hull units from the highest nose to
--- the lowest tail (see LOGO_SHIP and the two offsets in M.logo), so a height
--- asked for in ems converts to one hull unit by dividing by that.
+-- How tall the mark stands, against the type it sits beside, and how much air
+-- goes between them.
 --
 -- 0.74 em is a shade over the cap height of the face the name is set in. The
 -- mark reads as belonging to the word at that size, and as a picture beside a
@@ -3567,16 +3642,17 @@ end
 -- the word about an eighth of an em below the middle of the box it is set in.
 -- A mark hung on the box centre is a mark that looks high, which is what it
 -- looked.
-local LOGO_EM, LOGO_SPAN, LOGO_DROP = 0.74, 37.31, 0.12
+local LOGO_EM, LOGO_GAP, LOGO_DROP = 0.74, 0.30, 0.12
 
 local function wordmark(x, y, size)
     -- The mark stands to the left of the name, on the middle of the word
     -- rather than the middle of its line box, so the two read as one lockup.
     -- It takes the room it needs and the name starts after it.
-    local s = size * LOGO_EM / LOGO_SPAN
-    local lw = size * 0.95
-    M.logo(x + lw / 2, y + size * LOGO_DROP, s)
-    txt("vectorwake", x + lw, y, size, pal.INK, nil, MENU_FONT, true)
+    local h = size * LOGO_EM
+    local lw = M.logo_width(h)
+    M.logo(x + lw / 2, y + size * LOGO_DROP, h)
+    txt("vectorwake", x + lw + size * LOGO_GAP, y, size, pal.INK, nil,
+        MENU_FONT, true)
 end
 
 -- --- the whole thing -------------------------------------------------------
