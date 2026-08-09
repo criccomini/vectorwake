@@ -221,26 +221,61 @@ local function collar(cx, neck, half, line, col)
           line, col, true)
 end
 
--- A person's shell: a bowl of glass, one turn of a circle cut off at the
--- neckline. The chamfer the rest of this interface is built from went here
--- first and made a box with a face in it, and straight sides after that made
--- a bucket. A helmet is the one object in this game that is not machined, and
--- it reads as one once its edges stop being edges.
-local function helm(cx, cy, k, col)
+-- A person's shell: a closed flight helmet, a crown over a longer face, with
+-- nothing under it.
+--
+-- Two superellipses sharing a waist, which is the widest line across it and
+-- where the face keeps its eyes. FACE_CROWN is the share of the height above
+-- that waist, so a small one is a long face. FACE_ROUND is how square the
+-- crown turns and FACE_BLUNT how the chin ends: 2 turns through the bottom,
+-- less draws it towards a point. FACE_IN is the width the face gives up on
+-- its way down, which is the other half of a chin and has to move with
+-- FACE_BLUNT, since a blunt end on a face that has already lost its width is
+-- a stub rather than a jaw.
+--
+-- What this replaced was a bowl of glass on a collar, cut off flat at the
+-- neck. Three things were wrong with it and only the last is obvious. A true
+-- circle is as wide at the mouth as at the eyes and widest exactly halfway
+-- down, which no helmet built for a cockpit is. The collar was a line wider
+-- than the cut it stood on, so it read as shoulders under a fishbowl. And a
+-- circle with a bar across it is a diagram of a face rather than a drawing of
+-- one.
+local FACE_WIDE, FACE_CROWN = 0.38, 0.38
+local FACE_ROUND, FACE_BLUNT, FACE_IN = 2.1, 2.3, 0.16
+
+local function helm(cx, cy, k, col, line)
     local w = k
     local h = w * HELM_TALL
     local x0, y0 = cx - w / 2, cy - h / 2
-    local r = w * 0.5
-    local mid = y0 + r                 -- the centre of the bowl
-    local neck = mid + r * HELM_NECK   -- where the collar cuts it off
-    local half = math.sqrt(math.max(0, r * r - (neck - mid) ^ 2))
-    local line = pen(k, 0.11)
-    local segs = math.max(8, math.floor(k * 0.8))
-    -- The angle the cut meets the circle at, measured off the horizontal.
-    local a = math.asin((neck - mid) / r)
-    u:arc(cx, ry(mid), r, -a, math.pi + a, line, segs, col)
-    collar(cx, neck, half, line, col)
-    return x0, y0, w, h, mid, r
+    line = line or pen(k, 0.11)
+    local up, down = h * FACE_CROWN, h * (1 - FACE_CROWN)
+    local waist = y0 + up
+    local half = k * FACE_WIDE
+    -- Half the shell's width at a height. Crown above the waist, face below.
+    local function hw(y)
+        local t = (y - waist) / (y < waist and up or down)
+        t = math.max(-1, math.min(1, t))
+        if t < 0 then
+            return half * (1 - (-t) ^ FACE_ROUND) ^ (1 / FACE_ROUND)
+        end
+        return half * (1 - t ^ FACE_BLUNT) ^ (1 / FACE_BLUNT)
+                    * (1 - FACE_IN * t)
+    end
+    -- One closed run, left side down and right side back up. Sampled rather
+    -- than struck, because there is no one circle to strike it from.
+    local pts, steps = {}, math.max(10, math.min(18, math.floor(k * 0.7)))
+    for i = 0, steps do
+        local y = y0 + h * i / steps
+        pts[#pts + 1] = cx - hw(y)
+        pts[#pts + 1] = ry(y)
+    end
+    for i = steps, 0, -1 do
+        local y = y0 + h * i / steps
+        pts[#pts + 1] = cx + hw(y)
+        pts[#pts + 1] = ry(y)
+    end
+    u:outline(pts, line, col, true)
+    return x0, y0, w, h, waist, hw
 end
 
 -- A machine's shell: the same envelope with the curve taken out of it.
@@ -258,14 +293,14 @@ end
 -- past each end, so four capped sides overlap in four squares and light every
 -- corner. The crown is capped and covers them; the sides butt into it and
 -- into the collar, each drawing its own length and no more.
-local function hull_helm(cx, cy, k, col)
+local function hull_helm(cx, cy, k, col, line)
     local w = k
     local h = w * HELM_TALL
     local x0, y0 = cx - w / 2, cy - h / 2
     local r = w * 0.5
     local mid = y0 + r
     local neck = mid + r * HELM_NECK
-    local line = pen(k, 0.11)
+    line = line or pen(k, 0.11)
     u:seg(x0, ry(y0), x0 + w, ry(y0), line, col, true)
     u:seg(x0, ry(y0 + line / 2), x0, ry(neck - line / 2), line, col)
     u:seg(x0 + w, ry(y0 + line / 2), x0 + w, ry(neck - line / 2), line, col)
@@ -279,81 +314,56 @@ end
 -- in a row, and enough for the glass, the collar and the band to survive.
 local MARK_K = 11
 
--- How far off the bowl's centre the visor's two edges are struck from, in
--- radii, and where each sits when it crosses the middle. The two pivots are
--- that distance either side of the centre, which is what makes the band swell
--- rather than bend: bigger is flatter, and at a few radii the arcs are gentle
--- enough to read as a swelling instead of as a lens.
-local VISOR_PIVOT = 2.8
-local VISOR_TOP, VISOR_BOT = 0.34, 0.10
+-- How high the visor sits over the waist and how far it sags under it, in
+-- strokes, so the glass travels with the line rather than with the mark.
+-- Against the mark it grew with the drawing, and wherever the mark went big
+-- under a line held thin -- the rail -- the glass came out a slab in a column
+-- of line work.
+--
+-- And a ceiling on both, against the mark's own height, because the trade runs
+-- the other way at the other end. The pen is 0.13 of this mark's height at
+-- eleven points and 0.07 of it in the rail, so a visor cut purely in strokes
+-- is twice as deep in the games list as in the menu: it filled the shell and
+-- left a helmet reading as a blob with a notch in it. The ceilings are set
+-- clear of what the rail draws, so the size this shape was chosen at is the
+-- one neither of them touches.
+local VISOR_LIFT, VISOR_SAG = 1.5, 2.6
+local VISOR_LIFT_MAX, VISOR_SAG_MAX = 0.11, 0.19
 
--- A person: the visor, one curved band across the glass.
+-- A person: the visor, wrapped into the shell.
 --
--- It was a pair of shades with a wedge of nose between them, and the nose was
--- the part doing the work: two lenses without it close into a band with a
--- nick, and with it they read as a face rather than as a helmet. A visor is
--- the simpler object and the one a space helmet actually has, so the band is
--- unbroken and the face behind it is left alone.
+-- Ruled along the top and sagging along the bottom, so it wraps the face
+-- rather than lying across it, and it is deepest where it crosses the middle
+-- of that face. It sits on the waist, which is the shell's own widest line
+-- and where a face keeps its eyes.
 --
--- Swelled rather than ruled or bent. Two earlier cuts curved both edges the
--- same way, which slides the whole band up or down without changing its
--- shape: struck like the dome it was a brow, and struck against the dome it
--- was a frown, and either way it read as a line that had been pushed around
--- rather than as an object.
+-- Everything before it was a band: struck two ways to bow apart, or bent, or
+-- ruled flat. All of them read as a line drawn on a face rather than as a
+-- pane set into a helmet, because a band has two edges doing the same thing
+-- and glass in a shell does not. This has one edge on the brow and one on
+-- nothing, which is what a visor looks like from in front.
 --
--- This bows the edges apart instead. The top rises over the middle and the
--- bottom drops under it, so the band is deepest where it crosses the face and
--- narrows towards each end, which is what a curved pane does when you look at
--- it head on. The ends stop short of the glass rather than touching, which is
--- what keeps it a visor in a helmet instead of a helmet in two pieces.
---
--- Drawn as a strip of quads, walking the two edges together. A fan would
--- serve, the swelled band being convex where the bent one was not, but the
--- strip does not care either way and this shape has now changed three times.
-local function pilot_mark(cx, cy, col, k)
+-- Its ends come off the shell's own width at that height, so a narrower head
+-- gets a shorter visor. That is the trade in this mark: the visor is the
+-- whole of it at 26 points, and every hundredth of width the head gives up
+-- comes off the part being read.
+local function pilot_mark(cx, cy, col, k, line)
     k = k or MARK_K * S
-    local w, h, mid, r = select(3, helm(cx, cy, k, col))
-    local _ = h
-    -- The glass, less the line it is drawn with and the gap held off it.
-    local rin = r - (pen(k, 0.11) + w * 0.045)
-    -- One pivot under the helmet and one over it, each carrying the edge
-    -- furthest from it. The top's arc therefore stands on its pivot and the
-    -- bottom's hangs from its own, and the two part company away from the
-    -- middle.
-    local under, over = mid + r * VISOR_PIVOT, mid - r * VISOR_PIVOT
-    local top = under - (mid - r * VISOR_TOP)
-    local bot = (mid + r * VISOR_BOT) - over
-    local function upper(x)
-        return under - math.sqrt(math.max(0, top * top - x * x))
+    line = line or pen(k, 0.11)
+    local w, h, waist, hw = select(3, helm(cx, cy, k, col, line))
+    local top = waist - math.min(line * VISOR_LIFT, h * VISOR_LIFT_MAX)
+    local reach = hw(top) - line * 1.1
+    local sag = math.min(line * VISOR_SAG, h * VISOR_SAG_MAX)
+    local floor = cy + h / 2
+    -- One fan, walked left to right along the top and back along the sag. The
+    -- shape is convex, so a fan is exact and costs a triangle a step.
+    local pts = {cx - reach, ry(top), cx + reach, ry(top)}
+    for i = 8, 0, -1 do
+        local t = -1 + 2 * i / 8
+        pts[#pts + 1] = cx + reach * t
+        pts[#pts + 1] = ry(math.min(waist + sag * (1 - t * t), floor - line))
     end
-    local function lower(x)
-        return over + math.sqrt(math.max(0, bot * bot - x * x))
-    end
-    -- How far out the band runs before it would leave the glass. Solved by
-    -- halving rather than in closed form: the answer is a couple of pixels
-    -- and the arithmetic for it is a page.
-    local lo, hi = 0, rin
-    for _ = 1, 24 do
-        local m = (lo + hi) / 2
-        local ty, by = upper(m) - mid, lower(m) - mid
-        if m * m + math.max(ty * ty, by * by) <= rin * rin then
-            lo = m
-        else
-            hi = m
-        end
-    end
-    local reach = lo
-    local n = math.max(4, math.floor(k / 2))
-    local px, pty, pby
-    for i = 0, n do
-        local x = -reach + 2 * reach * i / n
-        local ty, by = upper(x), lower(x)
-        if px then
-            u:quad(cx + px, ry(pty), cx + x, ry(ty),
-                   cx + x, ry(by), cx + px, ry(pby), col)
-        end
-        px, pty, pby = x, ty, by
-    end
+    u:fan(pts, col)
     return w
 end
 
@@ -365,17 +375,17 @@ end
 -- Lamps rather than a visor, and a flat crown to stand them under. The
 -- antenna says the same thing a second time, which is worth the two points it
 -- costs: three of this mark's four uses are solo.
-local function bot_mark(x, y, col, k)
+local function bot_mark(x, y, col, k, line)
     k = k or MARK_K * S
     local cx = x + k / 2
-    local x0, y0, w, _, mid, r = hull_helm(cx, y, k, col)
+    local x0, y0, w, _, mid, r = hull_helm(cx, y, k, col, line)
     -- The middle of the box rather than the middle of the circle it used to
     -- be: a flat crown puts the room the dome was using back into the shell,
     -- and lamps left where they were sat in the bottom third of it.
     local eye = mid - r * 0.16
     u:disc(x0 + w * 0.31, ry(eye), w * 0.115, 8, col)
     u:disc(x0 + w * 0.69, ry(eye), w * 0.115, 8, col)
-    u:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), pen(k, 0.09), col, true)
+    u:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), line or pen(k, 0.09), col, true)
     u:disc(cx, ry(y0 - r * 0.48), w * 0.11, 8, col)
     return w
 end
@@ -3112,6 +3122,12 @@ local GUTTER = 22
 -- rail can size them, and they are the only place in this interface where a
 -- shape has to carry a meaning on its own -- so each one is a picture of the
 -- thing it opens, not a symbol somebody has to learn.
+--
+-- One line runs through all of them, held against the screen rather than
+-- against the mark's own size, so a column of six reads as one set. Anything
+-- that draws itself here and works its weight out from its width has to be
+-- told this instead.
+local RAIL_PEN = 1.2
 
 local function mark_zones(cx, cy, r, col)
     -- A world with a ring around it. The stop opens the list of places there
@@ -3145,7 +3161,14 @@ local function mark_pilot(cx, cy, r, col)
     -- The same helmet the games list counts people with, so the stop a player
     -- opens to change their call sign wears the mark that stands for them
     -- everywhere else.
-    pilot_mark(cx, cy, col, r * 1.6)
+    --
+    -- Drawn at the rail's own hairline rather than at its own. Everywhere else
+    -- this mark goes it is 11 points beside a number and its weight is struck
+    -- off its width, which is right for a mark that has to survive being
+    -- small. Here it is drawn half again as big next to six shapes that all
+    -- hold one line no matter what they are, and a weight that scales made it
+    -- the one heavy stop in the column.
+    pilot_mark(cx, cy, col, r * 1.6, RAIL_PEN * S)
 end
 
 local function mark_team(cx, cy, r, col)
