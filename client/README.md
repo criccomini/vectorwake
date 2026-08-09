@@ -670,8 +670,13 @@ and it drives the animation to make sure it starts from nothing and finishes
 into the shape itself rather than into an approximation of it.
 
 The favicon is its own cut rather than the logo shrunk: a heavier line and a
-shorter mark, since at sixteen pixels the logo's hairline is a hairline and the
-three wedges read as smudges.
+wider gap, since at sixteen pixels the logo's hairline is a hairline and the
+three wedges run together into one smudge. What does not change between the
+cuts is the wake: it tapers and fades exactly as `seg_fade` draws it in the
+interface, which in SVG means a filled four-cornered taper under a gradient
+rather than a stroke, because a stroke there cannot vary its width along its
+length. Drawn flat, as it was at first, the icon is three bars and a colour
+change, and the thing the shape is about stops happening.
 
 ## The repel nobody could see
 

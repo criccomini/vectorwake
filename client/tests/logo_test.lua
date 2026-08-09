@@ -72,9 +72,11 @@ package.loaded["arena.world"] = {build_overview = noop, forget_overview = noop,
 
 local ui = require("arena.ui")
 
--- The mark, drawn still at a size that leaves the stroke floor out of it.
+-- The mark, drawn still at a size that leaves the stroke floor out of it, and
+-- the size the icon is cut at: the mark is wider than it is tall, so this is
+-- what stands it in a square tile with room on every side.
 local pal = require("arena.palette")
-local MK = 300
+local MK = 280
 ui.begin(layer, W, H, 1, false, 0)
 ui.logo(W / 2, H / 2, MK, 1, true)
 ui.finish()
@@ -141,12 +143,34 @@ f:close()
 
 -- Every stroke the icon draws, as its two endpoints, in the order the file
 -- lists them. The tile is the one path with no L in it.
+--
+-- The two kinds are written differently, because the wakes taper and fade and
+-- a stroke in SVG can do neither: a vertical is a line with a width, and a
+-- wake is a four-cornered taper filled with a gradient. Both come back as a
+-- centre line, the wake's by pairing its corners off.
+local function nums(d)
+    local out = {}
+    for a, b in d:gmatch("([%-%d%.]+),([%-%d%.]+)") do
+        out[#out + 1] = {tonumber(a), tonumber(b)}
+    end
+    return out
+end
 local want = {}
-for d in svg:gmatch('<path d="(M[^"]-)"') do
-    local x1, y1, x2, y2 = d:match("^M([%-%d%.]+),([%-%d%.]+) L([%-%d%.]+),([%-%d%.]+)$")
-    if x1 then
-        want[#want + 1] = {tonumber(x1), tonumber(y1), tonumber(x2),
-                           tonumber(y2)}
+for d, rest in svg:gmatch('<path d="(M[^"]-)"([^>]*)>') do
+    local p = nums(d)
+    local ink = rest:find("url%(#") or rest:find('stroke="#')
+    if not ink then
+        p = {}  -- the tile the mark stands on
+    end
+    if #p == 2 then
+        want[#want + 1] = {p[1][1], p[1][2], p[2][1], p[2][2],
+                           fade = rest:find("url%(#")}
+    elseif #p == 4 then
+        -- Corner one pairs with corner four and corner two with corner three,
+        -- which is the order vec's own seg_fade lays a taper out in.
+        want[#want + 1] = {(p[1][1] + p[4][1]) / 2, (p[1][2] + p[4][2]) / 2,
+                           (p[2][1] + p[3][1]) / 2, (p[2][2] + p[3][2]) / 2,
+                           fade = rest:find("url%(#")}
     end
 end
 check("the icon holds the same six strokes", #want == 6, "strokes: " .. #want)
@@ -157,6 +181,21 @@ segs = {}
 ui.begin(layer, 512, 512, 1, false, 0)
 ui.logo(256, 256, MK, 1, true)
 ui.finish()
+
+-- And the same three of them fade. Which three is not a detail the shape
+-- survives losing: fade the verticals instead and the mark falls upward.
+local faded, drawn_fade = 0, 0
+for i = 1, math.min(#want, #segs) do
+    if want[i].fade then faded = faded + 1 end
+    if segs[i].kind == "fade" then drawn_fade = drawn_fade + 1 end
+    if (want[i].fade ~= nil) ~= (segs[i].kind == "fade") then
+        faded = -1
+        break
+    end
+end
+check("the icon fades the strokes the mark fades",
+      faded == 3 and drawn_fade == 3,
+      faded .. " in the file, " .. drawn_fade .. " drawn")
 
 -- The file reckons y downward, as SVG does. What the layer is handed has been
 -- flipped into the layer's own upward y, so one of the two has to come back.
