@@ -126,6 +126,24 @@
 	html, body {
 		background: #05070d;
 	}
+
+	/* And the rest of that sheet's loading screen, which is not a script and
+	so cannot be waited out. Defold paints it in CSS: a pale gradient on the
+	container and its own wordmark centred on the canvas element, at 70% of
+	the canvas. Both show from the moment the document has a canvas to lay
+	out, which on a five megabyte single-file page is a good second before
+	the last byte lands and our own loader reaches the bottom of the file and
+	can put the starfield up. Measured at 25 Mbit: painted at 60 ms, ours at
+	1.85 s. So the page opened on somebody else's brand and cut to ours.
+
+	The shorthand is doing the work: it resets the background-image to none.
+	`#canvas` outranks the `.canvas-app-canvas` the logo is set on. */
+	.canvas-app-container {
+		background: #05070d;
+	}
+	#canvas {
+		background: #05070d;
+	}
 	</style>
 </head>
 

@@ -335,7 +335,7 @@ FRAME_CSS = """
     left: 0 !important; top: 0 !important;
     width: 100vw !important; height: 100vh !important;
     margin: 0 !important; padding: 0 !important; border: 0 !important;
-    display: block !important; background: #05070d;
+    display: block !important;
   }
   /* On a high-density screen the buffer is upscaled to fit the window, and
      the browser's default filter is bilinear -- which is what made clean
@@ -408,6 +408,24 @@ def fill_window(html):
     return out
 
 
+# Defold's own loading screen is CSS rather than script, so it cannot be waited
+# out: bob injects a sheet that puts a pale gradient on the container and the
+# Defold wordmark on the canvas, and both paint the instant the document has a
+# canvas to lay out. On a five megabyte single file that is a second or more
+# before the loader at the bottom of the page runs and the starfield covers it.
+# engine_template.html grounds both to the arena's clear colour after the
+# injection point. This checks it is still there, because the rule lived here
+# for a while, only ran for --fragment, and prod serves the whole document: the
+# page opened on somebody else's brand for a year of pushes and nothing said so.
+def check_ground(html):
+    if "defold-logo-html5-splash" not in html:
+        return
+    if "#canvas {\n\t\tbackground: #05070d;" in html:
+        return
+    sys.exit("Defold's splash is in the sheet and engine_template.html no "
+             "longer overrides it; the page would open on the Defold logo")
+
+
 def to_fragment(html, title):
     """Strip the document wrapper, leaving styles and body content.
 
@@ -463,6 +481,7 @@ def main():
         r'\s*else\s*\{.*?\n\s*\}',
         re.S,
     )
+    check_ground(html)
     html = fill_window(html)
     html, n = guard.subn('EngineLoader.load("canvas", "%s");' % exe, html)
     if n != 1:
