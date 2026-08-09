@@ -15,7 +15,13 @@
 	<meta name="color-scheme" content="dark">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-	<title>{{project.title}} {{project.version}}</title>
+	<!-- Written out rather than {{project.title}} {{project.version}}, which
+	is what a tab said before: "vectorwake 34cdcf4+". The title is lower case
+	because bob names the bundle directory after it and the workflow reaches
+	into that path by name, and the version is the build stamp, which belongs
+	on the About page the menu already puts it on rather than in a tab strip
+	holding twenty other tabs. -->
+	<title>Vectorwake</title>
 	<!-- The mark, carried in the page: this file is the whole deployment,
 	so an icon on disk beside it would be a second thing to ship and the
 	first thing to forget. Six strokes, \|\|\|, read as the V of vector
