@@ -109,6 +109,8 @@ multi_delay = 100
 # [Bomb] ProximityDistance=3 tiles, and a tile more for each level of the bomb
 # carrying it.
 prox_step = 16
+# [Bomb] BombExplodeDelay=150.
+prox_delay = 150
 # [Shrapnel] InactiveShrapDamage=3, over the first quarter second, which is what
 # stops a bomb landing twice at point blank.
 shrap_inactive = 3
@@ -349,7 +351,7 @@ bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }
 # mines, shields and super, with their costs and prize weights; turrets and
 # AttachBounty; InitialBounty, because bounty here is derived from what a pilot
 # holds; a hull that starts on a rung above one, which is InitialGuns=2 on the
-# Terrier and InitialBombs=1 on the Leviathan and the Weasel; BombExplodeDelay,
+# Terrier and InitialBombs=1 on the Leviathan and the Weasel;
 # BombSafety and JitterTime; Gravity and GravityTopSpeed, with the two
 # [Wormhole] keys, since a wormhole here is a map feature with an arena-wide
 # pull; the placement half of the prize settings; the reward tables, DamageFactor

@@ -649,6 +649,7 @@ impl Arena {
             world.cfg.mod_spread = ((v as i64 * 65536 / 360) & 0xffff) as u16;
         }
         if let Some(v) = c.prox_step { world.cfg.prox_step = v * 256; }
+        if let Some(v) = c.prox_delay { world.cfg.prox_delay = v; }
         if let Some(v) = c.shrap_inactive {
             world.cfg.shrap_inactive = unsafe { sim::sim_units_energy(v) };
         }

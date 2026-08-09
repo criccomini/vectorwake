@@ -260,19 +260,12 @@ int main(void) {
         CHECK(c.fires > 1, "bombs actually leave the ship");
     }
 
-    /* A proximity fuse waits for the closest approach.
-     *
-     * Going off on entry is what this used to do, and it is the worst moment
-     * available: a blast falls off to nothing at its rim, so a bomb that
-     * triggers at the outer edge of its own reach arrives spent. The two
-     * checks below are the two halves of the rule, and the first is the one
-     * that was wrong.
-     */
+    /* A proximity fuse catches a near miss without weakening a bomb already
+     * on course for contact. */
     {
         const int32_t GAP = 200;
-        /* Straight at a stationary target: the fuse must change nothing.
-         * A bomb on a collision course has its closest approach at contact,
-         * so the fused round and the plain one land the same blow. */
+        /* Straight at a stationary target, contact arrives before the armed
+         * delay expires, so the fuse must change nothing. */
         int32_t dealt[2];
         for (int fused = 0; fused < 2; fused++) {
             sim_settings w = cfg;
@@ -289,10 +282,8 @@ int main(void) {
             dealt[fused] = e0 - s.ships[1].energy;
         }
         CHECK(dealt[0] > 0, "a plain bomb reaches a target dead ahead");
-        /* Within a hair rather than exactly: the fused round still ends a
-         * sample earlier where the hull box and the fuse box disagree. What
-         * it may not do is arrive at a fraction of the damage, which is what
-         * detonating on entry did: 112 against 562 on the shipped numbers. */
+        /* Sampling can move the two endings by a fraction, but arming the
+         * fuse must not turn a direct hit into peripheral damage. */
         CHECK(dealt[1] * 4 > dealt[0] * 3,
               "and a fused one lands what the plain one would, not a fifth");
 
@@ -317,6 +308,64 @@ int main(void) {
             wide[fused] = e0 - s.ships[1].energy;
         }
         CHECK(wide[1] > wide[0], "a fuse catches the near miss a plain bomb misses");
+    }
+
+    /* Proximity is a circle around the ship centre, followed by the original
+     * BombExplodeDelay clock. It is not padding around the collision box. */
+    {
+        sim_settings w = cfg;
+        w.prox_delay = 5;
+        sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
+        sp.speed = 0;
+        sp.trigger = 60 * 256;
+        sp.blast = 80 * 256;
+        sim_fire_pattern fp = *gun_of(&w, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&w, &sp);
+        w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &w);
+        step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1, "the test round left");
+        s.weapons[0].x = s.ships[1].x + 55 * 256;
+        s.weapons[0].y = s.ships[1].y;
+        s.weapons[0].vx = s.weapons[0].vy = 0;
+        step_n(&s, &w, 0, 0, 1);
+        CHECK(s.weapon_count == 1 && s.weapons[0].fuse == 5,
+              "crossing the centre radius arms the full delay");
+        step_n(&s, &w, 0, 0, 4);
+        CHECK(s.weapon_count == 1 && s.weapons[0].fuse == 1,
+              "the armed bomb waits through the delay");
+        step_n(&s, &w, 0, 0, 1);
+        CHECK(s.weapon_count == 0, "the bomb ends when its delay runs out");
+
+        sim_state p;
+        sim_init(&p, 1);
+        sim_spawn(&p, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&p, APEX, 1, 8192, 8192 - 200, 0, &w);
+        step_n(&p, &w, SIM_BTN_FIRE, 0, 1);
+        p.weapons[0].x = p.ships[1].x + 65 * 256;
+        p.weapons[0].y = p.ships[1].y;
+        p.weapons[0].vx = p.weapons[0].vy = 0;
+        step_n(&p, &w, 0, 0, 10);
+        CHECK(p.weapon_count == 1 && p.weapons[0].fuse_target == 255,
+              "the hull boundary does not enlarge the proximity circle");
+
+        sim_state q;
+        sim_init(&q, 1);
+        sim_spawn(&q, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&q, APEX, 1, 8192, 8192 - 200, 0, &w);
+        step_n(&q, &w, SIM_BTN_FIRE, 0, 1);
+        q.weapons[0].x = q.ships[1].x + 55 * 256;
+        q.weapons[0].y = q.ships[1].y;
+        q.weapons[0].vx = q.weapons[0].vy = 0;
+        step_n(&q, &w, 0, 0, 1);
+        q.ships[1].vx = -256;
+        step_n(&q, &w, 0, 0, 1);
+        CHECK(q.weapon_count == 0,
+              "an armed bomb ends when its target starts moving away");
     }
 
     /* --- tiles ------------------------------------------------------- */
@@ -995,15 +1044,7 @@ int main(void) {
     }
 
     {
-        /* A proximity fuse goes off at the closest approach.
-         *
-         * This asserted the opposite, that a fuse never touches the hull,
-         * which is true of a round going past and false of one aimed dead on,
-         * and the difference is the whole worth of the add-on. Stopping short
-         * of a target it was about to hit is not caution, it is throwing the
-         * damage away: a blast falls off to nothing at its rim, so a round
-         * that triggers at the outer edge of its own reach arrives spent.
-         */
+        /* A proximity fuse may still reach contact before its clock ends. */
         sim_settings w = cfg;
         sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
         const int32_t REACH = 60;
@@ -1012,8 +1053,7 @@ int main(void) {
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
-        /* Dead on. It closes the whole way, because the nearest it will ever
-         * be to a target in its path is the moment it arrives. */
+        /* Dead on, the round reaches the hull before its armed clock ends. */
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
@@ -1037,8 +1077,7 @@ int main(void) {
 
         /* Beside it. Offset by more than the hull's half width so nothing can
          * touch, and less than the reach so the fuse still has something to
-         * find: here it does go off without contact, at the point it drew
-         * level, which is what a fuse is for. */
+         * find. Here it goes off without contact when the pass opens. */
         sim_state p;
         sim_init(&p, 1);
         sim_spawn(&p, APEX, 0, 8192, 8192, 0, &w);

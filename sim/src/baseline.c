@@ -321,6 +321,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     /* And "each bomb level adds 1 to this amount", so a level 2 bomb senses
      * at four tiles and a level 3 at five. */
     cfg->prox_step = 16 * 256;
+    cfg->prox_delay = 150;                         /* BombExplodeDelay */
     /* InactiveShrapDamage=3, over the first quarter second of a fragment's
      * life. Shrapnel is born at the point of impact, which is inside the hull
      * the bomb just hit, so without this a bomb lands twice: once as a blast

@@ -119,6 +119,8 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w32(&w, (uint32_t)p->vx);
         w32(&w, (uint32_t)p->vy);
         w16(&w, p->life);
+        w8(&w, p->fuse_target);
+        w16(&w, p->fuse);
     }
 
     /* A prize is always at the centre of a tile -- `spawn_prize` puts it
@@ -220,6 +222,8 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         p->vx = (int32_t)r32(&r);
         p->vy = (int32_t)r32(&r);
         p->life = (uint16_t)r16(&r);
+        p->fuse_target = (uint8_t)r8(&r);
+        p->fuse = (uint16_t)r16(&r);
     }
 
     uint32_t prizes = r8(&r);
@@ -328,6 +332,7 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     }
 
     w32(&w, (uint32_t)cfg->prox_step);
+    w16(&w, cfg->prox_delay);
     w32(&w, (uint32_t)cfg->shrap_inactive);
     w16(&w, cfg->shrap_inactive_ticks);
 
@@ -433,6 +438,7 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
     }
 
     cfg->prox_step = (int32_t)r32(&r);
+    cfg->prox_delay = (uint16_t)r16(&r);
     cfg->shrap_inactive = (int32_t)r32(&r);
     cfg->shrap_inactive_ticks = (uint16_t)r16(&r);
 
