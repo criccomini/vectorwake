@@ -1091,12 +1091,16 @@ function update(self, dt)
             -- inside what a rotation already costs the eyes.
             local ok2, ins = pcall(html5.run, "window.vwInsets || ''")
             if ok2 and ins and ins ~= "" then
-                local l, rr, t, b = string.match(ins,
-                    "^([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+)")
+                -- And whether the page is a home-screen app, which rides
+                -- along because it is the same question about the same
+                -- edge: what is sitting on the bottom strip of glass.
+                local l, rr, t, b, app = string.match(ins,
+                    "^([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+)")
                 self.safe_l = tonumber(l) or 0
                 self.safe_r = tonumber(rr) or 0
                 self.safe_t = tonumber(t) or 0
                 self.safe_b = tonumber(b) or 0
+                self.installed = app == "1"
             end
         end
     end
@@ -1413,7 +1417,8 @@ function update(self, dt)
     -- lay out in drawable ones, so the density converts here, in the one
     -- place both readers are told.
     ui.safe((self.safe_l or 0) * density, (self.safe_r or 0) * density,
-            (self.safe_t or 0) * density, (self.safe_b or 0) * density)
+            (self.safe_t or 0) * density, (self.safe_b or 0) * density,
+            self.installed)
     touch.safe_l = (self.safe_l or 0) * density
     touch.safe_r = (self.safe_r or 0) * density
     -- The same four numbers, kept for the about page to print. Every device
@@ -1423,7 +1428,8 @@ function update(self, dt)
     -- somebody's hand.
     menu.screen = {w = ww, h = wh, d = density,
                    l = self.safe_l or 0, r = self.safe_r or 0,
-                   t = self.safe_t or 0, b = self.safe_b or 0}
+                   t = self.safe_t or 0, b = self.safe_b or 0,
+                   app = self.installed}
     ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0)
     -- The interface stays up under the menu. Nothing is paused, so hiding the
     -- scoreboard and the radar behind a panel would be a lie about what is

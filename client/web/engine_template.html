@@ -266,7 +266,12 @@
 				// The safe-area insets, in CSS pixels, in the reconciler for
 				// the reconciler's reason: iOS moves them on rotation with
 				// the same unreliable timing as everything else here. The
-				// client polls the string; "l r t b".
+				// client polls the string; "l r t b app", where the last is
+				// whether this is a home-screen app rather than a tab. The
+				// difference is a strip of glass at the bottom: a tab has a
+				// toolbar sitting on it and an app has the home indicator,
+				// and a rail belongs above the first and can run under the
+				// second.
 				var probe = document.getElementById('vw-safe');
 				if (probe) {
 					var cs = getComputedStyle(probe);
@@ -284,7 +289,7 @@
 						(parseFloat(cs.paddingLeft) || 0) + ' ' +
 						(parseFloat(cs.paddingRight) || 0) + ' ' +
 						(parseFloat(cs.paddingTop) || 0) + ' ' +
-						bottom;
+						bottom + ' ' + (standalone ? 1 : 0);
 				}
 				var dpi = 1;
 {{#display.high_dpi}}

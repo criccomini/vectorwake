@@ -522,9 +522,21 @@ end
 -- What arrives here is already net of whatever the canvas does not cover:
 -- under a browser's bottom toolbar the strip is spoken for, and stepping up
 -- by the inset as well would be stepping over the same thing twice.
-local SL, SR, ST, SB = 0, 0, 0, 0
-function M.safe(l, r, t, b)
+--
+-- `app` is whether the page was launched from a home screen rather than
+-- opened in a tab, and it decides the one case the paragraph above does not
+-- cover. In a tab the rail sits above the toolbar and there is nothing under
+-- it; installed, the rail is the last thing before the edge of the screen and
+-- the inset lifts it off that edge, which is the strip of black under the
+-- buttons on a phone with no address bar. So installed, the rail stops
+-- stepping over the indicator and runs to the edge the way the pads already
+-- do. It costs the bottom third of a stop's surface to a bar the system may
+-- swallow a press under, and buys back the ten points that made the row look
+-- like it had come loose.
+local SL, SR, ST, SB, SAPP = 0, 0, 0, 0, false
+function M.safe(l, r, t, b, app)
     SL, SR, ST, SB = l or 0, r or 0, t or 0, b or 0
+    SAPP = app and true or false
 end
 
 -- `now` is the frame's clock in seconds, for the few things on screen that
@@ -3891,7 +3903,7 @@ function M.menu(v)
         -- gap that was already there.
         icon_dy = (home and 30 or 32) * S
         local under = rh - icon_dy - 24 * S
-        ry_ = H - rh - math.max(0, SB - under)
+        ry_ = H - rh - (SAPP and 0 or math.max(0, SB - under))
         sx, sw = SL + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two

@@ -497,10 +497,12 @@ local NODES = {
             {label = "screen", detail = function()
                 local s = M.screen
                 if not s then return "?" end
-                return string.format("%dx%d @%g  safe %g %g %g %g",
-                                     s.w, s.h, s.d, s.l, s.r, s.t, s.b)
+                return string.format("%dx%d @%g  safe %g %g %g %g  %s",
+                                     s.w, s.h, s.d, s.l, s.r, s.t, s.b,
+                                     s.app and "app" or "tab")
             end, verbatim = true,
-            hint = "drawable, density, then the insets left right top bottom"},
+            hint = "drawable, density, the insets left right top bottom, "
+                .. "and whether this is a home-screen app or a tab"},
             {label = "zone", detail = function()
                 if M.zone == "" then return "not in one" end
                 return M.zone
