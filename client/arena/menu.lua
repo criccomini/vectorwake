@@ -503,6 +503,21 @@ local NODES = {
             end, verbatim = true,
             hint = "drawable, density, the insets left right top bottom, "
                 .. "and whether this is a home-screen app or a tab"},
+            -- What the page believes about the screen it is on, in CSS
+            -- points, unreduced. The canvas is sized from the first two and
+            -- a phone has already been seen handing back a canvas the top
+            -- inset short of its own screen; whether that missing strip is
+            -- above the canvas or below it is the difference between a rail
+            -- on the bottom edge and a rail floating over one, and no
+            -- machine here can be asked.
+            {label = "viewport", detail = function()
+                local s = M.screen
+                if not s or not s.vl then return "?" end
+                return string.format("layout %g  visual %g  screen %g  at %g",
+                                     s.vl, s.vv, s.vs, s.vt)
+            end, verbatim = true,
+            hint = "what the page measures its own window and screen to be, "
+                .. "and where the window sits on the screen"},
             {label = "zone", detail = function()
                 if M.zone == "" then return "not in one" end
                 return M.zone

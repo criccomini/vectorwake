@@ -302,11 +302,23 @@
 					// follows a browser that has scrolled its toolbar away,
 					// which is the same screen by then.
 					var bare = standalone || (pad > 0 && uncovered < 1);
+					// And the four numbers this whole reconciler is derived
+					// from, published so a phone can be asked what it thinks
+					// its own screen is. Installed on a 402x874 phone the
+					// canvas came out 402x812, exactly the top inset short,
+					// and which end of the screen that 62 points is missing
+					// from decides whether the fix grows the canvas or moves
+					// it. Nothing here can tell from the outside, and the
+					// only phone that knows is not this one.
+					var scr = window.screen || {};
 					window.vwInsets =
 						(parseFloat(cs.paddingLeft) || 0) + ' ' +
 						(parseFloat(cs.paddingRight) || 0) + ' ' +
 						(parseFloat(cs.paddingTop) || 0) + ' ' +
-						bottom + ' ' + (bare ? 1 : 0);
+						bottom + ' ' + (bare ? 1 : 0) + ' ' +
+						layoutH + ' ' + (vp ? Math.round(vp.height) : 0) +
+						' ' + (scr.height || 0) + ' ' +
+						Math.round(window.screenY || 0);
 				}
 				var dpi = 1;
 {{#display.high_dpi}}
