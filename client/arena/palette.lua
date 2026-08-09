@@ -187,7 +187,7 @@ local function hsv(h, s, v)
     local c = v * s
     local hh = (h % 360) / 60
     local x = c * (1 - math.abs(hh % 2 - 1))
-    local r, g, b = 0, 0, 0
+    local r, g, b
     if hh < 1 then r, g, b = c, x, 0
     elseif hh < 2 then r, g, b = x, c, 0
     elseif hh < 3 then r, g, b = 0, c, x
