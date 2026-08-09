@@ -570,3 +570,19 @@ nothing at all unless you had been left alone to recharge, and silently.
 One number to revisit at the first playtest: a bolt travels 200 px/s and a hull
 tops out at 490. Bullets slower than the ships they chase is a strange place to
 start, and it is one row of the table.
+
+## Measuring it
+
+Every number above is a choice, and most of them came from the original's
+settings rather than from anything this game has observed. `vectorwake-server
+calibrate stages` puts a price on them: one hull, the same pilot on both sides,
+and one stage of the tree as the only difference between two ships. It reports a
+win rate per stage, so changing a rung or an add-on's cost is a change with a
+number either side of it. The server's README explains how to read the report,
+including the control row it measures its own noise floor from.
+
+It answers what a rung is worth against a bare hull and against another rung. It
+does not answer what a weapon feels like, and the numbers it produces are only
+as good as the bots' willingness to use the thing being priced, which is why the
+report counts trigger pulls per stage: a rung nobody fired and a rung that lost
+are different findings that look identical in a win column.

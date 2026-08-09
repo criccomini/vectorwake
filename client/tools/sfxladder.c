@@ -300,6 +300,72 @@ static double ladder(const char *family, const char *const *names, int n,
     return widest;
 }
 
+// The soundtrack loops, and a loop has one way to fail that nothing else here
+// does: a seam.
+//
+// The property that prevents one is arithmetic, so that is what is checked. A
+// beat is RATE * 60 / BPM samples, and RATE * 60 is 1323000. Unless the tempo
+// divides that exactly, every beat is a fraction of a sample short, the error
+// adds up across the track, and the join lands off the downbeat by however
+// much it came to, on every pass. A track also has to be a whole number of
+// beats long or the last one is clipped.
+//
+// Neither is something a listener would report as a fault. They would report
+// that the music sounds slightly wrong and be unable to say why, which is why
+// it is worth an assertion rather than an ear.
+//
+// The join itself is measured too, but only as a sanity bound. Everything is
+// mixed in wrapping, so a pad still ringing at the end comes back at the start
+// rather than being chopped, and the step across the join should be no sharper
+// an edge than the music already contains. It sits around the ninety-ninth
+// percentile of the track's own steps, which is what a downbeat looks like:
+// the loop point is a kick drum, and a kick is a big step wherever it lands.
+static void check_tracks(void) {
+    int i;
+    for (i = 0; i < sfx_music_count(); i++) {
+        sfx_music_job *j = sfx_music_begin(i);
+        unsigned char *wav;
+        size_t len = 0;
+        double seam = 0.0, sharpest = 0.0;
+        int n, k, bpm = sfx_music_bpm(i), beat;
+        char line[80];
+
+        while (!sfx_music_step(j)) { }
+        wav = sfx_music_take(j, &len);
+        if (!wav || len <= 44 || bpm <= 0) {
+            fails++;
+            printf("FAIL track %d did not build\n", i);
+            free(wav);
+            continue;
+        }
+        n = (int)((len - 44) / 2);
+        {
+            double *x = (double *)malloc((size_t)n * sizeof(double));
+            if (!x) { free(wav); continue; }
+            for (k = 0; k < n; k++) {
+                int lo = wav[44 + k * 2], up = wav[45 + k * 2];
+                x[k] = (double)(short)(lo | (up << 8)) / 32768.0;
+            }
+            for (k = 1; k < n; k++) {
+                double d = fabs(x[k] - x[k - 1]);
+                if (d > sharpest) sharpest = d;
+            }
+            seam = fabs(x[0] - x[n - 1]);
+            free(x);
+        }
+        free(wav);
+
+        beat = (int)(RATE * 60) / bpm;
+        printf("     track %d  %3d bpm  %5.2f s  join %.3f against a sharpest "
+               "edge of %.3f\n", i, bpm, n / RATE, seam, sharpest);
+        snprintf(line, sizeof(line), "track %d closes on the beat", i);
+        check(line, (int)(RATE * 60) % bpm == 0 && n % beat == 0,
+              "its tempo does not divide the sample rate's minute");
+        snprintf(line, sizeof(line), "track %d joins no harder than it plays", i);
+        check(line, seam <= sharpest, "the join is the sharpest edge in it");
+    }
+}
+
 int main(void) {
     grid gun[4], bomb[4], blast[4];
     double slowest_gun = 0.0, quickest_bomb = 1e9;
@@ -324,6 +390,8 @@ int main(void) {
           quickest_bomb >= slowest_gun * FAMILY_RATIO &&
           quickest_bomb >= slowest_gun + FAMILY_MS,
           "a bomb arrives as fast as a bolt");
+
+    check_tracks();
 
     printf("%s\n", fails == 0 ? "ALL PASS" : "FAILED");
     return fails == 0 ? 0 : 1;

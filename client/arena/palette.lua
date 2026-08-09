@@ -165,6 +165,85 @@ function M.hot(col, k, alpha)
     }
 end
 
+-- --- a colour a side ---------------------------------------------------------
+--
+-- Cyan and orange say "mine" and "not mine", which is the call a pilot makes
+-- in a tenth of a second and the reason those two are separated by hue and by
+-- luminance both. They do not say *which* not-mine, and in a room holding ten
+-- sides that is a real question: three hulls converging is one thing if they
+-- are one squad and another thing if they are three strangers.
+--
+-- So a side also gets a colour of its own, generated rather than listed,
+-- because a zone deals sides out at runtime and a table of eight would run
+-- out. It is derived from the team byte alone, so every client agrees without
+-- anything being sent.
+--
+-- Where it is *not* used matters as much. Hulls, plates and rounds keep the
+-- two-colour reading: this is worn by names and by the panels that talk about
+-- people, which are read rather than glanced at. A hull that came in ten hues
+-- would be a hull whose side takes a moment to work out, and the moment is
+-- the whole game.
+local function hsv(h, s, v)
+    local c = v * s
+    local hh = (h % 360) / 60
+    local x = c * (1 - math.abs(hh % 2 - 1))
+    local r, g, b = 0, 0, 0
+    if hh < 1 then r, g, b = c, x, 0
+    elseif hh < 2 then r, g, b = x, c, 0
+    elseif hh < 3 then r, g, b = 0, c, x
+    elseif hh < 4 then r, g, b = 0, x, c
+    elseif hh < 5 then r, g, b = x, 0, c
+    else r, g, b = c, 0, x end
+    local m = v - c
+    return {r + m, g + m, b + m, 1}
+end
+
+-- The arc FRIEND sits in, kept clear so no side is issued a cyan: cyan is
+-- reserved for yours, and an enemy wearing it is the one mistake this whole
+-- scheme could make. FRIEND is 194 degrees, and forty-five degrees around it
+-- is wide enough that nothing lands near.
+local TEAM_GAP_LO, TEAM_GAP_HI = 172, 217
+local TEAM_ARC = 360 - (TEAM_GAP_HI - TEAM_GAP_LO)
+-- Golden angle, so consecutive bytes are far apart and the whole set stays
+-- spread however many sides a room ends up holding. A hue wheel walked in
+-- even steps only looks even for the count it was cut for.
+local PHI = 0.6180339887498949
+local team_cache = {}
+
+-- How bright a colour actually is, which is not what its value says. A hue
+-- wheel walked at one saturation is not walked at one brightness: the eye
+-- takes a fifth of its luminance from blue and seven tenths from green, so a
+-- pure blue at full value is half the colour a pure yellow is, and on a black
+-- field it is the one nobody can read.
+local function luma(c)
+    local function lin(v)
+        return v <= 0.04045 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4
+    end
+    return 0.2126 * lin(c[1]) + 0.7152 * lin(c[2]) + 0.0722 * lin(c[3])
+end
+
+function M.team(t)
+    t = t or 0
+    local c = team_cache[t]
+    if not c then
+        local h = ((t + 1) * PHI % 1) * TEAM_ARC
+        if h >= TEAM_GAP_LO then h = h + (TEAM_GAP_HI - TEAM_GAP_LO) end
+        -- Hue is not enough on its own. Twelve of them spread over this arc
+        -- sit eighteen degrees apart at the closest, which is plenty until
+        -- the blues get walked toward white below and two of them arrive at
+        -- the same pale. So saturation carries a second reading, three steps
+        -- of it, and two sides near in hue land far apart in colour.
+        local s = ({0.66, 0.44, 0.30})[t % 3 + 1]
+        c = hsv(h, s, 1)
+        while luma(c) < 0.24 and s > 0.15 do
+            s = s - 0.04
+            c = hsv(h, s, 1)
+        end
+        team_cache[t] = c
+    end
+    return c
+end
+
 -- The rung ramp. One colour a rung, and colour on a round says nothing else:
 -- the same four for a bullet and a bomb, for yours and for theirs.
 --

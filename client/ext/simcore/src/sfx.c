@@ -124,6 +124,56 @@ static void voice_free(voice *v) {
     v->buf = NULL;
 }
 
+static void put32(unsigned char *p, uint32_t v) {
+    p[0] = (unsigned char)(v & 0xff);
+    p[1] = (unsigned char)((v >> 8) & 0xff);
+    p[2] = (unsigned char)((v >> 16) & 0xff);
+    p[3] = (unsigned char)((v >> 24) & 0xff);
+}
+
+static void put16(unsigned char *p, uint16_t v) {
+    p[0] = (unsigned char)(v & 0xff);
+    p[1] = (unsigned char)((v >> 8) & 0xff);
+}
+
+// A finished buffer as the bytes of a 16-bit mono wav, header and all. The
+// voice is freed either way.
+static unsigned char *voice_wav(voice *v, size_t *len) {
+    unsigned char *wav;
+    size_t data_bytes;
+    int i;
+
+    data_bytes = (size_t)v->n * 2;
+    wav = (unsigned char *)malloc(44 + data_bytes);
+    if (!wav) { voice_free(v); return NULL; }
+
+    memcpy(wav, "RIFF", 4);
+    put32(wav + 4, (uint32_t)(36 + data_bytes));
+    memcpy(wav + 8, "WAVEfmt ", 8);
+    put32(wav + 16, 16);                       // pcm header length
+    put16(wav + 20, 1);                        // pcm
+    put16(wav + 22, 1);                        // mono
+    put32(wav + 24, RATE);
+    put32(wav + 28, RATE * 2);                 // bytes per second
+    put16(wav + 32, 2);                        // bytes per frame
+    put16(wav + 34, 16);                       // bits per sample
+    memcpy(wav + 36, "data", 4);
+    put32(wav + 40, (uint32_t)data_bytes);
+
+    for (i = 0; i < v->n; i++) {
+        double x = v->buf[i];
+        int s;
+        if (x < -1.0) x = -1.0;
+        if (x > 1.0) x = 1.0;
+        s = (int)(x * 32767.0);
+        put16(wav + 44 + i * 2, (uint16_t)(int16_t)s);
+    }
+
+    voice_free(v);
+    *len = 44 + data_bytes;
+    return wav;
+}
+
 // Fast attack, exponential decay, silent at exactly `dur`.
 static double env(double t, double dur, double curve) {
     const double attack = 0.004;
@@ -155,7 +205,8 @@ static void v_saw(voice *v, double f0, double f1, double gain, double curve) {
     for (i = 0; i < v->n; i++) {
         double t = (double)i / RATE;
         double f = f0 + (f1 - f0) * pow(t / v->dur, curve);
-        ph = fmod(ph + f / RATE, 1.0);
+        ph += f / RATE;
+        if (ph >= 1.0) ph -= 1.0;
         v->buf[i] += (2.0 * ph - 1.0) * gain * env3(t, v->dur);
     }
 }
@@ -167,7 +218,8 @@ static void v_square(voice *v, double f0, double f1, double gain, double duty,
     for (i = 0; i < v->n; i++) {
         double t = (double)i / RATE;
         double f = f0 + (f1 - f0) * pow(t / v->dur, curve);
-        ph = fmod(ph + f / RATE, 1.0);
+        ph += f / RATE;
+        if (ph >= 1.0) ph -= 1.0;
         v->buf[i] += (ph < duty ? 1.0 : -1.0) * gain * env3(t, v->dur);
     }
 }
@@ -707,10 +759,117 @@ static void k_ui_go(voice *v) {
 // the second is restraint. So there is no melody doing anything clever, and
 // nothing in it arrives more often than the ear stops noticing.
 
-#define BPM 100
-#define BEAT (RATE * 60 / BPM)     // 13230 samples, exactly
-#define BAR (BEAT * 4)
-#define BARS 8
+// A tempo has to divide the sample rate's minute, or the loop does not close.
+//
+// A beat is RATE * 60 / BPM samples and a track is a whole number of beats, so
+// the seam lands on the downbeat only when that division is exact. 22050 * 60
+// is 1323000, which is 2^3 * 3^3 * 5^3 * 7^2, and the tempos below are the
+// divisors of it that fall where this genre lives. 96 and 112 are not among
+// them, which is worth knowing before wondering why they are absent.
+//
+// Everything else about a track is what makes eight of them eight rather than
+// one played eight times: the key, the four chords, how they are voiced, and
+// the note the lead holds over each.
+typedef struct {
+    int bpm;
+    int bars;                  // four chords, so a multiple of four
+    int root[4][2];            // what the bass walks, pitch class and octave
+    int voicing[4][3][2];      // the pad, low to high
+    int top[4][2];             // the note the lead holds
+} track;
+
+// The arpeggio is not in there because it is not a separate decision: it is
+// the pad's own three notes an octave up, played up and back down. That was
+// true of the first track before it was a table, and writing it out again per
+// track would only be an opportunity to disagree with the chord.
+
+static const track TRACKS[] = {
+    // Neon wake. A minor, i-VI-III-VII, which is the progression the whole
+    // style is built on and the reason every track in it sounds like every
+    // other. This is the one that was here before there were eight.
+    {100, 8,
+     {{9, 2}, {5, 2}, {0, 3}, {7, 2}},
+     {{{9, 3}, {0, 4}, {4, 4}},
+      {{5, 3}, {9, 3}, {0, 4}},
+      {{4, 3}, {7, 3}, {0, 4}},
+      {{2, 3}, {7, 3}, {11, 3}}},
+     {{4, 5}, {0, 5}, {7, 4}, {2, 5}}},
+
+    // Long dark. D minor, i-VII-VI-VII, and the slowest tempo the divisors
+    // allow. The bass walks down and comes back, which is most of why this one
+    // feels like waiting rather than driving.
+    {84, 8,
+     {{2, 2}, {0, 2}, {10, 1}, {0, 2}},
+     {{{2, 3}, {5, 3}, {9, 3}},
+      {{0, 3}, {4, 3}, {7, 3}},
+      {{10, 2}, {2, 3}, {5, 3}},
+      {{0, 3}, {4, 3}, {7, 3}}},
+     {{9, 4}, {7, 4}, {5, 4}, {7, 4}}},
+
+    // Coast road. E minor, i-III-VII-VI, the one progression here that spends
+    // more time major than minor and is the brightest for it.
+    {90, 8,
+     {{4, 2}, {7, 2}, {2, 2}, {0, 2}},
+     {{{4, 3}, {7, 3}, {11, 3}},
+      {{2, 3}, {7, 3}, {11, 3}},
+      {{2, 3}, {6, 3}, {9, 3}},
+      {{0, 3}, {4, 3}, {7, 3}}},
+     {{11, 4}, {2, 5}, {9, 4}, {7, 4}}},
+
+    // Cold open. C minor, i-VI-VII-VI, a progression that never resolves
+    // anywhere and just leans back and forth, which is the point of it.
+    {105, 8,
+     {{0, 2}, {8, 1}, {10, 1}, {8, 1}},
+     {{{0, 3}, {3, 3}, {7, 3}},
+      {{8, 2}, {0, 3}, {3, 3}},
+      {{10, 2}, {2, 3}, {5, 3}},
+      {{8, 2}, {0, 3}, {3, 3}}},
+     {{7, 4}, {3, 4}, {5, 4}, {0, 5}}},
+
+    // Undertow. F minor, i-VII-VI-V, four chords walking down by step onto a
+    // major fifth. The lead walks down with them, which is the only track here
+    // whose top line is a line rather than four held notes.
+    {98, 8,
+     {{5, 2}, {3, 2}, {1, 2}, {0, 2}},
+     {{{5, 3}, {8, 3}, {0, 4}},
+      {{3, 3}, {7, 3}, {10, 3}},
+      {{1, 3}, {5, 3}, {8, 3}},
+      {{0, 3}, {4, 3}, {7, 3}}},
+     {{0, 5}, {10, 4}, {8, 4}, {7, 4}}},
+
+    // Overdrive. G minor, i-VI-III-VII again but at a hundred and twenty,
+    // where the same four chords stop being wistful and start being a chase.
+    {120, 8,
+     {{7, 2}, {3, 2}, {10, 1}, {5, 2}},
+     {{{7, 3}, {10, 3}, {2, 4}},
+      {{3, 3}, {7, 3}, {10, 3}},
+      {{10, 2}, {2, 3}, {5, 3}},
+      {{5, 3}, {9, 3}, {0, 4}}},
+     {{2, 5}, {10, 4}, {5, 4}, {0, 5}}},
+
+    // Low ceiling. B minor, i-VII-VI-VII, voiced higher than the rest so it
+    // sits over an arena rather than under one.
+    {108, 8,
+     {{11, 2}, {9, 2}, {7, 2}, {9, 2}},
+     {{{11, 3}, {2, 4}, {6, 4}},
+      {{9, 3}, {1, 4}, {4, 4}},
+      {{7, 3}, {11, 3}, {2, 4}},
+      {{9, 3}, {1, 4}, {4, 4}}},
+     {{6, 5}, {4, 5}, {2, 5}, {1, 5}}},
+
+    // Redline. F sharp minor, i-VI-VII-i, the fastest tempo the divisors allow
+    // and the only progression that comes home before it repeats.
+    {126, 8,
+     {{6, 2}, {2, 2}, {4, 2}, {6, 2}},
+     {{{6, 3}, {9, 3}, {1, 4}},
+      {{2, 3}, {6, 3}, {9, 3}},
+      {{4, 3}, {8, 3}, {11, 3}},
+      {{6, 3}, {9, 3}, {1, 4}}},
+     {{1, 5}, {9, 4}, {11, 4}, {1, 5}}},
+};
+
+#define TRACK_COUNT ((int)(sizeof(TRACKS) / sizeof(TRACKS[0])))
+
 
 // Equal temperament from A4 = 440, with the pitch class given as a semitone
 // index from C.
@@ -737,7 +896,8 @@ static double *note_saw(double f, double dur, int *n_out, double decay,
     for (vi = 0; vi < nv; vi++) {
         double ph = 0.0;
         for (i = 0; i < n; i++) {
-            ph = fmod(ph + freq[vi] / RATE, 1.0);
+            ph += freq[vi] / RATE;
+            if (ph >= 1.0) ph -= 1.0;
             out[i] += (2.0 * ph - 1.0) / nv;
         }
     }
@@ -763,7 +923,8 @@ static double *note_pad(double f, double dur, int *n_out) {
         double g = freq[vi] > f * 1.5 ? 0.35 : 1.0;
         double ph = 0.0;
         for (i = 0; i < n; i++) {
-            ph = fmod(ph + freq[vi] / RATE, 1.0);
+            ph += freq[vi] / RATE;
+            if (ph >= 1.0) ph -= 1.0;
             out[i] += (2.0 * ph - 1.0) * g;
         }
     }
@@ -869,12 +1030,16 @@ static double *hat(rng *r, int *n_out) {
 // in it to hear, which is the difference between a loop and a repeat.
 static void track_at(double *dst, int n, int pos, const double *src, int len,
                      double gain) {
-    int i;
+    int i, p;
     if (!src) return;
+    // Wrapped by walking rather than by a remainder per sample. A pad is six
+    // seconds of samples and there are twelve of them in a track, so that
+    // division was a measurable slice of the whole render.
+    p = pos % n;
+    if (p < 0) p += n;
     for (i = 0; i < len; i++) {
-        int p = (pos + i) % n;
-        if (p < 0) p += n;
         dst[p] += src[i] * gain;
+        if (++p == n) p = 0;
     }
 }
 
@@ -885,132 +1050,196 @@ static void mix_free(double *dst, int n, int pos, double *src, int len,
     free(src);
 }
 
-// The soundtrack: eight bars of synthwave that come round without a seam.
+// A track, built a few milliseconds at a time.
 //
-// Nothing here is sampled either. It is the genre's own furniture put up out
-// of arithmetic, an eighth-note bass, a sixteenth arpeggio, a detuned pad and
-// four on the floor under a gated snare, over i-VI-III-VII in A minor, which
-// is the progression the whole style is built on and the reason every track in
-// it sounds like every other.
+// One of these takes about an eighth of a second to render, which is fine once
+// behind the menu at boot and not fine at all three minutes into a firefight,
+// where it is a frozen frame. So the work is cut into steps small enough to
+// hide inside a frame, and the client builds the next track while the current
+// one is still playing.
 //
-// Two things make it loop rather than restart. Everything is mixed in through
-// track_at, which wraps. And a hundred beats a minute at 22050 is 13230
-// samples a beat exactly, so eight bars is a whole number of samples and the
-// seam lands on the downbeat rather than a hair off it.
-//
-// It is most of the work on its own, nineteen seconds against a fifth of a
-// second, and the obvious economy is to render it at a lower rate, since there
-// is nothing in it above eight kilohertz except the hats. That does not work:
-// the engine plays 22050 and 44100 and nothing else, and a buffer at any other
-// rate is accepted without complaint and silent. Measured, not read.
-static void k_music(voice *v) {
-    // The root, the arpeggio cell it is played through, the pad voicing, and
-    // the note the lead holds over it. Pitch classes are semitones from C.
-    static const int ROOT[4][2] = {{9, 2}, {5, 2}, {0, 3}, {7, 2}};
-    static const int CELL[4][4][2] = {
-        {{9, 4}, {0, 5}, {4, 5}, {0, 5}},
-        {{5, 4}, {9, 4}, {0, 5}, {9, 4}},
-        {{4, 4}, {7, 4}, {0, 5}, {7, 4}},
-        {{2, 4}, {7, 4}, {11, 4}, {7, 4}},
-    };
-    static const int VOICING[4][3][2] = {
-        {{9, 3}, {0, 4}, {4, 4}},
-        {{5, 3}, {9, 3}, {0, 4}},
-        {{4, 3}, {7, 3}, {0, 4}},
-        {{2, 3}, {7, 3}, {11, 3}},
-    };
-    static const int TOP[4][2] = {{4, 5}, {0, 5}, {7, 4}, {2, 5}};
-
-    // BAR * BARS by construction, taken from the buffer so a wrap can never
-    // land outside it.
-    int n = v->n;
-    double *drums = (double *)calloc((size_t)n, sizeof(double));
-    double *bed = v->buf;
+// The steps are the score's own units: a pad voice, a lead note, a bar of
+// bass, a bar of arpeggio, a bar of drums. None of them is longer than about
+// four milliseconds. The order they are visited in is the order the old
+// single-call renderer visited them, which matters for exactly one reason:
+// the drums draw from a seeded generator, so a bar of drums rendered out of
+// turn would be a different bar of drums.
+struct sfx_music_job {
+    const track *t;
+    int beat, bar, bars_per_chord, n;
+    int step, steps;
+    voice v;
+    double *drums;
     rng r;
-    int c, bar, e, s, beat, i, len;
+    int ok;
+};
 
-    if (!drums) return;
-    rng_seed(&r, 20250802);
+// Per chord: three pad voices, a lead, and then bass, arpeggio and drums for
+// each of its bars. Then two to finish: the turnaround with the sidechain, and
+// the drums with the drive over the top.
+static int job_per_chord(const sfx_music_job *j) {
+    return 4 + 3 * j->bars_per_chord;
+}
 
-    for (c = 0; c < 4; c++) {
-        int base = c * 2 * BAR;
-        double root = nf(ROOT[c][0], ROOT[c][1]);
+sfx_music_job *sfx_music_begin(int i) {
+    sfx_music_job *j;
+    if (i < 0 || i >= TRACK_COUNT) return NULL;
+    j = (sfx_music_job *)calloc(1, sizeof(*j));
+    if (!j) return NULL;
+    j->t = &TRACKS[i];
+    j->beat = RATE * 60 / j->t->bpm;
+    j->bar = j->beat * 4;
+    j->bars_per_chord = j->t->bars / 4;
+    j->n = j->bar * j->t->bars;
+    j->steps = 4 * job_per_chord(j) + 2;
+    j->ok = voice_init(&j->v, (double)j->n / RATE);
+    j->drums = (double *)calloc((size_t)(j->n > 0 ? j->n : 1), sizeof(double));
+    if (!j->drums) j->ok = 0;
+    rng_seed(&j->r, 20250802);
+    return j;
+}
 
-        // Pad: one chord held across its two bars, arriving before the bar it
+// One chord's worth of the four voices that are not drums.
+static void job_chord(sfx_music_job *j, int c, int k) {
+    const track *t = j->t;
+    int base = c * j->bars_per_chord * j->bar;
+    double *bed = j->v.buf;
+    int len;
+
+    if (k < 3) {
+        // Pad: one chord held across its bars, arriving before the bar it
         // belongs to so the change is a swell rather than an edit.
-        for (i = 0; i < 3; i++) {
-            double *p = note_pad(nf(VOICING[c][i][0], VOICING[c][i][1]),
-                                 2.0 * BAR / RATE + 0.5, &len);
-            mix_free(bed, n, base - (int)(0.12 * RATE), p, len, 0.16);
-        }
+        double *p = note_pad(nf(t->voicing[c][k][0], t->voicing[c][k][1]),
+                             (double)(j->bars_per_chord * j->bar) / RATE + 0.5,
+                             &len);
+        mix_free(bed, j->n, base - (int)(0.12 * RATE), p, len, 0.16);
+        return;
+    }
+    if (k == 3) {
+        // Lead: one note, most of the chord, and then out of the way.
+        double *l = note_lead(nf(t->top[c][0], t->top[c][1]),
+                              (double)(j->bars_per_chord * j->bar - j->beat) /
+                                  RATE, &len);
+        mix_free(bed, j->n, base + j->beat, l, len, 0.10);
+        return;
+    }
+    {
+        int bar = (k - 4) / 3, which = (k - 4) % 3;
+        int b0 = base + bar * j->bar;
+        double root = nf(t->root[c][0], t->root[c][1]);
+        int e, s, beat;
 
-        // Lead: one note, most of the two bars, and then out of the way.
-        {
-            double *l = note_lead(nf(TOP[c][0], TOP[c][1]),
-                                  2.0 * BAR / RATE - (double)BEAT / RATE, &len);
-            mix_free(bed, n, base + BEAT, l, len, 0.10);
-        }
-
-        for (bar = 0; bar < 2; bar++) {
-            int b0 = base + bar * BAR;
-
+        if (which == 0) {
             // Bass on the eighths, up an octave for the last one, which is
             // what stops a driving bassline from being a drone.
             for (e = 0; e < 8; e++) {
                 double f = root * (e == 7 ? 2.0 : 1.0);
                 double *lo = note_saw(f, 0.30, &len, 5.0, 900.0, 0.0);
-                mix_free(bed, n, b0 + e * BEAT / 2, lo, len, 0.50);
+                mix_free(bed, j->n, b0 + e * j->beat / 2, lo, len, 0.50);
                 lo = note_saw(f / 2.0, 0.26, &len, 6.0, 420.0, 0.0);
-                mix_free(bed, n, b0 + e * BEAT / 2, lo, len, 0.22);
+                mix_free(bed, j->n, b0 + e * j->beat / 2, lo, len, 0.22);
             }
-
-            // Arpeggio on the sixteenths, the cell four times a bar.
+        } else if (which == 1) {
+            // Arpeggio on the sixteenths: the pad's own notes an octave up,
+            // up and back down, four times a bar.
+            static const int UPDOWN[4] = {0, 1, 2, 1};
             for (s = 0; s < 16; s++) {
-                double f = nf(CELL[c][s % 4][0], CELL[c][s % 4][1]) *
-                           ((bar == 1 && s >= 12) ? 2.0 : 1.0);
-                // A beat is 13230 samples, so a sixteenth is 3307.5 and the
-                // grid has to be computed from the beat rather than from a
-                // rounded sixteenth. Multiplying a truncated 3307 instead
-                // walks the arpeggio off the beat by half a sample per step.
+                const int *note = t->voicing[c][UPDOWN[s % 4]];
+                double f = nf(note[0], note[1] + 1) *
+                           ((bar == j->bars_per_chord - 1 && s >= 12) ? 2.0
+                                                                     : 1.0);
+                // A beat at a hundred is 13230 samples, so a sixteenth is
+                // 3307.5 and the grid has to be computed from the beat rather
+                // than from a rounded sixteenth. Multiplying a truncated 3307
+                // instead walks the arpeggio off the beat by half a sample a
+                // step.
                 double *a = note_saw(f, 0.20, &len, 9.0, 3000.0, 0.006);
-                mix_free(bed, n, b0 + s * BEAT / 4, a, len,
+                mix_free(bed, j->n, b0 + s * j->beat / 4, a, len,
                          (s % 2) ? 0.16 : 0.22);
             }
-
+        } else {
             // Four on the floor, snare on two and four, hats on the eighths
             // with the weight on the off-beat.
             for (beat = 0; beat < 4; beat++) {
-                double *d = kick(&r, &len);
-                mix_free(drums, n, b0 + beat * BEAT, d, len, 0.80);
+                double *d = kick(&j->r, &len);
+                mix_free(j->drums, j->n, b0 + beat * j->beat, d, len, 0.80);
                 if (beat % 2 == 1) {
-                    d = snare(&r, &len);
-                    mix_free(drums, n, b0 + beat * BEAT, d, len, 0.34);
+                    d = snare(&j->r, &len);
+                    mix_free(j->drums, j->n, b0 + beat * j->beat, d, len, 0.34);
                 }
-                d = hat(&r, &len);
-                mix_free(drums, n, b0 + beat * BEAT, d, len, 0.09);
-                d = hat(&r, &len);
-                mix_free(drums, n, b0 + beat * BEAT + BEAT / 2, d, len, 0.16);
+                d = hat(&j->r, &len);
+                mix_free(j->drums, j->n, b0 + beat * j->beat, d, len, 0.09);
+                d = hat(&j->r, &len);
+                mix_free(j->drums, j->n, b0 + beat * j->beat + j->beat / 2, d,
+                         len, 0.16);
             }
         }
     }
-
-    // The turnaround: one extra snare on the last off-beat, so the eighth bar
-    // points at the first instead of merely stopping next to it.
-    {
-        double *d = snare(&r, &len);
-        mix_free(drums, n, n - BEAT / 2, d, len, 0.30);
-    }
-
-    // Sidechain. Everything but the drums ducks under each kick and comes back
-    // over the beat, which is the breathing this music is mostly made of.
-    for (i = 0; i < n; i++) {
-        double x = (double)(i % BEAT) / BEAT;
-        bed[i] *= 0.55 + 0.45 * pow(dmin(1.0, x / 0.45), 0.6);
-    }
-    for (i = 0; i < n; i++) bed[i] += drums[i];
-    free(drums);
-    v_drive(v, 1.15);
 }
+
+int sfx_music_step(sfx_music_job *j) {
+    int per, len, i;
+    if (!j) return 1;
+    if (!j->ok || j->step >= j->steps) { j->step = j->steps; return 1; }
+    per = job_per_chord(j);
+
+    if (j->step < 4 * per) {
+        job_chord(j, j->step / per, j->step % per);
+    } else if (j->step == 4 * per) {
+        // The turnaround: one extra snare on the last off-beat, so the last
+        // bar points at the first instead of merely stopping next to it.
+        double *d = snare(&j->r, &len);
+        mix_free(j->drums, j->n, j->n - j->beat / 2, d, len, 0.30);
+
+        // Sidechain. Everything but the drums ducks under each kick and comes
+        // back over the beat, which is the breathing this music is mostly made
+        // of. The shape repeats every beat, so it is worth computing once: the
+        // pow it is built from was a twentieth of the render on its own.
+        {
+            double *duck = (double *)malloc((size_t)j->beat * sizeof(double));
+            if (duck) {
+                for (i = 0; i < j->beat; i++) {
+                    double x = (double)i / j->beat;
+                    duck[i] = 0.55 + 0.45 * pow(dmin(1.0, x / 0.45), 0.6);
+                }
+                for (i = 0; i < j->n; i++) j->v.buf[i] *= duck[i % j->beat];
+                free(duck);
+            }
+        }
+    } else {
+        for (i = 0; i < j->n; i++) j->v.buf[i] += j->drums[i];
+        v_drive(&j->v, 1.15);
+    }
+    j->step++;
+    return j->step >= j->steps;
+}
+
+static void job_free(sfx_music_job *j) {
+    if (!j) return;
+    voice_free(&j->v);
+    free(j->drums);
+    free(j);
+}
+
+unsigned char *sfx_music_take(sfx_music_job *j, size_t *len) {
+    unsigned char *wav = NULL;
+    if (j && j->ok && j->step >= j->steps) {
+        v_normalise(&j->v);              // a loop must not fade
+        wav = voice_wav(&j->v, len);
+    }
+    job_free(j);
+    return wav;
+}
+
+void sfx_music_cancel(sfx_music_job *j) { job_free(j); }
+
+int sfx_music_count(void) { return TRACK_COUNT; }
+
+int sfx_music_bpm(int i) {
+    if (i < 0 || i >= TRACK_COUNT) return 0;
+    return TRACKS[i].bpm;
+}
+
 
 // --- rendering -------------------------------------------------------------
 
@@ -1050,7 +1279,10 @@ static const entry KIT[] = {
     {"thrust",  0.5,   1, k_thrust},
     {"ui_move", 0.035, 0, k_ui_move},
     {"ui_go",   0.16,  0, k_ui_go},
-    {"music",   (double)(BAR * BARS) / RATE, 1, k_music},
+    // The soundtrack has a component and no maker: which of the eight tracks
+    // is in it changes while the game runs, so it is built through
+    // sfx_music_begin rather than rendered from a name.
+    {"music",   0.0,   1, NULL},
 };
 
 #define KIT_COUNT ((int)(sizeof(KIT) / sizeof(KIT[0])))
@@ -1071,63 +1303,22 @@ int sfx_is_loop(const char *name) {
     return 0;
 }
 
-static void put32(unsigned char *p, uint32_t v) {
-    p[0] = (unsigned char)(v & 0xff);
-    p[1] = (unsigned char)((v >> 8) & 0xff);
-    p[2] = (unsigned char)((v >> 16) & 0xff);
-    p[3] = (unsigned char)((v >> 24) & 0xff);
-}
-
-static void put16(unsigned char *p, uint16_t v) {
-    p[0] = (unsigned char)(v & 0xff);
-    p[1] = (unsigned char)((v >> 8) & 0xff);
-}
-
 unsigned char *sfx_render(const char *name, size_t *len) {
     const entry *k = NULL;
     voice v;
-    unsigned char *wav;
-    size_t data_bytes;
     int i;
 
     for (i = 0; i < KIT_COUNT; i++) {
         if (strcmp(KIT[i].name, name) == 0) { k = &KIT[i]; break; }
     }
-    if (!k || !voice_init(&v, k->dur)) return NULL;
+    // A name with no maker is a component the kit fills some other way: the
+    // soundtrack, which is built a step at a time by sfx_music_step.
+    if (!k || !k->make || !voice_init(&v, k->dur)) return NULL;
     k->make(&v);
 
     // A loop must not fade: the fade is a hole in the middle of the sound once
     // the buffer is played end to end.
     if (!k->loop) v_fade_out(&v);
     v_normalise(&v);
-
-    data_bytes = (size_t)v.n * 2;
-    wav = (unsigned char *)malloc(44 + data_bytes);
-    if (!wav) { voice_free(&v); return NULL; }
-
-    memcpy(wav, "RIFF", 4);
-    put32(wav + 4, (uint32_t)(36 + data_bytes));
-    memcpy(wav + 8, "WAVEfmt ", 8);
-    put32(wav + 16, 16);                       // pcm header length
-    put16(wav + 20, 1);                        // pcm
-    put16(wav + 22, 1);                        // mono
-    put32(wav + 24, RATE);
-    put32(wav + 28, RATE * 2);                 // bytes per second
-    put16(wav + 32, 2);                        // bytes per frame
-    put16(wav + 34, 16);                       // bits per sample
-    memcpy(wav + 36, "data", 4);
-    put32(wav + 40, (uint32_t)data_bytes);
-
-    for (i = 0; i < v.n; i++) {
-        double x = v.buf[i];
-        int s;
-        if (x < -1.0) x = -1.0;
-        if (x > 1.0) x = 1.0;
-        s = (int)(x * 32767.0);
-        put16(wav + 44 + i * 2, (uint16_t)(int16_t)s);
-    }
-
-    voice_free(&v);
-    *len = 44 + data_bytes;
-    return wav;
+    return voice_wav(&v, len);
 }

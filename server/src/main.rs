@@ -1074,12 +1074,24 @@ impl Arena {
         }
     }
 
+    /// An arrival with nothing to say about which side they land on, which is
+    /// every arrival that did not just get up out of a chair in this room.
+    fn join(&mut self, seat: Seat, class: u8, max_players: usize,
+            tx: mpsc::Sender<Message>) -> Option<u64> {
+        self.join_on(seat, class, max_players, None, tx)
+    }
+
     /// `max_players` is the zone's, which used to be a constant here while the
     /// key in the file was read by nobody. It bounds humans; the room's own size
     /// is `arena.max_ships` and the two are different questions, since a wide
     /// room with a small player cap is a zone that wants mostly bots.
-    fn join(&mut self, seat: Seat, class: u8, max_players: usize,
-            tx: mpsc::Sender<Message>) -> Option<u64> {
+    ///
+    /// `prefer` is a side this pilot already belongs to, which a watcher taking
+    /// a hull has and nobody else does. It is honoured while the side exists and
+    /// has room, and ignored otherwise rather than refused: a watcher whose side
+    /// filled up while they sat out is still a player who wants to fly.
+    fn join_on(&mut self, seat: Seat, class: u8, max_players: usize,
+               prefer: Option<u8>, tx: mpsc::Sender<Message>) -> Option<u64> {
         let name = seat.name.clone();
         let bot = seat.bot;
         // The cap is on people. A declared bot passes it by, which is the whole
@@ -1114,10 +1126,15 @@ impl Arena {
         self.world.state.ships[ship as usize].deaths = 0;
 
         // Which side an arrival lands on is the room's answer, not the
-        // client's: the emptiest of the zone's own that has room, or a side of
-        // their own where the zone names none. Moving is then one selection
-        // away in the team list, and only a full side can refuse it.
-        let team = self.seat_team(ship, seat.bot);
+        // client's: the side they already hold if they hold one, else the
+        // emptiest of the zone's own that has room, or a side of their own
+        // where the zone names none. Moving is then one selection away in the
+        // team list, and only a full side can refuse it.
+        let team = match prefer {
+            Some(t) if self.teams.contains_key(&t)
+                && self.team_has_room(t, bot, Some(ship)) => t,
+            _ => self.seat_team(ship, seat.bot),
+        };
         // Where a fresh pilot starts, worked out before anything about them is
         // set: a seat is furniture, and its last occupant does not come with
         // it.
@@ -1389,6 +1406,19 @@ impl Arena {
         // the honest answer to both: in a free-for-all it is the whole design,
         // and in a full room it beats refusing a pilot who has a seat.
         self.found_team(joining).unwrap_or(0)
+    }
+
+    /// Where a watcher belongs. The same question `seat_team` answers for a
+    /// pilot, asked by somebody holding no hull: a watcher occupies no seat, so
+    /// the per-side caps have nothing to weigh here and the emptiest of the
+    /// zone's own sides is the whole rule. Room is checked when they fly, which
+    /// is the moment it starts to mean anything.
+    ///
+    /// A free-for-all has no such sides, and the answer there is none. Every
+    /// pilot is a private side of one, so there is no side for an arrival to
+    /// share and nothing but the room channel to see.
+    fn watch_team(&self) -> Option<u8> {
+        (0..self.public_teams).min_by_key(|t| self.team_census(*t, None).0)
     }
 
     /// A new private side, named and empty, or none when the room already
@@ -1686,8 +1716,17 @@ impl Arena {
         }
     }
 
-    /// A client that arrived to watch. No side, so no live follow: the
-    /// channel is the whole of what a stranger at the door can see.
+    /// A client that arrived to watch. They are seated on a side at the door,
+    /// the same as anybody else who walks in: watching is a way of being in
+    /// this room rather than a lobby beside it. So the sight rule has a side to
+    /// check a follow against, and the team list has one to call theirs.
+    ///
+    /// Arriving to watch used to hand out no side at all, on the reasoning that
+    /// somebody who never flew here sat out from nowhere. What that produced
+    /// was a spectator alone off the edge of a room's two teams, shown every
+    /// hull as an enemy's and offered no live sight of any of them, while the
+    /// same person joining in a hull and then sitting out kept their side and
+    /// everything that came with it.
     fn watch_join(
         &mut self,
         seat: Seat,
@@ -1699,13 +1738,14 @@ impl Arena {
         }
         let id = self.next_id;
         self.next_id += 1;
+        let team = self.watch_team();
         self.watchers.insert(
             id,
-            Watcher { seat, team: None, any, mode: WatchMode::Channel, tx },
+            Watcher { seat, team, any, mode: WatchMode::Channel, tx },
         );
-        // A side of 255, which is the honest answer for somebody who arrived
-        // to watch: they sat out from nowhere, so no hull here is theirs to
-        // follow and the interface offers none.
+        // The room feed is still what they open on, since they have asked to
+        // watch nobody in particular yet. Their side is what makes the asking
+        // possible.
         self.broadcast_teams();
         Some(id)
     }
@@ -1714,10 +1754,17 @@ impl Arena {
     /// eviction, the spawn kit, the team seating. The watcher row goes only
     /// once the seat is real, so a room that filled while they sat out
     /// refuses and leaves them watching.
+    ///
+    /// The side they were watching with goes in as a preference rather than
+    /// being re-picked from scratch, because it was theirs the whole time they
+    /// sat there: the team list said so and the follow rule enforced it. Losing
+    /// it on the way back into a cockpit would move a pilot across the room for
+    /// having watched a minute of it.
     fn fly(&mut self, id: u64, class: u8, max_players: usize) -> Option<u64> {
         let seat = self.watchers.get(&id)?.seat.clone();
         let tx = self.watchers.get(&id)?.tx.clone();
-        let new_id = self.join(seat, class, max_players, tx.clone())?;
+        let back = self.watchers.get(&id)?.team;
+        let new_id = self.join_on(seat, class, max_players, back, tx.clone())?;
         self.watchers.remove(&id);
         let ship = self.players[&new_id].ship;
         let mut m = vec![S2C_WELCOME, ship];
@@ -2262,10 +2309,12 @@ impl Arena {
     /// The same list as a watcher sees it.
     ///
     /// They need it for one thing the flying version is also for: knowing
-    /// which side is theirs. A watcher sat out from somewhere, and that side
-    /// is what decides whose hull they may ask to follow, so without this the
-    /// interface cannot tell a lawful ask from one that will fall to the
-    /// channel and has to either offer every pilot or none.
+    /// which side is theirs. Every watcher has one, whether they sat out from
+    /// it or were seated on it at the door, and it is what decides whose hull
+    /// they may ask to follow, so without this the interface cannot tell a
+    /// lawful ask from one that will fall to the channel and has to either
+    /// offer every pilot or none. The exception is a free-for-all, where there
+    /// are no shared sides to be on and 255 is the truth.
     ///
     /// No doors in it. Every `may_join` is zero and so is the found byte,
     /// because a watcher crosses nothing while watching: taking a hull again
@@ -3214,6 +3263,71 @@ fn run_calibration() {
     }
 }
 
+/// Price each stage of the tech tree, in win probability.
+///
+///     vectorwake-server calibrate stages [bouts] [hull] [zone] [dir]
+///
+/// `zone` names a room in the catalog beside the binary and takes its arena
+/// block, because a zone owns its weapon table and its add-on steps: what
+/// multifire costs is Alpha's answer, not the core's. Omit it, or pass
+/// `baseline`, to measure the roster as this binary compiled it. Either way the
+/// map stays the pit, since the zone's own map would put a thousand tiles of
+/// looking for each other into a measurement of a loadout.
+///
+/// Unlike the ladder, this writes nothing anybody loads. `stages.json` is a
+/// measurement to diff a tuning change against, which is why it lands wherever
+/// you point it rather than in the zone directory beside `ladder.json`: that
+/// file is an input, and a reader should not have to work out which is which.
+fn run_stage_tournament() {
+    let bouts: u32 = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(6);
+    let hull = std::env::args().nth(4).unwrap_or_else(|| "Apex".into());
+    let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
+    let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
+    let Some(class) = ai::class_index(&hull) else {
+        println!("no hull named {hull:?}; the roster is {}", ai::CLASS_NAMES.join(", "));
+        std::process::exit(1);
+    };
+
+    // A named zone that cannot be found is a stop rather than a fallback. The
+    // whole reason to name one is that its numbers differ from the baseline's,
+    // so quietly measuring the baseline instead would answer a question nobody
+    // asked and label the answer with the zone.
+    let tuning = if zone == "baseline" {
+        None
+    } else {
+        let cat = match catalog::load("catalog") {
+            Ok(c) => c,
+            Err(e) => {
+                println!("stages: {e}");
+                std::process::exit(1);
+            }
+        };
+        let Some(def) = cat.zone(&zone) else {
+            println!("stages: no zone named {zone:?} in the catalog");
+            std::process::exit(1);
+        };
+        Some(def.arena.clone())
+    };
+
+    // One skill on both sides. Which value hardly matters while the parameter
+    // does not separate pilots (see the ignored test in calibrate.rs), and the
+    // middle of the roster's range is the honest place to stand until it does.
+    const SKILL: f32 = 0.50;
+    println!(
+        "pricing {} stages on a {hull} under {zone} tuning: {} pairs, {bouts} bouts each",
+        calibrate::STAGES.len(),
+        calibrate::STAGES.len() * (calibrate::STAGES.len() + 1) / 2
+    );
+    let rows = calibrate::run_stages(class as u8, SKILL, bouts, tuning.as_ref(), true);
+    let doc = calibrate::report_stages(&rows, &hull, SKILL, bouts, &zone);
+
+    let path = format!("{dir}/stages.json");
+    match std::fs::write(&path, serde_json::to_string_pretty(&doc).expect("serialize")) {
+        Ok(()) => println!("\nwrote {path}"),
+        Err(e) => println!("\ncould not write {path}: {e}"),
+    }
+}
+
 /// Where the directories are. `VW_DIRECTORY` names a host, which is resolved,
 /// so one hostname with several records is a whole deployment and a directory can
 /// be added or moved without touching an arena server. That is the DNS decision
@@ -3327,7 +3441,14 @@ async fn main() {
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("calibrate") {
-        run_calibration();
+        // What the ladder holds still is the tech tree, so it can never price
+        // one. That is this, the same harness with the pilots held still and
+        // the kit varying instead.
+        if std::env::args().nth(2).as_deref() == Some("stages") {
+            run_stage_tournament();
+        } else {
+            run_calibration();
+        }
         return;
     }
     // What the ladder cannot see: the roster on a real map, with walls in it.
@@ -5675,7 +5796,7 @@ mod tests {
     }
 
     #[test]
-    fn a_watcher_is_told_which_side_they_sat_out_from() {
+    fn a_watcher_is_told_which_side_is_theirs() {
         // The interface offers to follow a hull only where the zone would
         // grant it, which is your own side, so a watcher who does not know
         // their own side has to offer every pilot or none. Walked the way
@@ -5698,11 +5819,98 @@ mod tests {
         }
         assert_eq!(o, m.len(), "the reader lands on the end, not near it");
 
-        // Somebody who arrived to watch sat out from nowhere, and 255 is a
-        // side no hull is on, so the interface offers them nobody.
+        // And somebody who arrived to watch gets the same message with a real
+        // side in it, because they were seated on one at the door.
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
         let w = a.watch_join(Seat::guest("stranger", false), false, tx).unwrap();
+        let theirs = a.watcher_teams_msg(&a.watchers[&w])[1];
+        assert!(a.teams.get(&theirs).is_some_and(|t| t.public));
+    }
+
+    #[test]
+    fn arriving_to_watch_seats_you_the_way_arriving_to_fly_does() {
+        // Reported from Alpha: joining as a spectator left you off the sides
+        // entirely, while joining in a hull and then sitting out kept the side
+        // you were on. Two doors into the same room, two different answers to
+        // "whose side am I on", and the one the spectator got made every hull
+        // in the room read as an enemy's.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let one = seat_human(&mut a, "one");
+        let taken = a.world.state.ships[one as usize].team;
+
+        let (tx, _keep) = mpsc::channel(OUT_QUEUE);
+        let w = a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        let side = a.watchers[&w].team.expect("a side, the same as any arrival");
+        assert!(a.teams[&side].public, "one of the zone's own, not a private one");
+        assert_ne!(side, taken, "the emptier one, which is how a pilot lands too");
+        // And they weigh nothing while they sit there: a watcher holds no seat,
+        // so the balance the caps measure cannot see them.
+        assert_eq!(a.team_census(side, None), (0, 0));
+
+        // Which is what the side is for. A hull arriving on it is now theirs to
+        // follow live, where before the ask fell through to the room channel.
+        let mate = seat_human(&mut a, "mate");
+        assert_eq!(a.world.state.ships[mate as usize].team, side);
+        a.set_watch(w, mate);
+        assert_eq!(a.watchers[&w].mode, WatchMode::Follow(mate));
+    }
+
+    #[test]
+    fn a_free_for_all_still_seats_a_watcher_nowhere() {
+        // The one room where having no side is the truth rather than a hole:
+        // every pilot is a private side of one, so there is nothing to share
+        // and the channel is the whole of what anybody watching can see.
+        let mut a = room_with_teams("teams = []\n");
+        assert!(a.free_for_all());
+        let target = seat_human(&mut a, "flying");
+        let (tx, _keep) = mpsc::channel(OUT_QUEUE);
+        let w = a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        assert_eq!(a.watchers[&w].team, None);
         assert_eq!(a.watcher_teams_msg(&a.watchers[&w])[1], 255);
+        a.set_watch(w, target);
+        assert_eq!(a.watchers[&w].mode, WatchMode::Channel, "and no live sight");
+    }
+
+    #[test]
+    fn taking_a_hull_again_lands_you_back_on_the_side_you_watched_with() {
+        // Sitting out and flying again used to move you across the room: `fly`
+        // went through the same seating an arrival gets, so it re-picked the
+        // emptiest side and the side you had spent the last minute watching
+        // with counted for nothing.
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let (ship, id, _rx) = seat_rx(&mut a, "pilot");
+        // On the second side, which is the one a fresh arrival into this room
+        // would not pick: a tie goes to the first.
+        a.world.state.ships[ship as usize].team = 1;
+
+        assert!(a.sit_out(id, 255, false));
+        assert_eq!(a.watchers[&id].team, Some(1));
+        assert_eq!(a.seat_team(ship, false), 0, "what a re-pick would have said");
+
+        let new_id = a.fly(id, 0, 16).expect("a seat was free");
+        let back = a.players[&new_id].ship;
+        assert_eq!(a.world.state.ships[back as usize].team, 1, "their own side");
+    }
+
+    #[test]
+    fn a_side_that_filled_up_while_you_watched_does_not_refuse_you_the_room() {
+        // The preference is a preference. A watcher whose side took on its last
+        // permitted pilot while they sat there is still somebody who wants to
+        // fly, so the seating falls back to the ordinary rule rather than
+        // holding them in the gallery.
+        let mut a = room_with_teams(
+            "teams = [\"Keel\", \"Vantage\"]\nmax_humans_per_team = 1\n",
+        );
+        let (ship, id, _rx) = seat_rx(&mut a, "pilot");
+        let mine = a.world.state.ships[ship as usize].team;
+        assert!(a.sit_out(id, 255, false));
+
+        let taker = seat_human(&mut a, "taker");
+        assert_eq!(a.world.state.ships[taker as usize].team, mine, "their chair");
+
+        let new_id = a.fly(id, 0, 16).expect("a seat was free");
+        let back = a.players[&new_id].ship;
+        assert_ne!(a.world.state.ships[back as usize].team, mine, "the other side");
     }
 
     #[test]

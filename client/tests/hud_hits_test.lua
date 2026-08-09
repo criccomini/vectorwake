@@ -356,6 +356,71 @@ check("your side comes first, then the rest, each alphabetical",
       table.concat(order, ","))
 ui.details = false
 
+-- --- and it carries four numbers in 248 points ------------------------------
+--
+-- Kills, deaths, points and bounty, right-aligned off the panel's edge, with a
+-- name and a bot mark to the left of them. Points is the wide one: five digits
+-- after a long session, where the rest are two or three. Fixed offsets fitted
+-- three columns and could not fit four, so the widths are measured off the
+-- numbers in the room, and this is the question a fixed offset got wrong.
+--
+-- Asked with the widest row a room can produce. Everything on it is either
+-- left- or right-pivoted text, so the spans are exact, and none of them may
+-- touch: a scoreboard whose columns collide reads as one long number.
+
+ui.details = true
+ui.sort = "name"
+room.teams = {[0] = 1, 1, 1, 1}
+local kills, deaths, points, bounty =
+    sim.ship_kills, sim.ship_deaths, sim.ship_points, sim.ship_bounty
+sim.ship_kills = function(i) return i == 1 and 137 or 1 end
+sim.ship_deaths = function(i) return i == 1 and 118 or 1 end
+sim.ship_points = function(i) return i == 1 and 12750 or 1 end
+sim.ship_bounty = function(i) return i == 1 and 812 or 1 end
+frame({pilots = {[0] = {name = "aaa", label = "human"},
+                 [1] = {name = "Wintermute-99", label = "bot", ai = true},
+                 [2] = {name = "ccc", label = "human"},
+                 [3] = {name = "ddd", label = "human"}}})
+do
+    local st = package.loaded["arena.state"]
+    -- The widest row, found by its points, and then everything sharing its
+    -- baseline inside the panel. Bottom-up, so one y is one row.
+    local row_y
+    for k = 1, st.n do
+        local t = st.text[k]
+        if t.s == "12750" and t.x < 300 then row_y = t.y end
+    end
+    local span = {}
+    for k = 1, st.n do
+        local t = st.text[k]
+        if t.y == row_y and t.x < 300 then
+            local wide = #t.s * t.px * (1233 / 2048)
+            local x0 = t.pivot == "right" and (t.x - wide) or t.x
+            span[#span + 1] = {s = t.s, x0 = x0, x1 = x0 + wide}
+        end
+    end
+    table.sort(span, function(a, b) return a.x0 < b.x0 end)
+    check("the widest row draws a name and four numbers", #span == 5,
+          "drew " .. #span)
+    for k = 2, #span do
+        check(string.format("%s clears %s", span[k].s, span[k - 1].s),
+              span[k].x0 >= span[k - 1].x1,
+              string.format("%.1f into %.1f", span[k].x0, span[k - 1].x1))
+    end
+    -- The bot mark has a column of its own between the name and the kills, so
+    -- the marks line up down the list rather than trailing each name. It is
+    -- drawn rather than written, so what is measurable here is the gap the
+    -- name gives up for it: MARK_K plus the gap either side.
+    if #span == 5 then
+        check("the name leaves the mark its column",
+              span[2].x0 - span[1].x1 >= 11 + 7,
+              string.format("%.1f of gap", span[2].x0 - span[1].x1))
+    end
+end
+sim.ship_kills, sim.ship_deaths = kills, deaths
+sim.ship_points, sim.ship_bounty = points, bounty
+ui.details = false
+
 -- --- the feed is bounded ---------------------------------------------------
 
 -- Twelve lines offered, five drawn. The cap is the interface's, and the arena
@@ -369,21 +434,22 @@ check("the feed is capped at FEED_MAX", ui.FEED_MAX == 5,
       "FEED_MAX is " .. tostring(ui.FEED_MAX))
 check("a long feed still draws something", lines > 0 and before ~= nil)
 
--- A line is words with names in it, and the two are not set the same way: the
--- interface says its own words in capitals and quotes everybody else's. A call
--- sign is upper, lower and numeric exactly as its owner has it, and a feed
--- that shouted it back was the one place this pass got it wrong.
+-- A line is words with names in it, and neither is touched. A call sign is
+-- upper, lower and numeric exactly as its owner has it, which a feed that
+-- shouted it back got wrong once; and the words between the names stay lower,
+-- because this is the one panel setting a sentence about people rather than
+-- labelling an instrument, and leaving the names as the only capitals on the
+-- line is what makes them findable.
 frame({feed = {{text = {{"Probe 7"}, " killed ", {"vX-9"}, " (+12)"}, t = 0}}})
 local st_feed = package.loaded["arena.state"]
 local said_line
 for i = 1, st_feed.n do
-    if st_feed.text[i].s:find("killed", 1, true)
-       or st_feed.text[i].s:find("KILLED", 1, true) then
+    if st_feed.text[i].s:lower():find("killed", 1, true) then
         said_line = st_feed.text[i].s
     end
 end
-check("a feed line shouts its own words and quotes the names",
-      said_line == "Probe 7 KILLED vX-9 (+12)", tostring(said_line))
+check("a feed line quotes the names and does not shout its own words",
+      said_line == "Probe 7 killed vX-9 (+12)", tostring(said_line))
 
 -- --- the info box ----------------------------------------------------------
 

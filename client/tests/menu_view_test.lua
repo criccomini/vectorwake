@@ -318,18 +318,55 @@ local function closers()
     return n
 end
 
+-- What a press lands on, by the rule the arena uses: the first box published
+-- that contains it.
+local function press(x, y)
+    for _, h in ipairs(ui.hits) do
+        if x >= h.x and x <= h.x + h.w and y >= h.y and y <= h.y + h.h then
+            return h.action
+        end
+    end
+    return nil
+end
+
 local shut = {depth = 2, sel = 1,
               rail = RAIL, rail_sel = 1, focus = "stage", home = false,
               closable = true, rows = rows}
 st = draw(shut)
-check("a menu over a game carries one way out", closers() == 1,
-      closers() .. " published")
+check("a menu over a game carries a mark and the ground behind it",
+      closers() == 2, closers() .. " published")
 check("and no word for it", not has(st, "close") and not has(st, "back"),
       table.concat(texts(st), " "))
+
+-- The x sits on the name's line rather than at the top of the stage: a
+-- dialog's close belongs on its title, and here the title is the wordmark.
+local logo_y
+for i = 1, st.n do
+    if is(st.text[i], "vectorwake") then logo_y = H - st.text[i].y end
+end
+local xbox
+for _, h in ipairs(ui.hits) do
+    if h.action == "close" and h.w < W then xbox = h end
+end
+check("the way out is on the name's line", logo_y and xbox
+      and math.abs((xbox.y + xbox.h / 2) - logo_y) < 3,
+      string.format("logo %.1f, mark %.1f", logo_y or -1,
+                    xbox and (xbox.y + xbox.h / 2) or -1))
+
+-- Off the panel is out of the menu, which is what escape does. On the panel
+-- is not, or the space between two rows would throw a player back into the
+-- fight.
+check("a press off the panel is the way out", press(W - 8, H - 8) == "close",
+      tostring(press(W - 8, H - 8)))
+check("a press on the panel's own ground is not",
+      press(W / 2, H / 2) ~= "close", tostring(press(W / 2, H / 2)))
+
 shut.closable = false
 draw(shut)
 check("and none at all with nothing behind it", closers() == 0,
       closers() .. " published")
+check("so a press off the panel does nothing there",
+      press(W - 8, H - 8) == nil, tostring(press(W - 8, H - 8)))
 
 -- --- the mark hangs off the column rather than moving it ------------------
 --

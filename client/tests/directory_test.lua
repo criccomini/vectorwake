@@ -230,9 +230,8 @@ local menu = require("arena.menu")
 menu.show("zones")
 
 dir.rows = {}
-dir.note = "no directory answered"
-dir.why = "still asking, every few seconds"
-dir.at = "wss://dir.example/x"
+dir.note = "no servers found"
+dir.why = "retrying"
 local view = menu.view()
 check("an empty list draws no rows at all", #view.rows == 0,
       #view.rows .. " rows")
@@ -241,9 +240,6 @@ check("and says why", view.empty and view.empty.head == dir.note,
 check("and that it is still trying",
       view.empty and view.empty.line ~= nil and view.empty.line ~= "",
       "line: " .. tostring(view.empty and view.empty.line))
-check("and which address it is asking",
-      view.empty and view.empty.at == dir.at,
-      "at: " .. tostring(view.empty and view.empty.at))
 
 -- And a page with games on it has nothing to explain.
 dir.rows = {{zone = "chaos", name = "chaos", detail = "a brawl", count = "",

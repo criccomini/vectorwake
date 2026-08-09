@@ -127,6 +127,75 @@ local fast_gain = {}
 -- soundtrack at the setting, which is a loud way to find out.
 local master = 1
 
+-- --- eight tracks, one at a time ------------------------------------------
+--
+-- There are eight of them and the game plays each for three minutes before
+-- moving to the next, which is long enough that nobody hears a rotation as a
+-- change of subject and short enough that a long session is not one loop
+-- forty times over.
+--
+-- Where a session starts is random, so two people in the same arena are not
+-- listening in step and a player who quits after ten minutes has not heard
+-- only the first three.
+--
+-- One component holds whichever track is playing. Eight components would cost
+-- eight buffers of about a megabyte each, all but one of them silent, which is
+-- most of a page's worth of memory to save a copy.
+M.track = 1
+local ROTATE = 180              -- seconds a track holds the floor
+local rotate_left = ROTATE
+
+-- The next track, built while this one is still playing.
+--
+-- It has to be built ahead because building is not free: a track is about an
+-- eighth of a second of arithmetic, and spending that on the frame a rotation
+-- falls due is a frozen frame in the middle of a fight. sfx.c cuts the work
+-- into forty-two steps of at most eight milliseconds, and the loop below
+-- spends one step at a time, only on frames that had room for it.
+--
+-- Eight milliseconds is still half a frame, so `dt` decides. A frame that
+-- already ran long does not get asked to carry a step as well, and nothing is
+-- lost by skipping it: an eighth of a second of work has three minutes to
+-- find room in.
+local build = {track = nil, wav = nil, wait = 0}
+local BUILD_EVERY = 0.25        -- seconds between steps
+local BUILD_ROOM = 0.020        -- a frame longer than this carries nothing
+
+-- Put a track into the sound component, building it here and now.
+--
+-- Used at boot, where a tenth of a second behind the menu is invisible, and as
+-- the fallback whenever a rotation comes due with nothing built: better a
+-- hitch than the music stopping. Returns how many bytes went in, or nil.
+function M.music_install(i)
+    if i then M.track = i end
+    if not vwsfx.music_begin(M.track) then
+        print("SOUND: no track " .. tostring(M.track))
+        return nil
+    end
+    while not vwsfx.music_step() do end
+    local wav = vwsfx.music_take()
+    if not wav then
+        print("SOUND: track " .. M.track .. " did not build")
+        return nil
+    end
+    local ok, err = pcall(function()
+        resource.set_sound(go.get("#music", "sound"), wav)
+    end)
+    if not ok then
+        print("SOUND: cannot install the soundtrack: " .. tostring(err))
+        return nil
+    end
+    return #wav
+end
+
+-- Start somewhere different every session. os.time has a resolution of a
+-- second, which is plenty when the question is which of eight.
+local function pick_first()
+    local t = os.time()
+    if type(t) ~= "number" then return 1 end
+    return math.floor(t) % vwsfx.music_count() + 1
+end
+
 -- Render the kit and hand it to the engine, once, before anything can play.
 --
 -- Called from the script that owns the sound components, because `#gun`
@@ -145,6 +214,7 @@ local master = 1
 function M.init()
     local t0 = os.clock()
     local n, bytes, quick = 0, 0, 0
+    M.track = pick_first()
 
     -- The browser path is offered, not assumed. Every step of standing it up
     -- can fail on some engine or some browser, and each failure simply leaves
@@ -161,8 +231,14 @@ function M.init()
             idx = tonumber(idx)
             if idx > (top[fam] or -1) then top[fam] = idx end
         end
-        local wav = vwsfx.render(name)
-        if not wav then
+        -- The soundtrack is the one component the kit does not render from a
+        -- name, because which of the eight tracks is in it changes while the
+        -- game runs. M.music_install fills it, here and every rotation after.
+        local wav = name ~= "music" and vwsfx.render(name) or nil
+        if name == "music" then
+            local built = M.music_install(nil)
+            if built then n = n + 1 bytes = bytes + built end
+        elseif not wav then
             print("SOUND: no sound named '" .. name .. "'")
         else
             local ok, err = pcall(function()
@@ -195,9 +271,10 @@ function M.init()
     -- Whatever the volume already is, now that there is a graph to set it on.
     if fast then M.master_gain(master) end
 
-    print(string.format("SOUND: %d sounds, %d KB, %d ms, %d direct",
+    print(string.format("SOUND: %d sounds, %d KB, %d ms, %d direct, track %d",
                         n, math.floor(bytes / 1024 + 0.5),
-                        math.floor((os.clock() - t0) * 1000 + 0.5), quick))
+                        math.floor((os.clock() - t0) * 1000 + 0.5), quick,
+                        M.track))
 end
 
 -- The master volume, which the browser path has to be told about because it
@@ -336,11 +413,57 @@ end
 -- Starting it before the gate is the other half. Audio mixed into a suspended
 -- context is discarded rather than held, so the track advances while nobody
 -- can hear it, and the first thing a player does hear is the middle of it.
+--
+-- It also drives the rotation, which is why it keeps being called after the
+-- track has started: three minutes on each of the eight, with the next one
+-- built quietly in the gaps beforehand.
 function M.music_tick(dt)
-    if not music.want or music.settled then return end
-    if not audio_awake() then return end
-    music.settled = true
+    if not music.want then return end
+    if not music.settled then
+        if not audio_awake() then return end
+        music.settled = true
+        M.fire("music", {gain = 1, pan = 0, speed = 1})
+        rotate_left = ROTATE
+        build.track = M.track % vwsfx.music_count() + 1
+        build.wav, build.wait = nil, 0
+        vwsfx.music_begin(build.track)
+        return
+    end
+
+    -- A step at a time, and only on a frame that had room to spare. Nothing
+    -- here is urgent: the whole build is a fraction of a second of work with
+    -- three minutes to do it in, so a run of busy frames costs nothing but a
+    -- later finish.
+    if build.track and not build.wav then
+        build.wait = build.wait + dt
+        if build.wait >= BUILD_EVERY and dt <= BUILD_ROOM then
+            build.wait = 0
+            if vwsfx.music_step() then build.wav = vwsfx.music_take() or false end
+        end
+    end
+
+    rotate_left = rotate_left - dt
+    if rotate_left > 0 then return end
+
+    -- The rotation falls due. The buffer swap is a copy rather than a render,
+    -- so it is cheap enough to do outright; only a build that never finished
+    -- costs anything here, and it costs a hitch rather than a silence.
+    rotate_left = ROTATE
+    local next_track = build.track or (M.track % vwsfx.music_count() + 1)
+    pcall(sound.stop, "#music")
+    local installed = false
+    if build.wav then
+        local ok = pcall(function()
+            resource.set_sound(go.get("#music", "sound"), build.wav)
+        end)
+        if ok then M.track = next_track installed = true end
+    end
+    if not installed then M.music_install(next_track) end
     M.fire("music", {gain = 1, pan = 0, speed = 1})
+
+    build.track = M.track % vwsfx.music_count() + 1
+    build.wav, build.wait = nil, 0
+    vwsfx.music_begin(build.track)
 end
 
 -- One place where a sound actually starts.

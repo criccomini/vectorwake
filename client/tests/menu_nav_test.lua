@@ -117,6 +117,30 @@ menu.click_rail(ship_at)
 check("and again, the other way", menu.stack[2] == "ship",
       table.concat(menu.stack, "/"))
 
+-- The stop you are already standing in. On a phone the rail is the whole of
+-- the navigation and there is nothing outside the panel to press, so tapping
+-- the lit stop is the way back into the game. Re-entering the page you are
+-- already reading is the only other thing it could mean, and that is nothing.
+menu.click_rail(ship_at)
+check("the lit stop with nothing behind the panel stays put",
+      menu.open and menu.stack[2] == "ship", table.concat(menu.stack, "/"))
+
+menu.home = false
+menu.click_rail(ship_at)
+check("the lit stop over a game is the way back to it", not menu.open)
+
+-- At the root the same stop is lit while the stage is only previewing it, so
+-- a tap there goes in, which is what it has always done.
+menu.open = true
+menu.stack = {"root"}
+menu.sel = {}
+menu.click_rail(ship_at)
+check("the lit stop at the root still goes in",
+      menu.open and menu.stack[2] == "ship", table.concat(menu.stack, "/"))
+menu.home = true
+menu.stack = {"root"}
+menu.sel = {}
+
 -- --- a tap on a row is still a tap on a row -------------------------------
 
 menu.stack = {"root"}
@@ -178,6 +202,24 @@ check("and it is not a hull", ship_rows[9].hull == nil,
 -- view. The drawing reads this field; nothing else can say what it gets.
 check("so it says what to draw instead", ship_rows[9].figure == "pilot",
       tostring(ship_rows[9].figure))
+
+-- The same cell, seen from the rail. The stage previews the page a rail stop
+-- leads to before you go in, and that preview flattens rows down its own
+-- path, so a field the grid reads has to survive both. `figure` survived only
+-- one: escape into the menu and arrow left onto the rail, and the ninth cell
+-- was an Apex; step into the page and it was the helmet again.
+local was_stack, was_sel = menu.stack, menu.sel
+menu.stack = {"root"}
+menu.sel = {root = ship_at}
+local peek = menu.view()
+check("the rail previews the page it points at",
+      #peek.rows == 9 and peek.sel == 0,
+      #peek.rows .. " rows, cursor " .. tostring(peek.sel))
+check("flattened, not handed over as it was written",
+      type(peek.rows[9].mark) ~= "function")
+check("and the ninth cell is a pilot there too",
+      peek.rows[9].figure == "pilot", tostring(peek.rows[9].figure))
+menu.stack, menu.sel = was_stack, was_sel
 
 -- On the home screen the same page answers a different tense: not what you
 -- are, which is nothing, but what you will arrive as. So the wash follows the

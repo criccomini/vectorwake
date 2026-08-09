@@ -352,15 +352,41 @@ do
           string.format("head reaches %.2f of the radius", span / l.bombs.r))
 end
 
+-- --- the gun wears no second ring -------------------------------------------
+
+-- Energy came off the gun pad, because every hull carries a bar above it
+-- saying the same thing and that one is where a player is already looking.
+-- What is left is one ring per control, the same as the bomb's. Measured as
+-- "nothing round is drawn outside the rim", since the fault would be some
+-- other instrument moving in rather than this one coming back.
+do
+    local w, h, s = reset(unpack(LAND))
+    ENERGY = 400
+    local l = draw(w, h, s)
+    local out = 0
+    for _, sh in ipairs(shapes) do
+        local cx, cy = (sh.x0 + sh.x1) / 2, (sh.y0 + sh.y1) / 2
+        -- Its own radius rather than the box drawn round it, which a
+        -- stroke widens on both sides: the rim would answer for itself.
+        if sh.r and math.abs(cx - l.guns.x) < l.guns.r
+            and math.abs(cy - l.guns.y) < l.guns.r
+            and sh.r > l.guns.r * 1.02 then
+            out = out + 1
+        end
+    end
+    check("the gun pad draws nothing outside its rim", out == 0,
+          out .. " rings past the edge of the control")
+    ENERGY = 700
+end
+
 -- --- nothing overlaps anything ---------------------------------------------
 
--- The gun answers for its gauge rather than its rim: the arc rides outside
--- the ring and is the piece that actually reaches the rail above it.
-local GAUGE = 1.25
-
+-- Every control answers for its rim. The gun used to answer for an energy arc
+-- riding a fifth of a radius outside its ring instead, which was the piece
+-- that reached the rail above it; the hull's own bar says energy, so the arc
+-- went and the rim is the whole of the gun again.
 local function controls(L2)
-    local out = {{n = "guns", x = L2.guns.x, y = L2.guns.y,
-                  r = L2.guns.r * GAUGE},
+    local out = {{n = "guns", x = L2.guns.x, y = L2.guns.y, r = L2.guns.r},
                  {n = "home", x = L2.home.x, y = L2.home.y, r = L2.home.r}}
     if touch.has_bomb then
         out[#out + 1] = {n = "bombs", x = L2.bombs.x, y = L2.bombs.y,
@@ -391,8 +417,7 @@ for _, win in ipairs({LAND, PORT}) do
     local l = touch.layout(w, h, s)
     local o = worst_overlap(l)
     check("nothing overlaps at " .. w .. "x" .. h, not o, o)
-    -- On the screen, with the gun's gauge counted: it rides outside the rim
-    -- and is the piece that reaches furthest.
+    -- And on the screen.
     local off = nil
     for _, c in ipairs(controls(l)) do
         local reach = c.r
@@ -630,9 +655,30 @@ do
     local f1, e1 = pips(l.charge[1])
     check("a cell counts what is in hand", f1 == 2 and e1 == 1,
           f1 .. " held, " .. e1 .. " spent")
-    local f2, e2 = pips(l.charge[2])
-    check("and an empty one still counts its room", f2 == 0 and e2 == 3,
-          f2 .. " held, " .. e2 .. " spent")
+    -- And a slot spent out has no cell at all. A control that does nothing
+    -- when pressed is bad enough with a keyboard; on glass there is no travel
+    -- and no cursor, so the only way to learn a cell is dead is to tap it in
+    -- the middle of a fight and get nothing back.
+    check("and a spent slot draws no cell", #l.charge == 1,
+          #l.charge .. " cells for one charge in hand")
+    -- The rail closes up rather than leaving the gap. Two in hand puts the
+    -- second cell where the first sits when only one is held, which is the
+    -- shrink that keeps the block over the triggers the same shape.
+    local low = l.charge[1].y
+    touch.counts = {[0] = 2, [1] = 1}
+    local both = draw(w, h, s)
+    check("and the rail closes the gap", #both.charge == 2
+          and math.abs(both.charge[1].y - low) < 1,
+          #both.charge .. " cells, first at " ..
+          string.format("%.0f against %.0f", both.charge[1].y, low))
+
+    -- A hull holding nothing draws no rail, and nothing above the triggers
+    -- answers a tap.
+    reset(unpack(LAND))
+    touch.counts = {}
+    local none = draw(w, h, s)
+    check("a hull holding no charges draws no rail", #none.charge == 0,
+          #none.charge .. " cells with an empty hand")
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

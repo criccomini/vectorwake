@@ -51,6 +51,7 @@ M.stack = {"root"}
 M.sel = {}              -- selected row, per node, so a level remembers
 M.hover = nil           -- the stage row a pointer is resting on
 M.note = nil            -- set by the arena when a connection fails
+M.screen = nil          -- the drawable and its insets, for the about page
 -- What a key is made of, and how long one is. Both are the server's, written
 -- down here because the slots are drawn against them and what a keyboard hands
 -- us is filtered against them. Crockford's alphabet without the letters that
@@ -258,6 +259,12 @@ local function team_rows()
             -- Somebody named this side, so it is drawn the way they named it
             -- rather than the way this interface says its own words.
             label = t.name, named = true,
+            -- And in the colour that side wears on every plate in the arena,
+            -- so this list is where the colours get their names. Yours is
+            -- cyan here as it is everywhere: `tint` is the byte, and ui.lua
+            -- decides what "yours" means, since it is the side the camera is
+            -- behind rather than the one this menu belongs to.
+            tint = t.team,
             detail = t.bots > 0 and (t.humans .. " + " .. t.bots .. " AI")
                 or tostring(t.humans),
             act = "team", value = t.team,
@@ -328,7 +335,7 @@ end
 -- pretending to be a game and a sentence pretending to be a name.
 local function zone_empty()
     if #directory.rows > 0 then return nil end
-    return {head = directory.note, line = directory.why, at = directory.at}
+    return {head = directory.note, line = directory.why}
 end
 
 local NODES = {
@@ -485,6 +492,15 @@ local NODES = {
             {label = "engine", detail = function()
                 return "defold " .. (sys.get_engine_info().version or "?")
             end},
+            -- The drawable, and what the hardware says it is covering. Set
+            -- by the arena every frame from the page's own measurements.
+            {label = "screen", detail = function()
+                local s = M.screen
+                if not s then return "?" end
+                return string.format("%dx%d @%g  safe %g %g %g %g",
+                                     s.w, s.h, s.d, s.l, s.r, s.t, s.b)
+            end, verbatim = true,
+            hint = "drawable, density, then the insets left right top bottom"},
             {label = "zone", detail = function()
                 if M.zone == "" then return "not in one" end
                 return M.zone
@@ -510,6 +526,43 @@ local function rows_of(nd)
     local r = nd.rows
     if type(r) == "function" then return r() end
     return r
+end
+
+-- One row of a page, flattened for drawing: everything a live value gets
+-- asked for its answer, and everything else copied across.
+--
+-- Two callers, and that is why this is a function. The stage draws the page
+-- you are inside, and it also draws a preview of the page the rail stop under
+-- the cursor leads to, so a row is flattened in two places. They were two
+-- lists of fields, and the second one had been written before the spectate
+-- cell existed and never learned about `figure`. What that looked like was a
+-- cell whose figure changed depending on how you had arrived at the page: the
+-- helmet once the cursor was in the grid, an Apex while it was still on the
+-- rail, since a cell naming no figure falls back to hull zero.
+local function view_row(r, i)
+    local d = r.detail
+    if type(d) == "function" then d = d() end
+    local ci, cn
+    if r.choice then ci, cn = r.choice() end
+    return {
+        label = r.label, detail = d, note = r.note, waiting = r.waiting,
+        -- Whether this row's value is a string to be quoted rather than a
+        -- word to be said, and whether its label is somebody's name. See the
+        -- key on the pilot page and the sides on the team page.
+        verbatim = r.verbatim, named = r.named,
+        -- The side this row stands for, so the renderer can write it in that
+        -- side's colour. The byte rather than the colour: which side counts
+        -- as yours is the camera's business, and the camera is ui.lua's.
+        tint = r.tint,
+        index = i,
+        -- `hull` names a ship to draw and `figure` overrides it with something
+        -- that is not one.
+        hull = r.hull, figure = r.figure, role = r.role,
+        players = r.players, bots = r.bots, live = r.live,
+        choice = ci, choices = cn,
+        pick = (r.go or r.act) ~= nil,
+        mark = r.mark and r.mark() or false,
+    }
 end
 
 local function row_index(rows)
@@ -888,27 +941,7 @@ function M.view()
                  board = nd.board or false,
                  rows = {}}
     for i, r in ipairs(rows) do
-        local d = r.detail
-        if type(d) == "function" then d = d() end
-        local ci, cn
-        if r.choice then ci, cn = r.choice() end
-        out.rows[i] = {
-            label = r.label, detail = d, note = r.note, waiting = r.waiting,
-            -- Whether this row's value is a string to be quoted rather than a
-            -- word to be said, and whether its label is somebody's name. See
-            -- the key on the pilot page and the sides on the team page.
-            verbatim = r.verbatim, named = r.named,
-            index = i,
-            -- `hull` names a ship to draw and `figure` overrides it with
-            -- something that is not one. Both travel, because a cell with
-            -- neither would fall back to hull zero and draw an Apex, which is
-            -- exactly what the spectate cell did before this line existed.
-            hull = r.hull, figure = r.figure, role = r.role,
-            players = r.players, bots = r.bots, live = r.live,
-            choice = ci, choices = cn,
-            pick = (r.go or r.act) ~= nil,
-            mark = r.mark and r.mark() or false,
-        }
+        out.rows[i] = view_row(r, i)
     end
     -- The sentence about whatever is under the cursor, drawn once under the
     -- list rather than squeezed onto every row.
@@ -950,18 +983,7 @@ function M.view()
             out.empty = nd2.empty and nd2.empty() or nil
             out.rows = {}
             for i, r in ipairs(rows_of(nd2)) do
-                local d = r.detail
-                if type(d) == "function" then d = d() end
-                local ci, cn
-                if r.choice then ci, cn = r.choice() end
-                out.rows[i] = {label = r.label, detail = d, note = r.note,
-                               waiting = r.waiting, verbatim = r.verbatim,
-                               named = r.named,
-                               index = i, hull = r.hull, role = r.role,
-                               players = r.players, bots = r.bots,
-                               live = r.live, choice = ci, choices = cn,
-                               pick = (r.go or r.act) ~= nil,
-                               mark = r.mark and r.mark() or false}
+                out.rows[i] = view_row(r, i)
             end
             out.hint = nil
             -- Nothing in the preview is selected, because the cursor is on
@@ -1181,8 +1203,28 @@ end
 -- navigating: a tap on `settings` from inside `ship` picked the fourth hull.
 -- On a phone, where the rail is the only way to move, that is the whole of
 -- navigation not working.
+-- Which stop the panel is currently inside, or nil at the root, where the
+-- stage is a preview of the stop under the cursor rather than the stop
+-- itself. Worked out the way the view works it out.
+local function rail_inside()
+    if #M.stack < 2 then return nil end
+    for i, r in ipairs(rows_of(NODES.root)) do
+        if r.go == M.stack[2] then return i end
+    end
+    return nil
+end
+
 function M.click_rail(index)
     if not M.open then return nil, false end
+    -- The lit stop, tapped while you are already in it, with a game behind
+    -- the panel: that is the way back to the game. A phone's rail is the
+    -- whole of its navigation and there is no outside to press, so without
+    -- this the only way out is one small x; and re-entering the page you are
+    -- already reading is the one thing a rail stop could do that is nothing.
+    --
+    -- At the root the same stop is lit while the stage only previews it, and
+    -- there the tap goes in, which is what it has always done.
+    if index == rail_inside() and M.close() then return nil, true end
     M.stack = {"root"}
     M.sel.root = index
     M.note = nil

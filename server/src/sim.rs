@@ -363,6 +363,9 @@ extern "C" {
     pub fn sim_eff_thrust(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_take_prize(sh: *mut sim_ship, cfg: *const sim_settings, rng: *mut u32,
                           delta: *mut c_int) -> u8;
+    /// A green's grant without a green's roll, for a harness that needs to
+    /// hand two pilots the same kit. Returns whether the count moved.
+    pub fn sim_grant(sh: *mut sim_ship, cfg: *const sim_settings, ty: u8) -> c_int;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
     /// The other end of a snapshot. Only a client needs this, and the bot
     /// server is a client: it learns the room the way a browser does rather
@@ -398,8 +401,27 @@ pub const MAX_CHARGES: usize = 4;
 pub const CHARGE_MAX: u8 = 15;
 pub const PRIZE_COUNT: usize =
     UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
+pub const MOD_MULTI: usize = 0;
+pub const MOD_BOUNCE: usize = 1;
 pub const MOD_PROX: usize = 2;
+pub const MOD_SHRAPNEL: usize = 3;
+pub const MOD_FREEZE: usize = 4;
 pub const MOD_PUSH: usize = 5;
+
+// Where a thing sits in the flat prize space, mirroring the SIM_PRIZE_ macros.
+// The space is one shape, a count with a ceiling, so a stat, a rung, an add-on
+// and a charge are all addressed the same way, and anything that hands out a
+// specific one names it through these rather than by arithmetic at the call
+// site.
+pub const fn prize_stat(u: usize) -> u8 {
+    u as u8
+}
+pub const fn prize_level(t: usize) -> u8 {
+    (UP_COUNT + t) as u8
+}
+pub const fn prize_mod(t: usize, m: usize) -> u8 {
+    (UP_COUNT + TRIG_COUNT + t * MOD_COUNT + m) as u8
+}
 
 // Safe wrappers. The core has no globals and no allocation, so a state is a
 // plain value a thread can own for the duration of a tick.
@@ -691,6 +713,17 @@ impl World {
             let rng: *mut u32 = &mut self.state.rng;
             unsafe { sim_take_prize(sh, &*self.cfg, rng, std::ptr::null_mut()) };
         }
+    }
+
+    /// Hand a ship one specific thing from the tech tree, no roll involved.
+    /// False means the hull is already at that ceiling or has no such trigger,
+    /// which is a caller's answer rather than an error: it is how the loadout
+    /// tournament learns that a hull cannot wear the kit it is being measured
+    /// in. Never touches the generator, so a bout that grants is the same bout
+    /// as one that does not.
+    pub fn grant(&mut self, ship: usize, ty: u8) -> bool {
+        let sh: *mut sim_ship = &mut self.state.ships[ship];
+        unsafe { sim_grant(sh, &*self.cfg, ty) != 0 }
     }
 }
 

@@ -27,8 +27,9 @@ do
     -- different opinion from the synth about what is a held sound.
     local kit = assert(src:match("static const entry KIT%[%] = {(.-)};"),
                        "KIT not found in sfx.c")
-    -- The duration is any expression, not just a literal: the soundtrack's is
-    -- computed from the bar count.
+    -- The duration is any expression, not just a literal, and the
+    -- soundtrack's is zero: it has a component and no maker, being built a
+    -- step at a time rather than rendered from its name.
     for name, loop in kit:gmatch('{"([%w_]+)",%s*[^,]+,%s*(%d),') do
         LOOPS[name] = loop == "1"
     end
@@ -37,6 +38,10 @@ end
 
 local played = {}
 
+-- The soundtrack, stubbed as the step machine sfx.c actually is: begun,
+-- stepped until it says it is finished, then taken once.
+local TRACKS = 8
+local job = {track = nil, left = 0, begun = 0, taken = 0}
 _G.vwsfx = {
     names = function() return NAMES end,
     -- Enough of a wav header to be a string with a length. Nothing here
@@ -44,6 +49,22 @@ _G.vwsfx = {
     render = function() return string.rep("\0", 44) end,
     b64 = function(s) return string.rep("A", math.ceil(#s / 3) * 4) end,
     is_loop = function(name) return LOOPS[name] end,
+    music_count = function() return TRACKS end,
+    music_begin = function(i)
+        job.track, job.left = i, 4
+        job.begun = job.begun + 1
+        return true
+    end,
+    music_step = function()
+        if job.left > 0 then job.left = job.left - 1 end
+        return job.left == 0
+    end,
+    music_take = function()
+        if not job.track or job.left > 0 then return nil end
+        job.taken = job.taken + 1
+        job.track = nil
+        return string.rep("\0", 44)
+    end,
 }
 _G.resource = {set_sound = function() end}
 -- The component gain the browser path reads back, so the mix survives the
@@ -140,6 +161,70 @@ fails = fails + unwired
 print(string.format("%-38s -> %-10s %s", "every sound has a component",
                     #NAMES - unwired .. "/" .. #NAMES,
                     unwired == 0 and "ok" or "FAIL"))
+
+-- --- eight tracks, three minutes each --------------------------------------
+--
+-- The rotation is the one part of the soundtrack a player cannot check by
+-- listening for ten seconds, and the failure it is guarding against is
+-- expensive: a build that is not ready when the rotation falls due costs a
+-- frozen frame in the middle of a fight, which is the whole reason the build
+-- is spread over frames at all.
+
+local function drive(seconds, dt)
+    dt = dt or 0.016
+    for _ = 1, math.floor(seconds / dt) do sfx.music_tick(dt) end
+end
+
+do
+    local started = sfx.track
+    local ok = started >= 1 and started <= 8
+    if not ok then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "a session starts on some track",
+                        tostring(started), ok and "ok" or "FAIL"))
+
+    sfx.music(true)
+    drive(1)                              -- wakes, starts, and begins a build
+    local first = sfx.track
+    drive(60)                             -- long before the rotation is due
+    local ok2 = sfx.track == first and job.taken >= 1
+    if not ok2 then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s",
+                        "the next track is built well ahead",
+                        job.taken .. " built", ok2 and "ok" or "FAIL"))
+
+    drive(130)                            -- past three minutes in total
+    local ok3 = sfx.track == first % 8 + 1
+    if not ok3 then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "and it takes over at three minutes",
+                        first .. " then " .. sfx.track, ok3 and "ok" or "FAIL"))
+
+    -- Round and round: eight rotations from anywhere lands back where it
+    -- started, which is what makes this a rotation rather than a walk off the
+    -- end of the list.
+    for _ = 1, 7 do drive(181) end
+    local ok4 = sfx.track == first
+    if not ok4 then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "eight rotations come back round",
+                        tostring(sfx.track), ok4 and "ok" or "FAIL"))
+    sfx.music(false)
+end
+
+-- A frame that already ran long is not asked to carry a build step as well.
+do
+    local before = job.begun
+    package.loaded["arena.sfx"] = nil
+    local s2 = require("arena.sfx")
+    s2.init()
+    s2.music(true)
+    s2.music_tick(0.016)
+    local steps_before = job.left
+    for _ = 1, 50 do s2.music_tick(0.5) end   -- half-second frames, all busy
+    local ok = job.left == steps_before and job.begun > before
+    if not ok then fails = fails + 1 end
+    print(string.format("%-38s -> %-10s %s", "a busy frame carries no build",
+                        job.left .. " steps left", ok and "ok" or "FAIL"))
+    s2.music(false)
+end
 
 -- --- and again on the web, where one-shots leave the mixer ---------------
 --

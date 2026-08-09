@@ -114,6 +114,11 @@ package.loaded["arena.world"] = {
     radar_tiles = {},
     radar_safe = {},
     radar_doors = {},
+    -- The menu draws hulls on its ship page and marks; the rail below needs
+    -- the module to answer for one rather than to be right about it.
+    HULLS = setmetatable({}, {__index = function()
+        return {poly = {0, 0, 1, 1, 2, 0}, mid = 0}
+    end}),
 }
 
 local touch = require("arena.touch")
@@ -186,6 +191,62 @@ check("the rightmost steps in by the right inset",
 check("the topmost steps down by the top inset",
       math.abs((b.y0 - a.y0) - T_INS) < 1,
       string.format("%.1f then %.1f", a.y0, b.y0))
+
+-- The menu's rail is the one thing at the bottom that reads the bottom inset,
+-- and it reads it the way a tab bar does rather than the way the sides do.
+--
+-- A tab bar's surface runs under the home indicator and its icons do not. The
+-- rail was stepped up bodily instead, which stacked the indicator's 34 points
+-- on top of the 24 the block already keeps under its labels and left the words
+-- half an inch off the bottom of a phone with panel underneath them. So the
+-- surface stays on the edge, and the inset stands in for that padding rather
+-- than adding to it. The pads below are the opposite case again and keep their
+-- ground: the indicator is allowed to overlap a thumbstick.
+local B_INS = 34
+local MENU_RAIL = {}
+for i, nm in ipairs({"zones", "ship", "pilot", "settings", "help", "about"}) do
+    MENU_RAIL[i] = {label = nm, icon = nm, index = i}
+end
+
+-- Two numbers, both measured up from the bottom edge, which is where the mesh
+-- counts from: how far the lowest ink stops short of it, and how far the
+-- lowest word does. The rail is the only thing down there, so the word is one
+-- of its labels.
+local function rail_edges(inset)
+    shapes = {}
+    state.n = 0
+    ui.safe(0, 0, 0, inset)
+    -- Portrait, where the rail is a row along the bottom.
+    ui.begin(layer, 390, 844, 1, true)
+    ui.menu({depth = 2, sel = 1, rail = MENU_RAIL, rail_sel = 1,
+             focus = "stage", home = true, closable = false,
+             rows = {{label = "chaos", index = 1, pick = true,
+                      players = 2, bots = 4, live = true}}})
+    ui.finish()
+    -- The panel's wash paints to the bottom edge whatever the inset is, the
+    -- way the vignette does, so the measure skips anything as wide as the
+    -- screen and asks where the furniture stopped.
+    local ink = math.huge
+    for _, sh in ipairs(shapes) do
+        if sh.x1 - sh.x0 < 380 then ink = math.min(ink, sh.y0) end
+    end
+    local word = math.huge
+    for k = 1, state.n do word = math.min(word, state.text[k].y) end
+    return ink, word
+end
+local flat_ink, flat_word = rail_edges(0)
+local step_ink, step_word = rail_edges(B_INS)
+check("the rail's surface reaches the bottom edge with nothing covering it",
+      flat_ink < 6, string.format("%.1f", flat_ink))
+check("and still reaches it with the indicator there",
+      step_ink < 6, string.format("%.1f", step_ink))
+-- 24 points, which is what the block keeps under its labels on its own.
+check("the words keep the block's own padding when nothing covers them",
+      math.abs(flat_word - 24) < 1, string.format("%.1f", flat_word))
+check("and sit on the indicator rather than on it plus that padding",
+      math.abs(step_word - B_INS) < 1,
+      string.format("%.1f, wanted %d", step_word, B_INS))
+ui.safe(0, 0, 0, 0)
 
 -- The pads and the stick's resting mark, against the real layout: sides
 -- step in, and the bottom stays put because the home indicator is allowed
