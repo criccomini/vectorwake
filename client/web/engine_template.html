@@ -238,59 +238,39 @@
 				var vp = window.visualViewport;
 				var layoutH = document.documentElement.clientHeight || 0;
 				var width = Math.round(vp ? vp.width : window.innerWidth);
-				var visible = Math.round(vp ? vp.height : window.innerHeight);
-				// Installed to the home screen there is no browser furniture
-				// to hide behind, and iOS answers the visual viewport short of
-				// the screen by the home indicator's strip: the canvas then
-				// stopped above it and the page's own background showed
-				// through, which on a phone reads as an interface floating
-				// off the bottom of the screen. The layout viewport covers the
-				// whole screen under viewport-fit=cover, so that is what the
-				// canvas is sized to; the client steps its own furniture up by
-				// the inset published below.
+				// The viewport, and nothing larger, whatever else the window
+				// says about itself.
 				//
-				// In a browser the visual viewport stays the measure, because
-				// there the space below it is a toolbar rather than a strip of
-				// glass, and a rail drawn under a toolbar is a rail nobody can
-				// press.
+				// Two rounds of this file grew the canvas past it: first to
+				// the layout viewport, then to outerHeight, both aimed at a
+				// strip of screen the interface was not reaching. Installed on
+				// a 402x874 point iPhone the second one sized the canvas 874
+				// tall inside an 812 point viewport, and the bottom 62 points
+				// are where the menu's rail is: the installed app had no
+				// navigation on it at all, while the same build in a tab was
+				// correct.
+				//
+				// Whichever end of the screen that strip is at, the page
+				// cannot draw into it. A canvas taller than the viewport is
+				// not a canvas reaching further down the glass, it is a canvas
+				// whose bottom nobody can see and nobody can press. Reproduced
+				// at the phone's exact geometry, standalone with outerHeight
+				// 874 against a viewport of 812: canvas 874, and the rail
+				// under the edge of it.
+				//
+				// What is left over is painted the interface's own ground by
+				// the page, which is why the band reads as a slightly darker
+				// black rather than as a hole.
+				var visible = Math.round(vp ? vp.height : window.innerHeight);
 				var standalone = window.navigator.standalone === true
 					|| (window.matchMedia
 						&& window.matchMedia('(display-mode: standalone)').matches);
 				var probe = document.getElementById('vw-safe');
 				var cs = probe ? getComputedStyle(probe) : null;
-				var padT = cs ? (parseFloat(cs.paddingTop) || 0) : 0;
 				var padB = cs ? (parseFloat(cs.paddingBottom) || 0) : 0;
 				var scr = window.screen || {};
 				var innerH = Math.round(window.innerHeight || 0);
 				var outerH = Math.round(window.outerHeight || 0);
-				if (standalone && layoutH > visible) {
-					visible = layoutH;
-				}
-				// And the layout viewport is not the window either.
-				//
-				// Installed on a 402x874 point iPhone this file measured the
-				// canvas at 402x812 and was right about every number in it:
-				// layout 812, visual 812, inner 812, and a top inset of 62,
-				// which is exactly the difference. The interface still sat 62
-				// points off the bottom of the phone, and three rounds went
-				// into moving it four and then ten, which is what tuning a
-				// margin does while a whole status bar is missing underneath.
-				//
-				// outerHeight is what settled it, because it answers for the
-				// window rather than for the page: 874. So the window is the
-				// screen, the viewport is inset inside it, and the strip is
-				// below the viewport rather than above it, since a viewport
-				// that started under the status bar would report a top inset
-				// of nothing and this one reports the whole 62.
-				//
-				// Bounded to a shortfall no larger than the inset that
-				// explains it, and only installed, because in a tab the space
-				// under the viewport is a toolbar and drawing a rail beneath
-				// one is drawing it where nobody can press it.
-				if (standalone && outerH > visible
-						&& outerH - visible <= padT + 1) {
-					visible = outerH;
-				}
 				var height = visible - buttonHeight;
 				if (width < 1 || height < 1) {
 					return;
@@ -310,14 +290,10 @@
 					// already, and furniture stepping up by the inset as well
 					// would be stepping over something twice.
 					//
-					// Against the canvas rather than against the visual
-					// viewport, which is the same number in a tab and not the
-					// same number installed: the override above hands the
-					// canvas the whole layout viewport, and measuring the
-					// gap from a viewport that stops short of the indicator
-					// then reported a strip as covered by furniture that is
-					// not there. That netted the inset to nothing on exactly
-					// the phones it was written for.
+					// How much of the page the canvas does not cover at the
+					// bottom, which in a tab is the toolbar and installed is
+					// nothing. An inset with a toolbar already over it is a
+					// strip nothing needs to step around twice.
 					var uncovered = Math.max(0, layoutH - visible);
 					var bottom = Math.max(0, padB - uncovered);
 					// Asked of the geometry rather than of the browser. The
