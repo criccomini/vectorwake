@@ -256,9 +256,25 @@
 				var standalone = window.navigator.standalone === true
 					|| (window.matchMedia
 						&& window.matchMedia('(display-mode: standalone)').matches);
+				var probe = document.getElementById('vw-safe');
+				var cs = probe ? getComputedStyle(probe) : null;
+				var padT = cs ? (parseFloat(cs.paddingTop) || 0) : 0;
+				var padB = cs ? (parseFloat(cs.paddingBottom) || 0) : 0;
+				var scr = window.screen || {};
+				var innerH = Math.round(window.innerHeight || 0);
+				var outerH = Math.round(window.outerHeight || 0);
 				if (standalone && layoutH > visible) {
 					visible = layoutH;
 				}
+				// The canvas is deliberately not grown to window.screen here,
+				// though installed on a 402x874 point iPhone it comes out 812
+				// and the missing 62 is exactly the top inset. Which end of
+				// the screen that strip is at decides whether the fix grows
+				// the canvas or stops insetting the top twice, and growing it
+				// under the wrong reading puts the rail below the glass,
+				// where nothing can be pressed and no menu can be reached to
+				// undo it. outerHeight is published below to settle it: the
+				// window is the whole screen or it is not.
 				var height = visible - buttonHeight;
 				if (width < 1 || height < 1) {
 					return;
@@ -270,9 +286,7 @@
 				// whether the bottom of the canvas is the bottom of the
 				// screen. A rail belongs above a toolbar and can run under
 				// the home indicator, so that one bit decides where it sits.
-				var probe = document.getElementById('vw-safe');
-				if (probe) {
-					var cs = getComputedStyle(probe);
+				if (cs) {
 					// The bottom one is published net of whatever the canvas
 					// already fails to cover. env() answers for the screen,
 					// and the canvas is not always the screen: under a
@@ -289,8 +303,7 @@
 					// not there. That netted the inset to nothing on exactly
 					// the phones it was written for.
 					var uncovered = Math.max(0, layoutH - visible);
-					var pad = parseFloat(cs.paddingBottom) || 0;
-					var bottom = Math.max(0, pad - uncovered);
+					var bottom = Math.max(0, padB - uncovered);
 					// Asked of the geometry rather than of the browser. The
 					// question the rail has is "is there anything between me
 					// and the glass", and a hardware inset with nothing
@@ -301,23 +314,20 @@
 					// layout bug rather than a detection one. This also
 					// follows a browser that has scrolled its toolbar away,
 					// which is the same screen by then.
-					var bare = standalone || (pad > 0 && uncovered < 1);
+					var bare = standalone || (padB > 0 && uncovered < 1);
 					// And the four numbers this whole reconciler is derived
 					// from, published so a phone can be asked what it thinks
-					// its own screen is. Installed on a 402x874 phone the
-					// canvas came out 402x812, exactly the top inset short,
-					// and which end of the screen that 62 points is missing
-					// from decides whether the fix grows the canvas or moves
-					// it. Nothing here can tell from the outside, and the
-					// only phone that knows is not this one.
-					var scr = window.screen || {};
+					// its own screen is. They are how the 62 points above were
+					// found and they stay: this file has now been wrong twice
+					// in a way only a screen in a hand could show.
 					window.vwInsets =
 						(parseFloat(cs.paddingLeft) || 0) + ' ' +
 						(parseFloat(cs.paddingRight) || 0) + ' ' +
 						(parseFloat(cs.paddingTop) || 0) + ' ' +
 						bottom + ' ' + (bare ? 1 : 0) + ' ' +
 						layoutH + ' ' + (vp ? Math.round(vp.height) : 0) +
-						' ' + (scr.height || 0) + ' ' +
+						' ' + innerH + ' ' + outerH + ' ' +
+						(scr.height || 0) + ' ' +
 						Math.round(window.screenY || 0);
 				}
 				var dpi = 1;

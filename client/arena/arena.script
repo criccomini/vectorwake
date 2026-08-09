@@ -1094,9 +1094,11 @@ function update(self, dt)
                 -- And whether the page is a home-screen app, which rides
                 -- along because it is the same question about the same
                 -- edge: what is sitting on the bottom strip of glass.
-                local l, rr, t, b, app, lay, vis, scr, sy = string.match(ins,
+                local l, rr, t, b, app, lay, vis, inn, out, scr, sy =
+                    string.match(ins,
                     "^([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+)"
-                    .. " ([%d%.%-]+) ([%d%.%-]+) ([%d%.%-]+) ([%d%.%-]+)")
+                    .. " ([%d%.%-]+) ([%d%.%-]+) ([%d%.%-]+) ([%d%.%-]+)"
+                    .. " ([%d%.%-]+) ([%d%.%-]+)")
                 self.safe_l = tonumber(l) or 0
                 self.safe_r = tonumber(rr) or 0
                 self.safe_t = tonumber(t) or 0
@@ -1107,6 +1109,8 @@ function update(self, dt)
                 -- conclusion is what is in doubt.
                 self.vp_layout = tonumber(lay) or 0
                 self.vp_visual = tonumber(vis) or 0
+                self.vp_inner = tonumber(inn) or 0
+                self.vp_outer = tonumber(out) or 0
                 self.vp_screen = tonumber(scr) or 0
                 self.vp_top = tonumber(sy) or 0
             end
@@ -1439,6 +1443,7 @@ function update(self, dt)
                    t = self.safe_t or 0, b = self.safe_b or 0,
                    app = self.installed,
                    vl = self.vp_layout or 0, vv = self.vp_visual or 0,
+                   vi = self.vp_inner or 0, vo = self.vp_outer or 0,
                    vs = self.vp_screen or 0, vt = self.vp_top or 0}
     ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0)
     -- The interface stays up under the menu. Nothing is paused, so hiding the

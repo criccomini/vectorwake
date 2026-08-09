@@ -513,11 +513,12 @@ local NODES = {
             {label = "viewport", detail = function()
                 local s = M.screen
                 if not s or not s.vl then return "?" end
-                return string.format("layout %g  visual %g  screen %g  at %g",
-                                     s.vl, s.vv, s.vs, s.vt)
+                return string.format(
+                    "l %g  v %g  i %g  o %g  s %g  at %g",
+                    s.vl, s.vv, s.vi, s.vo, s.vs, s.vt)
             end, verbatim = true,
-            hint = "what the page measures its own window and screen to be, "
-                .. "and where the window sits on the screen"},
+            hint = "heights in points: layout viewport, visual viewport, inner, "
+                .. "outer, screen, and where the window sits on it"},
             {label = "zone", detail = function()
                 if M.zone == "" then return "not in one" end
                 return M.zone
