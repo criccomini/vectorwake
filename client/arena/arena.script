@@ -341,6 +341,20 @@ local function charge_row()
     return out
 end
 
+-- How far up the screen the thumb's controls reach, in drawable pixels from
+-- the bottom: the top of the gun pad, or of the charge rail when one is
+-- carried. The interface places its own things clear of this rather than
+-- guessing at a fraction of the screen.
+local function pad_reach(w, h, s)
+    local L = touch.layout(w, h, s)
+    local reach = L.guns.y + L.guns.r
+    for _, c in ipairs(L.charge or {}) do
+        local top = c.y + (c.w and c.w / 2 or c.r)
+        if top > reach then reach = top end
+    end
+    return reach
+end
+
 -- The menu and the info panels are the same kind of thing, a slab of text
 -- laid over a fight that does not pause for it, so they are one at a time.
 -- Opening either shuts the other. Two of them at once was the exact thing the
@@ -538,8 +552,12 @@ end
 -- still most of what it carries, but anything worth telling the player about
 -- in a sentence belongs here rather than in a second widget: it is already
 -- the place they look to find out what just happened.
-local function notify(text, col)
-    table.insert(feed, 1, {text = text, col = col, t = 0})
+-- `mine` marks a line as being about this pilot rather than about the room.
+-- A desktop shows the whole feed and does not care; a phone has room for one
+-- line at a time and shows only these, because a stranger killing a stranger
+-- is news a player reading it mid-fight cannot use.
+local function notify(text, col, mine)
+    table.insert(feed, 1, {text = text, col = col, t = 0, mine = mine})
     while #feed > ui.FEED_MAX do table.remove(feed) end
 end
 
@@ -570,15 +588,15 @@ local function drain_kills()
         -- Yours outranks theirs when you managed both at once, which is a
         -- pilot who blew themselves up with the kill: that is your kill, and
         -- it is the line you will want to see.
-        local col = nil
+        local col, mine = nil, false
         if k.killer == me and k.victim ~= me then
-            col = pal.PRIZE
+            col, mine = pal.PRIZE, true
         elseif k.victim == me then
-            col = pal.HURT
+            col, mine = pal.HURT, true
         end
         notify((k.victim == k.killer) and {vn, " was caught in it"}
             or (k.killer == 255) and {vn, " flew into the wall"}
-            or {pilot_named(k.killer), " killed ", vn, paid}, col)
+            or {pilot_named(k.killer), " killed ", vn, paid}, col, mine)
         -- Your own death deals the card shown under DESTROYED. Set from the
         -- zone's announcement rather than from the local simulation, which
         -- can be up to four ticks behind the news. See the clear below.
@@ -623,7 +641,8 @@ local function drain_events()
             -- is the one place that says which happened.
             local up = v >= 0
             if not up then col = pal.RUST end
-            notify((up and "+ " or "- ") .. name, col)
+            -- Always yours: the event is filtered to this pilot two lines up.
+            notify((up and "+ " or "- ") .. name, col, true)
         elseif ty == sim.EV_FLAG_TAKE or ty == sim.EV_FLAG_DROP then
             local col = (sim.ship_team(a) == eye_team())
                 and pal.FRIEND or pal.ENEMY
@@ -1072,12 +1091,28 @@ function update(self, dt)
             -- inside what a rotation already costs the eyes.
             local ok2, ins = pcall(html5.run, "window.vwInsets || ''")
             if ok2 and ins and ins ~= "" then
-                local l, rr, t, b = string.match(ins,
-                    "^([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+)")
+                -- And whether the page is a home-screen app, which rides
+                -- along because it is the same question about the same
+                -- edge: what is sitting on the bottom strip of glass.
+                local l, rr, t, b, app, lay, vis, inn, out, scr, sy =
+                    string.match(ins,
+                    "^([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+)"
+                    .. " ([%d%.%-]+) ([%d%.%-]+) ([%d%.%-]+) ([%d%.%-]+)"
+                    .. " ([%d%.%-]+) ([%d%.%-]+)")
                 self.safe_l = tonumber(l) or 0
                 self.safe_r = tonumber(rr) or 0
                 self.safe_t = tonumber(t) or 0
                 self.safe_b = tonumber(b) or 0
+                self.installed = app == "1"
+                -- What the page thinks its own screen is, for the about
+                -- page. Four numbers rather than a conclusion, because the
+                -- conclusion is what is in doubt.
+                self.vp_layout = tonumber(lay) or 0
+                self.vp_visual = tonumber(vis) or 0
+                self.vp_inner = tonumber(inn) or 0
+                self.vp_outer = tonumber(out) or 0
+                self.vp_screen = tonumber(scr) or 0
+                self.vp_top = tonumber(sy) or 0
             end
         end
     end
@@ -1394,7 +1429,8 @@ function update(self, dt)
     -- lay out in drawable ones, so the density converts here, in the one
     -- place both readers are told.
     ui.safe((self.safe_l or 0) * density, (self.safe_r or 0) * density,
-            (self.safe_t or 0) * density, (self.safe_b or 0) * density)
+            (self.safe_t or 0) * density, (self.safe_b or 0) * density,
+            self.installed)
     touch.safe_l = (self.safe_l or 0) * density
     touch.safe_r = (self.safe_r or 0) * density
     -- The same four numbers, kept for the about page to print. Every device
@@ -1404,7 +1440,11 @@ function update(self, dt)
     -- somebody's hand.
     menu.screen = {w = ww, h = wh, d = density,
                    l = self.safe_l or 0, r = self.safe_r or 0,
-                   t = self.safe_t or 0, b = self.safe_b or 0}
+                   t = self.safe_t or 0, b = self.safe_b or 0,
+                   app = self.installed,
+                   vl = self.vp_layout or 0, vv = self.vp_visual or 0,
+                   vi = self.vp_inner or 0, vo = self.vp_outer or 0,
+                   vs = self.vp_screen or 0, vt = self.vp_top or 0}
     ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0)
     -- The interface stays up under the menu. Nothing is paused, so hiding the
     -- scoreboard and the radar behind a panel would be a lie about what is
@@ -1463,6 +1503,11 @@ function update(self, dt)
             -- renderer, which knows about drawing and not about sides.
             may_invite = net.may_invite(), invited = net.invited,
             feed = feed, hurt = hurt, tip = tip,
+            -- How far up the screen the thumb's controls climb, so the one
+            -- feed line a phone shows can be placed clear of them. Measured
+            -- from the same layout the taps are tested against, because a
+            -- rail is as tall as the charges a hull happens to carry.
+            pad_top = touch.used and pad_reach(ww, wh, density) or nil,
             charges = charge_row(),
             cam_x = cx, cam_y = cy,
             half_w = self.hw, half_h = self.hh,

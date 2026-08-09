@@ -37,13 +37,15 @@ local REFRESH = 3
 local RETRY_FIRST, RETRY_MAX = 2, 15
 
 M.rows = {}
--- What the list says when it has nothing to list: a heading, the line under
--- it, and the address being asked. Three strings rather than one, because an
--- empty page has room to say what is happening and what will happen, and the
--- address is for whoever is running this rather than for whoever is playing.
+-- What the list says when it has nothing to list: a heading and the line
+-- under it. Two strings rather than one, because an empty page has room to
+-- say what is happening as well as what will happen.
+--
+-- It carried the address being asked as a third, on the argument that
+-- whoever is running this would want to know which endpoint was silent.
+-- They read logs; a player reads this.
 M.note = "looking for games"
 M.why = "asking the directory"
-M.at = ""
 -- Set by the caller before the list is opened. Used once, on first contact
 -- with a meta-layer, to name a brand new account.
 M.pilot_name = ""
@@ -70,7 +72,7 @@ local function on_message(s)
     local ok, reply = pcall(json.decode, string.sub(s, 2))
     if not ok or type(reply) ~= "table" or type(reply.zones) ~= "table" then
         M.note = "the directory sent something unreadable"
-        M.why = "still asking, every few seconds"
+        M.why = "retrying"
         return
     end
     -- Where accounts live, if this deployment has any. It rides the games list
@@ -157,8 +159,13 @@ local function dial()
                 or data.event == websocket.EVENT_ERROR then
                 conn = nil
                 if #M.rows == 0 then
-                    M.note = "no directory answered"
-                    M.why = "still asking, every few seconds"
+                    -- What a player can see from where they are sitting. It
+                    -- said "no directory answered", which names a piece of
+                    -- this fleet nobody playing has heard of and reads as
+                    -- something they have done wrong; the address under it
+                    -- is still there for whoever is running the thing.
+                    M.note = "no servers found"
+                    M.why = "retrying"
                 end
             end
         end)
@@ -175,7 +182,6 @@ function M.open(at)
     M.rows = {}
     M.note = "looking for games"
     M.why = "asking the directory"
-    M.at = at or ""
     since = 0
     watching = false
     retry_in = RETRY_FIRST

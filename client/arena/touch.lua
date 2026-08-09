@@ -312,8 +312,10 @@ local RIM = 0.90
 local function mark_k(pad, t)
     -- Half a mark's width in its own units, plus the heaviest stroke drawn out
     -- there. A gun is the wider one: its muzzle is a hull and a half behind
-    -- the round and its add-ons ring the round itself.
-    local half = marks.MARK_REACH + 0.05
+    -- the round and its add-ons ring the round itself. The fuse is measured
+    -- separately because it is the one add-on that reaches past the rest, so
+    -- the number the rings are shared out of is not the widest thing drawn.
+    local half = math.max(marks.MARK_REACH + 0.05, marks.FIELD_MAX)
     if t == sim.TRIG_GUN then
         half = math.max(marks.BOLT_LEN - marks.BOLT_BIAS,
                         marks.BOLT_BIAS + half)

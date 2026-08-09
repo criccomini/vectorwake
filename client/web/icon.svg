@@ -1,7 +1,15 @@
-<!-- vectorwake's mark: two hulls passing on a course tilted off
-     vertical, each nose a little past the other's tail, drawn as the
-     silhouette the simulation flies (hull_extent's 20 fore, 11 aft,
-     10 half width, chamfered tail) and nothing else. The template
-     embeds a favicon cut of this and two PNGs as data URIs, and
-     ui.lua draws the same pair beside the wordmark. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path d="M92,0H512V420L420,512H0V92Z" fill="#05070c"/><path d="M105.6,180.4L289.6,310.6L270.6,352.4L210.9,394.3L165.1,397.8Z" fill="none" stroke="#4fd6ff" stroke-width="19" stroke-linejoin="miter"/><path d="M406.4,331.6L222.4,201.4L241.4,159.6L301.1,117.7L346.9,114.2Z" fill="none" stroke="#ffa552" stroke-width="19" stroke-linejoin="miter"/></svg>
+<!-- vectorwake's mark: six strokes, \|\|\|, read as the V of
+     vector and the W of wake. Each wedge is a wake falling into a vertical and
+     meeting it on the baseline; one gap throughout, so nothing marks where one
+     letter stops and the next starts. A wake is the same width as the vertical
+     it lands on and fades in as it falls, the way a round arriving does
+     everywhere else in this game, so what changes along it is the light and
+     not the line. It stands left of the tile's centre because its weight does
+     not: the wakes arrive out of nothing and weigh almost none of what they
+     cover, so centring the box it fills leaves the last vertical looking like
+     it fell against the right edge. The bias is the midpoint of centring the
+     box and centring the ink, which is the same split marks.BOLT_BIAS settles
+     for the gun.
+     The template embeds a heavier favicon cut of this and two PNGs as data
+     URIs, and ui.lua draws the same six strokes beside the wordmark. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="w0" gradientUnits="userSpaceOnUse" x1="7.6" y1="124.0" x2="139.6" y2="388.0"><stop offset="0" stop-color="#ffa552" stop-opacity="0"/><stop offset="1" stop-color="#ffa552" stop-opacity="1"/></linearGradient><linearGradient id="w1" gradientUnits="userSpaceOnUse" x1="163.4" y1="124.0" x2="295.4" y2="388.0"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff" stop-opacity="1"/></linearGradient><linearGradient id="w2" gradientUnits="userSpaceOnUse" x1="319.1" y1="124.0" x2="451.1" y2="388.0"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff" stop-opacity="1"/></linearGradient></defs><path d="M92,0H512V420L420,512H0V92Z" fill="#05070c"/><path d="M7.6,124.0 L139.6,388.0" fill="none" stroke="url(#w0)" stroke-width="8.7"/><path d="M139.6,388.0 L139.6,124.0" fill="none" stroke="#ffa552" stroke-width="8.7" stroke-linecap="square"/><path d="M163.4,124.0 L295.4,388.0" fill="none" stroke="url(#w1)" stroke-width="8.7"/><path d="M295.4,388.0 L295.4,124.0" fill="none" stroke="#4fd6ff" stroke-width="8.7" stroke-linecap="square"/><path d="M319.1,124.0 L451.1,388.0" fill="none" stroke="url(#w2)" stroke-width="8.7"/><path d="M451.1,388.0 L451.1,124.0" fill="none" stroke="#4fd6ff" stroke-width="8.7" stroke-linecap="square"/></svg>

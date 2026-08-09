@@ -434,21 +434,22 @@ check("the feed is capped at FEED_MAX", ui.FEED_MAX == 5,
       "FEED_MAX is " .. tostring(ui.FEED_MAX))
 check("a long feed still draws something", lines > 0 and before ~= nil)
 
--- A line is words with names in it, and the two are not set the same way: the
--- interface says its own words in capitals and quotes everybody else's. A call
--- sign is upper, lower and numeric exactly as its owner has it, and a feed
--- that shouted it back was the one place this pass got it wrong.
+-- A line is words with names in it, and neither is touched. A call sign is
+-- upper, lower and numeric exactly as its owner has it, which a feed that
+-- shouted it back got wrong once; and the words between the names stay lower,
+-- because this is the one panel setting a sentence about people rather than
+-- labelling an instrument, and leaving the names as the only capitals on the
+-- line is what makes them findable.
 frame({feed = {{text = {{"Probe 7"}, " killed ", {"vX-9"}, " (+12)"}, t = 0}}})
 local st_feed = package.loaded["arena.state"]
 local said_line
 for i = 1, st_feed.n do
-    if st_feed.text[i].s:find("killed", 1, true)
-       or st_feed.text[i].s:find("KILLED", 1, true) then
+    if st_feed.text[i].s:lower():find("killed", 1, true) then
         said_line = st_feed.text[i].s
     end
 end
-check("a feed line shouts its own words and quotes the names",
-      said_line == "Probe 7 KILLED vX-9 (+12)", tostring(said_line))
+check("a feed line quotes the names and does not shout its own words",
+      said_line == "Probe 7 killed vX-9 (+12)", tostring(said_line))
 
 -- --- the info box ----------------------------------------------------------
 

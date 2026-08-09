@@ -375,7 +375,8 @@ first version of this: it gave every add-on a symbol of its own and lined them
 up in a column, and six shapes beside a seventh read as seven things the ship
 is carrying, when what a player holds is one gun and one bomb that greens have
 been changing all match. So a bolt with bouncing on it is a bolt with a ball on
-each end of it, and a bomb with proximity is a bomb inside a broken ring.
+each end of it, and a bomb with proximity is a bomb standing on the area its
+fuse reaches.
 
 The level was three cyan rungs beside the mark, and that went the same way. It
 was there before the round had a colour of its own, and the round has one now:
@@ -387,9 +388,25 @@ team's colour, which a weapon's level has nothing to do with.
 A gun is a line into a dot and a bomb is a ringed head, which is what each is
 in the arena, and one set of add-on marks fits both because every add-on is
 something that happens either to the round's body (multifire sends more of
-them, freeze rimes it) or to the round itself (proximity rings it, shrapnel
-throws fragments off it, bouncing rings it too, the repel add-on stands a wave
-in front of it).
+them, freeze rimes it) or to the round itself (shrapnel throws fragments off
+it, bouncing rings it, the repel add-on stands a wave in front of it).
+
+The bomb's head is a core filling most of its ring, which is the proportion the
+arena draws one in flight at: a 3.6 core inside a 4.6 ring, so the two read as
+one object with a lit rim. It was a fifth of that for a while, a small dot a
+long way inside a ring, which is the picture the proximity fuse used to draw,
+so a bare bomb read as a loaded one.
+
+Proximity is the exception to all of it, and is drawn as ground rather than as
+a mark. A fuse is a circle a round goes off inside of, so every drawing of its
+boundary is a ring, and this mark already has rings on it. Cutting the ring
+finer, squaring it into a reticle and breaking it on the flanks were all drawn
+and all still asked a reader to tell one circle from another at three points
+across. It is the filled area now, in the round's own hue taken right down and
+laid under everything, so the head and the fragments and the bounce ring stand
+on it. Nothing else on any mark is filled, and because ground is not a ring it
+takes no share of the room: a hull with a fuse and fragments splits the width
+two ways rather than three.
 
 The bomb had a fading trail behind it until it did not. An icon is not a round
 in flight, so a streak of motion on a thing sitting still in a corner was a
@@ -618,32 +635,61 @@ flying, on a build that takes six minutes to publish.
 
 ## The mark
 
-Two hulls passing on a course tilted off vertical, each nose a little past the
-other's tail, in the two team colours. The silhouette is the simulation's own:
-`hull_extent` in `sim/src/baseline.c` gives the Apex 20 forward, 11 back and 10
-to a side with the tail cut flat, so the shape in the tab is the shape people
-fly. Outline only, no canopy and no fill, because the interface draws
-everything else in the same thin strokes.
+Six strokes, `\|\|\|`, read as the V of vector and the W of wake. Each wedge
+is a diagonal falling into a vertical and meeting it on the baseline; the first
+is the V, in the colour the interface gives the other side, and the second and
+third together are the W, in yours. One gap throughout, so nothing marks where
+one letter stops and the next starts and the run reads as one gesture: you get
+the letters out of it the way you get them out of the name.
 
-What makes it the mark is the arrangement rather than the ship. Two hulls at
-rest, symmetric about a point, is the swap glyph every icon set already ships;
-two hulls passing is a moment out of the game, and nothing in a tab bar looks
-like it. The angle is deliberately off the 45 degrees the tile's own chamfer
-cuts: at 45 the tails lined up with the corners and the pair read as a shape
-fitted to its box rather than as two craft on a course.
+The diagonals are wakes, dark where they leave and full where they land, which
+is what a thing arriving looks like everywhere else in this game. The verticals
+stand. Every one of the six is the same hairline, so what changes along a wake
+is the light in it and not the line: drawn at two weights the wakes read as
+shadows cast by the verticals rather than as strokes of the same word. That is
+the whole vocabulary, and it is the same one the weapon marks are drawn in,
+which is the argument for it: a wordmark made of strokes belongs to an
+interface that has nothing else in it.
+
+What it replaced was two hulls passing on a course off vertical. That was a
+picture of the game; this is the name, which is what a wordmark is for.
+
+On the menu it draws itself. A bullet falls down the first diagonal, bounces
+off the baseline where the vertical stands, runs up it, hops to the next wedge
+and does it again, six strokes in about a second, and the mark is left standing
+when it finishes. Nothing tells it the menu opened: the run restarts whenever
+the mark has not been drawn for a moment, so every way into the menu replays it
+and nothing has to remember to ask.
 
 It exists twice, which is the risk worth knowing about. `client/web/icon.svg`
 is the source the page template carries as three data URIs, and `ui.logo` in
-`arena/ui.lua` draws the same pair as strokes beside the wordmark, because the
+`arena/ui.lua` draws the same six strokes beside the wordmark, because the
 interface has no way to put a picture on screen and would not want one.
 `lua5.1 client/tests/logo_test.lua` reads the shipped SVG's own coordinates and
 holds the Lua to them, so the two cannot drift apart without CI saying so. It
-also checks the property the mark depends on, that each nose reaches past the
-other's tail.
+also checks what makes the mark a word rather than a pattern, that each wake
+lands where its vertical stands and that the three wedges are evenly spaced,
+and it drives the animation to make sure it starts from nothing and finishes
+into the shape itself rather than into an approximation of it.
 
-The favicon is its own cut rather than the logo shrunk: wider apart and a
-heavier line, since at sixteen pixels two outlines at logo weight share pixels
-and read as one knot.
+The favicon is its own cut rather than the logo shrunk: a heavier line and a
+wider gap, since at sixteen pixels the logo's hairline is a hairline and the
+three wedges run together into one smudge. What does not change between the
+cuts is the wake: it fades exactly as `seg_fade` draws it in the interface,
+which in SVG is a stroke painted with a `linearGradient` running end to end.
+Drawn flat, as it was at first, the icon is three bars and a colour change, and
+the thing the shape is about stops happening. At the logo's own weight it also
+stops happening, because a stroke that fine sits under a pixel on a tab: the
+whole reason the favicon is cut separately.
+
+Both cuts stand left of centre in the tile. Centred on the box they fill, they
+look shoved right, because a wake arrives out of nothing and weighs almost none
+of the width it covers: the drawn box wants the mark 3 px left and the drawn
+ink wants it 47, on a tile 512 across. It sits at the midpoint of the two,
+which is how `marks.BOLT_BIAS` was settled for the gun and for the same reason.
+Past about 36 px the first wake's thin end runs off the left edge, and a hard
+cut across a gradient is worse than the thing being fixed. `logo_test` holds
+both ends: clear of both edges, and biased the way the weight is not.
 
 ## The repel nobody could see
 

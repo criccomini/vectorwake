@@ -68,15 +68,29 @@ function layer:arc(x, y, r, a0, a1)
     local s = put("arc", x - r, y - r, x + r, y + r)
     s.cx, s.cy, s.r, s.a0, s.a1 = x, H - y, r, a0, a1
 end
--- The visor is a strip of these. Only its extent is wanted, so they collapse
--- into one running box rather than being kept individually.
 function layer:quad(x1, y1, x2, y2, x3, y3, x4, y4)
     local xs, ys = {x1, x2, x3, x4}, {y1, y2, y3, y4}
     local s = put("quad", math.min(unpack(xs)), math.min(unpack(ys)),
                   math.max(unpack(xs)), math.max(unpack(ys)))
     s.top = H - math.max(unpack(ys))
 end
-for _, n in ipairs({"fan", "flush", "frame", "halo", "reset", "ring",
+-- The visor is one of these. Its points are kept rather than collapsed,
+-- because what is checked about it is the shape of its two edges against each
+-- other, which a bounding box has thrown away.
+function layer:fan(pts)
+    local o = {kind = "fan", pts = {}}
+    for i = 1, #pts, 2 do
+        o.pts[#o.pts + 1] = {pts[i], H - pts[i + 1]}
+    end
+    for _, pt in ipairs(o.pts) do
+        o.x0 = math.min(o.x0 or pt[1], pt[1])
+        o.x1 = math.max(o.x1 or pt[1], pt[1])
+        o.y0 = math.min(o.y0 or pt[2], pt[2])
+        o.y1 = math.max(o.y1 or pt[2], pt[2])
+    end
+    shapes[#shapes + 1] = o
+end
+for _, n in ipairs({"flush", "frame", "halo", "reset", "ring",
                     "ring_fade", "seg_fade", "skirt", "tri",
                     "tri_fade"}) do
     layer[n] = function() end
@@ -119,15 +133,21 @@ end
 
 -- --- finding the marks -----------------------------------------------------
 
--- A person's helmet, found by its glass: the one arc in this interface that
--- turns more than half a revolution. Nothing else on these screens does, and
--- the bowl runs from one end of the neck cut, over the crown, to the other.
+-- A person's helmet, found by its shell: a closed run drawn out of far more
+-- points than any corner needs, standing taller than it is wide. Everything
+-- else outlined on these screens is a handful of straight sides, and the one
+-- other sampled curve, the ring around the world in the Zones stop, is three
+-- times as wide as it is high.
 local function crowns(list)
     local out = {}
     for _, sh in ipairs(list) do
-        if sh.kind == "arc" and sh.a0
-            and math.abs(sh.a1 - sh.a0) > math.pi * 1.02 then
-            out[#out + 1] = sh
+        if sh.kind == "outline" and sh.pts and #sh.pts >= 20
+            and sh.y1 - sh.y0 > sh.x1 - sh.x0 then
+            out[#out + 1] = {cx = (sh.x0 + sh.x1) / 2,
+                             cy = (sh.y0 + sh.y1) / 2,
+                             w = sh.x1 - sh.x0, h = sh.y1 - sh.y0,
+                             x0 = sh.x0, x1 = sh.x1,
+                             y0 = sh.y0, y1 = sh.y1, pts = sh.pts}
         end
     end
     return out
@@ -212,84 +232,90 @@ check("the rail's pilot stop is a helmet", #rail_only == 1,
 local RAIL_HELMETS = #rail_only
 
 if rail_only[1] then
-    local bowl = rail_only[1]
-    local parts = near(rail_frame, bowl.cx, bowl.cy, bowl.r)
-    -- One straight run under the glass: the collar. The bowl is otherwise all
-    -- curve, which is the whole difference from the box this replaced.
-    local straight, worn = 0, 0
-    for _, sh in ipairs(parts) do
-        if horizontal(sh) and sh.ay > bowl.cy then
-            straight = straight + 1
-            if collar_of(sh, bowl.r) then worn = worn + 1 end
-        end
-    end
-    check("the person's shell is a turn of glass on one collar",
-          straight == 1 and worn == 1,
-          straight .. " straight runs under the glass, " .. worn
-          .. " of them long enough to stand on")
+    local shell = rail_only[1]
+    local parts = near(rail_frame, shell.cx, shell.cy, shell.h / 2)
 
-    -- The visor: drawn, curved, and clear of the glass at every point.
-    local band = {}
+    -- Nothing straight under it. The shell used to be cut off flat and stood
+    -- on a collar, and the collar was a line wider than the cut, which read as
+    -- shoulders. It closes on its own chin now, so a straight run down there
+    -- is that collar come back.
+    local straight = 0
     for _, sh in ipairs(parts) do
-        if sh.kind == "quad" then band[#band + 1] = sh end
+        if horizontal(sh) and sh.ay > shell.cy then straight = straight + 1 end
     end
-    check("the person wears a visor", #band >= 4,
-          #band .. " slices of band")
-    if #band >= 4 then
-        -- Swelled, which is two separate facts about two separate edges. Both
-        -- have to hold: curve them the same way and the band slides bodily up
-        -- or down without changing shape at all, which is what the two cuts
-        -- before this one did.
-        local mid_top, end_top = math.huge, -math.huge
+    check("the person's shell closes on itself, with nothing under it",
+          straight == 0, straight .. " straight runs below the middle")
+
+    -- Taller than it is wide, and narrower at the chin than at the eyes.
+    -- Both are what stopped it reading as a fishbowl, and neither survives
+    -- somebody tuning one number without looking.
+    check("it stands taller than it is wide", shell.h > shell.w * 1.05,
+          string.format("%.2f wide by %.2f high", shell.w, shell.h))
+    local widest, chin = 0, 0
+    for _, pt in ipairs(shell.pts) do
+        local dx = math.abs(pt[1] - shell.cx)
+        widest = math.max(widest, dx)
+        -- The bottom fifth, which is the chin.
+        if pt[2] > shell.y1 - shell.h * 0.2 then chin = math.max(chin, dx) end
+    end
+    check("and draws in below the eyes", chin < widest * 0.75,
+          string.format("chin %.2f against %.2f at the widest", chin, widest))
+
+    -- The visor: one pane, ruled along the top and sagging along the bottom.
+    local band
+    for _, sh in ipairs(parts) do
+        if sh.kind == "fan" then band = sh end
+    end
+    check("the person wears a visor", band ~= nil, "no pane drawn")
+    if band then
+        -- Ruled along the top: the two ends and the middle of that edge all
+        -- on one line. A visor curved on both edges is the band this
+        -- replaced, and it read as a line drawn on a face rather than as
+        -- glass set into a helmet.
+        local top = math.huge
+        for _, pt in ipairs(band.pts) do top = math.min(top, pt[2]) end
+        local ruled = 0
+        for _, pt in ipairs(band.pts) do
+            if math.abs(pt[2] - top) < 0.01 then ruled = ruled + 1 end
+        end
+        check("ruled along the top", ruled >= 2,
+              ruled .. " points on the top edge")
+
+        -- And sagging along the bottom: deepest where it crosses the middle
+        -- of the face, which is what a pane does and a rule does not.
         local mid_bot, end_bot = -math.huge, math.huge
-        local lo, hi = math.huge, -math.huge
-        for _, sh in ipairs(band) do
-            lo = math.min(lo, sh.x0)
-            hi = math.max(hi, sh.x1)
+        local lo, hi = band.x0, band.x1
+        for _, pt in ipairs(band.pts) do
+            local t = (pt[1] - lo) / (hi - lo)
+            if t > 0.4 and t < 0.6 then mid_bot = math.max(mid_bot, pt[2]) end
+            if t < 0.08 or t > 0.92 then end_bot = math.min(end_bot, pt[2]) end
         end
-        local span = hi - lo
-        for _, sh in ipairs(band) do
-            local t = ((sh.x0 + sh.x1) / 2 - lo) / span
-            if t > 0.4 and t < 0.6 then
-                mid_top = math.min(mid_top, sh.top)
-                mid_bot = math.max(mid_bot, sh.y1)
-            end
-            if t < 0.08 or t > 0.92 then
-                end_top = math.max(end_top, sh.top)
-                end_bot = math.min(end_bot, sh.y1)
-            end
-        end
-        -- Thick enough to be a band, measured on one slice at the middle. The
-        -- whole band's extent counts the bend as well as the depth, so a
-        -- visor squashed towards a hairline passes on curvature alone.
-        local deep = 0
-        for _, sh in ipairs(band) do
-            local t = ((sh.x0 + sh.x1) / 2 - lo) / span
-            if t > 0.4 and t < 0.6 then
-                deep = math.max(deep, sh.y1 - sh.y0)
-            end
-        end
-        check("of some depth", deep > bowl.r * 0.3,
-              string.format("%.3f of a radius deep", deep / bowl.r))
-        check("its top rises over the middle",
-              end_top - mid_top > bowl.r * 0.02,
-              string.format("%.3f of a radius", (end_top - mid_top) / bowl.r))
-        check("and its bottom drops under it",
-              mid_bot - end_bot > bowl.r * 0.02,
-              string.format("%.3f of a radius", (mid_bot - end_bot) / bowl.r))
-        -- Inside the glass, with the gap kept. Measured at the corners, which
-        -- is where a band run to the mark's nominal width escapes.
-        local worst = 0
-        for _, sh in ipairs(band) do
-            for _, x in ipairs({sh.x0, sh.x1}) do
-                for _, y in ipairs({sh.y0, sh.y1}) do
-                    local d = math.sqrt((x - bowl.cx) ^ 2 + (y - bowl.cy) ^ 2)
-                    worst = math.max(worst, d / bowl.r)
+        check("and sagging along the bottom",
+              mid_bot - end_bot > shell.h * 0.02,
+              string.format("%.3f of its own height", (mid_bot - end_bot)
+                                                      / shell.h))
+
+        -- Held inside the shell. Measured against the shell's own outline at
+        -- the visor's height rather than against a radius, since there is no
+        -- one circle to measure from any more.
+        local function shell_half(y)
+            local best = 0
+            for _, pt in ipairs(shell.pts) do
+                if math.abs(pt[2] - y) < shell.h * 0.06 then
+                    best = math.max(best, math.abs(pt[1] - shell.cx))
                 end
             end
+            return best
         end
-        check("and stays inside the glass with the gap kept", worst < 0.97,
-              string.format("reaches %.3f of the radius", worst))
+        local worst = 0
+        for _, pt in ipairs(band.pts) do
+            local half = shell_half(pt[2])
+            if half > 0 then
+                worst = math.max(worst, math.abs(pt[1] - shell.cx) / half)
+            end
+        end
+        check("and stays inside the shell", worst < 0.99,
+              string.format("reaches %.3f of the shell's own width", worst))
     end
 end
 
@@ -342,11 +368,11 @@ check("the bot's antenna stands above its crown",
       string.format("%.3f of a half width above", machine_over or 0))
 
 local person_over = rail_only[1]
-    and over(rail_frame, rail_only[1].cx, rail_only[1].cy - rail_only[1].r,
-             rail_only[1].r)
+    and over(rail_frame, rail_only[1].cx, rail_only[1].y0,
+             rail_only[1].h / 2)
 check("and the pilot puts nothing above hers",
       person_over and person_over < 0.02,
-      string.format("%.3f of a radius above", person_over or 0))
+      string.format("%.3f of a half height above", person_over or 0))
 
 -- --- and the pair sits level -----------------------------------------------
 
@@ -373,26 +399,34 @@ if #listed_round == RAIL_HELMETS + 1 and #listed_square == 1 then
         if not rail_x or math.abs(sh.cx - rail_x) > 1 then person = sh end
     end
     local machine = listed_square[1]
-    check("the pair in the row is drawn to one width",
-          person and math.abs(person.r * 2 - machine.w) < 0.51,
-          person and string.format("%.2f against %.2f", person.r * 2,
-                                   machine.w) or "no row helmet")
-    -- One baseline: both collars on the same line, within half a pixel.
-    local function collar_y(list, cx, cy, r)
-        local best
-        for _, sh in ipairs(near(list, cx, cy, r)) do
-            if collar_of(sh, r) and sh.ay > cy then
-                best = math.max(best or -math.huge, sh.ay)
-            end
+    -- One height, not one width. The person's shell is drawn narrower than
+    -- its box on purpose, which is what stopped it reading as a fishbowl, so
+    -- the two no longer measure the same across. What still has to hold is
+    -- that they stand the same tall, because a pair at two sizes reads as two
+    -- pictures that happen to be adjacent.
+    --
+    -- Read off the two ends rather than off a height, since the machine's
+    -- sides butt half a line under its own crown so that four capped strokes
+    -- do not light four corners, and a height measured through them comes out
+    -- half a line short of the box the mark actually fills.
+    check("the pair in the row is drawn to one crown",
+          person and math.abs(person.y0 - machine.top) < 0.51,
+          person and string.format("%.2f against %.2f", person.y0,
+                                   machine.top) or "no row helmet")
+    -- And on one line. The machine still stands on a collar and the person
+    -- closes on a chin, so what is compared is the bottom of each: the line
+    -- they are both drawn down to, whatever they do when they get there.
+    local my
+    for _, sh in ipairs(near(list_frame, machine.cx,
+                             machine.top + machine.h / 2, machine.w / 2)) do
+        if collar_of(sh, machine.w / 2) and sh.ay > machine.top then
+            my = math.max(my or -math.huge, sh.ay)
         end
-        return best
     end
-    local py = person and collar_y(list_frame, person.cx, person.cy, person.r)
-    local my = collar_y(list_frame, machine.cx, machine.top + machine.h / 2,
-                        machine.w / 2)
-    check("and they stand on one collar", py and my
-          and math.abs(py - my) < 0.51,
-          string.format("%.2f against %.2f", py or -1, my or -1))
+    check("and they stand on one line", person and my
+          and math.abs(person.y1 - my) < 0.51,
+          string.format("%.2f against %.2f", person and person.y1 or -1,
+                        my or -1))
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

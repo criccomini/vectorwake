@@ -87,9 +87,19 @@ moment the shapes were worth looking at. What has not changed is the constraint
 underneath it: a class is identifiable by silhouette alone, and detail that
 competes with that is wrong.
 
-**Teams.** Team color drives the outline and the fill tint, and the two teams
-are separated by hue and by luminance, so the distinction survives colorblind
-vision. Shape carries class, color carries team, and neither carries both.
+**Teams.** A hull carries two colors and only two: yours and not yours. The
+outline and the fill tint say which, separated by hue and by luminance so the
+distinction survives colorblind vision. That is the read a player needs in the
+half second before firing, and putting ten hues on the field would slow it down.
+
+Which side an enemy belongs to is a slower question, so it is answered in text
+rather than in paint. Names, bounties, the scoreboard and the stage list write a
+side in a color derived from its number, the same color on every machine with
+nothing sent to agree on it. Shape carries class, hull color carries friend or
+foe, and text carries the side.
+
+This replaces a rule that said team color drove the outline and that there were
+two teams to separate. Zones run ten.
 
 **Weapons.** Bright bolts with sharp falloff and short trails. Bombs bloom into
 geometric shockwaves rather than fireballs. Every weapon class occupies a

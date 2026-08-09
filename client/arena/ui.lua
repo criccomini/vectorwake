@@ -221,26 +221,61 @@ local function collar(cx, neck, half, line, col)
           line, col, true)
 end
 
--- A person's shell: a bowl of glass, one turn of a circle cut off at the
--- neckline. The chamfer the rest of this interface is built from went here
--- first and made a box with a face in it, and straight sides after that made
--- a bucket. A helmet is the one object in this game that is not machined, and
--- it reads as one once its edges stop being edges.
-local function helm(cx, cy, k, col)
+-- A person's shell: a closed flight helmet, a crown over a longer face, with
+-- nothing under it.
+--
+-- Two superellipses sharing a waist, which is the widest line across it and
+-- where the face keeps its eyes. FACE_CROWN is the share of the height above
+-- that waist, so a small one is a long face. FACE_ROUND is how square the
+-- crown turns and FACE_BLUNT how the chin ends: 2 turns through the bottom,
+-- less draws it towards a point. FACE_IN is the width the face gives up on
+-- its way down, which is the other half of a chin and has to move with
+-- FACE_BLUNT, since a blunt end on a face that has already lost its width is
+-- a stub rather than a jaw.
+--
+-- What this replaced was a bowl of glass on a collar, cut off flat at the
+-- neck. Three things were wrong with it and only the last is obvious. A true
+-- circle is as wide at the mouth as at the eyes and widest exactly halfway
+-- down, which no helmet built for a cockpit is. The collar was a line wider
+-- than the cut it stood on, so it read as shoulders under a fishbowl. And a
+-- circle with a bar across it is a diagram of a face rather than a drawing of
+-- one.
+local FACE_WIDE, FACE_CROWN = 0.38, 0.38
+local FACE_ROUND, FACE_BLUNT, FACE_IN = 2.1, 2.3, 0.16
+
+local function helm(cx, cy, k, col, line)
     local w = k
     local h = w * HELM_TALL
     local x0, y0 = cx - w / 2, cy - h / 2
-    local r = w * 0.5
-    local mid = y0 + r                 -- the centre of the bowl
-    local neck = mid + r * HELM_NECK   -- where the collar cuts it off
-    local half = math.sqrt(math.max(0, r * r - (neck - mid) ^ 2))
-    local line = pen(k, 0.11)
-    local segs = math.max(8, math.floor(k * 0.8))
-    -- The angle the cut meets the circle at, measured off the horizontal.
-    local a = math.asin((neck - mid) / r)
-    u:arc(cx, ry(mid), r, -a, math.pi + a, line, segs, col)
-    collar(cx, neck, half, line, col)
-    return x0, y0, w, h, mid, r
+    line = line or pen(k, 0.11)
+    local up, down = h * FACE_CROWN, h * (1 - FACE_CROWN)
+    local waist = y0 + up
+    local half = k * FACE_WIDE
+    -- Half the shell's width at a height. Crown above the waist, face below.
+    local function hw(y)
+        local t = (y - waist) / (y < waist and up or down)
+        t = math.max(-1, math.min(1, t))
+        if t < 0 then
+            return half * (1 - (-t) ^ FACE_ROUND) ^ (1 / FACE_ROUND)
+        end
+        return half * (1 - t ^ FACE_BLUNT) ^ (1 / FACE_BLUNT)
+                    * (1 - FACE_IN * t)
+    end
+    -- One closed run, left side down and right side back up. Sampled rather
+    -- than struck, because there is no one circle to strike it from.
+    local pts, steps = {}, math.max(10, math.min(18, math.floor(k * 0.7)))
+    for i = 0, steps do
+        local y = y0 + h * i / steps
+        pts[#pts + 1] = cx - hw(y)
+        pts[#pts + 1] = ry(y)
+    end
+    for i = steps, 0, -1 do
+        local y = y0 + h * i / steps
+        pts[#pts + 1] = cx + hw(y)
+        pts[#pts + 1] = ry(y)
+    end
+    u:outline(pts, line, col, true)
+    return x0, y0, w, h, waist, hw
 end
 
 -- A machine's shell: the same envelope with the curve taken out of it.
@@ -258,14 +293,14 @@ end
 -- past each end, so four capped sides overlap in four squares and light every
 -- corner. The crown is capped and covers them; the sides butt into it and
 -- into the collar, each drawing its own length and no more.
-local function hull_helm(cx, cy, k, col)
+local function hull_helm(cx, cy, k, col, line)
     local w = k
     local h = w * HELM_TALL
     local x0, y0 = cx - w / 2, cy - h / 2
     local r = w * 0.5
     local mid = y0 + r
     local neck = mid + r * HELM_NECK
-    local line = pen(k, 0.11)
+    line = line or pen(k, 0.11)
     u:seg(x0, ry(y0), x0 + w, ry(y0), line, col, true)
     u:seg(x0, ry(y0 + line / 2), x0, ry(neck - line / 2), line, col)
     u:seg(x0 + w, ry(y0 + line / 2), x0 + w, ry(neck - line / 2), line, col)
@@ -279,81 +314,56 @@ end
 -- in a row, and enough for the glass, the collar and the band to survive.
 local MARK_K = 11
 
--- How far off the bowl's centre the visor's two edges are struck from, in
--- radii, and where each sits when it crosses the middle. The two pivots are
--- that distance either side of the centre, which is what makes the band swell
--- rather than bend: bigger is flatter, and at a few radii the arcs are gentle
--- enough to read as a swelling instead of as a lens.
-local VISOR_PIVOT = 2.8
-local VISOR_TOP, VISOR_BOT = 0.34, 0.10
+-- How high the visor sits over the waist and how far it sags under it, in
+-- strokes, so the glass travels with the line rather than with the mark.
+-- Against the mark it grew with the drawing, and wherever the mark went big
+-- under a line held thin -- the rail -- the glass came out a slab in a column
+-- of line work.
+--
+-- And a ceiling on both, against the mark's own height, because the trade runs
+-- the other way at the other end. The pen is 0.13 of this mark's height at
+-- eleven points and 0.07 of it in the rail, so a visor cut purely in strokes
+-- is twice as deep in the games list as in the menu: it filled the shell and
+-- left a helmet reading as a blob with a notch in it. The ceilings are set
+-- clear of what the rail draws, so the size this shape was chosen at is the
+-- one neither of them touches.
+local VISOR_LIFT, VISOR_SAG = 1.5, 2.6
+local VISOR_LIFT_MAX, VISOR_SAG_MAX = 0.11, 0.19
 
--- A person: the visor, one curved band across the glass.
+-- A person: the visor, wrapped into the shell.
 --
--- It was a pair of shades with a wedge of nose between them, and the nose was
--- the part doing the work: two lenses without it close into a band with a
--- nick, and with it they read as a face rather than as a helmet. A visor is
--- the simpler object and the one a space helmet actually has, so the band is
--- unbroken and the face behind it is left alone.
+-- Ruled along the top and sagging along the bottom, so it wraps the face
+-- rather than lying across it, and it is deepest where it crosses the middle
+-- of that face. It sits on the waist, which is the shell's own widest line
+-- and where a face keeps its eyes.
 --
--- Swelled rather than ruled or bent. Two earlier cuts curved both edges the
--- same way, which slides the whole band up or down without changing its
--- shape: struck like the dome it was a brow, and struck against the dome it
--- was a frown, and either way it read as a line that had been pushed around
--- rather than as an object.
+-- Everything before it was a band: struck two ways to bow apart, or bent, or
+-- ruled flat. All of them read as a line drawn on a face rather than as a
+-- pane set into a helmet, because a band has two edges doing the same thing
+-- and glass in a shell does not. This has one edge on the brow and one on
+-- nothing, which is what a visor looks like from in front.
 --
--- This bows the edges apart instead. The top rises over the middle and the
--- bottom drops under it, so the band is deepest where it crosses the face and
--- narrows towards each end, which is what a curved pane does when you look at
--- it head on. The ends stop short of the glass rather than touching, which is
--- what keeps it a visor in a helmet instead of a helmet in two pieces.
---
--- Drawn as a strip of quads, walking the two edges together. A fan would
--- serve, the swelled band being convex where the bent one was not, but the
--- strip does not care either way and this shape has now changed three times.
-local function pilot_mark(cx, cy, col, k)
+-- Its ends come off the shell's own width at that height, so a narrower head
+-- gets a shorter visor. That is the trade in this mark: the visor is the
+-- whole of it at 26 points, and every hundredth of width the head gives up
+-- comes off the part being read.
+local function pilot_mark(cx, cy, col, k, line)
     k = k or MARK_K * S
-    local w, h, mid, r = select(3, helm(cx, cy, k, col))
-    local _ = h
-    -- The glass, less the line it is drawn with and the gap held off it.
-    local rin = r - (pen(k, 0.11) + w * 0.045)
-    -- One pivot under the helmet and one over it, each carrying the edge
-    -- furthest from it. The top's arc therefore stands on its pivot and the
-    -- bottom's hangs from its own, and the two part company away from the
-    -- middle.
-    local under, over = mid + r * VISOR_PIVOT, mid - r * VISOR_PIVOT
-    local top = under - (mid - r * VISOR_TOP)
-    local bot = (mid + r * VISOR_BOT) - over
-    local function upper(x)
-        return under - math.sqrt(math.max(0, top * top - x * x))
+    line = line or pen(k, 0.11)
+    local w, h, waist, hw = select(3, helm(cx, cy, k, col, line))
+    local top = waist - math.min(line * VISOR_LIFT, h * VISOR_LIFT_MAX)
+    local reach = hw(top) - line * 1.1
+    local sag = math.min(line * VISOR_SAG, h * VISOR_SAG_MAX)
+    local floor = cy + h / 2
+    -- One fan, walked left to right along the top and back along the sag. The
+    -- shape is convex, so a fan is exact and costs a triangle a step.
+    local pts = {cx - reach, ry(top), cx + reach, ry(top)}
+    for i = 8, 0, -1 do
+        local t = -1 + 2 * i / 8
+        pts[#pts + 1] = cx + reach * t
+        pts[#pts + 1] = ry(math.min(waist + sag * (1 - t * t), floor - line))
     end
-    local function lower(x)
-        return over + math.sqrt(math.max(0, bot * bot - x * x))
-    end
-    -- How far out the band runs before it would leave the glass. Solved by
-    -- halving rather than in closed form: the answer is a couple of pixels
-    -- and the arithmetic for it is a page.
-    local lo, hi = 0, rin
-    for _ = 1, 24 do
-        local m = (lo + hi) / 2
-        local ty, by = upper(m) - mid, lower(m) - mid
-        if m * m + math.max(ty * ty, by * by) <= rin * rin then
-            lo = m
-        else
-            hi = m
-        end
-    end
-    local reach = lo
-    local n = math.max(4, math.floor(k / 2))
-    local px, pty, pby
-    for i = 0, n do
-        local x = -reach + 2 * reach * i / n
-        local ty, by = upper(x), lower(x)
-        if px then
-            u:quad(cx + px, ry(pty), cx + x, ry(ty),
-                   cx + x, ry(by), cx + px, ry(pby), col)
-        end
-        px, pty, pby = x, ty, by
-    end
+    u:fan(pts, col)
     return w
 end
 
@@ -365,17 +375,17 @@ end
 -- Lamps rather than a visor, and a flat crown to stand them under. The
 -- antenna says the same thing a second time, which is worth the two points it
 -- costs: three of this mark's four uses are solo.
-local function bot_mark(x, y, col, k)
+local function bot_mark(x, y, col, k, line)
     k = k or MARK_K * S
     local cx = x + k / 2
-    local x0, y0, w, _, mid, r = hull_helm(cx, y, k, col)
+    local x0, y0, w, _, mid, r = hull_helm(cx, y, k, col, line)
     -- The middle of the box rather than the middle of the circle it used to
     -- be: a flat crown puts the room the dome was using back into the shell,
     -- and lamps left where they were sat in the bottom third of it.
     local eye = mid - r * 0.16
     u:disc(x0 + w * 0.31, ry(eye), w * 0.115, 8, col)
     u:disc(x0 + w * 0.69, ry(eye), w * 0.115, 8, col)
-    u:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), pen(k, 0.09), col, true)
+    u:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), line or pen(k, 0.09), col, true)
     u:disc(cx, ry(y0 - r * 0.48), w * 0.11, 8, col)
     return w
 end
@@ -522,9 +532,21 @@ end
 -- What arrives here is already net of whatever the canvas does not cover:
 -- under a browser's bottom toolbar the strip is spoken for, and stepping up
 -- by the inset as well would be stepping over the same thing twice.
-local SL, SR, ST, SB = 0, 0, 0, 0
-function M.safe(l, r, t, b)
+--
+-- `app` is whether the page was launched from a home screen rather than
+-- opened in a tab, and it decides the one case the paragraph above does not
+-- cover. In a tab the rail sits above the toolbar and there is nothing under
+-- it; installed, the rail is the last thing before the edge of the screen and
+-- the inset lifts it off that edge, which is the strip of black under the
+-- buttons on a phone with no address bar. So installed, the rail stops
+-- stepping over the indicator and runs to the edge the way the pads already
+-- do. It costs the bottom third of a stop's surface to a bar the system may
+-- swallow a press under, and buys back the ten points that made the row look
+-- like it had come loose.
+local SL, SR, ST, SB, SAPP = 0, 0, 0, 0, false
+function M.safe(l, r, t, b, app)
     SL, SR, ST, SB = l or 0, r or 0, t or 0, b or 0
+    SAPP = app and true or false
 end
 
 -- `now` is the frame's clock in seconds, for the few things on screen that
@@ -652,6 +674,20 @@ end
 -- be watching is a teammate of yours. Set once per frame from what the zone
 -- told this client its side is.
 local view_team = 255
+
+-- What colour to write a side's name in.
+--
+-- Yours is cyan, always, whichever byte it happens to be: "mine" is a reading
+-- a pilot makes before they read anything, and a side that changed colour on
+-- you when the zone shuffled the numbers would break it. Everybody else wears
+-- the colour their byte generates.
+--
+-- Only words go through this. Hulls, plates, rounds and the radar keep the two
+-- colours, because those are glanced at and a glance holds one bit.
+local function team_col(t)
+    if t == view_team then return pal.FRIEND end
+    return pal.team(t)
+end
 
 local function own_arrow(ax, ay, ox, oy, side, me)
     local edge = 5 * S
@@ -904,7 +940,6 @@ local function nameplates(o)
     -- the view_tiles setting put every name adrift the moment the camera
     -- stopped being driven by that setting -- which it already had.
     local scale = W / (2 * o.half_w)
-    local my_team = view_team
     -- The one hull that goes unlabelled is your own, and a watcher has none.
     -- The pilot being observed therefore wears their name and their bounty
     -- exactly like everybody else on screen: "who am I looking at" is the
@@ -923,8 +958,12 @@ local function nameplates(o)
             if sx > -40 and sx < W + 40 and sy > -30 and sy < H + 30 then
                 local p = o.pilots[i]
                 local nm = (p and p.name) or ("ship " .. i)
-                local col = (sim.ship_team(i) == my_team) and pal.FRIEND
-                    or pal.ENEMY
+                -- The plate is where the sides come apart. The hull under it
+                -- stays cyan or orange, which is the call a pilot makes at
+                -- speed; the name says which orange, which is the call they
+                -- make when they have a moment to read one. Three hulls
+                -- converging is a different problem if they are one squad.
+                local col = team_col(sim.ship_team(i))
                 -- The bounty rides with the name, always. It is what killing
                 -- them pays, so it is the one number that says which of two
                 -- ships in front of you is worth the risk.
@@ -960,8 +999,15 @@ local function nameplates(o)
                                  sy + 13 * S, pal.a(col, 0.45), 10 * S)
                     end
                     if bty > 0 then
+                        -- In the side's colour rather than the bounty gold,
+                        -- so the name and the number under it read as one
+                        -- label belonging to one squad. Gold said "this is a
+                        -- bounty", which the position under a name already
+                        -- says, and it said it identically for every pilot on
+                        -- screen: the one thing a colour here can carry is
+                        -- whose they are.
                         txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
-                            pal.a(pal.BOUNTY, 0.85))
+                            pal.a(col, 0.85))
                     end
                 end
             end
@@ -1197,7 +1243,6 @@ local function scores(me, pilots, watchers)
     ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
           pal.a(pal.RADAR_TILE, 0.35), 14 * S)
 
-    local my_team = view_team
     local y = top_y() + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
@@ -1207,7 +1252,10 @@ local function scores(me, pilots, watchers)
         -- colour: the neutral ink, dimmer than a pilot, which is the reading.
         local col = pal.DIM
         if not r.watch then
-            col = (sim.ship_team(r.i) == my_team) and pal.FRIEND or pal.ENEMY
+            -- The same colour their plate wears out in the arena. A key is
+            -- only a key if it reads the same in both places: a name orange
+            -- here and violet on the hull is two facts about one pilot.
+            col = team_col(sim.ship_team(r.i))
         end
         if mine or reading then
             -- Your row, marked the way a selected row is marked everywhere
@@ -1323,13 +1371,19 @@ local FEED_FADE = 1.6
 M.FEED_MAX = 5
 
 -- A feed line is words with names in it, so it is given as words with names
--- in it: plain strings are the interface talking and go to capitals, and a
--- table is a name, which is drawn as whoever owns it wrote it.
+-- in it: a table part is a name and is drawn as whoever owns it wrote it,
+-- and everything else is the interface talking.
+--
+-- The interface talks in capitals everywhere else and does not here. A label
+-- shouts because it is a thing to find at a glance; this is a sentence about
+-- people, and "OZONE KILLED KESTREL" reads as an announcement rather than as
+-- something that happened. Lower case leaves the names as the only capitals
+-- on the line, which is also what the eye is looking for.
 local function line_text(t)
-    if type(t) == "string" then return string.upper(t) end
+    if type(t) == "string" then return t end
     local out = {}
     for _, part in ipairs(t) do
-        out[#out + 1] = type(part) == "table" and part[1] or string.upper(part)
+        out[#out + 1] = type(part) == "table" and part[1] or part
     end
     return table.concat(out)
 end
@@ -1366,6 +1420,84 @@ local function feed(lines, top)
     -- a column of sentences.
     anchor.feed = {right - wide, block_top, block_bot}
     zone("feed", right - wide, block_top, wide, block_bot - block_top)
+end
+
+-- The one line a phone shows.
+--
+-- The feed is a column of five short lines hung off the right edge under the
+-- dial, and on a touchscreen it was drawn not at all: that corner is where a
+-- thumb flies the ship, and a running log nobody can pause is not what a
+-- player wants there. Which left a phone with no way at all to learn that
+-- somebody had just killed them, or that the green they flew through was a
+-- rung of bomb rather than a rung of gun.
+--
+-- So the phone gets the same feed, filtered to one line. Only lines the arena
+-- marked as being about this pilot: their kills, their deaths, and what they
+-- picked up. A stranger killing a stranger is news, and it is news a player
+-- in a fight cannot use. And only the newest of those at once, because two
+-- lines stacked over the middle of the screen is a panel, and a panel over
+-- the fight is the thing the corner feed was moved out of the way to avoid.
+--
+-- Shorter-lived than a feed line, too. Nine seconds is right for a column
+-- that is read at a glance and scrolls; the same nine seconds in the middle
+-- of the screen is a caption that lives there.
+local TOAST_LIFE = 3.6
+local TOAST_FADE = 0.9
+
+-- Where it sits, which is the far side of the screen from the thumbs in
+-- whichever way the phone is being held.
+-- `reach` is how far up the screen the controls climb, in drawable pixels
+-- from the bottom, handed down by the frame loop. Asked for rather than
+-- worked out here: touch.lua owns where a thumb's controls go, this file owns
+-- where the instruments go, and the two stopped requiring each other on
+-- purpose.
+local function toast_y(reach)
+    if W >= H then
+        -- Landscape: under the flags, in the band across the top that the
+        -- corner chips and the dial leave empty between them.
+        return ST + 62 * S
+    end
+    -- Portrait: two thirds of the way down, the empty band between the ship
+    -- and the controls. Clamped clear of what the pads actually reach rather
+    -- than trusting the fraction, since a hull carrying four kinds of charge
+    -- builds a taller rail than one carrying none, and the rail is the thing
+    -- this must not land on.
+    local floor = reach and (H - reach - 22 * S) or H
+    return math.min(H * 0.66, floor)
+end
+
+local function toast(lines, reach)
+    local f = nil
+    for i = 1, #lines do
+        if lines[i].mine and lines[i].t < TOAST_LIFE then
+            f = lines[i]
+            break
+        end
+    end
+    if not f then return end
+    local a = 1
+    local left = TOAST_LIFE - f.t
+    if left < TOAST_FADE then a = math.max(0, left / TOAST_FADE) end
+    local words = line_text(f.text)
+    local size = (FONT + 1) * S
+    local y = toast_y(reach)
+    -- A wash under it rather than a box round it, the width of the words and
+    -- no wider. Mid-screen over a starfield the type needs something to sit
+    -- on; a border would be the one shape this interface does not draw.
+    local w = text_w(words, size) + 26 * S
+    local h = LINE * S + 6 * S
+    -- The card a dead pilot reads is the one other slab that lands near the
+    -- middle, and in both orientations it lands clear of this. Both cannot
+    -- grow forever though, so the check is the overlap itself rather than
+    -- "are they dead": a death line is exactly the kind this exists to show,
+    -- and refusing to draw it whenever a card is up would be refusing the
+    -- commonest one.
+    if wait_box and y - h / 2 < wait_box.y + wait_box.h
+       and y + h / 2 > wait_box.y then
+        return
+    end
+    rect(W / 2 - w / 2, y - h / 2, w, h, pal.rgb(0x03050a, 0.62 * a))
+    txt(words, W / 2, y, size, pal.a(f.col or pal.INK, a), "center", nil, true)
 end
 
 -- The corner stack: what the triggers do, what you carry and can spend, and
@@ -1670,13 +1802,17 @@ local function inspect(o, top)
     -- would hand the room a roster the zone deliberately did not send. Your own
     -- side is always yours to know, whatever it is marked, since you are in it.
     --
-    -- Falling back to the raw number when the zone has sent no team list at all
-    -- would be the same leak by a duller instrument, so an unknown side simply
-    -- has no row: this box says what it is told and infers nothing.
-    local side = nil
+    -- What is withheld is the *name*. Which side somebody is on is on their
+    -- hull, in the colour of their plate, and has been since the plates
+    -- started carrying it, so a row that said nothing at all would be keeping
+    -- a secret the screen has already given away. The row is always drawn, in
+    -- the side's colour; a side this pilot may not have named reads as
+    -- "private", which is the honest answer and the one the zone intends.
+    local side, side_named = nil, false
     for _, t in ipairs(o.teams or {}) do
         if t.team == theirs and (t.public or same_team) then
             side = (t.name ~= "" and t.name) or ("team " .. t.team)
+            side_named = t.name ~= ""
         end
     end
     -- The invitation lives here because this is already the panel you open by
@@ -1692,7 +1828,8 @@ local function inspect(o, top)
     -- else's, so offering it on an enemy would be a control that quietly
     -- dropped you back on the room channel.
     local follow = o.watch and same_team and o.watch.subject ~= i
-    local rows_n = 5 + (side and 1 or 0)
+    -- The team row always exists now, so the count is fixed.
+    local rows_n = 6
     local h = 30 * S + rows_n * rowh
         + ((invite or follow) and (KEY_H + 12) * S or 0) + 10 * S
     -- Under whatever is in the column, and never above where the column
@@ -1725,10 +1862,10 @@ local function inspect(o, top)
             "right", nil, raw)
         ry_ = ry_ + rowh
     end
-    if side then
-        -- A side somebody founded and named is a name as well.
-        row("SIDE", side, pal.a(col, 0.9), true)
-    end
+    -- In the side's own colour, which is the same colour their plate wears
+    -- out in the arena: this box is where a player learns what that colour
+    -- on the hull they are looking at means.
+    row("TEAM", side or "private", pal.a(team_col(theirs), 0.95), side_named)
     -- What the zone is willing to say this seat is, which is the honest
     -- version of the question: the client cannot tell, and the server's label
     -- is the only answer anybody has. A guest is not an accusation.
@@ -2613,6 +2750,10 @@ function M.hud(o)
     elseif not M.touching then
         feed(o.feed, M.radar_span())
     end
+    -- The phone's own reading of that same feed, and not in the same place:
+    -- this one is over the middle of the screen rather than in the corner the
+    -- debug readout took, so the two do not argue about a strip.
+    if M.touching then toast(o.feed, o.pad_top) end
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it. A watcher has no
     -- hull, so the hull's furniture -- the corner stack, the loadout -- is
@@ -2981,6 +3122,12 @@ local GUTTER = 22
 -- rail can size them, and they are the only place in this interface where a
 -- shape has to carry a meaning on its own -- so each one is a picture of the
 -- thing it opens, not a symbol somebody has to learn.
+--
+-- One line runs through all of them, held against the screen rather than
+-- against the mark's own size, so a column of six reads as one set. Anything
+-- that draws itself here and works its weight out from its width has to be
+-- told this instead.
+local RAIL_PEN = 1.2
 
 local function mark_zones(cx, cy, r, col)
     -- A world with a ring around it. The stop opens the list of places there
@@ -3014,7 +3161,14 @@ local function mark_pilot(cx, cy, r, col)
     -- The same helmet the games list counts people with, so the stop a player
     -- opens to change their call sign wears the mark that stands for them
     -- everywhere else.
-    pilot_mark(cx, cy, col, r * 1.6)
+    --
+    -- Drawn at the rail's own hairline rather than at its own. Everywhere else
+    -- this mark goes it is 11 points beside a number and its weight is struck
+    -- off its width, which is right for a mark that has to survive being
+    -- small. Here it is drawn half again as big next to six shapes that all
+    -- hold one line no matter what they are, and a weight that scales made it
+    -- the one heavy stop in the column.
+    pilot_mark(cx, cy, col, r * 1.6, RAIL_PEN * S)
 end
 
 local function mark_team(cx, cy, r, col)
@@ -3161,6 +3315,11 @@ end
 -- stage has them, or the row a pointer is resting on.
 local function stage_row(x, y, w, h, r, hot)
     local col = r.mark and pal.FRIEND or pal.INK
+    -- A row that stands for a side is written in that side's colour, which is
+    -- what makes this list the key to every plate in the arena. It outranks
+    -- the mark's cyan because your own side generates cyan anyway, so the two
+    -- rules agree on the one row where they could disagree.
+    if r.tint then col = team_col(r.tint) end
     -- The cursor is a field of team blue across the row, and only that. It
     -- was a field with a chamfered bracket drawn around it, which is two
     -- marks saying one thing, and the corners cut the row into a box in a
@@ -3268,9 +3427,10 @@ end
 -- of type alone at the top of an empty panel said as much and read as a
 -- failure the player had caused and would have to do something about.
 --
--- The heading is what happened, the line under it is what happens next, and
--- the address under that is for whoever is running this rather than whoever is
--- playing, which is why it is set small and dim.
+-- The heading is what happened and the line under it is what happens next.
+-- The address being asked used to sit under those two, small and dim, for
+-- whoever is running this rather than whoever is playing. Whoever is running
+-- it reads logs.
 local function empty_state(x, y, w, h, e)
     local cx = x + w / 2
     local r = math.max(22 * S, math.min(56 * S, h * 0.26))
@@ -3284,10 +3444,6 @@ local function empty_state(x, y, w, h, e)
         pal.a(pal.INK, 0.85), "center", MENU_FONT)
     if e.line and e.line ~= "" then
         txt(e.line, cx, ty + 24 * S, 12 * S, pal.a(pal.DIM, 0.95), "center")
-    end
-    if e.at and e.at ~= "" then
-        txt(e.at, cx, ty + 46 * S, 11 * S, pal.a(pal.DIM, 0.45), "center",
-            nil, true)
     end
 end
 
@@ -3475,64 +3631,146 @@ local function ship_grid(x, y, w, h, v, focused)
     end
 end
 
--- The mark: two hulls passing, each nose a little past the other's tail.
+-- The mark: six strokes, \|\|\|, read as a V and then a W.
 --
--- The same drawing the page carries as its icon, and drawn here rather than
--- imported, because the interface has no way to put a picture on screen and
--- would not want one: everything else here is strokes into a mesh layer, and
--- a mark that arrived as pixels would be the only thing in the client that
--- could not be drawn at any size.
+-- Each wedge is a diagonal falling into a vertical and meeting it on the
+-- baseline. The first wedge is the V of vector, in the colour the interface
+-- gives the other side; the second and third together are the W of wake, in
+-- yours. One gap throughout, so nothing marks where one letter stops and the
+-- next starts and the run reads as one gesture: you get the letters out of it
+-- the way you get them out of the name.
 --
--- The silhouette is the simulation's own. `hull_extent` in sim/src/baseline.c
--- gives the Apex 20 forward, 11 back and 10 to a side, with the tail cut flat
--- rather than pointed, so the shape in the tab is the shape people fly.
+-- The diagonals are wakes, thin and clear where they leave and full where they
+-- land, which is what a thing arriving looks like everywhere else in this
+-- game. The verticals stand.
 --
--- What makes it ours is the arrangement rather than the ship. Two hulls at
--- rest, symmetric about a point, is the swap glyph every icon set already
--- has; two hulls passing on a course off the vertical is a moment out of the
--- game, and nothing in a tab bar looks like it. The angle is off the diagonal
--- the tile's own chamfer cuts, on purpose: at forty five the tails lined up
--- with the corners and the pair read as a shape fitted to its box.
-local LOGO_FORE, LOGO_AFT, LOGO_HALF = 20, 11, 10
-local LOGO_SHIP = {
-    {0, -LOGO_FORE}, {LOGO_HALF, LOGO_AFT * 0.72}, {LOGO_HALF * 0.48, LOGO_AFT},
-    {-LOGO_HALF * 0.48, LOGO_AFT}, {-LOGO_HALF, LOGO_AFT * 0.72},
-}
--- Tilt off vertical, how far apart the two fly, and how far each nose reaches
--- past the other's tail. All three in hull units, so the mark scales by one
--- number.
-local LOGO_TILT = -35 * math.pi / 180
-local LOGO_SEP, LOGO_PASS = 21, 8
+-- Drawn here rather than imported, because the interface has no way to put a
+-- picture on screen and would not want one: everything else is strokes into a
+-- mesh layer, and a mark that arrived as pixels would be the only thing in the
+-- client that could not be drawn at any size. The page carries the same shape
+-- as `client/web/icon.svg`, and logo_test holds the two to each other.
+--
+-- What it replaces is two hulls passing on a course off the vertical. That was
+-- a picture of the game; this is the name, which is what a wordmark is for.
+local MK_WD, MK_GAP, MK_WEIGHT = 0.50, 0.09, 0.033
 
-local function logo_hull(cx, cy, ang, s, col, w)
-    local ca, sa = math.cos(ang), math.sin(ang)
-    local pts = {}
-    for _, p in ipairs(LOGO_SHIP) do
-        local x, y = p[1] * s, p[2] * s
-        pts[#pts + 1] = cx + x * ca - y * sa
-        pts[#pts + 1] = ry(cy + x * sa + y * ca)
-    end
-    u:outline(pts, w, col, true)
+-- How wide the mark stands, against its own height.
+function M.logo_width(h)
+    return h * (3 * MK_WD + 2 * MK_GAP)
 end
 
--- `s` is one hull unit, so the pair stands about 31 of them long.
-function M.logo(cx, cy, s, alpha)
+-- Where each stroke starts and ends, in units of the mark's height, with the
+-- mark's left edge and baseline at the origin and y up. Six of them, in the
+-- order a bullet would draw them: down the diagonal, bounce, up the vertical,
+-- across to the next.
+local function mk_strokes()
+    local out = {}
+    for i = 0, 2 do
+        local x = i * (MK_WD + MK_GAP)
+        out[#out + 1] = {x, 1, x + MK_WD, 0, wedge = i, fade = true}
+        out[#out + 1] = {x + MK_WD, 0, x + MK_WD, 1, wedge = i}
+    end
+    return out
+end
+local MK_STROKES = mk_strokes()
+
+-- How long the bullet spends on each piece, and how long a bounce shows for.
+local MK_FALL, MK_RISE, MK_HOP, MK_FLASH = 0.17, 0.12, 0.07, 0.22
+
+-- When the run started. Reset whenever the mark has not been drawn for a
+-- moment, which is the honest reading of "the menu just opened": nothing has
+-- to tell the mark that it did, and every way in gets the same animation.
+local logo_seen, logo_t0 = -1, 0
+
+-- One stroke, drawn to `p` of its length. At p = 1 this is exactly what the
+-- still mark draws, which is what lets the animation finish into the shape
+-- rather than into an approximation of it.
+-- `oy` is the baseline, in this file's own downward y, and a stroke's second
+-- and fourth numbers are heights above it. One flip, at the point of drawing.
+local function mk_stroke(st, ox, oy, h, w, col, p)
+    local x1, y1 = ox + st[1] * h, oy - st[2] * h
+    local x2, y2 = ox + st[3] * h, oy - st[4] * h
+    local ex, ey = x1 + (x2 - x1) * p, y1 + (y2 - y1) * p
+    local a = (col[4] or 1)
+    if st.fade then
+        -- One width the whole way, so a wake and a vertical are the same line
+        -- and only the light in it changes. Tapering the wake as well made the
+        -- two read as different strokes, and at favicon size it read as three
+        -- bars with something faint behind them.
+        u:seg_fade(x1, ry(y1), ex, ry(ey), w, w, 0, a * p, col)
+    else
+        u:seg(x1, ry(y1), ex, ry(ey), w, col, true)
+    end
+    return ex, ey
+end
+
+-- `h` is the mark's height and (cx, cy) its centre. `still` draws the finished
+-- shape and nothing else, which is what anything not on the menu wants.
+function M.logo(cx, cy, h, alpha, still)
     alpha = alpha or 1
-    local along = (LOGO_FORE - LOGO_AFT - LOGO_PASS) / 2
-    local ux, uy = math.sin(LOGO_TILT), -math.cos(LOGO_TILT)
-    local px, py = math.cos(LOGO_TILT), math.sin(LOGO_TILT)
-    -- Against the hull unit, so the weight travels with the mark rather than
-    -- with the window. It used to be a tenth of this and the floor underneath
-    -- did all the work, which meant the mark drew a hairline at every size it
-    -- was ever asked for and got thinner the smaller it was set. The floor is
-    -- still here for the sizes where a stroke under a pixel disappears.
-    local w = math.max(1.2 * S, s * 1.1)
-    logo_hull(cx - px * LOGO_SEP / 2 * s - ux * along * s,
-              cy - py * LOGO_SEP / 2 * s - uy * along * s,
-              LOGO_TILT, s, pal.a(pal.FRIEND, alpha), w)
-    logo_hull(cx + px * LOGO_SEP / 2 * s + ux * along * s,
-              cy + py * LOGO_SEP / 2 * s + uy * along * s,
-              LOGO_TILT + math.pi, s, pal.a(pal.ENEMY, alpha), w)
+    local ox = cx - M.logo_width(h) / 2
+    local oy = cy + h / 2
+    -- Against the mark's own height, so the weight travels with it rather than
+    -- with the window. One drawable pixel is the floor, and at this weight the
+    -- menu's own two sizes are close enough to it that they mostly sit on it:
+    -- anything finer is not a lighter line, it is a line drawn some of the
+    -- time.
+    local w = math.max(1 * S, h * MK_WEIGHT)
+    local hue = {pal.a(pal.ENEMY, alpha), pal.a(pal.FRIEND, alpha),
+                 pal.a(pal.FRIEND, alpha)}
+
+    if not still and M.now - logo_seen > 0.25 then logo_t0 = M.now end
+    if not still then logo_seen = M.now end
+    local t = still and math.huge or (M.now - logo_t0)
+
+    -- Walk the strokes in the order they are drawn, spending the clock as we
+    -- go. What is behind the bullet is drawn whole, what it is on is drawn as
+    -- far as it has got, and what is ahead of it is not there yet.
+    local bx, by, bcol
+    for i, st in ipairs(MK_STROKES) do
+        local span = st.fade and MK_FALL or MK_RISE
+        local col = hue[st.wedge + 1]
+        if t >= span then
+            mk_stroke(st, ox, oy, h, w, col, 1)
+            t = t - span
+            -- A bounce off the baseline, and the hop across to the next wedge
+            -- at the top. Neither draws any of the mark; the first is a flash
+            -- where the bullet turned and the second is the bullet in transit.
+            if st.fade then
+                if t < MK_FLASH then
+                    local f = 1 - t / MK_FLASH
+                    u:ring(ox + st[3] * h, ry(oy), h * 0.10 * (1.6 - f),
+                           math.max(1 * S, w * 0.5 * f), 12,
+                           pal.a(pal.hot(col, 0.5), alpha * f * 0.9))
+                end
+            elseif i < #MK_STROKES then
+                if t < MK_HOP then
+                    local nx = MK_STROKES[i + 1][1]
+                    local f = t / MK_HOP
+                    bx = ox + (st[3] + (nx - st[3]) * f) * h
+                    by = oy - h
+                    bcol = pal.a(pal.DIM, alpha * 0.7)
+                    break
+                end
+                t = t - MK_HOP
+            end
+        else
+            bx, by = mk_stroke(st, ox, oy, h, w, col, math.max(0, t) / span)
+            bcol = pal.a(pal.hot(col, 0.65), alpha)
+            break
+        end
+    end
+    -- The bullet: the same dot the corner draws on the end of a gun's line,
+    -- with its glow stepped out of discs rather than taken from `halo`. A
+    -- halo would read a shade softer and costs the mark the one property that
+    -- makes it portable, which is that it is drawn out of the two primitives
+    -- every surface in this client already has.
+    if bx then
+        local a = bcol[4] or 1
+        u:disc(bx, ry(by), w * 3.0, 12, pal.a(bcol, a * 0.16))
+        u:disc(bx, ry(by), w * 1.9, 10, pal.a(bcol, a * 0.30))
+        u:disc(bx, ry(by), w * 1.15, 10, bcol)
+    end
 end
 
 -- The mark and the name, and nothing under them.
@@ -3543,10 +3781,8 @@ end
 -- decoration in an interface that has none anywhere else, and every shape of
 -- it that was tried, swelling from both ends and then solid into a tail, read
 -- as a rule somebody had left there rather than as part of the name.
--- How tall the mark stands and how much room it wants, both against the type
--- it sits beside. The pair measures 37.3 hull units from the highest nose to
--- the lowest tail (see LOGO_SHIP and the two offsets in M.logo), so a height
--- asked for in ems converts to one hull unit by dividing by that.
+-- How tall the mark stands, against the type it sits beside, and how much air
+-- goes between them.
 --
 -- 0.74 em is a shade over the cap height of the face the name is set in. The
 -- mark reads as belonging to the word at that size, and as a picture beside a
@@ -3564,16 +3800,17 @@ end
 -- the word about an eighth of an em below the middle of the box it is set in.
 -- A mark hung on the box centre is a mark that looks high, which is what it
 -- looked.
-local LOGO_EM, LOGO_SPAN, LOGO_DROP = 0.74, 37.31, 0.12
+local LOGO_EM, LOGO_GAP, LOGO_DROP = 0.74, 0.30, 0.12
 
 local function wordmark(x, y, size)
     -- The mark stands to the left of the name, on the middle of the word
     -- rather than the middle of its line box, so the two read as one lockup.
     -- It takes the room it needs and the name starts after it.
-    local s = size * LOGO_EM / LOGO_SPAN
-    local lw = size * 0.95
-    M.logo(x + lw / 2, y + size * LOGO_DROP, s)
-    txt("vectorwake", x + lw, y, size, pal.INK, nil, MENU_FONT, true)
+    local h = size * LOGO_EM
+    local lw = M.logo_width(h)
+    M.logo(x + lw / 2, y + size * LOGO_DROP, h)
+    txt("vectorwake", x + lw + size * LOGO_GAP, y, size, pal.INK, nil,
+        MENU_FONT, true)
 end
 
 -- --- the whole thing -------------------------------------------------------
@@ -3689,7 +3926,21 @@ function M.menu(v)
         -- gap that was already there.
         icon_dy = (home and 30 or 32) * S
         local under = rh - icon_dy - 24 * S
-        ry_ = H - rh - math.max(0, SB - under)
+        if SAPP then
+            -- Installed, the padding under the words is measured against the
+            -- indicator rather than against the rail, because the indicator
+            -- is the only thing down there and the rail's own idea of a
+            -- bottom margin was written for a row with a toolbar under it.
+            -- Two thirds of the strip is what the bar and its own margin
+            -- take; the rest was the row sitting higher than it had to, and
+            -- it goes back. On a large phone the rail's padding grows with
+            -- the interface while the indicator stays 34 points whatever the
+            -- screen, so this gives back more the bigger the phone, which is
+            -- where the gap looked worst.
+            ry_ = H - rh + math.max(0, under - SB * 0.56)
+        else
+            ry_ = H - rh - math.max(0, SB - under)
+        end
         sx, sw = SL + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two
