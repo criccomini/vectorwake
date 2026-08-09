@@ -282,7 +282,7 @@ typedef struct {
     uint8_t on_wall;      /* sim_wall_rule */
     uint8_t bounces;      /* walls survived, when bouncing */
     /* arrival: what counts as having got somewhere */
-    int32_t trigger;      /* Q8 px from a hull; 0 is contact */
+    int32_t trigger;      /* Q8 px from a hull centre; 0 is contact */
     uint8_t expire_ends;  /* whether running out of life also counts */
     uint8_t splinter;     /* a pattern fired where it ended, or SIM_NO_PATTERN */
     /* ending */
@@ -427,8 +427,10 @@ typedef struct {
      * whose magnitude is another weapon rather than a number. */
     uint8_t mod_splinter[SIM_MAX_RUNGS];
     /* Proximity widens with the bomb's level: ProximityDistance is the L1
-     * radius and "each bomb level adds 1 to this amount". Q8 px per level. */
+     * radius and "each bomb level adds 1 to this amount". Q8 px per level.
+     * prox_delay is BombExplodeDelay after a round enters that radius. */
     int32_t prox_step;
+    uint16_t prox_delay;
     /* InactiveShrapDamage, and how long a fragment counts as inactive. A
      * shard does almost nothing for its first quarter second, which is what
      * stops a bomb killing at point blank twice over: once with the blast and
@@ -593,6 +595,9 @@ typedef struct {
     int32_t x, y;
     int32_t vx, vy;
     uint16_t life; /* ticks remaining */
+    /* The hull that armed a proximity fuse, or 255 while it is unarmed. */
+    uint8_t fuse_target;
+    uint16_t fuse;
 } sim_weapon;
 
 typedef enum {

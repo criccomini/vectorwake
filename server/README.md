@@ -152,13 +152,17 @@ largest effects are real.
 
 **`dmg/hit` and `self%`** are why a stage won or lost, where the win column only
 says that it did. A blast falls off to nothing at its rim, so a fuse that goes
-off early lands the same count of impacts for a fraction of the damage, and the
-hit rate alone reads that as an improvement. Proximity is the case: it lifts the
-hit rate three points and cuts damage per impact, which is a losing trade the
-win column cannot explain on its own. `self%` is the share of a stage's damage
-it dealt to itself, since a bomb's blast has no owner test. It answers "is this
-stage losing because the pilot keeps standing in it" with a number rather than
-a theory: proximity sits at bare's 1.7%, and the bomb rungs at 5.6%.
+off early can turn more impacts into less damage. Proximity no longer makes
+that trade after its radius moved to the target's centre and gained the
+original's delay. At twenty-four bouts per pair under Alpha tuning, it raised
+an Apex's hit rate from 37.5% to 39.9% and damage per hit from 225k to 243k; an
+Anvil moved from 39.8% to 41.9% and from 228k to 248k. Their win rates gained
+15.3 and 11.8 points over bare, beyond noise floors of 4.5 and 5.9 points.
+`self%` is the share of a stage's damage it dealt to itself, since a bomb's
+blast has no owner test. It answers whether a stage is losing because the pilot
+keeps standing in it with a number rather than a theory: proximity stayed near
+bare at 1.7% on Apex and 2.3% against 1.8% on Anvil, while the bomb rungs were
+about 5% to 6%.
 
 The **mirror column** is each stage against itself, kept out of the win column
 on purpose. Folding it in would credit one win and one loss to the same row

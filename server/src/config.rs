@@ -128,6 +128,8 @@ pub struct ArenaConfig {
     /// Px the proximity fuse widens by for each level of the bomb carrying
     /// it, on top of whatever a rung of the add-on is worth.
     pub prox_step: Option<i32>,
+    /// Ticks a proximity bomb waits after a ship enters its sensor.
+    pub prox_delay: Option<u16>,
     /// What a fragment does while it is still inside the hull the bomb went
     /// off against, and how long that lasts in ticks. Without it a bomb lands
     /// twice at point blank: once as a blast, again as a ring of shrapnel
@@ -211,7 +213,7 @@ pub struct WeaponConfig {
     /// Walls survived, when bouncing.
     pub bounces: Option<u8>,
     // What counts as arriving somewhere.
-    /// Px from a hull that sets it off. 0 is contact, which is a bullet.
+    /// Px from a hull centre that sets it off. 0 is contact, which is a bullet.
     pub trigger: Option<i32>,
     /// Whether running out of life counts as arriving. A mine's whole life
     /// is its timer; a bomb that crosses the arena untouched did not arrive.

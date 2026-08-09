@@ -158,6 +158,8 @@ pub struct sim_settings {
     pub mod_splinter: [u8; MAX_RUNGS],
     /// Q8 px a bomb level adds to the proximity fuse.
     pub prox_step: i32,
+    /// BombExplodeDelay, in ticks after a proximity crossing.
+    pub prox_delay: u16,
     /// Q10 energy a fragment does while it is still inactive, and how long
     /// that lasts in ticks.
     pub shrap_inactive: i32,
@@ -267,6 +269,9 @@ pub struct sim_weapon {
     pub vx: i32,
     pub vy: i32,
     pub life: u16,
+    /// Ship that armed a proximity fuse, or 255 while unarmed, and its clock.
+    pub fuse_target: u8,
+    pub fuse: u16,
 }
 
 #[repr(C)]

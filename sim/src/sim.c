@@ -364,6 +364,8 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
     w->vx = vx;
     w->vy = vy;
     w->life = life;
+    w->fuse_target = 255;
+    w->fuse = 0;
 }
 
 /* ---- add-ons ----
@@ -1623,7 +1625,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             cached_key = key;
         }
         const sim_weapon_spec *spec = &cached;
-        int ended = 0, hit_ship = -1;
+        int ended = 0, hit_ship = -1, armed_now = 0;
 
         /* 1. Out of life. Arriving somewhere is what sets a weapon off, and
          * running out is not arriving: at five seconds of flight a bomb that
@@ -1704,42 +1706,21 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 break;
             }
 
-            /* 3. Ships. A weapon never arrives at its owner or a teammate,
-             * and `trigger` is how close counts: zero is contact with the
-             * hull, which is a bullet, and anything larger is a proximity
-             * fuse. A hit ends the walk where it landed, which puts a blast
-             * at the point of impact rather than at wherever the tick would
-             * have carried the round.
-             *
-             * A fuse waits for the closest approach rather than firing where
-             * it first reaches. Going off on entry is what this did, and it
-             * is the worst point available: a blast falls off to nothing at
-             * its rim, so a bomb that triggers at the outer edge of its own
-             * reach arrives already spent. On the shipped numbers that is a
-             * fuse at 48 px inside an 80 px blast, which turned a 562 damage
-             * hit into 112 and made proximity the one thing in the tech tree
-             * worth less than carrying nothing. Measured, at 27% against a
-             * bare hull's 34%, and 51% against 32% once it waited.
-             *
-             * Waiting costs the round nothing: it can still only end once, a
-             * bomb on a collision course flies to contact and lands what it
-             * always would, and a near miss that used to sail past detonates
-             * at the point it was nearest. Which is why the fuse now lands
-             * both more often and harder than no fuse at all, where before it
-             * bought the first by giving up the second. */
+            /* 3. Ships. Contact is still the hull's own rectangle. A
+             * proximity setting is different: the original measures its
+             * radius from ship centre to bomb centre, not outward from the
+             * collision shape. Crossing that circle arms BombExplodeDelay.
+             * The bomb keeps flying until the clock runs out, unless the
+             * target starts moving away first. Contact remains immediate. */
             for (int i = 0; i < next->ship_count && !ended; i++) {
                 const sim_ship *sh = &next->ships[i];
                 if (!sh->active || !sh->alive) continue;
                 if ((uint8_t)i == w->owner || sh->team == w->team) continue;
-                /* The hull's own rectangle, not a circle drawn around it: a
-                 * round into a Cipher's flank has to reach the knife. */
                 int64_t ddx = (int64_t)w->x - hull[i].x;
                 int64_t ddy = (int64_t)w->y - hull[i].y;
                 int64_t along = (ddx * hull[i].fx + ddy * hull[i].fy) >> 15;
                 int64_t across = (ddy * hull[i].fx - ddx * hull[i].fy) >> 15;
                 if (across < 0) across = -across;
-                /* Contact ends everything, fuse or no fuse, so nothing can
-                 * fly through a hull while it waits for a better moment. */
                 if (along >= -(int64_t)hull[i].aft
                     && along <= (int64_t)hull[i].fore
                     && across <= (int64_t)hull[i].halfw) {
@@ -1747,27 +1728,37 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     hit_ship = i;
                     continue;
                 }
-                if (spec->trigger == 0) continue;
-                /* The fuse's reach pads every face of that same box. */
-                if (along < -((int64_t)hull[i].aft + spec->trigger)
-                    || along > (int64_t)hull[i].fore + spec->trigger
-                    || across > (int64_t)hull[i].halfw + spec->trigger) {
+                if (spec->trigger == 0 || w->fuse_target != 255) continue;
+                if (ddx * ddx + ddy * ddy > (int64_t)spec->trigger * spec->trigger)
                     continue;
+                w->fuse_target = (uint8_t)i;
+                w->fuse = cfg->prox_delay;
+                armed_now = 1;
+                if (w->fuse == 0) {
+                    ended = 1;
+                    hit_ship = i;
                 }
-                /* Still closing? Then the best moment is still ahead. The
-                 * gap shrinks exactly while the separation and the relative
-                 * velocity point against each other, so their dot product is
-                 * the whole test, and it needs no state on the projectile
-                 * and nothing on the wire: both halves are already in the
-                 * state this tick, which is what keeps it the same answer on
-                 * every machine. Zero counts as arrived, so a round that
-                 * enters the reach already opening away goes off at once,
-                 * that being its closest approach. */
+            }
+        }
+
+        /* Count from the tick after arming. An opening target ends the bomb
+         * early, which is BombExplodeDelay's other documented half. */
+        if (!ended && !armed_now && w->fuse_target != 255) {
+            int i = w->fuse_target;
+            if (i < next->ship_count && next->ships[i].active
+                && next->ships[i].alive && next->ships[i].team != w->team) {
+                const sim_ship *sh = &next->ships[i];
+                int64_t ddx = (int64_t)w->x - sh->x;
+                int64_t ddy = (int64_t)w->y - sh->y;
                 int64_t rvx = (int64_t)w->vx - sh->vx;
                 int64_t rvy = (int64_t)w->vy - sh->vy;
-                if (ddx * rvx + ddy * rvy < 0) continue;
+                if (ddx * rvx + ddy * rvy > 0
+                    || (w->fuse > 0 && --w->fuse == 0)) {
+                    ended = 1;
+                    hit_ship = i;
+                }
+            } else if (w->fuse > 0 && --w->fuse == 0) {
                 ended = 1;
-                hit_ship = i;
             }
         }
 
@@ -1863,6 +1854,7 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, (uint32_t)w->vx);
         h = hash_u32(h, (uint32_t)w->vy);
         h = hash_u32(h, w->life);
+        h = hash_u32(h, (uint32_t)(w->fuse_target | (w->fuse << 8)));
     }
     return h;
 }
