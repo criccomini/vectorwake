@@ -137,13 +137,13 @@ local MY_KILL = {text = {{"you"}, " killed ", {"other"}},
 -- --- only what is about you ------------------------------------------------
 
 frame(844, 390, {THEIRS})
-check("a stranger's kill is not shown on a phone", shown("someone KILLED other") == nil)
+check("a stranger's kill is not shown on a phone", shown("someone killed other") == nil)
 
 frame(844, 390, {MINE})
 check("a green you flew through is", shown("+ BOMB") ~= nil)
 
 frame(844, 390, {MY_KILL})
-check("and so is a kill you made", shown("you KILLED other") ~= nil)
+check("and so is a kill you made", shown("you killed other") ~= nil)
 
 -- --- one at a time ---------------------------------------------------------
 
@@ -151,7 +151,7 @@ check("and so is a kill you made", shown("you KILLED other") ~= nil)
 -- one and only the newer one.
 frame(844, 390, {MINE, MY_KILL})
 check("the newest of yours is shown", shown("+ BOMB") ~= nil)
-check("and the older one is not", shown("you KILLED other") == nil)
+check("and the older one is not", shown("you killed other") == nil)
 
 -- A stranger's line arriving on top of yours does not hide yours: it is
 -- skipped, not counted as the one line.
