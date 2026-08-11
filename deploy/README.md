@@ -191,9 +191,10 @@ The flag is set in the database and nowhere else. No route writes `accounts.admi
 
 ```sh
 psql "$(./deploy/fleet.sh db --url)" -c \
-  "update accounts set admin = true
-   where id = (select account from names where lower(call_sign) = lower('<call sign>'))
-   returning id, call_sign;"
+  "update accounts a set admin = true
+   from names n
+   where n.account = a.id and lower(n.call_sign) = lower('<call sign>')
+   returning a.id, n.call_sign;"
 ```
 
 The same statement works on the central host, which has the string in its `.env` and no psql of its own: `cd /opt/vectorwake/deploy && . ./.env && docker run --rm postgres:16-alpine psql "$VW_META_DATABASE" -c "..."`.
