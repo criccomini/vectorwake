@@ -450,41 +450,50 @@ pub struct StageRow {
     pub stalemates: u32,
 }
 
+/// A win rate, counting a draw as half a win each way.
+pub fn win_rate_of(wins: u32, losses: u32, draws: u32) -> f64 {
+    let n = wins + losses + draws;
+    if n == 0 {
+        return 0.0;
+    }
+    (wins as f64 + 0.5 * draws as f64) / n as f64
+}
+
+/// Half the 95% interval on that rate, in points.
+///
+/// Wilson rather than the textbook normal, so a row that won nothing gets an
+/// interval it could actually live in instead of plus or minus zero. Shared by
+/// every table this file prints, because a second copy of this is a second
+/// chance to get it wrong, and the number it replaced was wrong enough.
+pub fn margin_of(wins: u32, losses: u32, draws: u32) -> f64 {
+    let n = (wins + losses + draws) as f64;
+    if n == 0.0 {
+        return 0.0;
+    }
+    const Z: f64 = 1.96;
+    let p = win_rate_of(wins, losses, draws);
+    let denom = 1.0 + Z * Z / n;
+    100.0 * Z * ((p * (1.0 - p) / n) + (Z * Z / (4.0 * n * n))).sqrt() / denom
+}
+
 impl StageRow {
     pub fn bouts(&self) -> u32 {
         self.wins + self.losses + self.draws
     }
     pub fn win_rate(&self) -> f64 {
-        let n = self.bouts();
-        if n == 0 {
-            return 0.0;
-        }
-        (self.wins as f64 + 0.5 * self.draws as f64) / n as f64
+        win_rate_of(self.wins, self.losses, self.draws)
     }
 
     /// Half the 95% interval on this row's win rate, in points.
     ///
     /// A win rate is a coin counted `bouts()` times, and this is what that
-    /// counting is worth: 1.96 standard errors, Wilson rather than the
-    /// textbook normal so a row near nothing or near everything gets an
-    /// interval that stays inside both.
-    ///
-    /// It exists because the report used to answer "is this gap real" with
-    /// the spread of the kit-less rows, which is the range of four samples
-    /// and mostly luck. That number read 4.2 points where the sampling
-    /// spread alone was nearer 15, and it climbed rather than fell as bouts
-    /// went up, which is the giveaway. Every row can price its own error
-    /// from its own count, so every row now does.
+    /// counting is worth. It exists because the report used to answer "is this
+    /// gap real" with the spread of the kit-less rows, which is the range of
+    /// four samples and mostly luck: it read 4.2 points where the sampling
+    /// spread alone was nearer 15. Every row can price its own error from its
+    /// own count, so every row now does.
     pub fn margin(&self) -> f64 {
-        let n = self.bouts() as f64;
-        if n == 0.0 {
-            return 0.0;
-        }
-        const Z: f64 = 1.96;
-        let p = self.win_rate();
-        let denom = 1.0 + Z * Z / n;
-        let half = Z * ((p * (1.0 - p) / n) + (Z * Z / (4.0 * n * n))).sqrt() / denom;
-        100.0 * half
+        margin_of(self.wins, self.losses, self.draws)
     }
 }
 
@@ -746,6 +755,432 @@ against this number.",
     })
 }
 
+/* ---- the hull tournament ----------------------------------------------
+ *
+ * The loadout tournament holds the hull still and varies the kit. This holds
+ * the kit still and varies the hull, which is the other half and cannot be got
+ * from that one: `stage_bout` puts one `class` on both seats, so it is a mirror
+ * by construction and no amount of running it compares two hulls.
+ *
+ * Pilots are matched on **bounty** rather than on kit, and that is the whole
+ * design. `sim_bounty` counts every green as one whatever it turned out to be,
+ * including one that landed on a ceiling, so handing both sides the same number
+ * of greens matches them exactly on the number a player actually sees over an
+ * enemy's head. It does not match them on power: hulls have different pools and
+ * different ceilings, so the same bounty buys a Cipher and an Anvil different
+ * amounts of kit, and the gap widens as the count climbs.
+ *
+ * That difference is the finding rather than the flaw. A hull that saturates
+ * early really is weaker at high bounty, and a matrix that erased it would be
+ * answering a question nobody is ever in.
+ */
+
+/// One hull's line in the cross-hull matrix.
+pub struct HullRow {
+    pub name: &'static str,
+    pub class: u8,
+    pub wins: u32,
+    pub losses: u32,
+    pub draws: u32,
+    pub kills: u32,
+    pub shots: [u32; sim::TRIG_COUNT],
+    pub hits: u32,
+    pub damage: u64,
+    pub self_hits: u32,
+    pub self_damage: u64,
+    /// Greens offered, and how many of them moved a count. The first is what
+    /// the two sides are matched on, since every green is one bounty; the
+    /// second is what this hull got for it. Two hulls at the same bounty with
+    /// different conversion is the mechanism behind most of this table.
+    pub greens: u32,
+    pub converted: u32,
+    /// Win rate against each hull, indexed as the roster is. `None` on the
+    /// diagonal, which is scored as a bias check instead.
+    pub vs: Vec<Option<f64>>,
+    /// The mirror: this hull against itself, as the share the first seat took.
+    /// Away from a half and the pit's geometry is leaking into the result.
+    pub mirror: f64,
+    pub stalemates: u32,
+}
+
+impl HullRow {
+    pub fn bouts(&self) -> u32 {
+        self.wins + self.losses + self.draws
+    }
+    pub fn win_rate(&self) -> f64 {
+        win_rate_of(self.wins, self.losses, self.draws)
+    }
+    pub fn margin(&self) -> f64 {
+        margin_of(self.wins, self.losses, self.draws)
+    }
+}
+
+/// Roll `greens` greens for one ship, and return how many of them moved a count.
+///
+/// The generator is the caller's so the same salt draws the same greens, and so
+/// that handing out a loadout does not shift the bout's own stream.
+///
+/// Conversion is read off `earned` rather than off the delta the core returns.
+/// That delta is +1 for everything except rust, so it answers "was this a
+/// green" and never "did it land on anything" -- measuring with it reported
+/// every hull converting all of sixty greens, which is what sent me looking.
+/// `earned` is the counter the core moves in exactly the case wanted: a green
+/// whose count was already at its ceiling banks a bounty there instead. Read
+/// across the grants alone, with no ticks in between, it cannot pick up the
+/// bounty that killing also earns.
+fn green(world: &mut sim::World, ship: usize, greens: u32, rng: &mut u32) -> u32 {
+    let before = world.state.ships[ship].earned;
+    for _ in 0..greens {
+        world.take_prize_from(ship, rng);
+    }
+    let wasted = world.state.ships[ship].earned.saturating_sub(before) as u32;
+    greens.saturating_sub(wasted)
+}
+
+/// Two hulls, the same bounty each, one bout.
+///
+/// Returns the bout and how many greens each side was offered over it, which is
+/// `greens` times the number of lives it had rather than a constant.
+pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
+                 tuning: Option<&config::ArenaConfig>) -> (Bout, [u32; 2]) {
+    let mut world = sim::World::with_map(0x5ea1 ^ salt, sim::build_pit);
+    let route = nav::Nav::build(&world.map);
+    if let Some(c) = tuning {
+        crate::Room::apply_config(&mut world, c);
+    }
+    // The zone's own spawn kit would arrive on top of the one being measured,
+    // and greens on the floor would let one side out-scavenge the other. Held
+    // against the zone for the same reason the other two harnesses hold them.
+    world.cfg.spawn_prizes = 0;
+    world.cfg.prize_max = 0;
+
+    // Sides alternate, so the pit's geometry cannot turn into a result. The
+    // seats keep their positions and their bot seeds; it is the hulls that
+    // move between them.
+    let flip = salt % 2 == 1;
+    let seats: [u8; 2] = if flip { [classes[1], classes[0]] } else { classes };
+
+    let ships = [
+        world.spawn(seats[0], 0, 505, 522, 0) as u8,
+        world.spawn(seats[1], 1, 519, 502, 32768) as u8,
+    ];
+
+    // Nonzero, because xorshift stays at zero forever once it arrives there and
+    // a bout whose greens all rolled the same thing is not obvious from a
+    // report that only prints totals.
+    let mut prng = [
+        (salt.wrapping_mul(2654435761) ^ 0x9E37_79B9) | 1,
+        (salt.wrapping_mul(2246822519) ^ 0x85EB_CA6B) | 1,
+    ];
+
+    let mut out = [Side::default(); 2];
+    let mut offered = [0u32; 2];
+    for k in 0..2 {
+        out[k].worn = green(&mut world, ships[k] as usize, greens, &mut prng[k]);
+        offered[k] = greens;
+    }
+
+    let mut bots = [ai::Bot::new(ships[0], skill), ai::Bot::new(ships[1], skill)];
+    bots[0].reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
+    bots[1].reseed(salt.wrapping_mul(3266489917) ^ 0x5678);
+
+    // One map per seat, because the two seats are different hulls now and a
+    // spec id means nothing without knowing whose trigger threw it.
+    let trig_of = [
+        spec_triggers(&world.cfg, seats[0]),
+        spec_triggers(&world.cfg, seats[1]),
+    ];
+    let mut alive_was = [true; 2];
+    let mut ticks = 0;
+    let mut decided = false;
+
+    for _ in 0..MATCH_TICKS {
+        let inputs = [
+            sim::sim_input {
+                ship: ships[0],
+                buttons: bots[0].think(&ai::own(&world, ships[0]), &route,
+                                       bots[0].looks_due().then(|| ai::scan(&world, ships[0]))),
+            },
+            sim::sim_input {
+                ship: ships[1],
+                buttons: bots[1].think(&ai::own(&world, ships[1]), &route,
+                                       bots[1].looks_due().then(|| ai::scan(&world, ships[1]))),
+            },
+        ];
+        world.step(&inputs);
+        ticks += 1;
+
+        {
+            let ev = &*world.events;
+            for i in 0..ev.count as usize {
+                let e = ev.e[i];
+                match e.etype {
+                    sim::EV_FIRE => {
+                        if let Some(k) = ships.iter().position(|&s| s == e.a) {
+                            if let Some(&t) = trig_of[k].get(&e.b) {
+                                out[k].shots[t] += 1;
+                            }
+                        }
+                    }
+                    sim::EV_HIT => {
+                        if let Some(k) = ships.iter().position(|&s| s == e.b) {
+                            if e.a == e.b {
+                                out[k].self_hits += 1;
+                                out[k].self_damage += e.v.max(0) as u64;
+                            } else {
+                                out[k].hits += 1;
+                                out[k].damage += e.v.max(0) as u64;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Death clears the tech tree, so the bounty goes back on at the
+        // dead-to-alive edge or the rest of the bout is fought bare.
+        for k in 0..2 {
+            let alive = world.state.ships[ships[k] as usize].alive != 0;
+            if alive && !alive_was[k] {
+                out[k].regrants += green(&mut world, ships[k] as usize, greens, &mut prng[k]);
+                offered[k] += greens;
+            }
+            alive_was[k] = alive;
+        }
+
+        let kills = [
+            world.state.ships[ships[0] as usize].kills,
+            world.state.ships[ships[1] as usize].kills,
+        ];
+        if kills[0] >= KILL_TARGET || kills[1] >= KILL_TARGET {
+            decided = true;
+            break;
+        }
+    }
+
+    for k in 0..2 {
+        out[k].kills = world.state.ships[ships[k] as usize].kills as u32;
+    }
+    (
+        Bout {
+            sides: if flip { [out[1], out[0]] } else { out },
+            ticks,
+            decided,
+        },
+        if flip { [offered[1], offered[0]] } else { offered },
+    )
+}
+
+/// Every hull against every other, `bouts` times each, at one bounty.
+pub fn run_hulls(skill: f32, greens: u32, bouts: u32,
+                 tuning: Option<&config::ArenaConfig>, verbose: bool) -> Vec<HullRow> {
+    let n = ai::CLASS_NAMES.len();
+    let mut rows: Vec<HullRow> = (0..n)
+        .map(|i| HullRow {
+            name: ai::CLASS_NAMES[i],
+            class: i as u8,
+            wins: 0,
+            losses: 0,
+            draws: 0,
+            kills: 0,
+            shots: [0; sim::TRIG_COUNT],
+            hits: 0,
+            damage: 0,
+            self_hits: 0,
+            self_damage: 0,
+            greens: 0,
+            converted: 0,
+            vs: vec![None; n],
+            mirror: 0.0,
+            stalemates: 0,
+        })
+        .collect();
+
+    let mut salt = 0u32;
+    for i in 0..n {
+        for j in i..n {
+            let (mut wi, mut wj, mut drew, mut stale) = (0u32, 0u32, 0u32, 0u32);
+            for _ in 0..bouts {
+                let (b, offered) = hull_bout([i as u8, j as u8], skill, greens, salt, tuning);
+                salt = salt.wrapping_add(1);
+
+                for (k, side) in [(i, b.sides[0]), (j, b.sides[1])] {
+                    rows[k].kills += side.kills;
+                    rows[k].hits += side.hits;
+                    rows[k].damage += side.damage;
+                    rows[k].self_hits += side.self_hits;
+                    rows[k].self_damage += side.self_damage;
+                    rows[k].converted += side.worn + side.regrants;
+                    for t in 0..sim::TRIG_COUNT {
+                        rows[k].shots[t] += side.shots[t];
+                    }
+                }
+                rows[i].greens += offered[0];
+                rows[j].greens += offered[1];
+
+                if !b.decided {
+                    stale += 1;
+                }
+                match b.sides[0].kills.cmp(&b.sides[1].kills) {
+                    std::cmp::Ordering::Greater => wi += 1,
+                    std::cmp::Ordering::Less => wj += 1,
+                    std::cmp::Ordering::Equal => drew += 1,
+                }
+            }
+
+            // A hull against itself is a bias check and not a result: it
+            // contributes a win and a loss to the same row however it goes,
+            // so counting it would drag every rate toward a half.
+            if i == j {
+                rows[i].mirror = (wi as f64 + 0.5 * drew as f64) / bouts.max(1) as f64;
+                rows[i].stalemates = stale;
+                continue;
+            }
+            rows[i].wins += wi;
+            rows[i].losses += wj;
+            rows[i].draws += drew;
+            rows[j].wins += wj;
+            rows[j].losses += wi;
+            rows[j].draws += drew;
+            let rate = (wi as f64 + 0.5 * drew as f64) / bouts.max(1) as f64;
+            rows[i].vs[j] = Some(rate);
+            rows[j].vs[i] = Some(1.0 - rate);
+        }
+        if verbose {
+            println!("{} done ({}/{})", ai::CLASS_NAMES[i], i + 1, n);
+        }
+    }
+    rows
+}
+
+/// The cross-hull report: a line per ship, then the matrix.
+pub fn report_hulls(rows: &[HullRow], skill: f32, greens: u32, bouts: u32,
+                    zone: &str) -> serde_json::Value {
+    let n = rows.len();
+    println!(
+        "\nhull tournament: {zone} tuning, skill {skill:.2}, {greens} greens a life, \
+{bouts} bouts a pair, {n} hulls"
+    );
+
+    println!(
+        "\n{:<10} {:>7} {:>7} {:>7} {:>7} {:>6} {:>7} {:>6} {:>7} {:>7}",
+        "hull", "win%", "+-95%", "guns", "bombs", "hit%", "dmg/hit", "self%", "conv%", "mirror"
+    );
+    for r in rows {
+        let fired: u32 = r.shots.iter().sum();
+        println!(
+            "{:<10} {:>7.1} {:>7.1} {:>7} {:>7} {:>6.1} {:>7.0} {:>6.1} {:>7.1} {:>7.1}",
+            r.name,
+            100.0 * r.win_rate(),
+            r.margin(),
+            r.shots[sim::TRIG_GUN],
+            r.shots[sim::TRIG_BOMB],
+            100.0 * r.hits as f64 / fired.max(1) as f64,
+            r.damage as f64 / r.hits.max(1) as f64,
+            100.0 * r.self_damage as f64 / (r.damage + r.self_damage).max(1) as f64,
+            // What this hull turned its bounty into. Two hulls matched on
+            // greens and split on this column are the same price and not the
+            // same ship.
+            100.0 * r.converted as f64 / r.greens.max(1) as f64,
+            100.0 * r.mirror,
+        );
+    }
+
+    println!("\nrow's win% against column");
+    print!("{:<11}", "");
+    for (j, r) in rows.iter().enumerate() {
+        let _ = j;
+        print!("{:>7}", &r.name[..r.name.len().min(6)]);
+    }
+    println!();
+    for (i, r) in rows.iter().enumerate() {
+        print!("{:<11}", r.name);
+        for j in 0..n {
+            match r.vs[j] {
+                Some(v) if i != j => print!("{:>7.0}", 100.0 * v),
+                _ => print!("{:>7}", "-"),
+            }
+        }
+        println!();
+    }
+
+    // A roster built on counters is not asking every hull to sit at a half.
+    // What it is asking is that nothing beats the whole field and nothing
+    // loses to it, so that is what gets checked rather than the average.
+    //
+    // Read against each cell's own interval. A pair meets `bouts` times, so a
+    // cell is worth far less than the row beside it, and 21 pairs is 21 tries
+    // at finding something at one in twenty.
+    let cell = margin_of(bouts / 2, bouts - bouts / 2, 0);
+    println!(
+        "\neach cell is {bouts} bouts, so +-{cell:.0} points on its own; a row is \
+{} and worth +-{:.1}. With {} pairs on the board, one cell in twenty comes out \
+past its interval by luck alone.",
+        rows.first().map(|r| r.bouts()).unwrap_or(0),
+        rows.first().map(|r| r.margin()).unwrap_or(0.0),
+        n * (n - 1) / 2,
+    );
+
+    for (i, r) in rows.iter().enumerate() {
+        let beat: Vec<&str> = (0..n)
+            .filter(|&j| j != i && r.vs[j].map(|v| v > 0.5).unwrap_or(false))
+            .map(|j| rows[j].name)
+            .collect();
+        let lost: Vec<&str> = (0..n)
+            .filter(|&j| j != i && r.vs[j].map(|v| v < 0.5).unwrap_or(false))
+            .map(|j| rows[j].name)
+            .collect();
+        if beat.is_empty() {
+            println!("{} beats nothing on the board", r.name);
+        }
+        if lost.is_empty() {
+            println!("{} loses to nothing on the board", r.name);
+        }
+    }
+
+    let bias: Vec<&str> = rows
+        .iter()
+        .filter(|r| (r.mirror - 0.5).abs() > 0.15)
+        .map(|r| r.name)
+        .collect();
+    if !bias.is_empty() {
+        println!(
+            "mirror is away from even on: {}. The seats are not equivalent for \
+those hulls, so read their rows knowing the map is in them.",
+            bias.join(", ")
+        );
+    }
+
+    serde_json::json!({
+        "tuning": zone,
+        "skill": skill,
+        "greens_per_life": greens,
+        "bouts_per_pair": bouts,
+        "hulls": rows.iter().map(|r| serde_json::json!({
+            "name": r.name,
+            "class": r.class,
+            "wins": r.wins,
+            "losses": r.losses,
+            "draws": r.draws,
+            "win_rate": r.win_rate(),
+            "win_rate_margin": r.margin(),
+            "kills": r.kills,
+            "gun_shots": r.shots[sim::TRIG_GUN],
+            "bomb_shots": r.shots[sim::TRIG_BOMB],
+            "hits": r.hits,
+            "damage": r.damage,
+            "self_hits": r.self_hits,
+            "self_damage": r.self_damage,
+            "greens_offered": r.greens,
+            "greens_converted": r.converted,
+            "mirror": r.mirror,
+            "stalemates": r.stalemates,
+            "vs": r.vs,
+        })).collect::<Vec<_>>(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -885,6 +1320,98 @@ mod tests {
 
         // Nothing played is not something known.
         assert_eq!(row_of(0, 0).margin(), 0.0);
+    }
+
+    /// Bounty is matched a life at a time, which is not the same as matched
+    /// over a bout, and the difference is worth pinning rather than assuming.
+    ///
+    /// Both pilots are handed `greens` at every spawn, so at any moment in the
+    /// fight they have drawn the same number since they last died. Totals come
+    /// apart, because the side that dies more respawns more and is handed the
+    /// opening bounty again each time. That is the game's own arrangement and
+    /// not an advantage: those extra greens are bought with deaths, and a hull
+    /// that is dying is not winning.
+    ///
+    /// What this guards is the silent version of the failure. A green landing
+    /// on a ceiling grants nothing, so a harness that counted grants rather
+    /// than offers would hand the deeper tech tree more bounty for free and
+    /// report the result as balance.
+    #[test]
+    fn bounty_is_matched_a_life_at_a_time() {
+        // The knife against the fortress: the widest gap in tree shape the
+        // roster has, so the widest gap between offered and converted.
+        let cipher = ai::class_index("Cipher").unwrap() as u8;
+        let anvil = ai::class_index("Anvil").unwrap() as u8;
+        const GREENS: u32 = 8;
+        for salt in 0..4 {
+            let (_, offered) = hull_bout([cipher, anvil], 0.5, GREENS, salt, None);
+            for k in 0..2 {
+                assert!(offered[k] >= GREENS, "salt {salt}: side {k} never got its opening");
+                assert_eq!(offered[k] % GREENS, 0, "salt {salt}: greens arrive a life at a time");
+            }
+        }
+
+        // Deliberately not cross-checked against the other side's kills. A
+        // death is not always somebody's kill: a blast has no owner test, so a
+        // pilot can end their own life with their own bomb, respawn, and be
+        // refitted for a death that appears in nobody's column. Trying to
+        // predict the refit count from kills is how that got found.
+
+        // The claim underneath all of this, on its own: the same bounty buys
+        // different hulls different amounts of ship. Handed enough greens to
+        // saturate, a hull stops converting them, and every one of those still
+        // counts a bounty.
+        let mut world = sim::World::with_map(1, sim::build_pit);
+        let mut short = 0;
+        for &(class, name) in &[(cipher, "Cipher"), (anvil, "Anvil")] {
+            let ship = world.spawn(class, 0, 505, 522, 0) as usize;
+            let mut rng = 0x1234_5678u32;
+            let offered = 60;
+            let converted = green(&mut world, ship, offered, &mut rng);
+            assert!(converted <= offered, "{name} converted more than it was handed");
+            if converted < offered {
+                short += 1;
+            }
+        }
+        assert!(
+            short > 0,
+            "sixty greens saturated nobody, so this harness is not reaching \
+the ceilings the matched-bounty argument turns on"
+        );
+    }
+
+    /// A hull against itself comes out even, or the pit is doing the deciding.
+    ///
+    /// The two seats are different places with different headings, so a bout is
+    /// not symmetric and cannot be made so. What makes the matrix honest is the
+    /// alternation: odd salts swap which hull sits where, and the report undoes
+    /// it. If that undoing were wrong every cell would be its own opposite on
+    /// half the bouts, which averages to a flat 50% and reads as balance.
+    ///
+    /// A mirror pairing is where it shows. Both sides are the same hull, so
+    /// anything away from even is the seat rather than the ship.
+    #[test]
+    fn a_hull_against_itself_is_even() {
+        for name in ["Apex", "Anvil"] {
+            let c = ai::class_index(name).unwrap() as u8;
+            let (mut first, mut n) = (0.0f64, 0.0f64);
+            for salt in 0..24 {
+                let (b, _) = hull_bout([c, c], 0.5, 4, salt, None);
+                first += match b.sides[0].kills.cmp(&b.sides[1].kills) {
+                    std::cmp::Ordering::Greater => 1.0,
+                    std::cmp::Ordering::Less => 0.0,
+                    std::cmp::Ordering::Equal => 0.5,
+                };
+                n += 1.0;
+            }
+            let share = first / n;
+            assert!(
+                (0.2..=0.8).contains(&share),
+                "{name} against itself took the first seat {:.0}% of the time, \
+which is the pit talking",
+                100.0 * share
+            );
+        }
     }
 
     /// A stage has to be one thing under one name, or the matrix has two
