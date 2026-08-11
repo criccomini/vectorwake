@@ -1222,10 +1222,6 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_BTN_MULTI);    lua_setfield(L, -2, "BTN_MULTI");
     lua_pushnumber(L, 1u << SIM_BTN_SLOT_SHIFT); lua_setfield(L, -2, "BTN_SLOT_STEP");
     lua_pushnumber(L, SIM_EV_CHARGE);    lua_setfield(L, -2, "EV_CHARGE");
-    // Two arrivals under one code, told apart by b: a wormhole is 1 and a
-    // door that shut on a ship is 0. Both are the arena moving a pilot who
-    // did not ask to be moved, which is the whole reason the guide wants it.
-    lua_pushnumber(L, SIM_EV_WARP);      lua_setfield(L, -2, "EV_WARP");
 
     lua_pop(L, 1);
     assert(top == lua_gettop(L));

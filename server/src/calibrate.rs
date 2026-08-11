@@ -45,6 +45,14 @@ fn bout(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: 
     // having shot anybody, which is a fact about the prize economy rather than
     // about who can fly.
     world.cfg.prize_max = 0;
+    // And the zone's spawn scatter, for a reason the other two did not have to
+    // spell out. A radius drops a respawning ship on a random tile that far
+    // from the map's centre, and Alpha's is 250 against a pit thirty-two tiles
+    // wide: the first death throws both pilots out of the room and into the
+    // empty field around it, where they spend the rest of the bout not finding
+    // each other. It halved the kills in this tournament and I spent a while
+    // blaming a refactor for it. Zero puts them back on the map's own starts.
+    world.cfg.spawn_radius = 0;
 
     // Alternate which pilot starts on which side, so a positional advantage
     // in the pit cannot accumulate into a rating.
@@ -322,6 +330,14 @@ pub fn stage_bout(kits: [&Stage; 2], class: u8, skill: f32, salt: u32,
     // that the kit is the only difference between the two pilots.
     world.cfg.spawn_prizes = 0;
     world.cfg.prize_max = 0;
+    // And the zone's spawn scatter, for a reason the other two did not have to
+    // spell out. A radius drops a respawning ship on a random tile that far
+    // from the map's centre, and Alpha's is 250 against a pit thirty-two tiles
+    // wide: the first death throws both pilots out of the room and into the
+    // empty field around it, where they spend the rest of the bout not finding
+    // each other. It halved the kills in this tournament and I spent a while
+    // blaming a refactor for it. Zero puts them back on the map's own starts.
+    world.cfg.spawn_radius = 0;
 
     // Sides alternate, so the pit's own geometry cannot turn into a result.
     let flip = salt % 2 == 1;
@@ -913,6 +929,14 @@ pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
     // against the zone for the same reason the other two harnesses hold them.
     world.cfg.spawn_prizes = 0;
     world.cfg.prize_max = 0;
+    // And the zone's spawn scatter, for a reason the other two did not have to
+    // spell out. A radius drops a respawning ship on a random tile that far
+    // from the map's centre, and Alpha's is 250 against a pit thirty-two tiles
+    // wide: the first death throws both pilots out of the room and into the
+    // empty field around it, where they spend the rest of the bout not finding
+    // each other. It halved the kills in this tournament and I spent a while
+    // blaming a refactor for it. Zero puts them back on the map's own starts.
+    world.cfg.spawn_radius = 0;
 
     // Seated last, so both hulls open with the settings this room actually has.
     let Some(ships) = map.seat(&mut world, salt, seats) else { return dead };
@@ -1435,6 +1459,46 @@ mod tests {
             short > 0,
             "sixty greens saturated nobody, so this harness is not reaching \
 the ceilings the matched-bounty argument turns on"
+        );
+    }
+
+    /// A zone's spawn scatter stays out of every harness here.
+    ///
+    /// `spawn_radius` drops a respawning ship on a random tile that far from
+    /// the map's centre. Alpha carries 250 and the pit is thirty-two tiles
+    /// across, so the first death puts both pilots outside the room, and they
+    /// spend the rest of the bout failing to find each other: it halved the
+    /// kills in a 384-bout tournament and moved every hull's win rate, which I
+    /// spent a while attributing to a refactor.
+    ///
+    /// The failure is quiet in the worst way. Nothing errors, every column
+    /// still prints, and the numbers are simply about a different fight. Two
+    /// settings were already held for the same reason and this is the third.
+    #[test]
+    fn a_zones_spawn_scatter_does_not_reach_the_harness() {
+        let scattered: config::ArenaConfig =
+            toml::from_str("spawn_radius = 250\n").expect("a zone that scatters");
+        let cipher = ai::class_index("Cipher").unwrap() as u8;
+
+        // Fought in the pit, where a 250-tile radius is off the map's furniture
+        // entirely. Kills are the tell: pilots who cannot find each other
+        // cannot kill each other.
+        let mut kills = 0;
+        for salt in 0..6 {
+            let (b, _) = hull_bout([cipher, cipher], 0.5, 10, salt, Some(&scattered),
+                                   &Arena::Built(sim::build_pit));
+            kills += b.sides[0].kills + b.sides[1].kills;
+        }
+        // Measured both ways rather than guessed: held, six bouts come to 50
+        // kills, which is most of the way to the ten a decided bout is worth.
+        // Unheld they come to 19, because after the opening life nobody can
+        // find anybody. Forty sits well clear of the broken number and well
+        // under the working one.
+        assert!(
+            kills > 40,
+            "six bouts produced {kills} kills between them, against 50 when the \
+scatter is held and 19 when it is not, so it is still throwing pilots out of \
+the room"
         );
     }
 
