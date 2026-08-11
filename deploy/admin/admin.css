@@ -1,0 +1,102 @@
+/* The game's palette, from client/arena/palette.lua, so the panel reads as
+   the same instrument: BG 05070c, INK dfe9f5, DIM 6c7a90, BORDER 1d2838,
+   FRIEND 4fd6ff for the acting edge and ENEMY ffa552 for the destructive
+   one. Monospace throughout, because the client draws nothing but text and
+   vectors and this page is more of the same. */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #05070c;
+  color: #dfe9f5;
+  font: 15px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+main {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 2rem; }
+h2 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #6c7a90;
+  margin: 2.5rem 0 0.75rem;
+  border-bottom: 1px solid #1d2838;
+  padding-bottom: 0.4rem;
+}
+
+.dim { color: #6c7a90; }
+.who { color: #6c7a90; }
+.who span { color: #dfe9f5; }
+
+form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; }
+label { display: flex; flex-direction: column; gap: 0.25rem; color: #6c7a90; }
+
+input {
+  background: #0a0f18;
+  border: 1px solid #1d2838;
+  border-radius: 3px;
+  color: #dfe9f5;
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+}
+input:focus { outline: 1px solid #4fd6ff; outline-offset: 0; }
+
+button {
+  background: #0a0f18;
+  border: 1px solid #4fd6ff;
+  border-radius: 3px;
+  color: #4fd6ff;
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+}
+button:hover { background: #10202c; }
+
+/* The one destructive control on the page wears the enemy's colour. */
+#ban-button.ban { border-color: #ffa552; color: #ffa552; }
+#ban-button.ban:hover { background: #2a1c10; }
+
+button.link {
+  border: none;
+  background: none;
+  color: #6c7a90;
+  text-decoration: underline;
+  padding: 0 0 0 0.5rem;
+}
+
+.note { color: #ffa552; min-height: 1.5em; margin: 0.6rem 0 0; }
+.note:empty { margin: 0; }
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 1.2rem;
+  margin: 1rem 0;
+  border: 1px solid #1d2838;
+  border-radius: 3px;
+  padding: 0.9rem 1.1rem;
+}
+dt { color: #6c7a90; }
+dd { margin: 0; overflow-wrap: anywhere; }
+dd.bad { color: #ffa552; }
+dd.good { color: #4fd6ff; }
+
+table { border-collapse: collapse; width: 100%; }
+th {
+  text-align: left;
+  color: #6c7a90;
+  font-weight: 400;
+  border-bottom: 1px solid #1d2838;
+  padding: 0.25rem 1rem 0.25rem 0;
+}
+td { padding: 0.3rem 1rem 0.3rem 0; border-bottom: 1px solid #10161f; }
+
+#ban-form { margin-top: 0.75rem; }
+#ban-form input { flex: 1; }
