@@ -29,14 +29,23 @@ treats the resulting refusal as what it is and quietly becomes a new guest.
 
 ## Names
 
-Names come from the server's generator, always, and are unique across the
-fleet from the moment they are dealt, guests included. There is no free-text
-name field for the same reason there is no chat, per
+Names come from the server's generator, and are unique across the fleet from
+the moment they are dealt, guests included. No player-facing route accepts a
+proposed name, for the same reason there is no chat, per
 [decision 28](../architecture/decisions.md#28-no-chat): an open text channel
-is a moderation queue. And no route accepts a client-proposed name at all,
-because whoever proposes a name chooses it, and both properties the design
-leans on, a curated register and fleet-wide uniqueness, hold only while the
-server does the choosing.
+is a moderation queue, and a name a player types is that channel with a
+scoreboard attached.
+
+One route does take a typed name, and it is an operator's:
+`/v1/admin/rename`, behind the admin flag, one pilot at a time, with the
+actor and both names on the log line. It is worth being exact about what that
+spends, because this section used to claim it could never happen. Fleet-wide
+uniqueness is untouched, since the arbiter was never the generator: it is the
+unique index on `lower(call_sign)`, and a typed name that collides is refused
+by the same index that makes a dealt one redraw. What it spends is the
+curated register, because some names are now chosen words rather than drawn
+ones. That is a deliberate trade, bounded by who can make it, and the thing
+it buys is an operator who can fix a name rather than only replace it.
 
 Any pilot may reroll, guest or claimed. The account number never moves, so the
 rating and the history ride through the rename; only the label changes. The

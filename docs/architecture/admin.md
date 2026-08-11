@@ -192,24 +192,21 @@ Most of an account is deliberately not editable, and the panel is easier to
 reason about once that is said plainly rather than discovered a field at a
 time.
 
-**The call sign can be rerolled and never typed.** An operator gets the same
-draw a player's own reroll gets, so no admin can mint a name a player could
-not have been dealt. [accounts.md](../design/accounts.md) is why: a curated
-register and fleet-wide uniqueness hold only while the server does the
-choosing, and a route that accepted a proposed name would end both. The
-account number does not move, so the rating and the history ride through it.
-A bot is refused, because a house bot's name is how its roster individual is
-found and renaming one would leave the scoreboard disagreeing with the roster
-that seeded its rating.
+**The call sign can be typed or dealt.** An operator may set one directly or
+take a fresh draw from the pool, and the account number does not move either
+way, so the rating and the history ride through it. The typed half is the one
+place in this service where a name is chosen rather than generated;
+[accounts.md](../design/accounts.md) says what that spends and what it does
+not, and the short version is that uniqueness survives because the unique
+index was always the arbiter. A typed name is cleaned the way an arena cleans
+any name it is handed, printable ASCII and 24 at the outside, and a collision
+comes back as a refusal naming the name. A bot is refused outright, because a
+house bot's name is how its roster individual is found and renaming one would
+leave the scoreboard disagreeing with the roster that seeded its rating.
 
 **Standing is a ban and its reason**, which the panel already sets, and which
 takes effect within one token lifetime because this is where tokens are
 minted.
-
-**An operator note** is the one piece of free text on an account: what
-happened, what was said, what was decided. `reason` cannot serve that purpose,
-because it describes a ban that is true right now and is gone the moment the
-ban is lifted.
 
 Three things stay uneditable on purpose. A rating is a projection of
 `rated_events`, so setting one by hand would leave the number disagreeing with

@@ -427,15 +427,15 @@ function drawPilot(p) {
   row("last seen", p.last_seen);
   row("standing", p.banned ? `banned: ${p.reason || "no reason recorded"}` : "in good standing",
       p.banned ? "bad" : "good");
-  if (p.note) row("note", p.note);
   if (p.admin) row("admin", "holds the flag", "good");
   dl.hidden = false;
 
   el("pilot-edit").hidden = false;
-  el("note-text").value = p.note || "";
   // A bot's name is how its roster identity is found, so the server refuses
-  // to reroll one. Saying so on the button beats saying it in a refusal.
-  el("rename-button").hidden = p.kind !== "human";
+  // to rename one at all. Saying so by not drawing the controls beats saying
+  // it in a refusal.
+  el("name-text").value = "";
+  el("name-form").hidden = p.kind !== "human";
 
   // Admins are not bannable from here either, for the same reason: the
   // server refuses, and a button that is not there is a kinder refusal.
@@ -478,43 +478,44 @@ el("kick-button").addEventListener("click", () => {
 
 // The note is the only free text an operator writes about somebody, so it
 // saves on its own rather than riding along with a ban.
-el("note-form").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
+// Rename: one route, two intentions. A typed name is sent as typed and the
+// server decides whether it is allowed; an empty field means deal one, which
+// is what the reroll button sends. Either way the account number does not
+// move, so the rating and the history ride through it.
+async function rename(name, dialog) {
   if (!shown) return;
-  const note = el("lookup-note");
-  try {
-    await post("/v1/admin/note", {
-      secret, account: shown.account, note: el("note-text").value,
-    });
-    await lookup(`#${shown.account}`);
-    tell("lookup-note", "note saved", "ok");
-  } catch (e) {
-    tell(note.id, e.message);
-  }
-});
-
-// A reroll deals a name; it never takes one. There is no field to type into
-// here on purpose, per docs/design/accounts.md: a name an operator could
-// choose is a name that leaves the curated register, and the pool's
-// uniqueness holds only while the server does the choosing.
-el("rename-button").addEventListener("click", async () => {
-  if (!shown) return;
-  const note = el("lookup-note");
-  const yes = await ask({
-    title: "Reroll this call sign?",
-    body: `${shown.name} is dealt a new name from the pool, and the old one ` +
-      "goes back into it. The account number does not move, so the rating " +
-      "and the history ride through the rename.",
-    ok: "reroll",
-  });
+  const yes = await ask(dialog);
   if (yes === null) return;
   try {
-    const r = await post("/v1/admin/rename", { secret, account: shown.account });
+    const r = await post("/v1/admin/rename", { secret, account: shown.account, name });
     await lookup(`#${shown.account}`);
     tell("lookup-note", `now called ${r.name}`, "ok");
   } catch (e) {
-    tell(note.id, e.message);
+    tell("lookup-note", e.message);
   }
+}
+
+el("name-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const want = el("name-text").value.trim();
+  if (!shown || !want) return;
+  rename(want, {
+    title: "Rename this pilot?",
+    body: `${shown.name} becomes ${want}. Their old call sign goes back into ` +
+      "the pool for anybody to be dealt, and this one is theirs until it is " +
+      "changed again.",
+    ok: "rename",
+  });
+});
+
+el("reroll-button").addEventListener("click", () => {
+  if (!shown) return;
+  rename("", {
+    title: "Reroll this call sign?",
+    body: `${shown.name} is dealt a new name from the pool, and the old one ` +
+      "goes back into it.",
+    ok: "reroll",
+  });
 });
 
 el("ban-form").addEventListener("submit", async (ev) => {

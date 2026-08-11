@@ -51,8 +51,7 @@ framework would be the larger change.
 | `/v1/admin/pilot` | the admin panel | One pilot by call sign or number: kind, standing, the dates. Behind the account flag |
 | `/v1/admin/ban` | the admin panel | A fleet ban, which takes effect at the next token issuance. Refuses accounts that hold the flag |
 | `/v1/admin/bans` | the admin panel | Every account currently marked, with its reason |
-| `/v1/admin/rename` | the admin panel | Deals a pilot a fresh call sign from the pool. Refuses a bot, whose name is its roster identity |
-| `/v1/admin/note` | the admin panel | An operator's note on an account. Empty clears it |
+| `/v1/admin/rename` | the admin panel | Sets a pilot's call sign to a typed one, or deals a fresh one when nothing is typed. Refuses a taken name and refuses a bot, whose name is its roster identity |
 | `/v1/admin/admins` | the admin panel | Who holds the flag |
 
 The `/v1/admin` block is the panel's, and [admin.md](admin.md) is its design.

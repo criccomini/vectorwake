@@ -106,14 +106,14 @@
     <dl id="pilot" hidden></dl>
 
     <div id="pilot-edit" hidden>
-      <form id="note-form" class="row">
+      <form id="name-form" class="row">
         <div class="field grow">
-          <label for="note-text">operator note</label>
-          <input id="note-text" maxlength="500"
-                 placeholder="what happened, and what was done about it">
+          <label for="name-text">call sign</label>
+          <input id="name-text" maxlength="24" autocapitalize="off"
+                 spellcheck="false" placeholder="a new call sign">
         </div>
-        <button>save note</button>
-        <button id="rename-button" type="button">reroll call sign</button>
+        <button id="name-button">rename</button>
+        <button id="reroll-button" type="button">reroll</button>
       </form>
       <form id="ban-form" class="row">
         <div class="field grow">
