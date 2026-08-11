@@ -25,6 +25,22 @@ Conventions:
 - `.claude/hooks/session-start.sh` installs OptMem and exports `MEMORY_DIR`, so
   the `memo` commands below operate on this repo's store.
 
+## Ground rules
+
+`CONSTITUTION.md` at the root is the baseline: how to take an instruction, when
+to ask, what not to overwrite, what counts as verified. Read it and follow it.
+Everything else in this file overrides it, and so does anything you are asked
+for directly.
+
+@CONSTITUTION.md
+
+It is the Clanker Constitution, vendored at release `v2026.08.10` and not ours
+to edit. Update it by copying a newer reviewed tag from
+https://github.com/kenn-io/constitution rather than fetching one at startup, so
+the rules an agent boots with are the rules in the commit. Same arrangement as
+the vendored humanizer skill: preferences that are ours belong in this file,
+beside the rest of the house style.
+
 ## Shipping
 
 The web build is how this game is actually looked at, so a change nobody can play
@@ -96,6 +112,11 @@ Your memory is OptMem:
 
 OptMem outlives every session, compaction, model and vendor change.
 Without it you do not know who you are, or what was decided and tried.
+
+Constitution section 7 warns against agent-private memories standing in for
+shared instructions, which is not what this is: the store is committed to the
+repository and read by whoever comes next. Durable project guidance still
+belongs in this file.
 
 ### At startup: activating OptMem (mandatory)
 
