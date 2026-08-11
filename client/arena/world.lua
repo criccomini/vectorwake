@@ -326,9 +326,9 @@ for _, h in ipairs(M.HULLS) do
             local dx, dy = math.sin(a), math.cos(a)
             local best = 0
             for v = 1, n do
-                local w = (v % n) + 1
+                local nv = (v % n) + 1
                 local ax, ay = p[v * 2 - 1], p[v * 2] - h.mid
-                local bx, by = p[w * 2 - 1], p[w * 2] - h.mid
+                local bx, by = p[nv * 2 - 1], p[nv * 2] - h.mid
                 local ex, ey = bx - ax, by - ay
                 local den = dx * ey - dy * ex
                 if math.abs(den) > 1e-9 then
@@ -1771,12 +1771,10 @@ local dtmp = {}
 
 function M.drones(fill, glow, cls, x, y, riders)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
-    local col = pal.FRIEND
     for k = 1, #riders, 3 do
         local a = riders[k] / 65536 * TAU
         local frac = riders[k + 1]
-        local team_col = riders[k + 2]
-        col = team_col
+        local col = riders[k + 2]
         local ca, sa = math.cos(a), math.sin(a)
         -- Brightness is that gunner's own energy, which the original hides
         -- and its own guides complain about: a carrier cannot otherwise tell
