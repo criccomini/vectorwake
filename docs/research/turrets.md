@@ -52,18 +52,23 @@ whether there is one at all.
 | Setting | Applies to | Reference value | Unit |
 |---|---|---|---|
 | `TurretLimit` | the host's hull | 5 | riders allowed, and 0 forbids attaching to this ship |
-| `TurretThrustPenalty` | the host's hull | 1 | thrust lost per rider, against `MaximumThrust` 17 |
-| `TurretSpeedPenalty` | the host's hull | 125 | pixels/second/10 per rider, so 12.5 px/s against 325 |
+| `TurretThrustPenalty` | the host's hull | 1 | thrust lost while carrying, against `MaximumThrust` 17 |
+| `TurretSpeedPenalty` | the host's hull | 125 | pixels/second/10, so 12.5 px/s against 325 |
 | `AttachBounty` | the rider's hull | 0 | bounty the rider needs before it may attach |
 
 Values are from `dist/conf/svs/ship-terrier`, where, as `original-settings.md`
-already says, all eight ships carry identical numbers.
+already says, all eight ships carry identical numbers. Note that all eight also
+carry `TurretLimit=5`: any ship can be a carrier, and the zones where only one
+can are zones that set the other seven to zero.
 
-A full stack of five costs the host 29% of its thrust and 19% of its top speed.
-That is the entire mechanical cost of carrying people. Everything else about
-turrets is positional, which is worth saying because it is tempting to assume
-the penalties are what balances the mechanic. They are not. What balances it is
-that five ships are now standing in one place.
+Neither penalty scales with the count. The client tests whether the ship has
+any riders at all and subtracts once, so the first rider costs the host 6% of
+its thrust and 4% of its top speed and the next four are free. The settings
+text agrees, saying "with a turret riding" rather than per turret.
+
+That is the entire mechanical cost of carrying people, and it means a carrier
+with one rider should always want five. What balances the mechanic is not the
+penalty. It is that five ships are now standing in one place.
 
 ## Everyone in the stack is a separate ship
 
@@ -93,6 +98,32 @@ cloaked rider is not drawn at all. A cloaked host with visible riders shows up
 as turrets floating in space. Flags follow the host: a host holding one is red
 on radar, and if a rider is the one holding it the host is red only to enemies
 with x-radar.
+
+## How it is drawn
+
+Not as ships, which is the thing to know before designing anything.
+
+A ship is a 36 by 36 sprite picked out of a sheet by class and by one of 40
+headings. A turret is a 16 by 16 sprite picked out of a different sheet by
+heading alone. There is no class in that index: one gun graphic serves all
+eight ships, so a Leviathan riding a Terrier and a Warbird riding it look
+identical.
+
+The renderer skips any player who is attached, then draws each carrier
+followed by its riders, every one of them centred on the carrier's own
+position. Five riders is five 16 by 16 guns stacked on the same pixel, each
+turned to the heading its pilot is holding. You cannot count them and you
+cannot tell what they are.
+
+What you can read is the text. The carrier's name is drawn under it, then each
+rider's name twelve pixels below the last, so a full stack carries a column of
+six names. The count and the roster live there rather than in the picture.
+
+Two artifacts fall out of the draw order rather than out of any decision. The
+riders are drawn outside the test that decides whether the carrier itself is
+visible, which is exactly why a cloaked carrier leaves its guns hanging in
+space. And a rider's name is laid out using its carrier's sprite size rather
+than its own, so the text sits where the carrier is, whatever the rider flies.
 
 ## The wire
 
@@ -157,6 +188,12 @@ that always transmits, or riders will fly blind on the ship they are sitting on.
   `types.h` and add the field layouts.
 - Ship settings on the ASSS wiki for the units
   (http://wiki.minegoboom.com/index.php/Ship_Settings).
+- nullspace `src/null/PlayerManager.cpp` for the drawing, `Graphics.cpp` for the
+  two sprite sheets, and `ShipController.cpp` for a rider's position being
+  assigned from its carrier every tick and for the penalties being subtracted
+  once (https://github.com/plushmonkey/nullspace). It is a reimplementation
+  rather than Continuum, which is closed, and it is the closest thing to a
+  reference there is.
 - Rincewind's SubSpace strategy guide for the client-side rules, which are
   documented nowhere in the server source: the energy and specials conditions,
   the drain on arrival, what dies with what, and the radar cases
