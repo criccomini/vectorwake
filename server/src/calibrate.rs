@@ -846,8 +846,9 @@ fn green(world: &mut sim::World, ship: usize, greens: u32, rng: &mut u32) -> u32
 /// Returns the bout and how many greens each side was offered over it, which is
 /// `greens` times the number of lives it had rather than a constant.
 pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
-                 tuning: Option<&config::ArenaConfig>) -> (Bout, [u32; 2]) {
-    let mut world = sim::World::with_map(0x5ea1 ^ salt, sim::build_pit);
+                 tuning: Option<&config::ArenaConfig>,
+                 map: fn(&mut sim::sim_map)) -> (Bout, [u32; 2]) {
+    let mut world = sim::World::with_map(0x5ea1 ^ salt, map);
     let route = nav::Nav::build(&world.map);
     if let Some(c) = tuning {
         crate::Room::apply_config(&mut world, c);
@@ -978,7 +979,8 @@ pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
 
 /// Every hull against every other, `bouts` times each, at one bounty.
 pub fn run_hulls(skill: f32, greens: u32, bouts: u32,
-                 tuning: Option<&config::ArenaConfig>, verbose: bool) -> Vec<HullRow> {
+                 tuning: Option<&config::ArenaConfig>, map: fn(&mut sim::sim_map),
+                 verbose: bool) -> Vec<HullRow> {
     let n = ai::CLASS_NAMES.len();
     let mut rows: Vec<HullRow> = (0..n)
         .map(|i| HullRow {
@@ -1006,7 +1008,7 @@ pub fn run_hulls(skill: f32, greens: u32, bouts: u32,
         for j in i..n {
             let (mut wi, mut wj, mut drew, mut stale) = (0u32, 0u32, 0u32, 0u32);
             for _ in 0..bouts {
-                let (b, offered) = hull_bout([i as u8, j as u8], skill, greens, salt, tuning);
+                let (b, offered) = hull_bout([i as u8, j as u8], skill, greens, salt, tuning, map);
                 salt = salt.wrapping_add(1);
 
                 for (k, side) in [(i, b.sides[0]), (j, b.sides[1])] {
@@ -1060,11 +1062,11 @@ pub fn run_hulls(skill: f32, greens: u32, bouts: u32,
 
 /// The cross-hull report: a line per ship, then the matrix.
 pub fn report_hulls(rows: &[HullRow], skill: f32, greens: u32, bouts: u32,
-                    zone: &str) -> serde_json::Value {
+                    zone: &str, map: &str) -> serde_json::Value {
     let n = rows.len();
     println!(
-        "\nhull tournament: {zone} tuning, skill {skill:.2}, {greens} greens a life, \
-{bouts} bouts a pair, {n} hulls"
+        "\nhull tournament: {zone} tuning on the {map}, skill {skill:.2}, {greens} greens \
+a life, {bouts} bouts a pair, {n} hulls"
     );
 
     println!(
@@ -1162,6 +1164,7 @@ those hulls, so read their rows knowing the map is in them.",
 
     serde_json::json!({
         "tuning": zone,
+        "map": map,
         "skill": skill,
         "greens_per_life": greens,
         "bouts_per_pair": bouts,
@@ -1352,7 +1355,7 @@ mod tests {
         let anvil = ai::class_index("Anvil").unwrap() as u8;
         const GREENS: u32 = 8;
         for salt in 0..4 {
-            let (_, offered) = hull_bout([cipher, anvil], 0.5, GREENS, salt, None);
+            let (_, offered) = hull_bout([cipher, anvil], 0.5, GREENS, salt, None, sim::build_pit);
             for k in 0..2 {
                 assert!(offered[k] >= GREENS, "salt {salt}: side {k} never got its opening");
                 assert_eq!(offered[k] % GREENS, 0, "salt {salt}: greens arrive a life at a time");
@@ -1404,7 +1407,7 @@ the ceilings the matched-bounty argument turns on"
             let c = ai::class_index(name).unwrap() as u8;
             let (mut first, mut n) = (0.0f64, 0.0f64);
             for salt in 0..24 {
-                let (b, _) = hull_bout([c, c], 0.5, 4, salt, None);
+                let (b, _) = hull_bout([c, c], 0.5, 4, salt, None, sim::build_pit);
                 first += match b.sides[0].kills.cmp(&b.sides[1].kills) {
                     std::cmp::Ordering::Greater => 1.0,
                     std::cmp::Ordering::Less => 0.0,

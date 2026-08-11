@@ -3736,6 +3736,22 @@ fn run_hull_tournament() {
     let greens: u32 = std::env::args().nth(4).and_then(|s| s.parse().ok()).unwrap_or(0);
     let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
     let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
+    let map = std::env::args().nth(7).unwrap_or_else(|| "pit".into());
+
+    // The pit is one room thirty-two tiles across and a pilot can see the whole
+    // of it, which suits the loadout tournament and flatters exactly the hulls
+    // that are meant to be strong up close. The arena has cover, lanes and
+    // somewhere to run to, so a hull whose weakness is written down as "loses
+    // outside two tiles" has room to lose there. Anything measured on one and
+    // not the other is a fact about that room.
+    let builder: fn(&mut sim::sim_map) = match map.as_str() {
+        "pit" => sim::build_pit,
+        "arena" => sim::build_arena,
+        other => {
+            println!("hulls: no map named {other:?}; there is `pit` and `arena`");
+            std::process::exit(1);
+        }
+    };
 
     let tuning = if zone == "baseline" {
         None
@@ -3757,11 +3773,12 @@ fn run_hull_tournament() {
     const SKILL: f32 = 0.50;
     let n = ai::CLASS_NAMES.len();
     println!(
-        "hulls at {greens} greens under {zone} tuning: {} pairs, {bouts} bouts each",
+        "hulls at {greens} greens under {zone} tuning on the {map}: {} pairs, \
+{bouts} bouts each",
         n * (n + 1) / 2
     );
-    let rows = calibrate::run_hulls(SKILL, greens, bouts, tuning.as_ref(), true);
-    let doc = calibrate::report_hulls(&rows, SKILL, greens, bouts, &zone);
+    let rows = calibrate::run_hulls(SKILL, greens, bouts, tuning.as_ref(), builder, true);
+    let doc = calibrate::report_hulls(&rows, SKILL, greens, bouts, &zone, &map);
 
     let path = format!("{dir}/hulls.json");
     match std::fs::write(&path, serde_json::to_string_pretty(&doc).expect("serialize")) {
