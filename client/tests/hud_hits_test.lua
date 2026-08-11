@@ -563,6 +563,50 @@ frame({teams = {}})
 check("no team list means no side row", not says("SIDE"))
 
 room.teams = {[0] = 1, 1, 1, 1}
+
+-- --- the tier a pilot wears ------------------------------------------------
+--
+-- The band is the only thing a player is ever told about a rating, so if it
+-- does not reach this panel then the whole ladder is a number two servers
+-- pass between themselves. It travels on the roster and is recomputed on
+-- every kill, and for a long time it arrived and was drawn nowhere.
+--
+-- Read off the drawn text for the same reason the team rows are: what is
+-- being asked is what reaches a player.
+
+-- A whole drawn string rather than a substring of all of them. "ACE" sits
+-- inside "SPACE", so the obvious spelling of this test passes on text that
+-- has nothing to do with the ladder.
+local function drew(word)
+    local st = package.loaded["arena.state"]
+    for k = 1, st.n do
+        if st.text[k].s:upper() == word:upper() then return true end
+    end
+    return false
+end
+
+ui.inspect = 1
+
+frame({pilots = {[0] = {name = "you", label = "human"},
+                 [1] = {name = "someone", label = "human", tier = "Ace"}}})
+check("the tier reaches the panel", drew("Ace"), drawn())
+check("under a label saying what it is", drew("TIER"))
+
+-- Provisional is the absence of an answer rather than a low one. A newcomer
+-- who read as the bottom band would be told something untrue about
+-- themselves on their first evening.
+frame({pilots = {[0] = {name = "you", label = "human"},
+                 [1] = {name = "someone", label = "human", tier = "placing"}}})
+check("a pilot still placing says so", drew("placing"), drawn())
+check("and is not given the bottom band instead", not drew("Green"))
+
+-- A roster that never carried one at all. The row is still drawn, because a
+-- panel with a hole where a row belongs reads as a bug rather than as
+-- silence, and "unrated" is the honest word for it.
+frame({pilots = {[0] = {name = "you", label = "human"},
+                 [1] = {name = "someone", label = "human"}}})
+check("a pilot with no tier at all still gets the row", drew("unrated"), drawn())
+
 ui.inspect = nil
 ui.details = false
 

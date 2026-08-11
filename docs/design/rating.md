@@ -46,11 +46,14 @@ bonus on top of it creates a kill-stealing incentive that fights the in-game
 bounty award, which already pays the finisher in points. Rating and score do
 different jobs; let them.
 
-**Support credit.** A hull carrying turrets contributes to kills it did not
-deal damage for. When a turret attached to a carrier earns credit, a configurable
-share of that credit, defaulting to 15%, transfers to the carrier. Without
-something like this, every rating system in this genre tells support players
-they are bad at the game.
+**No support credit for carrying.** A hull with turrets attached earns from its
+own guns and nothing else. This document used to promise the carrier a share of
+what its riders earned, on the reasoning that a rating system which ignores
+support play tells support players they are bad at the game. That reasoning does
+not survive contact with the hull: a carrier is not a platform somebody else
+shoots from, it is a ship with its own trigger, flying into the same fight, and
+it is credited for every point of damage it deals like anybody else. A share of
+its riders' work on top of that would pay it twice for being in one place.
 
 ## The update
 
@@ -130,10 +133,29 @@ returns nearly zero, and losing to it costs a lot.
 The population director removes bots as humans arrive, so a farm requires an
 empty arena.
 
-Above a threshold, the fraction of a player's rating gain that can come from AI
-in a day is capped. Bots exist to place a player on the ladder, not to climb it.
+Past the Ace band a pilot may take only fifty points a day from the AI, and the
+allowance rolls on a day measured from the first AI kill of the previous one.
+Below that line nothing is capped, because that is the bots doing the job they
+exist for: an arena with no humans in it should still be able to place
+somebody. Above it the AI has stopped measuring anybody and is only paying out.
+Losses are never capped, since a pilot who keeps dying to bots at that rating is
+being told something true. The floor is the Ace floor, and a test holds the two
+numbers together so the rule stays sayable in one sentence: the AI stops paying
+once you make Ace.
 
-Zones mark arenas as rated or unrated. A practice arena rates nothing.
+The brake is applied in the arena, where the delta is decided, rather than at
+the meta-layer where it lands. That keeps the log honest, since every rating is
+a projection of it and a cap applied downstream would be handed straight back
+the first time history was replayed under a new model. The cost of that choice
+is that the allowance is per room: a farmer who gets a fresh room gets a fresh
+fifty points. Rooms live for days and the population director empties an arena
+of bots as humans arrive, so this is friction on top of friction rather than a
+lock, which is all the other three are too.
+
+Zones mark arenas as rated or unrated. A practice arena rates nothing. That one
+is still a design and not a setting: no zone can currently declare itself
+unrated, and `VW_REPORT` is the only off switch, which works per deployment
+rather than per arena.
 
 ## What it means, and what it does not
 

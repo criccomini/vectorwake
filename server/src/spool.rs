@@ -34,6 +34,14 @@ pub struct Event {
     pub victim_before: f64,
     pub victim_after: f64,
     pub credits: Vec<Credit>,
+    /// True when no human was on either side of this death. The bots fight
+    /// around the clock at fill, so these are the overwhelming majority of
+    /// the log and the only rows retention is willing to drop: a model
+    /// migration replays human careers, and a bot re-seeds from calibration.
+    /// Computed in the arena, which is the only place that knows who was a
+    /// person.
+    #[serde(default)]
+    pub bots_only: bool,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
@@ -107,6 +115,12 @@ impl Spool {
 
     pub fn len(&self) -> usize {
         self.pending.len()
+    }
+
+    /// The most recent event still owed. For a caller that wants to see what
+    /// it just filed rather than what the far end eventually made of it.
+    pub fn last(&self) -> Option<&Event> {
+        self.pending.last()
     }
 
     /// Called from a tick. Appends and returns; it never blocks on anything
@@ -201,6 +215,7 @@ mod tests {
             victim_before: 1200.0,
             victim_after: 1184.0,
             credits: vec![Credit { account: 7, weight: 1.0, before: 1200.0, after: 1216.0 }],
+            bots_only: false,
         }
     }
 

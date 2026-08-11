@@ -373,7 +373,7 @@ declining to use one.
 
 ## 15. Rating is damage-weighted pairwise Elo, stored as an event log
 
-**Status:** proposed
+**Status:** accepted, and running
 
 Kills in this game have several contributors and a finisher who may have done the
 least. Each death becomes a set of pairwise contests between the victim and each
@@ -402,7 +402,10 @@ the bot population rather than by the players, since bots fight at fill around
 the clock. The live fleet writes on the order of 300,000 events a day, which is
 40 to 50 GB a year and fills a 25 GB database in six to nine months. Throughput
 is nowhere near a limit; space is. The answer is retention rather than a bigger
-disk, and it is in [meta-layer.md](meta-layer.md).
+disk: every event says whether a human was in it, and a sweeper drops bot-only
+rows after three weeks while human ones are kept for good. That is what makes
+"stored as an event log" affordable, and it is in
+[meta-layer.md](meta-layer.md).
 
 **Reconsider if:** the pairwise decomposition produces ratings that disagree with
 what good players can see with their own eyes. The event log is what makes that

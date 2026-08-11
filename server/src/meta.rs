@@ -104,9 +104,15 @@ create table if not exists rated_events (
     victim_before  double precision not null,
     victim_after   double precision not null,
     credits        jsonb not null,
-    event_id       bigint
+    event_id       bigint,
+    bots_only      boolean not null default false
 );
 create index if not exists rated_events_by_victim on rated_events (victim, at);
+-- Retention reads exactly this. Partial, because the rows it will never
+-- select are the ones worth keeping and there is no reason to index them:
+-- a human-involving row is kept forever and the sweeper never looks at it.
+alter table rated_events add column if not exists bots_only boolean not null default false;
+create index if not exists rated_events_botsweep on rated_events (at) where bots_only;
 -- The arena mints event_id when it files the event, and it rides through
 -- every retry of the batch. Unique here is what makes ingest idempotent:
 -- delivery is at-least-once, so the second arrival of an event has to be
@@ -749,6 +755,9 @@ async fn ingest(
     let after = ev.get("victim_after").and_then(|v| v.as_f64()).unwrap_or(0.0);
     let tick = ev.get("tick").and_then(|v| v.as_i64()).unwrap_or(0);
     let victim_kind = ev.get("victim_kind").and_then(|v| v.as_i64()).unwrap_or(0) as i16;
+    // Absent means keep, which is the safe direction: an arena too old to
+    // send this is not one whose events should quietly expire.
+    let bots_only = ev.get("bots_only").and_then(|v| v.as_bool()).unwrap_or(false);
     let empty = Vec::new();
     let credits = ev.get("credits").and_then(|v| v.as_array()).unwrap_or(&empty);
 
@@ -761,8 +770,8 @@ async fn ingest(
         .execute(
             "insert into rated_events
                (event_id, class, zone, instance, tick, victim, victim_kind,
-                victim_before, victim_after, credits)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                victim_before, victim_after, credits, bots_only)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
              on conflict (event_id) do nothing",
             &[
                 &event_id,
@@ -775,6 +784,7 @@ async fn ingest(
                 &before,
                 &after,
                 &serde_json::Value::Array(credits.clone()),
+                &bots_only,
             ],
         )
         .await
@@ -1090,6 +1100,52 @@ pub async fn run() {
                     .await
                 {
                     Ok(n) if n > 0 => println!("meta: released {n} idle guest account(s)"),
+                    _ => {}
+                }
+            }
+        });
+    }
+
+    // The retention sweeper. The log grows at a rate the players do not set:
+    // bots fight at fill around the clock, which is most of ~300,000 events a
+    // day, and at 400 to 500 bytes a row that fills a 25 GB database inside a
+    // year. Throughput was never the problem. Space is.
+    //
+    // What gets dropped follows from what the log is for. A row with a person
+    // in it is replayed by a model migration or a disputed rating, so it is
+    // kept for good. A bot-on-bot row has done its work the moment the
+    // projection applies it, and a bot's career re-seeds from calibration
+    // anyway.
+    //
+    // A bounded delete rather than the partition drop meta-layer.md sketched.
+    // Dropping a partition is cheaper per row, but it needs the table
+    // partitioned by bot-only and by month together, a job to make next
+    // month's partitions, and a migration to convert the table that exists.
+    // At a few hundred thousand rows a day the delete is far below what one
+    // vCPU does without noticing, and it is twenty lines that cannot leave a
+    // month unpartitioned and silently refuse every write.
+    {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                tick.tick().await;
+                let Ok(db) = pool.get().await else { continue };
+                // Bounded so one pass cannot open a transaction over a
+                // backlog. An hour's production is a fraction of this, so a
+                // sweeper behind after an outage still catches up.
+                match db
+                    .execute(
+                        "delete from rated_events where ctid in (
+                           select ctid from rated_events
+                           where bots_only and at < now() - interval '21 days'
+                           limit 50000)",
+                        &[],
+                    )
+                    .await
+                {
+                    Ok(n) if n > 0 => println!("meta: retired {n} bot-only rated event(s)"),
+                    Err(e) => println!("meta: retention pass failed: {e}"),
                     _ => {}
                 }
             }

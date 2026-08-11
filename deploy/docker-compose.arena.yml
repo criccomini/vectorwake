@@ -42,17 +42,16 @@ x-arena-env: &arena-env
   # the directory's refusal of credentials over cleartext requires.
   VW_DIRECTORY: ${VW_DIRECTORY:-ws://127.0.0.1:9000}
   VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
-  # Rated exchanges are not filed with the meta-layer while this is off.
-  # Nothing else changes: pilots still sign in, arrive carrying the rating they
-  # earned, and see it move on the scoreboard. The room rates every kill as it
-  # always did; this process simply does not report any of it, because the
-  # fleet is being tested and a test session's kills are real enough to move a
-  # ladder that is other people's.
+  # This arena files its rated exchanges with the meta-layer, which is the
+  # default and is what the ladder is made of.
   #
-  # Delete this line to start recording again. Events generated while it is off
-  # are dropped rather than held, so turning it back on starts from then rather
-  # than replaying the test.
-  VW_REPORT: "0"
+  # Set VW_REPORT=0 here to stop it, and set it while the fleet is under test:
+  # a test session's kills are real enough to move a ladder that is other
+  # people's. Nothing else changes when it is off. Pilots still sign in, still
+  # arrive carrying the rating they earned, and still watch it move on the
+  # scoreboard; only the filing stops. Events generated while it is off are
+  # dropped rather than held, so turning it back on records from then rather
+  # than replaying the quiet period.
   VW_REGION: ${VW_REGION:-local}
   # Where rated events go: loopback on a host that runs the meta-layer, the
   # front door's public https otherwise. Never the catalog's address by

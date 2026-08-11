@@ -144,13 +144,27 @@ update is an indexed upsert per participant. That is single-digit transactions
 per second against a database that does thousands on one vCPU, and login is a
 primary-key lookup. What runs out is space.
 
-The fix, when the disk says so, follows from what the log is for. The rows
-worth keeping forever are the ones with a human in them, because a model
-migration or a disputed rating replays those; bot-on-bot events have done their
-work the moment the projection applies them, and a bot's career re-seeds from
-calibration anyway. Partition by month, keep human-involving rows, drop
-bot-only partitions after a few weeks. Dropping a partition is metadata, so
-retention costs nothing at write time.
+What is kept follows from what the log is for. The rows worth keeping forever
+are the ones with a human in them, because a model migration or a disputed
+rating replays those; bot-on-bot events have done their work the moment the
+projection applies them, and a bot's career re-seeds from calibration anyway.
+
+So every event carries a `bots_only` flag, set in the arena because that is the
+only place that knows which pilot was a person, and an hourly sweeper deletes
+bot-only rows older than three weeks. Everything with a human on either side
+stays. A partial index covers exactly the rows the sweeper is looking for,
+which in steady state is one hour's worth of newly expired events in a table of
+millions.
+
+This is a plainer mechanism than the partitioning this document used to
+specify, and the reason is what partitioning would have cost around it. Dropping
+a partition is cheaper per row than deleting one, but it needs the table
+partitioned by bot-only and by month at once, a job to create next month's
+partitions ahead of time, and a migration for the table already in service.
+A month nobody created is a month that refuses every write. Measured on a
+database loaded with a day of fleet production, a sweep costs about 16
+milliseconds, which is far enough below one vCPU's idle capacity that the extra
+machinery buys nothing.
 
 The cruder alternatives are worth naming so they are not rediscovered as
 insights. Not spooling bot-vs-bot events at all would break the rule that a

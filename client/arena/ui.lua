@@ -2046,7 +2046,7 @@ local function inspect(o, top)
     local attach = not o.watch and same_team and i ~= o.me
         and sim.ship_alive(i) == 1 and sim.ship_carrier(i) == 255 and not drop
     -- The team row always exists now, so the count is fixed.
-    local rows_n = 6
+    local rows_n = 7
     local h = 30 * S + rows_n * rowh
         + ((invite or follow or attach or drop) and (KEY_H + 12) * S or 0)
         + 10 * S
@@ -2088,6 +2088,13 @@ local function inspect(o, top)
     -- version of the question: the client cannot tell, and the server's label
     -- is the only answer anybody has. A guest is not an accusation.
     row("SEAT", (p and p.label) or "unknown")
+    -- Where the ladder has them. A band rather than the number behind it: the
+    -- number twitches after every death and a word moves only when something
+    -- changed, which is the whole reason tiers exist. A pilot still placing
+    -- reads as that and draws dim, because it is the absence of an answer
+    -- rather than a low one, and a newcomer should not read as ranked last.
+    local band = (p and p.tier) or "unrated"
+    row("TIER", band, band == "placing" and pal.a(pal.DIM, 0.85) or nil)
     -- A line each, rather than one line of "21K 20D 748P". Three numbers
     -- packed into a row with their units stuck to them is a thing to decode;
     -- three labelled rows are three numbers to read, and this panel already
