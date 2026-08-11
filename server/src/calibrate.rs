@@ -648,12 +648,18 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
     // other, so they ought to agree, and how far they miss by is worth seeing.
     //
     // It is not this run's error bar, which is what it used to be called. It is
-    // the range of a handful of samples, and a range of four is mostly luck: it
-    // came out at 4.2 points on a run whose sampling spread alone was nearer
-    // 15, which invited reading a coin flip as a finding. Worse, it climbs with
-    // the bout count where real noise falls, because more bouts let the rows
-    // separate on whatever actually differs between them. They do not meet the
-    // same field, so they were never four draws from one urn.
+    // the range of a handful of samples, and the range of four is a poor
+    // estimator of anything: it carries about as much scatter as the quantity
+    // it is estimating. Three runs here read 4.2, 6.2 and 9.6 points while
+    // their sampling spreads were near 15, 15 and 5, so it landed a third of
+    // the truth twice and double it once. Reading a gap against a number that
+    // wrong in either direction is how a coin flip gets written up.
+    //
+    // The rows do meet equivalent fields, which is worth saying because the
+    // spread looks like it ought to have an explanation: `bare` faces the
+    // kitted stages plus `control`, `control` faces the same stages plus
+    // `bare`, and an empty kit is an empty kit. No structure, just a noisy
+    // statistic.
     //
     // The `+-95%` column is the honest version and it is per row, off that
     // row's own count. Two rows differ when their intervals come apart, which

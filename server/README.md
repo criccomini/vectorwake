@@ -165,15 +165,22 @@ a pair that is 48 bouts a row and about fourteen points either way, and only at
 and a gap of ten points off a short run is nothing at all.
 
 The **control** is a second bare kit, identical to the first, so the two ought to
-agree. How far they miss by is printed, and unwearable stages land in the same
-bucket. Treat it as a diagnostic rather than as an error bar. It is the range of
-a handful of samples, which is mostly luck: it has come out at 4.2 points on a
-run whose sampling spread alone was nearer fifteen, which is exactly how a coin
-flip gets written up as a finding. It also climbs with the bout count where real
-noise falls, because more bouts let those rows separate on whatever genuinely
-differs between them, and they do not each meet the same field. When the spread
-runs wider than sampling explains, that is worth chasing: something is varying
-that the harness is not holding still.
+agree. Unwearable stages land in the same bucket, since they are also bare, and
+how far the lot of them miss by is printed at the end.
+
+Do not use that spread as an error bar. It is the range of four samples, which
+scatters about as much as the thing it is estimating: three runs here reported
+4.2, 6.2 and 9.6 points where the sampling spread alone was near fifteen,
+fifteen and five, so it came out at a third of the truth twice and double it
+once. A gap read against a number that unreliable is a coin flip with a
+decimal point. The rows are not secretly meeting different opposition either,
+which is the first thing you would suspect: `bare` faces the kitted stages plus
+`control`, `control` faces the same stages plus `bare`, and an empty kit is an
+empty kit. It is simply a noisy statistic.
+
+What the control is still good for is catching a harness that has gone wrong.
+Two identical kits landing far apart, run after run, means something is varying
+that this thing is supposed to be holding still.
 
 **`dmg/hit` and `self%`** are why a stage won or lost, where the win column only
 says that it did. A blast falls off to nothing at its rim, so a fuse that goes
