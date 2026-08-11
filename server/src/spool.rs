@@ -1,9 +1,11 @@
-//! Rated events, on their way out of the arena.
+//! Durable records, on their way out of the arena.
 //!
 //! An arena computes rating movement because it is the only thing that saw the
 //! damage, and then it has to get that movement somewhere durable without ever
 //! making a tick wait on a network. So a death appends a line to a file and the
-//! tick moves on; a background task drains the file into the meta-layer.
+//! tick moves on; a background task drains the file into the meta-layer. What a
+//! pilot did, in [`crate::pilot`], travels the same road for the same reason,
+//! in its own file and to its own route.
 //!
 //! This replaces `persist.rs`, which wrote a rating per pilot beside the
 //! process. That was correct while one instance served a zone and wrong the
@@ -15,6 +17,8 @@
 //! loses those events, which is the same bounded loss the fleet already accepts
 //! for a room in progress.
 
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -61,9 +65,16 @@ const BATCH: usize = 256;
 /// anybody would notice.
 const IDLE_SECS: u64 = 5;
 
-pub struct Spool {
+pub struct Spool<T> {
     path: PathBuf,
-    pending: Vec<Event>,
+    pending: Vec<T>,
+    /// The route these records are posted to. Two kinds travel this way and
+    /// they land in different tables, so the kind is carried by the address
+    /// rather than by a field inside the batch.
+    route: &'static str,
+    /// What one of these is called, for the line printed when a restart finds
+    /// a debt.
+    noun: &'static str,
     /// Where to post. Empty means a deployment without accounts, and then this
     /// whole module is a no-op: nothing is written and nothing is sent.
     url: String,
@@ -73,24 +84,71 @@ pub struct Spool {
     instance: String,
 }
 
-impl Spool {
-    pub fn new(dir: &str) -> Spool {
-        let path = PathBuf::from(format!("{dir}/spool.jsonl"));
+/// Both of an arena's spools, which are made together, aimed together and
+/// handed to every room together. One struct rather than two arguments because
+/// nothing in the arena ever wants one without the other, and a third kind of
+/// record later should not be a third parameter on every constructor.
+#[derive(Clone)]
+pub struct Spools {
+    pub rated: Arc<Mutex<Spool<Event>>>,
+    pub pilots: Arc<Mutex<Spool<crate::pilot::Event>>>,
+}
+
+impl Spools {
+    pub fn open(dir: &str) -> Spools {
+        Spools {
+            rated: Arc::new(Mutex::new(Spool::rated(dir))),
+            pilots: Arc::new(Mutex::new(Spool::pilot(dir))),
+        }
+    }
+
+    /// Aim both at the same meta-layer. They post to different routes, which
+    /// each spool carries itself.
+    pub fn aim(&self, url: &str, token: &str, zone: &str, class: &str, instance: &str) {
+        if let Ok(mut s) = self.rated.lock() {
+            s.aim(url, token, zone, class, instance);
+        }
+        if let Ok(mut s) = self.pilots.lock() {
+            s.aim(url, token, zone, class, instance);
+        }
+    }
+}
+
+/// The rating half. Its file keeps the name it has always had, because an
+/// arena upgraded in place still owes whatever is in it.
+impl Spool<Event> {
+    pub fn rated(dir: &str) -> Spool<Event> {
+        Spool::open(dir, "spool.jsonl", "/v1/events", "rated event")
+    }
+}
+
+/// The pilot log half.
+impl Spool<crate::pilot::Event> {
+    pub fn pilot(dir: &str) -> Spool<crate::pilot::Event> {
+        Spool::open(dir, "pilot.jsonl", "/v1/pilot-events", "pilot event")
+    }
+}
+
+impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
+    fn open(dir: &str, file: &str, route: &'static str, noun: &'static str) -> Spool<T> {
+        let path = PathBuf::from(format!("{dir}/{file}"));
         // Anything left from a previous process is still owed to the
         // meta-layer, so a restart picks it up rather than starting clean.
         let pending = std::fs::read_to_string(&path)
             .map(|t| {
                 t.lines()
-                    .filter_map(|l| serde_json::from_str::<Event>(l).ok())
+                    .filter_map(|l| serde_json::from_str::<T>(l).ok())
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
         if !pending.is_empty() {
-            println!("spool: {} rated events carried over from a previous run", pending.len());
+            println!("spool: {} {noun}s carried over from a previous run", pending.len());
         }
         Spool {
             path,
             pending,
+            route,
+            noun,
             url: String::new(),
             token: String::new(),
             zone: String::new(),
@@ -119,14 +177,21 @@ impl Spool {
 
     /// The most recent event still owed. For a caller that wants to see what
     /// it just filed rather than what the far end eventually made of it.
-    pub fn last(&self) -> Option<&Event> {
+    pub fn last(&self) -> Option<&T> {
         self.pending.last()
+    }
+
+    /// One of the events still owed, oldest first. For reading back an order
+    /// that matters: the pilot log is a sequence, and a test that could only
+    /// see the last row could not tell a stay from a shuffle of one.
+    pub fn nth(&self, i: usize) -> Option<&T> {
+        self.pending.get(i)
     }
 
     /// Called from a tick. Appends and returns; it never blocks on anything
     /// slower than a buffered write to a local file, and drops the event
     /// entirely when there is nowhere for it to go.
-    pub fn push(&mut self, ev: Event) {
+    pub fn push(&mut self, ev: T) {
         if !self.armed() {
             return;
         }
@@ -139,7 +204,7 @@ impl Spool {
     }
 
     /// Everything currently owed, oldest first, up to one batch.
-    fn batch(&self) -> Vec<Event> {
+    fn batch(&self) -> Vec<T> {
         self.pending.iter().take(BATCH).cloned().collect()
     }
 
@@ -158,15 +223,18 @@ impl Spool {
     }
 }
 
-/// The drain. One task per process, started at boot, doing nothing at all until
-/// a catalog with a meta-layer in it arrives.
-pub async fn drain_loop(spool: Arc<Mutex<Spool>>) {
+/// The drain. One task per spool per process, started at boot, doing nothing at
+/// all until a catalog with a meta-layer in it arrives.
+pub async fn drain_loop<T>(spool: Arc<Mutex<Spool<T>>>)
+where
+    T: Serialize + DeserializeOwned + Clone + Send + 'static,
+{
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(IDLE_SECS)).await;
         // A plain mutex, locked twice around the post and never held across
         // it. The work inside is a memory copy and a file rewrite; the rooms
         // that append to this hold it for a line of JSON.
-        let (url, token, zone, class, instance, batch) = {
+        let (url, token, zone, class, instance, route, noun, batch) = {
             let Ok(s) = spool.lock() else { return };
             if !s.armed() || s.pending.is_empty() {
                 continue;
@@ -177,6 +245,8 @@ pub async fn drain_loop(spool: Arc<Mutex<Spool>>) {
                 s.zone.clone(),
                 s.class.clone(),
                 s.instance.clone(),
+                s.route,
+                s.noun,
                 s.batch(),
             )
         };
@@ -188,7 +258,7 @@ pub async fn drain_loop(spool: Arc<Mutex<Spool>>) {
             "instance": instance,
             "events": batch,
         });
-        match crate::meta::call(&url, "/v1/events", &payload.to_string()).await {
+        match crate::meta::call(&url, route, &payload.to_string()).await {
             Ok(_) => {
                 if let Ok(mut s) = spool.lock() {
                     s.confirm(n);
@@ -197,7 +267,7 @@ pub async fn drain_loop(spool: Arc<Mutex<Spool>>) {
             // Kept, and tried again on the next pass. A meta-layer that is down
             // costs persistence and nothing else, which is the property the
             // whole arrangement exists to have.
-            Err(e) => println!("spool: {n} events still owed ({e})"),
+            Err(e) => println!("spool: {n} {noun}s still owed ({e})"),
         }
     }
 }
@@ -219,8 +289,8 @@ mod tests {
         }
     }
 
-    fn spool_in(dir: &std::path::Path) -> Spool {
-        let mut s = Spool::new(dir.to_str().unwrap());
+    fn spool_in(dir: &std::path::Path) -> Spool<Event> {
+        let mut s = Spool::rated(dir.to_str().unwrap());
         s.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
         s
     }
@@ -242,7 +312,7 @@ mod tests {
             assert_eq!(s.len(), 2);
         }
         // A new process over the same directory still owes both.
-        let s = Spool::new(d.to_str().unwrap());
+        let s = Spool::rated(d.to_str().unwrap());
         assert_eq!(s.len(), 2, "a restart does not forgive a debt");
         assert_eq!(s.pending[0].tick, 10, "oldest first");
         assert_eq!(s.pending[0].id, ev(10, 1).id, "the same event, not a reminted one");
@@ -260,7 +330,7 @@ mod tests {
         assert_eq!(s.len(), 3);
         // And the file agrees, so a restart here does not resend the two that
         // already landed.
-        let reread = Spool::new(d.to_str().unwrap());
+        let reread = Spool::rated(d.to_str().unwrap());
         assert_eq!(reread.len(), 3);
         assert_eq!(reread.pending[0].tick, 2);
         let _ = std::fs::remove_dir_all(&d);
@@ -269,11 +339,46 @@ mod tests {
     #[test]
     fn without_a_meta_layer_nothing_is_written() {
         let d = tmp("unarmed");
-        let mut s = Spool::new(d.to_str().unwrap());
+        let mut s = Spool::rated(d.to_str().unwrap());
         assert!(!s.armed());
         s.push(ev(1, 1));
         assert_eq!(s.len(), 0, "a deployment without accounts writes nothing durable");
         assert!(!d.join("spool.jsonl").exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The two spools are separate files and separate debts. They shared a
+    /// name for one draft of this and the pilot log's lines were then handed
+    /// to the rating ingest, which refused every one of them for having no
+    /// victim.
+    #[test]
+    fn the_two_spools_do_not_share_a_file() {
+        let d = tmp("two");
+        let mut rated = Spool::rated(d.to_str().unwrap());
+        rated.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
+        let mut pilots = Spool::pilot(d.to_str().unwrap());
+        pilots.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
+        rated.push(ev(1, 1));
+        pilots.push(crate::pilot::Event {
+            id: 5,
+            at: 1_700_000_000_000,
+            session: "abc".into(),
+            kind: crate::pilot::JOIN.into(),
+            pilot: Some(7),
+            name: "Vega 001".into(),
+            bot: false,
+            room: Some(2),
+            tick: 99,
+            detail: serde_json::json!({ "class": 3 }),
+        });
+        assert_eq!(rated.len(), 1);
+        assert_eq!(pilots.len(), 1);
+        assert_eq!(
+            Spool::rated(d.to_str().unwrap()).len(),
+            1,
+            "the rating spool re-reads only its own file"
+        );
+        assert_eq!(Spool::pilot(d.to_str().unwrap()).len(), 1);
         let _ = std::fs::remove_dir_all(&d);
     }
 

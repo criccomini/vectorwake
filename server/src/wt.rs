@@ -282,7 +282,7 @@ async fn session(incoming: IncomingSession, zone: Arc<Mutex<ArenaServer>>) {
         })
     };
 
-    serve_client(zone, inbound, tx.clone()).await;
+    serve_client(zone, inbound, tx.clone(), "wt").await;
 
     framed.abort();
     dgrams.abort();
@@ -413,12 +413,9 @@ mod tests {
     /// cadence. Returns the port it answers on.
     async fn arena_door() -> u16 {
         let (cfg, _) = crate::config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let spool = std::sync::Arc::new(std::sync::Mutex::new(crate::spool::Spool::new(
-            "/nonexistent",
-        )));
         let zone = Arc::new(Mutex::new(crate::ArenaServer::new(
             cfg,
-            spool,
+            crate::spool::Spools::open("/nonexistent"),
             std::collections::HashMap::new(),
         )));
         // Standalone, like a laptop: a process under a directory holds no room
