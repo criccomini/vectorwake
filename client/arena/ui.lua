@@ -2760,13 +2760,12 @@ local function guide_anchor(e, me, o)
     -- anybody reads at a glance while flying.
     local right = sx < W * 0.55
     local x = sx + (right and 30 * S or -30 * S)
-    local align = right and "left" or "right"
-    local px = (FONT - 1) * S
-    local room = right and (W - x - 22 * S) or (x - 22 * S)
-    local out = {x = x, y = sy, col = pal.INK, align = align,
-                 lines = wrap(e.text, px, math.min(room, 420 * S))}
-    out.h = #out.lines * LINE * S
-    return out
+    -- Only where and which way. The words are guide_layout's to wrap, since
+    -- it is the end that has resolved which sentence this device gets; a
+    -- wrap here read e.text directly, and a line that named a card instead
+    -- of carrying words handed it nil.
+    return {x = x, y = sy, col = pal.INK,
+            align = right and "left" or "right"}
 end
 
 -- What a guide line says on this device. A line names a card or carries its
