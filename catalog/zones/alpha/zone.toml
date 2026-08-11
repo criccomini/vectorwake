@@ -301,8 +301,27 @@ bomb_mods = { prox = 1, shrapnel = 2 }
 
 # The one hull whose bombs never break up, which is most of what makes its
 # stalling bomb above a different weapon rather than a better one.
+#
+# And the thinnest bar on the board, because it is far and away the hardest
+# hull to hit: six pixels to a side where the rest of the roster carries ten to
+# seventeen, and a footprint of 408 against 572 for the next smallest. The
+# tournament had it beating every other hull with no losing matchup anywhere,
+# which is the one shape the roster is not allowed to have.
+#
+# The number is ships.md's own: it prices that hull at 1100 where everyone else
+# sits between 1350 and 2600, and nothing had ever charged it. Cloak and
+# stealth are not in the core either, so until they are it has been holding the
+# whole upside of being a knife and paying for none of it.
+#
+# The ladder keeps its shape rather than just losing its top. The baseline
+# climbs 1000 to 1700 in seven greens, so this climbs 650 to 1100 in seven of
+# them: a Cipher that has found nothing is thin, and one that has found
+# everything is still thinner than anybody's opening bar.
 [[arena.ships]]
 name = "Cipher"
+energy = 1100
+initial_energy = 650
+upgrade_energy = 65
 bomb_mods = { prox = 1 }
 
 # Double barrels, a rung of multifire nobody else climbs to, and the whole of
