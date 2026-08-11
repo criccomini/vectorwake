@@ -797,7 +797,7 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             match r {
                 Ok(0) => (400, serde_json::json!({
                     "error": "no such account, or it holds the admin flag; \
-                              revoke that on the host first"
+                              revoke that in the database first"
                 })),
                 Ok(_) => {
                     // Actions get no audit trail from the catalog, so say it
@@ -809,6 +809,97 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
+        }
+
+        // Every account currently marked, which is the half of banning the
+        // panel could not show: you could mark somebody and never see the
+        // list you had built.
+        "/v1/admin/bans" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let rows = db
+                .query(
+                    "select a.id, coalesce(n.call_sign, ''), coalesce(a.reason, ''),
+                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI')
+                     from accounts a left join names n on n.account = a.id
+                     where a.banned order by a.id desc",
+                    &[],
+                )
+                .await;
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    "bans": rs.iter().map(|r| serde_json::json!({
+                        "account": r.get::<_, i64>(0),
+                        "name": r.get::<_, String>(1),
+                        "reason": r.get::<_, String>(2),
+                        "last_seen": r.get::<_, String>(3),
+                    })).collect::<Vec<_>>(),
+                })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // The fleet, as the directory on this host has observed it. Relayed
+        // rather than served here: the directory holds the registrations and
+        // this process holds the only thing that can check an admin flag, so
+        // the panel asks the one that can authorise and it asks the one that
+        // knows. The directory answers this only over a socket no proxy
+        // touched, which is why the address below is loopback and not the
+        // public /dir route.
+        //
+        // Also where two silent failures become visible. A directory serving
+        // an older catalog version than another is a publish that half
+        // landed. And a verifying key in the catalog that is not the public
+        // half of the key this process signs with means every token in the
+        // fleet fails its check: pilots keep flying, as guests, rating
+        // nothing, with nothing anywhere saying so.
+        "/v1/admin/fleet" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let url = std::env::var("VW_META_DIRECTORY")
+                .unwrap_or_else(|_| "ws://127.0.0.1:9000".into());
+            let Some(body) =
+                crate::directory::request(&url, crate::fleet::O2D_FLEET, crate::fleet::D2O_FLEET).await
+            else {
+                return (503, serde_json::json!({
+                    "error": format!("no answer from the directory at {url}")
+                }));
+            };
+            let Ok(view) = serde_json::from_str::<crate::fleet::View>(&body) else {
+                return (502, serde_json::json!({ "error": "unreadable fleet view" }));
+            };
+            let mine = token::to_hex(meta.signing.verifying_key().as_bytes());
+            (200, serde_json::json!({
+                "catalog_version": view.catalog_version,
+                // Said as an answer rather than as two keys to compare by eye,
+                // because the whole value of the check is that nobody is
+                // looking when it matters.
+                "key_agrees": view.meta_key.eq_ignore_ascii_case(&mine),
+                "meta_key": mine,
+                "instances": view.instances.iter().map(|i| serde_json::json!({
+                    "instance": i.instance,
+                    "zone": i.zone,
+                    "address": i.address,
+                    "region": i.region,
+                    "pool": i.pool,
+                    "players": i.players,
+                    "bots": i.bots,
+                    "bots_wanted": i.bots_wanted,
+                    "rooms": i.rooms.len(),
+                    "max_rooms": i.max_rooms,
+                    "capped": i.capped,
+                    "verified": i.verified,
+                    "age_ms": i.age_ms,
+                    "intent": i.intent,
+                    "tick_us": i.metrics.tick_us,
+                    "bw_per_player": i.metrics.bw_per_player,
+                    "snapshot_bytes": i.metrics.snapshot_bytes,
+                    "queue_depth": i.metrics.queue_depth,
+                    "lag_actions": i.metrics.lag_actions,
+                })).collect::<Vec<_>>(),
+            }))
         }
 
         // Who holds the flag, so the panel can show the set it cannot change.

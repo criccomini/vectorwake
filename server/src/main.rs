@@ -7052,6 +7052,7 @@ mod tests {
                     ],
                     ..Default::default()
                 }],
+                ..Default::default()
             },
         );
         z.settle_room_numbers();
@@ -7076,6 +7077,7 @@ mod tests {
                     ],
                     ..Default::default()
                 }],
+                ..Default::default()
             },
         );
         y.settle_room_numbers();
@@ -7095,6 +7097,7 @@ mod tests {
                     rooms: vec![fleet::RoomView { number: 2, ..Default::default() }],
                     ..Default::default()
                 }],
+                ..Default::default()
             },
         );
         // The first room this instance holds already took one, so the fleet's

@@ -19,6 +19,17 @@ was last observed, and whether it passed verification. The admin UI is therefore
 another client of the browse protocol with an authenticated superset of the same
 reply.
 
+Built, and the authenticated half landed somewhere this section did not
+predict. A directory holds registrations and no accounts, so it cannot tell an
+operator from anybody else; the meta-layer holds accounts and no
+registrations. So the panel asks the process that can authorise, and that
+process asks the process that knows: `/v1/admin/fleet` checks the flag and
+relays `O2D_FLEET` to the directory over loopback. The directory answers that
+tag only for a request no proxy touched, which is a real distinction on these
+hosts and not the loopback test it looks like, because every service runs on
+the host network and Caddy proxies from 127.0.0.1 too. What separates them is
+the `X-Forwarded-For` Caddy always writes.
+
 Because each directory relays only its own observations, an admin unioning
 across all of a deployment's directories sees a more complete picture than any
 single directory holds. That is the same union an arena server performs to choose
@@ -113,13 +124,31 @@ left for a page to say. What earned the surface back was accounts. Once the
 meta-layer existed, "this account may operate the fleet" became a fact it
 could hold and check, and the ban stopped being a curl with a token in it.
 
-So the panel is `deploy/admin/`: three static files Caddy serves at
+So the panel is `deploy/admin/`: static files Caddy serves at
 `admin.<domain>` on the central host, with `/v1` proxied to the meta-layer so
 the page and its API share an origin and nothing needs CORS. Static for the
 reason the top of this document gives: it wants tables, forms and text entry,
-which the game client refuses to draw on purpose. Today it looks a pilot up,
-bans and unbans, and lists who holds the flag. The fleet view, the catalog
-editor, and the action verbs above are still in front of it.
+which the game client refuses to draw on purpose.
+
+It opens on the fleet, because "is anything wrong right now" is the question
+somebody opens a dashboard for. Every registered instance with its zone,
+region, occupancy, rooms and tick time, and a state that reads `ok` or names
+the one thing worth knowing: unverified, silent, a tick near budget, a queue
+that is not draining, lag actions taken, a drain announced, capped. Above it
+the totals, the catalog version, and the key check below. Under that a pilot
+lookup with ban and unban, the ban list, and who holds the flag.
+
+Two deployment-wide faults show there and nowhere else. Two directories on
+different catalog versions is a publish that half landed, which the fleet
+resolves correctly and silently by taking the highest. And a verifying key in
+the catalog that is not the public half of the meta-layer's signing key means
+every session token fails its check: pilots keep flying, as guests, rating
+nothing, with nothing on fire to say so.
+
+The catalog editor and the action verbs above are still in front of it. So is
+a roster: `RoomView` carries counts and not names, so kicking somebody needs
+either rosters on the status push or a kick by call sign that every arena
+checks against its own room.
 
 The name is its own certificate, which this file's opening comment prices as
 the thing a mistake can burn. Taken anyway, and as isolation rather than
