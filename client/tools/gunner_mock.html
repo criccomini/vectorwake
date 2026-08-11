@@ -180,25 +180,32 @@ function reach(h, ang) {
 
 // Where a drone sits: on an orbit, in the direction its gunner is aiming.
 //
-// The orbit is a circle that clears the hull, sized per hull, so a Cipher's
-// ring is wider than an Anvil's because the Cipher is longer. One radius for
-// the whole roster was tried and it has to clear the longest hull, which
-// leaves the compact ones ringed by drones far enough out to read as a
-// formation flying nearby rather than as one ship.
+// The orbit is a circle sized per hull, and it is allowed to cut through the
+// hull rather than clear it. Clearing it means clearing the longest thing on
+// it, which on a Cipher is a 23 pixel blade, and a ring drawn outside that has
+// drones hanging a tile and a half off the flanks. Overlapping brings it in to
+// where the ship actually is.
 //
 // A circle has no local frame worth keeping: the radius is the same in every
 // direction, so a drone's place depends on its gunner's aim and not at all on
 // where the carrier is pointing. Spin the carrier and the drones hover.
-function orbit(h, gap) {
-  if (h.far == null) {
-    h.far = 0;
-    for (let k = 0; k < 128; k++) h.far = Math.max(h.far, reach(h, k/128*2*Math.PI));
+function orbit(h, pct) {
+  if (h.reaches == null) {
+    h.reaches = [];
+    for (let i = 0; i < 256; i++) h.reaches.push(reach(h, i/256*2*Math.PI));
+    h.reaches.sort((a, b) => a - b);
   }
-  return h.far + (gap == null ? 2.4 : gap);
+  // A percentile of how far the hull reaches, not its maximum. Scaling the
+  // maximum down buries the ring inside a round hull long before it tightens
+  // around a long one, because a round hull reaches nearly as far in every
+  // direction. The spread is what has to be cut through: at the 80th the ring
+  // sits on the plating of the hull's body and lets its spikes through.
+  const i = Math.round((pct == null ? 0.8 : pct) * (h.reaches.length - 1));
+  return h.reaches[i];
 }
 
-function rim(h, worldAim, gap) {
-  const r = orbit(h, gap);
+function rim(h, worldAim, k) {
+  const r = orbit(h, k);
   return [Math.sin(worldAim)*r, Math.cos(worldAim)*r];
 }
 
@@ -395,7 +402,7 @@ function zoomed(ctx, cx, cy, k, fn) {
 const q = new URLSearchParams(location.search);
 const IDX = parseInt(q.get('i') || '0', 10);
 const VARIANT = q.get('v') || 'gun';
-const RIM = parseFloat(q.get('rim') || '2.4');
+const RIM = parseFloat(q.get('rim') || '0.8');
 const OPT = {variant: VARIANT, rim: RIM};
 const W = 1360, H = 660;
 
@@ -430,7 +437,7 @@ const ROSTER = [
 
 label(ctx, 40, 54, `${h.name} as a carrier`, INK, 26);
 label(ctx, 40, 82, VARIANT === 'drone'
-  ? 'a drone per gunner, on an orbit that clears the hull, in the direction that gunner is aiming'
+  ? 'a drone per gunner, on an orbit sitting on the hull, in the direction that gunner is aiming'
   : "the original's approach: one gun glyph per gunner, all on the ship's own point",
   DIMC, 14);
 
