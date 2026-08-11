@@ -29,8 +29,19 @@ original called `TurretLimit`, `TurretThrustPenalty`, `TurretSpeedPenalty` and
 ## The drawing
 
 One gun glyph per gunner, drawn on the carrier's own point, turned to the
-heading that gunner is holding. The glyph is the same for every class. Nothing
-is drawn for an empty gunner, so a carrier with nobody aboard is just a ship.
+heading that gunner is holding. The glyph is the same for every class.
+
+**A carrier is drawn exactly like any other ship.** That is the rule the rest
+of this hangs off, and it is a rule rather than a consequence. Carrying people
+does not tint a hull, brighten it, add a fitting to it or take anything off
+it. The guns are drawn over the top of a ship that has not been touched, they
+appear one at a time as gunners attach, and they are gone the moment those
+gunners leave. There is no carrier state for the hull to be in.
+
+So a ship that can carry and a ship that cannot look identical while both are
+empty, and capacity is invisible until somebody uses it. That is the cost and
+it is worth paying: every hull can carry, so a marking that said "this one
+can" would be on all of them, which is a marking that says nothing.
 
 Everything else follows from that:
 
