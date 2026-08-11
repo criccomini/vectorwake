@@ -124,9 +124,28 @@ EM_JS(void, VWWT_Open, (const char* url, int len, int cap), {
         // populating them that early; doing it here costs nothing and asks
         // for nothing before the session it belongs to is real.
         if (!need(wt, 'datagrams.readable') ||
-            !need(wt, 'datagrams.writable') ||
             !need(wt, 'incomingUnidirectionalStreams') ||
             !need(wt, 'createBidirectionalStream')) {
+            return null;
+        }
+        // The datagram writer, under whichever name this engine has for it.
+        //
+        // There are two, and no engine has both. `datagrams.writable` is the
+        // original, now deprecated and off the standards track; the current
+        // spelling is the `datagrams.createWritable()` method. Chrome and
+        // Firefox ship only the property, WebKit shipped only the method when
+        // WebTransport arrived in Safari 26.4.
+        //
+        // Asking for the property by name is what put every iPhone on the
+        // WebSocket. The QUIC handshake had already succeeded, which is
+        // why this runs at all, and then the check above rejected the session
+        // over a writer that was there under its other name. The about page
+        // read "this browser has no datagrams.writable" while the wire row
+        // blamed the network, and a player has no way to tell those apart.
+        var dgw = wt.datagrams.createWritable ? wt.datagrams.createWritable()
+                                              : wt.datagrams.writable;
+        if (!dgw) {
+            fail('this browser cannot write datagrams');
             return null;
         }
         // The next stream is accepted before this one is drained. Draining first
@@ -186,7 +205,7 @@ EM_JS(void, VWWT_Open, (const char* url, int len, int cap), {
         })();
         return wt.createBidirectionalStream().then(function(s) {
             S.rel = s.writable.getWriter();
-            S.dg = wt.datagrams.writable.getWriter();
+            S.dg = dgw.getWriter();
             // The reliable lane back: u32-framed messages on our own stream.
             //
             // Chunks are held as they arrive and each message is assembled

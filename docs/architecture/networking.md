@@ -509,6 +509,15 @@ not move at all, which was the test of the message model above: the same tags,
 the same bytes, sorted onto lanes that finally match the two channels the
 design always described.
 
+The one place the extension has to know which browser it is talking to is the
+datagram writer. It has two names: `datagrams.writable`, the original, now
+deprecated; and `datagrams.createWritable()`, the current spelling. No engine
+has both. Chrome and Firefox have the property, Safari has had the method since
+26.4, so the extension takes whichever is there. Naming the property outright
+cost every iPhone the faster door: the handshake succeeded, the client refused
+the session it had just opened, and the about page blamed a network that had
+done nothing.
+
 Three lanes, chosen per message. The client opens one bidirectional stream and
 speaks first on it; both directions carry every reliable message there,
 u32-framed. Snapshots leave as datagrams when one fits and on a fresh
