@@ -1,0 +1,268 @@
+# Alpha: ten teams, seven a side at most, kills only.
+#
+# The tuning here started from a settings file for the original's server and
+# has been moved a long way since, mostly by playing it. Read a number below as
+# this zone's own: where a comment explains one, it explains what the number
+# does, not where it was born.
+#
+# Seven hulls, each with a job. Apex intercepts, Wedge is the flat fast bomber,
+# Chord skirmishes, Anvil is the heavy and the only three-bomb rack, Facet
+# carries double barrels, Cipher arrives unseen, and Lattice throws bombs that
+# come back off a wall.
+
+description = "small teams, seven a side"
+
+# No flag game, no ball and no crown, which leaves kills.
+mode = "arena"
+
+# The zone's own map, drawn by `sim/tools/mapgen` from seed 23. It replaced a
+# conversion of somebody else's `.lvl`. The generator builds from measurements
+# of such a map rather than its geometry: three per cent wall, thin, in
+# clusters, with long lanes between them. docs/design/maps.md.
+#
+# Regenerate with `./sim/build/mapgen catalog/zones/alpha/alpha.vwmap 23`.
+map = "alpha.vwmap"
+
+# Thirty-two players, because a zone that is a game rather than a brawl should
+# not also be the smallest place to land.
+max_players = 32
+# Seats, which is those thirty-two plus the bots holding the room until they
+# arrive.
+max_ships = 64
+fill_target = 20
+
+# Four seats in five held by AI, so an arriving pair find a game in progress
+# rather than an empty map. The bot server stands one down per human.
+bot_fill = 0.8
+# Ten rooms to a process. The ceiling is about blast radius rather than memory:
+# a room is small and its siblings share the one copy of the map, but rooms in a
+# process die with it, and ten rooms of thirty-two is a fair amount to lose at
+# once.
+#
+# Nothing opens on this number alone. A room appears only when every room here
+# is already at `fill_target`, so reaching ten means nine rooms of twenty
+# players first, and each one that opens asks the bot server for its own share
+# of the seats on top of that.
+max_rooms = 10
+
+# Thirty-two players in two colours was a crowd, not two crews. The cap that
+# matters is seven a side, and the number to divide is the sixty-four seats
+# the room actually holds: the bot server keeps four in five of them warm,
+# so the population is the seats, not the player cap. Five teams over that
+# put ten on a side within the hour it shipped; sixty-four over ten is never
+# more than seven, however full the room runs.
+#
+# Named for the things that hold a structure up, which is the register the
+# hulls are named in, and no name here is a name any pilot wears: the bot
+# roster and the call sign generator are both single words, so a side never
+# reads as a person.
+teams = ["Bastion", "Caisson", "Corbel", "Culvert", "Girder",
+         "Lintel", "Pylon", "Spandrel", "Trestle", "Weir"]
+# A running game is never reshuffled. An arriving pilot lands on the emptiest
+# side, which is a default rather than a rule: the team list is one selection
+# away and the only thing that can refuse it is a full side.
+max_humans_per_team = 7
+
+[arena]
+# A wall gives back twelve sixteenths of what hit it. There is no separate term
+# for speed along a wall, so both take the same number.
+bounce = 12
+friction = 12
+
+# Four seconds dead, which is longer than it needs to be so there is time to
+# read the card the wait carries.
+respawn_delay = 400
+
+# A minute in a safe zone and the room takes the seat back. Nothing can reach a
+# ship in a safe zone and it cannot shoot out of one, so parking there is a seat
+# held at no risk in a room that caps at 32 of them.
+#
+# A minute rather than the ten or fifteen seconds that would do the job. The
+# zone is what you cross to get somewhere, what you duck into to recharge, and
+# where you sit while you read the help; a timer that fires during any of those
+# is a timer that punishes using the map. Leaving resets it, so the only way to
+# reach the end is to sit still for the whole minute.
+safe_limit = 6000
+
+# One green every thirty ticks.
+prize_delay = 30
+# Forty-two greens on the field at once. The room also carries bots, so the
+# field is a little thinner per pilot than the number suggests. It is read off
+# the player cap, so raising that raises this.
+prize_max = 42
+prize_life = 6000
+# One green in three hundred is a bad one.
+rust = 3
+# Thirty greens in hand the moment a ship spawns, which is criccomini's call
+# and worth explaining because it is doing a job nothing else can.
+#
+# A fresh hull here is bare: one gun, no bombs, no charges. Bounty in this core
+# is a sum over what a pilot holds rather than a number of its own, so a spawn
+# worth nothing is a spawn nobody has any reason to shoot. Greens are the only
+# lever, and one green is one bounty: thirty measures 29.5 at spawn, fifty
+# measures 49.4 and hands over every stat, ladder and add-on at once, which
+# leaves nothing to fly for.
+spawn_prizes = 30
+
+# Twice what our other zones pay, so a streak in here is visible from further
+# away.
+bounty_per_kill = 6
+points_per_flag = 0
+
+# Six seconds a cycle, four of them open.
+door_period = 600
+
+# The map's one wormhole, pulling more than twice the baseline's 90 px/s and
+# reaching 20 tiles instead of 14: strong enough to bend a straight run that
+# clips the well's edge, wide enough that the bend starts before the rings do.
+wormhole_pull = 200
+wormhole_range = 320
+
+# Five degrees between barrels. Between tunings this was the one setting that
+# moved a lot: a 15-degree fan was worth +5 win points and a 5-degree one +29,
+# because a fan nobody can land is not a weapon.
+mod_spread = 5
+
+# Half again the energy of a plain shot, and twice the wait.
+multi_energy = 50
+multi_delay = 100
+
+# Three tiles of fuse, and a tile more for each level of the bomb carrying it.
+prox_step = 16
+# A fuse that has found somebody waits this long for them to start pulling away
+# before it goes off anyway. It almost never decides anything, since a bomb is
+# long past its target by then, but it is what ends a fuse whose target simply
+# sits there.
+prox_delay = 150
+# A proximity bomb will not leave the tube with an enemy already inside the
+# fuse's distance, so it cannot be carried up to a hull and posted through it.
+bomb_safety = true
+# A hull whose bombs bounce pays nothing for it. The setting exists because a
+# zone may want the trade; ours does not take it.
+bbomb_damage = 1000
+# Three damage over the first quarter second, which is what stops a bomb landing
+# twice at point blank.
+shrap_inactive = 3
+shrap_inactive_ticks = 25
+
+[arena.mod_step]
+# One rung of multifire is two more barrels, and proximity is measured in
+# pixels. A rung of bouncing is one more wall on top of what the weapon already
+# had, which is one wall for a bomb and nothing worth counting for a bullet: a
+# bullet's base is already past what its life can spend, so bouncing bullets
+# bounce until they run out. Raise this and only the bombs change.
+multi = 2
+bounce = 1
+prox = 48
+
+# What a green is worth taking. Relative rather than percentages, and read
+# against the pool of whichever hull took it.
+#
+# Energy at 90 and thrust at 80 are the heaviest. A burst is the lightest at 10,
+# against the 70 our baseline gives it, and both weapon levels are 60 where our
+# own zones price a level at 25. Those weights came out of measuring win rate
+# per kit rather than out of any file.
+#
+# Left alone: bomb-multi, gun-prox, gun-shrapnel, bomb-bounce, freeze and push.
+# An absent line is not a weight of zero, and writing zero would take the prize
+# out of the game.
+[arena.prize_weight]
+energy = 90
+recharge = 70
+speed = 70
+thrust = 80
+rotation = 50
+gun-level = 60
+bomb-level = 60
+gun-multi = 30
+gun-bounce = 40
+bomb-prox = 40
+bomb-shrapnel = 60
+charge-1 = 40
+charge-2 = 10
+
+# The damage of one of the twenty-four rounds a burst throws. Lower than the
+# baseline's 700, so a burst here is survivable at a range that one is not.
+[[arena.weapons]]
+name = "charge-2"
+damage = 515
+
+# Facet fires slower than everything else, which is the price of its second
+# barrel. A ladder is a weapon per rung, so all three rungs say it.
+[[arena.weapons]]
+name = "facet-gun"
+delay = 30
+
+[[arena.weapons]]
+name = "facet-gun-2"
+delay = 30
+
+[[arena.weapons]]
+name = "facet-gun-3"
+delay = 30
+
+# Cipher's bombs stop a hit pilot recharging for four seconds, which is what
+# makes them a different weapon rather than a better one.
+[[arena.weapons]]
+name = "cipher-bomb"
+stall = 400
+
+[[arena.weapons]]
+name = "cipher-bomb-2"
+stall = 400
+
+# The ships. Everything not written below is the same across all seven, which is
+# deliberate: the hulls fly alike and are told apart by what they carry. The
+# tech tree is the difference between two pilots, not the chassis.
+
+# The interceptor turns harder and pushes harder than anything else in the zone,
+# and pays for it with the same hull everyone has.
+[[arena.ships]]
+name = "Apex"
+rotation = 300
+initial_rotation = 210
+upgrade_rotation = 40
+thrust = 19
+initial_thrust = 16
+upgrade_thrust = 2
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# The fastest thing in the zone from the moment it spawns.
+[[arena.ships]]
+name = "Wedge"
+speed = 3750
+initial_speed = 2200
+upgrade_speed = 250
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# Starts a quarter better at getting energy back and climbs to the same ceiling
+# as everyone.
+[[arena.ships]]
+name = "Chord"
+initial_recharge = 500
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# The heavy, and the only three-bomb rack. That comes from the baseline rather
+# than from here.
+[[arena.ships]]
+name = "Anvil"
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# The one hull whose bombs never break up, which is most of what makes its
+# stalling bomb above a different weapon rather than a better one.
+[[arena.ships]]
+name = "Cipher"
+bomb_mods = { prox = 1 }
+
+# Double barrels, a rung of multifire nobody else climbs to, and the whole of
+# what Facet is for.
+[[arena.ships]]
+name = "Facet"
+gun_mods = { multi = 2, bounce = 1 }
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# The only hull that can learn to bounce a bomb. It is a ceiling rather than
+# what it spawns with, so the rung still has to be earned.
+[[arena.ships]]
+name = "Lattice"
+bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }

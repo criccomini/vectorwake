@@ -1,0 +1,97 @@
+# The proxy, which every role runs and no role runs twice.
+#
+# It is its own file for that reason. Central and arena are disjoint sets of
+# game processes, but both need TLS, both need the deploy log served over plain
+# http, and a host running both needs exactly one Caddy rather than two
+# definitions that have to be kept identical. What differs per role is which
+# routes it serves, and that is VW_ROUTES selecting files out of caddy/conf.d
+# rather than a second copy of this service.
+#
+# Host networking throughout, per docs/architecture/hosting.md: bridge mode
+# publishes through NAT and a userland proxy, which hides the player's source
+# address and puts every long-lived game connection through nf_conntrack. It
+# also means these services reach each other on loopback, which is why the
+# directory can bind 127.0.0.1 and still be registered with.
+name: vectorwake
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    network_mode: host
+    restart: unless-stopped
+    # Where the page comes from, as a label, because it is the one thing about
+    # this service that has changed twice in a day and both times the symptom
+    # was a 404 nobody could attribute.
+    #
+    # It also forces a recreate. Changing only the volume source, from a named
+    # volume back to this bind mount, left compose reporting "Running" and
+    # keeping a container still holding the empty volume, so the page stayed
+    # 404 through two converges. A label is part of the service config, so it
+    # moves the config hash and compose acts. Recreating Caddy is safe now that
+    # the certificates are on a block volume rather than in its container.
+    labels:
+      vw.page-source: image
+      # The same trick again, for the same reason. Caddy reads its files once
+      # at start and they arrive through a bind mount, so editing one moves
+      # nothing compose can see and a new route stays dark until something else
+      # recreates the container. This label lists what the files route, so
+      # adding a route means changing it, and changing it is what makes compose
+      # act. Keep it in step with caddy/conf.d.
+      vw.routes: deploy dir meta a1 metrics
+      # The same trick a third time. This names the client page's cache policy
+      # so a policy change in the Caddyfile has something here to move.
+      vw.page-cache: no-cache
+      # And a fourth: whether /metrics/* asks for a password. It stopped doing
+      # so when the basic_auth came off; flipping this back means putting the
+      # auth back in the Caddyfile, not just editing the label.
+      vw.metrics: open
+    security_opt:
+      - no-new-privileges:true
+    # Caddy is the one thing here that binds privileged ports, so it keeps
+    # exactly that capability and nothing else.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Every role's routes, always mounted. VW_ROUTES decides which of them
+      # this host actually imports, so the mount does not have to vary with the
+      # role and neither does this service.
+      - ./caddy/conf.d:/etc/caddy/conf.d:ro
+      # Certificates and ACME account keys. Losing these means asking Let's
+      # Encrypt for everything again, which is rate limited to five a week per
+      # name, and losing them is not hypothetical: it is what took the game
+      # dark for an afternoon.
+      #
+      # So on a host this is a block volume, a resource a reinstall cannot take
+      # away, and VW_CERT_DIR names its mount point. Compose reads a value
+      # starting with a slash as a bind mount and anything else as a named
+      # volume, so the default keeps a laptop on the throwaway volume it wants.
+      - ${VW_CERT_DIR:-caddy-data}:/data
+      - caddy-config:/config
+      # Coarse provisioning progress, served over plain http by IP. The proxy
+      # starts before the build so this is readable while the slow part runs.
+      - ${VW_DEPLOY_LOG:-./deploy-log}:/srv/deploy:ro
+      # The browser client, published into this volume by the `client` service
+      # in docker-compose.central.yml. It still has to come from this origin: a
+      # page served by a third party under `connect-src 'self'` cannot open a
+      # socket to these arenas. An arena host leaves this empty and imports no
+      # route that reads it.
+      - client-page:/srv/play:ro
+    environment:
+      # The name this host serves, which is not the machine it runs on: a
+      # central host answers for play.<domain> whichever instance is underneath
+      # it, and an arena host answers for its own.
+      VW_HOST: ${VW_HOST:?set VW_HOST}
+      # Which of caddy/conf.d this host's role routes, by filename prefix.
+      # Empty is every one of them, which is the host that runs everything.
+      VW_ROUTES: ${VW_ROUTES:-}
+
+volumes:
+  caddy-data:
+  caddy-config:
+  # What Caddy serves at /. Written by the `client` service in
+  # docker-compose.central.yml, read by Caddy, and the reason a client release
+  # is a pull rather than a restart.
+  client-page:

@@ -1,0 +1,53 @@
+# The front door: what a player browses, where they sign in, and the page
+# itself. Imported into the site block in ../Caddyfile on a host whose role is
+# `central` or `all`.
+
+# What a player browses, and what the arenas register over, though the ones on
+# this host reach the directory on loopback and never through here. Arenas
+# elsewhere do come through here, which is the whole of what a remote arena
+# host needs from the fleet.
+handle_path /dir* {
+	reverse_proxy 127.0.0.1:9000
+}
+
+# Where a client signs in. Local arenas do not come through here either: they
+# reach the meta-layer on loopback, the same way they reach the directory.
+handle_path /meta* {
+	reverse_proxy 127.0.0.1:9400
+}
+
+# The one address that reaches the community's Discord, per decision 39. The
+# raw invite lives here and nowhere else: rotating it after a leak or a raid
+# is editing this line, and nothing compiled or cached ever carries it.
+redir /discord https://discord.gg/jyb4YBcY5Z 302
+
+# What each process says it costs, one path per process, open to anyone. These
+# carried a password once; it came off because nobody reading a dashboard wants
+# to keep one, and what these expose is population, capacity and build stamps,
+# none of which is a secret this fleet is keeping. The ports themselves stay on
+# loopback, so this route is still the only way in.
+handle /metrics/dir* {
+	rewrite * /metrics
+	reverse_proxy 127.0.0.1:9106
+}
+handle /metrics/meta* {
+	rewrite * /metrics
+	reverse_proxy 127.0.0.1:9107
+}
+
+# The game itself. It has to come from this origin: a page delivered by a third
+# party under `connect-src 'self'` cannot open a socket to these arenas at all.
+#
+# Compressed, because the bundle is 5 MB of mostly base64-encoded wasm that
+# gzips to 2.9, and egress is the one cost this deployment has.
+handle {
+	encode zstd gzip
+	# Revalidate on every load. The page carries an ETag, so this costs one
+	# conditional request answered 304 until a deploy actually changes the
+	# file. Without the header browsers fall back to heuristic caching, and
+	# Safari kept handing a phone the previous build through two fixes it
+	# never saw.
+	header Cache-Control "no-cache"
+	root * /srv/play
+	file_server
+}

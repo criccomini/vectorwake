@@ -1,0 +1,138 @@
+-- Render pipeline.
+--
+-- Five passes, and the order is the whole design:
+--
+--   vwbg    world, alpha      wall interiors, built once per map
+--   vwfill  world, alpha      the starfield, and the dark inside of a hull
+--   vwglow  world, additive   every bright thing: outlines, bolts, blasts
+--   vwui    screen, alpha     panels, bars, radar
+--   gui     screen            text, and only text
+--
+-- Additive is what makes the glow layer read as light rather than paint:
+-- overlapping bolts brighten instead of stacking, and because addition does
+-- not care about order, the static wall edges can share that pass with the
+-- per-frame geometry at no cost.
+--
+-- The camera holds a fixed zoom. A bigger window shows more of the arena
+-- rather than the same arena drawn larger, which is what the original did and
+-- what stops a resize from stretching the world. Small windows are the one
+-- exception: below a threshold the camera stands back so a phone is not
+-- fighting with a third of a desktop's sight. The rule lives in zoom.lua,
+-- where a test can reach it.
+
+local zoom = require("render.zoom")
+
+-- Screen pixels per world pixel. One means the hulls draw at the size they
+-- were authored in, which is the reason for that default.
+local ZOOM = sys.get_config_number("vectorwake.zoom", 1.0)
+
+function init(self)
+    self.bg_pred = render.predicate({"vwbg"})
+    self.fill_pred = render.predicate({"vwfill"})
+    self.glow_pred = render.predicate({"vwglow"})
+    self.ui_pred = render.predicate({"vwui"})
+    self.gui_pred = render.predicate({"gui"})
+    self.text_pred = render.predicate({"debug_text"})
+    -- Device pixels per point of screen.
+    --
+    -- With high_dpi on, the drawable already is the device-pixel size and
+    -- window.get_size() reports the same number, so the ratio between them is
+    -- one and tells us nothing -- which is how the interface ended up laid
+    -- out in raw device pixels on a phone, at half the size it was meant to
+    -- be read at. On the web the browser is the only thing that knows.
+    self.dpr = 1
+    if html5 then
+        local ok, v = pcall(html5.run, "window.devicePixelRatio")
+        local n = ok and tonumber(v)
+        if n and n > 0.5 then self.dpr = n end
+    end
+    -- 1.13 moved the buffer constants onto the graphics module.
+    self.clear = {
+        [graphics.BUFFER_TYPE_COLOR0_BIT] = vmath.vector4(0.020, 0.027, 0.047, 1),
+        [graphics.BUFFER_TYPE_DEPTH_BIT] = 1,
+    }
+end
+
+function update(self)
+    local w, h = render.get_window_width(), render.get_window_height()
+    if w == 0 or h == 0 then return end
+
+    render.set_depth_mask(true)
+    render.set_stencil_mask(0xff)
+    render.clear(self.clear)
+    render.set_viewport(0, 0, w, h)
+
+    -- Fixed zoom: the half-extent follows the window, so a wider window sees
+    -- further rather than seeing the same thing wider.
+    --
+    -- The drawable is in device pixels and may be denser than the window it
+    -- fills; drawing at that density is what keeps the lines sharp instead of
+    -- upscaled and soft. Fold the density into the zoom so a ship stays the
+    -- same size on screen and only the sharpness changes.
+    -- Native retina reports it as a bigger drawable than window; the browser
+    -- reports it only through devicePixelRatio. Take whichever knows.
+    local density = self.dpr
+    local ok, cw = pcall(window.get_size)
+    if ok and cw and cw > 0 and w / cw > density then density = w / cw end
+    if density < 1 then density = 1 end
+    local z = ZOOM * density * zoom.factor(w, h, density)
+    local half_w = w * 0.5 / z
+    local half_h = h * 0.5 / z
+    local cam = self.camera or vmath.vector3(512 * 16, 512 * 16, 0)
+
+    -- The eye sits well off the plane and the clip range is wide. With the
+    -- eye one unit out and a range of exactly (-1, 1), everything the game
+    -- draws lands on z_ndc = 1.0 -- precisely the far plane, where it is a
+    -- rounding error away from being clipped away entirely.
+    render.set_view(vmath.matrix4_look_at(
+        vmath.vector3(cam.x, cam.y, 10),
+        vmath.vector3(cam.x, cam.y, 0),
+        vmath.vector3(0, 1, 0)))
+    -- Top and bottom are swapped so the simulation's +y renders downward.
+    -- Tile coordinates then match the screen, and heading zero is north
+    -- rather than south. Without it the whole world is drawn as a vertical
+    -- mirror of itself, which nothing reveals until something asymmetric --
+    -- a ship with a nose -- has to agree with it.
+    render.set_projection(vmath.matrix4_orthographic(
+        -half_w, half_w, half_h, -half_h, -100, 100))
+
+    render.enable_state(graphics.STATE_BLEND)
+    render.disable_state(graphics.STATE_DEPTH_TEST)
+
+    -- The fragment shader writes premultiplied colour, so ordinary
+    -- compositing takes ONE as the source factor, not SRC_ALPHA.
+    render.set_blend_func(graphics.BLEND_FACTOR_ONE,
+                          graphics.BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
+    render.draw(self.bg_pred)
+    render.draw(self.fill_pred)
+
+    render.set_blend_func(graphics.BLEND_FACTOR_ONE, graphics.BLEND_FACTOR_ONE)
+    render.draw(self.glow_pred)
+
+    -- Interface last, in screen space, where one unit is one drawable pixel.
+    render.set_view(vmath.matrix4())
+    render.set_projection(vmath.matrix4_orthographic(0, w, 0, h, -1, 1))
+
+    render.set_blend_func(graphics.BLEND_FACTOR_ONE,
+                          graphics.BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
+    render.draw(self.ui_pred)
+    render.set_blend_func(graphics.BLEND_FACTOR_SRC_ALPHA,
+                          graphics.BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
+    render.draw(self.gui_pred)
+    render.draw(self.text_pred)
+
+    -- The interface positions itself in exactly this pixel space, so it is
+    -- told the numbers rather than asking the window for them: on HTML5 the
+    -- canvas drawable and the window size are not always the same, and a HUD
+    -- laid out against the wrong one lands off the edge of the screen. The
+    -- half-extents and the density go with it, so neither the interface nor
+    -- the touch layer keeps its own copy of the projection.
+    msg.post("main:/arena#arena", "viewport",
+             {w = w, h = h, hw = half_w, hh = half_h, density = density})
+end
+
+function on_message(self, message_id, message)
+    if message_id == hash("camera") then
+        self.camera = message.position
+    end
+end

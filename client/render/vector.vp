@@ -1,0 +1,22 @@
+#version 140
+
+// Every piece of vector art in this game -- hulls, bolts, walls, panels --
+// is untextured coloured geometry, so one shader draws all of it. The colour
+// arrives per vertex, which is what lets a single mesh hold a hundred
+// different things and still cost one draw call.
+
+in highp vec4 position;
+in mediump vec4 color;
+
+out mediump vec4 var_color;
+
+uniform vs_uniforms
+{
+    highp mat4 mtx_worldviewproj;
+};
+
+void main()
+{
+    var_color = color;
+    gl_Position = mtx_worldviewproj * vec4(position.xyz, 1.0);
+}

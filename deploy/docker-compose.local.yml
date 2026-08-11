@@ -1,0 +1,85 @@
+# Overlay for running the whole stack on one machine, before it goes anywhere.
+#
+#   printf 'VW_HOST=play.localhost\nVW_POOL_TOKEN=...\nVW_ADMIN_TOKEN=...\n' > deploy/.env
+#   docker compose -f deploy/docker-compose.caddy.yml \
+#       -f deploy/docker-compose.central.yml -f deploy/docker-compose.arena.yml \
+#       -f deploy/docker-compose.local.yml --env-file deploy/.env up -d --build
+#
+# Or put `COMPOSE_FILE=` in the .env the way a host does, which is shorter and
+# is the same mechanism.
+#
+# It does two things.
+#
+# **It builds instead of pulling.** The base files name a published image,
+# because that is what a host should run: CI builds it once and every host pulls
+# the same bytes. On a laptop the whole point is the code in front of you, which
+# is not in any registry, so the build is put back here. `image:` still names the
+# local tag so the two files cannot disagree about what is running.
+#
+# **It fixes name resolution.** Caddy routes by hostname, so the stack needs
+# VW_HOST to resolve, and glibc does not resolve `*.localhost` however much it
+# looks like it should. Without these entries the directory's address check
+# fails, both arenas stay unverified, and the browse reply offers nothing while
+# every game is in fact running, a confusing enough symptom to be worth a file
+# to prevent it.
+#
+# On a real host these are unnecessary: the names are in public DNS, and the
+# directory's check reaches the public address the way a player would, which is
+# the thing it is supposed to prove. Add `--resolve` or a hosts entry on whatever
+# machine you test from too.
+#
+# This overlay is the whole stack and only the whole stack: all three base
+# files, or none of it. An override naming a service the base set does not have
+# is not ignored, it is created, so `caddy.yml + central.yml + local.yml` starts
+# three arenas built from this file with no command and no idea what they are.
+# To run one role on a laptop, use its base files without this overlay and set
+# VW_IMAGE to a tag you built.
+x-build: &build
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  image: vectorwake:local
+
+services:
+  caddy:
+    extra_hosts: &names
+      - "${VW_HOST:-play.localhost}:127.0.0.1"
+  directory:
+    <<: *build
+    extra_hosts: *names
+  a1:
+    <<: *build
+    extra_hosts: *names
+  bots:
+    <<: *build
+    extra_hosts: *names
+  meta:
+    <<: *build
+    extra_hosts: *names
+    # A database to develop against. On a host this is bought rather than run,
+    # per decision 27, because it is the one thing here whose loss cannot be
+    # repaired by rebuilding. On a laptop it is a container that can be thrown
+    # away, which is the opposite requirement.
+    environment:
+      # Explicitly cleartext, because this database is a container on the same
+      # machine and the postgres image ships no certificate. Said out loud so a
+      # base image that starts offering TLS cannot turn this into a handshake
+      # against a CA that was never going to verify.
+      VW_META_DATABASE: postgres://vectorwake:vectorwake@127.0.0.1:5432/vectorwake?sslmode=disable
+      # No CA to trust: the connection above is cleartext.
+      VW_META_CA: ""
+    depends_on: [db]
+
+  db:
+    image: postgres:16-alpine
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vectorwake
+      POSTGRES_PASSWORD: vectorwake
+      POSTGRES_DB: vectorwake
+    volumes:
+      - db:/var/lib/postgresql/data
+
+volumes:
+  db:

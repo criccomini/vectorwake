@@ -1,0 +1,100 @@
+key_trigger {
+  input: KEY_LEFT
+  action: "turn_left"
+}
+key_trigger {
+  input: KEY_RIGHT
+  action: "turn_right"
+}
+key_trigger {
+  input: KEY_UP
+  action: "thrust"
+}
+key_trigger {
+  input: KEY_DOWN
+  action: "reverse"
+}
+key_trigger {
+  input: KEY_SPACE
+  action: "guns"
+}
+key_trigger {
+  input: KEY_LCTRL
+  action: "guns_ctrl"
+}
+key_trigger {
+  input: KEY_RCTRL
+  action: "guns_ctrl"
+}
+key_trigger {
+  input: KEY_TAB
+  action: "bombs"
+}
+mouse_trigger {
+  input: MOUSE_BUTTON_LEFT
+  action: "pointer"
+}
+mouse_trigger {
+  input: MOUSE_BUTTON_RIGHT
+  action: "pointer_alt"
+}
+mouse_trigger {
+  input: MOUSE_WHEEL_UP
+  action: "wheel_up"
+}
+mouse_trigger {
+  input: MOUSE_WHEEL_DOWN
+  action: "wheel_down"
+}
+touch_trigger {
+  input: TOUCH_MULTI
+  action: "touch"
+}
+key_trigger {
+  input: KEY_Q
+  action: "charge_1"
+}
+key_trigger {
+  input: KEY_W
+  action: "charge_2"
+}
+key_trigger {
+  input: KEY_A
+  action: "charge_3"
+}
+key_trigger {
+  input: KEY_S
+  action: "charge_4"
+}
+key_trigger {
+  input: KEY_P
+  action: "details"
+}
+key_trigger {
+  input: KEY_ENTER
+  action: "select"
+}
+key_trigger {
+  input: KEY_ESC
+  action: "menu"
+}
+key_trigger {
+  input: KEY_M
+  action: "map"
+}
+key_trigger {
+  input: KEY_BACKSPACE
+  action: "backspace"
+}
+key_trigger {
+  input: KEY_BACKQUOTE
+  action: "multi"
+}
+key_trigger {
+  input: KEY_TILDE
+  action: "multi"
+}
+text_trigger {
+  input: TEXT
+  action: "text"
+}

@@ -1,0 +1,2 @@
+# The lock file is per-process runtime state, not memory.
+.lock

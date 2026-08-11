@@ -1,0 +1,65 @@
+# The reference deployment. docs/architecture/catalog.md is the schema.
+#
+# One artifact, versioned as a unit. Bump `version` on every publish: an arena
+# server takes the highest version any directory offers, so this number is the
+# whole of the conflict resolution and a rollback needs a new higher number
+# rather than a reused one.
+
+version = 19
+name = "vectorwake"
+description = "the reference deployment"
+
+# What an arena server serves when nothing has told it otherwise.
+default_zone = "alpha"
+
+# Deployment-wide, because a ban that holds in one zone and not the next is a
+# support ticket waiting to happen.
+bans = []
+
+# Where a client signs in, and the key every arena checks its session tokens
+# against.
+#
+# The key is named rather than carried. It is the public half of the
+# meta-layer's VW_META_KEY, so the pair belongs together, and holding one half
+# here meant rotating an identity was a commit, an image build, and a window in
+# which the published half had moved and no host's .env had. `env:` puts both
+# in the same file, from the same bucket, changed at once. `vectorwake-server
+# metakey` prints them; fleet.sh stores them; the directory resolves this.
+#
+# The url is the public path a browser reaches; arenas and the bot server take
+# the loopback address in VW_META instead, so their traffic never leaves the
+# box. A deployment with no accounts sets VW_ACCOUNTS=0 and drops this block:
+# everyone flies as a guest and nothing durable is written.
+[meta]
+url = "https://play.vectorwake.net/meta"
+key = "env:VW_META_VERIFY"
+
+[[staff]]
+name = "chris"
+capabilities = ["ban", "catalog", "kick", "drain", "pin", "reload"]
+
+# Pool credentials: whose capacity this is, named here so it cannot be claimed,
+# with a cap on what one leaked token can do. `vectorwake-server token` prints
+# the raw token once and the row to paste here.
+#
+# The digest is named rather than carried, for the same reason as the meta key
+# above: it is the sha256 of a raw token that lives in a host's .env, and the
+# two halves should move together. fleet.sh derives this one from the token it
+# already holds, so there is nothing extra to keep and nothing that can
+# disagree. A digest is still safe to commit; this is about rotation, not
+# secrecy.
+[[pool]]
+name = "vultr atl"
+token = "env:VW_POOL_DIGEST"
+region = "atl"
+max_instances = 8
+
+# Declared rather than scanned, so retiring a zone is a reviewed line removed
+# and a half-written directory does not become live.
+# Chaos and War are out for now. Both were translations of the original's own
+# settings files and both worked, and a fleet of three rooms with a handful of
+# people in it is three rooms with nobody in any of them. One zone is where
+# everybody who turns up meets everybody else who did. Their directories are in
+# the history, and putting one back is this stanza and the folder beside it.
+[[zone]]
+name = "alpha"

@@ -1,0 +1,29 @@
+# The games on this host, one path per arena. Imported into the site block in
+# ../Caddyfile on a host whose role is `arena` or `all`.
+#
+# A path rather than a name per arena, which is the rate-limit lesson the file
+# above was rewritten around: adding an arena here costs nothing, and adding a
+# name costs one of five certificates a week.
+#
+# One of them, because an arena process holds every room its zone allows and
+# the count tracks zones rather than seats. A second zone in the catalog means
+# a second stanza here and in docker-compose.arena.yml, and a UDP port beside
+# 9443 in provision.sh and the firewall group.
+#
+# This is the WebSocket door. The WebTransport one is not here and cannot be:
+# a QUIC session is the HTTP/3 connection itself, so the arena terminates it on
+# its own UDP port and reads its certificate straight out of the store Caddy
+# writes.
+
+handle /metrics/a1* {
+	rewrite * /metrics
+	reverse_proxy 127.0.0.1:9101
+}
+handle /metrics/bots* {
+	rewrite * /metrics
+	reverse_proxy 127.0.0.1:9105
+}
+
+handle_path /a1* {
+	reverse_proxy 127.0.0.1:9001
+}

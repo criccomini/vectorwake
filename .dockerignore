@@ -1,0 +1,19 @@
+# The image needs the server, the core it links, and the catalog. Everything
+# else in this repository is either a build artifact or the client, and
+# server/target alone is 1.1 GB of it -- sent to the daemon as build context it
+# would dominate the build time of a build that does not use one byte of it.
+*
+!server
+!sim
+!catalog
+# The reference zone is two small files, and the binary compiles one of them in:
+# main.rs takes zone/ladder.json with include_str!. Without this line the build
+# context has no such path and the compile fails, whatever the Dockerfile copies.
+!zone
+server/target
+
+# Not used by the Dockerfile and absent from a normal checkout. It exists so a
+# build behind a TLS-intercepting proxy can add that proxy's CA in an extra
+# layer, which needs the file inside the build context. Gitignored, so this line
+# does nothing unless somebody has deliberately put one there.
+!sandbox-ca.crt

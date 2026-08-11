@@ -1,0 +1,33 @@
+# Golden trace: a fight first, then flight and wall bounces.
+# ship <n> <class> <team> <tile_x> <tile_y> <heading>
+# <ticks> <buttons per ship...>   1 left 2 right 4 thrust 8 reverse 16 fire 32 bomb
+#
+# Ship 0 (Apex) sits at 400,400 facing up. Ship 1 (Anvil) sits 20 tiles
+# above it facing down. They are in each other's line of fire from tick 0,
+# so the exchange lands hits and at least one kill before anybody moves.
+ship 0 0 0 400 400 0
+ship 1 3 1 400 380 32768
+# the exchange: Apex guns against Anvil bombs
+600 16 32
+400 16 0
+800 16 32
+600 16 0
+900 0 32
+600 16 0
+# ship 0 breaks off and flies: thrust, turns, coasting, reverse
+300 4 0
+200 6 0
+400 4 0
+150 1 0
+600 4 0
+100 0 0
+500 5 0
+250 8 0
+800 4 0
+120 2 0
+900 4 0
+1000 0 0
+# and runs into the border wall
+2000 4 0
+1500 6 16
+2000 0 0

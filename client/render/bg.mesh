@@ -1,0 +1,4 @@
+material: "/render/vw_bg.material"
+vertices: "/render/bg.buffer"
+primitive_type: PRIMITIVE_TRIANGLES
+position_stream: "position"

@@ -1,0 +1,248 @@
+-- Who this pilot is, across sessions and across zones.
+--
+-- Nobody signs up. The first time this runs it asks the meta-layer for an
+-- account, is handed a call sign with it, and stores the secret it gets
+-- back; from then on a session is one exchange that returns a token the
+-- arena checks for itself. docs/design/accounts.md is the model; the short
+-- version is that the account exists before the first menu is drawn and the
+-- player is never asked about it. A password is offered, never demanded,
+-- and it is the whole of what "claimed" means.
+--
+-- Everything here is best effort. A deployment with no meta-layer, or one
+-- whose meta-layer is down, leaves `M.token` empty, and an empty token still
+-- flies: the arena seats an unknown guest under the generated call sign. What
+-- is lost is the rating outliving the room, which is worth exactly one line in
+-- the menu and no interruption at all.
+
+local M = {}
+
+-- Where to log in. Learned from the directory's games list, because that is
+-- the one thing the client asks for before it needs an identity.
+M.base = ""
+M.token = ""
+M.account = 0
+M.name = ""
+M.claimed = false
+M.note = ""
+-- Whether the meta-layer has ever answered. It separates "waiting" from
+-- "there is nothing there", which are the same empty token and very different
+-- sentences to show somebody.
+M.reached = false
+
+local secret = ""
+-- One request of each kind in flight at a time. The games list re-asks the
+-- directory every few seconds and every reply carries the meta-layer's
+-- address, so without this the second reply starts a second account before the
+-- first one has answered, and a session leaves an orphan behind it.
+local minting = false
+local signing_in = false
+local SAVE = sys.get_save_file("vectorwake", "account")
+-- A token is good for fifteen minutes. Refreshing at ten leaves a wide margin
+-- for a slow reply and for a player who sat in the menu.
+local REFRESH = 600
+local refreshed_at = -1e9
+
+local function now()
+    return socket and socket.gettime and socket.gettime() or os.time()
+end
+
+local function save()
+    pcall(sys.save, SAVE, {secret = secret, account = M.account})
+end
+
+local function load()
+    local ok, d = pcall(sys.load, SAVE)
+    if ok and type(d) == "table" and type(d.secret) == "string" then
+        secret = d.secret
+        M.account = type(d.account) == "number" and d.account or 0
+    end
+end
+
+-- One POST. Defold's http.request is the same call in a browser and on a
+-- desktop, so there is one path here rather than one per platform.
+local function post(path, body, cb)
+    if M.base == "" then
+        cb(nil, "no meta-layer")
+        return
+    end
+    local url = M.base
+    if not string.match(url, "^https?://") then url = "http://" .. url end
+    http.request(url .. path, "POST", function(_, _, res)
+        if not res or res.status ~= 200 then
+            -- The body's reason where there is one. "That name and password
+            -- do not match" is the sentence a card has to show; "meta-layer
+            -- said 403" is a log line wearing its clothes.
+            local why
+            if res then
+                local ok, parsed = pcall(json.decode, res.response or "")
+                if ok and type(parsed) == "table"
+                   and type(parsed.error) == "string" then
+                    why = parsed.error
+                end
+                why = why or ("meta-layer said " .. tostring(res.status))
+            end
+            cb(nil, why or "no reply")
+            return
+        end
+        M.reached = true
+        local ok, parsed = pcall(json.decode, res.response or "")
+        if not ok or type(parsed) ~= "table" then
+            cb(nil, "unreadable reply")
+            return
+        end
+        cb(parsed, nil)
+    end, {["Content-Type"] = "application/json"}, json.encode(body or {}))
+end
+
+-- A session, from the device secret this client already holds. Called on the
+-- frame the meta-layer's address becomes known and every ten minutes after.
+-- This is also the heartbeat the guest sweeper reads: an account that has not
+-- begun a session in a week is one the server hands back to the name pool.
+local function session()
+    if signing_in then return end
+    signing_in = true
+    post("/v1/session", {secret = secret}, function(r, err)
+        signing_in = false
+        if not r then
+            -- A refused secret means the account behind it is gone or banned,
+            -- and either way this client cannot use it again. A guest swept
+            -- after a quiet week lands here, and the repair is the same as
+            -- the first run: ask to be somebody new.
+            M.note = err or "cannot start a session"
+            if err == "no such account" then
+                secret = ""
+                M.token = ""
+                M.account = 0
+                M.claimed = false
+                save()
+            end
+            return
+        end
+        M.token = r.token or ""
+        M.account = r.account or 0
+        M.name = r.name or M.name
+        M.claimed = r.claimed == true
+        M.note = ""
+        refreshed_at = now()
+    end)
+end
+
+-- First contact. The server chooses the call sign: a name a client could
+-- propose is a name a script could choose, and the fleet-wide uniqueness the
+-- login model rests on is only real while the server does the choosing.
+local function make_guest()
+    if minting then return end
+    minting = true
+    post("/v1/guest", {}, function(r, err)
+        minting = false
+        if not r then
+            M.note = err or "cannot reach the meta-layer"
+            return
+        end
+        secret = r.secret or ""
+        M.account = r.account or 0
+        M.name = r.name or ""
+        save()
+        session()
+    end)
+end
+
+-- Told where the meta-layer is, which the games list carries. Idempotent: the
+-- list is re-asked every few seconds while it is on screen, and this only does
+-- work when something has actually changed.
+function M.aim(base)
+    base = base or ""
+    if base == "" then return end
+    local moved = base ~= M.base
+    M.base = base
+    if secret == "" then
+        if moved or M.token == "" then make_guest() end
+    elseif moved or M.token == "" or now() - refreshed_at > REFRESH then
+        session()
+    end
+end
+
+function M.load()
+    load()
+end
+
+-- Whether there is an account layer to talk to and an account to talk about,
+-- which is what decides between asking the server for things and doing the
+-- offline version.
+function M.online()
+    return M.base ~= "" and secret ~= ""
+end
+
+-- Set the password, which is both claiming and changing: the caller holds a
+-- valid device secret either way, and the old password, if there was one,
+-- is replaced rather than joined.
+function M.claim(password, cb)
+    post("/v1/claim", {secret = secret, password = password}, function(r, err)
+        if not r then
+            M.note = err or "cannot set a password"
+            if cb then cb(false, M.note) end
+            return
+        end
+        M.claimed = true
+        -- The label a pilot wears comes from the token, so it is stale until
+        -- the next session. Ask for one now rather than leaving them reading
+        -- "guest" after the thing that fixes it.
+        session()
+        if cb then cb(true) end
+    end)
+end
+
+-- This device joining an account that already exists, by its name and
+-- password. The answer is a secret of this device's own, which is what lets
+-- one device be forgotten without taking the others with it.
+function M.login(name, password, cb)
+    post("/v1/login", {name = name, password = password}, function(r, err)
+        if not r then
+            M.note = err or "that did not work"
+            if cb then cb(false, M.note) end
+            return
+        end
+        secret = r.secret or ""
+        M.account = r.account or 0
+        M.token = ""
+        save()
+        session()
+        if cb then cb(true) end
+    end)
+end
+
+-- A fresh call sign from the pool. The account number stays, so the rating
+-- and the record ride through the rename; only the label moves.
+function M.rename(cb)
+    post("/v1/rename", {secret = secret}, function(r, err)
+        if not r then
+            M.note = err or "cannot reroll"
+            if cb then cb(false, M.note) end
+            return
+        end
+        M.name = r.name or M.name
+        if cb then cb(true) end
+    end)
+end
+
+-- Walk away from the account on this device. The account itself stands, and
+-- its password still opens it from anywhere; what is forgotten is this
+-- device's way in. The next thing this client needs is to be somebody, so it
+-- asks to be a fresh guest straight away.
+function M.logout()
+    secret = ""
+    M.token = ""
+    M.account = 0
+    M.claimed = false
+    M.name = ""
+    save()
+    if M.base ~= "" then make_guest() end
+end
+
+-- There was a status() here, one line about this pilot for the menu to print:
+-- claimed, guest on this device, signing in, no accounts on this deployment.
+-- The menu stopped printing sentences under its lists and it was the last
+-- caller. `M.note` still carries what went wrong, for a log rather than a
+-- player.
+
+return M

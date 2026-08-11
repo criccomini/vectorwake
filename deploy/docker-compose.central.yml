@@ -1,0 +1,141 @@
+# The front door: the directory a player browses, the meta-layer they sign in
+# to, and the page itself. Always beside docker-compose.caddy.yml, which is
+# what puts these on the internet.
+#
+# There is one of this shape in the deployment, and its name is
+# play.vectorwake.net rather than any particular machine: that address is in
+# the catalog's meta url and baked into the client, so a rebuild moves the
+# record and not the name. Nothing here holds state. The managed database does,
+# and it is bought rather than run, per decision 27.
+name: vectorwake
+
+x-central: &central
+  # Pulled, not built. The host compiled its own binary because the machine
+  # that did the first deploy had no registry credential; CI has one, so a
+  # deploy is a pull and this box needs no Rust toolchain, no C compiler, and
+  # none of the 2 GB of swap that existed because cargo linking tokio and
+  # rustls was the peak memory of its life.
+  #
+  # `prod` is a moving pointer CI retags on every push to main. Rollback is
+  # retagging it at an older `sha-` and letting the updater converge, which
+  # beats reverting a commit and rebuilding. Pin VW_IMAGE to a `sha-` tag to
+  # hold a host at a known build.
+  #
+  # docker-compose.local.yml puts the build back for working on a laptop.
+  image: ${VW_IMAGE:-ghcr.io/criccomini/vectorwake:prod}
+  network_mode: host
+  # Any exit restarts, including a clean one, so a process that decides to
+  # stop is a process that comes back fresh rather than a gap in the fleet.
+  restart: unless-stopped
+  # Least privilege, because these processes parse bytes from strangers. They
+  # bind unprivileged ports, write nothing but their own volume, and never
+  # escalate, so every capability is dropped and setuid is off the table. What
+  # this bounds is the blast radius of a bug in the one C library in the stack:
+  # a compromised process on a host-network container is otherwise a process on
+  # the host with root's capabilities.
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  # The page, delivered rather than served. A payload image with no process: it
+  # copies the bundle into the volume Caddy is already serving and exits, so a
+  # client release never restarts Caddy. Recreating Caddy severs every
+  # WebSocket it carries, which for a change to a menu label would mean
+  # disconnecting everybody mid-match.
+  #
+  # Copy then rename, because `mv` inside one filesystem is atomic: a request
+  # arriving mid-deploy gets the old file or the new one, never half of either.
+  #
+  # No depends_on, deliberately. Making Caddy wait for this to finish would
+  # mean a failed one-second file copy holding the whole site down, when the
+  # volume already holds a perfectly good previous page. Caddy serves the old
+  # bundle until the new one lands, which is the behaviour worth having.
+  client:
+    image: ${VW_CLIENT_IMAGE:-ghcr.io/criccomini/vectorwake-client:prod}
+    restart: "no"
+    # It moves a file between two local paths. It has no business on a network.
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - client-page:/srv/play
+    # Named literally, with no shell variables. Compose escapes `$` as `$$` and
+    # `docker compose config` re-escapes on the way out, so a loop over /page/*
+    # can be verified by reading neither the file nor the rendered output, and
+    # an unverifiable deploy step is worse than a literal one.
+    command:
+      - /bin/sh
+      - -c
+      - cp -a /page/index.html /srv/play/.index.html.new
+        && mv -f /srv/play/.index.html.new /srv/play/index.html
+        && ls -l /srv/play/index.html
+
+  directory:
+    <<: *central
+    command: ["directory", "127.0.0.1:9000", "/catalog"]
+    environment:
+      # The directory binds loopback on purpose. It refuses a credential over
+      # cleartext unless the peer is loopback, and behind a proxy every peer
+      # looks like loopback, so a public port would be a pool token accepted
+      # in the clear from anyone. Caddy terminates TLS and is the only way in,
+      # which is also how an arena on another host registers.
+      #
+      # The public halves of this deployment's identity, which the catalog
+      # names by `env:` rather than carrying: the sha256 an arena's pool token
+      # has to match, and the key a session token's signature is checked
+      # against. Both are safe to publish; they are here so that rotating an
+      # identity is a value in the .env beside its secret half rather than a
+      # commit, an image build and a window where the two disagree.
+      #
+      # The directory alone reads the verifying key from a catalog file. Arenas
+      # are handed it over the wire, which is why an arena host needs neither.
+      VW_POOL_DIGEST: ${VW_POOL_DIGEST:-}
+      VW_META_VERIFY: ${VW_META_VERIFY:-}
+      # Every process serves its own numbers on its own loopback port, so what
+      # a scrape reads is one process rather than the box. 9101 to 9107;
+      # 9100 sits empty, the retired admin surface's. Nothing in the Caddyfile
+      # routes to any of them: this is for something running on the host, not
+      # for the internet.
+      VW_METRICS: 127.0.0.1:9106
+
+  # Accounts, ratings, and the rated event log. The one process here with a
+  # database behind it, and the one every other process is built to survive the
+  # loss of: arenas verify session tokens against a key the catalog carries, so
+  # nothing on the join path calls this.
+  #
+  # `on-failure` rather than `unless-stopped`, alone in this file. A deployment
+  # without accounts is a supported arrangement, and it is expressed by leaving
+  # VW_META_DATABASE unset: the process says so and exits zero, and that is a
+  # decision rather than a crash. A real crash exits non-zero and comes back.
+  meta:
+    <<: *central
+    restart: on-failure
+    command: ["meta", "/catalog"]
+    volumes:
+      # The managed database's CA. Vultr signs each project's databases with
+      # its own rather than a publicly trusted one, so without this the
+      # meta-layer will not talk to it at all. Not a secret; see the file.
+      - ./db-ca.pem:/etc/vectorwake/db-ca.pem:ro
+    environment:
+      VW_META_LISTEN: 127.0.0.1:9400
+      VW_METRICS: 127.0.0.1:9107
+      VW_META_CA: /etc/vectorwake/db-ca.pem
+      # Empty means no accounts. See above. A managed database wants
+      # `?sslmode=require` on the end of it, which is what makes the connection
+      # use the CA above rather than going out in the clear.
+      VW_META_DATABASE: ${VW_META_DATABASE:-}
+      # 64 hex characters from `vectorwake-server metakey`, whose other half
+      # goes in the catalog's [meta] block. Losing this invalidates every live
+      # session and nothing else: minting a new one and publishing the new
+      # verifying key costs everybody one login.
+      VW_META_KEY: ${VW_META_KEY:-}
+      # Fleet bans are applied here, because this is where tokens are minted.
+      VW_ADMIN_TOKEN: ${VW_ADMIN_TOKEN:?set VW_ADMIN_TOKEN}
+      # This reads the catalog too, and checks a bot's pool token against the
+      # digest when one claims an account. See the directory above.
+      VW_POOL_DIGEST: ${VW_POOL_DIGEST:-}
+      VW_META_VERIFY: ${VW_META_VERIFY:-}

@@ -1,0 +1,87 @@
+# TLS, and routing for one host, under one hostname.
+#
+# One name, paths underneath, rather than a name per service. That is not a
+# stylistic choice; it was bought with an outage.
+#
+# The first design gave each service its own hostname so Caddy would fetch a
+# certificate per name without being told to. It does, and that is the problem: a
+# reinstall wipes the volume holding them, deploying by reinstall wiped it six
+# times in a day, and Let's Encrypt allows five certificates per week for the
+# same name. Three of the four names ran out and the game went dark while the
+# host looked perfectly healthy. The static client still served, because it was
+# the one name new enough to still have a certificate.
+#
+# So: one certificate to lose instead of four, and adding an arena is a path
+# rather than a DNS record and a fresh trip to a rate limiter. Deploys no longer
+# wipe anything either (see provision.sh and the updater timer), but the number
+# of certificates a mistake can burn is now one, and that is the part that does
+# not depend on remembering.
+#
+# {$VW_HOST} is the name this host serves, which is not the same as the machine
+# it runs on. A central host serves play.vectorwake.net whichever instance is
+# currently underneath it, which is what makes a rebuild a DNS update rather
+# than a client release; an arena host serves its own name. VW_HOST=play.localhost
+# gives a laptop the same shape, signed by Caddy's internal CA.
+#
+# What each role routes lives in conf.d, and VW_ROUTES is the prefix of the
+# files this host imports: `central`, `arena`, or empty for both, which is the
+# host that runs everything. The alternative was one file with every route in
+# it, where an arena host would answer /dir with a 502 from a directory that was
+# never meant to be there.
+#
+# A prefix rather than a filename with a default, because a Caddyfile default
+# only applies to a variable that is unset and not to one set to nothing, and
+# the difference is a host that will not start. Empty here means every file,
+# which is the safe direction: the worst an unset value can do is route to a
+# service this host does not run.
+
+# Reachable by raw IP over plain http, which is the only thing that works before
+# DNS has propagated and a certificate exists. That window is exactly when a
+# fresh host is least diagnosable, so provisioning writes coarse progress here
+# and Caddy comes up before the build rather than after it. Nothing secret is
+# written: anyone can read this.
+http:// {
+	handle_path /deploy* {
+		root * /srv/deploy
+		file_server browse
+	}
+	handle {
+		respond "vectorwake" 200
+	}
+}
+
+{$VW_HOST} {
+	# Plain HTTP, so the chain up to Caddy can be checked with curl from
+	# anywhere. Everything else here is a WebSocket upgrade, which plenty of
+	# networks decline to carry, and "cannot connect" is a useless symptom when
+	# the cause could be DNS, the certificate, Caddy, or the game.
+	#
+	# It says what it can see and no more. This used to answer a bare "ok",
+	# which reads as "the service is up" and means only "Caddy is up": it
+	# answered 200 throughout a reinstall with no game running at all, and
+	# fooled its own author.
+	handle /health {
+		respond "caddy up; this says nothing about the game" 200
+	}
+
+	# The same deploy log the plain-http block serves by IP, here so the page
+	# has a stable TLS address once a certificate exists. Nothing secret is in
+	# it, by the same rule as above: anyone may read it, and its whole value is
+	# being readable when things are odd.
+	handle_path /deploy* {
+		root * /srv/deploy
+		file_server browse
+	}
+
+	# The routes this host's role actually has processes behind. `handle` blocks
+	# are sorted by how specific their path is rather than by the order they are
+	# written, so the page's catch-all in central.caddy stays last however these
+	# are spliced in. Empty VW_ROUTES imports all of them.
+	import /etc/caddy/conf.d/{$VW_ROUTES}*.caddy
+}
+
+# Deliberately absent: any admin surface. One was built and served the fleet
+# view behind basic auth at /admin; it was removed as weight, since the browse
+# reply already shows every registered instance to anyone and /metrics carries
+# the numbers. Fleet bans ride the meta-layer's own /v1/ban behind the admin
+# token.

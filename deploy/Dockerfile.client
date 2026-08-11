@@ -1,0 +1,25 @@
+# The browser bundle, as an image whose only job is to carry it.
+#
+# The bundle used to be built by hand and committed: 5 MB into git history per
+# release, and a step a person had to remember. Twice in one day somebody changed
+# the simulation core and did not rebuild it, and the second time a player joining
+# Chaos was shown DESTROYED on a healthy server, because the client's compiled core
+# read a wire the server had stopped writing. A build step that depends on
+# remembering is the same class of thing as a version number that depends on
+# remembering, and we had already been bitten by that one.
+#
+# CI builds it and publishes it here. The context is the built page alone, because
+# building it needs a JDK, bob.jar and Defold's remote build server, none of which
+# belong on a game host or in this image.
+#
+# Deliberately not the Caddy image. Baking the page into Caddy would mean
+# recreating Caddy on every client release, and recreating Caddy severs every
+# WebSocket it carries -- so a change to a menu label would disconnect everybody
+# mid-match. This is a payload that copies itself into a volume Caddy is already
+# serving, so Caddy never restarts.
+#
+# No entrypoint: what to do with the payload is in docker-compose.yml, where
+# somebody reading the deployment can see it rather than having to inspect an
+# image to find out.
+FROM busybox:stable-musl
+COPY . /page/

@@ -1,0 +1,4 @@
+material: "/render/vw_glow.material"
+vertices: "/render/bgglow.buffer"
+primitive_type: PRIMITIVE_TRIANGLES
+position_stream: "position"

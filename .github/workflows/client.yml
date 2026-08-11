@@ -1,0 +1,171 @@
+name: client bundle
+
+# Build the browser bundle and publish it, so nobody builds it by hand.
+#
+# It was hand-built and committed until now, which cost a live outage: a commit
+# changed the simulation core, the bundle was not rebuilt, and the deployed client
+# read a wire the server had stopped writing -- a player joining Chaos saw
+# DESTROYED on a perfectly healthy fleet. The core refuses that mismatch now, and
+# CI refused to merge the next one, but both are guards around a manual step that
+# should not exist.
+#
+# sim/** is in the trigger and that is the whole point: the bundle links the same
+# simulation core the server does, so a change to the core is a change to the
+# client whether or not any Lua moved.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "client/**"
+      - "sim/**"
+      - "deploy/Dockerfile.client"
+      - ".github/workflows/client.yml"
+  pull_request:
+    paths:
+      - "client/**"
+      - "sim/**"
+      - "deploy/Dockerfile.client"
+      - ".github/workflows/client.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: client-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned. bob is the compiler for this client, and an unpinned one means the
+  # page can change without a commit. 1.13.0 is what client/README.md documents,
+  # and it is the version that needs Java 25.
+  BOB_VERSION: "1.13.0"
+
+jobs:
+  # Lua's own worst failure mode, caught before the page is built.
+  #
+  # A local is resolved at compile time, so a function written above the `local`
+  # it uses does not see that local: it compiles to a global read, the global is
+  # nil, and nothing says so until the line runs. That shipped once. `rolls` was
+  # declared below the function that clears it, `init` ends by calling that
+  # function, and every boot threw on `pairs(nil)` -- while still drawing, so the
+  # only symptom was that the audio never woke up. Nothing else in this
+  # toolchain looks for it: bob compiles the file happily, and the Lua that
+  # matters runs in a browser tab nobody attaches a debugger to.
+  #
+  # Its own job rather than a step in the bundle, because it needs no bob, no
+  # Java and no network, and it should say what is wrong in ten seconds rather
+  # than after a four-minute build.
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: install luacheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1 luarocks
+             && sudo luarocks install luacheck
+      # Named rather than globbed, because the engine's own file kinds are Lua
+      # and do not end in .lua: the script that owns the frame loop is one of
+      # them, and it is where the bug above lived.
+      - name: luacheck
+        run: luacheck client/arena client/render client/ui client/tests
+             client/arena/*.script client/render/*.render_script
+             client/ui/*.gui_script
+      # The client's own tests, which had been sitting in the tree runnable and
+      # unrun. They need the same lua5.1 this job already installs and no
+      # engine at all, and one of them is the only thing comparing what the
+      # client draws against what the simulation collides: hull_fit_test reads
+      # the radii out of sim/src/baseline.c, so a hull redrawn past its box
+      # fails here rather than on somebody's screen.
+      #
+      # From the repository root, because they read the maps and the settings
+      # the fleet actually serves rather than copies written down beside them.
+      - name: client tests
+        run: for t in client/tests/*_test.lua; do echo "== $t"; lua5.1 "$t" || exit 1; done
+
+      # The one client test that cannot be Lua, because the thing it measures is
+      # C: whether a pilot can hear which rung fired. It renders the kit with
+      # the same synth the browser runs and fails if two rungs have collapsed
+      # into one sound. Building the synth as C here is also what catches the
+      # dialect drift, since Defold's build server compiles it as C++.
+      - name: the weapon ladders can be told apart
+        run: make -C client/tools check
+
+  bundle:
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # build.sh stamps the page with `git rev-parse --short HEAD`, so the start
+      # screen says which build a player is looking at. That stamp is why this
+      # needs a real checkout and not a source tarball.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      # 208 MB, and it changes only when BOB_VERSION does.
+      - name: cache bob
+        id: bob
+        uses: actions/cache@v4
+        with:
+          path: /tmp/bob.jar
+          key: bob-${{ env.BOB_VERSION }}
+      - name: fetch bob
+        if: steps.bob.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o /tmp/bob.jar \
+            "https://github.com/defold/defold/releases/download/${BOB_VERSION}/bob.jar"
+          # A truncated download becomes a build failure much later and much less
+          # clearly, so confirm it is really bob before trusting it.
+          unzip -p /tmp/bob.jar META-INF/MANIFEST.MF | grep -q 'com.dynamo.bob.Bob'
+          ls -l /tmp/bob.jar
+
+      # Native extensions are compiled by Defold's own build server, so this step
+      # needs the network and can fail for reasons that have nothing to do with
+      # this repository. Worth knowing when it goes red.
+      - name: build the bundle
+        run: JAVA_HOME=$JAVA_HOME ./client/build.sh wasm-web release bundle
+
+      # The full document, not --fragment. The fragment exists for artifact
+      # hosts that supply their own doctype and head; served directly it is a
+      # page in quirks mode with no title and no icon, leaning on injected
+      # scripts for the viewport meta the head would have carried. Prod serves
+      # this file as the page, so it gets the real head.
+      - name: fold it into one file
+        run: |
+          mkdir -p page
+          python3 client/tools/single_file.py \
+            client/bundle/wasm-web/vectorwake page/index.html
+          ls -l page/
+
+      - uses: docker/setup-buildx-action@v3
+      - name: log in to ghcr
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: short sha
+        id: rev
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          # The built page alone is the context. Pointing this at the repository
+          # would ship the whole tree, including the unpacked bundle, to build a
+          # layer that holds one file.
+          context: page
+          file: ./deploy/Dockerfile.client
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository }}-client:sha-${{ steps.rev.outputs.short }}
+            ghcr.io/${{ github.repository }}-client:prod
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          platforms: linux/amd64
+          provenance: false

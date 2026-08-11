@@ -1,0 +1,142 @@
+# The games: an arena server, and the process that flies the bots into it.
+# Always beside docker-compose.caddy.yml, which terminates TLS for the arena's
+# WebSocket door; its WebTransport door it terminates itself.
+#
+# One arena, and the count is not a capacity dial. A process runs one zone's
+# configuration and holds as many rooms of it as `max_rooms` allows, created on
+# demand and reclaimed when they empty, so seats per host is that number in
+# zone.toml and not the number of stanzas here. Alpha allows ten, which is
+# further than this fleet has ever been asked to go.
+#
+# What the count does decide is how many zones a host can cover, because an
+# arena picks a zone nobody is serving and then stays with it. So the rule is
+# at least one per zone you want this host to serve, and the catalog is down to
+# Alpha alone.
+#
+# It was three, from when the catalog held Alpha, Chaos and War and one machine
+# had to cover all of them. Nothing re-derived it when the other two went, so
+# two processes were covering zones that no longer exist. Add one back per zone
+# the catalog grows, and reach for max_rooms when the answer is seats.
+#
+# A host of this shape holds nothing anyone would miss. Destroying one costs
+# the matches in progress on it and nothing else, which is what makes an arena
+# host the disposable unit of this deployment.
+name: vectorwake
+
+x-arena: &arena
+  # See docker-compose.central.yml for why this is pulled rather than built.
+  image: ${VW_IMAGE:-ghcr.io/criccomini/vectorwake:prod}
+  network_mode: host
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+# What an arena on this host is told. Kept apart from the service so that a
+# second one, the day the catalog grows a zone, differs by port, path and
+# volume and by nothing else.
+x-arena-env: &arena-env
+  # Loopback when the directory is on this host, and the front door's public
+  # wss when it is not. The token travels over TLS either way, which is what
+  # the directory's refusal of credentials over cleartext requires.
+  VW_DIRECTORY: ${VW_DIRECTORY:-ws://127.0.0.1:9000}
+  VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
+  # Rated exchanges are not filed with the meta-layer while this is off.
+  # Nothing else changes: pilots still sign in, arrive carrying the rating they
+  # earned, and see it move on the scoreboard. The room rates every kill as it
+  # always did; this process simply does not report any of it, because the
+  # fleet is being tested and a test session's kills are real enough to move a
+  # ladder that is other people's.
+  #
+  # Delete this line to start recording again. Events generated while it is off
+  # are dropped rather than held, so turning it back on starts from then rather
+  # than replaying the test.
+  VW_REPORT: "0"
+  VW_REGION: ${VW_REGION:-local}
+  # Where rated events go: loopback on a host that runs the meta-layer, the
+  # front door's public https otherwise. Never the catalog's address by
+  # accident, which is the one clients use.
+  VW_META: ${VW_META:-http://127.0.0.1:9400}
+
+services:
+  a1:
+    <<: *arena
+    command: ["127.0.0.1:9001", "/var/lib/vectorwake"]
+    environment:
+      <<: *arena-env
+      # What the directory hands players, which is not what this process binds:
+      # it serves cleartext on loopback and Caddy is the wss endpoint. One
+      # hostname, a path per arena: see caddy/Caddyfile for why.
+      VW_ADDRESS: wss://${VW_HOST:?set VW_HOST}/a1
+      # The WebTransport door. This one Caddy cannot front: the session *is*
+      # the HTTP/3 connection, so an arena terminates QUIC itself on its own
+      # public UDP port (host networking makes the bind real; provision.sh
+      # opens it in ufw) and reads the certificate out of Caddy's own
+      # store, mounted read-only below. The issuer directory in that store is
+      # Caddy's choice of the week, hence the glob, and the server re-reads the
+      # files on a timer so a renewal lands without a restart. A client that
+      # cannot reach UDP falls back to VW_ADDRESS on its own.
+      VW_WT_LISTEN: 0.0.0.0:9443
+      VW_WT_ADDRESS: https://${VW_HOST}:9443/a1
+      VW_WT_CERT: /certs/caddy/certificates/*/${VW_HOST}/${VW_HOST}.crt
+      VW_WT_KEY: /certs/caddy/certificates/*/${VW_HOST}/${VW_HOST}.key
+      VW_METRICS: 127.0.0.1:9101
+    volumes:
+      - a1:/var/lib/vectorwake
+      # Caddy's certificate store, read-only, for the WebTransport door above.
+      # The same volume (or block device) Caddy writes; an arena only ever
+      # reads two PEM files out of it.
+      - ${VW_CERT_DIR:-caddy-data}:/certs:ro
+
+  # The population. One process flies every bot on this host: it asks the
+  # arena how many it wants and opens that many connections, each an ordinary
+  # client that decodes snapshots through the simulation core. See decision 29.
+  #
+  # Named directly rather than browsed, which is the one place this service
+  # departs from the design in ai-runtime.md, and the reason is the addresses a
+  # browse would return. An arena advertises `wss://<host>/aN`, because that is
+  # what a player must dial, so a bot server acting on a browse reply would
+  # take every one of its connections out through DNS, TLS and Caddy to come
+  # back to a port on the same machine. That is 150 proxied sockets and two TLS
+  # stacks for traffic that never leaves the box.
+  #
+  # This is the same arena this file already declares, so it is not a second
+  # source of truth about what is running; and asking it directly is a better
+  # question anyway, since `bots_wanted` is the arena's own answer whatever
+  # zone it happens to have taken, and counts the rooms it is holding. This is also why the bots ride in
+  # this file rather than the central one: an arena host flies its own crowd,
+  # and a central bot server would pay inter-host egress to do a worse job.
+  #
+  # No volume. It keeps nothing between runs, because a bot's career lives in
+  # its account now rather than here.
+  #
+  # It does hold the pool token: a house bot claims an account with it, one per
+  # roster individual, and flies on a real session token. That is what lets one
+  # of them anchor the rating ladder and what tells a player which bots are the
+  # fleet's own rather than somebody else's.
+  #
+  # No address of its own either, which is why it can be restarted at any time.
+  # Losing it empties the rooms of bots and does nothing else; every human in
+  # them keeps playing, and the crowd comes back within seconds of it returning.
+  bots:
+    <<: *arena
+    command: ["bots"]
+    environment:
+      VW_ARENAS: ws://127.0.0.1:9001
+      VW_METRICS: 127.0.0.1:9105
+      VW_META: ${VW_META:-http://127.0.0.1:9400}
+      VW_TOKEN: ${VW_POOL_TOKEN:?set VW_POOL_TOKEN}
+    # Only what is in this file. The arena used to wait on the directory and
+    # the bots on the meta-layer, which cannot be expressed once those live on
+    # another host and were never load bearing: an arena retries registration
+    # and a bot retries its claim. Ordering that only holds on one shape of
+    # host is worse than no ordering at all.
+    depends_on: [a1]
+
+volumes:
+  # The reason it has one at all is the instance id: it is written on first start
+  # and read on every one after, so an arena that loses this file comes back
+  # looking like a different instance and the directory lists a ghost until the
+  # old registration is reaped.
+  a1:

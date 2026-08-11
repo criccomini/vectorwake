@@ -1,0 +1,328 @@
+# A vectorwake zone.
+#
+# Everything an operator tunes lives here rather than in the server's source,
+# which is the claim behind zones-are-content in docs/architecture. Anything
+# left out keeps the value the simulation core ships with, so a short file is
+# a legal file -- and a key left out is different from a key set to zero,
+# which is why `bounce = 0` is a wall that gives nothing back rather than a
+# wall that means "use the default".
+#
+# The server re-reads this while running. Save it and the numbers change; no
+# restart, nobody disconnected. A broken edit is logged and ignored rather
+# than taking the zone down. The two exceptions are `mode` and `flags`, which
+# settle when the arena opens: changing what a round is for while one is being
+# played is not a tuning change.
+
+name = "first light"
+description = "the reference zone: four flags, eight hulls, nine pilots"
+listen = "127.0.0.1:9010"
+
+# TLS. Set both and the zone serves wss instead of ws. A page delivered
+# over https may only open wss -- browsers refuse a plain ws socket from
+# a secure origin, with loopback the one exception -- so a zone that
+# strangers reach from a hosted client needs these.
+tls_cert = ""
+tls_key = ""
+# Humans this zone admits. The room may hold more seats than this: max_ships
+# under [arena] sizes the room and this bounds how many of its seats people get,
+# which is what leaves the bot roster somewhere to sit.
+max_players = 16
+
+# Names here cannot join. Root-level keys must sit above every [table]:
+# written below one, TOML reads them as belonging to that table instead,
+# which the server now reports rather than ignoring.
+bans = []
+
+[arena]
+mode = "warzone"
+flags = 4
+
+# Walls are inelastic. bounce is the speed a hit gives back out of 16, and
+# friction is the speed retained along the wall. 16 and 16 would be lossless.
+bounce = 10
+friction = 14
+
+# Pilots the room holds at once, bots included. 255 is the ceiling and not a
+# preference: a ship index is one byte everywhere it appears, and 255 is already
+# the "no ship" value in those fields. Leaving this out keeps 64, which is
+# four times what the original aimed a public room at -- its DesiredPlaying
+# defaults to 15 and exists only to decide when to open another arena. Widening
+# is cheap (50 us a tick at the ceiling against 13.5 at 64) so the reason to
+# stay near 64 is how the game plays, not what it costs.
+max_ships = 64
+
+respawn_delay = 400   # ticks, so four seconds
+
+# Greens: how fast they arrive, how many the map holds, how long one waits to
+# be collected, how close a ship has to get, and the tile band they land in.
+prize_delay = 100
+prize_max = 20
+prize_life = 3000
+prize_radius = 16
+prize_lo = 8
+prize_hi = 1015
+
+# Flags: how close a ship takes one from, and how long a dropped one is
+# untouchable so a carrier cannot juggle their own.
+flag_radius = 18
+flag_drop_cooldown = 200
+
+# Doors breathe. A cycle is open then shut, and a door's variant leads by
+# eighths of it, so one map can breathe rather than blink. A period of zero
+# leaves every door shut.
+door_period = 600
+door_open = 400
+
+# A wormhole's pull at the mouth, in px/s/10, and the px beyond which it does
+# not reach. One reaches fourteen tiles, which is enough to change how a whole
+# room is flown -- see the note in the map's own source.
+wormhole_pull = 90
+wormhole_range = 220
+
+# Out of a thousand, how often a green takes something back instead of giving
+# it. Rust can only corrode what a pilot is holding, so it costs the loaded
+# and never touches one who has just spawned.
+rust = 10
+
+# Greens a ship is handed the moment it spawns, rolled exactly the way one
+# found on the floor is: the hull's roster and every ceiling in it still
+# apply, so this is a head start rather than a way round the tree. Zero
+# starts pilots plain.
+spawn_prizes = 30
+
+# What a kill is worth. A killer is paid the victim's whole bounty, which is
+# derived from what that pilot was carrying -- so a fresh spawn is worth
+# nothing and camping one pays nothing. bounty_per_kill is what a kill adds to
+# the killer's own price; points_per_flag is the bonus for each flag the victim
+# was holding. See docs/design/bounty.md.
+bounty_per_kill = 3
+points_per_flag = 100
+
+# Per-hull tuning, in settings-file units. Name the hull and set only what you
+# want to change.
+#
+# Each stat is three numbers, under the original's names: a ceiling upgrades
+# climb toward (`speed`), a floor a fresh ship starts at (`initial_speed`), and
+# the step one green adds (`upgrade_speed`). Setting only the ceiling moves the
+# other two with it in proportion, so raising a hull's top speed does not
+# quietly make it start slower relative to where it can get. Writing a floor or
+# a step out beats that.
+#
+# The baseline is the original's, where all eight hulls fly identically and
+# what tells them apart is the weapons -- so the two blocks below are a
+# departure from it rather than a restatement, and deleting them puts the
+# roster back.
+[[arena.ships]]
+name = "Apex"
+speed = 4900
+thrust = 30
+rotation = 420
+energy = 1350
+recharge = 1500
+# The hull's footprint is deliberately not set here. The defaults are measured
+# off the drawn ships and the collision box follows the heading; a zone that
+# overrides `fore`, `aft` or `width` should keep sqrt(fore^2 + (width/2)^2)
+# inside 23 px, the diagonal every shipped map was checked against.
+
+[[arena.ships]]
+name = "Anvil"
+speed = 3200
+initial_speed = 2000
+upgrade_speed = 240
+thrust = 14
+rotation = 240
+energy = 2600
+recharge = 1000
+# How many of each charge this hull carries, by slot: three repels, three
+# bursts. Slots left off keep the baseline's.
+charges = [3, 3]
+
+# Weapons, by name.
+#
+# The core keeps two tables -- what a trigger makes, and what one projectile
+# of it is -- and everything that leaves a ship is a row in each. A block here
+# is one of each, under a name.
+#
+# The baseline builds a gun and a bomb for every hull, named for it:
+# apex-gun, apex-bomb, wedge-gun, ... A block whose name is one of those tunes
+# that weapon and leaves the rest of it alone. Any other name makes a new
+# weapon, which a hull can carry or another weapon can splinter into.
+#
+# The weapons that belong to a slot in the settings rather than to a hull are
+# named for the slot: charge-1 through charge-4, and shrapnel-1 up, one per
+# rung of the add-on. So the repel's own radius is charge-1's blast, and what
+# a second rung of shrapnel breaks into is shrapnel-2. Naming a charge slot
+# the baseline leaves empty makes the weapon and fills the slot at once.
+#
+# Units are the file's: px, px/s/10, energy, ticks, and degrees.
+#
+#   speed life on_wall bounces      how it flies (end, bounce, pass)
+#   trigger expire_ends splinter    what counts as arriving somewhere
+#   damage blast push push_time stall    what happens there
+#   count spread energy delay recoil    what one pull of the trigger makes
+#
+# Three examples, all off. Uncomment one and save; the zone re-reads it and
+# every client in the room gets the new table without reconnecting.
+#
+# A hull's ladder is named by rung: anvil-bomb is the first, anvil-bomb-2 and
+# anvil-bomb-3 the ones a bomb-level green climbs to. A ship block can write
+# that ladder out -- `gun = ["spike", "spike-2"]` -- and `bomb = []` takes a
+# rack away.
+#
+# Bombs that bounce three times, at every level:
+#   [[arena.weapons]]
+#   name = "anvil-bomb"
+#   on_wall = "bounce"
+#   bounces = 3
+#
+# A bomb that breaks into eight fragments where it goes off:
+#   [[arena.weapons]]
+#   name = "anvil-bomb"
+#   splinter = "shrapnel"
+#
+#   [[arena.weapons]]
+#   name = "shrapnel"
+#   speed = 1200
+#   life = 40
+#   damage = 50
+#   count = 8
+#   spread = 45
+#
+# A repel: no damage at all, a wide shove, and gone on the tick it appears.
+# Give it to a hull with `bomb = ["repel"]` under [[arena.ships]]; `bomb = []`
+# takes a rack away again.
+#   [[arena.weapons]]
+#   name = "repel"
+#   speed = 0
+#   life = 1
+#   on_wall = "pass"
+#   expire_ends = true
+#   blast = 300
+#   push = 3000
+#   energy = 400
+#   delay = 300
+#
+# The zone's own repel is charge-1, straight off the original's numbers:
+# RepelDistance 512, RepelSpeed 5000 and RepelTime 225. The reach is a square
+# of that half-width, the shove sets a hostile ship's speed to exactly that
+# from anywhere inside it rather than falling off with range, and the time is
+# how long it may fly at it before its own ceiling takes over -- which is the
+# part that makes a repel a repel, since 5000 is half again the fastest hull.
+#   [[arena.weapons]]
+#   name = "charge-1"
+#   blast = 300
+#   push_time = 100
+#
+# A third charge, in a slot the baseline leaves empty. Naming it makes the
+# weapon and fills the slot; give it a prize weight or no green will ever be
+# one, and a count under each hull that may carry it.
+#   [[arena.weapons]]
+#   name = "charge-3"
+#   speed = 0
+#   life = 1
+#   on_wall = "pass"
+#   expire_ends = true
+#   blast = 400
+#   damage = 900
+#   delay = 200
+#
+#   [arena.prize_weight]
+#   charge-3 = 40
+#
+#   [[arena.ships]]
+#   name = "Anvil"
+#   charges = [3, 3, 2]
+
+# The tech tree.
+#
+# A green is a stat step, a weapon level, or an add-on. Levels climb the
+# ladders above; add-ons are transforms applied to whatever rung the trigger is
+# on -- multi, bounce, prox, shrapnel, freeze, repel -- and each hull's row
+# says which it may ever hold and how many rungs of each. That is what keeps
+# the roster a roster: shrapnel belongs to bombers however the greens fall.
+#
+# What one rung of each add-on is worth. Units are the field it moves:
+# barrels, walls, px of fuse, ticks of stall, px/s/10 of shove.
+#   [arena.mod_step]
+#   multi = 2
+#   bounce = 1
+#   prox = 24
+#   freeze = 100
+#   push = 1200
+#
+# A rung of bouncing adds a wall to whatever the weapon already had, and what
+# it already had is where bullets and bombs part company. A bullet starts at
+# 255, more than its life can spend, so one rung means "until the round runs
+# out"; a bomb starts at zero, so one rung means one wall. That is the
+# original: BombBounceCount is a per-ship setting and no bullet equivalent
+# exists, because a bouncing bullet is a weapon type there and not a budget.
+# Raising this number lengthens bomb ricochets and does nothing to bullets,
+# which are already saturated.
+#
+# What a rung of multifire adds to the cost of pulling the trigger, as a
+# percentage of the shot's own energy and cooldown, and the degrees it fans to
+# when the pattern it transforms has no spread of its own. The defaults are the
+# original's -- 20 energy a bullet against 30 for multifire, 25 ticks of
+# cooldown against 50 -- so three rounds cost half again the energy and twice
+# the wait. Most of the price is in the rate, which is the half a pilot cannot
+# out-recharge.
+#   [arena]
+#   multi_energy = 50
+#   multi_delay = 100
+#   mod_spread = 15
+#
+# The bomb rules the original spells out and this core follows. A proximity
+# fuse widens with the bomb carrying it -- ProximityDistance is the level-one
+# radius and each level adds a tile -- so prox under mod_step is the first and
+# prox_step is what a level adds. And a fragment does almost nothing while it
+# is still inside the hull the bomb went off against, which is what stops a
+# bomb landing twice at point blank: once as the blast, again as a ring of
+# shrapnel born already touching its victim.
+#   [arena]
+#   prox_step = 16
+#   shrap_inactive = 3
+#   shrap_inactive_ticks = 25
+#
+# What each rung of shrapnel breaks into is a weapon like any other, named for
+# the rung. The baseline is the original's ShrapnelRate of 2 up to its
+# ShrapnelMax of 8, scattered rather than fanned because Shrapnel:Random is on
+# -- which a spread of zero is how a pattern asks for.
+#   [[arena.weapons]]
+#   name = "shrapnel-3"
+#   count = 12
+#   damage = 250
+#
+# And who may hold what, under a ship:
+#   [[arena.ships]]
+#   name = "Anvil"
+#   bomb_mods = { shrapnel = 3, prox = 1 }
+#   gun_mods = { multi = 1 }
+#
+# How often a green turns out to be each thing. Relative, not percentages, and
+# read against the pool of whoever picked it up -- so this is the shape of the
+# tree, and the roster decides which of it a given hull ever sees. The five
+# stats keep their own names; a level and an add-on are named for the trigger.
+# Anything left out keeps the baseline, which is the original's own table: 40 a
+# stat, 25 a level, 30 for multi or shrapnel, 25 for bounce or prox, 70 for a
+# charge.
+#   [arena.prize_weight]
+#   speed = 120
+#   gun-level = 30
+#   bomb-shrapnel = 20
+#   charge-2 = 25
+#
+# Charges are named by slot, because what sits in each is the zone's choice:
+# the baseline puts a repel in one and a burst in two. A charge is a weapon
+# you carry a count of and spend -- one key cycles which is ready and one
+# fires it, so a zone can add a third and fourth without asking for a key. The
+# weight is what makes a green ever be one; the count under each hull is what
+# makes that hull able to hold it.
+#
+# And rust, which is a key on [arena] rather than a weight -- see the top of
+# that section.
+
+# Staff and their capabilities are not here. Authority is still a set of named
+# powers rather than a rank, the way ASSS did it, but it belongs to the
+# deployment rather than to one game: the table lives in catalog.toml and the
+# admin surface checks against it. See docs/architecture/catalog.md.
+

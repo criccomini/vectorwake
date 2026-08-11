@@ -1,0 +1,142 @@
+name: server image
+
+# Build the one image the fleet runs, and publish it to GHCR.
+#
+# This exists to take the compiler off the game host. The host built its own
+# binary because the machine that did the first deploy had no registry
+# credential; Actions has one for free, so a deploy becomes a pull. What that
+# buys, measured on the live host: a source change went from a ten-minute
+# rebuild to about two minutes, and the box no longer needs 2 GB of RAM and 2 GB
+# of swap to survive cargo linking tokio and rustls.
+#
+# Nothing publishes that has not passed the gates. `test` runs the whole server
+# suite and the determinism check, and `publish` needs it -- and the release
+# build inside the image is its own third gate, since a warning-free debug test
+# run says nothing about whether `cargo build --release` links.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The last push to main wins. Two runs racing each other could otherwise move
+# `prod` backwards, since whichever finishes second is the tag that sticks.
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Two hundred dependencies, and none of them change between runs.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      # The determinism gate, repeated here rather than depended on across
+      # workflows. sim.yml proves the same property on three ABIs and is the
+      # real authority; this is the cheap version, thirty seconds, so that this
+      # workflow is self-contained and an image cannot be published on the
+      # strength of a golden trace nobody checked on this runner.
+      - name: simulation core, tests and golden trace
+        run: make -C sim check
+      - name: server tests
+        run: cargo test --manifest-path server/Cargo.toml
+
+      # The deployment file, parsed by the thing that actually parses it.
+      #
+      # A duplicate volume key reached the host and broke every converge for five
+      # minutes, because it was checked with Python's yaml.safe_load, which
+      # accepts duplicate mapping keys and keeps the last one. Compose rejects
+      # them outright. A validator more permissive than the consumer is not a
+      # validator, so this runs compose.
+      #
+      # Every role, because a file that only ever parses in one combination is a
+      # file that breaks the first time a host is built from another one, and
+      # nothing else looks at the arena shape until a machine boots into it.
+      - name: the compose files parse
+        run: |
+          printf 'VW_HOST=play.example.invalid\nVW_POOL_TOKEN=x\nVW_ADMIN_TOKEN=y\n' > /tmp/ci.env
+          C="docker compose --env-file /tmp/ci.env -f deploy/docker-compose.caddy.yml"
+          $C -f deploy/docker-compose.central.yml -f deploy/docker-compose.arena.yml config -q
+          $C -f deploy/docker-compose.central.yml config -q
+          $C -f deploy/docker-compose.arena.yml config -q
+          $C -f deploy/docker-compose.central.yml -f deploy/docker-compose.arena.yml \
+            -f deploy/docker-compose.local.yml config -q
+          echo "all, central, arena and the local overlay parse"
+
+      # And the routes each role serves, by the thing that serves them. A
+      # Caddyfile with a bad import fails at container start, which on a fresh
+      # host is after the point where anything can report it.
+      - name: the caddy config adapts
+        run: |
+          docker run --rm -e VW_HOST=play.example.invalid -e VW_ROUTES \
+            -v "$PWD/deploy/caddy:/etc/caddy:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          for i in central arena; do
+            docker run --rm -e VW_HOST=play.example.invalid -e VW_ROUTES="$i" \
+              -v "$PWD/deploy/caddy:/etc/caddy:ro" caddy:2-alpine \
+              caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          done
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    # A pull request builds, to prove the Dockerfile still works, and pushes
+    # nothing: `prod` is what the host follows, and a proposal must not move it.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: log in to ghcr
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: short sha
+        id: rev
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          # The same commit the label carries, but inside the binary, where a
+          # running process can report it on /metrics. A label answers "what is
+          # this image"; this answers "what is that process", which is the
+          # question asked while something is going wrong.
+          build-args: |
+            VW_COMMIT=${{ steps.rev.outputs.short }}
+          # Two tags, doing two jobs. `sha-` is immutable and is what a running
+          # container can be traced back to; `prod` is the moving pointer the
+          # host follows, so a rollback is retagging it at an older sha and
+          # letting the host converge, rather than reverting and rebuilding.
+          tags: |
+            ${{ env.IMAGE }}:sha-${{ steps.rev.outputs.short }}
+            ${{ env.IMAGE }}:prod
+          # So a container on the host can be mapped back to a commit without
+          # asking anybody. `docker inspect` reads it straight back.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # The registry cache is what makes the Dockerfile's dependency layer
+          # worth having: without it every run recompiles all two hundred
+          # crates, which is the same ten minutes this workflow exists to
+          # delete, just moved to a different machine.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # One architecture, no attestations. The host is x86-64 and provenance
+          # would publish an image index whose extra manifest shows up as an
+          # unknown platform for no benefit we can currently use. Building arm64
+          # too is a one-line change the day a cheaper arm plan is worth it --
+          # decision 2 already guarantees the two agree on state hashes.
+          platforms: linux/amd64
+          provenance: false
