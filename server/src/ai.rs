@@ -963,6 +963,25 @@ impl Bot {
                 self.parked_for += 1;
             } else {
                 self.parked_for = 0;
+                // Somebody found the corner, so it is not one. A parked pilot
+                // sits still with its trigger shut, which makes staying put
+                // an offer of a free kill that whoever found it has no reason
+                // to decline: measured on alpha, an enemy held station within
+                // 400 px for three thousand ticks while the pilot waited for a
+                // quiet it was never going to get, and the departure ended on
+                // the bot server's 40-second backstop rather than on its own
+                // terms. Somewhere else instead, with this corner on the list
+                // not to choose again. Leaving is what keeps its distance;
+                // parking is only ever the last few seconds of it.
+                if self.exit == Exit::Parked {
+                    self.exit = Exit::Leaving;
+                    if let Some(p) = self.refuge.take() {
+                        if self.tried.len() < 4 {
+                            self.tried.push(p);
+                        }
+                    }
+                    self.drop_route();
+                }
             }
         }
         self.timer += 1;
@@ -2019,11 +2038,19 @@ mod tests {
     /// vanishing mid-duel. It cannot be seen in one frame and it cannot be
     /// seen from the roster, because both ends look identical either way: what
     /// differs is where the pilot was and what it was doing on the way out.
-    #[test]
-    fn a_pilot_told_to_leave_flies_away_before_it_goes() {
+    ///
+    /// Eight salts rather than one, because the interesting failures here are
+    /// about where the other seven pilots happen to be standing, and one seed
+    /// samples one arrangement of them. The seed this started on went green
+    /// while a departing pilot was being camped in its corner for three
+    /// thousand ticks on every other seed there is.
+    /// One run of the departure drill, on the arrangement of pilots this
+    /// salt produces. Failures name the salt, because which one broke is
+    /// the whole of the reproduction.
+    fn a_departure(salt: u32) {
         let bytes = std::fs::read("../catalog/zones/alpha/alpha.vwmap")
             .expect("the alpha map ships in this repository");
-        let mut w = sim::World::from_packed(0x5eed, &bytes).expect("a map");
+        let mut w = sim::World::from_packed(salt, &bytes).expect("a map");
         let mut bots = Vec::new();
         for i in 0..8usize {
             let e = individual(i);
@@ -2091,15 +2118,15 @@ mod tests {
         }
 
         let done_at = done_at.expect(
-            "a pilot told to leave finishes leaving inside the ceiling");
+            &format!("salt {salt:#x}: a pilot told to leave never finished leaving"));
         // 40 seconds is the bot server's ceiling. Reaching it is the backstop
         // firing, not the ordinary way out, so this asserts the ordinary way
         // out actually happens.
-        assert!(done_at < 4_000, "left after {done_at} ticks");
+        assert!(done_at < 4_000, "salt {salt:#x}: left after {done_at} ticks");
         assert!(going_ticks > 100,
-                "it flew somewhere: only {going_ticks} ticks spent leaving");
+                "salt {salt:#x}: it flew somewhere: only {going_ticks} ticks spent leaving");
         assert_eq!(shot_while_going, 0,
-                   "the trigger stays shut once a pilot is on its way out");
+                   "salt {salt:#x}: the trigger stays shut once a pilot is on its way out");
 
         // And it ended up somewhere nobody is. Sight is 960 px, so clearing it
         // is the whole point: a pilot that logs off inside somebody's radar
@@ -2116,8 +2143,29 @@ mod tests {
             nearest = nearest.min((dx * dx + dy * dy).sqrt());
         }
         assert!(nearest > SIGHT,
-                "logged off {nearest:.0} px from somebody, inside their sight");
+                "salt {salt:#x}: logged off {nearest:.0} px from somebody, inside their sight");
     }
+
+    /// Leaving, end to end, on a real map: told to stand down, seeing out the
+    /// fight, flying somewhere nobody is, and stopping there.
+    ///
+    /// The failure this holds off is the one a player reports as a bot
+    /// vanishing mid-duel. It cannot be seen in one frame and it cannot be
+    /// seen from the roster, because both ends look identical either way: what
+    /// differs is where the pilot was and what it was doing on the way out.
+    ///
+    /// Eight salts rather than one, because what makes this hard is where the
+    /// other seven pilots happen to be standing, and one seed samples one
+    /// arrangement of them. The seed this started on stayed green while every
+    /// other seed had a departing pilot camped in its corner for three
+    /// thousand ticks.
+    #[test]
+    fn a_pilot_told_to_leave_flies_away_before_it_goes() {
+        for salt in [0x5eed, 1, 2, 3, 4, 5, 6, 7] {
+            a_departure(salt);
+        }
+    }
+
 
 
 
