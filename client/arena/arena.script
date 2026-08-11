@@ -565,6 +565,7 @@ function go_home(self, at)
     -- The next zone deals these seats to different pilots.
     for k in pairs(rolls) do rolls[k] = nil end
     fx.reset()
+    ui.clear_payouts()
     -- Leaving a zone re-derives the tables from the baseline, so what a spec
     -- id means changes on the way out of one as well as into it.
     world.forget_specs()
@@ -647,6 +648,15 @@ local function drain_kills()
         local col, mine = nil, false
         if k.killer == me and k.victim ~= me then
             col, mine = pal.PRIZE, true
+            -- And the same number again, off the wreck rather than in the
+            -- feed. A kill is read where it happened: a pilot who just took
+            -- somebody is looking at the explosion, not at the corner. The
+            -- feed keeps its line, because the two answer different
+            -- questions, and the payout is only worth floating when there
+            -- was one.
+            if k.paid > 0 then
+                ui.payout(sim.ship_x(k.victim), sim.ship_y(k.victim), k.paid)
+            end
         elseif k.victim == me then
             col, mine = pal.HURT, true
         end
@@ -1960,6 +1970,7 @@ function apply_menu(self, act)
         held_kit = nil
         marks.hold(nil)
         fx.reset()
+        ui.clear_payouts()
         world.forget_specs()
         sim.init(0x5eed)
         clear_static()
