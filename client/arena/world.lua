@@ -1835,6 +1835,8 @@ end
 -- than a second field that could disagree with it.
 local blast_of = {}
 local level_of = {}
+local still_of = {}
+local trigger_of = {}
 
 local life_of = {}
 -- What each pilot was last seen holding, by ship and charge slot. See
@@ -1850,6 +1852,8 @@ local shot_seen = {}
 function M.forget_specs()
     blast_of = {}
     level_of = {}
+    still_of = {}
+    trigger_of = {}
     life_of = {}
     charge_seen = {}
     shot_seen = {}
@@ -1884,9 +1888,143 @@ local function spec_life(id)
     return r
 end
 
+-- A mine: a round laid rather than thrown, that goes off. The core's own test
+-- is the same pair of fields, so the two cannot end up disagreeing about what
+-- a mine is, and a zone that puts one in a different slot still gets one drawn
+-- like a mine.
+local function spec_still(id)
+    local r = still_of[id]
+    if r == nil then
+        r = sim.spec_still(id)
+        still_of[id] = r
+    end
+    return r
+end
+
+local function spec_trigger(id)
+    local r = trigger_of[id]
+    if r == nil then
+        r = sim.spec_trigger(id)
+        trigger_of[id] = r
+    end
+    return r
+end
+
+local function is_mine(spec)
+    return spec_still(spec) and spec_blast(spec) > 0
+end
+
 local function bomb_col(lvl)
     if lvl < 0 then return pal.BURST end
     return pal.rung(lvl)
+end
+
+-- --- a mine ----------------------------------------------------------------
+--
+-- A hexagonal hub at a fixed rotation, six spikes off the flats, and a dark
+-- body. Every part of that is chosen against the bomb, because the two are
+-- the same weapon in different postures and telling them apart at a glance is
+-- the whole job. A bomb is a hot core with a trail; a mine's centre is dark,
+-- which reads at three pixels, and its outline has corners, which nothing
+-- else out here has -- every round in this game is a circle and every wall is
+-- a straight line, so an angular thing that is not a wall is unlike anything
+-- on screen.
+--
+-- It does not spin and it does not drift. The green already owns spinning,
+-- and the one fact worth telling about a mine is that it is not going
+-- anywhere. So what makes it look live has to happen in place: the core
+-- breathes on one clock and a charge laps the rim on another. The two periods
+-- do not divide into each other, so a mine never settles into an obvious
+-- repeat and two laid a second apart never fall into step.
+local MINE_HUB, MINE_TIP, MINE_ROT = 4.2, 8.0, 0.26
+local MINE_BREATH, MINE_CRAWL = 2.4, 3.2
+
+local function hexagon(x, y, r, rot)
+    local p = {}
+    for i = 0, 5 do
+        local a = rot + i / 6 * math.pi * 2
+        p[#p + 1] = x + math.cos(a) * r
+        p[#p + 1] = y + math.sin(a) * r
+    end
+    return p
+end
+
+-- The rim, parameterised in edges: u walks 0 to 6 around the hexagon, which is
+-- the same coordinate the life gauge cuts short.
+local function rim_at(h, u)
+    local k = math.floor(u) % 6
+    local f = u - math.floor(u)
+    local i0, i1 = k * 2 + 1, (k * 2 + 2) % 12 + 1
+    return h[i0] + (h[i1] - h[i0]) * f,
+           h[i0 + 1] + (h[i1 + 1] - h[i0 + 1]) * f
+end
+
+-- `frac` is the life remaining, drawn as the hub's own six edges going one at
+-- a time, so an old mine is visibly coming apart rather than wearing a second
+-- gauge nobody asked for.
+local function mine(fill, glow, x, y, col, t, frac, af, fuse)
+    local breath = 0.5 + 0.5 * math.sin(t * MINE_BREATH)
+    local h = hexagon(x, y, MINE_HUB, MINE_ROT)
+    fill:fan(h, pal.a(col, 0.11 * af))
+    for k = 0, 5 do
+        local lo, hi = k / 6, (k + 1) / 6
+        if frac > lo then
+            local f = frac >= hi and 1 or (frac - lo) * 6
+            local i0, i1 = k * 2 + 1, (k * 2 + 2) % 12 + 1
+            glow:seg(h[i0], h[i0 + 1],
+                     h[i0] + (h[i1] - h[i0]) * f,
+                     h[i0 + 1] + (h[i1 + 1] - h[i0 + 1]) * f,
+                     1.2, pal.a(col, 0.9 * af), f >= 1)
+        end
+    end
+    for j = 0, 5 do
+        local a = MINE_ROT + (j + 0.5) / 6 * math.pi * 2
+        local c, s = math.cos(a), math.sin(a)
+        glow:seg(x + c * (MINE_HUB - 0.6), y + s * (MINE_HUB - 0.6),
+                 x + c * MINE_TIP, y + s * MINE_TIP,
+                 1.1, pal.a(col, 0.8 * af), false)
+    end
+    -- The charge: one lap of whatever rim is left, riding the life gauge's own
+    -- edges, so a mine down to its last one has almost nowhere to run it and
+    -- the lap stops closing the moment the ring is broken. The head is a hot
+    -- pinpoint rather than more of the same colour, because the rim already
+    -- burns white where two edges meet and a spark that only brightened would
+    -- be lost among the corners.
+    if frac > 0.02 then
+        local closed = frac > 0.999
+        local span = frac * 6
+        local head = (t % MINE_CRAWL) / MINE_CRAWL * span
+        local tail = math.min(0.85, span * 0.5)
+        local px, py = rim_at(h, head)
+        for i = 1, 5 do
+            local u = head - tail * i / 5
+            if u < 0 then
+                if not closed then break end
+                u = u + span
+            end
+            local qx, qy = rim_at(h, u)
+            local a = 1 - i / 5
+            glow:seg(px, py, qx, qy, 1.1, pal.a(col, 0.40 * a * a * af), false)
+            px, py = qx, qy
+        end
+        local hx, hy = rim_at(h, head)
+        glow:halo(hx, hy, 3.4, 8, pal.a(col, 0.30 * af))
+        fill:disc(hx, hy, 0.85, 6, pal.a(pal.hot(col, 0.9, 1), 0.9 * af))
+    end
+    -- The fuse, once a second, drawn at the radius it actually triggers on. It
+    -- is the only thing in the game that tells a pilot the reach of a weapon
+    -- rather than making them learn it by dying, and it is faint on purpose: a
+    -- room of these must not become a page of circles.
+    if fuse > MINE_TIP then
+        local ph = t % 1
+        local g = (1 - ph) * (1 - ph)
+        glow:ring_fade(x, y, MINE_TIP + ph * (fuse - MINE_TIP), 3.4, 20,
+                       pal.a(col, 0.17 * g * af))
+    end
+    glow:halo(x, y, 11 * (0.90 + 0.10 * breath), 10,
+              pal.a(col, 0.15 * (0.85 + 0.30 * breath) * af))
+    fill:disc(x, y, 1.3, 6,
+              pal.a(pal.hot(col, 0.7, 1), (0.32 + 0.16 * breath) * af))
 end
 
 -- One bomb rung of blast radius, in world pixels: BombExplodePixels for a
@@ -2011,7 +2149,15 @@ function M.shots(me, sfx)
         -- A fragment is nobody's aim, and a repel is spent from an inventory
         -- rather than fired. `M.charges` has that one, and counting it here
         -- would put a bomb shot on top of the shockwave.
-        if depth == 0 and guns[owner] and spec_life(spec) > 1 then
+        --
+        -- A mine is a charge too, and the only one that stays in the world
+        -- long enough to be counted here. It has a blast and a long life, so
+        -- without this it reads as a thrown bomb and every mine posted across
+        -- the arena arrives as somebody lobbing one: the wrong sound, from a
+        -- trigger nobody pulled. Laying one is quiet, which is most of what
+        -- makes a minefield a thing you find rather than a thing you hear.
+        if depth == 0 and guns[owner] and spec_life(spec) > 1
+           and not is_mine(spec) then
             if spec_blast(spec) > 0 then
                 bombs[owner] = bombs[owner] + 1
                 bomb_spec[owner] = spec
@@ -2095,6 +2241,25 @@ function M.weapons(fill, glow, t, cull)
         local af = 0.45 + 0.55 * fade
         if outside(cull, x, y) then
             -- nothing: off screen
+        elseif is_mine(spec) then
+            -- The rung comes off the round, not off the spec. A mine is a
+            -- charge, so it is one spec for every rung and `spec_level` finds
+            -- it on nobody's ladder; what it wears is the bomb rung its layer
+            -- was on when they posted it, which the core carries on the round
+            -- for exactly this. That is not decoration -- the blast climbs the
+            -- same ladder -- so the colour is telling the truth about how hard
+            -- the thing is going to hit, which is the one job the ramp has.
+            local col = bomb_col(level)
+            -- Life remaining, as the fraction the hub's outline draws. The
+            -- last two seconds blink, which is the grammar a green already
+            -- uses for the same fact, so nobody has to be taught it twice.
+            local whole = spec_life(spec)
+            local frac = whole > 0 and life / whole or 1
+            local mf = af
+            if life < 200 then
+                mf = af * (0.35 + 0.65 * math.abs(math.sin(t * 9)))
+            end
+            mine(fill, glow, x, y, col, t, frac, mf, spec_trigger(spec))
         elseif spec_blast(spec) > 0 then
             -- A bomb is a heavy, slow, obviously dangerous object: a hot core
             -- inside a ring that breathes, with a trail long enough to read
@@ -2235,8 +2400,17 @@ function M.corpse(i, vx, vy, me, sfx)
 end
 
 function M.late_blast(w, sfx)
+    -- The rung comes off the round for a mine, exactly as the live drawing
+    -- reads it: every mine is one spec, so the spec table answers a rung one
+    -- blast in violet whatever the mine had been. The radius is composed the
+    -- way the core composes it, so the flash is the hole the blast made.
     local r = spec_blast(w.spec)
-    fx.detonate(w.x, w.y, r, bomb_col(spec_level(w.spec)))
+    local lvl = spec_level(w.spec)
+    if is_mine(w.spec) and w.level then
+        r = r + w.level * sim.spec_blast_up(w.spec)
+        lvl = w.level
+    end
+    fx.detonate(w.x, w.y, r, bomb_col(lvl))
     sfx("blast", w.x, w.y, blast_rung(r))
 end
 
@@ -2260,8 +2434,12 @@ function M.events(me, sfx)
             local trig = bomb and sim.TRIG_BOMB or sim.TRIG_GUN
             sfx(bomb and "bomb" or "gun", x, y, sim.ship_level(a, trig))
         elseif ty == sim.EV_EXPIRE then
-            local x = math.floor(v / 16384)
+            -- The payload is two fourteen-bit coordinates with the round's
+            -- rung in the bits above them, so the position needs its mask
+            -- now that the top of the word is no longer zero.
+            local x = math.floor(v / 16384) % 16384
             local y = v % 16384
+            local rung = math.floor(v / 268435456) % 4
             -- Pinned to the hull it ended on, when it ended on one. The event
             -- position is simulation truth, but a remote hull is drawn where
             -- the render smoothing says, up to a correction behind the truth,
@@ -2276,9 +2454,19 @@ function M.events(me, sfx)
                 x = x + (sim.ship_x(b) - sim.ship_x_raw(b))
                 y = y + (sim.ship_y(b) - sim.ship_y_raw(b))
             end
+            -- A mine's ring and colour come off the event's rung, because
+            -- every mine is one spec: the table answers a rung one blast in
+            -- violet whatever the mine had been, and the ring a detonation
+            -- draws has to be the hole it actually made. Composed the way
+            -- the core composes it, base plus rung steps of `blast_up`.
             local r = spec_blast(a)
+            local lvl = spec_level(a)
+            if is_mine(a) then
+                r = r + rung * sim.spec_blast_up(a)
+                lvl = rung
+            end
             if r > 0 then
-                fx.detonate(x, y, r, bomb_col(spec_level(a)))
+                fx.detonate(x, y, r, bomb_col(lvl))
                 sfx("blast", x, y, blast_rung(r))
             else
                 fx.burst(x, y, 4, 90, 0.22, 1.5, pal.a(pal.INK, 0.9))

@@ -978,8 +978,10 @@ impl Room {
         if let Some(v) = w.bounces { sp.bounces = v; }
         if let Some(v) = w.trigger { sp.trigger = v * 256; }
         if let Some(v) = w.blast { sp.blast = v * 256; }
+        if let Some(v) = w.blast_up { sp.blast_up = v * 256; }
         if let Some(v) = w.stall { sp.stall = v; }
         if let Some(v) = w.expire_ends { sp.expire_ends = v as u8; }
+        if let Some(v) = w.still { sp.still = v as u8; }
         if let Some(rule) = &w.on_wall {
             match rule.as_str() {
                 "end" => sp.on_wall = 0,
@@ -7687,9 +7689,12 @@ mod tests {
     /// charge is one block rather than a block plus a wiring line.
     #[test]
     fn naming_an_empty_charge_slot_fills_it() {
+        // The fourth slot, because the baseline now fills the first three: a
+        // repel, a burst and a mine. This test is about a slot the zone finds
+        // empty, so it has to name one that actually is.
         let (w, warn) = tuned(r#"
             [[arena.weapons]]
-            name = "charge-3"
+            name = "charge-4"
             speed = 0
             life = 1
             on_wall = "pass"
@@ -7699,22 +7704,21 @@ mod tests {
             delay = 200
 
             [arena.prize_weight]
-            charge-3 = 40
+            charge-4 = 40
 
             [[arena.ships]]
             name = "Anvil"
-            charges = [3, 3, 2]
+            charges = [3, 3, 3, 2]
         "#);
         assert!(warn.is_empty(), "{warn:?}");
-        assert_ne!(w.cfg.charge[2], sim::NO_PATTERN, "the slot is filled");
-        let sp = w.cfg.specs[w.cfg.patterns[w.cfg.charge[2] as usize].spec as usize];
+        assert_ne!(w.cfg.charge[3], sim::NO_PATTERN, "the slot is filled");
+        let sp = w.cfg.specs[w.cfg.patterns[w.cfg.charge[3] as usize].spec as usize];
         assert_eq!(sp.blast, 400 * 256);
-        assert_eq!(w.cfg.prize_weight[sim::PRIZE_COUNT - 2], 40, "and greens can be it");
+        assert_eq!(w.cfg.prize_weight[sim::PRIZE_COUNT - 1], 40, "and greens can be it");
         let anvil = ai::class_index("Anvil").unwrap();
-        assert_eq!(w.cfg.classes[anvil].charge_max[2], 2, "the Anvil carries two");
-        assert_eq!(w.cfg.classes[ai::class_index("Apex").unwrap()].charge_max[2], 0,
+        assert_eq!(w.cfg.classes[anvil].charge_max[3], 2, "the Anvil carries two");
+        assert_eq!(w.cfg.classes[ai::class_index("Apex").unwrap()].charge_max[3], 0,
                    "and nobody else carries any");
-        assert_eq!(w.cfg.charge[3], sim::NO_PATTERN, "the fourth slot is still empty");
     }
 
     #[test]
