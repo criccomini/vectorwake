@@ -85,6 +85,11 @@ alter table accounts add column if not exists last_seen timestamptz not null def
 -- is set by the operator in the database itself, so there is nothing for a
 -- leaked credential or a compromised neighbour process to call.
 alter table accounts add column if not exists admin boolean not null default false;
+-- What an operator wants to remember about a pilot: a warning given, a
+-- report looked into, why a ban was lifted. `reason` says why an account is
+-- banned right now and is gone the moment it is not, which is no place to
+-- keep the history that decided it.
+alter table accounts add column if not exists note text;
 -- The key era's leftovers. A key credential has no route left to present it
 -- to, and the link_codes table belonged to the same machinery.
 delete from credentials where method = 'key';
@@ -757,7 +762,8 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                             to_char(a.created at time zone 'utc', 'YYYY-MM-DD'),
                             to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI'),
                             exists (select 1 from credentials c
-                                    where c.account = a.id and c.method <> 'secret')
+                                    where c.account = a.id and c.method <> 'secret'),
+                            coalesce(a.note, '')
                      from accounts a left join names n on n.account = a.id";
             let row = match by_id {
                 Some(id) => {
@@ -788,6 +794,7 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                         "created": r.get::<_, String>(6),
                         "last_seen": r.get::<_, String>(7),
                         "claimed": r.get::<_, bool>(8),
+                        "note": r.get::<_, String>(9),
                     }))
                 }
                 Ok(None) => (404, serde_json::json!({ "error": "no such pilot" })),
@@ -884,6 +891,80 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             // the directory a moment later, and that lands in the audit log
             // the fleet view carries.
             (200, serde_json::json!({ "sent": sent.sent }))
+        }
+
+        // Deal a pilot a fresh call sign.
+        //
+        // Dealt, not chosen, and that is the whole shape of it: no route in
+        // this service accepts a proposed name, per docs/design/accounts.md,
+        // because a curated register and fleet-wide uniqueness hold only
+        // while the server does the choosing. An operator gets the same
+        // draw a player's own reroll gets, so an admin cannot mint a name a
+        // player could not have been given.
+        //
+        // Not throttled the way `/v1/rename` is. That limit stands between
+        // a script and the name pool, and an operator with a flag on their
+        // account is neither.
+        "/v1/admin/rename" => {
+            let Some(actor) = admin_for(&db, &s("secret")).await else {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            };
+            let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
+            let kind: i16 = match db
+                .query_opt("select kind from accounts where id = $1", &[&account])
+                .await
+            {
+                Ok(Some(r)) => r.get(0),
+                Ok(None) => return (404, serde_json::json!({ "error": "no such account" })),
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            // A house bot's name is its identity: the roster individual is
+            // looked up by it, so renaming one would leave the scoreboard
+            // disagreeing with the roster that seeded its rating.
+            if kind_of(kind).is_bot() {
+                return (400, serde_json::json!({
+                    "error": "a bot's name is how its roster identity is found; \
+                              rerolling it would split the two"
+                }));
+            }
+            match christen(&db, account).await {
+                Ok(name) => {
+                    println!("meta: admin {actor} rerolled {account} to {name:?}");
+                    (200, serde_json::json!({ "account": account, "name": name }))
+                }
+                Err(e) => (500, serde_json::json!({ "error": e })),
+            }
+        }
+
+        // An operator's note on a pilot. Empty clears it.
+        //
+        // Free text, and the one field here that is: everything else about
+        // an account is dealt, derived or a boolean. It is also the only
+        // string on this service a person composes, so the panel renders it
+        // as text and the site's CSP is the second lock on that door.
+        "/v1/admin/note" => {
+            let Some(actor) = admin_for(&db, &s("secret")).await else {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            };
+            let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
+            // Long enough for what happened, short enough that this column
+            // is never where somebody keeps a log.
+            let note: String = s("note").trim().chars().take(500).collect();
+            let stored = if note.is_empty() { None } else { Some(note.clone()) };
+            let r = db
+                .execute("update accounts set note = $2 where id = $1", &[&account, &stored])
+                .await;
+            match r {
+                Ok(0) => (404, serde_json::json!({ "error": "no such account" })),
+                Ok(_) => {
+                    println!(
+                        "meta: admin {actor} {} the note on {account}",
+                        if stored.is_some() { "wrote" } else { "cleared" }
+                    );
+                    (200, serde_json::json!({ "account": account, "note": note }))
+                }
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
         }
 
         // Every account currently marked, which is the half of banning the

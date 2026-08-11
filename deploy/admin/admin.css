@@ -251,11 +251,17 @@ button.link:hover { color: var(--ink); }
 }
 input:focus-visible { outline-offset: -1px; }
 
+/* A message about what just happened. Orange by default because most of them
+   are refusals, and the two other cases say so: something that worked wears
+   the acting color, and something merely in progress is dim. Saying "note
+   saved" in the color the game paints an enemy is a small lie every time. */
 .note {
   color: var(--enemy);
   margin: 0.6rem 0 0;
   min-height: 1.5em;
 }
+.note.ok { color: var(--friend); }
+.note.plain { color: var(--dim); }
 .note:empty { min-height: 0; margin: 0; }
 
 /* ------------------------------------------------------------------ pilot */
@@ -276,8 +282,12 @@ dd.bad { color: var(--enemy); }
 dd.good { color: var(--friend); }
 
 /* The controls that act on whoever the card is describing, kept clear of it
-   so the pair reads as a card and then its actions. */
-#ban-form { margin-top: var(--gap); }
+   so the pair reads as a card and then the things you can do to it. */
+#pilot-edit {
+  display: grid;
+  gap: var(--gap);
+  margin-top: var(--gap);
+}
 
 /* ----------------------------------------------------------------- tables */
 

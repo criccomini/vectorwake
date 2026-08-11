@@ -184,10 +184,49 @@ the catalog that is not the public half of the meta-layer's signing key means
 every session token fails its check: pilots keep flying, as guests, rating
 nothing, with nothing on fire to say so.
 
-The catalog editor and the action verbs above are still in front of it. So is
-a roster: `RoomView` carries counts and not names, so kicking somebody needs
-either rosters on the status push or a kick by call sign that every arena
-checks against its own room.
+The catalog editor is still in front of it.
+
+## What an operator may edit about a pilot
+
+Most of an account is deliberately not editable, and the panel is easier to
+reason about once that is said plainly rather than discovered a field at a
+time.
+
+**The call sign can be rerolled and never typed.** An operator gets the same
+draw a player's own reroll gets, so no admin can mint a name a player could
+not have been dealt. [accounts.md](../design/accounts.md) is why: a curated
+register and fleet-wide uniqueness hold only while the server does the
+choosing, and a route that accepted a proposed name would end both. The
+account number does not move, so the rating and the history ride through it.
+A bot is refused, because a house bot's name is how its roster individual is
+found and renaming one would leave the scoreboard disagreeing with the roster
+that seeded its rating.
+
+**Standing is a ban and its reason**, which the panel already sets, and which
+takes effect within one token lifetime because this is where tokens are
+minted.
+
+**An operator note** is the one piece of free text on an account: what
+happened, what was said, what was decided. `reason` cannot serve that purpose,
+because it describes a ban that is true right now and is gone the moment the
+ban is lifted.
+
+Three things stay uneditable on purpose. A rating is a projection of
+`rated_events`, so setting one by hand would leave the number disagreeing with
+the history it is supposed to be derived from; the way to move a rating is to
+change what happened or how it is scored. A password is the pilot's, and an
+admin who can set one can take an account, which is a larger power than
+anything else on this page and buys nothing a ban does not. And an account's
+kind is load-bearing in two directions at once: only a house bot may anchor
+the ladder, and only an accountable owner may hold a third-party bot, so
+kind moves when a bot is registered rather than when an operator decides.
+
+## Still ahead
+
+The verbs need one more thing before kicking is comfortable: `RoomView`
+carries counts and not names, so an operator cannot see who is in a room.
+Kick works by call sign against every instance, which is enough to act on a
+report and not enough to notice one.
 
 The name is its own certificate, which this file's opening comment prices as
 the thing a mistake can burn. Taken anyway, and as isolation rather than

@@ -41,6 +41,16 @@ async function post(path, body) {
   return reply;
 }
 
+// Say something in one of the note lines. `kind` is "ok" for something that
+// worked and "plain" for something in progress; a refusal is the default and
+// needs no argument.
+function tell(id, text, kind) {
+  const n = el(id);
+  n.textContent = text;
+  n.classList.toggle("ok", kind === "ok");
+  n.classList.toggle("plain", kind === "plain");
+}
+
 function show(section) {
   login.hidden = section !== login;
   panel.hidden = section !== panel;
@@ -84,7 +94,7 @@ async function boot() {
     if (!s.admin) {
       localStorage.removeItem(KEY);
       secret = "";
-      el("login-note").textContent = "that account no longer holds the admin flag";
+      tell("login-note", "that account no longer holds the admin flag");
       show(login);
       return;
     }
@@ -95,7 +105,7 @@ async function boot() {
       localStorage.removeItem(KEY);
       secret = "";
     }
-    el("login-note").textContent = e.message;
+    tell("login-note", e.message);
     show(login);
   }
 }
@@ -103,7 +113,7 @@ async function boot() {
 el("login-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const note = el("login-note");
-  note.textContent = "signing in.";
+  tell("login-note", "signing in.", "plain");
   try {
     const got = await post("/v1/login", {
       name: el("login-name").value.trim(),
@@ -113,16 +123,16 @@ el("login-form").addEventListener("submit", async (ev) => {
     if (!s.admin) {
       // A real pilot, but not an operator. The secret is not kept: this
       // page has no business holding a game credential it cannot use.
-      note.textContent = "that account does not hold the admin flag";
+      tell("login-note", "that account does not hold the admin flag");
       return;
     }
     secret = got.secret;
     localStorage.setItem(KEY, secret);
     el("login-password").value = "";
-    note.textContent = "";
+    tell("login-note", "");
     arrive(s.name);
   } catch (e) {
-    note.textContent = e.message;
+    tell(note.id, e.message);
   }
 });
 
@@ -134,8 +144,8 @@ function eject(why) {
   shown = null;
   if (ticking) { clearInterval(ticking); ticking = null; }
   el("pilot").hidden = true;
-  el("ban-form").hidden = true;
-  el("login-note").textContent = why || "";
+  el("pilot-edit").hidden = true;
+  tell("login-note", why || "");
   show(login);
 }
 
@@ -210,13 +220,12 @@ function ask({ title, body, ok, label, value }) {
 // The answer says only that it went: the arena's outcome arrives at the
 // directory a moment later and shows up in the log below.
 async function command(instance, verb, args) {
-  const note = el("fleet-note");
   noteOwner = "command";
   try {
     const r = await post("/v1/admin/command", { secret, instance, verb, args });
-    note.textContent = `${verb} sent to ${r.sent} instance(s); the log has the outcome`;
+    tell("fleet-note", `${verb} sent to ${r.sent} instance(s); the log has the outcome`, "ok");
   } catch (e) {
-    note.textContent = e.message;
+    tell("fleet-note", e.message);
     return;
   }
   // Give the arena a moment to answer before re-reading, so the outcome is
@@ -305,12 +314,12 @@ async function drawFleet() {
   try {
     f = await post("/v1/admin/fleet", { secret });
   } catch (e) {
-    note.textContent = e.message;
+    tell(note.id, e.message);
     noteOwner = "fleet";
     return;
   }
   if (noteOwner === "fleet") {
-    note.textContent = "";
+    tell("fleet-note", "");
     noteOwner = null;
   }
 
@@ -418,21 +427,28 @@ function drawPilot(p) {
   row("last seen", p.last_seen);
   row("standing", p.banned ? `banned: ${p.reason || "no reason recorded"}` : "in good standing",
       p.banned ? "bad" : "good");
+  if (p.note) row("note", p.note);
   if (p.admin) row("admin", "holds the flag", "good");
   dl.hidden = false;
 
-  // Admins are not bannable from here; the server refuses and the button
-  // saying so first is kinder than the refusal.
+  el("pilot-edit").hidden = false;
+  el("note-text").value = p.note || "";
+  // A bot's name is how its roster identity is found, so the server refuses
+  // to reroll one. Saying so on the button beats saying it in a refusal.
+  el("rename-button").hidden = p.kind !== "human";
+
+  // Admins are not bannable from here either, for the same reason: the
+  // server refuses, and a button that is not there is a kinder refusal.
   const form = el("ban-form"), button = el("ban-button");
   form.hidden = p.admin;
   button.textContent = p.banned ? "unban" : "ban";
   button.className = p.banned ? "" : "ban";
-  el("ban-reason").value = "";
+  el("ban-reason").value = p.banned ? p.reason || "" : "";
 }
 
 async function lookup(q) {
   const note = el("lookup-note");
-  note.textContent = "";
+  tell("lookup-note", "");
   const body = { secret };
   const m = q.match(/^#?(\d+)$/);
   if (m) body.account = Number(m[1]);
@@ -441,9 +457,9 @@ async function lookup(q) {
     drawPilot(await post("/v1/admin/pilot", body));
   } catch (e) {
     el("pilot").hidden = true;
-    el("ban-form").hidden = true;
+    el("pilot-edit").hidden = true;
     shown = null;
-    note.textContent = e.message;
+    tell(note.id, e.message);
   }
 }
 
@@ -458,6 +474,47 @@ el("lookup-form").addEventListener("submit", (ev) => {
 el("kick-button").addEventListener("click", () => {
   if (!shown || !shown.name) return;
   command("*", "kick", shown.name);
+});
+
+// The note is the only free text an operator writes about somebody, so it
+// saves on its own rather than riding along with a ban.
+el("note-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!shown) return;
+  const note = el("lookup-note");
+  try {
+    await post("/v1/admin/note", {
+      secret, account: shown.account, note: el("note-text").value,
+    });
+    await lookup(`#${shown.account}`);
+    tell("lookup-note", "note saved", "ok");
+  } catch (e) {
+    tell(note.id, e.message);
+  }
+});
+
+// A reroll deals a name; it never takes one. There is no field to type into
+// here on purpose, per docs/design/accounts.md: a name an operator could
+// choose is a name that leaves the curated register, and the pool's
+// uniqueness holds only while the server does the choosing.
+el("rename-button").addEventListener("click", async () => {
+  if (!shown) return;
+  const note = el("lookup-note");
+  const yes = await ask({
+    title: "Reroll this call sign?",
+    body: `${shown.name} is dealt a new name from the pool, and the old one ` +
+      "goes back into it. The account number does not move, so the rating " +
+      "and the history ride through the rename.",
+    ok: "reroll",
+  });
+  if (yes === null) return;
+  try {
+    const r = await post("/v1/admin/rename", { secret, account: shown.account });
+    await lookup(`#${shown.account}`);
+    tell("lookup-note", `now called ${r.name}`, "ok");
+  } catch (e) {
+    tell(note.id, e.message);
+  }
 });
 
 el("ban-form").addEventListener("submit", async (ev) => {
@@ -476,7 +533,7 @@ el("ban-form").addEventListener("submit", async (ev) => {
     await lookup(`#${shown.account}`);
     drawBans().catch(() => {});
   } catch (e) {
-    note.textContent = e.message;
+    tell(note.id, e.message);
   }
 });
 

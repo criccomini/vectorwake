@@ -104,14 +104,26 @@
     </form>
     <p id="lookup-note" class="note" role="status" aria-live="polite"></p>
     <dl id="pilot" hidden></dl>
-    <form id="ban-form" class="row" hidden>
-      <div class="field grow">
-        <label for="ban-reason" class="sr">reason</label>
-        <input id="ban-reason" placeholder="reason">
-      </div>
-      <button id="ban-button"></button>
-      <button id="kick-button" type="button">kick</button>
-    </form>
+
+    <div id="pilot-edit" hidden>
+      <form id="note-form" class="row">
+        <div class="field grow">
+          <label for="note-text">operator note</label>
+          <input id="note-text" maxlength="500"
+                 placeholder="what happened, and what was done about it">
+        </div>
+        <button>save note</button>
+        <button id="rename-button" type="button">reroll call sign</button>
+      </form>
+      <form id="ban-form" class="row">
+        <div class="field grow">
+          <label for="ban-reason">standing</label>
+          <input id="ban-reason" placeholder="reason for the ban">
+        </div>
+        <button id="ban-button"></button>
+        <button id="kick-button" type="button">kick</button>
+      </form>
+    </div>
 
     <h2 id="log-head">Log</h2>
     <div class="scroller">
