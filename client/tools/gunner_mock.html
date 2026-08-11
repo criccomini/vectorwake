@@ -261,24 +261,24 @@ function carrier(ctx, cls, x, y, heading, col, gunners, opt) {
         }
       };
       // body
-      put([0,2.5, 1.45,1.1, 1.45,-1.1, 0,-2.1, -1.45,-1.1, -1.45,1.1]);
+      put([0,2.1, 1.2,0.9, 1.2,-0.9, 0,-1.75, -1.2,-0.9, -1.2,0.9]);
       ctx.closePath();
       ctx.fillStyle = css(col, 0.16*e); ctx.fill();
       ctx.lineWidth = 0.85*s; ctx.strokeStyle = css(hot(col, 0.45), 0.9*e);
       ctx.stroke();
       // bore, out the front
       ctx.beginPath();
-      ctx.moveTo(dx + dsa*1.4*s, dy - dca*1.4*s);
-      ctx.lineTo(dx + dsa*4.3*s, dy - dca*4.3*s);
+      ctx.moveTo(dx + dsa*1.2*s, dy - dca*1.2*s);
+      ctx.lineTo(dx + dsa*3.7*s, dy - dca*3.7*s);
       ctx.lineWidth = 0.9*s; ctx.strokeStyle = css(col, 0.30*e); ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(dx + dsa*1.4*s, dy - dca*1.4*s);
-      ctx.lineTo(dx + dsa*4.3*s, dy - dca*4.3*s);
+      ctx.moveTo(dx + dsa*1.2*s, dy - dca*1.2*s);
+      ctx.lineTo(dx + dsa*3.7*s, dy - dca*3.7*s);
       ctx.lineWidth = 0.38*s; ctx.strokeStyle = css(hot(col, 0.75), 0.95*e);
       ctx.stroke();
       // the eye, which is the brightest cell on it for the same reason a
       // canopy is the brightest cell on a hull
-      ctx.beginPath(); ctx.arc(dx, dy, 0.62*s, 0, 7);
+      ctx.beginPath(); ctx.arc(dx, dy, 0.55*s, 0, 7);
       ctx.fillStyle = css(hot(col, 0.85), 0.95*e); ctx.fill();
     }
     ctx.restore();

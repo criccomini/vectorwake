@@ -1042,6 +1042,34 @@ function update(self, dt)
             sfx.ui("ui_move")
         end
     end
+    -- Get off whoever you are riding. A key rather than a control in a panel,
+    -- unlike attaching, and the difference is that this one needs no target:
+    -- attaching is a thing you do to a person, which is why it lives on the
+    -- card you open by picking one, and dropping is a thing you do to
+    -- yourself.
+    --
+    -- It also has to be fast. Attaching empties the bar it required, so the
+    -- moment a gunner most needs off is the moment it has nothing left, and
+    -- the panel route is a list, a row, a card and a button away from there.
+    --
+    -- Sent unconditionally rather than gated on riding: the core answers a
+    -- detach from a ship that is not riding with a refusal and no state
+    -- change, which is cheaper than a second copy of the rule here that could
+    -- disagree with it after a snapshot lands.
+    --
+    -- Not while a card is taking typing, which the panel toggles on P and M
+    -- get away with and this cannot: those two open something a stray press
+    -- can close again, and this one throws a pilot off a ship. The letter
+    -- reaches both paths, since a key trigger and the text stream are
+    -- separate actions in Defold, so typing a name with a d in it would
+    -- otherwise drop you.
+    if tapped[hash("drone")] then
+        tapped[hash("drone")] = nil
+        if live and not menu.typing() then
+            net.attach(255)
+            sfx.ui("ui_move")
+        end
+    end
     -- The whole map, on the same terms: gated on there being an arena, since
     -- the menu with nothing behind it has no map to show.
     if tapped[hash("map")] then
@@ -1505,6 +1533,7 @@ function update(self, dt)
                         riders[#riders + 1] =
                             sim.ship_energy(g) / math.max(1, sim.ship_max_energy(g))
                         riders[#riders + 1] = col
+                        riders[#riders + 1] = g == me
                     end
                 end
                 if riders then

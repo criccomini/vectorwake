@@ -1765,16 +1765,18 @@ end
 -- empty. That is deliberate: every hull can carry, so a marking that said
 -- "this one can" would be on all seven and say nothing.
 --
--- `riders` is a flat list of heading, energy fraction, per gunner.
-local DRONE = {0,2.5, 1.45,1.1, 1.45,-1.1, 0,-2.1, -1.45,-1.1, -1.45,1.1}
+-- `riders` is a flat list of heading, energy fraction, colour and whether it
+-- is yours, four entries per gunner.
+local DRONE = {0,2.1, 1.2,0.9, 1.2,-0.9, 0,-1.75, -1.2,-0.9, -1.2,0.9}
 local dtmp = {}
 
 function M.drones(fill, glow, cls, x, y, riders)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
-    for k = 1, #riders, 3 do
+    for k = 1, #riders, 4 do
         local a = riders[k] / 65536 * TAU
         local frac = riders[k + 1]
         local col = riders[k + 2]
+        local mine = riders[k + 3]
         local ca, sa = math.cos(a), math.sin(a)
         -- Brightness is that gunner's own energy, which the original hides
         -- and its own guides complain about: a carrier cannot otherwise tell
@@ -1782,18 +1784,28 @@ function M.drones(fill, glow, cls, x, y, riders)
         local e = 0.34 + 0.66 * math.max(0, math.min(1, frac))
         local dx = x + h.orbit * sa
         local dy = y - h.orbit * ca
+        -- Yours carries the halo your hull carries when you are flying it,
+        -- and its edge is lit the way your own hull's is. Riding takes your
+        -- silhouette off the screen, so without this the one question a pilot
+        -- asks every second -- which one is me -- has no answer at all while
+        -- they are a gunner, and the key that gets them off is a key they
+        -- press hoping.
+        if mine then
+            glow:halo(dx, dy, 9, 10, pal.a(col, 0.12))
+        end
         local q = place(DRONE, dtmp, dx, dy, ca, sa, 1, 1)
-        glow:fan(q, pal.a(col, 0.16 * e))
-        glow:outline(q, 0.85, pal.a(pal.hot(col, 0.45, 1), 0.9 * e), true)
+        glow:fan(q, pal.a(col, (mine and 0.24 or 0.16) * e))
+        glow:outline(q, 0.85,
+                     pal.a(pal.hot(col, mine and 0.7 or 0.45, 1), 0.9 * e), true)
         -- The bore, out the front, which is the whole of what a drone is for.
-        local bx, by = dx + sa * 4.3, dy - ca * 4.3
-        local rx, ry = dx + sa * 1.4, dy - ca * 1.4
+        local bx, by = dx + sa * 3.7, dy - ca * 3.7
+        local rx, ry = dx + sa * 1.2, dy - ca * 1.2
         glow:seg(rx, ry, bx, by, 0.9, pal.a(col, 0.30 * e), true)
         glow:seg(rx, ry, bx, by, 0.38,
                  pal.a(pal.hot(col, 0.75, 1), 0.95 * e), true)
         -- Its eye, brightest cell on it, for the reason a canopy is the
         -- brightest cell on a hull: it says which way this thing is looking.
-        glow:disc(dx, dy, 0.62, 4, pal.a(pal.hot(col, 0.85, 1), 0.95 * e))
+        glow:disc(dx, dy, 0.55, 4, pal.a(pal.hot(col, 0.85, 1), 0.95 * e))
     end
 end
 
