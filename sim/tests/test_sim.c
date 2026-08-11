@@ -2662,6 +2662,147 @@ int main(void) {
     }
 
     {
+        /* A mine is your own bomb put on the floor, so the bomb trigger's
+         * add-ons reach it. A bomber who climbed to shrapnel and watched
+         * their mines go off as bare blasts was being told the two are
+         * different weapons, and they are not.
+         *
+         * Fragments are looked for every tick rather than counted at the
+         * end, for the reason the shrapnel test above gives: they are born
+         * at the point of impact and the short-lived ones are gone by the
+         * next sample. A peak weapon count misses them entirely, which is
+         * how this was first measured and first got the wrong answer. */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, ANVIL, 1, 8192 + 60, 8192, 0, &cfg);
+        s.ships[0].charge[2] = 2;
+        s.ships[0].level[SIM_TRIG_BOMB] = 1;
+        s.ships[0].level[SIM_TRIG_GUN] = 2;
+        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 3);
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 1, "one charge lays one mine");
+        CHECK(sim_mod_get(s.weapons[0].mods, SIM_MOD_SHRAPNEL) == 3,
+              "and the mine carries the bomb trigger's shrapnel");
+        CHECK(s.weapons[0].shrap_level == 2,
+              "with fragments of the layer's gun rung, as a thrown bomb has");
+        s.ships[0].x -= 3000 * 256;
+        s.weapons[0].life = 2;
+        int frags = 0;
+        for (int t = 0; t < 120; t++) {
+            step_n(&s, &cfg, 0, 0, 1);
+            for (uint16_t i = 0; i < s.weapon_count; i++)
+                if (s.weapons[i].depth > 0) frags++;
+        }
+        CHECK(frags > 0, "and a mine that goes off breaks up");
+
+        /* Multifire is the one add-on that does not follow, because it
+         * multiplies the pattern rather than transforming the round: three
+         * mines out of one charge is not a stronger mine, it is a different
+         * inventory. */
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[2] = 1;
+        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_MULTI, 3);
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 1, "multifire does not lay three mines");
+        CHECK(sim_mod_get(s.weapons[0].mods, SIM_MOD_MULTI) == 0,
+              "and the round does not carry it either");
+    }
+
+    {
+        /* A fuse the weapon already has does not stack with the add-on.
+         *
+         * A bomb is a contact round until proximity gives it a fuse, so there
+         * the add-on is the whole of the reach and adding is right. A mine
+         * comes with one, and summing made it sense two tiles further than a
+         * proximity bomb of the same rung -- which inverts the reason its own
+         * fuse is the tighter of the two, since a mine does not have to be
+         * dodged in the air first.
+         *
+         * Measured as the furthest a standing hull can be and still arm the
+         * thing, because that is the number a player meets. The bomb is
+         * pinned where the mine sits so the two are compared at one
+         * geometry rather than wherever flight happened to take it. */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        for (int rung = 0; rung < 3; rung++) {
+            int arm[2] = {0, 0};
+            for (int kind = 0; kind < 2; kind++) {
+                for (int d = 8; d < 400; d += 2) {
+                    sim_state s;
+                    sim_init(&s, 1);
+                    sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+                    sim_spawn(&s, ANVIL, 1, 8192 + d, 8192, 0, &cfg);
+                    s.ships[0].level[SIM_TRIG_BOMB] = (uint8_t)rung;
+                    s.ships[0].mods[SIM_TRIG_BOMB] =
+                        sim_mod_set(0, SIM_MOD_PROX, 1);
+                    if (kind == 0) {
+                        s.ships[0].charge[2] = 1;
+                        step_n(&s, &cfg, MINE, 0, 1);
+                    } else {
+                        step_n(&s, &cfg, SIM_BTN_BOMB, 0, 1);
+                        if (s.weapon_count < 1) continue;
+                        s.weapons[0].x = 8192 * 256;
+                        s.weapons[0].y = 8192 * 256;
+                        s.weapons[0].vx = 0;
+                        s.weapons[0].vy = 0;
+                    }
+                    if (s.weapon_count < 1) continue;
+                    step_n(&s, &cfg, 0, 0, 1);
+                    if (s.weapon_count > 0 && s.weapons[0].fuse_target != 255)
+                        arm[kind] = d;
+                }
+            }
+            CHECK(arm[0] > 0 && arm[1] > 0, "both armed on somebody");
+            CHECK(arm[0] == arm[1],
+                  "a proximity mine senses exactly as far as the bomb it is");
+        }
+
+        /* And without the add-on it keeps a fuse of its own, which is the
+         * half of this that makes a mine a mine: a bomb there is contact. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, ANVIL, 1, 8192 + 30, 8192, 0, &cfg);
+        s.ships[0].charge[2] = 1;
+        step_n(&s, &cfg, MINE, 0, 1);
+        step_n(&s, &cfg, 0, 0, 1);
+        CHECK(s.weapon_count > 0 && s.weapons[0].fuse_target != 255,
+              "a mine with no add-on still senses on its own two tiles");
+    }
+
+    {
+        /* Push follows too, and the thing to hold is that it does not make a
+         * mine repel-proof. The push loop skips a round whose spec pushes, so
+         * that two repels cannot throw each other about, and it reads the
+         * *base* spec: a mine carrying push as an add-on still has none of
+         * its own, so an enemy repel converts it like any other. Pinned
+         * because it is load-bearing and accidental -- reading the composed
+         * spec there instead would silently make a Lattice's minefield
+         * immune to the one thing meant to clear it. */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const int LATTICE = 6;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);        /* lays it */
+        sim_spawn(&s, LATTICE, 1, 8192 - 200, 8192, 0, &cfg);  /* repels */
+        s.ships[0].charge[2] = 1;
+        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_PUSH, 2);
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 1, "the pushing mine is posted");
+        CHECK(sim_mod_get(s.weapons[0].mods, SIM_MOD_PUSH) == 2,
+              "and it carries the push add-on");
+        uint8_t was = s.weapons[0].spec;
+        s.ships[1].charge[0] = 1;
+        step_n(&s, &cfg, 0, SIM_BTN_USE, 3);
+        CHECK(s.weapon_count >= 1, "it survived the repel");
+        CHECK(s.weapons[0].spec != was,
+              "a mine that pushes is still a mine a repel can clear");
+        CHECK(s.weapons[0].vx > 0, "and it leaves in the push direction");
+    }
+
+    {
         /* A shot outlives its owner, whole.
          *
          * The rung is baked into the projectile's `spec` at the moment it is
@@ -3655,6 +3796,153 @@ int main(void) {
         step_n(&s, &cfg, 0, 0, 1);
         CHECK(s.ships[1].carrier == SIM_NO_CARRIER,
               "a dead carrier drops its gunners");
+    }
+
+    /* --- where a ship comes back ------------------------------------------
+     *
+     * Two arrangements behind one number, so both are measured against the
+     * same map: an empty room inside a border, with four spawn tiles marked
+     * for team 0 well away from the centre.
+     */
+    {
+        sim_map *sm = malloc(sizeof *sm);
+        memcpy(sm, m, sizeof *sm);
+        const int SPAWN_TX[4] = {100, 300, 700, 900};
+        for (int i = 0; i < 4; i++)
+            sm->tile[(size_t)200 * SIM_MAP_TILES + SPAWN_TX[i]] =
+                SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(sm);
+
+        sim_settings sc;
+        memset(&sc, 0, sizeof sc);
+        sim_settings_baseline(&sc, sm);
+        sc.spawn_prizes = 0;
+        sc.respawn_delay = 1;
+
+        CHECK(sc.spawn_radius == 0, "the baseline spawns on the map's tiles");
+        CHECK(sc.show_spawns == 1, "and a client marks them");
+
+        /* Tiles: `nth` walks them and the position is the tile's middle, not
+         * its corner. The corner is where two of the three callers used to
+         * put a ship, which left a hull sitting eight pixels out of the gap
+         * its tile had been checked for. */
+        {
+            sim_state s;
+            sim_init(&s, 7);
+            int32_t x = 0, y = 0;
+            int seen[4] = {0, 0, 0, 0};
+            for (uint32_t n = 0; n < 4; n++) {
+                sim_spawn_point(&s, &sc, 0, APEX, n, &x, &y);
+                CHECK(y == 200 * SIM_TILE_PX * 256 + SIM_TILE_PX * 128,
+                      "a tile spawn lands on the middle of its row");
+                for (int i = 0; i < 4; i++)
+                    if (x == SPAWN_TX[i] * SIM_TILE_PX * 256
+                            + SIM_TILE_PX * 128)
+                        seen[i] = 1;
+            }
+            CHECK(seen[0] && seen[1] && seen[2] && seen[3],
+                  "four arrivals in a row take the four tiles");
+        }
+
+        /* Death redraws it. Before this a spawn was fixed for the length of a
+         * visit: whichever tile the door handed you was yours until you left,
+         * so this asks for more than one tile across a run of deaths rather
+         * than for any particular one. */
+        {
+            sim_state s;
+            sim_init(&s, 11);
+            sim_spawn(&s, APEX, 0, 500 * SIM_TILE_PX, 500 * SIM_TILE_PX, 0, &sc);
+            int32_t first = 0;
+            int moved = 0;
+            for (int round = 0; round < 24; round++) {
+                s.ships[0].alive = 0;
+                s.ships[0].respawn_at = 1;
+                step_n(&s, &sc, 0, 0, 1);
+                CHECK(s.ships[0].alive == 1, "the delay ran out and it flew");
+                if (round == 0) first = s.ships[0].x;
+                else if (s.ships[0].x != first) moved = 1;
+                CHECK(s.ships[0].x == s.ships[0].spawn_x,
+                      "and the stored start moved with it, for the door warp");
+            }
+            CHECK(moved, "a run of deaths does not reuse one tile");
+        }
+
+        /* The radius. Ignores the tiles, stays inside the box, and is the
+         * same box for both sides: the point of it is that everybody is the
+         * same distance from the middle. */
+        {
+            sim_settings rc = sc;
+            rc.spawn_radius = 40;
+            sim_state s;
+            sim_init(&s, 3);
+            const int32_t mid = (SIM_MAP_TILES / 2) * SIM_TILE_PX * 256
+                              + SIM_TILE_PX * 128;
+            const int32_t reach = 40 * SIM_TILE_PX * 256;
+            int off_row = 0;
+            for (uint32_t n = 0; n < 200; n++) {
+                int32_t x = 0, y = 0;
+                sim_spawn_point(&s, &rc, (uint8_t)(n & 1), APEX, n, &x, &y);
+                CHECK(x >= mid - reach && x <= mid + reach
+                          && y >= mid - reach && y <= mid + reach,
+                      "a radius spawn stays inside its box");
+                if (y != 200 * SIM_TILE_PX * 256 + SIM_TILE_PX * 128)
+                    off_row = 1;
+            }
+            CHECK(off_row, "and ignores the map's spawn tiles");
+        }
+
+        /* Deterministic, which is the whole reason the roll is in here rather
+         * than in the room: a client predicting a respawn has to land on the
+         * tile the server did. */
+        {
+            sim_settings rc = sc;
+            rc.spawn_radius = 60;
+            sim_state a, b;
+            sim_init(&a, 99);
+            sim_init(&b, 99);
+            int same = 1;
+            for (uint32_t n = 0; n < 50; n++) {
+                int32_t ax = 0, ay = 0, bx = 0, by = 0;
+                sim_spawn_point(&a, &rc, 0, APEX, n, &ax, &ay);
+                sim_spawn_point(&b, &rc, 0, APEX, n, &bx, &by);
+                if (ax != bx || ay != by) same = 0;
+            }
+            CHECK(same, "one seed, one sequence of spawn points");
+        }
+
+        /* A radius wider than the map means anywhere, the way the original's
+         * 1024 did, and lands inside the border rather than on it. */
+        {
+            sim_settings rc = sc;
+            rc.spawn_radius = 4000;
+            sim_state s;
+            sim_init(&s, 5);
+            for (uint32_t n = 0; n < 200; n++) {
+                int32_t x = 0, y = 0;
+                sim_spawn_point(&s, &rc, 0, APEX, n, &x, &y);
+                CHECK(SIM_TILE_CLASS(sim_tile_at(sm, x >> 12, y >> 12))
+                          != SIM_TILE_SOLID,
+                      "a spawn anywhere is still not inside a wall");
+            }
+        }
+
+        /* And the settings survive a round trip, which is what lets a client
+         * predict any of the above. */
+        {
+            sim_settings rc = sc, got;
+            rc.spawn_radius = 133;
+            rc.show_spawns = 0;
+            uint8_t buf[SIM_PACK_MAX];
+            int n = sim_settings_pack(&rc, buf, sizeof buf);
+            CHECK(n > 0, "settings with a spawn radius pack");
+            memset(&got, 0, sizeof got);
+            got.map = sm;
+            CHECK(sim_settings_unpack(&got, buf, n) == 0, "and unpack");
+            CHECK(got.spawn_radius == 133, "the radius crosses the wire");
+            CHECK(got.show_spawns == 0, "and so does the mark");
+        }
+
+        free(sm);
     }
 
     free(m);

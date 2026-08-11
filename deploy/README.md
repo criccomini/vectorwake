@@ -185,6 +185,22 @@ journalctl -u vw-update.service -n 100 --no-pager
 
 The current arena Compose file sets `VW_REPORT=0`, so rated events are dropped rather than sent to the meta-layer. Remove that line when the deployment should record real matches.
 
+## The admin panel
+
+`admin.<domain>` serves a static page from [`admin/`](admin/) and proxies `/v1` to the meta-layer. An operator signs in with the call sign and password of a vectorwake account that holds the admin flag; [the admin document](../docs/architecture/admin.md) explains the model. Only a central host's `.env` sets `VW_ADMIN_HOST`, so every other role serves the site as `admin.localhost` and never asks Let's Encrypt about it. The DNS record rides with the front door: `fleet.sh point play <host>` moves both names, and creates the admin record if it is missing.
+
+The flag is granted on the central host, never from the panel, with the host's own admin token:
+
+```sh
+cd /opt/vectorwake/deploy
+. ./.env
+curl -s 127.0.0.1:9400/v1/admin/grant -d '{"admin_token":"'"$VW_ADMIN_TOKEN"'","name":"<call sign>","admin":true}'
+```
+
+`"admin":false` revokes. Granting requires a claimed account, because the panel signs in with a password and the sweeper deletes idle guests. The panel's own ban button refuses accounts that hold the flag, so unseating an admin starts here too: revoke first, then ban if it comes to that.
+
+Locally the panel is at `https://admin.localhost` once the stack is up; browsers resolve `*.localhost` to loopback on their own, and Caddy signs it with its internal CA.
+
 ## Logs and health
 
 Provisioning brings up a temporary HTTP server before Docker is ready, then Caddy takes over. These paths remain readable after boot:

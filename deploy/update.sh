@@ -26,6 +26,22 @@ after=$(git rev-parse origin/main)
 cd deploy || exit 1
 LOG=/var/lib/vw-deploy/deploy/update.log
 
+# Hosts provisioned before the admin panel have no VW_ADMIN_HOST in their
+# .env, and compose then serves the panel's site block as admin.localhost.
+# The name is the front door's domain with a different first label, so a
+# host that serves the front can derive it; provision.sh writes it for new
+# hosts and this appends it once for the ones that already exist. Central
+# roles only: an arena host wants the variable absent, which the compose
+# default already handles, and appending nothing is how absence stays.
+if ! grep -q '^VW_ADMIN_HOST=' .env 2>/dev/null; then
+	case $(sed -n 's/^VW_ROLE=//p' .env) in
+	central|all)
+		front=$(sed -n 's/^VW_HOST=//p' .env)
+		[ -n "$front" ] && printf 'VW_ADMIN_HOST=admin.%s\n' "${front#*.}" >>.env
+		;;
+	esac
+fi
+
 # The running image, read off the first game container this host's role has.
 # Central runs a directory and no arena, an arena host the reverse, so the
 # services are tried in turn rather than assumed.

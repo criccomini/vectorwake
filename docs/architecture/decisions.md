@@ -1652,3 +1652,44 @@ the client has.
 **Reconsider if:** confirmed-death latency reads as lag on real links, in
 which case the next lever is a provisional effect, dimmer than the real
 burst, rather than a return to concluding deaths locally.
+
+---
+
+## 41. The admin panel opens with an account flag
+
+**Status:** accepted
+
+`accounts.admin` is a boolean on the meta-layer's own table. An operator
+signs in to a static page at `admin.<domain>` with the call sign and password
+of their vectorwake account, and every admin route resolves the presented
+device secret and checks the flag in the database before acting. The `admin`
+field the session reply carries is decoration for the page; nothing a client
+asserts about itself is trusted.
+
+Two alternatives were designed and set aside. A signed admin token, minted
+and verified by the same process, is ceremony: the signature machinery in
+`token.rs` exists so arenas can verify without calling anybody, and no such
+boundary sits between the panel and the meta-layer, while a stateless token
+cannot be revoked and the flag check makes revocation land on the next click.
+The catalog's `[[staff]]` table keys on call signs, which are server-dealt
+words no operator's account holds and rerollable besides; it stays for the
+day named verbs need named powers, per decision 26.
+
+Granting is not a panel action. `/v1/admin/grant` sits behind the central
+host's own token, so the set of operators is decided on the box and a leaked
+session can act as an admin but never appoint one. The panel's ban refuses
+flagged accounts, so one rogue session cannot lock the other operators out.
+The flag only lands on claimed accounts, because the panel signs in with a
+password and the sweeper deletes idle guests.
+
+**Cost:** Fleet-wide reach behind a password whose floor is six characters,
+throttled to ten guesses a quarter hour per name. [admin.md](admin.md) wanted
+a passkey or an SSO front before any surface returned, and this trades that
+bar for a credential the fleet already had. Also a second certificate, priced
+low now that the store survives reinstalls and a burned limit on the admin
+name strands only the panel.
+
+**Reconsider if:** the panel grows verbs with different blast radii, which is
+when one flag stops being an authority model; or a password behind fleet
+reach stops being comfortable, in which case a passkey bolts onto the login
+without moving anything else.

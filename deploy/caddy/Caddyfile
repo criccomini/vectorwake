@@ -80,8 +80,38 @@ http:// {
 	import /etc/caddy/conf.d/{$VW_ROUTES}*.caddy
 }
 
-# Deliberately absent: any admin surface. One was built and served the fleet
-# view behind basic auth at /admin; it was removed as weight, since the browse
-# reply already shows every registered instance to anyone and /metrics carries
-# the numbers. Fleet bans ride the meta-layer's own /v1/ban behind the admin
-# token.
+# The admin panel, on a name of its own. An earlier surface lived at /admin
+# behind basic auth and was removed as weight; this one earned its way back
+# when accounts arrived, because "the admin flag on a vectorwake account" is
+# an authority the meta-layer can actually check. The page is static, the
+# API is the meta-layer the game already signs in to, and the two share this
+# origin so nothing needs CORS. The name is not the boundary: the same
+# routes answer under /meta on the front door, and the authorization is a
+# per-request flag check on every one of them.
+#
+# The default in the address is the guard. Only a central host's .env sets
+# VW_ADMIN_HOST, so every other role serves this site as admin.localhost: a
+# name nobody dials, certified by Caddy's internal CA, never taken to Let's
+# Encrypt. An arena host claiming admin.<domain> would sit in a challenge
+# retry loop against a name that resolves elsewhere. Mind the trap the
+# VW_ROUTES comment above records: this default covers a variable that is
+# unset, not one set to empty, which is why the compose file supplies the
+# same fallback instead of an empty string.
+{$VW_ADMIN_HOST:admin.localhost} {
+	# The meta-layer, unstripped: its routes really are /v1/*.
+	handle /v1/* {
+		reverse_proxy 127.0.0.1:9400
+	}
+
+	# The page. Its script and style live in separate files so that this
+	# CSP can stay strict; inline anything and the panel goes blank, which
+	# is the correct failure. What the policy buys: server text an
+	# operator's browser renders (ban reasons are free text) cannot become
+	# script, and the page cannot be framed for clickjacking.
+	handle {
+		header Cache-Control "no-cache"
+		header Content-Security-Policy "default-src 'self'; frame-ancestors 'none'"
+		root * /srv/admin
+		file_server
+	}
+}

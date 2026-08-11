@@ -495,6 +495,35 @@ typedef struct {
     int32_t bounce;   /* restitution on the axis that hit, out of 16 */
     int32_t friction; /* retained speed along the wall, out of 16 */
     uint16_t respawn_delay; /* ticks dead before respawn */
+    /* Where a ship comes back, as one number rather than a mode.
+     *
+     * Zero uses the map's own spawn tiles. That is what a map drawn with two
+     * home ends wants: `sim_map_spawn` walks them, a roster spreads across
+     * them, and a side forms up before it flies anywhere.
+     *
+     * Above zero the tiles are ignored and a ship lands on a random tile
+     * within this many of the map's centre, which is the arrangement the
+     * original had before it had spawn points at all. It buys one thing:
+     * everybody is the same distance from the middle. Our own generator
+     * scatters a team's starts across nearly half the map, so under tiles two
+     * pilots on one side can be twenty seconds apart on the way back to a
+     * fight. It costs the obvious thing: one landing zone is one place to
+     * camp, and a radius under about sixty puts every arrival on a camper's
+     * radar at the moment they appear, since that is how far radar reaches. */
+    uint16_t spawn_radius;
+    /* Whether a client marks the map's spawn tiles. Render only: nothing in
+     * this core reads it, and it travels here so the room and the client read
+     * one value rather than two that have to be kept in step, the same
+     * arrangement `safe_limit` below has.
+     *
+     * A client ignores it when `spawn_radius` is set, and that is a
+     * consequence rather than a default somebody can override: with a radius
+     * nobody arrives on those tiles, so a mark on one is a lie rather than a
+     * preference. What this setting is actually for is the other case. We draw
+     * every spawn, including the enemy's, in the enemy's colour, so a zone
+     * that does not want one side's home end advertised to the other has to be
+     * able to say so. */
+    uint8_t show_spawns;
     /* How long a ship may sit in a safe zone before the room takes its seat
      * back, in ticks, and zero for never.
      *
@@ -796,6 +825,19 @@ uint8_t sim_eff_max_ships(const sim_settings *cfg);
 
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg);
+
+/* Where to put a ship of this team now, as a Q8 world position, honouring
+ * `spawn_radius`. `nth` walks the map's spawn tiles when the setting is zero
+ * and is ignored when it is not; a caller that wants a random tile rather than
+ * the next one rolls `s->rng` itself first and passes it in. Rolls `s->rng`
+ * further on the radius path, which is why it takes the state at all.
+ *
+ * Exported because the room places arrivals and the core places respawns, and
+ * a seat handed out at the door has to land where a death would. Those used to
+ * be separate arithmetic in two languages, neither of which knew about a
+ * radius. */
+void sim_spawn_point(sim_state *s, const sim_settings *cfg, uint8_t team,
+                     uint8_t cls, uint32_t nth, int32_t *x, int32_t *y);
 
 /* Put a pilot in a different hull. A respawn, not a costume change: back to
  * your start at rest, a full bar of the new ship, upgrades gone, anything you

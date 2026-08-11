@@ -16,7 +16,7 @@ records why this is our own service rather than Nakama.
 
 | Table | Contents |
 |---|---|
-| accounts | id, kind (`human`, `house_bot`, `third_party_bot`), created, standing, and the owner id when the kind is a third-party bot |
+| accounts | id, kind (`human`, `house_bot`, `third_party_bot`), created, standing, the admin flag that opens [the panel](admin.md), and the owner id when the kind is a third-party bot |
 | credentials | account, method (`secret`, `password`, `steam`, more later), identifier or hash. A human account whose only credential is its secret is a guest |
 | names | account, call sign, unique fleet-wide under a case-insensitive index |
 | rated_events | the log [rating.md](../design/rating.md) specifies: participants, weights, ratings before and after, arena, mode class, opponent kind, timestamp |
@@ -48,6 +48,15 @@ framework would be the larger change.
 | `/v1/bot/register` | anyone, with a claimed account | A third-party bot account under that owner, who answers for it |
 | `/v1/events` | an arena, with a pool token | Rated events, appended to the log and applied to the projection |
 | `/v1/ban` | an operator, with the admin token | Marks an account, which takes effect at the next token issuance |
+| `/v1/admin/pilot` | the admin panel | One pilot by call sign or number: kind, standing, the dates. Behind the account flag |
+| `/v1/admin/ban` | the admin panel | The mark `/v1/ban` sets, held to an admin account's secret instead of the host token. Refuses accounts that hold the flag |
+| `/v1/admin/admins` | the admin panel | Who holds the flag |
+| `/v1/admin/grant` | an operator, with the admin token | Sets and clears the flag. Claimed accounts only, and deliberately not a panel action |
+
+The `/v1/admin` block is the panel's, and [admin.md](admin.md) is its design.
+The one rule those routes live by: the `admin` field `/v1/session` answers
+with is what the page draws, never what the server trusts. Every admin route
+resolves the presented secret and checks the flag in the database itself.
 
 A client learns the address from the directory's games list, which is the one
 thing it asks for before it needs an identity. That keeps the account system a

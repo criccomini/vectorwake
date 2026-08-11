@@ -158,8 +158,26 @@ the rack at exactly the speed the ship was doing and holds it until a wall
 stops it. This page called that drift for a while. It is not drift, it is
 flight, and it made the weapon usable only from a standstill.
 
-A mine is the bomb you leave behind, so it wears your bomb rung: the colour on
-the floor is the colour of the bombs you throw. That is a real number rather
+A mine is the bomb you leave behind, so it takes the bomb trigger's add-ons as
+well as its rung. Shrapnel breaks it up, and into rounds of your *gun's* rung,
+the same way a thrown bomb's fragments are read off your guns at the throw.
+Freeze stalls whoever it catches. Push shoves them. A pilot who climbed to
+shrapnel and watched their mines go off as bare blasts was being told the two
+are different weapons, and they are not.
+
+Two exceptions, in opposite directions. **Multifire is stripped**, because it
+multiplies a *pattern* rather than transforming a round: three mines out of one
+charge is not a stronger mine, it is a different inventory. And **proximity
+takes the larger of the two rather than the sum**, because a mine already
+senses. Adding is right for a bomb, which is a contact round with nothing to
+add to; on a mine it stacked to two tiles further than a proximity bomb of the
+same rung, which inverts the reason the mine's own fuse is the tighter of the
+two. It does not have to be dodged in the air first, so it should not out-range
+the round that does. With the add-on a mine senses exactly as far as the bomb
+it is; without it, its own two tiles.
+
+Its rung is also its colour: the colour on the floor is the colour of the
+bombs you throw. That is a real number rather
 than paint, because `blast_up` climbs the bomb ladder's own arithmetic and a
 rung three mine makes a rung three bomb's hole. A charge fires one pattern, so
 a mine cannot be a row per rung the way a bomb is; `blast_up` is to the mine

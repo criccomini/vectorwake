@@ -315,8 +315,15 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  * carry arrives at every client as zero. For these two that is a mine that
  * flies off at its layer's speed in the client's predicted world and wears a
  * blast the ladder never grew, while the server plays the weapon correctly,
- * which is the exact drift this message exists to prevent. */
-#define CFG_VERSION 11
+ * which is the exact drift this message exists to prevent.
+ *
+ * 12: `spawn_radius` and `show_spawns`. Two branches both called themselves 11
+ * and both changed the layout, which is what a merge of them has to notice: a
+ * client built from either one would have read this format's bytes in the
+ * wrong order while agreeing about the number that says it cannot. The radius
+ * has to travel because the client predicts a respawn's position, and the mark
+ * because the client is what draws it. */
+#define CFG_VERSION 12
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -403,6 +410,8 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w32(&w, (uint32_t)cfg->bounce);
     w32(&w, (uint32_t)cfg->friction);
     w16(&w, cfg->respawn_delay);
+    w16(&w, cfg->spawn_radius);
+    w8(&w, cfg->show_spawns);
     w16(&w, cfg->safe_limit);
     w16(&w, cfg->prize_delay);
     w16(&w, cfg->prize_max);
@@ -521,6 +530,8 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
     cfg->bounce = (int32_t)r32(&r);
     cfg->friction = (int32_t)r32(&r);
     cfg->respawn_delay = (uint16_t)r16(&r);
+    cfg->spawn_radius = (uint16_t)r16(&r);
+    cfg->show_spawns = (uint8_t)r8(&r);
     cfg->safe_limit = (uint16_t)r16(&r);
     cfg->prize_delay = (uint16_t)r16(&r);
     cfg->prize_max = (uint16_t)r16(&r);
