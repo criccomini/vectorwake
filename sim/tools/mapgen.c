@@ -12,14 +12,15 @@
  * the layout is this program's, seeded and reproducible. Nothing is traced.
  *
  *   make -C sim build/mapgen
- *   sim/build/mapgen catalog/zones/alpha/alpha.vwmap 23
+ *   sim/build/mapgen catalog/zones/alpha/alpha.vwmap 28
  *
  * The seed is the whole of the map's provenance: same seed, same map, on any
  * machine, which is what lets the file be committed and still be explained.
  * Checks at the end are the part that matters, because a map that fails one
- * is unplayable in a way that only shows up with sixty people in it. Every
- * open tile has to be on one region, doors counted as shut, which means the
- * pockets two structures make between them are dug open before anything is
+ * is unplayable in a way that only shows up with sixty people in it. They
+ * are made against a hull rather than against a point: what has to come out
+ * as one region is the set of tiles a ship fits on, doors counted as shut,
+ * and the ground that set cannot reach is walled off before anything is
  * written. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,67 +81,117 @@ static int clear_box(int x, int y, int w, int h, int pad) {
     return 1;
 }
 
+/* ---- centring -----------------------------------------------------------
+ *
+ * Every part of a structure is placed from the middle of the thing it sits
+ * in rather than from a corner, because a shape is read by its axes: a gap
+ * one tile off centre is a gap that does not face the one opposite it, and
+ * the only way to find that out is to fly at it and stop.
+ *
+ * Parity is the whole of the arithmetic. A run of `k` tiles centres exactly
+ * in a span of `len` only when the two are both odd or both even, so a
+ * length is adjusted to the span before it is placed rather than rounded
+ * into it afterwards. */
+
+/* `k`, moved to the span's parity so `centred` below divides evenly. */
+static int fits(int len, int k) { return ((len ^ k) & 1) ? k + 1 : k; }
+
+/* Where a run of `k` starts when it is centred in `len` tiles from `at`. */
+static int centred(int at, int len, int k) { return at + (len - k) / 2; }
+
+/* A gap of about `want` tiles, centred in a wall `span` long: as wide as
+ * asked for, or as wide as the wall can hold with its corners left standing,
+ * and of the wall's parity. Zero when the wall is too short to cut. */
+static int gap_len(int span, int want) {
+    int most = span - 6;
+    if (want > most) want = most;
+    if ((span ^ want) & 1) want--;
+    return want < 2 ? 0 : want;
+}
+
+/* A row of `step`-spaced tiles centred in `span`: how many fit, and where
+ * the first one goes. Two structures drawn the same way side by side then
+ * line up with each other, which is the point. */
+static void grid_span(int at, int span, int step, int *start, int *count) {
+    int n = (span - 1) / step + 1;
+    *count = n;
+    *start = centred(at, span, (n - 1) * step + 1);
+}
+
 /* ---- motifs -------------------------------------------------------------
  *
  * Each draws inside (x, y, w, h) and touches nothing outside it. They are
  * hollow and one tile thick, which is the measured map's dominant texture:
- * cover you can shoot past, not mass you have to go around. */
-
-/* When zero or more, a room hangs a door on this channel in its first gap
- * instead of leaving it open. A file static because the motif signature is
- * fixed and this is a tool rather than a library.
+ * cover you can shoot past, not mass you have to go around.
  *
- * Only the first gap, so a room is never shut on every side at once. */
+ * They are also symmetric, on one axis at least and usually both. A map
+ * drawn from random offsets reads as rubble however carefully its density
+ * was measured, and rubble is the one thing a player cannot navigate by. */
+
+/* When zero or more, a room hangs doors on this channel across one of its
+ * two ways through instead of leaving both open. A file static because the
+ * motif signature is fixed and this is a tool rather than a library.
+ *
+ * One way through only, and only when the room has two, so a room is never
+ * shut on every side at once. */
 static int room_door = -1;
 
 /* A room, with gaps cut in its walls so it can be flown through rather than
  * only around. A sealed box is a place a bomb cannot reach and a ship can be
- * trapped behind; every room here has at least two ways in. */
+ * trapped behind; every room here has at least two ways in.
+ *
+ * The gaps come in opposite pairs at the middle of the wall, so a room is
+ * something to fly straight through on either axis and looks the same from
+ * both sides of it. Cut at random offsets they mostly do not line up, which
+ * turns a room into a chicane and leaves whichever wall was missed as the
+ * side to be shot into with no way out behind you. */
 static void m_room(int x, int y, int w, int h, uint8_t wall) {
-    hline(x, x + w - 1, y, wall);
-    hline(x, x + w - 1, y + h - 1, wall);
-    vline(x, y, y + h - 1, wall);
-    vline(x + w - 1, y, y + h - 1, wall);
+    int x1 = x + w - 1, y1 = y + h - 1;
+    hline(x, x1, y, wall);
+    hline(x, x1, y1, wall);
+    vline(x, y, y1, wall);
+    vline(x1, y, y1, wall);
     /* A sixth of them doubled. The measured map is not uniformly hairline:
      * a fifth of its wall runs are two tiles or more, and a doubled wall is
      * the difference between cover a bomb clears and cover it does not. */
     if (w > 12 && h > 12 && chance(18)) {
-        hline(x + 1, x + w - 2, y + 1, wall);
-        hline(x + 1, x + w - 2, y + h - 2, wall);
-        vline(x + 1, y + 1, y + h - 2, wall);
-        vline(x + w - 2, y + 1, y + h - 2, wall);
+        hline(x + 1, x1 - 1, y + 1, wall);
+        hline(x + 1, x1 - 1, y1 - 1, wall);
+        vline(x + 1, y + 1, y1 - 1, wall);
+        vline(x1 - 1, y + 1, y1 - 1, wall);
     }
-    /* Cut on opposite sides first, so a room always has a way through and
-     * not merely a way in. Two chosen at random can both land on one wall,
-     * and a room with one open side is a dead end to be shot into. */
-    for (int g = 0; g < rr(2, 4); g++) {
-        int side = g < 2 ? (g == 0 ? 0 : 1) : rr(0, 3);
-        if (g == 1 && chance(50)) side = 3; /* or opposite the other way */
-        /* Shrink the gap to what the wall can hold rather than skipping it.
-         * Skipping is how a room ends up sealed, and a sealed room is a
-         * pocket no bomb reaches and no ship leaves. */
-        int span = (side < 2 ? w : h) - 7;
-        if (span < 2) continue;
-        int len = rr(4, 7);
-        if (len > span) len = span;
-        /* Two tiles deep, so a gap goes through a doubled wall as well as a
-         * single one. On a single wall the second tile is interior and was
-         * empty already. The outer tile takes the door when there is one:
-         * the inner one stays open, so a shut door is one tile thick like
-         * the wall it stands in. */
-        uint8_t outer = (g == 0 && room_door >= 0)
-                      ? SIM_TILE(SIM_TILE_DOOR, room_door) : SIM_TILE_EMPTY;
-        if (side < 2) {
-            int gx = rr(x + 2, x + w - 3 - len);
-            int gy = side ? y + h - 1 : y;
-            hline(gx, gx + len, gy, outer);
-            hline(gx, gx + len, side ? gy - 1 : gy + 1, SIM_TILE_EMPTY);
-        } else {
-            int gy = rr(y + 2, y + h - 3 - len);
-            int gx = side == 2 ? x : x + w - 1;
-            vline(gx, gy, gy + len, outer);
-            vline(side == 2 ? gx + 1 : gx - 1, gy, gy + len, SIM_TILE_EMPTY);
-        }
+    /* Both axes on most of them, one on the rest. A room cut on one axis is
+     * still a room with two ways in, since a pair is what is cut. */
+    int across = gap_len(w, rr(5, 8)), down = gap_len(h, rr(5, 8));
+    int both = chance(65);
+    if (!both && chance(50)) across = 0;
+    else if (!both) down = 0;
+    if (!across && !down) across = gap_len(w, 5);
+    /* The pair on one axis can be hung with doors, and only when the other
+     * axis is open: a room shut on every side is a room a ship is held in
+     * for as long as the channel is closed. */
+    uint8_t shut = SIM_TILE(SIM_TILE_DOOR, room_door < 0 ? 0 : room_door);
+    int hang = room_door >= 0 && across && down ? (chance(50) ? 1 : 2) : 0;
+    /* Two tiles deep, so a gap goes through a doubled wall as well as a
+     * single one. On a single wall the second tile is interior and was
+     * empty already. The outer tile takes the door when there is one: the
+     * inner one stays open, so a shut door is one tile thick like the wall
+     * it stands in. */
+    if (across) {
+        int gx = centred(x, w, across);
+        uint8_t t = hang == 1 ? shut : SIM_TILE_EMPTY;
+        hline(gx, gx + across - 1, y, t);
+        hline(gx, gx + across - 1, y + 1, SIM_TILE_EMPTY);
+        hline(gx, gx + across - 1, y1, t);
+        hline(gx, gx + across - 1, y1 - 1, SIM_TILE_EMPTY);
+    }
+    if (down) {
+        int gy = centred(y, h, down);
+        uint8_t t = hang == 2 ? shut : SIM_TILE_EMPTY;
+        vline(x, gy, gy + down - 1, t);
+        vline(x + 1, gy, gy + down - 1, SIM_TILE_EMPTY);
+        vline(x1, gy, gy + down - 1, t);
+        vline(x1 - 1, gy, gy + down - 1, SIM_TILE_EMPTY);
     }
 }
 
@@ -156,73 +207,121 @@ static void m_brackets(int x, int y, int w, int h, uint8_t wall) {
     vline(x + w - 1, y + h - 1 - b, y + h - 1, wall);
 }
 
-/* A regular field of single tiles. Reads as texture at radar scale and as
+/* A regular field of single tiles, centred in its box so that two of them
+ * side by side share one grid. Reads as texture at radar scale and as
  * something to weave through up close, and it costs almost no wall to draw. */
 static void m_lattice(int x, int y, int w, int h, uint8_t wall) {
-    int step = rr(5, 6);
-    for (int yy = y; yy < y + h; yy += step)
-        for (int xx = x; xx < x + w; xx += step) put(xx, yy, wall);
+    int step = rr(5, 6), sx, sy, nx, ny;
+    grid_span(x, w, step, &sx, &nx);
+    grid_span(y, h, step, &sy, &ny);
+    for (int j = 0; j < ny; j++)
+        for (int i = 0; i < nx; i++) put(sx + i * step, sy + j * step, wall);
 }
 
-/* A stepped 45-degree run. The only diagonal a tile grid has, and the reason
- * a shot fired along one skips rather than slides. */
+/* A stepped 45-degree run: the only diagonal a tile grid has, and the reason
+ * a shot fired along one skips rather than slides.
+ *
+ * One tile per step and never two. A second tile below each step drew a
+ * diagonal twice as thick as every other wall on the map, which is not a
+ * heavier line so much as a different material, and at radar scale it was
+ * the one shape that read as a smear rather than as a line.
+ *
+ * Three forms, each of them symmetric and each centred on its box: one arm,
+ * two arms crossed, or two meeting at a point. An odd span, so the two arms
+ * of a cross meet on exactly one tile instead of passing each other. */
 static void m_chevron(int x, int y, int w, int h, uint8_t wall) {
-    /* One short of the box, since the run thickens downward by a tile and a
-     * motif that writes outside its own box lands on its neighbour. */
-    int n = (w < h ? w : h) - 1;
-    if (n < 2) return;
-    int dx = chance(50) ? 1 : -1;
-    int sx = dx > 0 ? x : x + n - 1;
-    for (int i = 0; i < n; i++) {
-        put(sx + dx * i, y + i, wall);
-        if (chance(60)) put(sx + dx * i, y + i + 1, wall);
+    int n = w < h ? w : h;
+    if (!(n & 1)) n--;
+    if (n < 3) return;
+    int ox = centred(x, w, n), oy = centred(y, h, n);
+    int form = rr(0, 2);
+    if (form == 2) { /* two arms meeting at a point: V, its mirror, < or > */
+        int m = (n + 1) / 2, far = chance(50), down = chance(50);
+        int off = (n - m) / 2; /* the point and its arms span half the box */
+        for (int i = 0; i < m; i++) {
+            int lo = m - 1 - i, hi = m - 1 + i;
+            int at = off + (far ? m - 1 - i : i);
+            if (down) { put(ox + at, oy + lo, wall); put(ox + at, oy + hi, wall); }
+            else { put(ox + lo, oy + at, wall); put(ox + hi, oy + at, wall); }
+        }
+        return;
     }
-    if (chance(45)) /* mirror it into a V */
-        for (int i = 0; i < n; i++) put(sx + dx * (n - 1 - i), y + i, wall);
+    int cross = chance(45); /* an X, or the single arm on its own */
+    int back = chance(50);  /* which way a single arm leans */
+    for (int i = 0; i < n; i++) {
+        if (cross || !back) put(ox + i, oy + i, wall);
+        if (cross || back) put(ox + n - 1 - i, oy + i, wall);
+    }
 }
 
 /* A bar with a cap at each end. Blocks along its length, and the caps stop a
- * ship rounding it in one motion. */
+ * ship rounding it in one motion. The bar sits on the middle of the caps, so
+ * the odd span is taken off the box rather than out of the centring. */
 static void m_bar(int x, int y, int w, int h, uint8_t wall) {
     if (w >= h) {
-        int my = y + h / 2;
-        hline(x + 2, x + w - 3, my, wall);
-        vline(x, y, y + h - 1, wall);
-        vline(x + w - 1, y, y + h - 1, wall);
+        int n = h | 1;
+        if (n > h) n = h - 1;
+        int y0 = centred(y, h, n);
+        hline(x + 2, x + w - 3, y0 + n / 2, wall);
+        vline(x, y0, y0 + n - 1, wall);
+        vline(x + w - 1, y0, y0 + n - 1, wall);
     } else {
-        int mx = x + w / 2;
-        vline(mx, y + 2, y + h - 3, wall);
-        hline(x, x + w - 1, y, wall);
-        hline(x, x + w - 1, y + h - 1, wall);
+        int n = w | 1;
+        if (n > w) n = w - 1;
+        int x0 = centred(x, w, n);
+        vline(x0 + n / 2, y + 2, y + h - 3, wall);
+        hline(x0, x0 + n - 1, y, wall);
+        hline(x0, x0 + n - 1, y + h - 1, wall);
     }
 }
 
-/* Parallel lines of unequal length. Cheap, and it gives a lane a direction. */
+/* Parallel lines, centred on the box and the same length either side of the
+ * middle one, so a stack is a grate rather than a pile.
+ *
+ * Six tiles between lines at the closest. Four leaves three rows between
+ * them, which is a corridor a hull only just fits down at all, and eight
+ * stacks side by side at that spacing is the part of a map players stop
+ * flying through and start going around. */
 static void m_stack(int x, int y, int w, int h, uint8_t wall) {
-    int step = rr(4, 7);
-    for (int yy = y; yy < y + h; yy += step) {
-        int len = rr(w / 3 + 1, w);
-        int off = rr(0, w - len);
-        hline(x + off, x + off + len - 1, yy, wall);
+    int step = rr(6, 9), sy, n;
+    grid_span(y, h, step, &sy, &n);
+    int len[16];
+    if (n > (int)(sizeof len / sizeof len[0])) n = (int)(sizeof len / sizeof len[0]);
+    for (int i = 0; i < (n + 1) / 2; i++) {
+        int v = fits(w, rr(w / 2, w));
+        len[i] = v > w ? w : v;
+    }
+    for (int i = 0; i < n; i++) {
+        int L = len[i < n - 1 - i ? i : n - 1 - i];
+        int lx = centred(x, w, L);
+        hline(lx, lx + L - 1, sy + i * step, wall);
     }
 }
 
 /* A room split into cells. The densest thing here, and the only motif with
- * interior corners worth hiding in. */
+ * interior corners worth hiding in. Its dividers are spaced from whichever
+ * end is nearer, so the pattern is the same read from either side, and the
+ * way through each one is centred rather than dropped in at random. */
 static void m_cells(int x, int y, int w, int h, uint8_t wall) {
     m_room(x, y, w, h, wall);
     int cols = rr(1, 3), rows = rr(1, 2);
+    /* Five tiles through each divider. Three is the narrowest a hull fits
+     * down at all, and the narrowest thing on a map is where every fight in
+     * it ends up being fought. */
+    int gw = fits(w, 5), gh = fits(h, 5);
     for (int c = 1; c <= cols; c++) {
-        int cx = x + c * w / (cols + 1);
+        int cx = 2 * c <= cols + 1 ? x + c * w / (cols + 1)
+                                   : x + w - 1 - (cols + 1 - c) * w / (cols + 1);
         vline(cx, y + 1, y + h - 2, wall);
-        int gy = rr(y + 1, y + h - 4);
-        vline(cx, gy, gy + 2, SIM_TILE_EMPTY);
+        int gy = centred(y, h, gh);
+        vline(cx, gy, gy + gh - 1, SIM_TILE_EMPTY);
     }
     for (int r = 1; r <= rows; r++) {
-        int cy = y + r * h / (rows + 1);
+        int cy = 2 * r <= rows + 1 ? y + r * h / (rows + 1)
+                                   : y + h - 1 - (rows + 1 - r) * h / (rows + 1);
         hline(x + 1, x + w - 2, cy, wall);
-        int gx = rr(x + 1, x + w - 4);
-        hline(gx, gx + 2, cy, SIM_TILE_EMPTY);
+        int gx = centred(x, w, gw);
+        hline(gx, gx + gw - 1, cy, SIM_TILE_EMPTY);
     }
 }
 
@@ -237,11 +336,16 @@ static void m_spar(int x, int y, int w, int h, uint8_t wall) {
     }
 }
 
-/* Loose single tiles. The measured map is full of them and they are the
- * cheapest way to break a sight line without blocking a lane. */
+/* Loose single tiles, mirrored across the box so a scatter still has an
+ * axis. The measured map is full of them and they are the cheapest way to
+ * break a sight line without blocking a lane. */
 static void m_debris(int x, int y, int w, int h, uint8_t wall) {
-    int n = rr(3, 12);
-    for (int i = 0; i < n; i++) put(x + rr(0, w - 1), y + rr(0, h - 1), wall);
+    int n = rr(2, 6);
+    for (int i = 0; i < n; i++) {
+        int dx = rr(0, (w - 1) / 2), dy = rr(0, h - 1);
+        put(x + dx, y + dy, wall);
+        put(x + w - 1 - dx, y + dy, wall);
+    }
 }
 
 typedef void (*motif_fn)(int, int, int, int, uint8_t);
@@ -352,6 +456,10 @@ static int pick_district(void) {
     return 0;
 }
 
+/* When set, a cluster is placed near here instead of at a district's site.
+ * `fill_voids` below is the only caller that sets it. */
+static int aim_x = -1, aim_y = -1;
+
 /* Structures do not sit alone at even spacing. They come in groups of two to
  * six of the same kind at the same size, in a row or a small grid. That is
  * what gives a map a ten-tile nearest-neighbour spacing at the same time as
@@ -363,8 +471,13 @@ static int place_cluster(int big) {
     /* A big cluster is drawn tight, so its members touch and the thing reads
      * as one compound rather than as three boxes in a row. That tight gap is
      * the whole of the span distribution's tail: without it every structure
-     * on the map is the same size to look at, whatever its parts. */
-    int gap = big ? rr(2, 5) : rr(7, 16);
+     * on the map is the same size to look at, whatever its parts.
+     *
+     * Touching or four tiles clear, and nothing between. Two tiles between
+     * two walls is a lane no hull fits down: the widest of them is 34 pixels
+     * across the beam and a two-tile lane is 32, so it reads as a way
+     * through from every distance except the one you find out at. */
+    int gap = big ? (chance(45) ? 0 : rr(4, 6)) : rr(7, 16);
     int cw = cols * w + (cols - 1) * gap;
     int ch = rows * h + (rows - 1) * gap;
     if (cw > 260 || ch > 260) return 0;
@@ -373,11 +486,17 @@ static int place_cluster(int big) {
     if (m < 0) return 0;
 
     for (int tries = 0; tries < 24; tries++) {
-        int d = pick_district();
-        int k = (int)(rnd() % (uint32_t)districts[d].n);
-        int rad = districts[d].site[k].r;
-        int x = districts[d].site[k].x + rr(-rad, rad) - cw / 2;
-        int y = districts[d].site[k].y + rr(-rad, rad) - ch / 2;
+        int x, y;
+        if (aim_x >= 0) {
+            x = aim_x + rr(-20, 20) - cw / 2;
+            y = aim_y + rr(-20, 20) - ch / 2;
+        } else {
+            int d = pick_district();
+            int k = (int)(rnd() % (uint32_t)districts[d].n);
+            int rad = districts[d].site[k].r;
+            x = districts[d].site[k].x + rr(-rad, rad) - cw / 2;
+            y = districts[d].site[k].y + rr(-rad, rad) - ch / 2;
+        }
         if (x < EDGE + 2 || y < EDGE + 2) continue;
         if (x + cw >= TILES - EDGE - 3 || y + ch >= TILES - EDGE - 3) continue;
         if (!clear_box(x, y, cw, ch, rr(4, 9))) continue;
@@ -385,6 +504,14 @@ static int place_cluster(int big) {
          * a channel closing shuts a place rather than a scattering of
          * unrelated tiles. */
         room_door = chance(18) ? (int)(rnd() % 6u) : -1;
+        /* Every member of a group is drawn off the same roll of the dice, so
+         * a row of them is one shape repeated rather than four cousins. A
+         * motif makes its own choices as it draws (which way a chevron
+         * leans, how far apart a stack's lines are, where a room is cut) and
+         * letting each member choose again is what put a neighbour's line
+         * one tile off every time, which is the failure a player sees as a
+         * map that does not line up with itself. */
+        uint32_t stamp = rng_state;
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < cols; c++) {
                 /* A group is repetition, not a stencil: one in six members
@@ -392,13 +519,106 @@ static int place_cluster(int big) {
                  * than stamped. */
                 int mm = chance(17) ? pick_motif(w, h) : m;
                 if (mm < 0) mm = m;
+                uint32_t after = rng_state;
+                rng_state = stamp;
                 MOTIFS[mm].fn(x + c * (w + gap), y + r * (h + gap), w, h,
                               SIM_TILE_SOLID);
+                rng_state = after;
             }
         room_door = -1;
         return cols * rows;
     }
     return 0;
+}
+
+/* ---- the far corners of the field ---------------------------------------
+ *
+ * Placement is rejection sampling against districts, so where the dice put
+ * nothing there is nothing, and the map that falls out has as much bare
+ * ground as this seed happened to leave. Measuring it across seeds, the
+ * share of open ground more than forty tiles from any wall runs from under
+ * three per cent to over eight, which is the difference between a map with
+ * lanes in it and a map with a car park in the middle.
+ *
+ * The measured 1998 map has 1.7% at that distance. So this picks a tile out
+ * of whatever is beyond it, drops a group beside it, and goes again until
+ * the share is down to the target. It is not a density knob: the wall it
+ * adds goes only where there was none for forty tiles in any direction, and
+ * it stops as soon as the map is inside the figure the measurements ask for.
+ *
+ * Chebyshev distance, which is what a chamfer over eight neighbours gives
+ * and is the right metric for a sight line rather than for a walk. */
+static int32_t *dist;
+
+static void wall_distance(void) {
+    for (size_t i = 0; i < (size_t)TILES * TILES; i++)
+        dist[i] = SIM_TILE_CLASS(T[i]) == SIM_TILE_SOLID ? 0 : TILES;
+    for (int y = 0; y < TILES; y++)
+        for (int x = 0; x < TILES; x++) {
+            size_t i = (size_t)y * TILES + x;
+            if (!dist[i]) continue;
+            int32_t d = dist[i];
+            for (int j = -1; j <= 0; j++)
+                for (int k = -1; k <= 1; k++) {
+                    if (j == 0 && k >= 0) continue;
+                    int nx = x + k, ny = y + j;
+                    if (nx < 0 || ny < 0 || nx >= TILES) continue;
+                    if (dist[(size_t)ny * TILES + nx] + 1 < d)
+                        d = dist[(size_t)ny * TILES + nx] + 1;
+                }
+            dist[i] = d;
+        }
+    for (int y = TILES - 1; y >= 0; y--)
+        for (int x = TILES - 1; x >= 0; x--) {
+            size_t i = (size_t)y * TILES + x;
+            if (!dist[i]) continue;
+            int32_t d = dist[i];
+            for (int j = 0; j <= 1; j++)
+                for (int k = -1; k <= 1; k++) {
+                    if (j == 0 && k <= 0) continue;
+                    int nx = x + k, ny = y + j;
+                    if (nx < 0 || nx >= TILES || ny >= TILES) continue;
+                    if (dist[(size_t)ny * TILES + nx] + 1 < d)
+                        d = dist[(size_t)ny * TILES + nx] + 1;
+                }
+            dist[i] = d;
+        }
+}
+
+/* Share of open ground further than `far` tiles from a wall, in hundredths
+ * of a per cent, and one of those tiles picked at random.
+ *
+ * At random rather than the furthest, because the furthest is the same tile
+ * every time and a group that cannot be fitted beside it cannot be fitted
+ * beside it on the next round either. Aiming at the single worst point spent
+ * every attempt on one unbuildable spot. */
+static int void_share(int far, int *bx, int *by) {
+    size_t open_n = 0, out = 0;
+    for (int y = EDGE; y < TILES - EDGE; y++)
+        for (int x = EDGE; x < TILES - EDGE; x++) {
+            size_t i = (size_t)y * TILES + x;
+            if (SIM_TILE_CLASS(T[i]) == SIM_TILE_SOLID) continue;
+            open_n++;
+            if (dist[i] <= far) continue;
+            out++;
+            if (rnd() % (uint32_t)out == 0) { *bx = x; *by = y; }
+        }
+    return open_n ? (int)(10000 * out / open_n) : 0;
+}
+
+static int fill_voids(int far, int target, int rounds) {
+    int placed = 0, stale = 1;
+    for (int i = 0; i < rounds; i++) {
+        int bx = 0, by = 0;
+        if (stale) { wall_distance(); stale = 0; }
+        if (void_share(far, &bx, &by) <= target) break;
+        aim_x = bx;
+        aim_y = by;
+        int n = place_cluster(chance(45));
+        aim_x = aim_y = -1;
+        if (n) { placed += n; stale = 1; }
+    }
+    return placed;
 }
 
 /* ---- the big pieces -----------------------------------------------------
@@ -407,22 +627,48 @@ static int place_cluster(int big) {
  * navigates by, since a map with no landmark is a map where every direction
  * looks the same, and they are the only places here with an inside. */
 static void place_hall(int x, int y, int w, int h, int channel) {
-    m_room(x, y, w, h, SIM_TILE_SOLID);
-    /* Axial ways in, on a door channel, so the inside can be shut. */
-    int dw = rr(4, 7);
-    int mx = x + w / 2 - dw / 2, my = y + h / 2 - dw / 2;
-    hline(mx, mx + dw, y, SIM_TILE(SIM_TILE_DOOR, channel));
-    hline(mx, mx + dw, y + h - 1, SIM_TILE(SIM_TILE_DOOR, channel));
-    vline(x, my, my + dw, SIM_TILE(SIM_TILE_DOOR, channel));
-    vline(x + w - 1, my, my + dw, SIM_TILE(SIM_TILE_DOOR, channel));
+    int x1 = x + w - 1, y1 = y + h - 1;
+    hline(x, x1, y, SIM_TILE_SOLID);
+    hline(x, x1, y1, SIM_TILE_SOLID);
+    vline(x, y, y1, SIM_TILE_SOLID);
+    vline(x1, y, y1, SIM_TILE_SOLID);
 
-    /* Furniture, so the inside is a fight rather than a courtyard. */
-    int inner = rr(2, 4);
-    for (int i = 0; i < inner; i++) {
-        int iw = rr(6, w / 3), ih = rr(6, h / 3);
-        int ix = rr(x + 4, x + w - iw - 5), iy = rr(y + 4, y + h - ih - 5);
+    /* Four ways in, one to a wall, each the same width and each centred on
+     * the wall it goes through: a landmark is a thing you line up on from
+     * across the map, and a mouth a tile off centre is one you arrive at
+     * sideways.
+     *
+     * One axis is hung with doors and the other is left open, so a channel
+     * closing changes how the hall is entered rather than whether it can be
+     * left. Doors on all four was the old arrangement and the connectivity
+     * pass tore a hole in a wall to undo it every time, since a room only
+     * reachable through a door is a room a ship waits inside. */
+    int dw = fits(w, rr(7, 10)), dh = fits(h, rr(7, 10));
+    int mx = centred(x, w, dw), my = centred(y, h, dh);
+    uint8_t d = SIM_TILE(SIM_TILE_DOOR, channel);
+    uint8_t across = chance(50) ? d : SIM_TILE_EMPTY;
+    uint8_t down = across == d ? SIM_TILE_EMPTY : d;
+    hline(mx, mx + dw - 1, y, across);
+    hline(mx, mx + dw - 1, y1, across);
+    vline(x, my, my + dh - 1, down);
+    vline(x1, my, my + dh - 1, down);
+
+    /* Furniture, so the inside is a fight rather than a courtyard. In
+     * mirrored pairs off one roll, and clear of both axes, so the hall reads
+     * as a room with a plan and the four ways in still meet in the middle. */
+    int pairs = rr(1, 2);
+    for (int i = 0; i < pairs; i++) {
+        int iw = rr(6, w / 4), ih = rr(6, h / 3);
+        int ix = rr(x + 5, x + w / 2 - iw - 6);
+        int iy = rr(y + 5, y + h - ih - 6);
         int mm = pick_motif(iw, ih);
-        if (mm >= 0) MOTIFS[mm].fn(ix, iy, iw, ih, SIM_TILE_SOLID);
+        if (mm < 0) continue;
+        uint32_t stamp = rng_state;
+        MOTIFS[mm].fn(ix, iy, iw, ih, SIM_TILE_SOLID);
+        uint32_t after = rng_state;
+        rng_state = stamp;
+        MOTIFS[mm].fn(x1 - (ix - x) - iw + 1, iy, iw, ih, SIM_TILE_SOLID);
+        rng_state = after;
     }
 }
 
@@ -469,6 +715,12 @@ static int place_barrier(int channel) {
             if (SIM_TILE_CLASS(get(cx - px, cy - py)) != SIM_TILE_EMPTY) break;
             len++;
         }
+        /* Stop short of whatever the walk ran into. A run that ends against
+         * a second structure is attached at both ends, which is the one
+         * thing a barrier must not be: it divides the field every time its
+         * channel shuts. Four tiles, since three is a lane a hull can only
+         * just thread and this is the way round a shut door. */
+        if (len < want) len -= 4;
         if (len < 12) continue;
         uint8_t t = SIM_TILE(SIM_TILE_DOOR, channel);
         for (int i = 0; i < len; i++) put(sx + DX[d] * i, sy + DY[d] * i, t);
@@ -528,11 +780,52 @@ static int place_dock(int n) {
  * Everything below runs on the finished tiles. A map is not done because it
  * was drawn; it is done when a ship can get from any start to any other. */
 
-static int32_t *comp; /* component id per tile, 0 = wall */
+/* A ship is not a point, and every check here used to treat it as one.
+ *
+ * The widest hull in the roster measures 34 pixels across the beam and the
+ * longest reaches 23 pixels from its centre at the worst diagonal, against a
+ * tile of 16. Two tiles is 32 pixels and holds neither of them; three is 48
+ * and holds both at any heading, which is the same three tiles the hull
+ * extents in baseline.c are set to leave room to turn around in.
+ *
+ * So a hull can stand on a tile only when the eight tiles around it are open
+ * as well, and the connectivity of a map is the connectivity of that set
+ * rather than of its open tiles. Read one tile at a time instead, a map
+ * passes every check with structures whose only way in is a single-tile
+ * notch: open on the drawing, sealed from the cockpit, and no way to tell
+ * which from the other except to fly at it. */
+#define HULL 3
 
-/* Flood the open tiles, doors counted as walls, which is the worst case a
- * shut channel can produce. Returns the id of the largest region. */
-static int32_t label_open(size_t *out_main_size) {
+static int32_t *comp; /* region id per tile, 0 = outside the set */
+static uint8_t *nav;  /* 1 where a hull's centre fits */
+
+/* Only these stop a ship. Everything else is flown through, including the
+ * safe tiles of a berth and the wormhole. */
+static int blocks(uint8_t t, int shut) {
+    uint8_t c = SIM_TILE_CLASS(t);
+    return c == SIM_TILE_SOLID || (shut && c == SIM_TILE_DOOR);
+}
+
+/* Mark where a hull fits. `shut` counts every door as closed, which is the
+ * worst a channel can do to a route and the case a map has to survive. */
+static void mark_nav(int shut) {
+    for (size_t i = 0; i < (size_t)TILES * TILES; i++) nav[i] = 0;
+    for (int y = 1; y < TILES - 1; y++)
+        for (int x = 1; x < TILES - 1; x++) {
+            int fits_here = 1;
+            for (int j = -(HULL / 2); j <= HULL / 2 && fits_here; j++)
+                for (int i = -(HULL / 2); i <= HULL / 2; i++)
+                    if (blocks(T[(size_t)(y + j) * TILES + x + i], shut)) {
+                        fits_here = 0;
+                        break;
+                    }
+            nav[(size_t)y * TILES + x] = (uint8_t)fits_here;
+        }
+}
+
+/* Flood a mask into regions, numbered from one. Returns the id of the
+ * largest and puts its size in *out_main_size. */
+static int32_t label(const uint8_t *mask, size_t *out_main_size) {
     static int32_t *stack;
     if (!stack) stack = malloc(sizeof(int32_t) * TILES * TILES);
     memset(comp, 0, sizeof(int32_t) * TILES * TILES);
@@ -542,8 +835,7 @@ static int32_t label_open(size_t *out_main_size) {
     for (int y = 0; y < TILES; y++)
         for (int x = 0; x < TILES; x++) {
             size_t i0 = (size_t)y * TILES + x;
-            uint8_t c = SIM_TILE_CLASS(T[i0]);
-            if (c == SIM_TILE_SOLID || c == SIM_TILE_DOOR || comp[i0]) continue;
+            if (!mask[i0] || comp[i0]) continue;
             cur++;
             size_t n = 0, sp = 0;
             stack[sp++] = (int32_t)i0;
@@ -558,8 +850,7 @@ static int32_t label_open(size_t *out_main_size) {
                     int nx = cx + dx[d], ny = cy + dy[d];
                     if (nx < 0 || ny < 0 || nx >= TILES || ny >= TILES) continue;
                     size_t j = (size_t)ny * TILES + nx;
-                    uint8_t jc = SIM_TILE_CLASS(T[j]);
-                    if (jc == SIM_TILE_SOLID || jc == SIM_TILE_DOOR || comp[j]) continue;
+                    if (!mask[j] || comp[j]) continue;
                     comp[j] = cur;
                     stack[sp++] = (int32_t)j;
                 }
@@ -570,74 +861,161 @@ static int32_t label_open(size_t *out_main_size) {
     return best;
 }
 
-/* Break every sealed pocket open, so no part of the field is walled off.
+/* Widen a tile into a lane a hull fits down, and say how much wall it cost. */
+static int carve(int x, int y) {
+    int dug = 0;
+    for (int j = -(HULL / 2); j <= HULL / 2; j++)
+        for (int i = -(HULL / 2); i <= HULL / 2; i++) {
+            uint8_t c = SIM_TILE_CLASS(get(x + i, y + j));
+            if (c != SIM_TILE_SOLID && c != SIM_TILE_DOOR) continue;
+            put(x + i, y + j, SIM_TILE_EMPTY);
+            dug++;
+        }
+    return dug;
+}
+
+/* Join every place a hull can be to every other, so no part of the field is
+ * walled off from the rest.
  *
- * Drawing structures independently makes pockets whether or not any one of
- * them is closed: two open shapes standing near each other enclose the ground
+ * Drawing structures independently strands ground whether or not any one of
+ * them is closed: two open shapes standing near each other enclose what is
  * between them. It is not a rare case, it is dozens per map.
  *
- * An enclosed pocket is worse than wasted ground. A ship warped or shoved
- * into one cannot leave, a prize that lands in one is gone, and a bot that
- * routes toward one grinds on the wall in front of it. So each is joined to
- * the main region by digging out the shortest line of wall between them: a
- * breadth-first search outward from the pocket through wall tiles, cleared
- * once it arrives. Shortest, so a one-tile wall costs one tile, which is what
- * nearly all of them are.
+ * Stranded ground is worse than wasted. A ship warped or shoved into it
+ * cannot leave, a prize that lands there is gone, and a bot that routes
+ * toward it grinds on the wall in front of it. So each piece is joined to
+ * the main region along the shortest line between them: a breadth-first
+ * search outward, then a lane carved back along the way it came.
  *
- * Doors count as wall throughout, so a pocket reachable only through a door
- * is still a pocket: its channel shuts for part of every cycle and a ship
+ * The lane is three tiles wide, because the thing being let out is a ship.
+ * Digging the single-tile line this used to dig satisfied the check that
+ * asked for it and left the structure exactly as sealed as it was found.
+ *
+ * Doors count as shut throughout, so a place reachable only through a door
+ * is still stranded: its channel closes for part of every cycle and a ship
  * inside would be held there until it opened. */
-static int open_pockets(int32_t main) {
+static int join_nav(void) {
     static int32_t *queue, *from;
     if (!queue) queue = malloc(sizeof(int32_t) * TILES * TILES);
     if (!from) from = malloc(sizeof(int32_t) * TILES * TILES);
     if (!queue || !from) return -1;
     int dug = 0;
 
-    for (size_t seed_i = 0; seed_i < (size_t)TILES * TILES; seed_i++) {
-        if (comp[seed_i] == 0 || comp[seed_i] == main) continue;
-        int32_t pocket = comp[seed_i];
+    /* Carving changes which tiles a hull fits on, so the regions are read
+     * again after each sweep and the sweep repeated until one is left. Two
+     * passes is the usual answer and the cap is a backstop. */
+    for (int sweep = 0; sweep < 8; sweep++) {
+        size_t main_n = 0;
+        mark_nav(1);
+        int32_t main = label(nav, &main_n);
+        int joined = 0;
 
-        /* Walk out through wall, remembering each tile's predecessor, and
-         * stop at the first tile of any other region. */
-        size_t head = 0, tail = 0;
-        for (size_t i = 0; i < (size_t)TILES * TILES; i++) from[i] = -1;
-        for (size_t i = 0; i < (size_t)TILES * TILES; i++)
-            if (comp[i] == pocket) { queue[tail++] = (int32_t)i; from[i] = (int32_t)i; }
+        for (size_t seed_i = 0; seed_i < (size_t)TILES * TILES; seed_i++) {
+            if (comp[seed_i] == 0 || comp[seed_i] == main) continue;
+            int32_t pocket = comp[seed_i];
 
-        int32_t hit = -1;
-        static const int dx[4] = { 1, -1, 0, 0 };
-        static const int dy[4] = { 0, 0, 1, -1 };
-        while (head < tail && hit < 0) {
-            int32_t i = queue[head++];
-            int cx = i % TILES, cy = i / TILES;
-            for (int d = 0; d < 4 && hit < 0; d++) {
-                int nx = cx + dx[d], ny = cy + dy[d];
-                if (nx < EDGE || ny < EDGE) continue;
-                if (nx >= TILES - EDGE || ny >= TILES - EDGE) continue;
-                size_t j = (size_t)ny * TILES + nx;
-                if (from[j] >= 0) continue;
-                from[j] = i;
-                if (comp[j] != 0 && comp[j] != pocket) hit = (int32_t)j;
-                else if (comp[j] == 0) queue[tail++] = (int32_t)j;
+            /* Walk out through everything a hull cannot fit on, remembering
+             * each tile's predecessor, and stop at the first tile of any
+             * other region. */
+            size_t head = 0, tail = 0;
+            for (size_t i = 0; i < (size_t)TILES * TILES; i++) from[i] = -1;
+            for (size_t i = 0; i < (size_t)TILES * TILES; i++)
+                if (comp[i] == pocket) { queue[tail++] = (int32_t)i; from[i] = (int32_t)i; }
+
+            int32_t hit = -1;
+            static const int dx[4] = { 1, -1, 0, 0 };
+            static const int dy[4] = { 0, 0, 1, -1 };
+            while (head < tail && hit < 0) {
+                int32_t i = queue[head++];
+                int cx = i % TILES, cy = i / TILES;
+                for (int d = 0; d < 4 && hit < 0; d++) {
+                    int nx = cx + dx[d], ny = cy + dy[d];
+                    if (nx < EDGE + 1 || ny < EDGE + 1) continue;
+                    if (nx >= TILES - EDGE - 1 || ny >= TILES - EDGE - 1) continue;
+                    size_t j = (size_t)ny * TILES + nx;
+                    if (from[j] >= 0) continue;
+                    from[j] = i;
+                    if (comp[j] != 0 && comp[j] != pocket) hit = (int32_t)j;
+                    else if (comp[j] == 0) queue[tail++] = (int32_t)j;
+                }
             }
-        }
-        if (hit < 0) continue; /* nothing to join it to, which cannot happen
-                                * on a bounded map but is not worth crashing
-                                * over if it ever does */
+            if (hit < 0) continue; /* nothing to join it to, which cannot
+                                    * happen on a bounded map but is not
+                                    * worth crashing over if it ever does */
 
-        /* Clear the wall the search came through, and mark the pocket joined
-         * so its tiles are not searched again. */
-        for (int32_t i = from[hit]; i != from[i]; i = from[i]) {
-            if (SIM_TILE_CLASS(T[i]) == SIM_TILE_EMPTY) continue;
-            T[i] = SIM_TILE_EMPTY;
-            dug++;
+            /* Carve the way the search came, and mark the piece joined so
+             * its tiles are not searched again this sweep. */
+            for (int32_t i = from[hit]; i != from[i]; i = from[i])
+                dug += carve(i % TILES, i / TILES);
+            joined = 1;
+            int32_t into = comp[hit];
+            for (size_t i = 0; i < (size_t)TILES * TILES; i++)
+                if (comp[i] == pocket) comp[i] = into;
         }
-        int32_t joined = comp[hit] == main ? main : comp[hit];
-        for (size_t i = 0; i < (size_t)TILES * TILES; i++)
-            if (comp[i] == pocket) comp[i] = joined;
+        if (!joined) return dug;
     }
     return dug;
+}
+
+/* Wall in the ground no hull can reach even with every door standing open.
+ *
+ * What is left over after the joining above is the slivers: the tile between
+ * two structures that stopped one apart, the notch inside a corner, the
+ * inside of something drawn too small to enter. None of it is anywhere a
+ * ship goes, and all of it reads as somewhere to go from outside.
+ *
+ * Filling rather than digging, because a sliver widened to a lane is a hole
+ * knocked in a structure that was fine as it stood. Nothing filled here has
+ * a hull's tile beside it, since a tile beside one is a tile a hull can
+ * reach, so filling cannot take a lane away from anything. */
+static int fill_dead(void) {
+    size_t main_n = 0;
+    mark_nav(0);
+    int32_t main = label(nav, &main_n);
+
+    static uint8_t *reach;
+    if (!reach) reach = malloc((size_t)TILES * TILES);
+    if (!reach) return -1;
+    memset(reach, 0, (size_t)TILES * TILES);
+    for (int y = 1; y < TILES - 1; y++)
+        for (int x = 1; x < TILES - 1; x++) {
+            if (comp[(size_t)y * TILES + x] != main) continue;
+            for (int j = -(HULL / 2); j <= HULL / 2; j++)
+                for (int i = -(HULL / 2); i <= HULL / 2; i++)
+                    reach[(size_t)(y + j) * TILES + x + i] = 1;
+        }
+
+    int filled = 0;
+    for (size_t i = 0; i < (size_t)TILES * TILES; i++) {
+        if (reach[i] || SIM_TILE_CLASS(T[i]) != SIM_TILE_EMPTY) continue;
+        int x = (int)(i % TILES), y = (int)(i / TILES);
+        if (x < EDGE || y < EDGE || x >= TILES - EDGE || y >= TILES - EDGE) continue;
+        T[i] = SIM_TILE_SOLID;
+        filled++;
+    }
+    return filled;
+}
+
+/* Ground a hull can reach with the doors open, for the checks at the end. */
+static int dead_ground(void) {
+    size_t main_n = 0;
+    mark_nav(0);
+    int32_t main = label(nav, &main_n);
+    int dead = 0;
+    for (int y = 0; y < TILES; y++)
+        for (int x = 0; x < TILES; x++) {
+            size_t i = (size_t)y * TILES + x;
+            if (blocks(T[i], 0)) continue;
+            int seen = 0;
+            for (int j = -(HULL / 2); j <= HULL / 2 && !seen; j++)
+                for (int i2 = -(HULL / 2); i2 <= HULL / 2; i2++) {
+                    int nx = x + i2, ny = y + j;
+                    if (nx < 0 || ny < 0 || nx >= TILES || ny >= TILES) continue;
+                    if (comp[(size_t)ny * TILES + nx] == main) { seen = 1; break; }
+                }
+            if (!seen) dead++;
+        }
+    return dead;
 }
 
 /* A spawn needs room around it: a ship that materialises against a wall is a
@@ -648,9 +1026,8 @@ static int open_around(int x, int y, int r, int32_t main) {
             if (xx < EDGE || yy < EDGE || xx >= TILES - EDGE || yy >= TILES - EDGE)
                 return 0;
             if (SIM_TILE_CLASS(get(xx, yy)) != SIM_TILE_EMPTY) return 0;
-            if (comp[(size_t)yy * TILES + xx] != main) return 0;
         }
-    return 1;
+    return comp[(size_t)y * TILES + x] == main;
 }
 
 /* Eight a side, north and south, spread across the width. Two home ends
@@ -716,12 +1093,20 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
         wormholes = 1;
     }
 
-    /* Then the field. Asking for more clusters than can fit is how the count
-     * lands where it lands: placement refuses anything that would overlap. */
+    /* Then the field. Asking for far more clusters than can fit is how the
+     * count lands where it lands: placement refuses anything that would
+     * overlap, so what comes out is as much as the spacing rules allow
+     * rather than as much as the dice offered. */
     plan_districts();
     int structures = 0;
-    for (int i = 0; i < 85; i++) structures += place_cluster(1);
-    for (int i = 0; i < 950; i++) structures += place_cluster(0);
+    for (int i = 0; i < 105; i++) structures += place_cluster(1);
+    for (int i = 0; i < 1250; i++) structures += place_cluster(0);
+    /* And then wherever the dice left nothing at all. Three per cent of the
+     * open ground over forty tiles from a wall, which is where the seeds
+     * that came out well already sat and twice as close to the measured
+     * map's 1.7% as the ones that did not. */
+    int filled_in = fill_voids(40, 300, 400);
+    structures += filled_in;
 
     /* Barriers spread over six channels, so a shut lane here is an open one
      * there rather than the whole map breathing in and out together. Enough
@@ -732,42 +1117,61 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
 
     sim_map_index(m);
 
-    /* Join every pocket to the field, then label again: the digging changes
-     * the answer, and what the spawns are checked against has to be the map
-     * as it will be written rather than as it was drawn. */
-    size_t main_n = 0;
-    int32_t main_c = label_open(&main_n);
-    int dug = open_pockets(main_c);
-    main_c = label_open(&main_n);
+    /* Fix what was drawn, in the order the two passes depend on. Joining
+     * comes first, since it is what decides which ground is reachable at
+     * all; filling comes second and takes away what still is not. Then the
+     * regions are read once more, because what the spawns are placed against
+     * has to be the map as it will be written rather than as it was drawn. */
+    int dug = join_nav();
+    int filled = fill_dead();
+    size_t nav_n = 0;
+    mark_nav(1);
+    int32_t main_c = label(nav, &nav_n);
+    int nav_regions = 0;
+    for (size_t i = 0; i < (size_t)TILES * TILES; i++)
+        if (comp[i] > nav_regions) nav_regions = comp[i];
     int spawns = place_spawns(main_c);
 
     /* Report, and refuse to write a map that cannot be played. */
-    size_t solid = 0, safe = 0, door = 0, open_total = 0;
+    size_t solid = 0, safe = 0, door = 0;
     for (size_t i = 0; i < (size_t)TILES * TILES; i++) {
         uint8_t c = SIM_TILE_CLASS(T[i]);
         if (c == SIM_TILE_SOLID) solid++;
         else if (c == SIM_TILE_SAFE) safe++;
         else if (c == SIM_TILE_DOOR) door++;
-        if (c != SIM_TILE_SOLID && c != SIM_TILE_DOOR) open_total++;
     }
     size_t inner = (size_t)(TILES - 8) * (TILES - 8);
     double solid_pct = 100.0 * (double)(solid - (size_t)(TILES * TILES - inner))
                      / (double)inner;
 
+    /* A feature is stranded when no hull can stand within reach of it. Read
+     * off the shut-door labelling above, so a berth that can only be flown
+     * out of while a channel happens to be open counts as stranded. */
     int stranded = 0;
-    for (size_t i = 0; i < (size_t)TILES * TILES; i++) {
-        uint8_t c = SIM_TILE_CLASS(T[i]);
-        if ((c == SIM_TILE_SAFE || c == SIM_TILE_SPAWN || c == SIM_TILE_WORMHOLE)
-            && comp[i] != main_c) stranded++;
-    }
+    for (int y = 0; y < TILES; y++)
+        for (int x = 0; x < TILES; x++) {
+            size_t i = (size_t)y * TILES + x;
+            uint8_t c = SIM_TILE_CLASS(T[i]);
+            if (c != SIM_TILE_SAFE && c != SIM_TILE_SPAWN && c != SIM_TILE_WORMHOLE)
+                continue;
+            int seen = 0;
+            for (int j = -(HULL / 2); j <= HULL / 2 && !seen; j++)
+                for (int k = -(HULL / 2); k <= HULL / 2; k++) {
+                    int nx = x + k, ny = y + j;
+                    if (nx < 0 || ny < 0 || nx >= TILES || ny >= TILES) continue;
+                    if (comp[(size_t)ny * TILES + nx] == main_c) { seen = 1; break; }
+                }
+            if (!seen) stranded++;
+        }
 
-    double one_region = 100.0 * (double)main_n / (double)open_total;
+    int dead = dead_ground();
     if (!quiet) {
         printf("seed %u: solid %.2f%% of interior, %zu safe, %zu door (%d in"
                " barriers), %d structures, %d docks, %d spawns\n", s, solid_pct,
                safe, door, barrier_tiles, structures, docks, spawns);
-        printf("  open in one region: %.2f%%, %d wall tiles dug to join pockets,"
-               " stranded features: %d\n", one_region, dug, stranded);
+        printf("  %d region(s) a hull can fly, %d wall tiles dug to join them,"
+               " %d tiles walled off as unreachable, stranded features: %d\n",
+               nav_regions, dug, filled, stranded);
     }
 
     if (spawns != 16) {
@@ -786,16 +1190,24 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
         fprintf(stderr, "seed %u: %d features walled off\n", s, stranded);
         return 1;
     }
-    /* Every open tile on one region, not almost every one. A pocket is a
-     * place a ship can be put and cannot leave, so a threshold here would be
-     * a threshold on how much of the map is a trap. */
-    if (one_region < 100.0) {
-        fprintf(stderr, "seed %u: open space is not one region (%.4f%%)\n",
-                s, one_region);
+    /* One region a hull can fly, not almost one, and measured with every
+     * door shut. Anything else is a place a ship can be put and cannot
+     * leave, so a threshold here would be a threshold on how much of the map
+     * is a trap. */
+    if (nav_regions != 1) {
+        fprintf(stderr, "seed %u: %d regions a hull can fly, not one\n",
+                s, nav_regions);
         return 1;
     }
-    if (dug < 0) {
-        fprintf(stderr, "seed %u: could not join the pockets\n", s);
+    /* And nothing left over that looks open and is not. This is the check
+     * the single-tile version of all of the above could not make: it counted
+     * a one-tile notch as a way in and passed maps full of them. */
+    if (dead) {
+        fprintf(stderr, "seed %u: %d open tiles no hull can reach\n", s, dead);
+        return 1;
+    }
+    if (dug < 0 || filled < 0) {
+        fprintf(stderr, "seed %u: could not join the map up\n", s);
         return 1;
     }
     /* A map far off the measured three per cent is not wrong so much as not
@@ -817,7 +1229,9 @@ int main(int argc, char **argv) {
     }
     sim_map *m = calloc(1, sizeof *m);
     comp = malloc(sizeof(int32_t) * TILES * TILES);
-    if (!m || !comp) return 1;
+    nav = malloc((size_t)TILES * TILES);
+    dist = malloc(sizeof(int32_t) * TILES * TILES);
+    if (!m || !comp || !nav || !dist) return 1;
 
     /* Twelve seeds, none of them the shipped one, because the check worth
      * having is that the generator produces a playable map generally and not
@@ -826,7 +1240,7 @@ int main(int argc, char **argv) {
         for (uint32_t k = 101; k <= 112; k++)
             if (generate(m, k, 1) != 0) return 1;
         printf("mapgen selftest passed\n");
-        free(comp); free(m);
+        free(dist); free(nav); free(comp); free(m);
         return 0;
     }
 
@@ -843,6 +1257,6 @@ int main(int argc, char **argv) {
     fclose(f);
     printf("  %s: %d bytes, hash %08x, %u features\n", argv[1], n,
            sim_map_hash(m), m->feature_count);
-    free(buf); free(comp); free(m);
+    free(buf); free(dist); free(nav); free(comp); free(m);
     return 0;
 }

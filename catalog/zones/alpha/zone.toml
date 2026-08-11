@@ -15,12 +15,12 @@ description = "small teams, seven a side"
 # No flag game, no ball and no crown, which leaves kills.
 mode = "arena"
 
-# The zone's own map, drawn by `sim/tools/mapgen` from seed 23. It replaced a
+# The zone's own map, drawn by `sim/tools/mapgen` from seed 28. It replaced a
 # conversion of somebody else's `.lvl`. The generator builds from measurements
 # of such a map rather than its geometry: three per cent wall, thin, in
 # clusters, with long lanes between them. docs/design/maps.md.
 #
-# Regenerate with `./sim/build/mapgen catalog/zones/alpha/alpha.vwmap 23`.
+# Regenerate with `./sim/build/mapgen catalog/zones/alpha/alpha.vwmap 28`.
 map = "alpha.vwmap"
 
 # Thirty-two players, because a zone that is a game rather than a brawl should
@@ -186,6 +186,20 @@ charge-2 = 10
 [[arena.weapons]]
 name = "charge-2"
 damage = 515
+
+# How long a mine sits there: two minutes, which is what the baseline says
+# too. Written out because it is the number this zone was played with and the
+# one worth arguing about, not because it differs.
+#
+# A mine's clock is the whole of how long the ground it denies stays denied,
+# so it is a map setting as much as a weapon one. Two minutes on a map of long
+# lanes means a doorway posted at the start of a fight is still posted at the
+# end of it. The original bounds the same setting anywhere from two seconds to
+# ten minutes; if this room ever feels like a minefield rather than a game,
+# this is the line to cut before the damage.
+[[arena.weapons]]
+name = "charge-3"
+life = 12000
 
 # Facet fires slower than everything else, which is the price of its second
 # barrel. A ladder is a weapon per rung, so all three rungs say it.

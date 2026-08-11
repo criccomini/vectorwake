@@ -142,6 +142,13 @@ and a blast. It sits where you left it and goes off when its fuse finds
 somebody or its timer runs out, whichever comes first. Charge slot two, three
 in hand, and nothing in the update loop knows a mine from a bomb.
 
+Two minutes of `life`, and a zone moves it the way it moves any weapon's:
+`[[arena.weapons]] name = "charge-3"`, `life = 12000`. That clock is the whole
+of how long the ground a minefield denies stays denied, so it is a map setting
+as much as a weapon one and worth reaching for before the damage. The original
+calls it MineAliveTime and bounds it at two seconds to ten minutes; it ships no
+default we can read, so the two minutes is ours.
+
 `still` is the only field the weapon needed that the model did not already
 have, and it is there because every other round in the game wants the
 opposite. A shot takes the firer's velocity on top of its own speed, which is
