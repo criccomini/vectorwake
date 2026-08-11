@@ -64,7 +64,7 @@ struct S2CWeapons {
 };
 ```
 
-Weapons ride inside the position packet rather than travelling separately, which
+Weapons ride inside the position packet rather than traveling separately, which
 means a fire event and the ship state that produced it cannot desynchronize:
 
 ```c
@@ -189,7 +189,7 @@ hulls unless noted.
 
 Projectile speed is added to the ship's velocity, so a bullet's number is its
 speed *relative to the shooter* and does not change with how fast anyone is
-travelling. Rounds slower than ships is a deliberate choice, not an oversight.
+traveling. Rounds slower than ships is a deliberate choice, not an oversight.
 
 `[PrizeWeight]`, relative, from the same tree:
 

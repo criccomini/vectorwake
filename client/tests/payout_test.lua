@@ -89,7 +89,7 @@ local pal = require("arena.palette")
 
 local W, H = 1280, 800
 -- The camera sits on ship 0, and half_w is half the width, so the world and
--- the screen are one to one and a wreck at the camera lands dead centre.
+-- the screen are one to one and a wreck at the camera lands dead center.
 local CAM_X, CAM_Y = 100, 100
 
 local function frame(now)
@@ -149,7 +149,7 @@ check("in the green the feed uses for your own kill",
       first and first.col[1] == pal.PRIZE[1] and first.col[2] == pal.PRIZE[2]
           and first.col[3] == pal.PRIZE[3],
       first and table.concat(first.col, ",") or "nothing drawn")
--- Centre of the screen plus the nameplate's own offset, because the wreck is
+-- Center of the screen plus the nameplate's own offset, because the wreck is
 -- under the camera and that is where the bounty sat.
 check("over the wreck rather than over the screen",
       first and math.abs(first.x - (W / 2 + 12)) < 0.5,

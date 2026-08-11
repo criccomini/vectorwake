@@ -716,7 +716,7 @@ menu.sel = {}
 -- --- what the view says about the window does not depend on the page -----
 --
 -- `home` decides where the whole block is measured from: clear of the corner
--- stack over an arena, centred over the starfield. It used to be
+-- stack over an arena, centered over the starfield. It used to be
 -- `M.home and #M.stack == 1`, which is two questions with one answer, so
 -- going a level in on the start screen moved the block as if a game had
 -- appeared behind it.

@@ -72,11 +72,10 @@ pub struct ArenaConfig {
     pub respawn_delay: Option<u16>,
     /// Zero, or absent, spawns on the map's own spawn tiles. Above zero
     /// ignores them and drops a ship on a random tile within this many of the
-    /// map's centre, redrawn on every death. The original's own number works
-    /// out at 18: `WarpRadiusLimit=20` clamps a formula that would have asked
-    /// for 266, leaving a 37-tile square at the centre. 60 is where arrivals
-    /// stop being visible on a centre-camper's radar, which is the other
-    /// number worth having in mind.
+    /// map's center, redrawn on every death. Size it by how many ships share
+    /// the box: the original's own number is 18, and at the 51 ships one of
+    /// our rooms holds that leaves a fresh pilot a fifth of a second of bullet
+    /// flight from the nearest enemy. Alpha runs 250 for about three seconds.
     pub spawn_radius: Option<u16>,
     /// Whether a client marks the map's spawn tiles. Absent draws them.
     /// Ignored by the client when `spawn_radius` is set, since then nobody
@@ -249,7 +248,7 @@ pub struct WeaponConfig {
     /// exactly the speed the ship was doing and never stops.
     pub still: Option<bool>,
     // What counts as arriving somewhere.
-    /// Px from a hull centre that sets it off. 0 is contact, which is a bullet.
+    /// Px from a hull center that sets it off. 0 is contact, which is a bullet.
     pub trigger: Option<i32>,
     /// Whether running out of life counts as arriving. A mine's whole life
     /// is its timer; a bomb that crosses the arena untouched did not arrive.
@@ -257,7 +256,7 @@ pub struct WeaponConfig {
     /// A weapon fired where this one ended, by name.
     pub splinter: Option<String>,
     // What happens there.
-    /// Energy at the centre.
+    /// Energy at the center.
     pub damage: Option<i32>,
     /// Px of blast, falling off to nothing at the rim. 0 lands on one hull.
     pub blast: Option<i32>,

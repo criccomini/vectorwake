@@ -60,7 +60,7 @@ jobs:
       # nothing else looks at the arena shape until a machine boots into it.
       - name: the compose files parse
         run: |
-          printf 'VW_HOST=play.example.invalid\nVW_POOL_TOKEN=x\nVW_ADMIN_TOKEN=y\n' > /tmp/ci.env
+          printf 'VW_HOST=play.example.invalid\nVW_POOL_TOKEN=x\n' > /tmp/ci.env
           C="docker compose --env-file /tmp/ci.env -f deploy/docker-compose.caddy.yml"
           $C -f deploy/docker-compose.central.yml -f deploy/docker-compose.arena.yml config -q
           $C -f deploy/docker-compose.central.yml config -q
@@ -82,6 +82,13 @@ jobs:
               -v "$PWD/deploy/caddy:/etc/caddy:ro" caddy:2-alpine \
               caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
           done
+          # The admin site in both shapes: named, as a central host sets it,
+          # and defaulted to admin.localhost everywhere the variable is
+          # unset. The runs above already cover unset; this covers named.
+          docker run --rm -e VW_HOST=play.example.invalid -e VW_ROUTES \
+            -e VW_ADMIN_HOST=admin.example.invalid \
+            -v "$PWD/deploy/caddy:/etc/caddy:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
   publish:
     needs: test

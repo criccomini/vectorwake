@@ -62,7 +62,7 @@ function layer:outline(pts, w)
     end
     shapes[#shapes + 1] = o
 end
--- Arcs keep their geometry: a curve's centre, radius and sweep are how a
+-- Arcs keep their geometry: a curve's center, radius and sweep are how a
 -- round shell is told from a square one.
 function layer:arc(x, y, r, a0, a1)
     local s = put("arc", x - r, y - r, x + r, y + r)

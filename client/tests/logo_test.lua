@@ -13,7 +13,7 @@
 -- It also checks the thing that makes the mark a word rather than a pattern:
 -- six strokes in three wedges, each a diagonal landing on the baseline where a
 -- vertical stands, one gap throughout so no space says where the V stops and
--- the W starts, and the V in one team's colour with the W in the other's.
+-- the W starts, and the V in one team's color with the W in the other's.
 --
 -- And it drives the animation, because the mark draws itself stroke by stroke
 -- on the menu and a mark that never finishes is a mark nobody sees.
@@ -138,7 +138,7 @@ end
 check("every stroke is the same width", thick - thin < 0.01,
       string.format("%.2f to %.2f px", thin, thick))
 
--- The V is the other side's colour and the W is yours, which is the only
+-- The V is the other side's color and the W is yours, which is the only
 -- thing in the mark that says where one letter stops.
 local function hue(c) return c and string.format("%.3f,%.3f", c[1], c[2]) end
 check("the V wears one side and the W the other",
@@ -160,7 +160,7 @@ f:close()
 --
 -- All six are strokes of one width. What tells a wake from a vertical in the
 -- file is what paints it: a wake takes a gradient and a vertical takes a
--- colour. The tile takes neither, which is how it is left out.
+-- color. The tile takes neither, which is how it is left out.
 local want = {}
 for d, rest in svg:gmatch('<path d="(M[^"]-)"([^>]*)>') do
     local x1, y1, x2, y2 =
@@ -173,7 +173,7 @@ for d, rest in svg:gmatch('<path d="(M[^"]-)"([^>]*)>') do
 end
 check("the icon holds the same six strokes", #want == 6, "strokes: " .. #want)
 
--- Drawn at the icon's own scale and centre, so the two can be compared
+-- Drawn at the icon's own scale and center, so the two can be compared
 -- outright rather than through a transform this file would have to invent.
 segs = {}
 ui.begin(layer, 512, 512, 1, false, 0)
@@ -219,7 +219,7 @@ end
 local pad_l, pad_r = lo - sw * 0.447, 512 - (hi + sw * 0.5)
 check("the mark clears both edges of the tile", pad_l > 2 and pad_r > 2,
       string.format("%.1f left, %.1f right", pad_l, pad_r))
-check("and sits left of centre in it, where its weight is not",
+check("and sits left of center in it, where its weight is not",
       pad_r > pad_l * 3 and pad_r < pad_l * 25,
       string.format("%.1f left, %.1f right", pad_l, pad_r))
 
@@ -324,13 +324,13 @@ check("and it finishes into the shape itself",
 local state = package.loaded["arena.state"]
 
 -- The mark's own strokes, picked back out of a whole menu: the two team
--- colours at full strength, and nothing else the menu draws is that.
+-- colors at full strength, and nothing else the menu draws is that.
 local function mark_segs()
     local found = {}
     for _, sg in ipairs(segs) do
         local c = sg.col
         -- At full strength: the menu marks a selected row with a rule in the
-        -- team colour too, and that one is drawn at 0.95.
+        -- team color too, and that one is drawn at 0.95.
         if c and (c[4] or 1) > 0.99 then
             for _, team in ipairs({pal.FRIEND, pal.ENEMY}) do
                 if c[1] == team[1] and c[2] == team[2] and c[3] == team[3] then
@@ -413,17 +413,17 @@ check("the home screen draws the name and the mark together", L ~= nil, why)
 
 if L then
     -- On the middle of the word, which is not the middle of its line box.
-    -- `txt` centres a string in a box with descender room under it, and this
+    -- `txt` centers a string in a box with descender room under it, and this
     -- name is lowercase with no descenders, so its ink and its weight both
     -- sit lower than the box does. How much lower is a judgement made against
     -- a screenshot and recorded as LOGO_DROP; what is checked here is that
     -- the mark is placed against that judgement and not against zero, and
     -- that the offset travels with the type rather than being a pixel count.
-    local centre = (L.y0 + L.y1) / 2
-    local drop = (centre - L.wy) / L.size
+    local center = (L.y0 + L.y1) / 2
+    local drop = (center - L.wy) / L.size
     check("the mark sits on the middle of the word, not of its line box",
           drop > 0.06 and drop < 0.20,
-          string.format("%.3f em below the line box centre", drop))
+          string.format("%.3f em below the line box center", drop))
     -- Shorter than the type it stands beside. A mark taller than the em is
     -- the one that made the first draft read as a picture with a caption.
     local tall = L.y1 - L.y0
@@ -465,8 +465,8 @@ end
 -- undo. Three wedges are 1.75 as wide as they are tall, so a square tile holds
 -- them at barely half its height; the mark earns the tile back by being placed
 -- on its verticals instead of on the box it fills, which puts the standing
--- part of it evenly about the centre and runs the faded end of the first wake
--- off the left edge. A cut centred the ordinary way sits visibly right and
+-- part of it evenly about the center and runs the faded end of the first wake
+-- off the left edge. A cut centered the ordinary way sits visibly right and
 -- looks like nobody measured.
 local tpl = assert(io.open("client/web/engine_template.html", "r"),
                    "run me from the repository root")
@@ -506,7 +506,7 @@ end
 if b64 then
     local icon = unb64(b64)
     -- Every stroke, and which of them is a vertical: a wake takes a gradient
-    -- and a vertical takes a colour, the same way the mark's own file is read
+    -- and a vertical takes a color, the same way the mark's own file is read
     -- further up.
     local verts, all = {}, 0
     for d, rest in icon:gmatch('<path d="(M[^"]-)"([^>]*)>') do
@@ -524,8 +524,8 @@ if b64 then
           all .. " strokes")
     if #verts == 3 then
         table.sort(verts, function(a, b) return a.x < b.x end)
-        -- The whole placement: the middle vertical on the tile's own centre.
-        check("the middle vertical stands on the tile's centre",
+        -- The whole placement: the middle vertical on the tile's own center.
+        check("the middle vertical stands on the tile's center",
               math.abs(verts[2].x - 256) < 0.6,
               string.format("%.1f against 256", verts[2].x))
         -- Which leaves the outer two the same distance out, so the standing

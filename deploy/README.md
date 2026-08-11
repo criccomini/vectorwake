@@ -44,10 +44,9 @@ Generate a pool token and a meta-layer signing pair from the repository root:
 ```sh
 cargo run --quiet --manifest-path server/Cargo.toml -- token
 cargo run --quiet --manifest-path server/Cargo.toml -- metakey
-openssl rand -hex 24
 ```
 
-The first command prints a raw pool token and its `sha256:` digest. The second prints the meta-layer's signing key followed by its public verifying key. The OpenSSL value can be the local admin token.
+The first command prints a raw pool token and its `sha256:` digest. The second prints the meta-layer's signing key followed by its public verifying key.
 
 Copy those values into `deploy/.env`:
 
@@ -58,7 +57,6 @@ VW_REGION=local
 
 VW_POOL_TOKEN=<raw pool token>
 VW_POOL_DIGEST=sha256:<pool token digest>
-VW_ADMIN_TOKEN=<admin token>
 VW_META_KEY=<signing key>
 VW_META_VERIFY=<verifying key>
 VW_ACCOUNTS=1
@@ -184,6 +182,26 @@ journalctl -u vw-update.service -n 100 --no-pager
 ```
 
 Arenas file their rated events with the meta-layer. Set `VW_REPORT=0` in the arena Compose file to stop that while the fleet is under test; events generated while it is off are dropped rather than held.
+
+## The admin panel
+
+`admin.<domain>` serves a static page from [`admin/`](admin/) and proxies `/v1` to the meta-layer. An operator signs in with the call sign and password of a vectorwake account that holds the admin flag; [the admin document](../docs/architecture/admin.md) explains the model. Only a central host's `.env` sets `VW_ADMIN_HOST`, so every other role serves the site as `admin.localhost` and never asks Let's Encrypt about it. The DNS record rides with the front door: `fleet.sh point play <host>` moves both names, and creates the admin record if it is missing.
+
+The flag is set in the database and nowhere else. No route writes `accounts.admin`, so there is nothing for a leaked session or a compromised neighbour process to call; the authority over who operates the fleet is the database credential. From an operator's machine, with `VULTR_API_KEY` set as for any `fleet.sh` verb:
+
+```sh
+psql "$(./deploy/fleet.sh db --url)" -c \
+  "update accounts a set admin = true
+   from names n
+   where n.account = a.id and lower(n.call_sign) = lower('<call sign>')
+   returning a.id, n.call_sign;"
+```
+
+The same statement works on the central host, which has the string in its `.env` and no psql of its own: `cd /opt/vectorwake/deploy && . ./.env && docker run --rm postgres:16-alpine psql "$VW_META_DATABASE" -c "..."`.
+
+`admin = false` revokes. The `returning` line is the confirmation that exactly one row moved. Grant only claimed accounts: the panel signs in with a password, which a guest does not have. The sweeper leaves flagged accounts alone either way, and the panel's own ban button refuses them, so unseating an admin starts here too: revoke first, then ban from the panel if it comes to that.
+
+Locally the panel is at `https://admin.localhost` once the stack is up; browsers resolve `*.localhost` to loopback on their own, and Caddy signs it with its internal CA.
 
 ## Logs and health
 

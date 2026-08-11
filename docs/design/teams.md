@@ -22,7 +22,7 @@ whole client.
 ## Three numbers
 
 A zone shapes its teams with three settings, and everything else in this
-document is behaviour those settings imply.
+document is behavior those settings imply.
 
 | Setting | What it bounds |
 |---|---|

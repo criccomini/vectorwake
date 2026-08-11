@@ -72,7 +72,7 @@ flag drops, or an automatic warp on entry. They give a map author mechanical
 control without a module.
 
 A converter reads `.lvl` and writes ours. It exists so we can test our collision
-code against maps whose behaviour is known. Like the settings importer, its
+code against maps whose behavior is known. Like the settings importer, its
 output is not content we ship: a converted map from an existing zone is that
 zone's map, and being handed the file does not change that. Shipped maps are
 drawn by `sim/tools/mapgen`, which builds from the measurements in
@@ -93,7 +93,7 @@ core does yet.
 Two things the input cannot supply. A `.lvl` has no starts, because the
 original kept spawn regions in `arena.conf`, so the converter derives them from
 open ground and splits them north and south into two home ends. And the tileset
-is dropped, because a tile here is its behaviour: the 160 wall pictures become
+is dropped, because a tile here is its behavior: the 160 wall pictures become
 one class, and what a wall looks like is the client's business.
 
 Editing happens in Tiled, which Defold already integrates with, plus a small

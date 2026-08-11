@@ -404,7 +404,7 @@ switched off, nine pilots holding perfectly still because there was nothing any
 of them could see or shoot. The seat-per-side arrangement fits because ship
 indices stop at 254 and 255 is `TEAM_NONE`, and it needs no rule of its own in
 the core or in the client: the client already draws anybody not on your side as
-hostile, so a free-for-all colours itself.
+hostile, so a free-for-all colors itself.
 
 Private sides are founded by players from the same menu, wear a generated name,
 and admit whoever a member invites. The original's private freqs came with
@@ -427,7 +427,7 @@ A spectator is a player with a seat in the player list and no ship in the
 simulation. That is the whole of it, and it is why it costs almost nothing: the
 sim needs no spectator concept, `sim_state` gains no field, and a spectator is
 simply a connection that receives snapshots and sends no inputs. The one thing it
-does need is a snapshot that is not centred on a ship the viewer does not have,
+does need is a snapshot that is not centered on a ship the viewer does not have,
 which the interest radius currently assumes.
 
 A pilot moving between spectating and flying is a spawn and a despawn, not a

@@ -67,7 +67,7 @@ check: $(B)/test_sim $(B)/replay $(B)/lvl2vw $(B)/mapgen
 	$(B)/lvl2vw --selftest
 	$(B)/mapgen --selftest
 
-# Undefined behaviour is a determinism bug in this core specifically.
+# Undefined behavior is a determinism bug in this core specifically.
 #
 # Everything else here checks that one platform agrees with a committed hash.
 # UB is the thing that can make two platforms disagree while both look right
@@ -93,7 +93,7 @@ ubsan: | $(B)
 	  -o $(B)/replay_ubsan
 	$(B)/replay_ubsan tests/trace_basic.txt > $(B)/out-ubsan.txt
 	cmp tests/golden.txt $(B)/out-ubsan.txt
-	@echo no undefined behaviour, and the same hashes under a sanitizer
+	@echo no undefined behavior, and the same hashes under a sanitizer
 
 # WebAssembly build of the harness (requires emsdk). NODERAWFS lets node
 # read the trace file directly.

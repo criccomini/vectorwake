@@ -61,7 +61,7 @@ in `sim/`.
 | `tools/sfxdump.c` | Writes the kit out as wav files, for listening to |
 | `tools/sfxladder.c` | Whether a pilot can hear which rung fired |
 | `tests/sfx_test.lua` | Which sound each weapon rung reaches |
-| `tests/rung_test.lua` | That a rung's colour is legible and unlike anything else |
+| `tests/rung_test.lua` | That a rung's color is legible and unlike anything else |
 | `tests/pad_layout_test.lua` | Where a thumb's controls are, and what they draw |
 | `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
@@ -289,12 +289,12 @@ square, seven thousand nine hundred crossings into the core, to find four
 doors. Tiles do not move, so the search happens once, where the walls are
 built.
 
-**A star allocated a colour.** Three hundred and fifty `{r,g,b,a}` tables a
+**A star allocated a color.** Three hundred and fifty `{r,g,b,a}` tables a
 frame is twenty thousand a second, all garbage; eight brightnesses per depth
 are made once instead, and at a pixel and a half across nobody can tell.
 
 The interface's text got the same treatment: a node is only told its text,
-position, scale, pivot and colour again when one of them changed, and the
+position, scale, pivot and color again when one of them changed, and the
 vectors it is told with are made once and mutated rather than allocated per
 line per frame.
 
@@ -369,14 +369,14 @@ bounty. Each row is a mark, a count, and nothing else. The marks used to be
 words, which made the one corner a pilot only ever glances at into a column of
 reading.
 
-Every round in the game is coloured by one thing: the rung it was fired at.
+Every round in the game is colored by one thing: the rung it was fired at.
 Green, yellow, orange, red, from `pal.RUNG`, and a bullet, a bomb, yours and
 theirs all read off it. There were three ramps before, with hue carrying the
-team and lightness the rung, and it failed at both jobs: ten units of colour
+team and lightness the rung, and it failed at both jobs: ten units of color
 between rungs is not a call anybody makes on a three-pixel object crossing the
 screen, and blending toward white converged the two teams as they climbed, so
 the deadliest rounds were the hardest to attribute. It also put a rung 3 bomb
-on the charge colour exactly. `tests/rung_test.lua` measures all of that.
+on the charge color exactly. `tests/rung_test.lua` measures all of that.
 
 What it gives up is that a round no longer says whose it is. Ships, names and
 plates still carry the team, and in a free-for-all every round was worth
@@ -406,11 +406,11 @@ each end of it, and a bomb with proximity is a bomb standing on the area its
 fuse reaches.
 
 The level was three cyan rungs beside the mark, and that went the same way. It
-was there before the round had a colour of its own, and the round has one now:
+was there before the round had a color of its own, and the round has one now:
 it is drawn in the hue of the rung it is fired at, on the ramp above, so the
 corner already answers the question the ladder answered and answers it in the
 terms the arena uses. Two answers to one question, the second of them in the
-team's colour, which a weapon's level has nothing to do with.
+team's color, which a weapon's level has nothing to do with.
 
 A gun is a line into a dot and a bomb is a ringed head, which is what each is
 in the arena, and one set of add-on marks fits both because every add-on is
@@ -437,7 +437,7 @@ two ways rather than three.
 
 The bomb had a fading trail behind it until it did not. An icon is not a round
 in flight, so a streak of motion on a thing sitting still in a corner was a
-picture of the wrong moment, and a fade cannot be centred: it reaches its full
+picture of the wrong moment, and a fade cannot be centered: it reaches its full
 length at almost none of its brightness, so a bounding box put it square in the
 middle of a pad while everything visible crowded one side. Three passes at
 biasing it into place all landed somewhere a screenshot said was still off.
@@ -481,10 +481,10 @@ that the pads had it covered.
 
 What each caller still owns is where a mark goes and how big it is. `ui.lua`
 hangs one off each row of a column and flips y on the way in, since it reckons
-downward and the marks reckon upward. `touch.lua` centres one in a round pad
+downward and the marks reckon upward. `touch.lua` centers one in a round pad
 and sizes it off the pad's own radius, derived rather than picked: a mark
 reaches `MARK_REACH` of its own size out from the round and a gun's round sits
-`BOLT_BIAS` forward of centre, so the two triggers have different worst cases
+`BOLT_BIAS` forward of center, so the two triggers have different worst cases
 and one ratio for both would either spill a gun's fragments over the rim or
 draw a bomb head a third smaller than the pad it has to itself.
 
@@ -537,18 +537,18 @@ runs stack_test's own add-on loop against the pads, walks all 64 combinations
 looking for a mark that leaves its control, and checks that no round wears a
 trail.
 
-Where a mark looks centred is measured as the midpoint of two answers that
-disagree. Weighing a drawing by how much of it there is centres a gun on its
+Where a mark looks centered is measured as the midpoint of two answers that
+disagree. Weighing a drawing by how much of it there is centers a gun on its
 dot, since a solid disc outweighs the hairline reaching it; taking the
-drawing's extent centres it near the middle of the line, since the far tip of a
+drawing's extent centers it near the middle of the line, since the far tip of a
 hairline counts for as much as the dot. The eye lands between them, a strip of
 the mark drawn at biases either side agrees, and `marks.BOLT_BIAS` came out of
 that measurement rather than off a screenshot.
 
 `lua5.1 client/tests/stack_test.lua` runs the real `M.hud` against a stubbed
 engine and measures: every add-on draws something, a third rung looks
-different from a first, a fan's rounds are the colour of the round the gun
-fires, the row's hover box covers everything its mark drew, no team colour
+different from a first, a fan's rounds are the color of the round the gun
+fires, the row's hover box covers everything its mark drew, no team color
 appears beside a mark at any level, and no combination of the six at full depth
 leaves its own row or reaches the column the rows below it count in. That last
 one walks all 64 combinations, because the case that overflows is never the one
@@ -607,7 +607,7 @@ says, word for word, so that learning what a bomb is from the wait after one
 killed you and then pointing at the `BOMB` row is not learning it twice in two
 different sets of words. A card does not fit on a row, so all of them at once
 had to be gathered into a column off to one side, and a column says which
-instrument each line belongs to by colour rather than by position. Position was
+instrument each line belongs to by color rather than by position. Position was
 the whole point.
 
 There are no leader lines either. The first version had eleven captions with
@@ -615,7 +615,7 @@ eleven strokes running out across the arena to reach them, and the strokes were
 the whole of what made it unreadable. Every instrument here already sits
 against an edge with clear space beside it, so a word set next to a thing is
 read as being about that thing, at none of the cost. What is left is one line
-in the colour that instrument already wears, and only where the label on the
+in the color that instrument already wears, and only where the label on the
 row does not say it already: `GUN` names itself, so the line beside it explains
 the rung.
 
@@ -698,7 +698,7 @@ flying, on a build that takes six minutes to publish.
 
 Six strokes, `\|\|\|`, read as the V of vector and the W of wake. Each wedge
 is a diagonal falling into a vertical and meeting it on the baseline; the first
-is the V, in the colour the interface gives the other side, and the second and
+is the V, in the color the interface gives the other side, and the second and
 third together are the W, in yours. One gap throughout, so nothing marks where
 one letter stops and the next starts and the run reads as one gesture: you get
 the letters out of it the way you get them out of the name.
@@ -738,11 +738,11 @@ at twice that line on the tab. Both are placed the same way, and the placement
 is the interesting part.
 
 Three wedges are one and three quarters as wide as they are tall. Dropped into
-a square tile and centred on the box they fill, they are a fringe across the
-middle sitting visibly right of centre, because the wakes trail left of the
+a square tile and centered on the box they fill, they are a fringe across the
+middle sitting visibly right of center, because the wakes trail left of the
 verticals and weigh almost nothing while doing it. So both cuts stand on their
 middle vertical instead. That puts the three standing strokes evenly about the
-centre line with the same margin outside each of the outer two, and runs the
+center line with the same margin outside each of the outer two, and runs the
 faded end of the first wake off the left edge, which costs nothing: a wake
 fades in from nothing over its first fifth and there is no ink there to lose.
 
@@ -843,7 +843,7 @@ that is the same answer, since a rung is exactly a wider blast, and for a repel
 it is the only answer there is, its 512 pixels being wider than any bomb while
 its level comes back -1.
 
-Every buffer is normalised to one peak, so the buffer decides timbre only and
+Every buffer is normalized to one peak, so the buffer decides timbre only and
 the loudness climb lives in the `.sound` gains. Those gains are not in order and
 that is not a mistake: a folded bolt is a dense buffer and a resonant one is
 sparse, so equal peaks are unequal loudnesses. The numbers come from solving each

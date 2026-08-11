@@ -101,7 +101,7 @@ of another thing to learn.
 
 The interface stays up underneath, scoreboard and radar and feed and your own
 status, because hiding it would be a lie about what is happening. Only the two
-big centred lines step aside, since they sit exactly where the menu does.
+big centered lines step aside, since they sit exactly where the menu does.
 
 ## Changing hull is a respawn
 
@@ -145,17 +145,17 @@ silence.
 ## Loading
 
 Four megabytes of engine have to arrive and compile before the game can draw
-anything. What a player saw during that was a grey progress bar on black: a page
+anything. What a player saw during that was a gray progress bar on black: a page
 that has not started.
 
 Now the page starts without the engine. `client/tools/single_file.py` draws the
-same starfield, same three depths, same colours, same cell hash, in plain canvas
+same starfield, same three depths, same colors, same cell hash, in plain canvas
 2D, with the wordmark over it and one hairline of progress under that. When the
 engine's first real frame is on screen it fades out, into the same starfield
 drawn by the engine with the menu over it.
 
 The hand-off is triggered by the game, from `arena.script`, not by the loader.
-"The runtime initialised" is seconds before "there is something on screen", and
+"The runtime initialized" is seconds before "there is something on screen", and
 fading out at the wrong one of those turns a seamless hand-off into a black
 flash.
 

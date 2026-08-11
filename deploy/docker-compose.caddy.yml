@@ -37,7 +37,7 @@ services:
       # recreates the container. This label lists what the files route, so
       # adding a route means changing it, and changing it is what makes compose
       # act. Keep it in step with caddy/conf.d.
-      vw.routes: deploy dir meta a1 metrics
+      vw.routes: deploy dir meta a1 metrics admin
       # The same trick a third time. This names the client page's cache policy
       # so a policy change in the Caddyfile has something here to move.
       vw.page-cache: no-cache
@@ -79,6 +79,12 @@ services:
       # socket to these arenas. An arena host leaves this empty and imports no
       # route that reads it.
       - client-page:/srv/play:ro
+      # The admin panel, straight from the checkout: plain files with no build
+      # step, so the updater's git reset is the whole deploy. Unlike the Caddy
+      # config above, file_server reads these per request, which is why they
+      # need no label to move. Mounted on every role and served only where
+      # VW_ADMIN_HOST names a real site.
+      - ./admin:/srv/admin:ro
     environment:
       # The name this host serves, which is not the machine it runs on: a
       # central host answers for play.<domain> whichever instance is underneath
@@ -87,6 +93,13 @@ services:
       # Which of caddy/conf.d this host's role routes, by filename prefix.
       # Empty is every one of them, which is the host that runs everything.
       VW_ROUTES: ${VW_ROUTES:-}
+      # The admin panel's name, on the one host that serves it. The fallback
+      # is here and not only in the Caddyfile because a Caddyfile default
+      # applies to an unset variable, and compose always sets this one:
+      # `${VW_ADMIN_HOST:-}` would hand Caddy an empty site address on every
+      # host whose .env leaves it out. admin.localhost is the safe shape, a
+      # site nobody dials with a certificate nobody is asked for.
+      VW_ADMIN_HOST: ${VW_ADMIN_HOST:-admin.localhost}
 
 volumes:
   caddy-data:

@@ -1,14 +1,14 @@
--- The rung ramp: one colour a rung, and colour on a round says nothing else.
+-- The rung ramp: one color a rung, and color on a round says nothing else.
 --
 --     lua5.1 client/tests/rung_test.lua
 --
--- Colour is the only channel a three-pixel object crossing a screen has, so
+-- Color is the only channel a three-pixel object crossing a screen has, so
 -- what this measures is whether two rounds can actually be told apart, in
 -- units of perceived difference rather than in hex.
 --
 -- The ramp this replaced failed both ways and neither was visible in the
 -- source. Its rungs were ten units apart, which is not a call anybody makes
--- under fire. It put a rung 3 bomb on the charge colour exactly, and a rung 4
+-- under fire. It put a rung 3 bomb on the charge color exactly, and a rung 4
 -- bolt within seven of the HUD's own text. And it blended toward white, so
 -- the two teams converged as they climbed and the deadliest rounds were the
 -- hardest to attribute.
@@ -34,7 +34,7 @@ end
 local pal = require("arena.palette")
 
 -- CIE76: coarse next to the modern formulas, and far more than enough to
--- separate "two colours" from "one colour twice". Under about 15 is a
+-- separate "two colors" from "one color twice". Under about 15 is a
 -- distinction nobody makes on something moving.
 local function lab(c)
     local function lin(v)
@@ -78,7 +78,7 @@ check("and there is only the one", pal.FRIEND_LVL == nil
 
 -- Out of range either way, because a level comes from a zone file and a zone
 -- file is not this repository.
-check("a level past the top of the ramp still has a colour",
+check("a level past the top of the ramp still has a color",
       pal.rung(99) == pal.RUNG[4] and pal.rung(-3) == pal.RUNG[1],
       "the clamp does not hold")
 
@@ -120,7 +120,7 @@ local SPENT = {
     {"team cyan", pal.FRIEND}, {"team amber", pal.ENEMY},
     {"charge gold", pal.CHARGE_COL}, {"prize green", pal.PRIZE},
     {"burst violet", pal.BURST}, {"HUD ink", pal.INK},
-    {"a bomb's own colour", pal.BOMB}, {"rust", pal.RUST},
+    {"a bomb's own color", pal.BOMB}, {"rust", pal.RUST},
 }
 local near, nname = math.huge, ""
 for i, c in ipairs(pal.RUNG) do
@@ -136,7 +136,7 @@ end
 check("no rung lands on something already spent", near > 20, nname)
 
 -- The burst is the one weapon on the map that sits on no ladder at all, which
--- is why it keeps a colour of its own. If a rung ever reaches it, that
+-- is why it keeps a color of its own. If a rung ever reaches it, that
 -- distinction is gone.
 local vio = math.huge
 for _, c in ipairs(pal.RUNG) do vio = math.min(vio, de(c, pal.BURST)) end
@@ -146,7 +146,7 @@ check("and none of them reaches the violet that means no ladder", vio > 30,
 -- --- it reads as a scale ---------------------------------------------------
 
 -- A ramp is a sequence, not a set: rung 4 has to look like more than rung 1
--- or the colours are four labels a player has to memorise. Measured as a
+-- or the colors are four labels a player has to memorise. Measured as a
 -- turn through hue rather than as lightness, since the point of leaving the
 -- old ramp was that lightness alone converged.
 local function hue(c)

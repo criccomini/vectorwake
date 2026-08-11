@@ -9,10 +9,10 @@
 # saying there was no diagnostic channel.
 #
 # Placeholders substituted before submission, none committed:
-#   __POOL_TOKEN__  __ADMIN_TOKEN__  __BRANCH__  __DEPLOY_KEY_B64__
+#   __POOL_TOKEN__  __BRANCH__  __DEPLOY_KEY_B64__
 #   __META_DATABASE__  __META_KEY__  __ACCOUNTS__  __REGION__
 #   __POOL_DIGEST__  __META_VERIFY__
-#   __ROLE__  __HOST__  __FRONT__
+#   __ROLE__  __HOST__  __ADMIN_HOST__  __FRONT__
 #
 # The meta-layer's are, unlike the tokens, not minted per host: the database is
 # one database however many hosts read it. They arrive the same way regardless,
@@ -233,13 +233,13 @@ VW_ROLE=$ROLE
 COMPOSE_FILE=$COMPOSE
 VW_HOST=__HOST__
 VW_ROUTES=$ROUTES
+VW_ADMIN_HOST=__ADMIN_HOST__
 VW_DIRECTORY=$ARENA_DIRECTORY
 VW_META=$ARENA_META
 VW_REGION=__REGION__
 VW_DEPLOY_LOG=$LOG
 VW_CERT_DIR=$CERT_DIR
 VW_POOL_TOKEN=__POOL_TOKEN__
-VW_ADMIN_TOKEN=__ADMIN_TOKEN__
 VW_META_DATABASE=__META_DATABASE__
 VW_META_KEY=__META_KEY__
 VW_POOL_DIGEST=__POOL_DIGEST__

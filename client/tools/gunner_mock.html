@@ -102,7 +102,7 @@ function ship(ctx, cls, x, y, heading, col, opt) {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
 
-  // interior structure, in a neutral instrument grey
+  // interior structure, in a neutral instrument gray
   if (near && h.plates) for (const q of h.plates) {
     place(ctx, q, x, y, ca, sa, s); ctx.closePath();
     ctx.fillStyle = css(PANEL_INK, 0.035*dim); ctx.fill();
@@ -142,7 +142,7 @@ function ship(ctx, cls, x, y, heading, col, opt) {
     ctx.stroke();
   }
 
-  // the canopy, always the brightest closed cell and always forward of centre
+  // the canopy, always the brightest closed cell and always forward of center
   if (h.canopy) {
     place(ctx, h.canopy, x, y, ca, sa, s); ctx.closePath();
     ctx.fillStyle = css(hot(col,0.3), 0.42*dim); ctx.fill();
@@ -247,8 +247,8 @@ function carrier(ctx, cls, x, y, heading, col, gunners, opt) {
       const e = 0.34 + 0.66 * (g.energy == null ? 1 : g.energy);
       const a = heading + g.aim;
       const [ox, oy] = rim(h, a, opt.rim);
-      // centred on the hull's own middle rather than its origin, since that
-      // is where a ring looks centred
+      // centered on the hull's own middle rather than its origin, since that
+      // is where a ring looks centered
       const cx = x + (h.mid*sa)*s, cyy = y - (h.mid*ca)*s;
       const dx = cx + ox*s, dy = cyy - oy*s;
       const dca = Math.cos(a), dsa = Math.sin(a);
@@ -299,7 +299,7 @@ function carrier(ctx, cls, x, y, heading, col, gunners, opt) {
     const e = 0.34 + 0.66 * (g.energy == null ? 1 : g.energy);
     const a = heading + g.aim;
     const gca = Math.cos(a), gsa = Math.sin(a);
-    // the barrel, out of the shared centre
+    // the barrel, out of the shared center
     const o = [x + (cy*sa)*s, y - (cy*ca)*s];
     const bx = o[0] + gsa*7.4*s, by = o[1] - gca*7.4*s;
     const rx = o[0] + gsa*1.4*s, ry = o[1] - gca*1.4*s;

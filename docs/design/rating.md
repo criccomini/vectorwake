@@ -244,7 +244,7 @@ leave otherwise:
 
 - The last damage taken is within the quit window (`rating::QUIT_WINDOW`,
   three seconds). Recency is the only gate the ledger can hold, because
-  `death` normalises credit shares and any nonzero ledger resolves at full
+  `death` normalizes credit shares and any nonzero ledger resolves at full
   weight; the decay curve splits credit between attackers, it cannot say
   whether a fight is still on.
 - The ship's energy is below a fraction of its effective ceiling

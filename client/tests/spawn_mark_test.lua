@@ -7,7 +7,7 @@
 -- a spawn radius, in which case nobody arrives on those tiles at all and the
 -- rings point at nothing. Or a zone can want its home ends kept quiet, which
 -- is not a hypothetical preference: the mark is drawn for every spawn on the
--- map, the enemy's included and in the enemy's colour, so anybody flying can
+-- map, the enemy's included and in the enemy's color, so anybody flying can
 -- read where the other side comes back.
 --
 -- The core folds both answers into one call rather than handing the drawing
@@ -93,14 +93,14 @@ check("a spawn tile is marked when the zone says so", #on > 0,
 
 -- The mark sits on the middle of its tile rather than the corner, which is
 -- also where the core now puts the ship that arrives on it.
-local centred = false
+local centered = false
 for _, r in ipairs(on) do
     if r.x == SPAWN_TX * TILE + TILE / 2
         and r.y == SPAWN_TY * TILE + TILE / 2 then
-        centred = true
+        centered = true
     end
 end
-check("and sits on the middle of its tile", centred)
+check("and sits on the middle of its tile", centered)
 
 local off = draw(false)
 check("and is not drawn when it says not to", #off == 0,

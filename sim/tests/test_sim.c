@@ -610,7 +610,7 @@ int main(void) {
               "the ship is standing in the safe zone");
         /* Flight is untouched. Braking on entry made a safe zone flypaper,
          * and a zone that cannot be crossed at speed is a wall in a
-         * different colour. */
+         * different color. */
         step_n(&s, &sc, SIM_BTN_THRUST, 0, 30);
         int32_t vy = s.ships[id].vy;
         CHECK(vy != 0, "a ship accelerates inside a safe zone");
@@ -861,7 +861,7 @@ int main(void) {
               "and the features are rebuilt on arrival");
         CHECK(sim_map_hash(src) == sim_map_hash(dst), "the hashes agree");
 
-        /* A different map must not hash the same, or the check is theatre. */
+        /* A different map must not hash the same, or the check is theater. */
         sim_map *pit = malloc(sizeof *pit);
         sim_map_pit(pit);
         CHECK(sim_map_hash(pit) != sim_map_hash(src),
@@ -1287,7 +1287,7 @@ int main(void) {
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1, "fired");
         int32_t up = s.weapons[0].vy;
-        CHECK(up < 0, "travelling up");
+        CHECK(up < 0, "traveling up");
         step_n(&s, &w, 0, 0, 30);
         CHECK(s.weapon_count == 1, "the wall did not end it");
         CHECK(s.weapons[0].vy > 0, "it came back down");
@@ -1524,7 +1524,7 @@ int main(void) {
          * one almost at the rim leave at the same speed.
          *
          * Speed, not the x component: the charge leaves the muzzle rather
-         * than the hull's centre, so two victims level with the firer are on
+         * than the hull's center, so two victims level with the firer are on
          * slightly different bearings from it, and the whole point of this is
          * that the magnitude does not care. */
         sim_state s;
@@ -1585,7 +1585,7 @@ int main(void) {
         int32_t before = s.weapons[0].vx;
         uint16_t life = s.weapons[0].life;
         uint8_t bullet = s.weapons[0].spec;
-        CHECK(before < 0, "and travelling toward the repel");
+        CHECK(before < 0, "and traveling toward the repel");
         step_n(&s, &w, SIM_BTN_FIRE, 0, 3);
         CHECK(s.weapon_count >= 1, "and survived being repelled");
         CHECK(s.weapons[0].vx > 0, "a repel turns an enemy round around");
@@ -1605,7 +1605,7 @@ int main(void) {
          * you, your side and your own rounds alone. Without the team test the
          * shove was symmetric, and the worst of it landed on the pilot who
          * let it off: the charge spawns at a muzzle offset rather than at the
-         * hull centre, so the guard for a body at dead centre never saw them
+         * hull center, so the guard for a body at dead center never saw them
          * and they were thrown backwards at 484 px/s, which is faster than
          * any hull in the roster can fly.
          *
@@ -2521,7 +2521,7 @@ int main(void) {
     {
         /* The rung a mine wears is the rung its layer's bombs are on, and it
          * is a real number rather than a coat of paint: the blast climbs the
-         * bomb ladder's own arithmetic, so the colour the client paints from
+         * bomb ladder's own arithmetic, so the color the client paints from
          * cannot promise more than the mine delivers. */
         const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
         sim_state s;
@@ -2821,7 +2821,7 @@ int main(void) {
         s.ships[0].level[SIM_TRIG_GUN] = 1;
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
         step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(s.weapon_count == 3, "a levelled, multifired shot leaves");
+        CHECK(s.weapon_count == 3, "a leveled, multifired shot leaves");
         uint8_t spec = s.weapons[0].spec;
         uint16_t mods = s.weapons[0].mods;
         CHECK(cfg.specs[spec].damage == l2 && l2 > l1,
@@ -3395,7 +3395,7 @@ int main(void) {
      * the wrapped result was a hugely negative bar the clamp ignored because it
      * only ever looked for too much energy. A live server really produced this:
      * it set INT32_MAX to mean "full", and joining ships spent their first tick
-     * at INT32_MIN, one hit from dead. Undefined behaviour is also the one thing
+     * at INT32_MIN, one hit from dead. Undefined behavior is also the one thing
      * that could make this core step differently on different platforms, which
      * is the property everything else here depends on. */
     {
@@ -3802,7 +3802,7 @@ int main(void) {
      *
      * Two arrangements behind one number, so both are measured against the
      * same map: an empty room inside a border, with four spawn tiles marked
-     * for team 0 well away from the centre.
+     * for team 0 well away from the center.
      */
     {
         sim_map *sm = malloc(sizeof *sm);

@@ -86,6 +86,9 @@ REGION=${VW_REGION:-atl}
 # baked directory address, and the one an arena host anywhere dials to register.
 # A central host serves it; an arena host serves its own name and points here.
 FRONT=${VW_FRONT:-play.$DOMAIN}
+# The admin panel's name. It rides with the front: both belong to whichever
+# host is central, so `point` moves the pair together.
+ADMIN_HOST=${VW_ADMIN_HOST:-admin.$DOMAIN}
 DRY=0
 TTL=${VW_TTL:-300}
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -257,12 +260,10 @@ render() {
 
 	check_secrets "$role"
 
-	# Per host, both of them. The admin token is this host's alone so losing one
-	# is one host reprovisioned rather than a fleet-wide rotation. The status
-	# topic is the outbound channel provision.sh talks over when nothing can
-	# reach the box; it is random because anyone who learns it can read it.
+	# The status topic is the outbound channel provision.sh talks over when
+	# nothing can reach the box; it is random because anyone who learns it
+	# can read it. Per host, so a leak names one machine.
 	accounts=${accounts:-0}
-	admin=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
 	topic=vw-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')
 
 	# The meta-layer's two go only to a host that runs a meta-layer.
@@ -279,6 +280,14 @@ render() {
 	case $role in
 	arena) meta_db= meta_key= ;;
 	*)     meta_db=${VW_META_DATABASE:-} meta_key=${VW_META_KEY:-} ;;
+	esac
+
+	# The panel's name goes only to the host that serves it. An arena host
+	# gets an empty value, which the compose file turns into admin.localhost,
+	# a site nobody dials and no certificate authority is asked about.
+	case $role in
+	arena) admin_host= ;;
+	*)     admin_host=$ADMIN_HOST ;;
 	esac
 
 	# The public halves, which the catalog names with `env:` rather than
@@ -315,9 +324,9 @@ render() {
 	trap 'rm -f "$prov" ${SECRET_KEY_FILE:-}' EXIT
 	sed \
 		-e "s|__POOL_TOKEN__|$VW_POOL_TOKEN|g" \
-		-e "s|__ADMIN_TOKEN__|$admin|g" \
 		-e "s|__ROLE__|$role|g" \
 		-e "s|__HOST__|$(serves "$role" "$name")|g" \
+		-e "s|__ADMIN_HOST__|$admin_host|g" \
 		-e "s|__FRONT__|$FRONT|g" \
 		-e "s|__BRANCH__|$BRANCH|g" \
 		-e "s|__STATUS_TOPIC__|$topic|g" \
@@ -351,7 +360,6 @@ render() {
 	echo "fleet: $name role=$role region=$region branch=$BRANCH" >&2
 	echo "fleet: serves   $(serves "$role" "$name")" >&2
 	echo "fleet: watch    https://ntfy.sh/$topic" >&2
-	echo "fleet: admin token $admin" >&2
 }
 
 # --- verbs -------------------------------------------------------------------
@@ -389,7 +397,7 @@ cmd_new() {
 	busy=$(vultr block-storage list -o json | jq -r --arg l "$host-certs" --arg r "$region" \
 		'[.blocks[] | select(.label == $l and .region == $r and (.attached_to_instance // "") != "")][0].attached_to_instance // empty')
 	if [ -n "$busy" ]; then
-		die "a volume labelled $host-certs is attached to $busy already.
+		die "a volume labeled $host-certs is attached to $busy already.
        Detach it, or destroy that host first. Creating a second would issue a
        fresh certificate and spend one of five for this week."
 	fi
@@ -540,6 +548,37 @@ cmd_new() {
 	esac
 }
 
+# Create or move one A record, quietly when it already points there. For the
+# names that ride along with a cutover, after the cutover's own question has
+# been asked and answered. Prefixed variables, because POSIX sh has no locals
+# and the caller's are in use.
+converge_record() {
+	cr_name=$1 cr_ip=$2
+	cr_rec=$(vultr dns record list "$DOMAIN" -o json | jq -r --arg n "$cr_name" \
+		'[.records[] | select(.name == $n and .type == "A")][0] // empty')
+	cr_rid=$(printf '%s' "$cr_rec" | jq -r '.id // empty')
+	cr_old=$(printf '%s' "$cr_rec" | jq -r '.data // empty')
+	if [ -z "$cr_rid" ]; then
+		vultr_do dns record create "$DOMAIN" --type A --name "$cr_name" \
+			--data "$cr_ip" --ttl "$TTL" >/dev/null
+		echo "fleet: $cr_name.$DOMAIN -> $cr_ip (created)"
+	elif [ "$cr_old" != "$cr_ip" ]; then
+		vultr_do dns record update "$DOMAIN" "$cr_rid" --data "$cr_ip" --ttl "$TTL" >/dev/null
+		echo "fleet: $cr_name.$DOMAIN -> $cr_ip (moved from $cr_old)"
+	fi
+}
+
+# The names that follow the front door wherever it points. The panel's is
+# one: admin.<domain> belongs to whichever host is central, so a cutover
+# that moved only the front would strand the panel on the old box. Runs on
+# every exit of cmd_point, including "already points there", which is how
+# the record gets created the first time without a command of its own.
+ride_along() {
+	if [ "$name.$DOMAIN" = "$FRONT" ]; then
+		converge_record "${ADMIN_HOST%%.*}" "$1"
+	fi
+}
+
 # Move a name onto a host. This is the cutover, and it is the whole of it.
 #
 # `new` creates a record for the host it is creating and nothing else, which is
@@ -558,7 +597,7 @@ cmd_point() {
 
 	ip=$(vultr instance list -o json | jq -r --arg l "$target.$DOMAIN" \
 		'.instances[] | select(.label == $l) | .main_ip')
-	[ -n "$ip" ] || die "no instance labelled $target.$DOMAIN"
+	[ -n "$ip" ] || die "no instance labeled $target.$DOMAIN"
 	[ "$ip" != "0.0.0.0" ] || die "$target.$DOMAIN has no address yet"
 
 	rec=$(vultr dns record list "$DOMAIN" -o json | jq -r --arg n "$name" \
@@ -572,11 +611,13 @@ cmd_point() {
 		vultr_do dns record create "$DOMAIN" --type A --name "$name" \
 			--data "$ip" --ttl "$TTL" >/dev/null
 		echo "fleet: $name.$DOMAIN -> $ip"
+		ride_along "$ip"
 		return 0
 	fi
 
 	if [ "$old" = "$ip" ]; then
 		echo "fleet: $name.$DOMAIN already points at $ip"
+		ride_along "$ip"
 		return 0
 	fi
 
@@ -597,6 +638,7 @@ cmd_point() {
 
 	vultr_do dns record update "$DOMAIN" "$rid" --data "$ip" --ttl "$TTL" >/dev/null
 	echo "fleet: $name.$DOMAIN -> $ip"
+	ride_along "$ip"
 	# Said because it is the expensive part and it happens without being asked.
 	# The host has been trying and failing to get this certificate for as long
 	# as it has existed; the moment the name resolves here, it succeeds.
@@ -648,7 +690,7 @@ cmd_firewall() {
 			echo "  ok      $proto $port"
 		else
 			echo "  adding  $proto $port"
-			# "Anywhere" is spelt subnet 0.0.0.0 with a zero-bit mask. The CLI's
+			# "Anywhere" is spelled subnet 0.0.0.0 with a zero-bit mask. The CLI's
 			# --source is a different thing (empty, or the word cloudflare) and
 			# is left alone.
 			vultr_do firewall rule create "$gid" --protocol "$proto" \
@@ -712,7 +754,7 @@ cmd_db() {
 db_show() {
 	db=$(db_row)
 	if [ -z "$db" ]; then
-		echo "fleet: no managed database labelled $DB_LABEL" >&2
+		echo "fleet: no managed database labeled $DB_LABEL" >&2
 		echo "       fleet.sh db create [region]" >&2
 		return 1
 	fi
@@ -746,7 +788,7 @@ db_show() {
 db_create() {
 	region=${1:-$REGION}
 	if [ -n "$(db_row)" ]; then
-		echo "fleet: a database labelled $DB_LABEL already exists:"
+		echo "fleet: a database labeled $DB_LABEL already exists:"
 		# Tolerated failing, because one still building has no credentials to
 		# print and that is not an error here: the answer to `create` is that
 		# there is nothing to create.
@@ -786,7 +828,7 @@ db_create() {
 # typed rather than for a keystroke, and says what is inside first.
 db_destroy() {
 	db=$(db_row)
-	[ -n "$db" ] || die "no managed database labelled $DB_LABEL"
+	[ -n "$db" ] || die "no managed database labeled $DB_LABEL"
 	id=$(printf '%s' "$db" | jq -r '.id')
 	printf '%s' "$db" | jq -r '"fleet: \(.label)  \(.status)  \(.region)  \(.plan)"'
 	cat >&2 <<WARN
@@ -976,7 +1018,7 @@ $(printf '%s' "$clusters" | jq -r '.clusters[] | "         \(.region)  (\(.hostn
 		# for the same reason the region list above is: a bill nobody chose is
 		# the failure this verb exists to prevent.
 		#
-		# The bucket holds five objects totalling under a kilobyte, so every
+		# The bucket holds five objects totaling under a kilobyte, so every
 		# tier is overqualified and the difference is entirely the bill.
 		menu=$(mktemp) || die "no temporary file"
 		for c in $ids; do
@@ -1205,7 +1247,7 @@ cmd_rm() {
 
 	id=$(vultr instance list -o json | jq -r --arg l "$host" \
 		'.instances[] | select(.label == $l) | .id')
-	[ -n "$id" ] || die "no instance labelled $host"
+	[ -n "$id" ] || die "no instance labeled $host"
 
 	printf 'fleet: destroy %s (%s) and its DNS record? [y/N] ' "$host" "$id"
 	read -r yes

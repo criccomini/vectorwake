@@ -16,7 +16,7 @@ records why this is our own service rather than Nakama.
 
 | Table | Contents |
 |---|---|
-| accounts | id, kind (`human`, `house_bot`, `third_party_bot`), created, standing, and the owner id when the kind is a third-party bot |
+| accounts | id, kind (`human`, `house_bot`, `third_party_bot`), created, standing, the admin flag that opens [the panel](admin.md), and the owner id when the kind is a third-party bot |
 | credentials | account, method (`secret`, `password`, `steam`, more later), identifier or hash. A human account whose only credential is its secret is a guest |
 | names | account, call sign, unique fleet-wide under a case-insensitive index |
 | rated_events | the log [rating.md](../design/rating.md) specifies: participants, weights, ratings before and after, arena, mode class, opponent kind, timestamp |
@@ -47,7 +47,21 @@ framework would be the larger change.
 | `/v1/bot` | the bot server, with a pool token | The account for one roster individual, the same one every time. A new one is seeded from the calibrated ladder |
 | `/v1/bot/register` | anyone, with a claimed account | A third-party bot account under that owner, who answers for it |
 | `/v1/events` | an arena, with a pool token | Rated events, appended to the log and applied to the projection |
-| `/v1/ban` | an operator, with the admin token | Marks an account, which takes effect at the next token issuance |
+| `/v1/admin/fleet` | the admin panel | Every instance the directory on this host has observed, relayed from it over loopback, plus the catalog version and whether its verifying key is the one this process signs with |
+| `/v1/admin/pilot` | the admin panel | One pilot by call sign or number: kind, standing, the dates. Behind the account flag |
+| `/v1/admin/ban` | the admin panel | A fleet ban, which takes effect at the next token issuance. Refuses accounts that hold the flag |
+| `/v1/admin/bans` | the admin panel | Every account currently marked, with its reason |
+| `/v1/admin/admins` | the admin panel | Who holds the flag |
+
+The `/v1/admin` block is the panel's, and [admin.md](admin.md) is its design.
+The one rule those routes live by: the `admin` field `/v1/session` answers
+with is what the page draws, never what the server trusts. Every admin route
+resolves the presented secret and checks the flag in the database itself.
+
+The flag has no route of its own. Granting and revoking are SQL run by the
+operator on the central host, so the authority over who operates the fleet is
+the database credential and nothing reachable over HTTP; the first admin of a
+deployment is made the same way as the tenth.
 
 A client learns the address from the directory's games list, which is the one
 thing it asks for before it needs an identity. That keeps the account system a

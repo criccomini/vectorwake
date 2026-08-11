@@ -3,10 +3,10 @@
 --     lua5.1 client/tests/drones_test.lua
 --
 -- `world.drones` is handed a flat list of four entries per gunner -- heading,
--- energy fraction, colour, whether it is yours -- and the caller that fills it
+-- energy fraction, color, whether it is yours -- and the caller that fills it
 -- is in arena.script, which no test loads. So the stride is a contract between
 -- two files with nothing holding them together, and getting it wrong does not
--- throw: it reads a colour as a heading and puts a drone somewhere plausible.
+-- throw: it reads a color as a heading and puts a drone somewhere plausible.
 --
 -- What this pins is the arithmetic that can be checked without eyes. A drone
 -- sits on a ring in the direction its gunner is aiming, so its bearing from
@@ -57,9 +57,9 @@ local function recorder()
     return L
 end
 
--- The middle of every point a drone drew, which is near enough its centre for
+-- The middle of every point a drone drew, which is near enough its center for
 -- a bearing and a radius.
-local function centre(pts)
+local function center(pts)
     local sx, sy = 0, 0
     for _, p in ipairs(pts) do sx = sx + p.x; sy = sy + p.y end
     return sx / #pts, sy / #pts
@@ -73,7 +73,7 @@ local APEX = 0
 do
     local g = recorder()
     world.drones(nil, g, APEX, X, Y, {UP, 1.0, pal.FRIEND, false})
-    local cx, cy = centre(g.pts)
+    local cx, cy = center(g.pts)
     check("a drone aiming up sits above the hull", cy < Y - 4,
           string.format("cy=%.1f against y=%d", cy, Y))
     check("and on the hull's own axis", math.abs(cx - X) < 1.5,
@@ -85,8 +85,8 @@ do
     local up, right = recorder(), recorder()
     world.drones(nil, up, APEX, X, Y, {UP, 1.0, pal.FRIEND, false})
     world.drones(nil, right, APEX, X, Y, {RIGHT, 1.0, pal.FRIEND, false})
-    local ux, uy = centre(up.pts)
-    local rx, ry = centre(right.pts)
+    local ux, uy = center(up.pts)
+    local rx, ry = center(right.pts)
     local ur = math.sqrt((ux - X) ^ 2 + (uy - Y) ^ 2)
     local rr = math.sqrt((rx - X) ^ 2 + (ry - Y) ^ 2)
     check("turning walks a drone around the ring", rx > X + 4 and ry < Y + 4,
@@ -137,8 +137,8 @@ do
     local apex, anvil = recorder(), recorder()
     world.drones(nil, apex, 0, X, Y, {UP, 1.0, pal.FRIEND, false})
     world.drones(nil, anvil, 3, X, Y, {UP, 1.0, pal.FRIEND, false})
-    local _, ay = centre(apex.pts)
-    local _, ny = centre(anvil.pts)
+    local _, ay = center(apex.pts)
+    local _, ny = center(anvil.pts)
     check("the ring is sized per hull", math.abs(ay - ny) > 0.5,
           string.format("apex %.1f, anvil %.1f", Y - ay, Y - ny))
 end

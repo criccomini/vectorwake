@@ -199,6 +199,8 @@ impl Directory {
     pub fn view(&self) -> fleet::View {
         let now = now_ms();
         fleet::View {
+            catalog_version: self.catalog.version,
+            meta_key: self.catalog.meta.key.clone(),
             instances: self
                 .regs
                 .values()
@@ -331,6 +333,33 @@ impl Directory {
     }
 }
 
+/// One request, one reply, one closed socket. Both ends of a browse are cheap
+/// and neither is worth a held connection: the bot server runs this once a
+/// second, and a directory that is down should cost a failed dial rather than
+/// a stuck task.
+///
+/// Lives here rather than with its first caller because the question it asks
+/// belongs to this protocol: the bot server browses with it, and the
+/// meta-layer asks for the fleet view with it.
+pub async fn request(url: &str, ask: u8, expect: u8) -> Option<String> {
+    // Short, because everything it dials is a process that either answers
+    // immediately or is not there. A long dial timeout would let a dead
+    // address hold a caller's cycle open past the next one.
+    let deadline = std::time::Duration::from_secs(2);
+    let dial = tokio::time::timeout(deadline, tokio_tungstenite::connect_async(url));
+    let (mut ws, _) = dial.await.ok()?.ok()?;
+    ws.send(Message::Binary(vec![ask])).await.ok()?;
+    loop {
+        let msg = tokio::time::timeout(deadline, ws.next()).await.ok()??.ok()?;
+        if let Message::Binary(b) = msg {
+            if b.first() == Some(&expect) && b.len() > 1 {
+                let _ = ws.close(None).await;
+                return Some(String::from_utf8_lossy(&b[1..]).to_string());
+            }
+        }
+    }
+}
+
 /// Verify a claimed address the way a client is about to: connect, ask for
 /// status, require a well-formed answer. The party with a reason to care runs
 /// the check, and an operator can move hosts without a new credential.
@@ -380,6 +409,7 @@ async fn check(address: &str) -> Result<(), String> {
 async fn serve_registration(
     dir: Arc<Mutex<Directory>>,
     ws: tokio_tungstenite::WebSocketStream<Box<dyn crate::Conn>>,
+    local: bool,
 ) {
     let (mut sink, mut source) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
@@ -594,6 +624,33 @@ async fn serve_registration(
                 );
                 let _ = tx.send(Message::Binary(m));
             }
+            // An operator asking for everything this directory has observed,
+            // which is the browse reply plus the rows a player is deliberately
+            // not shown: unverified instances, ages, intents, pools, metrics.
+            //
+            // Answered only for a peer that arrived without a proxy in front
+            // of it, which on these hosts means a process on the box rather
+            // than somebody's browser. Loopback alone will not do it: every
+            // service here runs on the host network and Caddy proxies to
+            // 127.0.0.1, so a request through the public /dir route has a
+            // loopback peer too. What it does not have is this socket without
+            // an `X-Forwarded-For`, because Caddy always writes one.
+            //
+            // The meta-layer is the caller, and it is the caller because it is
+            // the only process that can check an admin flag. See
+            // `/v1/admin/fleet`.
+            Some(t) if t == fleet::O2D_FLEET => {
+                if !local {
+                    println!("refused a fleet view from a proxied peer");
+                    continue;
+                }
+                let d = dir.lock().await;
+                let mut m = vec![fleet::D2O_FLEET];
+                m.extend_from_slice(
+                    serde_json::to_string(&d.view()).unwrap_or_default().as_bytes(),
+                );
+                let _ = tx.send(Message::Binary(m));
+            }
             _ => {}
         }
     }
@@ -726,41 +783,71 @@ pub async fn run() {
             // A bearer token over cleartext is a token given away. Loopback is
             // the exception, because that is development and it has no path.
             let cleartext_remote = tls.is_none() && !peer.ip().is_loopback();
-            // Everything an arena sends up this socket is small: a REGISTER, a
-            // STATUS, an INTENT, an ACK, none past a kilobyte. The library
-            // default buffers frames up to 64 MiB each, and this port is dialed
-            // by strangers before any token is checked, so the cap is what
-            // bounds what an unauthenticated peer can make this process hold.
-            // The big payloads -- catalogs, views -- travel the other way and
-            // are not limited by this.
-            let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
-                max_message_size: Some(64 * 1024),
-                max_frame_size: Some(64 * 1024),
-                ..Default::default()
-            };
-            let Ok(ws) = tokio_tungstenite::accept_async_with_config(stream, Some(cfg)).await
-            else {
-                return;
-            };
-            if cleartext_remote {
-                let (mut sink, _) = ws.split();
-                let _ = sink
-                    .send(Message::Binary(fleet::frame(
-                        fleet::D2A_REJECTED,
-                        &fleet::Rejected {
-                            reason: "bad_address".into(),
-                            detail: "this directory will not accept a credential over \
-                                     cleartext from a remote peer; set VW_TLS_CERT and \
-                                     VW_TLS_KEY"
-                                .into(),
-                        },
-                    )))
-                    .await;
-                return;
-            }
-            serve_registration(dir, ws).await;
+            accept_conn(stream, dir, peer.ip().is_loopback(), cleartext_remote).await;
         });
     }
+}
+
+/// One connection, from handshake to hang-up. Its own function so a test can
+/// hand it a socket: what it decides, whether this peer may ask for the fleet
+/// view, is the only authorisation on this port and is worth proving rather
+/// than reading.
+async fn accept_conn(
+    stream: Box<dyn crate::Conn>,
+    dir: Arc<Mutex<Directory>>,
+    peer_loopback: bool,
+    cleartext_remote: bool,
+) {
+    // Everything an arena sends up this socket is small: a REGISTER, a
+    // STATUS, an INTENT, an ACK, none past a kilobyte. The library default
+    // buffers frames up to 64 MiB each, and this port is dialed by strangers
+    // before any token is checked, so the cap is what bounds what an
+    // unauthenticated peer can make this process hold. The big payloads,
+    // catalogs and views, travel the other way and are not limited by this.
+    let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
+        max_message_size: Some(64 * 1024),
+        max_frame_size: Some(64 * 1024),
+        ..Default::default()
+    };
+    // Whether a proxy handled this request before we did. Caddy writes
+    // `X-Forwarded-For` on everything it forwards, upgrades included, so its
+    // presence is the difference between a process on this box and somebody
+    // on the internet, both of which otherwise arrive from 127.0.0.1 on a
+    // host-network deployment. Read during the handshake because that is the
+    // only place the HTTP headers exist.
+    let proxied = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let saw = proxied.clone();
+    let ws = tokio_tungstenite::accept_hdr_async_with_config(
+        stream,
+        move |req: &tokio_tungstenite::tungstenite::handshake::server::Request,
+              resp: tokio_tungstenite::tungstenite::handshake::server::Response| {
+            if req.headers().contains_key("x-forwarded-for") {
+                saw.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            Ok(resp)
+        },
+        Some(cfg),
+    )
+    .await;
+    let Ok(ws) = ws else { return };
+    let local = peer_loopback && !proxied.load(std::sync::atomic::Ordering::Relaxed);
+    if cleartext_remote {
+        let (mut sink, _) = ws.split();
+        let _ = sink
+            .send(Message::Binary(fleet::frame(
+                fleet::D2A_REJECTED,
+                &fleet::Rejected {
+                    reason: "bad_address".into(),
+                    detail: "this directory will not accept a credential over \
+                             cleartext from a remote peer; set VW_TLS_CERT and \
+                             VW_TLS_KEY"
+                        .into(),
+                },
+            )))
+            .await;
+        return;
+    }
+    serve_registration(dir, ws, local).await;
 }
 
 #[cfg(test)]
@@ -925,5 +1012,81 @@ mod tests {
             d.command("nobody", "drain", "", "chris");
         }
         assert_eq!(d.audit.len(), AUDIT_MAX, "a log that grows forever is an outage waiting");
+    }
+
+    #[test]
+    fn the_view_carries_what_an_operator_checks_the_deployment_by() {
+        let mut d = Directory::new(cat());
+        reg(&mut d, "a", "chaos", 5, true);
+        let v = d.view();
+        assert_eq!(v.catalog_version, 7, "which version this directory serves");
+        assert_eq!(v.meta_key, d.catalog.meta.key, "and the key it says to check tokens with");
+    }
+
+    /// The fleet view is the one thing on this port a stranger may not have,
+    /// and the only thing standing between them is whether a proxy touched the
+    /// request. Both halves are proven against a real socket rather than
+    /// asserted about the flag, because the flag is not the claim: the claim is
+    /// that a browser coming through Caddy cannot get this and a process on the
+    /// box can.
+    #[tokio::test]
+    async fn a_proxied_peer_browses_but_cannot_read_the_fleet() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+        let mut d = Directory::new(cat());
+        reg(&mut d, "unproven", "chaos", 3, false);
+        let dir = Arc::new(Mutex::new(d));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((stream, peer)) = listener.accept().await {
+                let dir = dir.clone();
+                tokio::spawn(async move {
+                    accept_conn(Box::new(stream), dir, peer.ip().is_loopback(), false).await;
+                });
+            }
+        });
+
+        // Ask one question and wait briefly for the tag that answers it.
+        async fn ask(port: u16, forwarded: bool, tag: u8, want: u8) -> Option<String> {
+            let mut req = format!("ws://127.0.0.1:{port}/").into_client_request().unwrap();
+            if forwarded {
+                req.headers_mut()
+                    .insert("x-forwarded-for", "203.0.113.9".parse().unwrap());
+            }
+            let (mut ws, _) = tokio_tungstenite::connect_async(req).await.ok()?;
+            ws.send(Message::Binary(vec![tag])).await.ok()?;
+            let wait = std::time::Duration::from_millis(500);
+            while let Ok(Some(Ok(m))) = tokio::time::timeout(wait, ws.next()).await {
+                if let Message::Binary(b) = m {
+                    if b.first() == Some(&want) {
+                        return Some(String::from_utf8_lossy(&b[1..]).to_string());
+                    }
+                }
+            }
+            None
+        }
+
+        let direct = ask(port, false, fleet::O2D_FLEET, fleet::D2O_FLEET).await;
+        assert!(direct.is_some(), "a process on the box reads the fleet view");
+        assert!(
+            direct.unwrap().contains("unproven"),
+            "including the unverified instance no browse reply carries"
+        );
+
+        assert!(
+            ask(port, true, fleet::O2D_FLEET, fleet::D2O_FLEET).await.is_none(),
+            "a request that came through a proxy is refused the fleet view"
+        );
+
+        // And refused rather than disconnected: the same peer still browses,
+        // which is what every player's client does on this port all day.
+        let browsed = ask(port, true, STATUS_REQUEST, STATUS_REPLY).await;
+        assert!(browsed.is_some(), "a proxied peer still browses");
+        assert!(
+            !browsed.unwrap().contains("unproven"),
+            "and still does not learn about an unverified instance"
+        );
     }
 }

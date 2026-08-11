@@ -116,7 +116,7 @@ class Pilot:
         # teleports the ship, and comparing a still-flying prediction against a
         # fresh spawn point measures the teleport, not the prediction. Those are
         # counted separately: the client's contract is that it accepts the
-        # server's correction, so a discontinuity is expected behaviour and
+        # server's correction, so a discontinuity is expected behavior and
         # lumping it into the error hides how good the agreement actually is.
         self._pred = (self.L.vw_x(self.c, self.me), self.L.vw_y(self.c, self.me),
                       self.L.vw_alive(self.c, self.me),

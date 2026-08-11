@@ -56,7 +56,7 @@ pub struct sim_feature {
     pub variant: u8,
 }
 
-/// Mirrors `sim_map`. A tile is its behaviour -- see the enum in sim.h -- and
+/// Mirrors `sim_map`. A tile is its behavior -- see the enum in sim.h -- and
 /// the feature list is what rules reach for so nothing walks a million tiles
 /// a tick.
 #[repr(C)]
@@ -190,7 +190,7 @@ pub struct sim_settings {
     pub friction: i32,
     pub respawn_delay: u16,
     /// Zero spawns on the map's own tiles; above zero ignores them and drops a
-    /// ship on a random tile within this many of the map's centre. See
+    /// ship on a random tile within this many of the map's center. See
     /// `spawn_radius` in `sim.h` for which arrangement a zone is buying.
     pub spawn_radius: u16,
     /// Whether a client marks the map's spawn tiles. Render only, and ignored
@@ -655,7 +655,7 @@ impl World {
 
     /// Where a ship of this team goes now, as a Q8 world position: the map's
     /// own tiles walked by `nth`, or a draw inside `spawn_radius` of the
-    /// centre when the zone set one. The core decides, so a seat handed out
+    /// center when the zone set one. The core decides, so a seat handed out
     /// here lands where a death in the core would put the same pilot.
     pub fn spawn_point(&mut self, team: u8, cls: u8, nth: u32) -> (i32, i32) {
         let (mut x, mut y) = (0i32, 0i32);

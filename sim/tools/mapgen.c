@@ -85,21 +85,21 @@ static int clear_box(int x, int y, int w, int h, int pad) {
  *
  * Every part of a structure is placed from the middle of the thing it sits
  * in rather than from a corner, because a shape is read by its axes: a gap
- * one tile off centre is a gap that does not face the one opposite it, and
+ * one tile off center is a gap that does not face the one opposite it, and
  * the only way to find that out is to fly at it and stop.
  *
- * Parity is the whole of the arithmetic. A run of `k` tiles centres exactly
+ * Parity is the whole of the arithmetic. A run of `k` tiles centers exactly
  * in a span of `len` only when the two are both odd or both even, so a
  * length is adjusted to the span before it is placed rather than rounded
  * into it afterwards. */
 
-/* `k`, moved to the span's parity so `centred` below divides evenly. */
+/* `k`, moved to the span's parity so `centered` below divides evenly. */
 static int fits(int len, int k) { return ((len ^ k) & 1) ? k + 1 : k; }
 
-/* Where a run of `k` starts when it is centred in `len` tiles from `at`. */
-static int centred(int at, int len, int k) { return at + (len - k) / 2; }
+/* Where a run of `k` starts when it is centered in `len` tiles from `at`. */
+static int centered(int at, int len, int k) { return at + (len - k) / 2; }
 
-/* A gap of about `want` tiles, centred in a wall `span` long: as wide as
+/* A gap of about `want` tiles, centered in a wall `span` long: as wide as
  * asked for, or as wide as the wall can hold with its corners left standing,
  * and of the wall's parity. Zero when the wall is too short to cut. */
 static int gap_len(int span, int want) {
@@ -109,13 +109,13 @@ static int gap_len(int span, int want) {
     return want < 2 ? 0 : want;
 }
 
-/* A row of `step`-spaced tiles centred in `span`: how many fit, and where
+/* A row of `step`-spaced tiles centered in `span`: how many fit, and where
  * the first one goes. Two structures drawn the same way side by side then
  * line up with each other, which is the point. */
 static void grid_span(int at, int span, int step, int *start, int *count) {
     int n = (span - 1) / step + 1;
     *count = n;
-    *start = centred(at, span, (n - 1) * step + 1);
+    *start = centered(at, span, (n - 1) * step + 1);
 }
 
 /* ---- motifs -------------------------------------------------------------
@@ -178,7 +178,7 @@ static void m_room(int x, int y, int w, int h, uint8_t wall) {
      * inner one stays open, so a shut door is one tile thick like the wall
      * it stands in. */
     if (across) {
-        int gx = centred(x, w, across);
+        int gx = centered(x, w, across);
         uint8_t t = hang == 1 ? shut : SIM_TILE_EMPTY;
         hline(gx, gx + across - 1, y, t);
         hline(gx, gx + across - 1, y + 1, SIM_TILE_EMPTY);
@@ -186,7 +186,7 @@ static void m_room(int x, int y, int w, int h, uint8_t wall) {
         hline(gx, gx + across - 1, y1 - 1, SIM_TILE_EMPTY);
     }
     if (down) {
-        int gy = centred(y, h, down);
+        int gy = centered(y, h, down);
         uint8_t t = hang == 2 ? shut : SIM_TILE_EMPTY;
         vline(x, gy, gy + down - 1, t);
         vline(x + 1, gy, gy + down - 1, SIM_TILE_EMPTY);
@@ -207,7 +207,7 @@ static void m_brackets(int x, int y, int w, int h, uint8_t wall) {
     vline(x + w - 1, y + h - 1 - b, y + h - 1, wall);
 }
 
-/* A regular field of single tiles, centred in its box so that two of them
+/* A regular field of single tiles, centered in its box so that two of them
  * side by side share one grid. Reads as texture at radar scale and as
  * something to weave through up close, and it costs almost no wall to draw. */
 static void m_lattice(int x, int y, int w, int h, uint8_t wall) {
@@ -226,14 +226,14 @@ static void m_lattice(int x, int y, int w, int h, uint8_t wall) {
  * heavier line so much as a different material, and at radar scale it was
  * the one shape that read as a smear rather than as a line.
  *
- * Three forms, each of them symmetric and each centred on its box: one arm,
+ * Three forms, each of them symmetric and each centered on its box: one arm,
  * two arms crossed, or two meeting at a point. An odd span, so the two arms
  * of a cross meet on exactly one tile instead of passing each other. */
 static void m_chevron(int x, int y, int w, int h, uint8_t wall) {
     int n = w < h ? w : h;
     if (!(n & 1)) n--;
     if (n < 3) return;
-    int ox = centred(x, w, n), oy = centred(y, h, n);
+    int ox = centered(x, w, n), oy = centered(y, h, n);
     int form = rr(0, 2);
     if (form == 2) { /* two arms meeting at a point: V, its mirror, < or > */
         int m = (n + 1) / 2, far = chance(50), down = chance(50);
@@ -261,21 +261,21 @@ static void m_bar(int x, int y, int w, int h, uint8_t wall) {
     if (w >= h) {
         int n = h | 1;
         if (n > h) n = h - 1;
-        int y0 = centred(y, h, n);
+        int y0 = centered(y, h, n);
         hline(x + 2, x + w - 3, y0 + n / 2, wall);
         vline(x, y0, y0 + n - 1, wall);
         vline(x + w - 1, y0, y0 + n - 1, wall);
     } else {
         int n = w | 1;
         if (n > w) n = w - 1;
-        int x0 = centred(x, w, n);
+        int x0 = centered(x, w, n);
         vline(x0 + n / 2, y + 2, y + h - 3, wall);
         hline(x0, x0 + n - 1, y, wall);
         hline(x0, x0 + n - 1, y + h - 1, wall);
     }
 }
 
-/* Parallel lines, centred on the box and the same length either side of the
+/* Parallel lines, centered on the box and the same length either side of the
  * middle one, so a stack is a grate rather than a pile.
  *
  * Six tiles between lines at the closest. Four leaves three rows between
@@ -293,7 +293,7 @@ static void m_stack(int x, int y, int w, int h, uint8_t wall) {
     }
     for (int i = 0; i < n; i++) {
         int L = len[i < n - 1 - i ? i : n - 1 - i];
-        int lx = centred(x, w, L);
+        int lx = centered(x, w, L);
         hline(lx, lx + L - 1, sy + i * step, wall);
     }
 }
@@ -301,7 +301,7 @@ static void m_stack(int x, int y, int w, int h, uint8_t wall) {
 /* A room split into cells. The densest thing here, and the only motif with
  * interior corners worth hiding in. Its dividers are spaced from whichever
  * end is nearer, so the pattern is the same read from either side, and the
- * way through each one is centred rather than dropped in at random. */
+ * way through each one is centered rather than dropped in at random. */
 static void m_cells(int x, int y, int w, int h, uint8_t wall) {
     m_room(x, y, w, h, wall);
     int cols = rr(1, 3), rows = rr(1, 2);
@@ -313,14 +313,14 @@ static void m_cells(int x, int y, int w, int h, uint8_t wall) {
         int cx = 2 * c <= cols + 1 ? x + c * w / (cols + 1)
                                    : x + w - 1 - (cols + 1 - c) * w / (cols + 1);
         vline(cx, y + 1, y + h - 2, wall);
-        int gy = centred(y, h, gh);
+        int gy = centered(y, h, gh);
         vline(cx, gy, gy + gh - 1, SIM_TILE_EMPTY);
     }
     for (int r = 1; r <= rows; r++) {
         int cy = 2 * r <= rows + 1 ? y + r * h / (rows + 1)
                                    : y + h - 1 - (rows + 1 - r) * h / (rows + 1);
         hline(x + 1, x + w - 2, cy, wall);
-        int gx = centred(x, w, gw);
+        int gx = centered(x, w, gw);
         hline(gx, gx + gw - 1, cy, SIM_TILE_EMPTY);
     }
 }
@@ -633,9 +633,9 @@ static void place_hall(int x, int y, int w, int h, int channel) {
     vline(x, y, y1, SIM_TILE_SOLID);
     vline(x1, y, y1, SIM_TILE_SOLID);
 
-    /* Four ways in, one to a wall, each the same width and each centred on
+    /* Four ways in, one to a wall, each the same width and each centered on
      * the wall it goes through: a landmark is a thing you line up on from
-     * across the map, and a mouth a tile off centre is one you arrive at
+     * across the map, and a mouth a tile off center is one you arrive at
      * sideways.
      *
      * One axis is hung with doors and the other is left open, so a channel
@@ -644,7 +644,7 @@ static void place_hall(int x, int y, int w, int h, int channel) {
      * pass tore a hole in a wall to undo it every time, since a room only
      * reachable through a door is a room a ship waits inside. */
     int dw = fits(w, rr(7, 10)), dh = fits(h, rr(7, 10));
-    int mx = centred(x, w, dw), my = centred(y, h, dh);
+    int mx = centered(x, w, dw), my = centered(y, h, dh);
     uint8_t d = SIM_TILE(SIM_TILE_DOOR, channel);
     uint8_t across = chance(50) ? d : SIM_TILE_EMPTY;
     uint8_t down = across == d ? SIM_TILE_EMPTY : d;
@@ -783,7 +783,7 @@ static int place_dock(int n) {
 /* A ship is not a point, and every check here used to treat it as one.
  *
  * The widest hull in the roster measures 34 pixels across the beam and the
- * longest reaches 23 pixels from its centre at the worst diagonal, against a
+ * longest reaches 23 pixels from its center at the worst diagonal, against a
  * tile of 16. Two tiles is 32 pixels and holds neither of them; three is 48
  * and holds both at any heading, which is the same three tiles the hull
  * extents in baseline.c are set to leave room to turn around in.
@@ -797,7 +797,7 @@ static int place_dock(int n) {
 #define HULL 3
 
 static int32_t *comp; /* region id per tile, 0 = outside the set */
-static uint8_t *nav;  /* 1 where a hull's centre fits */
+static uint8_t *nav;  /* 1 where a hull's center fits */
 
 /* Only these stop a ship. Everything else is flown through, including the
  * safe tiles of a berth and the wormhole. */
@@ -1083,7 +1083,7 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
     int docks = 0;
     for (int i = 0; i < 9; i++) docks += place_dock(i);
 
-    /* One wormhole, off centre. A single one is a landmark and a hazard; a
+    /* One wormhole, off center. A single one is a landmark and a hazard; a
      * field of them is a physics demo. */
     int wormholes = 0;
     for (int tries = 0; tries < 500 && !wormholes; tries++) {

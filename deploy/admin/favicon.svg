@@ -1,0 +1,8 @@
+<!-- A hull, in the friend colour, on the game's own background. The client
+     draws ships as vectors and so does this: the same eight-point outline the
+     panel sits behind, small enough to read at 16 pixels. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" fill="#05070c"/>
+  <path d="M16 5 L26 27 L16 21 L6 27 Z" fill="none" stroke="#4fd6ff" stroke-width="2.5"
+        stroke-linejoin="round"/>
+</svg>

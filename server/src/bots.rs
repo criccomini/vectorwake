@@ -547,7 +547,7 @@ fn claim(taken: &Arc<Mutex<HashSet<String>>>) -> Option<ai::RosterEntry> {
 
 /// Ask a directory what is running, and how many bots each instance wants.
 async fn browse(url: &str) -> Vec<(String, u32)> {
-    let Some(body) = request(url, directory::STATUS_REQUEST, directory::STATUS_REPLY).await
+    let Some(body) = directory::request(url, directory::STATUS_REQUEST, directory::STATUS_REPLY).await
     else {
         return Vec::new();
     };
@@ -565,32 +565,10 @@ async fn browse(url: &str) -> Vec<(String, u32)> {
 /// directory. `C2S_STATUS` is answerable without joining, which is what makes
 /// this the same request a directory's verification makes.
 async fn ask(addr: &str) -> Option<u32> {
-    let body = request(addr, directory::STATUS_REQUEST, directory::STATUS_REPLY).await?;
+    let body = directory::request(addr, directory::STATUS_REQUEST, directory::STATUS_REPLY).await?;
     serde_json::from_str::<crate::fleet::Status>(&body)
         .ok()
         .map(|s| s.bots_wanted)
-}
-
-/// One request, one reply, one closed socket. Both ends of a browse are cheap
-/// and neither is worth a held connection: this runs once a second and a
-/// directory that is down should cost a failed dial rather than a stuck task.
-async fn request(url: &str, ask: u8, expect: u8) -> Option<String> {
-    // Short, because this runs on a one second cycle and everything it dials is
-    // a process that either answers immediately or is not there. A long dial
-    // timeout here would let a dead address hold a cycle open past the next one.
-    let deadline = std::time::Duration::from_secs(2);
-    let dial = tokio::time::timeout(deadline, tokio_tungstenite::connect_async(url));
-    let (mut ws, _) = dial.await.ok()?.ok()?;
-    ws.send(Message::Binary(vec![ask])).await.ok()?;
-    loop {
-        let msg = tokio::time::timeout(deadline, ws.next()).await.ok()??.ok()?;
-        if let Message::Binary(b) = msg {
-            if b.first() == Some(&expect) && b.len() > 1 {
-                let _ = ws.close(None).await;
-                return Some(String::from_utf8_lossy(&b[1..]).to_string());
-            }
-        }
-    }
 }
 
 /// One bot, from dial to disconnect.

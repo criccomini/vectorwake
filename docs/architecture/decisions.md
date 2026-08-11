@@ -521,15 +521,15 @@ license costs us turns out to matter more than the exclusivity it buys.
 
 ---
 
-## 19. A tile is its behaviour, not a number in a tileset
+## 19. A tile is its behavior, not a number in a tileset
 
 **Status:** accepted
 
-Map tiles carry a behaviour class -- empty, solid, safe, door, goal, wormhole,
+Map tiles carry a behavior class -- empty, solid, safe, door, goal, wormhole,
 over, under, turf -- in the low nibble of a byte, and a variant in the high
 one. The variant is a door's channel or a goal's team.
 
-The original encoded behaviour in the tile's own value: 1 through 160 were
+The original encoded behavior in the tile's own value: 1 through 160 were
 walls, 162 through 169 doors, 171 a safe zone, 176 through 190 scenery you
 flew under. Every rule in the engine was a range check against a constant, a
 map editor had to know all of them, and the 160 wall values existed to say
@@ -542,7 +542,7 @@ a wall looks like is the client's business.
 indices onto classes, and the 160 wall pictures collapse to one class, so a
 converted map loses its look until the client is given a way to vary it.
 
-**Reconsider if:** a mode needs per-tile behaviour the nine classes cannot
+**Reconsider if:** a mode needs per-tile behavior the nine classes cannot
 express, in which case the variant nibble is the place to look before adding
 a tenth class.
 
@@ -918,7 +918,7 @@ Fly.io lost on three counts recorded in [hosting.md](hosting.md): reaching a
 named machine from a browser needs a `fly-replay` bounce because a browser cannot
 set headers on a WebSocket handshake, `fly-replay` is HTTP-only so per-machine
 UDP addressing is unavailable, and egress at $0.02/GB is ten to thirty times the
-alternatives. Its fast machine starts optimise an operation we barely perform,
+alternatives. Its fast machine starts optimize an operation we barely perform,
 and its anycast region steering duplicates what the directory already does.
 
 Buying the database rather than running it is the one place "Docker for
@@ -978,9 +978,9 @@ to it, and this decision is that answer: there is nothing to moderate.
 
 **Cost:** The game is less of a social space and more of a sport, and some players
 will bounce off that immediately. Team coordination in a flag game has to happen
-through play, which caps how organised a team can be and changes what the mode
+through play, which caps how organized a team can be and changes what the mode
 should ask of them. No zone bots, which the research notes identify as where most
-zone identity lived. And any future league or clan scene will organise on Discord,
+zone identity lived. And any future league or clan scene will organize on Discord,
 which means the community's real home is somewhere we do not control.
 
 **Reconsider if:** the answer is a bounded channel rather than a general one.
@@ -1028,7 +1028,7 @@ authenticated house bot anchors the rating ladder.
 
 **Cost:** The arena builds an interest-filtered snapshot stream per bot where
 the in-process roster needed none, and that build was expensive enough to have
-been optimised once already. Measured before shipping the fill target, on a
+been optimized once already. Measured before shipping the fill target, on a
 64-seat room at 0.8: the arena's worst tick costs 314 microseconds of its 10
 millisecond budget, and the bot server costs 14% of a core and 15 MB for 51
 bots. So 0.8 stands. The numbers and what drives them are in
@@ -1518,7 +1518,7 @@ A disconnect now settles as a death when the pilot was plausibly about to
 die, and as an ordinary leave otherwise. Two conditions, each held where its
 facts live. The damage must be recent, three seconds, judged by the rating
 from its own ledger; recency is the only gate that layer can hold, because
-credit shares are normalised and any nonzero ledger resolves at full weight.
+credit shares are normalized and any nonzero ledger resolves at full weight.
 And the tank must be low, forty percent of the hull's effective ceiling,
 judged by the room from the ship state; energy is health and escape both and
 refills in seconds, so a pilot above the line could as easily have flown
@@ -1555,7 +1555,7 @@ is recorded.
 **Status:** proposed
 
 [Decision 28](#28-no-chat) removed text between players and named its own
-cost: any future league or clan scene will organise on Discord, which means
+cost: any future league or clan scene will organize on Discord, which means
 the community's real home is somewhere we do not control. This record accepts
 that cost deliberately instead of letting it happen to us. We create the
 Discord server, own it, and hold its admin keys, and the game's only
@@ -1655,3 +1655,50 @@ the client has.
 **Reconsider if:** confirmed-death latency reads as lag on real links, in
 which case the next lever is a provisional effect, dimmer than the real
 burst, rather than a return to concluding deaths locally.
+
+---
+
+## 41. The admin panel opens with an account flag
+
+**Status:** accepted
+
+`accounts.admin` is a boolean on the meta-layer's own table. An operator
+signs in to a static page at `admin.<domain>` with the call sign and password
+of their vectorwake account, and every admin route resolves the presented
+device secret and checks the flag in the database before acting. The `admin`
+field the session reply carries is decoration for the page; nothing a client
+asserts about itself is trusted.
+
+Two alternatives were designed and set aside. A signed admin token, minted
+and verified by the same process, is ceremony: the signature machinery in
+`token.rs` exists so arenas can verify without calling anybody, and no such
+boundary sits between the panel and the meta-layer, while a stateless token
+cannot be revoked and the flag check makes revocation land on the next click.
+The catalog's `[[staff]]` table keys on call signs, which are server-dealt
+words no operator's account holds and rerollable besides; it stays for the
+day named verbs need named powers, per decision 26.
+
+Granting is not an HTTP action at all. No route writes the flag: setting and
+clearing it are SQL run by the operator on the central host, which retired
+`VW_ADMIN_TOKEN` and the `/v1/ban` curl with it. A grant route behind that
+token was drafted first and dropped, because on a host-network deployment a
+guarded route is still a thing a compromised neighbour process can call,
+where the managed database is not; the operator's authority is the database
+credential they already hold. A leaked panel session can therefore act as an
+admin but never appoint one, and the panel's ban refuses flagged accounts,
+so one rogue session cannot lock the other operators out. Grant only claimed
+accounts: the panel signs in with a password, which a guest does not have,
+and the sweeper skips flagged accounts rather than collecting an operator
+mistake.
+
+**Cost:** Fleet-wide reach behind a password whose floor is six characters,
+throttled to ten guesses a quarter hour per name. [admin.md](admin.md) wanted
+a passkey or an SSO front before any surface returned, and this trades that
+bar for a credential the fleet already had. Also a second certificate, priced
+low now that the store survives reinstalls and a burned limit on the admin
+name strands only the panel.
+
+**Reconsider if:** the panel grows verbs with different blast radii, which is
+when one flag stops being an authority model; or a password behind fleet
+reach stops being comfortable, in which case a passkey bolts onto the login
+without moving anything else.

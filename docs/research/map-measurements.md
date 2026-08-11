@@ -184,6 +184,6 @@ roster stacking on one.
 ## What is not here
 
 Tileset, and therefore how any of it looked. A tile in this core is its
-behaviour, so the 160 wall pictures the original distinguished became one
+behavior, so the 160 wall pictures the original distinguished became one
 class on the way in. Nothing about the appearance of that map survived the
 conversion, and nothing about it is recorded here.

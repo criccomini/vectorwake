@@ -70,7 +70,7 @@ VwLayer* Layer(lua_State* L, int idx) {
 // Four floats out of a Lua {r, g, b, a}. rawgeti rather than lua_getfield
 // because these tables are the palette's and have no metatable worth
 // consulting sixty thousand times a second.
-inline void Colour(lua_State* L, int idx, float* out) {
+inline void Color(lua_State* L, int idx, float* out) {
     for (int i = 0; i < 4; i++) {
         lua_rawgeti(L, idx, i + 1);
         out[i] = (float)lua_tonumber(L, -1);
@@ -120,7 +120,7 @@ int Attach(lua_State* L) {
     // never-touched wasm heap, which is zero by definition. Sound generation
     // moved ahead of it at boot and freed the wav data it had synthesised,
     // and the layers got that memory back: 914892 of the background layer's
-    // 917504 bytes arrived nonzero. Read as vertex positions and colours, and
+    // 917504 bytes arrived nonzero. Read as vertex positions and colors, and
     // summed by the additive passes, that is a white screen.
     void* bytes = 0;
     uint32_t size = 0;
@@ -183,7 +183,7 @@ int Tri(lua_State* L) {
         return 0;
     }
     float c[4];
-    Colour(L, 8, c);
+    Color(L, 8, c);
     float* p = v->pos + (size_t)v->n * v->stride;
     float* q = v->col + (size_t)v->n * v->stride;
     Vertex(p, q, (float)lua_tonumber(L, 2), (float)lua_tonumber(L, 3), c, 1.0f);
@@ -206,7 +206,7 @@ int TriFade(lua_State* L) {
         return 0;
     }
     float c[4];
-    Colour(L, 11, c);
+    Color(L, 11, c);
     float* p = v->pos + (size_t)v->n * v->stride;
     float* q = v->col + (size_t)v->n * v->stride;
     Vertex(p, q, (float)lua_tonumber(L, 2), (float)lua_tonumber(L, 3), c,
@@ -232,7 +232,7 @@ int Quad(lua_State* L) {
         return 0;
     }
     float c[4];
-    Colour(L, 10, c);
+    Color(L, 10, c);
     float x[4], y[4];
     for (int i = 0; i < 4; i++) {
         x[i] = (float)lua_tonumber(L, 2 + i * 2);
@@ -259,7 +259,7 @@ int Rect(lua_State* L) {
         return 0;
     }
     float c[4];
-    Colour(L, 6, c);
+    Color(L, 6, c);
     float x0 = (float)lua_tonumber(L, 2);
     float y0 = (float)lua_tonumber(L, 3);
     float x1 = x0 + (float)lua_tonumber(L, 4);

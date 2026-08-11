@@ -81,6 +81,10 @@ delete from names a using names b
 create unique index if not exists names_unique on names (lower(call_sign));
 -- When this account last began a session, for the sweeper alone.
 alter table accounts add column if not exists last_seen timestamptz not null default now();
+-- Whether this account opens the admin panel. No route writes it: the flag
+-- is set by the operator in the database itself, so there is nothing for a
+-- leaked credential or a compromised neighbour process to call.
+alter table accounts add column if not exists admin boolean not null default false;
 -- The key era's leftovers. A key credential has no route left to present it
 -- to, and the link_codes table belonged to the same machinery.
 delete from credentials where method = 'key';
@@ -329,6 +333,25 @@ async fn account_for(db: &Client, method: &str, hash: &str) -> Option<i64> {
     .map(|r| r.get::<_, i64>(0))
 }
 
+/// The admin gate: the account behind this secret, if it holds the flag. The
+/// `admin` field a session reply carries is decoration for the panel; this
+/// check, run inside every admin route, is the authorization. Checked per
+/// action rather than per login, so revoking the flag or banning the account
+/// takes effect on the next click instead of the next session.
+async fn admin_for(db: &Client, secret: &str) -> Option<i64> {
+    db.query_opt(
+        "select a.id from accounts a
+         join credentials c on c.account = a.id and c.method = 'secret'
+         where c.hash = $1 and a.admin and not a.banned",
+        &[&sha256_hex(secret.as_bytes())],
+    )
+    .await
+    .ok()
+    .flatten()
+    .map(|r| r.get::<_, i64>(0))
+}
+
+
 async fn set_name(db: &Client, account: i64, name: &str) -> Result<(), String> {
     db.execute(
         "insert into names (account, call_sign) values ($1, $2)
@@ -450,11 +473,23 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             match claims_for(&db, account).await {
                 Ok(c) => {
                     let token = token::mint(&meta.signing, &c);
+                    // The flag rides the reply and not the token: no arena
+                    // reads it, so putting it in the token would be a wire
+                    // change to every arena for the panel's benefit alone.
+                    // The panel uses it to decide what to draw, and every
+                    // admin route re-checks the database, so a client that
+                    // forges this field fools only its own screen.
+                    let admin: bool = db
+                        .query_one("select admin from accounts where id = $1", &[&account])
+                        .await
+                        .map(|r| r.get(0))
+                        .unwrap_or(false);
                     (200, serde_json::json!({
                         "token": token,
                         "account": c.account,
                         "name": c.name,
                         "claimed": c.claimed,
+                        "admin": admin,
                         "bot": c.kind.is_bot(),
                         "expires": c.expires,
                         "ratings": c.ratings.iter().map(|r| serde_json::json!({
@@ -690,24 +725,219 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
         }
 
-        // A fleet ban, held by the operator's admin credential rather than a
-        // pool token, because this one is a human decision about a person.
-        "/v1/ban" => {
-            let want = std::env::var("VW_ADMIN_TOKEN").unwrap_or_default();
-            if want.is_empty() || s("admin_token") != want {
-                return (403, serde_json::json!({ "error": "bad admin token" }));
+        // ---------------------------------------------------- admin panel
+        //
+        // The routes behind the account flag, called by the static page at
+        // admin.<domain>. Each takes the caller's device secret and runs it
+        // through `admin_for`; the hostname is not the boundary and neither
+        // is anything the client claims about itself.
+        //
+        // The flag itself has no route. Granting and revoking are SQL run by
+        // the operator on the central host, per deploy/README.md, which is
+        // also why there is no VW_ADMIN_TOKEN anywhere any more: the one
+        // thing it still guarded stopped being reachable over HTTP.
+
+        // A pilot, looked up by call sign or account number. Behind the flag
+        // rather than public, because standing and last_seen are between the
+        // fleet and its operators.
+        "/v1/admin/pilot" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
             }
+            let by_id = body.get("account").and_then(|v| v.as_i64());
+            let q = "select a.id, coalesce(n.call_sign, ''), a.kind,
+                            a.banned, coalesce(a.reason, ''), a.admin,
+                            to_char(a.created at time zone 'utc', 'YYYY-MM-DD'),
+                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI'),
+                            exists (select 1 from credentials c
+                                    where c.account = a.id and c.method <> 'secret')
+                     from accounts a left join names n on n.account = a.id";
+            let row = match by_id {
+                Some(id) => {
+                    db.query_opt(&format!("{q} where a.id = $1"), &[&id]).await
+                }
+                None => {
+                    db.query_opt(
+                        &format!("{q} where lower(n.call_sign) = lower($1)"),
+                        &[&s("name")],
+                    )
+                    .await
+                }
+            };
+            match row {
+                Ok(Some(r)) => {
+                    let kind: i16 = r.get(2);
+                    (200, serde_json::json!({
+                        "account": r.get::<_, i64>(0),
+                        "name": r.get::<_, String>(1),
+                        "kind": match kind_of(kind) {
+                            Kind::Human => "human",
+                            Kind::HouseBot => "house bot",
+                            Kind::ThirdPartyBot => "third-party bot",
+                        },
+                        "banned": r.get::<_, bool>(3),
+                        "reason": r.get::<_, String>(4),
+                        "admin": r.get::<_, bool>(5),
+                        "created": r.get::<_, String>(6),
+                        "last_seen": r.get::<_, String>(7),
+                        "claimed": r.get::<_, bool>(8),
+                    }))
+                }
+                Ok(None) => (404, serde_json::json!({ "error": "no such pilot" })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // The fleet ban: a mark on the account, enforced where tokens are
+        // minted, held to an admin account's secret. Refuses to touch an
+        // account that holds the flag: an admin unseating an admin is a
+        // decision for whoever holds the box, so it goes revoke-in-the-
+        // database first, and one compromised session cannot lock the rest
+        // of the operators out.
+        "/v1/admin/ban" => {
+            let Some(actor) = admin_for(&db, &s("secret")).await else {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            };
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
             let banned = body.get("banned").and_then(|v| v.as_bool()).unwrap_or(true);
             let reason = s("reason");
             let r = db
                 .execute(
-                    "update accounts set banned = $2, reason = $3 where id = $1",
+                    "update accounts set banned = $2, reason = $3
+                     where id = $1 and not admin",
                     &[&account, &banned, &reason],
                 )
                 .await;
             match r {
-                Ok(n) => (200, serde_json::json!({ "changed": n })),
+                Ok(0) => (400, serde_json::json!({
+                    "error": "no such account, or it holds the admin flag; \
+                              revoke that in the database first"
+                })),
+                Ok(_) => {
+                    // Actions get no audit trail from the catalog, so say it
+                    // here, the way the directory notes its commands.
+                    println!(
+                        "meta: admin {actor} set banned={banned} on {account}: {reason:?}"
+                    );
+                    (200, serde_json::json!({ "account": account, "banned": banned }))
+                }
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // Every account currently marked, which is the half of banning the
+        // panel could not show: you could mark somebody and never see the
+        // list you had built.
+        "/v1/admin/bans" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let rows = db
+                .query(
+                    "select a.id, coalesce(n.call_sign, ''), coalesce(a.reason, ''),
+                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI')
+                     from accounts a left join names n on n.account = a.id
+                     where a.banned order by a.id desc",
+                    &[],
+                )
+                .await;
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    "bans": rs.iter().map(|r| serde_json::json!({
+                        "account": r.get::<_, i64>(0),
+                        "name": r.get::<_, String>(1),
+                        "reason": r.get::<_, String>(2),
+                        "last_seen": r.get::<_, String>(3),
+                    })).collect::<Vec<_>>(),
+                })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // The fleet, as the directory on this host has observed it. Relayed
+        // rather than served here: the directory holds the registrations and
+        // this process holds the only thing that can check an admin flag, so
+        // the panel asks the one that can authorise and it asks the one that
+        // knows. The directory answers this only over a socket no proxy
+        // touched, which is why the address below is loopback and not the
+        // public /dir route.
+        //
+        // Also where two silent failures become visible. A directory serving
+        // an older catalog version than another is a publish that half
+        // landed. And a verifying key in the catalog that is not the public
+        // half of the key this process signs with means every token in the
+        // fleet fails its check: pilots keep flying, as guests, rating
+        // nothing, with nothing anywhere saying so.
+        "/v1/admin/fleet" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let url = std::env::var("VW_META_DIRECTORY")
+                .unwrap_or_else(|_| "ws://127.0.0.1:9000".into());
+            let Some(body) =
+                crate::directory::request(&url, crate::fleet::O2D_FLEET, crate::fleet::D2O_FLEET).await
+            else {
+                return (503, serde_json::json!({
+                    "error": format!("no answer from the directory at {url}")
+                }));
+            };
+            let Ok(view) = serde_json::from_str::<crate::fleet::View>(&body) else {
+                return (502, serde_json::json!({ "error": "unreadable fleet view" }));
+            };
+            let mine = token::to_hex(meta.signing.verifying_key().as_bytes());
+            (200, serde_json::json!({
+                "catalog_version": view.catalog_version,
+                // Said as an answer rather than as two keys to compare by eye,
+                // because the whole value of the check is that nobody is
+                // looking when it matters.
+                "key_agrees": view.meta_key.eq_ignore_ascii_case(&mine),
+                "meta_key": mine,
+                "instances": view.instances.iter().map(|i| serde_json::json!({
+                    "instance": i.instance,
+                    "zone": i.zone,
+                    "address": i.address,
+                    "region": i.region,
+                    "pool": i.pool,
+                    "players": i.players,
+                    "bots": i.bots,
+                    "bots_wanted": i.bots_wanted,
+                    "rooms": i.rooms.len(),
+                    "max_rooms": i.max_rooms,
+                    "capped": i.capped,
+                    "verified": i.verified,
+                    "age_ms": i.age_ms,
+                    "intent": i.intent,
+                    "tick_us": i.metrics.tick_us,
+                    "bw_per_player": i.metrics.bw_per_player,
+                    "snapshot_bytes": i.metrics.snapshot_bytes,
+                    "queue_depth": i.metrics.queue_depth,
+                    "lag_actions": i.metrics.lag_actions,
+                })).collect::<Vec<_>>(),
+            }))
+        }
+
+        // Who holds the flag, so the panel can show the set it cannot change.
+        "/v1/admin/admins" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let rows = db
+                .query(
+                    "select a.id, coalesce(n.call_sign, ''),
+                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI')
+                     from accounts a left join names n on n.account = a.id
+                     where a.admin order by a.id",
+                    &[],
+                )
+                .await;
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    "admins": rs.iter().map(|r| serde_json::json!({
+                        "account": r.get::<_, i64>(0),
+                        "name": r.get::<_, String>(1),
+                        "last_seen": r.get::<_, String>(2),
+                    })).collect::<Vec<_>>(),
+                })),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
@@ -1081,6 +1311,11 @@ pub async fn run() {
     // sign back to the pool. Claimed accounts never expire; a password is a
     // person saying they mean to come back. The history in rated_events
     // carries no foreign key on purpose, so what happened stays happened.
+    //
+    // Admin-flagged accounts are never swept either. The flag is set by an
+    // operator's hand in the database, and the sweeper does not unmake
+    // operator decisions; an unclaimed account that was flagged by mistake
+    // is the operator's to notice, not this loop's to collect.
     {
         let pool = pool.clone();
         tokio::spawn(async move {
@@ -1092,6 +1327,7 @@ pub async fn run() {
                     .execute(
                         "delete from accounts
                          where kind = $1 and last_seen < now() - interval '7 days'
+                           and not admin
                            and not exists (select 1 from credentials c
                                            where c.account = accounts.id
                                              and c.method = 'password')",
@@ -1286,4 +1522,5 @@ mod tests {
         assert_eq!(clean_name(&"x".repeat(80)).len(), 24);
         assert_eq!(clean_name("   "), "");
     }
+
 }

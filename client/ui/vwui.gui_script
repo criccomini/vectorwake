@@ -28,7 +28,7 @@ local PIVOTS = {
 --
 -- A scoreboard row reads "0 / 0" for minutes at a time and the controls along
 -- the bottom never change at all, but this used to reset the text, pivot,
--- position, scale and colour of every node sixty times a second -- six calls
+-- position, scale and color of every node sixty times a second -- six calls
 -- into the engine per line, and two fresh vmath values per line for the
 -- garbage collector to deal with. The vectors are made once and mutated;
 -- Defold copies them into the node, so one object per node is enough.
@@ -94,7 +94,7 @@ function update(self)
         end
 
         -- `dim` is a whole-layer fade the interface applies to itself, so
-        -- it multiplies the alpha rather than replacing the colour: a label
+        -- it multiplies the alpha rather than replacing the color: a label
         -- keeps its meaning while the menu is over it and simply stops
         -- shouting.
         local c = t.col

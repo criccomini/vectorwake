@@ -621,7 +621,7 @@ ui.inspect = nil
 -- --- the safe zone says so, and says what it is about to cost ------------
 --
 -- A safe zone is the one part of the map whose rules are different and the
--- tile says so in colour alone. And the room takes the seat back after a
+-- tile says so in color alone. And the room takes the seat back after a
 -- while, which is a thing that has to be said before it happens rather than
 -- after: a hull that simply stops being yours reads as a disconnection.
 --

@@ -182,11 +182,17 @@ What the control is still good for is catching a harness that has gone wrong.
 Two identical kits landing far apart, run after run, means something is varying
 that this thing is supposed to be holding still.
 
+**`hit/pull`** is impacts per trigger pull, which is not a hit rate and does not
+stop at one. A fire event is the trigger being pulled rather than a round
+leaving, so a hull with two barrels can land two on a single pull and one
+carrying a multifire fan can land four. It was printed as a percentage until a
+Facet came back at 111%.
+
 **`dmg/hit` and `self%`** are why a stage won or lost, where the win column only
 says that it did. A blast falls off to nothing at its rim, so a fuse that goes
-off early lands the same count of impacts for a fraction of the damage, and the
-hit rate alone reads that as an improvement. Proximity is the case: it lifts the
-hit rate three points and cuts damage per impact, which is a losing trade the
+off early lands the same count of impacts for a fraction of the damage, and
+`hit/pull` alone reads that as an improvement. Proximity is the case: it lifts
+the count of impacts and cuts damage per impact, which is a losing trade the
 win column cannot explain on its own. `self%` is the share of a stage's damage
 it dealt to itself, since a bomb's blast has no owner test. It answers "is this
 stage losing because the pilot keeps standing in it" with a number rather than

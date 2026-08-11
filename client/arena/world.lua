@@ -32,14 +32,14 @@ end
 
 
 -- Hulls, in local pixels with the nose along +y. Shape carries class and
--- colour carries team, so neither has to carry both, and every class has to be
+-- color carries team, so neither has to carry both, and every class has to be
 -- identifiable by silhouette alone at radar scale, which means each one needs
 -- a front that is visibly not its back. See docs/design/ships.md.
 --
 -- `poly` is that silhouette, and it is the only part the menu's thumbnails
 -- draw. The rest is what a hull looks like once it is close enough to matter:
 -- `plates` are closed interior loops, `lines` open polylines, `canopy` the one
--- bright cell every hull carries forward of centre, `tubes` the hardpoints a
+-- bright cell every hull carries forward of center, `tubes` the hardpoints a
 -- class actually fires from, `pods` its lamps and dispensers, `jets` where
 -- thrust comes out, and `dim` how brightly the whole thing draws.
 M.HULLS = {
@@ -300,7 +300,7 @@ for _, h in ipairs(M.HULLS) do
         local t = (p[v * 2] - lo) / span
         h.lit[v] = t * t
     end
-    -- Halfway up the hull, which is where a thumbnail has to be centred: every
+    -- Halfway up the hull, which is where a thumbnail has to be centered: every
     -- one of these reaches further forward than back, so its origin is not its
     -- middle and a row of them drawn about the origin sits low.
     h.mid = (lo + hi) / 2
@@ -373,7 +373,7 @@ end
 -- as distance, which is the entire reason to have stars at all.
 
 local STARS = {
-    -- depth, cell size in world px, star size, colour, how many cells in
+    -- depth, cell size in world px, star size, color, how many cells in
     -- sixteen carry one. Farther is denser, smaller and dimmer, which is what
     -- distance does.
     {k = 0.18, cell =  54, size = 1.1, col = pal.STAR_FAR,  fill = 13},
@@ -486,7 +486,7 @@ end
 --
 -- The map, in the language the hulls use: a dark body that is a hole in the
 -- starfield, edges lit with falloff rather than banded, structure in a neutral
--- instrument grey, and colour kept for the things that mean something.
+-- instrument gray, and color kept for the things that mean something.
 --
 -- All of it is built once into the static layers when the camera leaves its
 -- window, so detail here is close to free. Only the doors and the wells are
@@ -640,7 +640,7 @@ local function wall_mass(bg, glow, set, cells, border)
     end
 end
 
--- A safe zone: a marked floor rather than a coloured patch. A wash, a hatch
+-- A safe zone: a marked floor rather than a colored patch. A wash, a hatch
 -- that stays inside its own tiles, and a dashed rim along the outside faces.
 local function safe_zone(bg, glow, set, cells)
     local wash = pal.a(pal.FRIEND, 0.05)
@@ -675,7 +675,7 @@ local function safe_zone(bg, glow, set, cells)
     end
 end
 
--- Rock. Faceted and grey on purpose: a hull is smooth, lit and coloured, and
+-- Rock. Faceted and gray on purpose: a hull is smooth, lit and colored, and
 -- at a glance across a room that is the whole difference between the two.
 -- An asteroid's shape, in its own space and built once.
 --
@@ -758,8 +758,8 @@ local function draw_rock(fill, glow, cx, cy, s, now)
         nrm[i] = nx * ca - ny * sa
         nrm[i + 1] = nx * sa + ny * ca
     end
-    -- Fanned from the centre, not from a vertex: the outline is star-shaped
-    -- about its own centre and nothing else, and a vertex fan on a shape with
+    -- Fanned from the center, not from a vertex: the outline is star-shaped
+    -- about its own center and nothing else, and a vertex fan on a shape with
     -- one notch in it paints outside the rock.
     local sides = s.sides
     local body = pal.a(pal.ROCK, 1)
@@ -827,7 +827,7 @@ local function station(bg, glow, tx, ty)
     glow:disc(cx, cy, 3.2, 8, pal.a(pal.hot(pal.FRIEND, 0.5, 1), 0.8))
 end
 
--- Floor markings, beneath the ships and in instrument grey, so decoration is
+-- Floor markings, beneath the ships and in instrument gray, so decoration is
 -- never mistaken for something a ship can hit.
 local function under_mark(glow, tx, ty, kind)
     local x, y = tx * TILE, ty * TILE
@@ -1029,7 +1029,7 @@ end
 -- The radar reaches `RADAR_TILES` from the camera, and the mesh window is
 -- rebuilt only once the camera has walked `STATIC_STEP` tiles from where it
 -- was built. So in the direction of travel the radar can want terrain up to
--- `RADAR_TILES + STATIC_STEP` from the build centre, and a window sized for
+-- `RADAR_TILES + STATIC_STEP` from the build center, and a window sized for
 -- drawing alone is short of that -- which is not a subtle artefact: the radar
 -- carries no terrain out there at all, and then a whole slab of it appears
 -- the moment the window is rebuilt. It reads as the map blinking in at the
@@ -1072,11 +1072,11 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
     -- steering by, and they were not on the radar at all.
     -- Anchored to the map's own even grid, never to the window. The stride
     -- is two tiles, so the phase of the sampled grid decides which tiles are
-    -- looked at, and taking it from the window centre meant every rebuild
+    -- looked at, and taking it from the window center meant every rebuild
     -- could flip it: measured on Chaos, 664 of 719 blips vanished when the
     -- window moved one tile, which on screen was the whole dial re-rolling
     -- every 256 pixels of flight. On the map's grid the same tiles are
-    -- sampled from every centre, so the picture slides and never re-rolls.
+    -- sampled from every center, so the picture slides and never re-rolls.
     --
     -- And the whole two-by-two block per sample, not its corner tile. With a
     -- fixed phase, a corner read would leave a one-tile wall on the odd
@@ -1192,7 +1192,7 @@ end
 
 -- Made once, not per frame: these are constants wearing a function's clothes,
 -- and allocating them in a draw loop is what a collector notices first.
--- A door reads in its own colour now rather than in the wall's, and shut and
+-- A door reads in its own color now rather than in the wall's, and shut and
 -- open are different hues rather than two brightnesses of one. See pal.DOOR:
 -- the band is nothing else's, so this costs no other reading.
 local DOOR_LIT = pal.DOOR
@@ -1208,7 +1208,7 @@ local DOOR_TICK_SHUT = pal.a(DOOR_LIT, 0.9)
 local DOOR_TICK_OPEN = pal.a(pal.DOOR_OPEN, 0.6)
 local DOOR_MARK = pal.a(pal.DOOR_OPEN, 0.8)
 local DOOR_SILL = pal.a(pal.DOOR_OPEN, 0.28)
--- The rings are a function of the clock now, so their colours are made per
+-- The rings are a function of the clock now, so their colors are made per
 -- frame rather than held here. The arms still are: their fade is by depth
 -- rather than by time.
 local HOLE_ARM = {}
@@ -1216,11 +1216,11 @@ for k = 1, 5 do HOLE_ARM[k] = pal.a(pal.HOLE, 0.34 - (k - 1) * 0.05) end
 
 -- One door, however many tiles it spans.
 --
--- A door has a colour of its own, and the rule it used to follow said it could
--- not. That rule was about not borrowing: colour belongs to teams and to weapon
+-- A door has a color of its own, and the rule it used to follow said it could
+-- not. That rule was about not borrowing: color belongs to teams and to weapon
 -- classes, and a door wearing cyan or pink is a door somebody misreads under
 -- fire. Green borrows from neither, so the door keeps its shape and its motion
--- and gains a hue, and shut and open now differ in colour rather than only in
+-- and gains a hue, and shut and open now differ in color rather than only in
 -- brightness. Which of the four clocks it is on is still a count of ticks on
 -- its posts.
 --
@@ -1234,8 +1234,8 @@ for k = 1, 5 do HOLE_ARM[k] = pal.a(pal.HOLE, 0.34 - (k - 1) * 0.05) end
 -- stands, a bright filament down the length of the gap flanked by two
 -- dimmer ones that breathe by width, a charge that runs the length from
 -- emitter to emitter, and a lit node at each end where the field takes hold
--- of the frame. The breathing is width rather than colour because widths
--- are numbers and colours are tables, and this runs per door per frame.
+-- of the frame. The breathing is width rather than color because widths
+-- are numbers and colors are tables, and this runs per door per frame.
 local function door_run(fill, glow, x0, y0, x1, y1, vertical, group, shut, now)
     if shut then
         fill:rect(x0, y0, x1 - x0, y1 - y0, DOOR_WASH)
@@ -1469,7 +1469,7 @@ local WAKE_DT = 0.13       -- seconds between them, so a trail is ~8s long
 -- everywhere on it, including across the join, which a there-and-back path
 -- would have to fade over.
 --
--- Pushed to the right of the camera rather than centred on it, because the
+-- Pushed to the right of the camera rather than centered on it, because the
 -- menu owns the left of the screen and a hull crossing the words would be
 -- decoration fighting the thing it is decorating.
 -- Sized against the view rather than in world pixels, because what these have
@@ -1657,9 +1657,9 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     end
 
     -- Interior structure, under the silhouette so the outline always wins.
-    -- Drawn in a neutral instrument grey rather than in the team colour: the
+    -- Drawn in a neutral instrument gray rather than in the team color: the
     -- team read belongs on the silhouette, and a hull whose every line is the
-    -- same colour looks cut from one sheet of neon rather than built.
+    -- same color looks cut from one sheet of neon rather than built.
     if near then
         if h.plates then
             for k = 1, #h.plates do
@@ -1702,7 +1702,7 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- its own brightness. It was three concentric strokes, which beaded at
     -- every corner and banded rather than falling off.
     -- The normals are not squashed with the points. Correcting them is an
-    -- inverse scale and a renormalise apiece, and what they aim is a soft
+    -- inverse scale and a renormalize apiece, and what they aim is a soft
     -- skirt three to nine pixels deep: at the steepest bank the error is a
     -- few degrees on a gradient, which is nothing.
     local nrm = place_dir(h.nrm, h.ntmp, ca, sa)
@@ -1719,7 +1719,7 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     end
 
     -- The canopy. Every hull has one, it is always the brightest closed shape
-    -- on the ship, and it is always forward of centre, so "which end is the
+    -- on the ship, and it is always forward of center, so "which end is the
     -- front" never needs a second look.
     if h.canopy then
         local q = place(h.canopy, h.ctmp, x, y, ca, sa, 1, squash)
@@ -1771,7 +1771,7 @@ end
 -- empty. That is deliberate: every hull can carry, so a marking that said
 -- "this one can" would be on all seven and say nothing.
 --
--- `riders` is a flat list of heading, energy fraction, colour and whether it
+-- `riders` is a flat list of heading, energy fraction, color and whether it
 -- is yours, four entries per gunner.
 local DRONE = {0,2.1, 1.2,0.9, 1.2,-0.9, 0,-1.75, -1.2,-0.9, -1.2,0.9}
 local dtmp = {}
@@ -1875,7 +1875,7 @@ local function spec_blast(id)
 end
 
 -- The rung a spec sits on, or -1 for a weapon on no ladder: a charge like
--- the burst, or a bomb's shrapnel. The colour tables answer both.
+-- the burst, or a bomb's shrapnel. The color tables answer both.
 local function spec_level(id)
     local r = level_of[id]
     if r == nil then
@@ -1930,7 +1930,7 @@ end
 -- A hexagonal hub at a fixed rotation, six spikes off the flats, and a dark
 -- body. Every part of that is chosen against the bomb, because the two are
 -- the same weapon in different postures and telling them apart at a glance is
--- the whole job. A bomb is a hot core with a trail; a mine's centre is dark,
+-- the whole job. A bomb is a hot core with a trail; a mine's center is dark,
 -- which reads at three pixels, and its outline has corners, which nothing
 -- else out here has -- every round in this game is a circle and every wall is
 -- a straight line, so an angular thing that is not a wall is unlike anything
@@ -1993,7 +1993,7 @@ local function mine(fill, glow, x, y, col, t, frac, af, fuse)
     -- The charge: one lap of whatever rim is left, riding the life gauge's own
     -- edges, so a mine down to its last one has almost nowhere to run it and
     -- the lap stops closing the moment the ring is broken. The head is a hot
-    -- pinpoint rather than more of the same colour, because the rim already
+    -- pinpoint rather than more of the same color, because the rim already
     -- burns white where two edges meet and a spark that only brightened would
     -- be lost among the corners.
     if frac > 0.02 then
@@ -2253,7 +2253,7 @@ function M.weapons(fill, glow, t, cull)
             -- it on nobody's ladder; what it wears is the bomb rung its layer
             -- was on when they posted it, which the core carries on the round
             -- for exactly this. That is not decoration -- the blast climbs the
-            -- same ladder -- so the colour is telling the truth about how hard
+            -- same ladder -- so the color is telling the truth about how hard
             -- the thing is going to hit, which is the one job the ramp has.
             local col = bomb_col(level)
             -- Life remaining, as the fraction the hub's outline draws. The
@@ -2283,7 +2283,7 @@ function M.weapons(fill, glow, t, cull)
             -- streak is what makes a stream of fire read as a direction
             -- rather than as a scatter of dots, and it is the whole reason
             -- the core reports weapon velocity to the client at all. The
-            -- The rung it was fired at, and nothing else: a round's colour
+            -- The rung it was fired at, and nothing else: a round's color
             -- says how hard it hits, not who sent it. It said the team once,
             -- climbing toward white with the rung, and the two facts fought:
             -- the ramps converged at the top, so the deadliest rounds were
@@ -2348,8 +2348,8 @@ function M.prizes(fill, glow, t, cull)
         if active and not outside(cull, x, y) then
             -- Every green looks the same, because every green *is* the same:
             -- what it turns out to be is decided when somebody takes it, from
-            -- what their hull can hold. Colouring them by kind would have been
-            -- colouring them by a decision that has not been made yet.
+            -- what their hull can hold. Coloring them by kind would have been
+            -- coloring them by a decision that has not been made yet.
             local col = pal.PRIZE
             -- A prize about to time out blinks, so a player can tell the
             -- difference between one worth crossing the arena for and one
@@ -2449,7 +2449,7 @@ function M.events(me, sfx)
             -- Pinned to the hull it ended on, when it ended on one. The event
             -- position is simulation truth, but a remote hull is drawn where
             -- the render smoothing says, up to a correction behind the truth,
-            -- and a detonation centred beside the ship it plainly just hit is
+            -- and a detonation centered beside the ship it plainly just hit is
             -- the game telling the shooter their shot missed. Moving the ring
             -- by the same offset the hull is drawn under keeps the two
             -- together; the offset dies away in a tenth of a second anyway.
@@ -2460,7 +2460,7 @@ function M.events(me, sfx)
                 x = x + (sim.ship_x(b) - sim.ship_x_raw(b))
                 y = y + (sim.ship_y(b) - sim.ship_y_raw(b))
             end
-            -- A mine's ring and colour come off the event's rung, because
+            -- A mine's ring and color come off the event's rung, because
             -- every mine is one spec: the table answers a rung one blast in
             -- violet whatever the mine had been, and the ring a detonation
             -- draws has to be the hole it actually made. Composed the way
@@ -2482,7 +2482,7 @@ function M.events(me, sfx)
             local col = (sim.ship_team(a) == team_of(me)) and pal.FRIEND or pal.ENEMY
             fx.burst(x, y, 5, 130, 0.26, 1.8, pal.hot(col, 0.6, 1))
             -- The screen shakes by what it cost you, not by what hit you.
-            -- A blast falls off linearly from its centre, so the damage is
+            -- A blast falls off linearly from its center, so the damage is
             -- already a measure of how close you were standing to it: a bomb
             -- in the face rattles the camera ten pixels, the edge of the same
             -- blast barely a pixel, and a bullet sits between them where it

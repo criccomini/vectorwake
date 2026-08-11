@@ -1,14 +1,14 @@
 # Maps
 
 The original's map was a 1024x1024 grid of 16-pixel tiles, and a tile's
-number was its behaviour: 1 through 160 were walls, 162 through 169 were
+number was its behavior: 1 through 160 were walls, 162 through 169 were
 doors, 171 was a safe zone, 176 through 190 were scenery you flew under. Every
 rule in the engine was a range check against a constant, and a map editor had
 to know all of them.
 
 The grid is the same. The numbering is not.
 
-## A tile is its behaviour
+## A tile is its behavior
 
 | Class | What it does |
 |---|---|
@@ -114,7 +114,7 @@ person, and this has to stay legible from a C file until that exists. A
 refuge -- a small safe zone -- sits every fourth cell each way, so nowhere in
 the field is more than a couple of hundred tiles from somewhere to stop.
 
-The old room survives at the centre, minus its enclosing box: the four
+The old room survives at the center, minus its enclosing box: the four
 pillars, the baffles, the two safe zones and the pair of out-of-phase doors.
 It is contested ground rather than home.
 
@@ -131,7 +131,7 @@ south, **eight starts apiece 256 tiles apart**, from (180,180) to (948,884).
 everything else, and that exception is the whole lesson of this section. They
 were three hundred tiles apart for the same reason the starts are, and it made
 the flag game unplayable rather than large: the shipped War map starts its
-pilots in a 68-tile box at the centre, so the nearest flag sat two hundred tiles
+pilots in a 68-tile box at the center, so the nearest flag sat two hundred tiles
 away, past sixty tiles of sight, past the radar, and past anything that would
 take a pilot there. Watched on the live server for four minutes: forty-two
 kills, four flags, and the banner never moved off "flags 0 - 0, 4 loose". Nobody
@@ -155,7 +155,7 @@ could see nobody used to sit still. They rally to the middle now, which is what
 makes a spread map a fight rather than an empty one.
 
 **Two zones ship their own maps with the starts together.** Chaos and War put
-all eight inside a 68-tile box at the centre, and that is deliberate: a public
+all eight inside a 68-tile box at the center, and that is deliberate: a public
 room with ten pilots in it wants them meeting in the first ten seconds, not
 converging over half a minute. The built-in procedural map keeps the bands,
 because that is the shape a 1024-tile map is for, and a zone that wants its
@@ -288,17 +288,17 @@ It draws from a vocabulary of rooms with gaps cut through them, corner
 brackets, lattices of single tiles, stepped diagonals, capped bars, line
 stacks and loose debris, in clusters of two to six at a time.
 
-**Every shape in it is symmetric and centred**, and every member of a cluster
+**Every shape in it is symmetric and centered**, and every member of a cluster
 is drawn off one roll of the dice, so a group is one shape repeated rather
 than four cousins of it. Both of those replaced random offsets, which drew a
 map that measured correctly and read as rubble. A room is cut on opposite
 walls at the same place, so it is something to fly straight through rather
-than a chicane. A stack of lines is centred and the same above the middle as
+than a chicane. A stack of lines is centered and the same above the middle as
 below. A diagonal is one tile per step, never two, and crossed diagonals meet
 on exactly one tile. A hall's four ways in are the same width and each sits
 in the middle of the wall it goes through.
 
-The arithmetic under that is parity. A run centres exactly in a span only
+The arithmetic under that is parity. A run centers exactly in a span only
 when the two are both odd or both even, so a gap's width is moved to its
 wall's parity before it is placed rather than rounded into position after.
 One tile is the whole difference between a gap that faces the one opposite
@@ -353,7 +353,7 @@ divides the field when its channel shuts.
 Then it fixes what it drew, and it does that against a hull rather than
 against a point. **A ship is three tiles across.** The widest one in the
 roster measures 34 pixels at the beam and the longest reaches 23 pixels from
-its centre at the worst diagonal, against a 16-pixel tile: two tiles is 32
+its center at the worst diagonal, against a 16-pixel tile: two tiles is 32
 pixels and holds neither of them, three is 48 and holds both at any heading.
 So a hull stands on a tile only when the eight around it are open too, and
 the connectivity of a map is the connectivity of that set.

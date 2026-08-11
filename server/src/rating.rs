@@ -325,7 +325,7 @@ impl Rating {
     ///
     /// Resolved exactly as a death when the last damage they took is inside
     /// the window, and exactly as `forget` when it is not. Recency is the
-    /// only gate this layer can hold: `death` normalises credit shares, so
+    /// only gate this layer can hold: `death` normalizes credit shares, so
     /// any nonzero ledger resolves at full weight and the decay curve can
     /// never distinguish a hot ledger from a stale one. Whether the pilot
     /// was losing is the room's question, answered from the ship's energy
@@ -619,6 +619,6 @@ mod tests {
         r.score.insert("dog".into(), 1100.0);
         r.damage(10, "dog", "fav", 1000, false);
         r.death(11, "dog").unwrap();
-        assert!(r.rating_of("fav") - 1900.0 < 1.0, "the favourite gains almost nothing");
+        assert!(r.rating_of("fav") - 1900.0 < 1.0, "the favorite gains almost nothing");
     }
 }

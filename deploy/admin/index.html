@@ -1,0 +1,83 @@
+<!doctype html>
+<!-- The admin panel. Static on purpose: docs/architecture/admin.md wants
+     tables, forms and text entry, which is exactly what the game client
+     refuses to draw, and a page needs no build step and no server of its
+     own. Caddy serves this directory and proxies /v1 to the meta-layer, so
+     the page and its API are one origin and nothing here needs CORS.
+
+     Script and style live in files beside this one rather than inline,
+     because the site's CSP says default-src 'self' and that is what makes
+     a stray script in rendered text a non-event. Keep it that way. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vectorwake admin</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<main>
+  <h1>vectorwake <span class="dim">admin</span></h1>
+
+  <section id="login" hidden>
+    <p class="dim">Sign in with a claimed account that holds the admin flag.</p>
+    <form id="login-form">
+      <label>call sign
+        <input id="login-name" autocomplete="username" required>
+      </label>
+      <label>password
+        <input id="login-password" type="password" autocomplete="current-password" required>
+      </label>
+      <button>sign in</button>
+    </form>
+    <p id="login-note" class="note"></p>
+  </section>
+
+  <section id="panel" hidden>
+    <p class="who">signed in as <span id="who"></span>
+      <button id="logout" class="link" type="button">sign out</button></p>
+
+    <h2>fleet</h2>
+    <p id="fleet-note" class="note"></p>
+    <p id="fleet-head" class="head"></p>
+    <table id="fleet">
+      <thead><tr>
+        <th>instance</th><th>zone</th><th>region</th>
+        <th class="n">players</th><th class="n">bots</th><th class="n">rooms</th>
+        <th class="n">tick</th><th>state</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <h2>pilot</h2>
+    <form id="lookup-form">
+      <input id="lookup-q" placeholder="call sign, or #account" required>
+      <button>look up</button>
+    </form>
+    <p id="lookup-note" class="note"></p>
+    <dl id="pilot" hidden></dl>
+    <form id="ban-form" hidden>
+      <input id="ban-reason" placeholder="reason">
+      <button id="ban-button"></button>
+    </form>
+
+    <h2>bans</h2>
+    <table id="bans">
+      <thead><tr><th>account</th><th>call sign</th><th>reason</th><th>last seen</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="bans-empty" class="dim" hidden>Nobody is banned.</p>
+
+    <h2>admins</h2>
+    <table id="admins">
+      <thead><tr><th>account</th><th>call sign</th><th>last seen</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="dim">The flag itself is granted in the database, not here.
+      See deploy/README.md.</p>
+  </section>
+</main>
+<script src="admin.js"></script>
+</body>
+</html>

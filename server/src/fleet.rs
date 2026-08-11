@@ -25,6 +25,15 @@ pub const D2A_VIEW: u8 = 0x52;
 pub const D2A_CATALOG: u8 = 0x53;
 pub const D2A_COMMAND: u8 = 0x54;
 
+/// Operator to directory, and back. A third space rather than a byte borrowed
+/// from either of the two above, for the reason this file's header gives: a
+/// message on the wrong socket should be an obvious mistake. This one asks for
+/// the same `View` an arena is pushed, which carries the rows a browse reply
+/// leaves out, so the directory answers it only for a peer that reached it
+/// without going through the proxy. See `serve_registration`.
+pub const O2D_FLEET: u8 = 0x60;
+pub const D2O_FLEET: u8 = 0x61;
+
 /// Every operator verb. The admin surface checks against this so a typo is a
 /// refusal rather than a message an arena answers with `unknown_verb`.
 pub const VERBS: [&str; 5] = ["kick", "drain", "pin", "unpin", "restart"];
@@ -200,6 +209,19 @@ pub struct Observed {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct View {
     pub instances: Vec<Observed>,
+    /// The catalog version this directory is serving. An arena already takes
+    /// the highest version any directory offers, so it has no use for this;
+    /// an operator does, because two directories on different versions is a
+    /// state the fleet resolves silently and correctly and which still means
+    /// somebody's publish only half landed.
+    #[serde(default)]
+    pub catalog_version: u32,
+    /// The verifying key this directory's catalog names, so an operator can
+    /// see it agree with the key the meta-layer actually signs with. They can
+    /// disagree, and when they do every token in the fleet fails its check and
+    /// every pilot quietly becomes a guest, which looks like nothing at all.
+    #[serde(default)]
+    pub meta_key: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

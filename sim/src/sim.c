@@ -58,7 +58,7 @@ static uint32_t xorshift32(uint32_t x) {
  * the rung it came off is not otherwise recoverable there. By the time the
  * client reads this event the weapon is gone from the state, so without
  * these bits a mine's detonation -- one spec whatever rung was posted -- had
- * no rung to size its ring or pick its colour by, and flashed rung one in
+ * no rung to size its ring or pick its color by, and flashed rung one in
  * violet whatever the mine had been. */
 static int32_t pack_pos(int32_t x_q8, int32_t y_q8, uint8_t level) {
     int32_t x = (x_q8 >> 8) & 0x3fff;
@@ -302,7 +302,7 @@ static int box_hits(const sim_map *m, const sim_settings *cfg, uint32_t tick,
 }
 
 /* The world-axis box a hull stands in at a heading: the tight bounding box of
- * its oriented footprint. `ox, oy` is where the box's centre sits relative to
+ * its oriented footprint. `ox, oy` is where the box's center sits relative to
  * the ship's position, because a hull reaches further past its nose than
  * behind its tail; `hx, hy` are the half-extents. An Apex flying diagonally
  * really is wider than one flying straight, so a gap it threads nose-first is
@@ -325,12 +325,12 @@ static void hull_box(const sim_ship_class *c, uint16_t heading,
     *hy = (int32_t)(((int64_t)half * afy + (int64_t)c->halfw * afx) >> 15);
 }
 
-/* The centre of a tile, which is where a spawned ship stands.
+/* The center of a tile, which is where a spawned ship stands.
  *
  * Worth a name because it used to be written out in three places and one of
  * them was wrong: the room and the team-change path both dropped a ship on a
  * tile's top-left corner, eight pixels up and left of where the wormhole path
- * put one, so a hull wide enough to matter sat off centre in the gap its tile
+ * put one, so a hull wide enough to matter sat off center in the gap its tile
  * was checked for. */
 static int32_t tile_mid(int32_t t) {
     return t * SIM_TILE_PX * 256 + SIM_TILE_PX * 128;
@@ -344,7 +344,7 @@ static int32_t tile_mid(int32_t t) {
  * help calling it a circle, and rejecting the corners costs a multiply per
  * candidate to buy something no pilot can tell is there.
  *
- * Sixteen tries at open ground, then the centre tile whatever is on it. The
+ * Sixteen tries at open ground, then the center tile whatever is on it. The
  * original took a hundred, but ours is a map that is ninety-seven per cent
  * open, so a draw that fails sixteen times is a radius sitting on a structure
  * rather than a run of bad luck, and a hundred tries would not fix it either.
@@ -363,7 +363,7 @@ static void pick_spawn(const sim_settings *cfg, uint32_t *rng, uint32_t tick,
         uint16_t tx = 0, ty = 0;
         if (!sim_map_spawn(cfg->map, team, nth, &tx, &ty)) {
             /* A map naming no starts at all, with no radius set to stand in
-             * for them. The centre is a poor answer and a loud one, which
+             * for them. The center is a poor answer and a loud one, which
              * beats scattering ships through whatever the map has at the
              * origin. */
             *x = *y = tile_mid(mid);
@@ -735,7 +735,7 @@ static uint8_t bomb_spec_at(const sim_settings *cfg, const sim_state *s,
  * only the first; a bomb has the first two; shrapnel is the fourth, and a
  * repel is the third with nothing else at all.
  *
- * Damage inside a blast falls off linearly from the centre, which is what
+ * Damage inside a blast falls off linearly from the center, which is what
  * makes the damage a measure of how close you were standing -- the screen
  * shake reads it back out.
  */
@@ -814,8 +814,8 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
      * enemy fire and leaves you, your side and your own rounds alone, and
      * without the test this was symmetric: it threw the pilot who let it off
      * backwards at 484 px/s -- faster than any hull can fly -- because the
-     * charge spawns at a muzzle offset rather than at the hull centre, so the
-     * "dead centre has no direction" guard below never saw them. It shoved
+     * charge spawns at a muzzle offset rather than at the hull center, so the
+     * "dead center has no direction" guard below never saw them. It shoved
      * team mates as hard as enemies, and it scattered the volley you had just
      * fired along with the one coming at you.
      *
@@ -841,7 +841,7 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
                 int64_t ddx = (int64_t)sh->x - w->x, ddy = (int64_t)sh->y - w->y;
                 if (!in_box(ddx, ddy, rad)) continue;
                 int64_t d = isqrt64(ddx * ddx + ddy * ddy);
-                if (d == 0) continue;      /* dead centre has no direction */
+                if (d == 0) continue;      /* dead center has no direction */
                 sh->vx = (int32_t)(ddx * spec->push / d);
                 sh->vy = (int32_t)(ddy * spec->push / d);
                 sh->repel = spec->push_time;
@@ -869,7 +869,7 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
                  * pilot who let the repel off has cleared the doorway, which
                  * is what a repel is for, and what leaves is a bomb of the
                  * rung it was laid at -- the same rung it has been wearing as
-                 * its colour the whole time it sat there, so the thing flying
+                 * its color the whole time it sat there, so the thing flying
                  * away is recognisably the thing that was posted. Whoever laid
                  * it still owns it, so it can still kill them. */
                 if (is_mine(&cfg->specs[o->spec])) {
@@ -1245,7 +1245,7 @@ int sim_prize_pool(const sim_ship_class *c, uint8_t *out) {
 }
 
 /* Move one count by a step, within its ceiling and never below zero. */
-/* How far a proximity sensor reaches, from the bomb's centre, in Q8 px.
+/* How far a proximity sensor reaches, from the bomb's center, in Q8 px.
  *
  * The original does not use ProximityDistance as the radius. It scales it by
  * eighteen pixels a tile and then takes fourteen back, which on a three-tile
@@ -1630,7 +1630,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          *
          * Flight is otherwise untouched. A ship crosses one at speed like
          * anywhere else -- braking on entry made it flypaper, and a zone you
-         * cannot pass through is a wall wearing a different colour.
+         * cannot pass through is a wall wearing a different color.
          *
          * The trigger is the brake. Pressing fire in here does not shoot; it
          * stops you dead, which is the only way to come to rest in a game
@@ -1917,10 +1917,10 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * the normal component and the ship slides along it.
          *
          * The box follows the heading: hull_box gives the world-axis bounds
-         * of the hull as oriented this tick, and its centre sits `ox, oy`
+         * of the hull as oriented this tick, and its center sits `ox, oy`
          * from the ship because a hull is longer ahead of its pivot than
          * behind it. The clamps below are the old flush-to-tile arithmetic
-         * with the reach on each side spelt out, since with an offset box
+         * with the reach on each side spelled out, since with an offset box
          * the reach to the right is no longer the reach to the left. */
         if (riding) {
             /* A gunner does not fly and does not collide. It is put on its
@@ -2015,14 +2015,14 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          *
          * The addition is guarded and done wide. Adding first and clamping
          * afterwards overflows for any ship already above the cap, and signed
-         * overflow is undefined behaviour: the wrapped result was a huge
+         * overflow is undefined behavior: the wrapped result was a huge
          * negative bar, which the clamp then let through because it only ever
          * looked for too much. A spawning ship really did arrive at INT32_MAX
          * -- the server set that, meaning "full" -- and left the tick at
          * INT32_MIN, one hit from dead.
          *
          * Worth more than the symptom: this core's whole contract is that every
-         * platform steps it identically, and undefined behaviour is exactly the
+         * platform steps it identically, and undefined behavior is exactly the
          * thing a compiler is free to render differently. No input may reach it. */
         int32_t cap = sim_eff_max_energy(cls, sh);
         if (sh->stall > 0) {
@@ -2203,7 +2203,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     break;
                 }
                 /* End on the near side of the wall rather than a step inside
-                 * it. A blast centred in the tile spends half its reach on
+                 * it. A blast centered in the tile spends half its reach on
                  * the far side where nobody is, and shrapnel spawned in there
                  * dies on its own first tick. */
                 w->x = px;
@@ -2217,7 +2217,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
              *
              * A proximity fuse is a different shape and a different rule, and
              * both are the original's. The sensor is a square about the bomb,
-             * `trigger * 18 / 16 - 14` px to a side from its centre, widened
+             * `trigger * 18 / 16 - 14` px to a side from its center, widened
              * by the target hull's own half width; the arming test is that
              * square against the hull's, which makes it the larger of the two
              * axis gaps rather than a distance. A three-tile fuse comes out

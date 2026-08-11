@@ -61,7 +61,7 @@ for i, n in ipairs({"zones", "ship", "pilot", "settings", "help", "about"}) do
 end
 
 -- The cursor, as the drawing makes it: a field of team blue across the row it
--- is on. Counted by colour, since the wash a marked row carries is the same
+-- is on. Counted by color, since the wash a marked row carries is the same
 -- blue at a lighter weight, and by width, since the rail's own lit stop wears
 -- the same field at the same weight and is a third as wide.
 local function cursors()
@@ -664,7 +664,7 @@ check("and draws no second line for the name", st6 ~= nil
 
 -- Wider than a mark and narrower than a stage row. The lower bound is not
 -- fussiness: several icons are drawn from rectangles, the settings sliders
--- among them, and they take the stop's colour when it lights, so counting
+-- among them, and they take the stop's color when it lights, so counting
 -- every blue rectangle in the rail counts the drawing as well as the field.
 local function rail_fields()
     local n = 0
