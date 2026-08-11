@@ -31,7 +31,13 @@ async function post(path, body) {
     throw new Error("cannot reach the meta-layer");
   }
   const reply = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(reply.error || `the server said ${r.status}`);
+  if (!r.ok) {
+    // The flag is checked per action, so a revoked operator finds out on
+    // their next click. Put them back at the door rather than leaving a
+    // panel that draws buttons and refuses all of them.
+    if (r.status === 403 && path.startsWith("/v1/admin")) eject(reply.error);
+    throw new Error(reply.error || `the server said ${r.status}`);
+  }
   return reply;
 }
 
@@ -113,14 +119,20 @@ el("login-form").addEventListener("submit", async (ev) => {
   }
 });
 
-el("logout").addEventListener("click", () => {
+// Back to the door, with the reason if there is one. Signing out and being
+// turned away are the same teardown, so they are the same function.
+function eject(why) {
   localStorage.removeItem(KEY);
   secret = "";
   shown = null;
   if (ticking) { clearInterval(ticking); ticking = null; }
+  el("pilot").hidden = true;
+  el("ban-form").hidden = true;
+  el("login-note").textContent = why || "";
   show(login);
-  el("login-note").textContent = "";
-});
+}
+
+el("logout").addEventListener("click", () => eject(""));
 
 // -------------------------------------------------------------------- fleet
 
