@@ -343,12 +343,6 @@ td.wrap {
   max-width: 30rem;
 }
 
-/* A line, no axes, no grid, scaled to its own range. It says which way a
-   number is going and leaves the number itself to the column beside it. */
-.spark { display: block; color: var(--dim); }
-.spark.seats { color: var(--friend); }
-.lede .spark { display: inline-block; vertical-align: middle; margin-left: 0.4rem; }
-
 /* The rooms an instance holds, as the numbers a player would use. The count
    leads, the rooms follow it, and a full one wears the enemy's color because
    full is the state that turns players away. */
