@@ -78,10 +78,12 @@ static const sim_class_units flight = {
 #define BULLET_UPGRADE  100   /* BulletDamageUpgrade: and each level after */
 #define BULLET_DELAY     25   /* BulletFireDelay */
 #define BULLET_ENERGY    20   /* BulletFireEnergy */
-/* How far apart a multi-barrel hull's rounds leave, at 65536 to the turn.
- * Half of `mod_spread`, so a second barrel reads as a barrel rather than as
- * a free rung of multifire: the Facet throws more lead through a tighter
- * cone than a fanning Apex does, which is the close-range hull's whole case.
+/* How far apart a multi-barrel hull's rounds leave, at 65536 to the turn:
+ * seven and a half degrees, half the baseline's fifteen-degree `mod_spread`,
+ * so a second barrel reads as a barrel rather than as a free rung of
+ * multifire. That ratio is the baseline's own; a zone that tightens its
+ * multifire fan can walk right past it, and one that cares sets `spread` on
+ * the facet-gun patterns too.
  *
  * It has to be nonzero. A pattern of many at spacing zero is the shrapnel
  * encoding, and scatters. */

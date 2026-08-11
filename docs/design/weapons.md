@@ -314,9 +314,11 @@ the six a pilot expects out of three times two. That was the Terrier's real
 behaviour, and here it falls out of the model instead of being written down
 for one hull.
 
-We do not copy the rest of that ship's bill. It also fired slower, and the
-number is not in anything we have, so the Facet fires at everybody's rate
-until somebody finds it.
+The rest of that ship's bill is a zone call. It also fired slower, and the
+original's number is not in anything we have, so the baseline leaves the rate
+at everybody's 25 ticks rather than guess. The alpha zone has already made
+its own call there: its `facet-gun` overrides say 30, priced as playtest
+tuning rather than as history.
 
 ### A shot is what it was when it left
 
