@@ -3,6 +3,7 @@
 
     client/tools/gunner_mock.py out/            # all seven hulls
     client/tools/gunner_mock.py out/ anvil apex
+    client/tools/gunner_mock.py out/ --drone    # the other candidate
 
 Gunners are not built. Nothing in `client/` draws one, `sim/` has no notion of
 a ship riding another, and the roster has no hull for it. This exists so the
@@ -105,7 +106,9 @@ def main(argv):
     if not argv:
         raise SystemExit(__doc__.strip().splitlines()[2].strip())
     out = argv[0]
-    want = [a.lower() for a in argv[1:]] or NAMES
+    rest = [a.lower() for a in argv[1:]]
+    variant = 'drone' if '--drone' in rest else 'gun'
+    want = [a for a in rest if not a.startswith('--')] or NAMES
     os.makedirs(out, exist_ok=True)
 
     page = open(os.path.join(HERE, 'gunner_mock.html'), encoding='utf-8').read()
@@ -118,12 +121,13 @@ def main(argv):
         if name not in NAMES:
             raise SystemExit('unknown hull %r, expected one of %s'
                              % (name, ', '.join(NAMES)))
-        shot = os.path.join(out, 'carrier-%s.png' % name)
+        shot = os.path.join(out, 'carrier-%s-%s.png' % (name, variant))
         subprocess.run([
             chrome, '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
             '--screenshot=' + shot, '--window-size=1360,660',
             '--virtual-time-budget=2000',
-            'file://%s?i=%d' % (os.path.abspath(built), NAMES.index(name)),
+            'file://%s?i=%d&v=%s' % (os.path.abspath(built),
+                                     NAMES.index(name), variant),
         ], check=True, capture_output=True)
         print(shot)
     os.remove(built)

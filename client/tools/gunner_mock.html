@@ -159,6 +159,41 @@ function ship(ctx, cls, x, y, heading, col, opt) {
   ctx.restore();
 }
 
+// How far the silhouette reaches from the hull's middle, in one direction.
+function reach(h, ang) {
+  const p = h.poly, n = p.length / 2;
+  const dx = Math.sin(ang), dy = Math.cos(ang);
+  let best = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const ax = p[i*2], ay = p[i*2+1] - h.mid;
+    const bx = p[j*2], by = p[j*2+1] - h.mid;
+    const ex = bx - ax, ey = by - ay;
+    const den = dx*ey - dy*ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = (ax*ey - ay*ex) / den;
+    const u = (ax*dy - ay*dx) / den;
+    if (t > 0 && u >= 0 && u <= 1) best = Math.max(best, t);
+  }
+  return best;
+}
+
+// Where a drone sits: on the rim, in the direction its gunner is aiming.
+// The rim follows the outline so a drone hovers off the hull rather than off
+// in space beside a thin one, and it is averaged over a 40 degree arc so that
+// crossing a wingtip walks the drone out instead of throwing it.
+function rim(h, localAim, gap) {
+  let sum = 0, weight = 0;
+  for (let k = -3; k <= 3; k++) {
+    const w = 1 - Math.abs(k) / 4;
+    sum += reach(h, localAim + k * 0.116) * w;
+    weight += w;
+  }
+  const r = sum / weight + (gap == null ? 1.6 : gap);
+  const dx = Math.sin(localAim), dy = Math.cos(localAim);
+  return [dx*r, h.mid + dy*r];
+}
+
 // A carrier: the ship, then one gun per gunner on the ship's own point. The
 // glyph is the same for every class, as the original's is, so nothing here
 // depends on the hull it is drawn over.
@@ -170,6 +205,55 @@ function carrier(ctx, cls, x, y, heading, col, gunners, opt) {
   const n = gunners.length;
 
   ship(ctx, cls, x, y, heading, col, opt);
+
+  if (opt.variant === 'drone') {
+    // A drone per gunner, hovering at the rim in the direction that gunner is
+    // aiming and facing out along it. Turning does not spin a drone in place,
+    // it walks it around the hull, so where the guns are pointing is legible
+    // from position alone.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (let k = 0; k < n; k++) {
+      const g = gunners[k];
+      if (g == null) continue;
+      const e = 0.34 + 0.66 * (g.energy == null ? 1 : g.energy);
+      const [lx, ly] = rim(h, g.aim, opt.rim);
+      const dx = x + (lx*ca + ly*sa)*s, dy = y + (lx*sa - ly*ca)*s;
+      const a = heading + g.aim;
+      const dca = Math.cos(a), dsa = Math.sin(a);
+      const put = (pts) => {
+        ctx.beginPath();
+        for (let i = 0; i < pts.length; i += 2) {
+          const pxx = dx + (pts[i]*dca + pts[i+1]*dsa)*s;
+          const pyy = dy + (pts[i]*dsa - pts[i+1]*dca)*s;
+          if (i === 0) ctx.moveTo(pxx, pyy); else ctx.lineTo(pxx, pyy);
+        }
+      };
+      // body
+      put([0,2.5, 1.45,1.1, 1.45,-1.1, 0,-2.1, -1.45,-1.1, -1.45,1.1]);
+      ctx.closePath();
+      ctx.fillStyle = css(col, 0.16*e); ctx.fill();
+      ctx.lineWidth = 0.85*s; ctx.strokeStyle = css(hot(col, 0.45), 0.9*e);
+      ctx.stroke();
+      // bore, out the front
+      ctx.beginPath();
+      ctx.moveTo(dx + dsa*1.4*s, dy - dca*1.4*s);
+      ctx.lineTo(dx + dsa*4.3*s, dy - dca*4.3*s);
+      ctx.lineWidth = 0.9*s; ctx.strokeStyle = css(col, 0.30*e); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(dx + dsa*1.4*s, dy - dca*1.4*s);
+      ctx.lineTo(dx + dsa*4.3*s, dy - dca*4.3*s);
+      ctx.lineWidth = 0.38*s; ctx.strokeStyle = css(hot(col, 0.75), 0.95*e);
+      ctx.stroke();
+      // the eye, which is the brightest cell on it for the same reason a
+      // canopy is the brightest cell on a hull
+      ctx.beginPath(); ctx.arc(dx, dy, 0.62*s, 0, 7);
+      ctx.fillStyle = css(hot(col, 0.85), 0.95*e); ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
 
   // The original's answer, in this palette: one gun glyph, the same for every
   // class, drawn on the carrier's own point and turned to the heading its
@@ -287,7 +371,9 @@ function zoomed(ctx, cx, cy, k, fn) {
 
 const q = new URLSearchParams(location.search);
 const IDX = parseInt(q.get('i') || '0', 10);
-const GUNSCALE = parseFloat(q.get('g') || '0.46');
+const VARIANT = q.get('v') || 'gun';
+const RIM = parseFloat(q.get('rim') || '1.6');
+const OPT = {variant: VARIANT, rim: RIM};
 const W = 1360, H = 660;
 
 const c = document.getElementById('c');
@@ -320,25 +406,28 @@ const ROSTER = [
 ];
 
 label(ctx, 40, 54, `${h.name} as a carrier`, INK, 26);
-label(ctx, 40, 82, "the original's approach: one gun glyph per gunner, all on the ship's own point", DIMC, 14);
+label(ctx, 40, 82, VARIANT === 'drone'
+  ? 'a drone per gunner, on the rim in the direction that gunner is aiming'
+  : "the original's approach: one gun glyph per gunner, all on the ship's own point",
+  DIMC, 14);
 
 const COL = [250, 680, 1110], CY = 320;
 zoomed(ctx, COL[0], CY, K, (g) => {
-  carrier(g, IDX, 0, -h.mid, 0, FRIEND, EMPTY);
+  carrier(g, IDX, 0, -h.mid, 0, FRIEND, EMPTY, OPT);
 });
 nameColumn(ctx, COL[0] + 30, 442, [ROSTER[0]], FRIEND);
 label(ctx, COL[0], 560, 'gunners 0/5', DIMC, 16, 'center');
 label(ctx, COL[0], 584, 'nothing is drawn, so it is just the ship', DIMC, 13, 'center');
 
 zoomed(ctx, COL[1], CY, K, (g) => {
-  carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW);
+  carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW, OPT);
 });
 nameColumn(ctx, COL[1] + 30, 442, ROSTER, FRIEND);
 label(ctx, COL[1], 560, 'gunners 5/5', INK, 16, 'center');
 label(ctx, COL[1], 584, 'the count is in the names, not in the ship', DIMC, 13, 'center');
 
 zoomed(ctx, COL[2], CY, K, (g) => {
-  carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW);
+  carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW, OPT);
   volley(g, 0, -h.mid, SHOTS, 1);
 });
 label(ctx, COL[2], 560, 'the same, firing', INK, 16, 'center');
@@ -346,10 +435,10 @@ label(ctx, COL[2], 584, 'five weapons off one ship at five angles', DIMC, 13, 'c
 
 // true size, because that is the only scale the question is really about
 label(ctx, 1110, 606, 'at 1:1  (empty, five aboard, firing)', DIMC, 13, 'center');
-zoomed(ctx, 1006, 632, 1, (g) => { carrier(g, IDX, 0, -h.mid, 0, FRIEND, EMPTY); });
-zoomed(ctx, 1110, 632, 1, (g) => { carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW); });
+zoomed(ctx, 1006, 632, 1, (g) => { carrier(g, IDX, 0, -h.mid, 0, FRIEND, EMPTY, OPT); });
+zoomed(ctx, 1110, 632, 1, (g) => { carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW, OPT); });
 zoomed(ctx, 1214, 632, 1, (g) => {
-  carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW);
+  carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW, OPT);
   volley(g, 0, -h.mid, SHOTS, 1);
 });
 
