@@ -135,11 +135,12 @@ TLS from the start, for the same reason registration requires it: an admin
 credential over cleartext is an admin credential given away.
 
 Entry is a flag on the operator's own account. `accounts.admin` is written by
-`/v1/admin/grant` alone, which sits behind the central host's token, so the
-set of operators is decided on the box and no client-reachable route mints
-one. Signing in to the panel is `/v1/login` with the operator's call sign and
-password, the same credential the game uses, and the device secret it answers
-with is what the panel holds.
+no route at all: granting and revoking are SQL run by the operator on the
+central host, per the runbook in `deploy/README.md`, so the authority over
+who operates the fleet is the database credential and nothing reachable over
+HTTP. Signing in to the panel is `/v1/login` with the operator's call sign
+and password, the same credential the game uses, and the device secret it
+answers with is what the panel holds.
 
 One rule makes that safe, and every route the panel grows has to keep it: the
 `admin` field a session reply carries is decoration for the page. The
@@ -150,9 +151,13 @@ lands on the next click, not the next session. A client can dress its screen
 up as an admin's and every action still comes back 403.
 
 Two containments back that up. A leaked panel session can act as an admin but
-never appoint one, because granting is not a panel action. And the panel's
-ban refuses accounts holding the flag, so one compromised session cannot lock
-the other operators out; unseating an admin starts on the host.
+never appoint one, because granting is not an HTTP action at all. And the
+panel's ban refuses accounts holding the flag, so one compromised session
+cannot lock the other operators out; unseating an admin starts in the
+database. The same shape is why there is no admin token any more: the one
+route it guarded was grant, and a guarded route on a host-network deployment
+is still a thing a compromised neighbour process can call, where SQL against
+the managed database is not.
 
 The cost, stated plainly: fleet-wide reach now stands behind a password whose
 only floor is six characters. The login throttle holds guessing to ten tries

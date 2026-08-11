@@ -47,16 +47,19 @@ framework would be the larger change.
 | `/v1/bot` | the bot server, with a pool token | The account for one roster individual, the same one every time. A new one is seeded from the calibrated ladder |
 | `/v1/bot/register` | anyone, with a claimed account | A third-party bot account under that owner, who answers for it |
 | `/v1/events` | an arena, with a pool token | Rated events, appended to the log and applied to the projection |
-| `/v1/ban` | an operator, with the admin token | Marks an account, which takes effect at the next token issuance |
 | `/v1/admin/pilot` | the admin panel | One pilot by call sign or number: kind, standing, the dates. Behind the account flag |
-| `/v1/admin/ban` | the admin panel | The mark `/v1/ban` sets, held to an admin account's secret instead of the host token. Refuses accounts that hold the flag |
+| `/v1/admin/ban` | the admin panel | A fleet ban, which takes effect at the next token issuance. Refuses accounts that hold the flag |
 | `/v1/admin/admins` | the admin panel | Who holds the flag |
-| `/v1/admin/grant` | an operator, with the admin token | Sets and clears the flag. Claimed accounts only, and deliberately not a panel action |
 
 The `/v1/admin` block is the panel's, and [admin.md](admin.md) is its design.
 The one rule those routes live by: the `admin` field `/v1/session` answers
 with is what the page draws, never what the server trusts. Every admin route
 resolves the presented secret and checks the flag in the database itself.
+
+The flag has no route of its own. Granting and revoking are SQL run by the
+operator on the central host, so the authority over who operates the fleet is
+the database credential and nothing reachable over HTTP; the first admin of a
+deployment is made the same way as the tenth.
 
 A client learns the address from the directory's games list, which is the one
 thing it asks for before it needs an identity. That keeps the account system a

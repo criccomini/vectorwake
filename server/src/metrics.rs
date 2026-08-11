@@ -20,11 +20,11 @@
 //! Bound to loopback, and only when `VW_METRICS` names an address. A process
 //! with nothing set opens no port at all.
 //!
-//! Caddy publishes them at `/metrics/<service>` behind a password, so the
-//! password is the only thing between these numbers and the internet. That is
-//! a deliberate choice and a narrow one: a read view is useful without a token,
-//! which is why the admin surface is not routed at all, and why this one is not
-//! routed without `basic_auth` in front of it.
+//! Caddy publishes them at `/metrics/<service>`, open to anyone: what they
+//! expose is population, capacity and build stamps, none of which is a secret
+//! this fleet keeps. The ports themselves stay on loopback, so the Caddy
+//! route is the only way in. Anything that needs authority lives behind the
+//! admin panel's account flag instead, never here.
 
 use std::fmt::Write;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};

@@ -274,11 +274,10 @@ any of this. It only needs the A records to be right and port 80 reachable.
 
 ## Secrets
 
-Four, none committed. Two are minted per host:
+Three, none committed. One is minted per host:
 
 - `VW_POOL_TOKEN`, which authorises the arena servers to register. The catalog
   holds only its `sha256:` digest, which is why the digest is safe in git.
-- `VW_ADMIN_TOKEN`, which a human holds for the admin surface.
 
 Two belong to the deployment rather than to any host, so they are supplied
 rather than generated:
@@ -298,14 +297,14 @@ Anything that rebuilt the host would have lost accounts silently.
 
 They live in `deploy/.env` at `0600`, written from the instance's user-data.
 Anything on the box can read user-data from the metadata service, which is
-acceptable because the box is what holds them anyway, and is the reason they are
-per host rather than shared. Rotating either is a new token, a new digest for the
-pool one, and a restart.
+acceptable because the box is what holds them anyway, and is the reason the pool
+token is per host rather than shared. Rotating it is a new token, a new digest,
+and a restart.
 
 ## Running it somewhere else, or locally
 
 ```sh
-printf 'VW_HOST=play.localhost\nVW_POOL_TOKEN=...\nVW_ADMIN_TOKEN=...\n' > deploy/.env
+printf 'VW_HOST=play.localhost\nVW_POOL_TOKEN=...\n' > deploy/.env
 docker compose -f deploy/docker-compose.caddy.yml \
     -f deploy/docker-compose.central.yml -f deploy/docker-compose.arena.yml \
     -f deploy/docker-compose.local.yml --env-file deploy/.env up -d --build
