@@ -187,6 +187,20 @@ charge-2 = 10
 name = "charge-2"
 damage = 515
 
+# How long a mine sits there: two minutes, which is what the baseline says
+# too. Written out because it is the number this zone was played with and the
+# one worth arguing about, not because it differs.
+#
+# A mine's clock is the whole of how long the ground it denies stays denied,
+# so it is a map setting as much as a weapon one. Two minutes on a map of long
+# lanes means a doorway posted at the start of a fight is still posted at the
+# end of it. The original bounds the same setting anywhere from two seconds to
+# ten minutes; if this room ever feels like a minefield rather than a game,
+# this is the line to cut before the damage.
+[[arena.weapons]]
+name = "charge-3"
+life = 12000
+
 # Facet fires slower than everything else, which is the price of its second
 # barrel. A ladder is a weapon per rung, so all three rungs say it.
 [[arena.weapons]]
