@@ -541,7 +541,7 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 return (403, serde_json::json!({ "error": "no such account" }));
             };
             if !meta.throttle.allow(&format!("rename:{ip}"), 30, hour) {
-                return (429, serde_json::json!({ "error": "that is plenty of rerolling; wait a while" }));
+                return (429, serde_json::json!({ "error": "that is plenty of rerolling. Try again later" }));
             }
             match christen(&db, account).await {
                 Ok(name) => (200, serde_json::json!({ "name": name })),
