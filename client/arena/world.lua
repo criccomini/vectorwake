@@ -307,6 +307,42 @@ for _, h in ipairs(M.HULLS) do
 
     h.tris = triangulate(p)
 
+    -- The ring a gunner's drone sits on, as the 80th percentile of how far
+    -- this hull reaches from its middle.
+    --
+    -- Not the maximum, which is the obvious answer and the wrong one: a ring
+    -- outside the longest thing on a Cipher is a ring twenty pixels off its
+    -- flanks, because the longest thing on a Cipher is a blade. And not a
+    -- fraction of the maximum either, which buries the ring inside a round
+    -- hull long before it tightens around a long one, since a round hull
+    -- reaches nearly as far in every direction and a knife does not. The
+    -- spread is what has to be cut through. At the 80th the ring sits on the
+    -- plating of the hull's body and lets its spikes pass through, which is a
+    -- pixel or so of overlap on an Anvil and eleven on a Cipher.
+    do
+        local rs = {}
+        for k = 0, 127 do
+            local a = k / 128 * TAU
+            local dx, dy = math.sin(a), math.cos(a)
+            local best = 0
+            for v = 1, n do
+                local nv = (v % n) + 1
+                local ax, ay = p[v * 2 - 1], p[v * 2] - h.mid
+                local bx, by = p[nv * 2 - 1], p[nv * 2] - h.mid
+                local ex, ey = bx - ax, by - ay
+                local den = dx * ey - dy * ex
+                if math.abs(den) > 1e-9 then
+                    local t = (ax * ey - ay * ex) / den
+                    local u = (ax * dy - ay * dx) / den
+                    if t > 0 and u >= 0 and u <= 1 and t > best then best = t end
+                end
+            end
+            rs[#rs + 1] = best
+        end
+        table.sort(rs)
+        h.orbit = rs[math.floor(0.8 * (#rs - 1)) + 1]
+    end
+
     -- Somewhere to transform into. A fresh table per part per hull per frame
     -- is a hundred tables a frame and all of them garbage, on a collector that
     -- runs in the same thread as the draw.
@@ -1710,6 +1746,54 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- one question a player asks every second is "which one is me".
     if mine then
         glow:halo(x, y, 26, 12, pal.a(col, 0.10 * dim))
+    end
+end
+
+-- The gunners riding a hull, as drones on a ring around it.
+--
+-- A drone sits in the direction its gunner is aiming and faces out along it,
+-- which makes position and facing the same fact: turning does not spin a
+-- drone in place, it walks it around the ring, so where five guns are
+-- pointing is readable without waiting for them to fire. The ring is a circle
+-- rather than anything fitted to the hull, so a drone's place depends on its
+-- gunner's aim and not at all on where the carrier is pointing: spin the
+-- carrier and the drones hover.
+--
+-- The carrier itself is not touched. Nothing here tints it, brightens it or
+-- adds a fitting to it, and with nobody aboard nothing is drawn at all, so a
+-- hull that can carry and a hull that cannot look identical while both are
+-- empty. That is deliberate: every hull can carry, so a marking that said
+-- "this one can" would be on all seven and say nothing.
+--
+-- `riders` is a flat list of heading, energy fraction, per gunner.
+local DRONE = {0,2.5, 1.45,1.1, 1.45,-1.1, 0,-2.1, -1.45,-1.1, -1.45,1.1}
+local dtmp = {}
+
+function M.drones(fill, glow, cls, x, y, riders)
+    local h = M.HULLS[cls + 1] or M.HULLS[1]
+    for k = 1, #riders, 3 do
+        local a = riders[k] / 65536 * TAU
+        local frac = riders[k + 1]
+        local col = riders[k + 2]
+        local ca, sa = math.cos(a), math.sin(a)
+        -- Brightness is that gunner's own energy, which the original hides
+        -- and its own guides complain about: a carrier cannot otherwise tell
+        -- it is hauling somebody one bullet from death.
+        local e = 0.34 + 0.66 * math.max(0, math.min(1, frac))
+        local dx = x + h.orbit * sa
+        local dy = y - h.orbit * ca
+        local q = place(DRONE, dtmp, dx, dy, ca, sa, 1, 1)
+        glow:fan(q, pal.a(col, 0.16 * e))
+        glow:outline(q, 0.85, pal.a(pal.hot(col, 0.45, 1), 0.9 * e), true)
+        -- The bore, out the front, which is the whole of what a drone is for.
+        local bx, by = dx + sa * 4.3, dy - ca * 4.3
+        local rx, ry = dx + sa * 1.4, dy - ca * 1.4
+        glow:seg(rx, ry, bx, by, 0.9, pal.a(col, 0.30 * e), true)
+        glow:seg(rx, ry, bx, by, 0.38,
+                 pal.a(pal.hot(col, 0.75, 1), 0.95 * e), true)
+        -- Its eye, brightest cell on it, for the reason a canopy is the
+        -- brightest cell on a hull: it says which way this thing is looking.
+        glow:disc(dx, dy, 0.62, 4, pal.a(pal.hot(col, 0.85, 1), 0.95 * e))
     end
 end
 

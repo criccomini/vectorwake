@@ -1446,7 +1446,12 @@ function update(self, dt)
             -- Yours is always drawn: the camera is on it, so it cannot be off
             -- screen, and a frame that skipped it would be a frame with no
             -- ship.
-            if sim.ship_alive(i) == 1
+            -- A gunner is not drawn as a hull. It is sitting on its carrier's
+            -- point, so drawing it there would be a second silhouette on the
+            -- same pixel; it comes back below as a drone on that carrier's
+            -- ring instead. Its own pip goes with it, since a bar over a hull
+            -- nobody can see belongs to nothing.
+            if sim.ship_alive(i) == 1 and sim.ship_carrier(i) == 255
                and (i == me or not (sim.ship_x(i) < cull.x0 or sim.ship_x(i) > cull.x1
                                     or sim.ship_y(i) < cull.y0 or sim.ship_y(i) > cull.y1)) then
                 local col = (sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY
@@ -1487,6 +1492,24 @@ function update(self, dt)
                     end
                     world.ship_bar(fill, glow, sim.ship_x(i), sim.ship_y(i), frac,
                                    bar_col)
+                end
+
+                -- And whoever is riding it, as drones on its ring. Gathered
+                -- here rather than inside the renderer because the renderer
+                -- draws one ship and knows nothing about the rest of the room.
+                local riders = nil
+                for g = 0, sim.ship_count() - 1 do
+                    if sim.ship_carrier(g) == i and sim.ship_alive(g) == 1 then
+                        riders = riders or {}
+                        riders[#riders + 1] = sim.ship_heading(g)
+                        riders[#riders + 1] =
+                            sim.ship_energy(g) / math.max(1, sim.ship_max_energy(g))
+                        riders[#riders + 1] = col
+                    end
+                end
+                if riders then
+                    world.drones(fill, glow, sim.ship_class(i),
+                                 sim.ship_x(i), sim.ship_y(i), riders)
                 end
             end
         end
@@ -2172,6 +2195,22 @@ function on_input(self, action_id, action)
                 if r.action == "invite" then
                     net.invite(r.value)
                     sfx.ui("ui_go")
+                    return true
+                end
+                -- Climb onto this pilot as a gunner, or drop off them. The box
+                -- shuts behind both: the answer arrives as your own hull
+                -- moving onto theirs, or falling off, and that is on the
+                -- screen behind the panel.
+                if r.action == "attach" then
+                    net.attach(r.value)
+                    ui.inspect = nil
+                    sfx.ui("ui_go")
+                    return true
+                end
+                if r.action == "detach" then
+                    net.attach(255)
+                    ui.inspect = nil
+                    sfx.ui("ui_move")
                     return true
                 end
                 -- Borrow this pilot's eyes. The box shuts behind it, unlike

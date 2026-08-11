@@ -87,6 +87,11 @@ const C2S_SHIP: u8 = 5;
 const C2S_TEAM: u8 = 6;
 const C2S_FOUND: u8 = 7;
 const C2S_INVITE: u8 = 8;
+/// `[C2S_ATTACH, ship]`: ride that teammate as a gunner, or 255 to get off.
+/// A request like the rest, answered by the snapshot: the core refuses anyone
+/// dead, on another side, short of a full bar, or reaching for a hull that
+/// carries nobody or is already full.
+const C2S_ATTACH: u8 = 10;
 /// `[C2S_WATCH, ship]`: whose eyes to borrow. From a player it means sit out,
 /// from a watcher it means look somewhere else. 255 asks for the room channel.
 ///
@@ -4622,6 +4627,23 @@ pub(crate) async fn serve_client(
                         if let Some(a) = z.rooms.get_mut(room) {
                             if let Some(ship) = a.players.get(&pid).map(|p| p.ship) {
                                 a.invite(ship, guest);
+                            }
+                        }
+                    }
+                }
+            }
+            C2S_ATTACH => {
+                // Climb onto a teammate, or drop off. Every condition is the
+                // core's, and the answer is the next snapshot: a gunner is a
+                // ship whose carrier byte points at somebody, which is what
+                // the client draws the drone from.
+                if data.len() >= 2 {
+                    if let Some((room, pid)) = seat {
+                        let want = data[1];
+                        let mut z = zone.lock().await;
+                        if let Some(a) = z.rooms.get_mut(room) {
+                            if let Some(ship) = a.players.get(&pid).map(|p| p.ship) {
+                                a.world.attach(ship, want);
                             }
                         }
                     }

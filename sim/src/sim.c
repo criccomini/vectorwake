@@ -129,6 +129,11 @@ void sim_class_from_units(sim_ship_class *c, const sim_class_units *u) {
         c->mod_max[t] = 0;
     }
     for (int k = 0; k < SIM_MAX_CHARGES; k++) c->charge_max[k] = 0;
+    c->gunner_limit = (uint8_t)(u->gunner_limit < 0 ? 0
+                                : u->gunner_limit > SIM_MAX_SHIPS - 1
+                                  ? SIM_MAX_SHIPS - 1 : u->gunner_limit);
+    c->gunner_thrust = sim_units_thrust(u->gunner_thrust_penalty);
+    c->gunner_speed = sim_units_speed(u->gunner_speed_penalty);
 }
 
 /* ---- upgrades ---- */
@@ -176,6 +181,11 @@ int32_t sim_eff_recharge(const sim_ship_class *c, const sim_ship *s) {
 void sim_init(sim_state *s, uint32_t seed) {
     memset(s, 0, sizeof *s);
     s->rng = seed ? seed : 1u;
+    /* Nobody is riding anybody, and zero is a ship index rather than a way of
+     * saying so. Every slot, not only the ones in use: the hash reads to
+     * `ship_count` and a slot that was never spawned still has to agree
+     * across three architectures. */
+    for (int i = 0; i < SIM_MAX_SHIPS; i++) s->ships[i].carrier = SIM_NO_CARRIER;
 }
 
 /* Hand a fresh ship its opening greens.
@@ -226,6 +236,7 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
     memset(sh, 0, sizeof *sh);
     sh->active = 1;
     sh->alive = 1;
+    sh->carrier = SIM_NO_CARRIER;
     sh->cls = cls < cfg->class_count ? cls : 0;
     sh->team = team;
     sh->x = sh->spawn_x = x_px * 256;
@@ -824,6 +835,24 @@ static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
  * were carrying goes back on the map. Everyone else keeps flying, which is
  * the whole point: a menu that rebuilt the arena to change your ship would
  * throw away the match to answer a question about yourself. */
+uint8_t sim_gunners(const sim_state *s, uint8_t i) {
+    uint8_t n = 0;
+    for (int k = 0; k < s->ship_count; k++) {
+        const sim_ship *g = &s->ships[k];
+        if (g->active && g->carrier == i) n++;
+    }
+    return n;
+}
+
+/* Put a ship down and take its gunners off with it. Used wherever a ship
+ * stops being the thing its riders attached to: it dies, it changes sides, it
+ * changes hull. */
+static void detach_all(sim_state *s, uint8_t i) {
+    s->ships[i].carrier = SIM_NO_CARRIER;
+    for (int k = 0; k < s->ship_count; k++)
+        if (s->ships[k].carrier == i) s->ships[k].carrier = SIM_NO_CARRIER;
+}
+
 int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
                        uint8_t cls) {
     if (i >= s->ship_count || cls >= cfg->class_count) return -1;
@@ -852,6 +881,10 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     sh->earned = 0;
     sh->alive = 1;
     sh->respawn_at = 0;
+    /* A new hull is a new ship as far as riding goes, in both directions:
+     * this one lands back at its own start, so anybody on it would be coming
+     * along uninvited, and it is no longer the hull it climbed onto. */
+    detach_all(s, i);
     sh->x = sh->spawn_x;
     sh->y = sh->spawn_y;
     sh->vx = sh->vy = 0;
@@ -861,6 +894,58 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
      * changed, so the old items may not be things this hull can hold. */
     outfit(sh, cfg, &s->rng);
     sh->energy = sim_eff_max_energy(&cfg->classes[cls], sh);
+    return 0;
+}
+
+int sim_attach(sim_state *s, const sim_settings *cfg, uint8_t i,
+               uint8_t target) {
+    if (i >= s->ship_count) return -1;
+    sim_ship *sh = &s->ships[i];
+    if (!sh->active) return -1;
+
+    /* Getting off is always allowed and costs nothing. It has to be: a gunner
+     * with an empty bar in a fight that has arrived is a pilot whose only move
+     * is to leave, and a refused detach is a death. */
+    if (target == SIM_NO_CARRIER) {
+        if (sh->carrier == SIM_NO_CARRIER) return -1;
+        sh->carrier = SIM_NO_CARRIER;
+        return 0;
+    }
+
+    if (target >= s->ship_count || target == i) return -1;
+    sim_ship *to = &s->ships[target];
+    if (!to->active || !to->alive || !sh->alive) return -1;
+    if (to->team != sh->team) return -1;
+    /* No chains. A gunner cannot be ridden, which keeps the graph one deep
+     * and keeps a stack a thing that dies with one ship rather than a tree. */
+    if (to->carrier != SIM_NO_CARRIER) return -1;
+    if (sh->carrier == target) return 0;
+    /* Nobody rides a hull that was not built to carry, and a hull that was
+     * only carries as many as its class allows. */
+    const sim_ship_class *tc = &cfg->classes[to->cls];
+    if (tc->gunner_limit == 0) return -1;
+    if (sim_gunners(s, target) >= tc->gunner_limit) return -1;
+    /* Full bar, the same gate a hull change and a side change get, and for
+     * the same reason: this is a free ride out of wherever you are to
+     * wherever your team is, and a pilot in trouble should not be able to
+     * spend it as an escape. */
+    if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
+
+    /* Anything riding you comes off first: you are about to stop being a
+     * place to sit. */
+    for (int k = 0; k < s->ship_count; k++)
+        if (s->ships[k].carrier == i) s->ships[k].carrier = SIM_NO_CARRIER;
+
+    sh->carrier = target;
+    sh->x = to->x;
+    sh->y = to->y;
+    sh->vx = to->vx;
+    sh->vy = to->vy;
+    /* And you arrive with nothing. The crossing is unlimited and instant, so
+     * what it costs is the bar, which is why attaching into a fight that is
+     * already running kills you and why a carrier is worth holding position
+     * with. A sliver rather than zero, since zero is dead. */
+    sh->energy = 1024;
     return 0;
 }
 
@@ -878,8 +963,12 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
     if (!sh->alive) return -1;
     if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
 
-    /* What you were carrying belongs to the side you are leaving. */
+    /* What you were carrying belongs to the side you are leaving. Gunners
+     * too, in both directions: the ones riding you are about to be on the
+     * wrong side of a hull they cannot steer, and you cannot stay on a
+     * carrier that is now an enemy. */
     drop_flags(s, cfg, i, 0);
+    detach_all(s, i);
     sh->team = team;
     /* Bounty earned by killing does not cross with you. Two pilots trading
      * sides to feed each other kills is the oldest arrangement in this genre,
@@ -1274,6 +1363,19 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
     for (uint16_t i = 0; i < input_count; i++)
         if (inputs[i].ship < SIM_MAX_SHIPS) buttons[inputs[i].ship] = inputs[i].buttons;
 
+    /* Riders per ship, counted once. The penalty check below wants the count
+     * for every hull every tick, and asking sim_gunners each time is a walk
+     * of the roster inside a walk of the roster. Counting from `prev`-equal
+     * state is safe because nothing between here and the penalty check
+     * changes a carrier field: attach and detach happen between ticks, and
+     * the seating pass that drops riders runs after the ship loop ends. */
+    uint8_t riders[SIM_MAX_SHIPS] = {0};
+    for (int i = 0; i < next->ship_count; i++) {
+        const sim_ship *g = &next->ships[i];
+        if (g->active && g->carrier != SIM_NO_CARRIER && g->carrier < SIM_MAX_SHIPS)
+            riders[g->carrier]++;
+    }
+
     /* --- ships --- */
     for (int i = 0; i < next->ship_count; i++) {
         sim_ship *sh = &next->ships[i];
@@ -1300,8 +1402,21 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             if (sh->fire_cooldown[k] > 0) sh->fire_cooldown[k]--;
 
         const int32_t e_rot = sim_eff_rot(cls, sh);
-        const int32_t e_thrust = sim_eff_thrust(cls, sh);
-        const int32_t e_speed = sim_eff_speed(cls, sh);
+        int32_t e_thrust = sim_eff_thrust(cls, sh);
+        int32_t e_speed = sim_eff_speed(cls, sh);
+
+        /* Carrying costs, and it costs the same whether one is riding or
+         * five. Charged here rather than in the effective-stat helpers
+         * because it is a property of the tick rather than of the ship: those
+         * helpers answer "what can this hull do", and the answer does not
+         * change because somebody sat on it. */
+        const int riding = sh->carrier != SIM_NO_CARRIER;
+        if (!riding && riders[i] > 0) {
+            e_thrust -= cls->gunner_thrust;
+            e_speed -= cls->gunner_speed;
+            if (e_thrust < 0) e_thrust = 0;
+            if (e_speed < 0) e_speed = 0;
+        }
 
         /* 1. Rotate. */
         if (b & SIM_BTN_LEFT) sh->heading = (uint16_t)(sh->heading - e_rot);
@@ -1310,8 +1425,9 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         int32_t dx, dy;
         heading_dir(sh->heading, &dx, &dy);
 
-        /* 2. Thrust along the nose. */
-        if (b & (SIM_BTN_THRUST | SIM_BTN_REVERSE)) {
+        /* 2. Thrust along the nose. A gunner has none: it turns, it shoots,
+         * and where it goes is somebody else's business. */
+        if (!riding && (b & (SIM_BTN_THRUST | SIM_BTN_REVERSE))) {
             int32_t sign = (b & SIM_BTN_THRUST) ? 1 : -1;
             sh->vx += (int32_t)(((int64_t)e_thrust * dx * sign) >> 15);
             sh->vy += (int32_t)(((int64_t)e_thrust * dy * sign) >> 15);
@@ -1579,7 +1695,10 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * behind it. The clamps below are the old flush-to-tile arithmetic
          * with the reach on each side spelt out, since with an offset box
          * the reach to the right is no longer the reach to the left. */
-        {
+        if (riding) {
+            /* A gunner does not fly and does not collide. It is put on its
+             * carrier below, once every hull that steers itself has moved. */
+        } else {
             const sim_map *m = cfg->map;
             int32_t ox, oy, hx, hy;
             hull_box(cls, sh->heading, &ox, &oy, &hx, &hy);
@@ -1686,6 +1805,39 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             sh->energy = charged > cap ? cap : (int32_t)charged;
         }
         if (sh->energy > cap) sh->energy = cap;
+    }
+
+    /* --- gunners ---
+     *
+     * Everything that steers itself has moved, so now the riders go where
+     * their carriers ended up. Done in a pass of its own rather than inside
+     * the loop above because a gunner seated mid-loop would be a tick behind
+     * or a tick ahead depending on which slot its carrier happened to hold,
+     * and the whole point of this core is that slot order is not a rule.
+     *
+     * It is also where a ride ends. Death, a side change, a hull change and a
+     * carrier that has itself climbed onto somebody all drop a gunner here,
+     * which is one place to be right rather than four. Nothing announces it:
+     * a gunner whose carrier just died is standing where the carrier was,
+     * with its own energy, and the next tick it flies. */
+    for (int i = 0; i < next->ship_count; i++) {
+        sim_ship *sh = &next->ships[i];
+        if (!sh->active || sh->carrier == SIM_NO_CARRIER) continue;
+        if (!sh->alive) { sh->carrier = SIM_NO_CARRIER; continue; }
+        if (sh->carrier >= next->ship_count) {
+            sh->carrier = SIM_NO_CARRIER;
+            continue;
+        }
+        const sim_ship *to = &next->ships[sh->carrier];
+        if (!to->active || !to->alive || to->team != sh->team
+            || to->carrier != SIM_NO_CARRIER) {
+            sh->carrier = SIM_NO_CARRIER;
+            continue;
+        }
+        sh->x = to->x;
+        sh->y = to->y;
+        sh->vx = to->vx;
+        sh->vy = to->vy;
     }
 
     update_prizes(next, cfg, ev);
@@ -1979,6 +2131,11 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, sh->btn_prev);
         h = hash_u32(h, sh->earned);
         h = hash_u32(h, sh->points);
+        /* Who this ship is riding. In here because a client that disagreed
+         * about it would be flying a hull the server has sitting still, which
+         * is the loudest desync there is and the one worth catching on the
+         * tick it happens rather than on the pixel it shows up as. */
+        h = hash_u32(h, sh->carrier);
     }
     h = hash_u32(h, s->prize_timer);
     h = hash_u32(h, s->flag_count);

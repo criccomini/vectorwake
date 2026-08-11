@@ -620,7 +620,7 @@ check("rolling rolls, and the arena is never told",
 -- reaches: thirty an hour from one address. The refusal has to land on the
 -- card, because the alternative is what this used to do, which is stop
 -- changing the name and say nothing at all about why.
-account.refuse = "that is plenty of rerolling; wait a while"
+account.refuse = "that is plenty of rerolling. Try again later"
 local held = menu.name
 local rolls = account.renamed
 menu.step({go = true})

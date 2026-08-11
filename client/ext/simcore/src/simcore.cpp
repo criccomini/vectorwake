@@ -334,6 +334,9 @@ SHIP_GETTER(ShipHeadingRaw, s->heading)
 SHIP_GETTER(ShipAlive, s->alive)
 SHIP_GETTER(ShipActive, s->active)
 SHIP_GETTER(ShipTeam, s->team)
+// Who this ship is riding, or 255. What the drawing needs to put a gunner's
+// drone on the right hull, and what the panel needs to offer the right verb.
+SHIP_GETTER(ShipCarrier, s->carrier)
 SHIP_GETTER(ShipClass, s->cls)
 SHIP_GETTER(ShipEnergy, s->energy)
 SHIP_GETTER(ShipKills, s->kills)
@@ -1046,6 +1049,7 @@ const luaL_reg kFunctions[] = {
     {"ship_alive", ShipAlive},
     {"ship_active", ShipActive},
     {"ship_team", ShipTeam},
+    {"ship_carrier", ShipCarrier},
     {"ship_class", ShipClass},
     {"ship_energy", ShipEnergy},
     {"ship_max_energy", ShipMaxEnergy},

@@ -33,15 +33,15 @@ possible at all.
 
 The client sends, among others: `0x01` arena login, `0x03` position, `0x05`
 death, `0x06` chat, `0x07` take prize, `0x0F` frequency change, `0x10` attach
-request, `0x13` flag request, `0x18` set ship, `0x1C` drop brick, `0x1F` fire
-ball, `0x21` soccer goal scored.
+request, `0x13` flag request, `0x14` drop every turret riding you, `0x18` set
+ship, `0x1C` drop brick, `0x1F` fire ball, `0x21` soccer goal scored.
 
 The server sends: `0x01` player id, `0x03` player entering (several stacked into
 one packet, parsed in 64-byte chunks), `0x04` player leaving, `0x05` large
-position, `0x06` death, `0x07` chat, `0x08` prize, `0x09` score update, `0x0F`
-arena settings, `0x12` flag position, `0x14` create turret, `0x28` small
-position, `0x29` map information, `0x2A` compressed map, `0x35`/`0x36` LVZ
-toggle and modify, `0x3B` redirect.
+position, `0x06` death, `0x07` chat, `0x08` prize, `0x09` score update, `0x0E`
+create turret link, `0x0F` arena settings, `0x12` flag position, `0x15` destroy
+turret link, `0x28` small position, `0x29` map information, `0x2A` compressed
+map, `0x35`/`0x36` LVZ toggle and modify, `0x3B` redirect.
 
 The position packet is the hot path and it is dense:
 
