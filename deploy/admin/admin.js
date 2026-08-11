@@ -44,6 +44,9 @@ async function post(path, body) {
 function show(section) {
   login.hidden = section !== login;
   panel.hidden = section !== panel;
+  // Who you are belongs in the header, which is outside both sections, so it
+  // is shown and hidden with them rather than by them.
+  el("who-line").hidden = section !== panel;
 }
 
 // ------------------------------------------------------------------ sign in
@@ -143,22 +146,62 @@ el("logout").addEventListener("click", () => eject(""));
 // Fill a tbody from rows of cells. Every value goes in as text, which is the
 // rule this page keeps everywhere: server strings are data, never markup. A
 // cell may also be a node, which is how the action buttons get in.
+//
+// Each cell carries its column's name in `data-label`. On a wide screen that
+// is unused; below the card breakpoint the stylesheet draws it beside the
+// value, which is what lets a phone read the same facts in the same words
+// instead of a squeezed table.
 function fill(table, rows) {
-  const body = el(table).querySelector("tbody");
+  const t = el(table);
+  const heads = [...t.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+  const body = t.querySelector("tbody");
   body.textContent = "";
   for (const cells of rows) {
     const tr = document.createElement("tr");
-    for (const c of cells) {
+    cells.forEach((c, i) => {
       const td = document.createElement("td");
       const v = Array.isArray(c) ? c[0] : c;
       if (v instanceof Node) td.append(v);
       else td.textContent = v;
       if (Array.isArray(c) && c[1]) td.className = c[1];
+      if (heads[i]) td.dataset.label = heads[i];
       tr.append(td);
-    }
+    });
     body.append(tr);
   }
   return body;
+}
+
+// -------------------------------------------------------------------- asking
+
+// One dialog, used for both questions this page asks. Native `<dialog>`
+// rather than confirm() and prompt(): those cannot be drawn to the game's art
+// direction, some browsers suppress them outright, and showModal() brings the
+// focus trap and the escape key with it for nothing.
+//
+// Resolves to the typed string, "" for a plain confirm, or null for a refusal,
+// so a caller can treat null as "they said no" whichever kind it asked.
+function ask({ title, body, ok, label, value }) {
+  const dlg = el("ask");
+  el("ask-title").textContent = title;
+  el("ask-body").textContent = body;
+  el("ask-ok").textContent = ok || "confirm";
+  const field = el("ask-field");
+  const input = el("ask-input");
+  field.hidden = !label;
+  if (label) {
+    el("ask-label").textContent = label;
+    input.value = value || "";
+  }
+  return new Promise((resolve) => {
+    dlg.addEventListener("close", () => {
+      resolve(dlg.returnValue === "ok" ? (label ? input.value.trim() : "") : null);
+    }, { once: true });
+    dlg.showModal();
+    // The field if there is one, so a keyboard can answer without reaching
+    // for the mouse; otherwise the confirming button.
+    (label ? input : el("ask-ok")).focus();
+  });
 }
 
 // ------------------------------------------------------------------ commands
@@ -166,8 +209,7 @@ function fill(table, rows) {
 // Send a verb to an instance, or to every instance when `instance` is "*".
 // The answer says only that it went: the arena's outcome arrives at the
 // directory a moment later and shows up in the log below.
-async function command(instance, verb, args, confirming) {
-  if (confirming && !window.confirm(confirming)) return;
+async function command(instance, verb, args) {
   const note = el("fleet-note");
   noteOwner = "command";
   try {
@@ -198,18 +240,32 @@ function button(label, onClick, cls) {
 function actions(i) {
   const box = document.createElement("span");
   box.className = "acts";
-  box.append(button("drain", () => command(i.instance, "drain", "",
-    `Drain ${i.instance}? New joins stop and every bot goes home. ` +
-    `${i.players} player(s) are on it now and will not be disconnected.`), "warn"));
+
+  box.append(button("drain", async () => {
+    const yes = await ask({
+      title: "Drain this instance?",
+      body: `${i.instance} stops taking joins and sends every bot home. ` +
+        (i.players
+          ? `The ${i.players} player(s) on it now keep flying until they leave.`
+          : "Nobody is playing on it."),
+      ok: "drain",
+    });
+    if (yes !== null) command(i.instance, "drain", "");
+  }, "warn"));
+
   if (i.pinned) {
     box.append(button("unpin", () => command(i.instance, "unpin", "")));
   } else {
-    box.append(button("pin", () => {
-      const zone = window.prompt("Pin to which zone?", i.zone || "");
-      if (!zone) return;
-      command(i.instance, "pin", zone,
-        `Pin ${i.instance} to ${zone}? Automatic zone selection stops for it` +
-        (i.players ? ", and it drains first because somebody is playing." : "."));
+    box.append(button("pin", async () => {
+      const zone = await ask({
+        title: "Pin this instance?",
+        body: "Automatic zone selection stops for it until it is unpinned" +
+          (i.players ? ", and it drains first because somebody is playing." : "."),
+        ok: "pin",
+        label: "zone",
+        value: i.zone || "",
+      });
+      if (zone) command(i.instance, "pin", zone);
     }, "warn"));
   }
   return box;
@@ -281,7 +337,7 @@ async function drawFleet() {
   const players = f.instances.reduce((n, i) => n + i.players, 0);
   const bots = f.instances.reduce((n, i) => n + i.bots, 0);
   const bad = f.instances.filter((i) => trouble(i)[1] === "bad").length;
-  const head = el("fleet-head");
+  const head = el("fleet-head-line");
   head.textContent = "";
   const say = (text, cls) => {
     const s = document.createElement("span");
@@ -320,7 +376,7 @@ function drawAudit(rows) {
       r.actor || (ack ? "arena" : ""),
       ack ? "answered" : r.verb,
       r.target,
-      [r.outcome || r.args, bad ? "bad" : ""],
+      [r.outcome || r.args, bad ? "wrap bad" : "wrap"],
     ];
   }));
   el("audit-empty").hidden = rows.length > 0;
@@ -332,7 +388,10 @@ function drawAudit(rows) {
 async function drawBans() {
   const rows = (await post("/v1/admin/bans", { secret })).bans || [];
   fill("bans", rows.map((b) => [
-    `#${b.account}`, b.name || "(none)", b.reason || "(none recorded)", b.last_seen,
+    `#${b.account}`,
+    b.name || "(none)",
+    [b.reason || "(none recorded)", "wrap"],
+    b.last_seen,
   ]));
   el("bans-empty").hidden = rows.length > 0;
   el("bans").hidden = rows.length === 0;

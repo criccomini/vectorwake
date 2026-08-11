@@ -5,88 +5,176 @@
      own. Caddy serves this directory and proxies /v1 to the meta-layer, so
      the page and its API are one origin and nothing here needs CORS.
 
+     It is drawn to the art direction in docs/design/identity.md, the same
+     one the game is drawn to: near-black field, thin lines, monospace
+     numerals, high contrast, no skeuomorphism. Colors come from
+     client/arena/palette.lua and mean what they mean in the game, so cyan
+     is the acting edge and orange is the destructive one.
+
      Script and style live in files beside this one rather than inline,
-     because the site's CSP says default-src 'self' and that is what makes
-     a stray script in rendered text a non-event. Keep it that way. -->
+     because the site's CSP says default-src 'self' and that is what makes a
+     stray script in rendered text a non-event. Keep it that way. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- viewport-fit=cover so the field reaches the edges of a notched phone;
+     the padding that keeps content clear of the notch is in the CSS. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070c">
+<meta name="description" content="Operator panel for a vectorwake deployment.">
 <title>vectorwake admin</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="mono.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="admin.css">
 </head>
 <body>
-<main>
-  <h1>vectorwake <span class="dim">admin</span></h1>
+<a class="skip" href="#main">Skip to content</a>
 
-  <section id="login" hidden>
-    <p class="dim">Sign in with a claimed account that holds the admin flag.</p>
-    <form id="login-form">
-      <label>call sign
-        <input id="login-name" autocomplete="username" required>
-      </label>
-      <label>password
-        <input id="login-password" type="password" autocomplete="current-password" required>
-      </label>
-      <button>sign in</button>
+<header class="bar">
+  <h1>
+    <!-- The same hull the favicon draws, and the same four-point outline the
+         client puts on the field. Inline so it takes the ink color and needs
+         no second request. -->
+    <svg class="mark" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true" focusable="false">
+      <path d="M16 4 L27 28 L16 21 L5 28 Z" fill="none" stroke="currentColor"
+            stroke-width="2.5" stroke-linejoin="round"/>
+    </svg>
+    vectorwake <span class="dim">admin</span>
+  </h1>
+  <p class="who" id="who-line" hidden>
+    <span id="who"></span>
+    <button id="logout" class="link" type="button">sign out</button>
+  </p>
+</header>
+
+<main id="main">
+  <noscript>
+    <p class="note">This panel is a small amount of JavaScript talking to the
+      meta-layer. Without it there is nothing to show.</p>
+  </noscript>
+
+  <section id="login" aria-labelledby="login-head" hidden>
+    <h2 id="login-head">Sign in</h2>
+    <p class="dim">Use a claimed account that holds the admin flag.</p>
+    <form id="login-form" class="stack">
+      <div class="field">
+        <label for="login-name">call sign</label>
+        <input id="login-name" name="username" autocomplete="username"
+               autocapitalize="off" spellcheck="false" required>
+      </div>
+      <div class="field">
+        <label for="login-password">password</label>
+        <input id="login-password" name="password" type="password"
+               autocomplete="current-password" required>
+      </div>
+      <button class="go">sign in</button>
     </form>
-    <p id="login-note" class="note"></p>
+    <p id="login-note" class="note" role="status" aria-live="polite"></p>
   </section>
 
-  <section id="panel" hidden>
-    <p class="who">signed in as <span id="who"></span>
-      <button id="logout" class="link" type="button">sign out</button></p>
+  <section id="panel" aria-labelledby="fleet-head" hidden>
+    <h2 id="fleet-head">Fleet</h2>
+    <p id="fleet-head-line" class="lede"></p>
+    <p id="fleet-note" class="note" role="status" aria-live="polite"></p>
+    <div class="scroller">
+      <table id="fleet">
+        <caption class="sr">Every arena instance this deployment's directory
+          has observed</caption>
+        <thead><tr>
+          <th scope="col">instance</th><th scope="col">zone</th>
+          <th scope="col">region</th>
+          <th scope="col" class="n">players</th><th scope="col" class="n">bots</th>
+          <th scope="col" class="n">rooms</th><th scope="col" class="n">tick</th>
+          <th scope="col">state</th>
+          <th scope="col"><span class="sr">actions</span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
 
-    <h2>fleet</h2>
-    <p id="fleet-note" class="note"></p>
-    <p id="fleet-head" class="head"></p>
-    <table id="fleet">
-      <thead><tr>
-        <th>instance</th><th>zone</th><th>region</th>
-        <th class="n">players</th><th class="n">bots</th><th class="n">rooms</th>
-        <th class="n">tick</th><th>state</th><th></th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-
-    <h2>pilot</h2>
-    <form id="lookup-form">
-      <input id="lookup-q" placeholder="call sign, or #account" required>
-      <button>look up</button>
+    <h2 id="pilot-head">Pilot</h2>
+    <form id="lookup-form" class="row">
+      <div class="field grow">
+        <label for="lookup-q" class="sr">call sign or account number</label>
+        <input id="lookup-q" placeholder="call sign, or #account"
+               autocapitalize="off" spellcheck="false" required>
+      </div>
+      <button class="go">look up</button>
     </form>
-    <p id="lookup-note" class="note"></p>
+    <p id="lookup-note" class="note" role="status" aria-live="polite"></p>
     <dl id="pilot" hidden></dl>
-    <form id="ban-form" hidden>
-      <input id="ban-reason" placeholder="reason">
+    <form id="ban-form" class="row" hidden>
+      <div class="field grow">
+        <label for="ban-reason" class="sr">reason</label>
+        <input id="ban-reason" placeholder="reason">
+      </div>
       <button id="ban-button"></button>
       <button id="kick-button" type="button">kick</button>
     </form>
 
-    <h2>log</h2>
-    <table id="audit">
-      <thead><tr><th>at</th><th>who</th><th>did</th><th>to</th><th>said</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <h2 id="log-head">Log</h2>
+    <div class="scroller">
+      <table id="audit">
+        <caption class="sr">Operator commands and the answers arenas gave</caption>
+        <thead><tr>
+          <th scope="col">at</th><th scope="col">who</th><th scope="col">did</th>
+          <th scope="col">to</th><th scope="col">said</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <p id="audit-empty" class="dim" hidden>No commands sent since the directory
       last started.</p>
 
-    <h2>bans</h2>
-    <table id="bans">
-      <thead><tr><th>account</th><th>call sign</th><th>reason</th><th>last seen</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <h2 id="bans-head">Bans</h2>
+    <div class="scroller">
+      <table id="bans">
+        <caption class="sr">Accounts currently refused a session token</caption>
+        <thead><tr>
+          <th scope="col">account</th><th scope="col">call sign</th>
+          <th scope="col">reason</th><th scope="col">last seen</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <p id="bans-empty" class="dim" hidden>Nobody is banned.</p>
 
-    <h2>admins</h2>
-    <table id="admins">
-      <thead><tr><th>account</th><th>call sign</th><th>last seen</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <h2 id="admins-head">Admins</h2>
+    <div class="scroller">
+      <table id="admins">
+        <caption class="sr">Accounts that hold the admin flag</caption>
+        <thead><tr>
+          <th scope="col">account</th><th scope="col">call sign</th>
+          <th scope="col">last seen</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <p class="dim">The flag itself is granted in the database, not here.
-      See deploy/README.md.</p>
+      See <code>deploy/README.md</code>.</p>
   </section>
 </main>
+
+<!-- Asking before something disruptive. A dialog rather than confirm() and
+     prompt(): those cannot be drawn to this art direction, some browsers
+     suppress them, and the native element brings the focus trap and the
+     escape key with it. -->
+<dialog id="ask" aria-labelledby="ask-title">
+  <form method="dialog" id="ask-form">
+    <h2 id="ask-title"></h2>
+    <p id="ask-body"></p>
+    <div class="field" id="ask-field" hidden>
+      <label for="ask-input" id="ask-label"></label>
+      <input id="ask-input" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="row end">
+      <button value="cancel" class="quiet">cancel</button>
+      <button value="ok" id="ask-ok" class="go"></button>
+    </div>
+  </form>
+</dialog>
+
 <script src="admin.js"></script>
 </body>
 </html>

@@ -1,131 +1,429 @@
-/* The game's palette, from client/arena/palette.lua, so the panel reads as
-   the same instrument: BG 05070c, INK dfe9f5, DIM 6c7a90, BORDER 1d2838,
-   FRIEND 4fd6ff for the acting edge and ENEMY ffa552 for the destructive
-   one. Monospace throughout, because the client draws nothing but text and
-   vectors and this page is more of the same. */
+/* The panel, drawn to the art direction in docs/design/identity.md.
+ *
+ * "Interface. Thin lines, monospace numerals, high contrast, no
+ * skeuomorphism." So: one hairline weight for structure, no shadows, no
+ * gradients on anything that is not the field itself, and nothing rounded
+ * enough to look like a button pretending to be a physical object.
+ *
+ * Color carries meaning and never decoration, which is the rule the game
+ * plays by: cyan is yours and the acting edge, orange is the enemy and the
+ * destructive one, violet is the band that means "a state, not a player".
+ * The values are palette.lua's, so a screen here and a screen in the game are
+ * the same instrument.
+ */
 
-* { box-sizing: border-box; }
+:root {
+  /* From client/arena/palette.lua. Names match it so the two can be read
+     against each other. */
+  --bg: #05070c;
+  --ink: #dfe9f5;
+  --dim: #6c7a90;
+  --friend: #4fd6ff;
+  --enemy: #ffa552;
+  --burst: #c27bff;
+  --line: #1d2838;
+  /* A card sits a shade above the field, and no more than a shade: at
+     #080c14 the dim ink on top of it measured 4.49:1, which is one
+     hundredth under what WCAG asks of body text. The palette is the game's
+     and not ours to retune, so the ground moved instead. */
+  --panel: #06090f;
+  --hair: #10161f;
+
+  /* One ramp for space, so nothing is spaced by eye. */
+  --gap: 0.75rem;
+  --pad: clamp(1rem, 4vw, 2rem);
+
+  color-scheme: dark;
+}
+
+/* The game's own typeface, subset to what this page draws. DejaVu Sans Mono
+   is what client/ui draws every glyph in, so the panel reads as the same
+   product rather than as the same colors. `local()` first, so a machine that
+   already has it downloads nothing. */
+@font-face {
+  font-family: "vw mono";
+  src: local("DejaVu Sans Mono"), url("mono.woff2") format("woff2");
+  font-display: swap;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
 
 /* `hidden` is a user-agent default of `display: none`, so any author rule
-   naming a display wins over it and the element stays on screen. Two below do,
-   `dl` and `form`, and both are things this page hides until a lookup has
-   found something; the panel shipped drawing an empty bordered box and a ban
-   form with a blank button. Stated once here rather than fixed at each site,
-   so a later rule cannot reopen it. */
+   naming a display wins over it and the element stays on screen. Several
+   below do. Stated once here rather than fixed at each site, so a later rule
+   cannot reopen it. */
 [hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  background: #05070c;
-  color: #dfe9f5;
-  font: 15px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "vw mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Fluid, but never below the size a phone can read comfortably. */
+  font-size: clamp(0.875rem, 0.82rem + 0.25vw, 0.95rem);
+  line-height: 1.55;
+  /* Every number on this page sits in a column with other numbers. */
+  font-variant-numeric: tabular-nums;
+  min-height: 100dvh;
 }
 
-main {
-  max-width: 34rem;
+/* The field. A sparse starfield, the way the client's own landing sits over
+   one, and dim enough that it never competes with a row of text; identity.md
+   asks for exactly that restraint of the game's background. Two layers at
+   different densities give it depth without a texture, an image, or a
+   repaint. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, #24344a 50%, transparent 50%),
+    radial-gradient(1px 1px at 67% 74%, #24344a 50%, transparent 50%),
+    radial-gradient(1px 1px at 84% 21%, #1b2738 50%, transparent 50%),
+    radial-gradient(1px 1px at 41% 88%, #1b2738 50%, transparent 50%),
+    radial-gradient(2px 2px at 93% 62%, #22304a 50%, transparent 50%);
+  background-size: 37vmax 41vmax, 53vmax 47vmax,
+                   61vmax 43vmax, 43vmax 59vmax, 79vmax 71vmax;
+  opacity: 0.55;
+}
+
+/* ---------------------------------------------------------------- skeleton */
+
+.bar, main {
+  max-width: 62rem;
   margin: 0 auto;
-  padding: 2.5rem 1.25rem 4rem;
+  /* Clear of a notch on a phone held sideways. */
+  padding-inline: max(var(--pad), env(safe-area-inset-left),
+                      env(safe-area-inset-right));
 }
 
-h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 2rem; }
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+  align-items: baseline;
+  justify-content: space-between;
+  padding-block: clamp(1.25rem, 4vw, 2rem) 0.75rem;
+}
+
+main { padding-bottom: max(4rem, env(safe-area-inset-bottom)); }
+
+h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: clamp(1.05rem, 1rem + 0.6vw, 1.35rem);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+/* The hull sits on the baseline of the words rather than above them. */
+.mark { flex: none; color: var(--friend); }
+
 h2 {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: #6c7a90;
-  margin: 2.5rem 0 0.75rem;
-  border-bottom: 1px solid #1d2838;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+  margin: clamp(2rem, 5vw, 2.75rem) 0 0.75rem;
   padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--line);
 }
 
-.dim { color: #6c7a90; }
-.who { color: #6c7a90; }
-.who span { color: #dfe9f5; }
+/* The first heading in a section does not need the space above it. */
+section > h2:first-child { margin-top: 0.5rem; }
 
-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; }
-label { display: flex; flex-direction: column; gap: 0.25rem; color: #6c7a90; }
+/* The front door gets the middle of the screen rather than the top left
+   corner of it. There is nothing else on the page at that moment, and a form
+   pinned to the corner of an empty field reads as a page that failed to
+   finish loading. */
+#login {
+  min-height: min(60vh, 30rem);
+  display: grid;
+  align-content: center;
+}
+
+.dim { color: var(--dim); }
+.lede { margin: 0 0 0.5rem; }
+.lede .bad { color: var(--enemy); }
+.who { margin: 0; color: var(--dim); }
+.who span { color: var(--ink); }
+
+code {
+  font: inherit;
+  color: var(--ink);
+}
+
+/* Reachable by keyboard, out of the way otherwise. */
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--panel);
+  border: 1px solid var(--friend);
+  color: var(--friend);
+  padding: 0.5rem 0.9rem;
+  z-index: 10;
+}
+.skip:focus { left: 0.5rem; top: 0.5rem; }
+
+/* For labels a screen reader needs and a sighted operator does not. */
+.sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ forms */
+
+form { margin: 0; }
+.stack { display: grid; gap: var(--gap); max-width: 22rem; }
+.row { display: flex; flex-wrap: wrap; gap: var(--gap); align-items: end; }
+.row.end { justify-content: flex-end; }
+/* Wide enough for a call sign and a sentence of reason, and no wider: a text
+   field stretched across a desktop reads as a mistake. */
+.grow { flex: 1 1 12rem; max-width: 26rem; }
+
+.field { display: grid; gap: 0.3rem; }
+label { color: var(--dim); font-size: 0.9em; }
 
 input {
   background: #0a0f18;
-  border: 1px solid #1d2838;
-  border-radius: 3px;
-  color: #dfe9f5;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--ink);
   font: inherit;
-  padding: 0.45rem 0.6rem;
+  /* 44px tall on a phone: the smallest target a thumb hits reliably. */
+  min-height: 2.75rem;
+  padding: 0.4rem 0.65rem;
+  width: 100%;
 }
-input:focus { outline: 1px solid #4fd6ff; outline-offset: 0; }
+input::placeholder { color: #4b586b; }
 
 button {
-  background: #0a0f18;
-  border: 1px solid #4fd6ff;
-  border-radius: 3px;
-  color: #4fd6ff;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--dim);
   font: inherit;
-  padding: 0.45rem 0.9rem;
+  min-height: 2.75rem;
+  padding: 0.4rem 1rem;
   cursor: pointer;
+  white-space: nowrap;
+  /* A press should read instantly; nothing here animates for its own sake. */
+  transition: color 90ms linear, border-color 90ms linear, background 90ms linear;
 }
-button:hover { background: #10202c; }
+button:hover { color: var(--ink); border-color: var(--dim); }
 
-/* The one destructive control on the page wears the enemy's color. */
-#ban-button.ban { border-color: #ffa552; color: #ffa552; }
-#ban-button.ban:hover { background: #2a1c10; }
+/* The acting edge. */
+button.go { border-color: var(--friend); color: var(--friend); }
+button.go:hover { background: #0d1b26; }
+
+button.quiet:hover { background: #0d131c; }
+
+/* The destructive one, in the color the game gives an enemy hull. */
+button.ban { border-color: var(--enemy); color: var(--enemy); }
+button.ban:hover { background: #241608; }
 
 button.link {
   border: none;
-  background: none;
-  color: #6c7a90;
+  /* Reads as a text link and is still a target a thumb can find: 24px is the
+     floor WCAG 2.2 puts under anything clickable. */
+  min-height: 1.75rem;
+  padding: 0 0.3rem 0 0.6rem;
+  color: var(--dim);
   text-decoration: underline;
-  padding: 0 0 0 0.5rem;
 }
+button.link:hover { color: var(--ink); }
 
-.note { color: #ffa552; min-height: 1.5em; margin: 0.6rem 0 0; }
-.note:empty { margin: 0; }
+/* Keyboard focus is a visible ring; a mouse press is not. */
+:focus-visible {
+  outline: 2px solid var(--friend);
+  outline-offset: 1px;
+}
+input:focus-visible { outline-offset: -1px; }
+
+.note {
+  color: var(--enemy);
+  margin: 0.6rem 0 0;
+  min-height: 1.5em;
+}
+.note:empty { min-height: 0; margin: 0; }
+
+/* ------------------------------------------------------------------ pilot */
 
 dl {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.2rem 1.2rem;
-  margin: 1rem 0;
-  border: 1px solid #1d2838;
-  border-radius: 3px;
+  gap: 0.25rem 1.25rem;
+  margin: 1rem 0 0;
+  border: 1px solid var(--line);
+  border-radius: 2px;
   padding: 0.9rem 1.1rem;
+  background: var(--panel);
 }
-dt { color: #6c7a90; }
+dt { color: var(--dim); }
 dd { margin: 0; overflow-wrap: anywhere; }
-dd.bad { color: #ffa552; }
-dd.good { color: #4fd6ff; }
+dd.bad { color: var(--enemy); }
+dd.good { color: var(--friend); }
 
-/* The line above the fleet table: totals, then anything wrong with the
-   deployment rather than with one instance. */
-.head { margin: 0 0 0.75rem; }
-.head .bad { color: #ffa552; }
+/* The controls that act on whoever the card is describing, kept clear of it
+   so the pair reads as a card and then its actions. */
+#ban-form { margin-top: var(--gap); }
 
-/* Row controls: small, quiet, and never the first thing the eye lands on.
-   The table is for reading; these are for the rare moment it is not. */
-.acts { display: flex; gap: 0.35rem; }
-.acts button {
-  padding: 0.15rem 0.5rem;
-  font-size: 0.85em;
-  border-color: #1d2838;
-  color: #6c7a90;
+/* ----------------------------------------------------------------- tables */
+
+/* A wide table scrolls inside its own box rather than pushing the page
+   sideways. Below the card breakpoint there is nothing to scroll. */
+.scroller { overflow-x: auto; }
+
+/* Full width so the rules under the headings run the width of the section
+   like every other line on the page, with the slack given to the last column
+   so the real ones hug their contents. What keeps that from squeezing a call
+   sign onto two lines is the `nowrap` below: a column cannot be pushed
+   narrower than the thing in it. */
+table {
+  border-collapse: collapse;
+  width: 100%;
 }
-.acts button:hover { border-color: #4fd6ff; color: #4fd6ff; background: #10202c; }
-.acts button.warn:hover { border-color: #ffa552; color: #ffa552; background: #2a1c10; }
+th:last-child, td:last-child { width: 100%; }
+caption { text-align: left; }
 
-table { border-collapse: collapse; width: 100%; }
-/* Counts read down a column, so they align on the right. */
-th.n, td.n { text-align: right; }
-td.bad { color: #ffa552; }
-td.warn { color: #c27bff; }
 th {
   text-align: left;
-  color: #6c7a90;
   font-weight: 400;
-  border-bottom: 1px solid #1d2838;
-  padding: 0.25rem 1rem 0.25rem 0;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+  padding: 0.3rem 1rem 0.3rem 0;
+  white-space: nowrap;
 }
-td { padding: 0.3rem 1rem 0.3rem 0; border-bottom: 1px solid #10161f; }
+td {
+  padding: 0.45rem 1rem 0.45rem 0;
+  border-bottom: 1px solid var(--hair);
+  vertical-align: top;
+}
+tr:last-child td { border-bottom: none; }
+th.n, td.n { text-align: right; padding-right: 1.25rem; }
+td.bad { color: var(--enemy); }
+td.warn { color: var(--burst); }
 
-#ban-form { margin-top: 0.75rem; }
-#ban-form input { flex: 1; }
+/* A call sign, an instance id and a timestamp are single things and never
+   break across lines. Prose is the exception, and it says so. */
+th, td { white-space: nowrap; }
+td.wrap {
+  white-space: normal;
+  min-width: 12rem;
+  max-width: 30rem;
+}
+
+/* Row controls: quiet until wanted, and never the first thing the eye lands
+   on in a table meant for reading. */
+.acts { display: flex; gap: 0.4rem; }
+.acts button {
+  min-height: 2rem;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.85em;
+}
+.acts button:hover { border-color: var(--friend); color: var(--friend); background: #0d1b26; }
+.acts button.warn:hover { border-color: var(--enemy); color: var(--enemy); background: #241608; }
+
+/* ----------------------------------------------------------------- dialog */
+
+dialog {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--ink);
+  font: inherit;
+  padding: clamp(1rem, 4vw, 1.5rem);
+  max-width: min(30rem, calc(100vw - 2rem));
+  width: 100%;
+}
+dialog::backdrop { background: rgb(2 4 8 / 0.72); }
+dialog h2 {
+  margin: 0 0 0.6rem;
+  border: none;
+  padding: 0;
+  color: var(--ink);
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+dialog p { margin: 0 0 1rem; color: var(--dim); }
+dialog .field { margin-bottom: 1rem; }
+
+/* ------------------------------------------------------------------ cards */
+
+/* Narrow screens get cards instead of a grid. Every cell keeps its column's
+   name beside it, so a phone reads the same facts in the same words rather
+   than a squeezed table or a sideways scroll. */
+@media (max-width: 46rem) {
+  table, thead, tbody, tr, td { display: block; width: 100%; }
+  /* A card has one value per line, so nothing needs holding on one line and
+     everything needs permission to wrap. */
+  td, td.wrap { white-space: normal; max-width: none; min-width: 0; }
+  thead {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  tr {
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    background: var(--panel);
+    padding: 0.6rem 0.85rem;
+    margin-bottom: 0.6rem;
+  }
+  td {
+    display: grid;
+    grid-template-columns: 6.5rem 1fr;
+    gap: 0.75rem;
+    align-items: baseline;
+    padding: 0.15rem 0;
+    border: none;
+    text-align: left;
+  }
+  td.n { text-align: left; padding-right: 0; }
+  /* The column name, carried on the cell by admin.js. */
+  td::before {
+    content: attr(data-label);
+    color: var(--dim);
+  }
+  /* A cell with nothing in it says nothing at all on a phone. */
+  td:empty { display: none; }
+  /* Full size on a phone: these are the buttons that stop a running game,
+     and a thumb should not have to aim. */
+  .acts { padding-top: 0.35rem; }
+  .acts button { min-height: 2.75rem; flex: 1; }
+
+  /* The same label-then-value shape the cards use, so a pilot and an
+     instance read alike on a phone. */
+  dl {
+    grid-template-columns: 6.5rem 1fr;
+    gap: 0.35rem 0.75rem;
+    padding: 0.6rem 0.85rem;
+  }
+}
+
+/* A phone in portrait. The text field takes its own row so the buttons
+   beside it are not squeezed into a third of one, and they share the next
+   row evenly instead of wrapping one at a time. */
+@media (max-width: 30rem) {
+  .row { align-items: stretch; }
+  .row .grow { flex: 1 1 100%; max-width: none; }
+  .row > button { flex: 1 1 7rem; }
+}
+
+/* Motion is decoration here, so it goes when it is not wanted. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
+}
