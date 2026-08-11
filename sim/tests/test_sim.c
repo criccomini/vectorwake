@@ -2100,6 +2100,65 @@ int main(void) {
     }
 
     {
+        /* DoubleBarrel. The Facet fires two for one pull where everyone else
+         * fires one, which is the Terrier's setting and the only weapon
+         * number besides MaxBombs that the original varied by ship. */
+        const int FACET = 5;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 2, "a Facet's gun sends two rounds");
+
+        /* One either side of where the nose points. Not exact mirrors: the
+         * offsets are, but a heading is quantised to 4096 entries on the way
+         * into the table and truncation takes the negative one a step further
+         * out, so this asks for the sign and not the magnitude. */
+        CHECK((s.weapons[0].vx < 0) != (s.weapons[1].vx < 0),
+              "one either side of where it is pointing");
+
+        /* Fanned and not scattered, which is a real distinction here: spacing
+         * of zero on a pattern of many is the shrapnel encoding, and it rolls
+         * every round's heading off the state's own generator. So move the
+         * generator and fire again. A fan cannot notice. */
+        sim_state r;
+        sim_init(&r, 1);
+        sim_spawn(&r, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
+        r.rng = 0x5eed1234u;
+        step_n(&r, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(r.weapon_count == s.weapon_count
+              && r.weapons[0].vx == s.weapons[0].vx
+              && r.weapons[1].vx == s.weapons[1].vx,
+              "and they are barrels rather than a scatter");
+
+        /* Four with a rung of multifire, not the six a pilot expects out of
+         * three times two. `compose` adds barrels rather than multiplying
+         * them, so the original's odd number falls out of the model rather
+         * than being special-cased for this hull. */
+        sim_state m;
+        sim_init(&m, 1);
+        sim_spawn(&m, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
+        m.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        step_n(&m, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(m.weapon_count == 4, "and four with a rung of multifire, not six");
+
+        /* Paid for by the barrel, which is where a round costs anything on
+         * its own: a shot is otherwise priced once however many things leave
+         * the tube. The original did the same with a per-ship
+         * BulletFireEnergy, and the multifire surcharge still lands on top of
+         * the doubled figure rather than instead of it. */
+        uint16_t facet_wait = 0, apex_wait = 0;
+        int32_t facet_plain = gun_cost(&cfg, (uint8_t)FACET, 0, &facet_wait);
+        int32_t apex_plain = gun_cost(&cfg, (uint8_t)APEX, 0, &apex_wait);
+        CHECK(facet_plain == apex_plain * 2, "two barrels cost two bullets");
+        CHECK(facet_wait == apex_wait, "at everybody else's rate of fire");
+        int32_t facet_multi = gun_cost(&cfg, (uint8_t)FACET,
+                                       sim_mod_set(0, SIM_MOD_MULTI, 1), NULL);
+        CHECK(facet_multi == facet_plain * 3 / 2,
+              "and multifire is half again on top of that");
+    }
+
+    {
         /* Climbing a rung swaps which pattern the trigger fires, and the one
          * above hits harder. */
         sim_state s;

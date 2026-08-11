@@ -293,9 +293,30 @@ a cost paid in cooldown is paid every time you pull the trigger and cannot be
 out-recharged. A pilot with multifire fires fewer, wider, more expensive
 volleys, which is a different weapon rather than a better one.
 
-Ours is those two ratios as a percentage per rung -- `mod_multi_energy = 50`,
-`mod_multi_delay = 100` -- because we have rungs and the original did not. A
+Ours is those two ratios as a percentage per rung (`mod_multi_energy = 50`,
+`mod_multi_delay = 100`), because we have rungs and the original did not. A
 second rung is a second helping of both, linear like every other add-on here.
+
+**Barrels are the hull's own, and they are the one thing paid for by the
+round.** `DoubleBarrel` was a per-ship setting and the Terrier alone carried
+it: two rounds abreast for one pull where every other ship sent one. The Facet
+has it here. It is not an add-on, so it is never picked up and never dropped,
+and that is exactly why it can be priced per barrel without the objection that
+sinks the idea everywhere else. A shot costs what pulling the trigger costs,
+so that a burst of sixteen or a wide fan stays affordable to use; those are
+bought once and then carried. A barrel is welded on at spawn. The original
+priced it the same way, since `BulletFireEnergy` was per ship and the
+Terrier's gun ate the bar about twice as fast as anyone's.
+
+The arithmetic is the part worth keeping. Multifire *adds* barrels rather than
+multiplying them, so two abreast plus a rung of multifire is four rather than
+the six a pilot expects out of three times two. That was the Terrier's real
+behaviour, and here it falls out of the model instead of being written down
+for one hull.
+
+We do not copy the rest of that ship's bill. It also fired slower, and the
+number is not in anything we have, so the Facet fires at everybody's rate
+until somebody finds it.
 
 ### A shot is what it was when it left
 
@@ -325,12 +346,15 @@ Each hull's row says how far it climbs and how far it may take each add-on.
 
 **Availability follows the original; ceilings are ours.** `MultiFire`,
 `BouncingBullets`, `Proximity` and `Shrapnel` appear nowhere in the original's
-per-ship config -- they are `[PrizeWeight]` entries any ship can be handed. The
-whole of its per-ship differentiation is nine settings, and the ones that bear
-on this are `MaxBombs` (3 on the Leviathan, 2 elsewhere), `ShrapnelMax` (8
-everywhere, 31 on the Shark) and `BombBounceCount` (1 on the Lancaster alone).
-So a bomber is not the hull that *may* hold shrapnel. It is the hull that holds
-more of it than anyone.
+per-ship config: they are `[PrizeWeight]` entries any ship can be handed. Its
+per-ship differentiation is a short list of flags and counts, and the ones that
+bear on this are `MaxBombs` (3 on the Leviathan, 2 elsewhere), `ShrapnelMax` (8
+everywhere, 31 on the Shark), `BombBounceCount` (1 on the Lancaster alone) and
+`DoubleBarrel` (the Terrier alone). So a bomber is not the hull that *may* hold
+shrapnel. It is the hull that holds more of it than anyone.
+
+Barrels are not on the matrix, because they are neither a ladder nor an add-on.
+The Facet fires two and every other hull fires one.
 
 | | gun | bomb | gun add-ons | bomb add-ons |
 |---|---|---|---|---|
