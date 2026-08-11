@@ -241,6 +241,18 @@ local join_args = nil
 -- path answers inside one round trip; three seconds is a blocked one, and a
 -- browser left to notice that on its own takes tens of seconds.
 local WT_PATIENCE = 3
+-- Seconds an opened session has gone without delivering a snapshot, nil once
+-- one lands or when no session is settling. The dial clock above cannot cover
+-- this: a browser mid-update has been seen completing the QUIC handshake and
+-- then wedging half-open, datagrams flowing and the reliable lane stalled, so
+-- the welcome never came and the join hung forever with no error to report.
+-- The handshake is not the session; only a snapshot proves the wire works.
+local settling = nil
+-- Longer than the dial's patience because this window carries the map, a
+-- megabyte and a half on the reliable lane, and a slow link is not a stalled
+-- one. It still fires inside the arena's own ten-second give-up, so the
+-- socket gets its turn before the player is sent back to the menu.
+local WT_SETTLE = 5
 -- The last snapshot tick applied, for the reorder guard in `on_snapshot`.
 local snap_tick = 0
 
@@ -286,6 +298,7 @@ local function lost(why)
     conn = nil
     wt_live = false
     pending = nil
+    settling = nil
     if on_lost_cb then on_lost_cb(why) end
 end
 local predicted_tick = 0
@@ -634,6 +647,7 @@ local function on_snapshot(s)
     if M.watching then
         M.subject = string.byte(s, 2)
         M.stats.snaps = M.stats.snaps + 1
+        settling = nil
         sim.smooth_capture()
         local before = capture_world()
         if sim.apply_snapshot(body) ~= 0 then return end
@@ -651,6 +665,7 @@ local function on_snapshot(s)
     local acked = u32(string.byte(s, 3), string.byte(s, 4),
                       string.byte(s, 5), string.byte(s, 6))
     M.stats.snaps = M.stats.snaps + 1
+    settling = nil
 
     -- Raw, not what the screen is showing. This measures how far the
     -- prediction missed by, and a number that has had render smoothing folded
@@ -886,14 +901,16 @@ local function dial_ws()
     return ok
 end
 
--- The WebTransport dial went nowhere, so take the socket instead, quietly:
--- the player asked for the game, not for a transport, and the join they get
--- is the same one either wire would have carried. Remembered for the session,
--- because a network that ate one QUIC handshake will eat the next, and three
--- silent seconds per join is a price to pay once.
+-- The WebTransport door failed, so take the socket instead, quietly: the
+-- player asked for the game, not for a transport, and the join they get is
+-- the same one either wire would have carried. Two ways here: a dial nobody
+-- answered, and a session that opened and then delivered nothing. Remembered
+-- for the session either way, because a door that failed one join has
+-- forfeited its next, and the seconds it costs are a price to pay once.
 local function fall_back()
     if join_args and join_args.wt ~= "" then wt_avoid[join_args.wt] = true end
     pending = nil
+    settling = nil
     wt_live = false
     -- The dead dial can still deliver its own error; it may not speak for
     -- the socket that replaces it.
@@ -917,6 +934,10 @@ local function dial_wt(wt_url)
         if gen ~= generation then return end
         if data.event == w.EVENT_CONNECTED then
             pending = nil
+            -- Opened is not delivering. The settle clock runs from here to
+            -- the first snapshot, because a browser has been seen wedging a
+            -- session exactly this far: handshake done, reliable lane dead.
+            settling = 0
             wt_live = true
             send_reliable(join_msg())
         elseif data.event == w.EVENT_MESSAGE then
@@ -982,7 +1003,7 @@ function M.transport()
         offered = door ~= "",
         tried = wt_tried,
         reason = wt_reason,
-        trying = pending ~= nil,
+        trying = pending ~= nil or settling ~= nil,
     }
 end
 
@@ -994,6 +1015,14 @@ function M.tick(dt)
     if pending then
         pending = pending + dt
         if pending >= WT_PATIENCE then fall_back() end
+    end
+    -- The settle clock. A snapshot is the proof the whole wire works, since
+    -- it rides behind the welcome's gate, and the arrival of one clears this
+    -- where it lands; a session still unproven when the clock runs out loses
+    -- the join to the socket.
+    if settling then
+        settling = settling + dt
+        if settling >= WT_SETTLE then fall_back() end
     end
 end
 
@@ -1198,6 +1227,7 @@ function M.disconnect()
     if w then pcall(w.disconnect) end
     wt_live = false
     pending = nil
+    settling = nil
     M.connected = false
 end
 
