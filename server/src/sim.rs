@@ -774,6 +774,26 @@ impl World {
         }
     }
 
+    /// Roll one green for this ship off a generator the caller holds, and say
+    /// whether the count actually moved.
+    ///
+    /// `outfit` rolls the same greens off the state's own generator, which is
+    /// what a live arena wants. A measurement wants two things that arrangement
+    /// cannot give: rolls that repeat for a given salt, and a bout whose own
+    /// stream does not shift depending on how many greens were handed out
+    /// first. So the generator comes in from outside.
+    ///
+    /// The return is the delta: 1 where a count moved, 0 where the roll landed
+    /// on a ceiling, -1 for rust. Bounty does not care which, since every green
+    /// is worth one whatever it turned out to be, so this is the difference
+    /// between what two pilots are matched on and what they got for it.
+    pub fn take_prize_from(&mut self, ship: usize, rng: &mut u32) -> i32 {
+        let sh: *mut sim_ship = &mut self.state.ships[ship];
+        let mut delta: c_int = 0;
+        unsafe { sim_take_prize(sh, &*self.cfg, rng as *mut u32, &mut delta) };
+        delta as i32
+    }
+
     /// Hand a ship one specific thing from the tech tree, no roll involved.
     /// False means the hull is already at that ceiling or has no such trigger,
     /// which is a caller's answer rather than an error: it is how the loadout

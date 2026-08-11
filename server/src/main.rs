@@ -3710,6 +3710,60 @@ fn run_stage_tournament() {
     }
 }
 
+/// `calibrate hulls <bouts> <greens> <zone> <dir>`: every hull against every
+/// other at matched bounty.
+///
+/// The other two harnesses each hold the hull still. This one varies it, which
+/// is the only way to ask whether the roster is balanced against itself rather
+/// than whether a kit is worth carrying.
+///
+/// `greens` is the bounty both sides are handed at every spawn. It is a bounty
+/// and not a loadout: the core counts every green as one whatever it turned out
+/// to be, so the two pilots are matched exactly on the number over their heads
+/// and inexactly on what it bought them, which is the situation a player is
+/// actually in. Zero measures bare hulls, the way the ladder does.
+///
+/// Writes `hulls.json`, which nothing loads. Same reasoning as `stages.json`:
+/// it is a measurement to diff a change against, and `ladder.json` is an input.
+fn run_hull_tournament() {
+    let bouts: u32 = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(24);
+    let greens: u32 = std::env::args().nth(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
+    let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
+
+    let tuning = if zone == "baseline" {
+        None
+    } else {
+        let cat = match catalog::load("catalog") {
+            Ok(c) => c,
+            Err(e) => {
+                println!("hulls: {e}");
+                std::process::exit(1);
+            }
+        };
+        let Some(def) = cat.zone(&zone) else {
+            println!("hulls: no zone named {zone:?} in the catalog");
+            std::process::exit(1);
+        };
+        Some(def.arena.clone())
+    };
+
+    const SKILL: f32 = 0.50;
+    let n = ai::CLASS_NAMES.len();
+    println!(
+        "hulls at {greens} greens under {zone} tuning: {} pairs, {bouts} bouts each",
+        n * (n + 1) / 2
+    );
+    let rows = calibrate::run_hulls(SKILL, greens, bouts, tuning.as_ref(), true);
+    let doc = calibrate::report_hulls(&rows, SKILL, greens, bouts, &zone);
+
+    let path = format!("{dir}/hulls.json");
+    match std::fs::write(&path, serde_json::to_string_pretty(&doc).expect("serialize")) {
+        Ok(()) => println!("\nwrote {path}"),
+        Err(e) => println!("\ncould not write {path}: {e}"),
+    }
+}
+
 /// Where the directories are. `VW_DIRECTORY` names a host, which is resolved,
 /// so one hostname with several records is a whole deployment and a directory can
 /// be added or moved without touching an arena server. That is the DNS decision
@@ -3858,6 +3912,8 @@ async fn main() {
         // the kit varying instead.
         if std::env::args().nth(2).as_deref() == Some("stages") {
             run_stage_tournament();
+        } else if std::env::args().nth(2).as_deref() == Some("hulls") {
+            run_hull_tournament();
         } else {
             run_calibration();
         }
