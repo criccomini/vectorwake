@@ -599,8 +599,8 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
         rows.len()
     );
     println!(
-        "\n{:<14} {:>5} {:>7} {:>7} {:>7} {:>7} {:>6} {:>7} {:>6} {:>7}",
-        "stage", "worn", "win%", "+-95%", "guns", "bombs", "hit%", "dmg/hit", "self%", "mirror"
+        "\n{:<14} {:>5} {:>7} {:>7} {:>7} {:>7} {:>8} {:>7} {:>6} {:>7}",
+        "stage", "worn", "win%", "+-95%", "guns", "bombs", "hit/pull", "dmg/hit", "self%", "mirror"
     );
     for r in rows {
         let fired: u32 = r.shots.iter().sum();
@@ -609,14 +609,18 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
             _ => r.worn.to_string(),
         };
         println!(
-            "{:<14} {:>5} {:>7.1} {:>7.1} {:>7} {:>7} {:>6.1} {:>7.0} {:>6.1} {:>7.1}",
+            "{:<14} {:>5} {:>7.1} {:>7.1} {:>7} {:>7} {:>8.2} {:>7.0} {:>6.1} {:>7.1}",
             r.name,
             worn,
             100.0 * r.win_rate(),
             r.margin(),
             r.shots[sim::TRIG_GUN],
             r.shots[sim::TRIG_BOMB],
-            100.0 * r.hits as f64 / fired.max(1) as f64,
+            // Impacts per trigger pull, and deliberately not a percentage. A
+            // fire event is a trigger being pulled, so a hull with two barrels
+            // can land two on one pull and one with a multifire fan four. It
+            // read as a hit rate until a Facet came back at 111%.
+            r.hits as f64 / fired.max(1) as f64,
             // What one impact actually arrives with. A blast falls off to
             // nothing at its rim, so a fuse that goes off early lands the same
             // count for a fraction of the damage, and only this column says so.
@@ -1064,19 +1068,23 @@ pub fn report_hulls(rows: &[HullRow], skill: f32, greens: u32, bouts: u32,
     );
 
     println!(
-        "\n{:<10} {:>7} {:>7} {:>7} {:>7} {:>6} {:>7} {:>6} {:>7} {:>7}",
-        "hull", "win%", "+-95%", "guns", "bombs", "hit%", "dmg/hit", "self%", "conv%", "mirror"
+        "\n{:<10} {:>7} {:>7} {:>7} {:>7} {:>8} {:>7} {:>6} {:>7} {:>7}",
+        "hull", "win%", "+-95%", "guns", "bombs", "hit/pull", "dmg/hit", "self%", "conv%", "mirror"
     );
     for r in rows {
         let fired: u32 = r.shots.iter().sum();
         println!(
-            "{:<10} {:>7.1} {:>7.1} {:>7} {:>7} {:>6.1} {:>7.0} {:>6.1} {:>7.1} {:>7.1}",
+            "{:<10} {:>7.1} {:>7.1} {:>7} {:>7} {:>8.2} {:>7.0} {:>6.1} {:>7.1} {:>7.1}",
             r.name,
             100.0 * r.win_rate(),
             r.margin(),
             r.shots[sim::TRIG_GUN],
             r.shots[sim::TRIG_BOMB],
-            100.0 * r.hits as f64 / fired.max(1) as f64,
+            // Impacts per trigger pull. Not a hit rate and not a percentage:
+            // a fire event is the trigger, so the Facet's two barrels land two
+            // on one pull and a multifire fan lands four. It was printed as a
+            // percentage and came back at 111, which is how this got noticed.
+            r.hits as f64 / fired.max(1) as f64,
             r.damage as f64 / r.hits.max(1) as f64,
             100.0 * r.self_damage as f64 / (r.damage + r.self_damage).max(1) as f64,
             // What this hull turned its bounty into. Two hulls matched on
