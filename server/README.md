@@ -158,13 +158,22 @@ The **wear column** says what actually went on. Ladders differ per hull, so
 give that hull reads `0/1`. Those rows are bare hulls under another name, and
 the report names them rather than leaving them to be spotted.
 
-The **control** is a second bare kit. It is identical to the first, so the gap
-between the two is this harness reporting a difference between two identical
-things: the noise floor, measured on the hull and bout count you just ran rather
-than assumed. Unwearable stages land in the same bucket and widen it, which is
-correct, since they are also bare. Read no gap narrower than the floor. At eight
-bouts a pair it is around fifteen points, which is wide enough that only the
-largest effects are real.
+The **`+-95%` column** is what a row's count is worth, and it is the number to
+read a gap against. A win rate is a coin counted `bouts()` times: at four bouts
+a pair that is 48 bouts a row and about fourteen points either way, and only at
+32 does it come in near five. Two stages differ when their intervals come apart,
+and a gap of ten points off a short run is nothing at all.
+
+The **control** is a second bare kit, identical to the first, so the two ought to
+agree. How far they miss by is printed, and unwearable stages land in the same
+bucket. Treat it as a diagnostic rather than as an error bar. It is the range of
+a handful of samples, which is mostly luck: it has come out at 4.2 points on a
+run whose sampling spread alone was nearer fifteen, which is exactly how a coin
+flip gets written up as a finding. It also climbs with the bout count where real
+noise falls, because more bouts let those rows separate on whatever genuinely
+differs between them, and they do not each meet the same field. When the spread
+runs wider than sampling explains, that is worth chasing: something is varying
+that the harness is not holding still.
 
 **`dmg/hit` and `self%`** are why a stage won or lost, where the win column only
 says that it did. A blast falls off to nothing at its rim, so a fuse that goes
