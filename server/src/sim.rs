@@ -77,6 +77,10 @@ pub struct sim_weapon_spec {
     pub life: u16,
     pub on_wall: u8,
     pub bounces: u8,
+    /// Whether the round is laid rather than thrown: it takes none of the
+    /// firer's velocity and stays where it was let go. A mine, and nothing
+    /// else, because everything that flies wants the ship's speed added.
+    pub still: u8,
     pub trigger: i32,
     pub expire_ends: u8,
     pub splinter: u8,
@@ -85,6 +89,9 @@ pub struct sim_weapon_spec {
     /// fragment, whose rung is its thrower's gun rather than a ladder.
     pub damage_up: i32,
     pub blast: i32,
+    /// Blast a rung adds, for the weapon whose rung is not a ladder either: a
+    /// mine is a charge, so it is one spec wearing the layer's bomb rung.
+    pub blast_up: i32,
     pub push: i32,
     /// Ticks a shoved hull keeps the repel's speed ceiling. RepelTime.
     pub push_time: u16,

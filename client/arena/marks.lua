@@ -114,9 +114,10 @@ end
 
 -- The charges, drawn from what the thing does rather than from a name that
 -- could disagree with it: a repel shoves and hurts nobody, so it is rings
--- going outward; a burst is many rounds at once, so it is a rosette. Anything
--- else a zone puts in a slot gets a plain disc, which says "a charge"
--- honestly rather than drawing a repel and being wrong.
+-- going outward; a burst is many rounds at once, so it is a rosette; a mine
+-- sits where it is put, so it is the spiked hexagon it looks like in the
+-- world. Anything else a zone puts in a slot gets a plain disc, which says "a
+-- charge" honestly rather than drawing a repel and being wrong.
 function M.charge(slot, cx, cy, k, col)
     if slot == 0 then
         u:ring(cx, cy, k * 0.34, M.pen(k, 0.11), 14, col)
@@ -126,6 +127,26 @@ function M.charge(slot, cx, cy, k, col)
             local t = i * math.pi / 4
             u:disc(cx + math.cos(t) * k * 0.52, cy + math.sin(t) * k * 0.52,
                    k * 0.135, 6, col)
+        end
+    elseif slot == 2 then
+        -- The same shape the world draws, at the same fixed rotation, so the
+        -- pad and the thing it puts down are recognisably one object. Hollow,
+        -- because a dark centre is the whole of what separates a mine from a
+        -- bomb at a glance.
+        local rot, hub = 0.26, k * 0.30
+        local pts = {}
+        for i = 0, 5 do
+            local a = rot + i / 6 * math.pi * 2
+            pts[#pts + 1] = cx + math.cos(a) * hub
+            pts[#pts + 1] = cy + math.sin(a) * hub
+        end
+        u:outline(pts, M.pen(k, 0.10), col, true)
+        for i = 0, 5 do
+            local a = rot + (i + 0.5) / 6 * math.pi * 2
+            local c, s = math.cos(a), math.sin(a)
+            u:seg(cx + c * hub, cy + s * hub,
+                  cx + c * k * 0.58, cy + s * k * 0.58,
+                  M.pen(k, 0.09), col)
         end
     else
         u:disc(cx, cy, k * 0.28, 10, col)

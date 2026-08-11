@@ -1853,15 +1853,17 @@ int main(void) {
             else charges++;
         }
         /* On the original's table an Apex's pool is five stats at 40, a gun
-         * level at 25, four add-ons at 110 between them, and both charges at
-         * 70: 475 in total. So a green is a stat a little over four times in
-         * ten, a charge three, an add-on two, and a level about one in
-         * twenty. Bands rather than exact numbers, because the point under
-         * test is the shape of the tree and not the generator. */
-        CHECK(stats > 3950 && stats < 4500, "stats are the bread of the tree");
-        CHECK(levels > 850 && levels < 1250, "a level is the rare one");
-        CHECK(mods > 2100 && mods < 2550, "an add-on is ordinary now");
-        CHECK(charges > 2700 && charges < 3200, "and a charge is common");
+         * level at 25, four add-ons at 110 between them, and now three
+         * charges at 70 rather than two: 545 where it was 475. The mine is
+         * the third, and adding a charge to the pool is a thing you feel
+         * across the whole of it -- a green is a charge closer to four times
+         * in ten than three, and every other kind is correspondingly rarer.
+         * Bands rather than exact numbers, because the point under test is
+         * the shape of the tree and not the generator. */
+        CHECK(stats > 3200 && stats < 3750, "stats are the bread of the tree");
+        CHECK(levels > 750 && levels < 1050, "a level is the rare one");
+        CHECK(mods > 1750 && mods < 2150, "an add-on is ordinary now");
+        CHECK(charges > 3450 && charges < 3950, "and a charge is common");
 
         /* And a zone that says otherwise gets otherwise. */
         for (int i = 0; i < SIM_UP_COUNT; i++) w.prize_weight[i] = 0;
@@ -2370,14 +2372,15 @@ int main(void) {
         uint8_t pool[SIM_PRIZE_COUNT];
         const int LATTICE = 6;
         int n = sim_prize_pool(&cfg.classes[LATTICE], pool);
-        int repel = 0, burst = 0, empty_slot = 0;
+        int repel = 0, burst = 0, mine = 0, empty_slot = 0;
         for (int i = 0; i < n; i++) {
             if (pool[i] == SIM_PRIZE_CHARGE(0)) repel = 1;
             if (pool[i] == SIM_PRIZE_CHARGE(1)) burst = 1;
-            if (pool[i] == SIM_PRIZE_CHARGE(2)
-                || pool[i] == SIM_PRIZE_CHARGE(3)) empty_slot = 1;
+            if (pool[i] == SIM_PRIZE_CHARGE(2)) mine = 1;
+            if (pool[i] == SIM_PRIZE_CHARGE(3)) empty_slot = 1;
         }
-        CHECK(repel && burst, "a hull is offered both charges the zone filled");
+        CHECK(repel && burst && mine,
+              "a hull is offered every charge the zone filled");
         CHECK(!empty_slot, "and never a slot the zone left empty");
 
         /* Close one on the hull and it leaves that hull's pool. */
@@ -2398,6 +2401,141 @@ int main(void) {
         CHECK(sh.charge[1] == 0, "and never picks one up however lucky");
         CHECK(sh.charge[0] == cfg.classes[LATTICE].charge_max[0],
               "while the one it may hold fills to the row and stops");
+    }
+
+    {
+        /* A mine, which is charge slot two.
+         *
+         * The whole of it is fields the model already had, so what these
+         * check is that the combination behaves like a mine rather than that
+         * any new mechanism works. It stays where it was let go, it goes off
+         * on its own clock, and it wears the rung its layer's bombs are on.
+         */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[2] = 3;
+
+        /* Laid at a run. This is the one the `still` field exists for: with
+         * the ship's velocity added, a speed-zero round leaves the rack doing
+         * exactly what the ship was doing and never stops, which is a bomb
+         * that does not steer rather than a mine. */
+        step_n(&s, &cfg, SIM_BTN_THRUST, 0, 120);
+        CHECK(s.ships[0].vy < -10000, "the pilot is moving when they lay it");
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 1, "a mine is in the world");
+        CHECK(s.ships[0].charge[2] == 2, "and one is spent");
+        int32_t mx = s.weapons[0].x, my = s.weapons[0].y;
+        CHECK(s.weapons[0].vx == 0 && s.weapons[0].vy == 0,
+              "a mine is laid at rest however fast its layer was going");
+        step_n(&s, &cfg, 0, 0, 200);
+        CHECK(s.weapon_count == 1, "and is still there two seconds later");
+        CHECK(s.weapons[0].x == mx && s.weapons[0].y == my,
+              "in exactly the place it was left");
+
+        /* Its life is its whole mechanism, and running out is an ending
+         * rather than a round quietly ceasing to exist. */
+        uint8_t mine_spec = s.weapons[0].spec;
+        CHECK(cfg.specs[mine_spec].expire_ends,
+              "a mine that runs out goes off");
+        CHECK(cfg.specs[mine_spec].blast > 0, "and takes a blast with it");
+        CHECK(cfg.specs[mine_spec].trigger > 0, "and senses on a fuse");
+    }
+
+    {
+        /* The rung a mine wears is the rung its layer's bombs are on, and it
+         * is a real number rather than a coat of paint: the blast climbs the
+         * bomb ladder's own arithmetic, so the colour the client paints from
+         * cannot promise more than the mine delivers. */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[2] = 4;
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapons[0].level == 0, "a rung one pilot lays a rung one mine");
+
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[2] = 4;
+        s.ships[0].level[SIM_TRIG_BOMB] = 2;
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapons[0].level == 2, "and a rung three pilot a rung three one");
+
+        /* What that rung buys, resolved the way the world resolves it. */
+        sim_weapon_spec r1, r3;
+        r1 = cfg.specs[s.weapons[0].spec];
+        r3 = r1;
+        CHECK(r1.blast_up > 0, "a mine's blast climbs with the rung");
+        r3.blast += 2 * r3.blast_up;
+        CHECK(r3.blast > r1.blast, "so a rung three mine makes a bigger hole");
+    }
+
+    {
+        /* A repelled mine stops being a mine.
+         *
+         * It is the one round in the game whose shape is wrong for being in
+         * flight: a minute of life and a fuse tuned to something standing
+         * still beside it. So the shove turns it into a bomb of the rung it
+         * was laid at and sends it off in the push direction, which is what
+         * clearing a doorway with a repel should look like.
+         *
+         * The Lattice carries the repel here; the mine is the Apex's, so the
+         * two are different hulls and the round crossing between them is
+         * unambiguous. */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const int LATTICE = 6;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);            /* lays it */
+        sim_spawn(&s, LATTICE, 1, 8192 - 200, 8192, 0, &cfg);   /* repels */
+        s.ships[0].charge[2] = 1;
+        s.ships[0].level[SIM_TRIG_BOMB] = 1;
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 1, "the mine is posted");
+        uint8_t was = s.weapons[0].spec;
+        CHECK(cfg.specs[was].still, "and it is the still kind of round");
+
+        s.ships[1].charge[0] = 1;
+        step_n(&s, &cfg, 0, SIM_BTN_USE, 3);
+        CHECK(s.weapon_count >= 1, "and it survives being repelled");
+        const sim_weapon *m = &s.weapons[0];
+        CHECK(m->spec != was, "a repelled mine is not a mine any more");
+        CHECK(!cfg.specs[m->spec].still, "it is a round that flies now");
+        CHECK(cfg.specs[m->spec].blast > 0, "and still a bomb");
+        CHECK(m->vx > 0, "thrown away from the repel, not toward it");
+        CHECK(m->owner == 0, "still owned by whoever laid it");
+        CHECK(m->life <= cfg.specs[m->spec].life
+              && m->life > cfg.specs[m->spec].life - 8,
+              "on a bomb's clock rather than the minute a mine sits for");
+        /* The rung survives the change, which is the point of reading it off
+         * the ladder rather than handing every repelled mine the same bomb. */
+        CHECK(m->spec == cfg.patterns[cfg.classes[APEX]
+                                      .trigger[SIM_TRIG_BOMB][1]].spec,
+              "and it is a bomb of the rung the mine was laid at");
+    }
+
+    {
+        /* Your own repel does not disarm your own minefield. The push loop
+         * has always been hostile-only; this is that rule reaching the new
+         * round, because a mine you cleared yourself would make the charge a
+         * way to tidy up after an ally rather than a way through a door. */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const int LATTICE = 6;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, LATTICE, 0, 8192 - 200, 8192, 0, &cfg);   /* same team */
+        s.ships[0].charge[2] = 1;
+        step_n(&s, &cfg, MINE, 0, 1);
+        uint8_t was = s.weapons[0].spec;
+        s.ships[1].charge[0] = 1;
+        step_n(&s, &cfg, 0, SIM_BTN_USE, 3);
+        CHECK(s.weapon_count >= 1, "the friendly mine is still there");
+        CHECK(s.weapons[0].spec == was, "and still a mine");
+        CHECK(s.weapons[0].vx == 0 && s.weapons[0].vy == 0,
+              "and has not moved an inch");
     }
 
     {

@@ -125,7 +125,7 @@ M.RUST      = rgb(0xff8a5c)
 M.CHARGES = {
     {name = "repel", short = "RPL"},
     {name = "burst", short = "BST"},
-    {name = "charge 3", short = "C3"},
+    {name = "mine", short = "MNE"},
     {name = "charge 4", short = "C4"},
 }
 M.CHARGE_COL = rgb(0xffd166)

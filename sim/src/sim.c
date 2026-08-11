@@ -435,6 +435,10 @@ static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
      * fragment is a bullet of whatever the thrower's guns were, so its damage
      * climbs with a number rather than by pointing at another row. */
     if (sp->damage_up) sp->damage += level * sp->damage_up;
+    /* And a rung of blast, for the other one. A mine is a charge, so it is one
+     * spec wearing the pilot's bomb rung rather than a row per rung, and this
+     * is what makes that rung worth anything. */
+    if (sp->blast_up) sp->blast += level * sp->blast_up;
     if ((n = sim_mod_get(mods, SIM_MOD_SHRAPNEL)) != 0)
         sp->splinter = cfg->mod_splinter[n < SIM_MAX_RUNGS ? n : SIM_MAX_RUNGS - 1];
     if ((n = sim_mod_get(mods, SIM_MOD_FREEZE)) != 0)
@@ -563,6 +567,39 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         drop_flags(s, cfg, victim, ev);
         emit(ev, SIM_EV_DEATH, victim, attacker, paid);
     }
+}
+
+/* A mine: a round laid rather than thrown, that goes off where it sits.
+ *
+ * Derived rather than flagged, because both halves are already load-bearing
+ * and neither is true of anything else. `still` is what stops it leaving at
+ * the ship's speed, and a blast is what makes it a weapon instead of a marker.
+ * A repel has no blast damage and is skipped before this is ever asked. The
+ * client draws mines off the same two fields, so the two cannot end up
+ * disagreeing about what a mine is. */
+static int is_mine(const sim_weapon_spec *sp) {
+    return sp->still && sp->blast > 0;
+}
+
+/* The bomb spec of a hull's rung, or SIM_NO_PATTERN when it has no rack there.
+ *
+ * A repelled mine becomes a bomb of the rung it was laid at, so the ladder has
+ * to be read back from the class that laid it. The rung is clamped rather than
+ * refused: a pilot who swapped to a hull with a shorter ladder while their
+ * mines were still out gets the top of what that hull has, which is the same
+ * rule a level takes everywhere else. */
+static uint8_t bomb_spec_at(const sim_settings *cfg, const sim_state *s,
+                            uint8_t owner, uint8_t level) {
+    if (owner >= s->ship_count) return SIM_NO_PATTERN;
+    const sim_ship *sh = &s->ships[owner];
+    if (!sh->active || sh->cls >= cfg->class_count) return SIM_NO_PATTERN;
+    const sim_ship_class *c = &cfg->classes[sh->cls];
+    for (int r = (level < SIM_MAX_RUNGS ? level : SIM_MAX_RUNGS - 1); r >= 0; r--) {
+        uint8_t pat = c->trigger[SIM_TRIG_BOMB][r];
+        if (pat != SIM_NO_PATTERN && pat < cfg->pattern_count)
+            return cfg->patterns[pat].spec;
+    }
+    return SIM_NO_PATTERN;
 }
 
 /* What a projectile does where it ends.
@@ -698,6 +735,30 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
                 if (d == 0) continue;
                 o->vx = (int32_t)(ddx * spec->push / d);
                 o->vy = (int32_t)(ddy * spec->push / d);
+                /* A mine that is shoved stops being a mine.
+                 *
+                 * Everything about the shape is wrong for a round in flight:
+                 * it sits on a minute of life, so pushed as itself it crosses
+                 * the map at repel speed and then keeps going, and it senses
+                 * on a fuse tuned to something standing still next to it. The
+                 * pilot who let the repel off has cleared the doorway, which
+                 * is what a repel is for, and what leaves is a bomb of the
+                 * rung it was laid at -- the same rung it has been wearing as
+                 * its colour the whole time it sat there, so the thing flying
+                 * away is recognisably the thing that was posted. Whoever laid
+                 * it still owns it, so it can still kill them. */
+                if (is_mine(&cfg->specs[o->spec])) {
+                    uint8_t b = bomb_spec_at(cfg, s, o->owner, o->level);
+                    if (b != SIM_NO_PATTERN) {
+                        o->spec = b;
+                        o->left = cfg->specs[b].bounces;
+                        /* It was laid, not thrown, so it never armed a fuse.
+                         * Leaving one latched would hand the bomb a target it
+                         * found while it was furniture. */
+                        o->fuse_target = 255;
+                        o->fuse = 0;
+                    }
+                }
                 /* And its clock starts again. A bomb batted back the way it
                  * came has the whole of its life to make the trip. */
                 o->life = cfg->specs[o->spec].life;
@@ -762,8 +823,11 @@ static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
         uint16_t h = (uint16_t)((int32_t)heading + off);
         int32_t dx, dy;
         heading_dir(h, &dx, &dy);
-        int32_t vx = vx0 + (int32_t)(((int64_t)spec->speed * dx) >> 15);
-        int32_t vy = vy0 + (int32_t)(((int64_t)spec->speed * dy) >> 15);
+        /* A still round ignores what the ship was doing and takes only its own
+         * speed, which for a mine is none. See `still` on the spec. */
+        int32_t bx = spec->still ? 0 : vx0, by = spec->still ? 0 : vy0;
+        int32_t vx = bx + (int32_t)(((int64_t)spec->speed * dx) >> 15);
+        int32_t vy = by + (int32_t)(((int64_t)spec->speed * dy) >> 15);
         spawn_weapon(s, p->spec, owner, team, x, y, vx, vy, spec->life,
                      spec->bounces, depth, mods, level,
                      shrap_level, shrap_bounce);
@@ -1390,9 +1454,17 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 /* A charge carries none of the pilot's add-ons. It is a thing
                  * you found whole, not a weapon you have been improving, and
                  * a repel that inherited shrapnel would be a surprise nobody
-                 * asked for. */
+                 * asked for.
+                 *
+                 * It does carry their bomb rung. A charge has no ladder of its
+                 * own, so a mine has nowhere else to get one, and a mine is
+                 * the bomb you leave behind: what it does and what colour it
+                 * is should both be what your bombs are. The repel and the
+                 * burst scale with nothing, so the rung reaches neither of
+                 * them and rides along as the number the client paints from. */
                 spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
-                              sh->vx, sh->vy, sh->heading, 0, 0, 0, 0, 0, ev);
+                              sh->vx, sh->vy, sh->heading, 0, 0,
+                              sh->level[SIM_TRIG_BOMB], 0, 0, ev);
                 sh->charge[k]--;
                 sh->energy -= cp.energy;
                 /* A charge rides the bomb's clock and locks both, which
