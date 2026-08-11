@@ -178,20 +178,28 @@ function reach(h, ang) {
   return best;
 }
 
-// Where a drone sits: on the rim, in the direction its gunner is aiming.
-// The rim follows the outline so a drone hovers off the hull rather than off
-// in space beside a thin one, and it is averaged over a 40 degree arc so that
-// crossing a wingtip walks the drone out instead of throwing it.
-function rim(h, localAim, gap) {
-  let sum = 0, weight = 0;
-  for (let k = -3; k <= 3; k++) {
-    const w = 1 - Math.abs(k) / 4;
-    sum += reach(h, localAim + k * 0.116) * w;
-    weight += w;
+// Where a drone sits: on an orbit, in the direction its gunner is aiming.
+//
+// The orbit is a circle that clears the hull, sized per hull, so a Cipher's
+// ring is wider than an Anvil's because the Cipher is longer. One radius for
+// the whole roster was tried and it has to clear the longest hull, which
+// leaves the compact ones ringed by drones far enough out to read as a
+// formation flying nearby rather than as one ship.
+//
+// A circle has no local frame worth keeping: the radius is the same in every
+// direction, so a drone's place depends on its gunner's aim and not at all on
+// where the carrier is pointing. Spin the carrier and the drones hover.
+function orbit(h, gap) {
+  if (h.far == null) {
+    h.far = 0;
+    for (let k = 0; k < 128; k++) h.far = Math.max(h.far, reach(h, k/128*2*Math.PI));
   }
-  const r = sum / weight + (gap == null ? 1.6 : gap);
-  const dx = Math.sin(localAim), dy = Math.cos(localAim);
-  return [dx*r, h.mid + dy*r];
+  return h.far + (gap == null ? 2.4 : gap);
+}
+
+function rim(h, worldAim, gap) {
+  const r = orbit(h, gap);
+  return [Math.sin(worldAim)*r, Math.cos(worldAim)*r];
 }
 
 // A carrier: the ship, then one gun per gunner on the ship's own point. The
@@ -207,20 +215,35 @@ function carrier(ctx, cls, x, y, heading, col, gunners, opt) {
   ship(ctx, cls, x, y, heading, col, opt);
 
   if (opt.variant === 'drone') {
-    // A drone per gunner, hovering at the rim in the direction that gunner is
-    // aiming and facing out along it. Turning does not spin a drone in place,
-    // it walks it around the hull, so where the guns are pointing is legible
-    // from position alone.
+    // A drone per gunner, on the orbit in the direction that gunner is aiming
+    // and facing out along it. Turning does not spin a drone in place, it
+    // walks it around the ring, so where the guns are pointing is legible from
+    // position alone.
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineCap = 'round';
+    // The orbit itself, faint, and only while somebody is on it. Without it
+    // five drones off a small hull read as five ships flying alongside.
+    if (gunners.some(g => g != null)) {
+      const r = orbit(h, opt.rim);
+      ctx.beginPath();
+      ctx.arc(x + (h.mid*sa)*s, y - (h.mid*ca)*s, r*s, 0, 7);
+      ctx.lineWidth = 0.5*s;
+      ctx.setLineDash([1.4*s, 2.2*s]);
+      ctx.strokeStyle = css(PANEL_INK, 0.16);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     for (let k = 0; k < n; k++) {
       const g = gunners[k];
       if (g == null) continue;
       const e = 0.34 + 0.66 * (g.energy == null ? 1 : g.energy);
-      const [lx, ly] = rim(h, g.aim, opt.rim);
-      const dx = x + (lx*ca + ly*sa)*s, dy = y + (lx*sa - ly*ca)*s;
       const a = heading + g.aim;
+      const [ox, oy] = rim(h, a, opt.rim);
+      // centred on the hull's own middle rather than its origin, since that
+      // is where a ring looks centred
+      const cx = x + (h.mid*sa)*s, cyy = y - (h.mid*ca)*s;
+      const dx = cx + ox*s, dy = cyy - oy*s;
       const dca = Math.cos(a), dsa = Math.sin(a);
       const put = (pts) => {
         ctx.beginPath();
@@ -372,7 +395,7 @@ function zoomed(ctx, cx, cy, k, fn) {
 const q = new URLSearchParams(location.search);
 const IDX = parseInt(q.get('i') || '0', 10);
 const VARIANT = q.get('v') || 'gun';
-const RIM = parseFloat(q.get('rim') || '1.6');
+const RIM = parseFloat(q.get('rim') || '2.4');
 const OPT = {variant: VARIANT, rim: RIM};
 const W = 1360, H = 660;
 
@@ -407,7 +430,7 @@ const ROSTER = [
 
 label(ctx, 40, 54, `${h.name} as a carrier`, INK, 26);
 label(ctx, 40, 82, VARIANT === 'drone'
-  ? 'a drone per gunner, on the rim in the direction that gunner is aiming'
+  ? 'a drone per gunner, on an orbit that clears the hull, in the direction that gunner is aiming'
   : "the original's approach: one gun glyph per gunner, all on the ship's own point",
   DIMC, 14);
 
