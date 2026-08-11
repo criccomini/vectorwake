@@ -22,8 +22,8 @@
  * touch. See the table's own note. */
 typedef struct {
     /* What still varies between hulls, which is everything the original
-     * varies and nothing else. Its whole per-ship differentiation is ten
-     * settings and three of them are here: MaxBombs, which is 3 on the
+     * varies and nothing else. Three of its per-ship settings are here:
+     * MaxBombs, which is 3 on the
      * Leviathan and 2 elsewhere; ShrapnelMax, which is 31 on the Shark and 8
      * elsewhere; and DoubleBarrel, which the Terrier alone carried. The rest
      * are flags for weapons this core has no idea about, meaning cloak,
@@ -118,12 +118,13 @@ static const sim_class_units flight = {
  * are entries in [PrizeWeight] with no per-ship gate anywhere in its config,
  * so any ship can be handed any of them.
  *
- * What it varies is the *ceiling*, not the availability. Its whole per-ship
- * differentiation is nine settings, and the ones that matter here are
- * `MaxBombs` -- 3 on the Leviathan against 2 everywhere else -- `ShrapnelMax`
- * at 8 against the Shark's 31, and `BombBounceCount`, which is 1 on the
- * Lancaster alone. So a bomber is not the hull that *may* hold shrapnel, it
- * is the hull that holds more of it than anyone.
+ * What it varies is the *ceiling*, not the availability. Its per-ship
+ * differentiation is a short list of flags and counts, and the ones that
+ * matter here are `MaxBombs` (3 on the Leviathan against 2 everywhere else),
+ * `ShrapnelMax` at 8 against the Shark's 31, `BombBounceCount`, which is 1 on
+ * the Lancaster alone, and `DoubleBarrel`, which is the Terrier's alone. So a
+ * bomber is not the hull that *may* hold shrapnel, it is the hull that holds
+ * more of it than anyone.
  *
  * Freeze and push have no setting to copy, because the original has no such
  * prize. They stay roster traits, which is a choice of ours and the only part
