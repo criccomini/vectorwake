@@ -1,1 +1,2 @@
 vectorwake: decision 40 leaves remote death fx to server confirmation; bot leaver deadlock fixed; Safari WebTransport needs createWritable(); reroll 429s at 30/hour per IP, now shown; Clanker Constitution vendored at root; GitHub API here needs MCP tools, not curl.                      
+Shipped: turrets/gunners (d key detaches, sim_attach), Facet double barrel, spawn rework (death redraws the tile in-core, spawn_radius scatters, show_spawns gates the marker). Never checkout main here; push origin <branch>:main. Client lua tests need apt lua5.1.                         

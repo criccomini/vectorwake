@@ -1,0 +1,1 @@
+Day one on vectorwake: shipped decision 40 (no predicted remote deaths), turrets/gunners, Facet double barrel, the spawn rework, reroll fix, Safari WebTransport fix, vendored CONSTITUTION.md. Never checkout main here; push origin <branch>:main. Lua tests need apt lua5.1.                
