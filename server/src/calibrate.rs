@@ -779,6 +779,51 @@ against this number.",
  * answering a question nobody is ever in.
  */
 
+/// Where a hull tournament is fought.
+///
+/// A roster is only balanced on a map, and the two shipped rooms disagree about
+/// what a hull is for: the pit is thirty-two tiles across and rewards whatever
+/// wins a knife fight, the arena has lanes and somewhere to run to. A hull whose
+/// design says "loses outside two tiles" cannot lose there in the first room.
+/// So this is a parameter, and a result carries the room it came from.
+#[derive(Clone)]
+pub enum Arena {
+    /// One of the core's own builders, with the fixed facing spawns the
+    /// tournament has always used. Symmetric by construction.
+    Built(fn(&mut sim::sim_map)),
+    /// A packed map off disk, whether shipped with a zone or generated. Spawns
+    /// come from the map's own starts, because a coordinate that is open in the
+    /// pit is inside a wall somewhere else.
+    Packed(std::sync::Arc<Vec<u8>>),
+}
+
+impl Arena {
+    /// Build the world this bout is fought in, and seat both hulls in it.
+    fn world(&self, salt: u32, classes: [u8; 2]) -> Option<(sim::World, [u8; 2])> {
+        match self {
+            Arena::Built(f) => {
+                let mut w = sim::World::with_map(0x5ea1 ^ salt, *f);
+                let ships = [
+                    w.spawn(classes[0], 0, 505, 522, 0) as u8,
+                    w.spawn(classes[1], 1, 519, 502, 32768) as u8,
+                ];
+                Some((w, ships))
+            }
+            Arena::Packed(bytes) => {
+                let mut w = sim::World::from_packed(0x5ea1 ^ salt, bytes).ok()?;
+                // `nth` walks the map's starts for that team, so the two sides
+                // land where the map says a team of theirs begins.
+                let a = w.spawn_on_map(classes[0], 0, salt / 2, 0);
+                let b = w.spawn_on_map(classes[1], 1, salt / 2, 32768);
+                if a < 0 || b < 0 {
+                    return None;
+                }
+                Some((w, [a as u8, b as u8]))
+            }
+        }
+    }
+}
+
 /// One hull's line in the cross-hull matrix.
 pub struct HullRow {
     pub name: &'static str,
@@ -847,8 +892,14 @@ fn green(world: &mut sim::World, ship: usize, greens: u32, rng: &mut u32) -> u32
 /// `greens` times the number of lives it had rather than a constant.
 pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
                  tuning: Option<&config::ArenaConfig>,
-                 map: fn(&mut sim::sim_map)) -> (Bout, [u32; 2]) {
-    let mut world = sim::World::with_map(0x5ea1 ^ salt, map);
+                 map: &Arena) -> (Bout, [u32; 2]) {
+    // Sides alternate, so the room's geometry cannot turn into a result. The
+    // seats keep their places and their bot seeds; it is the hulls that move.
+    let flip = salt % 2 == 1;
+    let seats: [u8; 2] = if flip { [classes[1], classes[0]] } else { classes };
+    let Some((mut world, ships)) = map.world(salt, seats) else {
+        return (Bout { sides: [Side::default(); 2], ticks: 0, decided: false }, [0, 0]);
+    };
     let route = nav::Nav::build(&world.map);
     if let Some(c) = tuning {
         crate::Room::apply_config(&mut world, c);
@@ -858,17 +909,6 @@ pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
     // against the zone for the same reason the other two harnesses hold them.
     world.cfg.spawn_prizes = 0;
     world.cfg.prize_max = 0;
-
-    // Sides alternate, so the pit's geometry cannot turn into a result. The
-    // seats keep their positions and their bot seeds; it is the hulls that
-    // move between them.
-    let flip = salt % 2 == 1;
-    let seats: [u8; 2] = if flip { [classes[1], classes[0]] } else { classes };
-
-    let ships = [
-        world.spawn(seats[0], 0, 505, 522, 0) as u8,
-        world.spawn(seats[1], 1, 519, 502, 32768) as u8,
-    ];
 
     // Nonzero, because xorshift stays at zero forever once it arrives there and
     // a bout whose greens all rolled the same thing is not obvious from a
@@ -979,7 +1019,7 @@ pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
 
 /// Every hull against every other, `bouts` times each, at one bounty.
 pub fn run_hulls(skill: f32, greens: u32, bouts: u32,
-                 tuning: Option<&config::ArenaConfig>, map: fn(&mut sim::sim_map),
+                 tuning: Option<&config::ArenaConfig>, map: &Arena,
                  verbose: bool) -> Vec<HullRow> {
     let n = ai::CLASS_NAMES.len();
     let mut rows: Vec<HullRow> = (0..n)
@@ -1355,7 +1395,7 @@ mod tests {
         let anvil = ai::class_index("Anvil").unwrap() as u8;
         const GREENS: u32 = 8;
         for salt in 0..4 {
-            let (_, offered) = hull_bout([cipher, anvil], 0.5, GREENS, salt, None, sim::build_pit);
+            let (_, offered) = hull_bout([cipher, anvil], 0.5, GREENS, salt, None, &Arena::Built(sim::build_pit));
             for k in 0..2 {
                 assert!(offered[k] >= GREENS, "salt {salt}: side {k} never got its opening");
                 assert_eq!(offered[k] % GREENS, 0, "salt {salt}: greens arrive a life at a time");
@@ -1407,7 +1447,7 @@ the ceilings the matched-bounty argument turns on"
             let c = ai::class_index(name).unwrap() as u8;
             let (mut first, mut n) = (0.0f64, 0.0f64);
             for salt in 0..24 {
-                let (b, _) = hull_bout([c, c], 0.5, 4, salt, None, sim::build_pit);
+                let (b, _) = hull_bout([c, c], 0.5, 4, salt, None, &Arena::Built(sim::build_pit));
                 first += match b.sides[0].kills.cmp(&b.sides[1].kills) {
                     std::cmp::Ordering::Greater => 1.0,
                     std::cmp::Ordering::Less => 0.0,

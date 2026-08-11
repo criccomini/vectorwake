@@ -3757,13 +3757,20 @@ fn run_hull_tournament() {
     // somewhere to run to, so a hull whose weakness is written down as "loses
     // outside two tiles" has room to lose there. Anything measured on one and
     // not the other is a fact about that room.
-    let builder: fn(&mut sim::sim_map) = match map.as_str() {
-        "pit" => sim::build_pit,
-        "arena" => sim::build_arena,
-        other => {
-            println!("hulls: no map named {other:?}; there is `pit` and `arena`");
-            std::process::exit(1);
-        }
+    let builder = match map.as_str() {
+        "pit" => calibrate::Arena::Built(sim::build_pit),
+        "arena" => calibrate::Arena::Built(sim::build_arena),
+        // Anything else is a path to a packed map, which is how a zone's own
+        // room and anything mapgen makes get measured. A roster is balanced on
+        // a map or it is not balanced, and two rooms are the fewest that can
+        // tell a hull from the place it was tested.
+        path => match std::fs::read(path) {
+            Ok(bytes) => calibrate::Arena::Packed(std::sync::Arc::new(bytes)),
+            Err(e) => {
+                println!("hulls: {path:?} is not `pit`, not `arena`, and will not open: {e}");
+                std::process::exit(1);
+            }
+        },
     };
 
     let tuning = if zone == "baseline" {
@@ -3790,7 +3797,7 @@ fn run_hull_tournament() {
 {bouts} bouts each",
         n * (n + 1) / 2
     );
-    let rows = calibrate::run_hulls(SKILL, greens, bouts, tuning.as_ref(), builder, true);
+    let rows = calibrate::run_hulls(SKILL, greens, bouts, tuning.as_ref(), &builder, true);
     let doc = calibrate::report_hulls(&rows, SKILL, greens, bouts, &zone, &map);
 
     let path = format!("{dir}/hulls.json");
