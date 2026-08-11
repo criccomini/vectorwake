@@ -133,8 +133,6 @@ services:
       # session and nothing else: minting a new one and publishing the new
       # verifying key costs everybody one login.
       VW_META_KEY: ${VW_META_KEY:-}
-      # Fleet bans are applied here, because this is where tokens are minted.
-      VW_ADMIN_TOKEN: ${VW_ADMIN_TOKEN:?set VW_ADMIN_TOKEN}
       # This reads the catalog too, and checks a bot's pool token against the
       # digest when one claims an account. See the directory above.
       VW_POOL_DIGEST: ${VW_POOL_DIGEST:-}

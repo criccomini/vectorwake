@@ -81,9 +81,9 @@ delete from names a using names b
 create unique index if not exists names_unique on names (lower(call_sign));
 -- When this account last began a session, for the sweeper alone.
 alter table accounts add column if not exists last_seen timestamptz not null default now();
--- Whether this account opens the admin panel. Written by /v1/admin/grant
--- alone, which sits behind the host's own token, so no client-reachable
--- route can set it.
+-- Whether this account opens the admin panel. No route writes it: the flag
+-- is set by the operator in the database itself, so there is nothing for a
+-- leaked credential or a compromised neighbour process to call.
 alter table accounts add column if not exists admin boolean not null default false;
 -- The key era's leftovers. A key credential has no route left to present it
 -- to, and the link_codes table belonged to the same machinery.
@@ -337,14 +337,6 @@ async fn admin_for(db: &Client, secret: &str) -> Option<i64> {
     .map(|r| r.get::<_, i64>(0))
 }
 
-/// Compare a presented operator token against the configured one, in time
-/// independent of where they first differ: hash both sides and compare the
-/// hashes. What a timing difference can leak then is a prefix of a sha256,
-/// which names nothing about the token itself. An empty configured token
-/// matches nothing, so an unset variable is a closed door.
-fn same_token(given: &str, want: &str) -> bool {
-    !want.is_empty() && sha256_hex(given.as_bytes()) == sha256_hex(want.as_bytes())
-}
 
 async fn set_name(db: &Client, account: i64, name: &str) -> Result<(), String> {
     db.execute(
@@ -719,34 +711,17 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
         }
 
-        // A fleet ban, held by the operator's admin credential rather than a
-        // pool token, because this one is a human decision about a person.
-        "/v1/ban" => {
-            let want = std::env::var("VW_ADMIN_TOKEN").unwrap_or_default();
-            if !same_token(&s("admin_token"), &want) {
-                return (403, serde_json::json!({ "error": "bad admin token" }));
-            }
-            let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
-            let banned = body.get("banned").and_then(|v| v.as_bool()).unwrap_or(true);
-            let reason = s("reason");
-            let r = db
-                .execute(
-                    "update accounts set banned = $2, reason = $3 where id = $1",
-                    &[&account, &banned, &reason],
-                )
-                .await;
-            match r {
-                Ok(n) => (200, serde_json::json!({ "changed": n })),
-                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
-            }
-        }
-
         // ---------------------------------------------------- admin panel
         //
         // The routes behind the account flag, called by the static page at
         // admin.<domain>. Each takes the caller's device secret and runs it
         // through `admin_for`; the hostname is not the boundary and neither
         // is anything the client claims about itself.
+        //
+        // The flag itself has no route. Granting and revoking are SQL run by
+        // the operator on the central host, per deploy/README.md, which is
+        // also why there is no VW_ADMIN_TOKEN anywhere any more: the one
+        // thing it still guarded stopped being reachable over HTTP.
 
         // A pilot, looked up by call sign or account number. Behind the flag
         // rather than public, because standing and last_seen are between the
@@ -799,11 +774,12 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
         }
 
-        // The same mark /v1/ban sets, held by an admin account instead of the
-        // host's token. Refuses to touch an account that holds the flag: an
-        // admin unseating an admin is a decision for whoever holds the box,
-        // so it goes revoke-on-the-host first, and one compromised session
-        // cannot lock the rest of the operators out.
+        // The fleet ban: a mark on the account, enforced where tokens are
+        // minted, held to an admin account's secret. Refuses to touch an
+        // account that holds the flag: an admin unseating an admin is a
+        // decision for whoever holds the box, so it goes revoke-in-the-
+        // database first, and one compromised session cannot lock the rest
+        // of the operators out.
         "/v1/admin/ban" => {
             let Some(actor) = admin_for(&db, &s("secret")).await else {
                 return (403, serde_json::json!({ "error": "not an admin" }));
@@ -857,66 +833,6 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                         "last_seen": r.get::<_, String>(2),
                     })).collect::<Vec<_>>(),
                 })),
-                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
-            }
-        }
-
-        // Granting and revoking the flag, behind the host's token rather
-        // than the flag itself: the set of admins is decided on the box, so
-        // a leaked session or a bug in the page can act as an admin but
-        // never mint one. By name or by account number, because the first
-        // grant happens before any panel exists to look a number up.
-        "/v1/admin/grant" => {
-            let want = std::env::var("VW_ADMIN_TOKEN").unwrap_or_default();
-            if !same_token(&s("admin_token"), &want) {
-                return (403, serde_json::json!({ "error": "bad admin token" }));
-            }
-            let admin = body.get("admin").and_then(|v| v.as_bool()).unwrap_or(true);
-            let account = match body.get("account").and_then(|v| v.as_i64()) {
-                Some(a) => a,
-                None => match db
-                    .query_opt(
-                        "select account from names where lower(call_sign) = lower($1)",
-                        &[&s("name")],
-                    )
-                    .await
-                {
-                    Ok(Some(r)) => r.get(0),
-                    Ok(None) => return (404, serde_json::json!({ "error": "no such pilot" })),
-                    Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
-                },
-            };
-            // Only a claimed account can hold the flag. The panel signs in
-            // with a password, which a guest does not have, and the sweeper
-            // deletes idle guests, which is no way for an admin account to
-            // go. The sweeper also skips the flag outright, but the real
-            // guard is here, where the flag is granted.
-            let claimed: bool = match db
-                .query_one(
-                    "select exists (select 1 from credentials
-                                    where account = $1 and method <> 'secret')",
-                    &[&account],
-                )
-                .await
-            {
-                Ok(r) => r.get(0),
-                Err(_) => false,
-            };
-            if admin && !claimed {
-                return (400, serde_json::json!({
-                    "error": "that account is an unclaimed guest; it cannot sign \
-                              in with a password. Claim it first"
-                }));
-            }
-            let r = db
-                .execute("update accounts set admin = $2 where id = $1", &[&account, &admin])
-                .await;
-            match r {
-                Ok(0) => (404, serde_json::json!({ "error": "no such account" })),
-                Ok(_) => {
-                    println!("meta: admin flag set to {admin} on account {account}");
-                    (200, serde_json::json!({ "account": account, "admin": admin }))
-                }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
@@ -1263,6 +1179,11 @@ pub async fn run() {
     // sign back to the pool. Claimed accounts never expire; a password is a
     // person saying they mean to come back. The history in rated_events
     // carries no foreign key on purpose, so what happened stays happened.
+    //
+    // Admin-flagged accounts are never swept either. The flag is set by an
+    // operator's hand in the database, and the sweeper does not unmake
+    // operator decisions; an unclaimed account that was flagged by mistake
+    // is the operator's to notice, not this loop's to collect.
     {
         let pool = pool.clone();
         tokio::spawn(async move {
@@ -1417,11 +1338,4 @@ mod tests {
         assert_eq!(clean_name("   "), "");
     }
 
-    #[test]
-    fn an_unset_admin_token_matches_nothing() {
-        assert!(same_token("t0ken", "t0ken"));
-        assert!(!same_token("t0ken", "other"));
-        assert!(!same_token("", ""), "empty configured means closed, not open");
-        assert!(!same_token("anything", ""));
-    }
 }

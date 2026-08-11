@@ -260,12 +260,10 @@ render() {
 
 	check_secrets "$role"
 
-	# Per host, both of them. The admin token is this host's alone so losing one
-	# is one host reprovisioned rather than a fleet-wide rotation. The status
-	# topic is the outbound channel provision.sh talks over when nothing can
-	# reach the box; it is random because anyone who learns it can read it.
+	# The status topic is the outbound channel provision.sh talks over when
+	# nothing can reach the box; it is random because anyone who learns it
+	# can read it. Per host, so a leak names one machine.
 	accounts=${accounts:-0}
-	admin=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
 	topic=vw-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')
 
 	# The meta-layer's two go only to a host that runs a meta-layer.
@@ -326,7 +324,6 @@ render() {
 	trap 'rm -f "$prov" ${SECRET_KEY_FILE:-}' EXIT
 	sed \
 		-e "s|__POOL_TOKEN__|$VW_POOL_TOKEN|g" \
-		-e "s|__ADMIN_TOKEN__|$admin|g" \
 		-e "s|__ROLE__|$role|g" \
 		-e "s|__HOST__|$(serves "$role" "$name")|g" \
 		-e "s|__ADMIN_HOST__|$admin_host|g" \
@@ -363,7 +360,6 @@ render() {
 	echo "fleet: $name role=$role region=$region branch=$BRANCH" >&2
 	echo "fleet: serves   $(serves "$role" "$name")" >&2
 	echo "fleet: watch    https://ntfy.sh/$topic" >&2
-	echo "fleet: admin token $admin" >&2
 }
 
 # --- verbs -------------------------------------------------------------------

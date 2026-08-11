@@ -1675,12 +1675,18 @@ The catalog's `[[staff]]` table keys on call signs, which are server-dealt
 words no operator's account holds and rerollable besides; it stays for the
 day named verbs need named powers, per decision 26.
 
-Granting is not a panel action. `/v1/admin/grant` sits behind the central
-host's own token, so the set of operators is decided on the box and a leaked
-session can act as an admin but never appoint one. The panel's ban refuses
-flagged accounts, so one rogue session cannot lock the other operators out.
-The flag only lands on claimed accounts, because the panel signs in with a
-password and the sweeper deletes idle guests.
+Granting is not an HTTP action at all. No route writes the flag: setting and
+clearing it are SQL run by the operator on the central host, which retired
+`VW_ADMIN_TOKEN` and the `/v1/ban` curl with it. A grant route behind that
+token was drafted first and dropped, because on a host-network deployment a
+guarded route is still a thing a compromised neighbour process can call,
+where the managed database is not; the operator's authority is the database
+credential they already hold. A leaked panel session can therefore act as an
+admin but never appoint one, and the panel's ban refuses flagged accounts,
+so one rogue session cannot lock the other operators out. Grant only claimed
+accounts: the panel signs in with a password, which a guest does not have,
+and the sweeper skips flagged accounts rather than collecting an operator
+mistake.
 
 **Cost:** Fleet-wide reach behind a password whose floor is six characters,
 throttled to ten guesses a quarter hour per name. [admin.md](admin.md) wanted
