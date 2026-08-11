@@ -868,6 +868,16 @@ end
 -- This is the path for a machine with keys. Where the client hands the lines
 -- to the page as input elements, the elements hold the text and none of this
 -- runs; `pull` below is how what was typed comes back.
+-- Whether a card is waiting for characters. Any key that does something to
+-- the game has to ask, because a key trigger and the text stream are separate
+-- actions down here: a letter bound to a control reaches that control while it
+-- is also being typed into a field.
+function M.typing()
+    local a = M.ask
+    return (a and a.fields and a.fields[a.field or 1] and not a.sending) and true
+        or false
+end
+
 function M.type_field(ch)
     local a = M.ask
     local f = a and a.fields and a.fields[a.field or 1]

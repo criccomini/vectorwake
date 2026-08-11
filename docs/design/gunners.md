@@ -66,6 +66,10 @@ Everything else follows from that:
   long one. The spread is what has to be cut through, and at the 80th the ring
   sits on the plating of the hull's body and lets its spikes through: about a
   pixel of overlap on an Anvil, eleven on a Cipher.
+- **Yours carries your hull's halo.** Riding takes your silhouette off the
+  screen, so without a mark the one question a pilot asks every second, which
+  one is me, has no answer at all while they are a gunner. Same halo the hull
+  wears when you fly it, and the edge lit the way your own hull's is.
 - **Each drone's brightness is that gunner's energy.** This is a deliberate
   departure. The original hides it, and its own strategy guides spend
   paragraphs on the consequence, which is that a carrier cannot tell it is
@@ -79,6 +83,14 @@ draws one gun sprite indexed by heading alone and puts the names in a column
 under the ship. If we want the class back it belongs in the name plate as a
 letter or a tint, never in the geometry, because geometry is what made the
 first three attempts at this unreadable.
+
+Getting off is the `d` key, and it is the one part of this that is not on the
+panel. Attaching needs a target, so it belongs on the card you open by picking
+a person; dropping needs none, and it has to be fast. Attaching empties the
+bar it required, so the moment a gunner most needs off is the moment it has
+nothing left, and a list, a row, a card and a button is not a control anybody
+reaches in that state. The original bound both directions to one key for the
+same reason.
 
 `client/tools/gunner_mock.py out/ --drone` draws it against hull geometry read
 out of the client. It is a mock of a thing that now exists, so it is a way to

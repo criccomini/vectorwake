@@ -3114,7 +3114,8 @@ local BOARD = {
      {"5"}, {"6"}, {"7"}, {"8"}, {"9"}, {"0"}},
     {{"tab", 1.7, "bomb"}, {"Q", 1, "charge"}, {"W", 1, "charge"}, {"E"},
      {"R"}, {"T"}, {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
-    {{"caps", 2.0}, {"A", 1, "charge"}, {"S", 1, "charge"}, {"D"}, {"F"},
+    {{"caps", 2.0}, {"A", 1, "charge"}, {"S", 1, "charge"}, {"D", 1, "drone"},
+     {"F"},
      {"G"}, {"H"}, {"J"}, {"K"}, {"L"}},
     {{"shift", 2.25}, {"Z"}, {"X"}, {"C"}, {"V"},
      {"B"}, {"N"}, {"M", 1, "map"}},
@@ -3146,6 +3147,7 @@ local BOARD_CATS = {
     {key = "multi", word = "multifire"},
     {key = "bomb", word = "bombs"},
     {key = "charge", word = "charges"},
+    {key = "drone", word = "drop off"},
     {key = "players", word = "players"},
     {key = "map", word = "map"},
     {key = "menu", word = "menu"},
@@ -3167,6 +3169,10 @@ local function board_col(cat)
     if cat == "bomb" then return pal.BOMB end
     if cat == "charge" then return pal.CHARGE_COL end
     if cat == "fly" then return pal.INK end
+    -- The gunner's own band, and it is the bounty gold rather than a new
+    -- hue: this key is the way off a ship somebody else is flying, and gold
+    -- is already what the interface uses for a number about you.
+    if cat == "drone" then return pal.BOUNTY end
     if cat == "players" then return pal.DOOR end
     if cat == "map" then return pal.HOLE end
     if cat == "menu" then return pal.ENEMY end
