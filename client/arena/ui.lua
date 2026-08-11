@@ -536,32 +536,27 @@ M.page_fields = false
 -- for; see M.begin.
 M.details = false
 
--- Where each instrument landed this frame.
+-- Where each row of the corner stack, the dial and the feed landed this
+-- frame, filed by each element as it draws itself.
 --
--- The help label sets a word beside a thing instead of drawing a line to it,
--- so it has to know where the thing ended up, and the only account of that
--- which cannot drift is the one each element files as it draws itself. A
--- second copy of the layout arithmetic would be two places that have to agree
--- about one corner.
-local anchor = {}
-
--- What the pointer can rest on to ask what it is, filed the same way and at
--- the same time as the anchors.
+-- Nothing on screen reads these. They exist so that the layout can be asked
+-- where it put something instead of a test working the same arithmetic out a
+-- second time, which is two places that then have to agree about one corner.
+-- The rows wear glyphs rather than words, so the drawn text cannot say where
+-- a row is and this is the only account of it there is.
 --
 -- Deliberately not `M.hits`. A hit box is a press: `on_input` takes the first
 -- one a press lands in, and the field of play holds none at all because left
--- click is the gun and a box over a hull would eat the shot. These are read by
--- the pointer and by nothing else, so naming a thing can never cost a trigger
--- pull. See hud_hits_test for the rule they are staying out of the way of.
+-- click is the gun and a box over a hull would eat the shot. See
+-- hud_hits_test for the rule those are staying out of the way of.
 local zones = {}
 local function zone(key, x, y, w, h)
     zones[#zones + 1] = {key = key, x = x, y = y, w = w, h = h}
 end
 
--- Which instrument the pointer is over, or nil. Last registered wins, so a
--- row inside a panel beats the panel: the corner stack files a zone per row
--- and hovering one names that row rather than the stack.
-function M.help_at(x, y)
+-- Which row covers this point, or nil. Last registered wins, so a row inside
+-- a panel beats the panel: the corner stack files a zone per row.
+function M.row_at(x, y)
     if not x or not y then return nil end
     local found = nil
     for _, z in ipairs(zones) do
@@ -643,7 +638,6 @@ function M.begin(layer, w, h, density, touching, now)
     nt = 0
     u:reset()
     M.hits = {}
-    anchor = {}
     zones = {}
     -- The lines the page is asked to hold, if any card raised this frame
     -- asks for typing. Cleared here rather than by whoever raised it, for
@@ -701,7 +695,6 @@ local function dial()
     -- The left edge and the whole vertical run of it, because the word beside
     -- the dial wears a bar as tall as the dial: an instrument this size is not
     -- named by a mark the height of one line of type.
-    anchor.radar = {ix, iy, iy + side}
     zone("radar", ix, iy, side, side)
     return ix, iy, side
 end
@@ -990,16 +983,6 @@ end
 -- or on the label beside it, would eat the trigger at the exact moment a
 -- player is lined up on somebody. Asking who somebody is belongs to the
 -- scoreboard, where a click is a click and nothing else.
--- Where the guide's label is standing this frame, or nil when there is none.
--- Set by `guide_draw` and read by `nameplates`, which is the one thing that
--- can land on top of it: a nameplate is a gui glyph, and the gui draws over
--- every mesh, so no wash can quiet one. The only way past that is to not draw
--- it.
---
--- The wait box a dead pilot used to read had the same problem and this is the
--- same answer, which is why the rectangle outlived it.
-local guide_box = nil
-
 -- What a kill paid, rising off the wreck.
 --
 -- Only ever your own. The number is a reward, and a reward somebody else
@@ -1064,16 +1047,7 @@ local function nameplates(o)
                 -- them pays, so it is the one number that says which of two
                 -- ships in front of you is worth the risk.
                 local bty = sim.ship_bounty(i)
-                -- Not when it would land on the line the guide is showing. A
-                -- name is worth knowing while you are deciding whether to
-                -- chase somebody; a sentence you are shown once is worth more
-                -- for the few seconds it is up. The ship still draws, only
-                -- the label goes.
-                local b = guide_box
-                local clear = not (b and sx + 12 * S < b.x + b.w
-                    and sx + 90 * S > b.x and sy + 28 * S > b.y
-                    and sy + 4 * S < b.y + b.h)
-                if clear then
+                do
                     -- A call sign is a name somebody was given, not a
                     -- word this interface is saying, so it keeps its own
                     -- case wherever it is drawn.
@@ -1624,7 +1598,6 @@ local function feed(lines, top)
     -- under it: under it the bar could only be a line tall and the sentence
     -- read as a sixth kill, and the feed is the one panel here that is already
     -- a column of sentences.
-    anchor.feed = {right - wide, block_top, block_bot}
     zone("feed", right - wide, block_top, wide, block_bot - block_top)
 end
 
@@ -1692,15 +1665,6 @@ local function toast(lines, reach)
     -- on; a border would be the one shape this interface does not draw.
     local w = text_w(words, size) + 26 * S
     local h = LINE * S + 6 * S
-    -- The guide's label is the one other run of words that can land near the
-    -- middle, since it follows your own ship and your own ship is what the
-    -- camera is centered on. The check is the overlap itself rather than
-    -- "is the guide up", because most of what the guide says sits out beside
-    -- an instrument and never comes near this.
-    if guide_box and y - h / 2 < guide_box.y + guide_box.h
-       and y + h / 2 > guide_box.y then
-        return
-    end
     rect(W / 2 - w / 2, y - h / 2, w, h, pal.rgb(0x03050a, 0.62 * a))
     txt(words, W / 2, y, size, pal.a(f.col or pal.INK, a), "center", nil, true)
 end
@@ -1787,22 +1751,6 @@ local function weapon_mark(cx, cy, k, me, t)
     return marks.weapon(cx, ry(cy), k, me, t)
 end
 
--- What those marks mean, in words, for the hover and the held H. The
--- decorations are the row now, and a player who has just picked up their
--- first proximity has no way to learn that the dashed ring is what arrived.
-local function mod_words(me, t)
-    local out = nil
-    for i = 1, #pal.MODS do
-        local n = sim.ship_mod(me, t, i - 1)
-        if n > 0 then
-            local w = pal.MODS[i].name
-            if n > 1 then w = w .. " x" .. n end
-            out = out and (out .. ", " .. w) or w
-        end
-    end
-    return out
-end
-
 -- How much bigger than the rest of the interface the corner stack draws, and
 -- the share of the window it may take doing it.
 --
@@ -1865,7 +1813,6 @@ local function status(me, charges, lift)
     local wide = val
     -- The charge rows in the order they were drawn, so a reader of this list
     -- walks them down the stack the way a reader of the stack does.
-    anchor.charge_order = {}
 
     -- A weapon row is the mark and nothing else.
     --
@@ -1880,8 +1827,6 @@ local function status(me, charges, lift)
         if sim.has_trigger(me, t) then
             local right = weapon_mark(mid, y + rows_h / 2, 9 * z, me, t)
             local key = (t == sim.TRIG_GUN) and "gun" or "bomb"
-            anchor[key] = y + rows_h / 2
-            anchor[key .. "_mods"] = mod_words(me, t)
             -- The row as far right as it actually drew. A loaded bomb wears
             -- fragments a third of the mark's width clear of it, and pointing
             -- at one of those is still pointing at the bomb.
@@ -1910,8 +1855,6 @@ local function status(me, charges, lift)
         -- its own; they shared a sentence only while that sentence was
         -- about which key spends them.
         local key = "charge:" .. string.lower(c.name or c.short or "")
-        anchor[key] = y + rows_h / 2
-        anchor.charge_order[#anchor.charge_order + 1] = key
         zone(key, x, y, pw - x, rows_h)
         y = y + rows_h
     end
@@ -1923,12 +1866,10 @@ local function status(me, charges, lift)
     local bty = sim.ship_bounty(me)
     txt(tostring(bty), val, y + rows_h / 2, (FONT - 2) * z,
         bty > 0 and pal.a(pal.PRIZE, 0.95) or pal.a(pal.DIM, 0.5))
-    anchor.bounty = y + rows_h / 2
     local bw = val + text_w(tostring(bty), (FONT - 2) * z)
     if bw > wide then wide = bw end
     zone("bounty", x, y, bw - x, rows_h)
 
-    anchor.stack_x = wide + 26 * z
     return 0
 end
 
@@ -2157,84 +2098,6 @@ local function inspect(o, top)
     return y + h
 end
 
--- --- the glossary ----------------------------------------------------------
---
--- One sentence per thing, wherever a player meets it. The hover label reads
--- these, and so does arena/guide.lua when a trigger fires on something a
--- player has just met for the first time, so learning what a bomb is from
--- being killed by one and then pointing at the BOMB row is learning it in the
--- same words twice rather than in two different sets.
---
--- Each card used to carry a figure as well, drawn beside the sentence in the
--- box a dead pilot read. The box is gone and so are the figures: a hover
--- label sets a word beside the real instrument, and a drawing of a bomb next
--- to the bomb row would be a picture of the picture already on it.
---
--- `key` is how the thing is worked, where it is worked by something, and it
--- is separate from the sentence because the two answer different questions
--- and only one of them changes with the device. `pad` is the same sentence
--- for a touchscreen, where the controls are thumbs rather than keys.
-local CARDS = {
-    bomb = {name = "BOMB",
-            text = "Heavy weapon that detonates on impact. Upgrades include " ..
-                   "shrapnel and proximity abilities. Proximity detonates on " ..
-                   "a near miss.",
-            key = "Tab fires them.",
-            pad = "The smaller pad beside the guns fires them."},
-    bolt = {name = "BULLET",
-            text = "Bullets are your rapid fire weapon. Upgrades include " ..
-                   "spread and bouncing abilities.",
-            key = "Space fires them.",
-            pad = "The big pad on the right fires them."},
-    green = {name = "GREEN",
-             text = "Greens contain prizes that upgrade your ship. They also " ..
-                    "increase your bounty."},
-    repel = {name = "REPEL",
-             text = "Pushes enemy fire and ships away from you. Does not " ..
-                    "affect you or your team.",
-             key = "Q triggers it.",
-             pad = "Tap the repel cell above the guns."},
-    burst = {name = "BURST",
-             text = "Fires bullets in every direction at once. Deadly at " ..
-                    "close range.",
-             key = "W triggers it.",
-             pad = "Tap the burst cell above the guns."},
-    -- The one charge that is a place rather than a shot, which is why its
-    -- sentence is about where it sits and not about what it comes out of.
-    mine = {name = "MINE",
-            text = "Mines stay where you drop them. They detonate when an " ..
-                   "enemy approaches.",
-            key = "A drops one.",
-            pad = "Tap the mine cell above the guns."},
-    bounty = {name = "BOUNTY",
-              text = "Points earned for destroying an enemy. Your enemies " ..
-                     "earn your bounty when they destroy you."},
-    shrap = {name = "SHRAPNEL",
-             text = "Fragments thrown by a bomb when it detonates. Each one " ..
-                    "is a bullet at your gun's level, and bounces only if " ..
-                    "your bullets do.",
-             key = "Tab fires them.",
-             pad = "The smaller pad beside the guns fires them."},
-    safe = {name = "SAFE ZONE",
-            text = "Nothing can hurt you inside one, and you cannot fire " ..
-                   "out. Pulling a trigger there stops your ship dead."},
-    hole = {name = "WORMHOLE",
-            text = "Pulls in anything that comes near. Fly into one and it " ..
-                   "throws you to a random start with your speed gone."},
-}
-M.CARDS = CARDS
-
--- What a card says on this device: the sentence, and how the thing is worked
--- where something works it. Joined rather than drawn as two blocks, since the
--- label wraps one paragraph and a second one would need a second layout for
--- the sake of a single sentence.
-function M.card_text(which)
-    local c = CARDS[which]
-    if not c then return nil end
-    local how = M.touching and c.pad or c.key
-    return how and (c.text .. " " .. how) or c.text
-end
-
 -- What is drawn while a pilot is sitting in a safe zone.
 --
 -- Two things, and the second only when the room has a limit. A safe zone is
@@ -2249,9 +2112,9 @@ end
 -- word is, because there is a game going on around this one and the hull it
 -- is about is in the middle of it.
 --
--- The clock is a numeral rather than the draining rule the wait card uses. A
--- minute is too long for a bar to read as anything, and the number a pilot
--- wants here is how many seconds they have, which is a number.
+-- The clock is a numeral rather than a draining bar. A minute is too long for
+-- a bar to read as anything, and the number a pilot wants here is how many
+-- seconds they have, which is a number.
 local function safe_note(spent, limit)
     local y = H * 0.62
     txt("SAFE ZONE", W / 2, y, (M.compact and 12 or 16) * S,
@@ -2582,240 +2445,6 @@ local function flag_strip(me)
     end
 end
 
--- --- the help label --------------------------------------------------------
---
--- Point at an instrument and it says what it is. Nothing is held, nothing is
--- toggled, and one thing is named at a time: the pointer is already an
--- expression of what you are asking about, so the question and the answer land
--- in the same place.
---
--- There was a held key for a while that named every instrument at once, and
--- what killed it is the sentences getting longer. Short phrases sat beside
--- their rows and adjacency did the work. Cards do not fit on a row, so all of
--- them together had to be gathered into a column, and a column off to one side
--- says which instrument each line belongs to by color rather than by
--- position, which is the one thing this was built to avoid.
---
--- No leader lines either, which was the lesson before that. Every instrument
--- sits against an edge with clear space beside it, so a word set next to a
--- thing reads as being about that thing.
-
--- The line for one instrument, or nil where an instrument has nothing to say
--- beyond the label it already wears: GUN and BOMB name themselves, so their
--- lines explain the rung rather than the word.
---
--- Every instrument offers itself and only the one asked for is built, which
--- keeps the list of what can be named in one place while costing one sentence
--- to draw one. The pointer asks again every frame it rests somewhere, and
--- wrapping six sentences sixty times a second to draw the seventh is how a
--- cursor stops keeping up.
-local function help_line(want)
-    local found = nil
-    -- `top` and `bot` are the run of the bar. Given, it is as tall as the
-    -- instrument; left out, it is as tall as the sentence, which is now often
-    -- more than one line.
-    --
-    -- Wrapped against the room actually left beside the thing, and never wider
-    -- than a measure somebody can read across. A card's worth of words set as
-    -- one line runs most of the way over the arena.
-    local function add(key, x, y, s, col, align, top, bot)
-        if key ~= want then return end
-        local px = (FONT - 1) * S
-        local room = (align == "right") and (x - 22 * S) or (W - x - 22 * S)
-        local e = {key = key, x = x, y = y, col = col, align = align,
-                   top = top, bot = bot,
-                   lines = wrap(s, px, math.min(room, 640 * S))}
-        e.h = #e.lines * LINE * S
-        found = e
-    end
-    -- The corner stack says what the glossary says, word for word, out of
-    -- CARDS. One sentence per thing, wherever a player meets it: learning what
-    -- a bomb is from the guide the first time one goes off near you and then
-    -- pointing at the BOMB row should not be learning it twice in two
-    -- different sets of words.
-    local sx = anchor.stack_x
-    if sx then
-        local function card(key, at, which, col, mods)
-            local c = CARDS[which]
-            if not at or not c then return end
-            -- What the round on the row is wearing, named. The card says what
-            -- the weapon is in general; the add-ons are what this ship picked
-            -- up in this fight, and a shape drawn onto a mark is learnable
-            -- exactly once, by being told.
-            --
-            -- What the add-ons are goes last, after the key, because it is the
-            -- only part of the line that is about this fight rather than
-            -- about the weapon. It is also the part that changes while you
-            -- are reading it.
-            local s = M.card_text(which)
-            if mods then s = s .. " Carrying " .. mods .. "." end
-            add(key, sx, at, s, col)
-        end
-        card("gun", anchor.gun, "bolt", pal.FRIEND, anchor.gun_mods)
-        card("bomb", anchor.bomb, "bomb", pal.BOMB, anchor.bomb_mods)
-        for _, key in ipairs(anchor.charge_order or {}) do
-            -- The slot's own name is the card's name: repel and burst each
-            -- have one. A slot with no card is a charge this build has not
-            -- described yet, and it says nothing rather than guessing.
-            card(key, anchor[key], key:match("^charge:(.*)$"), pal.CHARGE_COL)
-        end
-        card("bounty", anchor.bounty, "bounty", pal.PRIZE)
-    end
-    -- Beside the dial and as tall as it, whichever dial it is. The map is four
-    -- times the radar and a bar sized to the sentence would read as a note
-    -- attached to whatever row of the map it happened to land on.
-    if anchor.radar then
-        local top, bot = anchor.radar[2], anchor.radar[3]
-        add("radar", anchor.radar[1] - 16 * S, (top + bot) / 2,
-            M.map and "the whole arena, and you as the arrow"
-            or "near space. the rings are range.",
-            pal.RADAR_TILE, "right", top, bot)
-    end
-    if anchor.feed then
-        local top, bot = anchor.feed[2], anchor.feed[3]
-        add("feed", anchor.feed[1] - 16 * S, (top + bot) / 2, "who paid whom",
-            pal.BOUNTY, "right", top, bot)
-    end
-    return found
-end
-
--- A bar in the thing's own color, then the sentence. The bar sits on the side
--- facing whatever is being named, so it points without a line.
-local function help_draw(e)
-    local f = (FONT - 1) * S
-    local lh = LINE * S
-    -- The words are centered on the row; the bar is as tall as the instrument
-    -- when it was given one, and otherwise as tall as the words.
-    local ttop = e.y - e.h / 2
-    local top = e.top or ttop
-    local bot = e.bot or (ttop + e.h)
-    local dir = (e.align == "right") and -1 or 1
-    rect(e.x + (dir < 0 and -3 * S or 0), top, 3 * S, bot - top,
-         pal.a(e.col, 0.85))
-    -- Prose rather than the capitals the rest of the interface is set in,
-    -- with the capital taken once on the first line. Cased line by line, a
-    -- sentence that wrapped onto three of them would start three times.
-    local was = case
-    case = "sentence"
-    for i, line in ipairs(e.lines) do
-        txt(line, e.x + dir * 11 * S, ttop + (i - 0.5) * lh, f,
-            pal.a(pal.INK, e.alpha or 0.95), e.align, nil, i > 1)
-    end
-    case = was
-end
-
--- A block that would hang off the bottom or the top is moved back on, since
--- the corner stack sits against the bottom of the screen and the sentence
--- beside its last row is taller than the row is.
-local function help_fit(e)
-    local half = e.h / 2
-    if e.y + half > H - 8 * S then e.y = H - 8 * S - half end
-    if e.y - half < 8 * S then e.y = 8 * S + half end
-end
-
--- The pointer resting on one instrument names that instrument, and nothing
--- else happens: no wash, no other lines, no mode. This is a question asked of
--- one thing, and it has to cost about as much as looking at it.
-local function help_hover(key)
-    local e = help_line(key)
-    if not e then return end
-    -- On its own row, since one block has nothing to collide with and every
-    -- reason to sit against the thing being pointed at.
-    help_fit(e)
-    help_draw(e)
-end
-
--- --- the guide -------------------------------------------------------------
---
--- The same label, hovered by the game instead of by the pointer. A pilot who
--- has never fired is not going to discover the BOMB row by pointing at it,
--- because pointing at a thing is a question you can only ask once you suspect
--- the thing is there. arena/guide.lua decides what to say and when; this end
--- decides where it lands, and it lands exactly where the pointer's answer
--- would: a bar in the thing's own color with the words beside it.
---
--- The one anchor the hover label has no use for is your own ship, which is
--- where anything about flying belongs. There is no instrument for "left and
--- right turn", and a sentence about your ship set in a corner is a sentence
--- about the corner.
-local function guide_anchor(e, me, o)
-    if e.at and e.at ~= "ship" then
-        -- An instrument. help_line already knows where every one of them is
-        -- this frame and what color it wears, so the guide asks it rather
-        -- than working the same geometry out twice and drifting.
-        --
-        -- Nil where the instrument is not on screen, and that is the ordinary
-        -- case rather than the odd one: a touchscreen wears its weapons on the
-        -- pads and draws no corner stack at all, so every weapon line the
-        -- guide has would go unsaid on a phone. It falls through to the ship.
-        local a = help_line(e.at)
-        if a then return a end
-    end
-    if not o.half_w or o.half_w <= 0 then return nil end
-    local scale = W / (2 * o.half_w)
-    local sx = W / 2 + (sim.ship_x(me) - o.cam_x) * scale
-    local sy = H / 2 + (sim.ship_y(me) - o.cam_y) * scale
-    -- Off the nose to whichever side has the room. Against the right edge the
-    -- words would wrap to a column two words wide, which is not a sentence
-    -- anybody reads at a glance while flying.
-    local right = sx < W * 0.55
-    local x = sx + (right and 30 * S or -30 * S)
-    -- Only where and which way. The words are guide_layout's to wrap, since
-    -- it is the end that has resolved which sentence this device gets; a
-    -- wrap here read e.text directly, and a line that named a card instead
-    -- of carrying words handed it nil.
-    return {x = x, y = sy, col = pal.INK,
-            align = right and "left" or "right"}
-end
-
--- What a guide line says on this device. A line names a card or carries its
--- own words, and the choice between a key and a pad is made here rather than
--- in guide.lua for the same reason the glossary makes it here: which controls
--- exist is a fact about the machine, and this is the end that knows.
-local function guide_text(e)
-    if e.card then return M.card_text(e.card) end
-    return (M.touching and e.pad) or e.text
-end
-
--- Measured before the nameplates draw and drawn after them, which is why this
--- is two calls rather than one. See `guide_box`.
-local function guide_layout(e, me, o)
-    if not e then return nil end
-    local s = guide_text(e)
-    if not s or s == "" then return nil end
-    local a = guide_anchor(e, me, o)
-    if not a then return nil end
-    -- An instrument's own line is what the pointer would have drawn, so it
-    -- arrives with that instrument's words in it. The guide has its own.
-    a.lines = wrap(s, (FONT - 1) * S,
-                   math.min((a.align == "right") and (a.x - 22 * S)
-                            or (W - a.x - 22 * S), 640 * S))
-    a.h = #a.lines * LINE * S
-    -- A bar sized to an instrument says "this row". A bar sized to the words
-    -- says "these words", which is what the guide is: it is not naming the
-    -- gun row, it is telling you something and pointing at where to look.
-    a.top, a.bot = nil, nil
-    a.alpha = e.alpha
-    help_fit(a)
-    -- What a nameplate has to keep off, as a plain rectangle: top left corner
-    -- and a size, which is what `nameplates` and the notice both test against.
-    -- Wider than the words by the bar and its gap, since a name printed into
-    -- the gap is a name across the start of every line.
-    local w = 0
-    for _, line in ipairs(a.lines) do
-        local lw = text_w(line, (FONT - 1) * S)
-        if lw > w then w = lw end
-    end
-    w = w + 14 * S
-    a.rect = {x = (a.align == "right") and (a.x - w) or a.x,
-              y = a.y - a.h / 2, w = w, h = a.h}
-    return a
-end
-
-local function guide_draw(a)
-    if a then help_draw(a) end
-end
-
 function M.hud(o)
     case = "upper"
     if sim.ship_count() == 0 then return end
@@ -2837,21 +2466,6 @@ function M.hud(o)
     -- A third rather than out: nothing is paused, you can be shot while you
     -- are answering, and a glance at your energy is still worth taking.
     text_dim = (o.menu_open or M.room_ask) and 0.34 or 1
-
-    -- Measured here and drawn at the far end of this function. Nameplates read
-    -- the rectangle before they draw and the label goes over everything, so
-    -- the two happen at opposite ends and what a nameplate steps around is
-    -- this frame's line rather than last frame's.
-    --
-    -- Nothing under the menu, which takes the middle of the screen for itself,
-    -- and nothing while watching somebody else fly, where every sentence the
-    -- guide has would be about a ship that is not yours.
-    local guide = nil
-    guide_box = nil
-    if o.guide and not o.menu_open and not o.watch then
-        guide = guide_layout(o.guide, me, o)
-        guide_box = guide and guide.rect
-    end
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -2916,18 +2530,6 @@ function M.hud(o)
     local several = o.rooms and #o.rooms > 1
     menu_button(o.on_air and not o.watch, o.watch, several and o.room or nil)
     vignette(o.hurt or 0)
-    -- The pip over your own hull is not named. A bar that empties as you are
-    -- shot and fills when you stop being shot is the one instrument here that
-    -- explains itself, and a word beside it in the middle of the screen is a
-    -- word in the middle of the fight.
-    --
-    -- Last, so the word lands on top of the instrument it names. Not under the
-    -- menu, which is a different screen with its own help page on it.
-    if not o.menu_open then
-        local key = M.help_at(o.point_x, o.point_y)
-        if key then help_hover(key) end
-    end
-
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
@@ -2936,9 +2538,6 @@ function M.hud(o)
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
             pal.a(pal.INK, 0.92), "center")
     end
-    -- Over everything, and last, so nothing the arena drew this frame lands on
-    -- top of a sentence a player gets shown once.
-    guide_draw(guide)
     if not o.watch and sim.ship_alive(me) == 0 then
         txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
             pal.ENEMY, "center")
