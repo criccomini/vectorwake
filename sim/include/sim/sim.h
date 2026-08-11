@@ -508,8 +508,13 @@ typedef struct {
      * scatters a team's starts across nearly half the map, so under tiles two
      * pilots on one side can be twenty seconds apart on the way back to a
      * fight. It costs the obvious thing: one landing zone is one place to
-     * camp, and a radius under about sixty puts every arrival on a camper's
-     * radar at the moment they appear, since that is how far radar reaches. */
+     * be shot at, and how badly depends on how many ships share the box rather
+     * than on anything about the map. Tune it by seconds of bullet flight to
+     * the nearest enemy, not by the radius. The original's own number works
+     * out at 18, and at the 51 ships one of our rooms holds that leaves two
+     * and a half tiles, a fifth of a second, and pilots died as they arrived;
+     * a couple of hundred tiles buys the three seconds it takes to pick a
+     * direction. */
     uint16_t spawn_radius;
     /* Whether a client marks the map's spawn tiles. Render only: nothing in
      * this core reads it, and it travels here so the room and the client read

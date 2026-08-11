@@ -227,6 +227,15 @@ the room, and only a team change redraws it. Subspace redraws on every respawn.
 The one other thing that picks a spawn tile at random is a wormhole, which drops
 you on one without touching where your next death will put you.
 
+One thing the original's numbers do not carry across, learned by shipping
+them. Alpha took the 18 that falls out of `WarpRadiusLimit=20` and pilots died
+as they arrived, because a room here is about 51 ships across ten mutually
+hostile teams and 18 puts the nearest of them two and a half tiles away, a
+fifth of a second of bullet flight. The clamp was written for rooms that were
+not this dense. What transfers is the arrangement, not the radius, and the
+measure to size it against is seconds of bullet flight to the nearest enemy
+rather than tiles.
+
 Where our maps' spawn tiles come from, and why there are eight a side, is in
 [map-measurements.md](map-measurements.md) under "The spawns are not the
 original's". They are our converter's arithmetic, not a measurement of anything.
