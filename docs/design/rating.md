@@ -155,9 +155,19 @@ game.
 
 What a player sees is a tier rather than a number, and nothing at all until
 they are out of provisional. The bands live in `server/src/rating.rs`, from
-Drift to Wake. This began as an open question below and the shipped answer has
-held: a number invites anxiety over ten-point noise, and a coarse band moves
-only when something real has changed.
+Green to Legend. This began as an open question below and the shipped answer
+has held: a number invites anxiety over ten-point noise, and a coarse band
+moves only when something real has changed.
+
+The names are the pilot rather than the mark they leave, which is what makes
+the ladder read in order without a legend beside it. They also stay out of the
+call sign pool in `server/src/meta.rs`, since a pilot named for their own tier
+is one word doing two jobs on a scoreboard.
+
+Five bands, and Ace is the widest of them deliberately. A ladder with a rung
+every hundred points turns into the number it was meant to replace, and the
+stretch above a pilot who has clearly arrived is where the fewest people are
+and the least needs saying about them.
 
 ## Storage
 

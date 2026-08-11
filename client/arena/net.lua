@@ -301,8 +301,8 @@ end
 -- Visible tiers, matching server/src/rating.rs. Coarse bands mean a pilot is
 -- not watching a number twitch after every death.
 local TIERS = {
-    {1700, "Wake"}, {1500, "Shockwave"}, {1350, "Contrail"},
-    {1200, "Vector"}, {1050, "Trace"}, {-1e9, "Drift"},
+    {1700, "Legend"}, {1350, "Ace"}, {1200, "Lead"},
+    {1050, "Wing"}, {-1e9, "Green"},
 }
 local PROVISIONAL_GAMES = 10
 
@@ -311,7 +311,7 @@ function M.tier(rating, games)
     for _, t in ipairs(TIERS) do
         if rating >= t[1] then return t[2] end
     end
-    return "Drift"
+    return "Green"
 end
 
 -- Built up beside the live roster and swapped in whole, rather than cleared and

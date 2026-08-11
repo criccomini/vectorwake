@@ -37,13 +37,22 @@ pub const QUIT_WINDOW: u32 = 300;
 /// Visible tiers. A rating is a number the matchmaker reads; a tier is what a
 /// player is told, and coarse bands mean a pilot is not watching a number
 /// twitch after every death.
-pub const TIERS: [(&str, f64); 6] = [
-    ("Drift", f64::NEG_INFINITY),
-    ("Trace", 1050.0),
-    ("Vector", 1200.0),
-    ("Contrail", 1350.0),
-    ("Shockwave", 1500.0),
-    ("Wake", 1700.0),
+///
+/// The ladder names the pilot rather than the mark they leave, so it reads in
+/// order without a legend: everybody knows an Ace outranks a wingman. These
+/// words are held apart from the call sign pool in `meta.rs`, since a pilot
+/// called Ace 412 sitting in the Ace tier is two different things wearing one
+/// word. `call_words_collide_with_nothing` is what keeps them apart.
+///
+/// Five bands rather than more. Ace is the widest on purpose: it holds the
+/// long stretch between a pilot who has clearly arrived and the handful who
+/// are the reason anybody knows the zone's name.
+pub const TIERS: [(&str, f64); 5] = [
+    ("Green", f64::NEG_INFINITY),
+    ("Wing", 1050.0),
+    ("Lead", 1200.0),
+    ("Ace", 1350.0),
+    ("Legend", 1700.0),
 ];
 
 /// The band a rating falls in. Always answers: the lowest tier is unbounded
@@ -435,16 +444,17 @@ mod tests {
         let mut r = Rating::new();
         assert_eq!(r.tier_of("newcomer"), None, "a new pilot is placing");
         r.games.insert("newcomer".into(), PROVISIONAL_GAMES);
-        assert_eq!(r.tier_of("newcomer"), Some("Vector"), "1200 sits in Vector");
+        assert_eq!(r.tier_of("newcomer"), Some("Lead"), "1200 sits in Lead");
     }
 
     #[test]
     fn every_rating_has_a_tier() {
-        assert_eq!(tier(-999.0), "Drift", "the floor is unbounded below");
-        assert_eq!(tier(1049.0), "Drift");
-        assert_eq!(tier(1050.0), "Trace");
-        assert_eq!(tier(1200.0), "Vector");
-        assert_eq!(tier(99999.0), "Wake", "the ceiling is unbounded above");
+        assert_eq!(tier(-999.0), "Green", "the floor is unbounded below");
+        assert_eq!(tier(1049.0), "Green");
+        assert_eq!(tier(1050.0), "Wing");
+        assert_eq!(tier(1200.0), "Lead");
+        assert_eq!(tier(1699.0), "Ace", "the widest band runs to the top one");
+        assert_eq!(tier(99999.0), "Legend", "the ceiling is unbounded above");
     }
 
     #[test]

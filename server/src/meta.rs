@@ -1157,11 +1157,15 @@ mod tests {
 
     #[test]
     fn call_words_collide_with_nothing() {
-        // One namespace, three sources of names in it: players from this
-        // list, the AI roster from ai.rs, and the eight hulls the interface
-        // names beside them. A shared word would make the unique index
+        // One namespace, four sources of names in it: players from this list,
+        // the AI roster from ai.rs, the hulls the interface names beside them,
+        // and the rating tiers. A shared word would make the unique index
         // refuse an AI registration, or leave a scoreboard reading as two of
         // a kind, so the lists are held apart here.
+        //
+        // The tiers are the subtlest of the four: a pilot called Ace 412
+        // standing in the Ace tier is one word doing two unrelated jobs on
+        // the same scoreboard, and nothing but this check would catch it.
         let mut seen = std::collections::HashSet::new();
         for w in CALL_WORDS {
             assert!(seen.insert(w.to_lowercase()), "{w} appears twice");
@@ -1175,6 +1179,9 @@ mod tests {
         }
         for name in crate::ai::CLASS_NAMES {
             assert!(!seen.contains(&name.to_lowercase()), "{name} is a hull");
+        }
+        for (name, _) in crate::rating::TIERS {
+            assert!(!seen.contains(&name.to_lowercase()), "{name} is a rating tier");
         }
     }
 
