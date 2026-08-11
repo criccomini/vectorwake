@@ -406,6 +406,19 @@ local function toggle_details()
     ui.details = not ui.details
     if ui.details then
         menu.close()
+        ui.help = false
+        ui.rooms_open = false
+        ui.room_ask = nil
+    end
+end
+
+-- The controls table. A slab of text like the scoreboard, so it shuts the
+-- same things the scoreboard shuts: two of those over each other is neither.
+local function toggle_help()
+    ui.help = not ui.help
+    if ui.help then
+        menu.close()
+        ui.details = false
         ui.rooms_open = false
         ui.room_ask = nil
     end
@@ -552,6 +565,7 @@ function go_home(self, at)
     hurt = 0
     safe_ticks = 0
     watching = false
+    ui.help = false
     -- The next seat is a different pilot's switch, and inheriting this one's
     -- would click on arrival. The kit goes with it: a pad wearing the last
     -- zone's add-ons is a drawing of somebody else's ship.
@@ -1024,6 +1038,9 @@ function update(self, dt)
         elseif ui.inspect then
             ui.inspect = nil
             shut = true
+        elseif ui.help then
+            ui.help = false
+            shut = true
         elseif ui.details then
             toggle_details()
             shut = true
@@ -1087,6 +1104,16 @@ function update(self, dt)
         tapped[hash("map")] = nil
         if live then
             toggle_map()
+            sfx.ui("ui_move")
+        end
+    end
+    -- H or ?, and the same key closes it. Not while a card is taking typing,
+    -- which the panel toggles get away with and this cannot: an h in a call
+    -- sign would otherwise open the controls over the name being typed.
+    if tapped[hash("help")] then
+        tapped[hash("help")] = nil
+        if live and not menu.typing() then
+            toggle_help()
             sfx.ui("ui_move")
         end
     end

@@ -2115,6 +2115,112 @@ end
 -- The clock is a numeral rather than a draining bar. A minute is too long for
 -- a bar to read as anything, and the number a pilot wants here is how many
 -- seconds they have, which is a number.
+-- --- the help table --------------------------------------------------------
+--
+-- Every key the game answers to, what it is, and one sentence saying what it
+-- does. Held open rather than hovered, so reading it is a decision a player
+-- makes once and not something that happens to them while they are flying.
+--
+-- Static. What a particular hull is carrying is the corner stack's job and it
+-- draws that already; this is the keyboard, which is the same on every ship in
+-- every room, and a table that rearranged itself would be a reference you
+-- cannot learn.
+--
+-- Keyboard only, and that is not an oversight: a touchscreen has no key to
+-- open it with and no keys to list. The menu's help page is what a phone gets,
+-- and it names thumbs because thumbs are what a phone has.
+local HELP_ROWS = {
+    {"← →", "Rudder", "Turns your ship."},
+    {"↑", "Thrusters", "Drives your ship forward."},
+    {"↓", "Reverse", "Drives your ship backward."},
+    {"Space", "Guns", "Fires your rapid weapon."},
+    {"Tab", "Bombs", "Fires a heavy weapon that detonates on impact."},
+    {"Q", "Repel", "Pushes enemy fire and ships away from you."},
+    {"W", "Burst", "Fires bullets in every direction at once."},
+    {"A", "Mine", "Drops a mine that detonates when an enemy approaches."},
+    {"`", "Multifire", "Fans your gun wider for more energy per shot."},
+    {"D", "Detach", "Drops you off a ship you are riding."},
+    {"M", "Map", "Shows the whole arena instead of the radar."},
+    {"P", "Players", "Lists everyone here and what they are worth."},
+    {"H  ?", "Help", "Shows this table."},
+    {"Esc", "Menu", "Opens the menu."},
+}
+M.HELP_ROWS = HELP_ROWS
+
+-- Whether the table is up. The arena owns the key; this owns the drawing.
+M.help = false
+
+-- How wide a string draws, counting glyphs rather than bytes.
+--
+-- `text_w` counts bytes, which is right for every other caller and runs in
+-- the wrap on every frame. The arrow keys are the one place the interface
+-- says something outside ASCII, and each of them is three bytes: measured
+-- with `text_w` the key column comes out three times too wide. Counting
+-- continuation bytes is exact for UTF-8 and this runs fourteen times while a
+-- table is open, so it can afford to be.
+local function glyph_w(s, px)
+    local _, cont = string.gsub(s, "[\128-\191]", "")
+    return (#s - cont) * px * ADVANCE
+end
+
+local function help_table()
+    local fs = (M.compact and 11 or 13) * S
+    local rowh = fs * 1.65
+    local pad = 18 * S
+    -- Three columns, measured off the widest thing each has to hold rather
+    -- than guessed, since the sentences are what decides the width and they
+    -- are the one column that cannot be allowed to wrap.
+    local kw, nw, dw = 0, 0, 0
+    for _, r in ipairs(HELP_ROWS) do
+        kw = math.max(kw, glyph_w(r[1], fs))
+        nw = math.max(nw, glyph_w(r[2], fs))
+        dw = math.max(dw, glyph_w(r[3], fs))
+    end
+    local gap = 14 * S
+    local w = pad * 2 + kw + gap + nw + gap + dw
+    local head = fs * 1.9
+    local h = pad * 2 + head + #HELP_ROWS * rowh
+    -- Shrunk to fit rather than clipped, because a window narrower than the
+    -- longest sentence is a window this has to work in anyway.
+    local room = W - 24 * S
+    local scale = (w > room) and (room / w) or 1
+    if scale < 1 then
+        fs, rowh, pad, gap = fs * scale, rowh * scale, pad * scale, gap * scale
+        kw, nw, dw = kw * scale, nw * scale, dw * scale
+        head = head * scale
+        w = room
+        h = pad * 2 + head + #HELP_ROWS * rowh
+    end
+    local x, y = (W - w) / 2, (H - h) / 2
+
+    rect(x, y, w, h, pal.rgb(0x03050a, 0.88))
+    u:frame(x, ry(y, h), w, h, 1.0 * S, pal.a(pal.DIM, 0.5))
+
+    txt("CONTROLS", x + pad, y + pad + head * 0.35, fs * 1.05,
+        pal.a(pal.INK, 0.9))
+    local rule = y + pad + head - fs * 0.35
+    u:seg(x + pad, ry(rule), x + w - pad, ry(rule), 0.8 * S,
+          pal.a(pal.DIM, 0.45))
+
+    local kx = x + pad
+    local nx = kx + kw + gap
+    local dx = nx + nw + gap
+    local was = case
+    for i, r in ipairs(HELP_ROWS) do
+        local ty = y + pad + head + (i - 0.5) * rowh
+        -- The key in the color a key is drawn in everywhere else, the name in
+        -- ink, and the sentence dimmer than both: three weights so the eye can
+        -- run down one column without reading the other two.
+        case = "upper"
+        txt(r[1], kx, ty, fs, pal.a(pal.FRIEND, 0.95))
+        txt(r[2], nx, ty, fs, pal.a(pal.INK, 0.92))
+        -- Prose, and set as prose. The rest of the interface shouts.
+        case = "sentence"
+        txt(r[3], dx, ty, fs, pal.a(pal.PANEL_INK, 0.85))
+    end
+    case = was
+end
+
 local function safe_note(spent, limit)
     local y = H * 0.62
     txt("SAFE ZONE", W / 2, y, (M.compact and 12 or 16) * S,
@@ -2533,6 +2639,10 @@ function M.hud(o)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
+    -- Over the arena and under nothing, since it is the thing being read. The
+    -- game carries on behind it: nothing is paused here, and a player who
+    -- opens this in a fight can still be shot while they read.
+    if M.help then help_table() end
     flag_strip(me)
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
@@ -2624,7 +2734,7 @@ local BOARD = {
      {"R"}, {"T"}, {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
     {{"caps", 2.0}, {"A", 1, "charge"}, {"S", 1, "charge"}, {"D", 1, "drone"},
      {"F"},
-     {"G"}, {"H"}, {"J"}, {"K"}, {"L"}},
+     {"G"}, {"H", 1, "help"}, {"J"}, {"K"}, {"L"}},
     {{"shift", 2.25}, {"Z"}, {"X"}, {"C"}, {"V"},
      {"B"}, {"N"}, {"M", 1, "map"}},
     {{"ctrl", 1.6, "gun2"}, {"space", 6.2, "gun"}},
@@ -2659,6 +2769,7 @@ local BOARD_CATS = {
     {key = "players", word = "players"},
     {key = "map", word = "map"},
     {key = "menu", word = "menu"},
+    {key = "help", word = "controls"},
 }
 
 -- Hues nothing else in the legend is wearing, which is what a legend needs
@@ -2684,6 +2795,9 @@ local function board_col(cat)
     if cat == "players" then return pal.DOOR end
     if cat == "map" then return pal.HOLE end
     if cat == "menu" then return pal.ENEMY end
+    -- The one key that explains the rest of them, in the ink the interface
+    -- names things with. It opens a slab of words rather than a panel.
+    if cat == "help" then return pal.PANEL_INK end
     return nil
 end
 
