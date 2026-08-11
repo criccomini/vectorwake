@@ -159,9 +159,15 @@ two pockets of a few thousand tiles and three single tiles, all walled off.
 
 So the original had them too, and it is worth knowing that our own generator
 holds itself to a stricter rule than the thing it was measured against:
-mapgen digs every pocket open and checks for exactly one region. A pocket is
-a place a ship can be put and cannot leave, and 1.6% of a map being that is
-not a target to reproduce.
+mapgen joins every stranded piece of the field to the rest and checks for
+exactly one region. A pocket is a place a ship can be put and cannot leave,
+and 1.6% of a map being that is not a target to reproduce.
+
+The count above is taken one tile at a time, which is the usual way to ask
+and is not the question a pilot asks. A hull is three tiles across, so a
+structure whose only way in is a one-tile notch counts as open here and is
+sealed from the cockpit. Our generator measures its own regions against a
+hull instead, and widens or fills whatever that turns up.
 
 ## The spawns are not the original's
 

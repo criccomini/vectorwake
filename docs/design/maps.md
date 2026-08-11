@@ -279,6 +279,23 @@ It draws from a vocabulary of rooms with gaps cut through them, corner
 brackets, lattices of single tiles, stepped diagonals, capped bars, line
 stacks and loose debris, in clusters of two to six at a time.
 
+**Every shape in it is symmetric and centred**, and every member of a cluster
+is drawn off one roll of the dice, so a group is one shape repeated rather
+than four cousins of it. Both of those replaced random offsets, which drew a
+map that measured correctly and read as rubble. A room is cut on opposite
+walls at the same place, so it is something to fly straight through rather
+than a chicane. A stack of lines is centred and the same above the middle as
+below. A diagonal is one tile per step, never two, and crossed diagonals meet
+on exactly one tile. A hall's four ways in are the same width and each sits
+in the middle of the wall it goes through.
+
+The arithmetic under that is parity. A run centres exactly in a span only
+when the two are both odd or both even, so a gap's width is moved to its
+wall's parity before it is placed rather than rounded into position after.
+One tile is the whole difference between a gap that faces the one opposite
+and a gap that does not, and there is no way to see which you have except by
+flying at it and stopping.
+
 Where those clusters go is decided at two scales, and it takes both. The map
 is divided into thirty **districts**, each with its own density, and every
 district gets built: none is left empty. Inside a district, one to three
@@ -312,25 +329,51 @@ half of them are longer than nine tiles. Attaching one end and leaving the
 other free is also what makes a barrier safe: one bridging two structures
 divides the field when its channel shuts.
 
-Then it fixes what it drew. Structures placed independently enclose ground
-between them whether or not any one of them is closed, which makes dozens of
-sealed pockets per map. Each is joined to the field by digging the shortest
-line of wall between them, breadth-first from the pocket outward. Around forty
-tiles a map, nearly all of them single. A pocket is not wasted ground so much
-as a trap: a ship shoved into one cannot leave, a prize landing in one is
-gone, and a bot routing toward one grinds on the wall in front of it.
+Then it fixes what it drew, and it does that against a hull rather than
+against a point. **A ship is three tiles across.** The widest one in the
+roster measures 34 pixels at the beam and the longest reaches 23 pixels from
+its centre at the worst diagonal, against a 16-pixel tile: two tiles is 32
+pixels and holds neither of them, three is 48 and holds both at any heading.
+So a hull stands on a tile only when the eight around it are open too, and
+the connectivity of a map is the connectivity of that set.
+
+Structures placed independently strand ground between them whether or not any
+one of them is closed, which is dozens of pieces per map. Each is joined to
+the field along the shortest line between them, breadth-first from the piece
+outward, and the lane carved back along that line is three tiles wide because
+the thing being let out is a ship. What is left over afterwards is slivers:
+the tile between two structures that stopped one apart, or the inside of
+something drawn too small to enter. Those are walled in rather than dug out,
+since a sliver widened into a lane is a hole knocked in a structure that was
+fine as it stood.
+
+Stranded ground is not wasted so much as a trap: a ship shoved into it cannot
+leave, a prize landing there is gone, and a bot routing toward it grinds on
+the wall in front of it.
 
 Then it checks, and refuses to write a map that fails:
 
 - sixteen spawns placed, eight a side, north and south
 - nine safe zones placed
-- **every** open tile on one region, with doors counted as shut
-- no spawn, safe tile or wormhole off it
+- **one** region a hull can fly, with doors counted as shut
+- no spawn, safe tile or wormhole out of reach of it
+- no open tile a hull cannot reach with the doors open
 - solid between 2% and 4.5% of the interior
 
-The connectivity check counts a door as a wall throughout. A pocket reachable
-only through a door is still a pocket, since its channel shuts for part of
-every cycle and a ship inside would be held until it opened.
+The connectivity check counts a door as a wall throughout. A place reachable
+only through a door is still stranded, since its channel shuts for part of
+every cycle and a ship inside would be held until it opened. Halls are drawn
+to suit: one axis of a hall is hung with doors and the other is left open,
+rather than all four being doors and the connectivity pass tearing a hole in
+a wall to undo it.
+
+All of that used to be measured one tile at a time, and one tile is not a
+ship. Read that way a single-tile notch counts as a way in, so structures
+nothing could enter passed the check, and the pass that joined the pockets up
+dug single-tile channels that satisfied it and let nobody through. Seed 23
+shipped that way: 59 separate regions a hull could fly and 16,431 tiles of
+open ground it could not reach, doors counted shut, on a map the generator
+had checked and reported as one region.
 
 `mapgen --selftest` runs twelve other seeds through the same checks and is
 part of `make -C sim check`, so a change that makes the generator produce
