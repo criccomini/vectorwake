@@ -43,7 +43,7 @@ pub struct Drill {
     /// How much of the map they covered, as the count of eight-tile cells any
     /// bot stood in. A roster that finds one room and stays in it reads here.
     pub cells: usize,
-    /// Bot-ticks spent idle, travelling, fighting and leaving. A roster that is
+    /// Bot-ticks spent idle, traveling, fighting and leaving. A roster that is
     /// nearly all travel is a roster that never finds anybody, and one that is
     /// any measurable share leaving is a roster spending its life walking out:
     /// from the outside a departure looks exactly like a journey, which is why
@@ -79,7 +79,7 @@ impl Drill {
         println!("  ground   {} cells of eight tiles visited", self.cells);
         let t = self.flying.max(1) as f64;
         println!(
-            "  doing    {:.0}% idle, {:.0}% travelling, {:.0}% fighting, \
+            "  doing    {:.0}% idle, {:.0}% traveling, {:.0}% fighting, \
 {:.0}% leaving",
             100.0 * self.doing[0] as f64 / t,
             100.0 * self.doing[1] as f64 / t,
@@ -88,7 +88,7 @@ impl Drill {
         );
         let c = self.crawling.max(1) as f64;
         println!(
-            "  crawl in {:.0}% idle, {:.0}% travelling, {:.0}% fighting",
+            "  crawl in {:.0}% idle, {:.0}% traveling, {:.0}% fighting",
             100.0 * self.crawl_by[0] as f64 / c,
             100.0 * self.crawl_by[1] as f64 / c,
             100.0 * self.crawl_by[2] as f64 / c

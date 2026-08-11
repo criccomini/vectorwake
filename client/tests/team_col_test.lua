@@ -1,22 +1,22 @@
--- A colour a side, generated from its byte.
+-- A color a side, generated from its byte.
 --
 --     lua5.1 client/tests/team_col_test.lua
 --
 -- Cyan and orange answer "mine or not", and in a room holding ten sides the
--- next question is "which not-mine". A side's colour answers it, and it has
+-- next question is "which not-mine". A side's color answers it, and it has
 -- to answer without anything being sent: the same byte has to make the same
--- colour on every machine, or two players describing the same squad are
+-- color on every machine, or two players describing the same squad are
 -- describing different ones.
 --
 -- Three things can go wrong and none of them is visible in the source. A side
 -- could be issued a cyan and read as friendly, which is the one mistake here
 -- that costs somebody a life. Two sides could land near enough to be one
--- colour twice. And the generator could allocate on every call, which matters
--- because a plate asks for its colour once per ship per frame.
+-- color twice. And the generator could allocate on every call, which matters
+-- because a plate asks for its color once per ship per frame.
 --
 -- So the distances are measured rather than eyeballed, in CIE76, which is
 -- coarse next to the modern formulas and far more than enough to tell "two
--- colours" from "one colour twice".
+-- colors" from "one color twice".
 
 package.path = "client/?.lua;" .. package.path
 
@@ -59,10 +59,10 @@ local function hexof(c)
                          math.floor(c[3] * 255 + 0.5))
 end
 
--- --- it is a colour, and it is the same one every time ---------------------
+-- --- it is a color, and it is the same one every time ---------------------
 
 local c0 = pal.team(0)
-check("a side has a colour", type(c0) == "table" and #c0 == 4, hexof(c0))
+check("a side has a color", type(c0) == "table" and #c0 == 4, hexof(c0))
 check("and asking twice gives the same one", pal.team(0) == c0,
       "a fresh table a frame is an allocation in a draw loop")
 check("every byte answers", pal.team(255) ~= nil and pal.team(0) ~= nil)
@@ -77,11 +77,11 @@ for t = 0, 63 do
     local d = de(pal.team(t), pal.FRIEND)
     if d < worst then worst, worst_t = d, t end
 end
-check("no side lands on the colour that means yours", worst > 25,
+check("no side lands on the color that means yours", worst > 25,
       string.format("team %d is %.0f from FRIEND (%s)", worst_t or -1, worst,
                     hexof(pal.team(worst_t or 0))))
 
--- --- and no two sides are one colour twice ---------------------------------
+-- --- and no two sides are one color twice ---------------------------------
 
 -- Over the count a room actually holds. Sixty-four sides on one hue wheel
 -- would be indistinguishable whatever the scheme, and no zone deals that

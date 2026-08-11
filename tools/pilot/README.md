@@ -27,7 +27,7 @@ Needs `pip install websockets`.
 correctly holds a worst case of 0.50 px, which is fixed-point rounding, and a
 mean well under that. A settings or wire mismatch shows up here as a growing
 divergence and nowhere else -- a zone that raised a hull's top speed without the
-settings travelling measured 11 px of peak error while every other check on the
+settings traveling measured 11 px of peak error while every other check on the
 connection stayed green.
 
 `corrections` counts samples thrown out because the ship died or respawned

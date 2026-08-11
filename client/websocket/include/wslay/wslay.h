@@ -97,7 +97,7 @@ enum wslay_io_flags {
  * WSLAY_MSG_MORE
  *   There is more data to send
  *
- * It provides some hints to tune performance and behaviour. user_data
+ * It provides some hints to tune performance and behavior. user_data
  * is one given in wslay_frame_context_init() function. The
  * implementation of this function must return the number of bytes
  * sent. If there is an error, return -1. The return value 0 is also
@@ -352,7 +352,7 @@ typedef ssize_t (*wslay_event_recv_callback)(wslay_event_context_ptr ctx,
  * WSLAY_MSG_MORE
  *   There is more data to send
  *
- * It provides some hints to tune performance and behaviour.
+ * It provides some hints to tune performance and behavior.
  *
  * If there is an error, return -1 and set error code
  * WSLAY_ERR_CALLBACK_FAILURE using wslay_event_set_error(). Wslay

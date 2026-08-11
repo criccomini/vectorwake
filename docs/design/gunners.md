@@ -106,7 +106,7 @@ everybody aboard.
 The drones do not sit at that point, and that is the one place this drawing
 knowingly overstates the ship. A loaded Anvil is 34 pixels of drawing over 31
 of hull. Shots aimed at a drone hit nothing, and the gunner they were aimed at
-takes damage at the carrier's centre wherever its drone is drawn. A pixel and
+takes damage at the carrier's center wherever its drone is drawn. A pixel and
 a half all round is the same order as a barrel poking past a nose, which this
 roster already allows, and pulling the ring in until it were exact would put
 the drones inside the plating. Recorded rather than fixed.

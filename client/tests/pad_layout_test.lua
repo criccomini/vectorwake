@@ -47,10 +47,10 @@ end
 
 -- How much of a shape there is, where its weight sits, and how far it reaches.
 --
--- Both of the last two, because neither one is where a mark looks centred and
+-- Both of the last two, because neither one is where a mark looks centered and
 -- the answer is between them. Weighing a drawing by how much of it there is
--- puts a gun's centre near the dot, since a solid disc outweighs the hairline
--- that reaches it. Taking its extent puts the centre near the middle of the
+-- puts a gun's center near the dot, since a solid disc outweighs the hairline
+-- that reaches it. Taking its extent puts the center near the middle of the
 -- line, since the far tip of a hairline counts for as much as the dot. A strip
 -- of the mark drawn at biases either side agrees with the midpoint, so the
 -- midpoint is what is checked, and marks.BOLT_BIAS is the number that came
@@ -59,7 +59,7 @@ end
 -- `rad` is the radius of the circle a piece belongs to, where it has one.
 -- That is what tells the mark from the furniture: the pad's own ring and the
 -- gauge outside it are circles the size of the pad, and weighing them buries
--- the mark's own offset under a much larger, perfectly centred mass.
+-- the mark's own offset under a much larger, perfectly centered mass.
 local ink = {}
 local function weigh(area, x, y, rad, x0, x1, alpha)
     if area > 0 then
@@ -112,7 +112,7 @@ function layer:ring(x, y, r, w, _, c)
 end
 function layer:arc(x, y, r, a0, a1, w, _, c)
     put("arc", x - r - w, y - r - w, x + r + w, y + r + w, c).r = r
-    -- An arc's weight sits at the middle of its own sweep, not at its centre,
+    -- An arc's weight sits at the middle of its own sweep, not at its center,
     -- and it reaches only as far as its own sweep carries it.
     local d = a1 - a0
     if math.abs(d) < 1e-6 then return end
@@ -243,18 +243,18 @@ end
 -- --- and each mark sits in the middle of its pad ---------------------------
 
 -- Half way between where the drawing's weight sits and where the drawing
--- reaches, which is where it looks centred. A box alone got this wrong in the
+-- reaches, which is where it looks centered. A box alone got this wrong in the
 -- shipped build, when a bomb was a fading trail into a solid head: the box
 -- straddled the pad while everything you could see crowded one side, and the
 -- mark sat a quarter of a pad radius off while every measurement said fine.
--- Weight alone gets it wrong the other way, and centres a gun on its dot with
+-- Weight alone gets it wrong the other way, and centers a gun on its dot with
 -- the barrel hanging off the left of the pad.
 --
 -- Every loadout, because the pieces an add-on hangs on a mark are not
 -- symmetric either: a fan pulls the weight back toward the muzzle and a bounce
 -- ring pulls it forward, and the placement is the mean of what they do rather
 -- than whichever one was drawn the day it was set.
-local function mark_centre(pad, other)
+local function mark_center(pad, other)
     -- Level with the pad, which keeps the rail of charge cells above it out of
     -- the sum; within a mark's reach of it and nearer it than the trigger
     -- beside it, which keeps the other weapon and the stick's resting mark
@@ -295,15 +295,15 @@ for _, load in ipairs({
     MODS = load[2]
     local l = draw(w, h, s)
     for _, pad in ipairs({{"gun", l.guns, l.bombs}, {"bomb", l.bombs, l.guns}}) do
-        local off = mark_centre(pad[2], pad[3])
-        check("the " .. pad[1] .. " mark is centred with " .. load[1],
+        local off = mark_center(pad[2], pad[3])
+        check("the " .. pad[1] .. " mark is centered with " .. load[1],
               off and math.abs(off) < pad[2].r * 0.10,
               off and string.format("%.1f off, %.0f%% of the radius", off,
                                     100 * off / pad[2].r) or "no ink")
     end
 end
 
--- No round wears a trail. The tail is what put the bomb off centre in the
+-- No round wears a trail. The tail is what put the bomb off center in the
 -- first place: it faded to nothing along its length, so a box straddled the
 -- pad while everything visible crowded one side. It belongs to a round in
 -- flight, and a control is not showing a round going anywhere.
@@ -437,7 +437,7 @@ end
 -- most of a screen of edge to climb, and held sideways the dial takes better
 -- than half the height and leaves room for one cell. Both are measured,
 -- because the wrap is not an edge case on a landscape phone -- it is the
--- ordinary behaviour there, and it is the arithmetic that has to produce a
+-- ordinary behavior there, and it is the arithmetic that has to produce a
 -- column in one window and a block in the other.
 local TIGHT, ROOMY = 352, 1262      -- what ui.radar_span() leaves, either way
 
@@ -604,7 +604,7 @@ do
                 if math.abs(cx - pad.x) < pad.r and math.abs(cy - pad.y) < pad.r
                     and hw < pad.r * 0.9 then
                     -- A round piece reaches its own radius from its own
-                    -- centre, and a stroke reaches its far end. Neither
+                    -- center, and a stroke reaches its far end. Neither
                     -- reaches a corner of the box drawn round it, which is
                     -- what a box-only reading of this said and why a mark
                     -- inside its pad measured as a mark over the rim.

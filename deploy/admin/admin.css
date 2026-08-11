@@ -67,7 +67,7 @@ button {
 }
 button:hover { background: #10202c; }
 
-/* The one destructive control on the page wears the enemy's colour. */
+/* The one destructive control on the page wears the enemy's color. */
 #ban-button.ban { border-color: #ffa552; color: #ffa552; }
 #ban-button.ban:hover { background: #2a1c10; }
 

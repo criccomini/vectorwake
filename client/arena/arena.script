@@ -57,7 +57,7 @@ local me = 0
 -- instead.
 local watching = false
 
--- The ship whose perspective drives the camera, the colours and the sounds:
+-- The ship whose perspective drives the camera, the colors and the sounds:
 -- your own hull, or the snapshot's subject while watching. Nil when there is
 -- nobody to stand behind, which is an empty room's channel.
 local function eye()
@@ -67,14 +67,14 @@ local function eye()
     return nil
 end
 
--- The side everything on screen is coloured against.
+-- The side everything on screen is colored against.
 --
 -- Your own while flying. Also your own while watching, which is the side you
--- sat out from and the zone tells a watcher what it is: colouring from the
+-- sat out from and the zone tells a watcher what it is: coloring from the
 -- subject's side instead was the obvious reading and the wrong one, because
 -- the camera moves. It would have repainted your own teammates as enemies the
 -- moment the channel picked somebody from the other side, and it would have
--- put the card's WATCH on a hull drawn in the hostile colour.
+-- put the card's WATCH on a hull drawn in the hostile color.
 --
 -- 255 belongs to no side, which is what a stranger who arrived to watch gets:
 -- nobody out there is theirs, and nothing reads as friendly.
@@ -173,7 +173,7 @@ local layers = nil
 -- tiles either side and 56 leaves precisely one rebuild's margin; past that
 -- the margin goes negative and terrain stops in mid air, short of an edge the
 -- player can plainly see over. Rebuilding does not close it, because the
--- window is recentred rather than widened, which is why it reads as a gap
+-- window is recentered rather than widened, which is why it reads as a gap
 -- that follows you.
 local STATIC_STEP = 16
 -- What a 1280-wide window needs, and the floor: a window smaller than this
@@ -580,7 +580,7 @@ local function rebuild_static(tx, ty)
         end
     end
     static_tx, static_ty = tx, ty
-    -- Spawns and goals are drawn in the colour of whoever owns them, and the
+    -- Spawns and goals are drawn in the color of whoever owns them, and the
     -- terrain is built long before the frame that draws a ship, so the team
     -- goes in here rather than being passed down every call.
     world.my_team = (sim.ship_count() > 0) and eye_team() or 0
@@ -722,7 +722,7 @@ local function drain_kills()
             and (" (+" .. k.paid .. ")") or ""
         -- Two lines out of every feed are about you, and they are the two
         -- worth finding without reading: green when you took somebody, red
-        -- when somebody took you. Everything else stays the feed's own colour,
+        -- when somebody took you. Everything else stays the feed's own color,
         -- because a feed where every line is lit says nothing by lighting one.
         --
         -- Yours outranks theirs when you managed both at once, which is a
@@ -765,7 +765,7 @@ local function drain_comings()
 end
 
 local function drain_events()
-    -- The perspective every colour and sound is judged from. While watching
+    -- The perspective every color and sound is judged from. While watching
     -- it is the subject, and 255 when the channel has nobody: a ship index
     -- that matches no one, which the world code treats as "none of these are
     -- yours", the reading a watcher wants.
@@ -1603,11 +1603,11 @@ function update(self, dt)
                 -- is itself the notice that something hit you, which is why it
                 -- is absent at full rather than merely empty.
                 --
-                -- Your own grades from team colour into the hurt colours as it
+                -- Your own grades from team color into the hurt colors as it
                 -- falls. That used to be the corner bar's job and the corner
                 -- bar is gone: without this a pilot at eight percent and a
                 -- pilot at ninety would be told the same thing in the same
-                -- colour, and the length of a 22-pixel bar is not a warning.
+                -- color, and the length of a 22-pixel bar is not a warning.
                 local frac = sim.ship_energy(i) / math.max(1, sim.ship_max_energy(i))
                 if frac < 0.995 then
                     local bar_col = col
@@ -1895,7 +1895,7 @@ function update(self, dt)
 
     -- The page draws its own starfield and wordmark while four megabytes of
     -- engine compile. This is the moment it can stop: not when the runtime
-    -- initialised, which is seconds earlier, but when there is something on
+    -- initialized, which is seconds earlier, but when there is something on
     -- screen to hand over to.
     if not self.handed_over then
         self.handed_over = true
@@ -2129,7 +2129,7 @@ function on_message(self, message_id, message)
             layers.glow.px = px
             -- The terrain mesh has this baked into every face it drew, so a
             -- window meshed against the old one is wrong until it is built
-            -- again. Forgetting where it was centred is what asks for that.
+            -- again. Forgetting where it was centered is what asks for that.
             if px ~= self.px then
                 self.px = px
                 static_tx = nil

@@ -9,7 +9,7 @@ The format is documented here because our converter reads it. That converter is
 `sim/tools/lvl2vw.c`, and
 [architecture/content-pipeline.md](../architecture/content-pipeline.md) says how
 to run it. The output looks nothing like the input: a tile in vectorwake is its
-behaviour, so the 160 wall pictures collapse to one class and the tileset does
+behavior, so the 160 wall pictures collapse to one class and the tileset does
 not survive the trip.
 
 ## The file
@@ -18,7 +18,7 @@ not survive the trip.
 +-------------------------+  0
 | BITMAPFILEHEADER        |
 | BITMAPINFOHEADER        |
-| 256-colour palette      |
+| 256-color palette      |
 | pixels: the tileset     |
 +-------------------------+  bfReserved1 (optional)
 | eLVL metadata           |

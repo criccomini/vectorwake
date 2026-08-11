@@ -81,12 +81,12 @@ extern "C" {
 #define SIM_BTN_SLOT_MASK 0x0180u
 #define SIM_BTN_SLOT(b) (((b) & SIM_BTN_SLOT_MASK) >> SIM_BTN_SLOT_SHIFT)
 
-/* What a tile does. The original encoded behaviour in the tile's own number
+/* What a tile does. The original encoded behavior in the tile's own number
  * -- doors at 162 through 169, a safe zone at 171, scenery you fly under at
  * 176 through 190 -- so every rule in the engine was a range check against a
  * magic constant, and a map editor had to know all of them.
  *
- * Here a tile is its behaviour and nothing else. How it is drawn is the
+ * Here a tile is its behavior and nothing else. How it is drawn is the
  * client's business, which is why there are nine of these rather than 190.
  *
  * The byte is class in the low nibble and a variant in the high one: doors
@@ -193,7 +193,7 @@ void sim_map_pit(sim_map *m);
  * original; one mechanism here.
  *
  * Two things stay out deliberately. Appearance is the client's, keyed by spec
- * id in its own table -- the simulation carries no colours, exactly as a tile
+ * id in its own table -- the simulation carries no colors, exactly as a tile
  * class carries no picture. And nothing here is per-shot random: the angles
  * come out of the table, so a rosette is the same rosette on every machine.
  */
@@ -297,11 +297,11 @@ typedef struct {
      * standstill. */
     uint8_t still;
     /* arrival: what counts as having got somewhere */
-    int32_t trigger;      /* Q8 px from a hull centre; 0 is contact */
+    int32_t trigger;      /* Q8 px from a hull center; 0 is contact */
     uint8_t expire_ends;  /* whether running out of life also counts */
     uint8_t splinter;     /* a pattern fired where it ended, or SIM_NO_PATTERN */
     /* ending */
-    int32_t damage;          /* Q10 energy at the centre */
+    int32_t damage;          /* Q10 energy at the center */
     /* Damage a rung adds, which is BulletDamageUpgrade. Zero on everything
      * whose ladder is a row of separate specs, and set on the fragment, whose
      * rung is its thrower's gun rather than a ladder of its own. */
@@ -349,7 +349,7 @@ typedef enum {
  * One flat space, because the whole tech tree is one shape: a count with a
  * ceiling. A stat count interpolates a range, a level count indexes a
  * ladder, an add-on count transforms what a trigger fires. The zone weights
- * this space to decide what its greens are; the client colours and names
+ * this space to decide what its greens are; the client colors and names
  * from it; a prize carries one byte of it.
  *
  *   0 .. 4     a stat            sim_upgrade
@@ -502,7 +502,7 @@ typedef struct {
      * them, and a side forms up before it flies anywhere.
      *
      * Above zero the tiles are ignored and a ship lands on a random tile
-     * within this many of the map's centre, which is the arrangement the
+     * within this many of the map's center, which is the arrangement the
      * original had before it had spawn points at all. It buys one thing:
      * everybody is the same distance from the middle. Our own generator
      * scatters a team's starts across nearly half the map, so under tiles two
@@ -520,7 +520,7 @@ typedef struct {
      * consequence rather than a default somebody can override: with a radius
      * nobody arrives on those tiles, so a mark on one is a lie rather than a
      * preference. What this setting is actually for is the other case. We draw
-     * every spawn, including the enemy's, in the enemy's colour, so a zone
+     * every spawn, including the enemy's, in the enemy's color, so a zone
      * that does not want one side's home end advertised to the other has to be
      * able to say so. */
     uint8_t show_spawns;

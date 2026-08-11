@@ -13,7 +13,7 @@ buffer, so there is one file per sound and each keeps the name its component
 uses.
 
 Twelve of them are the weapon ladders, four rungs each of `gun`, `bomb` and
-`blast`. Every buffer is normalised to one peak, so a heavier weapon has to get
+`blast`. Every buffer is normalized to one peak, so a heavier weapon has to get
 its loudness from the gain here.
 
 Those gains are not in ascending order and that is not a mistake to fix. The

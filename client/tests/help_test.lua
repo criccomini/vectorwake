@@ -249,7 +249,7 @@ local FEED = "who paid whom"
 
 -- Two things this deliberately does not say, each because the instrument
 -- already says it. The energy pip empties when you are shot, and four bars
--- labelled LINK are a sentence about the connection.
+-- labeled LINK are a sentence about the connection.
 local SILENT = {"armour and ammunition, one pool", "your line to the arena"}
 
 local ALL = {GUN, BOMB, CHG, BST, BTY, RADAR, FEED}
@@ -318,7 +318,7 @@ check("open space answers nothing", ui.help_at(W * 0.72, H * 0.55) == nil,
 -- --- pointing at a row answers beside that row ----------------------------
 --
 -- The whole promise, and the one that breaks silently. A card's worth of words
--- is taller than the row it belongs to, so the block is centred on the row and
+-- is taller than the row it belongs to, so the block is centered on the row and
 -- pushed back on screen at the edges, and either of those can drift far enough
 -- to name the row above instead.
 

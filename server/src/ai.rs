@@ -246,7 +246,7 @@ pub struct Scan {
     /// matching how headings are measured everywhere else here.
     ///
     /// The router answers a different question. Its grid is two-tile cells and
-    /// its routes are legs between cell centres, so it knows the way through a
+    /// its routes are legs between cell centers, so it knows the way through a
     /// maze and nothing about the wall eight pixels off this hull's bow in the
     /// middle of a leg. The whiskers are the short-range sense the routes fly
     /// by, and the pairing halved the wall contacts the router alone left.
@@ -275,7 +275,7 @@ const WHISKER_PX: f32 = 176.0;
 fn whisker(w: &World, x: f32, y: f32, dx: f32, dy: f32, r: f32) -> f32 {
     // The full radius and a few pixels of slack, not a fraction of it. The
     // width this answers is "can this hull fly down there", and the shipped
-    // maps hold passages a hull fits through only if centred to the pixel --
+    // maps hold passages a hull fits through only if centered to the pixel --
     // a 46 px hull at a 48 px gap. A capsule narrower than the hull calls
     // those open, and a bot believes it, clips the corner, and spends its
     // life being un-stuck; asking for the hull plus room to manoeuvre makes
@@ -911,12 +911,12 @@ impl Bot {
     /// does between fights: a bot that vanished mid-duel would be a bug the
     /// person it was fighting could see.
     /// What this pilot thinks it is doing, for the drill to count. A roster
-    /// that is 90% travelling is a roster that never finds anybody, and that
+    /// that is 90% traveling is a roster that never finds anybody, and that
     /// is not visible from the outside: a bot flying hard at nothing looks
     /// exactly like a bot flying hard at somebody.
     pub fn doing(&self) -> usize {
         // Leaving first, because from the outside it looks exactly like
-        // travelling and a roster quietly spending its life walking out is the
+        // traveling and a roster quietly spending its life walking out is the
         // failure this counter exists to make visible.
         if self.exit != Exit::Staying {
             return 3;
@@ -1640,7 +1640,7 @@ impl Bot {
 
     /// Bend the wanted velocity off the line of an arriving round.
     ///
-    /// Not a separate behaviour with its own buttons: a dodge is a different
+    /// Not a separate behavior with its own buttons: a dodge is a different
     /// answer to "where do I want to be going", and putting it here means it
     /// composes with whatever the pilot was already doing rather than
     /// interrupting it.
@@ -1706,7 +1706,7 @@ impl Bot {
     /// is straight back out of it.
     ///
     /// This is the short-range half of not hitting walls; the router is the
-    /// long-range half. The router flies legs between two-tile cell centres
+    /// long-range half. The router flies legs between two-tile cell centers
     /// and knows nothing about the wall eight pixels off the bow mid-leg,
     /// which is exactly the distance this answers.
     fn bend(&self, want: f32, dist: f32) -> f32 {

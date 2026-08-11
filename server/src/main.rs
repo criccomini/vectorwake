@@ -103,7 +103,7 @@ const C2S_ATTACH: u8 = 10;
 /// scout team it imitates pays for a seat, shows on radar, and can be shot.
 const C2S_WATCH: u8 = 9;
 /// This client is a bot and says so. Everything that follows from the
-/// declaration is in the arena's favour, which is why a well-behaved bot sets
+/// declaration is in the arena's favor, which is why a well-behaved bot sets
 /// it: a declared bot is labeled in the roster, sits outside the human cap, and
 /// is asked to leave before a human is ever refused a seat. Anybody may set it.
 /// See docs/architecture/ai-runtime.md.
@@ -310,7 +310,7 @@ struct Watcher {
 /// has not shown yet.
 struct ChannelFrame {
     tick: u32,
-    /// Whose hull this frame is centred on, 255 for an empty room. Kept
+    /// Whose hull this frame is centered on, 255 for an empty room. Kept
     /// beside the bytes because it is the answer to "who is being seen right
     /// now", which is a question about the frame going out rather than about
     /// the camera: with a delay on the channel those are seconds apart.
@@ -370,7 +370,7 @@ impl Player {
     /// File an input for the tick it names.
     ///
     /// An input for a tick already simulated is applied now instead. That is
-    /// the old behaviour and the right fallback: the server must not rewind the
+    /// the old behavior and the right fallback: the server must not rewind the
     /// room to honour one late packet, which is the lag compensation
     /// docs/architecture/networking.md rules out, and a client with no lead at
     /// all keeps working exactly as it did.
@@ -1148,7 +1148,7 @@ impl Room {
     ///
     /// They were three hundred tiles apart, which reads well and made the flag
     /// game unplayable: the shipped War map starts its pilots in a 68-tile box at
-    /// the centre, so the nearest flag was two hundred tiles away, past sixty
+    /// the center, so the nearest flag was two hundred tiles away, past sixty
     /// tiles of sight, past the radar, and past anything that would take a pilot
     /// there. Watched live for four minutes: forty-two kills, four flags, and the
     /// banner never moved off "flags 0 - 0, 4 loose". Nobody had touched one.
@@ -1552,7 +1552,7 @@ impl Room {
     fn fresh_team_name(&mut self) -> String {
         const WORDS: [&str; 24] = [
             "Anvil Watch", "Black Sill", "Cold Harbour", "Deep Keel",
-            "Ember Line", "Far Reach", "Grey Span", "High Trestle",
+            "Ember Line", "Far Reach", "Gray Span", "High Trestle",
             "Iron Weir", "Long Lintel", "Mill Race", "North Gantry",
             "Old Causeway", "Pale Arch", "Quarry Gate", "Red Culvert",
             "Salt Pier", "Stone Chord", "Tall Derrick", "Under Span",
@@ -5511,7 +5511,7 @@ mod tests {
     }
 
     #[test]
-    fn a_declared_bot_is_labelled_and_rated_as_one() {
+    fn a_declared_bot_is_labeled_and_rated_as_one() {
         // Players deserve to know who they are fighting, and a rating system
         // that quietly mixes bots into your record is one nobody will trust.
         // Both come from what the client declared rather than from a roster the
@@ -6330,7 +6330,7 @@ mod tests {
         assert!(
             read.values()
                 .any(|(name, l)| name == "p0-0" && *l == token::Label::Unknown.to_byte()),
-            "the human we seated is in it, and not labelled a bot"
+            "the human we seated is in it, and not labeled a bot"
         );
         assert!(
             read.values().any(|(_, l)| *l == token::Label::ThirdPartyBot.to_byte()),
@@ -7811,7 +7811,7 @@ mod tests {
         assert!(warn.is_empty(), "alpha's own file warns: {warn:?}");
 
         // The control, and it has to be here. A weapon name this file does not
-        // recognise is not an error -- an unknown name *makes* a weapon, which
+        // recognize is not an error -- an unknown name *makes* a weapon, which
         // is how a zone adds one -- so a typo in a block above is a new dead
         // weapon and no warning. Reading a number alpha shares with the
         // baseline would then pass on a file that never applied. The burst's

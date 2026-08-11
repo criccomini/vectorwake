@@ -105,9 +105,9 @@ them for another reason, never in a sweep of their own.
 
 American spelling, everywhere: color, not colour. This holds for what the game
 says to a player, for comments, for commit messages and for chat. The
-repository was written in British spelling to start with, so most of it still
-reads the other way; that is a sweep waiting to happen and not a licence to
-match the neighbours in new work.
+repository was written in British spelling to start with and has been swept
+once, so a `colour` or a `centre` turning up now is a line that arrived from
+somewhere else rather than a house habit to match.
 
 ## Memory
 

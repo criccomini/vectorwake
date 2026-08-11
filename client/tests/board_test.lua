@@ -110,7 +110,7 @@ ui.finish()
 check("a touchscreen gets rows, not a picture of keys", #frames == 0,
       "frames: " .. #frames)
 
--- Every colour the board lights a key in has a word under it, and the words
+-- Every color the board lights a key in has a word under it, and the words
 -- are the whole of the explanation now that the line of prose naming the
 -- interface keys is gone.
 local LEGEND_WORDS = {}
@@ -169,7 +169,7 @@ for _, shape in ipairs({{1280, 800}, {1920, 1080}, {900, 600}, {1400, 400},
 end
 
 -- The legend wraps rather than running off the end of the board. Eight
--- colours and their words fit across a wide board and do not fit across a
+-- colors and their words fit across a wide board and do not fit across a
 -- narrow one, and a line that overflowed would carry away the last two of
 -- them. Since the captions naming those keys are gone, the legend is the only
 -- place the page says what they are.

@@ -17,7 +17,7 @@
 # Stood on its middle vertical. Three wedges are one and three quarters as
 # wide as they are tall, so a square tile holds the mark at barely half its
 # height, and centring the box it fills leaves the standing strokes visibly
-# right of centre. Putting the middle vertical on the tile's centre line puts
+# right of center. Putting the middle vertical on the tile's center line puts
 # the other two evenly either side of it and runs the first wake's faded end
 # off the left edge, where it carries no ink to lose. The favicon is placed the
 # same way for the same reason; this keeps the mark's own hairline cut, because
@@ -50,7 +50,7 @@ def cut(svg):
     """The mark, full bleed and stood on its middle vertical."""
     svg = svg[svg.index("<svg"):]
     # A vertical is the one path whose two ends share an x. The middle of the
-    # three is what the tile's centre line is for.
+    # three is what the tile's center line is for.
     verts = sorted(float(m) for m in
                    re.findall(r'<path d="M([\d.]+),[\d.]+ L\1,[\d.]+"', svg))
     if len(verts) != 3:

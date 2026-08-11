@@ -39,7 +39,7 @@ end
 -- One line, or three when the fan is on; a ring round each dot when the
 -- rounds come back off walls. It was a tapered streak once, drawn the way the
 -- arena draws a bolt in flight, and at the size a corner allows that came out
--- as a grey smudge with a speck on it. What survives being drawn small is a
+-- as a gray smudge with a speck on it. What survives being drawn small is a
 -- line and a dot.
 M.BOLT_LEN, M.BOLT_DOT, M.BOLT_FAN = 1.4, 0.17, 0.47
 
@@ -96,10 +96,10 @@ end
 -- bomb in flight. Two things were wrong with that. An icon is not a round in
 -- flight: it says which weapon a trigger fires, and a streak of motion on a
 -- thing sitting still in a corner is a picture of the wrong moment. And it
--- cannot be centred, because it fades to nothing along its length, so it drags
+-- cannot be centered, because it fades to nothing along its length, so it drags
 -- the drawing off to one side while a bounding box reports the mark as square
 -- in the middle. Three separate attempts to bias it into place all landed
--- somewhere a screenshot said was still off. A ring about a point is centred
+-- somewhere a screenshot said was still off. A ring about a point is centered
 -- where it is drawn.
 -- The core fills most of the ring, which is the proportion the arena draws a
 -- bomb in flight at: a 3.6 core inside a 4.6 ring, so the two read as one
@@ -131,7 +131,7 @@ function M.charge(slot, cx, cy, k, col)
     elseif slot == 2 then
         -- The same shape the world draws, at the same fixed rotation, so the
         -- pad and the thing it puts down are recognisably one object. Hollow,
-        -- because a dark centre is the whole of what separates a mine from a
+        -- because a dark center is the whole of what separates a mine from a
         -- bomb at a glance.
         local rot, hub = 0.26, k * 0.30
         local pts = {}
@@ -194,7 +194,7 @@ local function draw_round(m, col)
     if m.bolt then barrel(m, 0, col) else M.bomb_head(m.x, m.y, m.k, col) end
 end
 
--- Every add-on takes the mark, a colour and how many rungs deep it is, and
+-- Every add-on takes the mark, a color and how many rungs deep it is, and
 -- draws its rungs rather than reporting them. A number beside a symbol was
 -- what the stack did before, and it made a corner of arithmetic out of six
 -- facts a shape can carry: one rung of multifire is two more barrels, one rung
@@ -376,7 +376,7 @@ M.MARK_REACH = 1.05
 -- the one above.
 M.FIELD_MAX = M.MARK_REACH + 0.10
 
--- Where to put the round so that the mark reads as centred on the point it was
+-- Where to put the round so that the mark reads as centered on the point it was
 -- given, which is not the same as putting the round there.
 --
 -- A gun is not symmetric about its own round: three lines leaving a muzzle a
@@ -385,14 +385,14 @@ M.FIELD_MAX = M.MARK_REACH + 0.10
 --
 -- Measured rather than worked out, and measured as the mean of two answers
 -- that disagree. Weighing the drawing by how much of it there is puts the
--- centre near the dot, because a solid disc outweighs the hairline that
--- reaches it; taking the drawing's extent puts the centre near the middle of
+-- center near the dot, because a solid disc outweighs the hairline that
+-- reaches it; taking the drawing's extent puts the center near the middle of
 -- the line, because the far tip of a hairline counts for as much as the dot.
 -- Both are wrong in a direction, the eye lands between them, and a strip of
 -- the mark drawn at biases either side of the midpoint agrees with it. Then
 -- averaged over the loadouts a trigger can wear, since a fan pulls the weight
 -- back toward the muzzle and a bounce ring pulls it forward and no one case is
--- the one to favour.
+-- the one to favor.
 --
 -- The bomb wants nothing. It is a ring about a point, so the two answers are
 -- the same answer and both are zero.
@@ -435,9 +435,9 @@ local function ship_multi_off(me)
     return me and sim.ship_multi_off and sim.ship_multi_off(me)
 end
 
--- The rung a trigger is on, for a caller that colours something around a
+-- The rung a trigger is on, for a caller that colors something around a
 -- mark rather than drawing the mark itself. Exported because the pads ring
--- themselves in the round's own colour, and reading the core for that while
+-- themselves in the round's own color, and reading the core for that while
 -- the mark read the held copy is exactly the split this module exists to
 -- prevent: it put an orange fan inside a green ring for the length of a
 -- respawn wait.
@@ -447,12 +447,12 @@ end
 
 -- A trigger's mark: the round it fires, wearing what the greens did to it.
 --
--- In the round's own colour, which is the colour it will be when it leaves the
+-- In the round's own color, which is the color it will be when it leaves the
 -- gun: one ramp for every round in the game, so the rung a weapon has climbed
 -- is legible here exactly as it is legible coming at you across the arena, and
 -- a player who has learned one has learned the other.
 --
--- The add-ons are the same colour run hot, so what a green added reads as part
+-- The add-ons are the same color run hot, so what a green added reads as part
 -- of the round rather than as a separate object parked next to it. Two of the
 -- six are not that.
 --
@@ -460,12 +460,12 @@ end
 -- it is worn on. A fragment is a bullet, and the core reads which one off the
 -- guns at the throw, so a bomber who finds gun prizes watches the fragments on
 -- their bomb mark climb the ramp while the bomb under them stays put. It is
--- also the colour those fragments come out in across the arena, which is the
+-- also the color those fragments come out in across the arena, which is the
 -- point of there being one ramp.
 --
 -- Multifire is the one add-on that decorates nothing. Its extra barrels are
 -- the round itself, fired from the same muzzle on the same spec, which is why
--- the arena draws all three bullets in one colour. Run hot with the rest, the
+-- the arena draws all three bullets in one color. Run hot with the rest, the
 -- mark said the middle bullet was a different weapon from the two beside it,
 -- and disagreed with the arena about the only fact this ramp exists to carry.
 --
@@ -496,7 +496,7 @@ function M.weapon(cx, cy, k, me, t)
     -- so is a weapon that looks broken.
     local off = ship_multi_off(me)
     m.off = off and true or false
-    -- What goes under the round goes down first, in the round's own colour
+    -- What goes under the round goes down first, in the round's own color
     -- rather than the add-on's hot one: a fuse is not a thing stuck on a bomb,
     -- it is how far the bomb reaches, so it is the bomb faintly over the area
     -- it reaches. Then the round, then everything worn on it.
@@ -507,19 +507,19 @@ function M.weapon(cx, cy, k, me, t)
     draw_round(m, base)
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a
-    -- different colour stuck on the side of it.
+    -- different color stuck on the side of it.
     local add = pal.a(pal.hot(pal.rung(lvl), 0.45), 0.95)
     -- And the one add-on whose magnitude lives on the other ladder.
     local frag = pal.a(pal.hot(pal.rung(ship_lvl(me, sim.TRIG_GUN)), 0.45), 0.95)
     for i = 1, #pal.MODS do
         local n = ship_mod(me, t, i - 1)
         if n > 0 then
-            -- More of the round is the round's own colour; everything else is
+            -- More of the round is the round's own color; everything else is
             -- the round run hot. See above.
             local col = (i == 1) and base or add
             -- Except the fragments, which are a different weapon's rung. See
             -- above; on a hull whose two ladders are level they come out the
-            -- same colour as the rest, which is the honest answer.
+            -- same color as the rest, which is the honest answer.
             if i == 4 then col = frag end
             -- Except when you have declined it, which is the one time the
             -- barrels either side really are not the round you are firing.

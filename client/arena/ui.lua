@@ -111,7 +111,7 @@ local text_dim = 1
 
 -- Which voice the interface is speaking in. The HUD is read at a glance, over
 -- a fight, out of the corner of an eye, and capitals are the case an
--- instrument is labelled in. The menu is read rather than glanced at, and a
+-- instrument is labeled in. The menu is read rather than glanced at, and a
 -- page of capitals is a page nobody reads twice, so it takes a sentence's
 -- case: one capital at the front and nothing else shouting.
 --
@@ -225,9 +225,9 @@ end
 -- the antenna over it says it twice.
 --
 -- `k` is the width of the shell. `y` is the middle of the line it sits on, so
--- a caller can hand it a row's centre without knowing the height.
+-- a caller can hand it a row's center without knowing the height.
 --
--- HELM_NECK is how far below the centre the collar cuts, in radii. Both
+-- HELM_NECK is how far below the center the collar cuts, in radii. Both
 -- shells are cut off there and sit on the same run of line, so the mark's
 -- height is what it actually draws rather than a box of air around it.
 local HELM_NECK, HELM_COLLAR = 0.68, 1.26
@@ -305,7 +305,7 @@ end
 -- whole of the difference and all it needs to be.
 --
 -- Three sides and a collar rather than a closed outline. Closing it lays the
--- box's own base under the collar, and two lines of one colour on one pixel
+-- box's own base under the collar, and two lines of one color on one pixel
 -- row is a brighter line wherever these marks draw at part alpha, which is
 -- every nameplate in the arena.
 --
@@ -404,7 +404,7 @@ end
 
 -- A machine: the boxed shell, two lamps, and the antenna over the crown.
 --
--- `x` is its left edge rather than its centre, because every caller of this
+-- `x` is its left edge rather than its center, because every caller of this
 -- one is laying a row out left to right and knows where the mark starts.
 --
 -- Lamps rather than a visor, and a flat crown to stand them under. The
@@ -720,15 +720,15 @@ end
 -- given: a view without you on it is a view with no origin.
 -- The team a perspective seat is on, guarded: the hud's `me` is the watched
 -- subject while spectating and nil when the channel has nobody, and 255 is
--- the byte that belongs to no side, so an absent eye colours everybody
--- hostile the way a free-for-all already colours everyone who is not you.
+-- the byte that belongs to no side, so an absent eye colors everybody
+-- hostile the way a free-for-all already colors everyone who is not you.
 local function team_of(i)
     if not i or i < 0 or i >= sim.ship_count() then return 255 end
     return sim.ship_team(i)
 end
 
 -- The side this screen belongs to, which is not always the side of the hull
--- it is centred on.
+-- it is centered on.
 --
 -- Flying they are the same and it never mattered. Watching they come apart:
 -- the camera stands behind whoever the channel picked, and deriving "my team"
@@ -738,15 +738,15 @@ end
 -- told this client its side is.
 local view_team = 255
 
--- What colour to write a side's name in.
+-- What color to write a side's name in.
 --
 -- Yours is cyan, always, whichever byte it happens to be: "mine" is a reading
--- a pilot makes before they read anything, and a side that changed colour on
+-- a pilot makes before they read anything, and a side that changed color on
 -- you when the zone shuffled the numbers would break it. Everybody else wears
--- the colour their byte generates.
+-- the color their byte generates.
 --
 -- Only words go through this. Hulls, plates, rounds and the radar keep the two
--- colours, because those are glanced at and a glance holds one bit.
+-- colors, because those are glanced at and a glance holds one bit.
 local function team_col(t)
     if t == view_team then return pal.FRIEND end
     return pal.team(t)
@@ -793,14 +793,14 @@ local function radar(cx, cy, me)
     -- pixel grid it is drawn on.
     --
     -- A blip is a square about 2.8 pixels across with a hard edge, and a hard
-    -- edge that size covers two pixel centres at some sub-pixel offsets and
+    -- edge that size covers two pixel centers at some sub-pixel offsets and
     -- three at others: four pixels of area against nine, a bit over twice the
     -- ink, flipping as the fraction rolls over. Every blip shares the fraction,
     -- because they are a regular grid under one affine map, so the whole map
     -- breathes at once and reads as the terrain blinking off and on.
     --
     -- Two things fix it and both are free. A whole number of pixels covers
-    -- exactly that many centres wherever it starts, so the size stops
+    -- exactly that many centers wherever it starts, so the size stops
     -- mattering; and snapping the camera to a whole dial pixel leaves every
     -- blip's own fraction fixed, so the pattern slides rigidly rather than
     -- each square shifting off its neighbours. What a blip stands for is a
@@ -930,7 +930,7 @@ end
 -- frame a map arrives and the frame the next one does.
 --
 -- Constants rather than calls in the loop below, which runs a couple of
--- thousand times a frame: `pal.a` builds a colour, and building four of them
+-- thousand times a frame: `pal.a` builds a color, and building four of them
 -- per rectangle is work for the collector rather than for the screen.
 local MAP_WALL = pal.a(pal.RADAR_TILE, 0.85)
 local MAP_SAFE = pal.a(pal.RADAR_SAFE, 0.95)
@@ -983,7 +983,7 @@ end
 --
 -- Screen space, because text is: the world is a mesh and glyphs come from a
 -- gui font. The projection is the render script's -- a fixed world extent
--- across the shorter axis, centred on the camera -- so one number converts
+-- across the shorter axis, centered on the camera -- so one number converts
 -- between them and the two cannot drift.
 -- Nothing here is clickable, deliberately. The left button is the gun and the
 -- right one is the bomb, and a hit box publishes over both: a box on a hull,
@@ -1036,7 +1036,7 @@ local function nameplates(o)
     -- the view_tiles setting put every name adrift the moment the camera
     -- stopped being driven by that setting -- which it already had.
     local scale = W / (2 * o.half_w)
-    -- The one hull that goes unlabelled is your own, and a watcher has none.
+    -- The one hull that goes unlabeled is your own, and a watcher has none.
     -- The pilot being observed therefore wears their name and their bounty
     -- exactly like everybody else on screen: "who am I looking at" is the
     -- question a spectator has most of, and the answer belongs on the hull
@@ -1095,12 +1095,12 @@ local function nameplates(o)
                                  sy + 13 * S, pal.a(col, 0.45), 10 * S)
                     end
                     if bty > 0 then
-                        -- In the side's colour rather than the bounty gold,
+                        -- In the side's color rather than the bounty gold,
                         -- so the name and the number under it read as one
                         -- label belonging to one squad. Gold said "this is a
                         -- bounty", which the position under a name already
                         -- says, and it said it identically for every pilot on
-                        -- screen: the one thing a colour here can carry is
+                        -- screen: the one thing a color here can carry is
                         -- whose they are.
                         txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
                             pal.a(col, 0.85))
@@ -1455,10 +1455,10 @@ local function scores(me, pilots, watchers)
         local mine = r.i ~= nil and r.i == me
         local reading = r.i ~= nil and M.inspect == r.i
         -- A watcher is on nobody's side, so it is drawn in neither side's
-        -- colour: the neutral ink, dimmer than a pilot, which is the reading.
+        -- color: the neutral ink, dimmer than a pilot, which is the reading.
         local col = pal.DIM
         if not r.watch then
-            -- The same colour their plate wears out in the arena. A key is
+            -- The same color their plate wears out in the arena. A key is
             -- only a key if it reads the same in both places: a name orange
             -- here and violet on the hull is two facts about one pilot.
             col = team_col(sim.ship_team(r.i))
@@ -1467,7 +1467,7 @@ local function scores(me, pilots, watchers)
             -- Your row, marked the way a selected row is marked everywhere
             -- else in this interface: a lit rule and a wash off it, not a
             -- glyph in front of your name. The row being read about wears the
-            -- same mark, in its own colour, since it is a selection and this
+            -- same mark, in its own color, since it is a selection and this
             -- is how this interface draws one.
             local mark = reading and pal.BOUNTY or pal.FRIEND
             wash(x, y, w, LINE * S, pal.a(mark, 0.13))
@@ -1492,12 +1492,12 @@ local function scores(me, pilots, watchers)
             -- Kills, deaths and points all in ink. Deaths read dimmer than
             -- the two beside them for a while, which was a judgement about
             -- the number rather than a fact about it: a column is either a
-            -- score this board keeps or it is not on the board, and greying
+            -- score this board keeps or it is not on the board, and graying
             -- one of the three says the reader should care less about it
             -- while still making them read past it.
             txt(tostring(r.k), kx, cy, num, pal.a(pal.INK, 0.85), "right")
             txt(tostring(r.d), dx, cy, num, pal.a(pal.INK, 0.85), "right")
-            -- The bounty in gold, which is the colour it wears on a
+            -- The bounty in gold, which is the color it wears on a
             -- nameplate, in the corner stack and in the box this row opens.
             -- Points held the gold while it was the only score here; with
             -- both on the row, one of them has to be the one that means
@@ -1708,9 +1708,9 @@ end
 -- The corner stack: what the triggers do, what you carry and can spend, and
 -- what you are worth. Five rows, no panel and no rules between them.
 --
--- What a trigger does is the team colour and what you carry is gold, and that
+-- What a trigger does is the team color and what you carry is gold, and that
 -- separation is the whole reason there is no divider: a rule between them
--- would say a second time what the colour already says once.
+-- would say a second time what the color already says once.
 --
 -- Energy is not here. Your own hull carries the pip every other hull carries,
 -- so a bar in a corner was the same number drawn twice in the place you are
@@ -1762,8 +1762,8 @@ end
 
 -- A charge is whatever the zone put in the slot, so the mark follows the
 -- name and an unfamiliar one falls back to the prize shape it arrived as.
--- Each in the colour it goes off in: a repel is the gold of the count beside
--- it, a burst the violet of the two dozen rounds it throws. Grey said
+-- Each in the color it goes off in: a repel is the gold of the count beside
+-- it, a burst the violet of the two dozen rounds it throws. Gray said
 -- "instrument" on a row where every other mark now says what the thing is.
 local CHARGE_GLYPHS = {repel = gl_rings, burst = gl_burst}
 local CHARGE_HUES = {repel = pal.CHARGE_COL, burst = pal.BURST}
@@ -1846,7 +1846,7 @@ local function status(me, charges, lift)
     local rows_h = 22 * z
     local x = SL + PAD * S
     -- The axis every mark stands its subject on: the head of each round, the
-    -- centre of the repel's rings and the burst's hub, the middle of the
+    -- center of the repel's rings and the burst's hub, the middle of the
     -- green. Far enough in that a bolt's trail, which runs a hull and a half
     -- back from its head, still starts inside the margin.
     local mid = x + 15 * z
@@ -1870,11 +1870,11 @@ local function status(me, charges, lift)
     -- A weapon row is the mark and nothing else.
     --
     -- The level was three cyan rungs in the counting column beside it, which
-    -- is where the number lived before the round had a colour of its own. It
+    -- is where the number lived before the round had a color of its own. It
     -- has one now: a round is drawn in the hue of the rung it is fired at, on
     -- one ramp for the whole game, so the corner already says what the ladder
     -- said and says it in the same terms the arena does. Two answers to one
-    -- question, and the second one in the team's colour, which the level is
+    -- question, and the second one in the team's color, which the level is
     -- nothing to do with.
     for t = 0, SIM_TRIGGERS - 1 do
         if sim.has_trigger(me, t) then
@@ -2008,10 +2008,10 @@ local function inspect(o, top)
     -- side is always yours to know, whatever it is marked, since you are in it.
     --
     -- What is withheld is the *name*. Which side somebody is on is on their
-    -- hull, in the colour of their plate, and has been since the plates
+    -- hull, in the color of their plate, and has been since the plates
     -- started carrying it, so a row that said nothing at all would be keeping
     -- a secret the screen has already given away. The row is always drawn, in
-    -- the side's colour; a side this pilot may not have named reads as
+    -- the side's color; a side this pilot may not have named reads as
     -- "private", which is the honest answer and the one the zone intends.
     local side, side_named = nil, false
     for _, t in ipairs(o.teams or {}) do
@@ -2083,8 +2083,8 @@ local function inspect(o, top)
             "right", nil, raw)
         ry_ = ry_ + rowh
     end
-    -- In the side's own colour, which is the same colour their plate wears
-    -- out in the arena: this box is where a player learns what that colour
+    -- In the side's own color, which is the same color their plate wears
+    -- out in the arena: this box is where a player learns what that color
     -- on the hull they are looking at means.
     row("TEAM", side or "private", pal.a(team_col(theirs), 0.95), side_named)
     -- What the zone is willing to say this seat is, which is the honest
@@ -2093,7 +2093,7 @@ local function inspect(o, top)
     row("SEAT", (p and p.label) or "unknown")
     -- A line each, rather than one line of "21K 20D 748P". Three numbers
     -- packed into a row with their units stuck to them is a thing to decode;
-    -- three labelled rows are three numbers to read, and this panel already
+    -- three labeled rows are three numbers to read, and this panel already
     -- reads that way everywhere else.
     row("KILLS", tostring(sim.ship_kills(i)))
     row("DEATHS", tostring(sim.ship_deaths(i)))
@@ -2232,7 +2232,7 @@ end
 --
 -- Two things, and the second only when the room has a limit. A safe zone is
 -- the one part of the map whose rules are different and the tile says so in
--- colour alone, which is a thing you learn by being shot at somewhere you
+-- color alone, which is a thing you learn by being shot at somewhere you
 -- thought was safe. And a room that is about to take the seat back has to say
 -- so first, or the ship simply stops being yours.
 --
@@ -2288,7 +2288,7 @@ end
 -- menu now, under `help`, which is where a thing you consult belongs.
 
 -- One thing to press, wherever the thing to press turns up: a frame with a
--- hint of fill, lit in the colour of what it does, and its word in capitals in
+-- hint of fill, lit in the color of what it does, and its word in capitals in
 -- the face the numbers are set in. The corner keys and a question's answers
 -- are the same object, so they are one drawing rather than two functions
 -- agreeing on seven numbers by hand.
@@ -2301,7 +2301,7 @@ local function menu_button(on_air, watch, room)
     -- that corner was a thing to press, and the board has taught the same hand
     -- what a key looks like already.
     --
-    -- One colour between them, and one rule for lighting it. MENU was drawn in
+    -- One color between them, and one rule for lighting it. MENU was drawn in
     -- ink and PLAYERS in slate, which is two controls that do the same kind of
     -- thing wearing two different states before either had been pressed. What
     -- they wear now is off or on, and the panel each opens is what turns it on.
@@ -2337,7 +2337,7 @@ local function menu_button(on_air, watch, room)
     --
     -- It sits on this row rather than at the top of the middle, which is where
     -- it started and where it could not stay: that strip already carries the
-    -- flag pennants and the round's banner, both of them centred, and a notice
+    -- flag pennants and the round's banner, both of them centered, and a notice
     -- laid over them read as a fault in the flags. Those two are about the
     -- round. This is about you, like the keys beside it, and it is chrome
     -- rather than anything happening in the arena.
@@ -2406,7 +2406,7 @@ local function link(lag)
     end
     txt("LINK", right - 34 * S, base - 4 * S, (FONT - 3) * S,
         pal.a(pal.DIM, 0.8), "right")
-    -- Pointing at this one names nothing. Four bars labelled LINK beside a
+    -- Pointing at this one names nothing. Four bars labeled LINK beside a
     -- millisecond count are already a sentence about the connection, and a
     -- word saying so is the interface reading its own label back.
     -- The bars are the readout a player wants and the whole of it. Everything
@@ -2416,7 +2416,7 @@ local function link(lag)
     -- What answers that press is the whole cluster and the strip it stands
     -- in. It was 46 by 20 points hung off the right edge, which covered the
     -- four bars and the last quarter of the word beside them: three quarters
-    -- of the only thing on screen labelled LINK did nothing when pressed,
+    -- of the only thing on screen labeled LINK did nothing when pressed,
     -- and twenty points is half the height a thumb is usually given. It also
     -- took its top from the window while the drawing took it from the safe
     -- area, so a phone with an island drew the readout below the box meant
@@ -2438,7 +2438,7 @@ end
 
 -- The connection in numbers, for whoever is debugging it.
 --
--- Deliberately plain: labelled lines of text, no instrument, no colour doing
+-- Deliberately plain: labeled lines of text, no instrument, no color doing
 -- work. It is read by somebody who wants a number they can quote in a bug
 -- report, and every one of these has been asked for out loud at least once.
 --
@@ -2552,7 +2552,7 @@ end
 --
 -- This was a sentence -- "flags  you 2 - 1 them   1 loose" -- which is three
 -- numbers, two of them derivable from the third, in enough characters to
--- cross a phone. One pennant per flag, coloured by who holds it, says the
+-- cross a phone. One pennant per flag, colored by who holds it, says the
 -- same thing in a glance and in a fifth of the width: you count shapes, not
 -- words, and it scales to whatever number of flags a mode puts out.
 local function flag_strip(me)
@@ -2586,7 +2586,7 @@ end
 -- what killed it is the sentences getting longer. Short phrases sat beside
 -- their rows and adjacency did the work. Cards do not fit on a row, so all of
 -- them together had to be gathered into a column, and a column off to one side
--- says which instrument each line belongs to by colour rather than by
+-- says which instrument each line belongs to by color rather than by
 -- position, which is the one thing this was built to avoid.
 --
 -- No leader lines either, which was the lesson before that. Every instrument
@@ -2672,12 +2672,12 @@ local function help_line(want)
     return found
 end
 
--- A bar in the thing's own colour, then the sentence. The bar sits on the side
+-- A bar in the thing's own color, then the sentence. The bar sits on the side
 -- facing whatever is being named, so it points without a line.
 local function help_draw(e)
     local f = (FONT - 1) * S
     local lh = LINE * S
-    -- The words are centred on the row; the bar is as tall as the instrument
+    -- The words are centered on the row; the bar is as tall as the instrument
     -- when it was given one, and otherwise as tall as the words.
     local ttop = e.y - e.h / 2
     local top = e.top or ttop
@@ -2922,7 +2922,7 @@ function M.hud(o)
         if key then help_hover(key) end
     end
 
-    -- The two big centred lines are the only interface that sits where the
+    -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
     flag_strip(me)
@@ -3006,8 +3006,8 @@ end
 -- The controls were a column of sentences, which is a wall of text about a
 -- thing everybody already has a picture of under their hands. So the picture
 -- is what gets drawn: the board itself, unbound keys as faint outlines and
--- the bound ones lit in the colour of what they do, with a legend saying what
--- each colour is. A key does not need a caption when the board it sits on
+-- the bound ones lit in the color of what they do, with a legend saying what
+-- each color is. A key does not need a caption when the board it sits on
 -- says where it is.
 --
 -- Widths are in key units so the board scales with the panel. The rows are
@@ -3037,12 +3037,12 @@ local BOARD_UNITS = 12.4
 local KEY_LETTER = 0.40   -- a single character, against key height
 local KEY_WORD = 0.30     -- "shift", "space": the ones that have to fit across
 
--- What each colour means, in the order the legend reads.
+-- What each color means, in the order the legend reads.
 --
 -- Every lit key is on this list, which is the point of it: the three keys
--- that open something used to share one grey and a line of prose naming them
+-- that open something used to share one gray and a line of prose naming them
 -- one after another, so the picture said "these do interface things" and the
--- caption did the actual work. A colour apiece and a word in the legend says
+-- caption did the actual work. A color apiece and a word in the legend says
 -- it once.
 local BOARD_CATS = {
     {key = "fly", word = "fly"},
@@ -3057,12 +3057,12 @@ local BOARD_CATS = {
 }
 
 -- Hues nothing else in the legend is wearing, which is what a legend needs
--- and all it needs. Multifire takes the colour the green that grants it is
+-- and all it needs. Multifire takes the color the green that grants it is
 -- drawn in, so the one key that is a gun in a different mode reads as a
 -- relative of the guns rather than as a separate weapon.
 --
--- Menu had the grey every unbound key is drawn in, brighter. That is not a
--- colour, it is the absence of one, and against a board of dead keys in the
+-- Menu had the gray every unbound key is drawn in, brighter. That is not a
+-- color, it is the absence of one, and against a board of dead keys in the
 -- same hue the lit one did not read as lit at all: the swatch, the word
 -- under it and the key itself all looked switched off. Amber instead, which
 -- nothing else on this page is wearing.
@@ -3134,7 +3134,7 @@ local function legend_lines(w, lsize)
     return pack_legend(w, lsize)
 end
 
--- One key: an outline in its function's colour with a hint of fill, or a
+-- One key: an outline in its function's color with a hint of fill, or a
 -- faint outline for a key the game does not use. `cy` is the row's top.
 local function board_key(bx, cy, kw, kh, label, cat, dimmed)
     local col = board_col(cat)
@@ -3459,7 +3459,7 @@ end
 -- stage has them, or the row a pointer is resting on.
 local function stage_row(x, y, w, h, r, hot)
     local col = r.mark and pal.FRIEND or pal.INK
-    -- A row that stands for a side is written in that side's colour, which is
+    -- A row that stands for a side is written in that side's color, which is
     -- what makes this list the key to every plate in the arena. It outranks
     -- the mark's cyan because your own side generates cyan anyway, so the two
     -- rules agree on the one row where they could disagree.
@@ -3584,7 +3584,7 @@ end
 local function empty_state(x, y, w, h, e)
     local cx = x + w / 2
     local r = math.max(22 * S, math.min(56 * S, h * 0.26))
-    -- Centred in whatever room is left rather than hung off the top of it: on
+    -- Centered in whatever room is left rather than hung off the top of it: on
     -- an empty page there is nothing above to hang from.
     local blockh = 2 * r + 96 * S
     local cy = y + math.max(0, (h - blockh) / 2) + r + 8 * S
@@ -3659,7 +3659,7 @@ end
 -- because that is the page's unit and this interface is drawn in device
 -- pixels; `S` is the ratio between them.
 --
--- Each element is centred on the middle `field_line` draws its type on, the
+-- Each element is centered on the middle `field_line` draws its type on, the
 -- one the caret and the password's discs already use, so the type lands on
 -- the rule rather than near it. Forty four tall rather than the height of
 -- the type, which is the size a finger is: the whole row takes the tap, the
@@ -3770,7 +3770,7 @@ local function ask_card(x, y, w, h, a)
         end
     end
     -- Laid out from the middle out rather than from an edge in, so the row of
-    -- answers stays centred whatever the words are.
+    -- answers stays centered whatever the words are.
     local ws, total = {}, 0
     for i, k in ipairs(a.keys) do
         ws[i] = key_w(k.label)
@@ -3828,7 +3828,7 @@ local function ship_grid(x, y, w, h, v, focused)
     local rowsn = math.ceil(n / cols)
     local cw = w / cols
     local ch = math.min(h / rowsn, (M.compact and 92 or 104) * S)
-    -- Centred in the room it was given rather than hung off the top, so a
+    -- Centered in the room it was given rather than hung off the top, so a
     -- tall phone does not draw eight ships in the top third of the screen.
     y = y + math.max(0, (h - ch * rowsn) / 2)
     for i, r in ipairs(v.rows) do
@@ -3880,7 +3880,7 @@ end
 -- The mark: six strokes, \|\|\|, read as a V and then a W.
 --
 -- Each wedge is a diagonal falling into a vertical and meeting it on the
--- baseline. The first wedge is the V of vector, in the colour the interface
+-- baseline. The first wedge is the V of vector, in the color the interface
 -- gives the other side; the second and third together are the W of wake, in
 -- yours. One gap throughout, so nothing marks where one letter stops and the
 -- next starts and the run reads as one gesture: you get the letters out of it
@@ -3950,7 +3950,7 @@ local function mk_stroke(st, ox, oy, h, w, col, p)
     return ex, ey
 end
 
--- `h` is the mark's height and (cx, cy) its centre. `still` draws the finished
+-- `h` is the mark's height and (cx, cy) its center. `still` draws the finished
 -- shape and nothing else, which is what anything not on the menu wants.
 function M.logo(cx, cy, h, alpha, still)
     alpha = alpha or 1
@@ -4037,14 +4037,14 @@ end
 -- word sits on and made the lockup look assembled by accident.
 -- And how far below the line the mark sits.
 --
--- Not zero, which is what "centred" would suggest and what this had. `txt`
--- centres a string in its line box, and a line box has room under the
+-- Not zero, which is what "centered" would suggest and what this had. `txt`
+-- centers a string in its line box, and a line box has room under the
 -- baseline for descenders. "vectorwake" is all lowercase and has none, so its
 -- ink stops at the baseline and its weight sits lower still, in the x-height
 -- band: measured off a screenshot, the type runs from 143 to 171 with the
 -- x-height starting at 151, which puts what the eye reads as the middle of
 -- the word about an eighth of an em below the middle of the box it is set in.
--- A mark hung on the box centre is a mark that looks high, which is what it
+-- A mark hung on the box center is a mark that looks high, which is what it
 -- looked.
 local LOGO_EM, LOGO_GAP, LOGO_DROP = 0.74, 0.30, 0.12
 
@@ -4111,7 +4111,7 @@ function M.menu(v)
         local total = math.min(W - SL - SR - 2 * margin, 940 * S)
         local x0 = SL + (W - SL - SR - total) / 2
         -- Clear of what the ship is carrying. Over a game the corner stack
-        -- holds the left edge, and on a phone held sideways a centred block
+        -- holds the left edge, and on a phone held sideways a centered block
         -- lands right on it: the rail's marks and the words GUN and BOMB in
         -- the same column read as one broken thing. The stack stays, because
         -- what you are carrying is worth knowing while you pick a hull.
@@ -4123,7 +4123,7 @@ function M.menu(v)
             total = math.min(total, W - SR - x0 - margin)
         end
         -- Wide enough for the words, at any height. A rail of marks alone
-        -- was the short window's layout, on the argument that eight labelled
+        -- was the short window's layout, on the argument that eight labeled
         -- stops do not fit a phone held sideways; they fit, and with no title
         -- over the stage the lit word is the only thing on screen that says
         -- which page this is.
@@ -4132,7 +4132,7 @@ function M.menu(v)
                                         38 * S), 58 * S)
         rh = pitch * n
         -- The rail hangs from the top of the block, starting where the stage's
-        -- first row starts. Centred in the block instead, six stops in a tall
+        -- first row starts. Centered in the block instead, six stops in a tall
         -- window sat opposite the middle of a three-row list with the whole
         -- top of the panel empty above them, and the two halves read as two
         -- panels that had been put side by side by accident.

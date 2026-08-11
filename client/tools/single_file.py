@@ -183,14 +183,14 @@ SHIM = """
   // Loading.
   //
   // Four megabytes of engine have to arrive and compile before the game can
-  // draw anything, and what a player saw meanwhile was a grey bar on black --
+  // draw anything, and what a player saw meanwhile was a gray bar on black --
   // a page that has not started yet. So the page starts without it: the same
-  // starfield, at the same three depths and the same colours, drawn in plain
+  // starfield, at the same three depths and the same colors, drawn in plain
   // canvas 2D while the wasm compiles behind it. The wordmark sits in the
   // middle and the engine's own progress drives one hairline under it.
   //
   // The game says when it is up, from arena.script, rather than the loader
-  // guessing: "the runtime initialised" is several seconds before "there is
+  // guessing: "the runtime initialized" is several seconds before "there is
   // an arena on screen", and fading out at the wrong one of those is how a
   // seamless hand-off becomes a black flash.
   //
@@ -266,7 +266,7 @@ SHIM = """
       }
     }
 
-    // The same three depths world.lua uses, and the same colours, so the
+    // The same three depths world.lua uses, and the same colors, so the
     // moment the engine takes over nothing about the sky changes.
     var LAYERS = [
       {k: 0.18, cell: 54, size: 1.1, col: "#2a3a58", fill: 13},
@@ -326,8 +326,8 @@ SHIM = """
       var mh = size * LOGO_EM;
       var x0 = cx - span / 2;
 
-      // Defold centres a string in its line box and canvas draws from a
-      // baseline, so the box is measured and centred by hand. Old browsers do
+      // Defold centers a string in its line box and canvas draws from a
+      // baseline, so the box is measured and centered by hand. Old browsers do
       // not report it; the ratios below are what this face measures.
       var asc = m.fontBoundingBoxAscent || size * 0.99;
       var desc = m.fontBoundingBoxDescent || size * 0.31;
@@ -417,7 +417,7 @@ SHIM = """
 
 
 # A committed dark page: this is an arcade screen, and the ground is the
-# simulation's own clear colour. The frame stays quiet so the arena is the
+# simulation's own clear color. The frame stays quiet so the arena is the
 # only thing with any brightness in it.
 FRAME_CSS = """
 <style>
@@ -495,7 +495,7 @@ FRAME_HEAD = """
 
 
 # Defold's loader sizes the canvas by fitting game.project's 1280x800 into
-# the window with the aspect preserved, and centres what is left with a
+# the window with the aspect preserved, and centers what is left with a
 # margin -- which is where the interface-cropping offset came from. With a
 # fixed zoom that fit is exactly wrong: the buffer should be the window, so
 # a reshaped window shows more or less of the arena instead of the same
@@ -515,7 +515,7 @@ def fill_window(html):
 # Defold wordmark on the canvas, and both paint the instant the document has a
 # canvas to lay out. On a five megabyte single file that is a second or more
 # before the loader at the bottom of the page runs and the starfield covers it.
-# engine_template.html grounds both to the arena's clear colour after the
+# engine_template.html grounds both to the arena's clear color after the
 # injection point. This checks it is still there, because the rule lived here
 # for a while, only ran for --fragment, and prod serves the whole document: the
 # page opened on somebody else's brand for a year of pushes and nothing said so.

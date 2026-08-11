@@ -1,7 +1,7 @@
 #version 140
 
 // Every piece of vector art in this game -- hulls, bolts, walls, panels --
-// is untextured coloured geometry, so one shader draws all of it. The colour
+// is untextured colored geometry, so one shader draws all of it. The color
 // arrives per vertex, which is what lets a single mesh hold a hundred
 // different things and still cost one draw call.
 

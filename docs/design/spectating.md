@@ -69,7 +69,7 @@ is the invisibility capability, and when it arrives it should take the roster
 row and the tally together rather than half of each.
 
 It sat at the top of the middle first, and could not stay: that strip carries
-the flag pennants and the round's banner, both centred, and a notice laid over
+the flag pennants and the round's banner, both centered, and a notice laid over
 them read as a fault in the flags rather than as a fact about you. Those are
 about the round; this is about you, like the keys it now sits with. Being on
 that row also means the map opening across the corner keeps clear of it under
@@ -175,7 +175,7 @@ The exception is a free-for-all, where the answer really is none. Every pilot
 is a private side of one, so there is no side for an arrival to share and the
 channel is the whole of what anybody watching can see.
 
-And the screen is coloured from that side rather than from the subject's.
+And the screen is colored from that side rather than from the subject's.
 Deriving it from the hull the camera is behind is the obvious reading and the
 wrong one, because the camera moves: it repainted your own side as hostile
 whenever the channel crossed the line, and told the info box that a teammate
@@ -183,7 +183,7 @@ of the pilot you happen to be watching is a teammate of yours.
 
 Nothing on screen says the word "watching". The pilot being observed wears
 their call sign and their bounty at their hull's lower right, exactly as every
-other pilot on screen does, because the one hull that goes unlabelled is your
+other pilot on screen does, because the one hull that goes unlabeled is your
 own and a watcher has none. That is also the answer to the only question a
 spectator has constantly, and it belongs on the hull rather than in a caption
 at the foot of the screen.

@@ -42,7 +42,7 @@ typedef struct {
      * makes the original's odd number fall out: `compose` adds barrels rather
      * than multiplying them, so two abreast plus one rung of multifire is
      * four, not the six a pilot expects from three times two. That was the
-     * Terrier's actual behaviour and we get it for nothing. */
+     * Terrier's actual behavior and we get it for nothing. */
     uint8_t gun_barrels;
     uint16_t gun_mods, bomb_mods;
     /* How many of each charge, by slot: repel, burst, mine. RepelMax and
@@ -258,7 +258,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * radius. Two numbers are worth knowing when picking one. The original's
      * own works out at 18, because `WarpRadiusLimit=20` in the settings its
      * reference server ships clamps a formula that would have asked for 266,
-     * leaving a 37-tile square at the centre. And 60 is how far radar reaches,
+     * leaving a 37-tile square at the center. And 60 is how far radar reaches,
      * which is the point below which one pilot sitting on the middle can watch
      * every arrival. The original was well inside that; whether we want to be
      * is a decision per zone. */
@@ -702,7 +702,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             sh.damage = sim_units_energy(BOMB_DAMAGE);
             /* BombExplodePixels is the L1 radius and its help spells the rest
              * out: "L2 bombs double this, L3 bombs triple this". So the blast
-             * is what a bomb level buys, since the damage at the centre does
+             * is what a bomb level buys, since the damage at the center does
              * not move. */
             sh.blast = BOMB_BLAST * (k + 1) * 256;
             sh.splinter = SIM_NO_PATTERN;
@@ -834,7 +834,7 @@ static uint32_t cell_hash(uint32_t cx, uint32_t cy) {
  * because a hand-drawn 1024-tile map is a job for a map editor and a person,
  * and this has to be legible from a C file until that exists.
  *
- * The old room survives at the centre, minus its enclosing box: the pillars,
+ * The old room survives at the center, minus its enclosing box: the pillars,
  * the baffles, the two safe zones and the pair of out-of-phase doors are
  * still there, and are still where every ship spawns. So the game that
  * existed before this is the middle of the game that exists now, and the rest
@@ -922,14 +922,14 @@ void sim_map_arena(sim_map *m) {
     /* Starts, eight a side, spread across the map rather than parked in the
      * middle of it.
      *
-     * The first version of this map kept every spawn in the centre room, on
+     * The first version of this map kept every spawn in the center room, on
      * the reasoning that pilots scattered over 1024 tiles would never find
      * each other. That reasoning made the map decorative: a full-size arena
      * whose players are all inside one 84-tile box is an 84-tile arena with a
      * lot of unused address space around it.
      *
      * So each side gets a home band -- team 1 across the north, team 0 across
-     * the south -- eight starts apiece, 256 tiles apart, with the old centre
+     * the south -- eight starts apiece, 256 tiles apart, with the old center
      * room as the contested ground between them. Crossing takes about thirty
      * seconds at a hull's top speed, which is a journey rather than a walk,
      * and the bots fly it: their targeting has no range limit, only a

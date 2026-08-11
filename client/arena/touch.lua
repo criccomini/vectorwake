@@ -346,11 +346,11 @@ function M.draw(u, w, h, s)
         u:disc(pad.x, pad.y, pad.r, 24, pal.a(col, lit and 0.10 or 0.045))
     end
 
-    -- The gun, in the colour of the round it fires.
-    -- The rung the round is fired at, which is the colour it will be coming
+    -- The gun, in the color of the round it fires.
+    -- The rung the round is fired at, which is the color it will be coming
     -- at somebody across the arena. A player who has learned one has learned
     -- the other, and the two pads tell each other apart by their marks now
-    -- rather than by their colour.
+    -- rather than by their color.
     local gcol = pal.rung(marks.level(M.me, sim.TRIG_GUN))
     pad_ring(L.guns, gcol, guns)
     pad_mark(L.guns, sim.TRIG_GUN)

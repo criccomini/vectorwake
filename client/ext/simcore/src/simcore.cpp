@@ -703,7 +703,7 @@ int SpecLevel(lua_State* L) {
 int ShipBombRadius(lua_State* L) {
     int i = CheckShip(L);
     const sim_ship* sh = &g_cur->ships[i];
-    /* The rung this pilot is actually on: a levelled bomb is a wider one. */
+    /* The rung this pilot is actually on: a leveled bomb is a wider one. */
     const sim_ship_class* c = &g_cfg.classes[sh->cls];
     uint8_t lvl = sh->level[SIM_TRIG_BOMB];
     uint8_t pat = SIM_NO_PATTERN;
