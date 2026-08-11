@@ -47,14 +47,23 @@ static uint32_t xorshift32(uint32_t x) {
     return x ? x : 0x9e3779b9u;
 }
 
-/* A whole-pixel position squeezed into an event's one payload word. The map
- * is 16384 px on a side, so fourteen bits hold a coordinate exactly and the
- * pair fits with four to spare. Used by SIM_EV_EXPIRE, which is the only
- * report a caller gets of where a weapon stopped existing. */
-static int32_t pack_pos(int32_t x_q8, int32_t y_q8) {
+/* A whole-pixel position squeezed into an event's one payload word, with the
+ * round's rung in two of the bits left over. The map is 16384 px on a side,
+ * so fourteen bits hold a coordinate exactly and the pair fits with four to
+ * spare; the rung takes two of those. Used by SIM_EV_EXPIRE, which is the
+ * only report a caller gets of where a weapon stopped existing.
+ *
+ * The rung is there for the renderer, and for the same reason the round
+ * itself carries `level`: a spec is composed again where a round lands, and
+ * the rung it came off is not otherwise recoverable there. By the time the
+ * client reads this event the weapon is gone from the state, so without
+ * these bits a mine's detonation -- one spec whatever rung was posted -- had
+ * no rung to size its ring or pick its colour by, and flashed rung one in
+ * violet whatever the mine had been. */
+static int32_t pack_pos(int32_t x_q8, int32_t y_q8, uint8_t level) {
     int32_t x = (x_q8 >> 8) & 0x3fff;
     int32_t y = (y_q8 >> 8) & 0x3fff;
-    return (x << 14) | y;
+    return ((int32_t)(level & 3) << 28) | (x << 14) | y;
 }
 
 static void emit(sim_events *ev, uint8_t type, uint8_t a, uint8_t b,
@@ -1838,7 +1847,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
              * wants the victim, so a detonation can be drawn stuck to the
              * ship it hit rather than to a coordinate the render smoothing
              * has moved the ship away from. */
-            emit(ev, SIM_EV_EXPIRE, w->spec, 255, pack_pos(w->x, w->y));
+            emit(ev, SIM_EV_EXPIRE, w->spec, 255, pack_pos(w->x, w->y, w->level));
             kill_weapon(next, wi);
             continue;
         }
@@ -1892,7 +1901,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                         w->y = py;
                     }
                     emit(ev, SIM_EV_RICOCHET, w->owner, w->spec,
-                         pack_pos(w->x, w->y));
+                         pack_pos(w->x, w->y, w->level));
                     break;
                 }
                 /* End on the near side of the wall rather than a step inside
@@ -1992,7 +2001,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             weapon_end(next, cfg, spec, w, hit_ship, ev);
             emit(ev, SIM_EV_EXPIRE, w->spec,
                  hit_ship >= 0 ? (uint8_t)hit_ship : 255,
-                 pack_pos(w->x, w->y));
+                 pack_pos(w->x, w->y, w->level));
             kill_weapon(next, wi);
             continue;
         }

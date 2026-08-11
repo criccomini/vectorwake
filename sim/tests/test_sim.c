@@ -979,6 +979,22 @@ int main(void) {
         memset(&dst, 0, sizeof dst);
         CHECK(sim_settings_unpack(&dst, buf, n) == 0, "settings unpack");
         CHECK(dst.max_ships == 200, "the room size crosses the wire");
+
+        /* Whole tables, byte for byte, not a spot check. The pack is a
+         * hand-written mirror of the spec struct, so a field added to the
+         * struct and forgotten by the mirror arrives at every client as
+         * zero -- with the version matching, because the writer that should
+         * have bumped it is the writer that was not touched. That happened
+         * to `still` and `blast_up` in the very commit that added them: every
+         * suite stayed green while a joining client's mines flew off at
+         * their layer's speed. Every spec is built by copying a memset
+         * local, so the padding is zeroed and memcmp is a fair judge. */
+        CHECK(memcmp(dst.specs, src.specs,
+                     sizeof(sim_weapon_spec) * src.spec_count) == 0,
+              "every spec field crosses the wire");
+        CHECK(memcmp(dst.patterns, src.patterns,
+                     sizeof(sim_fire_pattern) * src.pattern_count) == 0,
+              "and every pattern field");
     }
 
     /* Friendly fire passes through: same team, no damage. */
@@ -2463,13 +2479,61 @@ int main(void) {
         step_n(&s, &cfg, MINE, 0, 1);
         CHECK(s.weapons[0].level == 2, "and a rung three pilot a rung three one");
 
-        /* What that rung buys, resolved the way the world resolves it. */
-        sim_weapon_spec r1, r3;
-        r1 = cfg.specs[s.weapons[0].spec];
-        r3 = r1;
-        CHECK(r1.blast_up > 0, "a mine's blast climbs with the rung");
-        r3.blast += 2 * r3.blast_up;
-        CHECK(r3.blast > r1.blast, "so a rung three mine makes a bigger hole");
+        /* What that rung buys, measured where it lands rather than read off
+         * the spec: a victim standing 150 px out, inside a rung three mine's
+         * 240 px blast and outside a rung one's 80. The composition happens
+         * in the update loop, off the level the round carries, so this is
+         * the path a real detonation takes and not arithmetic done here. */
+        sim_state det;
+        for (int lvl = 0; lvl <= 2; lvl += 2) {
+            sim_init(&det, 1);
+            sim_spawn(&det, APEX, 0, 8192, 8192, 0, &cfg);
+            sim_spawn(&det, APEX, 1, 8192 + 150, 8192, 0, &cfg);
+            det.ships[0].charge[2] = 1;
+            det.ships[0].level[SIM_TRIG_BOMB] = (uint8_t)lvl;
+            step_n(&det, &cfg, MINE, 0, 1);
+            CHECK(det.weapon_count == 1, "the mine is down");
+            /* The layer clears out, as a layer does. Standing next to your
+             * own blast discounts what it deals everyone else -- the mercy
+             * rule -- and a layer camped on its own mine would discount this
+             * victim to nothing. */
+            det.ships[0].x -= 2000 * 256;
+            det.weapons[0].life = 2;      /* run the minute out now */
+            int32_t e0 = det.ships[1].energy;
+            step_n(&det, &cfg, 0, 0, 4);
+            CHECK(det.weapon_count == 0, "and its timer set it off");
+            if (lvl == 0)
+                CHECK(det.ships[1].energy == e0,
+                      "150 px is outside a rung one mine's blast");
+            else
+                CHECK(det.ships[1].energy < e0,
+                      "and inside a rung three's, off the same spec");
+        }
+
+        /* The expiry event carries the rung, in the payload bits above the
+         * position, because by the time a client reads it the round is gone
+         * from the state and a mine is one spec whatever rung was posted.
+         * Without it the detonation flashed rung one in violet. */
+        sim_init(&det, 1);
+        sim_spawn(&det, APEX, 0, 8192, 8192, 0, &cfg);
+        det.ships[0].charge[2] = 1;
+        det.ships[0].level[SIM_TRIG_BOMB] = 2;
+        step_n(&det, &cfg, MINE, 0, 1);
+        det.weapons[0].life = 2;
+        int rung_seen = -1;
+        {
+            sim_state tmp;
+            sim_events ev;
+            for (int i = 0; i < 4; i++) {
+                sim_input in = {0, 0};
+                sim_step(&tmp, &det, &in, 1, &cfg, &ev);
+                det = tmp;
+                for (uint16_t e = 0; e < ev.count; e++)
+                    if (ev.e[e].type == SIM_EV_EXPIRE)
+                        rung_seen = (int)((ev.e[e].v >> 28) & 3);
+            }
+        }
+        CHECK(rung_seen == 2, "the expiry event says which rung went off");
     }
 
     {

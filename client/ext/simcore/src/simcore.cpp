@@ -551,6 +551,21 @@ int SpecBlast(lua_State* L) {
     return 1;
 }
 
+// Blast one rung adds, for the weapon whose rung is not a ladder of its own.
+// A mine is one spec whatever rung was posted, so the ring a detonation is
+// drawn at has to be composed the way the core composes it -- base plus the
+// round's rung times this -- or a rung three mine flashes a rung one hole
+// while dealing a rung three one.
+int SpecBlastUp(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_cfg.spec_count) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.specs[i].blast_up / 256.0);
+    return 1;
+}
+
 // Whether a spec's rounds are laid rather than thrown: they take none of the
 // firer's velocity, so they stay where they were let go.
 //
@@ -1098,6 +1113,7 @@ const luaL_reg kFunctions[] = {
     {"ship_extents", ShipExtents},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},
+    {"spec_blast_up", SpecBlastUp},
     {"spec_still", SpecStill},
     {"spec_trigger", SpecTrigger},
     {"spec_life", SpecLife},

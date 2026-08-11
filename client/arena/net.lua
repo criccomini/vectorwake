@@ -503,9 +503,14 @@ local function capture_world()
     local flying = {}
     local tick = sim.tick()
     for i = 0, sim.weapon_count() - 1 do
-        local x, y, spec, _, _, _, life, owner = sim.weapon_at(i)
+        local x, y, spec, _, _, _, life, owner, _, level = sim.weapon_at(i)
+        -- The rung rides along for the one blast whose colour lives on the
+        -- round rather than in the spec table: a mine wears its layer's bomb
+        -- rung, and a detonation reconstructed after the fact should flash in
+        -- the colour the mine sat there in.
         flying[born_key(tick, spec, life, owner)] =
-            {x = x, y = y, spec = spec, life = life}
+            {x = x, y = y, spec = spec, life = life, owner = owner,
+             level = level}
     end
     return {alive = alive, vx = vx, vy = vy, flying = flying}
 end
@@ -532,9 +537,44 @@ local function harvest_world(before)
         local _, _, spec, _, _, _, life, owner = sim.weapon_at(i)
         flying[born_key(tick, spec, life, owner)] = nil
     end
+    -- A mine that vanished did one of two things, and only one of them is an
+    -- explosion. An enemy repel turns a mine into a bomb of its rung, and the
+    -- repel lives a single tick, so this client never simulates one: the
+    -- conversion always lands here, as a mine gone from the world. Reporting
+    -- it as a blast made a scattered minefield flash and sound like it had
+    -- detonated -- three blasts, no damage, exactly when a repel already has
+    -- the player's attention. The bomb the mine became is in the snapshot,
+    -- though: same owner, a blast of its own, freshly born, a stone's throw
+    -- from where the mine sat. Finding one is what tells a scatter from a
+    -- detonation. The radius is generous against jitter, and the cost of a
+    -- rare mismatch is one missing flash rather than a false one.
+    local born = nil
     for _, w in pairs(flying) do
         if w.life > 20 and sim.spec_blast(w.spec) > 0 then
-            M.snap_blasts[#M.snap_blasts + 1] = w
+            local scattered = false
+            if sim.spec_still(w.spec) then
+                if not born then
+                    born = {}
+                    for i = 0, sim.weapon_count() - 1 do
+                        local x, y, spec, _, _, _, life, owner = sim.weapon_at(i)
+                        if sim.spec_blast(spec) > 0 and not sim.spec_still(spec)
+                            and sim.spec_life(spec) - life <= 30 then
+                            born[#born + 1] = {x = x, y = y, owner = owner}
+                        end
+                    end
+                end
+                for _, b in ipairs(born) do
+                    if b.owner == w.owner
+                        and math.abs(b.x - w.x) < 120
+                        and math.abs(b.y - w.y) < 120 then
+                        scattered = true
+                        break
+                    end
+                end
+            end
+            if not scattered then
+                M.snap_blasts[#M.snap_blasts + 1] = w
+            end
         end
     end
 end

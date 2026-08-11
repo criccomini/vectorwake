@@ -2304,8 +2304,17 @@ function M.corpse(i, vx, vy, me, sfx)
 end
 
 function M.late_blast(w, sfx)
+    -- The rung comes off the round for a mine, exactly as the live drawing
+    -- reads it: every mine is one spec, so the spec table answers a rung one
+    -- blast in violet whatever the mine had been. The radius is composed the
+    -- way the core composes it, so the flash is the hole the blast made.
     local r = spec_blast(w.spec)
-    fx.detonate(w.x, w.y, r, bomb_col(spec_level(w.spec)))
+    local lvl = spec_level(w.spec)
+    if is_mine(w.spec) and w.level then
+        r = r + w.level * sim.spec_blast_up(w.spec)
+        lvl = w.level
+    end
+    fx.detonate(w.x, w.y, r, bomb_col(lvl))
     sfx("blast", w.x, w.y, blast_rung(r))
 end
 
@@ -2329,8 +2338,12 @@ function M.events(me, sfx)
             local trig = bomb and sim.TRIG_BOMB or sim.TRIG_GUN
             sfx(bomb and "bomb" or "gun", x, y, sim.ship_level(a, trig))
         elseif ty == sim.EV_EXPIRE then
-            local x = math.floor(v / 16384)
+            -- The payload is two fourteen-bit coordinates with the round's
+            -- rung in the bits above them, so the position needs its mask
+            -- now that the top of the word is no longer zero.
+            local x = math.floor(v / 16384) % 16384
             local y = v % 16384
+            local rung = math.floor(v / 268435456) % 4
             -- Pinned to the hull it ended on, when it ended on one. The event
             -- position is simulation truth, but a remote hull is drawn where
             -- the render smoothing says, up to a correction behind the truth,
@@ -2345,9 +2358,19 @@ function M.events(me, sfx)
                 x = x + (sim.ship_x(b) - sim.ship_x_raw(b))
                 y = y + (sim.ship_y(b) - sim.ship_y_raw(b))
             end
+            -- A mine's ring and colour come off the event's rung, because
+            -- every mine is one spec: the table answers a rung one blast in
+            -- violet whatever the mine had been, and the ring a detonation
+            -- draws has to be the hole it actually made. Composed the way
+            -- the core composes it, base plus rung steps of `blast_up`.
             local r = spec_blast(a)
+            local lvl = spec_level(a)
+            if is_mine(a) then
+                r = r + rung * sim.spec_blast_up(a)
+                lvl = rung
+            end
             if r > 0 then
-                fx.detonate(x, y, r, bomb_col(spec_level(a)))
+                fx.detonate(x, y, r, bomb_col(lvl))
                 sfx("blast", x, y, blast_rung(r))
             else
                 fx.burst(x, y, 4, 90, 0.22, 1.5, pal.a(pal.INK, 0.9))
