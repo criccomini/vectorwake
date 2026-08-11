@@ -2662,6 +2662,147 @@ int main(void) {
     }
 
     {
+        /* A mine is your own bomb put on the floor, so the bomb trigger's
+         * add-ons reach it. A bomber who climbed to shrapnel and watched
+         * their mines go off as bare blasts was being told the two are
+         * different weapons, and they are not.
+         *
+         * Fragments are looked for every tick rather than counted at the
+         * end, for the reason the shrapnel test above gives: they are born
+         * at the point of impact and the short-lived ones are gone by the
+         * next sample. A peak weapon count misses them entirely, which is
+         * how this was first measured and first got the wrong answer. */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, ANVIL, 1, 8192 + 60, 8192, 0, &cfg);
+        s.ships[0].charge[2] = 2;
+        s.ships[0].level[SIM_TRIG_BOMB] = 1;
+        s.ships[0].level[SIM_TRIG_GUN] = 2;
+        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 3);
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 1, "one charge lays one mine");
+        CHECK(sim_mod_get(s.weapons[0].mods, SIM_MOD_SHRAPNEL) == 3,
+              "and the mine carries the bomb trigger's shrapnel");
+        CHECK(s.weapons[0].shrap_level == 2,
+              "with fragments of the layer's gun rung, as a thrown bomb has");
+        s.ships[0].x -= 3000 * 256;
+        s.weapons[0].life = 2;
+        int frags = 0;
+        for (int t = 0; t < 120; t++) {
+            step_n(&s, &cfg, 0, 0, 1);
+            for (uint16_t i = 0; i < s.weapon_count; i++)
+                if (s.weapons[i].depth > 0) frags++;
+        }
+        CHECK(frags > 0, "and a mine that goes off breaks up");
+
+        /* Multifire is the one add-on that does not follow, because it
+         * multiplies the pattern rather than transforming the round: three
+         * mines out of one charge is not a stronger mine, it is a different
+         * inventory. */
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[2] = 1;
+        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_MULTI, 3);
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 1, "multifire does not lay three mines");
+        CHECK(sim_mod_get(s.weapons[0].mods, SIM_MOD_MULTI) == 0,
+              "and the round does not carry it either");
+    }
+
+    {
+        /* A fuse the weapon already has does not stack with the add-on.
+         *
+         * A bomb is a contact round until proximity gives it a fuse, so there
+         * the add-on is the whole of the reach and adding is right. A mine
+         * comes with one, and summing made it sense two tiles further than a
+         * proximity bomb of the same rung -- which inverts the reason its own
+         * fuse is the tighter of the two, since a mine does not have to be
+         * dodged in the air first.
+         *
+         * Measured as the furthest a standing hull can be and still arm the
+         * thing, because that is the number a player meets. The bomb is
+         * pinned where the mine sits so the two are compared at one
+         * geometry rather than wherever flight happened to take it. */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        for (int rung = 0; rung < 3; rung++) {
+            int arm[2] = {0, 0};
+            for (int kind = 0; kind < 2; kind++) {
+                for (int d = 8; d < 400; d += 2) {
+                    sim_state s;
+                    sim_init(&s, 1);
+                    sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+                    sim_spawn(&s, ANVIL, 1, 8192 + d, 8192, 0, &cfg);
+                    s.ships[0].level[SIM_TRIG_BOMB] = (uint8_t)rung;
+                    s.ships[0].mods[SIM_TRIG_BOMB] =
+                        sim_mod_set(0, SIM_MOD_PROX, 1);
+                    if (kind == 0) {
+                        s.ships[0].charge[2] = 1;
+                        step_n(&s, &cfg, MINE, 0, 1);
+                    } else {
+                        step_n(&s, &cfg, SIM_BTN_BOMB, 0, 1);
+                        if (s.weapon_count < 1) continue;
+                        s.weapons[0].x = 8192 * 256;
+                        s.weapons[0].y = 8192 * 256;
+                        s.weapons[0].vx = 0;
+                        s.weapons[0].vy = 0;
+                    }
+                    if (s.weapon_count < 1) continue;
+                    step_n(&s, &cfg, 0, 0, 1);
+                    if (s.weapon_count > 0 && s.weapons[0].fuse_target != 255)
+                        arm[kind] = d;
+                }
+            }
+            CHECK(arm[0] > 0 && arm[1] > 0, "both armed on somebody");
+            CHECK(arm[0] == arm[1],
+                  "a proximity mine senses exactly as far as the bomb it is");
+        }
+
+        /* And without the add-on it keeps a fuse of its own, which is the
+         * half of this that makes a mine a mine: a bomb there is contact. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, ANVIL, 1, 8192 + 30, 8192, 0, &cfg);
+        s.ships[0].charge[2] = 1;
+        step_n(&s, &cfg, MINE, 0, 1);
+        step_n(&s, &cfg, 0, 0, 1);
+        CHECK(s.weapon_count > 0 && s.weapons[0].fuse_target != 255,
+              "a mine with no add-on still senses on its own two tiles");
+    }
+
+    {
+        /* Push follows too, and the thing to hold is that it does not make a
+         * mine repel-proof. The push loop skips a round whose spec pushes, so
+         * that two repels cannot throw each other about, and it reads the
+         * *base* spec: a mine carrying push as an add-on still has none of
+         * its own, so an enemy repel converts it like any other. Pinned
+         * because it is load-bearing and accidental -- reading the composed
+         * spec there instead would silently make a Lattice's minefield
+         * immune to the one thing meant to clear it. */
+        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const int LATTICE = 6;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);        /* lays it */
+        sim_spawn(&s, LATTICE, 1, 8192 - 200, 8192, 0, &cfg);  /* repels */
+        s.ships[0].charge[2] = 1;
+        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_PUSH, 2);
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 1, "the pushing mine is posted");
+        CHECK(sim_mod_get(s.weapons[0].mods, SIM_MOD_PUSH) == 2,
+              "and it carries the push add-on");
+        uint8_t was = s.weapons[0].spec;
+        s.ships[1].charge[0] = 1;
+        step_n(&s, &cfg, 0, SIM_BTN_USE, 3);
+        CHECK(s.weapon_count >= 1, "it survived the repel");
+        CHECK(s.weapons[0].spec != was,
+              "a mine that pushes is still a mine a repel can clear");
+        CHECK(s.weapons[0].vx > 0, "and it leaves in the push direction");
+    }
+
+    {
         /* A shot outlives its owner, whole.
          *
          * The rung is baked into the projectile's `spec` at the moment it is

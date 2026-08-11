@@ -449,7 +449,20 @@ static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
          * has climbed. The level has to be passed in because the rung picks
          * the spec before an add-on is ever applied to it, so by here the
          * pattern no longer knows which rung it came from. */
-        sp->trigger += n * cfg->mod_step[SIM_MOD_PROX] + level * cfg->prox_step;
+        int32_t fuse = n * cfg->mod_step[SIM_MOD_PROX] + level * cfg->prox_step;
+        /* The larger of the two, for a weapon that already senses on its own.
+         * Adding is right for a bomb, which is a contact round until the
+         * add-on gives it a fuse -- there is nothing to add to. A mine comes
+         * with one, so a sum double-dips: it reached two tiles further than a
+         * proximity bomb of the same rung, which inverts the reason its own
+         * fuse is the tighter of the two. A mine does not have to be dodged
+         * in the air first, so it should not also out-range the round that
+         * does. Matching rather than exceeding still pays the add-on. */
+        if (sp->trigger > 0) {
+            if (fuse > sp->trigger) sp->trigger = fuse;
+        } else {
+            sp->trigger += fuse;
+        }
     }
     /* A rung of damage, for the one spec whose rung is not a ladder: a
      * fragment is a bullet of whatever the thrower's guns were, so its damage
@@ -1581,15 +1594,42 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                  * a repel that inherited shrapnel would be a surprise nobody
                  * asked for.
                  *
-                 * It does carry their bomb rung. A charge has no ladder of its
-                 * own, so a mine has nowhere else to get one, and a mine is
-                 * the bomb you leave behind: what it does and what colour it
-                 * is should both be what your bombs are. The repel and the
-                 * burst scale with nothing, so the rung reaches neither of
-                 * them and rides along as the number the client paints from. */
+                 * A mine is the exception, because a mine is not a thing you
+                 * found whole: it is your own bomb, put on the floor instead
+                 * of thrown. A bomber who has climbed to shrapnel and watched
+                 * their mines go off as bare blasts is being told those two
+                 * are different weapons, and they are not. So it takes the
+                 * bomb trigger's add-ons and its rung both.
+                 *
+                 * Multifire is stripped, and it is the only one. The add-on
+                 * multiplies a *pattern*, so a mine would inherit it as three
+                 * mines out of one charge -- an inventory of three laying
+                 * nine, which is not a stronger mine but a different economy.
+                 * Everything else transforms the round: shrapnel breaks it
+                 * up, freeze stalls what it catches, push shoves, and the
+                 * fuse widens.
+                 *
+                 * The rung rides along for every charge. The repel and the
+                 * burst scale with nothing, so it reaches neither of them and
+                 * is the number the client paints a mine from. */
+                uint16_t cmods = 0;
+                uint8_t cshrap = 0, cbounce = 0;
+                if (is_mine(&cs)) {
+                    cmods = sim_mod_set(sh->mods[SIM_TRIG_BOMB],
+                                        SIM_MOD_MULTI, 0);
+                    /* And what those fragments will be. Shrapnel is bullets,
+                     * so a mine that breaks up throws rounds of its layer's
+                     * *gun* rung, bouncing if their bullets do -- read here,
+                     * at the laying, exactly as a thrown bomb reads it at the
+                     * throw. Without this a bomber's mines threw rung one
+                     * fragments while their bombs threw red ones. */
+                    cshrap = sh->level[SIM_TRIG_GUN];
+                    cbounce = (uint8_t)(sim_mod_get(sh->mods[SIM_TRIG_GUN],
+                                                    SIM_MOD_BOUNCE) != 0);
+                }
                 spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
-                              sh->vx, sh->vy, sh->heading, 0, 0,
-                              sh->level[SIM_TRIG_BOMB], 0, 0, ev);
+                              sh->vx, sh->vy, sh->heading, 0, cmods,
+                              sh->level[SIM_TRIG_BOMB], cshrap, cbounce, ev);
                 sh->charge[k]--;
                 sh->energy -= cp.energy;
                 /* A charge rides the bomb's clock and locks both, which
