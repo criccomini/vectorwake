@@ -24,6 +24,10 @@ use std::sync::{Arc, Mutex};
 /// than sent as somebody the meta-layer has never heard of.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub struct Event {
+    /// Minted once, when the event is filed, and carried through every retry.
+    /// Delivery is at-least-once: a batch that half-lands is posted again
+    /// whole, and this is what lets the meta-layer refuse the half it kept.
+    pub id: i64,
     pub tick: u32,
     pub victim: u64,
     pub victim_kind: u8,
@@ -190,6 +194,7 @@ mod tests {
 
     fn ev(tick: u32, victim: u64) -> Event {
         Event {
+            id: (tick as i64) << 32 | victim as i64,
             tick,
             victim,
             victim_kind: 0,
@@ -225,6 +230,7 @@ mod tests {
         let s = Spool::new(d.to_str().unwrap());
         assert_eq!(s.len(), 2, "a restart does not forgive a debt");
         assert_eq!(s.pending[0].tick, 10, "oldest first");
+        assert_eq!(s.pending[0].id, ev(10, 1).id, "the same event, not a reminted one");
         let _ = std::fs::remove_dir_all(&d);
     }
 

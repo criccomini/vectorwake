@@ -103,9 +103,17 @@ create table if not exists rated_events (
     victim_kind    smallint not null,
     victim_before  double precision not null,
     victim_after   double precision not null,
-    credits        jsonb not null
+    credits        jsonb not null,
+    event_id       bigint
 );
 create index if not exists rated_events_by_victim on rated_events (victim, at);
+-- The arena mints event_id when it files the event, and it rides through
+-- every retry of the batch. Unique here is what makes ingest idempotent:
+-- delivery is at-least-once, so the second arrival of an event has to be
+-- refused rather than applied again. Rows from before the id existed are
+-- null, which the index does not mind.
+alter table rated_events add column if not exists event_id bigint;
+create unique index if not exists rated_events_once on rated_events (event_id);
 ";
 
 pub struct Meta {
@@ -713,6 +721,13 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
 /// log is the durable artifact and the rating is derived from it, but an event
 /// that landed without moving anybody would leave the two disagreeing until
 /// somebody recomputed, and nothing here is worth that.
+///
+/// Delivery is at-least-once. A spool retries a whole batch when any of it
+/// fails, and a batch that committed under a lost reply is posted again, so
+/// the same event arriving twice is ordinary weather rather than a fault.
+/// The arena-minted id is the umbrella: the log refuses the second copy, and
+/// a refused copy must not touch the projection, or every retry would bend
+/// somebody's rating by a delta the log recorded once.
 async fn ingest(
     db: &mut Client,
     class: &str,
@@ -724,6 +739,12 @@ async fn ingest(
     if victim == 0 {
         return Err("no victim".into());
     }
+    // Refused rather than taken as-is, because an event without an id cannot
+    // be deduplicated, and one arena quietly exempt from exactly-once is the
+    // failure this field exists to end.
+    let Some(event_id) = ev.get("id").and_then(|v| v.as_i64()) else {
+        return Err("no event id".into());
+    };
     let before = ev.get("victim_before").and_then(|v| v.as_f64()).unwrap_or(0.0);
     let after = ev.get("victim_after").and_then(|v| v.as_f64()).unwrap_or(0.0);
     let tick = ev.get("tick").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -736,24 +757,34 @@ async fn ingest(
         .await
         .map_err(|e| format!("cannot open a transaction: {e}"))?;
 
-    db.execute(
-        "insert into rated_events
-           (class, zone, instance, tick, victim, victim_kind, victim_before, victim_after, credits)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-        &[
-            &class,
-            &zone,
-            &instance,
-            &tick,
-            &victim,
-            &victim_kind,
-            &before,
-            &after,
-            &serde_json::Value::Array(credits.clone()),
-        ],
-    )
-    .await
-    .map_err(|e| format!("cannot store event: {e}"))?;
+    let stored = db
+        .execute(
+            "insert into rated_events
+               (event_id, class, zone, instance, tick, victim, victim_kind,
+                victim_before, victim_after, credits)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+             on conflict (event_id) do nothing",
+            &[
+                &event_id,
+                &class,
+                &zone,
+                &instance,
+                &tick,
+                &victim,
+                &victim_kind,
+                &before,
+                &after,
+                &serde_json::Value::Array(credits.clone()),
+            ],
+        )
+        .await
+        .map_err(|e| format!("cannot store event: {e}"))?;
+    // A retry finding its work already done. Reported as success, because the
+    // spool is asking "is this filed", and it is; applying the deltas again is
+    // what this function exists to never do.
+    if stored == 0 {
+        return db.commit().await.map_err(|e| format!("cannot commit: {e}"));
+    }
 
     apply(&db, victim, class, after - before).await?;
     for c in credits {

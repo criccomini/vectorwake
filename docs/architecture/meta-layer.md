@@ -102,6 +102,14 @@ buffer rather than a database: an arena destroyed mid-spool loses those events
 and nothing else, which is the same bounded loss the fleet already accepts for
 a room in progress.
 
+Delivery is at-least-once, and the meta-layer is what makes that safe. A
+spool retries a whole batch when any of it fails, and a batch that committed
+under a lost reply gets posted again, so events arrive twice in ordinary
+operation. Each one carries an id the arena mints when it files it; the log
+is unique on that id, and a second arrival is refused without touching the
+projection. Without the refusal a retry would re-add deltas the log recorded
+once, which is how a rating drifts from its own history.
+
 Only participants with accounts travel. A guest is rated inside the room and
 forgotten when it ends, so an event where the victim has no account is not
 sent at all, and a guest contributor is dropped from one that is. Sending them

@@ -2163,6 +2163,10 @@ impl Room {
             return;
         }
         let ev = spool::Event {
+            // Random rather than derived, because nothing here is unique
+            // enough to derive from: ticks restart with the process, so a
+            // key built on them would recur across two lives of one instance.
+            id: rand::random(),
             tick: r.tick,
             victim,
             victim_kind: u8::from(self.rating.is_bot(&r.victim)),
