@@ -1,1 +1,2 @@
 Decision 40: predicted deaths were jarring, so the client now kills only its own hull (sim_settings deathless+mortal_ship) and remote death fx wait for snapshot confirmation. Also fixed a bot-departure camping deadlock. CI status needs the GitHub MCP tools; curl 403s.                   
+Safari WebTransport needs datagrams.createWritable() (Chrome/Firefox only the deprecated .writable); client takes either now. Reroll 429s after 30/hour per IP and the confirm card now shows why. Clanker Constitution vendored at root, AGENTS.md points at it, CLAUDE.md symlinks it.       

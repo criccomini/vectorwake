@@ -186,15 +186,42 @@ end
 -- name is unique fleet-wide and only the holder of the pool can promise
 -- that; the local generator survives for a deployment with no meta-layer,
 -- where there is nobody to be unique against.
-function M.reroll()
-    if account.online() then
-        account.rename(function(ok)
-            if ok then M.adopt_account_name() end
-        end)
+--
+-- The card that asked stays up while the draw is in flight and turns into the
+-- refusal when there is one, the same as the account cards do. This used to
+-- take `ok` alone and drop the reason on the floor, which mattered because
+-- there is a reason worth reading: the server caps rerolling per address per
+-- hour, and a player enjoying the names reaches that cap. Past it the row
+-- simply stopped changing and said nothing about why, because the sentence
+-- landed on `account.note` while this file draws its own `M.note`, which only
+-- a failed join ever writes to.
+function M.reroll(asked)
+    if not account.online() then
+        M.name = callsign.generate()
+        M.save_identity()
         return
     end
-    M.name = callsign.generate()
-    M.save_identity()
+    if asked then
+        M.ask = asked
+        asked.sending = true
+        asked.head = "Rolling."
+    end
+    account.rename(function(ok, why)
+        -- Whether the card that asked is still the one up. A reply for a card
+        -- the player has since dismissed has nobody to tell, but a name it
+        -- already won is still ours to take.
+        local mine = asked ~= nil and M.ask == asked
+        if ok then
+            if mine then M.ask = nil end
+            M.adopt_account_name()
+            return
+        end
+        if mine then
+            asked.sending = false
+            asked.head = (why or "That did not work.") .. "."
+            asked.head = string.gsub(asked.head, "%.%.$", ".")
+        end
+    end)
 end
 
 -- The account's name wins once there is one. The arena takes the name from
@@ -757,7 +784,7 @@ end
 -- not travel out to the arena and back for something the menu can do itself.
 local function settle(act, asked)
     if act == "reroll" then
-        M.reroll()
+        M.reroll(asked)
     elseif act == "claim" then
         M.ask_password()
     elseif act == "enter_login" then

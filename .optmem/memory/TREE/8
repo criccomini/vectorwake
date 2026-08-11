@@ -1,0 +1,1 @@
+vectorwake: decision 40 leaves remote death fx to server confirmation; bot leaver deadlock fixed; Safari WebTransport needs createWritable(); reroll 429s at 30/hour per IP, now shown; Clanker Constitution vendored at root; GitHub API here needs MCP tools, not curl.                      
