@@ -17,7 +17,6 @@
 -- of release builds entirely: a shipped bundle drew an empty arena.
 
 local net = require("arena.net")
-local tips = require("arena.tips")
 local touch = require("arena.touch")
 local account = require("arena.account")
 local directory = require("arena.directory")
@@ -28,6 +27,7 @@ local world = require("arena.world")
 local fx = require("arena.fx")
 local sfx = require("arena.sfx")
 local ui = require("arena.ui")
+local guide = require("arena.guide")
 local vec = require("render.vec")
 
 local TICK_HZ = 100
@@ -106,11 +106,6 @@ end
 local accum = 0
 local feed = {}
 local hurt = 0
--- The card drawn under DESTROYED, and whether the hull has been dead since
--- it was set: the card is cleared on the way back up, so `was_dead` is the
--- edge detector.
-local tip = nil
-local was_dead = false
 -- Ticks this pilot has spent inside a safe zone without leaving it, which is
 -- the same count the room is keeping and for the same reason: it is about to
 -- take the seat back. Counted here rather than read off the wire because it
@@ -345,6 +340,88 @@ local function my_buttons()
     return b + (charge_tap or 0) * sim.BTN_SLOT_STEP
 end
 
+-- What arena/guide.lua needs to see this frame.
+--
+-- Gathered rather than worked out again: every fact here is one some
+-- instrument on screen is already drawing, and a guide line that disagreed
+-- with the thing it is pointing at would be worse than no line at all.
+--
+-- Nothing is asked of the core while watching, where `me` is the seat this
+-- client was given and may be 255. The guide answers a watching frame with
+-- nothing, but it has to be handed a table it can read that from first.
+local function guide_context()
+    if watching or me == nil or me >= sim.ship_count() then
+        return {me = me, watching = true}
+    end
+    local c = {
+        me = me,
+        watching = false,
+        alive = sim.ship_alive(me) == 1,
+        menu_open = menu.open,
+        typing = menu.typing(),
+        bits = my_buttons(),
+        has_bomb = sim.has_trigger(me, sim.TRIG_BOMB),
+        in_safe = sim.in_safe(me) == true,
+        bounty = sim.ship_bounty(me),
+        others = sim.ship_count() - 1,
+        -- Riding somebody, which is the one ask a pilot cannot get out of by
+        -- flying differently. 255 is the core's "nobody" here as everywhere.
+        riding = sim.ship_carrier(me) ~= 255,
+    }
+    -- And the other end of it: somebody riding you. Read by walking the
+    -- roster rather than off a count, because the core publishes the rider's
+    -- carrier and not the carrier's riders.
+    for i = 0, sim.ship_count() - 1 do
+        if i ~= me and sim.ship_carrier(i) == me then
+            c.boarded = true
+            break
+        end
+    end
+    -- The first charge in hand that the glossary can describe. A slot a zone
+    -- filled with something this build has no words for is left alone rather
+    -- than pointed at with an empty sentence.
+    for k = 0, sim.MAX_CHARGES - 1 do
+        if sim.ship_charge(me, k) > 0 then
+            local kind = pal.CHARGES[k + 1]
+            if kind and ui.CARDS[kind.name] then
+                c.charge_name = kind.name
+                break
+            end
+        end
+    end
+    -- Whether there is anything aboard worth losing, read off the copy the
+    -- interface keeps of the last living frame. Asked at the moment of death
+    -- the ship itself answers nothing, because death strips it in one
+    -- instruction.
+    local kit = held_kit or flown
+    if flown_ok and kit then
+        for t = 0, sim.TRIG_COUNT - 1 do
+            if (kit.level[t] or 0) > 0 then c.carrying = true end
+            local m = kit.mods[t]
+            for i = 0, sim.MOD_COUNT - 1 do
+                if m and (m[i] or 0) > 0 then c.carrying = true end
+            end
+        end
+        for k = 0, sim.MAX_CHARGES - 1 do
+            if (kit.charge[k] or 0) > 0 then c.carrying = true end
+        end
+    end
+    -- Somebody on the other side, close enough to be on screen. The sides
+    -- read apart by color and that is a thing to be told once, at the moment
+    -- there are two colors to tell apart.
+    local mine = sim.ship_team(me)
+    for i = 0, sim.ship_count() - 1 do
+        if i ~= me and sim.ship_alive(i) == 1
+           and sim.ship_team(i) ~= mine
+           and math.abs(sim.ship_x(i) - sim.ship_x(me)) < 900
+           and math.abs(sim.ship_y(i) - sim.ship_y(me)) < 900 then
+            c.enemy_near = true
+            break
+        end
+    end
+    return c
+end
+
 -- What the panel draws: every slot this hull can carry, how many are in
 -- hand, and which one the use key would spend.
 local function charge_row()
@@ -402,6 +479,10 @@ end
 
 local function toggle_details()
     ui.details = not ui.details
+    -- Both of these are funnels: a key and a tap arrive here and nowhere
+    -- else, so the guide learns the control has been found once rather than
+    -- at each of the places it can be pressed from.
+    guide.acted("players")
     if ui.details then
         menu.close()
         ui.rooms_open = false
@@ -415,6 +496,7 @@ end
 -- reasonable thing to want. So it toggles on its own and shuts nothing.
 local function toggle_map()
     ui.map = not ui.map
+    guide.acted("map")
 end
 
 -- What the pointer is resting on in the menu, which lights the same way the
@@ -549,9 +631,10 @@ function go_home(self, at)
     feed = {}
     hurt = 0
     safe_ticks = 0
-    tip = nil
-    was_dead = false
     watching = false
+    -- What the guide has already said stays said. What it was in the middle
+    -- of saying is about an arena this pilot has just left.
+    guide.leave()
     -- The next seat is a different pilot's switch, and inheriting this one's
     -- would click on arrival. The kit goes with it: a pad wearing the last
     -- zone's add-ons is a drawing of somebody else's ship.
@@ -663,12 +746,6 @@ local function drain_kills()
         notify((k.victim == k.killer) and {vn, " was caught in it"}
             or (k.killer == 255) and {vn, " flew into the wall"}
             or {pilot_named(k.killer), " killed ", vn, paid}, col, mine)
-        -- Your own death deals the card shown under DESTROYED. Set from the
-        -- zone's announcement rather than from the local simulation, which
-        -- can be up to four ticks behind the news. See the clear below.
-        if k.victim == me then
-            tip = tips.pick()
-        end
     end
     if #net.kills > 0 then net.kills = {} end
 end
@@ -1077,6 +1154,10 @@ function update(self, dt)
         tapped[hash("drone")] = nil
         if live and not menu.typing() then
             net.attach(255)
+            -- Found the way off, whether or not the core grants it. The guide
+            -- is asking whether this pilot knows the key, and pressing it is
+            -- the answer regardless of what the seat says back.
+            guide.acted("drop")
             sfx.ui("ui_move")
         end
     end
@@ -1584,26 +1665,6 @@ function update(self, dt)
         -- into. ui.lua owns that metric and cannot be asked from touch.lua,
         -- which it requires.
         touch.ceiling = wh - ui.radar_span()
-        -- Flying again is what takes the card down, and it has to be the
-        -- edge of that, not the state. The zone announces a kill every tick
-        -- but packs a snapshot one tick in five, and a shot fired and landing
-        -- between snapshots is one this client never simulated, so the
-        -- announcement can arrive while the local hull is still alive. A
-        -- clear that ran on every living frame wiped the card in the same
-        -- frame drain_kills set it, and whether a death showed its card came
-        -- down to which of two messages won a forty millisecond race. Close
-        -- range lost it, which is why it looked intermittent.
-        if watching then
-            -- No hull to be dead in. The card machinery would otherwise read
-            -- seat 255 and conclude you had died.
-            tip = nil
-            was_dead = false
-        elseif sim.ship_alive(me) == 1 then
-            if was_dead then tip = nil end
-            was_dead = false
-        else
-            was_dead = true
-        end
         -- Which charge slots this hull carries, and how many of each are in
         -- hand. The pads are built from this, so a hull with none draws none
         -- and a zone that fills all four gets four.
@@ -1663,8 +1724,13 @@ function update(self, dt)
         -- the delayed channel asking the core about a seat that cannot exist.
         local hud_me = me
         if watching then hud_me = e end
+        -- What the guide has to say this frame, or nil. It reads the core's
+        -- events itself, so this is the one call: nothing upstream has to
+        -- remember to tell it that a green was collected.
+        local guide_line = guide.update(dt, guide_context())
         ui.hud({
             me = hud_me,
+            guide = guide_line,
             -- Watching, and what of: a particular hull, or the room's own
             -- feed. The subject alone cannot say, because the channel is
             -- usually pointed at somebody too. What separates them is whether
@@ -1705,7 +1771,7 @@ function update(self, dt)
             -- connection's business, so they are read here rather than in the
             -- renderer, which knows about drawing and not about sides.
             may_invite = net.may_invite(), invited = net.invited,
-            feed = feed, hurt = hurt, tip = tip,
+            feed = feed, hurt = hurt,
             -- How long this pilot has been sitting in a safe zone and how
             -- long the room allows, so the interface can say both. Zero for a
             -- limit means the room never takes a seat back and there is no
@@ -2255,6 +2321,7 @@ function on_input(self, action_id, action)
                 end
                 if r.action == "detach" then
                     net.attach(255)
+                    guide.acted("drop")
                     ui.inspect = nil
                     sfx.ui("ui_move")
                     return true

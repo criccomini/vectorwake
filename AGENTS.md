@@ -103,6 +103,12 @@ mostly in C comments and commit messages, and they are the same tell wearing a
 hat. New prose does not use them. Existing lines get fixed when you are editing
 them for another reason, never in a sweep of their own.
 
+American spelling, everywhere: color, not colour. This holds for what the game
+says to a player, for comments, for commit messages and for chat. The
+repository was written in British spelling to start with, so most of it still
+reads the other way; that is a sweep waiting to happen and not a licence to
+match the neighbours in new work.
+
 ## Memory
 
 Your memory is OptMem:

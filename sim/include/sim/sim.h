@@ -756,7 +756,9 @@ typedef enum {
      * by the time a caller looks, the weapon is gone from the state. Whole
      * pixels, packed (x << 14) | y. */
     SIM_EV_EXPIRE,   /* a: weapon type, b: owner, v: packed position */
-    SIM_EV_PRIZE,    /* a: ship, b: sim_upgrade collected */
+    /* a: ship, b: the flat prize index (see SIM_PRIZE_LEVEL and friends,
+     * not sim_upgrade alone), v: +1 collected, -1 rusted away. */
+    SIM_EV_PRIZE,
     /* A charge was spent. b is the slot, v is how many are left, which is
      * what a panel wants and what a sound wants to know it happened. */
     SIM_EV_CHARGE,

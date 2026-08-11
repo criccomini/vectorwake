@@ -990,11 +990,15 @@ end
 -- or on the label beside it, would eat the trigger at the exact moment a
 -- player is lined up on somebody. Asking who somebody is belongs to the
 -- scoreboard, where a click is a click and nothing else.
--- Where the wait box is standing this frame, or nil when there is none. Set
--- by `wait` and read by `nameplates`, which is the one thing that can land on
--- top of it: a nameplate is a gui glyph, and the gui draws over every mesh, so
--- no wash can quiet one. The only way past that is to not draw it.
-local wait_box = nil
+-- Where the guide's label is standing this frame, or nil when there is none.
+-- Set by `guide_draw` and read by `nameplates`, which is the one thing that
+-- can land on top of it: a nameplate is a gui glyph, and the gui draws over
+-- every mesh, so no wash can quiet one. The only way past that is to not draw
+-- it.
+--
+-- The wait box a dead pilot used to read had the same problem and this is the
+-- same answer, which is why the rectangle outlived it.
+local guide_box = nil
 
 -- What a kill paid, rising off the wreck.
 --
@@ -1060,12 +1064,12 @@ local function nameplates(o)
                 -- them pays, so it is the one number that says which of two
                 -- ships in front of you is worth the risk.
                 local bty = sim.ship_bounty(i)
-                -- Not when it would land on the line somebody has three
-                -- seconds to read. A name is worth knowing while you are
-                -- deciding whether to chase somebody, and you are dead, so
-                -- for those three seconds it is worth less than the sentence
-                -- underneath it. The hull still draws; only the label goes.
-                local b = wait_box
+                -- Not when it would land on the line the guide is showing. A
+                -- name is worth knowing while you are deciding whether to
+                -- chase somebody; a sentence you are shown once is worth more
+                -- for the few seconds it is up. The ship still draws, only
+                -- the label goes.
+                local b = guide_box
                 local clear = not (b and sx + 12 * S < b.x + b.w
                     and sx + 90 * S > b.x and sy + 28 * S > b.y
                     and sy + 4 * S < b.y + b.h)
@@ -1688,14 +1692,13 @@ local function toast(lines, reach)
     -- on; a border would be the one shape this interface does not draw.
     local w = text_w(words, size) + 26 * S
     local h = LINE * S + 6 * S
-    -- The card a dead pilot reads is the one other slab that lands near the
-    -- middle, and in both orientations it lands clear of this. Both cannot
-    -- grow forever though, so the check is the overlap itself rather than
-    -- "are they dead": a death line is exactly the kind this exists to show,
-    -- and refusing to draw it whenever a card is up would be refusing the
-    -- commonest one.
-    if wait_box and y - h / 2 < wait_box.y + wait_box.h
-       and y + h / 2 > wait_box.y then
+    -- The guide's label is the one other run of words that can land near the
+    -- middle, since it follows your own ship and your own ship is what the
+    -- camera is centered on. The check is the overlap itself rather than
+    -- "is the guide up", because most of what the guide says sits out beside
+    -- an instrument and never comes near this.
+    if guide_box and y - h / 2 < guide_box.y + guide_box.h
+       and y + h / 2 > guide_box.y then
         return
     end
     rect(W / 2 - w / 2, y - h / 2, w, h, pal.rgb(0x03050a, 0.62 * a))
@@ -2147,220 +2150,83 @@ local function inspect(o, top)
     return y + h
 end
 
--- The damage vignette: red creeping in from the edges rather than a flash
--- over the middle, so it never hides the ship that is shooting you.
---
--- With the corner energy bar gone this carries more weight than it used to:
--- the vignette says "you are being hit", the hull's pip says how much is
--- left, and its colour says how urgent that is. Three channels, none of them
--- a panel.
 -- --- the glossary ----------------------------------------------------------
 --
--- Each card in the wait box draws the thing it is about and then says what it
--- is. That is the whole idea: a sentence about bombs is a sentence, and the
--- bomb that killed you is a shape you have seen a hundred times without ever
--- being told what it was.
+-- One sentence per thing, wherever a player meets it. The hover label reads
+-- these, and so does arena/guide.lua when a trigger fires on something a
+-- player has just met for the first time, so learning what a bomb is from
+-- being killed by one and then pointing at the BOMB row is learning it in the
+-- same words twice rather than in two different sets.
 --
--- The figures are the arena's own, built the way world.lua builds them, at a
--- smaller scale and standing still. Drawing a fresh icon for the purpose would
--- teach a pilot to recognise something that is not out there.
+-- Each card used to carry a figure as well, drawn beside the sentence in the
+-- box a dead pilot read. The box is gone and so are the figures: a hover
+-- label sets a word beside the real instrument, and a drawing of a bomb next
+-- to the bomb row would be a picture of the picture already on it.
 --
--- They draw into the interface layer rather than the glow one, which is alpha
--- blended and not additive, so the bloom comes from stacked translucent rings
--- instead of from adding light. Close enough at this size, and it keeps the
--- card in the layer that owns the rest of the box.
-
--- The weapon's own colour rather than a rung's. These figures say what killed
--- you, not how far up its ladder it was, and they used to borrow the second
--- entry of a ramp because it happened to look right -- which stopped being
--- true the moment one ramp meant one thing. Naming them is also most of what
--- keeps two cards from coming out the same colour. Shrapnel is the deliberate
--- exception: it takes the bullet's, because that is what a fragment is, and
--- eight of them thrown out of a red core is not the bullet card anyway.
-local function fig_bomb(cx, cy, k)
-    local col = pal.BOMB
-    -- No trail, though it wears one in flight. Drawn inside the blast ring it
-    -- stopped short of the rim and read as a stray stroke rather than as
-    -- motion, and the card does not need it: against the repel below this is
-    -- already the red one with something burning in the middle.
-    --
-    -- The blast it would throw, faint, because the blast is what a rung buys
-    -- and it is what the card is about.
-    u:ring(cx, ry(cy), k * 0.92, 1.0 * S, 22, pal.a(col, 0.26))
-    u:halo(cx, ry(cy), k * 0.50, 12, pal.a(col, 0.45))
-    u:ring(cx, ry(cy), k * 0.32, 1.6 * S, 14, pal.a(col, 0.95))
-    u:disc(cx, ry(cy), k * 0.20, 10, pal.a(pal.hot(col, 0.85, 1), 0.95))
-end
-
-local function fig_bolt(cx, cy, k)
-    local col = pal.ENEMY
-    -- Travelling left to right with its trail behind it, which is the only
-    -- way a bolt is ever seen: the streak is what says which way it is going.
-    --
-    -- Heavier than the arena's own. Out there a bolt is three overlapping
-    -- strokes on an additive layer and the light piles up; in here the layer
-    -- is alpha blended, so the same numbers drew a hairline with a dot on the
-    -- end. The look is matched rather than the arithmetic.
-    local x0, x1 = cx - k * 0.95, cx + k * 0.5
-    u:seg_fade(x0, ry(cy), x1, ry(cy), 1.0 * S, 6.5 * S, 0, 0.30, col)
-    u:seg_fade(cx - k * 0.45, ry(cy), x1, ry(cy), 1.4 * S, 3.6 * S, 0, 0.85,
-               col)
-    u:halo(x1, ry(cy), k * 0.42, 10, pal.a(col, 0.55))
-    u:disc(x1, ry(cy), k * 0.17, 8, pal.a(pal.hot(col, 0.9, 1), 1))
-end
-
-local function fig_green(cx, cy, k)
-    local col = pal.PRIZE
-    local r = k * 0.62
-    local pts = {cx, ry(cy - r), cx + r, ry(cy), cx, ry(cy + r), cx - r, ry(cy)}
-    u:halo(cx, ry(cy), k * 0.95, 10, pal.a(col, 0.16))
-    u:fan(pts, pal.a(col, 0.28))
-    u:outline(pts, 1.4 * S, pal.a(col, 0.95), true)
-end
-
--- Fragments leaving the bomb that threw them.
---
--- The fragments are bullets, so they are the card deck's bullet colour, and
--- the dying bomb at the centre is the bomb's own red. Two colours is the whole
--- card: a bomb turning into your gun's fire, which is exactly what the add-on
--- does. It threw eight violet fragments once, on the same reasoning the arena
--- used, and that reasoning was wrong in both places.
---
--- The angles are uneven on purpose. Shrapnel:Random is what the original's
--- own arena file sets and what the baseline copies, so a ring of them is not
--- a ring, and drawing it evenly would be drawing the burst again.
-local SHRAP_ANGLES = {0.35, 1.15, 1.95, 2.55, 3.55, 4.35, 5.05, 5.85}
-local function fig_shrap(cx, cy, k)
-    local col = pal.ENEMY
-    local bomb = pal.BOMB
-    for _, a in ipairs(SHRAP_ANGLES) do
-        local dx, dy = math.cos(a), math.sin(a)
-        u:seg_fade(cx + dx * k * 0.34, ry(cy + dy * k * 0.34),
-                   cx + dx * k * 0.95, ry(cy + dy * k * 0.95),
-                   0.7 * S, 2.2 * S, 0, 0.85, col)
-        u:disc(cx + dx * k * 0.95, ry(cy + dy * k * 0.95), k * 0.07, 6,
-               pal.a(pal.hot(col, 0.9, 1), 1))
-    end
-    u:halo(cx, ry(cy), k * 0.3, 10, pal.a(bomb, 0.5))
-    u:ring(cx, ry(cy), k * 0.2, 1.2 * S, 10, pal.a(bomb, 0.9))
-end
-
--- The floor a pilot cannot be shot on, drawn the way the arena draws it: a
--- dashed edge round a hatched patch, in the friendly blue. The only square
--- figure in the deck, which is most of what tells it apart at a glance.
-local function fig_safe(cx, cy, k)
-    local col = pal.FRIEND
-    local r = k * 0.82
-    u:rect(cx - r, ry(cy - r, 2 * r), 2 * r, 2 * r, pal.a(col, 0.10))
-    for i = -1, 1 do
-        local o = i * r * 0.66
-        u:seg(cx - r + math.max(0, o), ry(cy + r + math.min(0, o)),
-              cx + r + math.min(0, o), ry(cy - r + math.max(0, o)),
-              0.7 * S, pal.a(col, 0.3))
-    end
-    -- Dashed, the way a safe tile's face is: four to a side, so the gaps read
-    -- as gaps rather than as a broken line.
-    for i = 0, 3 do
-        local t0 = -r + (2 * r) * i / 4 + r * 0.06
-        local t1 = -r + (2 * r) * (i + 1) / 4 - r * 0.06
-        u:seg(cx + t0, ry(cy - r), cx + t1, ry(cy - r), 1.2 * S, pal.a(col, 0.75))
-        u:seg(cx + t0, ry(cy + r), cx + t1, ry(cy + r), 1.2 * S, pal.a(col, 0.75))
-        u:seg(cx - r, ry(cy + t0), cx - r, ry(cy + t1), 1.2 * S, pal.a(col, 0.75))
-        u:seg(cx + r, ry(cy + t0), cx + r, ry(cy + t1), 1.2 * S, pal.a(col, 0.75))
-    end
-end
-
--- The well, standing still: rings closing on an eye, with the arms that turn
--- against them out in the arena. Drawn falling inward rather than at even
--- spacing, so it reads as a pull and not as the repel's push.
-local function fig_hole(cx, cy, k)
-    local col = pal.HOLE
-    for i = 1, 3 do
-        local rr = k * (0.98 - (i - 1) * 0.26)
-        u:ring(cx, ry(cy), rr, 1.0 * S, 18, pal.a(col, 0.18 + (i - 1) * 0.16))
-    end
-    for i = 0, 3 do
-        local a0 = i * math.pi / 2 + 0.4
-        u:arc(cx, ry(cy), k * 0.5, a0, a0 + 0.85, 1.2 * S, 5, pal.a(col, 0.75))
-    end
-    u:halo(cx, ry(cy), k * 0.3, 10, pal.a(col, 0.55))
-    u:disc(cx, ry(cy), k * 0.13, 8, pal.a(pal.hot(col, 0.6, 1), 0.95))
-end
-
--- Twelve rounds where the arena throws twenty-four. A ring drawn at the real
--- count closes into a disc at this size, and what the figure has to say is
--- "every direction at once" rather than a number.
-local function fig_burst(cx, cy, k)
-    local col = pal.BURST
-    u:halo(cx, ry(cy), k * 0.45, 12, pal.a(col, 0.25))
-    for i = 0, 11 do
-        local a = i * math.pi / 6
-        local dx, dy = math.cos(a), math.sin(a)
-        local x0, y0 = cx + dx * k * 0.30, cy + dy * k * 0.30
-        local x1, y1 = cx + dx * k * 0.92, cy + dy * k * 0.92
-        u:seg_fade(x0, ry(y0), x1, ry(y1), 0.8 * S, 2.6 * S, 0, 0.85, col)
-        u:disc(x1, ry(y1), k * 0.075, 6, pal.a(pal.hot(col, 0.9, 1), 1))
-    end
-end
-
-local function fig_repel(cx, cy, k)
-    local col = pal.CHARGE_COL
-    -- Rings going out and nothing in the middle, which is a shove drawn
-    -- standing still. The empty centre is the point of difference from the
-    -- bomb: a repel is not an object, it is a thing that happened at a place.
-    u:ring(cx, ry(cy), k * 0.96, 1.1 * S, 22, pal.a(col, 0.22))
-    u:ring(cx, ry(cy), k * 0.68, 1.3 * S, 18, pal.a(col, 0.48))
-    u:ring(cx, ry(cy), k * 0.40, 1.5 * S, 14, pal.a(col, 0.9))
-end
-
--- The nameplate, as a stranger wears it: a hull with a number under it. What
--- the card is about is the number, so the hull is dim and small.
-local thumb    -- defined with the menu, which is the other thing that draws one
-local function fig_bounty(cx, cy, k)
-    thumb(cx, cy - k * 0.28, 5, pal.a(pal.ENEMY, 0.9), k * 0.042)
-    txt("42", cx, cy + k * 0.88, 12 * S, pal.a(pal.BOUNTY, 0.95), "center")
-end
-
--- Every card: the figure, the word for it, and what it does.
---
--- The word sits over the sentence rather than out at the box's edge, which is
--- where a caption lived once and did not work: out there it read as a label
--- for the whole panel, and the panel is always the same thing. Above the body
--- it is a heading for the paragraph under it, which is what it actually is,
--- and it gives a pilot the name to carry away. The figure alone taught the
--- shape and left them with nothing to call it.
+-- `key` is how the thing is worked, where it is worked by something, and it
+-- is separate from the sentence because the two answer different questions
+-- and only one of them changes with the device. `pad` is the same sentence
+-- for a touchscreen, where the controls are thumbs rather than keys.
 local CARDS = {
-    bomb = {fig = fig_bomb, name = "BOMB",
+    bomb = {name = "BOMB",
             text = "Heavy weapon that detonates on impact. Upgrades include " ..
                    "shrapnel and proximity abilities. Proximity detonates on " ..
-                   "a near miss."},
-    bolt = {fig = fig_bolt, name = "BULLET",
+                   "a near miss.",
+            key = "Tab fires them.",
+            pad = "The smaller pad beside the guns fires them."},
+    bolt = {name = "BULLET",
             text = "Bullets are your rapid fire weapon. Upgrades include " ..
-                   "spread and bouncing abilities."},
-    green = {fig = fig_green, name = "GREEN",
+                   "spread and bouncing abilities.",
+            key = "Space fires them.",
+            pad = "The big pad on the right fires them."},
+    green = {name = "GREEN",
              text = "Greens contain prizes that upgrade your ship. They also " ..
                     "increase your bounty."},
-    repel = {fig = fig_repel, name = "REPEL",
+    repel = {name = "REPEL",
              text = "Pushes enemy fire and ships away from you. Does not " ..
-                    "affect you or your team."},
-    burst = {fig = fig_burst, name = "BURST",
+                    "affect you or your team.",
+             key = "Q triggers it.",
+             pad = "Tap the repel cell above the guns."},
+    burst = {name = "BURST",
              text = "Fires bullets in every direction at once. Deadly at " ..
-                    "close range."},
-    bounty = {fig = fig_bounty, name = "BOUNTY",
+                    "close range.",
+             key = "W triggers it.",
+             pad = "Tap the burst cell above the guns."},
+    -- The one charge that is a place rather than a shot, which is why its
+    -- sentence is about where it sits and not about what it comes out of.
+    mine = {name = "MINE",
+            text = "Mines stay where you drop them. They detonate when an " ..
+                   "enemy approaches.",
+            key = "A drops one.",
+            pad = "Tap the mine cell above the guns."},
+    bounty = {name = "BOUNTY",
               text = "Points earned for destroying an enemy. Your enemies " ..
                      "earn your bounty when they destroy you."},
-    shrap = {fig = fig_shrap, name = "SHRAPNEL",
+    shrap = {name = "SHRAPNEL",
              text = "Fragments thrown by a bomb when it detonates. Each one " ..
                     "is a bullet at your gun's level, and bounces only if " ..
-                    "your bullets do."},
-    safe = {fig = fig_safe, name = "SAFE ZONE",
+                    "your bullets do.",
+             key = "Tab fires them.",
+             pad = "The smaller pad beside the guns fires them."},
+    safe = {name = "SAFE ZONE",
             text = "Nothing can hurt you inside one, and you cannot fire " ..
                    "out. Pulling a trigger there stops your ship dead."},
-    hole = {fig = fig_hole, name = "WORMHOLE",
+    hole = {name = "WORMHOLE",
             text = "Pulls in anything that comes near. Fly into one and it " ..
                    "throws you to a random start with your speed gone."},
 }
 M.CARDS = CARDS
+
+-- What a card says on this device: the sentence, and how the thing is worked
+-- where something works it. Joined rather than drawn as two blocks, since the
+-- label wraps one paragraph and a second one would need a second layout for
+-- the sake of a single sentence.
+function M.card_text(which)
+    local c = CARDS[which]
+    if not c then return nil end
+    local how = M.touching and c.pad or c.key
+    return how and (c.text .. " " .. how) or c.text
+end
 
 -- What is drawn while a pilot is sitting in a safe zone.
 --
@@ -2395,143 +2261,13 @@ local function safe_note(spent, limit)
         (M.compact and 10 or 12) * S, pal.a(col, 0.9), "center")
 end
 
--- What is drawn under DESTROYED while a pilot waits to fly again.
+-- The damage vignette: red creeping in from the edges rather than a flash
+-- over the middle, so it never hides the ship that is shooting you.
 --
--- The shape is the interface's own and nothing new: a wash to lift it off
--- the arena, the map border's tick as a rule across the top, and under it a
--- card. It had corner brackets and a caption once, and both went. A frame is
--- for holding a cluster together against the panels around it, and this box
--- shares the middle of the screen with nothing.
---
--- The rule is the clock. It is drawn twice, dim across the full width and
--- lit across what is left of the respawn, so the one line the box carries
--- besides its card also says how long there is to read it. A numeral
--- counting down would be a thing to watch instead of the sentence, and this
--- game has one big centred readout already.
---
--- Centred under the banner rather than in a corner, because for these few
--- seconds there is nothing to fly and nothing to look away from, and it goes
--- the moment the hull is back.
--- Where the box goes and what it holds, worked out before anything else is
--- drawn so `nameplates` can step around it in the same frame. Measuring and
--- drawing are separate for that reason alone: the box is drawn last, over
--- everything, and a rectangle published then would be a frame stale, which is
--- one frame of a stranger's name across the sentence at the moment it appears.
-local function wait_layout(which)
-    local card = CARDS[which]
-    if not card then return nil end
-    -- Sized up, and against the wrong thing before. It was set under the
-    -- corner stack's own body text, which is what a pilot reads at a glance
-    -- while flying; this is read once, at arm's length, in the only seconds
-    -- of the game where there is nothing else to do. A card nobody finishes
-    -- is a card that may as well not be dealt.
-    local fs = (M.compact and 13 or 15) * S
-    local pad = 16 * S
-    -- Wide enough to read, never wider than the screen it is on. The width
-    -- is set by the longest card rather than by taste: the bomb is 123
-    -- characters and wraps to four rows under 560, the last of them holding
-    -- the single word "miss."
-    local w = math.min(560 * S, W - 40 * S)
-    local inner = w - pad * 2
-    -- The figure's cell, and what is left for the sentence beside it. Square,
-    -- because every shape in here is drawn around its own centre and a cell
-    -- that was not square would put the bomb and the flag on different axes.
-    local cell = (M.compact and 50 or 60) * S
-    local gap = 14 * S
-    -- Wrapped to less than the column holds. A line broken at exactly the
-    -- width ends flush against the padding, which reads as text that only
-    -- just fitted rather than text that was laid out.
-    local measure = inner - cell - gap - 6 * S
-    local lines = wrap(card.text, fs, measure)
-
-    local rule = 13 * S              -- the clock rule, at the top of the box
-    local rowh = 19 * S
-    -- The heading and the air under it, which the figure's cell has to clear
-    -- as well: the shape is centred on the whole block, name included, or it
-    -- floats against a column it is supposed to sit beside.
-    local lab = (M.compact and 11 or 12) * S
-    local headh = lab + 9 * S
-    -- Tall enough for the figure or for the words, whichever asks for more,
-    -- so a one-line card is not a box with a bomb hanging out of the bottom.
-    local body = math.max(cell, headh + #lines * rowh)
-    local h = rule + 13 * S + body + 13 * S
-    return {
-        x = (W - w) / 2, y = H * 0.46 + (M.compact and 22 or 30) * S,
-        w = w, h = h, inner = inner, pad = pad,
-        fs = fs, lab = lab, headh = headh, rule = rule, rowh = rowh,
-        cell = cell, gap = gap, body = body,
-        card = card, lines = lines,
-    }
-end
-
-local function wait(b, me)
-    if not b then return end
-    local x, y = b.x, b.y
-
-    -- Darker than the panels' own wash. Those sit in a corner over mostly
-    -- empty field; this sits in the middle of the arena, where a stranger's
-    -- hull flies straight through it, and a line you have three seconds to
-    -- read cannot afford to be shared with one.
-    rect(x, y, b.w, b.h, pal.a(pal.BG, 0.86))
-
-    -- The clock. `respawn_at` counts down in the core and is in every
-    -- snapshot, so this is read rather than timed here: a local stopwatch
-    -- would drift off the tick that actually puts the hull back.
-    --
-    -- The bar and nothing else. It used to run over a ticked rule, which is a
-    -- ruler under a thing nobody is measuring: the wait is over when the bar
-    -- runs out, and how much of a second each tick stood for was never a
-    -- question anybody had while they were dead.
-    local left, delay = 0, 0
-    if sim.ship_respawn then left, delay = sim.ship_respawn(me) end
-    if delay > 0 and left > 0 then
-        local frac = left / delay
-        if frac > 1 then frac = 1 end
-        u:seg(x + b.pad, ry(y + b.rule),
-              x + b.pad + b.inner * frac, ry(y + b.rule),
-              1.2 * S, pal.a(pal.FRIEND, 0.7))
-    end
-
-    -- The words on the left, the figure on the right.
-    --
-    -- Reading order decides it. Every other panel in this interface opens at
-    -- the left edge and the eye starts there by habit, so the name is the
-    -- first thing met and the shape is what the sentence hands you at the end
-    -- of it. With the figure leading, the eye had to step over a shape it did
-    -- not yet have a word for.
-    --
-    -- The block of words is centred on the body's own middle rather than hung
-    -- from the top, so a one-line card and a three-line card are both
-    -- balanced against the shape, and the figure sits on that same middle.
-    local top = y + b.rule + 13 * S
-    local mid = top + b.body / 2
-
-    local tx = x + b.pad
-    local block = b.headh + #b.lines * b.rowh
-    local ty = mid - block / 2 + b.lab / 2
-    -- Brighter than the sentence under it, in the ink the interface names
-    -- things with, so the eye takes the word first and then reads why.
-    txt(b.card.name, tx, ty, b.lab, pal.a(pal.INK, 0.9))
-    ty = ty + b.headh - b.lab / 2 + b.rowh / 2
-    -- The word above is a label and shouts with the rest of the HUD. What is
-    -- under it is prose: three seconds of reading rather than a glance, and a
-    -- paragraph in capitals is a paragraph nobody finishes.
-    --
-    -- The capital is taken once, on the first line. Cased line by line, a
-    -- sentence that wrapped onto three of them would start three times.
-    local was = case
-    case = "sentence"
-    for i, line in ipairs(b.lines) do
-        txt(line, tx, ty, b.fs, pal.a(pal.PANEL_INK, 0.92), nil, nil, i > 1)
-        ty = ty + b.rowh
-    end
-    case = was
-
-    -- Centred in what the text column left, against the box's right padding,
-    -- so the shape has air round it rather than being pushed against a wall.
-    b.card.fig(x + b.w - b.pad - b.cell / 2, mid, b.cell / 2)
-end
-
+-- With the corner energy bar gone this carries more weight than it used to:
+-- the vignette says "you are being hit", the ship's pip says how much is
+-- left, and its color says how urgent that is. Three channels, none of them
+-- a panel.
 local function vignette(amount)
     if amount <= 0.01 then return end
     local col = pal.a(pal.HURT, 0.55 * amount)
@@ -2885,9 +2621,9 @@ local function help_line(want)
         e.h = #e.lines * LINE * S
         found = e
     end
-    -- The corner stack says what the card a dead pilot reads says, word for
-    -- word, out of CARDS. One sentence per thing, wherever a player meets it:
-    -- learning what a bomb is from the wait after it killed you and then
+    -- The corner stack says what the glossary says, word for word, out of
+    -- CARDS. One sentence per thing, wherever a player meets it: learning what
+    -- a bomb is from the guide the first time one goes off near you and then
     -- pointing at the BOMB row should not be learning it twice in two
     -- different sets of words.
     local sx = anchor.stack_x
@@ -2896,11 +2632,16 @@ local function help_line(want)
             local c = CARDS[which]
             if not at or not c then return end
             -- What the round on the row is wearing, named. The card says what
-            -- the weapon is in general; the add-ons are what this hull picked
+            -- the weapon is in general; the add-ons are what this ship picked
             -- up in this fight, and a shape drawn onto a mark is learnable
             -- exactly once, by being told.
-            local s = mods and (c.text .. " Carrying " .. mods .. ".")
-                or c.text
+            --
+            -- What the add-ons are goes last, after the key, because it is the
+            -- only part of the line that is about this fight rather than
+            -- about the weapon. It is also the part that changes while you
+            -- are reading it.
+            local s = M.card_text(which)
+            if mods then s = s .. " Carrying " .. mods .. "." end
             add(key, sx, at, s, col)
         end
         card("gun", anchor.gun, "bolt", pal.FRIEND, anchor.gun_mods)
@@ -2944,13 +2685,14 @@ local function help_draw(e)
     local dir = (e.align == "right") and -1 or 1
     rect(e.x + (dir < 0 and -3 * S or 0), top, 3 * S, bot - top,
          pal.a(e.col, 0.85))
-    -- The same sentences the dead read, so they are set the same way: prose,
-    -- with its capital taken once on the first line.
+    -- Prose rather than the capitals the rest of the interface is set in,
+    -- with the capital taken once on the first line. Cased line by line, a
+    -- sentence that wrapped onto three of them would start three times.
     local was = case
     case = "sentence"
     for i, line in ipairs(e.lines) do
         txt(line, e.x + dir * 11 * S, ttop + (i - 0.5) * lh, f,
-            pal.a(pal.INK, 0.95), e.align, nil, i > 1)
+            pal.a(pal.INK, e.alpha or 0.95), e.align, nil, i > 1)
     end
     case = was
 end
@@ -2976,6 +2718,98 @@ local function help_hover(key)
     help_draw(e)
 end
 
+-- --- the guide -------------------------------------------------------------
+--
+-- The same label, hovered by the game instead of by the pointer. A pilot who
+-- has never fired is not going to discover the BOMB row by pointing at it,
+-- because pointing at a thing is a question you can only ask once you suspect
+-- the thing is there. arena/guide.lua decides what to say and when; this end
+-- decides where it lands, and it lands exactly where the pointer's answer
+-- would: a bar in the thing's own color with the words beside it.
+--
+-- The one anchor the hover label has no use for is your own ship, which is
+-- where anything about flying belongs. There is no instrument for "left and
+-- right turn", and a sentence about your ship set in a corner is a sentence
+-- about the corner.
+local function guide_anchor(e, me, o)
+    if e.at and e.at ~= "ship" then
+        -- An instrument. help_line already knows where every one of them is
+        -- this frame and what color it wears, so the guide asks it rather
+        -- than working the same geometry out twice and drifting.
+        --
+        -- Nil where the instrument is not on screen, and that is the ordinary
+        -- case rather than the odd one: a touchscreen wears its weapons on the
+        -- pads and draws no corner stack at all, so every weapon line the
+        -- guide has would go unsaid on a phone. It falls through to the ship.
+        local a = help_line(e.at)
+        if a then return a end
+    end
+    if not o.half_w or o.half_w <= 0 then return nil end
+    local scale = W / (2 * o.half_w)
+    local sx = W / 2 + (sim.ship_x(me) - o.cam_x) * scale
+    local sy = H / 2 + (sim.ship_y(me) - o.cam_y) * scale
+    -- Off the nose to whichever side has the room. Against the right edge the
+    -- words would wrap to a column two words wide, which is not a sentence
+    -- anybody reads at a glance while flying.
+    local right = sx < W * 0.55
+    local x = sx + (right and 30 * S or -30 * S)
+    local align = right and "left" or "right"
+    local px = (FONT - 1) * S
+    local room = right and (W - x - 22 * S) or (x - 22 * S)
+    local out = {x = x, y = sy, col = pal.INK, align = align,
+                 lines = wrap(e.text, px, math.min(room, 420 * S))}
+    out.h = #out.lines * LINE * S
+    return out
+end
+
+-- What a guide line says on this device. A line names a card or carries its
+-- own words, and the choice between a key and a pad is made here rather than
+-- in guide.lua for the same reason the glossary makes it here: which controls
+-- exist is a fact about the machine, and this is the end that knows.
+local function guide_text(e)
+    if e.card then return M.card_text(e.card) end
+    return (M.touching and e.pad) or e.text
+end
+
+-- Measured before the nameplates draw and drawn after them, which is why this
+-- is two calls rather than one. See `guide_box`.
+local function guide_layout(e, me, o)
+    if not e then return nil end
+    local s = guide_text(e)
+    if not s or s == "" then return nil end
+    local a = guide_anchor(e, me, o)
+    if not a then return nil end
+    -- An instrument's own line is what the pointer would have drawn, so it
+    -- arrives with that instrument's words in it. The guide has its own.
+    a.lines = wrap(s, (FONT - 1) * S,
+                   math.min((a.align == "right") and (a.x - 22 * S)
+                            or (W - a.x - 22 * S), 640 * S))
+    a.h = #a.lines * LINE * S
+    -- A bar sized to an instrument says "this row". A bar sized to the words
+    -- says "these words", which is what the guide is: it is not naming the
+    -- gun row, it is telling you something and pointing at where to look.
+    a.top, a.bot = nil, nil
+    a.alpha = e.alpha
+    help_fit(a)
+    -- What a nameplate has to keep off, as a plain rectangle: top left corner
+    -- and a size, which is what `nameplates` and the notice both test against.
+    -- Wider than the words by the bar and its gap, since a name printed into
+    -- the gap is a name across the start of every line.
+    local w = 0
+    for _, line in ipairs(a.lines) do
+        local lw = text_w(line, (FONT - 1) * S)
+        if lw > w then w = lw end
+    end
+    w = w + 14 * S
+    a.rect = {x = (a.align == "right") and (a.x - w) or a.x,
+              y = a.y - a.h / 2, w = w, h = a.h}
+    return a
+end
+
+local function guide_draw(a)
+    if a then help_draw(a) end
+end
+
 function M.hud(o)
     case = "upper"
     if sim.ship_count() == 0 then return end
@@ -2998,14 +2832,19 @@ function M.hud(o)
     -- are answering, and a glance at your energy is still worth taking.
     text_dim = (o.menu_open or M.room_ask) and 0.34 or 1
 
-    -- Measured first, drawn last. Nameplates need to know where it is before
-    -- they draw, and it needs to sit over everything, so the two happen at
-    -- opposite ends of this function. Nil whenever it will not be drawn:
-    -- alive, or under the menu, which takes the centre of the screen for
-    -- itself and puts both of these away.
-    wait_box = nil
-    if not o.menu_open and not o.watch and sim.ship_alive(me) == 0 then
-        wait_box = wait_layout(o.tip)
+    -- Measured here and drawn at the far end of this function. Nameplates read
+    -- the rectangle before they draw and the label goes over everything, so
+    -- the two happen at opposite ends and what a nameplate steps around is
+    -- this frame's line rather than last frame's.
+    --
+    -- Nothing under the menu, which takes the middle of the screen for itself,
+    -- and nothing while watching somebody else fly, where every sentence the
+    -- guide has would be about a ship that is not yours.
+    local guide = nil
+    guide_box = nil
+    if o.guide and not o.menu_open and not o.watch then
+        guide = guide_layout(o.guide, me, o)
+        guide_box = guide and guide.rect
     end
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
@@ -3091,10 +2930,12 @@ function M.hud(o)
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
             pal.a(pal.INK, 0.92), "center")
     end
+    -- Over everything, and last, so nothing the arena drew this frame lands on
+    -- top of a sentence a player gets shown once.
+    guide_draw(guide)
     if not o.watch and sim.ship_alive(me) == 0 then
         txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
             pal.ENEMY, "center")
-        wait(wait_box, me)
     elseif not o.watch and (o.safe or 0) > 0 then
         safe_note(o.safe, o.safe_limit or 0)
     end
@@ -3124,7 +2965,11 @@ end
 -- weight out it came out at twice the ships beside it.
 local HULL_PEN = 1.4
 
-function thumb(cx, cy, cls, col, scale, turn)
+-- Local now that it is. It was declared up with the glossary's figures and
+-- assigned here, because the bounty card drew one; the card is gone and every
+-- caller left is below this, so the forward declaration went with it rather
+-- than leaving a global behind.
+local function thumb(cx, cy, cls, col, scale, turn)
     local h = world.HULLS[cls + 1]
     if not h then return end
     local k = 1

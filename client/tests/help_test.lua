@@ -202,22 +202,27 @@ end
 -- Where a block's words came out: the top and bottom of the run of lines that
 -- carries this sentence, found by walking the drawn text for its first word.
 local function block_of(f, sentence)
-    -- Matched by consuming consecutive drawn lines until they rebuild the
-    -- sentence exactly. Anything looser mistakes a line of one card for a line
-    -- of another, since they share plenty of short words. Compared in one
-    -- case, since the interface sets what it says in capitals and what is
-    -- being matched here is the words.
+    -- Matched by consuming consecutive drawn lines until they cover the
+    -- sentence. Anything looser mistakes a line of one card for a line of
+    -- another, since they share plenty of short words. Compared in one case,
+    -- since the interface sets what it says in capitals and what is being
+    -- matched here is the words.
+    --
+    -- Covering rather than rebuilding exactly, because a row can say more than
+    -- the card does: the gun row appends what it is carrying, and the line
+    -- where the wrap crosses out of the card carries words from both. The
+    -- question this answers is where the block that holds this sentence
+    -- landed, which does not need the block to end with it.
     local s = string.upper(sentence)
     for i = 1, #f do
         local first = string.upper(f[i].s)
         if s:find(first, 1, true) == 1 then
             local acc, j = first, i
-            while acc ~= s and j < #f do
+            while #acc < #s and j < #f do
                 j = j + 1
                 acc = acc .. " " .. string.upper(f[j].s)
-                if s:find(acc, 1, true) ~= 1 then break end
             end
-            if acc == s then
+            if acc:sub(1, #s) == s then
                 -- The block's extent, not its first and last baseline.
                 local half = LINE_H / 2
                 return {top = f[i].y - half, bot = f[j].y + half,
@@ -229,14 +234,15 @@ local function block_of(f, sentence)
     return nil
 end
 
--- The corner stack says what the card a dead pilot reads says, so the test
--- reads them out of the same table rather than keeping a second copy to fall
--- out of step with it.
-local GUN = ui.CARDS.bolt.text
-local BOMB = ui.CARDS.bomb.text
-local CHG = ui.CARDS.repel.text
-local BST = ui.CARDS.burst.text
-local BTY = ui.CARDS.bounty.text
+-- The corner stack says what the glossary says, so the test reads the
+-- sentences out of the same place rather than keeping a second copy to fall
+-- out of step with it. `card_text` and not `CARDS[k].text`, because a card
+-- whose thing has a key says the key too and what lands on screen is both.
+local GUN = ui.card_text("bolt")
+local BOMB = ui.card_text("bomb")
+local CHG = ui.card_text("repel")
+local BST = ui.card_text("burst")
+local BTY = ui.card_text("bounty")
 local RADAR = "near space. the rings are range."
 local MAP = "the whole arena, and you as the arrow"
 local FEED = "who paid whom"
@@ -382,6 +388,41 @@ do
           says(fr, CHG) and not says(fr, BST))
     check("the burst row says what a burst is",
           says(fb, BST) and not says(fb, CHG))
+end
+
+-- --- and it says which key works it ----------------------------------------
+--
+-- The sentence says what a thing is; on its own that leaves a pilot knowing
+-- there is a repel aboard and no way to spend it. This reverses an earlier
+-- call that kept the key out on the grounds that it is a fact about the
+-- keyboard rather than about the repel. Both are true and only one of them
+-- gets somebody out of a corner.
+--
+-- What it must not do is name a key on a device that has none, which is the
+-- reason that call was made in the first place.
+
+do
+    for _, pair in ipairs({{"gun", "Space"}, {"bomb", "Tab"},
+                           {"charge:repel", "Q"}, {"charge:burst", "W"}}) do
+        local key, word = pair[1], pair[2]
+        local px, py = a_point_in(key)
+        check(key .. " names the key that works it",
+              says(frame({point_x = px, point_y = py}), word), word)
+    end
+
+    -- And on glass it names none of them, because there is nothing there to
+    -- point at: a touchscreen wears its weapons on the pads and the corner
+    -- stack stands down rather than drawing them twice. That is the whole
+    -- reason a card carries `pad` beside `key` instead of one sentence with a
+    -- key in it. The guide is what reaches a phone, and guide_test covers it.
+    frame({touching = true})
+    local absent = {}
+    for _, k in ipairs({"gun", "bomb", "charge:repel", "charge:burst",
+                        "bounty"}) do
+        if a_point_in(k) then absent[#absent + 1] = k end
+    end
+    check("a touchscreen has no corner stack to point at", #absent == 0,
+          table.concat(absent, "; "))
 end
 
 -- --- nothing runs off the screen -------------------------------------------
