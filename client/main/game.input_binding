@@ -87,6 +87,10 @@ key_trigger {
   action: "backspace"
 }
 key_trigger {
+  input: KEY_D
+  action: "drone"
+}
+key_trigger {
   input: KEY_BACKQUOTE
   action: "multi"
 }

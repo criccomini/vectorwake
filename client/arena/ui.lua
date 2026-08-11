@@ -1972,10 +1972,26 @@ local function inspect(o, top)
     -- else's, so offering it on an enemy would be a control that quietly
     -- dropped you back on the room channel.
     local follow = o.watch and same_team and o.watch.subject ~= i
+    -- Riding lives in this panel for the reason the other two do: you opened
+    -- it by picking a person, and climbing onto somebody is a thing you do to
+    -- a person. Never offered to a watcher: the request goes out on your own
+    -- seat, and a watcher pressing DROP on somebody else's carrier would be
+    -- detaching a ship the button was not about.
+    --
+    -- Offered on a living teammate who is not you and is not themselves
+    -- riding somebody, since the core refuses a chain. Every other condition
+    -- the core enforces is left to it: a bar that is not full and a hull with
+    -- no room refuse on the wire and say so by the button not taking. Testing
+    -- them here as well would be a second copy of the rules, drifting.
+    local riding = (not o.watch) and sim.ship_carrier(o.me) or 255
+    local drop = riding ~= 255 and i == riding
+    local attach = not o.watch and same_team and i ~= o.me
+        and sim.ship_alive(i) == 1 and sim.ship_carrier(i) == 255 and not drop
     -- The team row always exists now, so the count is fixed.
     local rows_n = 6
     local h = 30 * S + rows_n * rowh
-        + ((invite or follow) and (KEY_H + 12) * S or 0) + 10 * S
+        + ((invite or follow or attach or drop) and (KEY_H + 12) * S or 0)
+        + 10 * S
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
     -- at the top of the screen lands on the menu chip.
@@ -2042,7 +2058,17 @@ local function inspect(o, top)
     -- appear together: inviting wants somebody who is not on your side and
     -- following wants somebody who is.
     local label, action = nil, nil
-    if invite then
+    -- DROP only on the card of whoever you are riding: a DROP under a
+    -- stranger's name would be a control about a ship the name does not
+    -- belong to. ATTACH on any other living teammate, including while you
+    -- ride -- switching carriers is a legal ask, gated by the core on the
+    -- same full bar as any other attach. Neither ever displaces INVITE,
+    -- which wants an enemy where these want a teammate.
+    if drop then
+        label, action = "DROP", "detach"
+    elseif attach then
+        label, action = "ATTACH", "attach"
+    elseif invite then
         -- Once it is sent it says so and stops taking clicks: the zone answers
         -- an invitation with a team list that does not name the invitee, so
         -- this is the only acknowledgement there is, and a button that stayed
@@ -3088,7 +3114,8 @@ local BOARD = {
      {"5"}, {"6"}, {"7"}, {"8"}, {"9"}, {"0"}},
     {{"tab", 1.7, "bomb"}, {"Q", 1, "charge"}, {"W", 1, "charge"}, {"E"},
      {"R"}, {"T"}, {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
-    {{"caps", 2.0}, {"A", 1, "charge"}, {"S", 1, "charge"}, {"D"}, {"F"},
+    {{"caps", 2.0}, {"A", 1, "charge"}, {"S", 1, "charge"}, {"D", 1, "drone"},
+     {"F"},
      {"G"}, {"H"}, {"J"}, {"K"}, {"L"}},
     {{"shift", 2.25}, {"Z"}, {"X"}, {"C"}, {"V"},
      {"B"}, {"N"}, {"M", 1, "map"}},
@@ -3120,6 +3147,7 @@ local BOARD_CATS = {
     {key = "multi", word = "multifire"},
     {key = "bomb", word = "bombs"},
     {key = "charge", word = "charges"},
+    {key = "drone", word = "drop off"},
     {key = "players", word = "players"},
     {key = "map", word = "map"},
     {key = "menu", word = "menu"},
@@ -3141,6 +3169,10 @@ local function board_col(cat)
     if cat == "bomb" then return pal.BOMB end
     if cat == "charge" then return pal.CHARGE_COL end
     if cat == "fly" then return pal.INK end
+    -- The gunner's own band, and it is the bounty gold rather than a new
+    -- hue: this key is the way off a ship somebody else is flying, and gold
+    -- is already what the interface uses for a number about you.
+    if cat == "drone" then return pal.BOUNTY end
     if cat == "players" then return pal.DOOR end
     if cat == "map" then return pal.HOLE end
     if cat == "menu" then return pal.ENEMY end

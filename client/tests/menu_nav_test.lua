@@ -46,8 +46,12 @@ function account.login(name, password, cb)
 end
 function account.rename(cb)
     account.renamed = account.renamed + 1
-    account.name = "Nimbus " .. (100 + account.renamed)
-    if cb then cb(true) end
+    -- A refused draw wins no name, which is the whole of what the throttled
+    -- reroll looks like from here.
+    if account.refuse == nil then
+        account.name = "Nimbus " .. (100 + account.renamed)
+    end
+    if cb then cb(account.refuse == nil, account.refuse) end
 end
 function account.logout()
     account.claimed = false
@@ -611,6 +615,32 @@ check("rolling rolls, and the arena is never told",
       menu.name ~= was and act9 == nil and moved9,
       tostring(was) .. " -> " .. tostring(menu.name) .. ", act "
           .. tostring(act9))
+
+-- The cap the server keeps on rerolling, which anybody enjoying the names
+-- reaches: thirty an hour from one address. The refusal has to land on the
+-- card, because the alternative is what this used to do, which is stop
+-- changing the name and say nothing at all about why.
+account.refuse = "that is plenty of rerolling. Try again later"
+local held = menu.name
+local rolls = account.renamed
+menu.step({go = true})
+menu.ask.sel = 1
+menu.step({go = true})
+check("a refused roll keeps the card up wearing the reason",
+      menu.ask ~= nil and menu.ask.head == account.refuse .. "."
+          and menu.name == held,
+      tostring(menu.ask and menu.ask.head) .. ", name " .. tostring(menu.name))
+check("and the server was asked", account.renamed == rolls + 1,
+      tostring(account.renamed))
+-- Still sending would mean the card refuses every answer, which is a refusal
+-- you cannot get out of.
+check("and the card takes answers again",
+      menu.ask ~= nil and menu.ask.sending == false,
+      tostring(menu.ask and menu.ask.sending))
+check("and escape walks away from the refusal",
+      select(2, menu.step({back = true})) == true and menu.ask == nil,
+      tostring(menu.ask))
+account.refuse = nil
 
 menu.ask = nil
 menu.stack = {"root"}

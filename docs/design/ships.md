@@ -172,11 +172,12 @@ or the class is wrong.
 Whether Chord and Facet are distinct enough in practice, or whether sustained
 fire and close-range spread collapse into the same playstyle.
 
-Whether a turret mechanic is worth having at all. Attaching to another player
-is unusual and takes explaining, and it is also one of the most distinctive
-things the original did. The Spire was the hull built around it and it has
-been withdrawn (see decisions.md), so nothing on the roster carries turrets
-now and nothing has to until a hull is designed for them.
+Whether gunners earn their place. Riding on another player is unusual and
+takes explaining, and it is also one of the most distinctive things the
+original did. It is built now, and every hull here carries five, so the
+question is no longer whether a hull exists for it: the Spire was withdrawn
+for having a role nothing implemented, and what was missing has since been
+written. See [gunners.md](gunners.md). What settles this is a playtest.
 
 Whether seven is right for launch. Six ships done well beats eight done
 carelessly, and the roster can grow after the game is good.

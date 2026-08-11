@@ -168,6 +168,8 @@ local sim = {
     ship_heading = function() return 0 end,
     ship_alive = function() return 1 end,
     ship_team = function() return 1 end,
+    -- Nobody is riding anybody unless a test says so.
+    ship_carrier = function() return 255 end,
     ship_class = function() return 0 end,
     ship_energy = function() return 100 end,
     ship_max_energy = function() return 100 end,

@@ -402,6 +402,18 @@ typedef struct {
     /* How many of each charge kind this hull may carry. Zero is a hull that
      * never gets one, which is how a repel stays the denial ship's thing. */
     uint8_t charge_max[SIM_MAX_CHARGES];
+
+    /* Gunners: teammates riding this hull, aiming and firing their own
+     * weapons out of a ship they cannot steer. Zero forbids it, which is how
+     * a zone makes one hull the carrier and leaves the rest alone.
+     *
+     * The two penalties are charged once, when the first gunner arrives, and
+     * not again for the next four. That is what the original does and it is
+     * worth knowing rather than inheriting by accident: a carrier with one
+     * gunner always wants five. */
+    uint8_t gunner_limit;
+    int32_t gunner_thrust;   /* Q16 px/tick^2 off the carrier while carrying */
+    int32_t gunner_speed;    /* Q16 px/tick off the carrier while carrying */
 } sim_ship_class;
 
 typedef struct {
@@ -577,7 +589,14 @@ typedef struct {
     /* The score. Not cleared by death: what you have been paid is yours,
      * and what you are worth is a different number entirely. */
     uint32_t points;
+    /* The ship this one is riding, or SIM_NO_CARRIER. A gunner keeps its own
+     * heading, its own energy and its own weapons, and gives up thrust and
+     * position: it sits exactly where its carrier sits, takes damage there,
+     * and is as big as one point. */
+    uint8_t carrier;
 } sim_ship;
+
+#define SIM_NO_CARRIER 0xFFu
 
 /* What this pilot is worth to whoever kills them.
  *
@@ -804,6 +823,21 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
  *
  * Returns 0, or -1 for an unknown ship, a dead pilot, or one not at full
  * energy. Asking for the side you are already on does nothing and succeeds. */
+/* Ride a teammate, or SIM_NO_CARRIER to stop. Returns 0 if the state
+ * changed and -1 if the request was refused.
+ *
+ * Refused unless both ships are alive on the same side, the target is not
+ * itself riding somebody, it has room under its hull's `gunner_limit`, and
+ * the asker is at full energy. Granting it moves the asker onto the target
+ * from anywhere in the arena and leaves it with almost nothing in the bar,
+ * which is the whole shape of the mechanic: the ride is free and arriving is
+ * what costs. Detaching is never refused. */
+int sim_attach(sim_state *s, const sim_settings *cfg, uint8_t i,
+               uint8_t target);
+
+/* How many gunners are riding this ship. */
+uint8_t sim_gunners(const sim_state *s, uint8_t i);
+
 int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
                       uint8_t team);
 
@@ -837,6 +871,10 @@ typedef struct {
     int32_t init_rotation, up_rotation, max_rotation;
     int32_t init_energy, up_energy, max_energy;
     int32_t init_recharge, up_recharge, max_recharge;
+    /* Gunners allowed on this hull, and what carrying any costs it. The
+     * penalties are authored in the same units as the stat each comes off:
+     * thrust like `max_thrust`, speed like `max_speed`. */
+    int32_t gunner_limit, gunner_thrust_penalty, gunner_speed_penalty;
     /* No footprint here: the settings files these units mirror never carried
      * one, and the extents are measured off our own hulls in baseline.c. */
 } sim_class_units;

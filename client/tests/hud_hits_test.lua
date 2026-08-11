@@ -67,6 +67,8 @@ local sim = {
     ship_heading = function() return 0 end,
     ship_alive = function(i) return room.alive[i] == false and 0 or 1 end,
     ship_team = function(i) return room.teams[i] or 0 end,
+    -- Nobody is riding anybody unless a test says so.
+    ship_carrier = function() return 255 end,
     ship_class = function() return 0 end,
     ship_energy = function() return 100 end,
     ship_max_energy = function() return 100 end,

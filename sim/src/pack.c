@@ -104,6 +104,7 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w16(&w, sh->btn_prev);
         w16(&w, sh->earned);
         w32(&w, sh->points);
+        w8(&w, sh->carrier);
     }
 
     w16(&w, s->weapon_count);
@@ -210,6 +211,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         sh->btn_prev = (uint16_t)r16(&r);
         sh->earned = (uint16_t)r16(&r);
         sh->points = r32(&r);
+        sh->carrier = (uint8_t)r8(&r);
     }
 
     uint32_t weapons = r16(&r);

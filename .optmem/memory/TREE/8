@@ -1,1 +1,1 @@
-Working on vectorwake, a Subspace-like space MMO: shipped client and transport fixes, vendored the Clanker Constitution as house rules, and designed its mines, a dark spiked hexagon that sits still and idles on two clocks.                                                                 
+vectorwake: decision 40 leaves remote death fx to server confirmation; bot leaver deadlock fixed; Safari WebTransport needs createWritable(); reroll 429s at 30/hour per IP, now shown; Clanker Constitution vendored at root; GitHub API here needs MCP tools, not curl.                      
