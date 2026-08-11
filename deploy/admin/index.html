@@ -45,7 +45,7 @@
       <thead><tr>
         <th>instance</th><th>zone</th><th>region</th>
         <th class="n">players</th><th class="n">bots</th><th class="n">rooms</th>
-        <th class="n">tick</th><th>state</th>
+        <th class="n">tick</th><th>state</th><th></th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -60,7 +60,16 @@
     <form id="ban-form" hidden>
       <input id="ban-reason" placeholder="reason">
       <button id="ban-button"></button>
+      <button id="kick-button" type="button">kick</button>
     </form>
+
+    <h2>log</h2>
+    <table id="audit">
+      <thead><tr><th>at</th><th>who</th><th>did</th><th>to</th><th>said</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="audit-empty" class="dim" hidden>No commands sent since the directory
+      last started.</p>
 
     <h2>bans</h2>
     <table id="bans">

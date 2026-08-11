@@ -84,6 +84,45 @@ that needs a protocol.
 Actions get no audit trail from the catalog, so log each at both ends, the
 directory that sent it and the arena that ran it, and show the log in the UI.
 
+### What each one does, as built
+
+All five are implemented on the arena in `ArenaServer::run_command`, and the
+panel sends four of them.
+
+**kick** takes a call sign, not a seat, and sweeps every room in the process,
+because an operator naming a player does not know which room holds them. The
+panel extends that across instances: the directory fans a kick out to every
+arena it holds a registration for, and the ones that do not have that pilot
+answer `nobody here called ...`, which is a refusal worth reading rather than
+noise to suppress. It is a disconnect and not a ban. They may rejoin at once,
+so it is for breaking up a situation; the durable answer is a ban, which lives
+with identity in the meta-layer.
+
+**drain** stops new joins and sends every bot home, publishing `bots_wanted` of
+zero so the bot server stops refilling it. Humans already flying stay flying.
+This is what empties a box before it is retired, and since nothing in the
+selection path drains any more, per
+[zones-and-arenas.md](zones-and-arenas.md), it is the only thing that drains at
+all.
+
+**pin** holds an instance on one named zone and switches policy off for it:
+`decide_loop` skips a pinned instance entirely. It refuses a zone the catalog
+does not carry. Pinning a populated instance drains it first and switches when
+it empties, answering `pinned; draining before the switch`. **unpin** returns
+it to policy.
+
+**restart** exits, and lets the container platform bring the process back. That
+is the whole implementation and the honest one, for the reason at the bottom of
+this document: an admin surface that spawned processes would need credentials
+on the hosting layer. The panel does not draw a button for it. The route
+accepts it, because a considered `curl` is a different thing from a stray
+click.
+
+A command is fire and forget with an answer that arrives later: the directory
+records what it sent, the arena acks with an outcome, and the directory records
+that beside it. So the panel shows the audit log rather than a result, and both
+halves of a command appear there a moment apart.
+
 ## Capabilities
 
 This is what finally calls `has_capability`. It sat in `config.rs` for months

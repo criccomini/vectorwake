@@ -53,6 +53,10 @@ function show(section) {
 // numbers again.
 const FLEET_REFRESH_MS = 5000;
 let ticking = null;
+// Who wrote what is in the fleet note. The refresh clears its own messages
+// and leaves a command's alone, because a redraw arriving a second after a
+// click used to wipe the only confirmation the click produced.
+let noteOwner = null;
 
 async function arrive(name) {
   el("who").textContent = name;
@@ -137,7 +141,8 @@ el("logout").addEventListener("click", () => eject(""));
 // -------------------------------------------------------------------- fleet
 
 // Fill a tbody from rows of cells. Every value goes in as text, which is the
-// rule this page keeps everywhere: server strings are data, never markup.
+// rule this page keeps everywhere: server strings are data, never markup. A
+// cell may also be a node, which is how the action buttons get in.
 function fill(table, rows) {
   const body = el(table).querySelector("tbody");
   body.textContent = "";
@@ -146,13 +151,68 @@ function fill(table, rows) {
     for (const c of cells) {
       const td = document.createElement("td");
       const v = Array.isArray(c) ? c[0] : c;
-      td.textContent = v;
+      if (v instanceof Node) td.append(v);
+      else td.textContent = v;
       if (Array.isArray(c) && c[1]) td.className = c[1];
       tr.append(td);
     }
     body.append(tr);
   }
   return body;
+}
+
+// ------------------------------------------------------------------ commands
+
+// Send a verb to an instance, or to every instance when `instance` is "*".
+// The answer says only that it went: the arena's outcome arrives at the
+// directory a moment later and shows up in the log below.
+async function command(instance, verb, args, confirming) {
+  if (confirming && !window.confirm(confirming)) return;
+  const note = el("fleet-note");
+  noteOwner = "command";
+  try {
+    const r = await post("/v1/admin/command", { secret, instance, verb, args });
+    note.textContent = `${verb} sent to ${r.sent} instance(s); the log has the outcome`;
+  } catch (e) {
+    note.textContent = e.message;
+    return;
+  }
+  // Give the arena a moment to answer before re-reading, so the outcome is
+  // usually there by the time the operator looks.
+  setTimeout(() => drawFleet().catch(() => {}), 700);
+}
+
+function button(label, onClick, cls) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = label;
+  if (cls) b.className = cls;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+// The controls on one instance's row. Restart is deliberately not here: it is
+// the container platform's job, and the route accepts it for a considered
+// curl rather than a stray click. Drain and pin ask first, because both
+// interrupt a running game; unpin only hands an instance back to policy.
+function actions(i) {
+  const box = document.createElement("span");
+  box.className = "acts";
+  box.append(button("drain", () => command(i.instance, "drain", "",
+    `Drain ${i.instance}? New joins stop and every bot goes home. ` +
+    `${i.players} player(s) are on it now and will not be disconnected.`), "warn"));
+  if (i.pinned) {
+    box.append(button("unpin", () => command(i.instance, "unpin", "")));
+  } else {
+    box.append(button("pin", () => {
+      const zone = window.prompt("Pin to which zone?", i.zone || "");
+      if (!zone) return;
+      command(i.instance, "pin", zone,
+        `Pin ${i.instance} to ${zone}? Automatic zone selection stops for it` +
+        (i.players ? ", and it drains first because somebody is playing." : "."));
+    }, "warn"));
+  }
+  return box;
 }
 
 // What is worth saying out loud about one instance, worst first, or nothing
@@ -167,7 +227,18 @@ function trouble(i) {
   if (i.tick_us > 8000) return [`tick ${(i.tick_us / 1000).toFixed(1)}ms`, "bad"];
   if (i.queue_depth > 50) return [`queue ${i.queue_depth}`, "bad"];
   if (i.lag_actions > 0) return [`lag ${i.lag_actions}`, "warn"];
-  if (i.intent) return [i.intent, "warn"];
+  // A pin outranks the rest of this list because it is the one state policy
+  // cannot explain: an instance on a zone the rules would not have chosen
+  // reads as a fault until you know somebody put it there. Named with who
+  // and when, which is what turns two conflicting pins into visible operator
+  // error rather than a mystery.
+  if (i.pinned) {
+    const when = i.pinned_at_ms
+      ? new Date(i.pinned_at_ms).toTimeString().slice(0, 5) : "";
+    return [`pinned to ${i.pinned}` +
+      (i.pinned_by ? ` by ${i.pinned_by}` : "") + (when ? ` at ${when}` : ""), "warn"];
+  }
+  if (i.intent) return [`announced ${i.intent}`, "warn"];
   if (i.capped) return ["capped", "warn"];
   return ["ok", ""];
 }
@@ -179,9 +250,13 @@ async function drawFleet() {
     f = await post("/v1/admin/fleet", { secret });
   } catch (e) {
     note.textContent = e.message;
+    noteOwner = "fleet";
     return;
   }
-  note.textContent = "";
+  if (noteOwner === "fleet") {
+    note.textContent = "";
+    noteOwner = null;
+  }
 
   const rows = f.instances.map((i) => [
     i.instance,
@@ -195,8 +270,10 @@ async function drawFleet() {
     // at all rather than as the good news it is.
     [i.tick_us ? `${(i.tick_us / 1000).toFixed(2)}ms` : "", "n"],
     trouble(i),
+    actions(i),
   ]);
   fill("fleet", rows);
+  drawAudit(f.audit || []);
 
   // The line above the table is the answer to "is the fleet up", so it says
   // the totals and then anything that is wrong with the deployment itself,
@@ -222,6 +299,32 @@ async function drawFleet() {
   if (!f.key_agrees) {
     say("The catalog names a different verifying key than this meta-layer signs with, so every session token is failing.", "bad");
   }
+}
+
+// ---------------------------------------------------------------------- log
+
+// The directory's own record, newest first. Both halves of a command land
+// here: what it sent, then the arena's ack a moment later, which is why an
+// `ack:` row has no verb of its own.
+function drawAudit(rows) {
+  fill("audit", rows.map((r) => {
+    const t = new Date(r.at_ms);
+    const hhmmss = [t.getHours(), t.getMinutes(), t.getSeconds()]
+      .map((n) => String(n).padStart(2, "0")).join(":");
+    const bad = /refused|no such|unknown|nobody/i.test(r.outcome);
+    // An ack has no actor because no person sent it: it is the arena
+    // answering. Saying so beats an empty cell that reads like missing data.
+    const ack = r.verb.startsWith("ack:");
+    return [
+      hhmmss,
+      r.actor || (ack ? "arena" : ""),
+      ack ? "answered" : r.verb,
+      r.target,
+      [r.outcome || r.args, bad ? "bad" : ""],
+    ];
+  }));
+  el("audit-empty").hidden = rows.length > 0;
+  el("audit").hidden = rows.length === 0;
 }
 
 // --------------------------------------------------------------------- bans
@@ -288,6 +391,14 @@ async function lookup(q) {
 el("lookup-form").addEventListener("submit", (ev) => {
   ev.preventDefault();
   lookup(el("lookup-q").value.trim());
+});
+
+// Kick goes to every instance, because a call sign says who and not where.
+// The arenas not holding them answer "nobody here called ...", which is worth
+// reading in the log rather than hiding: it says where they are not.
+el("kick-button").addEventListener("click", () => {
+  if (!shown || !shown.name) return;
+  command("*", "kick", shown.name);
 });
 
 el("ban-form").addEventListener("submit", async (ev) => {

@@ -3587,6 +3587,12 @@ impl ArenaServer {
             // open another, which is the fill ladder's second rung exhausted.
             capped: self.rooms.iter().all(|r| r.humans() >= target)
                 && self.rooms.len() >= self.max_rooms(),
+            // Said out loud, because a pinned instance is one policy has
+            // stopped applying to, and that is invisible from every other
+            // number here.
+            pinned: self.pinned.as_ref().map(|p| p.0.clone()).unwrap_or_default(),
+            pinned_by: self.pinned.as_ref().map(|p| p.1.clone()).unwrap_or_default(),
+            pinned_at_ms: self.pinned.as_ref().map(|p| p.2).unwrap_or(0),
             metrics: fleet::Metrics {
                 tick_us: self.tick_us,
                 // The worst-off client in the process. A depth near `OUT_QUEUE`

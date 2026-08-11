@@ -319,6 +319,13 @@ async fn account_for(db: &Client, method: &str, hash: &str) -> Option<i64> {
     .map(|r| r.get::<_, i64>(0))
 }
 
+/// Where the directory on this host answers. Loopback by default and
+/// loopback in practice: the directory refuses the operator tags to anything
+/// that came through a proxy, which the public `/dir` route always has.
+fn directory_url() -> String {
+    std::env::var("VW_META_DIRECTORY").unwrap_or_else(|_| "ws://127.0.0.1:9000".into())
+}
+
 /// The admin gate: the account behind this secret, if it holds the flag. The
 /// `admin` field a session reply carries is decoration for the panel; this
 /// check, run inside every admin route, is the authorization. Checked per
@@ -811,6 +818,60 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
         }
 
+        // An operator verb, sent to a running arena through the directory.
+        //
+        // Different in kind from the ban above, and the difference is why it
+        // takes this path rather than a database write: a ban is a mark on an
+        // account that outlives every process, while these reach one process
+        // now and mean nothing afterwards. The registration socket is where
+        // they go, per admin.md, so no arena exposes an admin listener and a
+        // directory can only command what has registered with it.
+        //
+        // The actor is read from the database here rather than taken from the
+        // body. An audit row naming whoever the caller said they were would
+        // be a record of nothing.
+        "/v1/admin/command" => {
+            let Some(actor) = admin_for(&db, &s("secret")).await else {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            };
+            let who: String = db
+                .query_opt("select call_sign from names where account = $1", &[&actor])
+                .await
+                .ok()
+                .flatten()
+                .map(|r| r.get(0))
+                .unwrap_or_else(|| format!("account {actor}"));
+            let cmd = crate::fleet::OperatorCommand {
+                instance: s("instance"),
+                verb: s("verb"),
+                args: s("args"),
+                actor: who.clone(),
+            };
+            let frame = crate::fleet::frame(crate::fleet::O2D_COMMAND, &cmd);
+            let url = directory_url();
+            let Some(body) =
+                crate::directory::ask_with(&url, frame, crate::fleet::D2O_COMMAND).await
+            else {
+                return (503, serde_json::json!({
+                    "error": format!("no answer from the directory at {url}")
+                }));
+            };
+            let Ok(sent) = serde_json::from_str::<crate::fleet::CommandSent>(&body) else {
+                return (502, serde_json::json!({ "error": "unreadable reply" }));
+            };
+            println!(
+                "meta: {who} sent {:?} {:?} to {:?}: {} instance(s)",
+                cmd.verb, cmd.args, cmd.instance, sent.sent
+            );
+            if sent.sent == 0 {
+                return (400, serde_json::json!({ "error": sent.error }));
+            }
+            // What it did is not known yet and cannot be: the arena answers
+            // the directory a moment later, and that lands in the audit log
+            // the fleet view carries.
+            (200, serde_json::json!({ "sent": sent.sent }))
+        }
+
         // Every account currently marked, which is the half of banning the
         // panel could not show: you could mark somebody and never see the
         // list you had built.
@@ -858,8 +919,7 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             if admin_for(&db, &s("secret")).await.is_none() {
                 return (403, serde_json::json!({ "error": "not an admin" }));
             }
-            let url = std::env::var("VW_META_DIRECTORY")
-                .unwrap_or_else(|_| "ws://127.0.0.1:9000".into());
+            let url = directory_url();
             let Some(body) =
                 crate::directory::request(&url, crate::fleet::O2D_FLEET, crate::fleet::D2O_FLEET).await
             else {
@@ -870,9 +930,17 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             let Ok(view) = serde_json::from_str::<crate::fleet::View>(&body) else {
                 return (502, serde_json::json!({ "error": "unreadable fleet view" }));
             };
+            // The audit rides in the same reply and is passed through as it
+            // arrived: it is the directory's record, and this process has
+            // nothing to add to it.
+            let audit = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v.get("audit").cloned())
+                .unwrap_or_else(|| serde_json::json!([]));
             let mine = token::to_hex(meta.signing.verifying_key().as_bytes());
             (200, serde_json::json!({
                 "catalog_version": view.catalog_version,
+                "audit": audit,
                 // Said as an answer rather than as two keys to compare by eye,
                 // because the whole value of the check is that nobody is
                 // looking when it matters.
@@ -893,6 +961,9 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     "verified": i.verified,
                     "age_ms": i.age_ms,
                     "intent": i.intent,
+                    "pinned": i.pinned,
+                    "pinned_by": i.pinned_by,
+                    "pinned_at_ms": i.pinned_at_ms,
                     "tick_us": i.metrics.tick_us,
                     "bw_per_player": i.metrics.bw_per_player,
                     "snapshot_bytes": i.metrics.snapshot_bytes,

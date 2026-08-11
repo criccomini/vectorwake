@@ -33,6 +33,12 @@ pub const D2A_COMMAND: u8 = 0x54;
 /// without going through the proxy. See `serve_registration`.
 pub const O2D_FLEET: u8 = 0x60;
 pub const D2O_FLEET: u8 = 0x61;
+/// And an operator asking a directory to send one of `VERBS` to an instance
+/// it holds. The reply says only whether it went, because the outcome comes
+/// back from the arena as an `Ack` a moment later and lands in the audit log
+/// the fleet view carries. Same gate as `O2D_FLEET`.
+pub const O2D_COMMAND: u8 = 0x62;
+pub const D2O_COMMAND: u8 = 0x63;
 
 /// Every operator verb. The admin surface checks against this so a typo is a
 /// refusal rather than a message an arena answers with `unknown_verb`.
@@ -137,6 +143,21 @@ pub struct Status {
     pub capped: bool,
     #[serde(default)]
     pub metrics: Metrics,
+    /// An operator pin, when one is set: the zone, who set it, and when. Empty
+    /// otherwise.
+    ///
+    /// It travels because a pin is the one piece of arena state that policy
+    /// cannot explain. An instance sitting on a zone the selection rules would
+    /// not have chosen looks like a fault until you know somebody put it
+    /// there, and admin.md asks for exactly that sentence: pinned to Chaos by
+    /// chris at 14:02. Two directories can send conflicting pins, and this is
+    /// what turns that into visible operator error rather than a mystery.
+    #[serde(default)]
+    pub pinned: String,
+    #[serde(default)]
+    pub pinned_by: String,
+    #[serde(default)]
+    pub pinned_at_ms: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -204,6 +225,14 @@ pub struct Observed {
     pub pool: String,
     #[serde(default)]
     pub metrics: Metrics,
+    /// The pin this instance reports, passed through as it arrived. See
+    /// `Status::pinned`.
+    #[serde(default)]
+    pub pinned: String,
+    #[serde(default)]
+    pub pinned_by: String,
+    #[serde(default)]
+    pub pinned_at_ms: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -234,6 +263,39 @@ pub struct Command {
     /// Who asked, for the log at both ends.
     #[serde(default)]
     pub actor: String,
+}
+
+/// An operator asking a directory to command an instance. The directory turns
+/// this into the `Command` above, which is why there is no `command_id` here:
+/// the directory numbers its own commands, so an operator cannot choose an id
+/// and cannot collide with one.
+///
+/// `instance` empty or `*` means every instance registered with that
+/// directory. A kick wants that, because an operator naming a pilot knows the
+/// call sign and not the process holding them.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct OperatorCommand {
+    #[serde(default)]
+    pub instance: String,
+    pub verb: String,
+    #[serde(default)]
+    pub args: String,
+    /// Who asked. Filled in by the meta-layer from the account behind the
+    /// secret, never by the caller: an actor a client could choose is a name
+    /// in an audit log that means nothing.
+    #[serde(default)]
+    pub actor: String,
+}
+
+/// What the directory says about a command it was asked to send: how many
+/// instances it went to, and why not when none did. The outcome is not here
+/// and cannot be, because the arena answers with an `Ack` a moment later; it
+/// lands in the audit log the fleet view carries.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct CommandSent {
+    pub sent: u32,
+    #[serde(default)]
+    pub error: String,
 }
 
 /// The catalog as it travels. A subset of what is on disk: the zone definitions

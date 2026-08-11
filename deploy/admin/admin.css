@@ -101,6 +101,18 @@ dd.good { color: #4fd6ff; }
 .head { margin: 0 0 0.75rem; }
 .head .bad { color: #ffa552; }
 
+/* Row controls: small, quiet, and never the first thing the eye lands on.
+   The table is for reading; these are for the rare moment it is not. */
+.acts { display: flex; gap: 0.35rem; }
+.acts button {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.85em;
+  border-color: #1d2838;
+  color: #6c7a90;
+}
+.acts button:hover { border-color: #4fd6ff; color: #4fd6ff; background: #10202c; }
+.acts button.warn:hover { border-color: #ffa552; color: #ffa552; background: #2a1c10; }
+
 table { border-collapse: collapse; width: 100%; }
 /* Counts read down a column, so they align on the right. */
 th.n, td.n { text-align: right; }
