@@ -1419,6 +1419,12 @@ function update(self, dt)
         if net.settings_epoch ~= (self.settings_epoch or 0) then
             self.settings_epoch = net.settings_epoch
             world.forget_specs()
+            -- And the terrain with it, because a setting decides part of what
+            -- the terrain is: whether the map's spawn tiles carry a mark. The
+            -- mesh is built once every sixteen tiles of camera travel, so
+            -- without this a zone that turns the marks off keeps showing them
+            -- until somebody flies far enough for the window to be rebuilt.
+            rebuild_static()
         end
 
         local t = sim.tick() / TICK_HZ

@@ -11,6 +11,7 @@ learned, written so a new contributor does not have to repeat the reading.
 | [asss-server.md](asss-server.md) | The ASSS server: modules, capabilities, arenas, lag control, configuration model |
 | [protocol-and-simulation.md](protocol-and-simulation.md) | Wire protocol, units, physics, the client-authoritative trust model |
 | [turrets.md](turrets.md) | Riding on a teammate: the warp rules attaching inherits, what a rider costs the host, and how little of it the server checks |
+| [spawning.md](spawning.md) | Where a ship arrives: the `[Spawn]` point and radius Continuum added, what the radius really covers, and the radar setting the alpha used instead |
 | [lvl-format.md](lvl-format.md) | The `.lvl` map format, byte for byte, and the tile types our converter reads |
 | [map-measurements.md](map-measurements.md) | What one of the original's maps is made of, counted: density, wall thickness, structure sizes and spacing |
 | [prior-art.md](prior-art.md) | Subspace Infinity, nullspace, Subspace Server .NET, tooling, and what each proves |

@@ -111,7 +111,7 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
         // Sides alternate, which is what a free-for-all does not have and what
         // makes anybody hostile to anybody. Two teams is the harsher test: it
         // puts half the room between a pilot and its nearest enemy.
-        let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32, 512, 512, 0) as u8;
+        let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32, 0) as u8;
         let mut b = ai::Bot::new(ship, e.skill);
         b.reseed(seed ^ (i as u32).wrapping_mul(2654435761));
         brains.push(b);
