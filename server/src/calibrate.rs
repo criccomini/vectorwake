@@ -798,27 +798,32 @@ pub enum Arena {
 }
 
 impl Arena {
-    /// Build the world this bout is fought in, and seat both hulls in it.
-    fn world(&self, salt: u32, classes: [u8; 2]) -> Option<(sim::World, [u8; 2])> {
+    /// The room, empty. Built before the zone's settings are applied and
+    /// seated only after, which is the order that matters: `sim_spawn` reads a
+    /// hull's opening energy out of the class table, so a ship seated first
+    /// carries the baseline's numbers and then watches the zone's arrive
+    /// around it. Measuring a per-hull energy change that way reports a hull
+    /// that starts as one ship and recharges toward another.
+    fn build(&self, salt: u32) -> Option<sim::World> {
         match self {
-            Arena::Built(f) => {
-                let mut w = sim::World::with_map(0x5ea1 ^ salt, *f);
-                let ships = [
-                    w.spawn(classes[0], 0, 505, 522, 0) as u8,
-                    w.spawn(classes[1], 1, 519, 502, 32768) as u8,
-                ];
-                Some((w, ships))
-            }
-            Arena::Packed(bytes) => {
-                let mut w = sim::World::from_packed(0x5ea1 ^ salt, bytes).ok()?;
-                // `nth` walks the map's starts for that team, so the two sides
-                // land where the map says a team of theirs begins.
+            Arena::Built(f) => Some(sim::World::with_map(0x5ea1 ^ salt, *f)),
+            Arena::Packed(bytes) => sim::World::from_packed(0x5ea1 ^ salt, bytes).ok(),
+        }
+    }
+
+    /// Seat both hulls, once the room is tuned.
+    fn seat(&self, w: &mut sim::World, salt: u32, classes: [u8; 2]) -> Option<[u8; 2]> {
+        match self {
+            Arena::Built(_) => Some([
+                w.spawn(classes[0], 0, 505, 522, 0) as u8,
+                w.spawn(classes[1], 1, 519, 502, 32768) as u8,
+            ]),
+            Arena::Packed(_) => {
+                // `nth` walks the map's own starts for that team, so the two
+                // sides land where the map says a team of theirs begins.
                 let a = w.spawn_on_map(classes[0], 0, salt / 2, 0);
                 let b = w.spawn_on_map(classes[1], 1, salt / 2, 32768);
-                if a < 0 || b < 0 {
-                    return None;
-                }
-                Some((w, [a as u8, b as u8]))
+                (a >= 0 && b >= 0).then_some([a as u8, b as u8])
             }
         }
     }
@@ -897,9 +902,8 @@ pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
     // seats keep their places and their bot seeds; it is the hulls that move.
     let flip = salt % 2 == 1;
     let seats: [u8; 2] = if flip { [classes[1], classes[0]] } else { classes };
-    let Some((mut world, ships)) = map.world(salt, seats) else {
-        return (Bout { sides: [Side::default(); 2], ticks: 0, decided: false }, [0, 0]);
-    };
+    let dead = (Bout { sides: [Side::default(); 2], ticks: 0, decided: false }, [0, 0]);
+    let Some(mut world) = map.build(salt) else { return dead };
     let route = nav::Nav::build(&world.map);
     if let Some(c) = tuning {
         crate::Room::apply_config(&mut world, c);
@@ -909,6 +913,9 @@ pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
     // against the zone for the same reason the other two harnesses hold them.
     world.cfg.spawn_prizes = 0;
     world.cfg.prize_max = 0;
+
+    // Seated last, so both hulls open with the settings this room actually has.
+    let Some(ships) = map.seat(&mut world, salt, seats) else { return dead };
 
     // Nonzero, because xorshift stays at zero forever once it arrives there and
     // a bout whose greens all rolled the same thing is not obvious from a
@@ -1429,6 +1436,50 @@ mod tests {
             "sixty greens saturated nobody, so this harness is not reaching \
 the ceilings the matched-bounty argument turns on"
         );
+    }
+
+    /// A hull opens the bout with the zone's numbers, not the baseline's.
+    ///
+    /// `sim_spawn` reads opening energy out of the class table, so seating a
+    /// ship before the zone's settings are applied gives it the baseline's bar
+    /// and then swaps the ceiling out from under it. It is invisible in every
+    /// column the report prints and it corrupts exactly the measurement anybody
+    /// would reach for this harness to make, which is what a per-hull change is
+    /// worth. It happened: a refactor moved the seating inside the map builder,
+    /// and the Cipher energy change came back moving hulls it cannot touch.
+    #[test]
+    fn a_zones_ship_settings_reach_the_opening_bar() {
+        let cipher = ai::class_index("Cipher").unwrap() as u8;
+        let thin: config::ArenaConfig = toml::from_str(
+            "[[ships]]\nname = \"Cipher\"\ninitial_energy = 250\nenergy = 400\n",
+        )
+        .expect("a zone that thins one hull");
+
+        let arena = Arena::Built(sim::build_pit);
+
+        let mut plain = arena.build(0).expect("a room");
+        let p = arena.seat(&mut plain, 0, [cipher, cipher]).expect("seats");
+        let untuned = plain.state.ships[p[0] as usize].energy;
+
+        let mut room = arena.build(0).expect("a room");
+        crate::Room::apply_config(&mut room, &thin);
+        let s = arena.seat(&mut room, 0, [cipher, cipher]).expect("seats");
+        let opened = room.state.ships[s[0] as usize].energy;
+
+        assert!(
+            opened < untuned,
+            "a Cipher opened on {opened} either way, so the zone's ship block \
+never reached the spawn"
+        );
+
+        // Checked on the bar directly and not through a bout, because a bout
+        // cannot see it. Seat a ship early and it opens on the baseline's
+        // energy and then recharges toward the zone's ceiling within a few
+        // seconds, so the fight converges and every column this harness prints
+        // comes out the same. That is the whole reason it went unnoticed, and
+        // it is why the ordering in `hull_bout` carries a comment rather than
+        // a second assertion: nothing observable from outside that function
+        // distinguishes the two orders.
     }
 
     /// A hull against itself comes out even, or the pit is doing the deciding.
