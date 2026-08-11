@@ -6,6 +6,14 @@
 
 * { box-sizing: border-box; }
 
+/* `hidden` is a user-agent default of `display: none`, so any author rule
+   naming a display wins over it and the element stays on screen. Two below do,
+   `dl` and `form`, and both are things this page hides until a lookup has
+   found something; the panel shipped drawing an empty bordered box and a ban
+   form with a blank button. Stated once here rather than fixed at each site,
+   so a later rule cannot reopen it. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: #05070c;
