@@ -158,13 +158,29 @@ The **wear column** says what actually went on. Ladders differ per hull, so
 give that hull reads `0/1`. Those rows are bare hulls under another name, and
 the report names them rather than leaving them to be spotted.
 
-The **control** is a second bare kit. It is identical to the first, so the gap
-between the two is this harness reporting a difference between two identical
-things: the noise floor, measured on the hull and bout count you just ran rather
-than assumed. Unwearable stages land in the same bucket and widen it, which is
-correct, since they are also bare. Read no gap narrower than the floor. At eight
-bouts a pair it is around fifteen points, which is wide enough that only the
-largest effects are real.
+The **`+-95%` column** is what a row's count is worth, and it is the number to
+read a gap against. A win rate is a coin counted `bouts()` times: at four bouts
+a pair that is 48 bouts a row and about fourteen points either way, and only at
+32 does it come in near five. Two stages differ when their intervals come apart,
+and a gap of ten points off a short run is nothing at all.
+
+The **control** is a second bare kit, identical to the first, so the two ought to
+agree. Unwearable stages land in the same bucket, since they are also bare, and
+how far the lot of them miss by is printed at the end.
+
+Do not use that spread as an error bar. It is the range of four samples, which
+scatters about as much as the thing it is estimating: three runs here reported
+4.2, 6.2 and 9.6 points where the sampling spread alone was near fifteen,
+fifteen and five, so it came out at a third of the truth twice and double it
+once. A gap read against a number that unreliable is a coin flip with a
+decimal point. The rows are not secretly meeting different opposition either,
+which is the first thing you would suspect: `bare` faces the kitted stages plus
+`control`, `control` faces the same stages plus `bare`, and an empty kit is an
+empty kit. It is simply a noisy statistic.
+
+What the control is still good for is catching a harness that has gone wrong.
+Two identical kits landing far apart, run after run, means something is varying
+that this thing is supposed to be holding still.
 
 **`dmg/hit` and `self%`** are why a stage won or lost, where the win column only
 says that it did. A blast falls off to nothing at its rim, so a fuse that goes

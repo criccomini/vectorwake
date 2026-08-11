@@ -461,6 +461,31 @@ impl StageRow {
         }
         (self.wins as f64 + 0.5 * self.draws as f64) / n as f64
     }
+
+    /// Half the 95% interval on this row's win rate, in points.
+    ///
+    /// A win rate is a coin counted `bouts()` times, and this is what that
+    /// counting is worth: 1.96 standard errors, Wilson rather than the
+    /// textbook normal so a row near nothing or near everything gets an
+    /// interval that stays inside both.
+    ///
+    /// It exists because the report used to answer "is this gap real" with
+    /// the spread of the kit-less rows, which is the range of four samples
+    /// and mostly luck. That number read 4.2 points where the sampling
+    /// spread alone was nearer 15, and it climbed rather than fell as bouts
+    /// went up, which is the giveaway. Every row can price its own error
+    /// from its own count, so every row now does.
+    pub fn margin(&self) -> f64 {
+        let n = self.bouts() as f64;
+        if n == 0.0 {
+            return 0.0;
+        }
+        const Z: f64 = 1.96;
+        let p = self.win_rate();
+        let denom = 1.0 + Z * Z / n;
+        let half = Z * ((p * (1.0 - p) / n) + (Z * Z / (4.0 * n * n))).sqrt() / denom;
+        100.0 * half
+    }
 }
 
 /// Every stage against every other, `bouts` times each, plus a mirror control.
@@ -565,8 +590,8 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
         rows.len()
     );
     println!(
-        "\n{:<14} {:>5} {:>7} {:>7} {:>7} {:>6} {:>7} {:>6} {:>7}",
-        "stage", "worn", "win%", "guns", "bombs", "hit%", "dmg/hit", "self%", "mirror"
+        "\n{:<14} {:>5} {:>7} {:>7} {:>7} {:>7} {:>6} {:>7} {:>6} {:>7}",
+        "stage", "worn", "win%", "+-95%", "guns", "bombs", "hit%", "dmg/hit", "self%", "mirror"
     );
     for r in rows {
         let fired: u32 = r.shots.iter().sum();
@@ -575,10 +600,11 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
             _ => r.worn.to_string(),
         };
         println!(
-            "{:<14} {:>5} {:>7.1} {:>7} {:>7} {:>6.1} {:>7.0} {:>6.1} {:>7.1}",
+            "{:<14} {:>5} {:>7.1} {:>7.1} {:>7} {:>7} {:>6.1} {:>7.0} {:>6.1} {:>7.1}",
             r.name,
             worn,
             100.0 * r.win_rate(),
+            r.margin(),
             r.shots[sim::TRIG_GUN],
             r.shots[sim::TRIG_BOMB],
             100.0 * r.hits as f64 / fired.max(1) as f64,
@@ -619,24 +645,44 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
         );
     }
     // Every row that ended up wearing nothing is flying the same hull as every
-    // other, so the spread across them is this run's own error bar. Printed
-    // before the caveats because it is what decides which of the rows above
-    // are worth reading at all.
+    // other, so they ought to agree, and how far they miss by is worth seeing.
+    //
+    // It is not this run's error bar, which is what it used to be called. It is
+    // the range of a handful of samples, and the range of four is a poor
+    // estimator of anything: it carries about as much scatter as the quantity
+    // it is estimating. Three runs here read 4.2, 6.2 and 9.6 points while
+    // their sampling spreads were near 15, 15 and 5, so it landed a third of
+    // the truth twice and double it once. Reading a gap against a number that
+    // wrong in either direction is how a coin flip gets written up.
+    //
+    // The rows do meet equivalent fields, which is worth saying because the
+    // spread looks like it ought to have an explanation: `bare` faces the
+    // kitted stages plus `control`, `control` faces the same stages plus
+    // `bare`, and an empty kit is an empty kit. No structure, just a noisy
+    // statistic.
+    //
+    // The `+-95%` column is the honest version and it is per row, off that
+    // row's own count. Two rows differ when their intervals come apart, which
+    // is a question this line cannot answer and should not look like it can.
     let flat: Vec<&StageRow> = rows.iter().filter(|r| r.worn == 0).collect();
-    let floor = match (
-        flat.iter().map(|r| r.win_rate()).fold(f64::INFINITY, f64::min),
-        flat.iter().map(|r| r.win_rate()).fold(f64::NEG_INFINITY, f64::max),
-    ) {
-        (lo, hi) if flat.len() > 1 => Some(100.0 * (hi - lo)),
-        _ => None,
-    };
-    if let Some(gap) = floor {
+    let kitless_spread = if flat.len() > 1 {
+        let lo = flat.iter().map(|r| r.win_rate()).fold(f64::INFINITY, f64::min);
+        let hi = flat.iter().map(|r| r.win_rate()).fold(f64::NEG_INFINITY, f64::max);
+        let widest = flat.iter().map(|r| r.margin()).fold(0.0, f64::max);
         println!(
-            "\n{} rows are wearing nothing at all and spread {gap:.1} points, \
-so that is the noise floor: read no gap narrower than it.",
-            flat.len()
+            "\n{} rows are wearing nothing at all and spread {:.1} points, against \
+a 95% interval of +-{widest:.1} on each of them. Sampling explains a spread of \
+about {:.0}; anything past that is those rows meeting different fields, not this \
+run being noisy. Either way, read gaps against the per-row interval and not \
+against this number.",
+            flat.len(),
+            100.0 * (hi - lo),
+            2.06 * widest,
         );
-    }
+        Some(100.0 * (hi - lo))
+    } else {
+        None
+    };
 
     // A row nobody can wear is a copy of `bare` under another name, and a row
     // worn short is a copy of a shallower row. Either one invites a reader to
@@ -667,9 +713,11 @@ so that is the noise floor: read no gap narrower than it.",
         "tuning": zone,
         "skill": skill,
         "bouts_per_pair": bouts,
-        /* Percentage points of spread across the rows wearing nothing. A
-         * difference narrower than this is not a difference. */
-        "noise_floor": floor,
+        /* Percentage points between the best and worst of the rows wearing
+         * nothing. A diagnostic and not an error bar: rows that ought to agree
+         * and do not have found something the harness is not controlling for.
+         * For whether a gap is real, use each row's own `win_rate_margin`. */
+        "kitless_spread": kitless_spread,
         "stages": rows.iter().map(|r| serde_json::json!({
             "name": r.name,
             "worn": r.worn,
@@ -678,6 +726,11 @@ so that is the noise floor: read no gap narrower than it.",
             "losses": r.losses,
             "draws": r.draws,
             "win_rate": r.win_rate(),
+            /* Half the 95% interval, in points. In the file as well as the
+             * table, because a run gets diffed against another run and the
+             * only question that ever asks is whether the two moved further
+             * apart than either could wander on its own. */
+            "win_rate_margin": r.margin(),
             "kills": r.kills,
             "gun_shots": r.shots[sim::TRIG_GUN],
             "bomb_shots": r.shots[sim::TRIG_BOMB],
@@ -775,6 +828,64 @@ mod tests {
     }
 
     /* ---- the loadout tournament ---- */
+
+    fn row_of(wins: u32, losses: u32) -> StageRow {
+        StageRow {
+            name: "probe",
+            worn: 0,
+            asked: None,
+            wins,
+            losses,
+            draws: 0,
+            kills: 0,
+            shots: [0; sim::TRIG_COUNT],
+            hits: 0,
+            damage: 0,
+            self_hits: 0,
+            self_damage: 0,
+            regrants: 0,
+            vs: Vec::new(),
+            mirror: 0.5,
+            stalemates: 0,
+        }
+    }
+
+    /// The interval has to narrow as bouts pile up, which is the whole reason
+    /// it replaced a number that did the opposite.
+    ///
+    /// The figures are the ones this harness actually produced on a Facet: a
+    /// coin-flip row over 48 bouts is worth about 14 points either way, and
+    /// the same rate over 384 is worth about 5. Anybody reading a gap of ten
+    /// off a 48-bout run is reading noise, which is what the old floor let
+    /// through by reporting 4.2.
+    #[test]
+    fn the_interval_narrows_with_bouts() {
+        let small = row_of(24, 24);
+        let large = row_of(192, 192);
+        assert!(
+            (13.0..15.0).contains(&small.margin()),
+            "48 bouts at even money should be worth about 14 points, got {:.1}",
+            small.margin()
+        );
+        assert!(
+            (4.0..6.0).contains(&large.margin()),
+            "384 bouts should be worth about 5, got {:.1}",
+            large.margin()
+        );
+        assert!(large.margin() < small.margin(), "more bouts, tighter interval");
+
+        // Wilson and not the textbook normal, so a row that won nothing gets an
+        // interval it could actually live in rather than plus or minus zero.
+        let swept = row_of(0, 48);
+        assert!(swept.margin() > 3.0, "a shut-out is not measured perfectly");
+        assert!(
+            swept.win_rate() * 100.0 + swept.margin() < 15.0,
+            "and it still reads as a bad stage"
+        );
+
+        // Nothing played is not something known.
+        assert_eq!(row_of(0, 0).margin(), 0.0);
+    }
 
     /// A stage has to be one thing under one name, or the matrix has two
     /// columns for the same kit and no way to say so.
