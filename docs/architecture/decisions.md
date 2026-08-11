@@ -1639,10 +1639,15 @@ them, at the confirmed moment, on the hull the screen was already showing.
 snapshot late, which is the standard bargain in server-authoritative
 shooters, and the spark keeps the shot feeling connected meanwhile. A hull
 the local simulation would have killed keeps flying for that beat and can
-absorb a following shot the server never saw; the snapshot corrects it. Your
-own death stays immediate, and stays a prediction: the rare revival of your
-own hull is still possible, but everything feeding that prediction is the
-most accurate state the client has.
+absorb a following shot the server never saw; the snapshot corrects it. The
+clamp is visible in one place besides the hull itself: the pip over a wounded
+ship reads off predicted energy, so a mispredicted kill shows its victim on a
+sliver of bar until the next snapshot lifts it back. That is the same
+correction every other predicted number gets, on 22 pixels rather than on the
+whole screen, which is the trade this record is making. Your own death stays
+immediate, and stays a prediction: the rare revival of your own hull is still
+possible, but everything feeding that prediction is the most accurate state
+the client has.
 
 **Reconsider if:** confirmed-death latency reads as lag on real links, in
 which case the next lever is a provisional effect, dimmer than the real
