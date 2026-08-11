@@ -18,6 +18,9 @@ local C2S_TEAM, C2S_FOUND, C2S_INVITE = 6, 7, 8
 -- somewhere else. A request like the team asks: the subject byte of the next
 -- snapshot is the answer, and an unlawful ask lands on the room channel.
 local C2S_WATCH = 9
+-- Ride a teammate as a gunner, or 255 to get off. A request like the rest:
+-- the core decides, and the answer is the carrier byte of the next snapshot.
+local C2S_ATTACH = 10
 -- The one flag a player sets in a join: this client came to watch, not to
 -- fly. The class byte is ignored, no ship is spawned, and the seat taken is a
 -- watcher's. The other bit is JOIN_BOT, which a player never sets.
@@ -1076,6 +1079,14 @@ function M.invite(ship)
     if not ask(string.char(C2S_INVITE, ship)) then return false end
     M.invited[ship] = true
     return true
+end
+
+-- Climb onto a teammate, or 255 to drop off. Nothing is recorded here the way
+-- an invitation is: an invitation vanishes into a team list that does not name
+-- the invitee, where this one comes back as state on the hull, so the panel
+-- reads the answer off the ship rather than off a note it wrote itself.
+function M.attach(ship)
+    return ask(string.char(C2S_ATTACH, ship or 255))
 end
 
 -- Watch somebody, or 255 for the room channel. From a flying pilot this is

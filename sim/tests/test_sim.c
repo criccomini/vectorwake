@@ -3351,6 +3351,51 @@ int main(void) {
         sim_map_index(m);
     }
 
+    /* Gunners. A ride is refused below a full bar, granted from anywhere in
+     * the arena, and ends when the carrier does. */
+    {
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);   /* the carrier */
+        sim_spawn(&s, APEX, 0, 2000, 2000, 0, &cfg);   /* half the map away */
+        sim_spawn(&s, APEX, 1, 8192, 8300, 0, &cfg);   /* the other side */
+
+        CHECK(s.ships[1].carrier == SIM_NO_CARRIER, "a fresh ship rides nobody");
+        CHECK(sim_attach(&s, &cfg, 2, 0) == -1, "an enemy cannot ride you");
+        CHECK(sim_attach(&s, &cfg, 1, 1) == -1, "a ship cannot ride itself");
+
+        s.ships[1].energy -= 1;
+        CHECK(sim_attach(&s, &cfg, 1, 0) == -1, "a ride needs a full bar");
+        s.ships[1].energy += 1;
+
+        CHECK(sim_attach(&s, &cfg, 1, 0) == 0, "a teammate may be ridden");
+        CHECK(s.ships[1].x == s.ships[0].x && s.ships[1].y == s.ships[0].y,
+              "attaching crosses the map");
+        CHECK(s.ships[1].energy < sim_eff_max_energy(&cfg.classes[APEX],
+                                                     &s.ships[1]) / 4,
+              "and arrives with almost nothing");
+        CHECK(sim_gunners(&s, 0) == 1, "the carrier counts one gunner");
+        CHECK(sim_attach(&s, &cfg, 0, 1) == -1, "a gunner cannot be ridden");
+
+        /* Riding is not flying: the gunner keeps the carrier's position
+         * whatever it holds down, and turns while it does. */
+        uint16_t was = s.ships[1].heading;
+        step_n(&s, &cfg, SIM_BTN_THRUST, SIM_BTN_THRUST | SIM_BTN_LEFT, 30);
+        CHECK(s.ships[1].x == s.ships[0].x && s.ships[1].y == s.ships[0].y,
+              "a gunner rides where the carrier is");
+        CHECK(s.ships[1].heading != was, "a gunner still turns");
+
+        /* And the carrier pays for the passenger, once. */
+        int32_t one = sim_eff_thrust(&cfg.classes[APEX], &s.ships[0]);
+        CHECK(cfg.classes[APEX].gunner_thrust > 0, "carrying costs thrust");
+        CHECK(one > 0, "the carrier still has thrust");
+
+        s.ships[0].alive = 0;
+        step_n(&s, &cfg, 0, 0, 1);
+        CHECK(s.ships[1].carrier == SIM_NO_CARRIER,
+              "a dead carrier drops its gunners");
+    }
+
     free(m);
     if (failures == 0) printf("all tests passed\n");
     return failures ? 1 : 0;

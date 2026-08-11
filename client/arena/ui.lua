@@ -2042,7 +2042,30 @@ local function inspect(o, top)
     -- appear together: inviting wants somebody who is not on your side and
     -- following wants somebody who is.
     local label, action = nil, nil
-    if invite then
+    -- Riding lives in this panel for the reason the other two do: you opened
+    -- it by picking a person, and climbing onto somebody is a thing you do to
+    -- a person. It outranks watching because it is the one of the two that
+    -- does something to the game.
+    --
+    -- Offered on a living teammate who is not you and is not themselves
+    -- riding somebody, since the core refuses a chain. Every other condition
+    -- the core enforces is left to it: a bar that is not full and a hull with
+    -- no room refuse on the wire and say so by the button not taking. Testing
+    -- them here as well would be a second copy of the rules, drifting.
+    local mine = o.watch and o.watch.subject or o.me
+    local riding = mine and sim.ship_carrier(mine) or 255
+    local attach = same_team and i ~= mine and sim.ship_alive(i) == 1
+        and sim.ship_carrier(i) == 255 and not o.watch
+    if riding ~= 255 then
+        -- Already aboard, so the only thing this panel can offer is the way
+        -- off, and it offers it on whoever you are riding rather than on
+        -- everybody: a DROP under a stranger's name is a control that would
+        -- do something to a ship the name does not belong to.
+        label, action = (i == riding) and "DROP" or nil,
+                        (i == riding) and "detach" or nil
+    elseif attach then
+        label, action = "ATTACH", "attach"
+    elseif invite then
         -- Once it is sent it says so and stops taking clicks: the zone answers
         -- an invitation with a team list that does not name the invitee, so
         -- this is the only acknowledgement there is, and a button that stayed

@@ -127,6 +127,11 @@ pub struct sim_ship_class {
     pub mod_max: [u16; TRIG_COUNT],
     /// How many of each charge kind this hull may carry.
     pub charge_max: [u8; MAX_CHARGES],
+    /// Gunners this hull may carry, and what carrying any of them costs it.
+    /// The penalties are charged once, not per gunner.
+    pub gunner_limit: u8,
+    pub gunner_thrust: i32,
+    pub gunner_speed: i32,
 }
 
 #[repr(C)]
@@ -243,6 +248,8 @@ pub struct sim_ship {
     pub earned: u16,
     /// The score. Not cleared by death.
     pub points: u32,
+    /// The ship this one is riding, or 255.
+    pub carrier: u8,
 }
 
 #[repr(C)]
@@ -390,6 +397,8 @@ extern "C" {
     pub fn sim_map_unpack(map: *mut sim_map, inp: *const u8, len: i32) -> i32;
     pub fn sim_set_ship_team(s: *mut sim_state, cfg: *const sim_settings,
                              i: u8, team: u8) -> c_int;
+    pub fn sim_attach(s: *mut sim_state, cfg: *const sim_settings,
+                      i: u8, target: u8) -> c_int;
     pub fn sim_map_spawn(map: *const sim_map, team: u8, nth: u32,
                          tx: *mut u16, ty: *mut u16) -> i32;
     pub fn sim_map_arena(map: *mut sim_map);
@@ -663,6 +672,13 @@ impl World {
     /// the core refuses anyone dead or short of a full bar.
     pub fn set_ship_team(&mut self, i: u8, team: u8) -> bool {
         unsafe { sim_set_ship_team(&mut *self.state, &*self.cfg, i, team) == 0 }
+    }
+
+    /// Ride a teammate, or 255 to stop. Every condition is the core's: alive,
+    /// same side, a hull that carries, room on it, and a full bar. The room
+    /// has nothing to add, which is why this is a straight pass through.
+    pub fn attach(&mut self, i: u8, target: u8) -> bool {
+        unsafe { sim_attach(&mut *self.state, &*self.cfg, i, target) == 0 }
     }
 
     pub fn step(&mut self, inputs: &[sim_input]) {

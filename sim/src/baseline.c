@@ -59,6 +59,15 @@ static const sim_class_units flight = {
     200,   40,  230,      /* rotation */
     1000, 100, 1700,      /* energy */
     400,  166, 1150,      /* recharge */
+    /* Gunners, and what carrying them costs: TurretLimit, TurretThrustPenalty
+     * and TurretSpeedPenalty, which the original gives every one of its eight
+     * ships identically. Five riders, one of seventeen thrust and 12.5 px/s
+     * off the top, charged once however many are aboard.
+     *
+     * Every hull carrying is the original's default and it is the right one
+     * to inherit: a zone that wants a single carrier sets the others to zero,
+     * which is how the zones with a single carrier did it. */
+    5, 1, 125,
 };
 
 /* The weapons, also identical on every hull, from the same files and the

@@ -172,14 +172,12 @@ or the class is wrong.
 Whether Chord and Facet are distinct enough in practice, or whether sustained
 fire and close-range spread collapse into the same playstyle.
 
-Whether gunners are worth having at all. Riding on another player is unusual
-and takes explaining, and it is also one of the most distinctive things the
-original did. The Spire was the hull built around it and it has been withdrawn
-(see decisions.md), so nothing on the roster carries gunners now. Note that
-this is not a question about one hull: the original gave every ship five and
-left zones to zero the ones that should not carry, and the drawing in
-[gunners.md](gunners.md) works on any of these seven, so the roster does not
-have to grow for the answer to be yes.
+Whether gunners earn their place. Riding on another player is unusual and
+takes explaining, and it is also one of the most distinctive things the
+original did. It is built now, and every hull here carries five, so the
+question is no longer whether a hull exists for it: the Spire was withdrawn
+for having a role nothing implemented, and what was missing has since been
+written. See [gunners.md](gunners.md). What settles this is a playtest.
 
 Whether seven is right for launch. Six ships done well beats eight done
 carelessly, and the roster can grow after the game is good.
