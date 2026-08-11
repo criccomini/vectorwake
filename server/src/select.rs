@@ -615,6 +615,7 @@ async fn run_one(
             willing: z.fleet.willing.clone(),
             version: fleet::PROTOCOL,
             build: crate::metrics::commit().to_string(),
+            host_id: std::env::var("VW_HOST_ID").unwrap_or_default(),
         }
     };
     sink.send(Message::Binary(fleet::frame(fleet::A2D_REGISTER, &reg)))

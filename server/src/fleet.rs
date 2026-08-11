@@ -80,6 +80,17 @@ pub struct Register {
     #[serde(default)]
     pub willing: Vec<String>,
     pub version: u32,
+    /// The provider's id for the machine this process is on, when the host
+    /// knows one. Read from the metadata service at provisioning and passed
+    /// in, rather than fetched here: an arena has no business making a
+    /// network call to learn something that does not change.
+    ///
+    /// It buys the admin panel a link to the console page for the box, which
+    /// is the click after deciding a host rather than a process is the
+    /// problem. Empty on a laptop and on any provider whose metadata names
+    /// the field differently, which costs a link and nothing else.
+    #[serde(default)]
+    pub host_id: String,
     /// The commit this arena was built from.
     ///
     /// `version` above is the registration protocol's and answers whether the
@@ -238,6 +249,9 @@ pub struct Observed {
     /// The build this instance registered with, passed through.
     #[serde(default)]
     pub build: String,
+    /// And the machine it says it is on. See `Register::host_id`.
+    #[serde(default)]
+    pub host_id: String,
     /// The pin this instance reports, passed through as it arrived. See
     /// `Status::pinned`.
     #[serde(default)]

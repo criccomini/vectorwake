@@ -1227,6 +1227,7 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     })).collect::<Vec<_>>(),
                     "max_rooms": i.max_rooms,
                     "build": i.build,
+                    "host_id": i.host_id,
                     "capped": i.capped,
                     "verified": i.verified,
                     "age_ms": i.age_ms,

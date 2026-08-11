@@ -252,6 +252,12 @@ button.link {
 }
 button.link:hover { color: var(--ink); }
 
+/* A link out of the panel, which is only ever to the machine an instance runs
+   on. Underlined so it reads as leaving, in the ink color so it does not
+   compete with the acting edge. */
+main a { color: var(--ink); text-decoration-color: var(--line); }
+main a:hover { color: var(--friend); text-decoration-color: var(--friend); }
+
 /* A name in the list is the way into that pilot's card, so it reads as the
    link it is rather than as another cell of text. */
 button.pick {

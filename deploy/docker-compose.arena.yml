@@ -53,6 +53,12 @@ x-arena-env: &arena-env
   # dropped rather than held, so turning it back on records from then rather
   # than replaying the quiet period.
   VW_REGION: ${VW_REGION:-local}
+  # The provider's own id for the machine this is running on, read from the
+  # metadata service at provisioning and empty everywhere else. It buys one
+  # thing: the admin panel can link an instance straight to the console page
+  # for the box it is on, which is the click an operator makes after deciding
+  # a host is the problem. Empty means the panel draws plain text.
+  VW_HOST_ID: ${VW_HOST_ID:-}
   # Where rated events go: loopback on a host that runs the meta-layer, the
   # front door's public https otherwise. Never the catalog's address by
   # accident, which is the one clients use.

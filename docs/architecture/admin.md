@@ -174,8 +174,21 @@ somebody opens a dashboard for. Every registered instance with its zone,
 region, occupancy, rooms and tick time, and a state that reads `ok` or names
 the one thing worth knowing: unverified, silent, a tick near budget, a queue
 that is not draining, lag actions taken, a drain announced, capped. Above it
-the totals, the catalog version, and the key check below. Under that a pilot
-lookup with ban and unban, the ban list, and who holds the flag.
+the totals, the catalog version, and the key check below. Under that the pilot
+table with ban and unban, the ban list, and who holds the flag.
+
+An instance name links out to the provider's console page for the machine it
+runs on, which is the click after deciding a host rather than a process is the
+problem. The link exists only when the host knows its own provider id:
+`provision.sh` reads it from the metadata service every cloud offers on
+169.254.169.254, writes it to `.env` as `VW_HOST_ID`, and the arena carries it
+on its registration. A laptop and any provider that spells the field
+differently get plain text, which costs a link and nothing else.
+
+The pilot table filters as you type, over call signs and account numbers, and
+there is no button beside the box: the keystrokes are the whole interaction,
+and a button that repeats them invites somebody to wonder what it does
+differently. Picking a row opens that pilot's card.
 
 Two deployment-wide faults show there and nowhere else. Two directories on
 different catalog versions is a publish that half landed, which the fleet

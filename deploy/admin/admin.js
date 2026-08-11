@@ -234,6 +234,28 @@ async function command(instance, verb, args) {
   setTimeout(() => drawFleet().catch(() => {}), 700);
 }
 
+// The instance, linked to the machine it is on when the host knows its own
+// provider id. That is the click after deciding the box rather than the
+// process is the problem, and it saves finding the right row in a console
+// listing every instance the account owns.
+//
+// A link and not a fetch, so the site's CSP has nothing to say about it: the
+// policy governs what this page loads, not where it navigates. Provider-shaped
+// on purpose. If the deployment ever leaves Vultr this is the one line that
+// knows, which is a better place for that knowledge than nowhere.
+const CONSOLE = "https://console.vultr.com/subs/?id=";
+
+function instance(i) {
+  if (!i.host_id) return i.instance;
+  const a = document.createElement("a");
+  a.href = CONSOLE + encodeURIComponent(i.host_id);
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = i.instance;
+  a.title = "open the console page for the machine this instance runs on";
+  return a;
+}
+
 // Bytes at a glance. An operator comparing a snapshot against a budget wants
 // "3.1 kB", not five digits to count.
 function bytes(n) {
@@ -388,7 +410,7 @@ async function drawFleet() {
 function draw(f) {
   const rows = f.instances.map((i) => {
     return [
-      i.instance,
+      instance(i),
       i.zone || "(none)",
       i.region,
       trouble(i),
@@ -620,12 +642,6 @@ async function lookup(q) {
     tell(note.id, e.message);
   }
 }
-
-el("lookup-form").addEventListener("submit", (ev) => {
-  ev.preventDefault();
-  const q = el("lookup-q").value.trim();
-  if (q) lookup(q);
-});
 
 // Kick goes to every instance, because a call sign says who and not where.
 // The arenas not holding them answer "nobody here called ...", which is worth
