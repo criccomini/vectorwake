@@ -105,6 +105,12 @@ different hulls, and a rating measures the individual, hull included.
 vectorwake-server calibrate stages 24 Apex alpha .   # writes ./stages.json
 ```
 
+Naming a zone loads the catalog, and the catalog wants this deployment's
+identity before it will hand anything over: `VW_POOL_DIGEST` and
+`VW_META_VERIFY`. Neither has the least bearing on a measurement, so set them to
+anything shaped right and forget them, which is what `set_placeholder_identity`
+does for the tests. Measuring `baseline` needs no catalog and no variables.
+
 The ladder holds the tech tree at zero so it can rank pilots, which means it can
 never price one. This is the same harness with the pilots held still instead:
 one hull, one skill on both sides, and a fixed kit as the only difference
@@ -116,7 +122,15 @@ matters more than it sounds, because a zone owns its weapon table and its
 add-on steps: Alpha fans multifire to five degrees where the compiled baseline
 fans it to fifteen, which moves the hit rate of the stage being priced from 65%
 to 80%. Pass `baseline`, or leave it off, to measure the roster as this binary
-compiled it. A named zone that is not in the catalog stops the run rather than
+compiled it.
+
+That example holds for six of the seven hulls. `mod_spread` is the angle a
+multifire add-on supplies to a pattern that has none of its own, and the Facet's
+gun has one: it fires two barrels seven and a half degrees apart, and keeps that
+angle whatever a zone sets. So the Facet is the hull whose fan a zone cannot
+widen or tighten from the arena block, and on Alpha it is the hull that fans
+*wider* than everyone rather than narrower. Retuning it means setting `spread`
+on the `facet-gun` weapons. A named zone that is not in the catalog stops the run rather than
 falling back, since silently pricing the baseline under a zone's name is the one
 outcome worse than not running.
 
