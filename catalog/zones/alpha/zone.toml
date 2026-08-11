@@ -73,6 +73,30 @@ friction = 12
 # read the card the wait carries.
 respawn_delay = 400
 
+# Where a ship comes back: not the map's spawn tiles, but a square in the
+# middle of the map, which is what the original did before it had spawn points.
+#
+# The number is the original's own, worked back from the settings its reference
+# server ships. `Misc:WarpRadiusLimit=20` clamps a formula that would otherwise
+# have asked for 266 and up, so a default zone put every arrival in x 493 to
+# 529 and y the same: a 37-tile square dead centre, about one screen across,
+# however full the room was. Ours is a radius rather than a width, so 18.
+#
+# That is a deliberately small number and it is the whole point of this zone
+# using it. Alpha is ten teams and kills only, on a mapgen map whose spawn
+# tiles are scattered over nearly half the field, which put one pilot five
+# seconds from a fight and their team mate twenty-six. Everybody landing in the
+# same screen costs the formation a team game would want and buys the thing
+# this zone is for: you come back where the shooting is.
+#
+# What it also buys is a camp. Radar reaches 60 tiles, so 18 is comfortably
+# inside what one pilot sitting on the centre can watch, and a fresh ship here
+# is worth about 29.5 bounty because `spawn_prizes` is 30. If that turns out to
+# be as unpleasant as it sounds, the lever is this number and not a rule about
+# farming: 60 gets arrivals off a camper's radar, at the price of some of the
+# closeness. Left at the original's until it has been played.
+spawn_radius = 18
+
 # A minute in a safe zone and the room takes the seat back. Nothing can reach a
 # ship in a safe zone and it cannot shoot out of one, so parking there is a seat
 # held at no risk in a room that caps at 32 of them.

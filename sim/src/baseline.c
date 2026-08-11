@@ -249,9 +249,13 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     /* Spawn on the map's own tiles. Every map we ship carries them, and a
      * baseline that scattered ships round the middle instead would be the
      * baseline overruling the map. A zone that wants the scatter sets a
-     * radius, and 133 is the number to start from: it is what the original
-     * used in an empty arena, and it is a bit over twice how far radar
-     * reaches, which is the floor worth having. */
+     * radius. Two numbers are worth knowing when picking one. The original's
+     * own works out at 18, because `WarpRadiusLimit=20` in the settings its
+     * reference server ships clamps a formula that would have asked for 266,
+     * leaving a 37-tile square at the centre. And 60 is how far radar reaches,
+     * which is the point below which one pilot sitting on the middle can watch
+     * every arrival. The original was well inside that; whether we want to be
+     * is a decision per zone. */
     cfg->spawn_radius = 0;
     /* And a client marks those tiles, because a pilot who cannot see where
      * they are about to arrive cannot decide anything about it. */

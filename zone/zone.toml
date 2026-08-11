@@ -63,9 +63,11 @@ respawn_delay = 400   # ticks, so four seconds
 # over nearly half the map, so under tiles one pilot can be five seconds from
 # the middle and their team mate twenty-six. A radius makes everybody the same
 # distance from it and turns one patch of ground into the only place anyone
-# arrives. 133 is where to start if you want that: it is the box the original
-# used in an empty arena, and radar reaches 60 tiles, so anything much tighter
-# means a camper sees every arrival the moment it appears.
+# arrives. The original's own number comes to 18, because WarpRadiusLimit=20 in
+# its reference settings clamps a formula that would have asked for 266, so a
+# stock zone dropped everyone into a 37-tile square at the centre. Radar reaches
+# 60 tiles, so that is well inside what one camper can watch: pick 18 for the
+# original's feel and 60 or more to make camping the middle hard work.
 #
 # spawn_radius = 133
 

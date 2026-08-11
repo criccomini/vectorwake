@@ -127,9 +127,10 @@ The first is `Misc:WarpRadiusLimit`, whose help text gives the whole model away:
 > When ships are randomly placed in the arena, this parameter will limit how far
 > from the center of the arena they can be placed (1024=anywhere)
 
-Random placement around the centre of the map, with a cap. The second is
-`Radar:RadarMode`, which looks like a display setting and turns out to be doing
-a second job:
+Random placement around the centre of the map, with a cap, and the cap is the
+half of this that decides everything: the reference server ships it at 20, on a
+map 1024 tiles across. The second setting is `Radar:RadarMode`, which looks
+like a display setting and turns out to be doing a second job:
 
 > Radar mode (0=normal, 1=half/half, 2=quarters, 3=half/half-see team mates,
 > 4=quarters-see team mates)
@@ -143,22 +144,31 @@ and a quartered radar as a statement that it has four, then spawns accordingly:
 | 2, 4 | `x = (freq & 1) * 768 + rand(0..255)`, `y = ((freq / 2) & 1) * 768 + rand(0..255)`. Four corners by freq mod 4. |
 | 0 | A box around the map centre whose width grows with the room's population. |
 
-That third row is the strange one. The width is
+That third row is the strange one, and it is the row where reading the code
+without reading the settings gets you a wrong answer. The width is
 `((players / 8) * 8192 + 1024) / 96 + 256`, clamped to `WarpRadiusLimit` with a
 floor of 3, and then the tile is drawn from it with about 20 tiles of extra
-jitter:
+jitter. Taken alone the formula widens as the room fills:
 
-| Players in the arena | Box width, in tiles |
+| Players in the arena | Width the formula asks for |
 |---|---|
 | 0 to 7 | 266 |
 | 8 to 15 | 352 |
 | 16 to 23 | 437 |
 | 24 to 31 | 522 |
 
-An empty arena drops arrivals within about 133 tiles of the middle. A busy one
-scatters them over a quarter of the map. Whatever the reasoning was, the effect
-is that a filling room spreads its arrivals out instead of piling them into one
-landing zone.
+None of which happens on a stock server. `dist/conf/svs/misc` sets
+`WarpRadiusLimit=20`, and 20 is below every row of that table, so the clamp
+fires on an empty arena and the population term never reaches the arithmetic.
+What a default zone actually does is put arrivals in x 493 to 529 and y the
+same: a 37-tile square dead in the middle of the map, about one screen across,
+whatever the room holds.
+
+So the growth is real code and, at the settings the reference server ships, it
+is unreachable. It only means anything in a zone that raises the limit past
+266, and `RadarMode=0` with `WarpRadiusLimit=20` is what the same file pairs it
+with. Read the two together or the fallback looks like a scatter when it is the
+opposite: everybody, both sides, into one screen at the centre.
 
 All three modes run the same hundred attempts against the same fit test, falling
 back to 512, 512. One caveat on those attempts, and it is a caveat about the

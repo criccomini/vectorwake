@@ -72,10 +72,11 @@ pub struct ArenaConfig {
     pub respawn_delay: Option<u16>,
     /// Zero, or absent, spawns on the map's own spawn tiles. Above zero
     /// ignores them and drops a ship on a random tile within this many of the
-    /// map's centre, redrawn on every death. 133 is the number to start from:
-    /// it is what the original used in an empty arena, and it is a bit over
-    /// twice how far radar reaches, which is the floor worth having if a
-    /// camper is not to see every arrival.
+    /// map's centre, redrawn on every death. The original's own number works
+    /// out at 18: `WarpRadiusLimit=20` clamps a formula that would have asked
+    /// for 266, leaving a 37-tile square at the centre. 60 is where arrivals
+    /// stop being visible on a centre-camper's radar, which is the other
+    /// number worth having in mind.
     pub spawn_radius: Option<u16>,
     /// Whether a client marks the map's spawn tiles. Absent draws them.
     /// Ignored by the client when `spawn_radius` is set, since then nobody
