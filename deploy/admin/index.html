@@ -81,12 +81,23 @@
       <table id="fleet">
         <caption class="sr">Every arena instance this deployment's directory
           has observed</caption>
+        <!-- Health first, because that is what gets scanned: an operator
+             reads down `state` and stops at the row that is not `ok`. The
+             five numbers server.md names trail to the right, where they are
+             for investigating rather than noticing. -->
         <thead><tr>
           <th scope="col">instance</th><th scope="col">zone</th>
           <th scope="col">region</th>
-          <th scope="col" class="n">players</th><th scope="col" class="n">bots</th>
-          <th scope="col" class="n">rooms</th><th scope="col" class="n">tick</th>
           <th scope="col">state</th>
+          <th scope="col" class="n">players</th><th scope="col" class="n">bots</th>
+          <th scope="col">rooms</th>
+          <th scope="col">trend</th>
+          <th scope="col" class="n">tick</th>
+          <th scope="col" class="n">bw/seat</th>
+          <th scope="col" class="n">snapshot</th>
+          <th scope="col" class="n">queue</th>
+          <th scope="col" class="n">lag/s</th>
+          <th scope="col">build</th>
           <th scope="col"><span class="sr">actions</span></th>
         </tr></thead>
         <tbody></tbody>

@@ -233,6 +233,109 @@ async function command(instance, verb, args) {
   setTimeout(() => drawFleet().catch(() => {}), 700);
 }
 
+// ---------------------------------------------------------------- history
+
+// What the panel remembers while it is open, keyed by instance: one sample
+// per refresh, oldest first. Ten minutes at a five second refresh, which is
+// enough to answer "is this worse than it was a minute ago" and short enough
+// that it costs nothing.
+//
+// It lives in the page and dies with it, deliberately. Real history wants a
+// sampler writing somewhere durable, and until that exists a buffer that only
+// covers the time you have been watching is honest about what it knows.
+const KEEP = 120;
+const history = new Map();
+
+function remember(instances) {
+  const seen = new Set();
+  for (const i of instances) {
+    seen.add(i.instance);
+    const h = history.get(i.instance) || [];
+    h.push({ players: i.players, bots: i.bots, tick_us: i.tick_us });
+    if (h.length > KEEP) h.shift();
+    history.set(i.instance, h);
+  }
+  // An instance that has gone is forgotten rather than left as a stale line
+  // that would rejoin the wrong history if the id ever came back.
+  for (const k of history.keys()) if (!seen.has(k)) history.delete(k);
+}
+
+// Bytes at a glance. An operator comparing a snapshot against a budget wants
+// "3.1 kB", not five digits to count.
+function bytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} kB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// A commit is only ever compared here, so seven characters is the whole of
+// what is useful. `unknown` is what a binary built outside CI reports, and
+// saying so beats drawing a blank cell that reads like a missing field.
+function build(b, mine) {
+  if (!b) return "";
+  const short = b.slice(0, 7);
+  return b === mine || !mine ? short : `${short} (drift)`;
+}
+
+const SVG = "http://www.w3.org/2000/svg";
+
+// One line, scaled to its own range, with no axes and no grid. It answers
+// "which way is this going" and nothing else, which is all a cell this size
+// can honestly carry. Drawn with SVG attributes rather than inline styles,
+// so the site's CSP needs no exception.
+function sparkline(values, cls) {
+  const w = 84, h = 20, pad = 2;
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h);
+  svg.setAttribute("class", `spark ${cls || ""}`);
+  svg.setAttribute("aria-hidden", "true");
+  if (values.length < 2) return svg;
+
+  const top = Math.max(...values, 1);
+  const step = (w - pad * 2) / (values.length - 1);
+  const y = (v) => h - pad - (v / top) * (h - pad * 2);
+  const points = values.map((v, i) => `${(pad + i * step).toFixed(1)},${y(v).toFixed(1)}`);
+
+  const line = document.createElementNS(SVG, "polyline");
+  line.setAttribute("points", points.join(" "));
+  line.setAttribute("fill", "none");
+  line.setAttribute("stroke", "currentColor");
+  line.setAttribute("stroke-width", "1");
+  line.setAttribute("stroke-linejoin", "round");
+  svg.append(line);
+
+  // The latest sample gets a mark, because the end of the line is the number
+  // in the column beside it and the eye should find them together.
+  const dot = document.createElementNS(SVG, "circle");
+  dot.setAttribute("cx", (pad + (values.length - 1) * step).toFixed(1));
+  dot.setAttribute("cy", y(values[values.length - 1]).toFixed(1));
+  dot.setAttribute("r", "1.6");
+  dot.setAttribute("fill", "currentColor");
+  svg.append(dot);
+  return svg;
+}
+
+// The rooms an instance is holding, as the numbers a player would use. A
+// count cannot say whether one room is packed or four are half empty, which
+// is the fill ladder working or not working.
+function rooms(i) {
+  const box = document.createElement("span");
+  box.className = "rooms";
+  const head = document.createElement("span");
+  head.textContent = `${i.rooms.length}/${i.max_rooms}`;
+  box.append(head);
+  for (const r of i.rooms) {
+    const cell = document.createElement("span");
+    cell.className = r.full ? "room full" : "room";
+    cell.textContent = `#${r.number} ${r.players}`;
+    if (r.bots) cell.textContent += `+${r.bots}`;
+    box.append(cell);
+  }
+  return box;
+}
+
 function button(label, onClick, cls) {
   const b = document.createElement("button");
   b.type = "button";
@@ -323,20 +426,32 @@ async function drawFleet() {
     noteOwner = null;
   }
 
-  const rows = f.instances.map((i) => [
-    i.instance,
-    i.zone || "(none)",
-    i.region,
-    [i.players, "n"],
-    [i.bots, "n"],
-    [`${i.rooms}/${i.max_rooms}`, "n"],
-    // Two decimals because a healthy tick is tens of microseconds and one
-    // decimal rounds every one of them to 0.0ms, which reads as no reading
-    // at all rather than as the good news it is.
-    [i.tick_us ? `${(i.tick_us / 1000).toFixed(2)}ms` : "", "n"],
-    trouble(i),
-    actions(i),
-  ]);
+  remember(f.instances);
+  const rows = f.instances.map((i) => {
+    const h = history.get(i.instance) || [];
+    return [
+      i.instance,
+      i.zone || "(none)",
+      i.region,
+      trouble(i),
+      [i.players, "n"],
+      [i.bots, "n"],
+      rooms(i),
+      sparkline(h.map((s) => s.players + s.bots), "seats"),
+      // Two decimals because a healthy tick is tens of microseconds and one
+      // decimal rounds every one of them to 0.0ms, which reads as no reading
+      // at all rather than as the good news it is.
+      [i.tick_us ? `${(i.tick_us / 1000).toFixed(2)}ms` : "", "n"],
+      // The other four of the five numbers server.md names. They arrive on
+      // every status push and were being thrown away here.
+      [i.bw_per_player ? `${bytes(i.bw_per_player)}/s` : "", "n"],
+      [i.snapshot_bytes ? bytes(i.snapshot_bytes) : "", "n"],
+      [i.queue_depth, i.queue_depth > 50 ? "n bad" : "n"],
+      [i.lag_actions, i.lag_actions > 0 ? "n warn" : "n"],
+      [build(i.build, f.build), i.build && f.build && i.build !== f.build ? "bad" : ""],
+      actions(i),
+    ];
+  });
   fill("fleet", rows);
   drawAudit(f.audit || []);
 
@@ -359,11 +474,39 @@ async function drawFleet() {
   else say(`${n} arena${n === 1 ? "" : "s"}, ${players} playing, ${bots} bots.`);
   if (bad) say(`${bad} needing attention.`, "bad");
   say(`catalog v${f.catalog_version}.`);
+
+  // Every build in the deployment, held against this one. Three processes
+  // that agree is a converge that landed; one that does not is a converge
+  // that half did, which every other number here would go on reporting as
+  // perfectly healthy.
+  const others = [f.directory_build, ...f.instances.map((i) => i.build)].filter(Boolean);
+  const drifted = others.filter((b) => b !== f.build).length;
+  if (f.build) {
+    say(`build ${f.build.slice(0, 7)}.`);
+    if (drifted) {
+      say(`${drifted} process(es) on another build; a converge landed on some of the fleet and not the rest.`, "bad");
+    }
+  }
+
   // A key disagreement is not visible anywhere else in the fleet: tokens fail
   // their check, everyone flies as a guest, and nothing is on fire.
   if (!f.key_agrees) {
     say("The catalog names a different verifying key than this meta-layer signs with, so every session token is failing.", "bad");
   }
+
+  // The fleet's own line, beside the totals: every seat the deployment is
+  // holding, however it is spread across instances.
+  const totals = [];
+  const depth = Math.max(0, ...[...history.values()].map((h) => h.length));
+  for (let k = 0; k < depth; k++) {
+    let sum = 0;
+    for (const h of history.values()) {
+      const s = h[h.length - depth + k];
+      if (s) sum += s.players + s.bots;
+    }
+    totals.push(sum);
+  }
+  if (totals.length > 1) head.append(sparkline(totals, "seats"));
 }
 
 // ---------------------------------------------------------------------- log

@@ -153,6 +153,66 @@ pub static CONNECTIONS_TOTAL: Counter = Counter::new();
 /// Snapshot bytes handed to the writers. Egress is the hosting bill, so this
 /// is the number that turns into money.
 pub static SNAPSHOT_BYTES: Counter = Counter::new();
+/// The size of the most recent snapshot handed to a writer.
+///
+/// The counter above is what the deployment is billed for; this is what
+/// server.md means by snapshot size, which is a property of one room's state
+/// rather than of an afternoon's traffic. Both are wanted and neither answers
+/// for the other.
+pub static SNAPSHOT_LAST: Gauge = Gauge::new();
+
+/// A counter read as a rate.
+///
+/// Two of the five numbers server.md names are rates rather than levels, and
+/// a level is what a `Counter` holds: `vw_snapshot_bytes_total` climbing
+/// forever says nothing about whether the last minute was busy. This keeps
+/// the previous reading beside its timestamp and answers with the difference,
+/// which is the same arithmetic a scrape would do and which nothing here is
+/// currently doing for us.
+///
+/// Holds its last answer for a second, so a status push that arrives because
+/// somebody joined does not divide a tiny delta by a tiny window and report a
+/// wild number.
+pub struct Rate {
+    last_total: AtomicU64,
+    last_ms: AtomicU64,
+    held: AtomicU64,
+}
+
+impl Rate {
+    pub const fn new() -> Self {
+        Rate {
+            last_total: AtomicU64::new(0),
+            last_ms: AtomicU64::new(0),
+            held: AtomicU64::new(0),
+        }
+    }
+
+    /// Units per second since the previous sample at least a second ago.
+    pub fn per_sec(&self, total: u64, now_ms: u64) -> u64 {
+        let then = self.last_ms.load(Ordering::Relaxed);
+        if then == 0 {
+            self.last_ms.store(now_ms, Ordering::Relaxed);
+            self.last_total.store(total, Ordering::Relaxed);
+            return 0;
+        }
+        let elapsed = now_ms.saturating_sub(then);
+        if elapsed < 1000 {
+            return self.held.load(Ordering::Relaxed);
+        }
+        let grew = total.saturating_sub(self.last_total.load(Ordering::Relaxed));
+        let rate = grew.saturating_mul(1000) / elapsed.max(1);
+        self.last_total.store(total, Ordering::Relaxed);
+        self.last_ms.store(now_ms, Ordering::Relaxed);
+        self.held.store(rate, Ordering::Relaxed);
+        rate
+    }
+}
+
+/// Snapshot bytes as a rate, and drops as a rate. See `Rate`.
+pub static BYTES_RATE: Rate = Rate::new();
+pub static DROP_RATE: Rate = Rate::new();
+
 /// Messages dropped because a client's queue was full.
 ///
 /// `try_send` drops rather than waits, which is the right choice and an
@@ -262,7 +322,11 @@ pub fn set_zone(zone: &str) {
     }
 }
 
-fn commit() -> &'static str {
+/// The commit this binary was built from, or `unknown` outside CI. Public
+/// because it is not only a metrics label: an arena carries it up the
+/// registration socket, which is what lets an operator see a converge that
+/// updated one process and not another.
+pub fn commit() -> &'static str {
     option_env!("VW_COMMIT").unwrap_or("unknown")
 }
 
@@ -513,5 +577,33 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_rate_is_the_difference_over_the_window() {
+        let r = Rate::new();
+        // The first sample has nothing to subtract from and says so.
+        assert_eq!(r.per_sec(1_000, 10_000), 0);
+        // Two seconds later, two thousand more: a thousand a second.
+        assert_eq!(r.per_sec(3_000, 12_000), 1_000);
+        // Asked again inside the same second it holds its last answer rather
+        // than dividing a small delta by a smaller window. A held answer does
+        // not move the baseline, which is the point: the next real sample
+        // measures from the last one it recorded, not from the last question.
+        assert_eq!(r.per_sec(3_100, 12_400), 1_000);
+        // So this window is the two seconds since 12_000, over the hundred
+        // the counter grew in them.
+        assert_eq!(r.per_sec(3_100, 14_000), 50);
+        // And a counter that has not moved since reads zero rather than stale.
+        assert_eq!(r.per_sec(3_100, 16_000), 0);
+    }
+
+    #[test]
+    fn a_rate_survives_a_counter_that_went_backwards() {
+        // Nothing here resets a counter, but a reader that panicked or
+        // underflowed on one would take a process down for a metric.
+        let r = Rate::new();
+        assert_eq!(r.per_sec(500, 1_000), 0);
+        assert_eq!(r.per_sec(100, 3_000), 0);
     }
 }

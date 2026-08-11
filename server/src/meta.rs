@@ -1056,6 +1056,13 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             (200, serde_json::json!({
                 "catalog_version": view.catalog_version,
                 "audit": audit,
+                // Three builds to hold against each other: this process, the
+                // directory that answered, and each arena below. A converge
+                // that lands on one and not another leaves a fleet that
+                // works and disagrees, which is invisible from every other
+                // number here.
+                "build": crate::metrics::commit(),
+                "directory_build": view.build,
                 // Said as an answer rather than as two keys to compare by eye,
                 // because the whole value of the check is that nobody is
                 // looking when it matters.
@@ -1070,8 +1077,19 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     "players": i.players,
                     "bots": i.bots,
                     "bots_wanted": i.bots_wanted,
-                    "rooms": i.rooms.len(),
+                    // The rooms themselves, not a count of them. An instance
+                    // holding one room of twenty and an instance holding
+                    // four of five are the same number and different
+                    // situations, and the fill ladder is the thing an
+                    // operator is judging when they look here.
+                    "rooms": i.rooms.iter().map(|r| serde_json::json!({
+                        "number": r.number,
+                        "players": r.players,
+                        "bots": r.bots,
+                        "full": r.full,
+                    })).collect::<Vec<_>>(),
                     "max_rooms": i.max_rooms,
+                    "build": i.build,
                     "capped": i.capped,
                     "verified": i.verified,
                     "age_ms": i.age_ms,

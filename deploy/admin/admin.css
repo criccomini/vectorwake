@@ -334,6 +334,25 @@ td.wrap {
   max-width: 30rem;
 }
 
+/* A line, no axes, no grid, scaled to its own range. It says which way a
+   number is going and leaves the number itself to the column beside it. */
+.spark { display: block; color: var(--dim); }
+.spark.seats { color: var(--friend); }
+.lede .spark { display: inline-block; vertical-align: middle; margin-left: 0.4rem; }
+
+/* The rooms an instance holds, as the numbers a player would use. The count
+   leads, the rooms follow it, and a full one wears the enemy's color because
+   full is the state that turns players away. */
+.rooms { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: baseline; }
+.room {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0 0.35rem;
+  color: var(--dim);
+  font-size: 0.85em;
+}
+.room.full { border-color: var(--enemy); color: var(--enemy); }
+
 /* Row controls: quiet until wanted, and never the first thing the eye lands
    on in a table meant for reading. */
 .acts { display: flex; gap: 0.4rem; }

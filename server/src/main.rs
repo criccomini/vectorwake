@@ -2240,6 +2240,7 @@ impl Room {
             // Counted here rather than at the socket: this is the byte the
             // room decided to send, and egress is what a host bills for.
             metrics::SNAPSHOT_BYTES.add(msg.len() as u64);
+            metrics::SNAPSHOT_LAST.set(msg.len() as i64);
             if p.tx.try_send(Message::Binary(msg)).is_err() {
                 metrics::SEND_DROPPED.inc();
             }
@@ -2271,6 +2272,7 @@ impl Room {
             msg.extend_from_slice(&0u32.to_le_bytes());
             msg.extend_from_slice(&buf[..n as usize]);
             metrics::SNAPSHOT_BYTES.add(msg.len() as u64);
+            metrics::SNAPSHOT_LAST.set(msg.len() as i64);
             if w.tx.try_send(Message::Binary(msg)).is_err() {
                 metrics::SEND_DROPPED.inc();
             }
@@ -3613,7 +3615,29 @@ impl ArenaServer {
                     .map(|p| (OUT_QUEUE - p.tx.capacity()) as u32)
                     .max()
                     .unwrap_or(0),
-                ..Default::default()
+                // The other three of server.md's five, which this struct
+                // filled with `Default::default()` until now: an operator
+                // was being shown three zeroes that meant "never measured"
+                // and read as "nothing wrong".
+                //
+                // Bandwidth is what this process is queueing to clients,
+                // divided by the seats it is queueing to. Seats rather than
+                // humans, because a bot is sent the same snapshot as anybody
+                // and the number is about what the host is carrying.
+                snapshot_bytes: crate::metrics::SNAPSHOT_LAST.get().max(0) as u32,
+                bw_per_player: {
+                    let seats = (self.total_players() + self.total_bots()).max(1) as u64;
+                    let per_sec = crate::metrics::BYTES_RATE
+                        .per_sec(crate::metrics::SNAPSHOT_BYTES.get(), fleet::now_ms());
+                    (per_sec / seats) as u32
+                },
+                // A lag action is this process degrading a connection that
+                // cannot keep up, which it does by dropping rather than
+                // waiting. As a rate, because the counter behind it only
+                // ever climbs and a fleet view wants to know about now.
+                lag_actions: crate::metrics::DROP_RATE
+                    .per_sec(crate::metrics::SEND_DROPPED.get(), fleet::now_ms())
+                    as u32,
             },
         }
     }
