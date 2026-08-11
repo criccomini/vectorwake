@@ -159,6 +159,25 @@ end
 -- the mark remembers where the dots landed, because the bounce rings them, and
 -- how far right anything got, because the caller sizes a row off that.
 --
+-- The fan as a control, rather than as a round on its way somewhere.
+--
+-- The same shape `dec_multi` puts on a bolt, cut to fit a cell: one barrel
+-- down the middle and two off it. The middle one is the round you fire either
+-- way, so it stays lit; the outer two are what the add-on adds, and they go
+-- quiet when it is declined rather than disappearing. A fan that vanished when
+-- it was switched off would read as a fan you no longer had, which is the same
+-- reason a declined add-on stays drawn on a weapon mark.
+--
+-- Centred on the cell rather than hung off a muzzle, because there is no round
+-- here for it to hang from.
+function M.fan(cx, cy, k, col, off)
+    local ox = cx - k * M.BOLT_LEN * 0.5
+    local quiet = pal.a(col, 0.28)
+    M.bolt_line(ox, cy, -M.BOLT_FAN, k, off and quiet or col)
+    M.bolt_line(ox, cy, M.BOLT_FAN, k, off and quiet or col)
+    M.bolt_line(ox, cy, 0, k, col)
+end
+
 -- `held` is a barrel you have but are not firing: drawn, so the fan does not
 -- appear to vanish when it is declined, but not counted as a round. What is
 -- not firing does not bounce, and a ring on it says it does.

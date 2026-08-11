@@ -529,6 +529,7 @@ local NODES = {
     help = {board = true, rows = {
         {label = "steer", detail = "left thumb: point where you want the nose"},
         {label = "fire", detail = "right pads: guns, then bombs"},
+        {label = "multifire", detail = "tap the fan cell to switch it off"},
         {label = "charges", detail = "tap a charge pad to spend it"},
         {label = "who", detail = "tap a pilot on the scoreboard"},
     }},

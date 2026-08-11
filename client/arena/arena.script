@@ -286,6 +286,10 @@ end
 -- flame, so the first call would swallow the tap and the one that mattered
 -- would see nothing.
 local charge_tap = nil
+-- Whether this step carries a press of the fan cell. Beside `charge_tap`
+-- because it is the same shape of thing: a control's tap, latched by the
+-- interface and spent by exactly one simulation step.
+local multi_tap = false
 -- The same latch for a charge key, filled where taps are read and drained
 -- into `charge_tap` by the step loop.
 local key_charge = nil
@@ -331,6 +335,10 @@ local function my_buttons()
     -- to read back or to have forgotten to move. The control you pressed is
     -- the thing you get.
     if charge_tap then bits[sim.BTN_USE] = true end
+    -- The fan cell, which is the only way to decline multifire on glass. It
+    -- lands in the same bit the key holds down, so the core sees one press
+    -- however it was made.
+    if multi_tap then bits[sim.BTN_MULTI] = true end
 
     local b = 0
     for bit in pairs(bits) do b = b + bit end
@@ -1071,8 +1079,15 @@ function update(self, dt)
             -- after the step that spends it.
             charge_tap = touch.fired_charge() or key_charge
             key_charge = nil
+            -- Spent over one step for the same reason, and it has to be one:
+            -- the core toggles on the rising edge, so a bit left down over
+            -- two steps is still one toggle but a bit set again on the next
+            -- is a second. Reading it here, once, is what makes a tap a
+            -- press rather than a hold.
+            multi_tap = touch.fired_multi()
             step_once()
             charge_tap = nil
+            multi_tap = false
             accum = accum - DT
             steps = steps + 1
         end
@@ -1668,6 +1683,13 @@ function update(self, dt)
         -- Which charge slots this hull carries, and how many of each are in
         -- hand. The pads are built from this, so a hull with none draws none
         -- and a zone that fills all four gets four.
+        -- And whether either trigger is carrying a fan, which is what decides
+        -- whether the rail holds a cell for declining it. The same expression
+        -- the multifire sound reads, because it is the same question: does
+        -- this hull have barrels to turn off.
+        touch.has_fan = sim.ship_mod(me, sim.TRIG_GUN, sim.MOD_MULTI) > 0
+            or sim.ship_mod(me, sim.TRIG_BOMB, sim.MOD_MULTI) > 0
+        touch.multi_off = sim.ship_multi_off(me)
         touch.charges = my_slots()
         touch.counts = {}
         touch.maxes = {}

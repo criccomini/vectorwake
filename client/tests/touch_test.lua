@@ -101,5 +101,57 @@ end
 -- Lifting the thumb clears the ask.
 check("after the lift the stick is quiet", #touch.bits(0) == 0)
 
+-- --- the fan cell -----------------------------------------------------------
+--
+-- Multifire is the one gun mode with no key on glass, so this cell is the only
+-- way to decline it there. It behaves like a charge and is not one: latched
+-- rather than held, but a toggle rather than a spend, and present only while
+-- the hull is carrying barrels to turn off.
+
+local function tap(x, y)
+    touch.on_touch({touch = {{id = 3, pressed = true,
+                              screen_x = x, screen_y = y}}}, W, H, 1)
+    touch.on_touch({touch = {{id = 3, released = true,
+                              screen_x = x, screen_y = y}}}, W, H, 1)
+end
+
+touch.has_fan = false
+check("no fan, no cell", touch.layout(W, H, 1).fan == nil)
+
+touch.has_fan = true
+local L = touch.layout(W, H, 1)
+check("a fan puts a cell in the rail", L.fan ~= nil)
+-- Above the triggers rather than on them. A cell overlapping the gun would
+-- swallow a pull, which is the one press that must never be eaten.
+check("clear of the trigger it belongs to",
+      L.fan and L.fan.y > L.guns.y + L.guns.r,
+      L.fan and (L.fan.y .. " against " .. (L.guns.y + L.guns.r)))
+
+check("nothing latched before a tap", touch.fired_multi() == false)
+tap(L.fan.x, L.fan.y)
+check("a tap latches one press", touch.fired_multi() == true)
+check("and the read spends it", touch.fired_multi() == false)
+
+-- Two taps between two reads collapse into one, which the charge latch does
+-- as well. Harmless here: the step loop reads this every simulation tick, so
+-- the two would have to land inside a hundredth of a second.
+tap(L.fan.x, L.fan.y)
+tap(L.fan.x, L.fan.y)
+check("taps between reads collapse rather than queue",
+      touch.fired_multi() == true and touch.fired_multi() == false)
+
+-- The triggers keep their own space, in both directions.
+tap(L.guns.x, L.guns.y)
+check("a pull of the gun is not a toggle", touch.fired_multi() == false)
+touch.release_all()
+
+-- And a hull that lost its fan has no cell there, so the space falls through
+-- rather than answering to a control that is no longer drawn.
+touch.has_fan = false
+tap(L.fan.x, L.fan.y)
+check("with the fan gone the cell is not there to press",
+      touch.fired_multi() == false)
+touch.release_all()
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

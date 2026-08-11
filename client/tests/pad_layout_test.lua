@@ -169,6 +169,9 @@ local function reset(w, h, s)
     touch.used = true
     touch.me = 0
     touch.has_bomb = true
+    -- Off by default, which is the ordinary hull: a fan is picked up. The
+    -- block at the bottom turns it on for the case that is actually tight.
+    touch.has_fan = false
     touch.charges = {0, 1}
     touch.counts = {[0] = 2, [1] = 1}
     touch.maxes = {[0] = 3, [1] = 3}
@@ -392,6 +395,12 @@ local function controls(L2)
         out[#out + 1] = {n = "bombs", x = L2.bombs.x, y = L2.bombs.y,
                          r = L2.bombs.r}
     end
+    -- The fan sits in the same rail and answers the same way, so it belongs in
+    -- the same sweep. It is the one cell that is a mode rather than a stock,
+    -- which changes what it draws and nothing about where it may sit.
+    if L2.fan then
+        out[#out + 1] = {n = "fan", x = L2.fan.x, y = L2.fan.y, r = L2.fan.r}
+    end
     for i, c in ipairs(L2.charge) do
         out[#out + 1] = {n = "charge" .. i, x = c.x, y = c.y, r = c.r}
     end
@@ -451,6 +460,7 @@ local function columns(l)
 end
 
 local function under_ceiling(l, ceil)
+    if l.fan and l.fan.y + l.fan.r > ceil then return false end
     for _, c in ipairs(l.charge) do
         if c.y + c.r > ceil then return false end
     end
@@ -679,6 +689,48 @@ do
     local none = draw(w, h, s)
     check("a hull holding no charges draws no rail", #none.charge == 0,
           #none.charge .. " cells with an empty hand")
+end
+
+-- --- the fan, in the rail that was already the tight one --------------------
+--
+-- Multifire's cell is the fifth thing in a column that had four at its worst,
+-- and the worst is a phone held sideways, where the dial takes better than
+-- half the height and the rail is already stepping left to fit. Adding to that
+-- column is exactly where a rail runs into the dial or off the edge, so the
+-- full rack plus a fan is checked rather than assumed.
+do
+    local w, h, s = reset(unpack(LAND))
+    touch.ceiling = TIGHT
+    touch.charges = {0, 1, 2, 3}
+    -- Stock in every slot, or the rail quietly drops the empty ones and the
+    -- tight case under test is not the tight case.
+    touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
+    touch.maxes = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
+    touch.has_fan = true
+    local l = touch.layout(w, h, s)
+    check("the fan takes a cell of its own beside a full rack",
+          l.fan ~= nil and #l.charge == 4,
+          tostring(l.fan ~= nil) .. ", " .. #l.charge .. " charges")
+    check("and nothing overlaps once it is there", not worst_overlap(l),
+          worst_overlap(l))
+    check("and the whole rail still clears the dial", under_ceiling(l, TIGHT),
+          "something is drawn into the dial's corner")
+    for _, c in ipairs(controls(l)) do
+        check(c.n .. " is on the screen",
+              c.x - c.r >= 0 and c.x + c.r <= w
+                  and c.y - c.r >= 0 and c.y + c.r <= h,
+              string.format("%s at %.0f,%.0f r%.0f", c.n, c.x, c.y, c.r))
+    end
+    -- The fan is nearest the trigger, and it stays there as charges are spent.
+    -- A mode that walked down the column every time a charge went would be a
+    -- control that moved while a thumb was reaching for it.
+    local first = {l.fan.x, l.fan.y}
+    touch.counts = {[0] = 0, [1] = 0, [2] = 0, [3] = 1}
+    local fewer = touch.layout(w, h, s)
+    check("and it holds its cell as the rack empties",
+          fewer.fan.x == first[1] and fewer.fan.y == first[2],
+          string.format("%.0f,%.0f then %.0f,%.0f", first[1], first[2],
+                        fewer.fan.x, fewer.fan.y))
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
