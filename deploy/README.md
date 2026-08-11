@@ -181,7 +181,7 @@ systemctl status vw-update.timer
 journalctl -u vw-update.service -n 100 --no-pager
 ```
 
-The current arena Compose file sets `VW_REPORT=0`, so rated events are dropped rather than sent to the meta-layer. Remove that line when the deployment should record real matches.
+Arenas file their rated events with the meta-layer. Set `VW_REPORT=0` in the arena Compose file to stop that while the fleet is under test; events generated while it is off are dropped rather than held.
 
 ## The admin panel
 

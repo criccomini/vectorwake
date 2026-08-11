@@ -90,8 +90,9 @@ deployment one container image and a horizontal scale a non-event.
    settings, which arrive as the same packed bytes a client receives at join.
 4. **Serve.** Tick at 100 Hz, push status updates as counts change, answer
    direct status queries.
-5. **Drain and re-choose.** Stop accepting joins, let the room empty, then go
-   back to step 3.
+5. **Re-choose, once empty.** An instance whose rooms have emptied on their own
+   goes back to step 3. It does not empty them to get there; see the first
+   selection rule.
 
 An arena server that cannot reach any directory keeps serving whatever it last
 chose, and can still choose again from the last catalog it was sent. One that has
@@ -108,10 +109,17 @@ exactly the condition under which a correct local decision becomes a bad global
 outcome. Four rules keep that from happening.
 
 **Only an empty arena server chooses.** Switching zone means a new map and a new
-mode, so it disconnects everyone in the room. An arena server that wants to
-change drains first. This is the rule that makes the rest of the design safe
-rather than merely clever: instances may flap all they like while nobody is
-affected, and drain time rate-limits decisions for free.
+mode, so it disconnects everyone in the room. This is the rule that makes the
+rest of the design safe rather than merely clever: instances may flap all they
+like while nobody is affected.
+
+An arena server that wants a different zone waits rather than emptying itself
+to get one. That is narrower than this document originally described and it is
+what the code does: `decide_loop` stands down the moment `total_players()` is
+anything but zero, and nothing in the selection path drains. Draining is an
+operator's verb and only an operator's, which also means the patience constant
+an automatic drain would have needed does not exist. What rate-limits decisions
+is `RECHOOSE_COOLDOWN` alone.
 
 **Prefer not to exist.** An arena server opens a new instance of a zone only when
 every live instance of that zone is out of room. Five War rooms holding four
@@ -146,7 +154,6 @@ constants (all overridable per deployment, defaults chosen to be boring)
   DECIDE_JITTER      0..5000 ms   spread before a cold instance decides
   ANNOUNCE_HOLD      3000 ms      wait between announcing and committing
   INTENT_TTL         15000 ms     how long an announcement reserves a zone
-  DRAIN_GRACE        120000 ms    empty-room patience before re-choosing
   RECHOOSE_COOLDOWN  60000 ms     minimum between two commits by one instance
 
 choose():
@@ -224,8 +231,9 @@ stateDiagram-v2
     Announcing --> Serving: committed, map and settings loaded
     Serving --> Serving: catalog changed; new settings, same zone
     Serving --> Serving: room opened or reclaimed; below max_rooms
-    Serving --> Draining: operator drain, or a better zone exists
-    Draining --> Choosing: empty, or DRAIN_GRACE elapsed
+    Serving --> Choosing: rooms emptied on their own
+    Serving --> Draining: operator drain, or a pin at a populated instance
+    Draining --> Choosing: empty
     Serving --> Serving: pinned; policy stops applying
 ```
 
@@ -346,8 +354,9 @@ out-of-memory kill that takes every room in it down together.
 
 A room that empties is reclaimed rather than kept warm, except that an instance
 serving a zone always keeps one room, so it still *is* an instance of that zone
-and appears as one. Draining, then, means all rooms empty and the last one closes,
-which is when the instance may choose a different zone.
+and appears as one. An instance is free to choose a different zone once every
+room has emptied that way, which is a thing that happens to it rather than a
+thing it does.
 
 Bans and staff capabilities live in the catalog rather than beside one zone. A
 player banned from Chaos but not from War is a support ticket waiting to happen,

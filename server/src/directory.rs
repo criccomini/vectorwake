@@ -221,6 +221,9 @@ impl Directory {
                     intent_ms: r.intent_until_ms.saturating_sub(now),
                     pool: r.pool.clone(),
                     metrics: r.status.metrics.clone(),
+                    pinned: r.status.pinned.clone(),
+                    pinned_by: r.status.pinned_by.clone(),
+                    pinned_at_ms: r.status.pinned_at_ms,
                 })
                 .collect(),
         }
@@ -342,13 +345,19 @@ impl Directory {
 /// belongs to this protocol: the bot server browses with it, and the
 /// meta-layer asks for the fleet view with it.
 pub async fn request(url: &str, ask: u8, expect: u8) -> Option<String> {
+    ask_with(url, vec![ask], expect).await
+}
+
+/// The same, for a question that carries a body. One frame out, one frame with
+/// the tag we want back.
+pub async fn ask_with(url: &str, frame: Vec<u8>, expect: u8) -> Option<String> {
     // Short, because everything it dials is a process that either answers
     // immediately or is not there. A long dial timeout would let a dead
     // address hold a caller's cycle open past the next one.
     let deadline = std::time::Duration::from_secs(2);
     let dial = tokio::time::timeout(deadline, tokio_tungstenite::connect_async(url));
     let (mut ws, _) = dial.await.ok()?.ok()?;
-    ws.send(Message::Binary(vec![ask])).await.ok()?;
+    ws.send(Message::Binary(frame)).await.ok()?;
     loop {
         let msg = tokio::time::timeout(deadline, ws.next()).await.ok()??.ok()?;
         if let Message::Binary(b) = msg {
@@ -645,11 +654,69 @@ async fn serve_registration(
                     continue;
                 }
                 let d = dir.lock().await;
+                // The audit rides along rather than costing a second round
+                // trip, because the panel polls this every few seconds and
+                // the log is how a command's outcome gets back to whoever
+                // sent it. Newest first here; the panel reads downward.
+                let mut body = serde_json::to_value(d.view()).unwrap_or_default();
+                let mut rows = d.audit.clone();
+                rows.reverse();
+                body["audit"] = serde_json::to_value(rows).unwrap_or_default();
                 let mut m = vec![fleet::D2O_FLEET];
-                m.extend_from_slice(
-                    serde_json::to_string(&d.view()).unwrap_or_default().as_bytes(),
-                );
+                m.extend_from_slice(body.to_string().as_bytes());
                 let _ = tx.send(Message::Binary(m));
+            }
+            // An operator asking this directory to command an instance it
+            // holds. Same gate as the view above, and the same reason: the
+            // meta-layer is the only process that can tell an operator from
+            // anybody else, so it asks on their behalf over loopback.
+            Some(t) if t == fleet::O2D_COMMAND => {
+                if !local {
+                    println!("refused a command from a proxied peer");
+                    continue;
+                }
+                let Some(c) = fleet::parse::<fleet::OperatorCommand>(&data, fleet::O2D_COMMAND)
+                else {
+                    continue;
+                };
+                let mut d = dir.lock().await;
+                let reply = if !fleet::VERBS.contains(&c.verb.as_str()) {
+                    // What the constant is for: a typo is refused here rather
+                    // than sent, so no arena has to answer `unknown_verb` and
+                    // no audit row records a verb that never existed.
+                    fleet::CommandSent {
+                        sent: 0,
+                        error: format!(
+                            "no such verb {:?}; one of {}",
+                            c.verb,
+                            fleet::VERBS.join(", ")
+                        ),
+                    }
+                } else {
+                    // Empty or `*` is every instance this directory holds. A
+                    // kick wants that: an operator knows the call sign and not
+                    // which process is holding that pilot.
+                    let targets: Vec<String> = if c.instance.is_empty() || c.instance == "*" {
+                        d.regs.keys().cloned().collect()
+                    } else {
+                        vec![c.instance.clone()]
+                    };
+                    let mut sent = 0u32;
+                    for t in &targets {
+                        if d.command(t, &c.verb, &c.args, &c.actor) {
+                            sent += 1;
+                        }
+                    }
+                    fleet::CommandSent {
+                        sent,
+                        error: if sent == 0 {
+                            "no instance took it".into()
+                        } else {
+                            String::new()
+                        },
+                    }
+                };
+                let _ = tx.send(Message::Binary(fleet::frame(fleet::D2O_COMMAND, &reply)));
             }
             _ => {}
         }

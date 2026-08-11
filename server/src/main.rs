@@ -2147,28 +2147,35 @@ impl Room {
             // them there is no event, only unbalanced credit.
             return;
         };
+        // Whether a person was involved, tracked alongside the credits rather
+        // than derived later: only this process knows which rid is a bot, and
+        // once the event is a row in the log that knowledge is gone. Retention
+        // reads this and nothing else.
+        let mut all_bots = self.rating.is_bot(&r.victim);
         let credits: Vec<spool::Credit> = r
             .credits
             .iter()
             .filter_map(|(who, w, before, after)| {
-                Some(spool::Credit {
-                    account: *self.accounts.get(who)?,
-                    weight: *w,
-                    before: *before,
-                    after: *after,
-                })
+                let account = *self.accounts.get(who)?;
+                all_bots = all_bots && self.rating.is_bot(who);
+                Some(spool::Credit { account, weight: *w, before: *before, after: *after })
             })
             .collect();
         if credits.is_empty() {
             return;
         }
         let ev = spool::Event {
+            // Random rather than derived, because nothing here is unique
+            // enough to derive from: ticks restart with the process, so a
+            // key built on them would recur across two lives of one instance.
+            id: rand::random(),
             tick: r.tick,
             victim,
             victim_kind: u8::from(self.rating.is_bot(&r.victim)),
             victim_before: r.victim_before,
             victim_after: r.victim_after,
             credits,
+            bots_only: all_bots,
         };
         if let Ok(mut s) = self.spool.lock() {
             s.push(ev);
@@ -3587,6 +3594,12 @@ impl ArenaServer {
             // open another, which is the fill ladder's second rung exhausted.
             capped: self.rooms.iter().all(|r| r.humans() >= target)
                 && self.rooms.len() >= self.max_rooms(),
+            // Said out loud, because a pinned instance is one policy has
+            // stopped applying to, and that is invisible from every other
+            // number here.
+            pinned: self.pinned.as_ref().map(|p| p.0.clone()).unwrap_or_default(),
+            pinned_by: self.pinned.as_ref().map(|p| p.1.clone()).unwrap_or_default(),
+            pinned_at_ms: self.pinned.as_ref().map(|p| p.2).unwrap_or(0),
             metrics: fleet::Metrics {
                 tick_us: self.tick_us,
                 // The worst-off client in the process. A depth near `OUT_QUEUE`
@@ -6949,6 +6962,65 @@ mod tests {
             credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
         });
         assert_eq!(sp.lock().unwrap().len(), 1, "neither half-formed event travelled");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn only_a_death_with_no_person_in_it_is_marked_droppable() {
+        // Retention deletes on this one flag and nothing else, so getting it
+        // backwards would either fill the disk it exists to protect or quietly
+        // expire the human careers a model migration replays.
+        let d = std::env::temp_dir().join(format!("vw-botsonly-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let mut sp = spool::Spool::new(d.to_str().unwrap());
+        sp.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
+        let sp = std::sync::Arc::new(std::sync::Mutex::new(sp));
+
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, sp.clone(), HashMap::new());
+        z.serve_zone(&wire_zone(1, 6, 16)).expect("a room");
+        let a = &mut z.rooms[0];
+        for (rid, account) in [("bot1", 1u64), ("bot2", 2), ("human", 3)] {
+            a.accounts.insert(rid.into(), account);
+        }
+        a.rating.mark_bot("bot1");
+        a.rating.mark_bot("bot2");
+
+        let ev = |victim: &str, killer: &str| rating::RatedEvent {
+            tick: 100,
+            victim: victim.into(),
+            victim_before: 1200.0,
+            victim_after: 1184.0,
+            credits: vec![(killer.into(), 1.0, 1200.0, 1216.0)],
+        };
+        let flag_of = |sp: &std::sync::Arc<std::sync::Mutex<spool::Spool>>| {
+            sp.lock().unwrap().last().expect("an event").bots_only
+        };
+
+        a.hand_off(&ev("bot2", "bot1"));
+        assert!(flag_of(&sp), "machines all the way down, so it may expire");
+
+        a.hand_off(&ev("bot2", "human"));
+        assert!(!flag_of(&sp), "a person did the killing, so the row is a career");
+
+        a.hand_off(&ev("human", "bot1"));
+        assert!(!flag_of(&sp), "a person did the dying, which counts the same");
+
+        // The case the loop could get wrong: one human buried in a crowd of
+        // machines is still a human, and an `all` that stopped at the first
+        // bot would drop the row that proves it.
+        a.hand_off(&rating::RatedEvent {
+            tick: 400,
+            victim: "bot2".into(),
+            victim_before: 1200.0,
+            victim_after: 1184.0,
+            credits: vec![
+                ("bot1".into(), 0.5, 1200.0, 1208.0),
+                ("human".into(), 0.5, 1200.0, 1208.0),
+            ],
+        });
+        assert!(!flag_of(&sp), "one person among the machines keeps the row");
         let _ = std::fs::remove_dir_all(&d);
     }
 
