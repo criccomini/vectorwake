@@ -1,0 +1,1 @@
+#0 2026-08-11 Chris finds predicted-death explosions jarring when the server revives the ship; leans toward leaving death fx to server confirmation. Client sim does kill hulls during prediction (net.lua/world.lua EV_DEATH -> fx.destroy).                                                                                  
