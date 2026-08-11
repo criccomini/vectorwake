@@ -1012,6 +1012,43 @@ int main(void) {
         CHECK(s.ships[1].x == s.ships[1].spawn_x, "respawn returns to spawn");
     }
 
+    /* A deathless instance concludes no death but its named pilot's
+     * (decision 40). The hit still reports, so the client's spark still
+     * draws; the hull keeps a sliver and flies on, and no kill is credited,
+     * because the death is the zone's to announce. */
+    {
+        sim_state s;
+        sim_settings dc = cfg;
+        dc.deathless = 1;
+        dc.mortal_ship = 255;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dc);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &dc);
+        s.ships[1].energy = 1;
+        ev_counts c = step_counting(&s, &dc, SIM_BTN_FIRE, 0, 150);
+        CHECK(s.ships[1].alive, "a deathless instance kills nobody");
+        CHECK(s.ships[1].energy >= 1, "the hull keeps a sliver");
+        CHECK(c.hits > 0, "the hit still reports");
+        CHECK(c.deaths == 0, "the death does not happen");
+        CHECK(s.ships[0].kills == 0, "and no kill is credited");
+    }
+
+    /* The one hull named mortal still dies, which is how the client keeps
+     * its own death immediate while everyone else's waits for the zone. */
+    {
+        sim_state s;
+        sim_settings dc = cfg;
+        dc.deathless = 1;
+        dc.mortal_ship = 1;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dc);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &dc);
+        s.ships[1].energy = 1;
+        ev_counts c = step_counting(&s, &dc, SIM_BTN_FIRE, 0, 150);
+        CHECK(!s.ships[1].alive, "the named hull still dies");
+        CHECK(c.deaths == 1, "and its death is reported");
+    }
+
     /* Changing hull is a respawn, not a costume change, and it leaves the
      * rest of the arena exactly where it was. */
     {

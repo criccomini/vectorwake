@@ -190,6 +190,12 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->class_count = SIM_MAX_CLASSES;
     cfg->spec_count = 0;
     cfg->pattern_count = 0;
+    /* Every death is real, which is the server's answer and the safe one:
+     * callers hand this function uninitialized structs, and a garbage byte
+     * here would be a server that quietly stopped killing anybody. The
+     * prediction client overrides both after every baseline (decision 40). */
+    cfg->deathless = 0;
+    cfg->mortal_ship = 255;
     /* Walls are inelastic: a hit returns about 60% of the speed that went
      * into it and scrubs some of the speed along it. Clipping a wall should
      * hurt, which is what makes tight flying a skill. */

@@ -491,6 +491,19 @@ typedef struct {
      * overflow. Zero means the ceiling too, since a zone that says nothing
      * should not get a room nobody can enter. */
     uint8_t max_ships;
+    /* Whose death this instance may conclude on its own. The server keeps
+     * the zero default and every death is real here. A prediction client
+     * sets `deathless` and names its own hull in `mortal_ship`, or 255 for
+     * none, which is what a watcher is: damage still lands and still
+     * reports SIM_EV_HIT, but any other hull stops at its last sliver of
+     * energy instead of dying. A kill a client concludes about a coasting
+     * remote hull is an explosion the next snapshot may take back, so a
+     * remote death only ever arrives as a snapshot state change, which the
+     * client already turns into light and sound (decision 40). Neither
+     * field is packed or hashed: this is a fact about who is simulating,
+     * not about the world. */
+    uint8_t deathless;
+    uint8_t mortal_ship;
     const sim_map *map;    /* geometry; not part of rolled-back state */
 } sim_settings;
 

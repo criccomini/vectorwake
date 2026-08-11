@@ -515,6 +515,14 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
     v->energy -= amount;
     emit(ev, SIM_EV_HIT, victim, attacker, amount);
     if (v->energy <= 0) {
+        /* A prediction client concludes no death but its own pilot's. The
+         * hull keeps a sliver and flies on; the death, if the zone agrees
+         * there is one, arrives as a snapshot state change instead. The hit
+         * above has already reported, so the spark still draws. */
+        if (cfg->deathless && victim != cfg->mortal_ship) {
+            v->energy = 1;
+            return;
+        }
         v->energy = 0;
         v->alive = 0;
         v->deaths++;

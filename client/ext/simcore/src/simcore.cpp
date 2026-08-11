@@ -41,6 +41,19 @@ sim_state* g_nxt = &g_b;
 sim_events g_ev;
 uint8_t g_net[SIM_PACK_MAX];
 
+// Whose death prediction may conclude: this client's own pilot and nobody
+// else (decision 40). Held beside g_cfg rather than only in it, because a
+// settings message and a fresh map both rebuild g_cfg from scratch, and the
+// rule about who is asking has to survive the zone retuning what the game
+// is. 255 until net.lua says who we are, which is also what watching is:
+// nobody dies locally, and every death arrives as the zone's news.
+uint8_t g_mortal_ship = 255;
+
+void ReapplyMortal() {
+    g_cfg.deathless = 1;
+    g_cfg.mortal_ship = g_mortal_ship;
+}
+
 // A ship index a caller may actually use. The ships array is SIM_MAX_SHIPS
 // wide and 255 is the wire's "nobody", so an unguarded accessor read whatever
 // memory sat past the array and said nothing -- and this client's worst bugs
@@ -62,6 +75,7 @@ int Init(lua_State* L) {
     uint32_t seed = (uint32_t)luaL_checkinteger(L, 1);
     sim_map_arena(&g_map);
     sim_settings_baseline(&g_cfg, &g_map);
+    ReapplyMortal();
     sim_init(g_cur, seed);
     return 0;
 }
@@ -864,6 +878,7 @@ int ApplyMap(lua_State* L) {
     const char* data = luaL_checklstring(L, 1, &len);
     int r = sim_map_unpack(&g_map, (const uint8_t*)data, (int)len);
     if (r == 0) sim_settings_baseline(&g_cfg, &g_map);
+    ReapplyMortal();
     lua_pushnumber(L, r);
     return 1;
 }
@@ -877,8 +892,21 @@ int ApplySettings(lua_State* L) {
     size_t len = 0;
     const char* data = luaL_checklstring(L, 1, &len);
     int r = sim_settings_unpack(&g_cfg, (const uint8_t*)data, (int)len);
+    ReapplyMortal();
     lua_pushnumber(L, r);
     return 1;
+}
+
+// Who this client is, for the death rule above: the one hull prediction may
+// kill. 255 while watching, so the free-run kills nobody at all.
+int SetMortal(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i > 255) {
+        return luaL_error(L, "mortal ship %d out of range", i);
+    }
+    g_mortal_ship = (uint8_t)i;
+    ReapplyMortal();
+    return 0;
 }
 
 int Hash(lua_State* L) {
@@ -1070,6 +1098,7 @@ const luaL_reg kFunctions[] = {
     {"smooth_reset", SmoothReset},
     {"apply_map", ApplyMap},
     {"apply_settings", ApplySettings},
+    {"set_mortal", SetMortal},
     {0, 0}};
 
 void LuaInit(lua_State* L) {

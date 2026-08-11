@@ -2125,10 +2125,11 @@ end
 -- noise. Positions come from the event where the core carries one, because by
 -- the time the client looks a dead weapon is already gone from the state.
 
--- The two announcements a snapshot swallows, drawn late rather than never.
--- net.lua queues them when a state replacement kills a ship or ends a bomb
--- before the local simulation got to; each draws exactly what the missed
--- event would have. See the comment on the queues in net.lua.
+-- The announcements that arrive as snapshot state changes rather than as
+-- local events. Since decision 40 that is every remote death: prediction is
+-- not allowed to conclude one, so net.lua finds them by diffing the world
+-- across each snapshot and queues them. Each draws exactly what the event
+-- would have. See the comment on the queues in net.lua.
 function M.corpse(i, vx, vy, me, sfx)
     local x, y = sim.ship_x(i), sim.ship_y(i)
     local col = (sim.ship_team(i) == team_of(me)) and pal.FRIEND
@@ -2204,6 +2205,9 @@ function M.events(me, sfx)
             end
             sfx("hit", x, y)
         elseif ty == sim.EV_DEATH then
+            -- The predicted pilot's own death, and since decision 40 only
+            -- theirs: every other death arrives as a snapshot change and is
+            -- drawn by M.corpse.
             local x, y = sim.ship_x(a), sim.ship_y(a)
             local vx, vy = sim.ship_vel(a)
             local col = (sim.ship_team(a) == team_of(me)) and pal.FRIEND or pal.ENEMY

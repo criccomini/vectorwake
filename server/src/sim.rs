@@ -194,6 +194,11 @@ pub struct sim_settings {
     pub flag_radius: i32,
     pub flag_drop_cooldown: u16,
     pub max_ships: u8,
+    /// Whose death this instance may conclude on its own. The server keeps
+    /// both at zero, which `sim_settings_baseline` writes: every death is
+    /// real here. The prediction client sets them; see sim.h (decision 40).
+    pub deathless: u8,
+    pub mortal_ship: u8,
     pub map: *const sim_map,
 }
 

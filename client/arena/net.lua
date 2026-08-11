@@ -114,14 +114,15 @@ M.comings = {}
 -- not want to be told that they themselves arrived.
 local present = nil
 
--- Deaths and bomb endings the simulation never announced, found by comparing
--- the world the client had with the world a snapshot handed it. A snapshot
--- replaces state outright and emits no events, and anything emitted inside
--- the rollback replay is cleared by the next step before anyone reads it, so
--- a kill the local prediction mistimed was a hull vanishing with no
--- explosion and no sound: measured at 15% of deaths against a server on
--- loopback, and a real link's longer lead can only raise that. The arena
--- drains these into the same light and noise the events would have made.
+-- Deaths and bomb endings the local simulation never announced, found by
+-- comparing the world the client had with the world a snapshot handed it. A
+-- snapshot replaces state outright and emits no events, and anything emitted
+-- inside the rollback replay is cleared by the next step before anyone reads
+-- it. This queue began as a patch for kills the prediction mistimed, 15% of
+-- deaths against a server on loopback; since decision 40 it is the road every
+-- remote death takes, because prediction is no longer allowed to conclude
+-- one. The arena drains these into the same light and noise the events would
+-- have made.
 M.snap_deaths = {}
 M.snap_blasts = {}
 
@@ -732,6 +733,12 @@ local function on_message(s)
             snap_tick = 0
         end
         M.watching = watching
+        -- Prediction may kill this hull and no other (decision 40): a death
+        -- the client concludes about a coasting remote hull is an explosion
+        -- the next snapshot may take back, so everyone else's death waits
+        -- for the zone. While watching the byte is already 255, which is
+        -- the rule's own word for nobody.
+        sim.set_mortal(M.me)
         if not watching then
             M.subject = nil
             M.on_air = false
@@ -991,6 +998,9 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     -- screen while the next one is being reached.
     M.me = 0
     M.watching = false
+    -- Nobody is mortal between rooms. Seat zero above is a placeholder
+    -- rather than a pilot, and the next welcome names the real one.
+    sim.set_mortal(255)
     M.subject = nil
     M.on_air = false
     M.watchers = {}

@@ -1599,3 +1599,51 @@ record. [platforms.md](platforms.md)'s console gate is unchanged, since
 in-game there is still nothing to moderate. The presence bot, when it comes,
 wants per-zone population gauges on the directory's metrics page, which do
 not exist yet.
+
+---
+
+## 40. Prediction concludes no death but your own
+
+**Status:** accepted
+
+The client's predicted ticks run the whole simulation, damage included, so a
+local tick could kill any hull in the room. When the dead hull was somebody
+else's, that conclusion rested on the least reliable thing the client holds:
+remote ships coast between snapshots, wrong by however much their pilot
+dodged inside the gap, while the client's own hull tracks the server to half
+a pixel. The result was a full death burst and sound for a kill the zone had
+not agreed to, and when it disagreed, the victim popping back onto the screen
+a beat later. A false "you got him" changes what the shooter does next, which
+makes it worse than a slightly late true one. The kill feed had already
+stopped trusting local death events for the same reason, and net.lua's
+header claimed the client "decides no hit, no death, no pickup" while the
+explosion said otherwise.
+
+Muting the death effect alone would have made it worse, not better: the
+local simulation still marked the hull dead, so the ship would vanish in
+silence and maybe return, and on a correctly predicted kill the snapshot
+would arrive already agreeing, leaving no state change for the late-death
+queue to see and no explosion ever drawn. So the rule sits in the damage
+path instead. `sim_settings` carries `deathless` and `mortal_ship`, neither
+packed nor hashed; with `deathless` set, lethal damage clamps every hull
+except `mortal_ship` at one point of energy instead of killing it. The hit
+still reports, so the shooter's spark still draws. The server leaves the
+fields at their baseline zero and is bit-for-bit unchanged, which is why the
+golden hashes did not move. The client names its own seat mortal at each
+welcome, and nobody while watching. Every remote death then reaches the
+client as a snapshot alive-to-dead transition, and the `snap_deaths` queue,
+built for the 15% of kills the prediction used to mistime, now draws all of
+them, at the confirmed moment, on the hull the screen was already showing.
+
+**Cost:** the kill burst arrives roughly a round trip plus up to one
+snapshot late, which is the standard bargain in server-authoritative
+shooters, and the spark keeps the shot feeling connected meanwhile. A hull
+the local simulation would have killed keeps flying for that beat and can
+absorb a following shot the server never saw; the snapshot corrects it. Your
+own death stays immediate, and stays a prediction: the rare revival of your
+own hull is still possible, but everything feeding that prediction is the
+most accurate state the client has.
+
+**Reconsider if:** confirmed-death latency reads as lag on real links, in
+which case the next lever is a provisional effect, dimmer than the real
+burst, rather than a return to concluding deaths locally.

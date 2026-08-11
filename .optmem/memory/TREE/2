@@ -1,0 +1,1 @@
+Chris found predicted-death explosions jarring (server revives, hull pops back); decision 40: sim_settings deathless+mortal_ship, client clamps remote hulls at 1 energy, remote death fx wait for snapshot confirmation via snap_deaths. Server baseline zero, golden unchanged.              
