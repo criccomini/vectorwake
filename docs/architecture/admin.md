@@ -177,13 +177,22 @@ that is not draining, lag actions taken, a drain announced, capped. Above it
 the totals, the catalog version, and the key check below. Under that the pilot
 table with ban and unban, the ban list, and who holds the flag.
 
-An instance name links out to the provider's console page for the machine it
-runs on, which is the click after deciding a host rather than a process is the
-problem. The link exists only when the host knows its own provider id:
+Two columns link out, and both lead to the thing you want next after reading
+the row. An instance name goes to the provider's console page for the machine
+it runs on, which is the click after deciding a host rather than a process is
+the problem. The link exists only when the host knows its own provider id:
 `provision.sh` reads it from the metadata service every cloud offers on
 169.254.169.254, writes it to `.env` as `VW_HOST_ID`, and the arena carries it
 on its registration. A laptop and any provider that spells the field
 differently get plain text, which costs a link and nothing else.
+
+A build goes to the repository at that commit, which is the question a drifted
+row raises: what is this process actually running. CI stamps the short sha and
+GitHub resolves a short one the same as a full one, so nothing is padded on the
+way. `unknown` is what a binary built outside CI reports and it links nowhere,
+because there is nothing on the other end of it. The drift note stays outside
+the link, since it is the panel's reading of the row rather than part of the
+sha.
 
 The pilot table filters as you type, over call signs and account numbers, and
 there is no button beside the box: the keystrokes are the whole interaction,

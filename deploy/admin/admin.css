@@ -319,15 +319,22 @@ dd.good { color: var(--friend); }
 .scroller { overflow-x: auto; }
 
 /* Full width so the rules under the headings run the width of the section
-   like every other line on the page, with the slack given to the last column
-   so the real ones hug their contents. What keeps that from squeezing a call
+   like every other line on the page. What keeps that from squeezing a call
    sign onto two lines is the `nowrap` below: a column cannot be pushed
-   narrower than the thing in it. */
+   narrower than the thing in it.
+
+   Where the slack goes is the part worth stating, because there used to be a
+   rule about it and now there is not. It went to the last column, whatever
+   that column happened to be, which suited the log because its last column is
+   a sentence and nothing else. In the pilot table the last column is a
+   timestamp, so four real columns shared 375 pixels while a date sat alone
+   under 553. Auto layout shares the slack out in proportion to what is in each
+   column, which spreads the short ones and still hands a prose column the most
+   of it, so the rule was the thing making this worse. */
 table {
   border-collapse: collapse;
   width: 100%;
 }
-th:last-child, td:last-child { width: 100%; }
 caption { text-align: left; }
 
 th {

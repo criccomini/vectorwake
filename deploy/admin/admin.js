@@ -267,10 +267,33 @@ function bytes(n) {
 // A commit is only ever compared here, so seven characters is the whole of
 // what is useful. `unknown` is what a binary built outside CI reports, and
 // saying so beats drawing a blank cell that reads like a missing field.
+//
+// The sha links to the repository at that commit, which is the question after
+// noticing a row has drifted: what is this process actually running. CI stamps
+// the short sha, and GitHub resolves a short one on /tree the same as a full
+// one, so the value travels as it arrives rather than being padded here.
+// `unknown` links nowhere, because there is nothing on the other end of it.
+//
+// The drift note stays outside the link. It is our reading of the row, not
+// part of the sha, and a link whose text includes a parenthetical reads as
+// though the parenthetical is somewhere you can go.
+const REPO = "https://github.com/criccomini/vectorwake/tree/";
+
 function build(b, mine) {
   if (!b) return "";
   const short = b.slice(0, 7);
-  return b === mine || !mine ? short : `${short} (drift)`;
+  const drift = b !== mine && mine ? " (drift)" : "";
+  if (b === "unknown") return short + drift;
+  const box = document.createDocumentFragment();
+  const a = document.createElement("a");
+  a.href = REPO + encodeURIComponent(b);
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = short;
+  a.title = "open the repository at this commit";
+  box.append(a);
+  if (drift) box.append(document.createTextNode(drift));
+  return box;
 }
 
 // The rooms an instance is holding, as the numbers a player would use. A
@@ -444,7 +467,8 @@ function draw(f) {
   head.textContent = "";
   const say = (text, cls) => {
     const s = document.createElement("span");
-    s.textContent = text;
+    if (text instanceof Node) s.append(text);
+    else s.textContent = text;
     if (cls) s.className = cls;
     head.append(s, document.createTextNode(" "));
   };
@@ -461,7 +485,12 @@ function draw(f) {
   const others = [f.directory_build, ...f.instances.map((i) => i.build)].filter(Boolean);
   const drifted = others.filter((b) => b !== f.build).length;
   if (f.build) {
-    say(`build ${f.build.slice(0, 7)}.`);
+    // The same sha the rows carry, linked the same way, because two spellings
+    // of one commit eight lines apart reads as a bug in whichever is plainer.
+    const line = document.createDocumentFragment();
+    line.append(document.createTextNode("build "), build(f.build, ""),
+                document.createTextNode("."));
+    say(line);
     if (drifted) {
       say(`${drifted} process(es) on another build; a converge landed on some of the fleet and not the rest.`, "bad");
     }
