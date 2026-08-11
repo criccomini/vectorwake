@@ -281,6 +281,21 @@ typedef struct {
     uint16_t life;        /* ticks before it runs out */
     uint8_t on_wall;      /* sim_wall_rule */
     uint8_t bounces;      /* walls survived, when bouncing */
+    /* Whether the round starts at rest instead of carrying the firer's
+     * velocity. Everything that flies wants the velocity: a bullet fired
+     * forwards at a run is faster over the ground than one fired from a
+     * standstill, which is the rule every shot in the game has followed since
+     * the model was written, so zero is that and the field is only ever set by
+     * something that wants the exception.
+     *
+     * A mine is the exception, and it is the whole reason this exists. Its
+     * speed is zero, so with the velocity added it does not sit anywhere: it
+     * leaves the rack at exactly the speed the ship was doing and keeps it
+     * until a wall stops it, which is a round that happens to do no steering
+     * rather than a mine. The doc called that drift for a while. It is not
+     * drift, it is flight, and it made the weapon usable only from a
+     * standstill. */
+    uint8_t still;
     /* arrival: what counts as having got somewhere */
     int32_t trigger;      /* Q8 px from a hull centre; 0 is contact */
     uint8_t expire_ends;  /* whether running out of life also counts */
@@ -292,6 +307,13 @@ typedef struct {
      * rung is its thrower's gun rather than a ladder of its own. */
     int32_t damage_up;
     int32_t blast;        /* Q8 px; 0 means the damage lands on one hull */
+    /* Blast a rung adds, for the same reason `damage_up` exists: a weapon
+     * whose rung comes from somewhere other than a ladder of its own. A mine
+     * is the one, since a charge fires one pattern and the rung it wears is
+     * the pilot's bomb rung. Without it a top-rung mine is painted red and
+     * goes off like a rung one, and the ramp only means anything while it
+     * tells the truth about how hard a thing hits. */
+    int32_t blast_up;
     int32_t push;         /* Q16 px/tick a ship is shoved outward at */
     /* How long a shoved ship keeps a speed ceiling of `push` rather than its
      * hull's own. RepelTime, and the half of a repel that makes it a repel:

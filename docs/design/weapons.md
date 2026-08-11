@@ -137,9 +137,38 @@ bullet and takes the same number.
 `mod_step` could not express that. A step is one number for every weapon that
 takes the add-on, and these two weapons take it and spend it differently.
 
-**Mine.** `speed: 0`, a long `life`, `expire_ends: 1`, a blast. It sits where
-you left it and goes off on its timer -- and because speed is inherited from
-the ship, a mine dropped at speed is a mine that drifts.
+**Mine.** `speed: 0`, `still: 1`, a long `life`, `expire_ends: 1`, a `trigger`,
+and a blast. It sits where you left it and goes off when its fuse finds
+somebody or its timer runs out, whichever comes first. Charge slot two, three
+in hand, and nothing in the update loop knows a mine from a bomb.
+
+`still` is the only field the weapon needed that the model did not already
+have, and it is there because every other round in the game wants the
+opposite. A shot takes the firer's velocity on top of its own speed, which is
+what makes one fired at a run faster over the ground than one fired standing.
+A speed-zero round with that velocity added does not sit anywhere: it leaves
+the rack at exactly the speed the ship was doing and holds it until a wall
+stops it. This page called that drift for a while. It is not drift, it is
+flight, and it made the weapon usable only from a standstill.
+
+A mine is the bomb you leave behind, so it wears your bomb rung: the colour on
+the floor is the colour of the bombs you throw. That is a real number rather
+than paint, because `blast_up` climbs the bomb ladder's own arithmetic and a
+rung three mine makes a rung three bomb's hole. A charge fires one pattern, so
+a mine cannot be a row per rung the way a bomb is; `blast_up` is to the mine
+what `damage_up` is to the fragment, which is the second weapon whose rung
+comes from somewhere other than a ladder of its own.
+
+**A repelled mine stops being a mine.** Shoved by an enemy repel it becomes a
+bomb of the rung it was laid at and leaves in the push direction. The shape is
+wrong for a round in flight in both directions at once -- a minute of life, and
+a fuse tuned to something standing still beside it -- so a mine pushed as
+itself would cross the map at repel speed and keep going. Clearing a posted
+doorway is what a repel is *for*, and what comes out the far side is
+recognisably the thing that was posted, still owned by whoever laid it and
+still able to kill them. Your own repel leaves your own mines alone, which is
+the push loop's hostile-only rule reaching the new round rather than a rule
+of its own.
 
 **Shrapnel.** A bomb whose `splinter` is a burst of short-lived fragments, and
 the fragments are *bullets*. That is the original's rule and it is where the
