@@ -136,7 +136,7 @@ impl Histogram {
 
 // --- what the fleet reports -------------------------------------------------
 //
-// Unlabelled on purpose. Each process is its own scrape target, so which zone
+// Unlabeled on purpose. Each process is its own scrape target, so which zone
 // and which role a number belongs to is the target's business rather than
 // something repeated on every line. `vw_build_info` carries the identity once.
 

@@ -115,8 +115,8 @@ identifiable at radar scale.
 
 Inside that silhouette a hull is built rather than empty, in four weights of
 line: the outline, closed plates, panel lines, and a canopy that is the
-brightest cell on the ship and always forward of centre. Interior detail draws
-in a neutral instrument grey, which keeps the team read on the outline where
+brightest cell on the ship and always forward of center. Interior detail draws
+in a neutral instrument gray, which keeps the team read on the outline where
 this document puts it. The silhouette is lit from the hull's own nose, so an
 edge facing the way a ship is pointing draws brighter than one facing away, and
 the body fill is lit along the same axis: slate at the bow, near black at the

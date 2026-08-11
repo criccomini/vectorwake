@@ -13,6 +13,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vectorwake admin</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="admin.css">
 </head>
 <body>
@@ -37,6 +38,18 @@
     <p class="who">signed in as <span id="who"></span>
       <button id="logout" class="link" type="button">sign out</button></p>
 
+    <h2>fleet</h2>
+    <p id="fleet-note" class="note"></p>
+    <p id="fleet-head" class="head"></p>
+    <table id="fleet">
+      <thead><tr>
+        <th>instance</th><th>zone</th><th>region</th>
+        <th class="n">players</th><th class="n">bots</th><th class="n">rooms</th>
+        <th class="n">tick</th><th>state</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+
     <h2>pilot</h2>
     <form id="lookup-form">
       <input id="lookup-q" placeholder="call sign, or #account" required>
@@ -49,12 +62,19 @@
       <button id="ban-button"></button>
     </form>
 
+    <h2>bans</h2>
+    <table id="bans">
+      <thead><tr><th>account</th><th>call sign</th><th>reason</th><th>last seen</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="bans-empty" class="dim" hidden>Nobody is banned.</p>
+
     <h2>admins</h2>
     <table id="admins">
       <thead><tr><th>account</th><th>call sign</th><th>last seen</th></tr></thead>
       <tbody></tbody>
     </table>
-    <p class="dim">The flag itself is granted on the host, not here.
+    <p class="dim">The flag itself is granted in the database, not here.
       See deploy/README.md.</p>
   </section>
 </main>

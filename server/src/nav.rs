@@ -8,7 +8,7 @@
 //! and it fixes nothing else, because the replacement destination is rolled from
 //! the same box in the middle of the map and lies through the same wall. A drill
 //! on Chaos caught one holding thrust into a wall for a minute and a half,
-//! travelling one pixel every ten ticks.
+//! traveling one pixel every ten ticks.
 //!
 //! ## The grid is two tiles, not eight
 //!
@@ -63,7 +63,7 @@ pub struct Nav {
     /// the tiles for walls because the bytes are already in cache.
     safe: Box<[bool]>,
     /// Which patch of connected open cells each cell belongs to, zero for a
-    /// wall. Labelled once at build by a flood fill, and the whole reason it
+    /// wall. Labeled once at build by a flood fill, and the whole reason it
     /// exists is the question "is there any path at all", answered without
     /// searching.
     ///
@@ -143,7 +143,7 @@ fn relax(cost: &[u8], from: usize) -> Box<[u32]> {
     d
 }
 
-fn centre(c: usize) -> f32 {
+fn center(c: usize) -> f32 {
     c as f32 * CELL_PX + CELL_PX / 2.0
 }
 
@@ -319,7 +319,7 @@ impl Nav {
             let mut cx = REFUGE_STRIDE / 2;
             while cx < W {
                 let c = cy * W + cx;
-                let (x, y) = (centre(cx), centre(cy));
+                let (x, y) = (center(cx), center(cy));
                 let (dx, dy) = (x - from.0, y - from.1);
                 if dx * dx + dy * dy <= within * within
                     && self.cost[c] != BLOCKED
@@ -554,7 +554,7 @@ impl Scratch {
                 self.came[n] = k as u8;
                 // Octile knows direction; the landmarks know the detours.
                 // Octile alone assumes open ground at unit cost, and on these
-                // maps a corner-to-centre route's true cost is several times
+                // maps a corner-to-center route's true cost is several times
                 // that promise, so plain A* expanded the whole under-promised
                 // ellipse: 133,000 cells for a 449-cell path, which put a
                 // roster of forty-eight bots at four and a half seconds of
@@ -582,7 +582,7 @@ impl Scratch {
         let mut out = Vec::new();
         let mut c = goal;
         while c != start {
-            out.push((centre(c % W), centre(c / W)));
+            out.push((center(c % W), center(c / W)));
             let (dx, dy) = STEPS[self.came[c] as usize];
             let (px, py) = ((c % W) as i32 - dx, (c / W) as i32 - dy);
             c = py as usize * W + px as usize;
@@ -737,7 +737,7 @@ mod tests {
         // Everybody is standing on this pilot, so loneliness is simply distance
         // from here and the best open-ground score is the range itself.
         let range = 800.0;
-        let safe_at = (centre(scx), centre(scy));
+        let safe_at = (center(scx), center(scy));
         let d = ((safe_at.0 - me.0).powi(2) + (safe_at.1 - me.1).powi(2)).sqrt();
         assert!(d < range && d + SAFE_WORTH > range,
                 "the safe patch has to be the nearer option and still win: \

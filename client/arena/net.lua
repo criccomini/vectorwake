@@ -507,10 +507,10 @@ local function capture_world()
     local tick = sim.tick()
     for i = 0, sim.weapon_count() - 1 do
         local x, y, spec, _, _, _, life, owner, _, level = sim.weapon_at(i)
-        -- The rung rides along for the one blast whose colour lives on the
+        -- The rung rides along for the one blast whose color lives on the
         -- round rather than in the spec table: a mine wears its layer's bomb
         -- rung, and a detonation reconstructed after the fact should flash in
-        -- the colour the mine sat there in.
+        -- the color the mine sat there in.
         flying[born_key(tick, spec, life, owner)] =
             {x = x, y = y, spec = spec, life = life, owner = owner,
              level = level}

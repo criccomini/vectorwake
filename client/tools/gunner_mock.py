@@ -12,7 +12,7 @@ arguing about it afterwards.
 
 What keeps it honest is that it draws nothing of its own. The hull outlines,
 the plates, the panel lines, the canopies and the hardpoints are parsed out of
-`client/arena/world.lua`, and the colours out of `client/arena/palette.lua`,
+`client/arena/world.lua`, and the colors out of `client/arena/palette.lua`,
 so a hull that changes there changes here. The one thing invented is the gun
 glyph, which is the thing under discussion.
 

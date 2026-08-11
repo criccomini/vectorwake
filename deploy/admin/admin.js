@@ -31,7 +31,13 @@ async function post(path, body) {
     throw new Error("cannot reach the meta-layer");
   }
   const reply = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(reply.error || `the server said ${r.status}`);
+  if (!r.ok) {
+    // The flag is checked per action, so a revoked operator finds out on
+    // their next click. Put them back at the door rather than leaving a
+    // panel that draws buttons and refuses all of them.
+    if (r.status === 403 && path.startsWith("/v1/admin")) eject(reply.error);
+    throw new Error(reply.error || `the server said ${r.status}`);
+  }
   return reply;
 }
 
@@ -42,10 +48,25 @@ function show(section) {
 
 // ------------------------------------------------------------------ sign in
 
+// How often the fleet redraws while somebody is looking at it. An arena
+// pushes status every five seconds, so asking faster would draw the same
+// numbers again.
+const FLEET_REFRESH_MS = 5000;
+let ticking = null;
+
 async function arrive(name) {
   el("who").textContent = name;
   show(panel);
   el("lookup-q").focus();
+  refresh();
+  // Only the fleet is on a timer. Bans and admins change when an operator
+  // changes them, and this page is where that happens.
+  if (!ticking) ticking = setInterval(() => drawFleet().catch(() => {}), FLEET_REFRESH_MS);
+}
+
+function refresh() {
+  drawFleet().catch(() => {});
+  drawBans().catch(() => {});
   drawAdmins().catch(() => {});
 }
 
@@ -98,13 +119,121 @@ el("login-form").addEventListener("submit", async (ev) => {
   }
 });
 
-el("logout").addEventListener("click", () => {
+// Back to the door, with the reason if there is one. Signing out and being
+// turned away are the same teardown, so they are the same function.
+function eject(why) {
   localStorage.removeItem(KEY);
   secret = "";
   shown = null;
+  if (ticking) { clearInterval(ticking); ticking = null; }
+  el("pilot").hidden = true;
+  el("ban-form").hidden = true;
+  el("login-note").textContent = why || "";
   show(login);
-  el("login-note").textContent = "";
-});
+}
+
+el("logout").addEventListener("click", () => eject(""));
+
+// -------------------------------------------------------------------- fleet
+
+// Fill a tbody from rows of cells. Every value goes in as text, which is the
+// rule this page keeps everywhere: server strings are data, never markup.
+function fill(table, rows) {
+  const body = el(table).querySelector("tbody");
+  body.textContent = "";
+  for (const cells of rows) {
+    const tr = document.createElement("tr");
+    for (const c of cells) {
+      const td = document.createElement("td");
+      const v = Array.isArray(c) ? c[0] : c;
+      td.textContent = v;
+      if (Array.isArray(c) && c[1]) td.className = c[1];
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  return body;
+}
+
+// What is worth saying out loud about one instance, worst first, or nothing
+// when it is simply serving. The panel is read at a glance, so an instance
+// that is fine should say "ok" and an instance that is not should say which
+// way. Thresholds: the tick budget is 10ms at 100Hz, a queue that is not
+// draining is the first sign of a room in trouble, and 30s of silence is when
+// the directory reaps a registration.
+function trouble(i) {
+  if (!i.verified) return ["unverified", "bad"];
+  if (i.age_ms > 15000) return [`silent ${Math.round(i.age_ms / 1000)}s`, "bad"];
+  if (i.tick_us > 8000) return [`tick ${(i.tick_us / 1000).toFixed(1)}ms`, "bad"];
+  if (i.queue_depth > 50) return [`queue ${i.queue_depth}`, "bad"];
+  if (i.lag_actions > 0) return [`lag ${i.lag_actions}`, "warn"];
+  if (i.intent) return [i.intent, "warn"];
+  if (i.capped) return ["capped", "warn"];
+  return ["ok", ""];
+}
+
+async function drawFleet() {
+  const note = el("fleet-note");
+  let f;
+  try {
+    f = await post("/v1/admin/fleet", { secret });
+  } catch (e) {
+    note.textContent = e.message;
+    return;
+  }
+  note.textContent = "";
+
+  const rows = f.instances.map((i) => [
+    i.instance,
+    i.zone || "(none)",
+    i.region,
+    [i.players, "n"],
+    [i.bots, "n"],
+    [`${i.rooms}/${i.max_rooms}`, "n"],
+    // Two decimals because a healthy tick is tens of microseconds and one
+    // decimal rounds every one of them to 0.0ms, which reads as no reading
+    // at all rather than as the good news it is.
+    [i.tick_us ? `${(i.tick_us / 1000).toFixed(2)}ms` : "", "n"],
+    trouble(i),
+  ]);
+  fill("fleet", rows);
+
+  // The line above the table is the answer to "is the fleet up", so it says
+  // the totals and then anything that is wrong with the deployment itself,
+  // which no single row would show.
+  const players = f.instances.reduce((n, i) => n + i.players, 0);
+  const bots = f.instances.reduce((n, i) => n + i.bots, 0);
+  const bad = f.instances.filter((i) => trouble(i)[1] === "bad").length;
+  const head = el("fleet-head");
+  head.textContent = "";
+  const say = (text, cls) => {
+    const s = document.createElement("span");
+    s.textContent = text;
+    if (cls) s.className = cls;
+    head.append(s, document.createTextNode(" "));
+  };
+  const n = f.instances.length;
+  if (!n) say("no arena is registered", "bad");
+  else say(`${n} arena${n === 1 ? "" : "s"}, ${players} playing, ${bots} bots.`);
+  if (bad) say(`${bad} needing attention.`, "bad");
+  say(`catalog v${f.catalog_version}.`);
+  // A key disagreement is not visible anywhere else in the fleet: tokens fail
+  // their check, everyone flies as a guest, and nothing is on fire.
+  if (!f.key_agrees) {
+    say("The catalog names a different verifying key than this meta-layer signs with, so every session token is failing.", "bad");
+  }
+}
+
+// --------------------------------------------------------------------- bans
+
+async function drawBans() {
+  const rows = (await post("/v1/admin/bans", { secret })).bans || [];
+  fill("bans", rows.map((b) => [
+    `#${b.account}`, b.name || "(none)", b.reason || "(none recorded)", b.last_seen,
+  ]));
+  el("bans-empty").hidden = rows.length > 0;
+  el("bans").hidden = rows.length === 0;
+}
 
 // ------------------------------------------------------------------- pilot
 
@@ -175,6 +304,7 @@ el("ban-form").addEventListener("submit", async (ev) => {
     // Re-read rather than guess: what the page shows is what the database
     // holds, including anything another operator did in between.
     await lookup(`#${shown.account}`);
+    drawBans().catch(() => {});
   } catch (e) {
     note.textContent = e.message;
   }
@@ -184,17 +314,7 @@ el("ban-form").addEventListener("submit", async (ev) => {
 
 async function drawAdmins() {
   const rows = (await post("/v1/admin/admins", { secret })).admins || [];
-  const body = el("admins").querySelector("tbody");
-  body.textContent = "";
-  for (const a of rows) {
-    const tr = document.createElement("tr");
-    for (const v of [`#${a.account}`, a.name || "(none)", a.last_seen]) {
-      const td = document.createElement("td");
-      td.textContent = v;
-      tr.append(td);
-    }
-    body.append(tr);
-  }
+  fill("admins", rows.map((a) => [`#${a.account}`, a.name || "(none)", a.last_seen]));
 }
 
 boot();

@@ -47,6 +47,18 @@ M.maxes = {}
 -- somebody actually has.
 M.has_bomb = true
 
+-- Whether the hull flying is carrying a fan on either trigger, and whether it
+-- is currently declined. Set by the caller.
+--
+-- False until told otherwise, which is the opposite of `has_bomb` and the safe
+-- direction for each: a rack is the ordinary case and a missing update must not
+-- take the bomb pad away, while a fan is something you pick up, and a cell for
+-- an add-on nobody holds is a control that toggles a mode it has no barrels
+-- for. Multifire is the one gun mode with no key on glass, so this cell is the
+-- only way to decline it there at all.
+M.has_fan = false
+M.multi_off = false
+
 -- What an iPhone's island or notch covers at the sides, in drawable pixels,
 -- set by the caller from what the page measures. The pads and the stick's
 -- resting mark step inside them; the bottom is deliberately not represented,
@@ -83,6 +95,14 @@ local bombs = nil
 -- would spend a second one the moment the cooldown lapsed, and there are only
 -- three.
 local fired = nil
+
+-- Whether the fan cell was tapped since it was last asked. Latched the same
+-- way and for a related reason: the core toggles multifire on the rising edge
+-- of the button, so what a control owes it is one edge per press. A held cell
+-- would hold the bit down, which is what the key does and is harmless, but a
+-- thumb resting on a control it has already used should not be the difference
+-- between one toggle and none.
+local fanned = false
 
 -- The charge slots this hull can carry, newest set by the caller. Empty until
 -- told, so a hull with none draws none.
@@ -140,6 +160,17 @@ function M.layout(w, h, s)
     -- first build of this cleared neither, which took a screenshot to see.
     local y0 = gun_pad.y + r * 1.08 + cw * 0.75
     local x, y = x0, y0
+    -- The fan takes the first cell, nearest the trigger whose mode it is, and
+    -- keeps it. The rest of the rail closes up as charges are spent, and a
+    -- mode that slid down the column every time somebody used a charge would
+    -- be a control that moved while a thumb was reaching for it. This one only
+    -- ever appears or goes, and it goes by being lost rather than by being
+    -- spent.
+    local fan = nil
+    if M.has_fan then
+        fan = {x = x, y = y, w = cw, r = cw / 2}
+        y = y + cw * 1.14
+    end
     local charge = {}
     for _, k in ipairs(M.charges) do
         -- Only what is in hand. A cell for a slot you have spent out is a
@@ -161,7 +192,7 @@ function M.layout(w, h, s)
     end
 
     return {r = r, guns = gun_pad, bombs = bomb_pad, home = home,
-            charge = charge}
+            charge = charge, fan = fan}
 end
 
 local function near(pad, x, y, slack)
@@ -187,6 +218,10 @@ local function zone(x, y, w, h, s)
     -- Not tested when the hull has no rack, so the space falls through to the
     -- stick rather than being eaten by a control that is not drawn.
     if M.has_bomb and near(L.bombs, x, y) then return "bombs" end
+    -- Tested in the order the rail is drawn in, and only when it is there, so
+    -- a hull with no fan leaves the space to the stick rather than to a cell
+    -- nobody can see.
+    if L.fan and within(L.fan, x, y) then return "multi" end
     for _, c in ipairs(L.charge) do
         if within(c, x, y) then return c.slot end   -- a number, not a name
     end
@@ -225,6 +260,8 @@ function M.on_touch(action, w, h, s)
                 guns = t.id
             elseif z == "bombs" then
                 bombs = t.id
+            elseif z == "multi" then
+                fanned = true
             elseif type(z) == "number" then
                 fired = z
             end
@@ -250,6 +287,15 @@ function M.fired_charge()
     local k = fired
     fired = nil
     return k
+end
+
+-- Whether the fan cell was tapped since this was last asked. Consumed by the
+-- read, like a charge, so one tap is one toggle however many frames pass
+-- before the step loop gets to it.
+function M.fired_multi()
+    local hit = fanned
+    fanned = false
+    return hit
 end
 
 -- The bits held this frame, given where the ship is currently pointing.
@@ -346,11 +392,11 @@ function M.draw(u, w, h, s)
         u:disc(pad.x, pad.y, pad.r, 24, pal.a(col, lit and 0.10 or 0.045))
     end
 
-    -- The gun, in the colour of the round it fires.
-    -- The rung the round is fired at, which is the colour it will be coming
+    -- The gun, in the color of the round it fires.
+    -- The rung the round is fired at, which is the color it will be coming
     -- at somebody across the arena. A player who has learned one has learned
     -- the other, and the two pads tell each other apart by their marks now
-    -- rather than by their colour.
+    -- rather than by their color.
     local gcol = pal.rung(marks.level(M.me, sim.TRIG_GUN))
     pad_ring(L.guns, gcol, guns)
     pad_mark(L.guns, sim.TRIG_GUN)
@@ -365,6 +411,26 @@ function M.draw(u, w, h, s)
         local bcol = pal.rung(marks.level(M.me, sim.TRIG_BOMB))
         pad_ring(L.bombs, bcol, bombs)
         pad_mark(L.bombs, sim.TRIG_BOMB)
+    end
+
+    -- The fan, in the rail's first cell.
+    --
+    -- The same square as a charge, because it sits in the same column and a
+    -- rail of two shapes reads as two rails. What tells it from a charge is
+    -- the gun's own color instead of the charge hue, and the absence of pips:
+    -- pips are a count of what is left, and a mode has no stock to run out of.
+    -- Dimmed while it is declined, which is the treatment the same add-on
+    -- already gets on a weapon mark.
+    if L.fan then
+        local c = L.fan
+        local half = c.w / 2
+        local lit = not M.multi_off
+        u:rect(c.x - half, c.y - half, c.w, c.w,
+               pal.a(gcol, lit and 0.07 or 0.03))
+        u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s,
+                pal.a(gcol, lit and 0.6 or 0.26))
+        marks.fan(c.x, c.y, c.w * 0.30,
+                  pal.a(gcol, lit and 0.92 or 0.42), M.multi_off)
     end
 
     -- A cell per charge in hand, and none for one that is spent out. What

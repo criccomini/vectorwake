@@ -171,7 +171,7 @@ being sent to every client twenty times a second.
 Two changes, neither of which a player can observe:
 
 **A prize's position travels as two tile indices, not two Q8 pixel
-coordinates.** A prize is always at the centre of a tile -- `spawn_prize` puts
+coordinates.** A prize is always at the center of a tile -- `spawn_prize` puts
 it there and nothing moves it, checked over 5.7 million samples -- so four of
 its eight position bytes were carrying nothing. The unpacked state is
 bit-identical; `sim_unpack` reconstructs with the same expression that placed
@@ -496,7 +496,7 @@ release clock, and a loss pushes that clock forward one RTT, which delays the
 chunk it hit and everything queued behind it. That is what a receiver holding
 a stream does.
 
-Recovery is modelled as fast retransmit, one RTT. Real RTO-based recovery is
+Recovery is modeled as fast retransmit, one RTT. Real RTO-based recovery is
 slower -- Linux will not go below 200 ms -- so these are the optimistic
 numbers, and a real network is somewhat worse than this table.
 

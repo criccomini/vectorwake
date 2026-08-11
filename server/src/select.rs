@@ -235,7 +235,7 @@ mod tests {
 
     fn union(list: Vec<fleet::Observed>) -> Union {
         let mut u = Union::default();
-        u.absorb(&fleet::View { instances: list });
+        u.absorb(&fleet::View { instances: list, ..Default::default() });
         u
     }
 
@@ -380,8 +380,8 @@ mod tests {
         fresh.age_ms = 100;
         let mut stale = obs("a", "war", 1, false);
         stale.age_ms = 9_000;
-        u.absorb(&fleet::View { instances: vec![stale] });
-        u.absorb(&fleet::View { instances: vec![fresh] });
+        u.absorb(&fleet::View { instances: vec![stale], ..Default::default() });
+        u.absorb(&fleet::View { instances: vec![fresh], ..Default::default() });
         assert_eq!(u.by_instance["a"].zone, "chaos", "the newer report wins");
         assert_eq!(u.by_instance.len(), 1, "deduplicated by instance id");
 
@@ -392,8 +392,8 @@ mod tests {
         fresh.age_ms = 100;
         let mut stale = obs("a", "war", 1, false);
         stale.age_ms = 9_000;
-        u.absorb(&fleet::View { instances: vec![fresh] });
-        u.absorb(&fleet::View { instances: vec![stale] });
+        u.absorb(&fleet::View { instances: vec![fresh], ..Default::default() });
+        u.absorb(&fleet::View { instances: vec![stale], ..Default::default() });
         assert_eq!(u.by_instance["a"].zone, "chaos");
     }
 
@@ -831,7 +831,7 @@ mod commit_tests {
     }
     fn union(list: Vec<fleet::Observed>) -> Union {
         let mut u = Union::default();
-        u.absorb(&fleet::View { instances: list });
+        u.absorb(&fleet::View { instances: list, ..Default::default() });
         u
     }
 

@@ -164,7 +164,7 @@ async fn serve(endpoint: Arc<Endpoint<endpoint_side::Server>>, zone: Arc<Mutex<A
 ///
 /// `RECEIVE_WINDOW` is the one that actually bounds it, because it covers the
 /// connection rather than a stream, and no count of streams can climb past
-/// it. The rest are defence in depth. Datagrams are not flow controlled by
+/// it. The rest are defense in depth. Datagrams are not flow controlled by
 /// any of these, so inputs and snapshots are unaffected.
 ///
 /// The stream counts cannot go to one and nought, tempting as that is: this
@@ -367,7 +367,7 @@ async fn write_frame(s: &mut SendStream, b: &[u8]) -> Result<(), ()> {
 /// its flying. A watcher fared worse, since the ask is its whole proof of
 /// life: it went on sending keepalives up a stream nobody read and was
 /// dropped for silence a minute later. On the WebSocket the same bad frame
-/// is a read error that ends the connection, and that is the behaviour to
+/// is a read error that ends the connection, and that is the behavior to
 /// match, so closing here is the honest equivalent.
 async fn read_framed(conn: Connection, s: RecvStream, tx: mpsc::Sender<Vec<u8>>) {
     read_frames(s, tx).await;

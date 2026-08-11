@@ -50,7 +50,7 @@ which is what gives a blast a body rather than a hiss. The interface ticks.
 
 A rung is the most useful thing about an incoming round. It is the whole of the
 damage a bolt carries and the whole of the radius a bomb clears, and a pilot
-cannot read it off anything: the round is three pixels wide and its colour, which
+cannot read it off anything: the round is three pixels wide and its color, which
 does carry the rung, is behind them as often as in front. So each rung is its own
 sound, and it has to be one you can name after hearing it once.
 
@@ -246,7 +246,7 @@ neighbour.
 
 ## Loudness is not in the buffer, and the gains are no longer a ladder
 
-Every buffer is normalised to the same peak before it is written, so the buffer
+Every buffer is normalized to the same peak before it is written, so the buffer
 decides timbre and nothing else. The climb has always lived in the per-sound
 gains instead.
 
@@ -266,12 +266,12 @@ rung gives the numbers above; the detonations get three a rung instead, since
 the rung is bought for the blast and that is where it should be felt.
 
 The window runs through a highpass at 120 Hz first, and that arrived late and by
-complaint. Read flat, the metre counts forty hertz the same as a thousand. A
+complaint. Read flat, the meter counts forty hertz the same as a thousand. A
 rung three bomb is nearly all forty hertz, and almost nothing anybody plays this
 on can make that, so a flat reading was crediting energy that never reached a
 listener and handing the heaviest weapon in the game the quietest gain in its
 family: 0.38, against 0.55 for the tin can two rungs below it. The player who
-flew it reported the red charge as hard to hear, which is what a metre measuring
+flew it reported the red charge as hard to hear, which is what a meter measuring
 the wrong thing feels like from the other end. Weighted, the same sound wants
 0.95.
 
@@ -294,7 +294,7 @@ It was one sound for every rung for a long time, and the reason was real: a shel
 in flight carries a spec, which says what a projectile does and not which rung
 fired it.
 
-The rung is readable off the spec after all, by the same route that colours the
+The rung is readable off the spec after all, by the same route that colors the
 round. But the four detonations are picked by radius instead, which answers one
 more case. For a bomb the two say the same thing, since a rung is
 exactly a wider blast. A repel is on no ladder at all: its shove clears 512

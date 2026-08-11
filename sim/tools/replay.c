@@ -35,7 +35,7 @@ static void build_map(sim_map *m) {
         for (int tx = 520; tx < 532; tx++)
             m->tile[(size_t)ty * SIM_MAP_TILES + tx] = SIM_TILE_SOLID;
     /* A safe zone, a door and a wormhole, so the trace covers the tile
-     * behaviours as well as the walls. */
+     * behaviors as well as the walls. */
     for (int ty = 496; ty < 500; ty++)
         for (int tx = 496; tx < 502; tx++)
             m->tile[(size_t)ty * SIM_MAP_TILES + tx] = SIM_TILE_SAFE;

@@ -47,8 +47,10 @@ framework would be the larger change.
 | `/v1/bot` | the bot server, with a pool token | The account for one roster individual, the same one every time. A new one is seeded from the calibrated ladder |
 | `/v1/bot/register` | anyone, with a claimed account | A third-party bot account under that owner, who answers for it |
 | `/v1/events` | an arena, with a pool token | Rated events, appended to the log and applied to the projection |
+| `/v1/admin/fleet` | the admin panel | Every instance the directory on this host has observed, relayed from it over loopback, plus the catalog version and whether its verifying key is the one this process signs with |
 | `/v1/admin/pilot` | the admin panel | One pilot by call sign or number: kind, standing, the dates. Behind the account flag |
 | `/v1/admin/ban` | the admin panel | A fleet ban, which takes effect at the next token issuance. Refuses accounts that hold the flag |
+| `/v1/admin/bans` | the admin panel | Every account currently marked, with its reason |
 | `/v1/admin/admins` | the admin panel | Who holds the flag |
 
 The `/v1/admin` block is the panel's, and [admin.md](admin.md) is its design.

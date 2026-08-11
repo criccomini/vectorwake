@@ -1,10 +1,10 @@
--- What colour a round comes at you in.
+-- What color a round comes at you in.
 --
 --     lua5.1 client/tests/round_col_test.lua
 --
 -- One ramp for every round in the game: the rung a weapon has climbed is its
 -- hue, so what is coming says how hard it hits. `rung_test` measures the ramp
--- itself, that its four colours stay apart from each other and from everything
+-- itself, that its four colors stay apart from each other and from everything
 -- else on the screen. This measures what the arena actually paints with it.
 --
 -- The case that brought it here is shrapnel. A fragment is a bullet: the core
@@ -92,8 +92,8 @@ function layer:halo(...) rec("halo", ...) end
 function layer:ring(...) rec("ring", ...) end
 function layer:disc(...) rec("disc", ...) end
 -- What a mine is made of. Two of these cannot go through `rec`, which reads
--- the colour off the end of the argument list: `seg` carries a cap flag after
--- its colour, and `fan` takes a table of points rather than a run of numbers,
+-- the color off the end of the argument list: `seg` carries a cap flag after
+-- its color, and `fan` takes a table of points rather than a run of numbers,
 -- which the flattening would record as one opaque value.
 function layer:ring_fade(...) rec("ring_fade", ...) end
 function layer:seg(x1, y1, x2, y2, width, col)
@@ -122,9 +122,9 @@ local function hex(c)
                          c[3] * 255 + 0.5)
 end
 
--- The colours a round was painted in, in order, as text. A bolt is four
+-- The colors a round was painted in, in order, as text. A bolt is four
 -- strokes and two of them run the hue hot, so a round is a short list rather
--- than a single colour, and comparing the lists is comparing the whole look.
+-- than a single color, and comparing the lists is comparing the whole look.
 local function palette_of(shapes)
     local out = {}
     for i, s in ipairs(shapes) do out[i] = hex(s.col) end
@@ -153,8 +153,8 @@ end
 
 -- --- and a fragment is the bullet it is -------------------------------------
 
--- Stroke for stroke and colour for colour, at every rung. Not "close to the
--- bullet" and not "some colour off the ramp": the same drawing, because the
+-- Stroke for stroke and color for color, at every rung. Not "close to the
+-- bullet" and not "some color off the ramp": the same drawing, because the
 -- weapon is the same weapon and a player told them apart on sight was being
 -- told something untrue.
 for lvl = 0, 3 do
@@ -173,7 +173,7 @@ end
 local red = draw({spec = 6, depth = 1, level = 3})
 check("and no fragment is violet", not palette_of(red):find(hex(pal.BURST), 1,
                                                             true),
-      "still wearing the burst's colour")
+      "still wearing the burst's color")
 
 -- --- what is genuinely on no ladder stays violet ----------------------------
 
@@ -205,14 +205,14 @@ for lvl = 0, 3 do
           not got:find(hex(pal.BURST), 1, true), "drawn " .. got)
 end
 
--- Two rungs apart are two colours apart, which is the property the ramp exists
+-- Two rungs apart are two colors apart, which is the property the ramp exists
 -- for and the one a single shared spec would have quietly cost.
 check("and two mines off different rungs do not match",
       palette_of(draw({spec = MINE, level = 0}))
       ~= palette_of(draw({spec = MINE, level = 3})))
 
 -- It is a mine rather than a bomb on the screen, too: the shapes differ, and
--- the dark centre is the whole of what separates them at a glance.
+-- the dark center is the whole of what separates them at a glance.
 check("a mine is not drawn as a bomb",
       not same_shape(draw({spec = MINE, level = 2}), draw({spec = BOLT[2]})))
 

@@ -74,7 +74,7 @@ its own blast radius while a two-player duel wants to share.
 [Decision 29](decisions.md#29-a-bot-is-a-client) moved the AI out of the arena
 and onto sockets, which trades AI time inside the tick for a snapshot stream per
 bot. The trade was recorded owing a measurement, since snapshot building is the
-one cost that now scales with the population and it had been optimised once
+one cost that now scales with the population and it had been optimized once
 already. Measured on a Chaos room at its shipped `bot_fill` of 0.8, which is 51
 bots in 64 seats, with the arena and the bot server on one host:
 
@@ -195,7 +195,7 @@ proxy. That would have killed [networking.md](networking.md)'s UDP path for
 native clients. On instances with their own IP addresses it survives untouched.
 
 Its two headline advantages turn out to be ones this design does not need.
-Sub-second machine starts optimise an operation we barely perform, since rooms
+Sub-second machine starts optimize an operation we barely perform, since rooms
 appear inside a running process in microseconds. And anycast region steering is
 something the directory already does: it reports each arena server's region and
 the client prefers its own, which is the same outcome in our own code.

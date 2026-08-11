@@ -349,7 +349,7 @@ static void v_drive(voice *v, double k) {
     for (i = 0; i < v->n; i++) v->buf[i] = tanh(v->buf[i] * k) / tanh(k);
 }
 
-// A resonant bandpass whose centre sweeps, mixed over the dry signal.
+// A resonant bandpass whose center sweeps, mixed over the dry signal.
 //
 // Resonance is what gives a sound a body to have come out of. A narrow peak
 // that rings up around 1.5 kHz is a tin can; the same peak down at 200 and
@@ -357,7 +357,7 @@ static void v_drive(voice *v, double k) {
 // take things away: a resonator hands some of it back, louder, at one place.
 //
 // The cookbook bandpass with constant peak gain, coefficients rebuilt every
-// sample because the centre is moving. That is a transcendental or three per
+// sample because the center is moving. That is a transcendental or three per
 // sample, which is nothing against how rarely this runs.
 static void v_reson(voice *v, double f0, double f1, double q, double wet) {
     double x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0;
@@ -535,7 +535,7 @@ static void v_fade_out(voice *v) {
     for (i = 0; i < m; i++) v->buf[v->n - 1 - i] *= (double)i / m;
 }
 
-static void v_normalise(voice *v) {
+static void v_normalize(voice *v) {
     double hi = 1e-6;
     double k;
     int i;
@@ -573,7 +573,7 @@ static void v_normalise(voice *v) {
 // The detonations further down are still a table, because their brief is one
 // thing getting bigger rather than four things being different.
 //
-// Loudness is not decided here. Every buffer is normalised to the same peak
+// Loudness is not decided here. Every buffer is normalized to the same peak
 // before it is written, so these decide timbre only, and the gains in the
 // .sound files carry the climb. Those gains are not in order and are not meant
 // to be: a folded buffer is dense and a resonant one is sparse, so eight sounds
@@ -802,7 +802,7 @@ static void k_bomb3(voice *v) {
 // that matters most and it was flat until now: one blast for every rung,
 // because the shell in flight carries a spec rather than the rung that fired
 // it. The rung is readable off the spec after all, by the same route that
-// colours the round, so the detonation can say what cleared the room.
+// colors the round, so the detonation can say what cleared the room.
 //
 // A bigger charge is duller, longer and later rather than louder. The crack at
 // the front is the same fifty milliseconds at every rung, since that is the
@@ -1476,7 +1476,7 @@ static void job_free(sfx_music_job *j) {
 unsigned char *sfx_music_take(sfx_music_job *j, size_t *len) {
     unsigned char *wav = NULL;
     if (j && j->ok && j->step >= j->steps) {
-        v_normalise(&j->v);              // a loop must not fade
+        v_normalize(&j->v);              // a loop must not fade
         wav = voice_wav(&j->v, len);
     }
     job_free(j);
@@ -1575,6 +1575,6 @@ unsigned char *sfx_render(const char *name, size_t *len) {
     // A loop must not fade: the fade is a hole in the middle of the sound once
     // the buffer is played end to end.
     if (!k->loop) v_fade_out(&v);
-    v_normalise(&v);
+    v_normalize(&v);
     return voice_wav(&v, len);
 }

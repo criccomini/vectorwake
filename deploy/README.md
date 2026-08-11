@@ -187,15 +187,17 @@ The current arena Compose file sets `VW_REPORT=0`, so rated events are dropped r
 
 `admin.<domain>` serves a static page from [`admin/`](admin/) and proxies `/v1` to the meta-layer. An operator signs in with the call sign and password of a vectorwake account that holds the admin flag; [the admin document](../docs/architecture/admin.md) explains the model. Only a central host's `.env` sets `VW_ADMIN_HOST`, so every other role serves the site as `admin.localhost` and never asks Let's Encrypt about it. The DNS record rides with the front door: `fleet.sh point play <host>` moves both names, and creates the admin record if it is missing.
 
-The flag is set in the database and nowhere else. No route writes `accounts.admin`, so there is nothing for a leaked session or a compromised neighbour process to call; the authority over who operates the fleet is the database credential on the central host. To grant:
+The flag is set in the database and nowhere else. No route writes `accounts.admin`, so there is nothing for a leaked session or a compromised neighbour process to call; the authority over who operates the fleet is the database credential. From an operator's machine, with `VULTR_API_KEY` set as for any `fleet.sh` verb:
 
 ```sh
-cd /opt/vectorwake/deploy && . ./.env
-docker run --rm postgres:16-alpine psql "$VW_META_DATABASE" -c \
-  "update accounts set admin = true
-   where id = (select account from names where lower(call_sign) = lower('<call sign>'))
-   returning id, call_sign;"
+psql "$(./deploy/fleet.sh db --url)" -c \
+  "update accounts a set admin = true
+   from names n
+   where n.account = a.id and lower(n.call_sign) = lower('<call sign>')
+   returning a.id, n.call_sign;"
 ```
+
+The same statement works on the central host, which has the string in its `.env` and no psql of its own: `cd /opt/vectorwake/deploy && . ./.env && docker run --rm postgres:16-alpine psql "$VW_META_DATABASE" -c "..."`.
 
 `admin = false` revokes. The `returning` line is the confirmation that exactly one row moved. Grant only claimed accounts: the panel signs in with a password, which a guest does not have. The sweeper leaves flagged accounts alone either way, and the panel's own ban button refuses them, so unseating an admin starts here too: revoke first, then ban from the panel if it comes to that.
 

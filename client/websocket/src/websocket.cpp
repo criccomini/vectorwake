@@ -357,7 +357,7 @@ static void ConnectionWorker(void* _conn)
         return;
     }
 
-    // initialise wslay
+    // initialize wslay
     int r = WSL_Init(&conn->m_Ctx, g_Websocket.m_BufferSize, (void*)conn);
     if (0 != r)
     {

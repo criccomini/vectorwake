@@ -29,7 +29,7 @@ touched it: the pong stranded on the wrong half of a split stream, which no
 browser ever noticed and which dropped every other kind of client at forty
 seconds; the recharge overflow that reached `INT32_MIN` and that only a
 harness decoding snapshots ever saw; the prediction divergence caused by a
-setting changing without travelling, visible on no other check. Bots that are
+setting changing without traveling, visible on no other check. Bots that are
 clients walk that path all day in every arena and fail loudly the moment it
 breaks.
 
@@ -216,7 +216,7 @@ reads as the progress it is.
 **Whiskers.** A look around includes sixteen rays of wall distance, cast as a
 capsule the hull's own width plus a few pixels of slack, because the converted
 maps are full of gaps a ray threads and a hull does not: dashed walls with
-one-tile holes, and passages a hull fits only if centred to the pixel. The
+one-tile holes, and passages a hull fits only if centered to the pixel. The
 control layer bends the wanted velocity to the nearest sufficiently open ray,
 so a pilot mid-leg slides along a wall the router's two-tile grid never saw
 instead of pressing its nose into it.
@@ -391,7 +391,7 @@ Whether the grid is enough for maps with tight tunnels, or whether some maps nee
 authored navigation hints. The original's maps were built for humans who learn a
 map over months, and some of them are cruel.
 
-Why pilots still spend most of their time travelling rather than fighting. On the
+Why pilots still spend most of their time traveling rather than fighting. On the
 drill it is about nine parts in ten, which is a roster that keeps missing each
 other:
 sight is sixty tiles, a map is a thousand, and roaming aims everybody at the

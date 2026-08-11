@@ -51,7 +51,7 @@ services:
   # No depends_on, deliberately. Making Caddy wait for this to finish would
   # mean a failed one-second file copy holding the whole site down, when the
   # volume already holds a perfectly good previous page. Caddy serves the old
-  # bundle until the new one lands, which is the behaviour worth having.
+  # bundle until the new one lands, which is the behavior worth having.
   client:
     image: ${VW_CLIENT_IMAGE:-ghcr.io/criccomini/vectorwake-client:prod}
     restart: "no"
@@ -124,6 +124,14 @@ services:
       VW_META_LISTEN: 127.0.0.1:9400
       VW_METRICS: 127.0.0.1:9107
       VW_META_CA: /etc/vectorwake/db-ca.pem
+      # Where the admin panel's fleet view comes from. The meta-layer holds
+      # the accounts and so is the only process that can check an admin flag;
+      # the directory holds the registrations. So one asks the other, on
+      # loopback, and it has to be loopback: the directory answers that
+      # request only when no proxy touched it, which is what keeps the view
+      # off the public /dir route. Stated here rather than left to the code's
+      # default because it is a dependency between two services in this file.
+      VW_META_DIRECTORY: ws://127.0.0.1:9000
       # Empty means no accounts. See above. A managed database wants
       # `?sslmode=require` on the end of it, which is what makes the connection
       # use the CA above rather than going out in the clear.

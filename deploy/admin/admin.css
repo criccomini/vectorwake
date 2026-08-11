@@ -6,6 +6,14 @@
 
 * { box-sizing: border-box; }
 
+/* `hidden` is a user-agent default of `display: none`, so any author rule
+   naming a display wins over it and the element stays on screen. Two below do,
+   `dl` and `form`, and both are things this page hides until a lookup has
+   found something; the panel shipped drawing an empty bordered box and a ban
+   form with a blank button. Stated once here rather than fixed at each site,
+   so a later rule cannot reopen it. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: #05070c;
@@ -59,7 +67,7 @@ button {
 }
 button:hover { background: #10202c; }
 
-/* The one destructive control on the page wears the enemy's colour. */
+/* The one destructive control on the page wears the enemy's color. */
 #ban-button.ban { border-color: #ffa552; color: #ffa552; }
 #ban-button.ban:hover { background: #2a1c10; }
 
@@ -88,7 +96,16 @@ dd { margin: 0; overflow-wrap: anywhere; }
 dd.bad { color: #ffa552; }
 dd.good { color: #4fd6ff; }
 
+/* The line above the fleet table: totals, then anything wrong with the
+   deployment rather than with one instance. */
+.head { margin: 0 0 0.75rem; }
+.head .bad { color: #ffa552; }
+
 table { border-collapse: collapse; width: 100%; }
+/* Counts read down a column, so they align on the right. */
+th.n, td.n { text-align: right; }
+td.bad { color: #ffa552; }
+td.warn { color: #c27bff; }
 th {
   text-align: left;
   color: #6c7a90;

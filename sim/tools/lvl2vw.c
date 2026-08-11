@@ -1,7 +1,7 @@
 /* Convert a Subspace .lvl map into one of ours.
  *
  * The point is not compatibility. It is that a converted map is a room whose
- * behaviour somebody already knows, so our collision, our doors and our safe
+ * behavior somebody already knows, so our collision, our doors and our safe
  * zones can be flown against geometry that was play-tested for years by people
  * who were not us. What comes out is not content we ship: an existing zone's
  * map belongs to that zone, and the tileset it was drawn with does not survive
@@ -11,7 +11,7 @@
  * flat array of 4-byte records, x:12 y:12 type:8, after an optional bitmap
  * whose header says where they start.
  *
- * The type byte is the interesting part, because the original put behaviour in
+ * The type byte is the interesting part, because the original put behavior in
  * the number: a door is 162 through 169, a safe zone is 171, scenery you fly
  * under is 176 through 190. Here a tile is its class and nothing else, so this
  * is where 190 numbers become nine. */
@@ -129,7 +129,7 @@ static void read_tiles(sim_map *m, const uint8_t *p, size_t len, report *rp) {
         if (type == LVL_WORMHOLE) {
             /* A wormhole is a 5x5 picture around one gravity well. Painting
              * all 25 as wormholes would give the well 25 times its pull, so
-             * the centre carries the feature and the rest is open space, which
+             * the center carries the feature and the rest is open space, which
              * is what the original's is: you fly through a wormhole, you do
              * not bounce off it. */
             for (int dy = 0; dy < 5; dy++)
@@ -516,7 +516,7 @@ static int selftest(void) {
     expect(SIM_TILE_CLASS(at(m, 21, 21)) == SIM_TILE_SOLID
                && SIM_TILE_CLASS(at(m, 35, 35)) == SIM_TILE_SOLID,
            "an object's body is still a wall to fly into");
-    expect(at(m, 42, 42) == SIM_TILE_WORMHOLE, "wormhole centre");
+    expect(at(m, 42, 42) == SIM_TILE_WORMHOLE, "wormhole center");
     expect(at(m, 40, 40) == SIM_TILE_EMPTY && at(m, 44, 44) == SIM_TILE_EMPTY,
            "wormhole rim is open");
     expect(at(m, 50, 50) == SIM_TILE(SIM_TILE_SOLID, V_ROCK_A),

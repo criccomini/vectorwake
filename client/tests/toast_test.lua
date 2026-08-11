@@ -170,7 +170,7 @@ frame(844, 390, {MINE})
 local land = shown("+ BOMB")
 check("landscape puts it in the upper band", land and land.y < 390 * 0.33,
       land and string.format("y %.0f of 390", land.y) or "not drawn")
-check("and centred", land and math.abs(land.x - 844 / 2) < 1,
+check("and centered", land and math.abs(land.x - 844 / 2) < 1,
       land and string.format("x %.0f", land.x) or "not drawn")
 
 -- Portrait: two thirds down, and above the controls. Checked with a full
@@ -181,7 +181,7 @@ local reach = pad_reach(390, 844, 1)
 check("portrait puts it two thirds down",
       port and port.y > 844 * 0.55 and port.y <= 844 * 0.67,
       port and string.format("y %.0f of 844", port.y) or "not drawn")
-check("and centred", port and math.abs(port.x - 390 / 2) < 1)
+check("and centered", port and math.abs(port.x - 390 / 2) < 1)
 -- touch.lua counts up from the bottom; the toast counts down from the top.
 check("and clear of the controls under it",
       port and port.y + 12 < 844 - reach,

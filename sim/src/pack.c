@@ -129,7 +129,7 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w8(&w, p->shrap_bounce);
     }
 
-    /* A prize is always at the centre of a tile -- `spawn_prize` puts it
+    /* A prize is always at the center of a tile -- `spawn_prize` puts it
      * there and nothing moves it -- so its position is two tile indices
      * rather than two Q8 pixel coordinates. Four bytes each way instead of
      * eight, and the unpacked state is bit-identical: the arithmetic below is
