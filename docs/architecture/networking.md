@@ -556,6 +556,18 @@ to be one arena starting up as a network blocking UDP; remembering it for the
 session put players on the slower wire for every zone and told them their
 network had eaten it.
 
+The handshake is not the session, so a second clock runs from the open to the
+first snapshot. A desktop browser with an update staged has been seen
+completing the QUIC handshake and then wedging half-open, the reliable lane
+stalled while datagrams flowed, which left a player staring at "joining" over
+a live arena with nothing to report and no way out but a reload. The dial
+clock cannot catch that state: it stopped the moment the session opened. Five
+seconds without a snapshot now loses the join to the socket by the same quiet
+road as an unanswered dial, and a snapshot is the right proof because it rides
+behind the welcome's own gate: one in hand means both lanes spoke. The window
+is wider than the dial's because it carries the map, and a slow link is not a
+stalled one.
+
 Which is why both readouts say which door a connection came through, since
 otherwise nothing would. The debug readout carries it in flight, as `wt` or
 `ws` beside the lag and the lead. The menu's about page carries it in words,

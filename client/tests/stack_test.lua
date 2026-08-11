@@ -260,14 +260,14 @@ local function frame(px, py)
     return shapes
 end
 
--- Where a row of the stack is, taken from the hover zones the interface
--- publishes rather than from this file's idea of the layout. Probed the way a
--- pointer probes: the box is the extent of the points that answer to the row.
+-- Where a row of the stack is, taken from the rectangles the interface
+-- publishes as it draws rather than from this file's idea of the layout. The
+-- box is the extent of the points that answer to the row.
 local function row_box(key)
     local x0, y0, x1, y1
     for px = 0, 320, 2 do
         for py = H - 320, H, 2 do
-            if ui.help_at(px, py) == key then
+            if ui.row_at(px, py) == key then
                 x0 = math.min(x0 or px, px)
                 x1 = math.max(x1 or px, px)
                 y0 = math.min(y0 or py, py)
@@ -530,8 +530,8 @@ check("a fully loaded mark stops short of the counting column",
 
 -- --- the row grows with what it carries ------------------------------------
 
--- The hover zone is the row, and pointing at a fragment thrown clear of the
--- bomb is still pointing at the bomb.
+-- The row's rectangle covers its marks, so a fragment thrown clear of the
+-- bomb is still inside the bomb's row.
 mods = {}
 frame()
 local narrow = row_box("bomb")
@@ -548,60 +548,13 @@ check("and the row covers everything its mark drew",
       string.format("mark reaches %.0f, row ends at %.0f",
                     marks_to or -1, loaded and loaded.x1 or -1))
 
--- --- the words are still available -----------------------------------------
-
--- A shape drawn onto a mark is learnable exactly once, by being told what it
--- is. Held H is where that happens now, and it has to name what the hull is
--- actually carrying rather than the add-ons weapons have in general, or a
--- player who just picked up their first proximity is looking at a new ring
--- with nothing on the screen connecting the two.
--- Upper cased, because the interface sets what it says in capitals and what
--- these checks are about is which words it says.
+-- --- the row still says what it carries, in marks --------------------------
 --
--- Joined by spaces rather than by newlines, because a hover sentence is
--- wrapped to whatever room is left beside the block and the block's width is
--- what a loadout decides. Matching across the wrap made a phrase check fail
--- for the reason a phrase check exists to ignore: the corner got narrower, the
--- label got wider, and "carrying prox" broke across two lines.
-local function said()
-    local out = {}
-    for k = 1, state.n do out[#out + 1] = string.upper(state.text[k].s) end
-    return table.concat(out, " ")
-end
-
--- A point inside a row, asked of the interface rather than worked out here.
--- The zones come from the frame just drawn, so this runs between two frames:
--- one to publish them, one with the pointer resting where they said.
-local function point_in(key)
-    for py = H - 320, H, 2 do
-        for px = 0, 320, 2 do
-            if ui.help_at(px, py) == key then return px, py end
-        end
-    end
-    return nil
-end
-
--- Matched against the whole phrase rather than the words in it, because the
--- bomb's own card already contains "shrapnel" and "proximity" as things a
--- bomb can have. What is under test is the sentence about this hull.
-mods = {[1] = {[2] = 1, [3] = 3}}
-frame()
-frame(point_in("bomb"))
-local words = said()
-check("pointing at the bomb names the add-ons it is carrying",
-      words:find("CARRYING PROX, SHRAPNEL X3.", 1, true) ~= nil, words)
-
-mods = {[0] = {[0] = 2}}
-frame()
-frame(point_in("gun"))
-check("and names the gun's separately",
-      said():find("CARRYING MULTI X2.", 1, true) ~= nil, said())
-
-mods = {}
-frame()
-frame(point_in("gun"))
-check("a bare weapon is not described as carrying anything",
-      said():find("CARRYING", 1, true) == nil, said())
+-- There were words for this once: point at the row and a sentence named the
+-- add-ons the hull had picked up. The words are gone with the rest of the
+-- help, so the decorations on the mark are the whole account of what is
+-- aboard, and what this file can still check is that they are drawn and that
+-- the row grows to hold them. The section above does both.
 
 -- --- the block is sized to the window it is in ----------------------------
 
@@ -614,7 +567,6 @@ local function block(w, h, dens, touching)
     shapes = {}
     ink = {}
     state.n = 0
-    ui.help = false
     ui.begin(layer, w, h, dens, touching or false)
     ui.hud({
         me = 0, class_names = {"Apex"}, menu_open = false,
@@ -635,7 +587,7 @@ local function block(w, h, dens, touching)
     local top, bot
     for _, key in ipairs({"gun", "bomb", "bounty"}) do
         for py = 0, h, 2 do
-            if ui.help_at(4 + 14 * dens, py) == key then
+            if ui.row_at(4 + 14 * dens, py) == key then
                 top = math.min(top or py, py)
                 bot = math.max(bot or py, py)
             end
@@ -1131,7 +1083,7 @@ do
     local answered = {}
     for py = 0, 780, 6 do
         for px = 0, 400, 6 do
-            local k = ui.help_at(px, py)
+            local k = ui.row_at(px, py)
             if k then answered[k] = true end
         end
     end

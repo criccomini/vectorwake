@@ -262,6 +262,71 @@ wt.cb(nil, {event = webtransport.EVENT_DISCONNECTED})
 check("a drop mid-game reports rather than redialling", why ~= nil
       and ws.dialled == 0, tostring(why))
 
+-- --- the fallback, on a session that opens and says nothing ------------------
+--
+-- The handshake is not the session. A browser mid-update has been seen
+-- completing the QUIC handshake and then wedging half-open, the reliable lane
+-- stalled with datagrams still flowing, and the dial clock cannot catch that:
+-- it stopped the moment the session opened. Only a snapshot proves the whole
+-- wire works, so an opened session gets a few seconds to produce one and then
+-- the socket takes the join, exactly as an unanswered dial would have gone.
+
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+check("the wedge case starts on the fast door",
+      net.stats.wire == "wt" and ws.dialled == 0)
+for _ = 1, 4 do net.tick(1) end
+check("an open session gets more patience than a dial", ws.dialled == 0,
+      "dialled " .. ws.dialled)
+for _ = 1, 2 do net.tick(1) end
+check("but a session that never delivers loses the join", ws.dialled == 1,
+      "dialled " .. ws.dialled)
+ws.cb(nil, ws.handle, {event = websocket.EVENT_CONNECTED})
+check("and the socket carries the same join", #ws.sent == 1
+      and string.byte(ws.sent[1], 1) == 1)
+
+-- A welcome alone is not deliverance: the wedge that prompted this carried
+-- the other half dead, and a session whose datagrams never arrive is a game
+-- at snapshot-rate zero. The snapshot is the proof, whichever lane it rode.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(1, 3, 0, 0, 0, 0)})
+for _ = 1, 6 do net.tick(1) end
+check("a welcome without snapshots still loses the join", ws.dialled == 1,
+      "dialled " .. ws.dialled)
+
+-- And one snapshot settles the wire for good: the clock stops, and six quiet
+-- seconds later the session is still the one that was joined.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(1, 3, 0, 0, 0, 0)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
+for _ = 1, 6 do net.tick(1) end
+check("one snapshot settles the session", ws.dialled == 0
+      and net.stats.wire == "wt", "dialled " .. ws.dialled)
+
+-- A session that dies while settling is a loss with a reason, and the clock
+-- dies with it rather than redialling over the report.
+net = fresh_net()
+why = nil
+net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos",
+            false, "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(1, 3, 0, 0, 0, 0)})
+wt.cb(nil, {event = webtransport.EVENT_DISCONNECTED})
+for _ = 1, 6 do net.tick(1) end
+check("a loss while settling stays a loss", why ~= nil and ws.dialled == 0,
+      tostring(why) .. ", dialled " .. ws.dialled)
+
 -- --- what the about page reads ----------------------------------------------
 --
 -- The page prints one line per state, so every state has to be answerable.
@@ -278,8 +343,15 @@ net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
             "https://zone:9443")
 check("a dial in the air says so", net.transport().trying)
 wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+-- Open is not proven: until a snapshot lands the settle clock is running and
+-- the readout keeps saying so, because a session that opened and delivered
+-- nothing is exactly the state the reader is trying to diagnose.
+check("an open session still counts as trying", net.transport().trying)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(1, 3, 0, 0, 0, 0)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 t = net.transport()
-check("an open session names webtransport", t.kind == "wt" and not t.trying)
+check("a proven session names webtransport", t.kind == "wt" and not t.trying)
 
 net = fresh_net()
 net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
