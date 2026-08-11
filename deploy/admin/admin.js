@@ -234,31 +234,26 @@ async function command(instance, verb, args) {
   setTimeout(() => drawFleet().catch(() => {}), 700);
 }
 
-// ---------------------------------------------------------------- history
-
-// What the panel remembers while it is open, keyed by instance: one sample
-// per refresh, oldest first. Ten minutes at a five second refresh, which is
-// enough to answer "is this worse than it was a minute ago" and short enough
-// that it costs nothing.
+// The instance, linked to the machine it is on when the host knows its own
+// provider id. That is the click after deciding the box rather than the
+// process is the problem, and it saves finding the right row in a console
+// listing every instance the account owns.
 //
-// It lives in the page and dies with it, deliberately. Real history wants a
-// sampler writing somewhere durable, and until that exists a buffer that only
-// covers the time you have been watching is honest about what it knows.
-const KEEP = 120;
-const history = new Map();
+// A link and not a fetch, so the site's CSP has nothing to say about it: the
+// policy governs what this page loads, not where it navigates. Provider-shaped
+// on purpose. If the deployment ever leaves Vultr this is the one line that
+// knows, which is a better place for that knowledge than nowhere.
+const CONSOLE = "https://console.vultr.com/subs/?id=";
 
-function remember(instances) {
-  const seen = new Set();
-  for (const i of instances) {
-    seen.add(i.instance);
-    const h = history.get(i.instance) || [];
-    h.push({ players: i.players, bots: i.bots, tick_us: i.tick_us });
-    if (h.length > KEEP) h.shift();
-    history.set(i.instance, h);
-  }
-  // An instance that has gone is forgotten rather than left as a stale line
-  // that would rejoin the wrong history if the id ever came back.
-  for (const k of history.keys()) if (!seen.has(k)) history.delete(k);
+function instance(i) {
+  if (!i.host_id) return i.instance;
+  const a = document.createElement("a");
+  a.href = CONSOLE + encodeURIComponent(i.host_id);
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = i.instance;
+  a.title = "open the console page for the machine this instance runs on";
+  return a;
 }
 
 // Bytes at a glance. An operator comparing a snapshot against a budget wants
@@ -272,50 +267,33 @@ function bytes(n) {
 // A commit is only ever compared here, so seven characters is the whole of
 // what is useful. `unknown` is what a binary built outside CI reports, and
 // saying so beats drawing a blank cell that reads like a missing field.
+//
+// The sha links to the repository at that commit, which is the question after
+// noticing a row has drifted: what is this process actually running. CI stamps
+// the short sha, and GitHub resolves a short one on /tree the same as a full
+// one, so the value travels as it arrives rather than being padded here.
+// `unknown` links nowhere, because there is nothing on the other end of it.
+//
+// The drift note stays outside the link. It is our reading of the row, not
+// part of the sha, and a link whose text includes a parenthetical reads as
+// though the parenthetical is somewhere you can go.
+const REPO = "https://github.com/criccomini/vectorwake/tree/";
+
 function build(b, mine) {
   if (!b) return "";
   const short = b.slice(0, 7);
-  return b === mine || !mine ? short : `${short} (drift)`;
-}
-
-const SVG = "http://www.w3.org/2000/svg";
-
-// One line, scaled to its own range, with no axes and no grid. It answers
-// "which way is this going" and nothing else, which is all a cell this size
-// can honestly carry. Drawn with SVG attributes rather than inline styles,
-// so the site's CSP needs no exception.
-function sparkline(values, cls) {
-  const w = 84, h = 20, pad = 2;
-  const svg = document.createElementNS(SVG, "svg");
-  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-  svg.setAttribute("width", w);
-  svg.setAttribute("height", h);
-  svg.setAttribute("class", `spark ${cls || ""}`);
-  svg.setAttribute("aria-hidden", "true");
-  if (values.length < 2) return svg;
-
-  const top = Math.max(...values, 1);
-  const step = (w - pad * 2) / (values.length - 1);
-  const y = (v) => h - pad - (v / top) * (h - pad * 2);
-  const points = values.map((v, i) => `${(pad + i * step).toFixed(1)},${y(v).toFixed(1)}`);
-
-  const line = document.createElementNS(SVG, "polyline");
-  line.setAttribute("points", points.join(" "));
-  line.setAttribute("fill", "none");
-  line.setAttribute("stroke", "currentColor");
-  line.setAttribute("stroke-width", "1");
-  line.setAttribute("stroke-linejoin", "round");
-  svg.append(line);
-
-  // The latest sample gets a mark, because the end of the line is the number
-  // in the column beside it and the eye should find them together.
-  const dot = document.createElementNS(SVG, "circle");
-  dot.setAttribute("cx", (pad + (values.length - 1) * step).toFixed(1));
-  dot.setAttribute("cy", y(values[values.length - 1]).toFixed(1));
-  dot.setAttribute("r", "1.6");
-  dot.setAttribute("fill", "currentColor");
-  svg.append(dot);
-  return svg;
+  const drift = b !== mine && mine ? " (drift)" : "";
+  if (b === "unknown") return short + drift;
+  const box = document.createDocumentFragment();
+  const a = document.createElement("a");
+  a.href = REPO + encodeURIComponent(b);
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = short;
+  a.title = "open the repository at this commit";
+  box.append(a);
+  if (drift) box.append(document.createTextNode(drift));
+  return box;
 }
 
 // The rooms an instance is holding, as the numbers a player would use. A
@@ -453,18 +431,15 @@ async function drawFleet() {
 }
 
 function draw(f) {
-  remember(f.instances);
   const rows = f.instances.map((i) => {
-    const h = history.get(i.instance) || [];
     return [
-      i.instance,
+      instance(i),
       i.zone || "(none)",
       i.region,
       trouble(i),
       [i.players, "n"],
       [i.bots, "n"],
       rooms(i),
-      sparkline(h.map((s) => s.players + s.bots), "seats"),
       // Two decimals because a healthy tick is tens of microseconds and one
       // decimal rounds every one of them to 0.0ms, which reads as no reading
       // at all rather than as the good news it is.
@@ -492,7 +467,8 @@ function draw(f) {
   head.textContent = "";
   const say = (text, cls) => {
     const s = document.createElement("span");
-    s.textContent = text;
+    if (text instanceof Node) s.append(text);
+    else s.textContent = text;
     if (cls) s.className = cls;
     head.append(s, document.createTextNode(" "));
   };
@@ -509,7 +485,12 @@ function draw(f) {
   const others = [f.directory_build, ...f.instances.map((i) => i.build)].filter(Boolean);
   const drifted = others.filter((b) => b !== f.build).length;
   if (f.build) {
-    say(`build ${f.build.slice(0, 7)}.`);
+    // The same sha the rows carry, linked the same way, because two spellings
+    // of one commit eight lines apart reads as a bug in whichever is plainer.
+    const line = document.createDocumentFragment();
+    line.append(document.createTextNode("build "), build(f.build, ""),
+                document.createTextNode("."));
+    say(line);
     if (drifted) {
       say(`${drifted} process(es) on another build; a converge landed on some of the fleet and not the rest.`, "bad");
     }
@@ -521,19 +502,6 @@ function draw(f) {
     say("The catalog names a different verifying key than this meta-layer signs with, so every session token is failing.", "bad");
   }
 
-  // The fleet's own line, beside the totals: every seat the deployment is
-  // holding, however it is spread across instances.
-  const totals = [];
-  const depth = Math.max(0, ...[...history.values()].map((h) => h.length));
-  for (let k = 0; k < depth; k++) {
-    let sum = 0;
-    for (const h of history.values()) {
-      const s = h[h.length - depth + k];
-      if (s) sum += s.players + s.bots;
-    }
-    totals.push(sum);
-  }
-  if (totals.length > 1) head.append(sparkline(totals, "seats"));
 }
 
 // ---------------------------------------------------------------------- log
@@ -643,7 +611,14 @@ async function drawPilots(q) {
   try {
     r = await post("/v1/admin/pilots", { secret, q: q || "" });
   } catch (e) {
-    tell("pilots-note", e.message);
+    // The page and the server update on different clocks: these files ship
+    // from the checkout in about a minute, the binary ships as an image once
+    // CI has built it. So a route this page knows about can be a route the
+    // meta-layer has not learned yet, and "no such route" is a deploy in
+    // progress rather than anything an operator can act on.
+    tell("pilots-note", /no such route/i.test(e.message)
+      ? "this list needs a newer meta-layer than the one running; it will fill in once the deploy lands"
+      : e.message);
     return;
   }
   const list = r.pilots || [];
@@ -696,12 +671,6 @@ async function lookup(q) {
     tell(note.id, e.message);
   }
 }
-
-el("lookup-form").addEventListener("submit", (ev) => {
-  ev.preventDefault();
-  const q = el("lookup-q").value.trim();
-  if (q) lookup(q);
-});
 
 // Kick goes to every instance, because a call sign says who and not where.
 // The arenas not holding them answer "nobody here called ...", which is worth

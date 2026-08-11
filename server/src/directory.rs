@@ -36,6 +36,7 @@ const VERIFY_EVERY_MS: u64 = 30_000;
 struct Reg {
     pool: String,
     build: String,
+    host_id: String,
     instance: String,
     address: String,
     wt: String,
@@ -224,6 +225,7 @@ impl Directory {
                     pool: r.pool.clone(),
                     metrics: r.status.metrics.clone(),
                     build: r.build.clone(),
+                    host_id: r.host_id.clone(),
                     pinned: r.status.pinned.clone(),
                     pinned_by: r.status.pinned_by.clone(),
                     pinned_at_ms: r.status.pinned_at_ms,
@@ -521,6 +523,7 @@ async fn serve_registration(
                         Reg {
                             pool: pool.clone(),
                             build: r.build.clone(),
+                            host_id: r.host_id.clone(),
                             instance: r.instance.clone(),
                             address: r.address.clone(),
                             wt: r.wt.clone(),
@@ -959,6 +962,7 @@ mod tests {
             Reg {
                 pool: "p".into(),
                 build: "testbuild".into(),
+                host_id: String::new(),
                 instance: id.into(),
                 address: format!("ws://{id}:9010"),
                 wt: String::new(),

@@ -226,6 +226,15 @@ if [ "$ROLE" = arena ]; then
 	ARENA_META=https://__FRONT__/meta
 fi
 
+# The provider's id for this machine, from the metadata service every cloud
+# offers on the same link-local address. Only the admin panel wants it, so a
+# provider that names the field differently, or no provider at all, costs a
+# link and nothing else. Two spellings tried: Vultr's console uses the v2 id,
+# and the older numeric one is the fallback.
+HOST_ID=$(curl -s --max-time 3 http://169.254.169.254/v1.json 2>/dev/null \
+	| grep -o '"instance-v2-id"[^,]*' | cut -d'"' -f4)
+[ -n "$HOST_ID" ] || HOST_ID=$(curl -s --max-time 3 http://169.254.169.254/v1.json 2>/dev/null \
+	| grep -o '"instanceid"[^,]*' | cut -d'"' -f4)
 say "writing the environment; this host is a $ROLE serving __HOST__"
 install -m 0600 /dev/null /opt/vectorwake/deploy/.env || die "cannot write .env"
 cat >/opt/vectorwake/deploy/.env <<EOF
@@ -239,6 +248,7 @@ VW_META=$ARENA_META
 VW_REGION=__REGION__
 VW_DEPLOY_LOG=$LOG
 VW_CERT_DIR=$CERT_DIR
+VW_HOST_ID=$HOST_ID
 VW_POOL_TOKEN=__POOL_TOKEN__
 VW_META_DATABASE=__META_DATABASE__
 VW_META_KEY=__META_KEY__

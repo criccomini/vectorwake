@@ -33,6 +33,17 @@ LOG=/var/lib/vw-deploy/deploy/update.log
 # hosts and this appends it once for the ones that already exist. Central
 # roles only: an arena host wants the variable absent, which the compose
 # default already handles, and appending nothing is how absence stays.
+# The provider's id for this machine, which hosts provisioned before the admin
+# panel linked to a console never read. Same shape as the line below: ask once,
+# append once, and an empty answer is a missing link rather than a failure.
+if ! grep -q '^VW_HOST_ID=' .env 2>/dev/null; then
+	id=$(curl -s --max-time 3 http://169.254.169.254/v1.json 2>/dev/null \
+		| grep -o '"instance-v2-id"[^,]*' | cut -d'"' -f4)
+	[ -n "$id" ] || id=$(curl -s --max-time 3 http://169.254.169.254/v1.json 2>/dev/null \
+		| grep -o '"instanceid"[^,]*' | cut -d'"' -f4)
+	printf 'VW_HOST_ID=%s\n' "$id" >>.env
+fi
+
 if ! grep -q '^VW_ADMIN_HOST=' .env 2>/dev/null; then
 	case $(sed -n 's/^VW_ROLE=//p' .env) in
 	central|all)

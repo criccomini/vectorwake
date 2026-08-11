@@ -151,8 +151,16 @@ section > h2:first-child { margin-top: 0.5rem; }
 .dim { color: var(--dim); }
 .lede { margin: 0 0 0.5rem; }
 .lede .bad { color: var(--enemy); }
-.who { margin: 0; color: var(--dim); }
+.who {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  color: var(--dim);
+}
 .who span { color: var(--ink); }
+/* Smaller than a form's button: this one sits in a line of text. */
+.who button { min-height: 2rem; padding: 0.2rem 0.7rem; }
 
 code {
   font: inherit;
@@ -244,6 +252,12 @@ button.link {
 }
 button.link:hover { color: var(--ink); }
 
+/* A link out of the panel, which is only ever to the machine an instance runs
+   on. Underlined so it reads as leaving, in the ink color so it does not
+   compete with the acting edge. */
+main a { color: var(--ink); text-decoration-color: var(--line); }
+main a:hover { color: var(--friend); text-decoration-color: var(--friend); }
+
 /* A name in the list is the way into that pilot's card, so it reads as the
    link it is rather than as another cell of text. */
 button.pick {
@@ -305,15 +319,22 @@ dd.good { color: var(--friend); }
 .scroller { overflow-x: auto; }
 
 /* Full width so the rules under the headings run the width of the section
-   like every other line on the page, with the slack given to the last column
-   so the real ones hug their contents. What keeps that from squeezing a call
+   like every other line on the page. What keeps that from squeezing a call
    sign onto two lines is the `nowrap` below: a column cannot be pushed
-   narrower than the thing in it. */
+   narrower than the thing in it.
+
+   Where the slack goes is the part worth stating, because there used to be a
+   rule about it and now there is not. It went to the last column, whatever
+   that column happened to be, which suited the log because its last column is
+   a sentence and nothing else. In the pilot table the last column is a
+   timestamp, so four real columns shared 375 pixels while a date sat alone
+   under 553. Auto layout shares the slack out in proportion to what is in each
+   column, which spreads the short ones and still hands a prose column the most
+   of it, so the rule was the thing making this worse. */
 table {
   border-collapse: collapse;
   width: 100%;
 }
-th:last-child, td:last-child { width: 100%; }
 caption { text-align: left; }
 
 th {
@@ -329,6 +350,11 @@ td {
   border-bottom: 1px solid var(--hair);
   vertical-align: top;
 }
+/* A row with a control in it lines everything up on the control's middle,
+   because a button is taller than the text beside it and a top-aligned one
+   reads as a different row. Prose cells keep their top alignment, which is
+   what a wrapped ban reason wants. */
+tr:has(button) td { vertical-align: middle; }
 tr:last-child td { border-bottom: none; }
 th.n, td.n { text-align: right; padding-right: 1.25rem; }
 td.bad { color: var(--enemy); }
@@ -342,12 +368,6 @@ td.wrap {
   min-width: 12rem;
   max-width: 30rem;
 }
-
-/* A line, no axes, no grid, scaled to its own range. It says which way a
-   number is going and leaves the number itself to the column beside it. */
-.spark { display: block; color: var(--dim); }
-.spark.seats { color: var(--friend); }
-.lede .spark { display: inline-block; vertical-align: middle; margin-left: 0.4rem; }
 
 /* The rooms an instance holds, as the numbers a player would use. The count
    leads, the rooms follow it, and a full one wears the enemy's color because
@@ -364,7 +384,7 @@ td.wrap {
 
 /* Row controls: quiet until wanted, and never the first thing the eye lands
    on in a table meant for reading. */
-.acts { display: flex; gap: 0.4rem; }
+.acts { display: flex; gap: 0.4rem; align-items: center; }
 .acts button {
   min-height: 2rem;
   padding: 0.1rem 0.6rem;
