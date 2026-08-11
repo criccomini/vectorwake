@@ -151,8 +151,16 @@ section > h2:first-child { margin-top: 0.5rem; }
 .dim { color: var(--dim); }
 .lede { margin: 0 0 0.5rem; }
 .lede .bad { color: var(--enemy); }
-.who { margin: 0; color: var(--dim); }
+.who {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  color: var(--dim);
+}
 .who span { color: var(--ink); }
+/* Smaller than a form's button: this one sits in a line of text. */
+.who button { min-height: 2rem; padding: 0.2rem 0.7rem; }
 
 code {
   font: inherit;
@@ -329,6 +337,11 @@ td {
   border-bottom: 1px solid var(--hair);
   vertical-align: top;
 }
+/* A row with a control in it lines everything up on the control's middle,
+   because a button is taller than the text beside it and a top-aligned one
+   reads as a different row. Prose cells keep their top alignment, which is
+   what a wrapped ban reason wants. */
+tr:has(button) td { vertical-align: middle; }
 tr:last-child td { border-bottom: none; }
 th.n, td.n { text-align: right; padding-right: 1.25rem; }
 td.bad { color: var(--enemy); }
@@ -358,7 +371,7 @@ td.wrap {
 
 /* Row controls: quiet until wanted, and never the first thing the eye lands
    on in a table meant for reading. */
-.acts { display: flex; gap: 0.4rem; }
+.acts { display: flex; gap: 0.4rem; align-items: center; }
 .acts button {
   min-height: 2rem;
   padding: 0.1rem 0.6rem;

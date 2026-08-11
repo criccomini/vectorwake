@@ -560,7 +560,14 @@ async function drawPilots(q) {
   try {
     r = await post("/v1/admin/pilots", { secret, q: q || "" });
   } catch (e) {
-    tell("pilots-note", e.message);
+    // The page and the server update on different clocks: these files ship
+    // from the checkout in about a minute, the binary ships as an image once
+    // CI has built it. So a route this page knows about can be a route the
+    // meta-layer has not learned yet, and "no such route" is a deploy in
+    // progress rather than anything an operator can act on.
+    tell("pilots-note", /no such route/i.test(e.message)
+      ? "this list needs a newer meta-layer than the one running; it will fill in once the deploy lands"
+      : e.message);
     return;
   }
   const list = r.pilots || [];
