@@ -1929,8 +1929,7 @@ mod tests {
         let mut bots = Vec::new();
         for i in 0..10usize {
             let e = individual(i);
-            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2,
-                                      512, 512, 0);
+            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 0);
             assert!(ship >= 0, "a seat on the map");
             let mut b = Bot::new(ship as u8, e.skill);
             b.reseed(i as u32 * 977 + 13);
@@ -2054,8 +2053,7 @@ mod tests {
         let mut bots = Vec::new();
         for i in 0..8usize {
             let e = individual(i);
-            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2,
-                                      512, 512, 0);
+            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 0);
             assert!(ship >= 0, "a seat on the map");
             let mut b = Bot::new(ship as u8, e.skill);
             b.reseed(i as u32 * 977 + 13);
@@ -2186,7 +2184,7 @@ mod tests {
         let mut bots = Vec::new();
         for i in 0..24usize {
             let e = individual(i);
-            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 512, 512, 0);
+            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 0);
             let mut b = Bot::new(ship as u8, e.skill);
             b.reseed(i as u32 * 977 + 13);
             bots.push(b);

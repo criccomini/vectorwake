@@ -650,6 +650,8 @@ impl Room {
         if let Some(v) = c.bounce { world.cfg.bounce = v; }
         if let Some(v) = c.friction { world.cfg.friction = v; }
         if let Some(v) = c.respawn_delay { world.cfg.respawn_delay = v; }
+        if let Some(v) = c.spawn_radius { world.cfg.spawn_radius = v; }
+        if let Some(v) = c.show_spawns { world.cfg.show_spawns = v as u8; }
         if let Some(v) = c.safe_limit { world.cfg.safe_limit = v; }
         // The core clamps this to SIM_MAX_SHIPS and reads zero as the ceiling,
         // so a zone asking for more than the array holds gets the array rather
@@ -1190,7 +1192,7 @@ impl Room {
         // A joining pilot takes the next start in the map's rotation, so
         // arrivals spread across them instead of landing on each other.
         let nth = self.world.state.ship_count as u32;
-        let mut ship = self.world.spawn_on_map(class.min(7), 0, nth, 512, 522, 0);
+        let mut ship = self.world.spawn_on_map(class.min(7), 0, nth, 0);
         if ship < 0 && !bot {
             // Every seat taken and a human at the door. The bot server leaves a
             // fifth of the room empty precisely so this does not happen, but a
@@ -1226,7 +1228,11 @@ impl Room {
         // set: a seat is furniture, and its last occupant does not come with
         // it.
         let nth = self.world.state.ship_count as u32;
-        let (sx, sy) = self.world.map_spawn(team, nth).unwrap_or((512, 522));
+        // The core works it out, so a seat handed out here lands exactly where
+        // a death would put the same pilot. This used to walk the map's tiles
+        // itself and multiply by the tile size, which was a second copy of the
+        // arithmetic and knew nothing about a spawn radius.
+        let (sx, sy) = self.world.spawn_point(team, class.min(7), nth);
         {
             let sh = &mut self.world.state.ships[ship as usize];
             // Clamped against the roster the core actually holds rather
@@ -1264,8 +1270,8 @@ impl Room {
             // And where they are, which is the same bug wearing its most
             // obvious face: a pilot who rejoined appeared exactly where they
             // had left off.
-            sh.x = sx * sim::TILE_PX * 256;
-            sh.y = sy * sim::TILE_PX * 256;
+            sh.x = sx;
+            sh.y = sy;
             sh.vx = 0;
             sh.vy = 0;
             sh.spawn_x = sh.x;

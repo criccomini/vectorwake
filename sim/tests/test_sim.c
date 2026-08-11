@@ -3455,6 +3455,153 @@ int main(void) {
               "a dead carrier drops its gunners");
     }
 
+    /* --- where a ship comes back ------------------------------------------
+     *
+     * Two arrangements behind one number, so both are measured against the
+     * same map: an empty room inside a border, with four spawn tiles marked
+     * for team 0 well away from the centre.
+     */
+    {
+        sim_map *sm = malloc(sizeof *sm);
+        memcpy(sm, m, sizeof *sm);
+        const int SPAWN_TX[4] = {100, 300, 700, 900};
+        for (int i = 0; i < 4; i++)
+            sm->tile[(size_t)200 * SIM_MAP_TILES + SPAWN_TX[i]] =
+                SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(sm);
+
+        sim_settings sc;
+        memset(&sc, 0, sizeof sc);
+        sim_settings_baseline(&sc, sm);
+        sc.spawn_prizes = 0;
+        sc.respawn_delay = 1;
+
+        CHECK(sc.spawn_radius == 0, "the baseline spawns on the map's tiles");
+        CHECK(sc.show_spawns == 1, "and a client marks them");
+
+        /* Tiles: `nth` walks them and the position is the tile's middle, not
+         * its corner. The corner is where two of the three callers used to
+         * put a ship, which left a hull sitting eight pixels out of the gap
+         * its tile had been checked for. */
+        {
+            sim_state s;
+            sim_init(&s, 7);
+            int32_t x = 0, y = 0;
+            int seen[4] = {0, 0, 0, 0};
+            for (uint32_t n = 0; n < 4; n++) {
+                sim_spawn_point(&s, &sc, 0, APEX, n, &x, &y);
+                CHECK(y == 200 * SIM_TILE_PX * 256 + SIM_TILE_PX * 128,
+                      "a tile spawn lands on the middle of its row");
+                for (int i = 0; i < 4; i++)
+                    if (x == SPAWN_TX[i] * SIM_TILE_PX * 256
+                            + SIM_TILE_PX * 128)
+                        seen[i] = 1;
+            }
+            CHECK(seen[0] && seen[1] && seen[2] && seen[3],
+                  "four arrivals in a row take the four tiles");
+        }
+
+        /* Death redraws it. Before this a spawn was fixed for the length of a
+         * visit: whichever tile the door handed you was yours until you left,
+         * so this asks for more than one tile across a run of deaths rather
+         * than for any particular one. */
+        {
+            sim_state s;
+            sim_init(&s, 11);
+            sim_spawn(&s, APEX, 0, 500 * SIM_TILE_PX, 500 * SIM_TILE_PX, 0, &sc);
+            int32_t first = 0;
+            int moved = 0;
+            for (int round = 0; round < 24; round++) {
+                s.ships[0].alive = 0;
+                s.ships[0].respawn_at = 1;
+                step_n(&s, &sc, 0, 0, 1);
+                CHECK(s.ships[0].alive == 1, "the delay ran out and it flew");
+                if (round == 0) first = s.ships[0].x;
+                else if (s.ships[0].x != first) moved = 1;
+                CHECK(s.ships[0].x == s.ships[0].spawn_x,
+                      "and the stored start moved with it, for the door warp");
+            }
+            CHECK(moved, "a run of deaths does not reuse one tile");
+        }
+
+        /* The radius. Ignores the tiles, stays inside the box, and is the
+         * same box for both sides: the point of it is that everybody is the
+         * same distance from the middle. */
+        {
+            sim_settings rc = sc;
+            rc.spawn_radius = 40;
+            sim_state s;
+            sim_init(&s, 3);
+            const int32_t mid = (SIM_MAP_TILES / 2) * SIM_TILE_PX * 256
+                              + SIM_TILE_PX * 128;
+            const int32_t reach = 40 * SIM_TILE_PX * 256;
+            int off_row = 0;
+            for (uint32_t n = 0; n < 200; n++) {
+                int32_t x = 0, y = 0;
+                sim_spawn_point(&s, &rc, (uint8_t)(n & 1), APEX, n, &x, &y);
+                CHECK(x >= mid - reach && x <= mid + reach
+                          && y >= mid - reach && y <= mid + reach,
+                      "a radius spawn stays inside its box");
+                if (y != 200 * SIM_TILE_PX * 256 + SIM_TILE_PX * 128)
+                    off_row = 1;
+            }
+            CHECK(off_row, "and ignores the map's spawn tiles");
+        }
+
+        /* Deterministic, which is the whole reason the roll is in here rather
+         * than in the room: a client predicting a respawn has to land on the
+         * tile the server did. */
+        {
+            sim_settings rc = sc;
+            rc.spawn_radius = 60;
+            sim_state a, b;
+            sim_init(&a, 99);
+            sim_init(&b, 99);
+            int same = 1;
+            for (uint32_t n = 0; n < 50; n++) {
+                int32_t ax = 0, ay = 0, bx = 0, by = 0;
+                sim_spawn_point(&a, &rc, 0, APEX, n, &ax, &ay);
+                sim_spawn_point(&b, &rc, 0, APEX, n, &bx, &by);
+                if (ax != bx || ay != by) same = 0;
+            }
+            CHECK(same, "one seed, one sequence of spawn points");
+        }
+
+        /* A radius wider than the map means anywhere, the way the original's
+         * 1024 did, and lands inside the border rather than on it. */
+        {
+            sim_settings rc = sc;
+            rc.spawn_radius = 4000;
+            sim_state s;
+            sim_init(&s, 5);
+            for (uint32_t n = 0; n < 200; n++) {
+                int32_t x = 0, y = 0;
+                sim_spawn_point(&s, &rc, 0, APEX, n, &x, &y);
+                CHECK(SIM_TILE_CLASS(sim_tile_at(sm, x >> 12, y >> 12))
+                          != SIM_TILE_SOLID,
+                      "a spawn anywhere is still not inside a wall");
+            }
+        }
+
+        /* And the settings survive a round trip, which is what lets a client
+         * predict any of the above. */
+        {
+            sim_settings rc = sc, got;
+            rc.spawn_radius = 133;
+            rc.show_spawns = 0;
+            uint8_t buf[SIM_PACK_MAX];
+            int n = sim_settings_pack(&rc, buf, sizeof buf);
+            CHECK(n > 0, "settings with a spawn radius pack");
+            memset(&got, 0, sizeof got);
+            got.map = sm;
+            CHECK(sim_settings_unpack(&got, buf, n) == 0, "and unpack");
+            CHECK(got.spawn_radius == 133, "the radius crosses the wire");
+            CHECK(got.show_spawns == 0, "and so does the mark");
+        }
+
+        free(sm);
+    }
+
     free(m);
     if (failures == 0) printf("all tests passed\n");
     return failures ? 1 : 0;

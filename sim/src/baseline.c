@@ -246,6 +246,16 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * player has nothing to fly and a reason to care, and buying that moment
      * costs a second of a respawn nobody enjoyed anyway. */
     cfg->respawn_delay = 400; /* 4 s */
+    /* Spawn on the map's own tiles. Every map we ship carries them, and a
+     * baseline that scattered ships round the middle instead would be the
+     * baseline overruling the map. A zone that wants the scatter sets a
+     * radius, and 133 is the number to start from: it is what the original
+     * used in an empty arena, and it is a bit over twice how far radar
+     * reaches, which is the floor worth having. */
+    cfg->spawn_radius = 0;
+    /* And a client marks those tiles, because a pilot who cannot see where
+     * they are about to arrive cannot decide anything about it. */
+    cfg->show_spawns = 1;
     /* No limit on sitting in a safe zone. The baseline is a translation of a
      * settings file that has no such rule, and a room that empties its own
      * stands is a deployment decision: a zone that wants one sets it. */

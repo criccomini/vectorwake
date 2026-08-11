@@ -316,6 +316,91 @@ static void hull_box(const sim_ship_class *c, uint16_t heading,
     *hy = (int32_t)(((int64_t)half * afy + (int64_t)c->halfw * afx) >> 15);
 }
 
+/* The centre of a tile, which is where a spawned ship stands.
+ *
+ * Worth a name because it used to be written out in three places and one of
+ * them was wrong: the room and the team-change path both dropped a ship on a
+ * tile's top-left corner, eight pixels up and left of where the wormhole path
+ * put one, so a hull wide enough to matter sat off centre in the gap its tile
+ * was checked for. */
+static int32_t tile_mid(int32_t t) {
+    return t * SIM_TILE_PX * 256 + SIM_TILE_PX * 128;
+}
+
+/* Where a ship of this team goes now. See `spawn_radius` in the header for
+ * which of the two arrangements a zone is asking for and why.
+ *
+ * The scatter is a square rather than a disc, and that is inherited on
+ * purpose: the original's was a square too, in spite of its own configuration
+ * help calling it a circle, and rejecting the corners costs a multiply per
+ * candidate to buy something no pilot can tell is there.
+ *
+ * Sixteen tries at open ground, then the centre tile whatever is on it. The
+ * original took a hundred, but ours is a map that is ninety-seven per cent
+ * open, so a draw that fails sixteen times is a radius sitting on a structure
+ * rather than a run of bad luck, and a hundred tries would not fix it either.
+ *
+ * `nth` walks the tiles on the tile path and is ignored on the other. Rolling
+ * for randomness is the caller's job there, because the room wants the next
+ * tile rather than a random one: an arrival that draws is an arrival that can
+ * draw the tile the last one got, and the point of walking them is that eight
+ * pilots entering together do not stack. */
+static void pick_spawn(const sim_settings *cfg, uint32_t *rng, uint32_t tick,
+                       uint8_t team, uint8_t cls, uint32_t nth,
+                       int32_t *x, int32_t *y) {
+    const int32_t mid = SIM_MAP_TILES / 2;
+
+    if (cfg->spawn_radius == 0) {
+        uint16_t tx = 0, ty = 0;
+        if (!sim_map_spawn(cfg->map, team, nth, &tx, &ty)) {
+            /* A map naming no starts at all, with no radius set to stand in
+             * for them. The centre is a poor answer and a loud one, which
+             * beats scattering ships through whatever the map has at the
+             * origin. */
+            *x = *y = tile_mid(mid);
+            return;
+        }
+        *x = tile_mid(tx);
+        *y = tile_mid(ty);
+        return;
+    }
+
+    /* The footprint is taken at heading zero rather than at the ship's, since
+     * a respawn is about to be handed one anyway and a hull's box is widest
+     * across the diagonals. Being slightly generous here costs a candidate,
+     * and being slightly mean costs a ship stuck in a wall. */
+    int32_t ox, oy, hx, hy;
+    hull_box(&cfg->classes[cls < cfg->class_count ? cls : 0], 0,
+             &ox, &oy, &hx, &hy);
+
+    int32_t r = (int32_t)cfg->spawn_radius;
+    uint32_t span = (uint32_t)r * 2u + 1u;
+    for (int n = 0; n < 16; n++) {
+        *rng = xorshift32(*rng);
+        int32_t tx = mid + (int32_t)((*rng >> 8) % span) - r;
+        *rng = xorshift32(*rng);
+        int32_t ty = mid + (int32_t)((*rng >> 8) % span) - r;
+        /* A radius wider than the map is legal and means "anywhere", the way
+         * the original's 1024 did. Clamped inside the border the index paints
+         * rather than rejected, so a wide radius still fills the map instead
+         * of throwing away every draw that lands past the edge. */
+        if (tx < 1) tx = 1; else if (tx > SIM_MAP_TILES - 2) tx = SIM_MAP_TILES - 2;
+        if (ty < 1) ty = 1; else if (ty > SIM_MAP_TILES - 2) ty = SIM_MAP_TILES - 2;
+        int32_t px = tile_mid(tx), py = tile_mid(ty);
+        if (!box_hits(cfg->map, cfg, tick, px + ox, py + oy, hx, hy)) {
+            *x = px;
+            *y = py;
+            return;
+        }
+    }
+    *x = *y = tile_mid(mid);
+}
+
+void sim_spawn_point(sim_state *s, const sim_settings *cfg, uint8_t team,
+                     uint8_t cls, uint32_t nth, int32_t *x, int32_t *y) {
+    pick_spawn(cfg, &s->rng, s->tick, team, cls, nth, x, y);
+}
+
 /* Whether a point falls within `pad` of the hull's oriented rectangle, which
  * is the shape the client draws. Weapons and pickups use this rather than the
  * world-axis box above: a wall stops you where your box is, but a bullet into
@@ -541,9 +626,16 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         v->vx = v->vy = 0;
         /* What the kill is worth, read before the pilot is stripped: the
          * price is what they were carrying, and in one more instruction it
-         * will be nothing. A fresh spawn is therefore worth nothing at all,
-         * which is why this game needs no anti-farming rule -- camping a
-         * respawn pays exactly zero. */
+         * will be nothing.
+         *
+         * That used to carry a second claim, that a fresh spawn is therefore
+         * worth nothing and this game needs no anti-farming rule because
+         * camping a respawn pays zero. True while `spawn_prizes` was zero and
+         * not since: the greens a ship is handed at spawn are things it holds,
+         * `sim_bounty` sums what a pilot holds, and at the baseline's thirty
+         * that is about 29.5 a kill for shooting people as they arrive. The
+         * levers on it are `spawn_prizes` and `spawn_radius`, which is what a
+         * radius is for as much as distance is. */
         int32_t paid = 0;
         if (attacker != 255 && attacker != victim) {
             sim_ship *k = &s->ships[attacker];
@@ -979,12 +1071,9 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
      * this team hands out somebody else's, which `sim_map_spawn` already does
      * and is the whole reason a team the map has never heard of -- a private
      * one, formed in a room mid-round -- works at all. */
-    uint16_t tx = 0, ty = 0;
     s->rng = xorshift32(s->rng);
-    if (sim_map_spawn(cfg->map, team, s->rng >> 8, &tx, &ty)) {
-        sh->spawn_x = (int32_t)tx * SIM_TILE_PX * 256;
-        sh->spawn_y = (int32_t)ty * SIM_TILE_PX * 256;
-    }
+    pick_spawn(cfg, &s->rng, s->tick, team, sh->cls, s->rng >> 8,
+               &sh->spawn_x, &sh->spawn_y);
     sh->x = sh->spawn_x;
     sh->y = sh->spawn_y;
     sh->vx = sh->vy = 0;
@@ -1385,6 +1474,20 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         if (!sh->alive) {
             if (sh->respawn_at > 0 && --sh->respawn_at == 0) {
                 sh->alive = 1;
+                /* A fresh draw, not the tile you came in on. A spawn used to
+                 * be fixed for the length of a visit, which made whichever
+                 * tile the door happened to hand you a property of your whole
+                 * session: an enemy who found it owned you until you left, and
+                 * on a map whose starts are scattered over half of it, two
+                 * pilots on one side were up to twenty seconds apart on the
+                 * way back to the same fight for as long as they both stayed.
+                 *
+                 * It also moves `spawn_x`, so the door-crush warp below keeps
+                 * sending a ship somewhere it could currently arrive rather
+                 * than to a tile it has not used since it walked in. */
+                next->rng = xorshift32(next->rng);
+                pick_spawn(cfg, &next->rng, next->tick, sh->team, sh->cls,
+                           next->rng >> 8, &sh->spawn_x, &sh->spawn_y);
                 sh->x = sh->spawn_x;
                 sh->y = sh->spawn_y;
                 sh->vx = sh->vy = 0;
@@ -1650,25 +1753,28 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * wormhole drawn six tiles across is entered by flying into the part
          * of it that is drawn rather than by passing over a point.
          *
-         * The destination is any of the map's spawns rather than the pilot's
-         * own team's, because a wormhole that only ever sent you home would
-         * be a retreat button. Drawn from the state's own generator, so the
-         * two ends of the wire agree about where a ship went. */
+         * The destination is wherever this pilot could currently respawn,
+         * drawn from the state's own generator so the two ends of the wire
+         * agree about where a ship went. Which under a spawn radius is a tile
+         * near the middle, and under spawn tiles is one of this team's own:
+         * the comment here used to claim it was anybody's, on the grounds that
+         * a wormhole which only sent you home would be a retreat button, but
+         * it has always passed the pilot's team and `sim_map_spawn` prefers a
+         * team's own tiles. Left as it behaves rather than as it was described,
+         * because changing which it is belongs in a decision about wormholes
+         * rather than in a change about spawning. */
         if (sh->alive
             && SIM_TILE_CLASS(sim_tile_at(cfg->map, sh->x >> 12, sh->y >> 12))
                    == SIM_TILE_WORMHOLE) {
-            uint16_t stx = 0, sty = 0;
             next->rng = xorshift32(next->rng);
-            if (sim_map_spawn(cfg->map, sh->team, next->rng >> 8, &stx, &sty)) {
-                sh->x = (int32_t)stx * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
-                sh->y = (int32_t)sty * SIM_TILE_PX * 256 + (SIM_TILE_PX * 128);
-                /* Momentum does not survive the trip. Arriving at a spawn at
-                 * four hundred pixels a second is arriving inside whatever is
-                 * next to it. */
-                sh->vx = 0;
-                sh->vy = 0;
-                emit(ev, SIM_EV_WARP, (uint8_t)i, 1, 0);
-            }
+            pick_spawn(cfg, &next->rng, next->tick, sh->team, sh->cls,
+                       next->rng >> 8, &sh->x, &sh->y);
+            /* Momentum does not survive the trip. Arriving at a spawn at four
+             * hundred pixels a second is arriving inside whatever is next to
+             * it. */
+            sh->vx = 0;
+            sh->vy = 0;
+            emit(ev, SIM_EV_WARP, (uint8_t)i, 1, 0);
         }
 
         /* 4b. A door that shuts on a ship warps it rather than swallowing it.

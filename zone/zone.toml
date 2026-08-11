@@ -53,6 +53,29 @@ max_ships = 64
 
 respawn_delay = 400   # ticks, so four seconds
 
+# Where a ship comes back, as one number rather than a style.
+#
+# Zero, the default, uses the map's own spawn tiles, redrawn on every death.
+# Above zero ignores them and drops a ship on a random tile within that many of
+# the map's centre, which is what the original did before it had spawn points.
+#
+# The trade is distance against exposure. Our generator spreads a side's starts
+# over nearly half the map, so under tiles one pilot can be five seconds from
+# the middle and their team mate twenty-six. A radius makes everybody the same
+# distance from it and turns one patch of ground into the only place anyone
+# arrives. 133 is where to start if you want that: it is the box the original
+# used in an empty arena, and radar reaches 60 tiles, so anything much tighter
+# means a camper sees every arrival the moment it appears.
+#
+# spawn_radius = 133
+
+# Whether a client marks the map's spawn tiles. Ignored when spawn_radius is
+# set, because then nobody arrives on them. Worth turning off in a mode that
+# does not want one side's home end advertised to the other: the mark is drawn
+# for every spawn on the map, the enemy's included.
+#
+# show_spawns = true
+
 # Greens: how fast they arrive, how many the map holds, how long one waits to
 # be collected, how close a ship has to get, and the tile band they land in.
 prize_delay = 100
@@ -91,8 +114,11 @@ rust = 10
 spawn_prizes = 30
 
 # What a kill is worth. A killer is paid the victim's whole bounty, which is
-# derived from what that pilot was carrying -- so a fresh spawn is worth
-# nothing and camping one pays nothing. bounty_per_kill is what a kill adds to
+# derived from what that pilot was carrying, so what a spawn is worth is what
+# `spawn_prizes` just handed it: at thirty greens that is about 29.5, not the
+# nothing this line claimed for as long as the setting above was zero. Camping
+# a spawn pays, and the levers on that are `spawn_prizes` and `spawn_radius`
+# rather than any rule about farming. bounty_per_kill is what a kill adds to
 # the killer's own price; points_per_flag is the bonus for each flag the victim
 # was holding. See docs/design/bounty.md.
 bounty_per_kill = 3

@@ -439,6 +439,19 @@ int SafeLimit(lua_State* L) {
     return 1;
 }
 
+// Whether to mark the map's spawn tiles, as one answer rather than two
+// settings the drawing has to combine.
+//
+// A radius means nobody arrives on those tiles, so a mark on one is wrong
+// rather than merely unwanted, and no zone setting should be able to ask for
+// it. That is why the radius is folded in here instead of being handed to the
+// drawing beside `show_spawns`: a caller that reads two numbers is a caller
+// that can read one of them and forget the other.
+int ShowSpawns(lua_State* L) {
+    lua_pushboolean(L, g_cfg.show_spawns && g_cfg.spawn_radius == 0);
+    return 1;
+}
+
 // How many of a charge kind a pilot is holding, and how many their hull may
 // ever hold. The second is the roster's rule, and the panel needs it to know
 // which slots to draw at all.
@@ -1069,6 +1082,7 @@ const luaL_reg kFunctions[] = {
     {"ship_cooldown", ShipCooldown},
     {"ship_respawn", ShipRespawn},
     {"safe_limit", SafeLimit},
+    {"show_spawns", ShowSpawns},
     {"ship_extents", ShipExtents},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},

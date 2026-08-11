@@ -70,6 +70,17 @@ pub struct ArenaConfig {
     /// Speed retained along a wall, out of 16.
     pub friction: Option<i32>,
     pub respawn_delay: Option<u16>,
+    /// Zero, or absent, spawns on the map's own spawn tiles. Above zero
+    /// ignores them and drops a ship on a random tile within this many of the
+    /// map's centre, redrawn on every death. 133 is the number to start from:
+    /// it is what the original used in an empty arena, and it is a bit over
+    /// twice how far radar reaches, which is the floor worth having if a
+    /// camper is not to see every arrival.
+    pub spawn_radius: Option<u16>,
+    /// Whether a client marks the map's spawn tiles. Absent draws them.
+    /// Ignored by the client when `spawn_radius` is set, since then nobody
+    /// arrives on them.
+    pub show_spawns: Option<bool>,
     pub safe_limit: Option<u16>,
     /// Pilots this room holds, bots included, capped at 255 by the wire: a ship
     /// index is a byte everywhere it appears. Zero or absent keeps the

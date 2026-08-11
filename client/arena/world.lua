@@ -927,6 +927,12 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
     local rocks, stations, unders = {}, {}, {}
     local turfs, spawns, goals = {}, {}, {}
     local my_team = M.my_team or 0
+    -- Asked once per window rather than once per tile, and asked of the core
+    -- rather than assembled here: a zone that spawns on a radius is a zone
+    -- where nobody arrives on these tiles, so a mark on one would be wrong
+    -- rather than unwanted, and folding that in beside the zone's own
+    -- preference is the core's job. See `show_spawns` in sim.h.
+    local show_spawns = sim.show_spawns()
 
     for ty = y0, y1 do
         for tx = x0, x1 do
@@ -963,7 +969,7 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
             elseif cls == sim.T_TURF then
                 turfs[#turfs + 1] = tx
                 turfs[#turfs + 1] = ty
-            elseif cls == sim.T_SPAWN then
+            elseif cls == sim.T_SPAWN and show_spawns then
                 spawns[#spawns + 1] = tx
                 spawns[#spawns + 1] = ty
                 spawns[#spawns + 1] = var

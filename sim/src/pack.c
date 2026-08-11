@@ -308,7 +308,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-#define CFG_VERSION 10
+#define CFG_VERSION 11
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -393,6 +393,8 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w32(&w, (uint32_t)cfg->bounce);
     w32(&w, (uint32_t)cfg->friction);
     w16(&w, cfg->respawn_delay);
+    w16(&w, cfg->spawn_radius);
+    w8(&w, cfg->show_spawns);
     w16(&w, cfg->safe_limit);
     w16(&w, cfg->prize_delay);
     w16(&w, cfg->prize_max);
@@ -509,6 +511,8 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
     cfg->bounce = (int32_t)r32(&r);
     cfg->friction = (int32_t)r32(&r);
     cfg->respawn_delay = (uint16_t)r16(&r);
+    cfg->spawn_radius = (uint16_t)r16(&r);
+    cfg->show_spawns = (uint8_t)r8(&r);
     cfg->safe_limit = (uint16_t)r16(&r);
     cfg->prize_delay = (uint16_t)r16(&r);
     cfg->prize_max = (uint16_t)r16(&r);

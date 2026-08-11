@@ -182,6 +182,13 @@ pub struct sim_settings {
     pub bounce: i32,
     pub friction: i32,
     pub respawn_delay: u16,
+    /// Zero spawns on the map's own tiles; above zero ignores them and drops a
+    /// ship on a random tile within this many of the map's centre. See
+    /// `spawn_radius` in `sim.h` for which arrangement a zone is buying.
+    pub spawn_radius: u16,
+    /// Whether a client marks the map's spawn tiles. Render only, and ignored
+    /// by the client when `spawn_radius` is set.
+    pub show_spawns: u8,
     /// Ticks a ship may sit in a safe zone before the room takes its seat
     /// back, zero for never. The core neither counts it nor acts on it: it
     /// travels in the settings so the room and the client read one number.
@@ -401,6 +408,9 @@ extern "C" {
                       i: u8, target: u8) -> c_int;
     pub fn sim_map_spawn(map: *const sim_map, team: u8, nth: u32,
                          tx: *mut u16, ty: *mut u16) -> i32;
+    pub fn sim_spawn_point(s: *mut sim_state, cfg: *const sim_settings,
+                           team: u8, cls: u8, nth: u32,
+                           x: *mut i32, y: *mut i32);
     pub fn sim_map_arena(map: *mut sim_map);
     pub fn sim_map_pit(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
@@ -636,14 +646,27 @@ impl World {
         if ok != 0 { Some((tx as i32, ty as i32)) } else { None }
     }
 
-    /// Spawn at the map's own start when it names one, and at the position
-    /// the caller had in mind when it does not. A map that carries its starts
-    /// can be dropped into any zone; one that does not leaves the zone's
-    /// configuration in charge, which is how every map worked before.
+    /// Where a ship of this team goes now, as a Q8 world position: the map's
+    /// own tiles walked by `nth`, or a draw inside `spawn_radius` of the
+    /// centre when the zone set one. The core decides, so a seat handed out
+    /// here lands where a death in the core would put the same pilot.
+    pub fn spawn_point(&mut self, team: u8, cls: u8, nth: u32) -> (i32, i32) {
+        let (mut x, mut y) = (0i32, 0i32);
+        unsafe {
+            sim_spawn_point(&mut *self.state, &*self.cfg, team, cls, nth,
+                            &mut x, &mut y);
+        }
+        (x, y)
+    }
+
+    /// Spawn wherever the core says a ship of this team currently starts.
+    /// `tile_x`/`tile_y` are gone: a map that names no starts and a zone that
+    /// sets no radius both land on the same fallback inside the core now,
+    /// instead of on whatever tile each caller happened to have in mind.
     pub fn spawn_on_map(&mut self, cls: u8, team: u8, nth: u32,
-                        tile_x: i32, tile_y: i32, heading: u16) -> i32 {
-        let (x, y) = self.map_spawn(team, nth).unwrap_or((tile_x, tile_y));
-        self.spawn(cls, team, x, y, heading)
+                        heading: u16) -> i32 {
+        let (x, y) = self.spawn_point(team, cls, nth);
+        self.spawn_at(cls, team, x, y, heading)
     }
 
     pub fn spawn(&mut self, cls: u8, team: u8, tile_x: i32, tile_y: i32, heading: u16) -> i32 {
@@ -657,6 +680,15 @@ impl World {
                 heading,
                 &*self.cfg,
             )
+        }
+    }
+
+    /// The same, taking a Q8 world position rather than a tile, for callers
+    /// that got theirs from `spawn_point` and would otherwise divide by the
+    /// tile size only for `spawn` to multiply it straight back.
+    pub fn spawn_at(&mut self, cls: u8, team: u8, x: i32, y: i32, heading: u16) -> i32 {
+        unsafe {
+            sim_spawn(&mut *self.state, cls, team, x / 256, y / 256, heading, &*self.cfg)
         }
     }
 
