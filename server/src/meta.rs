@@ -107,9 +107,23 @@ create table if not exists rated_events (
     victim_kind    smallint not null,
     victim_before  double precision not null,
     victim_after   double precision not null,
-    credits        jsonb not null
+    credits        jsonb not null,
+    event_id       bigint,
+    bots_only      boolean not null default false
 );
 create index if not exists rated_events_by_victim on rated_events (victim, at);
+-- Retention reads exactly this. Partial, because the rows it will never
+-- select are the ones worth keeping and there is no reason to index them:
+-- a human-involving row is kept forever and the sweeper never looks at it.
+alter table rated_events add column if not exists bots_only boolean not null default false;
+create index if not exists rated_events_botsweep on rated_events (at) where bots_only;
+-- The arena mints event_id when it files the event, and it rides through
+-- every retry of the batch. Unique here is what makes ingest idempotent:
+-- delivery is at-least-once, so the second arrival of an event has to be
+-- refused rather than applied again. Rows from before the id existed are
+-- null, which the index does not mind.
+alter table rated_events add column if not exists event_id bigint;
+create unique index if not exists rated_events_once on rated_events (event_id);
 ";
 
 pub struct Meta {
@@ -1014,6 +1028,13 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
 /// log is the durable artifact and the rating is derived from it, but an event
 /// that landed without moving anybody would leave the two disagreeing until
 /// somebody recomputed, and nothing here is worth that.
+///
+/// Delivery is at-least-once. A spool retries a whole batch when any of it
+/// fails, and a batch that committed under a lost reply is posted again, so
+/// the same event arriving twice is ordinary weather rather than a fault.
+/// The arena-minted id is the umbrella: the log refuses the second copy, and
+/// a refused copy must not touch the projection, or every retry would bend
+/// somebody's rating by a delta the log recorded once.
 async fn ingest(
     db: &mut Client,
     class: &str,
@@ -1025,10 +1046,19 @@ async fn ingest(
     if victim == 0 {
         return Err("no victim".into());
     }
+    // Refused rather than taken as-is, because an event without an id cannot
+    // be deduplicated, and one arena quietly exempt from exactly-once is the
+    // failure this field exists to end.
+    let Some(event_id) = ev.get("id").and_then(|v| v.as_i64()) else {
+        return Err("no event id".into());
+    };
     let before = ev.get("victim_before").and_then(|v| v.as_f64()).unwrap_or(0.0);
     let after = ev.get("victim_after").and_then(|v| v.as_f64()).unwrap_or(0.0);
     let tick = ev.get("tick").and_then(|v| v.as_i64()).unwrap_or(0);
     let victim_kind = ev.get("victim_kind").and_then(|v| v.as_i64()).unwrap_or(0) as i16;
+    // Absent means keep, which is the safe direction: an arena too old to
+    // send this is not one whose events should quietly expire.
+    let bots_only = ev.get("bots_only").and_then(|v| v.as_bool()).unwrap_or(false);
     let empty = Vec::new();
     let credits = ev.get("credits").and_then(|v| v.as_array()).unwrap_or(&empty);
 
@@ -1037,24 +1067,35 @@ async fn ingest(
         .await
         .map_err(|e| format!("cannot open a transaction: {e}"))?;
 
-    db.execute(
-        "insert into rated_events
-           (class, zone, instance, tick, victim, victim_kind, victim_before, victim_after, credits)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-        &[
-            &class,
-            &zone,
-            &instance,
-            &tick,
-            &victim,
-            &victim_kind,
-            &before,
-            &after,
-            &serde_json::Value::Array(credits.clone()),
-        ],
-    )
-    .await
-    .map_err(|e| format!("cannot store event: {e}"))?;
+    let stored = db
+        .execute(
+            "insert into rated_events
+               (event_id, class, zone, instance, tick, victim, victim_kind,
+                victim_before, victim_after, credits, bots_only)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             on conflict (event_id) do nothing",
+            &[
+                &event_id,
+                &class,
+                &zone,
+                &instance,
+                &tick,
+                &victim,
+                &victim_kind,
+                &before,
+                &after,
+                &serde_json::Value::Array(credits.clone()),
+                &bots_only,
+            ],
+        )
+        .await
+        .map_err(|e| format!("cannot store event: {e}"))?;
+    // A retry finding its work already done. Reported as success, because the
+    // spool is asking "is this filed", and it is; applying the deltas again is
+    // what this function exists to never do.
+    if stored == 0 {
+        return db.commit().await.map_err(|e| format!("cannot commit: {e}"));
+    }
 
     apply(&db, victim, class, after - before).await?;
     for c in credits {
@@ -1372,6 +1413,52 @@ pub async fn run() {
         });
     }
 
+    // The retention sweeper. The log grows at a rate the players do not set:
+    // bots fight at fill around the clock, which is most of ~300,000 events a
+    // day, and at 400 to 500 bytes a row that fills a 25 GB database inside a
+    // year. Throughput was never the problem. Space is.
+    //
+    // What gets dropped follows from what the log is for. A row with a person
+    // in it is replayed by a model migration or a disputed rating, so it is
+    // kept for good. A bot-on-bot row has done its work the moment the
+    // projection applies it, and a bot's career re-seeds from calibration
+    // anyway.
+    //
+    // A bounded delete rather than the partition drop meta-layer.md sketched.
+    // Dropping a partition is cheaper per row, but it needs the table
+    // partitioned by bot-only and by month together, a job to make next
+    // month's partitions, and a migration to convert the table that exists.
+    // At a few hundred thousand rows a day the delete is far below what one
+    // vCPU does without noticing, and it is twenty lines that cannot leave a
+    // month unpartitioned and silently refuse every write.
+    {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                tick.tick().await;
+                let Ok(db) = pool.get().await else { continue };
+                // Bounded so one pass cannot open a transaction over a
+                // backlog. An hour's production is a fraction of this, so a
+                // sweeper behind after an outage still catches up.
+                match db
+                    .execute(
+                        "delete from rated_events where ctid in (
+                           select ctid from rated_events
+                           where bots_only and at < now() - interval '21 days'
+                           limit 50000)",
+                        &[],
+                    )
+                    .await
+                {
+                    Ok(n) if n > 0 => println!("meta: retired {n} bot-only rated event(s)"),
+                    Err(e) => println!("meta: retention pass failed: {e}"),
+                    _ => {}
+                }
+            }
+        });
+    }
+
     let verifying = token::to_hex(signing.verifying_key().as_bytes());
     let meta = Arc::new(Meta { pool, signing, catalog, throttle: Throttle::default() });
     let listener = match tokio::net::TcpListener::bind(&addr).await {
@@ -1433,11 +1520,15 @@ mod tests {
 
     #[test]
     fn call_words_collide_with_nothing() {
-        // One namespace, three sources of names in it: players from this
-        // list, the AI roster from ai.rs, and the eight hulls the interface
-        // names beside them. A shared word would make the unique index
+        // One namespace, four sources of names in it: players from this list,
+        // the AI roster from ai.rs, the hulls the interface names beside them,
+        // and the rating tiers. A shared word would make the unique index
         // refuse an AI registration, or leave a scoreboard reading as two of
         // a kind, so the lists are held apart here.
+        //
+        // The tiers are the subtlest of the four: a pilot called Ace 412
+        // standing in the Ace tier is one word doing two unrelated jobs on
+        // the same scoreboard, and nothing but this check would catch it.
         let mut seen = std::collections::HashSet::new();
         for w in CALL_WORDS {
             assert!(seen.insert(w.to_lowercase()), "{w} appears twice");
@@ -1451,6 +1542,9 @@ mod tests {
         }
         for name in crate::ai::CLASS_NAMES {
             assert!(!seen.contains(&name.to_lowercase()), "{name} is a hull");
+        }
+        for (name, _) in crate::rating::TIERS {
+            assert!(!seen.contains(&name.to_lowercase()), "{name} is a rating tier");
         }
     }
 

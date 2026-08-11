@@ -27,6 +27,23 @@ const K_BOT: f64 = 8.0;
 /// bug in the attribution ledger can do.
 const EVENT_CAP: f64 = 64.0;
 
+/// The farm brake. Beating the AI is meant to place a pilot on the ladder,
+/// not to be a way up it, and Elo's own geometry only handles part of that:
+/// a bot rated far below you pays nearly nothing, but an arena full of bots
+/// pays nearly nothing many times an hour.
+///
+/// So past the point where the AI is still measuring anybody, a pilot may take
+/// only so much from it in a day. The floor is the Ace band, which is where a
+/// pilot has clearly outrun a population anchored at `ai::ANCHOR_RATING`, and
+/// `the_farm_brake_starts_where_ace_does` holds the two together. Below it
+/// nothing is capped, because that is the bots doing the job they exist for.
+///
+/// Losses are not capped. A pilot who keeps dying to the AI above this line is
+/// being told something true.
+const AI_FARM_FLOOR: f64 = 1350.0;
+const AI_GAIN_PER_DAY: f64 = 50.0;
+const DAY_TICKS: u32 = 8_640_000;
+
 /// How long a pilot stays answerable for damage after taking it, in ticks.
 /// A disconnect inside this window, with the tank low, settles as a death;
 /// outside it the ledger is dropped the way a leave always dropped it. Three
@@ -37,13 +54,22 @@ pub const QUIT_WINDOW: u32 = 300;
 /// Visible tiers. A rating is a number the matchmaker reads; a tier is what a
 /// player is told, and coarse bands mean a pilot is not watching a number
 /// twitch after every death.
-pub const TIERS: [(&str, f64); 6] = [
-    ("Drift", f64::NEG_INFINITY),
-    ("Trace", 1050.0),
-    ("Vector", 1200.0),
-    ("Contrail", 1350.0),
-    ("Shockwave", 1500.0),
-    ("Wake", 1700.0),
+///
+/// The ladder names the pilot rather than the mark they leave, so it reads in
+/// order without a legend: everybody knows an Ace outranks a wingman. These
+/// words are held apart from the call sign pool in `meta.rs`, since a pilot
+/// called Ace 412 sitting in the Ace tier is two different things wearing one
+/// word. `call_words_collide_with_nothing` is what keeps them apart.
+///
+/// Five bands rather than more. Ace is the widest on purpose: it holds the
+/// long stretch between a pilot who has clearly arrived and the handful who
+/// are the reason anybody knows the zone's name.
+pub const TIERS: [(&str, f64); 5] = [
+    ("Green", f64::NEG_INFINITY),
+    ("Wing", 1050.0),
+    ("Lead", 1200.0),
+    ("Ace", 1350.0),
+    ("Legend", 1700.0),
 ];
 
 /// The band a rating falls in. Always answers: the lowest tier is unbounded
@@ -97,6 +123,11 @@ pub struct Rating {
     anchors: HashSet<Id>,
     /// Pilots that move slowly, which is to say the AI.
     bots: HashSet<Id>,
+    /// What each pilot has taken from the AI in the current day, and when that
+    /// day started. Kept per room, which is the scope that can hold it: the
+    /// arena is where a delta is decided, and deciding it anywhere else would
+    /// leave the log saying one thing and the ladder another.
+    ai_gain: HashMap<Id, (f64, u32)>,
 }
 
 impl Rating {
@@ -110,6 +141,7 @@ impl Rating {
             games: HashMap::new(),
             anchors: HashSet::new(),
             bots: HashSet::new(),
+            ai_gain: HashMap::new(),
         }
     }
 
@@ -219,6 +251,14 @@ impl Rating {
             let base = w * (1.0 - expected) * damp;
             let ka = self.k_for(attacker);
             let delta = (ka * base).clamp(-EVENT_CAP, EVENT_CAP);
+            // A person taking points off a machine, which is the only
+            // direction farming runs. Bot on bot is the calibration ladder
+            // talking to itself and is left alone.
+            let delta = if self.bots.contains(victim) && !self.bots.contains(attacker) {
+                self.throttle_ai_gain(tick, attacker, ra, delta)
+            } else {
+                delta
+            };
             let after = if self.anchors.contains(attacker) {
                 ra
             } else {
@@ -249,6 +289,31 @@ impl Rating {
         };
         self.log.push(ev.clone());
         Some(ev)
+    }
+
+    /// Trim a gain taken from the AI, once the AI has stopped measuring this
+    /// pilot. Returns what they are actually paid.
+    ///
+    /// Applied where the delta is decided rather than where it is stored, so
+    /// the event log records what the pilot was paid. The log is the durable
+    /// artifact and every rating is a projection of it; a cap applied later
+    /// would make the two disagree, and replaying the log under a new model
+    /// would quietly hand back every point this ever withheld.
+    fn throttle_ai_gain(&mut self, tick: u32, who: &str, rating: f64, delta: f64) -> f64 {
+        if delta <= 0.0 || rating < AI_FARM_FLOOR {
+            return delta;
+        }
+        let e = self.ai_gain.entry(who.to_string()).or_insert((0.0, tick));
+        // A fresh day. Measured from the first AI gain of the previous one
+        // rather than from any wall clock, because a room has no calendar and
+        // a rolling window is what the rule is actually about.
+        if tick.saturating_sub(e.1) > DAY_TICKS {
+            *e = (0.0, tick);
+        }
+        let room = (AI_GAIN_PER_DAY - e.0).max(0.0);
+        let paid = delta.min(room);
+        e.0 += paid;
+        paid
     }
 
     /// A pilot leaving clears their pending ledger.
@@ -435,16 +500,116 @@ mod tests {
         let mut r = Rating::new();
         assert_eq!(r.tier_of("newcomer"), None, "a new pilot is placing");
         r.games.insert("newcomer".into(), PROVISIONAL_GAMES);
-        assert_eq!(r.tier_of("newcomer"), Some("Vector"), "1200 sits in Vector");
+        assert_eq!(r.tier_of("newcomer"), Some("Lead"), "1200 sits in Lead");
     }
 
     #[test]
     fn every_rating_has_a_tier() {
-        assert_eq!(tier(-999.0), "Drift", "the floor is unbounded below");
-        assert_eq!(tier(1049.0), "Drift");
-        assert_eq!(tier(1050.0), "Trace");
-        assert_eq!(tier(1200.0), "Vector");
-        assert_eq!(tier(99999.0), "Wake", "the ceiling is unbounded above");
+        assert_eq!(tier(-999.0), "Green", "the floor is unbounded below");
+        assert_eq!(tier(1049.0), "Green");
+        assert_eq!(tier(1050.0), "Wing");
+        assert_eq!(tier(1200.0), "Lead");
+        assert_eq!(tier(1699.0), "Ace", "the widest band runs to the top one");
+        assert_eq!(tier(99999.0), "Legend", "the ceiling is unbounded above");
+    }
+
+    /// Grind one bot after another and see what the day pays out.
+    fn farm(r: &mut Rating, who: &str, bouts: u32) -> f64 {
+        let before = r.rating_of(who);
+        for i in 0..bouts {
+            // A different bot each time, so repeat dampening is not what is
+            // being measured here.
+            let bot = format!("bot{i}");
+            r.mark_bot(&bot);
+            r.score.insert(bot.clone(), 1200.0);
+            let t = i * 100;
+            r.damage(t, &bot, who, 1000, false);
+            r.death(t + 1, &bot);
+        }
+        r.rating_of(who) - before
+    }
+
+    #[test]
+    fn the_ai_stops_paying_a_pilot_it_no_longer_measures() {
+        let mut r = Rating::new();
+        r.score.insert("farmer".into(), 1500.0);
+        r.games.insert("farmer".into(), 100);
+        let gained = farm(&mut r, "farmer", 200);
+        assert!(gained <= AI_GAIN_PER_DAY + 1e-6,
+                "a day of grinding paid {gained}, cap is {AI_GAIN_PER_DAY}");
+        assert!(gained > 0.0, "and it is a cap rather than a wall");
+    }
+
+    #[test]
+    fn a_pilot_the_ai_is_still_placing_is_not_capped() {
+        // The whole point of rating bots is that a human alone in a room can
+        // be placed. Capping below the line would break the feature the cap
+        // exists to protect.
+        let mut r = Rating::new();
+        r.score.insert("newcomer".into(), 1200.0);
+        let gained = farm(&mut r, "newcomer", 200);
+        assert!(gained > AI_GAIN_PER_DAY,
+                "a placing pilot took only {gained} from a full day of bots");
+    }
+
+    #[test]
+    fn the_allowance_comes_back_the_next_day() {
+        let mut r = Rating::new();
+        r.score.insert("farmer".into(), 1500.0);
+        r.games.insert("farmer".into(), 100);
+        farm(&mut r, "farmer", 200);
+        let after_one_day = r.rating_of("farmer");
+
+        // Same pilot, a day later. `farm` starts its ticks at zero, so reach
+        // past the window directly rather than replaying a day of nothing.
+        let bot = "tomorrow";
+        r.mark_bot(bot);
+        r.score.insert(bot.into(), 1200.0);
+        let t = DAY_TICKS + 10_000;
+        r.damage(t, bot, "farmer", 1000, false);
+        r.death(t + 1, bot);
+        assert!(r.rating_of("farmer") > after_one_day, "the window rolled");
+    }
+
+    #[test]
+    fn killing_people_is_never_capped() {
+        // The brake is about the AI. A pilot who spends a day beating humans
+        // has done the thing the ladder is for.
+        let mut r = Rating::new();
+        r.score.insert("ace".into(), 1500.0);
+        r.games.insert("ace".into(), 100);
+        let mut gained = 0.0;
+        for i in 0..200u32 {
+            let foe = format!("human{i}");
+            r.score.insert(foe.clone(), 1200.0);
+            r.damage(i * 100, &foe, "ace", 1000, false);
+            r.death(i * 100 + 1, &foe);
+        }
+        gained += r.rating_of("ace") - 1500.0;
+        assert!(gained > AI_GAIN_PER_DAY * 3.0,
+                "a day of beating people paid {gained}, which the brake should not touch");
+    }
+
+    #[test]
+    fn a_bot_beating_a_bot_is_left_alone() {
+        // Calibration runs entirely bot on bot. A brake that fired there
+        // would flatten the ladder every rating in the fleet is measured
+        // against.
+        let mut r = Rating::new();
+        r.mark_bot("hunter");
+        r.score.insert("hunter".into(), 1500.0);
+        let gained = farm(&mut r, "hunter", 200);
+        assert!(gained > AI_GAIN_PER_DAY,
+                "the calibration ladder was capped at {gained}");
+    }
+
+    #[test]
+    fn the_farm_brake_starts_where_ace_does() {
+        // Two numbers that have to agree, in two places that cannot see each
+        // other. The brake is explainable to a player as "the AI stops paying
+        // once you make Ace", and that sentence is only true while this holds.
+        let ace = TIERS.iter().find(|(n, _)| *n == "Ace").expect("an Ace band");
+        assert_eq!(AI_FARM_FLOOR, ace.1);
     }
 
     #[test]

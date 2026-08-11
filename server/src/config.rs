@@ -72,11 +72,10 @@ pub struct ArenaConfig {
     pub respawn_delay: Option<u16>,
     /// Zero, or absent, spawns on the map's own spawn tiles. Above zero
     /// ignores them and drops a ship on a random tile within this many of the
-    /// map's center, redrawn on every death. The original's own number works
-    /// out at 18: `WarpRadiusLimit=20` clamps a formula that would have asked
-    /// for 266, leaving a 37-tile square at the center. 60 is where arrivals
-    /// stop being visible on a center-camper's radar, which is the other
-    /// number worth having in mind.
+    /// map's center, redrawn on every death. Size it by how many ships share
+    /// the box: the original's own number is 18, and at the 51 ships one of
+    /// our rooms holds that leaves a fresh pilot a fifth of a second of bullet
+    /// flight from the nearest enemy. Alpha runs 250 for about three seconds.
     pub spawn_radius: Option<u16>,
     /// Whether a client marks the map's spawn tiles. Absent draws them.
     /// Ignored by the client when `spawn_radius` is set, since then nobody

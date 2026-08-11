@@ -76,26 +76,39 @@ respawn_delay = 400
 # Where a ship comes back: not the map's spawn tiles, but a square in the
 # middle of the map, which is what the original did before it had spawn points.
 #
-# The number is the original's own, worked back from the settings its reference
-# server ships. `Misc:WarpRadiusLimit=20` clamps a formula that would otherwise
-# have asked for 266 and up, so a default zone put every arrival in x 493 to
-# 529 and y the same: a 37-tile square dead center, about one screen across,
-# however full the room was. Ours is a radius rather than a width, so 18.
+# The number is not the original's, and the first attempt at this took the
+# original's and was unplayable. `Misc:WarpRadiusLimit=20` in the reference
+# server's settings clamps a formula that would otherwise have asked for 266 and
+# up, so a stock zone dropped everyone into a 37-tile square at the center. Ours
+# is a radius rather than a width, which made it 18, and 18 killed people as
+# they arrived.
 #
-# That is a deliberately small number and it is the whole point of this zone
-# using it. Alpha is ten teams and kills only, on a mapgen map whose spawn
-# tiles are scattered over nearly half the field, which put one pilot five
-# seconds from a fight and their team mate twenty-six. Everybody landing in the
-# same screen costs the formation a team game would want and buys the thing
-# this zone is for: you come back where the shooting is.
+# It does not transfer because this room is denser than anything that clamp was
+# written for. Alpha holds 64 seats and the bot server keeps four in five warm,
+# so a live room is about 51 ships, all of them hostile to each other across ten
+# teams. Measured over 300 draws of 51 ships on this map, against a bullet that
+# crosses 12.5 tiles a second and reaches 69:
 #
-# What it also buys is a camp. Radar reaches 60 tiles, so 18 is comfortably
-# inside what one pilot sitting on the center can watch, and a fresh ship here
-# is worth about 29.5 bounty because `spawn_prizes` is 30. If that turns out to
-# be as unpleasant as it sounds, the lever is this number and not a rule about
-# farming: 60 gets arrivals off a camper's radar, at the price of some of the
-# closeness. Left at the original's until it has been played.
-spawn_radius = 18
+#     radius   nearest enemy   as bullet flight
+#         18      2.7 tiles           0.2 s
+#         60      8.8                 0.7
+#        150     22.5                 1.8
+#        250     37.3                 3.0
+#        389     58.1                 4.6
+#
+# 250 is where a fresh pilot gets about three seconds before anything already
+# in the air can reach them, which is a moment to pick a direction. 389 is what
+# the original's own formula asks for at 51 players once the clamp is off, and
+# it buys another 1.6 seconds for a mean flight home of 16.7 s against 12.1 s,
+# which is back to what the spawn tiles cost and the reason this zone stopped
+# using them.
+#
+# No radius makes an arrival safe here. A bullet reaches 69 tiles and the widest
+# box that still counts as a spawn area leaves the mean under that, so the
+# nearest enemy is always nominally in range; what a radius buys is the seconds
+# before that matters. The other levers, if this is still too hot, are
+# `spawn_prizes` and `respawn_delay`.
+spawn_radius = 250
 
 # A minute in a safe zone and the room takes the seat back. Nothing can reach a
 # ship in a safe zone and it cannot shoot out of one, so parking there is a seat

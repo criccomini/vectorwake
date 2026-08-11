@@ -63,13 +63,17 @@ respawn_delay = 400   # ticks, so four seconds
 # over nearly half the map, so under tiles one pilot can be five seconds from
 # the middle and their team mate twenty-six. A radius makes everybody the same
 # distance from it and turns one patch of ground into the only place anyone
-# arrives. The original's own number comes to 18, because WarpRadiusLimit=20 in
-# its reference settings clamps a formula that would have asked for 266, so a
-# stock zone dropped everyone into a 37-tile square at the center. Radar reaches
-# 60 tiles, so that is well inside what one camper can watch: pick 18 for the
-# original's feel and 60 or more to make camping the middle hard work.
+# arrives.
 #
-# spawn_radius = 133
+# Size it by the crowd, not by the map. The original's own number comes to 18,
+# because WarpRadiusLimit=20 in its reference settings clamps a formula that
+# would have asked for 266, and 18 was unplayable in a room of 51: it put a
+# fresh pilot two and a half tiles from the nearest enemy, a fifth of a second
+# of bullet flight, and they died on arrival. Tune against that flight time.
+# Alpha runs 250 for about three seconds of it, with the numbers written out in
+# catalog/zones/alpha/zone.toml.
+#
+# spawn_radius = 250
 
 # Whether a client marks the map's spawn tiles. Ignored when spawn_radius is
 # set, because then nobody arrives on them. Worth turning off in a mode that
