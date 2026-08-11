@@ -157,7 +157,7 @@ do
     local f = frame(1280, 800, 1, false)
     local leaked = nil
     for _, r in ipairs(ui.HELP_ROWS) do
-        if says(f, r[3]) then leaked = r[3] end
+        if says(f, r.what) then leaked = r.what end
     end
     check("nothing of it is drawn while it is shut", leaked == nil, leaked)
 end
@@ -169,9 +169,9 @@ do
     check("it names itself", says(f, "CONTROLS") ~= nil)
     local missing = {}
     for _, r in ipairs(ui.HELP_ROWS) do
-        local d = says(f, r[3])
-        if not (d and at_row(f, r[1], d.y) and at_row(f, r[2], d.y)) then
-            missing[#missing + 1] = r[2]
+        local d = says(f, r.what)
+        if not (d and at_row(f, r.key, d.y) and at_row(f, r.name, d.y)) then
+            missing[#missing + 1] = r.name
         end
     end
     check("every row draws all three of its columns", #missing == 0,
@@ -187,9 +187,9 @@ do
     local f = frame(1280, 800, 1, true)
     local kx, nx, dx = {}, {}, {}
     for _, r in ipairs(ui.HELP_ROWS) do
-        local d = says(f, r[3])
-        kx[#kx + 1] = at_row(f, r[1], d.y).left
-        nx[#nx + 1] = at_row(f, r[2], d.y).left
+        local d = says(f, r.what)
+        kx[#kx + 1] = at_row(f, r.key, d.y).left
+        nx[#nx + 1] = at_row(f, r.name, d.y).left
         dx[#dx + 1] = d.left
     end
     local function spread(t)
@@ -252,13 +252,13 @@ do
     }
     local unbound, unmapped = {}, {}
     for _, r in ipairs(ui.HELP_ROWS) do
-        local keys = AS[r[1]]
+        local keys = AS[r.key]
         if not keys then
-            unmapped[#unmapped + 1] = r[1]
+            unmapped[#unmapped + 1] = r.key
         else
             for _, k in ipairs(keys) do
                 if not BOUND[k] then
-                    unbound[#unbound + 1] = r[2] .. " (" .. k .. ")"
+                    unbound[#unbound + 1] = r.name .. " (" .. k .. ")"
                 end
             end
         end
@@ -267,6 +267,81 @@ do
           table.concat(unmapped, ", "))
     check("and every one of them is bound in the arena", #unbound == 0,
           table.concat(unbound, ", "))
+end
+
+-- --- and a phone is told about the controls it cannot read ----------------
+--
+-- These rows were written out a second time in the menu once, and drifted:
+-- the map moved onto the dial and gunners landed, and the page a phone reads
+-- went on describing a game with neither in it. One list fixes that, and this
+-- pins the part of it a sweep cannot judge.
+--
+-- Not every tappable thing needs a sentence. Most of what a finger lands on
+-- in the arena is a word on a card: INVITE, WATCH, a room number. Those say
+-- what they do by being read. What needs saying is the controls that carry no
+-- word at all, or that live behind a card you have to know to open, and that
+-- is a judgement rather than something a regex can settle. So the judgement
+-- is written down here and checked, instead of being left in somebody's head.
+
+do
+    -- Wearing no label a player can read, so a phone learns them here or not
+    -- at all. The dial is a picture, the pads are marks, and DROP is behind a
+    -- card you reach by tapping your own name.
+    local MUST_SAY = {"Rudder", "Thrusters", "Guns", "Bombs", "Repel",
+                      "Burst", "Mine", "Multifire", "Map", "Detach",
+                      "Players"}
+    local pad = {}
+    for _, r in ipairs(ui.HELP_ROWS) do pad[r.name] = r.pad end
+
+    local silent = {}
+    for _, name in ipairs(MUST_SAY) do
+        if not pad[name] or pad[name] == "" then silent[#silent + 1] = name end
+    end
+    check("every unlabeled control has a sentence for a thumb", #silent == 0,
+          table.concat(silent, ", "))
+
+    -- The two that say nothing, and why. Reverse has no gesture at all, by
+    -- decision; help is the page being read. Anything else arriving with no
+    -- `pad` is a control a phone has quietly lost.
+    local mute = {}
+    for _, r in ipairs(ui.HELP_ROWS) do
+        if not r.pad and r.name ~= "Reverse" and r.name ~= "Help" then
+            mute[#mute + 1] = r.name
+        end
+    end
+    check("and only reverse and help are keyboard-only", #mute == 0,
+          table.concat(mute, ", "))
+
+    -- A thumb sentence that names a key is a sentence written for the wrong
+    -- device, which is the shape the drift took last time.
+    local keyed = {}
+    for _, r in ipairs(ui.HELP_ROWS) do
+        if r.pad and (r.pad:find("[Pp]ress ") or r.pad:find("[Kk]ey")) then
+            keyed[#keyed + 1] = r.name
+        end
+    end
+    check("and no thumb sentence names a key", #keyed == 0,
+          table.concat(keyed, ", "))
+
+    -- What a phone is handed is every row a thumb can work, which is the
+    -- whole list less the two that say nothing.
+    local thumbed = 0
+    for _, r in ipairs(ui.HELP_ROWS) do if r.pad then thumbed = thumbed + 1 end end
+    check("a phone is offered every control it can work",
+          thumbed == #ui.HELP_ROWS - 2,
+          thumbed .. " of " .. #ui.HELP_ROWS)
+
+    -- And the menu builds its page from this list rather than from a second
+    -- copy, which is the whole point of the list being shared. Read out of
+    -- the source, because the alternative is exporting the menu's page table
+    -- to prove it.
+    local mf = io.open("client/arena/menu.lua")
+    local mbody = mf and mf:read("*a") or ""
+    if mf then mf:close() end
+    check("and the menu's help page is generated from it",
+          mbody:find('require("arena.controls")', 1, true) ~= nil
+          and mbody:match("help = {board = true, rows = function"),
+          "menu.lua writes its own rows again")
 end
 
 if fails > 0 then

@@ -2129,22 +2129,7 @@ end
 -- Keyboard only, and that is not an oversight: a touchscreen has no key to
 -- open it with and no keys to list. The menu's help page is what a phone gets,
 -- and it names thumbs because thumbs are what a phone has.
-local HELP_ROWS = {
-    {"← →", "Rudder", "Turns your ship."},
-    {"↑", "Thrusters", "Drives your ship forward."},
-    {"↓", "Reverse", "Drives your ship backward."},
-    {"Space", "Guns", "Fires your rapid weapon."},
-    {"Tab", "Bombs", "Fires a heavy weapon that detonates on impact."},
-    {"Q", "Repel", "Pushes enemy fire and ships away from you."},
-    {"W", "Burst", "Fires bullets in every direction at once."},
-    {"A", "Mine", "Drops a mine that detonates when an enemy approaches."},
-    {"`", "Multifire", "Fans your gun wider for more energy per shot."},
-    {"D", "Detach", "Drops you off a ship you are riding."},
-    {"M", "Map", "Shows the whole arena instead of the radar."},
-    {"P", "Players", "Lists everyone here and what they are worth."},
-    {"H  ?", "Help", "Shows this table."},
-    {"Esc", "Menu", "Opens the menu."},
-}
+local HELP_ROWS = require("arena.controls")
 M.HELP_ROWS = HELP_ROWS
 
 -- Whether the table is up. The arena owns the key; this owns the drawing.
@@ -2172,9 +2157,9 @@ local function help_table()
     -- are the one column that cannot be allowed to wrap.
     local kw, nw, dw = 0, 0, 0
     for _, r in ipairs(HELP_ROWS) do
-        kw = math.max(kw, glyph_w(r[1], fs))
-        nw = math.max(nw, glyph_w(r[2], fs))
-        dw = math.max(dw, glyph_w(r[3], fs))
+        kw = math.max(kw, glyph_w(r.key, fs))
+        nw = math.max(nw, glyph_w(r.name, fs))
+        dw = math.max(dw, glyph_w(r.what, fs))
     end
     local gap = 14 * S
     local w = pad * 2 + kw + gap + nw + gap + dw
@@ -2212,11 +2197,11 @@ local function help_table()
         -- ink, and the sentence dimmer than both: three weights so the eye can
         -- run down one column without reading the other two.
         case = "upper"
-        txt(r[1], kx, ty, fs, pal.a(pal.FRIEND, 0.95))
-        txt(r[2], nx, ty, fs, pal.a(pal.INK, 0.92))
+        txt(r.key, kx, ty, fs, pal.a(pal.FRIEND, 0.95))
+        txt(r.name, nx, ty, fs, pal.a(pal.INK, 0.92))
         -- Prose, and set as prose. The rest of the interface shouts.
         case = "sentence"
-        txt(r[3], dx, ty, fs, pal.a(pal.PANEL_INK, 0.85))
+        txt(r.what, dx, ty, fs, pal.a(pal.PANEL_INK, 0.85))
     end
     case = was
 end
