@@ -308,7 +308,22 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-#define CFG_VERSION 11
+/* 11: `still` and `blast_up` joined the spec. The version is the whole of the
+ * compatibility story -- a mismatch is refused, and CI ships both ends of the
+ * wire from the same commit -- but the fields still have to be *here*: this
+ * file is a hand-written mirror of the spec struct, and a field it does not
+ * carry arrives at every client as zero. For these two that is a mine that
+ * flies off at its layer's speed in the client's predicted world and wears a
+ * blast the ladder never grew, while the server plays the weapon correctly,
+ * which is the exact drift this message exists to prevent.
+ *
+ * 12: `spawn_radius` and `show_spawns`. Two branches both called themselves 11
+ * and both changed the layout, which is what a merge of them has to notice: a
+ * client built from either one would have read this format's bytes in the
+ * wrong order while agreeing about the number that says it cannot. The radius
+ * has to travel because the client predicts a respawn's position, and the mark
+ * because the client is what draws it. */
+#define CFG_VERSION 12
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -357,12 +372,14 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w16(&w, sp->life);
         w8(&w, sp->on_wall);
         w8(&w, sp->bounces);
+        w8(&w, sp->still);
         w32(&w, (uint32_t)sp->trigger);
         w8(&w, sp->expire_ends);
         w8(&w, sp->splinter);
         w32(&w, (uint32_t)sp->damage);
         w32(&w, (uint32_t)sp->damage_up);
         w32(&w, (uint32_t)sp->blast);
+        w32(&w, (uint32_t)sp->blast_up);
         w32(&w, (uint32_t)sp->push);
         w16(&w, sp->push_time);
         w16(&w, sp->stall);
@@ -471,12 +488,14 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         sp->life = (uint16_t)r16(&r);
         sp->on_wall = (uint8_t)r8(&r);
         sp->bounces = (uint8_t)r8(&r);
+        sp->still = (uint8_t)r8(&r);
         sp->trigger = (int32_t)r32(&r);
         sp->expire_ends = (uint8_t)r8(&r);
         sp->splinter = (uint8_t)r8(&r);
         sp->damage = (int32_t)r32(&r);
         sp->damage_up = (int32_t)r32(&r);
         sp->blast = (int32_t)r32(&r);
+        sp->blast_up = (int32_t)r32(&r);
         sp->push = (int32_t)r32(&r);
         sp->push_time = (uint16_t)r16(&r);
         sp->stall = (uint16_t)r16(&r);

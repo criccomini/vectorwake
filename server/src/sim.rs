@@ -77,6 +77,10 @@ pub struct sim_weapon_spec {
     pub life: u16,
     pub on_wall: u8,
     pub bounces: u8,
+    /// Whether the round is laid rather than thrown: it takes none of the
+    /// firer's velocity and stays where it was let go. A mine, and nothing
+    /// else, because everything that flies wants the ship's speed added.
+    pub still: u8,
     pub trigger: i32,
     pub expire_ends: u8,
     pub splinter: u8,
@@ -85,6 +89,9 @@ pub struct sim_weapon_spec {
     /// fragment, whose rung is its thrower's gun rather than a ladder.
     pub damage_up: i32,
     pub blast: i32,
+    /// Blast a rung adds, for the weapon whose rung is not a ladder either: a
+    /// mine is a charge, so it is one spec wearing the layer's bomb rung.
+    pub blast_up: i32,
     pub push: i32,
     /// Ticks a shoved hull keeps the repel's speed ceiling. RepelTime.
     pub push_time: u16,
@@ -797,6 +804,26 @@ impl World {
             let rng: *mut u32 = &mut self.state.rng;
             unsafe { sim_take_prize(sh, &*self.cfg, rng, std::ptr::null_mut()) };
         }
+    }
+
+    /// Roll one green for this ship off a generator the caller holds, and say
+    /// whether the count actually moved.
+    ///
+    /// `outfit` rolls the same greens off the state's own generator, which is
+    /// what a live arena wants. A measurement wants two things that arrangement
+    /// cannot give: rolls that repeat for a given salt, and a bout whose own
+    /// stream does not shift depending on how many greens were handed out
+    /// first. So the generator comes in from outside.
+    ///
+    /// The return is the delta: 1 where a count moved, 0 where the roll landed
+    /// on a ceiling, -1 for rust. Bounty does not care which, since every green
+    /// is worth one whatever it turned out to be, so this is the difference
+    /// between what two pilots are matched on and what they got for it.
+    pub fn take_prize_from(&mut self, ship: usize, rng: &mut u32) -> i32 {
+        let sh: *mut sim_ship = &mut self.state.ships[ship];
+        let mut delta: c_int = 0;
+        unsafe { sim_take_prize(sh, &*self.cfg, rng as *mut u32, &mut delta) };
+        delta as i32
     }
 
     /// Hand a ship one specific thing from the tech tree, no roll involved.

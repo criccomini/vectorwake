@@ -980,8 +980,10 @@ impl Room {
         if let Some(v) = w.bounces { sp.bounces = v; }
         if let Some(v) = w.trigger { sp.trigger = v * 256; }
         if let Some(v) = w.blast { sp.blast = v * 256; }
+        if let Some(v) = w.blast_up { sp.blast_up = v * 256; }
         if let Some(v) = w.stall { sp.stall = v; }
         if let Some(v) = w.expire_ends { sp.expire_ends = v as u8; }
+        if let Some(v) = w.still { sp.still = v as u8; }
         if let Some(rule) = &w.on_wall {
             match rule.as_str() {
                 "end" => sp.on_wall = 0,
@@ -3714,6 +3716,60 @@ fn run_stage_tournament() {
     }
 }
 
+/// `calibrate hulls <bouts> <greens> <zone> <dir>`: every hull against every
+/// other at matched bounty.
+///
+/// The other two harnesses each hold the hull still. This one varies it, which
+/// is the only way to ask whether the roster is balanced against itself rather
+/// than whether a kit is worth carrying.
+///
+/// `greens` is the bounty both sides are handed at every spawn. It is a bounty
+/// and not a loadout: the core counts every green as one whatever it turned out
+/// to be, so the two pilots are matched exactly on the number over their heads
+/// and inexactly on what it bought them, which is the situation a player is
+/// actually in. Zero measures bare hulls, the way the ladder does.
+///
+/// Writes `hulls.json`, which nothing loads. Same reasoning as `stages.json`:
+/// it is a measurement to diff a change against, and `ladder.json` is an input.
+fn run_hull_tournament() {
+    let bouts: u32 = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(24);
+    let greens: u32 = std::env::args().nth(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
+    let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
+
+    let tuning = if zone == "baseline" {
+        None
+    } else {
+        let cat = match catalog::load("catalog") {
+            Ok(c) => c,
+            Err(e) => {
+                println!("hulls: {e}");
+                std::process::exit(1);
+            }
+        };
+        let Some(def) = cat.zone(&zone) else {
+            println!("hulls: no zone named {zone:?} in the catalog");
+            std::process::exit(1);
+        };
+        Some(def.arena.clone())
+    };
+
+    const SKILL: f32 = 0.50;
+    let n = ai::CLASS_NAMES.len();
+    println!(
+        "hulls at {greens} greens under {zone} tuning: {} pairs, {bouts} bouts each",
+        n * (n + 1) / 2
+    );
+    let rows = calibrate::run_hulls(SKILL, greens, bouts, tuning.as_ref(), true);
+    let doc = calibrate::report_hulls(&rows, SKILL, greens, bouts, &zone);
+
+    let path = format!("{dir}/hulls.json");
+    match std::fs::write(&path, serde_json::to_string_pretty(&doc).expect("serialize")) {
+        Ok(()) => println!("\nwrote {path}"),
+        Err(e) => println!("\ncould not write {path}: {e}"),
+    }
+}
+
 /// Where the directories are. `VW_DIRECTORY` names a host, which is resolved,
 /// so one hostname with several records is a whole deployment and a directory can
 /// be added or moved without touching an arena server. That is the DNS decision
@@ -3862,6 +3918,8 @@ async fn main() {
         // the kit varying instead.
         if std::env::args().nth(2).as_deref() == Some("stages") {
             run_stage_tournament();
+        } else if std::env::args().nth(2).as_deref() == Some("hulls") {
+            run_hull_tournament();
         } else {
             run_calibration();
         }
@@ -7688,14 +7746,96 @@ mod tests {
                    "and the rung below it is untouched");
     }
 
+    /// How long a mine sits there, which is the setting a zone is most likely
+    /// to want off the baseline: it is the whole of how long the ground a
+    /// minefield denies stays denied, and the original bounds its own
+    /// MineAliveTime anywhere from two seconds to ten minutes.
+    ///
+    /// The baseline's two minutes is a number rather than a mechanism, so
+    /// what this pins is that a zone can move it at all, and that moving it
+    /// touches nothing else about the weapon.
+    #[test]
+    fn a_zone_sets_how_long_a_mine_lives() {
+        let mine = |w: &sim::World| {
+            w.cfg.specs[w.cfg.patterns[w.cfg.charge[2] as usize].spec as usize]
+        };
+        let (base, warn) = tuned("");
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(mine(&base).life, 12_000, "two minutes, out of the box");
+
+        let (w, warn) = tuned(r#"
+            [[arena.weapons]]
+            name = "charge-3"
+            life = 30000
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        let m = mine(&w);
+        assert_eq!(m.life, 30_000, "five minutes, because the zone said so");
+        // And it is still a mine: the fields that make it one are untouched by
+        // a clock change, which is what stops this being a way to quietly turn
+        // the charge into something else.
+        assert_eq!(m.still, 1, "still laid rather than thrown");
+        assert_eq!(m.expire_ends, 1, "and running out still sets it off");
+        assert_eq!(m.blast, base_blast(&base), "with the blast it had");
+        assert_eq!(m.trigger, mine(&base).trigger, "and the same fuse");
+    }
+
+    fn base_blast(w: &sim::World) -> i32 {
+        w.cfg.specs[w.cfg.patterns[w.cfg.charge[2] as usize].spec as usize].blast
+    }
+
+    /// Alpha's own file, applied the way a room applies it.
+    ///
+    /// The shipped zone files are read by nothing else in this suite: the map
+    /// beside this one is loaded by the bot tests, and the tuning next to it
+    /// was never parsed until a room in production did it. So a typo in a
+    /// weapon name is a silent no-op -- `apply_config` warns and carries on,
+    /// which is right for a live zone and useless as a check -- and a typo in
+    /// a field is a parse error nobody sees until the room opens.
+    ///
+    /// This asserts the warnings are empty, which is what catches the name,
+    /// and the one number the zone is here to state.
+    ///
+    /// Through `ZoneDef`, which is the schema the catalog actually reads a
+    /// shipped zone with -- `config::ZoneConfig` is the standalone server's
+    /// and has no `mode` -- so this also gets `deny_unknown_fields` over the
+    /// whole file rather than only over the line it came to check.
+    #[test]
+    fn the_alpha_zone_file_says_what_it_means() {
+        let src = std::fs::read_to_string("../catalog/zones/alpha/zone.toml")
+            .expect("the alpha zone ships in this repository");
+        let z: crate::catalog::ZoneDef =
+            toml::from_str(&src).expect("alpha's zone file parses");
+        let mut w = sim::World::new(1);
+        let warn = Room::apply_config(&mut w, &z.arena);
+        assert!(warn.is_empty(), "alpha's own file warns: {warn:?}");
+
+        // The control, and it has to be here. A weapon name this file does not
+        // recognise is not an error -- an unknown name *makes* a weapon, which
+        // is how a zone adds one -- so a typo in a block above is a new dead
+        // weapon and no warning. Reading a number alpha shares with the
+        // baseline would then pass on a file that never applied. The burst's
+        // damage is alpha's own and the baseline's is 700.
+        let burst = w.cfg.specs[w.cfg.patterns[w.cfg.charge[1] as usize].spec as usize];
+        assert_eq!(burst.damage, unsafe { sim::sim_units_energy(515) },
+                   "alpha's file reached the weapon table at all");
+
+        let mine = w.cfg.specs[w.cfg.patterns[w.cfg.charge[2] as usize].spec as usize];
+        assert_eq!(mine.life, 12_000, "alpha's mines sit for two minutes");
+        assert_eq!(mine.still, 1, "and are still mines");
+    }
+
     /// The baseline fills two charge slots and leaves two empty. Naming an
     /// empty one makes the weapon and puts it in the slot, so adding a third
     /// charge is one block rather than a block plus a wiring line.
     #[test]
     fn naming_an_empty_charge_slot_fills_it() {
+        // The fourth slot, because the baseline now fills the first three: a
+        // repel, a burst and a mine. This test is about a slot the zone finds
+        // empty, so it has to name one that actually is.
         let (w, warn) = tuned(r#"
             [[arena.weapons]]
-            name = "charge-3"
+            name = "charge-4"
             speed = 0
             life = 1
             on_wall = "pass"
@@ -7705,22 +7845,21 @@ mod tests {
             delay = 200
 
             [arena.prize_weight]
-            charge-3 = 40
+            charge-4 = 40
 
             [[arena.ships]]
             name = "Anvil"
-            charges = [3, 3, 2]
+            charges = [3, 3, 3, 2]
         "#);
         assert!(warn.is_empty(), "{warn:?}");
-        assert_ne!(w.cfg.charge[2], sim::NO_PATTERN, "the slot is filled");
-        let sp = w.cfg.specs[w.cfg.patterns[w.cfg.charge[2] as usize].spec as usize];
+        assert_ne!(w.cfg.charge[3], sim::NO_PATTERN, "the slot is filled");
+        let sp = w.cfg.specs[w.cfg.patterns[w.cfg.charge[3] as usize].spec as usize];
         assert_eq!(sp.blast, 400 * 256);
-        assert_eq!(w.cfg.prize_weight[sim::PRIZE_COUNT - 2], 40, "and greens can be it");
+        assert_eq!(w.cfg.prize_weight[sim::PRIZE_COUNT - 1], 40, "and greens can be it");
         let anvil = ai::class_index("Anvil").unwrap();
-        assert_eq!(w.cfg.classes[anvil].charge_max[2], 2, "the Anvil carries two");
-        assert_eq!(w.cfg.classes[ai::class_index("Apex").unwrap()].charge_max[2], 0,
+        assert_eq!(w.cfg.classes[anvil].charge_max[3], 2, "the Anvil carries two");
+        assert_eq!(w.cfg.classes[ai::class_index("Apex").unwrap()].charge_max[3], 0,
                    "and nobody else carries any");
-        assert_eq!(w.cfg.charge[3], sim::NO_PATTERN, "the fourth slot is still empty");
     }
 
     #[test]

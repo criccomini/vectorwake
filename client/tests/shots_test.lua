@@ -36,6 +36,9 @@ local SPECS = {
     [2] = {blast = 400, life = 500, level = 1},
     [3] = {blast = 512, life = 1,   level = -1},
     [4] = {blast = 0,   life = 40,  level = -1},
+    -- A mine: a blast and a long life, exactly like a bomb, and laid from an
+    -- inventory rather than thrown. `still` is what tells the two apart.
+    [5] = {blast = 400, life = 6000, level = -1, still = true},
 }
 
 local room = {count = 3, alive = {[0] = true, [1] = true, [2] = true},
@@ -56,6 +59,8 @@ _G.sim = {
     ship_carrier = function() return 255 end,
     charge_spec = function() return -1 end,
     spec_blast = function(id) return (SPECS[id] or {}).blast or 0 end,
+    spec_still = function(id) return (SPECS[id] or {}).still or false end,
+    spec_trigger = function(id) return (SPECS[id] or {}).trigger or 0 end,
     spec_life = function(id) return (SPECS[id] or {}).life or 0 end,
     spec_level = function(id) return (SPECS[id] or {}).level or -1 end,
     weapon_count = function() return #air end,
@@ -188,6 +193,36 @@ idle()
 room.cd[1] = 20
 check("a shot whose rounds were culled is silent", look() == 0,
       "heard " .. #heard)
+
+-- --- a mine is laid, not thrown ---------------------------------------------
+
+-- The two signals this file exists to correlate both fire when somebody posts
+-- a mine: spending a charge locks the triggers, so the cooldown rises, and
+-- unlike every other charge the round it leaves behind stays in the world to
+-- be counted. A mine has a blast and a long life, which is a bomb as far as
+-- the count is concerned, so without the `still` test every mine laid anywhere
+-- in the arena arrives as somebody lobbing a bomb: the wrong sound, from a
+-- trigger nobody pulled. Laying one is quiet, which is most of what makes a
+-- minefield a thing you find rather than a thing you hear.
+idle()
+air = {}
+look()
+idle()
+fires(1, 5)
+check("laying a mine is silent", look() == 0, "heard " .. #heard)
+
+-- And the mine sitting in the world does not swallow a real bomb thrown over
+-- it afterwards. A shot is a cooldown that *rose*, and laying the mine latched
+-- a full one, so the clock has to be run down and then read before the bomb
+-- can register as anything: idling alone moves the room and not what was last
+-- seen of it.
+for _ = 1, 5 do idle() end
+look()
+fires(1, 2)
+check("but a bomb thrown over a minefield still sounds", look() == 1,
+      "heard " .. #heard)
+check("and as a bomb, on the rung it was thrown at",
+      heard[1] and heard[1].name == "bomb" and heard[1].lvl == 1)
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

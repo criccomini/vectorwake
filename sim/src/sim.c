@@ -47,14 +47,23 @@ static uint32_t xorshift32(uint32_t x) {
     return x ? x : 0x9e3779b9u;
 }
 
-/* A whole-pixel position squeezed into an event's one payload word. The map
- * is 16384 px on a side, so fourteen bits hold a coordinate exactly and the
- * pair fits with four to spare. Used by SIM_EV_EXPIRE, which is the only
- * report a caller gets of where a weapon stopped existing. */
-static int32_t pack_pos(int32_t x_q8, int32_t y_q8) {
+/* A whole-pixel position squeezed into an event's one payload word, with the
+ * round's rung in two of the bits left over. The map is 16384 px on a side,
+ * so fourteen bits hold a coordinate exactly and the pair fits with four to
+ * spare; the rung takes two of those. Used by SIM_EV_EXPIRE, which is the
+ * only report a caller gets of where a weapon stopped existing.
+ *
+ * The rung is there for the renderer, and for the same reason the round
+ * itself carries `level`: a spec is composed again where a round lands, and
+ * the rung it came off is not otherwise recoverable there. By the time the
+ * client reads this event the weapon is gone from the state, so without
+ * these bits a mine's detonation -- one spec whatever rung was posted -- had
+ * no rung to size its ring or pick its colour by, and flashed rung one in
+ * violet whatever the mine had been. */
+static int32_t pack_pos(int32_t x_q8, int32_t y_q8, uint8_t level) {
     int32_t x = (x_q8 >> 8) & 0x3fff;
     int32_t y = (y_q8 >> 8) & 0x3fff;
-    return (x << 14) | y;
+    return ((int32_t)(level & 3) << 28) | (x << 14) | y;
 }
 
 static void emit(sim_events *ev, uint8_t type, uint8_t a, uint8_t b,
@@ -531,6 +540,10 @@ static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
      * fragment is a bullet of whatever the thrower's guns were, so its damage
      * climbs with a number rather than by pointing at another row. */
     if (sp->damage_up) sp->damage += level * sp->damage_up;
+    /* And a rung of blast, for the other one. A mine is a charge, so it is one
+     * spec wearing the pilot's bomb rung rather than a row per rung, and this
+     * is what makes that rung worth anything. */
+    if (sp->blast_up) sp->blast += level * sp->blast_up;
     if ((n = sim_mod_get(mods, SIM_MOD_SHRAPNEL)) != 0)
         sp->splinter = cfg->mod_splinter[n < SIM_MAX_RUNGS ? n : SIM_MAX_RUNGS - 1];
     if ((n = sim_mod_get(mods, SIM_MOD_FREEZE)) != 0)
@@ -668,6 +681,39 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
     }
 }
 
+/* A mine: a round laid rather than thrown, that goes off where it sits.
+ *
+ * Derived rather than flagged, because both halves are already load-bearing
+ * and neither is true of anything else. `still` is what stops it leaving at
+ * the ship's speed, and a blast is what makes it a weapon instead of a marker.
+ * A repel has no blast damage and is skipped before this is ever asked. The
+ * client draws mines off the same two fields, so the two cannot end up
+ * disagreeing about what a mine is. */
+static int is_mine(const sim_weapon_spec *sp) {
+    return sp->still && sp->blast > 0;
+}
+
+/* The bomb spec of a hull's rung, or SIM_NO_PATTERN when it has no rack there.
+ *
+ * A repelled mine becomes a bomb of the rung it was laid at, so the ladder has
+ * to be read back from the class that laid it. The rung is clamped rather than
+ * refused: a pilot who swapped to a hull with a shorter ladder while their
+ * mines were still out gets the top of what that hull has, which is the same
+ * rule a level takes everywhere else. */
+static uint8_t bomb_spec_at(const sim_settings *cfg, const sim_state *s,
+                            uint8_t owner, uint8_t level) {
+    if (owner >= s->ship_count) return SIM_NO_PATTERN;
+    const sim_ship *sh = &s->ships[owner];
+    if (!sh->active || sh->cls >= cfg->class_count) return SIM_NO_PATTERN;
+    const sim_ship_class *c = &cfg->classes[sh->cls];
+    for (int r = (level < SIM_MAX_RUNGS ? level : SIM_MAX_RUNGS - 1); r >= 0; r--) {
+        uint8_t pat = c->trigger[SIM_TRIG_BOMB][r];
+        if (pat != SIM_NO_PATTERN && pat < cfg->pattern_count)
+            return cfg->patterns[pat].spec;
+    }
+    return SIM_NO_PATTERN;
+}
+
 /* What a projectile does where it ends.
  *
  * One ending, four things it might do, all optional and all read off the
@@ -801,6 +847,30 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
                 if (d == 0) continue;
                 o->vx = (int32_t)(ddx * spec->push / d);
                 o->vy = (int32_t)(ddy * spec->push / d);
+                /* A mine that is shoved stops being a mine.
+                 *
+                 * Everything about the shape is wrong for a round in flight:
+                 * it sits on a minute of life, so pushed as itself it crosses
+                 * the map at repel speed and then keeps going, and it senses
+                 * on a fuse tuned to something standing still next to it. The
+                 * pilot who let the repel off has cleared the doorway, which
+                 * is what a repel is for, and what leaves is a bomb of the
+                 * rung it was laid at -- the same rung it has been wearing as
+                 * its colour the whole time it sat there, so the thing flying
+                 * away is recognisably the thing that was posted. Whoever laid
+                 * it still owns it, so it can still kill them. */
+                if (is_mine(&cfg->specs[o->spec])) {
+                    uint8_t b = bomb_spec_at(cfg, s, o->owner, o->level);
+                    if (b != SIM_NO_PATTERN) {
+                        o->spec = b;
+                        o->left = cfg->specs[b].bounces;
+                        /* It was laid, not thrown, so it never armed a fuse.
+                         * Leaving one latched would hand the bomb a target it
+                         * found while it was furniture. */
+                        o->fuse_target = 255;
+                        o->fuse = 0;
+                    }
+                }
                 /* And its clock starts again. A bomb batted back the way it
                  * came has the whole of its life to make the trip. */
                 o->life = cfg->specs[o->spec].life;
@@ -865,8 +935,11 @@ static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
         uint16_t h = (uint16_t)((int32_t)heading + off);
         int32_t dx, dy;
         heading_dir(h, &dx, &dy);
-        int32_t vx = vx0 + (int32_t)(((int64_t)spec->speed * dx) >> 15);
-        int32_t vy = vy0 + (int32_t)(((int64_t)spec->speed * dy) >> 15);
+        /* A still round ignores what the ship was doing and takes only its own
+         * speed, which for a mine is none. See `still` on the spec. */
+        int32_t bx = spec->still ? 0 : vx0, by = spec->still ? 0 : vy0;
+        int32_t vx = bx + (int32_t)(((int64_t)spec->speed * dx) >> 15);
+        int32_t vy = by + (int32_t)(((int64_t)spec->speed * dy) >> 15);
         spawn_weapon(s, p->spec, owner, team, x, y, vx, vy, spec->life,
                      spec->bounces, depth, mods, level,
                      shrap_level, shrap_bounce);
@@ -1609,9 +1682,17 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 /* A charge carries none of the pilot's add-ons. It is a thing
                  * you found whole, not a weapon you have been improving, and
                  * a repel that inherited shrapnel would be a surprise nobody
-                 * asked for. */
+                 * asked for.
+                 *
+                 * It does carry their bomb rung. A charge has no ladder of its
+                 * own, so a mine has nowhere else to get one, and a mine is
+                 * the bomb you leave behind: what it does and what colour it
+                 * is should both be what your bombs are. The repel and the
+                 * burst scale with nothing, so the rung reaches neither of
+                 * them and rides along as the number the client paints from. */
                 spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
-                              sh->vx, sh->vy, sh->heading, 0, 0, 0, 0, 0, ev);
+                              sh->vx, sh->vy, sh->heading, 0, 0,
+                              sh->level[SIM_TRIG_BOMB], 0, 0, ev);
                 sh->charge[k]--;
                 sh->energy -= cp.energy;
                 /* A charge rides the bomb's clock and locks both, which
@@ -2024,7 +2105,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
              * wants the victim, so a detonation can be drawn stuck to the
              * ship it hit rather than to a coordinate the render smoothing
              * has moved the ship away from. */
-            emit(ev, SIM_EV_EXPIRE, w->spec, 255, pack_pos(w->x, w->y));
+            emit(ev, SIM_EV_EXPIRE, w->spec, 255, pack_pos(w->x, w->y, w->level));
             kill_weapon(next, wi);
             continue;
         }
@@ -2078,7 +2159,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                         w->y = py;
                     }
                     emit(ev, SIM_EV_RICOCHET, w->owner, w->spec,
-                         pack_pos(w->x, w->y));
+                         pack_pos(w->x, w->y, w->level));
                     break;
                 }
                 /* End on the near side of the wall rather than a step inside
@@ -2178,7 +2259,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             weapon_end(next, cfg, spec, w, hit_ship, ev);
             emit(ev, SIM_EV_EXPIRE, w->spec,
                  hit_ship >= 0 ? (uint8_t)hit_ship : 255,
-                 pack_pos(w->x, w->y));
+                 pack_pos(w->x, w->y, w->level));
             kill_weapon(next, wi);
             continue;
         }

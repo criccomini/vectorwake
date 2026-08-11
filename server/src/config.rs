@@ -242,6 +242,12 @@ pub struct WeaponConfig {
     pub on_wall: Option<String>,
     /// Walls survived, when bouncing.
     pub bounces: Option<u8>,
+    /// Whether the round is laid rather than thrown. Everything that flies
+    /// takes the firer's velocity on top of its own speed, which is what
+    /// makes a shot fired at a run faster over the ground. A mine is the one
+    /// that must not: with the velocity added, a speed-zero round leaves at
+    /// exactly the speed the ship was doing and never stops.
+    pub still: Option<bool>,
     // What counts as arriving somewhere.
     /// Px from a hull centre that sets it off. 0 is contact, which is a bullet.
     pub trigger: Option<i32>,
@@ -255,6 +261,10 @@ pub struct WeaponConfig {
     pub damage: Option<i32>,
     /// Px of blast, falling off to nothing at the rim. 0 lands on one hull.
     pub blast: Option<i32>,
+    /// Px of blast one rung adds, for a weapon whose rung is not a ladder of
+    /// its own. A mine is a charge, so every mine is one spec and the rung it
+    /// wears is the layer's bomb rung.
+    pub blast_up: Option<i32>,
     /// Px/s/10 everything hostile inside the reach is set to. Not an impulse
     /// and not distance-scaled: the far edge is shoved as hard as the middle.
     /// Damage is optional; this is the whole of a repel.

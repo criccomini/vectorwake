@@ -567,6 +567,51 @@ int SpecBlast(lua_State* L) {
     return 1;
 }
 
+// Blast one rung adds, for the weapon whose rung is not a ladder of its own.
+// A mine is one spec whatever rung was posted, so the ring a detonation is
+// drawn at has to be composed the way the core composes it -- base plus the
+// round's rung times this -- or a rung three mine flashes a rung one hole
+// while dealing a rung three one.
+int SpecBlastUp(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_cfg.spec_count) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.specs[i].blast_up / 256.0);
+    return 1;
+}
+
+// Whether a spec's rounds are laid rather than thrown: they take none of the
+// firer's velocity, so they stay where they were let go.
+//
+// With a blast beside it this is what a mine is, and the core's own test is
+// the same pair. Drawn from the fields rather than from a slot number or a
+// name, so a zone that puts a mine somewhere else still gets one that looks
+// like a mine, and one that puts something else in slot two does not.
+int SpecStill(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    lua_pushboolean(L, i >= 0 && i < g_cfg.spec_count && g_cfg.specs[i].still);
+    return 1;
+}
+
+// The radius a spec's fuse senses at, in world pixels; 0 is a contact round.
+//
+// A mine draws its own reach once a second, which is the only thing in the
+// game that tells a pilot how far a weapon reaches instead of making them
+// learn it by dying. That ring has to be the real number or it teaches the
+// wrong lesson, so it comes from the spec rather than from a constant in the
+// renderer that a zone could quietly make a lie.
+int SpecTrigger(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_cfg.spec_count) {
+        lua_pushnumber(L, 0);
+        return 1;
+    }
+    lua_pushnumber(L, g_cfg.specs[i].trigger / 256.0);
+    return 1;
+}
+
 // How long a spec's rounds live, in ticks.
 //
 // Read for one reason: a weapon whose life is a single tick is one no watcher
@@ -1086,6 +1131,9 @@ const luaL_reg kFunctions[] = {
     {"ship_extents", ShipExtents},
     {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},
+    {"spec_blast_up", SpecBlastUp},
+    {"spec_still", SpecStill},
+    {"spec_trigger", SpecTrigger},
     {"spec_life", SpecLife},
     {"spec_level", SpecLevel},
     {"shrap_count", ShrapCount},

@@ -45,9 +45,10 @@ typedef struct {
      * Terrier's actual behaviour and we get it for nothing. */
     uint8_t gun_barrels;
     uint16_t gun_mods, bomb_mods;
-    /* How many of each charge, by slot: repel, burst. RepelMax and BurstMax
-     * are 3 on all eight of the original's ships and none of them starts
-     * holding any. */
+    /* How many of each charge, by slot: repel, burst, mine. RepelMax and
+     * BurstMax are 3 on all eight of the original's ships and none of them
+     * starts holding any; MineMax is 3 there too, on every hull that carries
+     * mines at all. */
     uint8_t charges[SIM_MAX_CHARGES];
 } class_row;
 
@@ -104,9 +105,10 @@ static const sim_class_units flight = {
 #define BOMB_THRUST     400   /* BombThrust: the recoil of letting one go */
 #define BOMB_BLAST       80   /* BombExplodePixels, for an L1 bomb */
 
-/* The charge slots the baseline uses. A zone can fill the other two. */
+/* The charge slots the baseline uses. A zone can fill the one left over. */
 #define CH_REPEL 0
 #define CH_BURST 1
+#define CH_MINE  2
 
 /* Two bits per add-on, so a row reads as a list rather than a number. */
 #define M1(a) ((uint16_t)(1u << ((a) * 2)))
@@ -189,33 +191,37 @@ static const class_row rows[SIM_MAX_CLASSES] = {
        started at L2 where everyone else started at L1, and this core has no
        equivalent: every hull spawns on the bottom rung and climbs by green.
 
-       gun  bomb  barrels  gun add-ons  bomb add-ons          charges */
-    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}},
+       Every hull carries all three charges the roster fills, because every
+       one of them carries a rack: a mine is the bomb you leave behind, and a
+       hull that may throw one may post one.
+
+       gun  bomb  barrels  gun add-ons  bomb add-ons   repel burst mine */
+    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 3, 0}},
     /* Wedge and Anvil are the bombers, so they are the hulls that hold the
        most shrapnel, which here is a deeper rung on the add-on rather than
        the count the original's ShrapnelMax is. */
     {3, 2, 1, GUN_ALL,
-     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}},
+     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 3, 0}},
     /* Spread is Chord's and freeze is ours: neither has a setting in the
        original, so add-on ceilings are where our roster still lives. */
     {3, 2, 1, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE) | M1(SIM_MOD_FREEZE),
-     BOMB_ALL,                                             {3, 3, 0, 0}},
+     BOMB_ALL,                                             {3, 3, 3, 0}},
     /* The Leviathan: MaxBombs 3. */
     {3, 3, 1, GUN_ALL,
-     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}},
-    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}},
+     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 3, 0}},
+    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 3, 0}},
     /* Facet carries the Terrier's DoubleBarrel, the one hull that fires two
        abreast for one pull. The multifire ceiling of two is Chord's as well,
        so the barrels are what actually tell the two spread hulls apart: the
        Chord has to find greens to fan at all, and the Facet is already
        throwing a wall of lead the moment it spawns. */
     {3, 2, 2, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE), BOMB_ALL,
-                                                           {3, 3, 0, 0}},
+                                                           {3, 3, 3, 0}},
     /* Lattice is the Lancaster: BombBounceCount is 1 on that ship and 0 on
        every other, so bombs that come back off a wall are its alone. Push is
        ours and stays with it for the same reason. */
     {3, 2, 1, GUN_ALL,
-     BOMB_ALL | M2(SIM_MOD_BOUNCE) | M2(SIM_MOD_PUSH),     {3, 3, 0, 0}},
+     BOMB_ALL | M2(SIM_MOD_BOUNCE) | M2(SIM_MOD_PUSH),     {3, 3, 3, 0}},
 };
 #undef GUN_ALL
 #undef BOMB_ALL
@@ -535,7 +541,57 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         bf.delay = 120;
         cfg->charge[1] = (uint8_t)sim_add_pattern(cfg, &bf);
 
-        cfg->charge[2] = SIM_NO_PATTERN;
+        /* The mine: the bomb you leave behind you.
+         *
+         * Every field here is one the model already had, which is the whole
+         * argument for it being a charge rather than a mechanism. Speed zero
+         * and `still` is a round that stays where it was let go. A minute of
+         * life with `expire_ends` is a timer that goes off rather than a round
+         * that quietly stops existing. A trigger is the fuse. A blast is what
+         * it does when either of those finds somebody. Nothing in the update
+         * loop knows a mine from a bomb.
+         *
+         * `still` is the one field that had to be added, and only because a
+         * mine is the first weapon that does not want the ship's velocity.
+         *
+         * Two tiles of fuse, against the three a proximity bomb senses at. A
+         * mine is already the round you cannot see coming, and it does not
+         * have to be dodged in the air first, so it reaches less far than the
+         * bomb whose whole cost is being thrown accurately. */
+        sim_weapon_spec mn;
+        memset(&mn, 0, sizeof mn);
+        mn.speed = 0;
+        mn.still = 1;
+        /* Two minutes. MineAliveTime in the original, whose own help file
+         * bounds it at 200 to 60000 hundredths -- two seconds to ten minutes
+         * -- and neither that file nor the settings template carries a
+         * default, so the number itself is ours rather than inherited.
+         *
+         * It was a minute, which was the bomb's alive time reused on the
+         * argument that a mine is the bomb you leave behind. That reasoning
+         * holds for the damage and not for the clock: a bomb's minute means
+         * "until it hits something", and a mine's means how long the ground
+         * it denies stays denied. A minute is a tenth of what the original
+         * would even accept, and zone denial that expires while the fight is
+         * still in the room is not denial. */
+        mn.life = 12000;
+        mn.on_wall = SIM_WALL_END;
+        mn.expire_ends = 1;
+        mn.trigger = 2 * 16 * 256;
+        mn.damage = sim_units_energy(BOMB_DAMAGE);
+        /* The rung the pilot's bombs are on, since a charge has no ladder of
+         * its own to climb. Base plus one step per rung is the bomb ladder's
+         * own arithmetic, so a rung 3 mine makes a rung 3 bomb's hole. */
+        mn.blast = BOMB_BLAST * 256;
+        mn.blast_up = BOMB_BLAST * 256;
+        mn.splinter = SIM_NO_PATTERN;
+        sim_fire_pattern mf;
+        memset(&mf, 0, sizeof mf);
+        mf.spec = (uint8_t)sim_add_spec(cfg, &mn);
+        mf.count = 1;
+        mf.delay = 120;
+        cfg->charge[CH_MINE] = (uint8_t)sim_add_pattern(cfg, &mf);
+
         cfg->charge[3] = SIM_NO_PATTERN;
         /* Repel=70 and Burst=70, and they are the two heaviest entries in the
          * original's table by a distance -- almost twice a stat. A charge is
@@ -545,7 +601,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * the hull would otherwise accept. */
         cfg->prize_weight[SIM_PRIZE_CHARGE(0)] = 70;
         cfg->prize_weight[SIM_PRIZE_CHARGE(1)] = 70;
-        cfg->prize_weight[SIM_PRIZE_CHARGE(2)] = 0;
+        cfg->prize_weight[SIM_PRIZE_CHARGE(2)] = 70;
         cfg->prize_weight[SIM_PRIZE_CHARGE(3)] = 0;
     }
 

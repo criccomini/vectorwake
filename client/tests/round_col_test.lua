@@ -38,20 +38,27 @@ end
 -- one: a rung is a row of its own with more damage on it. Spec 5 is the burst,
 -- fired from a charge and on nobody's ladder. Spec 6 is the fragment, also on
 -- nobody's ladder and for a different reason, and the whole point of the file.
+-- Spec 7 is the mine, and it is the third reason a rung cannot come off the
+-- spec: a mine is a charge, so every mine in the game is one spec whatever
+-- rung was posted, and the ladder it wears is its layer's bomb ladder.
 local SPECS = {
     [1] = {life = 550, level = 0}, [2] = {life = 550, level = 1},
     [3] = {life = 550, level = 2}, [4] = {life = 550, level = 3},
     [5] = {life = 550, level = -1},
     [6] = {life = 550, level = -1},
+    [7] = {life = 6000, level = -1, blast = 80, still = true, trigger = 32},
 }
 local BOLT = {[0] = 1, [1] = 2, [2] = 3, [3] = 4}
+local MINE = 7
 
 -- One round in the air at a time. Each row is what `weapon_at` hands back.
 local air = nil
 
 _G.sim = {
     tick = function() return 1000 end,
-    spec_blast = function() return 0 end,
+    spec_blast = function(id) return (SPECS[id] or {}).blast or 0 end,
+    spec_still = function(id) return (SPECS[id] or {}).still or false end,
+    spec_trigger = function(id) return (SPECS[id] or {}).trigger or 0 end,
     spec_life = function(id) return (SPECS[id] or {}).life or 0 end,
     spec_level = function(id) return (SPECS[id] or {}).level or -1 end,
     weapon_count = function() return air and 1 or 0 end,
@@ -84,6 +91,19 @@ function layer:seg_fade(...) rec("seg_fade", ...) end
 function layer:halo(...) rec("halo", ...) end
 function layer:ring(...) rec("ring", ...) end
 function layer:disc(...) rec("disc", ...) end
+-- What a mine is made of. Two of these cannot go through `rec`, which reads
+-- the colour off the end of the argument list: `seg` carries a cap flag after
+-- its colour, and `fan` takes a table of points rather than a run of numbers,
+-- which the flattening would record as one opaque value.
+function layer:ring_fade(...) rec("ring_fade", ...) end
+function layer:seg(x1, y1, x2, y2, width, col)
+    drawn[#drawn + 1] = {kind = "seg", args = {x1, y1, x2, y2, width}, col = col}
+end
+function layer:fan(pts, col)
+    local a = {}
+    for i = 1, #pts do a[i] = pts[i] end
+    drawn[#drawn + 1] = {kind = "fan", args = a, col = col}
+end
 
 local CULL = {x0 = 0, y0 = 0, x1 = 800, y1 = 600}
 
@@ -168,6 +188,33 @@ for lvl = 0, 3 do
     check(string.format("and rung %d has not reached them", lvl),
           not burst:find(hex(pal.rung(lvl)), 1, true), "drawn " .. burst)
 end
+
+-- --- a mine wears the rung of the bombs that laid it ------------------------
+
+-- A charge, like the burst, and drawn nothing like it. The burst has no rung
+-- because nobody's ladder reaches it; a mine has one because it *is* the bomb
+-- you left behind, and the core hands the layer's bomb rung to the round for
+-- exactly this. Violet here would say "a thing you found whole", which is
+-- true of the charge and false of what it puts on the floor.
+for lvl = 0, 3 do
+    local got = palette_of(draw({spec = MINE, level = lvl}))
+    check(string.format("a mine laid off rung %d bombs is rung %d", lvl, lvl),
+          got:find(hex(pal.rung(lvl)), 1, true) ~= nil,
+          "drawn " .. got .. ", want " .. hex(pal.rung(lvl)))
+    check(string.format("and a rung %d mine is not violet", lvl),
+          not got:find(hex(pal.BURST), 1, true), "drawn " .. got)
+end
+
+-- Two rungs apart are two colours apart, which is the property the ramp exists
+-- for and the one a single shared spec would have quietly cost.
+check("and two mines off different rungs do not match",
+      palette_of(draw({spec = MINE, level = 0}))
+      ~= palette_of(draw({spec = MINE, level = 3})))
+
+-- It is a mine rather than a bomb on the screen, too: the shapes differ, and
+-- the dark centre is the whole of what separates them at a glance.
+check("a mine is not drawn as a bomb",
+      not same_shape(draw({spec = MINE, level = 2}), draw({spec = BOLT[2]})))
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

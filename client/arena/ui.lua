@@ -996,6 +996,35 @@ end
 -- no wash can quiet one. The only way past that is to not draw it.
 local wait_box = nil
 
+-- What a kill paid, rising off the wreck.
+--
+-- Only ever your own. The number is a reward, and a reward somebody else
+-- collected is not news worth putting over the fight; the feed already says
+-- who took whom. It is raised from the zone's kill message rather than from
+-- the local simulation, for the reason the feed line is: prediction kills the
+-- same pilot once per rollback, and the zone announces each death exactly
+-- once with what it paid.
+--
+-- Anchored in the world, so it drifts off the spot the hull died on rather
+-- than off a point on the screen, and a player who is still moving watches it
+-- fall behind them the way the wreck does.
+local payouts = {}
+local PAYOUT_LIFE = 1.4    -- seconds from the kill to gone
+local PAYOUT_RISE = 26     -- points travelled in that time
+local PAYOUT_HOLD = 0.25   -- the fraction of it spent at full strength
+
+-- Raised by whoever drains the kills. World coordinates, because that is
+-- where the wreck is.
+function M.payout(x, y, n)
+    payouts[#payouts + 1] = {x = x, y = y, n = n, t0 = M.now}
+end
+
+-- A new arena is not the one the last number was earned in. Cheap to call and
+-- it costs nothing when there is nothing to drop.
+function M.clear_payouts()
+    for i = #payouts, 1, -1 do payouts[i] = nil end
+end
+
 local function nameplates(o)
     if not o.half_w or o.half_w <= 0 then return end
     -- The render script publishes its own half-extents for exactly this, so
@@ -1076,6 +1105,35 @@ local function nameplates(o)
             end
         end
     end
+
+    -- The payouts, drifting off the wrecks that paid them. Walked backwards
+    -- into itself so an expired one is dropped in the same pass that draws
+    -- the rest, and the list stays as short as the killing is fast.
+    local live = 0
+    for k = 1, #payouts do
+        local p = payouts[k]
+        local age = M.now - p.t0
+        if age >= 0 and age < PAYOUT_LIFE then
+            live = live + 1
+            payouts[live] = p
+            local f = age / PAYOUT_LIFE
+            local px = W / 2 + (p.x - o.cam_x) * scale
+            local py = H / 2 + (p.y - o.cam_y) * scale
+            -- Full for the first quarter and then out. A number that starts
+            -- fading on the frame it appears is one nobody finishes reading,
+            -- and this one appears in the middle of the thing that earned it.
+            local a = 1
+            if f > PAYOUT_HOLD then
+                a = 1 - (f - PAYOUT_HOLD) / (1 - PAYOUT_HOLD)
+            end
+            -- The bounty's own size and offset, in the green the feed already
+            -- uses for a line about a kill of yours. Up is negative here: the
+            -- name sits at +13 and the bounty at +25, under it.
+            txt("+" .. p.n, px + 12 * S, py + 13 * S - PAYOUT_RISE * S * f,
+                11 * S, pal.a(pal.PRIZE, 0.95 * a), nil, nil, true)
+        end
+    end
+    for k = #payouts, live + 1, -1 do payouts[k] = nil end
 
     -- Not your own, for the same reason your name is not drawn: a bounty under
     -- your hull is a number about you, in the one place on screen you are

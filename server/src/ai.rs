@@ -2129,12 +2129,19 @@ mod tests {
         // And it ended up somewhere nobody is. Sight is 960 px, so clearing it
         // is the whole point: a pilot that logs off inside somebody's radar
         // has popped in front of them however politely it got there.
+        //
+        // Somebody, not something. A ship waiting to respawn is still active
+        // and still sitting at the coordinates it died on, and it is watching
+        // nothing at all -- `scan` skips the dead when it decides a horizon is
+        // clear, so counting them here asked the departure for a quiet the
+        // code never promised and does not owe. This measured a corpse 820 px
+        // from a pilot that had correctly waited for an empty room.
         let me = &w.state.ships[leaver as usize];
         let (mx, my) = (me.x as f32 / 256.0, me.y as f32 / 256.0);
         let mut nearest = f32::INFINITY;
         for b in bots.iter().skip(1) {
             let o = &w.state.ships[b.ship as usize];
-            if o.active == 0 {
+            if o.active == 0 || o.alive == 0 {
                 continue;
             }
             let (dx, dy) = (o.x as f32 / 256.0 - mx, o.y as f32 / 256.0 - my);

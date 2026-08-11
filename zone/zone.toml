@@ -184,10 +184,16 @@ charges = [3, 3]
 #
 # Units are the file's: px, px/s/10, energy, ticks, and degrees.
 #
-#   speed life on_wall bounces      how it flies (end, bounce, pass)
+#   speed life on_wall bounces still    how it flies (end, bounce, pass)
 #   trigger expire_ends splinter    what counts as arriving somewhere
-#   damage blast push push_time stall    what happens there
+#   damage blast blast_up push push_time stall    what happens there
 #   count spread energy delay recoil    what one pull of the trigger makes
+#
+# `still` is the odd one and it is what a mine is made of. Every round takes
+# the firer's velocity on top of its own speed, which is why a shot fired at a
+# run is faster over the ground; a speed-zero round with that added leaves at
+# exactly the speed the ship was doing and never stops. `still = true` is a
+# round that stays where it was let go.
 #
 # Three examples, all off. Uncomment one and save; the zone re-reads it and
 # every client in the room gets the new table without reconnecting.
