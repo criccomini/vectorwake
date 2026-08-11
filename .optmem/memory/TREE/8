@@ -1,1 +1,2 @@
 vectorwake: decision 40 leaves remote death fx to server confirmation; bot leaver deadlock fixed; Safari WebTransport needs createWritable(); reroll 429s at 30/hour per IP, now shown; Clanker Constitution vendored at root; GitHub API here needs MCP tools, not curl.                      
+Shipped: turrets/gunners (sim_attach, C2S_ATTACH=10, d to detach, drone ring), the Facet's second barrel from Subspace's Terrier, and mapgen redrawn for a 3-tile hull with symmetric centred shapes. Alpha ships seed 28, drill-picked to match the old map.                                  

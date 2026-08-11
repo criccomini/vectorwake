@@ -260,12 +260,21 @@ make -C sim build/mapdump
 
 ```sh
 make -C sim build/mapgen
-./sim/build/mapgen catalog/zones/alpha/alpha.vwmap 23
+./sim/build/mapgen catalog/zones/alpha/alpha.vwmap 28
 ```
 
-Seed 23 is the shipped map, and the seed is the whole of its provenance: the
+Seed 28 is the shipped map, and the seed is the whole of its provenance: the
 same number gives the same map on any machine, so a file in the repository can
 be explained by a command rather than by whoever happened to draw it.
+
+Which seed ships is a drill result rather than a preference, and this one was
+picked the same way seed 23 was before it. Twelve candidates were flown by
+the full roster and the one whose kill rate, accuracy, time to first contact
+and fighting share landed on top of the map it replaced was kept. That
+matters because the spread between maps is wide: across seven maps of this
+family the kill rate runs from 0.60 to 0.98 a bot-minute and the time to
+first contact from 41 to 58 seconds, so a new map is only the same game as
+the old one if somebody checks.
 
 It exists because the map that shipped before it was a converted `.lvl` from
 an existing zone, which is somebody else's drawing however it reaches us.
@@ -309,6 +318,18 @@ this replaced has no empty square at all: its emptiest is 1.6 per cent wall
 and its fullest 7.3. Sorted into 32-tile squares, a fifth of them are empty.
 It varies enormously up close and hardly at all across the map, and only two
 levels of placement give you both.
+
+**Then it walks out to whatever ground the dice missed.** Districts say where
+building is likely, not where it happens, so a seed can leave a hundred tiles
+of open field with nothing on it at all. Measured across seeds, the share of
+open ground more than forty tiles from any wall ran from under 3 per cent to
+over 8, which is the difference between a map with lanes in it and a map with
+a car park in the middle. So a last pass picks a tile at random from whatever
+is beyond that distance, drops a group beside it, and repeats until the share
+is down to 3 per cent. It is not a density knob: the wall it adds only goes
+where there was none for forty tiles in any direction, and it stops as soon
+as the map is inside the figure. Across the twelve selftest seeds it holds
+that share between 2.3 and 3.9 per cent, against 2.9 to 8.3 without it.
 
 Five large halls are placed first as landmarks, since rejection sampling gives
 the last caller whatever room is left and a map wants its big pieces sited
@@ -370,10 +391,10 @@ a wall to undo it.
 All of that used to be measured one tile at a time, and one tile is not a
 ship. Read that way a single-tile notch counts as a way in, so structures
 nothing could enter passed the check, and the pass that joined the pockets up
-dug single-tile channels that satisfied it and let nobody through. Seed 23
-shipped that way: 59 separate regions a hull could fly and 16,431 tiles of
-open ground it could not reach, doors counted shut, on a map the generator
-had checked and reported as one region.
+dug single-tile channels that satisfied it and let nobody through. The map
+this replaced shipped that way: 59 separate regions a hull could fly and
+16,431 tiles of open ground it could not reach, doors counted shut, on a map
+the generator had checked and reported as one region.
 
 `mapgen --selftest` runs twelve other seeds through the same checks and is
 part of `make -C sim check`, so a change that makes the generator produce

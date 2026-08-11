@@ -12,7 +12,7 @@
  * the layout is this program's, seeded and reproducible. Nothing is traced.
  *
  *   make -C sim build/mapgen
- *   sim/build/mapgen catalog/zones/alpha/alpha.vwmap 23
+ *   sim/build/mapgen catalog/zones/alpha/alpha.vwmap 28
  *
  * The seed is the whole of the map's provenance: same seed, same map, on any
  * machine, which is what lets the file be committed and still be explained.
@@ -456,6 +456,10 @@ static int pick_district(void) {
     return 0;
 }
 
+/* When set, a cluster is placed near here instead of at a district's site.
+ * `fill_voids` below is the only caller that sets it. */
+static int aim_x = -1, aim_y = -1;
+
 /* Structures do not sit alone at even spacing. They come in groups of two to
  * six of the same kind at the same size, in a row or a small grid. That is
  * what gives a map a ten-tile nearest-neighbour spacing at the same time as
@@ -473,7 +477,7 @@ static int place_cluster(int big) {
      * two walls is a lane no hull fits down: the widest of them is 34 pixels
      * across the beam and a two-tile lane is 32, so it reads as a way
      * through from every distance except the one you find out at. */
-    int gap = big ? (chance(45) ? 0 : rr(4, 6)) : rr(8, 16);
+    int gap = big ? (chance(45) ? 0 : rr(4, 6)) : rr(7, 16);
     int cw = cols * w + (cols - 1) * gap;
     int ch = rows * h + (rows - 1) * gap;
     if (cw > 260 || ch > 260) return 0;
@@ -482,11 +486,17 @@ static int place_cluster(int big) {
     if (m < 0) return 0;
 
     for (int tries = 0; tries < 24; tries++) {
-        int d = pick_district();
-        int k = (int)(rnd() % (uint32_t)districts[d].n);
-        int rad = districts[d].site[k].r;
-        int x = districts[d].site[k].x + rr(-rad, rad) - cw / 2;
-        int y = districts[d].site[k].y + rr(-rad, rad) - ch / 2;
+        int x, y;
+        if (aim_x >= 0) {
+            x = aim_x + rr(-20, 20) - cw / 2;
+            y = aim_y + rr(-20, 20) - ch / 2;
+        } else {
+            int d = pick_district();
+            int k = (int)(rnd() % (uint32_t)districts[d].n);
+            int rad = districts[d].site[k].r;
+            x = districts[d].site[k].x + rr(-rad, rad) - cw / 2;
+            y = districts[d].site[k].y + rr(-rad, rad) - ch / 2;
+        }
         if (x < EDGE + 2 || y < EDGE + 2) continue;
         if (x + cw >= TILES - EDGE - 3 || y + ch >= TILES - EDGE - 3) continue;
         if (!clear_box(x, y, cw, ch, rr(4, 9))) continue;
@@ -519,6 +529,96 @@ static int place_cluster(int big) {
         return cols * rows;
     }
     return 0;
+}
+
+/* ---- the far corners of the field ---------------------------------------
+ *
+ * Placement is rejection sampling against districts, so where the dice put
+ * nothing there is nothing, and the map that falls out has as much bare
+ * ground as this seed happened to leave. Measuring it across seeds, the
+ * share of open ground more than forty tiles from any wall runs from under
+ * three per cent to over eight, which is the difference between a map with
+ * lanes in it and a map with a car park in the middle.
+ *
+ * The measured 1998 map has 1.7% at that distance. So this picks a tile out
+ * of whatever is beyond it, drops a group beside it, and goes again until
+ * the share is down to the target. It is not a density knob: the wall it
+ * adds goes only where there was none for forty tiles in any direction, and
+ * it stops as soon as the map is inside the figure the measurements ask for.
+ *
+ * Chebyshev distance, which is what a chamfer over eight neighbours gives
+ * and is the right metric for a sight line rather than for a walk. */
+static int32_t *dist;
+
+static void wall_distance(void) {
+    for (size_t i = 0; i < (size_t)TILES * TILES; i++)
+        dist[i] = SIM_TILE_CLASS(T[i]) == SIM_TILE_SOLID ? 0 : TILES;
+    for (int y = 0; y < TILES; y++)
+        for (int x = 0; x < TILES; x++) {
+            size_t i = (size_t)y * TILES + x;
+            if (!dist[i]) continue;
+            int32_t d = dist[i];
+            for (int j = -1; j <= 0; j++)
+                for (int k = -1; k <= 1; k++) {
+                    if (j == 0 && k >= 0) continue;
+                    int nx = x + k, ny = y + j;
+                    if (nx < 0 || ny < 0 || nx >= TILES) continue;
+                    if (dist[(size_t)ny * TILES + nx] + 1 < d)
+                        d = dist[(size_t)ny * TILES + nx] + 1;
+                }
+            dist[i] = d;
+        }
+    for (int y = TILES - 1; y >= 0; y--)
+        for (int x = TILES - 1; x >= 0; x--) {
+            size_t i = (size_t)y * TILES + x;
+            if (!dist[i]) continue;
+            int32_t d = dist[i];
+            for (int j = 0; j <= 1; j++)
+                for (int k = -1; k <= 1; k++) {
+                    if (j == 0 && k <= 0) continue;
+                    int nx = x + k, ny = y + j;
+                    if (nx < 0 || nx >= TILES || ny >= TILES) continue;
+                    if (dist[(size_t)ny * TILES + nx] + 1 < d)
+                        d = dist[(size_t)ny * TILES + nx] + 1;
+                }
+            dist[i] = d;
+        }
+}
+
+/* Share of open ground further than `far` tiles from a wall, in hundredths
+ * of a per cent, and one of those tiles picked at random.
+ *
+ * At random rather than the furthest, because the furthest is the same tile
+ * every time and a group that cannot be fitted beside it cannot be fitted
+ * beside it on the next round either. Aiming at the single worst point spent
+ * every attempt on one unbuildable spot. */
+static int void_share(int far, int *bx, int *by) {
+    size_t open_n = 0, out = 0;
+    for (int y = EDGE; y < TILES - EDGE; y++)
+        for (int x = EDGE; x < TILES - EDGE; x++) {
+            size_t i = (size_t)y * TILES + x;
+            if (SIM_TILE_CLASS(T[i]) == SIM_TILE_SOLID) continue;
+            open_n++;
+            if (dist[i] <= far) continue;
+            out++;
+            if (rnd() % (uint32_t)out == 0) { *bx = x; *by = y; }
+        }
+    return open_n ? (int)(10000 * out / open_n) : 0;
+}
+
+static int fill_voids(int far, int target, int rounds) {
+    int placed = 0, stale = 1;
+    for (int i = 0; i < rounds; i++) {
+        int bx = 0, by = 0;
+        if (stale) { wall_distance(); stale = 0; }
+        if (void_share(far, &bx, &by) <= target) break;
+        aim_x = bx;
+        aim_y = by;
+        int n = place_cluster(chance(45));
+        aim_x = aim_y = -1;
+        if (n) { placed += n; stale = 1; }
+    }
+    return placed;
 }
 
 /* ---- the big pieces -----------------------------------------------------
@@ -993,12 +1093,20 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
         wormholes = 1;
     }
 
-    /* Then the field. Asking for more clusters than can fit is how the count
-     * lands where it lands: placement refuses anything that would overlap. */
+    /* Then the field. Asking for far more clusters than can fit is how the
+     * count lands where it lands: placement refuses anything that would
+     * overlap, so what comes out is as much as the spacing rules allow
+     * rather than as much as the dice offered. */
     plan_districts();
     int structures = 0;
-    for (int i = 0; i < 85; i++) structures += place_cluster(1);
-    for (int i = 0; i < 950; i++) structures += place_cluster(0);
+    for (int i = 0; i < 105; i++) structures += place_cluster(1);
+    for (int i = 0; i < 1250; i++) structures += place_cluster(0);
+    /* And then wherever the dice left nothing at all. Three per cent of the
+     * open ground over forty tiles from a wall, which is where the seeds
+     * that came out well already sat and twice as close to the measured
+     * map's 1.7% as the ones that did not. */
+    int filled_in = fill_voids(40, 300, 400);
+    structures += filled_in;
 
     /* Barriers spread over six channels, so a shut lane here is an open one
      * there rather than the whole map breathing in and out together. Enough
@@ -1122,7 +1230,8 @@ int main(int argc, char **argv) {
     sim_map *m = calloc(1, sizeof *m);
     comp = malloc(sizeof(int32_t) * TILES * TILES);
     nav = malloc((size_t)TILES * TILES);
-    if (!m || !comp || !nav) return 1;
+    dist = malloc(sizeof(int32_t) * TILES * TILES);
+    if (!m || !comp || !nav || !dist) return 1;
 
     /* Twelve seeds, none of them the shipped one, because the check worth
      * having is that the generator produces a playable map generally and not
@@ -1131,7 +1240,7 @@ int main(int argc, char **argv) {
         for (uint32_t k = 101; k <= 112; k++)
             if (generate(m, k, 1) != 0) return 1;
         printf("mapgen selftest passed\n");
-        free(nav); free(comp); free(m);
+        free(dist); free(nav); free(comp); free(m);
         return 0;
     }
 
@@ -1148,6 +1257,6 @@ int main(int argc, char **argv) {
     fclose(f);
     printf("  %s: %d bytes, hash %08x, %u features\n", argv[1], n,
            sim_map_hash(m), m->feature_count);
-    free(buf); free(nav); free(comp); free(m);
+    free(buf); free(dist); free(nav); free(comp); free(m);
     return 0;
 }
