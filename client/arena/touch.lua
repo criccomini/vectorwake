@@ -417,7 +417,7 @@ function M.draw(u, w, h, s)
     --
     -- The same square as a charge, because it sits in the same column and a
     -- rail of two shapes reads as two rails. What tells it from a charge is
-    -- the gun's own colour instead of the charge hue, and the absence of pips:
+    -- the gun's own color instead of the charge hue, and the absence of pips:
     -- pips are a count of what is left, and a mode has no stock to run out of.
     -- Dimmed while it is declined, which is the treatment the same add-on
     -- already gets on a weapon mark.

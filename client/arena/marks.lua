@@ -168,7 +168,7 @@ end
 -- it was switched off would read as a fan you no longer had, which is the same
 -- reason a declined add-on stays drawn on a weapon mark.
 --
--- Centred on the cell rather than hung off a muzzle, because there is no round
+-- Centered on the cell rather than hung off a muzzle, because there is no round
 -- here for it to hang from.
 function M.fan(cx, cy, k, col, off)
     local ox = cx - k * M.BOLT_LEN * 0.5
