@@ -987,6 +987,143 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
         }
 
+        // Pilots, filtered by what an operator has typed so far.
+        //
+        // Searched here rather than filtered in the page. A panel that pulls
+        // every account down and greps it in the browser is fine on a
+        // deployment with forty of them and wrong on the one this is built
+        // for: guests are free and accumulate for a week, so the list is
+        // unbounded and the filter belongs where the index is.
+        //
+        // `strpos` rather than `like`, so a `%` or a `_` somebody types is a
+        // character to find and not a wildcard that quietly matches
+        // everything.
+        "/v1/admin/pilots" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let q = s("q");
+            let q = q.trim();
+            // A leading # is how this panel writes an account number, and
+            // typing one should not stop the number being one.
+            let number: i64 = q.trim_start_matches('#').parse().unwrap_or(-1);
+            let q = q.to_string();
+            let rows = db
+                .query(
+                    "select a.id, coalesce(n.call_sign, ''), a.kind, a.banned, a.admin,
+                            exists (select 1 from credentials c
+                                    where c.account = a.id and c.method = 'password'),
+                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI')
+                     from accounts a left join names n on n.account = a.id
+                     where $1 = ''
+                        or strpos(lower(coalesce(n.call_sign, '')), lower($1)) > 0
+                        or a.id = $2
+                     order by a.last_seen desc
+                     limit 100",
+                    &[&q, &number],
+                )
+                .await;
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    // Said rather than inferred from the length, so a page
+                    // showing a hundred rows can say whether that is all of
+                    // them or the first hundred.
+                    "capped": rs.len() == 100,
+                    "pilots": rs.iter().map(|r| {
+                        let kind: i16 = r.get(2);
+                        serde_json::json!({
+                            "account": r.get::<_, i64>(0),
+                            "name": r.get::<_, String>(1),
+                            "kind": match kind_of(kind) {
+                                Kind::Human => "human",
+                                Kind::HouseBot => "house bot",
+                                Kind::ThirdPartyBot => "third-party bot",
+                            },
+                            "banned": r.get::<_, bool>(3),
+                            "admin": r.get::<_, bool>(4),
+                            "claimed": r.get::<_, bool>(5),
+                            "last_seen": r.get::<_, String>(6),
+                        })
+                    }).collect::<Vec<_>>(),
+                })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // Give the admin flag, or take it back.
+        //
+        // Behind the flag itself, which is a real change from how this
+        // shipped: granting used to be SQL an operator ran on the box, so a
+        // leaked panel session could act as an admin and never appoint one.
+        // It can now do both. What is kept is every guard that did not
+        // depend on that containment, and one new one.
+        //
+        // Only a claimed human may hold it. The panel signs in with a
+        // password, which a guest does not have and a bot's `house`
+        // credential is not, and the sweeper deletes idle guests, which is no
+        // way for an operator account to end.
+        //
+        // And the last admin cannot be removed. Two operators disagreeing is
+        // a conversation; a deployment with nobody who can open the panel is
+        // a trip to the database, and the one keystroke between those two
+        // states should not be this one.
+        "/v1/admin/grant" => {
+            let Some(actor) = admin_for(&db, &s("secret")).await else {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            };
+            let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
+            let admin = body.get("admin").and_then(|v| v.as_bool()).unwrap_or(true);
+            let row = db
+                .query_opt(
+                    "select a.kind, a.admin,
+                            exists (select 1 from credentials c
+                                    where c.account = a.id and c.method = 'password')
+                     from accounts a where a.id = $1",
+                    &[&account],
+                )
+                .await;
+            let (kind, held, has_password): (i16, bool, bool) = match row {
+                Ok(Some(r)) => (r.get(0), r.get(1), r.get(2)),
+                Ok(None) => return (404, serde_json::json!({ "error": "no such account" })),
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            if admin && kind_of(kind).is_bot() {
+                return (400, serde_json::json!({
+                    "error": "a bot cannot open the panel; it has no password to sign in with"
+                }));
+            }
+            if admin && !has_password {
+                return (400, serde_json::json!({
+                    "error": "that account has no password, so it could not sign in. \
+                              It has to claim one first"
+                }));
+            }
+            if !admin && held {
+                let others: i64 = db
+                    .query_one("select count(*) from accounts where admin and id <> $1", &[&account])
+                    .await
+                    .map(|r| r.get(0))
+                    .unwrap_or(0);
+                if others == 0 {
+                    return (409, serde_json::json!({
+                        "error": "that is the last admin; granting somebody else first \
+                                  keeps this deployment out of the database"
+                    }));
+                }
+            }
+            let r = db
+                .execute("update accounts set admin = $2 where id = $1", &[&account, &admin])
+                .await;
+            match r {
+                Ok(0) => (404, serde_json::json!({ "error": "no such account" })),
+                Ok(_) => {
+                    println!("meta: admin {actor} set admin={admin} on account {account}");
+                    (200, serde_json::json!({ "account": account, "admin": admin }))
+                }
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
         // Every account currently marked, which is the half of banning the
         // panel could not show: you could mark somebody and never see the
         // list you had built.

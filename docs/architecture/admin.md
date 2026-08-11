@@ -254,14 +254,23 @@ per action rather than per login, so revoking the flag or banning the account
 lands on the next click, not the next session. A client can dress its screen
 up as an admin's and every action still comes back 403.
 
-Two containments back that up. A leaked panel session can act as an admin but
-never appoint one, because granting is not an HTTP action at all. And the
-panel's ban refuses accounts holding the flag, so one compromised session
-cannot lock the other operators out; unseating an admin starts in the
-database. The same shape is why there is no admin token any more: the one
-route it guarded was grant, and a guarded route on a host-network deployment
-is still a thing a compromised neighbour process can call, where SQL against
-the managed database is not.
+An admin appoints other admins from the panel. That is a real reduction in
+containment and it is worth writing down rather than discovering: a leaked
+session, or a bug in the page, can now mint an operator that outlives the
+session it came from, where before the worst it could do was act as one until
+the flag was revoked. The trade bought the thing an operator actually wanted,
+which is adding a second operator without a database credential and a shell.
+
+What survives the trade is every guard that did not depend on that
+containment. Only a claimed human can hold the flag, because the panel signs
+in with a password that a guest does not have and a bot's `house` credential
+is not. The panel's ban refuses accounts holding the flag, so one compromised
+session cannot lock the other operators out. And the last admin cannot be
+revoked, because two operators disagreeing is a conversation while a
+deployment with nobody who can open the panel is a trip to the database.
+
+The first admin of a deployment is still made in the database, since there is
+nobody to grant it yet, and `deploy/README.md` has that one command.
 
 The cost, stated plainly: fleet-wide reach now stands behind a password whose
 only floor is six characters. The login throttle holds guessing to ten tries

@@ -1678,25 +1678,34 @@ The catalog's `[[staff]]` table keys on call signs, which are server-dealt
 words no operator's account holds and rerollable besides; it stays for the
 day named verbs need named powers, per decision 26.
 
-Granting is not an HTTP action at all. No route writes the flag: setting and
-clearing it are SQL run by the operator on the central host, which retired
-`VW_ADMIN_TOKEN` and the `/v1/ban` curl with it. A grant route behind that
-token was drafted first and dropped, because on a host-network deployment a
-guarded route is still a thing a compromised neighbour process can call,
-where the managed database is not; the operator's authority is the database
-credential they already hold. A leaked panel session can therefore act as an
-admin but never appoint one, and the panel's ban refuses flagged accounts,
-so one rogue session cannot lock the other operators out. Grant only claimed
-accounts: the panel signs in with a password, which a guest does not have,
-and the sweeper skips flagged accounts rather than collecting an operator
-mistake.
+Granting moved twice and landed in the panel. It began as a route behind
+`VW_ADMIN_TOKEN`, then became SQL an operator ran against the database, which
+retired that token and the `/v1/ban` curl with it. It is now an admin action
+like the others.
+
+Each move traded containment for reach, and the last one is the largest: a
+leaked session or a bug in the page can mint an operator that outlives it,
+where the database-only arrangement meant the worst a session could do was
+act as an admin until somebody revoked it. What that bought is adding a
+second operator without a shell and a database credential, which is the thing
+an operator actually wanted and the reason this panel exists at all.
+
+The guards that did not depend on the containment all survive. Only a claimed
+human may hold the flag, since the panel signs in with a password a guest
+does not have and a bot's `house` credential is not. The panel's ban refuses
+flagged accounts, so one rogue session cannot lock the others out. The last
+admin cannot be revoked, because a deployment with nobody who can open the
+panel is a trip to the database. And the first admin is still made there,
+since there is nobody to grant it yet.
 
 **Cost:** Fleet-wide reach behind a password whose floor is six characters,
 throttled to ten guesses a quarter hour per name. [admin.md](admin.md) wanted
 a passkey or an SSO front before any surface returned, and this trades that
-bar for a credential the fleet already had. Also a second certificate, priced
-low now that the store survives reinstalls and a burned limit on the admin
-name strands only the panel.
+bar for a credential the fleet already had. That cost rose when granting
+moved into the panel: one guessed password now appoints operators rather than
+only impersonating one. Also a second certificate, priced low now that the
+store survives reinstalls and a burned limit on the admin name strands only
+the panel.
 
 **Reconsider if:** the panel grows verbs with different blast radii, which is
 when one flag stops being an authority model; or a password behind fleet

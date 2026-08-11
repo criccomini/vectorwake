@@ -83,6 +83,7 @@ async function arrive(name) {
 
 function refresh() {
   drawFleet().catch(() => {});
+  drawPilots(el("lookup-q").value.trim()).catch(() => {});
   drawBans().catch(() => {});
   drawAdmins().catch(() => {});
 }
@@ -324,14 +325,26 @@ function rooms(i) {
   const box = document.createElement("span");
   box.className = "rooms";
   const head = document.createElement("span");
-  head.textContent = `${i.rooms.length}/${i.max_rooms}`;
+  // A meta-layer that predates rooms travelling whole sends a count here.
+  // The page and the server update on different clocks, so for a few minutes
+  // after a deploy this reads the old shape, and a panel that draws nothing
+  // is a worse answer than one that draws what it was sent.
+  const list = Array.isArray(i.rooms) ? i.rooms : [];
+  const count = Array.isArray(i.rooms) ? i.rooms.length : i.rooms || 0;
+  head.textContent = `${count}/${i.max_rooms}`;
   box.append(head);
-  for (const r of i.rooms) {
-    const cell = document.createElement("span");
-    cell.className = r.full ? "room full" : "room";
-    cell.textContent = `#${r.number} ${r.players}`;
-    if (r.bots) cell.textContent += `+${r.bots}`;
-    box.append(cell);
+  // The breakdown only when there is something to break down. One room holds
+  // whatever the players and bots columns already say, so repeating it beside
+  // them taught nobody anything and read as a code to be cracked.
+  if (list.length > 1) {
+    for (const r of list) {
+      const cell = document.createElement("span");
+      cell.className = r.full ? "room full" : "room";
+      cell.textContent = `#${r.number}: ${r.players} playing`;
+      if (r.bots) cell.textContent += `, ${r.bots} bots`;
+      if (r.full) cell.textContent += ", full";
+      box.append(cell);
+    }
   }
   return box;
 }
@@ -426,6 +439,20 @@ async function drawFleet() {
     noteOwner = null;
   }
 
+  try {
+    draw(f);
+  } catch (e) {
+    // A render that throws used to reach the caller's `.catch(() => {})` and
+    // vanish, leaving column headings over an empty table and no hint why.
+    // The likeliest cause is the page being newer than the meta-layer, which
+    // happens on every deploy: the static files ship from the checkout in a
+    // minute and the binary ships as an image after CI.
+    tell("fleet-note", `cannot draw the fleet: ${e.message}. If a deploy just landed, the page may be ahead of the server; it will agree again shortly.`);
+    noteOwner = "fleet";
+  }
+}
+
+function draw(f) {
   remember(f.instances);
   const rows = f.instances.map((i) => {
     const h = history.get(i.instance) || [];
@@ -570,7 +597,7 @@ function drawPilot(p) {
   row("last seen", p.last_seen);
   row("standing", p.banned ? `banned: ${p.reason || "no reason recorded"}` : "in good standing",
       p.banned ? "bad" : "good");
-  if (p.admin) row("admin", "holds the flag", "good");
+  if (p.admin) row("admin", "yes", "good");
   dl.hidden = false;
 
   el("pilot-edit").hidden = false;
@@ -580,14 +607,78 @@ function drawPilot(p) {
   el("name-text").value = "";
   el("name-form").hidden = p.kind !== "human";
 
-  // Admins are not bannable from here either, for the same reason: the
-  // server refuses, and a button that is not there is a kinder refusal.
   const form = el("ban-form"), button = el("ban-button");
-  form.hidden = p.admin;
+  form.hidden = false;
+  // An admin is not bannable: the server refuses, and a button that is not
+  // there is a kinder refusal than one that is.
+  button.hidden = p.admin;
+  el("kick-button").hidden = p.admin;
+  el("ban-reason").parentElement.hidden = p.admin;
   button.textContent = p.banned ? "unban" : "ban";
   button.className = p.banned ? "" : "ban";
   el("ban-reason").value = p.banned ? p.reason || "" : "";
+
+  // The flag. Only a claimed human can hold one, because the panel signs in
+  // with a password, so the button is drawn only where it could work.
+  const flag = el("admin-button");
+  const grantable = p.kind === "human" && (p.admin || p.claimed);
+  flag.hidden = !grantable;
+  flag.textContent = p.admin ? "revoke admin" : "make admin";
+  flag.className = p.admin ? "ban" : "";
 }
+
+// ------------------------------------------------------------------ pilots
+
+// The list under the filter. Searched on the server, because guests are free
+// and accumulate for a week, so the set is unbounded and the index is where
+// the filtering belongs.
+//
+// Typing is debounced: a keystroke is not a question worth asking a database,
+// and 180ms is under the gap between two keys and over the gap inside one
+// word.
+let typing = null;
+
+async function drawPilots(q) {
+  let r;
+  try {
+    r = await post("/v1/admin/pilots", { secret, q: q || "" });
+  } catch (e) {
+    tell("pilots-note", e.message);
+    return;
+  }
+  const list = r.pilots || [];
+  fill("pilots", list.map((p) => {
+    // The call sign opens the card. A button rather than a click handler on
+    // the row, so a keyboard reaches it and a screen reader calls it what it
+    // is.
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "link pick";
+    pick.textContent = p.name || "(none)";
+    pick.addEventListener("click", () => lookup(`#${p.account}`));
+    return [
+      `#${p.account}`,
+      pick,
+      p.kind === "human" ? (p.claimed ? "human" : "guest") : p.kind,
+      [p.banned ? "banned" : p.admin ? "admin" : "", p.banned ? "bad" : "good"],
+      p.last_seen,
+    ];
+  }));
+  const note = el("pilots-note");
+  if (!list.length) {
+    note.textContent = q ? `nobody matches ${q}` : "no pilots yet";
+  } else if (r.capped) {
+    note.textContent = "the first 100, most recently seen first; keep typing to narrow it";
+  } else {
+    note.textContent = `${list.length} pilot${list.length === 1 ? "" : "s"}`;
+  }
+}
+
+el("lookup-q").addEventListener("input", (ev) => {
+  clearTimeout(typing);
+  const q = ev.target.value.trim();
+  typing = setTimeout(() => drawPilots(q).catch(() => {}), 180);
+});
 
 async function lookup(q) {
   const note = el("lookup-note");
@@ -608,7 +699,8 @@ async function lookup(q) {
 
 el("lookup-form").addEventListener("submit", (ev) => {
   ev.preventDefault();
-  lookup(el("lookup-q").value.trim());
+  const q = el("lookup-q").value.trim();
+  if (q) lookup(q);
 });
 
 // Kick goes to every instance, because a call sign says who and not where.
@@ -651,6 +743,37 @@ el("name-form").addEventListener("submit", (ev) => {
   });
 });
 
+// Granting and revoking the flag. It is the one action on this page that
+// changes who else may use the page, so it asks in the plainest words the
+// dialog has room for.
+async function setAdmin(account, name, admin) {
+  const yes = await ask({
+    title: admin ? "Make this pilot an admin?" : "Revoke this admin?",
+    body: admin
+      ? `${name} will be able to sign in here and do everything you can do, ` +
+        "including making other admins."
+      : `${name} will not be able to sign in here again. Their account, ` +
+        "rating and history are untouched.",
+    ok: admin ? "make admin" : "revoke",
+  });
+  if (yes === null) return;
+  try {
+    await post("/v1/admin/grant", { secret, account, admin });
+    // Re-read first and say so second: `lookup` clears this line on its way
+    // in, so a message set before it is a message nobody sees.
+    if (shown && shown.account === account) await lookup(`#${account}`);
+    drawAdmins().catch(() => {});
+    tell("lookup-note", admin ? `${name} is an admin` : `${name} is no longer an admin`, "ok");
+  } catch (e) {
+    tell("lookup-note", e.message);
+  }
+}
+
+el("admin-button").addEventListener("click", () => {
+  if (!shown) return;
+  setAdmin(shown.account, shown.name, !shown.admin);
+});
+
 el("reroll-button").addEventListener("click", () => {
   if (!shown) return;
   rename("", {
@@ -685,7 +808,12 @@ el("ban-form").addEventListener("submit", async (ev) => {
 
 async function drawAdmins() {
   const rows = (await post("/v1/admin/admins", { secret })).admins || [];
-  fill("admins", rows.map((a) => [`#${a.account}`, a.name || "(none)", a.last_seen]));
+  fill("admins", rows.map((a) => {
+    const box = document.createElement("span");
+    box.className = "acts";
+    box.append(button("revoke", () => setAdmin(a.account, a.name, false), "warn"));
+    return [`#${a.account}`, a.name || "(none)", a.last_seen, box];
+  }));
 }
 
 boot();

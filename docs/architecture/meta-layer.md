@@ -48,6 +48,8 @@ framework would be the larger change.
 | `/v1/bot/register` | anyone, with a claimed account | A third-party bot account under that owner, who answers for it |
 | `/v1/events` | an arena, with a pool token | Rated events, appended to the log and applied to the projection |
 | `/v1/admin/fleet` | the admin panel | Every instance the directory on this host has observed, relayed from it over loopback, plus the catalog version and whether its verifying key is the one this process signs with |
+| `/v1/admin/pilots` | the admin panel | Pilots matching what an operator has typed, most recently seen first, searched in the database rather than filtered in the page |
+| `/v1/admin/grant` | the admin panel | Gives or takes the admin flag. Claimed humans only, and never the last admin |
 | `/v1/admin/pilot` | the admin panel | One pilot by call sign or number: kind, standing, the dates. Behind the account flag |
 | `/v1/admin/ban` | the admin panel | A fleet ban, which takes effect at the next token issuance. Refuses accounts that hold the flag |
 | `/v1/admin/bans` | the admin panel | Every account currently marked, with its reason |
@@ -59,10 +61,10 @@ The one rule those routes live by: the `admin` field `/v1/session` answers
 with is what the page draws, never what the server trusts. Every admin route
 resolves the presented secret and checks the flag in the database itself.
 
-The flag has no route of its own. Granting and revoking are SQL run by the
-operator on the central host, so the authority over who operates the fleet is
-the database credential and nothing reachable over HTTP; the first admin of a
-deployment is made the same way as the tenth.
+The flag is granted from the panel by whoever already holds one. The first
+admin of a deployment is the exception and is made in the database, because
+there is nobody to grant it yet; `deploy/README.md` has that command.
+[admin.md](admin.md) records what moving this out of the database cost.
 
 A client learns the address from the directory's games list, which is the one
 thing it asks for before it needs an identity. That keeps the account system a

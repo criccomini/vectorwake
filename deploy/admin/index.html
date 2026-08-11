@@ -91,7 +91,7 @@
           <th scope="col">state</th>
           <th scope="col" class="n">players</th><th scope="col" class="n">bots</th>
           <th scope="col">rooms</th>
-          <th scope="col">trend</th>
+          <th scope="col">seats, 10 min</th>
           <th scope="col" class="n">tick</th>
           <th scope="col" class="n">bw/seat</th>
           <th scope="col" class="n">snapshot</th>
@@ -107,13 +107,28 @@
     <h2 id="pilot-head">Pilot</h2>
     <form id="lookup-form" class="row">
       <div class="field grow">
-        <label for="lookup-q" class="sr">call sign or account number</label>
-        <input id="lookup-q" placeholder="call sign, or #account"
-               autocapitalize="off" spellcheck="false" required>
+        <label for="lookup-q" class="sr">filter by call sign or account number</label>
+        <input id="lookup-q" type="search" placeholder="call sign, or #account"
+               autocapitalize="off" spellcheck="false"
+               autocomplete="off" aria-controls="pilots">
       </div>
       <button class="go">look up</button>
     </form>
     <p id="lookup-note" class="note" role="status" aria-live="polite"></p>
+
+    <div class="scroller">
+      <table id="pilots">
+        <caption class="sr">Pilots matching the filter, most recently seen
+          first</caption>
+        <thead><tr>
+          <th scope="col">account</th><th scope="col">call sign</th>
+          <th scope="col">kind</th><th scope="col">standing</th>
+          <th scope="col">last seen</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="pilots-note" class="dim" role="status" aria-live="polite"></p>
     <dl id="pilot" hidden></dl>
 
     <div id="pilot-edit" hidden>
@@ -133,6 +148,7 @@
         </div>
         <button id="ban-button"></button>
         <button id="kick-button" type="button">kick</button>
+        <button id="admin-button" type="button"></button>
       </form>
     </div>
 
@@ -170,12 +186,11 @@
         <thead><tr>
           <th scope="col">account</th><th scope="col">call sign</th>
           <th scope="col">last seen</th>
+          <th scope="col"><span class="sr">actions</span></th>
         </tr></thead>
         <tbody></tbody>
       </table>
     </div>
-    <p class="dim">The flag itself is granted in the database, not here.
-      See <code>deploy/README.md</code>.</p>
   </section>
 </main>
 
