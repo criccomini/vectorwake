@@ -35,6 +35,7 @@ const VERIFY_EVERY_MS: u64 = 30_000;
 /// itself.
 struct Reg {
     pool: String,
+    build: String,
     instance: String,
     address: String,
     wt: String,
@@ -201,6 +202,7 @@ impl Directory {
         fleet::View {
             catalog_version: self.catalog.version,
             meta_key: self.catalog.meta.key.clone(),
+            build: crate::metrics::commit().to_string(),
             instances: self
                 .regs
                 .values()
@@ -221,6 +223,7 @@ impl Directory {
                     intent_ms: r.intent_until_ms.saturating_sub(now),
                     pool: r.pool.clone(),
                     metrics: r.status.metrics.clone(),
+                    build: r.build.clone(),
                     pinned: r.status.pinned.clone(),
                     pinned_by: r.status.pinned_by.clone(),
                     pinned_at_ms: r.status.pinned_at_ms,
@@ -517,6 +520,7 @@ async fn serve_registration(
                         r.instance.clone(),
                         Reg {
                             pool: pool.clone(),
+                            build: r.build.clone(),
                             instance: r.instance.clone(),
                             address: r.address.clone(),
                             wt: r.wt.clone(),
@@ -954,6 +958,7 @@ mod tests {
             id.into(),
             Reg {
                 pool: "p".into(),
+                build: "testbuild".into(),
                 instance: id.into(),
                 address: format!("ws://{id}:9010"),
                 wt: String::new(),

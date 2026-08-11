@@ -83,6 +83,7 @@ async function arrive(name) {
 
 function refresh() {
   drawFleet().catch(() => {});
+  drawPilots(el("lookup-q").value.trim()).catch(() => {});
   drawBans().catch(() => {});
   drawAdmins().catch(() => {});
 }
@@ -233,6 +234,121 @@ async function command(instance, verb, args) {
   setTimeout(() => drawFleet().catch(() => {}), 700);
 }
 
+// ---------------------------------------------------------------- history
+
+// What the panel remembers while it is open, keyed by instance: one sample
+// per refresh, oldest first. Ten minutes at a five second refresh, which is
+// enough to answer "is this worse than it was a minute ago" and short enough
+// that it costs nothing.
+//
+// It lives in the page and dies with it, deliberately. Real history wants a
+// sampler writing somewhere durable, and until that exists a buffer that only
+// covers the time you have been watching is honest about what it knows.
+const KEEP = 120;
+const history = new Map();
+
+function remember(instances) {
+  const seen = new Set();
+  for (const i of instances) {
+    seen.add(i.instance);
+    const h = history.get(i.instance) || [];
+    h.push({ players: i.players, bots: i.bots, tick_us: i.tick_us });
+    if (h.length > KEEP) h.shift();
+    history.set(i.instance, h);
+  }
+  // An instance that has gone is forgotten rather than left as a stale line
+  // that would rejoin the wrong history if the id ever came back.
+  for (const k of history.keys()) if (!seen.has(k)) history.delete(k);
+}
+
+// Bytes at a glance. An operator comparing a snapshot against a budget wants
+// "3.1 kB", not five digits to count.
+function bytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} kB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// A commit is only ever compared here, so seven characters is the whole of
+// what is useful. `unknown` is what a binary built outside CI reports, and
+// saying so beats drawing a blank cell that reads like a missing field.
+function build(b, mine) {
+  if (!b) return "";
+  const short = b.slice(0, 7);
+  return b === mine || !mine ? short : `${short} (drift)`;
+}
+
+const SVG = "http://www.w3.org/2000/svg";
+
+// One line, scaled to its own range, with no axes and no grid. It answers
+// "which way is this going" and nothing else, which is all a cell this size
+// can honestly carry. Drawn with SVG attributes rather than inline styles,
+// so the site's CSP needs no exception.
+function sparkline(values, cls) {
+  const w = 84, h = 20, pad = 2;
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h);
+  svg.setAttribute("class", `spark ${cls || ""}`);
+  svg.setAttribute("aria-hidden", "true");
+  if (values.length < 2) return svg;
+
+  const top = Math.max(...values, 1);
+  const step = (w - pad * 2) / (values.length - 1);
+  const y = (v) => h - pad - (v / top) * (h - pad * 2);
+  const points = values.map((v, i) => `${(pad + i * step).toFixed(1)},${y(v).toFixed(1)}`);
+
+  const line = document.createElementNS(SVG, "polyline");
+  line.setAttribute("points", points.join(" "));
+  line.setAttribute("fill", "none");
+  line.setAttribute("stroke", "currentColor");
+  line.setAttribute("stroke-width", "1");
+  line.setAttribute("stroke-linejoin", "round");
+  svg.append(line);
+
+  // The latest sample gets a mark, because the end of the line is the number
+  // in the column beside it and the eye should find them together.
+  const dot = document.createElementNS(SVG, "circle");
+  dot.setAttribute("cx", (pad + (values.length - 1) * step).toFixed(1));
+  dot.setAttribute("cy", y(values[values.length - 1]).toFixed(1));
+  dot.setAttribute("r", "1.6");
+  dot.setAttribute("fill", "currentColor");
+  svg.append(dot);
+  return svg;
+}
+
+// The rooms an instance is holding, as the numbers a player would use. A
+// count cannot say whether one room is packed or four are half empty, which
+// is the fill ladder working or not working.
+function rooms(i) {
+  const box = document.createElement("span");
+  box.className = "rooms";
+  const head = document.createElement("span");
+  // A meta-layer that predates rooms travelling whole sends a count here.
+  // The page and the server update on different clocks, so for a few minutes
+  // after a deploy this reads the old shape, and a panel that draws nothing
+  // is a worse answer than one that draws what it was sent.
+  const list = Array.isArray(i.rooms) ? i.rooms : [];
+  const count = Array.isArray(i.rooms) ? i.rooms.length : i.rooms || 0;
+  head.textContent = `${count}/${i.max_rooms}`;
+  box.append(head);
+  // The breakdown only when there is something to break down. One room holds
+  // whatever the players and bots columns already say, so repeating it beside
+  // them taught nobody anything and read as a code to be cracked.
+  if (list.length > 1) {
+    for (const r of list) {
+      const cell = document.createElement("span");
+      cell.className = r.full ? "room full" : "room";
+      cell.textContent = `#${r.number}: ${r.players} playing`;
+      if (r.bots) cell.textContent += `, ${r.bots} bots`;
+      if (r.full) cell.textContent += ", full";
+      box.append(cell);
+    }
+  }
+  return box;
+}
+
 function button(label, onClick, cls) {
   const b = document.createElement("button");
   b.type = "button";
@@ -323,20 +439,46 @@ async function drawFleet() {
     noteOwner = null;
   }
 
-  const rows = f.instances.map((i) => [
-    i.instance,
-    i.zone || "(none)",
-    i.region,
-    [i.players, "n"],
-    [i.bots, "n"],
-    [`${i.rooms}/${i.max_rooms}`, "n"],
-    // Two decimals because a healthy tick is tens of microseconds and one
-    // decimal rounds every one of them to 0.0ms, which reads as no reading
-    // at all rather than as the good news it is.
-    [i.tick_us ? `${(i.tick_us / 1000).toFixed(2)}ms` : "", "n"],
-    trouble(i),
-    actions(i),
-  ]);
+  try {
+    draw(f);
+  } catch (e) {
+    // A render that throws used to reach the caller's `.catch(() => {})` and
+    // vanish, leaving column headings over an empty table and no hint why.
+    // The likeliest cause is the page being newer than the meta-layer, which
+    // happens on every deploy: the static files ship from the checkout in a
+    // minute and the binary ships as an image after CI.
+    tell("fleet-note", `cannot draw the fleet: ${e.message}. If a deploy just landed, the page may be ahead of the server; it will agree again shortly.`);
+    noteOwner = "fleet";
+  }
+}
+
+function draw(f) {
+  remember(f.instances);
+  const rows = f.instances.map((i) => {
+    const h = history.get(i.instance) || [];
+    return [
+      i.instance,
+      i.zone || "(none)",
+      i.region,
+      trouble(i),
+      [i.players, "n"],
+      [i.bots, "n"],
+      rooms(i),
+      sparkline(h.map((s) => s.players + s.bots), "seats"),
+      // Two decimals because a healthy tick is tens of microseconds and one
+      // decimal rounds every one of them to 0.0ms, which reads as no reading
+      // at all rather than as the good news it is.
+      [i.tick_us ? `${(i.tick_us / 1000).toFixed(2)}ms` : "", "n"],
+      // The other four of the five numbers server.md names. They arrive on
+      // every status push and were being thrown away here.
+      [i.bw_per_player ? `${bytes(i.bw_per_player)}/s` : "", "n"],
+      [i.snapshot_bytes ? bytes(i.snapshot_bytes) : "", "n"],
+      [i.queue_depth, i.queue_depth > 50 ? "n bad" : "n"],
+      [i.lag_actions, i.lag_actions > 0 ? "n warn" : "n"],
+      [build(i.build, f.build), i.build && f.build && i.build !== f.build ? "bad" : ""],
+      actions(i),
+    ];
+  });
   fill("fleet", rows);
   drawAudit(f.audit || []);
 
@@ -359,11 +501,39 @@ async function drawFleet() {
   else say(`${n} arena${n === 1 ? "" : "s"}, ${players} playing, ${bots} bots.`);
   if (bad) say(`${bad} needing attention.`, "bad");
   say(`catalog v${f.catalog_version}.`);
+
+  // Every build in the deployment, held against this one. Three processes
+  // that agree is a converge that landed; one that does not is a converge
+  // that half did, which every other number here would go on reporting as
+  // perfectly healthy.
+  const others = [f.directory_build, ...f.instances.map((i) => i.build)].filter(Boolean);
+  const drifted = others.filter((b) => b !== f.build).length;
+  if (f.build) {
+    say(`build ${f.build.slice(0, 7)}.`);
+    if (drifted) {
+      say(`${drifted} process(es) on another build; a converge landed on some of the fleet and not the rest.`, "bad");
+    }
+  }
+
   // A key disagreement is not visible anywhere else in the fleet: tokens fail
   // their check, everyone flies as a guest, and nothing is on fire.
   if (!f.key_agrees) {
     say("The catalog names a different verifying key than this meta-layer signs with, so every session token is failing.", "bad");
   }
+
+  // The fleet's own line, beside the totals: every seat the deployment is
+  // holding, however it is spread across instances.
+  const totals = [];
+  const depth = Math.max(0, ...[...history.values()].map((h) => h.length));
+  for (let k = 0; k < depth; k++) {
+    let sum = 0;
+    for (const h of history.values()) {
+      const s = h[h.length - depth + k];
+      if (s) sum += s.players + s.bots;
+    }
+    totals.push(sum);
+  }
+  if (totals.length > 1) head.append(sparkline(totals, "seats"));
 }
 
 // ---------------------------------------------------------------------- log
@@ -427,24 +597,88 @@ function drawPilot(p) {
   row("last seen", p.last_seen);
   row("standing", p.banned ? `banned: ${p.reason || "no reason recorded"}` : "in good standing",
       p.banned ? "bad" : "good");
-  if (p.note) row("note", p.note);
-  if (p.admin) row("admin", "holds the flag", "good");
+  if (p.admin) row("admin", "yes", "good");
   dl.hidden = false;
 
   el("pilot-edit").hidden = false;
-  el("note-text").value = p.note || "";
   // A bot's name is how its roster identity is found, so the server refuses
-  // to reroll one. Saying so on the button beats saying it in a refusal.
-  el("rename-button").hidden = p.kind !== "human";
+  // to rename one at all. Saying so by not drawing the controls beats saying
+  // it in a refusal.
+  el("name-text").value = "";
+  el("name-form").hidden = p.kind !== "human";
 
-  // Admins are not bannable from here either, for the same reason: the
-  // server refuses, and a button that is not there is a kinder refusal.
   const form = el("ban-form"), button = el("ban-button");
-  form.hidden = p.admin;
+  form.hidden = false;
+  // An admin is not bannable: the server refuses, and a button that is not
+  // there is a kinder refusal than one that is.
+  button.hidden = p.admin;
+  el("kick-button").hidden = p.admin;
+  el("ban-reason").parentElement.hidden = p.admin;
   button.textContent = p.banned ? "unban" : "ban";
   button.className = p.banned ? "" : "ban";
   el("ban-reason").value = p.banned ? p.reason || "" : "";
+
+  // The flag. Only a claimed human can hold one, because the panel signs in
+  // with a password, so the button is drawn only where it could work.
+  const flag = el("admin-button");
+  const grantable = p.kind === "human" && (p.admin || p.claimed);
+  flag.hidden = !grantable;
+  flag.textContent = p.admin ? "revoke admin" : "make admin";
+  flag.className = p.admin ? "ban" : "";
 }
+
+// ------------------------------------------------------------------ pilots
+
+// The list under the filter. Searched on the server, because guests are free
+// and accumulate for a week, so the set is unbounded and the index is where
+// the filtering belongs.
+//
+// Typing is debounced: a keystroke is not a question worth asking a database,
+// and 180ms is under the gap between two keys and over the gap inside one
+// word.
+let typing = null;
+
+async function drawPilots(q) {
+  let r;
+  try {
+    r = await post("/v1/admin/pilots", { secret, q: q || "" });
+  } catch (e) {
+    tell("pilots-note", e.message);
+    return;
+  }
+  const list = r.pilots || [];
+  fill("pilots", list.map((p) => {
+    // The call sign opens the card. A button rather than a click handler on
+    // the row, so a keyboard reaches it and a screen reader calls it what it
+    // is.
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "link pick";
+    pick.textContent = p.name || "(none)";
+    pick.addEventListener("click", () => lookup(`#${p.account}`));
+    return [
+      `#${p.account}`,
+      pick,
+      p.kind === "human" ? (p.claimed ? "human" : "guest") : p.kind,
+      [p.banned ? "banned" : p.admin ? "admin" : "", p.banned ? "bad" : "good"],
+      p.last_seen,
+    ];
+  }));
+  const note = el("pilots-note");
+  if (!list.length) {
+    note.textContent = q ? `nobody matches ${q}` : "no pilots yet";
+  } else if (r.capped) {
+    note.textContent = "the first 100, most recently seen first; keep typing to narrow it";
+  } else {
+    note.textContent = `${list.length} pilot${list.length === 1 ? "" : "s"}`;
+  }
+}
+
+el("lookup-q").addEventListener("input", (ev) => {
+  clearTimeout(typing);
+  const q = ev.target.value.trim();
+  typing = setTimeout(() => drawPilots(q).catch(() => {}), 180);
+});
 
 async function lookup(q) {
   const note = el("lookup-note");
@@ -465,7 +699,8 @@ async function lookup(q) {
 
 el("lookup-form").addEventListener("submit", (ev) => {
   ev.preventDefault();
-  lookup(el("lookup-q").value.trim());
+  const q = el("lookup-q").value.trim();
+  if (q) lookup(q);
 });
 
 // Kick goes to every instance, because a call sign says who and not where.
@@ -478,43 +713,75 @@ el("kick-button").addEventListener("click", () => {
 
 // The note is the only free text an operator writes about somebody, so it
 // saves on its own rather than riding along with a ban.
-el("note-form").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
+// Rename: one route, two intentions. A typed name is sent as typed and the
+// server decides whether it is allowed; an empty field means deal one, which
+// is what the reroll button sends. Either way the account number does not
+// move, so the rating and the history ride through it.
+async function rename(name, dialog) {
   if (!shown) return;
-  const note = el("lookup-note");
-  try {
-    await post("/v1/admin/note", {
-      secret, account: shown.account, note: el("note-text").value,
-    });
-    await lookup(`#${shown.account}`);
-    tell("lookup-note", "note saved", "ok");
-  } catch (e) {
-    tell(note.id, e.message);
-  }
-});
-
-// A reroll deals a name; it never takes one. There is no field to type into
-// here on purpose, per docs/design/accounts.md: a name an operator could
-// choose is a name that leaves the curated register, and the pool's
-// uniqueness holds only while the server does the choosing.
-el("rename-button").addEventListener("click", async () => {
-  if (!shown) return;
-  const note = el("lookup-note");
-  const yes = await ask({
-    title: "Reroll this call sign?",
-    body: `${shown.name} is dealt a new name from the pool, and the old one ` +
-      "goes back into it. The account number does not move, so the rating " +
-      "and the history ride through the rename.",
-    ok: "reroll",
-  });
+  const yes = await ask(dialog);
   if (yes === null) return;
   try {
-    const r = await post("/v1/admin/rename", { secret, account: shown.account });
+    const r = await post("/v1/admin/rename", { secret, account: shown.account, name });
     await lookup(`#${shown.account}`);
     tell("lookup-note", `now called ${r.name}`, "ok");
   } catch (e) {
-    tell(note.id, e.message);
+    tell("lookup-note", e.message);
   }
+}
+
+el("name-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const want = el("name-text").value.trim();
+  if (!shown || !want) return;
+  rename(want, {
+    title: "Rename this pilot?",
+    body: `${shown.name} becomes ${want}. Their old call sign goes back into ` +
+      "the pool for anybody to be dealt, and this one is theirs until it is " +
+      "changed again.",
+    ok: "rename",
+  });
+});
+
+// Granting and revoking the flag. It is the one action on this page that
+// changes who else may use the page, so it asks in the plainest words the
+// dialog has room for.
+async function setAdmin(account, name, admin) {
+  const yes = await ask({
+    title: admin ? "Make this pilot an admin?" : "Revoke this admin?",
+    body: admin
+      ? `${name} will be able to sign in here and do everything you can do, ` +
+        "including making other admins."
+      : `${name} will not be able to sign in here again. Their account, ` +
+        "rating and history are untouched.",
+    ok: admin ? "make admin" : "revoke",
+  });
+  if (yes === null) return;
+  try {
+    await post("/v1/admin/grant", { secret, account, admin });
+    // Re-read first and say so second: `lookup` clears this line on its way
+    // in, so a message set before it is a message nobody sees.
+    if (shown && shown.account === account) await lookup(`#${account}`);
+    drawAdmins().catch(() => {});
+    tell("lookup-note", admin ? `${name} is an admin` : `${name} is no longer an admin`, "ok");
+  } catch (e) {
+    tell("lookup-note", e.message);
+  }
+}
+
+el("admin-button").addEventListener("click", () => {
+  if (!shown) return;
+  setAdmin(shown.account, shown.name, !shown.admin);
+});
+
+el("reroll-button").addEventListener("click", () => {
+  if (!shown) return;
+  rename("", {
+    title: "Reroll this call sign?",
+    body: `${shown.name} is dealt a new name from the pool, and the old one ` +
+      "goes back into it.",
+    ok: "reroll",
+  });
 });
 
 el("ban-form").addEventListener("submit", async (ev) => {
@@ -541,7 +808,12 @@ el("ban-form").addEventListener("submit", async (ev) => {
 
 async function drawAdmins() {
   const rows = (await post("/v1/admin/admins", { secret })).admins || [];
-  fill("admins", rows.map((a) => [`#${a.account}`, a.name || "(none)", a.last_seen]));
+  fill("admins", rows.map((a) => {
+    const box = document.createElement("span");
+    box.className = "acts";
+    box.append(button("revoke", () => setAdmin(a.account, a.name, false), "warn"));
+    return [`#${a.account}`, a.name || "(none)", a.last_seen, box];
+  }));
 }
 
 boot();

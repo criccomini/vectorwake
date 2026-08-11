@@ -85,11 +85,11 @@ alter table accounts add column if not exists last_seen timestamptz not null def
 -- is set by the operator in the database itself, so there is nothing for a
 -- leaked credential or a compromised neighbour process to call.
 alter table accounts add column if not exists admin boolean not null default false;
--- What an operator wants to remember about a pilot: a warning given, a
--- report looked into, why a ban was lifted. `reason` says why an account is
--- banned right now and is gone the moment it is not, which is no place to
--- keep the history that decided it.
-alter table accounts add column if not exists note text;
+-- An operator note lived here for an afternoon and was dropped: what an
+-- operator writes about a pilot is a moderation record, and a text column
+-- with no history, no author and no timestamp is a worse place to keep one
+-- than nowhere at all.
+alter table accounts drop column if exists note;
 -- The key era's leftovers. A key credential has no route left to present it
 -- to, and the link_codes table belonged to the same machinery.
 delete from credentials where method = 'key';
@@ -364,7 +364,15 @@ async fn admin_for(db: &Client, secret: &str) -> Option<i64> {
 }
 
 
+/// Give an account a name somebody chose. The unique index on
+/// `lower(call_sign)` is the arbiter, exactly as it is for a dealt name, and
+/// a collision comes back as `TAKEN` rather than as Postgres prose: a caller
+/// deciding what to do about it should not be reading error strings from a
+/// driver to find out what happened.
+const TAKEN: &str = "that call sign is taken";
+
 async fn set_name(db: &Client, account: i64, name: &str) -> Result<(), String> {
+    use deadpool_postgres::tokio_postgres::error::SqlState;
     db.execute(
         "insert into names (account, call_sign) values ($1, $2)
          on conflict (account) do update set call_sign = excluded.call_sign",
@@ -372,7 +380,13 @@ async fn set_name(db: &Client, account: i64, name: &str) -> Result<(), String> {
     )
     .await
     .map(|_| ())
-    .map_err(|e| format!("cannot store name: {e}"))
+    .map_err(|e| {
+        if e.code() == Some(&SqlState::UNIQUE_VIOLATION) {
+            TAKEN.to_string()
+        } else {
+            format!("cannot store name: {e}")
+        }
+    })
 }
 
 /// Everything a token needs about an account, in one round trip each.
@@ -762,8 +776,7 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                             to_char(a.created at time zone 'utc', 'YYYY-MM-DD'),
                             to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI'),
                             exists (select 1 from credentials c
-                                    where c.account = a.id and c.method <> 'secret'),
-                            coalesce(a.note, '')
+                                    where c.account = a.id and c.method <> 'secret')
                      from accounts a left join names n on n.account = a.id";
             let row = match by_id {
                 Some(id) => {
@@ -794,7 +807,6 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                         "created": r.get::<_, String>(6),
                         "last_seen": r.get::<_, String>(7),
                         "claimed": r.get::<_, bool>(8),
-                        "note": r.get::<_, String>(9),
                     }))
                 }
                 Ok(None) => (404, serde_json::json!({ "error": "no such pilot" })),
@@ -893,28 +905,39 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             (200, serde_json::json!({ "sent": sent.sent }))
         }
 
-        // Deal a pilot a fresh call sign.
+        // Give a pilot a call sign: the one an operator typed, or a fresh
+        // draw from the pool when they typed nothing.
         //
-        // Dealt, not chosen, and that is the whole shape of it: no route in
-        // this service accepts a proposed name, per docs/design/accounts.md,
-        // because a curated register and fleet-wide uniqueness hold only
-        // while the server does the choosing. An operator gets the same
-        // draw a player's own reroll gets, so an admin cannot mint a name a
-        // player could not have been given.
+        // The typed half is an exception to a rule the rest of this service
+        // keeps, and it is worth being plain about which half of that rule
+        // it spends. docs/design/accounts.md rests two properties on names
+        // being dealt. Fleet-wide uniqueness survives untouched, because the
+        // arbiter was never the generator: it is the unique index on
+        // `lower(call_sign)`, and a collision is refused here the same way it
+        // is refused a redraw in `christen`. The curated register does not
+        // survive, because a person now chooses some of the words. That is
+        // the trade, made deliberately, and it is bounded by who can make it:
+        // an account with the admin flag, acting on one pilot at a time, with
+        // the actor and the old and new names on the log line. No player
+        // facing route accepts a proposed name, which is what decision 28's
+        // argument about moderation queues was actually about.
         //
-        // Not throttled the way `/v1/rename` is. That limit stands between
-        // a script and the name pool, and an operator with a flag on their
-        // account is neither.
+        // Not throttled the way `/v1/rename` is. That limit stands between a
+        // script and the name pool, and an operator is neither.
         "/v1/admin/rename" => {
             let Some(actor) = admin_for(&db, &s("secret")).await else {
                 return (403, serde_json::json!({ "error": "not an admin" }));
             };
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
-            let kind: i16 = match db
-                .query_opt("select kind from accounts where id = $1", &[&account])
+            let (kind, was): (i16, String) = match db
+                .query_opt(
+                    "select a.kind, coalesce(n.call_sign, '') from accounts a
+                     left join names n on n.account = a.id where a.id = $1",
+                    &[&account],
+                )
                 .await
             {
-                Ok(Some(r)) => r.get(0),
+                Ok(Some(r)) => (r.get(0), r.get(1)),
                 Ok(None) => return (404, serde_json::json!({ "error": "no such account" })),
                 Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
             };
@@ -924,44 +947,178 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             if kind_of(kind).is_bot() {
                 return (400, serde_json::json!({
                     "error": "a bot's name is how its roster identity is found; \
-                              rerolling it would split the two"
+                              renaming it would split the two"
                 }));
             }
-            match christen(&db, account).await {
-                Ok(name) => {
-                    println!("meta: admin {actor} rerolled {account} to {name:?}");
+
+            let asked = s("name");
+            if asked.trim().is_empty() {
+                // Nothing typed means deal one, which is what the reroll
+                // button sends and what a player's own reroll does.
+                return match christen(&db, account).await {
+                    Ok(name) => {
+                        println!("meta: admin {actor} rerolled {account} from {was:?} to {name:?}");
+                        (200, serde_json::json!({ "account": account, "name": name }))
+                    }
+                    Err(e) => (500, serde_json::json!({ "error": e })),
+                };
+            }
+
+            // The same cleaning an arena applies to any name it is handed:
+            // printable ASCII, no control characters, 24 at the outside. The
+            // scoreboard was drawn for "Solstice 999", so a long one fits the
+            // database and not the screen; that is the operator's to judge.
+            let name = clean_name(&asked);
+            if name.is_empty() {
+                return (400, serde_json::json!({
+                    "error": "a call sign needs printable characters"
+                }));
+            }
+            match set_name(&db, account, &name).await {
+                Ok(()) => {
+                    println!("meta: admin {actor} renamed {account} from {was:?} to {name:?}");
                     (200, serde_json::json!({ "account": account, "name": name }))
                 }
+                // The index is the arbiter, and it says this one is held.
+                Err(e) if e == TAKEN => (409, serde_json::json!({
+                    "error": format!("{name:?} is already somebody's call sign")
+                })),
                 Err(e) => (500, serde_json::json!({ "error": e })),
             }
         }
 
-        // An operator's note on a pilot. Empty clears it.
+        // Pilots, filtered by what an operator has typed so far.
         //
-        // Free text, and the one field here that is: everything else about
-        // an account is dealt, derived or a boolean. It is also the only
-        // string on this service a person composes, so the panel renders it
-        // as text and the site's CSP is the second lock on that door.
-        "/v1/admin/note" => {
+        // Searched here rather than filtered in the page. A panel that pulls
+        // every account down and greps it in the browser is fine on a
+        // deployment with forty of them and wrong on the one this is built
+        // for: guests are free and accumulate for a week, so the list is
+        // unbounded and the filter belongs where the index is.
+        //
+        // `strpos` rather than `like`, so a `%` or a `_` somebody types is a
+        // character to find and not a wildcard that quietly matches
+        // everything.
+        "/v1/admin/pilots" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let q = s("q");
+            let q = q.trim();
+            // A leading # is how this panel writes an account number, and
+            // typing one should not stop the number being one.
+            let number: i64 = q.trim_start_matches('#').parse().unwrap_or(-1);
+            let q = q.to_string();
+            let rows = db
+                .query(
+                    "select a.id, coalesce(n.call_sign, ''), a.kind, a.banned, a.admin,
+                            exists (select 1 from credentials c
+                                    where c.account = a.id and c.method = 'password'),
+                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI')
+                     from accounts a left join names n on n.account = a.id
+                     where $1 = ''
+                        or strpos(lower(coalesce(n.call_sign, '')), lower($1)) > 0
+                        or a.id = $2
+                     order by a.last_seen desc
+                     limit 100",
+                    &[&q, &number],
+                )
+                .await;
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    // Said rather than inferred from the length, so a page
+                    // showing a hundred rows can say whether that is all of
+                    // them or the first hundred.
+                    "capped": rs.len() == 100,
+                    "pilots": rs.iter().map(|r| {
+                        let kind: i16 = r.get(2);
+                        serde_json::json!({
+                            "account": r.get::<_, i64>(0),
+                            "name": r.get::<_, String>(1),
+                            "kind": match kind_of(kind) {
+                                Kind::Human => "human",
+                                Kind::HouseBot => "house bot",
+                                Kind::ThirdPartyBot => "third-party bot",
+                            },
+                            "banned": r.get::<_, bool>(3),
+                            "admin": r.get::<_, bool>(4),
+                            "claimed": r.get::<_, bool>(5),
+                            "last_seen": r.get::<_, String>(6),
+                        })
+                    }).collect::<Vec<_>>(),
+                })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // Give the admin flag, or take it back.
+        //
+        // Behind the flag itself, which is a real change from how this
+        // shipped: granting used to be SQL an operator ran on the box, so a
+        // leaked panel session could act as an admin and never appoint one.
+        // It can now do both. What is kept is every guard that did not
+        // depend on that containment, and one new one.
+        //
+        // Only a claimed human may hold it. The panel signs in with a
+        // password, which a guest does not have and a bot's `house`
+        // credential is not, and the sweeper deletes idle guests, which is no
+        // way for an operator account to end.
+        //
+        // And the last admin cannot be removed. Two operators disagreeing is
+        // a conversation; a deployment with nobody who can open the panel is
+        // a trip to the database, and the one keystroke between those two
+        // states should not be this one.
+        "/v1/admin/grant" => {
             let Some(actor) = admin_for(&db, &s("secret")).await else {
                 return (403, serde_json::json!({ "error": "not an admin" }));
             };
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
-            // Long enough for what happened, short enough that this column
-            // is never where somebody keeps a log.
-            let note: String = s("note").trim().chars().take(500).collect();
-            let stored = if note.is_empty() { None } else { Some(note.clone()) };
+            let admin = body.get("admin").and_then(|v| v.as_bool()).unwrap_or(true);
+            let row = db
+                .query_opt(
+                    "select a.kind, a.admin,
+                            exists (select 1 from credentials c
+                                    where c.account = a.id and c.method = 'password')
+                     from accounts a where a.id = $1",
+                    &[&account],
+                )
+                .await;
+            let (kind, held, has_password): (i16, bool, bool) = match row {
+                Ok(Some(r)) => (r.get(0), r.get(1), r.get(2)),
+                Ok(None) => return (404, serde_json::json!({ "error": "no such account" })),
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            if admin && kind_of(kind).is_bot() {
+                return (400, serde_json::json!({
+                    "error": "a bot cannot open the panel; it has no password to sign in with"
+                }));
+            }
+            if admin && !has_password {
+                return (400, serde_json::json!({
+                    "error": "that account has no password, so it could not sign in. \
+                              It has to claim one first"
+                }));
+            }
+            if !admin && held {
+                let others: i64 = db
+                    .query_one("select count(*) from accounts where admin and id <> $1", &[&account])
+                    .await
+                    .map(|r| r.get(0))
+                    .unwrap_or(0);
+                if others == 0 {
+                    return (409, serde_json::json!({
+                        "error": "that is the last admin; granting somebody else first \
+                                  keeps this deployment out of the database"
+                    }));
+                }
+            }
             let r = db
-                .execute("update accounts set note = $2 where id = $1", &[&account, &stored])
+                .execute("update accounts set admin = $2 where id = $1", &[&account, &admin])
                 .await;
             match r {
                 Ok(0) => (404, serde_json::json!({ "error": "no such account" })),
                 Ok(_) => {
-                    println!(
-                        "meta: admin {actor} {} the note on {account}",
-                        if stored.is_some() { "wrote" } else { "cleared" }
-                    );
-                    (200, serde_json::json!({ "account": account, "note": note }))
+                    println!("meta: admin {actor} set admin={admin} on account {account}");
+                    (200, serde_json::json!({ "account": account, "admin": admin }))
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
@@ -1036,6 +1193,13 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             (200, serde_json::json!({
                 "catalog_version": view.catalog_version,
                 "audit": audit,
+                // Three builds to hold against each other: this process, the
+                // directory that answered, and each arena below. A converge
+                // that lands on one and not another leaves a fleet that
+                // works and disagrees, which is invisible from every other
+                // number here.
+                "build": crate::metrics::commit(),
+                "directory_build": view.build,
                 // Said as an answer rather than as two keys to compare by eye,
                 // because the whole value of the check is that nobody is
                 // looking when it matters.
@@ -1050,8 +1214,19 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     "players": i.players,
                     "bots": i.bots,
                     "bots_wanted": i.bots_wanted,
-                    "rooms": i.rooms.len(),
+                    // The rooms themselves, not a count of them. An instance
+                    // holding one room of twenty and an instance holding
+                    // four of five are the same number and different
+                    // situations, and the fill ladder is the thing an
+                    // operator is judging when they look here.
+                    "rooms": i.rooms.iter().map(|r| serde_json::json!({
+                        "number": r.number,
+                        "players": r.players,
+                        "bots": r.bots,
+                        "full": r.full,
+                    })).collect::<Vec<_>>(),
                     "max_rooms": i.max_rooms,
+                    "build": i.build,
                     "capped": i.capped,
                     "verified": i.verified,
                     "age_ms": i.age_ms,
@@ -1330,13 +1505,20 @@ async fn serve(mut s: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result
     };
 
     let out = out.to_string();
+    // Every code any route here returns. A route answering with one that is
+    // missing from this list does not fail loudly: it sends the right body
+    // under "500 Internal Server Error", so the caller reads a considered
+    // refusal as a server fault. That is how a 409 shipped looking like a
+    // crash, and it is why this list is worth keeping in step.
     let status = match code {
         200 => "200 OK",
         400 => "400 Bad Request",
         403 => "403 Forbidden",
         404 => "404 Not Found",
         405 => "405 Method Not Allowed",
+        409 => "409 Conflict",
         429 => "429 Too Many Requests",
+        502 => "502 Bad Gateway",
         503 => "503 Service Unavailable",
         _ => "500 Internal Server Error",
     };

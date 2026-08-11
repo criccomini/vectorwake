@@ -80,6 +80,16 @@ pub struct Register {
     #[serde(default)]
     pub willing: Vec<String>,
     pub version: u32,
+    /// The commit this arena was built from.
+    ///
+    /// `version` above is the registration protocol's and answers whether the
+    /// two ends can speak; this answers which build is running, which is a
+    /// different question and the one an operator actually asks. A converge
+    /// that updated the directory and not an arena leaves a fleet that works
+    /// and disagrees, and until this travelled the only way to see it was to
+    /// read two metrics endpoints and compare by eye.
+    #[serde(default)]
+    pub build: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -225,6 +235,9 @@ pub struct Observed {
     pub pool: String,
     #[serde(default)]
     pub metrics: Metrics,
+    /// The build this instance registered with, passed through.
+    #[serde(default)]
+    pub build: String,
     /// The pin this instance reports, passed through as it arrived. See
     /// `Status::pinned`.
     #[serde(default)]
@@ -251,6 +264,10 @@ pub struct View {
     /// every pilot quietly becomes a guest, which looks like nothing at all.
     #[serde(default)]
     pub meta_key: String,
+    /// The build this directory is running, so the panel can hold every
+    /// process in the deployment against one another.
+    #[serde(default)]
+    pub build: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

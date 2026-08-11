@@ -192,24 +192,21 @@ Most of an account is deliberately not editable, and the panel is easier to
 reason about once that is said plainly rather than discovered a field at a
 time.
 
-**The call sign can be rerolled and never typed.** An operator gets the same
-draw a player's own reroll gets, so no admin can mint a name a player could
-not have been dealt. [accounts.md](../design/accounts.md) is why: a curated
-register and fleet-wide uniqueness hold only while the server does the
-choosing, and a route that accepted a proposed name would end both. The
-account number does not move, so the rating and the history ride through it.
-A bot is refused, because a house bot's name is how its roster individual is
-found and renaming one would leave the scoreboard disagreeing with the roster
-that seeded its rating.
+**The call sign can be typed or dealt.** An operator may set one directly or
+take a fresh draw from the pool, and the account number does not move either
+way, so the rating and the history ride through it. The typed half is the one
+place in this service where a name is chosen rather than generated;
+[accounts.md](../design/accounts.md) says what that spends and what it does
+not, and the short version is that uniqueness survives because the unique
+index was always the arbiter. A typed name is cleaned the way an arena cleans
+any name it is handed, printable ASCII and 24 at the outside, and a collision
+comes back as a refusal naming the name. A bot is refused outright, because a
+house bot's name is how its roster individual is found and renaming one would
+leave the scoreboard disagreeing with the roster that seeded its rating.
 
 **Standing is a ban and its reason**, which the panel already sets, and which
 takes effect within one token lifetime because this is where tokens are
 minted.
-
-**An operator note** is the one piece of free text on an account: what
-happened, what was said, what was decided. `reason` cannot serve that purpose,
-because it describes a ban that is true right now and is gone the moment the
-ban is lifted.
 
 Three things stay uneditable on purpose. A rating is a projection of
 `rated_events`, so setting one by hand would leave the number disagreeing with
@@ -257,14 +254,23 @@ per action rather than per login, so revoking the flag or banning the account
 lands on the next click, not the next session. A client can dress its screen
 up as an admin's and every action still comes back 403.
 
-Two containments back that up. A leaked panel session can act as an admin but
-never appoint one, because granting is not an HTTP action at all. And the
-panel's ban refuses accounts holding the flag, so one compromised session
-cannot lock the other operators out; unseating an admin starts in the
-database. The same shape is why there is no admin token any more: the one
-route it guarded was grant, and a guarded route on a host-network deployment
-is still a thing a compromised neighbour process can call, where SQL against
-the managed database is not.
+An admin appoints other admins from the panel. That is a real reduction in
+containment and it is worth writing down rather than discovering: a leaked
+session, or a bug in the page, can now mint an operator that outlives the
+session it came from, where before the worst it could do was act as one until
+the flag was revoked. The trade bought the thing an operator actually wanted,
+which is adding a second operator without a database credential and a shell.
+
+What survives the trade is every guard that did not depend on that
+containment. Only a claimed human can hold the flag, because the panel signs
+in with a password that a guest does not have and a bot's `house` credential
+is not. The panel's ban refuses accounts holding the flag, so one compromised
+session cannot lock the other operators out. And the last admin cannot be
+revoked, because two operators disagreeing is a conversation while a
+deployment with nobody who can open the panel is a trip to the database.
+
+The first admin of a deployment is still made in the database, since there is
+nobody to grant it yet, and `deploy/README.md` has that one command.
 
 The cost, stated plainly: fleet-wide reach now stands behind a password whose
 only floor is six characters. The login throttle holds guessing to ten tries

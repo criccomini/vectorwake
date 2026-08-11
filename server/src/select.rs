@@ -614,6 +614,7 @@ async fn run_one(
             pool_hint: String::new(),
             willing: z.fleet.willing.clone(),
             version: fleet::PROTOCOL,
+            build: crate::metrics::commit().to_string(),
         }
     };
     sink.send(Message::Binary(fleet::frame(fleet::A2D_REGISTER, &reg)))

@@ -187,7 +187,7 @@ Arenas file their rated events with the meta-layer. Set `VW_REPORT=0` in the are
 
 `admin.<domain>` serves a static page from [`admin/`](admin/) and proxies `/v1` to the meta-layer. An operator signs in with the call sign and password of a vectorwake account that holds the admin flag; [the admin document](../docs/architecture/admin.md) explains the model. Only a central host's `.env` sets `VW_ADMIN_HOST`, so every other role serves the site as `admin.localhost` and never asks Let's Encrypt about it. The DNS record rides with the front door: `fleet.sh point play <host>` moves both names, and creates the admin record if it is missing.
 
-The flag is set in the database and nowhere else. No route writes `accounts.admin`, so there is nothing for a leaked session or a compromised neighbour process to call; the authority over who operates the fleet is the database credential. From an operator's machine, with `VULTR_API_KEY` set as for any `fleet.sh` verb:
+Admins are made from the panel, by an admin. The first one is the exception, because there is nobody to grant it yet: it is set in the database. From an operator's machine, with `VULTR_API_KEY` set as for any `fleet.sh` verb:
 
 ```sh
 psql "$(./deploy/fleet.sh db --url)" -c \
@@ -199,7 +199,7 @@ psql "$(./deploy/fleet.sh db --url)" -c \
 
 The same statement works on the central host, which has the string in its `.env` and no psql of its own: `cd /opt/vectorwake/deploy && . ./.env && docker run --rm postgres:16-alpine psql "$VW_META_DATABASE" -c "..."`.
 
-`admin = false` revokes. The `returning` line is the confirmation that exactly one row moved. Grant only claimed accounts: the panel signs in with a password, which a guest does not have. The sweeper leaves flagged accounts alone either way, and the panel's own ban button refuses them, so unseating an admin starts here too: revoke first, then ban from the panel if it comes to that.
+`admin = false` revokes, and the `returning` line confirms exactly one row moved. After that first one, use the panel: look a pilot up and press make admin. Only claimed accounts can hold the flag, because signing in needs a password a guest does not have, and the panel refuses to revoke the last admin so that a deployment cannot be locked out of itself.
 
 Locally the panel is at `https://admin.localhost` once the stack is up; browsers resolve `*.localhost` to loopback on their own, and Caddy signs it with its internal CA.
 
