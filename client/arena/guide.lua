@@ -208,16 +208,17 @@ local TELLS = {
                  pad = "Your bombs improved. They have a wider blast, and " ..
                        "do more damage. The smaller pad beside the guns " ..
                        "fires them."},
-    -- The one line that cannot be written for a touchscreen, because a
-    -- touchscreen has no control for it: the pads carry the two triggers and
-    -- the charges and nothing else. Said anyway, minus the way out of it,
-    -- since a player whose gun has started fanning is owed the reason.
+    -- Multifire is the one add-on that arrives switched on, so its line is
+    -- about the way out. On glass that is the fan cell, first in the charge
+    -- rail; the pad sentence went without it for the day the control did not
+    -- exist, which is no longer this day.
     multi = {at = "gun",
              text = "Multifire is on. Your gun fans wider and each pull " ..
                     "costs more, which is not always the better trade. " ..
                     "Tilde turns it off.",
              pad = "Multifire is on. Your gun fans wider and each pull " ..
-                   "costs more, which is not always the better trade."},
+                   "costs more, which is not always the better trade. The " ..
+                   "fan cell above the guns turns it off."},
     shrapnel = {at = "bomb", card = "shrap"},
     safe = {at = "ship", card = "safe"},
     hole = {at = "ship", card = "hole"},

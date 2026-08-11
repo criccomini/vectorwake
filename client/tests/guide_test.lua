@@ -319,8 +319,11 @@ do
     local l = wait_for("multi")
     check("multifire says how to switch it off",
           l and l.text:find("Tilde turns it off"), l and l.text)
-    check("and on glass, where there is no control for it, it does not",
-          l and l.pad and not l.pad:find("Tilde"), l and l.pad)
+    -- Glass has its own way out now, the fan cell in the charge rail, and
+    -- the pad sentence names that rather than a key the device has not got.
+    check("and on glass it names the fan cell, not the key",
+          l and l.pad and l.pad:find("fan cell")
+          and not l.pad:find("Tilde"), l and l.pad)
 end
 
 -- --- the two arrivals under one event code ---------------------------------
