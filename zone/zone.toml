@@ -57,7 +57,7 @@ respawn_delay = 400   # ticks, so four seconds
 #
 # Zero, the default, uses the map's own spawn tiles, redrawn on every death.
 # Above zero ignores them and drops a ship on a random tile within that many of
-# the map's centre, which is what the original did before it had spawn points.
+# the map's center, which is what the original did before it had spawn points.
 #
 # The trade is distance against exposure. Our generator spreads a side's starts
 # over nearly half the map, so under tiles one pilot can be five seconds from
@@ -65,7 +65,7 @@ respawn_delay = 400   # ticks, so four seconds
 # distance from it and turns one patch of ground into the only place anyone
 # arrives. The original's own number comes to 18, because WarpRadiusLimit=20 in
 # its reference settings clamps a formula that would have asked for 266, so a
-# stock zone dropped everyone into a 37-tile square at the centre. Radar reaches
+# stock zone dropped everyone into a 37-tile square at the center. Radar reaches
 # 60 tiles, so that is well inside what one camper can watch: pick 18 for the
 # original's feel and 60 or more to make camping the middle hard work.
 #

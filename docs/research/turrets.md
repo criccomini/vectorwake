@@ -110,7 +110,7 @@ eight ships, so a Leviathan riding a Terrier and a Warbird riding it look
 identical.
 
 The renderer skips any player who is attached, then draws each carrier
-followed by its riders, every one of them centred on the carrier's own
+followed by its riders, every one of them centered on the carrier's own
 position. Five riders is five 16 by 16 guns stacked on the same pixel, each
 turned to the heading its pilot is holding. You cannot count them and you
 cannot tell what they are.

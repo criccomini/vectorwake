@@ -99,7 +99,7 @@ function update(self)
     render.enable_state(graphics.STATE_BLEND)
     render.disable_state(graphics.STATE_DEPTH_TEST)
 
-    -- The fragment shader writes premultiplied colour, so ordinary
+    -- The fragment shader writes premultiplied color, so ordinary
     -- compositing takes ONE as the source factor, not SRC_ALPHA.
     render.set_blend_func(graphics.BLEND_FACTOR_ONE,
                           graphics.BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)

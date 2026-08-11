@@ -252,7 +252,7 @@ end
 -- There was a `hint` as well: a sentence about the selected row, drawn once at
 -- the foot of the panel. Every row on about, pilot and settings had one, and
 -- they were captions. "The commit this page was built from" under a row
--- labelled build with a commit in it. "Shown once, and never written to this
+-- labeled build with a commit in it. "Shown once, and never written to this
 -- device" under show my key. A caption is read once, and after that it is a
 -- line of text moving about at the bottom of the page every time the cursor
 -- moves.
@@ -323,8 +323,8 @@ local function team_rows()
             -- Somebody named this side, so it is drawn the way they named it
             -- rather than the way this interface says its own words.
             label = t.name, named = true,
-            -- And in the colour that side wears on every plate in the arena,
-            -- so this list is where the colours get their names. Yours is
+            -- And in the color that side wears on every plate in the arena,
+            -- so this list is where the colors get their names. Yours is
             -- cyan here as it is everywhere: `tint` is the byte, and ui.lua
             -- decides what "yours" means, since it is the side the camera is
             -- behind rather than the one this menu belongs to.
@@ -529,6 +529,7 @@ local NODES = {
     help = {board = true, rows = {
         {label = "steer", detail = "left thumb: point where you want the nose"},
         {label = "fire", detail = "right pads: guns, then bombs"},
+        {label = "multifire", detail = "tap the fan cell to switch it off"},
         {label = "charges", detail = "tap a charge pad to spend it"},
         {label = "who", detail = "tap a pilot on the scoreboard"},
     }},
@@ -731,7 +732,7 @@ local function view_row(r, i)
         -- key on the pilot page and the sides on the team page.
         verbatim = r.verbatim, named = r.named,
         -- The side this row stands for, so the renderer can write it in that
-        -- side's colour. The byte rather than the colour: which side counts
+        -- side's color. The byte rather than the color: which side counts
         -- as yours is the camera's business, and the camera is ui.lua's.
         tint = r.tint,
         index = i,
@@ -1138,7 +1139,7 @@ function M.view()
                  note = M.note, closable = not M.home,
                  -- Whether there is a game behind the panel, which is what
                  -- decides where the block sits: clear of the corner stack
-                 -- over an arena, centred over the starfield. Not whether you
+                 -- over an arena, centered over the starfield. Not whether you
                  -- are at the top of the menu. It used to say both at once,
                  -- and so the whole block moved every time you went a level
                  -- in: on a phone held sideways the rail slid 124 points out

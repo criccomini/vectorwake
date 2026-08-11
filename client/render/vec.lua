@@ -129,7 +129,7 @@ function Layer:frame(x, y, w, h, t, col)
     self:rect(x + w - t, y + t, t, h - 2 * t, col)
 end
 
--- A thick line segment. Width is total, centred on the line.
+-- A thick line segment. Width is total, centered on the line.
 --
 -- `cap` extends both ends by half the width. Corners are not mitred here, so
 -- an outline leaves a notch at every vertex where two quads meet at an angle;
@@ -138,7 +138,7 @@ end
 --
 -- The edges carry a pixel of falloff, and the reason is that this game draws
 -- almost nothing else. A wall face is a line 0.7 pixels wide, and a hard edge
--- that narrow does not have a dim version: the pixel centre is inside the quad
+-- that narrow does not have a dim version: the pixel center is inside the quad
 -- or it is not, so as the camera slides under it the line switches off and on.
 -- Measured on a converted map, sliding the camera an eighth of a pixel at a
 -- time, the light on screen swung by fifteen percent from one frame to the
@@ -173,7 +173,7 @@ function Layer:seg(x1, y1, x2, y2, width, col, cap)
     local hc, ho = (w - px) * 0.5, (w + px) * 0.5
     local cx, cy = -uy * hc, ux * hc
     local ox, oy = -uy * ho, ux * ho
-    -- A dimmed colour is written into one table that is never handed on,
+    -- A dimmed color is written into one table that is never handed on,
     -- rather than made fresh. The extension reads it during the call and keeps
     -- nothing, and a stroke is the most frequent thing this client does: at
     -- one table apiece a busy frame was several thousand of them for the
@@ -266,7 +266,7 @@ function Layer:disc(x, y, r, segs, col)
     end
 end
 
--- A disc that is solid at the centre and gone at the rim: a light source
+-- A disc that is solid at the center and gone at the rim: a light source
 -- rather than a coin. Additive, this is the whole bloom vocabulary.
 function Layer:halo(x, y, r, segs, col)
     local u = unit(segs)

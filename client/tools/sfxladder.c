@@ -8,7 +8,7 @@
 // a rung stops being its own.
 //
 // It is the audio half of client/tests/rung_test.lua, which does the same job
-// for the colours those rounds are drawn in: a ramp is only a ramp if the
+// for the colors those rounds are drawn in: a ramp is only a ramp if the
 // steps can be told apart, and neither claim survives being left to taste.
 //
 // --- what is measured ------------------------------------------------------
@@ -26,7 +26,7 @@
 // what an average would see. Pitch, timbre and length all land in one number
 // here, which is the number a listener is answering.
 //
-// Level does not, on purpose. Every buffer is normalised to the same peak
+// Level does not, on purpose. Every buffer is normalized to the same peak
 // before it is written and every grid to its own loudest cell, so this cannot
 // be satisfied by making a rung louder. Loudness is real and it lives in the
 // .sound gains; it is not what is being asked about.
@@ -75,7 +75,7 @@
 #define RATE 22050.0
 #define PI 3.14159265358979323846
 
-// Third-octave centres, 63 Hz to 10 kHz. Coarse next to a real loudness model
+// Third-octave centers, 63 Hz to 10 kHz. Coarse next to a real loudness model
 // and far more than enough to separate "two sounds" from "one sound twice".
 static const double BAND[] = {
     63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800,

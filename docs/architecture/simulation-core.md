@@ -86,7 +86,7 @@ The map is a 1024x1024 grid of 16-pixel tiles. Collision is a swept test against
 the grid rather than a physics engine: step along the movement vector in tile
 increments, stop at the first solid tile, reflect the component that hit.
 
-A tile is not a boolean. It carries a behaviour class and a variant -- safe
+A tile is not a boolean. It carries a behavior class and a variant -- safe
 zones, doors on a clock, wormholes, goals -- so "solid" is a question asked of
 the tile and the tick rather than a bit read out of an array. A door is solid
 for part of its cycle and not for the rest, which is why collision takes the

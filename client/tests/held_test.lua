@@ -30,7 +30,7 @@ end
 
 -- --- a recording layer -----------------------------------------------------
 
--- Every primitive as a line of text: shape, rounded geometry, and the colour
+-- Every primitive as a line of text: shape, rounded geometry, and the color
 -- it was drawn in. Comparing the whole record catches a mark that moved, one
 -- that lost a decoration, and one that only changed hue, which is exactly the
 -- fault reported: green where the round had climbed a ladder.
@@ -119,7 +119,7 @@ local after_gun, after_bomb = draw(0), draw(1)
 check("a fresh hull's gun is drawn stripped", after_gun ~= before_gun)
 check("and so is its bomb", after_bomb ~= before_bomb)
 
--- The colour is the reported symptom, so it gets its own check rather than
+-- The color is the reported symptom, so it gets its own check rather than
 -- riding on the record comparison: rung zero is the green a stripped round
 -- is drawn in, and the held mark must not be wearing it.
 local pal = require("arena.palette")

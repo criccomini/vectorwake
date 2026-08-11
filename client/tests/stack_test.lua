@@ -39,7 +39,7 @@ end
 -- about a row is two chances to get the arithmetic wrong.
 local shapes = {}
 local kind = nil       -- what primitive is being recorded, for `subject`
-local tint = nil       -- the colour it was drawn in, where that is the question
+local tint = nil       -- the color it was drawn in, where that is the question
 local function box(x0, y0, x1, y1, col, w)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
@@ -48,7 +48,7 @@ local function box(x0, y0, x1, y1, col, w)
 end
 
 -- Kept apart from `col`, which the ladder search used to match against. A
--- mark's own colours have no business deciding where the counting column is,
+-- mark's own colors have no business deciding where the counting column is,
 -- and putting them in the same field would make the column's position depend
 -- on what the hull is carrying.
 local function hue(c)
@@ -115,7 +115,7 @@ end
 -- An arc is bounded by its own circle whichever way it opens, which is all the
 -- box needs: the question there is whether a mark stayed inside a row, and a
 -- generous box can only fail a mark that passed. Its ink is the run of it, and
--- its ink sits at the mean of the arc rather than at the centre of the circle.
+-- its ink sits at the mean of the arc rather than at the center of the circle.
 function layer:arc(x, y, r, a0, a1, w)
     box(x - r - w, y - r - w, x + r + w, y + r + w, nil, w)
     local d = a1 - a0
@@ -151,7 +151,7 @@ end
 local mods = {}
 -- Whether the fan is declined, which Q toggles in flight.
 local multi_off = false
--- The rung this hull's triggers are on, which the mark carries as a colour.
+-- The rung this hull's triggers are on, which the mark carries as a color.
 -- Both ladders together unless a check pulls the gun off on its own, which
 -- only the fragments care about: they are bullets, so a bomb mark draws them
 -- off the gun's rung rather than off the rung it is itself drawn in.
@@ -286,9 +286,9 @@ end
 -- first time the block is resized and takes the checks below with it.
 --
 -- Read off a charge row, because a weapon row has nothing in that column any
--- more: the level was three rungs in the team colour there, and the round's
+-- more: the level was three rungs in the team color there, and the round's
 -- own hue says it now. What is left counting is the pips, which are the
--- leftmost thing in the charge colour on a row that has any.
+-- leftmost thing in the charge color on a row that has any.
 local function column_at(b)
     local at = nil
     for _, s in ipairs(shapes) do
@@ -715,7 +715,7 @@ end
 -- lands on is the round.
 --
 -- Found as the darkest, densest thing on the row: the head of a weapon mark
--- is a filled disc and the radial glyphs are drawn about their own centre, so
+-- is a filled disc and the radial glyphs are drawn about their own center, so
 -- the middle of the tightest shape on each row is its subject.
 -- What lines up down the stack is the drawing, not the round inside it.
 --
@@ -756,7 +756,7 @@ for _, at in pairs(axis) do
     if at then lo = math.min(lo or at, at) hi = math.max(hi or at, at) end
 end
 local spread = (hi or 0) - (lo or 0)
-check("every row centres its mark on one axis", spread <= 2 * SCALE,
+check("every row centers its mark on one axis", spread <= 2 * SCALE,
       string.format("%.1f px of spread across %d rows", spread, #ROWS))
 
 -- And a loadout does not drag a row out of that column. The gun's fan opens
@@ -785,17 +785,17 @@ check("the counting column sits close to the marks",
       gap > 8 * SCALE and gap < 30 * SCALE,
       string.format("%.0f px from the subject to the column", gap))
 
--- --- the level is a colour, not a ladder -----------------------------------
+-- --- the level is a color, not a ladder -----------------------------------
 
 -- A weapon row was a mark and three cyan rungs beside it saying which rung of
 -- the ladder the trigger was on. The round carries that now, in the hue it
 -- will be when it leaves the gun, on the one ramp every round in the game is
 -- drawn from. Two answers to one question, and the second one in the team's
--- colour, which a weapon's level has nothing to do with.
+-- color, which a weapon's level has nothing to do with.
 --
--- Measured as "no team colour on a weapon row" rather than "no rects": the
+-- Measured as "no team color on a weapon row" rather than "no rects": the
 -- fault would be somebody putting the count back some other way, and the tell
--- is the colour it was counted in.
+-- is the color it was counted in.
 for _, lvl in ipairs({0, 1, 3}) do
     level = lvl
     mods = {}
@@ -815,7 +815,7 @@ for _, lvl in ipairs({0, 1, 3}) do
             end
         end
         check(string.format("the %s row at level %d draws no ladder", key, lvl),
-              n == 0, n .. " shapes in the team colour beside the mark")
+              n == 0, n .. " shapes in the team color beside the mark")
     end
 end
 level = 1
@@ -879,7 +879,7 @@ check("the barrels themselves stay on the mark when declined",
 -- hot: what a green added reads as part of the round rather than as a separate
 -- object beside it. Multifire decorates nothing. Its extra barrels fire the
 -- same round out of the same muzzle on the same spec, which is why world.lua
--- gives all three bullets one colour in flight. Drawn hot with the rest, the
+-- gives all three bullets one color in flight. Drawn hot with the rest, the
 -- corner said the middle bullet was a different weapon from the two either
 -- side and disagreed with the arena about the one fact this ramp carries.
 local function dots_on_gun()
@@ -920,9 +920,9 @@ frame()
 local off_dots = dots_on_gun()
 multi_off = false
 check("a declined fan tells the two apart", distinct(off_dots) == 2,
-      distinct(off_dots) .. " colours across " .. #off_dots .. " dots")
+      distinct(off_dots) .. " colors across " .. #off_dots .. " dots")
 
--- The bomb's fan is the same argument: rounds leaving together, in the colour
+-- The bomb's fan is the same argument: rounds leaving together, in the color
 -- of the round. Measured on the strokes, since a bomb's fan has no dots.
 local function bomb_hues()
     local b = row_box("bomb")
@@ -949,7 +949,7 @@ for _, sh in ipairs(shapes) do
         bare_bomb = hue(sh.tint)
     end
 end
-check("a bomb's fan is drawn in the round's own colour",
+check("a bomb's fan is drawn in the round's own color",
       bare_bomb ~= nil and bomb_fan[bare_bomb] == true,
       "fan hues: " .. (next(bomb_fan) or "none") .. ", round: " ..
       tostring(bare_bomb))
@@ -1085,9 +1085,9 @@ local gun_hot = pal.hot(pal.rung(3), 0.45)
 local bomb_hot = pal.hot(pal.rung(1), 0.45)
 local ticks = frag_ticks(gun_hot)
 check("fragments take the gun's rung, not the bomb's", ticks == 2,
-      ticks .. " of 2 ticks in the gun's colour")
+      ticks .. " of 2 ticks in the gun's color")
 check("and none of them the rung the bomb is drawn in",
-      frag_ticks(bomb_hot) == 0, "a tick in the bomb's own colour")
+      frag_ticks(bomb_hot) == 0, "a tick in the bomb's own color")
 -- And it follows the guns while they climb, which is the whole of the fact:
 -- a bomber who finds gun prizes is throwing harder fragments and the mark on
 -- their bomb says so without the bomb itself moving.

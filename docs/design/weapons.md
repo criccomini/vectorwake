@@ -47,7 +47,7 @@ sim_fire_pattern              sim_weapon_spec
   delay     cooldown ticks        trigger      px from a hull that counts as arriving
   recoil    kick on the shooter   expire_ends  whether running out counts as arriving
                                   splinter     a pattern fired where it ended
-                                  damage       energy at the centre
+                                  damage       energy at the center
                                   blast        px of falloff; 0 lands on one hull
                                   push         px/tick shoved outward
                                   push_time    ticks the shove outruns a hull
@@ -84,12 +84,12 @@ A mine is the opposite: its whole life is a timer, and `expire_ends` says so.
 is a bullet; anything larger is a proximity fuse that never touches you.
 
 **Ending** does up to four things, all optional: hurt the hull it touched, hurt
-everything inside `blast` with damage falling off linearly from the centre,
+everything inside `blast` with damage falling off linearly from the center,
 shove ships *and other projectiles* outward, and fire `splinter`. A plain
 bullet does the first. A bomb does the first two. A repel does only the third.
 
 A round that ends at a wall ends on the near side of it rather than a step
-inside. A blast centred in the tile spends half its reach where nobody is, and
+inside. A blast centered in the tile spends half its reach where nobody is, and
 fragments born in there die on their own first tick.
 
 ## What is carried per projectile, and why
@@ -176,7 +176,7 @@ two. It does not have to be dodged in the air first, so it should not out-range
 the round that does. With the add-on a mine senses exactly as far as the bomb
 it is; without it, its own two tiles.
 
-Its rung is also its colour: the colour on the floor is the colour of the
+Its rung is also its color: the color on the floor is the color of the
 bombs you throw. That is a real number rather
 than paint, because `blast_up` climbs the bomb ladder's own arithmetic and a
 rung three mine makes a rung three bomb's hole. A charge fires one pattern, so
@@ -308,7 +308,7 @@ tree needed.
 
 One shape, four meanings. A green is one byte naming a place in that space --
 five stats, then a level per trigger, then an add-on per trigger per kind --
-which is also the space a zone weights and the client colours from.
+which is also the space a zone weights and the client colors from.
 
 ### Add-ons are per trigger
 
@@ -365,7 +365,7 @@ Terrier's gun ate the bar about twice as fast as anyone's.
 The arithmetic is the part worth keeping. Multifire *adds* barrels rather than
 multiplying them, so two abreast plus a rung of multifire is four rather than
 the six a pilot expects out of three times two. That was the Terrier's real
-behaviour, and here it falls out of the model instead of being written down
+behavior, and here it falls out of the model instead of being written down
 for one hull.
 
 The rest of that ship's bill is a zone call. It also fired slower, and the
@@ -393,7 +393,7 @@ ordinary projectiles from that moment on.
 
 So dying clears the *inventory*, which is what gates firing. Nothing in flight
 reads it: the update loop touches `owner` only to skip you in collision and to
-name you in an event. A pilot who is killed a tick after throwing a levelled,
+name you in an event. A pilot who is killed a tick after throwing a leveled,
 shrapnel-loaded bomb still gets the bomb they threw.
 
 ### The matrix
@@ -608,7 +608,7 @@ Losing an energy step clamps the bar down to the new ceiling rather than
 leaving a pilot standing above it.
 
 The client draws and sounds a rust as a loss: the feed says `- speed` in the
-rust colour, and there is a separate sound, because the one mechanic in the
+rust color, and there is a separate sound, because the one mechanic in the
 game that costs you something should not be silent.
 
 ### Writing a tree
@@ -633,7 +633,7 @@ gun_mods = { multi = 1 }
 
 ## What is deliberately out
 
-**Appearance.** The core carries no colours. The client keys a projectile's
+**Appearance.** The core carries no colors. The client keys a projectile's
 look off its spec id in its own table, and asks `spec_blast(id) > 0` to know
 whether a thing that just went off looks like a bomb -- because a weapon that
 goes off looks like one by *being* one. The same line we hold for tile classes.

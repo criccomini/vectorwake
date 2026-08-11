@@ -397,7 +397,7 @@ cmd_new() {
 	busy=$(vultr block-storage list -o json | jq -r --arg l "$host-certs" --arg r "$region" \
 		'[.blocks[] | select(.label == $l and .region == $r and (.attached_to_instance // "") != "")][0].attached_to_instance // empty')
 	if [ -n "$busy" ]; then
-		die "a volume labelled $host-certs is attached to $busy already.
+		die "a volume labeled $host-certs is attached to $busy already.
        Detach it, or destroy that host first. Creating a second would issue a
        fresh certificate and spend one of five for this week."
 	fi
@@ -597,7 +597,7 @@ cmd_point() {
 
 	ip=$(vultr instance list -o json | jq -r --arg l "$target.$DOMAIN" \
 		'.instances[] | select(.label == $l) | .main_ip')
-	[ -n "$ip" ] || die "no instance labelled $target.$DOMAIN"
+	[ -n "$ip" ] || die "no instance labeled $target.$DOMAIN"
 	[ "$ip" != "0.0.0.0" ] || die "$target.$DOMAIN has no address yet"
 
 	rec=$(vultr dns record list "$DOMAIN" -o json | jq -r --arg n "$name" \
@@ -690,7 +690,7 @@ cmd_firewall() {
 			echo "  ok      $proto $port"
 		else
 			echo "  adding  $proto $port"
-			# "Anywhere" is spelt subnet 0.0.0.0 with a zero-bit mask. The CLI's
+			# "Anywhere" is spelled subnet 0.0.0.0 with a zero-bit mask. The CLI's
 			# --source is a different thing (empty, or the word cloudflare) and
 			# is left alone.
 			vultr_do firewall rule create "$gid" --protocol "$proto" \
@@ -754,7 +754,7 @@ cmd_db() {
 db_show() {
 	db=$(db_row)
 	if [ -z "$db" ]; then
-		echo "fleet: no managed database labelled $DB_LABEL" >&2
+		echo "fleet: no managed database labeled $DB_LABEL" >&2
 		echo "       fleet.sh db create [region]" >&2
 		return 1
 	fi
@@ -788,7 +788,7 @@ db_show() {
 db_create() {
 	region=${1:-$REGION}
 	if [ -n "$(db_row)" ]; then
-		echo "fleet: a database labelled $DB_LABEL already exists:"
+		echo "fleet: a database labeled $DB_LABEL already exists:"
 		# Tolerated failing, because one still building has no credentials to
 		# print and that is not an error here: the answer to `create` is that
 		# there is nothing to create.
@@ -828,7 +828,7 @@ db_create() {
 # typed rather than for a keystroke, and says what is inside first.
 db_destroy() {
 	db=$(db_row)
-	[ -n "$db" ] || die "no managed database labelled $DB_LABEL"
+	[ -n "$db" ] || die "no managed database labeled $DB_LABEL"
 	id=$(printf '%s' "$db" | jq -r '.id')
 	printf '%s' "$db" | jq -r '"fleet: \(.label)  \(.status)  \(.region)  \(.plan)"'
 	cat >&2 <<WARN
@@ -1018,7 +1018,7 @@ $(printf '%s' "$clusters" | jq -r '.clusters[] | "         \(.region)  (\(.hostn
 		# for the same reason the region list above is: a bill nobody chose is
 		# the failure this verb exists to prevent.
 		#
-		# The bucket holds five objects totalling under a kilobyte, so every
+		# The bucket holds five objects totaling under a kilobyte, so every
 		# tier is overqualified and the difference is entirely the bill.
 		menu=$(mktemp) || die "no temporary file"
 		for c in $ids; do
@@ -1247,7 +1247,7 @@ cmd_rm() {
 
 	id=$(vultr instance list -o json | jq -r --arg l "$host" \
 		'.instances[] | select(.label == $l) | .id')
-	[ -n "$id" ] || die "no instance labelled $host"
+	[ -n "$id" ] || die "no instance labeled $host"
 
 	printf 'fleet: destroy %s (%s) and its DNS record? [y/N] ' "$host" "$id"
 	read -r yes

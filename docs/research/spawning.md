@@ -86,7 +86,7 @@ if (radius > 0) {
 Five things fall out of that.
 
 **A radius of zero skips the loop entirely.** Not a one-tile circle, not a
-retry against the walls: the position was already set to the exact centre and
+retry against the walls: the position was already set to the exact center and
 nothing touches it again. Everybody on the freq arrives on the same tile,
 stacked, and there is no fit test at all, so a point drawn inside rock spawns the
 whole team inside rock.
@@ -96,22 +96,22 @@ a circle from the center point freq 0 can start", and both offsets are drawn
 independently, which makes the reachable area a square of side 2r. Corners are
 as likely as the middle. The offsets run from -r to r-1 rather than -r to r,
 because `rand() % (radius * 2)` yields 0 to 2r-1, so the box is very slightly
-off centre toward the top left.
+off center toward the top left.
 
 **Everything is whole tiles.** No sub-tile placement, and the fit test is
 `CanFit`, which walks solid tiles across the hull's radius. Ship radius comes
 from `ShipSettings.GetRadius()`, which is the `Radius` setting over 16 and
 defaults to 14 pixels when the setting is zero.
 
-**A hundred failures means the exact centre anyway.** The fallback is not "try
-harder" or "give up", it is the unchecked centre tile. A radius that mostly
-covers wall degrades to the radius-zero behaviour rather than to an error.
+**A hundred failures means the exact center anyway.** The fallback is not "try
+harder" or "give up", it is the unchecked center tile. A radius that mostly
+covers wall degrades to the radius-zero behavior rather than to an error.
 
 **The team index counts entries, not slots.** `frequency % spawn_count`, where
 `spawn_count` is how many of the four entries have any non-zero field. Setting
 Team0 and Team1 gives the even and odd split the changelog describes. Setting
 only Team2 gives a count of one, so everybody uses entry zero, which is the
-all-zeros Team0 and therefore the map centre.
+all-zeros Team0 and therefore the map center.
 
 One more quirk in the same function: an X or Y of zero reads as 512. Zero is how
 the settings say "unset", so a point cannot sit on column zero or row zero.
@@ -127,7 +127,7 @@ The first is `Misc:WarpRadiusLimit`, whose help text gives the whole model away:
 > When ships are randomly placed in the arena, this parameter will limit how far
 > from the center of the arena they can be placed (1024=anywhere)
 
-Random placement around the centre of the map, with a cap, and the cap is the
+Random placement around the center of the map, with a cap, and the cap is the
 half of this that decides everything: the reference server ships it at 20, on a
 map 1024 tiles across. The second setting is `Radar:RadarMode`, which looks
 like a display setting and turns out to be doing a second job:
@@ -142,7 +142,7 @@ and a quartered radar as a statement that it has four, then spawns accordingly:
 |---|---|
 | 1, 3 | `x = (freq & 1) * 768 + rand(0..255)`, `y = 256 + rand(0..255)`. Even freqs against the left edge, odd against the right. |
 | 2, 4 | `x = (freq & 1) * 768 + rand(0..255)`, `y = ((freq / 2) & 1) * 768 + rand(0..255)`. Four corners by freq mod 4. |
-| 0 | A box around the map centre whose width grows with the room's population. |
+| 0 | A box around the map center whose width grows with the room's population. |
 
 That third row is the strange one, and it is the row where reading the code
 without reading the settings gets you a wrong answer. The width is
@@ -168,7 +168,7 @@ So the growth is real code and, at the settings the reference server ships, it
 is unreachable. It only means anything in a zone that raises the limit past
 266, and `RadarMode=0` with `WarpRadiusLimit=20` is what the same file pairs it
 with. Read the two together or the fallback looks like a scatter when it is the
-opposite: everybody, both sides, into one screen at the centre.
+opposite: everybody, both sides, into one screen at the center.
 
 All three modes run the same hundred attempts against the same fit test, falling
 back to 512, 512. One caveat on those attempts, and it is a caveat about the

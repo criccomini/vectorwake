@@ -1,1 +1,2 @@
 Working on vectorwake, a Subspace-like space MMO: shipped client, transport and roster work, vendored the Clanker Constitution as house rules, and built its mines end to end from design through the wire.                                                                                    
+Facet second barrel is worth +20.7 pts and bare hull balance is hitbox area. Maps need a drill A/B, not a density check. Admin panel shipped, then VW_ADMIN_TOKEN retired for operator SQL. Death cards gone for arena/guide.lua. American spelling is house style.                            

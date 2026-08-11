@@ -45,7 +45,7 @@ bot_fill = 0.8
 # of the seats on top of that.
 max_rooms = 10
 
-# Thirty-two players in two colours was a crowd, not two crews. The cap that
+# Thirty-two players in two colors was a crowd, not two crews. The cap that
 # matters is seven a side, and the number to divide is the sixty-four seats
 # the room actually holds: the bot server keeps four in five of them warm,
 # so the population is the seats, not the player cap. Five teams over that
@@ -79,7 +79,7 @@ respawn_delay = 400
 # The number is the original's own, worked back from the settings its reference
 # server ships. `Misc:WarpRadiusLimit=20` clamps a formula that would otherwise
 # have asked for 266 and up, so a default zone put every arrival in x 493 to
-# 529 and y the same: a 37-tile square dead centre, about one screen across,
+# 529 and y the same: a 37-tile square dead center, about one screen across,
 # however full the room was. Ours is a radius rather than a width, so 18.
 #
 # That is a deliberately small number and it is the whole point of this zone
@@ -90,7 +90,7 @@ respawn_delay = 400
 # this zone is for: you come back where the shooting is.
 #
 # What it also buys is a camp. Radar reaches 60 tiles, so 18 is comfortably
-# inside what one pilot sitting on the centre can watch, and a fresh ship here
+# inside what one pilot sitting on the center can watch, and a fresh ship here
 # is worth about 29.5 bounty because `spawn_prizes` is 30. If that turns out to
 # be as unpleasant as it sounds, the lever is this number and not a rule about
 # farming: 60 gets arrivals off a camper's radar, at the price of some of the

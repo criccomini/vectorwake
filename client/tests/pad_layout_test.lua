@@ -47,10 +47,10 @@ end
 
 -- How much of a shape there is, where its weight sits, and how far it reaches.
 --
--- Both of the last two, because neither one is where a mark looks centred and
+-- Both of the last two, because neither one is where a mark looks centered and
 -- the answer is between them. Weighing a drawing by how much of it there is
--- puts a gun's centre near the dot, since a solid disc outweighs the hairline
--- that reaches it. Taking its extent puts the centre near the middle of the
+-- puts a gun's center near the dot, since a solid disc outweighs the hairline
+-- that reaches it. Taking its extent puts the center near the middle of the
 -- line, since the far tip of a hairline counts for as much as the dot. A strip
 -- of the mark drawn at biases either side agrees with the midpoint, so the
 -- midpoint is what is checked, and marks.BOLT_BIAS is the number that came
@@ -59,7 +59,7 @@ end
 -- `rad` is the radius of the circle a piece belongs to, where it has one.
 -- That is what tells the mark from the furniture: the pad's own ring and the
 -- gauge outside it are circles the size of the pad, and weighing them buries
--- the mark's own offset under a much larger, perfectly centred mass.
+-- the mark's own offset under a much larger, perfectly centered mass.
 local ink = {}
 local function weigh(area, x, y, rad, x0, x1, alpha)
     if area > 0 then
@@ -112,7 +112,7 @@ function layer:ring(x, y, r, w, _, c)
 end
 function layer:arc(x, y, r, a0, a1, w, _, c)
     put("arc", x - r - w, y - r - w, x + r + w, y + r + w, c).r = r
-    -- An arc's weight sits at the middle of its own sweep, not at its centre,
+    -- An arc's weight sits at the middle of its own sweep, not at its center,
     -- and it reaches only as far as its own sweep carries it.
     local d = a1 - a0
     if math.abs(d) < 1e-6 then return end
@@ -169,6 +169,9 @@ local function reset(w, h, s)
     touch.used = true
     touch.me = 0
     touch.has_bomb = true
+    -- Off by default, which is the ordinary hull: a fan is picked up. The
+    -- block at the bottom turns it on for the case that is actually tight.
+    touch.has_fan = false
     touch.charges = {0, 1}
     touch.counts = {[0] = 2, [1] = 1}
     touch.maxes = {[0] = 3, [1] = 3}
@@ -243,18 +246,18 @@ end
 -- --- and each mark sits in the middle of its pad ---------------------------
 
 -- Half way between where the drawing's weight sits and where the drawing
--- reaches, which is where it looks centred. A box alone got this wrong in the
+-- reaches, which is where it looks centered. A box alone got this wrong in the
 -- shipped build, when a bomb was a fading trail into a solid head: the box
 -- straddled the pad while everything you could see crowded one side, and the
 -- mark sat a quarter of a pad radius off while every measurement said fine.
--- Weight alone gets it wrong the other way, and centres a gun on its dot with
+-- Weight alone gets it wrong the other way, and centers a gun on its dot with
 -- the barrel hanging off the left of the pad.
 --
 -- Every loadout, because the pieces an add-on hangs on a mark are not
 -- symmetric either: a fan pulls the weight back toward the muzzle and a bounce
 -- ring pulls it forward, and the placement is the mean of what they do rather
 -- than whichever one was drawn the day it was set.
-local function mark_centre(pad, other)
+local function mark_center(pad, other)
     -- Level with the pad, which keeps the rail of charge cells above it out of
     -- the sum; within a mark's reach of it and nearer it than the trigger
     -- beside it, which keeps the other weapon and the stick's resting mark
@@ -295,15 +298,15 @@ for _, load in ipairs({
     MODS = load[2]
     local l = draw(w, h, s)
     for _, pad in ipairs({{"gun", l.guns, l.bombs}, {"bomb", l.bombs, l.guns}}) do
-        local off = mark_centre(pad[2], pad[3])
-        check("the " .. pad[1] .. " mark is centred with " .. load[1],
+        local off = mark_center(pad[2], pad[3])
+        check("the " .. pad[1] .. " mark is centered with " .. load[1],
               off and math.abs(off) < pad[2].r * 0.10,
               off and string.format("%.1f off, %.0f%% of the radius", off,
                                     100 * off / pad[2].r) or "no ink")
     end
 end
 
--- No round wears a trail. The tail is what put the bomb off centre in the
+-- No round wears a trail. The tail is what put the bomb off center in the
 -- first place: it faded to nothing along its length, so a box straddled the
 -- pad while everything visible crowded one side. It belongs to a round in
 -- flight, and a control is not showing a round going anywhere.
@@ -392,6 +395,12 @@ local function controls(L2)
         out[#out + 1] = {n = "bombs", x = L2.bombs.x, y = L2.bombs.y,
                          r = L2.bombs.r}
     end
+    -- The fan sits in the same rail and answers the same way, so it belongs in
+    -- the same sweep. It is the one cell that is a mode rather than a stock,
+    -- which changes what it draws and nothing about where it may sit.
+    if L2.fan then
+        out[#out + 1] = {n = "fan", x = L2.fan.x, y = L2.fan.y, r = L2.fan.r}
+    end
     for i, c in ipairs(L2.charge) do
         out[#out + 1] = {n = "charge" .. i, x = c.x, y = c.y, r = c.r}
     end
@@ -437,7 +446,7 @@ end
 -- most of a screen of edge to climb, and held sideways the dial takes better
 -- than half the height and leaves room for one cell. Both are measured,
 -- because the wrap is not an edge case on a landscape phone -- it is the
--- ordinary behaviour there, and it is the arithmetic that has to produce a
+-- ordinary behavior there, and it is the arithmetic that has to produce a
 -- column in one window and a block in the other.
 local TIGHT, ROOMY = 352, 1262      -- what ui.radar_span() leaves, either way
 
@@ -451,6 +460,7 @@ local function columns(l)
 end
 
 local function under_ceiling(l, ceil)
+    if l.fan and l.fan.y + l.fan.r > ceil then return false end
     for _, c in ipairs(l.charge) do
         if c.y + c.r > ceil then return false end
     end
@@ -604,7 +614,7 @@ do
                 if math.abs(cx - pad.x) < pad.r and math.abs(cy - pad.y) < pad.r
                     and hw < pad.r * 0.9 then
                     -- A round piece reaches its own radius from its own
-                    -- centre, and a stroke reaches its far end. Neither
+                    -- center, and a stroke reaches its far end. Neither
                     -- reaches a corner of the box drawn round it, which is
                     -- what a box-only reading of this said and why a mark
                     -- inside its pad measured as a mark over the rim.
@@ -679,6 +689,48 @@ do
     local none = draw(w, h, s)
     check("a hull holding no charges draws no rail", #none.charge == 0,
           #none.charge .. " cells with an empty hand")
+end
+
+-- --- the fan, in the rail that was already the tight one --------------------
+--
+-- Multifire's cell is the fifth thing in a column that had four at its worst,
+-- and the worst is a phone held sideways, where the dial takes better than
+-- half the height and the rail is already stepping left to fit. Adding to that
+-- column is exactly where a rail runs into the dial or off the edge, so the
+-- full rack plus a fan is checked rather than assumed.
+do
+    local w, h, s = reset(unpack(LAND))
+    touch.ceiling = TIGHT
+    touch.charges = {0, 1, 2, 3}
+    -- Stock in every slot, or the rail quietly drops the empty ones and the
+    -- tight case under test is not the tight case.
+    touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
+    touch.maxes = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
+    touch.has_fan = true
+    local l = touch.layout(w, h, s)
+    check("the fan takes a cell of its own beside a full rack",
+          l.fan ~= nil and #l.charge == 4,
+          tostring(l.fan ~= nil) .. ", " .. #l.charge .. " charges")
+    check("and nothing overlaps once it is there", not worst_overlap(l),
+          worst_overlap(l))
+    check("and the whole rail still clears the dial", under_ceiling(l, TIGHT),
+          "something is drawn into the dial's corner")
+    for _, c in ipairs(controls(l)) do
+        check(c.n .. " is on the screen",
+              c.x - c.r >= 0 and c.x + c.r <= w
+                  and c.y - c.r >= 0 and c.y + c.r <= h,
+              string.format("%s at %.0f,%.0f r%.0f", c.n, c.x, c.y, c.r))
+    end
+    -- The fan is nearest the trigger, and it stays there as charges are spent.
+    -- A mode that walked down the column every time a charge went would be a
+    -- control that moved while a thumb was reaching for it.
+    local first = {l.fan.x, l.fan.y}
+    touch.counts = {[0] = 0, [1] = 0, [2] = 0, [3] = 1}
+    local fewer = touch.layout(w, h, s)
+    check("and it holds its cell as the rack empties",
+          fewer.fan.x == first[1] and fewer.fan.y == first[2],
+          string.format("%.0f,%.0f then %.0f,%.0f", first[1], first[2],
+                        fewer.fan.x, fewer.fan.y))
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

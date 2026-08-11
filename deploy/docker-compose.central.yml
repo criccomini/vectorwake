@@ -51,7 +51,7 @@ services:
   # No depends_on, deliberately. Making Caddy wait for this to finish would
   # mean a failed one-second file copy holding the whole site down, when the
   # volume already holds a perfectly good previous page. Caddy serves the old
-  # bundle until the new one lands, which is the behaviour worth having.
+  # bundle until the new one lands, which is the behavior worth having.
   client:
     image: ${VW_CLIENT_IMAGE:-ghcr.io/criccomini/vectorwake-client:prod}
     restart: "no"

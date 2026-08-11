@@ -2,7 +2,7 @@
 
 vectorwake carries no text between players, permanently, per
 [decision 28](../architecture/decisions.md#28-no-chat). The record that removed
-chat also priced it: any league or clan scene will organise on Discord, so the
+chat also priced it: any league or clan scene will organize on Discord, so the
 community's real home is somewhere we do not control. This document is about
 paying that price on purpose instead of being surprised by it. We create the
 server, we hold the keys, and the game points at it.
@@ -63,7 +63,7 @@ screen already differ from each other: full bleed, because Discord masks an
 icon to a circle and would read the file's chamfer as a bite out of the rim,
 and stood on its middle vertical, because three wedges are nearly twice as
 wide as they are tall and centring the box they fill leaves the standing
-strokes visibly right of centre. It keeps the mark's own hairline, since
+strokes visibly right of center. It keeps the mark's own hairline, since
 nothing here asks for it at sixteen pixels.
 
 ## The door
@@ -161,7 +161,7 @@ already holds, and a line saying warzone went dark at 14:02 and came back at
 
 `deploy/discord/icon.py` proved the pipeline: a drawing in the game's own
 palette, rasterised headlessly, uploaded. The same path answers `/rank` and
-`/whois` with a card drawn in the game's colours rather than a grey embed, and
+`/whois` with a card drawn in the game's colors rather than a gray embed, and
 the difference between a bot that belongs to this project and one bolted onto
 it is mostly that. A weekly standings post and a sparkline of the last seven
 days' traffic are the same trick again.
@@ -237,7 +237,7 @@ the constraint is size rather than format: 10 MB for an unboosted server,
 50 at boost level two, 100 at three, and Discord takes the higher of the
 server's cap and the poster's rather than the sum.
 
-Ten megabytes is a great deal more than this game needs. Flat colour on black
+Ten megabytes is a great deal more than this game needs. Flat color on black
 with hard edges is close to the ideal case for a codec, so seconds of arena
 footage land well under a megabyte. Anything long enough to strain that wants
 a link to our own hosting with `og:video` on the page, which Discord embeds a
