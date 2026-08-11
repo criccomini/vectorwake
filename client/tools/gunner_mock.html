@@ -1,0 +1,359 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;background:#05070c}
+  canvas{display:block}
+</style>
+<canvas id="c"></canvas>
+<script>
+const HULLS = HULLS_JSON;
+
+// palette, straight out of client/arena/palette.lua
+const BG = [0x05/255, 0x07/255, 0x0c/255];
+const FRIEND = [0x4f/255, 0xd6/255, 0xff/255];
+const PANEL_INK = [0x9f/255, 0xb6/255, 0xd4/255];
+const RUNG = [[0x62/255,0xcc/255,0x35/255], [0xf7/255,0xdd/255,0x0b/255],
+              [0xff/255,0x70/255,0x00/255], [0xf4/255,0x2e/255,0x3d/255]];
+const BOUNTY = [0xff/255, 0xe0/255, 0x8a/255];
+const INK = [0xdf/255, 0xe9/255, 0xf5/255];
+const DIMC = [0x6c/255, 0x7a/255, 0x90/255];
+
+const css = (c, a) => `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)},${a})`;
+const hot = (c, k) => [c[0]+(1-c[0])*k, c[1]+(1-c[1])*k, c[2]+(1-c[2])*k];
+
+// --- hull bake, mirroring the loop at the top of world.lua -----------------
+function bake(h) {
+  const p = h.poly, n = p.length / 2;
+  let area = 0, lo = p[1], hi = p[1];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += p[i*2]*p[j*2+1] - p[j*2]*p[i*2+1];
+    lo = Math.min(lo, p[i*2+1]); hi = Math.max(hi, p[i*2+1]);
+  }
+  const w = area > 0 ? 1 : -1;
+  h.lo = lo; h.hi = hi; h.mid = (lo + hi) / 2; h.nose = hi;
+  h.hot = [];
+  for (let v = 0; v < n; v++) {
+    const b = (v + 1) % n;
+    const dx = p[b*2] - p[v*2], dy = p[b*2+1] - p[v*2+1];
+    const len = Math.hypot(dx, dy) || 1;
+    const ny = -dx / len * w;
+    h.hot.push(0.40 + 0.60 * (0.5 + 0.5 * ny));
+  }
+  return h;
+}
+HULLS.forEach(bake);
+
+// point in hull-local space -> canvas, for a ship at (x,y) heading `a` radians
+function place(ctx, pts, x, y, ca, sa, s) {
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i += 2) {
+    const px = x + (pts[i]*ca + pts[i+1]*sa) * s;
+    const py = y + (pts[i]*sa - pts[i+1]*ca) * s;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  return ctx;
+}
+const px = (h, i, x, ca, sa, s) => x + (h[i]*ca + h[i+1]*sa) * s;
+const py = (h, i, y, ca, sa, s) => y + (h[i]*sa - h[i+1]*ca) * s;
+
+let Z = 1; // current magnification, for shadowBlur which the transform misses
+
+function bloom(ctx, pathFn, depth, alpha, col, width) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = css(col, alpha);
+  ctx.shadowBlur = depth * Z;
+  ctx.strokeStyle = css(col, alpha * 0.9);
+  ctx.lineWidth = width;
+  for (let k = 0; k < 3; k++) { pathFn(); ctx.stroke(); }
+  ctx.restore();
+}
+
+// --- one ship, following M.ship in world.lua -------------------------------
+function ship(ctx, cls, x, y, heading, col, opt) {
+  opt = opt || {};
+  const h = HULLS[cls];
+  const ca = Math.cos(heading), sa = Math.sin(heading);
+  const s = opt.scale || 1;
+  const dim = (opt.alpha || 1) * (h.dim || 1);
+  const near = !opt.far;
+  const P = () => place(ctx, h.poly, x, y, ca, sa, s);
+
+  // body: an opaque base tinted toward the team, then an additive wash
+  // brightest at the bow.
+  ctx.save();
+  P(); ctx.closePath();
+  ctx.fillStyle = css([col[0]*0.055+0.018, col[1]*0.055+0.026, col[2]*0.055+0.042], 0.95*dim);
+  ctx.fill();
+  ctx.clip();
+  const gx0 = x - h.lo*sa*s, gy0 = y + h.lo*ca*s;
+  const gx1 = x - h.hi*sa*s, gy1 = y + h.hi*ca*s;
+  const g = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+  for (let k = 0; k <= 6; k++) {
+    const t = k / 6;
+    g.addColorStop(t, css(col, t * t * 0.20 * dim));
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = g;
+  ctx.fillRect(x - 60*s, y - 60*s, 120*s, 120*s);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  // interior structure, in a neutral instrument grey
+  if (near && h.plates) for (const q of h.plates) {
+    place(ctx, q, x, y, ca, sa, s); ctx.closePath();
+    ctx.fillStyle = css(PANEL_INK, 0.035*dim); ctx.fill();
+    ctx.lineWidth = 0.85*s; ctx.strokeStyle = css(PANEL_INK, 0.36*dim); ctx.stroke();
+  }
+  if (near && h.lines) for (const q of h.lines) {
+    place(ctx, q, x, y, ca, sa, s);
+    ctx.lineWidth = 0.7*s; ctx.strokeStyle = css(PANEL_INK, 0.26*dim); ctx.stroke();
+  }
+
+  // hardpoints, drawn hot
+  if (h.tubes) for (const t of h.tubes) {
+    const ax = x + (t[0]*ca + t[1]*sa)*s, ay = y + (t[0]*sa - t[1]*ca)*s;
+    const bx = x + (t[2]*ca + t[3]*sa)*s, by = y + (t[2]*sa - t[3]*ca)*s;
+    const seg = () => { ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); };
+    ctx.lineCap = 'round';
+    seg(); ctx.lineWidth = (t[4]+4)*s; ctx.strokeStyle = css(col, 0.09*dim); ctx.stroke();
+    seg(); ctx.lineWidth = t[4]*s; ctx.strokeStyle = css(col, 0.30*dim); ctx.stroke();
+    seg(); ctx.lineWidth = t[4]*0.34*s; ctx.strokeStyle = css(hot(col,0.55), 0.9*dim); ctx.stroke();
+  }
+  ctx.restore();
+
+  // silhouette: two skirts of bloom, then a hot edge per side
+  bloom(ctx, () => { P(); ctx.closePath(); }, 9*s, 0.105*dim, col, 1.2*s);
+  bloom(ctx, () => { P(); ctx.closePath(); }, 3*s, 0.32*dim, col, 1.0*s);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const edge = hot(col, opt.mine ? 0.62 : 0.34);
+  const n = h.poly.length / 2;
+  ctx.lineWidth = 1.5*s; ctx.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    ctx.beginPath();
+    ctx.moveTo(px(h.poly, i*2, x, ca, sa, s), py(h.poly, i*2, y, ca, sa, s));
+    ctx.lineTo(px(h.poly, j*2, x, ca, sa, s), py(h.poly, j*2, y, ca, sa, s));
+    ctx.strokeStyle = css(edge, h.hot[i]*dim);
+    ctx.stroke();
+  }
+
+  // the canopy, always the brightest closed cell and always forward of centre
+  if (h.canopy) {
+    place(ctx, h.canopy, x, y, ca, sa, s); ctx.closePath();
+    ctx.fillStyle = css(hot(col,0.3), 0.42*dim); ctx.fill();
+    ctx.lineWidth = 0.9*s; ctx.strokeStyle = css(hot(col,0.8), 0.95*dim); ctx.stroke();
+  }
+  // lamps and dispensers
+  if (near && h.pods) for (const d of h.pods) {
+    const lx = x + (d[0]*ca + d[1]*sa)*s, ly = y + (d[0]*sa - d[1]*ca)*s;
+    ctx.beginPath(); ctx.arc(lx, ly, d[2]*1.3*s, 0, 7);
+    ctx.fillStyle = css(col, 0.30*dim); ctx.fill();
+    ctx.beginPath(); ctx.arc(lx, ly, d[2]*0.45*s, 0, 7);
+    ctx.fillStyle = css(hot(col,0.8), 0.8*dim); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// A carrier: the ship, then one gun per gunner on the ship's own point. The
+// glyph is the same for every class, as the original's is, so nothing here
+// depends on the hull it is drawn over.
+function carrier(ctx, cls, x, y, heading, col, gunners, opt) {
+  opt = opt || {};
+  const h = HULLS[cls];
+  const ca = Math.cos(heading), sa = Math.sin(heading);
+  const s = opt.scale || 1;
+  const n = gunners.length;
+
+  ship(ctx, cls, x, y, heading, col, opt);
+
+  // The original's answer, in this palette: one gun glyph, the same for every
+  // class, drawn on the carrier's own point and turned to the heading its
+  // pilot is holding. Nothing is drawn for an empty slot, because in the
+  // original an empty carrier is just a ship.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  const cy = h.mid;
+  for (let k = 0; k < n; k++) {
+    const g = gunners[k];
+    if (g == null) continue;
+    const e = 0.34 + 0.66 * (g.energy == null ? 1 : g.energy);
+    const a = heading + g.aim;
+    const gca = Math.cos(a), gsa = Math.sin(a);
+    // the barrel, out of the shared centre
+    const o = [x + (cy*sa)*s, y - (cy*ca)*s];
+    const bx = o[0] + gsa*7.4*s, by = o[1] - gca*7.4*s;
+    const rx = o[0] + gsa*1.4*s, ry = o[1] - gca*1.4*s;
+    ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(bx, by);
+    ctx.lineWidth = 3.4*s; ctx.strokeStyle = css(col, 0.10*e); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(bx, by);
+    ctx.lineWidth = 1.15*s; ctx.strokeStyle = css(col, 0.34*e); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(bx, by);
+    ctx.lineWidth = 0.45*s; ctx.strokeStyle = css(hot(col, 0.7), 0.95*e); ctx.stroke();
+    // the breech, which is what makes a stack look like a stack
+    const br = [-1.45,-0.9, 1.45,-0.9, 1.15,2.0, -1.15,2.0];
+    ctx.beginPath();
+    for (let i = 0; i < br.length; i += 2) {
+      const pxx = o[0] + (br[i]*gca + br[i+1]*gsa)*s;
+      const pyy = o[1] + (br[i]*gsa - br[i+1]*gca)*s;
+      if (i === 0) ctx.moveTo(pxx, pyy); else ctx.lineTo(pxx, pyy);
+    }
+    ctx.closePath();
+    ctx.fillStyle = css(col, 0.14*e); ctx.fill();
+    ctx.lineWidth = 0.75*s; ctx.strokeStyle = css(hot(col, 0.5), 0.85*e); ctx.stroke();
+    // the muzzle
+    ctx.beginPath(); ctx.arc(bx, by, 0.6*s, 0, 7);
+    ctx.fillStyle = css(hot(col, 0.85), 0.95*e); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// The count, where the original keeps it: a column of names under the ship,
+// the carrier first and one line per gunner after it.
+function nameColumn(ctx, x, y, rows, col) {
+  ctx.save();
+  for (let k = 0; k < rows.length; k++) {
+    const r = rows[k];
+    const ly = y + k * 15;
+    ctx.font = '12px "DejaVu Sans Mono", ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = css(k === 0 ? col : col, k === 0 ? 0.95 : 0.72);
+    ctx.fillText(r.name, x, ly);
+    ctx.fillStyle = css(BOUNTY, k === 0 ? 0.85 : 0.55);
+    ctx.fillText(String(r.bounty), x + 78, ly);
+  }
+  ctx.restore();
+}
+
+// Five weapons leaving one ship at five angles, which is the thing a stack
+// actually looks like and the only drawing that has to carry it.
+function volley(ctx, x, y, shots, s) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  for (const sh of shots) {
+    const c = RUNG[sh.rung];
+    const dx = Math.sin(sh.aim), dy = -Math.cos(sh.aim);
+    const bx = x + dx*sh.d*s, by = y + dy*sh.d*s;
+    ctx.beginPath();
+    ctx.moveTo(bx - dx*3.2*s, by - dy*3.2*s);
+    ctx.lineTo(bx, by);
+    ctx.lineWidth = 1.1*s; ctx.strokeStyle = css(c, 0.30); ctx.stroke();
+    ctx.beginPath(); ctx.arc(bx, by, 1.5*s, 0, 7);
+    ctx.fillStyle = css(c, 0.30); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx, by, 0.72*s, 0, 7);
+    ctx.fillStyle = css(hot(c, 0.75), 0.95); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// --- page ------------------------------------------------------------------
+function stars(ctx, w, h, seed) {
+  let s = seed;
+  const rnd = () => (s = (s*1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 150; i++) {
+    const x = rnd()*w, y = rnd()*h, a = 0.06 + rnd()*0.22, r = 0.5 + rnd()*0.9;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7);
+    ctx.fillStyle = css(INK, a); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function label(ctx, x, y, text, col, size, align) {
+  ctx.save();
+  ctx.font = `${size}px "DejaVu Sans Mono", ui-monospace, monospace`;
+  ctx.fillStyle = css(col, 0.92);
+  ctx.textAlign = align || 'left';
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function zoomed(ctx, cx, cy, k, fn) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(k, k);
+  Z = k;
+  fn(ctx);
+  Z = 1;
+  ctx.restore();
+}
+
+const q = new URLSearchParams(location.search);
+const IDX = parseInt(q.get('i') || '0', 10);
+const GUNSCALE = parseFloat(q.get('g') || '0.46');
+const W = 1360, H = 660;
+
+const c = document.getElementById('c');
+c.width = W; c.height = H;
+const ctx = c.getContext('2d');
+ctx.fillStyle = css(BG, 1); ctx.fillRect(0, 0, W, H);
+stars(ctx, W, H, 9271 + IDX*77);
+
+const h = HULLS[IDX];
+const CREW = [
+  {cls: 3, aim: -0.9, energy: 1.0},   // Anvil
+  {cls: 5, aim: 2.1,  energy: 0.75},  // Facet
+  {cls: 4, aim: 3.3,  energy: 0.28},  // Cipher, nearly dead
+  {cls: 1, aim: 1.2,  energy: 1.0},   // Wedge
+  {cls: 0, aim: -2.4, energy: 0.9},   // Apex
+];
+const K = 7.4;
+
+const EMPTY = [null, null, null, null, null];
+const SHOTS = [
+  {aim: -0.9, d: 17, rung: 0}, {aim: 2.1, d: 12, rung: 1},
+  {aim: 3.3, d: 20, rung: 0}, {aim: 1.2, d: 15, rung: 2},
+  {aim: -2.4, d: 10, rung: 0},
+];
+
+const ROSTER = [
+  {name: 'Vesper', bounty: 41}, {name: 'Talon', bounty: 12},
+  {name: 'Corvid', bounty: 3},  {name: 'Ember', bounty: 27},
+  {name: 'Quill', bounty: 8},   {name: 'Basalt', bounty: 19},
+];
+
+label(ctx, 40, 54, `${h.name} as a carrier`, INK, 26);
+label(ctx, 40, 82, "the original's approach: one gun glyph per gunner, all on the ship's own point", DIMC, 14);
+
+const COL = [250, 680, 1110], CY = 320;
+zoomed(ctx, COL[0], CY, K, (g) => {
+  carrier(g, IDX, 0, -h.mid, 0, FRIEND, EMPTY);
+});
+nameColumn(ctx, COL[0] + 30, 442, [ROSTER[0]], FRIEND);
+label(ctx, COL[0], 560, 'gunners 0/5', DIMC, 16, 'center');
+label(ctx, COL[0], 584, 'nothing is drawn, so it is just the ship', DIMC, 13, 'center');
+
+zoomed(ctx, COL[1], CY, K, (g) => {
+  carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW);
+});
+nameColumn(ctx, COL[1] + 30, 442, ROSTER, FRIEND);
+label(ctx, COL[1], 560, 'gunners 5/5', INK, 16, 'center');
+label(ctx, COL[1], 584, 'the count is in the names, not in the ship', DIMC, 13, 'center');
+
+zoomed(ctx, COL[2], CY, K, (g) => {
+  carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW);
+  volley(g, 0, -h.mid, SHOTS, 1);
+});
+label(ctx, COL[2], 560, 'the same, firing', INK, 16, 'center');
+label(ctx, COL[2], 584, 'five weapons off one ship at five angles', DIMC, 13, 'center');
+
+// true size, because that is the only scale the question is really about
+label(ctx, 1110, 606, 'at 1:1  (empty, five aboard, firing)', DIMC, 13, 'center');
+zoomed(ctx, 1006, 632, 1, (g) => { carrier(g, IDX, 0, -h.mid, 0, FRIEND, EMPTY); });
+zoomed(ctx, 1110, 632, 1, (g) => { carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW); });
+zoomed(ctx, 1214, 632, 1, (g) => {
+  carrier(g, IDX, 0, -h.mid, 0, FRIEND, CREW);
+  volley(g, 0, -h.mid, SHOTS, 1);
+});
+
+
+
+label(ctx, 40, 634, 'mock: nothing in the client draws this', DIMC, 13);
+</script>
