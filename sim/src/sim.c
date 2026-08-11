@@ -1363,6 +1363,19 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
     for (uint16_t i = 0; i < input_count; i++)
         if (inputs[i].ship < SIM_MAX_SHIPS) buttons[inputs[i].ship] = inputs[i].buttons;
 
+    /* Riders per ship, counted once. The penalty check below wants the count
+     * for every hull every tick, and asking sim_gunners each time is a walk
+     * of the roster inside a walk of the roster. Counting from `prev`-equal
+     * state is safe because nothing between here and the penalty check
+     * changes a carrier field: attach and detach happen between ticks, and
+     * the seating pass that drops riders runs after the ship loop ends. */
+    uint8_t riders[SIM_MAX_SHIPS] = {0};
+    for (int i = 0; i < next->ship_count; i++) {
+        const sim_ship *g = &next->ships[i];
+        if (g->active && g->carrier != SIM_NO_CARRIER && g->carrier < SIM_MAX_SHIPS)
+            riders[g->carrier]++;
+    }
+
     /* --- ships --- */
     for (int i = 0; i < next->ship_count; i++) {
         sim_ship *sh = &next->ships[i];
@@ -1398,7 +1411,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * helpers answer "what can this hull do", and the answer does not
          * change because somebody sat on it. */
         const int riding = sh->carrier != SIM_NO_CARRIER;
-        if (!riding && sim_gunners(next, (uint8_t)i) > 0) {
+        if (!riding && riders[i] > 0) {
             e_thrust -= cls->gunner_thrust;
             e_speed -= cls->gunner_speed;
             if (e_thrust < 0) e_thrust = 0;

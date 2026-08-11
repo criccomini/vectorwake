@@ -1972,10 +1972,26 @@ local function inspect(o, top)
     -- else's, so offering it on an enemy would be a control that quietly
     -- dropped you back on the room channel.
     local follow = o.watch and same_team and o.watch.subject ~= i
+    -- Riding lives in this panel for the reason the other two do: you opened
+    -- it by picking a person, and climbing onto somebody is a thing you do to
+    -- a person. Never offered to a watcher: the request goes out on your own
+    -- seat, and a watcher pressing DROP on somebody else's carrier would be
+    -- detaching a ship the button was not about.
+    --
+    -- Offered on a living teammate who is not you and is not themselves
+    -- riding somebody, since the core refuses a chain. Every other condition
+    -- the core enforces is left to it: a bar that is not full and a hull with
+    -- no room refuse on the wire and say so by the button not taking. Testing
+    -- them here as well would be a second copy of the rules, drifting.
+    local riding = (not o.watch) and sim.ship_carrier(o.me) or 255
+    local drop = riding ~= 255 and i == riding
+    local attach = not o.watch and same_team and i ~= o.me
+        and sim.ship_alive(i) == 1 and sim.ship_carrier(i) == 255 and not drop
     -- The team row always exists now, so the count is fixed.
     local rows_n = 6
     local h = 30 * S + rows_n * rowh
-        + ((invite or follow) and (KEY_H + 12) * S or 0) + 10 * S
+        + ((invite or follow or attach or drop) and (KEY_H + 12) * S or 0)
+        + 10 * S
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
     -- at the top of the screen lands on the menu chip.
@@ -2042,27 +2058,14 @@ local function inspect(o, top)
     -- appear together: inviting wants somebody who is not on your side and
     -- following wants somebody who is.
     local label, action = nil, nil
-    -- Riding lives in this panel for the reason the other two do: you opened
-    -- it by picking a person, and climbing onto somebody is a thing you do to
-    -- a person. It outranks watching because it is the one of the two that
-    -- does something to the game.
-    --
-    -- Offered on a living teammate who is not you and is not themselves
-    -- riding somebody, since the core refuses a chain. Every other condition
-    -- the core enforces is left to it: a bar that is not full and a hull with
-    -- no room refuse on the wire and say so by the button not taking. Testing
-    -- them here as well would be a second copy of the rules, drifting.
-    local mine = o.watch and o.watch.subject or o.me
-    local riding = mine and sim.ship_carrier(mine) or 255
-    local attach = same_team and i ~= mine and sim.ship_alive(i) == 1
-        and sim.ship_carrier(i) == 255 and not o.watch
-    if riding ~= 255 then
-        -- Already aboard, so the only thing this panel can offer is the way
-        -- off, and it offers it on whoever you are riding rather than on
-        -- everybody: a DROP under a stranger's name is a control that would
-        -- do something to a ship the name does not belong to.
-        label, action = (i == riding) and "DROP" or nil,
-                        (i == riding) and "detach" or nil
+    -- DROP only on the card of whoever you are riding: a DROP under a
+    -- stranger's name would be a control about a ship the name does not
+    -- belong to. ATTACH on any other living teammate, including while you
+    -- ride -- switching carriers is a legal ask, gated by the core on the
+    -- same full bar as any other attach. Neither ever displaces INVITE,
+    -- which wants an enemy where these want a teammate.
+    if drop then
+        label, action = "DROP", "detach"
     elseif attach then
         label, action = "ATTACH", "attach"
     elseif invite then
