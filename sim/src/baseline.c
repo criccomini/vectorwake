@@ -548,7 +548,19 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         memset(&mn, 0, sizeof mn);
         mn.speed = 0;
         mn.still = 1;
-        mn.life = 6000;
+        /* Two minutes. MineAliveTime in the original, whose own help file
+         * bounds it at 200 to 60000 hundredths -- two seconds to ten minutes
+         * -- and neither that file nor the settings template carries a
+         * default, so the number itself is ours rather than inherited.
+         *
+         * It was a minute, which was the bomb's alive time reused on the
+         * argument that a mine is the bomb you leave behind. That reasoning
+         * holds for the damage and not for the clock: a bomb's minute means
+         * "until it hits something", and a mine's means how long the ground
+         * it denies stays denied. A minute is a tenth of what the original
+         * would even accept, and zone denial that expires while the fight is
+         * still in the room is not denial. */
+        mn.life = 12000;
         mn.on_wall = SIM_WALL_END;
         mn.expire_ends = 1;
         mn.trigger = 2 * 16 * 256;
