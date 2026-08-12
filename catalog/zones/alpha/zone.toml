@@ -301,8 +301,33 @@ bomb_mods = { prox = 1, shrapnel = 2 }
 
 # The one hull whose bombs never break up, which is most of what makes its
 # stalling bomb above a different weapon rather than a better one.
+# And a bar to pay for the shape. It is the hardest hull in the game to hit:
+# twelve pixels wide where the rest of the roster is twenty to thirty-four, and
+# weapons test the oriented rectangle rather than a box around it, so pointing
+# at somebody it shows a third of a Chord. That advantage is purely defensive,
+# which is why it never stops paying: it does not fall off with range the way a
+# spread gun does, and it grows as accuracy drops.
+#
+# Untouched it won every matchup on every map measured, six of six, at 61% in
+# the pit and 68 to 74 on rooms with distance in them. Nothing else on the board
+# came within eighteen points. Its designed price, ships.md's 1100, was never
+# applied and its designed identity, cloak and stealth, is not in the core, so
+# it had been holding the whole upside of being a knife for free.
+#
+# 1300 rather than the 1100 on paper, because both were measured. 1100 balances
+# the roster and ruins the hull: Alpha's own map goes from 23.6 points of spread
+# to 8.1, and the Cipher lands last having beaten nothing. 1300 buys the same
+# board, 8.8 points, and leaves it the strongest hull with one thing that beats
+# it, which is the shape a roster built on counters is supposed to have. gen7
+# agrees: 29.4 to 12.1, five wins and a loss.
+#
+# The ladder keeps its shape rather than losing its top, climbing 765 to 1300
+# over seven greens where the baseline climbs 1000 to 1700.
 [[arena.ships]]
 name = "Cipher"
+energy = 1300
+initial_energy = 765
+upgrade_energy = 76
 bomb_mods = { prox = 1 }
 
 # Double barrels, a rung of multifire nobody else climbs to, and the whole of

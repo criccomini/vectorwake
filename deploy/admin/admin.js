@@ -887,6 +887,36 @@ function drawPilot(p) {
 // word.
 let typing = null;
 
+// Where a pilot sits on their ladder. Empty while they are placing, because
+// the server hands out no position until a rating has settled and an empty
+// cell says that more plainly than a placeholder would.
+//
+// The size of the board rides in the title rather than the cell: #3 of 5 and
+// #3 of 5000 are different facts, and a column narrow enough to scan cannot
+// carry both halves of every row.
+function rank(p) {
+  if (p.rank == null) return "";
+  const cell = document.createElement("span");
+  cell.textContent = `#${p.rank}`;
+  if (p.of) cell.title = `${p.rank} of ${p.of} rated in ${p.class}`;
+  return cell;
+}
+
+// The band, which is the only one of these three a player is ever shown. The
+// server computes it, and sends the two constants behind it, because the
+// thresholds and the default class live in rating.rs and meta.rs and a second
+// copy here is a second copy to forget when they move.
+//
+// Three states and they are genuinely different: a band, still placing with
+// the count so far, and never rated at all. The class comes along only when it
+// is not the default one, so today it says nothing and the day duels are rated
+// it stops the column quietly comparing two ladders.
+function tier(p, r) {
+  if (p.tier) return p.class === r.default_class ? p.tier : `${p.tier} (${p.class})`;
+  if (p.games != null) return `placing ${p.games}/${r.provisional}`;
+  return "";
+}
+
 async function drawPilots(q) {
   let r;
   try {
@@ -917,6 +947,9 @@ async function drawPilots(q) {
       pick,
       p.kind === "human" ? (p.claimed ? "human" : "guest") : p.kind,
       [p.banned ? "banned" : p.admin ? "admin" : "", p.banned ? "bad" : "good"],
+      [rank(p), "n"],
+      [p.rating == null ? "" : Math.round(p.rating), "n"],
+      tier(p, r),
       p.last_seen,
     ];
   }));

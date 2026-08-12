@@ -213,6 +213,21 @@ and a button that repeats them invites somebody to wonder what it does
 differently. Picking a row opens that pilot's card, and under the card is what
 the fleet saw them do.
 
+Each row carries a standing in three readings, because they answer questions
+that are not the same one. **rank** is the position on the ladder, **rating**
+is the number the matchmaker reads, and **tier** is the band, which is the only
+one of the three a player is ever shown per
+[rating.md](../design/rating.md). Two things follow from how rating works and
+are worth knowing before reading the column. A pilot holds one rating per mode
+class, so the row shows the class they have played most and names it when it is
+not the default one; the rank is their position on that ladder rather than on
+some merged board. And a pilot still inside their provisional games has a
+rating but no position, since ranking an unsettled number would push everybody
+else down for it, so the cell reads `placing 4/10` and the rank is empty. Bots
+hold accounts and are rated like anybody else, which is the point of them, so
+the top of a ladder can be one and that is the system working rather than a
+bug.
+
 That heading is up whether or not anybody is picked, the way Log and Bans are,
 and says to pick a pilot when nothing is. It lived inside the block it labels
 for one afternoon, which meant the section did not exist until you had already
