@@ -11,7 +11,7 @@
      client/arena/palette.lua and mean what they mean in the game, so cyan
      is the acting edge and orange is the destructive one.
 
-     Four views rather than one scroll. Everything used to sit on a single
+     Five main views rather than one scroll. Everything used to sit on a single
      page in the order it was built, so an operator looking for a ban
      scrolled past the fleet, the feed, a pilot card and a command log to
      find it, and the page grew a section every time the panel did. The
@@ -65,6 +65,7 @@
   <a href="#fleet" id="nav-fleet" data-view="fleet">Fleet</a>
   <a href="#pilots" id="nav-pilots" data-view="pilots">Pilots</a>
   <a href="#activity" id="nav-activity" data-view="activity">Activity</a>
+  <a href="#errors" id="nav-errors" data-view="errors">Errors</a>
   <a href="#access" id="nav-access" data-view="access">Access</a>
 </nav>
 
@@ -345,6 +346,42 @@
         <button type="button" data-step="1" class="quiet">next</button>
       </div>
       <p id="recent-empty" class="dim" hidden></p>
+    </section>
+
+    <!-- ---------------------------------------------------------- errors -->
+    <section class="view" id="view-errors" aria-labelledby="errors-head" hidden>
+      <h2 id="errors-head">Client errors</h2>
+
+      <div class="tiles">
+        <div class="tile"><span class="v" id="errors-hour">0</span><span class="k">groups in 1h</span></div>
+        <div class="tile"><span class="v" id="errors-day">0</span><span class="k">groups in 24h</span></div>
+        <div class="tile"><span class="v" id="errors-groups">0</span><span class="k">retained groups</span></div>
+        <div class="tile"><span class="v" id="errors-hits">0</span><span class="k">occurrences</span></div>
+      </div>
+
+      <p class="lede dim">The browser groups repeated failures by build, stack,
+        and reported account. Reports expire 30 days after their last occurrence.</p>
+      <p id="errors-note" class="note" role="status" aria-live="polite"></p>
+      <div class="scroller">
+        <table id="errors">
+          <caption class="sr">Browser errors reported by the game client, newest first</caption>
+          <thead><tr>
+            <th scope="col">last seen</th>
+            <th scope="col">account</th>
+            <th scope="col" class="wrap">error</th>
+            <th scope="col">build</th>
+            <th scope="col">page</th>
+            <th scope="col" class="n">hits</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager" id="errors-pager">
+        <button type="button" data-step="-1" class="quiet">previous</button>
+        <span id="errors-range" class="dim" role="status" aria-live="polite"></span>
+        <button type="button" data-step="1" class="quiet">next</button>
+      </div>
+      <p id="errors-empty" class="dim" hidden>No browser errors have been reported.</p>
     </section>
 
     <!-- --------------------------------------------------------- access -->

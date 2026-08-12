@@ -46,8 +46,19 @@ local function now()
     return socket and socket.gettime and socket.gettime() or os.time()
 end
 
+-- The page-level error reporter cannot see a Lua module. Hand it the public
+-- account number and nothing else, so a browser failure can be tied to the
+-- pilot an operator will inspect without putting the device secret in JavaScript.
+local function publish_account()
+    if html5 then
+        pcall(html5.run, "window.vwAccount=" ..
+                         tostring(math.max(0, math.floor(M.account or 0))))
+    end
+end
+
 local function save()
     pcall(sys.save, SAVE, {secret = secret, account = M.account})
+    publish_account()
 end
 
 local function load()
@@ -56,6 +67,7 @@ local function load()
         secret = d.secret
         M.account = type(d.account) == "number" and d.account or 0
     end
+    publish_account()
 end
 
 -- One POST. Defold's http.request is the same call in a browser and on a
@@ -124,6 +136,7 @@ local function session()
         M.claimed = r.claimed == true
         M.note = ""
         refreshed_at = now()
+        publish_account()
     end)
 end
 

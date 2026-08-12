@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1420"/>
+      <stop offset="1" stop-color="#05070c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#4fd6ff" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#4fd6ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#05070c"/>
+  <rect x="1" y="1" width="1198" height="628" fill="url(#fade)" stroke="#1d2838" stroke-width="2"/>
+  <path d="M0 524H1200M0 419H1200M0 314H1200M0 209H1200M0 104H1200" stroke="#101722"/>
+  <path d="M180 0V630M390 0V630M600 0V630M810 0V630M1020 0V630" stroke="#101722"/>
+
+  <g transform="translate(72 62) scale(.55)" stroke-width="1.2" stroke-linejoin="miter">
+    <path fill="#ffa552" stroke="#ffa552" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+    <path fill="#3f4b60" stroke="#3f4b60" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+    <path fill="#4fd6ff" stroke="#4fd6ff" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+  </g>
+  <text x="132" y="102" fill="#dfe9f5" font-family="DejaVu Sans Mono, monospace" font-size="27" letter-spacing="2">vectorwake</text>
+  <text x="72" y="230" fill="#dfe9f5" font-family="DejaVu Sans Mono, monospace" font-size="54" font-weight="700" letter-spacing="-2">MASSIVELY MULTIPLAYER</text>
+  <text x="72" y="294" fill="#dfe9f5" font-family="DejaVu Sans Mono, monospace" font-size="54" font-weight="700" letter-spacing="-2">SPACE COMBAT.</text>
+  <text x="75" y="356" fill="#7c8da6" font-family="DejaVu Sans Mono, monospace" font-size="21">Live in your browser. Free on desktop and mobile.</text>
+
+  <g transform="translate(815 160)">
+    <circle cx="142" cy="142" r="210" fill="url(#glow)"/>
+    <circle cx="142" cy="142" r="130" fill="none" stroke="#1d3a4d" stroke-width="2"/>
+    <circle cx="142" cy="142" r="72" fill="none" stroke="#1d3a4d"/>
+    <path d="M-26 142H310M142-26V310" stroke="#1d3a4d"/>
+    <path d="M142 54L202 154L168 145L142 224L116 145L82 154Z" fill="#0b1420" stroke="#4fd6ff" stroke-width="4"/>
+    <path d="M142 75V196M111 145H173" stroke="#4fd6ff" stroke-opacity=".5"/>
+    <path d="M115 228L99 269M142 228V290M169 228L185 269" stroke="#4fd6ff" stroke-width="3" stroke-linecap="round" opacity=".65"/>
+    <circle cx="17" cy="65" r="6" fill="#ffa552"/>
+    <path d="M32 78L78 111" stroke="#ffa552" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="272" cy="215" r="5" fill="#ff5ea8"/>
+    <path d="M256 205L215 180" stroke="#ff5ea8" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(72 509)" font-family="DejaVu Sans Mono, monospace" font-size="16" letter-spacing="1.5">
+    <rect width="184" height="48" fill="#4fd6ff"/>
+    <text x="20" y="31" fill="#02050a" font-weight="700">PLAY FOR FREE</text>
+    <text x="218" y="31" fill="#7c8da6">INERTIAL FLIGHT</text>
+    <text x="438" y="31" fill="#7c8da6">SEVEN SHIPS</text>
+    <text x="628" y="31" fill="#7c8da6">PERSISTENT PILOTS</text>
+  </g>
+  <text x="1128" y="594" text-anchor="end" fill="#3f4b60" font-family="DejaVu Sans Mono, monospace" font-size="15">vectorwake.net</text>
+</svg>
