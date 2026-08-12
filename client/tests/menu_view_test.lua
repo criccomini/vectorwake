@@ -708,37 +708,37 @@ rail_view.rail_hover = nil
 
 do
     local controls = require("arena.controls")
-    local rows = {}
+    local pad_rows = {}
     for _, c in ipairs(controls) do
         if c.pad then
-            rows[#rows + 1] = {label = string.lower(c.name), detail = c.pad}
+            pad_rows[#pad_rows + 1] = {label = string.lower(c.name), detail = c.pad}
         end
     end
     -- A phone held sideways, in drawable pixels at two per point, which is
     -- the shortest window this interface is laid out for.
     local hh = 390 * 2
-    local st = draw({depth = 2, sel = 0, rail = RAIL, rail_sel = 1,
+    local page = draw({depth = 2, sel = 0, rail = RAIL, rail_sel = 1,
                      focus = "rows", home = false, closable = true,
-                     rows = rows}, 844 * 2, hh, true)
+                     rows = pad_rows}, 844 * 2, hh, true)
     local off = nil
-    for i = 1, st.n do
-        local t = st.text[i]
+    for i = 1, page.n do
+        local t = page.text[i]
         if t.y < 0 or t.y > hh then
             off = string.format("%q at y %.0f", t.s, t.y)
         end
     end
     check("every controls row fits a phone held sideways", off == nil, off)
     local drawn = 0
-    for _, r in ipairs(rows) do
-        for i = 1, st.n do
-            if string.upper(st.text[i].s) == string.upper(r.label) then
+    for _, r in ipairs(pad_rows) do
+        for i = 1, page.n do
+            if string.upper(page.text[i].s) == string.upper(r.label) then
                 drawn = drawn + 1
                 break
             end
         end
     end
-    check("and every one of them is drawn", drawn == #rows,
-          drawn .. " of " .. #rows)
+    check("and every one of them is drawn", drawn == #pad_rows,
+          drawn .. " of " .. #pad_rows)
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

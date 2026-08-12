@@ -469,35 +469,6 @@ local function key_cap(x, y, w, label, on)
         pal.a(col, on and 1 or 0.85), "center", nil, true)
 end
 
--- Broken into lines no wider than `measure`, at whitespace. Used by the card a
--- dead pilot reads and by the label the pointer raises, which say the same
--- sentences and would otherwise break them in two different places.
---
--- Remembered, because the answer only changes when the sentence or the room
--- does, and the label asks the same question of the same sentence every
--- frame a pointer rests on an instrument. Building it each time is a hundred
--- string joins a frame to redraw words that have not moved, which is exactly
--- the sort of thing that shows up as a cursor that does not keep up.
-local wrap_cache = {}
-local function wrap(s, px, measure)
-    local id = s .. "\1" .. px .. "\1" .. measure
-    local hit_ = wrap_cache[id]
-    if hit_ then return hit_ end
-    local out, line = {}, nil
-    for word in string.gmatch(s, "%S+") do
-        local try = line and (line .. " " .. word) or word
-        if line and text_w(try, px) > measure then
-            out[#out + 1] = line
-            line = word
-        else
-            line = try
-        end
-    end
-    if line then out[#out + 1] = line end
-    wrap_cache[id] = out
-    return out
-end
-
 -- Close, as a drawn mark rather than the letter x.
 --
 -- A letter is a letter: at this size an x reads as text somebody left in the
@@ -628,7 +599,6 @@ function M.begin(layer, w, h, density, touching, now)
     -- Every wrapped sentence was broken against the old width, so the memo
     -- goes with the size that produced it. Only on a real change: clearing it
     -- every frame would be the same as not having one.
-    if S ~= density then wrap_cache = {} end
     S = density
     -- The marks draw into the same layer, and the pads reach for them after
     -- this returns, so they are handed it here rather than by each caller.
@@ -1867,7 +1837,6 @@ local function status(me, charges, lift)
     txt(tostring(bty), val, y + rows_h / 2, (FONT - 2) * z,
         bty > 0 and pal.a(pal.PRIZE, 0.95) or pal.a(pal.DIM, 0.5))
     local bw = val + text_w(tostring(bty), (FONT - 2) * z)
-    if bw > wide then wide = bw end
     zone("bounty", x, y, bw - x, rows_h)
 
     return 0
@@ -2171,7 +2140,7 @@ local function help_table()
     local scale = (w > room) and (room / w) or 1
     if scale < 1 then
         fs, rowh, pad, gap = fs * scale, rowh * scale, pad * scale, gap * scale
-        kw, nw, dw = kw * scale, nw * scale, dw * scale
+        kw, nw = kw * scale, nw * scale
         head = head * scale
         w = room
         h = pad * 2 + head + #HELP_ROWS * rowh
