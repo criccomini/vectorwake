@@ -261,6 +261,13 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         sh->active = (uint8_t)(flags & 1);
         sh->alive = (uint8_t)((flags >> 1) & 1);
         sh->cls = (uint8_t)r8(&r);
+        /* A hull index off the wire is an array index everywhere it lands:
+         * settings->classes is SIM_MAX_CLASSES wide, and both the stepping
+         * core and the client's accessors subscript it with this byte and no
+         * bound of their own. Refusing it here is the only place that covers
+         * all of them, and a sender with a class this build does not have is
+         * talking about a game this build cannot play anyway. */
+        if (sh->cls >= SIM_MAX_CLASSES) return -1;
         sh->team = (uint8_t)r8(&r);
         sh->x = (int32_t)r32(&r);
         sh->y = (int32_t)r32(&r);

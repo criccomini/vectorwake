@@ -441,6 +441,12 @@ end
 -- open under it swallows every press that lands in its rectangle.
 local function shut_panels()
     ui.details = false
+    -- The controls table belongs in this list for the same reason the
+    -- scoreboard does: the toggles below treat the two as one slot, and help
+    -- was the half that opening the menu forgot. It is not drawn under an open
+    -- menu, so the symptom was a table nobody asked for reappearing when the
+    -- menu closed, including over a game joined in the meantime.
+    ui.help = false
     ui.rooms_open = false
     ui.room_ask = nil
 end
@@ -950,10 +956,31 @@ function init(self)
     -- directory answers, so arriving and pressing enter is arriving and
     -- flying. The rail is still beside it, one press left.
     go_home(self, "zones")
+
+    -- Let go of everything when the window does.
+    --
+    -- A key released while the page is not focused produces no keyup for the
+    -- page to hear, so the press stays in `held` forever: come back to the tab
+    -- and the ship is still thrusting, or still turning, with nothing on the
+    -- keyboard down. A modifier stuck that way is worse than a stuck thrust,
+    -- because chords are resolved by reading `held` and a phantom Shift hands
+    -- every later press to the wrong binding.
+    --
+    -- Nothing else in the client claims this listener, and Defold allows one.
+    window.set_listener(function(_, event)
+        if event == window.WINDOW_EVENT_FOCUS_LOST then
+            held = {}
+            owner = {}
+            touch.release_all()
+        end
+    end)
 end
 
 function final(self)
     msg.post(".", "release_input_focus")
+    -- The listener outlives this script otherwise, and it closes over tables
+    -- this script owns.
+    window.set_listener(nil)
 end
 
 -- Whether a ship is burning its engine this frame, which is the only thing on
@@ -1362,7 +1389,7 @@ function update(self, dt)
             -- the keyboard does not have to make.
             go = tapped[hash("select")]
                 or (not asking and tapped[hash("guns")]),
-            back = tapped[hash("menu")] or tapped[hash("cancel")],
+            back = tapped[hash("menu")],
             rub = tapped[hash("backspace")],
         })
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
@@ -1400,6 +1427,13 @@ function update(self, dt)
 
     if self.online and net.connected then
         me = net.me
+        -- Whatever the thumbs were holding when the cockpit went away, let go
+        -- of it. on_input stops feeding touch.lua for the length of a watch,
+        -- so a release landing after this point is never delivered and the
+        -- latch it was meant to clear survives: the pad held while tapping
+        -- WATCH still reads as held, silently, until a hull is taken again and
+        -- the ship opens fire with nobody's finger on the glass.
+        if net.watching and not watching then touch.release_all() end
         watching = net.watching
     end
 
@@ -1796,9 +1830,16 @@ function update(self, dt)
         -- whether the rail holds a cell for declining it. The same expression
         -- the multifire sound reads, because it is the same question: does
         -- this hull have barrels to turn off.
-        touch.has_fan = sim.ship_mod(me, sim.TRIG_GUN, sim.MOD_MULTI) > 0
-            or sim.ship_mod(me, sim.TRIG_BOMB, sim.MOD_MULTI) > 0
-        touch.multi_off = sim.ship_multi_off(me)
+        -- Guarded like every other read of `me` on this frame, and for a
+        -- harder reason than the pads not being drawn: watching sets `me` to
+        -- 255, the wire's "nobody", which the core refuses as a ship index.
+        -- These two were the only reads here that asked anyway, so every frame
+        -- of every watch raised before the layers flushed and the screen sat
+        -- frozen on the last frame the watcher had flown.
+        touch.has_fan = not watching
+            and (sim.ship_mod(me, sim.TRIG_GUN, sim.MOD_MULTI) > 0
+                 or sim.ship_mod(me, sim.TRIG_BOMB, sim.MOD_MULTI) > 0)
+        touch.multi_off = not watching and sim.ship_multi_off(me)
         touch.charges = my_slots()
         touch.has_mine = not watching and sim.mine_max(me) > 0
         touch.mine_max = touch.has_mine and sim.mine_max(me) or 0
@@ -2073,6 +2114,7 @@ function enter_game(self, address, zone_name, wt, room, watch)
     me = 0
     directory.close()
     ui.details = false
+    ui.help = false
     ui.map = false
     -- The rooms panel is left standing. Moving room is the one join that
     -- happens from inside a list, and the list is where you were looking:
@@ -2627,7 +2669,15 @@ function on_input(self, action_id, action)
                     -- Better than half a row before it counts as travel,
                     -- which is the width of the wobble in a tap.
                     if math.abs(dy) > pitch * 0.6 then list_drag.moved = true end
-                    local to = list_drag.at + math.floor(dy / pitch)
+                    -- Rounded toward zero, so the same small wobble counts the
+                    -- same in both directions. math.floor runs toward negative
+                    -- infinity, which made one pixel of downward drift a whole
+                    -- row of scroll while a pixel upward was none: a tap that
+                    -- shifted the list under its own finger and opened the row
+                    -- that slid into the gap.
+                    local rows = dy / pitch
+                    rows = (rows < 0) and math.ceil(rows) or math.floor(rows)
+                    local to = list_drag.at + rows
                     if list_drag.rooms then
                         ui.room_scroll = to
                     else
@@ -2641,11 +2691,22 @@ function on_input(self, action_id, action)
             end
         end
 
+        -- Which fingers the interface took, rather than whether any did.
+        --
+        -- A press landing on a hit box used to return from here, and Defold
+        -- delivers every touch point of a frame in one action: the other
+        -- thumb's press, move and release went with it. Lifting off the guns
+        -- pad in the same frame as a tap on a chip meant the release was never
+        -- seen, the pad stayed latched, and the ship fired with no finger down
+        -- until some later touch happened to reuse the id -- which on the web,
+        -- where ids are not reused, is never.
+        local claimed = dragged and {[dragged] = true} or nil
         if action.touch then
             for _, t in ipairs(action.touch) do
-                if t.id ~= dragged and t.pressed
+                if t.pressed and not (claimed and claimed[t.id])
                    and hit(t.screen_x or t.x, t.screen_y or t.y) then
-                    return
+                    claimed = claimed or {}
+                    claimed[t.id] = true
                 end
             end
         end
@@ -2655,10 +2716,11 @@ function on_input(self, action_id, action)
         if net.watching then
             if action.touch then
                 for _, t in ipairs(action.touch) do
-                    -- Not the finger reading the scoreboard. Walking the
-                    -- camera off a scroll is the same mistake as opening a
-                    -- card under it, one screen further out.
-                    if t.pressed and t.id ~= dragged then
+                    -- Not a finger the interface already took. Walking the
+                    -- camera off a scroll, or off a tap on a chip, is the same
+                    -- mistake as opening a card under it, one screen further
+                    -- out.
+                    if t.pressed and not (claimed and claimed[t.id]) then
                         local x = t.screen_x or t.x
                         local half = (self.vw or 0) / 2
                         tapped[x < half and hash("turn_left")
@@ -2668,7 +2730,8 @@ function on_input(self, action_id, action)
             end
             return
         end
-        touch.on_touch(action, self.vw or 0, self.vh or 0, self.density or 1)
+        touch.on_touch(action, self.vw or 0, self.vh or 0, self.density or 1,
+                       claimed)
         return
     end
     -- A click faster than a frame never reaches this line at all. See the note

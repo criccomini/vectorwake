@@ -2245,6 +2245,11 @@ impl Room {
         );
         let mut m = vec![S2C_WELCOME, ship];
         m.extend_from_slice(&self.world.state.tick.to_le_bytes());
+        // The room, like every other welcome carries it. This one did not, and
+        // it is the only welcome a pilot receives without having just picked a
+        // room, so the corner chip lost the number for the rest of the session:
+        // the client reads it off the end of the message and got nothing.
+        m.extend_from_slice(&(self.number as u16).to_le_bytes());
         let _ = tx.try_send(Message::Binary(m));
         self.broadcast_roster();
         self.broadcast_teams();

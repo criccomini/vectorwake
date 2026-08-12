@@ -154,7 +154,40 @@ local VOLUMES = {{0, "off"}, {0.3, "quiet"}, {0.6, "half"}, {1.0, "full"}}
 local MUSICS = {{0, "off"}, {0.2, "quiet"}, {0.45, "half"}, {0.75, "full"}}
 local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 
+-- The hulls, up here with the other tables a saved setting indexes rather than
+-- down with the pages that draw them. A save is read before any page exists,
+-- and a guard written against a table declared below it is not a guard: Lua
+-- resolves the name at compile time, so it would read a nil global and admit
+-- everything.
+local HULLS = {
+    {"Apex", "interceptor", "fastest, sharpest turn, lightest bar"},
+    {"Wedge", "bomber", "heavy bombs on a short reload"},
+    {"Chord", "skirmisher", "quick guns, no bomb rack"},
+    {"Anvil", "heavy", "the biggest bar and the biggest bomb"},
+    {"Cipher", "stealth", "hardest hitting gun, thinnest hull"},
+    {"Facet", "brawler", "close in, and quick about it"},
+    {"Lattice", "denial", "holds ground it has taken"},
+}
+
 local SAVE = sys.get_save_file("vectorwake", "pilot")
+
+-- A saved number is only worth what the table it indexes says it is worth.
+--
+-- Everything here came out of a file this build did not necessarily write.
+-- Both of these lists have changed size before -- the hulls were eight and are
+-- seven, the frame caps offered a rate this build no longer has -- and a stale
+-- index survived into a table that had shrunk under it. The read that followed
+-- was `TABLE[i][1]` on a nil, which is not something the pcall around the
+-- call could catch: Lua evaluates an argument before the call it belongs to,
+-- so the raise happened in the caller. That is a client that fails in
+-- `load_identity` on every boot, before it can reach the row that would fix
+-- the value, and the save it keeps failing on is never rewritten.
+local function saved_index(v, list, fallback)
+    if type(v) ~= "number" then return fallback end
+    v = math.floor(v)
+    if v < 1 or v > #list then return fallback end
+    return v
+end
 
 function M.save_identity()
     pcall(sys.save, SAVE, {
@@ -174,10 +207,14 @@ function M.load_identity()
     local ok, d = pcall(sys.load, SAVE)
     if ok and type(d) == "table" and type(d.name) == "string" and d.name ~= "" then
         M.name = d.name
-        if type(d.class) == "number" then M.class = math.floor(d.class) % 8 end
-        if type(d.volume) == "number" then M.volume = d.volume end
-        if type(d.music) == "number" then M.music = d.music end
-        if type(d.cap) == "number" then M.cap = d.cap end
+        -- The hull is a zero-based index, so it is checked one off from the
+        -- rest. It used to be taken modulo eight against seven hulls, which
+        -- let a class of 7 through to be read as HULLS[8].
+        M.class = saved_index(type(d.class) == "number" and d.class + 1 or nil,
+                              HULLS, M.class + 1) - 1
+        M.volume = saved_index(d.volume, VOLUMES, M.volume)
+        M.music = saved_index(d.music, MUSICS, M.music)
+        M.cap = saved_index(d.cap, CAPS, M.cap)
         -- The game you were in last, so coming back puts the cursor on it and
         -- a returning player is one press from flying.
         if type(d.zone) == "string" then M.zone = d.zone end
@@ -297,16 +334,6 @@ end
 --
 -- A node's `rows` is a table, or a function returning one when what is in the
 -- list depends on the moment.
-
-local HULLS = {
-    {"Apex", "interceptor", "fastest, sharpest turn, lightest bar"},
-    {"Wedge", "bomber", "heavy bombs on a short reload"},
-    {"Chord", "skirmisher", "quick guns, no bomb rack"},
-    {"Anvil", "heavy", "the biggest bar and the biggest bomb"},
-    {"Cipher", "stealth", "hardest hitting gun, thinnest hull"},
-    {"Facet", "brawler", "close in, and quick about it"},
-    {"Lattice", "denial", "holds ground it has taken"},
-}
 
 local function hull_rows()
     local rows = {}
@@ -859,12 +886,18 @@ local function bind_to(id, chord)
     end
     M.save_identity()
     local name = control_name(id)
+    -- What was stored, not what was pressed. `chord` is in the order the hand
+    -- went down and binds.set files a normalized copy with the modifiers
+    -- first, so holding Tab and then Shift left the chip reading Shift+Tab
+    -- under a sentence claiming Tab+Shift: the one line whose whole job is to
+    -- confirm the binding, disagreeing with the row it confirms.
+    local set = binds.chord_of[id] or chord
     if moved then
         M.foot = string.format("%s is on %s; %s took the keys it left",
-                               name, keyset.chord(chord),
+                               name, keyset.chord(set),
                                control_name(moved) or "")
     else
-        M.foot = string.format("%s is on %s", name, keyset.chord(chord))
+        M.foot = string.format("%s is on %s", name, keyset.chord(set))
     end
     return true
 end
@@ -1733,6 +1766,21 @@ function M.hover_rail(index)
     return index ~= nil
 end
 
+-- Is there still a row there?
+--
+-- A press is tested against hit boxes the previous frame published, and some
+-- of these lists are rebuilt underneath them: the games list is refreshed from
+-- the directory for as long as it is on screen, so a room can leave it between
+-- the drawing and the press. The cursor clamps an index past the end onto the
+-- last row, which turned a click on a row that no longer exists into a click
+-- on whatever had moved into the bottom of the list -- and on the home screen
+-- there is no confirmation card between that and joining a game nobody picked.
+-- The hover path has always checked this; the two click paths did not.
+local function row_at(index)
+    local rows = rows_of(node())
+    return index and rows[index] or nil
+end
+
 -- A pointer landed on a row of the stage, which is not always a row of the
 -- node the cursor is in: on the home screen the stage shows what the rail is
 -- pointing at, before anybody has gone in. So this goes in first and then
@@ -1747,6 +1795,7 @@ function M.click_stage(index)
         M.note = nil
     end
     local id = M.stack[#M.stack]
+    if not row_at(index) then return nil, false end
     M.sel[id] = index
     return activate(), true
 end
@@ -1754,6 +1803,7 @@ end
 -- A pointer landed on a row the interface published.
 function M.click(index)
     if not M.open then return nil, false end
+    if not row_at(index) then return nil, false end
     M.sel[M.stack[#M.stack]] = index
     return activate(), true
 end

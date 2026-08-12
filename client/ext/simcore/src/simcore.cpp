@@ -40,6 +40,12 @@ sim_state* g_cur = &g_a;
 sim_state* g_nxt = &g_b;
 sim_events g_ev;
 uint8_t g_net[SIM_PACK_MAX];
+// Where a snapshot is decoded before it is believed. sim_unpack zeroes the
+// state it writes into before it validates anything, so unpacking straight
+// into the live world made every refusal an erasure: the one truncated or
+// skewed message emptied the arena, and the caller's "nonzero means the old
+// world is kept" was not true of any rejection the parser itself makes.
+sim_state g_snap;
 
 // Whose death prediction may conclude: this client's own pilot and nobody
 // else (decision 40). Held beside g_cfg rather than only in it, because a
@@ -175,7 +181,9 @@ int ApplySnapshot(lua_State* L) {
         return 1;
     }
     memcpy(g_net, data, len);
-    lua_pushnumber(L, sim_unpack(g_cur, g_net, (int)len));
+    int rc = sim_unpack(&g_snap, g_net, (int)len);
+    if (rc == 0) *g_cur = g_snap;
+    lua_pushnumber(L, rc);
     return 1;
 }
 

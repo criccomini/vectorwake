@@ -311,15 +311,18 @@ end
 -- lives out here rather than inside `connect` because the decoders need it
 -- too: a map or a set of settings this client cannot read is exactly as
 -- final as a socket that dropped, and used to set a field nobody read.
-local function lost(why)
-    if M.lost then return end
-    M.lost = why
-    M.connected = false
-    -- Hung up, not merely forgotten. A decode failure calls this with the
-    -- wire still open, and dropping the handle first meant nothing could ever
-    -- close it: the socket stayed up, kept receiving an arena the client had
-    -- declared unreadable, and held the seat until the zone's own quiet limit
-    -- noticed a minute later.
+-- Put both wires down and forget what the connection was in the middle of.
+--
+-- One copy, because there are two ways a connection ends -- it failed, or we
+-- left -- and they used to hang up in two places that had to be kept
+-- identical. Everything here is about the wire itself, so a transport field
+-- added to one path and missed on the other is how a ghost session gets left
+-- open in the page.
+local function hangup()
+    -- A decode failure calls this with the wire still open, and dropping the
+    -- handle first meant nothing could ever close it: the socket stayed up,
+    -- kept receiving an arena the client had declared unreadable, and held the
+    -- seat until the zone's own quiet limit noticed a minute later.
     if conn then pcall(websocket.disconnect, conn) end
     conn = nil
     -- The WebTransport session gets the same hangup the socket does: a
@@ -331,6 +334,21 @@ local function lost(why)
     pending = nil
     settling = nil
     quiet = nil
+    M.connected = false
+    -- News belonging to the connection that just ended. Undrained kills and
+    -- arrivals outlived their socket, and the frame that notices the loss
+    -- drains them afterwards against a seat number that has been reset and a
+    -- roster that has been emptied.
+    M.kills = {}
+    M.comings = {}
+    M.snap_deaths = {}
+    M.snap_blasts = {}
+end
+
+local function lost(why)
+    if M.lost then return end
+    M.lost = why
+    hangup()
     if on_lost_cb then on_lost_cb(why) end
 end
 local predicted_tick = 0
@@ -655,6 +673,15 @@ end
 -- every watcher on a lossy link.
 local WATCH_REWIND = 100
 
+-- Said when the core refuses a snapshot, which is the same kind of news as a
+-- map or a set of settings this client cannot read: the zone is describing a
+-- game this build does not understand. It used to be said to nobody. The
+-- refusal returned, the arriving message had already cleared the quiet clock
+-- on its way in, and the player kept a connection reported healthy in a room
+-- that had stopped updating -- the failure the wire's protocol number is
+-- supposed to prevent, wearing the one disguise it cannot catch.
+local SNAP_UNREADABLE = "the zone sent a snapshot this client cannot read"
+
 local function on_snapshot(s)
     -- Nothing before the welcome. The zone sends the map, the settings and
     -- the welcome on the reliable lane and snapshots beside it, and only TCP
@@ -664,6 +691,13 @@ local function on_snapshot(s)
     -- which is somebody else. It healed itself when the map landed and left
     -- the misprediction readout holding a stranger's flight.
     if not M.connected then return end
+
+    -- Long enough to hold the header and the body's own tick before any of it
+    -- is read as a number. string.byte past the end answers nil, not zero, so
+    -- a short message used to raise inside the transport's callback and go on
+    -- raising once per arriving snapshot -- the roster and the teams decoders
+    -- guard the same way and say why.
+    if #s < 10 then return end
 
     -- header: type, subject ship, acked input tick
     --
@@ -690,12 +724,15 @@ local function on_snapshot(s)
     -- header says that flying never needed: whose eyes these are.
     if M.watching then
         M.subject = string.byte(s, 2)
+        sim.smooth_capture()
+        local before = capture_world()
+        if sim.apply_snapshot(body) ~= 0 then
+            lost(SNAP_UNREADABLE)
+            return
+        end
         M.stats.snaps = M.stats.snaps + 1
         settling = nil
         quiet = 0
-        sim.smooth_capture()
-        local before = capture_world()
-        if sim.apply_snapshot(body) ~= 0 then return end
         sim.smooth_settle()
         -- Kills and detonations the free-run never lived through still owe
         -- their light and noise; a watcher is here for the explosions.
@@ -709,9 +746,6 @@ local function on_snapshot(s)
     -- tick it was stamped for.
     local acked = u32(string.byte(s, 3), string.byte(s, 4),
                       string.byte(s, 5), string.byte(s, 6))
-    M.stats.snaps = M.stats.snaps + 1
-    settling = nil
-    quiet = 0
 
     -- Raw, not what the screen is showing. This measures how far the
     -- prediction missed by, and a number that has had render smoothing folded
@@ -723,7 +757,13 @@ local function on_snapshot(s)
     sim.smooth_capture()
     -- What the client believes before the truth arrives, for the queues above.
     local before = capture_world()
-    if sim.apply_snapshot(body) ~= 0 then return end
+    if sim.apply_snapshot(body) ~= 0 then
+        lost(SNAP_UNREADABLE)
+        return
+    end
+    M.stats.snaps = M.stats.snaps + 1
+    settling = nil
+    quiet = 0
 
     -- Replay the inputs the server had not applied when it sent this.
     --
@@ -901,8 +941,28 @@ end
 -- An empty token is a pilot who has never reached the meta-layer, or reached
 -- it while it was down, and they fly as a guest rather than being turned
 -- away.
+-- Anything this message puts in a byte goes through here first.
+--
+-- string.char raises on a number a byte cannot hold, and every value below
+-- arrived from outside: the room and the zone name come off a directory reply,
+-- which is checked for being a number and not for being one of these. A reply
+-- naming room 300 used to raise inside the transport's connected callback,
+-- where the surrounding pcall cannot help because Lua evaluates an argument
+-- before the call it is an argument to. The join was never sent and the player
+-- watched the ten-second give-up blame the zone for not answering.
+local function byte_or_zero(v)
+    if type(v) ~= "number" then return 0 end
+    v = math.floor(v)
+    if v < 0 or v > 255 then return 0 end
+    return v
+end
+
 local function join_msg()
-    local want = join_args.zone or ""
+    -- Cut to what their length bytes can describe, so the header and the
+    -- payload cannot disagree. A name too long to say is a join the zone will
+    -- refuse and say why, which beats one this client cannot express.
+    local want = string.sub(join_args.zone or "", 1, 255)
+    local name = string.sub(join_args.name, 1, 255)
     local session = account.token or ""
     local flags = join_args.watch and JOIN_WATCH or 0
     -- The room, when a list was read and one was named, and zero when it was
@@ -910,8 +970,8 @@ local function join_msg()
     -- rather than a demand: the room can fill before this lands, and the
     -- welcome says where we actually ended up.
     return string.char(C2S_JOIN, join_args.class, CLIENT_PROTOCOL, flags,
-                       #want, #join_args.name, join_args.room or 0)
-        .. want .. join_args.name .. session
+                       #want, #name, byte_or_zero(join_args.room))
+        .. want .. name .. session
 end
 
 -- One WebSocket dial. Everything that decides *which* wire is in `M.connect`
@@ -1331,15 +1391,7 @@ function M.disconnect()
     -- Bumped whether or not there was a socket, so that anything still in
     -- flight from the last one is stale from here on.
     generation = generation + 1
-    if conn then pcall(websocket.disconnect, conn) end
-    conn = nil
-    local w = wtx()
-    if w then pcall(w.disconnect) end
-    wt_live = false
-    pending = nil
-    settling = nil
-    quiet = nil
-    M.connected = false
+    hangup()
 end
 
 return M

@@ -261,13 +261,25 @@ end
 -- were all being tested against coordinates off the side of the screen, which
 -- is why none of them worked on a phone. screen_x is the real drawable pixel
 -- and needs no correction anywhere.
-function M.on_touch(action, w, h, s)
+-- `claimed` is the set of touch ids the interface took before this was called:
+-- a finger scrolling the scoreboard, or one that landed on a hit box. Only
+-- their presses are skipped. A release is always honored whoever it belongs
+-- to, because a release exists to let go of something and the id that never
+-- grabbed anything lets go of nothing.
+--
+-- The list-dragging finger used to arrive here unmarked. The scoreboard sits
+-- in the left column, which is the stick's half of the screen, so scrolling it
+-- mid-flight also grabbed the stick: reading the scores turned the ship and,
+-- past a longer drag, lit the engine.
+function M.on_touch(action, w, h, s, claimed)
     if not action.touch then return end
     M.used = true
     M.scale = s or 1
     for _, t in ipairs(action.touch) do
         local tx, ty = t.screen_x or t.x, t.screen_y or t.y
-        if t.pressed then
+        if t.pressed and claimed and claimed[t.id] then
+            -- taken by the interface; it starts nothing here
+        elseif t.pressed then
             local z = zone(tx, ty, w, h, s)
             if z == "stick" and not stick then
                 stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
