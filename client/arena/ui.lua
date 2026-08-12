@@ -1137,11 +1137,46 @@ end
 -- so a capital cannot jump a pilot to the top of the room, and the raw name
 -- breaks a tie so the order is total and the list cannot flicker between two
 -- pilots who differ only in case. The games list orders itself the same way.
+-- The lowercased form is put on the row when the row is filled rather than
+-- worked out here: this runs on both sides of every comparison, which is a
+-- few hundred of them each frame the panel is open, to lower the same handful
+-- of names over and over.
 local function ahead(a, b)
-    local la, lb = string.lower(a.name), string.lower(b.name)
-    if la ~= lb then return la < lb, true end
+    if a.lname ~= b.lname then return a.lname < b.lname, true end
     if a.name ~= b.name then return a.name < b.name, true end
     return false, false
+end
+
+-- Which column the scoreboard is sorted by, and the order that column asks
+-- for. Written just before the sort and read inside it, so the comparator can
+-- be one function built once rather than a fresh closure over the column every
+-- frame the panel is up.
+local sort_key = nil
+
+local function by_column(a, b)
+    -- Watchers last, under everybody who is actually flying, whatever column
+    -- is chosen. They have no score to sort by and sorting them into the
+    -- middle of a scoreboard by a zero would read as a pilot doing badly
+    -- rather than as somebody not playing.
+    if a.watch ~= b.watch then return b.watch end
+    if a.mine ~= b.mine then return a.mine end
+    if sort_key == "name" then
+        local first, differ = ahead(a, b)
+        if differ then return first end
+    elseif sort_key == "kills" then
+        if a.k ~= b.k then return a.k > b.k end
+    elseif sort_key == "bounty" then
+        if a.b ~= b.b then return a.b > b.b end
+    elseif sort_key == "deaths" then
+        -- Fewest first: on every other column the top of the list is the
+        -- pilot doing best, and this is the one where that means less.
+        if a.d ~= b.d then return a.d < b.d end
+    else
+        if a.p ~= b.p then return a.p > b.p end
+    end
+    if a.p ~= b.p then return a.p > b.p end
+    if a.k ~= b.k then return a.k > b.k end
+    return (ahead(a, b))
 end
 
 -- The rooms of this zone, and the way into a different one.
@@ -1274,6 +1309,7 @@ local function scores(me, pilots, watchers)
         -- rather than about the last hour.
         r.k, r.d, r.p, r.b = seat_score(i, p)
         r.name = (p and p.name) or ("ship " .. i)
+        r.lname = string.lower(r.name)
         -- The roster's own flag. This used to look for a local bot object,
         -- which the client no longer flies and the server never sends, so the
         -- column was blank for every AI in a zone full of them.
@@ -1301,6 +1337,7 @@ local function scores(me, pilots, watchers)
         r.i = nil
         r.k, r.d, r.p, r.b = 0, 0, 0, 0
         r.name = w.name
+        r.lname = string.lower(r.name)
         r.ai = w.label == "bot" or w.label == "bot?"
         r.label = w.label
         r.mine = false
@@ -1319,32 +1356,8 @@ local function scores(me, pilots, watchers)
     -- are what a player counts in their head, and they say something points
     -- do not, since a pilot who kills loaded ships outscores one who kills
     -- more of the empty.
-    local key = M.sort
-    table.sort(rows, function(a, b)
-        -- Watchers last, under everybody who is actually flying, whatever
-        -- column is chosen. They have no score to sort by and sorting them
-        -- into the middle of a scoreboard by a zero would read as a pilot
-        -- doing badly rather than as somebody not playing.
-        if a.watch ~= b.watch then return b.watch end
-        if a.mine ~= b.mine then return a.mine end
-        if key == "name" then
-            local first, differ = ahead(a, b)
-            if differ then return first end
-        elseif key == "kills" then
-            if a.k ~= b.k then return a.k > b.k end
-        elseif key == "bounty" then
-            if a.b ~= b.b then return a.b > b.b end
-        elseif key == "deaths" then
-            -- Fewest first: on every other column the top of the list is the
-            -- pilot doing best, and this is the one where that means less.
-            if a.d ~= b.d then return a.d < b.d end
-        else
-            if a.p ~= b.p then return a.p > b.p end
-        end
-        if a.p ~= b.p then return a.p > b.p end
-        if a.k ~= b.k then return a.k > b.k end
-        return (ahead(a, b))
-    end)
+    sort_key = M.sort
+    table.sort(rows, by_column)
 
     if n == 0 then
         M.scroll = 0

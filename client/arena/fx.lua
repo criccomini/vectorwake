@@ -214,6 +214,19 @@ end
 
 -- --- draw ------------------------------------------------------------------
 
+-- One table, filled and handed over, for every colour this file passes down.
+--
+-- The layer's calls read a colour during the call and keep no reference to it,
+-- which is what makes this safe and is the same bargain vec.lua's own dimming
+-- scratch relies on. A fresh table per particle meant up to four hundred and
+-- sixty of them a frame, all garbage, arriving exactly when two explosions
+-- overlap and the frame is already at its heaviest.
+local tint = {0, 0, 0, 0}
+local function faded(col, alpha)
+    tint[1], tint[2], tint[3], tint[4] = col[1], col[2], col[3], alpha
+    return tint
+end
+
 function M.draw(glow)
     for i = 1, nw do
         local w = waves[i]
@@ -222,7 +235,7 @@ function M.draw(glow)
         local fade = 1 - t
         local col = w.col
         glow:ring_fade(w.x, w.y, r, w.width * (0.35 + fade * 0.65),
-                       24, {col[1], col[2], col[3], col[4] * fade * fade})
+                       24, faded(col, col[4] * fade * fade))
     end
 
     for i = 1, np do
@@ -230,12 +243,11 @@ function M.draw(glow)
         local t = p.age / p.life
         local fade = 1 - t
         local col = p.col
-        local c = {col[1], col[2], col[3], col[4] * fade}
         -- A shard is drawn along its own velocity, so a fast one is a streak
         -- and a dying one is a dot. That single rule does most of the work.
         local sx, sy = p.vx * 0.016, p.vy * 0.016
         glow:seg_fade(p.x - sx, p.y - sy, p.x, p.y,
-                      p.size * 0.3, p.size * fade, 0, 1, c)
+                      p.size * 0.3, p.size * fade, 0, 1, faded(col, col[4] * fade))
     end
 
     for i = 1, nd do
@@ -243,13 +255,12 @@ function M.draw(glow)
         local t = p.age / p.life
         local fade = 1 - t
         local col = p.col
-        local c = {col[1], col[2], col[3], col[4] * fade}
         -- A piece of hull is drawn along its own angle, not its velocity:
         -- tumbling free of its course is what tells it apart from a spark.
         local h = p.len * (0.4 + 0.6 * fade) / 2
         local ca, sa = math.cos(p.ang), math.sin(p.ang)
         glow:seg_fade(p.x - ca * h, p.y - sa * h, p.x + ca * h, p.y + sa * h,
-                      0.8, 1.5, fade * 0.45, fade, c)
+                      0.8, 1.5, fade * 0.45, fade, faded(col, col[4] * fade))
     end
 end
 
