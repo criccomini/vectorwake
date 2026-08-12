@@ -1114,23 +1114,41 @@ function M.next_field(back)
     return true
 end
 
--- The claim, sent. The card stays up while the answer is in flight and turns
--- into the refusal when there is one, holding what was typed: the next thing
--- anybody does with a refused password is fix it, not retype it.
-function M.send_claim(asked)
-    local password = asked and asked.fields and asked.fields[1].value or ""
+-- What a card typed into does while the meta-layer thinks about it.
+--
+-- The card stays up while the answer is in flight and turns into the refusal
+-- when there is one, holding what was typed: the next thing anybody does with
+-- a refused password is fix it, not retype it. `send` is handed the callback
+-- to hang the reply on, and `won` is what to do with a yes, which is the only
+-- part that differs between the things sent from here.
+--
+-- Three details are easy to leave out of a second copy of this and were:
+-- the guard against a card that has since been replaced, the flag that stops
+-- a second press while the first is in flight, and the trim that keeps a
+-- reason which already ends in a full stop from growing another one.
+local function send_card(asked, busy, send, won)
     M.ask = asked
     asked.sending = true
-    asked.head = "One moment."
-    account.claim(password, function(ok, why)
+    asked.head = busy
+    send(function(ok, why)
+        -- A different question is up now; this answer is about nothing.
         if M.ask ~= asked then return end
         if ok then
             M.ask = nil
+            if won then won() end
             return
         end
         asked.sending = false
-        asked.head = (why or "That did not work.") .. "."
-        asked.head = string.gsub(asked.head, "%.%.$", ".")
+        asked.head = string.gsub((why or "That did not work.") .. ".",
+                                 "%.%.$", ".")
+    end)
+end
+
+-- The claim, sent.
+function M.send_claim(asked)
+    local password = asked and asked.fields and asked.fields[1].value or ""
+    send_card(asked, "One moment.", function(done)
+        account.claim(password, done)
     end)
 end
 
@@ -1139,20 +1157,11 @@ function M.send_login(asked)
     local name = asked and asked.fields and asked.fields[1].value or ""
     local password = asked and asked.fields and asked.fields[2]
         and asked.fields[2].value or ""
-    M.ask = asked
-    asked.sending = true
-    asked.head = "Signing in."
-    account.login(name, password, function(ok, why)
-        if M.ask ~= asked then return end
-        if ok then
-            M.ask = nil
-            M.note = nil
-            M.adopt_account_name()
-            return
-        end
-        asked.sending = false
-        asked.head = (why or "That did not work.") .. "."
-        asked.head = string.gsub(asked.head, "%.%.$", ".")
+    send_card(asked, "Signing in.", function(done)
+        account.login(name, password, done)
+    end, function()
+        M.note = nil
+        M.adopt_account_name()
     end)
 end
 

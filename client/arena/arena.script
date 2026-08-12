@@ -610,15 +610,24 @@ end
 -- join that was never answered, and the first frame of the whole client. The
 -- note is deliberately not cleared, because most of the callers have just set
 -- one and it is the only thing that will say what went wrong.
-function go_home(self, at)
+-- Put down the zone we were in.
+--
+-- Both ways out of a game run this: going back to the menu, and joining
+-- another one. They used to hold two copies of the list, and the copies had
+-- already parted -- the box open on a pilot and the switch positions the pads
+-- were drawing were cleared by one and not the other, so a zone-to-zone join
+-- carried a panel describing a seat the next room deals to a stranger. What
+-- each caller does *differently* is worth reading; what they do the same is
+-- not worth writing twice.
+--
+-- The rooms panel is deliberately not here. See enter_game.
+local function leave_world()
+    -- `net.connect` drops the old socket itself, but the world it filled is
+    -- this script's to clear.
     net.disconnect()
-    self.online = false
-    self.joining = nil
     feed = {}
     hurt = 0
     safe_ticks = 0
-    watching = false
-    ui.help = false
     -- The next seat is a different pilot's switch, and inheriting this one's
     -- would click on arrival. The kit goes with it: a pad wearing the last
     -- zone's add-ons is a drawing of somebody else's ship.
@@ -643,7 +652,16 @@ function go_home(self, at)
     clear_static()
     me = 0
     ui.details = false
+    ui.help = false
     ui.map = false
+    ui.room_ask = nil
+end
+
+function go_home(self, at)
+    leave_world()
+    self.online = false
+    self.joining = nil
+    watching = false
     -- The rooms of the zone being left, and a question about one of them. The
     -- panel is deliberately left standing across a move within a zone, which
     -- is why it has to be put away here: the next zone's list is a different
@@ -2096,33 +2114,16 @@ end
 -- Into a game: everything a join tears down and dials, shared by the row a
 -- player presses and the rejoin the client makes when its identity moves.
 function enter_game(self, address, zone_name, wt, room, watch)
-    -- Whatever we were in, we are leaving. `net.connect` drops the old
-    -- socket itself, but the world it filled is this script's to clear.
-    net.disconnect()
-    feed = {}
-    hurt = 0
-    safe_ticks = 0
-    multi_was = nil
-    flown_ok = false
-    held_kit = nil
-    marks.hold(nil)
-    fx.reset()
-    ui.clear_payouts()
-    world.forget_specs()
-    sim.init(0x5eed)
-    clear_static()
-    me = 0
+    -- Whatever we were in, we are leaving.
+    --
+    -- The rooms panel is the one thing left standing. Moving room is the one
+    -- join that happens from inside a list, and the list is where you were
+    -- looking: shutting it would answer the press by taking away the thing
+    -- that asked the question, and you arrive with no idea which of them you
+    -- landed in. Its question is dropped by leave_world, since that was about
+    -- a press that has now happened.
+    leave_world()
     directory.close()
-    ui.details = false
-    ui.help = false
-    ui.map = false
-    -- The rooms panel is left standing. Moving room is the one join that
-    -- happens from inside a list, and the list is where you were looking:
-    -- shutting it would answer the press by taking away the thing that
-    -- asked the question, and you arrive with no idea which of them you
-    -- landed in. Its question is dropped, though, since that was about a
-    -- press that has now happened.
-    ui.room_ask = nil
     menu.note = "joining " .. zone_name
     -- The one address serves the whole join: the directory named it, and
     -- the zone's name travels with the request so an instance that has
@@ -2133,6 +2134,25 @@ function enter_game(self, address, zone_name, wt, room, watch)
     end, zone_name, watch, wt, room)
     self.online = true
     self.joining = 0
+end
+
+-- May this pilot spend a hull, right now?
+--
+-- Alive and full, or nothing. The rule itself lives in the core so both ends
+-- hold exactly one copy of it; this exists only so a refusal arrives with a
+-- sentence instead of in silence, and `what` is the half of that sentence
+-- which differs between the things it gates. Sets the note and answers false
+-- when the answer is no.
+local function full_bar(what)
+    if sim.ship_alive(me) ~= 1 then
+        menu.note = "not while you are waiting to respawn"
+        return false
+    end
+    if sim.ship_energy(me) < sim.ship_max_energy(me) then
+        menu.note = what .. " needs a full bar"
+        return false
+    end
+    return true
 end
 
 function apply_menu(self, act)
@@ -2163,18 +2183,7 @@ function apply_menu(self, act)
         -- your upgrades and your place on the map are gone, the same as
         -- dying, because a fresh hull is a fresh bar and it has to cost what
         -- a fresh bar costs.
-        --
-        -- Alive and full, or nothing. That rule lives in the core so both
-        -- sides have exactly one copy of it; the check here is only so a
-        -- refusal comes with a reason instead of silence.
-        if sim.ship_alive(me) ~= 1 then
-            menu.note = "not while you are waiting to respawn"
-            return
-        end
-        if sim.ship_energy(me) < sim.ship_max_energy(me) then
-            menu.note = "a hull change needs a full bar"
-            return
-        end
+        if not full_bar("a hull change") then return end
         -- The server owns the roster, so this asks and the next snapshot
         -- answers. Nothing is predicted: a hull that flickered back would be
         -- worse than one that arrives a frame late.
@@ -2185,19 +2194,10 @@ function apply_menu(self, act)
     end
 
     -- Crossing to another side, and founding one. The same gate a hull change
-    -- gets, for the same reason and enforced in the same place: the rule lives
-    -- in the core so both ends hold one copy, and these checks exist only so a
-    -- refusal arrives with a sentence instead of in silence.
+    -- gets, for the same reason.
     if act == "team" or act == "found" then
         if not self.online then return end
-        if sim.ship_alive(me) ~= 1 then
-            menu.note = "not while you are waiting to respawn"
-            return
-        end
-        if sim.ship_energy(me) < sim.ship_max_energy(me) then
-            menu.note = "changing sides needs a full bar"
-            return
-        end
+        if not full_bar("changing sides") then return end
         if act == "found" then
             net.found_team()
         else

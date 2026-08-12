@@ -2945,25 +2945,41 @@ local function board(x, top, w, v)
         return hit_row.on[v.sel] == true, false
     end
 
-    local function draw(bx, cy, kw, label)
+    -- Whether the cursor is on this key, and which control's color it wears.
+    -- A nil color is a key drawn dark. `force` is for the one key whose color
+    -- does not come from the list; it still goes out with the rest of them
+    -- while a binding is being asked for.
+    --
+    -- Both halves of the board ask this: the main block below and the arrow
+    -- cluster under it, which drew its keys differently and worked out their
+    -- state identically. Chords had to be taught to both, one line each, and
+    -- the arrows would have been the copy somebody missed.
+    local function key_look(label, force)
         local hit_row = on[label]
-        local cat = hit_row and hit_row.row.cat
         local sel, keep = state_of(hit_row)
+        local cat = hit_row and hit_row.row.cat
         if keep and hit_row.asking then cat = hit_row.asking.cat end
+        if force then cat = force end
+        if arming and not keep then cat = nil end
+        return sel, cat
+    end
+
+    -- The cursor: the same chamfered bracket that holds a cluster together
+    -- everywhere else, round the key whose chip the cursor is on. Not a
+    -- second color, so the key goes on saying what it does.
+    local function key_cursor(bx, cy, kw)
+        bracket(bx - 3 * S, cy - 3 * S, kw + 6 * S, kh + 6 * S,
+                pal.a(pal.INK, arming and 0.95 or 0.7), 9 * S, 3 * S)
+    end
+
+    local function draw(bx, cy, kw, label)
         -- Ctrl is the one key on the board whose control is not in the list:
         -- it fires guns, it cannot be moved, and the browser only surrenders
         -- it in fullscreen. So the picture carries it on its own, at half
         -- light, which is the board saying "sometimes" without a footnote.
-        if label == "ctrl" then cat = "gun" end
-        if arming and not keep then cat = nil end
+        local sel, cat = key_look(label, label == "ctrl" and "gun" or nil)
         board_key(bx, cy, kw, kh, label, cat, label == "ctrl")
-        -- The cursor: the same chamfered bracket that holds a cluster together
-        -- everywhere else, round the key whose chip the cursor is on. Not a
-        -- second color, so the key goes on saying what it does.
-        if sel then
-            bracket(bx - 3 * S, cy - 3 * S, kw + 6 * S, kh + 6 * S,
-                    pal.a(pal.INK, arming and 0.95 or 0.7), 9 * S, 3 * S)
-        end
+        if sel then key_cursor(bx, cy, kw) end
         -- And the key itself is the control. A picture of a keyboard with a
         -- list of keys under it, where only the list answers a click, is a
         -- diagram somebody has to be told is not the thing.
@@ -2991,11 +3007,7 @@ local function board(x, top, w, v)
         local kx = ax + d[1] * aw
         local cy = top + (3 + d[2]) * pitch
         local kw = aw - 3 * S
-        local hit_row = on[d[5]]
-        local sel, keep = state_of(hit_row)
-        local cat = hit_row and hit_row.row.cat
-        if keep and hit_row.asking then cat = hit_row.asking.cat end
-        if arming and not keep then cat = nil end
+        local sel, cat = key_look(d[5])
         local col = board_col(cat)
         if col then
             rect(kx, cy, kw, kh, pal.a(col, 0.08))
@@ -3006,10 +3018,7 @@ local function board(x, top, w, v)
             board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4],
                         pal.a(pal.DIM, 0.4))
         end
-        if sel then
-            bracket(kx - 3 * S, cy - 3 * S, kw + 6 * S, kh + 6 * S,
-                    pal.a(pal.INK, arming and 0.95 or 0.7), 9 * S, 3 * S)
-        end
+        if sel then key_cursor(kx, cy, kw) end
         hit(kx, cy, kw, kh, "key", d[5])
     end
 
