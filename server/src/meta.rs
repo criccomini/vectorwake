@@ -1468,17 +1468,33 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
         // watches this on anybody's behalf. An operator looks, or it says
         // nothing.
         //
-        // People or bots, never both at once, and that is the whole reason
-        // this is usable. A room runs 51 bots against a handful of players, so
-        // a mixed feed is bot arrivals with the interesting rows pushed off
-        // the end of it. It also happens to be what the index wants: with
-        // `pilot_events_sweep` on (bot, at), one value of `bot` and a time
-        // bound is a range scan, and an unfiltered `order by at desc` is not.
+        // Who and what arrive as lists, because the page offers them as facets
+        // you tick rather than as one choice at a time.
+        //
+        // People and bots are still worth keeping apart, and the default is
+        // still people alone: a room runs 51 bots against a handful of
+        // players, so a mixed feed is bot arrivals with the interesting rows
+        // pushed off the end of it. What changed is that it is now the
+        // operator's call rather than the route's. The index survives it,
+        // since `pilot_events_sweep` is on (bot, at) and `bot = any($1)` over
+        // a two-value domain is one range scan per value rather than a walk.
         "/v1/admin/recent" => {
             if admin_for(&db, &s("secret")).await.is_none() {
                 return (403, serde_json::json!({ "error": "not an admin" }));
             }
-            let bots = body.get("bots").and_then(|v| v.as_bool()).unwrap_or(false);
+            // Ticking neither box is a question with no answer rather than a
+            // question meaning "everything", so an empty list selects nothing
+            // and the page says so.
+            let who: Vec<bool> = match body.get("who").and_then(|v| v.as_array()) {
+                Some(a) => {
+                    let mut v: Vec<bool> =
+                        a.iter().filter_map(|x| x.as_str()).map(|s| s == "bots").collect();
+                    v.sort_unstable();
+                    v.dedup();
+                    v
+                }
+                None => vec![false],
+            };
             // Bounded by time as well as by count, so a rare kind cannot turn
             // this into a walk of the whole table looking for two hundred
             // refusals that are not there.
@@ -1487,7 +1503,15 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 .and_then(|v| v.as_i64())
                 .unwrap_or(24)
                 .clamp(1, 24 * 30) as i32;
-            let kind = s("kind");
+            // An empty list of kinds means every kind, which is the opposite
+            // of how `who` reads and is right for the same reason: nobody
+            // ticks thirteen boxes to say "no filter", and everybody unticks
+            // one population to mean it.
+            let kinds: Vec<String> = body
+                .get("kinds")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str()).map(String::from).collect())
+                .unwrap_or_default();
             // The call sign falls back to the account's current one. A row
             // the arena filed carries the name as it read at the time, which
             // is the honest one; a row the meta-layer filed about an account
@@ -1499,23 +1523,23 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                             pe.zone, pe.instance, pe.room, pe.detail
                      from pilot_events pe
                      left join names n on n.account = pe.pilot
-                     where pe.bot = $1 and pe.at > now() - make_interval(hours => $2)";
+                     where pe.bot = any($1) and pe.at > now() - make_interval(hours => $2)";
             // One more than asked for, so the footer knows whether there is a
             // next page without counting a table that takes most of 300,000
             // rows a day. See `/v1/admin/events`, which pages the same way.
             let (limit, offset) = page_of(body);
             let probe = limit + 1;
-            let rows = if kind.is_empty() {
+            let rows = if kinds.is_empty() {
                 db.query(
                     &format!("{q} order by pe.at desc, pe.id desc limit $3 offset $4"),
-                    &[&bots, &hours, &probe, &offset],
+                    &[&who, &hours, &probe, &offset],
                 )
                 .await
             } else {
                 db.query(
-                    &format!("{q} and pe.kind = $3 order by pe.at desc, pe.id desc \
+                    &format!("{q} and pe.kind = any($3) order by pe.at desc, pe.id desc \
                               limit $4 offset $5"),
-                    &[&bots, &hours, &kind, &probe, &offset],
+                    &[&who, &hours, &kinds, &probe, &offset],
                 )
                 .await
             };

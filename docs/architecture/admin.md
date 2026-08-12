@@ -191,10 +191,26 @@ version, the build and the key check sit in the line above the table, and the
 command log sits below it, because the fleet is where commands are sent from
 and a verb with its answer a moment later is one thing read in one place.
 
-Pilots holds the filter, the table, the card a call sign opens and that pilot's
-history. Activity is the same log across the whole fleet. Access is bans and
-admins together, since both answer one question about who may do what and they
-used to sit at opposite ends of a long page.
+Pilots holds the filter and the table. Activity is the same log across the
+whole fleet, filtered by facets you tick rather than by two dropdowns: the
+questions asked of it are usually "these three kinds" or "both populations",
+which a dropdown can only answer by growing a combination per pair. None ticked
+under **what** means every kind, and none ticked under **who** means nothing at
+all, which reads backwards until you notice that nobody expresses "no filter"
+by ticking twelve boxes and everybody expresses it by leaving them alone.
+Access is bans and admins together, since both answer one question about who
+may do what and they used to sit at opposite ends of a long page.
+
+A fifth view, `#pilot/<account>`, is one pilot: their card, the controls that
+act on them, and their history. It is reached by link rather than from the
+rail, because there is no such thing as the pilot page until you have picked
+one. It used to be a card at the bottom of the list, under whichever page of
+the table you happened to be on, so picking somebody scrolled you past
+twenty-five rows and the address bar said nothing about who you were reading
+about. Being a page is what lets every call sign anywhere on the panel point at
+it, and they all do now: the pilot table, the activity feed, a pilot's own
+history, the ban list and the admin list were four different things, two of
+them buttons that opened a card and two of them plain text that did nothing.
 
 The pilot table and both event tables page twenty-five rows at a time. The
 pilot table's footer counts, because the accounts it reads are bounded by how
@@ -206,6 +222,15 @@ reads the same either way. Where a page starts comes from the reply rather than
 from a constant on the page, since the server clamps what it was asked for and
 a client deriving the answer from its own number lies the moment the two
 disagree.
+
+The controls disappear entirely against a meta-layer too old to page, which is
+every deploy for about a minute. Such a server ignores `limit` and `offset` and
+answers with the whole list, so `next` would move a number nothing acts on and
+the footer would count rows off the end of a list that was never sliced. That
+is what "pilots 1 to 72" becoming "pilots 26 to 98" over an unchanged table of
+seventy-two was. The page tells the two apart by whether `offset` came back at
+all, the same way it decides whether a pilot is unrated or the server simply
+never said.
 
 Two columns link out, and both lead to the thing you want next after reading
 the row. An instance name goes to the provider's console page for the machine

@@ -86,9 +86,25 @@ const pages = { pilots: 0, recent: 0, events: 0 };
 // scan and worth it; the event log takes most of 300,000 rows a day, so it
 // answers "is there another page" with one extra row instead. The footer reads
 // the same either way, which is the point of doing it here.
-function pager(name, { empty, noun, shown, from, total, more }) {
+function pager(name, { empty, noun, shown, from, total, more, paged = true }) {
   const box = el(`${name}-pager`);
   const [prev, next] = box.querySelectorAll("button");
+
+  // A meta-layer too old to page ignores `limit` and `offset` and answers with
+  // the whole list, so the controls have to go: `next` would move a number
+  // nothing acts on and the footer would count rows off the end of a list that
+  // was never sliced. That is what "pilots 1 to 72" then "pilots 26 to 98" on
+  // an unchanged table of 72 was, and it is a deploy race rather than a bug in
+  // either half. The page detects it the same way it detects everything else
+  // the server may not send: by whether the field came back at all.
+  if (!paged) {
+    prev.hidden = true;
+    next.hidden = true;
+    el(name === "pilots" ? "pilots-note" : `${name}-range`).textContent =
+      shown ? `${shown} ${noun}${shown === 1 ? "" : "s"}` : empty;
+    return;
+  }
+
   prev.disabled = from === 0;
   next.disabled = !more;
   // The controls go when a list fits on one page, because two dead buttons
@@ -137,31 +153,69 @@ for (const [name, redraw] of [
 // would need a rewrite rule in Caddy to survive a reload. A hash is still
 // somewhere you can bookmark, still what the back button walks, and costs
 // none of that.
-const VIEWS = ["fleet", "pilots", "activity", "access"];
+const VIEWS = ["fleet", "pilots", "activity", "access", "pilot"];
+
+// The rail holds four; `pilot` is the fifth and is reached by link rather than
+// by nav, because there is no such thing as "the pilot page" until you have
+// picked one.
+const RAILED = VIEWS.slice(0, 4);
+
+// Who the pilot view is currently showing, so a redraw after a rename or a ban
+// knows which account to ask for again.
+let onPilot = null;
 
 function route() {
-  const want = location.hash.replace(/^#/, "");
-  const view = VIEWS.includes(want) ? want : VIEWS[0];
-  for (const v of VIEWS) {
-    el(`view-${v}`).hidden = v !== view;
+  // `#pilot/123` is the only route with an argument, and the account is the
+  // whole of it. Anything unrecognised falls to the fleet rather than to a
+  // blank page.
+  const raw = location.hash.replace(/^#/, "");
+  const [head, arg] = raw.split("/");
+  const view = VIEWS.includes(head) ? head : VIEWS[0];
+  onPilot = view === "pilot" ? Number(arg) || null : null;
+
+  for (const v of VIEWS) el(`view-${v}`).hidden = v !== view;
+  for (const v of RAILED) {
     const link = el(`nav-${v}`);
     // `aria-current` rather than a class, because "this is the one you are on"
-    // is what it means, and the stylesheet can hang off it just as well.
-    if (view === v) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
+    // is what it means, and the stylesheet can hang off it just as well. The
+    // pilot page marks Pilots, since that is where it came from and an
+    // unmarked rail reads as a page outside the panel.
+    if (v === view || (view === "pilot" && v === "pilots")) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
   }
   return view;
 }
 
-// A hash the page did not put there is a click on a nav link or the back
-// button, and both mean draw that view now rather than at the next refresh.
+// A hash the page did not put there is a click on a link or the back button,
+// and both mean draw that view now rather than at the next refresh.
 addEventListener("hashchange", () => {
   const view = route();
   if (panel.hidden) return;
   if (view === "activity") paint("recent", drawRecent);
   if (view === "pilots") paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
   if (view === "access") { paint("bans", drawBans); paint("admins", drawAdmins); }
+  if (view === "pilot") paint("pilot", () => lookup(`#${onPilot}`));
 });
+
+// A call sign, anywhere on this panel, pointing at that pilot's page.
+//
+// One function because there are five places a person is named (the pilot
+// table, the activity feed, a pilot's own history, the ban list and the admin
+// list) and they were four different things: two of them buttons that opened a
+// card, two of them plain text that did nothing. A real link is middle
+// clickable, has an address you can send somebody, and needs no handler.
+function pilotLink(account, name) {
+  const text = name || (account ? `#${account}` : "(none)");
+  if (!account) return text;
+  const a = document.createElement("a");
+  a.href = `#pilot/${account}`;
+  a.className = "pick";
+  a.textContent = text;
+  return a;
+}
 
 // ------------------------------------------------------------------ sign in
 
@@ -181,6 +235,7 @@ let noteOwner = null;
 // quietly on screen.
 const NOTES = {
   fleet: "fleet-note",
+  pilot: "lookup-note",
   recent: "recent-note",
   pilots: "pilots-note",
   bans: "bans-note",
@@ -706,7 +761,7 @@ async function drawBans() {
   const rows = (await post("/v1/admin/bans", { secret })).bans || [];
   fill("bans", rows.map((b) => [
     `#${b.account}`,
-    b.name || "(none)",
+    pilotLink(b.account, b.name),
     [b.reason || "(none recorded)", "wrap"],
     b.last_seen,
   ]));
@@ -734,12 +789,18 @@ function ago(utc) {
   return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }
 
+// What is ticked in one facet, as an array.
+function ticked(name) {
+  return [...document.querySelectorAll(`#view-activity input[name="${name}"]:checked`)]
+    .map((b) => b.value);
+}
+
 async function drawRecent() {
-  const who = el("recent-who").value;
+  const who = ticked("who");
   const body = {
     secret,
-    bots: who === "bots",
-    kind: el("recent-kind").value,
+    who,
+    kinds: ticked("kind"),
     hours: Number(el("recent-hours").value),
     limit: PAGE,
     offset: pages.recent * PAGE,
@@ -755,23 +816,12 @@ async function drawRecent() {
   }
   const list = r.events || [];
   fill("recent", list.map((v) => {
-    // The call sign opens the card below, so noticing something here and
-    // going to look at it is one click rather than a retype.
-    let cell = v.name || "(none)";
-    if (v.pilot) {
-      const pick = document.createElement("button");
-      pick.type = "button";
-      pick.className = "link pick";
-      pick.textContent = v.name || `#${v.pilot}`;
-      pick.addEventListener("click", () => {
-        el("lookup-q").value = `#${v.pilot}`;
-        lookup(`#${v.pilot}`);
-      });
-      cell = pick;
-    }
+    // The call sign is a link to that pilot's page, so noticing something
+    // here and going to look at it is one click and an address you can send
+    // to somebody.
     return [
       v.at,
-      cell,
+      pilotLink(v.pilot, v.name),
       [v.kind, NOTABLE(v) ? "bad" : ""],
       [describe(v), "wrap"],
       v.zone ? `${v.zone}${v.room === null ? "" : ` r${v.room}`} ${v.instance}` : "",
@@ -790,12 +840,13 @@ async function drawRecent() {
     .join(", ");
   const empty = el("recent-empty");
   pager("recent", {
-    empty: "nothing matching that",
+    empty: who.length ? "nothing matching that" : "tick people or bots to see anything",
     noun: "event",
     shown: list.length,
-    from: r.offset == null ? pages.recent * PAGE : r.offset,
+    from: r.offset,
     total: null,
     more: Boolean(r.more),
+    paged: r.offset != null,
   });
   if (list.length) {
     tell("recent-note", `last filed: ${pulse}`);
@@ -812,11 +863,21 @@ async function drawRecent() {
 
 // A changed filter is a different list, and page four of it is an empty table
 // and a puzzle.
-["recent-who", "recent-kind", "recent-hours"].forEach((id) =>
-  el(id).addEventListener("change", () => {
-    pages.recent = 0;
-    paint("recent", drawRecent);
-  }));
+// Every box and the one menu, on change. A changed filter is a different
+// list, and page four of it is an empty table and a puzzle.
+el("view-activity").addEventListener("change", () => {
+  pages.recent = 0;
+  paint("recent", drawRecent);
+});
+
+// Thirteen boxes are quick to tick and slow to untick one at a time.
+el("kinds-clear").addEventListener("click", () => {
+  for (const b of document.querySelectorAll('#view-activity input[name="kind"]')) {
+    b.checked = false;
+  }
+  pages.recent = 0;
+  paint("recent", drawRecent);
+});
 
 // ---------------------------------------------------------------- activity
 
@@ -969,9 +1030,10 @@ async function drawEvents() {
     empty: "nothing recorded",
     noun: "event",
     shown: list.length,
-    from: r.offset == null ? pages.events * PAGE : r.offset,
+    from: r.offset,
     total: null,
     more: Boolean(r.more),
+    paged: r.offset != null,
   });
 
   const note = el("activity-note");
@@ -993,6 +1055,9 @@ async function drawEvents() {
 
 function drawPilot(p) {
   shown = p;
+  // The page is about this person, so it is titled with them. "Pilot" over a
+  // card that already says the call sign twice is a heading doing no work.
+  el("one-head").textContent = p.name || `Account #${p.account}`;
   const dl = el("pilot");
   dl.textContent = "";
   const row = (dt, dd, cls) => {
@@ -1116,17 +1181,9 @@ async function drawPilots(q) {
   }
   const list = r.pilots || [];
   fill("pilots", list.map((p) => {
-    // The call sign opens the card. A button rather than a click handler on
-    // the row, so a keyboard reaches it and a screen reader calls it what it
-    // is.
-    const pick = document.createElement("button");
-    pick.type = "button";
-    pick.className = "link pick";
-    pick.textContent = p.name || "(none)";
-    pick.addEventListener("click", () => lookup(`#${p.account}`));
     return [
       `#${p.account}`,
-      pick,
+      pilotLink(p.account, p.name),
       p.kind === "human" ? (p.claimed ? "human" : "guest") : p.kind,
       [p.banned ? "banned" : p.admin ? "admin" : "", p.banned ? "bad" : "good"],
       [rank(p), "n"],
@@ -1142,15 +1199,15 @@ async function drawPilots(q) {
   // clamps what it was asked for, so the page it actually returned is the only
   // one that can be described honestly, and a client deriving the answer from
   // its own constant is a client that lies the moment the two disagree.
-  const from = r.offset == null ? pages.pilots * PAGE : r.offset;
-  const total = r.total == null ? null : r.total;
+  const paged = r.offset != null;
   pager("pilots", {
     empty: q ? `nobody matches ${q}` : "no pilots yet",
     noun: "pilot",
     shown: list.length,
-    from,
-    total,
-    more: total == null ? list.length >= PAGE : from + list.length < total,
+    from: r.offset,
+    total: r.total,
+    more: paged && r.offset + list.length < r.total,
+    paged,
   });
 }
 
@@ -1164,13 +1221,10 @@ el("lookup-q").addEventListener("input", (ev) => {
 async function lookup(q) {
   const note = el("lookup-note");
   tell("lookup-note", "");
-  // The card lives on the Pilots view and this is reached from the Activity
-  // feed too, where a call sign is the obvious thing to click. Without this it
-  // opened a card on a view you were not looking at, which reads as a click
-  // that did nothing at all.
-  if (location.hash !== "#pilots") location.hash = "#pilots";
-  // A fresh pilot is a fresh history, so it starts at the first page of it.
-  pages.events = 0;
+  // A different pilot is a different history, so it starts at the first page
+  // of it. Same pilot redrawn after a rename keeps the page you were on.
+  const m0 = q.match(/^#?(\d+)$/);
+  if (!shown || (m0 && Number(m0[1]) !== shown.account)) pages.events = 0;
   const body = { secret };
   const m = q.match(/^#?(\d+)$/);
   if (m) body.account = Number(m[1]);
@@ -1297,7 +1351,7 @@ async function drawAdmins() {
     const box = document.createElement("span");
     box.className = "acts";
     box.append(button("revoke", () => setAdmin(a.account, a.name, false), "warn"));
-    return [`#${a.account}`, a.name || "(none)", a.last_seen, box];
+    return [`#${a.account}`, pilotLink(a.account, a.name), a.last_seen, box];
   }));
 }
 

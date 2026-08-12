@@ -182,20 +182,6 @@ h1 {
   box-shadow: -1px 0 8px -2px var(--friend);
 }
 
-/* The index in front of the name, which is what makes the four read as a
-   numbered list of stations rather than four links that happen to be stacked.
-   Subordinate to the label by color and size, and no further: at the hairline
-   color it measured 1.35:1, and a number nobody can read is not a subtle
-   number, it is noise with a shape. The hierarchy comes from `--dim` against
-   the label's `--ink` instead, which both clear what WCAG asks of text this
-   size. */
-.rail .glyph {
-  color: var(--dim);
-  font-size: 0.8em;
-  letter-spacing: 0;
-}
-.rail a[aria-current="page"] .glyph { color: var(--friend); opacity: 0.7; }
-
 /* -------------------------------------------------------------- headings */
 
 h2 {
@@ -258,6 +244,100 @@ h3 {
   letter-spacing: 0.14em;
   color: var(--dim);
 }
+
+/* --------------------------------------------------------------- facets */
+
+/* Three groups on one line where there is room, wrapping as a unit when there
+   is not. The middle one grows because twelve kinds need the space and two
+   populations do not. */
+.facets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap) clamp(1.5rem, 3vw, 2.5rem);
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--hair);
+}
+
+/* A fieldset, because that is what a group of related boxes is, and its legend
+   is what a screen reader reads before each one. The browser's own border and
+   padding go: this page draws its own lines and does not want a second style
+   of them around every group. */
+.facet {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.facet.grow { flex: 1 1 22rem; }
+
+.facet legend {
+  padding: 0;
+  margin-bottom: 0.5rem;
+  color: var(--dim);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+/* The `clear` beside a legend is an action about the group, so it sits on the
+   same line at the same weight and does not pretend to be one of the boxes. */
+.facet legend button { margin-left: 0.6rem; }
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* A box and its word are one target, outlined so the row of them reads as a
+   row of switches rather than as a paragraph with checkboxes in it. Forty-four
+   pixels tall, which is the smallest a thumb hits reliably. */
+.chips label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--dim);
+  cursor: pointer;
+  user-select: none;
+  transition: color 90ms linear, border-color 90ms linear, background 90ms linear;
+}
+.chips label:hover { color: var(--ink); border-color: var(--dim); }
+
+/* Ticked is the acting edge, the same cyan as everything else that means "this
+   one". `:has` rather than a class, so nothing has to be kept in step by
+   JavaScript. */
+.chips label:has(input:checked) {
+  color: var(--friend);
+  border-color: var(--friend);
+  background: var(--panel);
+}
+
+/* The native box, in the game's colors. `accent-color` is one line and leaves
+   the control the platform's own, which is what keeps it reachable by keyboard
+   and legible to a screen reader. */
+.chips input {
+  accent-color: var(--friend);
+  width: 0.95rem;
+  height: 0.95rem;
+  margin: 0;
+  flex: none;
+}
+
+/* A focus ring the page draws itself, since the outline is otherwise lost
+   against the border above. */
+.chips input:focus-visible { outline: 2px solid var(--friend); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- crumb */
+
+/* The way back from a page reached by link rather than by the rail. Above the
+   heading, because that is where a reader looks for it and it should not be
+   something you find at the bottom. */
+.crumb { margin: 0 0 0.75rem; font-size: 0.9em; }
 
 /* ---------------------------------------------------------------- pager */
 
@@ -423,14 +503,15 @@ button.link:hover { color: var(--ink); }
 main a { color: var(--ink); text-decoration-color: var(--line); }
 main a:hover { color: var(--friend); text-decoration-color: var(--friend); }
 
-/* A name in the list is the way into that pilot's card, so it reads as the
-   link it is rather than as another cell of text. */
-button.pick {
+/* A call sign, anywhere it appears, is the way to that pilot's page. It is a
+   real link now rather than a button that looked like one, so it reads the
+   same in five tables and a middle click opens it where you would expect. */
+a.pick {
   padding: 0;
   color: var(--ink);
   text-decoration-color: var(--line);
 }
-button.pick:hover { color: var(--friend); text-decoration-color: var(--friend); }
+a.pick:hover { color: var(--friend); text-decoration-color: var(--friend); }
 
 /* Keyboard focus is a visible ring; a mouse press is not. */
 :focus-visible {
@@ -454,15 +535,14 @@ input:focus-visible { outline-offset: -1px; }
 
 /* ------------------------------------------------------------------ pilot */
 
+/* The facts about one pilot. No border and no ground of its own: it sits
+   inside the card, which already draws both, and a box in a box reads as two
+   things where there is one. */
 dl {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 0.25rem 1.25rem;
-  margin: 1rem 0 0;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  padding: 0.9rem 1.1rem;
-  background: var(--panel);
+  margin: 0;
 }
 dt { color: var(--dim); }
 dd { margin: 0; overflow-wrap: anywhere; }
@@ -679,7 +759,6 @@ dialog .field { margin-bottom: 1rem; }
   dl {
     grid-template-columns: 6.5rem 1fr;
     gap: 0.35rem 0.75rem;
-    padding: 0.6rem 0.85rem;
   }
 }
 
@@ -687,10 +766,8 @@ dialog .field { margin-bottom: 1rem; }
    beside it are not squeezed into a third of one, and they share the next
    row evenly instead of wrapping one at a time. */
 @media (max-width: 30rem) {
-  /* Four station names and their indices do not fit across a phone, and the
-     names are the half worth keeping: a strip that scrolls to reach its last
-     tab hides that the tab is there. */
-  .rail .glyph { display: none; }
+  /* Four names across a phone is tight, and a strip that scrolls to reach
+     its last tab hides that the tab is there. */
   .rail a { padding-inline: 0.6rem; letter-spacing: 0.04em; }
 
   .row { align-items: stretch; }

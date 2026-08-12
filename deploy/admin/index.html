@@ -55,7 +55,7 @@
     vectorwake <span class="dim">admin</span>
   </h1>
   <p class="who" id="who-line" hidden>
-    <span id="who"></span>
+    <span class="dim">signed in as</span> <span id="who"></span>
     <button id="logout" type="button">sign out</button>
   </p>
 </header>
@@ -64,18 +64,10 @@
      page and a middle click or a bookmark does what it looks like it does.
      Hidden until there is something to navigate. -->
 <nav class="rail" id="rail" aria-label="Sections" hidden>
-  <a href="#fleet" id="nav-fleet" data-view="fleet">
-    <span class="glyph" aria-hidden="true">01</span> Fleet
-  </a>
-  <a href="#pilots" id="nav-pilots" data-view="pilots">
-    <span class="glyph" aria-hidden="true">02</span> Pilots
-  </a>
-  <a href="#activity" id="nav-activity" data-view="activity">
-    <span class="glyph" aria-hidden="true">03</span> Activity
-  </a>
-  <a href="#access" id="nav-access" data-view="access">
-    <span class="glyph" aria-hidden="true">04</span> Access
-  </a>
+  <a href="#fleet" id="nav-fleet" data-view="fleet">Fleet</a>
+  <a href="#pilots" id="nav-pilots" data-view="pilots">Pilots</a>
+  <a href="#activity" id="nav-activity" data-view="activity">Activity</a>
+  <a href="#access" id="nav-access" data-view="access">Access</a>
 </nav>
 
 <main id="main">
@@ -178,8 +170,6 @@
                autocapitalize="off" spellcheck="false"
                autocomplete="off" aria-controls="pilots">
       </div>
-      <p id="lookup-note" class="note" role="status" aria-live="polite"></p>
-
       <div class="scroller">
         <table id="pilots">
           <caption class="sr">Pilots matching the filter, most recently seen
@@ -205,6 +195,22 @@
         <button type="button" data-step="1" class="quiet">next</button>
       </div>
 
+    </section>
+
+
+    <!-- ---------------------------------------------------------- pilot -->
+    <!-- One pilot, on a page of their own at #pilot/<account>.
+
+         It used to be a card at the bottom of the list view, under whatever
+         page of the table you happened to be on, which meant picking somebody
+         scrolled you past twenty-five rows to read about them and the address
+         bar said nothing about who you were looking at. A page per pilot is
+         linkable, which is what makes every call sign anywhere on this panel
+         able to point at it. -->
+    <section class="view" id="view-pilot" aria-labelledby="one-head" hidden>
+      <p class="crumb"><a href="#pilots">back to all pilots</a></p>
+      <h2 id="one-head">Pilot</h2>
+      <p id="lookup-note" class="note" role="status" aria-live="polite"></p>
       <div class="card" id="pilot-card" hidden>
         <dl id="pilot"></dl>
         <div id="pilot-edit">
@@ -238,9 +244,8 @@
            Read-only, and no controls in it. The log is a record of what
            happened, and an operator who could revise it would be holding a
            different kind of thing. -->
-      <h3 id="activity-head">This pilot's activity</h3>
-      <p id="activity-none" class="dim">Pick a call sign above to see what the
-        fleet saw them do.</p>
+      <h3 id="activity-head">Activity</h3>
+      <p id="activity-none" class="dim">No pilot loaded.</p>
       <div id="activity" hidden>
         <p id="activity-note" class="note" role="status" aria-live="polite"></p>
         <div class="scroller">
@@ -269,51 +274,59 @@
 
     <!-- ------------------------------------------------------- activity -->
     <!-- What the fleet has seen lately, across every arena. A call sign in it
-         opens that pilot's card on the Pilots view, so noticing something and
-         going to look at it is one click.
+         is a link to that pilot's page, so noticing something and going to
+         look at it is one click.
 
-         People and bots are separate views rather than one mixed feed. A room
-         runs fifty-one bots against a handful of players, so mixing them is a
-         page of bot arrivals with everything worth reading pushed off the end.
-         It is also what the index wants. -->
+         Who and what are facets rather than two dropdowns. A dropdown asks
+         for one answer, and the questions here are usually "these three kinds"
+         or "both populations", which a dropdown can only do by adding a
+         combination per pair. The default is still people alone: a room runs
+         fifty-one bots against a handful of players, so a mixed feed is bot
+         arrivals with everything worth reading pushed off the end. -->
     <section class="view" id="view-activity" aria-labelledby="recent-head" hidden>
       <h2 id="recent-head">Activity</h2>
-      <div class="row" id="recent-controls">
-        <div class="field">
-          <label for="recent-who">who</label>
-          <select id="recent-who">
-            <option value="people" selected>people</option>
-            <option value="bots">bots</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="recent-kind">what</label>
-          <select id="recent-kind">
-            <option value="" selected>everything</option>
-            <option value="denied">denied</option>
-            <option value="join">join</option>
-            <option value="leave">leave</option>
-            <option value="died">died</option>
-            <option value="kill">kill</option>
-            <option value="ship">ship</option>
-            <option value="team">team</option>
-            <option value="watch">watch</option>
-            <option value="on_air">on_air</option>
-            <option value="login">login</option>
-            <option value="rename">rename</option>
-            <option value="ban">ban</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="recent-hours">since</label>
+
+      <div class="facets">
+        <fieldset class="facet">
+          <legend>who</legend>
+          <div class="chips">
+            <label><input type="checkbox" name="who" value="people" checked> people</label>
+            <label><input type="checkbox" name="who" value="bots"> bots</label>
+          </div>
+        </fieldset>
+
+        <!-- Thirteen boxes is a wall, so they group by what the row is about
+             and the groups wrap rather than the boxes. None ticked means every
+             kind, which is what nobody wants to express by ticking thirteen. -->
+        <fieldset class="facet grow">
+          <legend>what <button type="button" id="kinds-clear" class="link">clear</button></legend>
+          <div class="chips">
+            <label><input type="checkbox" name="kind" value="join"> join</label>
+            <label><input type="checkbox" name="kind" value="leave"> leave</label>
+            <label><input type="checkbox" name="kind" value="denied"> denied</label>
+            <label><input type="checkbox" name="kind" value="kill"> kill</label>
+            <label><input type="checkbox" name="kind" value="died"> died</label>
+            <label><input type="checkbox" name="kind" value="ship"> ship</label>
+            <label><input type="checkbox" name="kind" value="team"> team</label>
+            <label><input type="checkbox" name="kind" value="watch"> watch</label>
+            <label><input type="checkbox" name="kind" value="on_air"> on air</label>
+            <label><input type="checkbox" name="kind" value="login"> login</label>
+            <label><input type="checkbox" name="kind" value="rename"> rename</label>
+            <label><input type="checkbox" name="kind" value="ban"> ban</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="facet">
+          <legend><label for="recent-hours">since</label></legend>
           <select id="recent-hours">
             <option value="1">an hour ago</option>
             <option value="24" selected>a day ago</option>
             <option value="168">a week ago</option>
             <option value="720">a month ago</option>
           </select>
-        </div>
+        </fieldset>
       </div>
+
       <p id="recent-note" class="note" role="status" aria-live="polite"></p>
       <div class="scroller">
         <table id="recent">
