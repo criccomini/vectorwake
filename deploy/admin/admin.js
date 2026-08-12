@@ -77,6 +77,44 @@ let pulsing = null;
 // click used to wipe the only confirmation the click produced.
 let noteOwner = null;
 
+// Where each table says what went wrong. One entry per table, so a table
+// added later without a note line fails this lookup loudly here rather than
+// quietly on screen.
+const NOTES = {
+  fleet: "fleet-note",
+  recent: "recent-note",
+  pilots: "pilots-note",
+  bans: "bans-note",
+  admins: "admins-note",
+  activity: "activity-note",
+};
+
+// Draw a table, and say so when it cannot be drawn.
+//
+// Every draw is started from a timer, a refresh or a keystroke, none of which
+// has anywhere to put a rejection, so each call used to end in
+// `.catch(() => {})`. That swallowed a failed render whole: the previous rows
+// stayed on screen and the count under them still agreed with them, so a
+// table that had stopped updating read exactly like a table with nothing new
+// to say. Injecting one malformed row reproduced it in a second, and the same
+// class of failure had already cost an hour twice, once on the fleet table
+// and once on this one.
+//
+// The likeliest cause is the page being newer than the meta-layer, which
+// happens on every deploy: these files ship from the checkout inside a minute
+// and the binary ships as an image once CI has built it. So the message says
+// that rather than only naming the exception, and it says the rows are old,
+// because a half-written table is worse than an empty one and both are worse
+// than either with a line under it.
+function paint(name, run) {
+  return run().catch((e) => {
+    tell(NOTES[name], `cannot draw this: ${e.message}. The rows above may be out of date. If a deploy just landed, the page is ahead of the server and it will agree again shortly.`);
+    // The fleet note is shared with the command confirmations, so a redraw
+    // has to know whose message it is about to clear.
+    if (name === "fleet") noteOwner = "fleet";
+  });
+}
+
 async function arrive(name) {
   el("who").textContent = name;
   show(panel);
@@ -85,16 +123,16 @@ async function arrive(name) {
   // The fleet and the feed are the two that move on their own. Bans and
   // admins change when an operator changes them, and this page is where that
   // happens.
-  if (!ticking) ticking = setInterval(() => drawFleet().catch(() => {}), FLEET_REFRESH_MS);
-  if (!pulsing) pulsing = setInterval(() => drawRecent().catch(() => {}), RECENT_REFRESH_MS);
+  if (!ticking) ticking = setInterval(() => paint("fleet", drawFleet), FLEET_REFRESH_MS);
+  if (!pulsing) pulsing = setInterval(() => paint("recent", drawRecent), RECENT_REFRESH_MS);
 }
 
 function refresh() {
-  drawFleet().catch(() => {});
-  drawRecent().catch(() => {});
-  drawPilots(el("lookup-q").value.trim()).catch(() => {});
-  drawBans().catch(() => {});
-  drawAdmins().catch(() => {});
+  paint("fleet", drawFleet);
+  paint("recent", drawRecent);
+  paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
+  paint("bans", drawBans);
+  paint("admins", drawAdmins);
 }
 
 async function boot() {
@@ -245,7 +283,7 @@ async function command(instance, verb, args) {
   }
   // Give the arena a moment to answer before re-reading, so the outcome is
   // usually there by the time the operator looks.
-  setTimeout(() => drawFleet().catch(() => {}), 700);
+  setTimeout(() => paint("fleet", drawFleet), 700);
 }
 
 // The instance, linked to the machine it is on when the host knows its own
@@ -431,17 +469,11 @@ async function drawFleet() {
     noteOwner = null;
   }
 
-  try {
-    draw(f);
-  } catch (e) {
-    // A render that throws used to reach the caller's `.catch(() => {})` and
-    // vanish, leaving column headings over an empty table and no hint why.
-    // The likeliest cause is the page being newer than the meta-layer, which
-    // happens on every deploy: the static files ship from the checkout in a
-    // minute and the binary ships as an image after CI.
-    tell("fleet-note", `cannot draw the fleet: ${e.message}. If a deploy just landed, the page may be ahead of the server; it will agree again shortly.`);
-    noteOwner = "fleet";
-  }
+  // A render that throws goes to `paint`, which is where every other table's
+  // does too. This used to be a try/catch here and nowhere else, which is
+  // exactly why it was worth generalising: the lesson had been learned once
+  // and applied at one call site out of six.
+  draw(f);
 }
 
 function draw(f) {
@@ -655,7 +687,7 @@ async function drawRecent() {
 }
 
 ["recent-who", "recent-kind", "recent-hours"].forEach((id) =>
-  el(id).addEventListener("change", () => drawRecent().catch(() => {})));
+  el(id).addEventListener("change", () => paint("recent", drawRecent)));
 
 // ---------------------------------------------------------------- activity
 
@@ -872,7 +904,7 @@ function drawPilot(p) {
   // whichever stay the last one was opened to.
   if (!shownWas || shownWas !== p.account) stay = null;
   shownWas = p.account;
-  drawEvents().catch(() => {});
+  paint("activity", drawEvents);
 }
 
 
@@ -977,7 +1009,7 @@ async function drawPilots(q) {
 el("lookup-q").addEventListener("input", (ev) => {
   clearTimeout(typing);
   const q = ev.target.value.trim();
-  typing = setTimeout(() => drawPilots(q).catch(() => {}), 180);
+  typing = setTimeout(() => paint("pilots", () => drawPilots(q)), 180);
 });
 
 async function lookup(q) {
@@ -1060,7 +1092,7 @@ async function setAdmin(account, name, admin) {
     // Re-read first and say so second: `lookup` clears this line on its way
     // in, so a message set before it is a message nobody sees.
     if (shown && shown.account === account) await lookup(`#${account}`);
-    drawAdmins().catch(() => {});
+    paint("admins", drawAdmins);
     tell("lookup-note", admin ? `${name} is an admin` : `${name} is no longer an admin`, "ok");
   } catch (e) {
     tell("lookup-note", e.message);
@@ -1096,7 +1128,7 @@ el("ban-form").addEventListener("submit", async (ev) => {
     // Re-read rather than guess: what the page shows is what the database
     // holds, including anything another operator did in between.
     await lookup(`#${shown.account}`);
-    drawBans().catch(() => {});
+    paint("bans", drawBans);
   } catch (e) {
     tell(note.id, e.message);
   }
