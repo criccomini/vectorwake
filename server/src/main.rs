@@ -38,12 +38,25 @@ use tokio_tungstenite::tungstenite::Message;
 const TICK_HZ: u64 = 100;
 const SNAPSHOT_EVERY: u32 = 5; // 20 Hz
 /// How far from a player a prize has to be before it is left out of that
-/// player's snapshot, in Q8 pixels. 256 tiles.
+/// player's snapshot, in Q8 pixels. 160 tiles.
 ///
-/// Four times the radar's reach, which is the furthest a client can see one
-/// by any means. A hull tops out at 490 px/s and a snapshot period is 50 ms,
-/// so a ship covers 24 px between snapshots against 3136 px of margin beyond
-/// the radar: the boundary is not somewhere a player can arrive at.
+/// Sized against what a client can actually draw, which is the honest bound.
+/// `TUNE.STATIC_MAX` in arena.script holds the terrain window at 137 tiles
+/// either side and says so out loud when a view asks for more, and the radar
+/// reaches 60. So 137 is the furthest anything can be rendered, and this is
+/// that plus 23 tiles.
+///
+/// What has to cross that margin before the next snapshot announces it:
+/// a hull at 490 px/s covers 24 px in the 50 ms period, and the quickest
+/// round in the baseline is `sim_units_speed(3000)`, 300 px/s, which covers
+/// 15. Against 368 px of margin that is fifteen periods of warning for the
+/// fastest thing in the game.
+///
+/// It was 256 tiles, which came from an argument about prizes: four times the
+/// radar's reach, chosen when this filtered nothing else. Ships and rounds
+/// care about the render window rather than the radar, and the area ratio is
+/// what pays: (160/256) squared is 0.39, so the same rule costs 61% fewer
+/// rounds in range.
 ///
 /// It governs ships and rounds as well as prizes now, which is two changes
 /// wearing one constant. The bytes: rounds were 78% of a snapshot and four
@@ -53,7 +66,7 @@ const SNAPSHOT_EVERY: u32 = 5; // 20 Hz
 /// and energy of every ship on the map, so a maphack was not an exploit but
 /// a rendering choice. Now a client is told about what it could lawfully
 /// look at, and a modified one has nothing else to draw.
-const INTEREST: i32 = 256 * 16 * 256;
+const INTEREST: i32 = 160 * 16 * 256;
 /// Humans a zone admits when its file says nothing. The room may hold more
 /// seats than this: `max_ships` sizes the room, and this bounds how many of its
 /// seats people get, which is what leaves room for the bot roster.

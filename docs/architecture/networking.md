@@ -226,10 +226,40 @@ asserted, so a third-party bot is filtered exactly like the person running it.
 Flags still travel whole, being few and being objectives every pilot is
 entitled to know the state of.
 
-Measured against a full fifty-two ship room: **312 KB/s to 24.4 KB/s**, with
-prediction error improving from 0.75/0.38 px worst/mean to 0.61/0.24 and no
-corrections. The improvement is not a paradox: a client that is not told about
-distant rounds cannot mispredict them.
+### Sizing the radius against what can be drawn
+
+It was 256 tiles, four times the radar's reach, chosen when it filtered prizes
+alone. Ships and rounds care about a different bound: `TUNE.STATIC_MAX` in
+arena.script holds the terrain window at **137 tiles** either side and says so
+out loud when a view asks for more, so 137 is the furthest anything can be
+rendered by any means.
+
+So the radius is 160 tiles, that plus 23. What has to cross the margin before
+the next snapshot announces it: a hull at 490 px/s covers 24 px in the 50 ms
+period, and the quickest round in the baseline is `sim_units_speed(3000)`, 300
+px/s, covering 15. Against 368 px of margin that is fifteen periods of warning
+for the fastest thing in the game.
+
+The area ratio is what pays. (160/256) squared is 0.39, so the same rule costs
+61% fewer rounds in range, for one constant and no change to the wire.
+
+### Measured
+
+Against a full fifty-two ship room, one pilot flown by `tools/pilot`:
+
+| | KB/s | predict err worst/mean |
+|---|---|---|
+| before | 312.0 | 0.75 / 0.38 |
+| ships and rounds culled, 256 tiles | 24.4 | 0.61 / 0.24 |
+| radius sized to the render window, 160 tiles | **17.0** | 0.73 / 0.40 |
+
+94.6% off, with no corrections at any point and prediction error staying at the
+0.5 px band that fixed-point rounding puts it in. That it did not degrade is
+worth stating, because it might have: a client no longer consumes rng for
+shrapnel it cannot see, so its generator can drift from the server's inside a
+snapshot period. The resync every 50 ms evidently dominates. A fix that derives
+the spread from state rather than the shared generator is written down here in
+case that stops being true.
 
 Measured on one state with nine ships at the map's real spawns, packed both
 ways: **2898 to 1323 bytes, 56.6 to 25.8 KB/s, 54% off** -- and under the
