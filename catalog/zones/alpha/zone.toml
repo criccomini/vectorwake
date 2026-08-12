@@ -231,7 +231,7 @@ damage = 515
 # ten minutes; if this room ever feels like a minefield rather than a game,
 # this is the line to cut before the damage.
 [[arena.weapons]]
-name = "charge-3"
+name = "mine"
 life = 12000
 
 # Facet fires slower than everything else, which is the price of its second

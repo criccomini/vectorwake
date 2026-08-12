@@ -1702,44 +1702,9 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 /* A charge carries none of the pilot's add-ons. It is a thing
                  * you found whole, not a weapon you have been improving, and
                  * a repel that inherited shrapnel would be a surprise nobody
-                 * asked for.
-                 *
-                 * A mine is the exception, because a mine is not a thing you
-                 * found whole: it is your own bomb, put on the floor instead
-                 * of thrown. A bomber who has climbed to shrapnel and watched
-                 * their mines go off as bare blasts is being told those two
-                 * are different weapons, and they are not. So it takes the
-                 * bomb trigger's add-ons and its rung both.
-                 *
-                 * Multifire is stripped, and it is the only one. The add-on
-                 * multiplies a *pattern*, so a mine would inherit it as three
-                 * mines out of one charge -- an inventory of three laying
-                 * nine, which is not a stronger mine but a different economy.
-                 * Everything else transforms the round: shrapnel breaks it
-                 * up, freeze stalls what it catches, push shoves, and the
-                 * fuse widens.
-                 *
-                 * The rung rides along for every charge. The repel and the
-                 * burst scale with nothing, so it reaches neither of them and
-                 * is the number the client paints a mine from. */
-                uint16_t cmods = 0;
-                uint8_t cshrap = 0, cbounce = 0;
-                if (is_mine(&cs)) {
-                    cmods = sim_mod_set(sh->mods[SIM_TRIG_BOMB],
-                                        SIM_MOD_MULTI, 0);
-                    /* And what those fragments will be. Shrapnel is bullets,
-                     * so a mine that breaks up throws rounds of its layer's
-                     * *gun* rung, bouncing if their bullets do -- read here,
-                     * at the laying, exactly as a thrown bomb reads it at the
-                     * throw. Without this a bomber's mines threw rung one
-                     * fragments while their bombs threw red ones. */
-                    cshrap = sh->level[SIM_TRIG_GUN];
-                    cbounce = (uint8_t)(sim_mod_get(sh->mods[SIM_TRIG_GUN],
-                                                    SIM_MOD_BOUNCE) != 0);
-                }
+                 * asked for. Nor a rung: neither of the two scales with one. */
                 spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
-                              sh->vx, sh->vy, sh->heading, 0, cmods,
-                              sh->level[SIM_TRIG_BOMB], cshrap, cbounce, ev);
+                              sh->vx, sh->vy, sh->heading, 0, 0, 0, 0, 0, ev);
                 sh->charge[k]--;
                 sh->energy -= cp.energy;
                 /* A charge rides the bomb's clock and locks both, which
@@ -1749,6 +1714,71 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 sh->vx -= (int32_t)(((int64_t)cp.recoil * dx) >> 15);
                 sh->vy -= (int32_t)(((int64_t)cp.recoil * dy) >> 15);
                 emit(ev, SIM_EV_CHARGE, (uint8_t)i, (uint8_t)k, sh->charge[k]);
+            }
+        }
+
+        /* 3b. A mine, which is the bomb trigger in its other posture.
+         *
+         * There is no inventory and no green: a pilot has mines because they
+         * have a rack, which is the original's arrangement -- a mine there is
+         * a bomb with one bit set rather than a weapon of its own, and the
+         * special inventory its position packet carries has no room for one.
+         * What limits it is how many of yours are already lying about.
+         *
+         * The count is walked rather than kept. A byte on the ship would be
+         * cheaper and would be a second copy of a fact the weapon table
+         * already holds, and the two would part company the first time a mine
+         * ended somewhere the counter did not hear about: a wall, a repel
+         * turning it into a bomb, its own timer, or the owner dying with it
+         * still out. Walking the table cannot be wrong, costs nothing on the
+         * ticks nobody lays one, and takes no room in a snapshot. */
+        if (!in_safe && sh->fire_cooldown[SIM_TRIG_BOMB] == 0
+            && (b & SIM_BTN_MINE) && cls->mine_max > 0) {
+            uint8_t rack = trigger_pattern(cls, SIM_TRIG_BOMB,
+                                           sh->level[SIM_TRIG_BOMB]);
+            sim_fire_pattern mp;
+            sim_weapon_spec ms;
+            /* A hull with no rack lays nothing: a mine is a bomb you did not
+             * throw, so having one to throw is the whole of the licence. */
+            if (rack != SIM_NO_PATTERN
+                && resolve(cfg, cfg->mine, 0, 0, &mp, &ms)
+                && sh->energy > mp.energy) {
+                int out = 0;
+                for (uint16_t w = 0; w < next->weapon_count; w++) {
+                    if (next->weapons[w].owner != (uint8_t)i) continue;
+                    if (is_mine(&cfg->specs[next->weapons[w].spec])) out++;
+                }
+                if (out < (int)cls->mine_max) {
+                    int32_t mx = sh->x
+                        + (int32_t)(((int64_t)(cls->fore + 512) * dx) >> 15);
+                    int32_t my = sh->y
+                        + (int32_t)(((int64_t)(cls->fore + 512) * dy) >> 15);
+                    /* The bomb trigger's add-ons and its rung, because that is
+                     * what this round is. Multifire is the one stripped: it
+                     * multiplies a pattern rather than transforming a round,
+                     * and one press putting three mines on the floor spends
+                     * the hull's whole allowance in a single tick.
+                     *
+                     * The fragments are bullets of the layer's *gun* rung and
+                     * bounce if their bullets do, read here at the laying
+                     * exactly as a thrown bomb reads it at the throw. */
+                    uint16_t mm = sim_mod_set(sh->mods[SIM_TRIG_BOMB],
+                                              SIM_MOD_MULTI, 0);
+                    spawn_pattern(next, cfg, cfg->mine, (uint8_t)i, sh->team,
+                                  mx, my, sh->vx, sh->vy, sh->heading, 0, mm,
+                                  sh->level[SIM_TRIG_BOMB],
+                                  sh->level[SIM_TRIG_GUN],
+                                  (uint8_t)(sim_mod_get(sh->mods[SIM_TRIG_GUN],
+                                                        SIM_MOD_BOUNCE) != 0),
+                                  ev);
+                    sh->energy -= mp.energy;
+                    /* It rides the bomb's clock and locks both, the way every
+                     * other thing that leaves this hull does. No recoil: it is
+                     * put down rather than thrown, so there is nothing to
+                     * push back against. */
+                    lock_trigger(sh, SIM_TRIG_GUN, mp.delay);
+                    lock_trigger(sh, SIM_TRIG_BOMB, mp.delay);
+                }
             }
         }
 

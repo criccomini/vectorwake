@@ -267,6 +267,19 @@ charges = [3, 3]
 #   [[arena.ships]]
 #   name = "Anvil"
 #   charges = [3, 3, 2]
+#
+# Mines, which are not a charge: a pilot has them for as long as they have a
+# bomb rack, so there is no slot, no count in hand and no green. What a zone
+# decides is how many of one pilot's may lie about at once, per hull, and how
+# long each sits there. Zero is a hull that never mines.
+#   [[arena.weapons]]
+#   name = "mine"
+#   life = 30000
+#   blast = 120
+#
+#   [[arena.ships]]
+#   name = "Anvil"
+#   mine_max = 8
 
 # The tech tree.
 #

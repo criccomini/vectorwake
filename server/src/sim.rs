@@ -29,6 +29,8 @@ pub const BTN_BOMB: u16 = 32;
 /// which charge is ready is the client's business and not simulation state.
 pub const BTN_USE: u16 = 64;
 pub const BTN_SLOT_SHIFT: u16 = 7;
+/// Lay a mine: the bomb trigger's other posture, not a charge.
+pub const BTN_MINE: u16 = 0x0400;
 
 // Mirrored by hand from sim_event_type in sim/include/sim/sim.h, so the order
 // there is the order here and a new one goes on the end.
@@ -134,6 +136,10 @@ pub struct sim_ship_class {
     pub mod_max: [u16; TRIG_COUNT],
     /// How many of each charge kind this hull may carry.
     pub charge_max: [u8; MAX_CHARGES],
+    /// MaxMines: how many of this hull's mines may be in the world at once.
+    /// The only limit on mines, since a pilot has them for as long as they
+    /// have a bomb rack.
+    pub mine_max: u8,
     /// Gunners this hull may carry, and what carrying any of them costs it.
     /// The penalties are charged once, not per gunner.
     pub gunner_limit: u8,
@@ -152,6 +158,8 @@ pub struct sim_settings {
     pub pattern_count: u8,
     /// What each charge kind fires, as a pattern index.
     pub charge: [u8; MAX_CHARGES],
+    /// What a mine is, as a pattern index, or NO_PATTERN in a zone with none.
+    pub mine: u8,
     /// Odds a green turns out to be each thing, over the flat prize space.
     pub prize_weight: [u16; PRIZE_COUNT],
     /// What a kill adds to the killer's own bounty.

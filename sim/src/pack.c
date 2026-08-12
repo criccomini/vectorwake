@@ -322,8 +322,14 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  * client built from either one would have read this format's bytes in the
  * wrong order while agreeing about the number that says it cannot. The radius
  * has to travel because the client predicts a respawn's position, and the mark
- * because the client is what draws it. */
-#define CFG_VERSION 12
+ * because the client is what draws it.
+ *
+ * 13: `mine` and `mine_max`. Mines stopped being a charge, so the pattern is
+ * no longer reachable through `charge[]` and the ceiling is no longer a
+ * count in hand. Both travel because the client predicts laying one: without
+ * them it either cannot find the weapon at all or lets a pilot put down more
+ * than the room allows and watches the server delete them. */
+#define CFG_VERSION 13
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -356,6 +362,7 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
             w16(&w, c->mod_max[t]);
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, c->charge_max[k]);
+        w8(&w, c->mine_max);
     }
 
     w32(&w, (uint32_t)cfg->prox_step);
@@ -397,6 +404,7 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     }
 
     for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, cfg->charge[k]);
+    w8(&w, cfg->mine);
     for (int i = 0; i < SIM_PRIZE_COUNT; i++) w16(&w, cfg->prize_weight[i]);
     w16(&w, cfg->rust_chance);
     w16(&w, cfg->spawn_prizes);
@@ -470,6 +478,7 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
             c->charge_max[k] = (uint8_t)r8(&r);
+        c->mine_max = (uint8_t)r8(&r);
     }
 
     cfg->prox_step = (int32_t)r32(&r);
@@ -515,6 +524,7 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
     }
 
     for (int k = 0; k < SIM_MAX_CHARGES; k++) cfg->charge[k] = (uint8_t)r8(&r);
+    cfg->mine = (uint8_t)r8(&r);
     for (int i = 0; i < SIM_PRIZE_COUNT; i++)
         cfg->prize_weight[i] = (uint16_t)r16(&r);
     cfg->rust_chance = (uint16_t)r16(&r);

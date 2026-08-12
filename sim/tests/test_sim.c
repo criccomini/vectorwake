@@ -1869,17 +1869,20 @@ int main(void) {
             else charges++;
         }
         /* On the original's table an Apex's pool is five stats at 40, a gun
-         * level at 25, four add-ons at 110 between them, and now three
-         * charges at 70 rather than two: 545 where it was 475. The mine is
-         * the third, and adding a charge to the pool is a thing you feel
-         * across the whole of it -- a green is a charge closer to four times
-         * in ten than three, and every other kind is correspondingly rarer.
-         * Bands rather than exact numbers, because the point under test is
-         * the shape of the tree and not the generator. */
-        CHECK(stats > 3200 && stats < 3750, "stats are the bread of the tree");
-        CHECK(levels > 750 && levels < 1050, "a level is the rare one");
-        CHECK(mods > 1750 && mods < 2150, "an add-on is ordinary now");
-        CHECK(charges > 3450 && charges < 3950, "and a charge is common");
+         * level at 25, four add-ons at 110 between them, and both charges at
+         * 70: 475 in total. So a green is a stat a little over four times in
+         * ten, a charge three, an add-on two, and a level about one in
+         * twenty. Bands rather than exact numbers, because the point under
+         * test is the shape of the tree and not the generator.
+         *
+         * Two charges and not three: a mine is not one. It is the bomb
+         * trigger's other posture and there is no green for it, so it takes
+         * nothing out of this pool -- which is the half of the change a
+         * distribution test can see. */
+        CHECK(stats > 3950 && stats < 4500, "stats are the bread of the tree");
+        CHECK(levels > 850 && levels < 1250, "a level is the rare one");
+        CHECK(mods > 2100 && mods < 2550, "an add-on is ordinary now");
+        CHECK(charges > 2700 && charges < 3200, "and a charge is common");
 
         /* And a zone that says otherwise gets otherwise. */
         for (int i = 0; i < SIM_UP_COUNT; i++) w.prize_weight[i] = 0;
@@ -2447,15 +2450,14 @@ int main(void) {
         uint8_t pool[SIM_PRIZE_COUNT];
         const int LATTICE = 6;
         int n = sim_prize_pool(&cfg.classes[LATTICE], pool);
-        int repel = 0, burst = 0, mine = 0, empty_slot = 0;
+        int repel = 0, burst = 0, empty_slot = 0;
         for (int i = 0; i < n; i++) {
             if (pool[i] == SIM_PRIZE_CHARGE(0)) repel = 1;
             if (pool[i] == SIM_PRIZE_CHARGE(1)) burst = 1;
-            if (pool[i] == SIM_PRIZE_CHARGE(2)) mine = 1;
-            if (pool[i] == SIM_PRIZE_CHARGE(3)) empty_slot = 1;
+            if (pool[i] == SIM_PRIZE_CHARGE(2)
+                || pool[i] == SIM_PRIZE_CHARGE(3)) empty_slot = 1;
         }
-        CHECK(repel && burst && mine,
-              "a hull is offered every charge the zone filled");
+        CHECK(repel && burst, "a hull is offered both charges the zone filled");
         CHECK(!empty_slot, "and never a slot the zone left empty");
 
         /* Close one on the hull and it leaves that hull's pool. */
@@ -2479,18 +2481,17 @@ int main(void) {
     }
 
     {
-        /* A mine, which is charge slot two.
+        /* A mine, which is the bomb trigger in its other posture.
          *
          * The whole of it is fields the model already had, so what these
          * check is that the combination behaves like a mine rather than that
          * any new mechanism works. It stays where it was let go, it goes off
          * on its own clock, and it wears the rung its layer's bombs are on.
          */
-        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const uint16_t MINE = SIM_BTN_MINE;
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].charge[2] = 3;
 
         /* Laid at a run. This is the one the `still` field exists for: with
          * the ship's velocity added, a speed-zero round leaves the rack doing
@@ -2500,7 +2501,9 @@ int main(void) {
         CHECK(s.ships[0].vy < -10000, "the pilot is moving when they lay it");
         step_n(&s, &cfg, MINE, 0, 1);
         CHECK(s.weapon_count == 1, "a mine is in the world");
-        CHECK(s.ships[0].charge[2] == 2, "and one is spent");
+        CHECK(s.ships[0].energy < sim_eff_max_energy(&cfg.classes[APEX],
+                                                     &s.ships[0]),
+              "and it cost energy rather than an item in a slot");
         int32_t mx = s.weapons[0].x, my = s.weapons[0].y;
         CHECK(s.weapons[0].vx == 0 && s.weapons[0].vy == 0,
               "a mine is laid at rest however fast its layer was going");
@@ -2523,17 +2526,15 @@ int main(void) {
          * is a real number rather than a coat of paint: the blast climbs the
          * bomb ladder's own arithmetic, so the color the client paints from
          * cannot promise more than the mine delivers. */
-        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const uint16_t MINE = SIM_BTN_MINE;
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].charge[2] = 4;
         step_n(&s, &cfg, MINE, 0, 1);
         CHECK(s.weapons[0].level == 0, "a rung one pilot lays a rung one mine");
 
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].charge[2] = 4;
         s.ships[0].level[SIM_TRIG_BOMB] = 2;
         step_n(&s, &cfg, MINE, 0, 1);
         CHECK(s.weapons[0].level == 2, "and a rung three pilot a rung three one");
@@ -2548,7 +2549,6 @@ int main(void) {
             sim_init(&det, 1);
             sim_spawn(&det, APEX, 0, 8192, 8192, 0, &cfg);
             sim_spawn(&det, APEX, 1, 8192 + 150, 8192, 0, &cfg);
-            det.ships[0].charge[2] = 1;
             det.ships[0].level[SIM_TRIG_BOMB] = (uint8_t)lvl;
             step_n(&det, &cfg, MINE, 0, 1);
             CHECK(det.weapon_count == 1, "the mine is down");
@@ -2575,7 +2575,6 @@ int main(void) {
          * Without it the detonation flashed rung one in violet. */
         sim_init(&det, 1);
         sim_spawn(&det, APEX, 0, 8192, 8192, 0, &cfg);
-        det.ships[0].charge[2] = 1;
         det.ships[0].level[SIM_TRIG_BOMB] = 2;
         step_n(&det, &cfg, MINE, 0, 1);
         det.weapons[0].life = 2;
@@ -2607,13 +2606,12 @@ int main(void) {
          * The Lattice carries the repel here; the mine is the Apex's, so the
          * two are different hulls and the round crossing between them is
          * unambiguous. */
-        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const uint16_t MINE = SIM_BTN_MINE;
         const int LATTICE = 6;
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);            /* lays it */
         sim_spawn(&s, LATTICE, 1, 8192 - 200, 8192, 0, &cfg);   /* repels */
-        s.ships[0].charge[2] = 1;
         s.ships[0].level[SIM_TRIG_BOMB] = 1;
         step_n(&s, &cfg, MINE, 0, 1);
         CHECK(s.weapon_count == 1, "the mine is posted");
@@ -2644,13 +2642,12 @@ int main(void) {
          * has always been hostile-only; this is that rule reaching the new
          * round, because a mine you cleared yourself would make the charge a
          * way to tidy up after an ally rather than a way through a door. */
-        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const uint16_t MINE = SIM_BTN_MINE;
         const int LATTICE = 6;
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, LATTICE, 0, 8192 - 200, 8192, 0, &cfg);   /* same team */
-        s.ships[0].charge[2] = 1;
         step_n(&s, &cfg, MINE, 0, 1);
         uint8_t was = s.weapons[0].spec;
         s.ships[1].charge[0] = 1;
@@ -2672,12 +2669,11 @@ int main(void) {
          * at the point of impact and the short-lived ones are gone by the
          * next sample. A peak weapon count misses them entirely, which is
          * how this was first measured and first got the wrong answer. */
-        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const uint16_t MINE = SIM_BTN_MINE;
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, ANVIL, 1, 8192 + 60, 8192, 0, &cfg);
-        s.ships[0].charge[2] = 2;
         s.ships[0].level[SIM_TRIG_BOMB] = 1;
         s.ships[0].level[SIM_TRIG_GUN] = 2;
         s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 3);
@@ -2703,7 +2699,6 @@ int main(void) {
          * inventory. */
         sim_init(&s, 1);
         sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].charge[2] = 1;
         s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_MULTI, 3);
         step_n(&s, &cfg, MINE, 0, 1);
         CHECK(s.weapon_count == 1, "multifire does not lay three mines");
@@ -2725,7 +2720,7 @@ int main(void) {
          * thing, because that is the number a player meets. The bomb is
          * pinned where the mine sits so the two are compared at one
          * geometry rather than wherever flight happened to take it. */
-        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const uint16_t MINE = SIM_BTN_MINE;
         for (int rung = 0; rung < 3; rung++) {
             int arm[2] = {0, 0};
             for (int kind = 0; kind < 2; kind++) {
@@ -2738,7 +2733,6 @@ int main(void) {
                     s.ships[0].mods[SIM_TRIG_BOMB] =
                         sim_mod_set(0, SIM_MOD_PROX, 1);
                     if (kind == 0) {
-                        s.ships[0].charge[2] = 1;
                         step_n(&s, &cfg, MINE, 0, 1);
                     } else {
                         step_n(&s, &cfg, SIM_BTN_BOMB, 0, 1);
@@ -2765,7 +2759,6 @@ int main(void) {
         sim_init(&s, 1);
         sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, ANVIL, 1, 8192 + 30, 8192, 0, &cfg);
-        s.ships[0].charge[2] = 1;
         step_n(&s, &cfg, MINE, 0, 1);
         step_n(&s, &cfg, 0, 0, 1);
         CHECK(s.weapon_count > 0 && s.weapons[0].fuse_target != 255,
@@ -2781,13 +2774,12 @@ int main(void) {
          * because it is load-bearing and accidental -- reading the composed
          * spec there instead would silently make a Lattice's minefield
          * immune to the one thing meant to clear it. */
-        const uint16_t MINE = SIM_BTN_USE | (2u << SIM_BTN_SLOT_SHIFT);
+        const uint16_t MINE = SIM_BTN_MINE;
         const int LATTICE = 6;
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);        /* lays it */
         sim_spawn(&s, LATTICE, 1, 8192 - 200, 8192, 0, &cfg);  /* repels */
-        s.ships[0].charge[2] = 1;
         s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_PUSH, 2);
         step_n(&s, &cfg, MINE, 0, 1);
         CHECK(s.weapon_count == 1, "the pushing mine is posted");
@@ -2800,6 +2792,99 @@ int main(void) {
         CHECK(s.weapons[0].spec != was,
               "a mine that pushes is still a mine a repel can clear");
         CHECK(s.weapons[0].vx > 0, "and it leaves in the push direction");
+    }
+
+    {
+        /* You have mines because you have bombs.
+         *
+         * No inventory, no green, nothing to run out of: a fresh hull that has
+         * touched nothing can lay one on the tick it spawns. That is the
+         * original's arrangement -- a mine there is a bomb with one bit set,
+         * and the special inventory a position packet carries lists bursts and
+         * repels and thors and no mines -- and it is the whole reason the
+         * ceiling below has to exist. */
+        const uint16_t MINE = SIM_BTN_MINE;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        CHECK(s.ships[0].charge[0] == 0 && s.ships[0].charge[1] == 0,
+              "the pilot is carrying nothing");
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 1, "and lays a mine anyway");
+
+        /* A hull with no rack lays none, because there is no bomb to not
+         * throw. That is the only licence a mine needs and the only one it
+         * has. */
+        sim_settings w = cfg;
+        w.classes[APEX].trigger[SIM_TRIG_BOMB][0] = SIM_NO_PATTERN;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        step_n(&s, &w, MINE, 0, 1);
+        CHECK(s.weapon_count == 0, "a hull with no rack lays nothing");
+
+        /* And a zone that wants a hull out of the mining business says so
+         * directly, which is what makes mining somebody's job rather than
+         * everybody's. */
+        w = cfg;
+        w.classes[APEX].mine_max = 0;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        step_n(&s, &w, MINE, 0, 1);
+        CHECK(s.weapon_count == 0, "nor does a hull the zone allows none");
+    }
+
+    {
+        /* The ceiling, which is the only thing limiting a weapon with no
+         * ammunition: how many of yours are already lying about.
+         *
+         * Walked rather than counted on the ship, so it cannot drift. What
+         * this pins is the consequence of that choice: every way a mine
+         * leaves the world gives the slot back, including ones a counter
+         * would have to be told about. */
+        const uint16_t MINE = SIM_BTN_MINE;
+        sim_settings w = cfg;
+        w.classes[APEX].mine_max = 3;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        s.ships[0].energy = sim_eff_max_energy(&w.classes[APEX], &s.ships[0]);
+
+        for (int n = 0; n < 3; n++) {
+            /* Nose somewhere new each time so they do not stack in one spot,
+             * and wait out the bomb clock the laying locked. */
+            s.ships[0].heading = (uint16_t)(n * 8000);
+            s.ships[0].energy =
+                sim_eff_max_energy(&w.classes[APEX], &s.ships[0]);
+            step_n(&s, &w, MINE, 0, 1);
+            step_n(&s, &w, 0, 0, 160);
+        }
+        CHECK(s.weapon_count == 3, "three down, which is the hull's ceiling");
+        s.ships[0].energy = sim_eff_max_energy(&w.classes[APEX], &s.ships[0]);
+        step_n(&s, &w, MINE, 0, 1);
+        CHECK(s.weapon_count == 3, "and the fourth press does nothing at all");
+        /* Refused rather than fired and wasted, the way the bomb safety is:
+         * a trigger that costs you a bar for nothing is a bug that reads as
+         * lag. */
+        CHECK(s.ships[0].energy
+              == sim_eff_max_energy(&w.classes[APEX], &s.ships[0]),
+              "and costs nothing, since nothing was laid");
+
+        /* One goes off and the room is there again. */
+        s.weapons[0].life = 2;
+        step_n(&s, &w, 0, 0, 5);
+        CHECK(s.weapon_count == 2, "one ran out");
+        step_n(&s, &w, MINE, 0, 1);
+        CHECK(s.weapon_count == 3, "so another may be laid");
+
+        /* Dying does not clear them, so a pilot who spent their allowance and
+         * died comes back unable to mine until the old ones age out. That
+         * falls out of the count being a walk of the world rather than a
+         * number on the hull, and it is the right way round: the mines are
+         * still out there, still yours, still dangerous. */
+        int before = s.weapon_count;
+        s.ships[0].alive = 0;
+        step_n(&s, &w, 0, 0, 2);
+        CHECK(s.weapon_count == before, "a death leaves your minefield where it is");
     }
 
     {

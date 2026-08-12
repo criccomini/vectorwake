@@ -289,6 +289,8 @@ local charge_tap = nil
 -- because it is the same shape of thing: a control's tap, latched by the
 -- interface and spent by exactly one simulation step.
 local multi_tap = false
+-- The mine cell's tap, latched the same way as the fan's.
+local mine_tap = false
 -- The same latch for a charge key, filled where taps are read and drained
 -- into `charge_tap` by the step loop.
 local key_charge = nil
@@ -338,6 +340,20 @@ local function my_buttons()
     -- lands in the same bit the key holds down, so the core sees one press
     -- however it was made.
     if multi_tap then bits[sim.BTN_MULTI] = true end
+
+    -- Shift and the bomb key together lay a mine, which is the original's own
+    -- chord and the reason `mine_mod` is a modifier rather than a key of its
+    -- own: a mine is not a third weapon, it is the bomb trigger held
+    -- differently, and the input should say so with the same finger.
+    --
+    -- The bomb bit comes back off, or one press would ask for both and the
+    -- core would throw a bomb as well as posting a mine. The mine pad on glass
+    -- lands in the same bit for the same reason the fan cell does.
+    if bits[sim.BTN_BOMB] and held[hash("mine_mod")] then
+        bits[sim.BTN_BOMB] = nil
+        bits[sim.BTN_MINE] = true
+    end
+    if mine_tap then bits[sim.BTN_MINE] = true end
 
     local b = 0
     for bit in pairs(bits) do b = b + bit end
@@ -1008,9 +1024,11 @@ function update(self, dt)
             -- is a second. Reading it here, once, is what makes a tap a
             -- press rather than a hold.
             multi_tap = touch.fired_multi()
+            mine_tap = touch.fired_mine()
             step_once()
             charge_tap = nil
             multi_tap = false
+            mine_tap = false
             accum = accum - DT
             steps = steps + 1
         end
@@ -1623,6 +1641,9 @@ function update(self, dt)
             or sim.ship_mod(me, sim.TRIG_BOMB, sim.MOD_MULTI) > 0
         touch.multi_off = sim.ship_multi_off(me)
         touch.charges = my_slots()
+        touch.has_mine = not watching and sim.mine_max(me) > 0
+        touch.mine_max = touch.has_mine and sim.mine_max(me) or 0
+        touch.mines_out = touch.has_mine and sim.mines_out(me) or 0
         touch.counts = {}
         touch.maxes = {}
         for _, k in ipairs(touch.charges) do

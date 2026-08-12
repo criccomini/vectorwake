@@ -103,10 +103,14 @@ local fired = nil
 -- thumb resting on a control it has already used should not be the difference
 -- between one toggle and none.
 local fanned = false
+-- And the mine cell, latched the same way: one tap is one mine.
+local mined = false
 
 -- The charge slots this hull can carry, newest set by the caller. Empty until
 -- told, so a hull with none draws none.
 M.charges = {}
+-- Whether this hull lays mines at all, which is `mine_max` above zero.
+M.has_mine = false
 
 -- Where the controls are. One definition, used by the hit test and by the
 -- drawing, because they were written out separately once and had drifted: the
@@ -171,6 +175,16 @@ function M.layout(w, h, s)
         fan = {x = x, y = y, w = cw, r = cw / 2}
         y = y + cw * 1.14
     end
+    -- The mine takes the next fixed cell, for the same reason the fan takes
+    -- the first: it is a mode of the bomb trigger rather than a thing in a
+    -- slot, so it is always there or never, and it must not slide down the
+    -- rail when a charge is spent. On glass there is no shift to hold, so a
+    -- cell is the whole of the control.
+    local mine = nil
+    if M.has_mine then
+        mine = {x = x, y = y, w = cw, r = cw / 2}
+        y = y + cw * 1.14
+    end
     local charge = {}
     for _, k in ipairs(M.charges) do
         -- Only what is in hand. A cell for a slot you have spent out is a
@@ -192,7 +206,7 @@ function M.layout(w, h, s)
     end
 
     return {r = r, guns = gun_pad, bombs = bomb_pad, home = home,
-            charge = charge, fan = fan}
+            charge = charge, fan = fan, mine = mine}
 end
 
 local function near(pad, x, y, slack)
@@ -222,6 +236,7 @@ local function zone(x, y, w, h, s)
     -- a hull with no fan leaves the space to the stick rather than to a cell
     -- nobody can see.
     if L.fan and within(L.fan, x, y) then return "multi" end
+    if L.mine and within(L.mine, x, y) then return "mine" end
     for _, c in ipairs(L.charge) do
         if within(c, x, y) then return c.slot end   -- a number, not a name
     end
@@ -262,6 +277,8 @@ function M.on_touch(action, w, h, s)
                 bombs = t.id
             elseif z == "multi" then
                 fanned = true
+            elseif z == "mine" then
+                mined = true
             elseif type(z) == "number" then
                 fired = z
             end
@@ -295,6 +312,15 @@ end
 function M.fired_multi()
     local hit = fanned
     fanned = false
+    return hit
+end
+
+-- Whether the mine cell was tapped since this was last asked, consumed by the
+-- read like the others: one tap lays one mine however many frames pass before
+-- the step loop gets to it.
+function M.fired_mine()
+    local hit = mined
+    mined = false
     return hit
 end
 
@@ -431,6 +457,42 @@ function M.draw(u, w, h, s)
                 pal.a(gcol, lit and 0.6 or 0.26))
         marks.fan(c.x, c.y, c.w * 0.30,
                   pal.a(gcol, lit and 0.92 or 0.42), M.multi_off)
+    end
+
+    -- The mine, in the cell after the fan and drawn like it: the same square,
+    -- the bomb's own color rather than the charge hue, because it is the bomb
+    -- trigger's other posture and not something found in a slot.
+    --
+    -- Its pips are the room left rather than the stock in hand, which is the
+    -- one place a mine differs from everything else on this rail. A pilot
+    -- never runs out of mines; they run out of floor. So a lit pip is a mine
+    -- that could still be laid, and a cell with none lit is a minefield at its
+    -- ceiling -- the same picture a spent charge would draw, saying the same
+    -- thing about whether pressing it will do anything.
+    if L.mine then
+        local c = L.mine
+        local half = c.w / 2
+        local cap = M.mine_max or 0
+        local room = cap - (M.mines_out or 0)
+        local lit = room > 0
+        local bcol = pal.rung(marks.level(M.me, sim.TRIG_BOMB))
+        u:rect(c.x - half, c.y - half, c.w, c.w,
+               pal.a(bcol, lit and 0.07 or 0.03))
+        u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s,
+                pal.a(bcol, lit and 0.6 or 0.26))
+        marks.mine(c.x, c.y + c.w * 0.06, c.w * 0.30,
+                   pal.a(bcol, lit and 0.92 or 0.42))
+        if cap > 0 then
+            local pw = c.w * 0.14
+            local gap = pw * 0.55
+            local span = cap * pw + (cap - 1) * gap
+            local px = c.x - span / 2
+            for i = 1, cap do
+                u:rect(px, c.y - half + c.w * 0.10, pw, c.w * 0.075,
+                       pal.a(bcol, i <= room and 0.85 or 0.18))
+                px = px + pw + gap
+            end
+        end
     end
 
     -- A cell per charge in hand, and none for one that is spent out. What

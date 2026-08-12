@@ -172,6 +172,9 @@ local function reset(w, h, s)
     -- Off by default, which is the ordinary hull: a fan is picked up. The
     -- block at the bottom turns it on for the case that is actually tight.
     touch.has_fan = false
+    -- Off by default too, and for the same reason: a hull that lays mines is
+    -- a hull the zone said may, not the ordinary one.
+    touch.has_mine = false
     touch.charges = {0, 1}
     touch.counts = {[0] = 2, [1] = 1}
     touch.maxes = {[0] = 3, [1] = 3}
@@ -401,6 +404,13 @@ local function controls(L2)
     if L2.fan then
         out[#out + 1] = {n = "fan", x = L2.fan.x, y = L2.fan.y, r = L2.fan.r}
     end
+    -- The mine is the rail's other fixed cell and sits under the same rules.
+    -- It is not a charge -- there is no stock to spend, only room on the
+    -- floor -- but where it may sit is exactly a charge's question.
+    if L2.mine then
+        out[#out + 1] = {n = "mine", x = L2.mine.x, y = L2.mine.y,
+                         r = L2.mine.r}
+    end
     for i, c in ipairs(L2.charge) do
         out[#out + 1] = {n = "charge" .. i, x = c.x, y = c.y, r = c.r}
     end
@@ -461,6 +471,7 @@ end
 
 local function under_ceiling(l, ceil)
     if l.fan and l.fan.y + l.fan.r > ceil then return false end
+    if l.mine and l.mine.y + l.mine.r > ceil then return false end
     for _, c in ipairs(l.charge) do
         if c.y + c.r > ceil then return false end
     end
@@ -731,6 +742,49 @@ do
           fewer.fan.x == first[1] and fewer.fan.y == first[2],
           string.format("%.0f,%.0f then %.0f,%.0f", first[1], first[2],
                         fewer.fan.x, fewer.fan.y))
+end
+
+-- --- the mine cell -----------------------------------------------------------
+--
+-- A mine is not a charge and the rail has to hold it anyway. It has no stock,
+-- so it can never be spent out of the column the way a charge is; it appears
+-- with the hull and stays. What is tested here is that adding a second fixed
+-- cell did not push the rack into the dial or the triggers, which is the
+-- failure a new cell in a column causes and the only one worth a test.
+do
+    local w, h, s = reset(unpack(PORT))
+    touch.ceiling = ROOMY
+    touch.has_fan = true
+    touch.has_mine = true
+    touch.charges = {0, 1}
+    touch.counts = {[0] = 3, [1] = 3}
+    local l = touch.layout(w, h, s)
+    check("a mining hull gets a mine cell", l.mine ~= nil)
+    check("nothing on the rail overlaps", worst_overlap(l) == nil,
+          tostring(worst_overlap(l)))
+    check("and the rail clears the dial", under_ceiling(l, ROOMY))
+    for _, c in ipairs(controls(l)) do
+        check(c.n .. " is on the screen with a mine cell",
+              c.x - c.r >= 0 and c.x + c.r <= w
+                  and c.y - c.r >= 0 and c.y + c.r <= h,
+              string.format("%s at %.0f,%.0f r%.0f", c.n, c.x, c.y, c.r))
+    end
+
+    -- Fixed like the fan, and for the same reason: spending a charge must not
+    -- slide the control a thumb is already reaching for.
+    local at = {l.mine.x, l.mine.y}
+    touch.counts = {[0] = 0, [1] = 1}
+    local fewer = touch.layout(w, h, s)
+    check("and it holds its cell as the rack empties",
+          fewer.mine.x == at[1] and fewer.mine.y == at[2],
+          string.format("%.0f,%.0f then %.0f,%.0f", at[1], at[2],
+                        fewer.mine.x, fewer.mine.y))
+
+    -- A hull the zone allows none gets no cell at all, so the space falls
+    -- through to the stick rather than to a control that does nothing.
+    touch.has_mine = false
+    check("a hull that lays none gets no cell",
+          touch.layout(w, h, s).mine == nil)
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

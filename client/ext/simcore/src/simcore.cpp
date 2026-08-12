@@ -524,6 +524,33 @@ int ChargeMax(lua_State* L) {
     return 1;
 }
 
+// How many mines this hull may have out at once, and how many it has.
+//
+// Two numbers rather than a count in hand, because a mine is not carried:
+// the pilot always has them and what runs out is room on the floor. The
+// interface needs both to say "two of your four are out", and the second is
+// a walk of the weapon table for the same reason the core walks it -- a
+// count kept anywhere else is a second copy of a fact the world already
+// holds, and the two part company the moment one goes off unseen.
+int MineMax(lua_State* L) {
+    int i = CheckShip(L);
+    lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].mine_max);
+    return 1;
+}
+
+int MinesOut(lua_State* L) {
+    int i = CheckShip(L);
+    int n = 0;
+    for (uint16_t w = 0; w < g_cur->weapon_count; w++) {
+        const sim_weapon* p = &g_cur->weapons[w];
+        if (p->owner != (uint8_t)i) continue;
+        const sim_weapon_spec* sp = &g_cfg.specs[p->spec];
+        if (sp->still && sp->blast > 0) n++;
+    }
+    lua_pushnumber(L, n);
+    return 1;
+}
+
 // What a pilot is worth, and what they have been paid. Bounty is derived
 // from what they hold, so it costs the wire nothing: the client already has
 // every count it is a sum over.
@@ -1120,6 +1147,8 @@ const luaL_reg kFunctions[] = {
     {"ship_bounty", ShipBounty},
     {"ship_points", ShipPoints},
     {"charge_max", ChargeMax},
+    {"mine_max", MineMax},
+    {"mines_out", MinesOut},
     {"has_trigger", HasTrigger},
     {"trigger_rate", TriggerRate},
     {"ship_mod", ShipMod},
@@ -1220,6 +1249,7 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_MAX_CHARGES);  lua_setfield(L, -2, "MAX_CHARGES");
     lua_pushnumber(L, SIM_BTN_USE);      lua_setfield(L, -2, "BTN_USE");
     lua_pushnumber(L, SIM_BTN_MULTI);    lua_setfield(L, -2, "BTN_MULTI");
+    lua_pushnumber(L, SIM_BTN_MINE);     lua_setfield(L, -2, "BTN_MINE");
     lua_pushnumber(L, 1u << SIM_BTN_SLOT_SHIFT); lua_setfield(L, -2, "BTN_SLOT_STEP");
     lua_pushnumber(L, SIM_EV_CHARGE);    lua_setfield(L, -2, "EV_CHARGE");
 

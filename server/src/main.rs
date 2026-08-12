@@ -875,6 +875,7 @@ impl Room {
             for (k, &n) in s.charges.iter().take(sim::MAX_CHARGES).enumerate() {
                 world.cfg.classes[idx].charge_max[k] = n.min(sim::CHARGE_MAX);
             }
+            if let Some(n) = s.mine_max { world.cfg.classes[idx].mine_max = n; }
             let cls = &mut world.cfg.classes[idx];
             // Raise the ceiling and the ladder under it moves with it, in
             // proportion. A zone that says nothing keeps the baseline's own
@@ -949,16 +950,19 @@ impl Room {
 
     /// The weapons that belong to a settings slot rather than to a hull, under
     /// the names a zone file reaches them by: `charge-1` through `charge-4`,
-    /// and `shrapnel-1` up, one per rung of the add-on.
+    /// `shrapnel-1` up, one per rung of the add-on, and `mine`.
     ///
-    /// Numbered rather than called repel and burst, because what sits in a
-    /// charge slot is the zone's own choice and the prize weights name them
-    /// the same way.
+    /// The charges are numbered rather than called repel and burst, because
+    /// what sits in a charge slot is the zone's own choice and the prize
+    /// weights name them the same way. The mine is named, because it is not a
+    /// slot a zone chooses the contents of: there is one mine, it is what the
+    /// bomb trigger lays, and calling it `charge-3` would say otherwise.
     fn slots(world: &sim::World) -> Vec<(String, u8)> {
         let mut v = Vec::new();
         for k in 0..sim::MAX_CHARGES {
             v.push((format!("charge-{}", k + 1), world.cfg.charge[k]));
         }
+        v.push(("mine".into(), world.cfg.mine));
         for k in 1..sim::MAX_RUNGS {
             v.push((format!("shrapnel-{k}"), world.cfg.mod_splinter[k]));
         }
@@ -976,6 +980,8 @@ impl Room {
             if let Ok(k) = n.parse::<usize>() {
                 if k >= 1 && k < sim::MAX_RUNGS { world.cfg.mod_splinter[k] = pat; }
             }
+        } else if name == "mine" {
+            world.cfg.mine = pat;
         }
     }
 
@@ -8602,7 +8608,7 @@ mod tests {
     #[test]
     fn a_zone_sets_how_long_a_mine_lives() {
         let mine = |w: &sim::World| {
-            w.cfg.specs[w.cfg.patterns[w.cfg.charge[2] as usize].spec as usize]
+            w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize]
         };
         let (base, warn) = tuned("");
         assert!(warn.is_empty(), "{warn:?}");
@@ -8610,7 +8616,7 @@ mod tests {
 
         let (w, warn) = tuned(r#"
             [[arena.weapons]]
-            name = "charge-3"
+            name = "mine"
             life = 30000
         "#);
         assert!(warn.is_empty(), "{warn:?}");
@@ -8626,7 +8632,36 @@ mod tests {
     }
 
     fn base_blast(w: &sim::World) -> i32 {
-        w.cfg.specs[w.cfg.patterns[w.cfg.charge[2] as usize].spec as usize].blast
+        w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize].blast
+    }
+
+    /// The mine ceiling, which is the whole of what limits mines: there is no
+    /// inventory to run out of, so how many of a pilot's may lie about at
+    /// once is the only number a zone has to reach for.
+    #[test]
+    fn a_zone_says_how_many_mines_a_hull_may_have_out() {
+        let (base, warn) = tuned("");
+        assert!(warn.is_empty(), "{warn:?}");
+        let anvil = ai::class_index("Anvil").unwrap();
+        assert_eq!(base.cfg.classes[anvil].mine_max, 4, "four, out of the box");
+
+        let (w, warn) = tuned(r#"
+            [[arena.ships]]
+            name = "Anvil"
+            mine_max = 9
+
+            [[arena.ships]]
+            name = "Apex"
+            mine_max = 0
+        "#);
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(w.cfg.classes[anvil].mine_max, 9, "the heavy mines heavily");
+        assert_eq!(w.cfg.classes[ai::class_index("Apex").unwrap()].mine_max, 0,
+                   "and a zone can take a hull out of the business");
+        // Hulls the file did not name keep the baseline's, the way every other
+        // per-ship number here does.
+        assert_eq!(w.cfg.classes[ai::class_index("Wedge").unwrap()].mine_max, 4,
+                   "a hull the file passed over is untouched");
     }
 
     /// Alpha's own file, applied the way a room applies it.
@@ -8665,7 +8700,7 @@ mod tests {
         assert_eq!(burst.damage, unsafe { sim::sim_units_energy(515) },
                    "alpha's file reached the weapon table at all");
 
-        let mine = w.cfg.specs[w.cfg.patterns[w.cfg.charge[2] as usize].spec as usize];
+        let mine = w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize];
         assert_eq!(mine.life, 12_000, "alpha's mines sit for two minutes");
         assert_eq!(mine.still, 1, "and are still mines");
     }

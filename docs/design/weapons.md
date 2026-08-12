@@ -139,11 +139,32 @@ takes the add-on, and these two weapons take it and spend it differently.
 
 **Mine.** `speed: 0`, `still: 1`, a long `life`, `expire_ends: 1`, a `trigger`,
 and a blast. It sits where you left it and goes off when its fuse finds
-somebody or its timer runs out, whichever comes first. Charge slot two, three
-in hand, and nothing in the update loop knows a mine from a bomb.
+somebody or its timer runs out, whichever comes first. Nothing in the update
+loop knows a mine from a bomb.
+
+**It is not a charge.** It is the bomb trigger in its other posture: shift and
+the bomb key, which is the original's own chord, or the mine cell on glass.
+There is no inventory and no green, because a pilot has mines for as long as
+they have a rack. That is the original's arrangement rather than a
+simplification of it -- a mine there is not a weapon type at all, the two
+bytes a shot travels in have five bits of type with no code for one and a
+single `alternate` bit that turns a bomb into a mine, and the special
+inventory beside it lists bursts, repels, thors, bricks and portals and no
+mines.
+
+What limits it is **`mine_max`**, how many of yours may be lying about at once.
+It is per hull and a zone sets it, which makes it the whole of the balance
+knob: zero is a hull that never mines, and a big number is a hull that papers
+a lane. The baseline gives everybody four. That count is walked out of the
+weapon table rather than kept on the ship, so every way a mine can leave the
+world gives the slot back -- a wall, its own timer, a repel turning it into a
+bomb -- and no counter can drift from it. Dying does not clear your minefield,
+so a pilot who spent their allowance and died comes back unable to lay until
+the old ones age out, which is the right way round: they are still out there
+and still yours.
 
 Two minutes of `life`, and a zone moves it the way it moves any weapon's:
-`[[arena.weapons]] name = "charge-3"`, `life = 12000`. That clock is the whole
+`[[arena.weapons]] name = "mine"`, `life = 12000`. That clock is the whole
 of how long the ground a minefield denies stays denied, so it is a map setting
 as much as a weapon one and worth reaching for before the damage. The original
 calls it MineAliveTime and bounds it at two seconds to ten minutes; it ships no
@@ -248,6 +269,10 @@ The weapons that belong to a settings slot rather than to a hull are named for
 the slot: `charge-1` through `charge-4`, and `shrapnel-1` up, one per rung of
 the add-on. Naming a charge slot the baseline leaves empty makes the weapon and
 fills the slot in one block.
+
+`mine` is the exception that is named rather than numbered, because it is not
+a slot whose contents a zone picks: there is one mine, it is what the bomb
+trigger lays, and calling it `charge-3` would say the opposite.
 
 Any *other* name makes a weapon that did not exist, which a hull can carry or
 another weapon can splinter into. Order in the file does not matter -- names

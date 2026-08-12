@@ -77,6 +77,15 @@ extern "C" {
  * Edge-triggered inside the core rather than pulsed by the client, so a lost
  * input cannot leave the two ends disagreeing about a piece of ship state. */
 #define SIM_BTN_MULTI 0x0200u
+/* Lay a mine, which is the bomb trigger in its other posture.
+ *
+ * Its own button and not a charge slot, because a mine is not a thing you
+ * carry a count of: you have mines because you have bombs, exactly as the
+ * original has it -- there a mine is not a weapon type at all but a bomb with
+ * one bit set, and the inventory its position packet carries lists bursts,
+ * repels, thors and portals and no mines. What limits it is how many of yours
+ * are already out, which is `mine_max` on the hull. */
+#define SIM_BTN_MINE 0x0400u
 #define SIM_BTN_SLOT_SHIFT 7
 #define SIM_BTN_SLOT_MASK 0x0180u
 #define SIM_BTN_SLOT(b) (((b) & SIM_BTN_SLOT_MASK) >> SIM_BTN_SLOT_SHIFT)
@@ -402,6 +411,14 @@ typedef struct {
     /* How many of each charge kind this hull may carry. Zero is a hull that
      * never gets one, which is how a repel stays the denial ship's thing. */
     uint8_t charge_max[SIM_MAX_CHARGES];
+    /* How many of this hull's mines may be in the world at once. MaxMines,
+     * which the original bounds at twenty.
+     *
+     * This is the whole of what limits mines, because nothing else does: a
+     * pilot has them for as long as they have a bomb rack, so there is no
+     * ammunition to run out of and no green to wait for. Zero is a hull that
+     * lays none, which is how a zone makes mining one ship's job. */
+    uint8_t mine_max;
 
     /* Gunners: teammates riding this hull, aiming and firing their own
      * weapons out of a ship they cannot steer. Zero forbids it, which is how
@@ -428,6 +445,11 @@ typedef struct {
      * a slot this zone does not use. Zone-wide rather than per hull, so a
      * charge means the same thing to everybody who has one. */
     uint8_t charge[SIM_MAX_CHARGES];
+    /* What a mine is, as a pattern index, or SIM_NO_PATTERN in a zone with
+     * none. One pattern for the whole room rather than a ladder per hull: the
+     * rung a mine wears is the layer's bomb rung, and `blast_up` is what turns
+     * that rung into a hole the size of that rung's bomb. */
+    uint8_t mine;
     /* Odds a green turns out to be each thing, over the flat prize space.
      * Relative rather than percentages -- doubling every number changes
      * nothing -- and read against the pool of the hull that took it, so what
