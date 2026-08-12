@@ -103,6 +103,30 @@ pub const ON_AIR: &str = "on_air";
 /// The seat ended. `detail`: `why`, one of the reasons below, how many ticks
 /// the pilot held the seat, and whether it settled as a quit.
 pub const LEAVE: &str = "leave";
+/// This pilot's hull was destroyed. `detail`: who by, and what it paid.
+///
+/// Combat started outside this log, on the reasoning that `rated_events`
+/// already keeps every death and a log should not say things twice. What that
+/// produced was a session that read as a join and a leave with an hour of
+/// silence between them, which is nobody's idea of what happened. So the
+/// human-involving deaths are filed here too, as the pilot's own row: the
+/// rated log stays the authority on what a death did to a number, and this
+/// one says that it happened to this person in this room. Bot-on-bot deaths,
+/// the overwhelming bulk, still never enter.
+pub const DIED: &str = "died";
+/// This pilot destroyed somebody. `detail`: who, and what it paid.
+pub const KILL: &str = "kill";
+
+/// The two combat kinds do not spend the session budget. The budget exists
+/// because most of this log is things a pilot can do as fast as they can
+/// press a key; a death is gated by the simulation, which charges a respawn
+/// and a flight back before the next one is possible, so a session cannot
+/// flood through it. Spending would also mean a long evening of honest
+/// flying exhausts the allowance and the departure at the end of it goes
+/// unrecorded, which is the row the whole log is for.
+pub fn budgeted(kind: &str) -> bool {
+    kind != DIED && kind != KILL
+}
 
 /// Written by the meta-layer rather than an arena, for the handful of things
 /// that happen to a pilot with no room involved. These carry no session: there
@@ -133,6 +157,11 @@ pub mod why {
     pub const DRAINED: &str = "drained";
     /// An operator kicked them.
     pub const KICKED: &str = "kicked";
+    /// The process is going down, by the restart verb or the host stopping
+    /// the container. Every deploy lands as one of these, and before it was
+    /// written down a converge simply cut every open session's story short:
+    /// the join was on file and the departure never happened.
+    pub const RESTART: &str = "restart";
 }
 
 /// Rows one connection may file before it stops being written down.

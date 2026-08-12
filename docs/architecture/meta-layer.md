@@ -239,9 +239,16 @@ us who they are.
 
 ### What is tracked
 
-Eleven kinds from an arena, all of them a change of state rather than a thing
-that happens every tick. Firing, hitting and dying are already elsewhere or are
-far too many; the whole of this log is the shape of somebody's stay.
+Thirteen kinds from an arena. Eleven are changes of state rather than things
+that happen every tick, and two are combat. Combat started outside this log on
+the reasoning that `rated_events` already keeps every death and a log should
+not say things twice; what that produced was a session that read as a join and
+a leave with an hour of silence between them. So the human-involving deaths
+are filed here too, as the pilot's own rows. The rated log stays the authority
+on what a death did to the ladder, this one says it happened to this person in
+this room, and bot-on-bot deaths, the overwhelming bulk of every hour, still
+never enter. Firing and hitting stay out: they are per-tick, and the sim is
+where they live.
 
 | Kind | When | Carries |
 |---|---|---|
@@ -256,6 +263,8 @@ far too many; the whole of this log is the shape of somebody's stay.
 | `fly` | took a hull again | hull, sim slot, side |
 | `on_air` | became somebody's subject | the slot |
 | `leave` | the seat ended | why, the slot, ticks held, and whether it settled as a quit |
+| `died` | their hull was destroyed | who by, and what it paid |
+| `kill` | they destroyed somebody | who, what it paid, and whether the victim quit the fight |
 
 `leave` is the one that repays the most work. Five callers reach `Room::leave`,
 a quit, a sit-out, a bot evicted for an arriving human, a bot sent home by a
@@ -292,9 +301,13 @@ half that lets them act, by making a report checkable against what the fleet saw
 Both ceilings exist because half of these are things a pilot can do as fast as
 they can press a key.
 
-A session files at most 200 rows. An honest stay writes somewhere between five
-and twenty, so reaching the cap is itself the finding, and past it the pilot
-keeps playing while the log stops growing on their account. Only changes that
+A session files at most 200 rows, and combat is exempt from the count: a death
+is gated by the simulation, which charges a respawn and a flight back before
+the next one is possible, so it cannot be flooded, and a long evening of honest
+flying must not exhaust the allowance the departure at the end of it needs.
+Everything else in an honest stay is somewhere between five and twenty rows,
+so reaching the cap is itself the finding, and past it the pilot keeps playing
+while the log stops growing on their account. Only changes that
 took effect are written at all, which removes most of the rest: the core
 refuses a hull or side change for anyone dead or short of a full bar and says
 nothing about it, so the asking and the happening are different events and only

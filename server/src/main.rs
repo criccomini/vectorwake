@@ -587,8 +587,9 @@ fn file_event(
     let Ok(mut s) = pilots.lock() else { return };
     // Budget is spent only when there is somewhere for the row to go, so a
     // deployment with no meta-layer does not quietly exhaust every session's
-    // allowance against a spool that writes nothing.
-    if !s.armed() || !session.spend() {
+    // allowance against a spool that writes nothing. Combat is exempt from
+    // spending altogether: see `pilot::budgeted`.
+    if !s.armed() || (pilot::budgeted(kind) && !session.spend()) {
         return;
     }
     s.push(pilot::Event {
@@ -1839,6 +1840,44 @@ impl Room {
         );
     }
 
+    /// One death, into the pilot log, from whichever path resolved it.
+    ///
+    /// A row for the human who died and a row for the human who did it, and
+    /// nothing when both parties are machines, which is most of every hour.
+    /// `rated_events` remains the authority on what the death did to the
+    /// ladder; these rows are what put it in the story of a session, where a
+    /// join followed by an hour of silence used to stand in for the whole
+    /// evening. Assists are deliberately left to the rated log: one death is
+    /// at most two rows here, not one per contributor.
+    fn note_death(&self, victim: u8, killer: u8, paid: i32) {
+        let bounty = paid.clamp(0, u16::MAX as i32);
+        if let Some(seat) = self.names.get(&victim) {
+            if !seat.bot {
+                let seat = seat.clone();
+                self.note(
+                    pilot::DIED,
+                    &seat,
+                    serde_json::json!({ "by": self.name_of(killer), "bounty": bounty }),
+                );
+            }
+        }
+        // A self-kill has no second party to credit, and crediting the victim
+        // with their own destruction would count it twice.
+        if victim == killer {
+            return;
+        }
+        if let Some(seat) = self.names.get(&killer) {
+            if !seat.bot {
+                let seat = seat.clone();
+                self.note(
+                    pilot::KILL,
+                    &seat,
+                    serde_json::json!({ "of": self.name_of(victim), "bounty": bounty }),
+                );
+            }
+        }
+    }
+
     /// A pilot goes, and their seat is retired rather than handed on.
     ///
     /// Handing it to a fresh bot is what this used to do, and it was the
@@ -1869,7 +1908,10 @@ impl Room {
             // This is bookkeeping about a fight that already happened, not a
             // death in the world, so no mode hook fires and no bounty pays.
             let tick = self.world.state.tick;
-            let losing = {
+            // A restart is the process leaving, not the pilot: settling it
+            // as a quit would charge everyone who happened to be mid-fight
+            // when a deploy landed with a death they did not choose.
+            let losing = why != pilot::why::RESTART && {
                 let sh = &self.world.state.ships[p.ship as usize];
                 let ceiling = self.world.eff_max_energy(p.ship as usize).max(1);
                 sh.alive != 0
@@ -1900,6 +1942,18 @@ impl Room {
                         .map(|(s, _)| *s)
                 });
                 if let (Some(ks), Some(krid)) = (seat, top) {
+                    // The killer's half of a quit. The victim's own row is
+                    // the LEAVE below, marked as a quit; a `died` here too
+                    // would say the same thing twice about one departure.
+                    if let Some(kseat) = self.names.get(&ks).cloned() {
+                        if !kseat.bot {
+                            self.note(
+                                pilot::KILL,
+                                &kseat,
+                                serde_json::json!({ "of": p.name, "quit": true }),
+                            );
+                        }
+                    }
                     let vr = self.rating.rating_of(&p.rid).round() as i16;
                     let kr = self.rating.rating_of(&krid).round() as i16;
                     let mut m = vec![S2C_KILL, p.ship, ks];
@@ -2269,6 +2323,7 @@ impl Room {
             if let Some(r) = rated.as_ref() {
                 self.hand_off(r);
             }
+            self.note_death(victim, killer, paid);
             let mut m = vec![S2C_KILL];
             m.push(victim);
             m.push(killer);
@@ -3412,6 +3467,21 @@ impl ArenaServer {
         gone
     }
 
+    /// The process is about to go, so every seated pilot's departure gets
+    /// written down first. Without this a deploy read as a fleet of joins
+    /// that never ended: the converge recreates the container, the sockets
+    /// die with it, and the leave that a closing socket files never runs
+    /// because nothing is left to run it. The spool is an append to a local
+    /// file, so the rows survive to the next boot and drain from there.
+    fn file_departures(&mut self) {
+        for r in self.rooms.iter_mut() {
+            let ids: Vec<u64> = r.players.keys().copied().collect();
+            for id in ids {
+                r.leave(id, pilot::why::RESTART);
+            }
+        }
+    }
+
     /// An operator verb from a directory. `unknown_verb` is what lets a
     /// directory be newer than an arena without either pretending.
     fn run_command(&mut self, c: &fleet::Command) -> (&'static str, String) {
@@ -3472,6 +3542,7 @@ impl ArenaServer {
             "restart" => {
                 println!("restart asked for by {:?}; exiting so the supervisor restarts us",
                          c.actor);
+                self.file_departures();
                 // The container platform owns restarts. Exiting is the whole
                 // implementation, and it is the honest one.
                 std::process::exit(0);
@@ -4234,6 +4305,25 @@ async fn main() {
         watcher.current.wt_key.clone(),
     );
     let zone = Arc::new(Mutex::new(ArenaServer::new(watcher, spools, ladder)));
+    // The stop signal, which is how every converge ends this process: file
+    // each open session's departure, then go. Compose allows ten seconds
+    // between the signal and the kill, and this is a lock and a few file
+    // appends. SIGKILL after a hang loses exactly what it lost before this
+    // existed, which is the bounded loss the spool design already accepts.
+    {
+        let zone = zone.clone();
+        tokio::spawn(async move {
+            let mut term =
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    Ok(t) => t,
+                    Err(_) => return,
+                };
+            term.recv().await;
+            zone.lock().await.file_departures();
+            println!("stopped; departures are on file");
+            std::process::exit(0);
+        });
+    }
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind failed");
@@ -7500,6 +7590,75 @@ mod tests {
         z.rooms[0].leave(id, pilot::why::LEFT);
         assert_eq!(z.spools.pilots.lock().unwrap().len(), 0);
         assert_eq!(session.filed(), 0, "and no allowance was spent on nothing");
+    }
+
+    /// Combat is the story of a session, and the log left it out for a day:
+    /// a join and a leave with an hour of silence between them. A death files
+    /// a row for each human in it and nothing for the machines, which are
+    /// most of every hour.
+    #[test]
+    fn a_death_is_two_rows_for_people_and_none_for_machines() {
+        let (mut z, pilots, d) = logging_arena("death");
+        let cap = z.max_players();
+        let a = &mut z.rooms[0];
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let hunter = a.join(Seat::guest("Hunter", false), 0, cap, tx).unwrap();
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let prey = a.join(Seat::guest("Prey", false), 0, cap, tx).unwrap();
+        let (hs, ps) = (a.players[&hunter].ship, a.players[&prey].ship);
+        let bots = seat_bots(a, 2);
+
+        a.note_death(ps, hs, 120);
+        let filed = rows(&pilots);
+        let combat: Vec<(&str, &str)> = filed
+            .iter()
+            .filter(|e| e.kind == pilot::DIED || e.kind == pilot::KILL)
+            .map(|e| (e.kind.as_str(), e.name.as_str()))
+            .collect();
+        assert_eq!(combat, vec![("died", "Prey"), ("kill", "Hunter")]);
+        assert_eq!(
+            filed.iter().find(|e| e.kind == pilot::DIED).unwrap().detail["by"],
+            "Hunter",
+        );
+
+        a.note_death(bots[0], bots[1], 60);
+        assert_eq!(rows(&pilots).len(), filed.len(), "machines file nothing");
+
+        // A self-kill is one row: crediting the victim with their own
+        // destruction would say it twice.
+        a.note_death(hs, hs, 0);
+        let after = rows(&pilots);
+        assert_eq!(after.len(), filed.len() + 1);
+        assert_eq!(after.last().unwrap().kind, pilot::DIED);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A converge used to cut every open session's story short: the join was
+    /// on file and the departure never happened, because a killed process
+    /// runs no socket cleanup. The stop path writes them all down, and it
+    /// does not settle anybody's fight as a quit on the way, because the
+    /// process leaving is not the pilot leaving.
+    #[test]
+    fn a_restart_files_every_departure_without_charging_a_quit() {
+        let (mut z, pilots, d) = logging_arena("restart");
+        let cap = z.max_players();
+        let a = &mut z.rooms[0];
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = a.join(Seat::guest("Bystander", false), 0, cap, tx).unwrap();
+        let ship = a.players[&id].ship;
+        // Mid-fight when the deploy lands: alive, nearly dead, ledger hot.
+        a.rating.damage(a.world.state.tick, "Bystander", "Somebody", 500, false);
+        a.world.state.ships[ship as usize].energy = 1;
+
+        z.file_departures();
+        let filed = rows(&pilots);
+        let end = filed.iter().find(|e| e.kind == pilot::LEAVE).expect("a departure on file");
+        assert_eq!(end.detail["why"], pilot::why::RESTART);
+        assert_eq!(
+            end.detail["quit_loss"], false,
+            "a deploy is not the pilot quitting a fight",
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// One pilot cannot make the fleet's database grow without bound. Sitting

@@ -711,6 +711,11 @@ function describe(e) {
       return bits(["slot", d.to]);
     case "sit_out":
       return d.why === "safe" ? "moved by the safe-zone sweep" : "asked to sit out";
+    case "died":
+      return bits(["by", d.by], [null, d.bounty ? `paid ${d.bounty}` : null]);
+    case "kill":
+      return bits(["of", d.of], [null, d.bounty ? `paid ${d.bounty}` : null],
+                  [null, d.quit ? "they quit the fight" : null]);
     case "fly":
       return bits(["hull", d.class], ["slot", d.ship], ["side", d.team]);
     case "on_air":

@@ -1729,8 +1729,18 @@ report and not notice one.
 
 So arenas file a second log to the meta-layer, `pilot_events`, on the road the
 rated log already built: append a line, let the tick move on, drain the batch in
-the background, refuse a replay on an arena-minted id. Eleven kinds of arena
-event and eight account events from the meta-layer itself. Every arena row
+the background, refuse a replay on an arena-minted id. Thirteen kinds of arena
+event and eight account events from the meta-layer itself.
+
+Two of the thirteen are combat, and they arrived a day after the rest, because
+the first cut kept kills out on the rule that `rated_events` already holds
+every death and a log should not say things twice. The rule held and the log
+was useless: a session read as a join and a leave with an hour of silence
+between them, which its first operator noticed within the hour. The
+human-involving deaths are filed here too now, `died` and `kill`, a row per
+human participant and nothing for the machines. The rated log keeps the
+authority on ratings and the full credit list; these rows put the death in the
+story of a stay. Every arena row
 carries a session, which is one connection and rides on the seat, because
 sitting out and flying again reissue every other handle a pilot has.
 
@@ -1769,7 +1779,12 @@ the first cap.
 **Cost:** A second spool file and a second drain task on every arena, and a
 `Seat` that now carries a session. `Room::leave` grew a reason parameter, which
 touched all five of its callers and is the change that makes the log worth
-having. Rows expire, so a question asked late enough has no answer, and the
+having. The stop signal is handled now, so a converge files a `leave` for every
+open session before the process goes; before that, every deploy cut the open
+stories short, and the first session anybody inspected was one of them. The
+human-involving death rows repeat a fact the rated log holds, which is the
+price of a session that reads whole; the repeat is bounded by there being
+humans in the fight. Rows expire, so a question asked late enough has no answer, and the
 ninety-day figure is a guess at how late that is rather than a measurement.
 
 **Reconsider if:** the ninety days turns out to be wrong in either direction,
