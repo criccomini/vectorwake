@@ -1272,9 +1272,12 @@ local function scores(me, pilots, watchers)
         -- The side, from the roster for the same reason the score is: a seat
         -- outside the snapshot has no team byte in the simulation, and every
         -- pilot out of sight reading as team zero would put half the arena on
-        -- your side of the board.
-        local team = (sim.ship_active(i) == 1) and sim.ship_team(i) or (p and p.team)
-        r.mine = team == view_team
+        -- your side of the board. Kept on the row, because the drawing wants
+        -- it too: reading the simulation again at draw time painted every
+        -- out-of-sight name in team zero's color, one shared violet that
+        -- reshuffled as pilots crossed into view.
+        r.team = (sim.ship_active(i) == 1) and sim.ship_team(i) or (p and p.team)
+        r.mine = r.team == view_team
         r.watch = false
     end
     -- Then whoever is watching. They are in the room without being in the
@@ -1432,8 +1435,11 @@ local function scores(me, pilots, watchers)
         if not r.watch then
             -- The same color their plate wears out in the arena. A key is
             -- only a key if it reads the same in both places: a name orange
-            -- here and violet on the hull is two facts about one pilot.
-            col = team_col(sim.ship_team(r.i))
+            -- here and violet on the hull is two facts about one pilot. From
+            -- the row rather than the simulation, because the simulation only
+            -- holds the seats inside this client's interest window and
+            -- answers team zero for everybody else.
+            col = team_col(r.team)
         end
         if mine or reading then
             -- Your row, marked the way a selected row is marked everywhere
@@ -1936,7 +1942,14 @@ local function inspect(o, top)
     -- Name, then the rows that always exist, then the team when it means
     -- something. Counted rather than guessed so the panel is exactly as tall
     -- as what it holds.
-    local theirs = sim.ship_team(i)
+    --
+    -- Their side comes from the roster when the seat is outside the snapshot,
+    -- exactly as the scoreboard's does: the simulation holds only the seats
+    -- inside this client's interest window, and a pilot across the map read
+    -- as team zero: the wrong color on the row, and possibly the wrong
+    -- side's name against it.
+    local theirs = (sim.ship_active(i) == 1) and sim.ship_team(i)
+                   or (p and p.team)
     local same_team = theirs == view_team
     -- Which side they are on, and whether this pilot is allowed to be told.
     --

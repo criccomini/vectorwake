@@ -1830,6 +1830,16 @@ could declare themselves a bot from any address and be handed the map. It keys
 off the token's label now, which is derived from an account and cannot be
 asserted, so a third-party bot is filtered exactly like the person running it.
 
+Two pieces of fallout surfaced in the first hour of play, both the same shape:
+client code that treated the snapshot as the whole room. The prediction core
+kept sowing prizes, and against a filtered state its live count says nothing
+about the map, so it seeded a phantom green near the player every prize_delay
+ticks for the next snapshot to sweep; a deathless instance now sows nothing,
+by the same reasoning as decision 40. And the scoreboard's drawing read
+`sim.ship_team` per row, which answers zero for every absent seat, so every
+out-of-sight name wore one shared color; the row takes its side from the
+roster now, as its sort already did.
+
 **Measured:** 312 KB/s to 24.4 KB/s against a full fifty-two ship room, under
 the 30 KB/s target it was ten times over. Prediction error improved rather than
 degraded, 0.75/0.38 px worst/mean to 0.61/0.24, with no corrections: a client

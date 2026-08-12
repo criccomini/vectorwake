@@ -1518,7 +1518,15 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
         }
     }
 
-    if (cfg->prize_delay == 0 || live >= cfg->prize_max) return;
+    /* Sowing is the authority's act, like concluding a death. A prediction
+     * client runs this same routine over a snapshot filtered to its interest
+     * window, so its live count is a fact about the window rather than about
+     * the map: far below prize_max even on a full field. Left to run, it
+     * seeded a phantom green near the player every prize_delay ticks,
+     * because spawn_prize aims at a live pilot's radar ring and the only
+     * pilots in a filtered state are the nearby ones. The next snapshot
+     * swept each one, so greens blinked in and out of the visible screen. */
+    if (cfg->deathless || cfg->prize_delay == 0 || live >= cfg->prize_max) return;
     if (++s->prize_timer >= cfg->prize_delay) {
         s->prize_timer = 0;
         spawn_prize(s, cfg);

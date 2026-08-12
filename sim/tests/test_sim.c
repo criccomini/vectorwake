@@ -1049,6 +1049,34 @@ int main(void) {
         CHECK(s.ships[0].kills == 0, "and no kill is credited");
     }
 
+    /* A deathless instance sows no prizes, for the same reason it concludes
+     * no death: it is a prediction client simulating a snapshot filtered to
+     * its interest window, so its live count is about the window, not the
+     * map. Left to sow, it seeded a green near the player every prize_delay
+     * ticks and the next snapshot swept it: greens blinking in and out of
+     * the visible screen. The authority run beside it is what proves the
+     * gate is doing the work rather than the field being unsowable. */
+    {
+        sim_state s;
+        sim_settings dc = cfg;
+        dc.deathless = 1;
+        dc.mortal_ship = 0;
+        sim_init(&s, 5);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dc);
+        step_counting(&s, &dc, 0, 0, dc.prize_delay * 4);
+        int live = 0;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
+        CHECK(live == 0, "a deathless instance sows nothing");
+
+        sim_state a;
+        sim_init(&a, 5);
+        sim_spawn(&a, APEX, 0, 8192, 8192, 0, &cfg);
+        step_counting(&a, &cfg, 0, 0, cfg.prize_delay * 4);
+        live = 0;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += a.prizes[i].active;
+        CHECK(live > 0, "the authority sows the same field");
+    }
+
     /* The one hull named mortal still dies, which is how the client keeps
      * its own death immediate while everyone else's waits for the zone. */
     {
