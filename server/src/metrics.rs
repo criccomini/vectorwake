@@ -153,6 +153,20 @@ pub static CONNECTIONS_TOTAL: Counter = Counter::new();
 /// Snapshot bytes handed to the writers. Egress is the hosting bill, so this
 /// is the number that turns into money.
 pub static SNAPSHOT_BYTES: Counter = Counter::new();
+/// The same bytes, to the seats that are not our own bots.
+///
+/// Which is the number `bw/seat` is actually about. A room seats fifty-one
+/// house bots against a handful of people, and those bots sit on loopback and
+/// are sent the whole room by design, so an average over every seat is an
+/// average over a population that costs nothing and reads everything. Dividing
+/// the total by all seats reported 305 kB/s on a fleet where a real client
+/// downloading 17 was the fact anybody wanted.
+///
+/// The seats it is divided by, held beside it so the division happens where
+/// the numbers are rather than being reconstructed from two unrelated gauges.
+pub static SNAPSHOT_BYTES_OUT: Counter = Counter::new();
+pub static SEATS_OUT: Gauge = Gauge::new();
+
 /// The size of the most recent snapshot handed to a writer.
 ///
 /// The counter above is what the deployment is billed for; this is what
@@ -211,6 +225,8 @@ impl Rate {
 
 /// Snapshot bytes as a rate, and drops as a rate. See `Rate`.
 pub static BYTES_RATE: Rate = Rate::new();
+/// The same, over the seats a snapshot is actually filtered for.
+pub static OUT_RATE: Rate = Rate::new();
 pub static DROP_RATE: Rate = Rate::new();
 
 /// Messages dropped because a client's queue was full.
@@ -423,6 +439,12 @@ pub fn render() -> String {
 
     counter(&mut out, "vw_connections_total", "Sockets accepted.", CONNECTIONS_TOTAL.get());
     counter(&mut out, "vw_snapshot_bytes_total", "Snapshot bytes queued to clients.", SNAPSHOT_BYTES.get());
+    counter(&mut out, "vw_snapshot_bytes_out_total",
+            "Snapshot bytes queued to seats that are not our own bots.",
+            SNAPSHOT_BYTES_OUT.get());
+    gauge(&mut out, "vw_seats_out",
+          "Seats a snapshot is filtered for, which is every seat not on loopback.",
+          SEATS_OUT.get());
     counter(&mut out, "vw_send_dropped_total", "Messages dropped on a full client queue.", SEND_DROPPED.get());
     counter(&mut out, "vw_wt_attempts_total",
             "QUIC connection attempts that reached this arena, handshake or not.",

@@ -2473,6 +2473,11 @@ impl Room {
     }
 
     fn broadcast_snapshot(&mut self, buf: &mut [u8]) {
+        // Seats this pass filtered a snapshot for, which is every seat that is
+        // not one of ours. Counted here rather than derived from the player
+        // counts, because the split that matters is loopback against the
+        // network and neither `total_players` nor `total_bots` draws that line.
+        let mut out_seats: i64 = 0;
         for p in self.players.values() {
             // Packed per player rather than once for everybody, so each is
             // sent only the prizes near its own ship. Prizes are most of a
@@ -2515,11 +2520,21 @@ impl Room {
             // Counted here rather than at the socket: this is the byte the
             // room decided to send, and egress is what a host bills for.
             metrics::SNAPSHOT_BYTES.add(msg.len() as u64);
+            // And again, to the side of the split that answers "what does a
+            // player download". Ours are excluded because they are sent the
+            // whole room over loopback, and averaging them in is what made the
+            // fleet view report three hundred kilobytes a second for a client
+            // pulling seventeen.
+            if !house {
+                metrics::SNAPSHOT_BYTES_OUT.add(msg.len() as u64);
+                out_seats += 1;
+            }
             metrics::SNAPSHOT_LAST.set(msg.len() as i64);
             if p.tx.try_send(Message::Binary(msg)).is_err() {
                 metrics::SEND_DROPPED.inc();
             }
         }
+        metrics::SEATS_OUT.set(out_seats);
 
         // Watchers riding one pilot's eyes, live. Packed at the followed hull
         // with the human radius whatever the target's own stream gets: a
@@ -3949,9 +3964,14 @@ impl ArenaServer {
                 // and the number is about what the host is carrying.
                 snapshot_bytes: crate::metrics::SNAPSHOT_LAST.get().max(0) as u32,
                 bw_per_player: {
-                    let seats = (self.total_players() + self.total_bots()).max(1) as u64;
-                    let per_sec = crate::metrics::BYTES_RATE
-                        .per_sec(crate::metrics::SNAPSHOT_BYTES.get(), fleet::now_ms());
+                    // Over the seats a snapshot is filtered for, not over every
+                    // seat in the room. Our own bots are sent the whole room on
+                    // loopback by design, and averaging fifty-one of those in
+                    // with one player answered a question nobody asked: it read
+                    // 305 kB/s while a real client was pulling 17.
+                    let seats = crate::metrics::SEATS_OUT.get().max(1) as u64;
+                    let per_sec = crate::metrics::OUT_RATE
+                        .per_sec(crate::metrics::SNAPSHOT_BYTES_OUT.get(), fleet::now_ms());
                     (per_sec / seats) as u32
                 },
                 // A lag action is this process degrading a connection that

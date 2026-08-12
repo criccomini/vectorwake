@@ -254,7 +254,21 @@ Against a full fifty-two ship room, one pilot flown by `tools/pilot`:
 | radius sized to the render window, 160 tiles | **17.0** | 0.73 / 0.40 |
 
 94.6% off, with no corrections at any point and prediction error staying at the
-0.5 px band that fixed-point rounding puts it in. That it did not degrade is
+0.5 px band that fixed-point rounding puts it in.
+
+Against the live fleet, two pilots in a room of fifty-three: **30.7 and 66.2
+KB/s**, from 312 and 345 before. The spread is fight density rather than noise
+and it is the honest shape of this: a pilot in a quiet corner is at the target,
+a pilot in the middle of the room's one big fight is twice it, because
+everything the cull removes is by definition somewhere you are not.
+
+One operator-facing number had to change with it. `bw/seat` divided the whole
+process's snapshot bytes by every seat, and a room seats fifty-one house bots
+against a handful of people. Those bots are on loopback and are sent the whole
+room by design, so the average was over a population that costs nothing and
+reads everything: it reported 305 kB/s while a real client was pulling 17. It
+counts the seats a snapshot is actually filtered for now, which is the same
+boolean that chooses the radius, so the two cannot disagree. That it did not degrade is
 worth stating, because it might have: a client no longer consumes rng for
 shrapnel it cannot see, so its generator can drift from the server's inside a
 snapshot period. The resync every 50 ms evidently dominates. A fix that derives
