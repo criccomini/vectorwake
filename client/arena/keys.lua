@@ -4,9 +4,16 @@
 -- test says so: a key the picture draws and this does not is a key you can
 -- point at and cannot use, and one this carries that the picture leaves out is
 -- a key nobody can find. `label` is what the board writes on it and `show` is
--- what a list writes, which differ in the two places a key is a picture of
--- itself rather than a word: the tilde key is drawn `~` and written `` ` ``,
--- and the arrows are drawn as triangles and written as glyphs.
+-- what a list writes. They differ in one place: the arrows are drawn as
+-- triangles and written as glyphs.
+--
+-- Both are the unshifted legend, always. A binding is a physical key and shift
+-- is a key in its own right, so a board writing `~` on the backquote was
+-- naming a character nothing here binds: the chip beside it said the other
+-- one, and the two disagreed about the same key. Nor do the legends swap while
+-- shift is held down. Holding shift is how a chord is typed, and relabeling
+-- the board underneath a hand doing that renames every key at the one moment
+-- the page is being read for which key is which.
 --
 -- `input` is the engine's own name for it, and `action` is the name it arrives
 -- under. One action per key, rather than one per thing a key does, is the
@@ -32,7 +39,9 @@ end
 M.list = {
     -- KEY_TILDE beside KEY_BACKQUOTE because a browser reports the shifted
     -- key as its own code and the same physical key has to answer either way.
-    K("tick", "~", "`", "KEY_BACKQUOTE", "KEY_TILDE"),
+    -- Which is the reason the legend is the unshifted one: shift and this key
+    -- are a chord on the backquote, not a press of something else.
+    K("tick", "`", "`", "KEY_BACKQUOTE", "KEY_TILDE"),
     K("1", "1", "1", "KEY_1"), K("2", "2", "2", "KEY_2"),
     K("3", "3", "3", "KEY_3"), K("4", "4", "4", "KEY_4"),
     K("5", "5", "5", "KEY_5"), K("6", "6", "6", "KEY_6"),

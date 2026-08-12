@@ -2762,7 +2762,7 @@ end
 -- does. What a key does is the view's to say now, since it is a pilot's to
 -- change; this is the shape of a keyboard, which is not.
 local BOARD = {
-    {{"esc", 1.0}, {"~"}, {"1"}, {"2"}, {"3"}, {"4"}, {"5"}, {"6"}, {"7"},
+    {{"esc", 1.0}, {"`"}, {"1"}, {"2"}, {"3"}, {"4"}, {"5"}, {"6"}, {"7"},
      {"8"}, {"9"}, {"0"}, {"-"}, {"="}, {"bksp", 1.0}},
     {{"tab", 1.5}, {"Q"}, {"W"}, {"E"}, {"R"}, {"T"}, {"Y"}, {"U"}, {"I"},
      {"O"}, {"P"}, {"["}, {"]"}, {"\\", 1.5}},

@@ -238,6 +238,22 @@ do
     end
     check("every bindable key is drawn on the board", #unseen == 0,
           table.concat(unseen, ", "))
+
+    -- And drawn with the legend a list would write. They were two spellings of
+    -- one key for a while: the board said one thing on the backquote and the
+    -- chip beside it said another, which reads as two keys rather than as one
+    -- key drawn twice. A binding is a physical key, so the unshifted legend is
+    -- the only one either half of the page has any business writing.
+    -- Case aside: the board writes a key cap and a list writes a word, so
+    -- `tab` and `Tab` are one spelling in two voices rather than two keys.
+    local split = {}
+    for _, k in ipairs(keys.list) do
+        if k.label and string.lower(k.label) ~= string.lower(k.show) then
+            split[#split + 1] = k.id
+        end
+    end
+    check("and drawn with the same legend a list writes it with",
+          #split == 0, table.concat(split, ", "))
 end
 
 -- A chord lights whole. Mines are Shift and the bomb key, and the bomb key is
