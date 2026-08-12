@@ -79,4 +79,9 @@ if [ "$TASK" = "bundle" ]; then
   set -- "$@" --bundle-output bundle/"$PLATFORM"
 fi
 
-exec "$JAVA" -jar "$BOB" "$@" resolve build "$TASK"
+# Not exec'd. Replacing the shell here would drop the EXIT trap above with it,
+# so every build that got this far -- which is every build that succeeds --
+# left its stamp directory behind in /tmp. The trap only ever fired on the
+# failures, which is the half that did not matter. `set -e` carries the exit
+# status out of here unchanged.
+"$JAVA" -jar "$BOB" "$@" resolve build "$TASK"

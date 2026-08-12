@@ -1225,6 +1225,39 @@ local function rooms_panel(rooms, here)
     return y + h
 end
 
+-- Is this seat in the snapshot?
+--
+-- Snapshots carry only what this client could lawfully see, so a pilot on the
+-- far side of the map is absent from the simulation and every number it holds
+-- about them is a zero. The roster is the other half of the answer: it names
+-- every seat in the arena twice a second and carries their totals for exactly
+-- this reason.
+--
+-- One copy of the question, because it has been got wrong twice by being
+-- asked in a second place: the draw-time read of the team byte painted every
+-- out-of-sight name in team zero's violet, and the pilot box read the four
+-- score lines straight out of the simulation and showed zeros for the seat
+-- whose row, on the scoreboard behind it, showed the real numbers.
+local function seat_here(i)
+    return sim.ship_active(i) == 1
+end
+
+local function seat_team(i, p)
+    return seat_here(i) and sim.ship_team(i) or (p and p.team)
+end
+
+-- Kills, deaths, points and bounty, whichever way round they have to be got.
+local function seat_score(i, p)
+    if seat_here(i) then
+        -- The simulation for a seat we can see, because it lands twenty times
+        -- a second and your own kill should appear the moment it happens.
+        return sim.ship_kills(i), sim.ship_deaths(i),
+               sim.ship_points(i), sim.ship_bounty(i)
+    end
+    return (p and p.k) or 0, (p and p.d) or 0,
+           (p and p.p) or 0, (p and p.b) or 0
+end
+
 local function scores(me, pilots, watchers)
     -- Asked for, not assumed. Mid-fight this is the least useful thing on the
     -- screen and the feed still says who is killing whom, so it lives behind
@@ -1237,30 +1270,9 @@ local function scores(me, pilots, watchers)
         if not r then r = {} rows[n] = r end
         r.i = i
         local p = pilots[i]
-        -- Where the numbers come from depends on whether this seat is in the
-        -- snapshot at all. Snapshots carry what this client could lawfully
-        -- see, so a pilot on the far side of the map is not in the simulation
-        -- and reading their kills out of it would answer zero for everybody
-        -- out of sight.
-        --
-        -- The simulation for seats we can see, because it lands twenty times a
-        -- second and your own kill should appear the moment it happens; the
-        -- roster otherwise, which carries every seat in the arena twice a
-        -- second and is exactly what a scoreboard wants of the rest.
-        if sim.ship_active(i) == 1 then
-            r.k = sim.ship_kills(i)
-            r.d = sim.ship_deaths(i)
-            r.p = sim.ship_points(i)
-            -- What killing them pays right now, which is the one number on
-            -- this row that is about the next thirty seconds rather than
-            -- about the last hour.
-            r.b = sim.ship_bounty(i)
-        else
-            r.k = (p and p.k) or 0
-            r.d = (p and p.d) or 0
-            r.p = (p and p.p) or 0
-            r.b = (p and p.b) or 0
-        end
+        -- Bounty is the one number on this row about the next thirty seconds
+        -- rather than about the last hour.
+        r.k, r.d, r.p, r.b = seat_score(i, p)
         r.name = (p and p.name) or ("ship " .. i)
         -- The roster's own flag. This used to look for a local bot object,
         -- which the client no longer flies and the server never sends, so the
@@ -1269,14 +1281,11 @@ local function scores(me, pilots, watchers)
         -- What the zone is willing to say this seat is, which is a stronger
         -- statement than "AI" and is what the counts below are made of.
         r.label = (p and p.label) or "unknown"
-        -- The side, from the roster for the same reason the score is: a seat
-        -- outside the snapshot has no team byte in the simulation, and every
-        -- pilot out of sight reading as team zero would put half the arena on
-        -- your side of the board. Kept on the row, because the drawing wants
-        -- it too: reading the simulation again at draw time painted every
-        -- out-of-sight name in team zero's color, one shared violet that
-        -- reshuffled as pilots crossed into view.
-        r.team = (sim.ship_active(i) == 1) and sim.ship_team(i) or (p and p.team)
+        -- Kept on the row, because the drawing wants it too: reading the
+        -- simulation again at draw time painted every out-of-sight name in
+        -- team zero's color, one shared violet that reshuffled as pilots
+        -- crossed into view.
+        r.team = seat_team(i, p)
         r.mine = r.team == view_team
         r.watch = false
     end
@@ -1948,8 +1957,7 @@ local function inspect(o, top)
     -- inside this client's interest window, and a pilot across the map read
     -- as team zero: the wrong color on the row, and possibly the wrong
     -- side's name against it.
-    local theirs = (sim.ship_active(i) == 1) and sim.ship_team(i)
-                   or (p and p.team)
+    local theirs = seat_team(i, p)
     local same_team = theirs == view_team
     -- Which side they are on, and whether this pilot is allowed to be told.
     --
@@ -2070,12 +2078,19 @@ local function inspect(o, top)
     -- packed into a row with their units stuck to them is a thing to decode;
     -- three labeled rows are three numbers to read, and this panel already
     -- reads that way everywhere else.
-    row("KILLS", tostring(sim.ship_kills(i)))
-    row("DEATHS", tostring(sim.ship_deaths(i)))
-    row("POINTS", tostring(sim.ship_points(i)))
+    --
+    -- Through the same read the scoreboard uses, which this panel was not
+    -- doing: the four lines came straight out of the simulation, so opening
+    -- the box on a pilot across the map answered zero to all of them while
+    -- the row it was opened from, a finger's width behind it, showed what the
+    -- roster says.
+    local k, d, pts, bty = seat_score(i, p)
+    row("KILLS", tostring(k))
+    row("DEATHS", tostring(d))
+    row("POINTS", tostring(pts))
     -- What killing them pays, which is the number that decides whether the
     -- rest of this matters right now.
-    row("BOUNTY", tostring(sim.ship_bounty(i)), pal.a(pal.BOUNTY, 0.9))
+    row("BOUNTY", tostring(bty), pal.a(pal.BOUNTY, 0.9))
 
     -- One word and a rule under it, because that is what a control looks like
     -- inside a panel. Once it is sent it says so and stops taking
@@ -4173,7 +4188,15 @@ function M.menu(v)
             -- the interface while the indicator stays 34 points whatever the
             -- screen, so this gives back more the bigger the phone, which is
             -- where the gap looked worst.
-            ry_ = H - rh + math.max(0, under - SB * 0.56)
+            --
+            -- Never more than the indicator itself, because the give-back is
+            -- measured against it and a device reporting no inset has nothing
+            -- to measure. Without that cap the arithmetic cancelled exactly at
+            -- SB = 0: the whole of the rail's padding went back, which put the
+            -- middle of the words on the bottom edge of the screen and cut
+            -- every label in half. An Android PWA with button navigation
+            -- reports no inset, and so does a phone with a home button.
+            ry_ = H - rh + math.max(0, math.min(SB, under - SB * 0.56))
         else
             ry_ = H - rh - math.max(0, SB - under)
         end

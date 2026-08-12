@@ -308,7 +308,16 @@ for _, h in ipairs(M.HULLS) do
     h.tris = triangulate(p)
 
     -- The ring a gunner's drone sits on, as the 80th percentile of how far
-    -- this hull reaches from its middle.
+    -- this hull reaches from its origin.
+    --
+    -- From the origin, because that is the point the ring is drawn around:
+    -- M.drones puts every drone at this radius from the ship's position, and
+    -- it has to, since the ring is held in world directions so that spinning
+    -- the carrier does not drag the drones round with it. This measured from
+    -- `h.mid` instead, which is the thumbnail's centering and belongs to the
+    -- menu, and the two disagreed by the whole of that offset: a drone aiming
+    -- over the nose sat a few pixels inside the plating the ring was fitted
+    -- to, and one aiming over the tail floated the same distance clear of it.
     --
     -- Not the maximum, which is the obvious answer and the wrong one: a ring
     -- outside the longest thing on a Cipher is a ring twenty pixels off its
@@ -327,8 +336,8 @@ for _, h in ipairs(M.HULLS) do
             local best = 0
             for v = 1, n do
                 local nv = (v % n) + 1
-                local ax, ay = p[v * 2 - 1], p[v * 2] - h.mid
-                local bx, by = p[nv * 2 - 1], p[nv * 2] - h.mid
+                local ax, ay = p[v * 2 - 1], p[v * 2]
+                local bx, by = p[nv * 2 - 1], p[nv * 2]
                 local ex, ey = bx - ax, by - ay
                 local den = dx * ey - dy * ex
                 if math.abs(den) > 1e-9 then
@@ -1439,10 +1448,28 @@ function M.draw_tiles(fill, glow, now, cull)
                     ex, ey = ex + dx, ey + dy
                     seen[ey * 1024 + ex] = true
                 end
+                -- Back to where the door actually begins, past the edge of the
+                -- screen if that is where it begins.
+                --
+                -- The tile this run was found from is only the first one that
+                -- survived the cull, and a door longer than the cull margin
+                -- loses its start to it. Anchoring there made every fact the
+                -- run derives from its own length -- the tick cluster at the
+                -- middle, the sill of an open door, the phase of the charge
+                -- travelling along it -- a function of how much of the door
+                -- was on screen, so flying along a long door walked its
+                -- furniture a tile at a time and re-wrapped the pulse. The
+                -- ends are the map's, not the camera's.
+                local sx, sy = t.tx, t.ty
+                while same(sx - dx, sy - dy) do
+                    sx, sy = sx - dx, sy - dy
+                    seen[sy * 1024 + sx] = true
+                end
                 -- A run of tiles across the screen is a door that slides up
                 -- and down, so its slats lie along the run and its posts cap
                 -- the ends.
-                door_run(fill, glow, wx, wy, (ex + 1) * TILE, (ey + 1) * TILE,
+                door_run(fill, glow, sx * TILE, sy * TILE,
+                         (ex + 1) * TILE, (ey + 1) * TILE,
                          not across, group, not sim.door_open(t.variant), now)
             end
         else

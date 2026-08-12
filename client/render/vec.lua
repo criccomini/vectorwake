@@ -300,9 +300,24 @@ function Layer:arc(x, y, r, a0, a1, width, segs, col)
     end
 end
 
+-- Held at the middle, never through it.
+--
+-- A band wider than twice its own radius has an inner edge behind the center,
+-- and a negative radius does not draw a smaller ring: every inner vertex lands
+-- on the far side of the middle, so each segment becomes a bow tie crossing
+-- its neighbours. What that draws is a blob at the center rather than the thin
+-- ring the caller asked for, and on the additive layer, where every one of
+-- these overlaps counts, a wave meant to be brightest on its rim came out
+-- brightest in its middle. Clamped, the inner edge collapses to the center and
+-- the band is a disc, which is the honest reading of a ring that wide.
+local function inner(r, width)
+    local ri = r - width * 0.5
+    return ri > 0 and ri or 0
+end
+
 function Layer:ring(x, y, r, width, segs, col)
     local u = unit(segs)
-    local ri, ro = r - width * 0.5, r + width * 0.5
+    local ri, ro = inner(r, width), r + width * 0.5
     for i = 0, segs - 1 do
         local c0, s0 = u[i * 2 + 1], u[i * 2 + 2]
         local c1, s1 = u[i * 2 + 3], u[i * 2 + 4]
@@ -311,10 +326,13 @@ function Layer:ring(x, y, r, width, segs, col)
     end
 end
 
--- A shockwave: bright on the ring, gone on both sides of it.
+-- A shockwave: bright on the ring, gone on both sides of it. Every wave the
+-- effects layer draws starts wider than it is round, so the clamp above is
+-- load-bearing here rather than defensive: this is the first frame or two of
+-- every ship death and every bomb.
 function Layer:ring_fade(x, y, r, width, segs, col)
     local u = unit(segs)
-    local ri, ro = r - width * 0.5, r + width * 0.5
+    local ri, ro = inner(r, width), r + width * 0.5
     for i = 0, segs - 1 do
         local c0, s0 = u[i * 2 + 1], u[i * 2 + 2]
         local c1, s1 = u[i * 2 + 3], u[i * 2 + 4]
