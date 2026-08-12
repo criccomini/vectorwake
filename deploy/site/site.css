@@ -188,6 +188,11 @@ button {
   fill: currentColor;
 }
 
+.discord-button svg {
+  width: 17px;
+  height: 17px;
+}
+
 .github-stars,
 .discord-members {
   padding-left: 9px;
