@@ -1965,7 +1965,7 @@ local function inspect(o, top)
     local attach = not o.watch and same_team and i ~= o.me
         and sim.ship_alive(i) == 1 and sim.ship_carrier(i) == 255 and not drop
     -- The team row always exists now, so the count is fixed.
-    local rows_n = 7
+    local rows_n = 8
     local h = 30 * S + rows_n * rowh
         + ((invite or follow or attach or drop) and (KEY_H + 12) * S or 0)
         + 10 * S
@@ -2014,6 +2014,23 @@ local function inspect(o, top)
     -- rather than a low one, and a newcomer should not read as ranked last.
     local band = (p and p.tier) or "unrated"
     row("TIER", band, band == "placing" and pal.a(pal.DIM, 0.85) or nil)
+    -- And the number under it, which is what the band is a rounding of.
+    --
+    -- The band exists so nobody has to watch a number move after every death,
+    -- and that reasoning still holds for the *band*: it is the row above and it
+    -- still only changes when something changed. This is the second line rather
+    -- than a replacement for the first. A pilot who wants to know whether they
+    -- are near the top of Lead or the bottom of it has no way to ask otherwise,
+    -- and the number is already on the wire, updated on both pilots at every
+    -- rated death.
+    --
+    -- Dim while placing, for the same reason the band is: ten games in, it is a
+    -- number that has not settled, and reading it as firm is reading it wrong.
+    -- A seat with no rating at all is a watcher, and a dash is the honest
+    -- answer there rather than a zero.
+    local score = o.ratings and o.ratings[i]
+    row("RATING", score and tostring(math.floor(score + 0.5)) or "--",
+        (band == "placing" or not score) and pal.a(pal.DIM, 0.85) or nil)
     -- A line each, rather than one line of "21K 20D 748P". Three numbers
     -- packed into a row with their units stuck to them is a thing to decode;
     -- three labeled rows are three numbers to read, and this panel already

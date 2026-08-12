@@ -135,6 +135,7 @@ local function frame(o)
             [2] = {name = "a bot", label = "bot", ai = true, house = true},
             [3] = {name = "a guest", label = "unknown"},
         },
+        ratings = o.ratings,
         teams = o.teams or {},
         feed = o.feed or {},
         hurt = 0,
@@ -518,6 +519,42 @@ ui.details = false
 frame()
 check("shutting the scoreboard shuts the info box", ui.inspect == nil)
 check("and takes its close box with it", box("uninspect") == nil)
+
+-- The rating, under the band it is a rounding of. The band alone cannot say
+-- whether somebody is at the top of Lead or the bottom of it, and the number
+-- is already on the wire.
+local function panel_rows(o)
+    local st = package.loaded["arena.state"]
+    ui.details = true
+    ui.inspect = 2
+    frame(o)
+    local seen = {}
+    for i = 1, st.n do
+        if st.text and st.text[i] then seen[#seen + 1] = st.text[i].s end
+    end
+    return seen
+end
+-- The value is whatever the panel drew immediately after the label, which is
+-- how every other row in this box is laid out. Looked up by adjacency rather
+-- than by searching the whole frame: the scoreboard above it is full of bare
+-- numbers, and a test that scanned for one would pass on somebody else's.
+local function row_value(rows, label)
+    for i, s in ipairs(rows) do
+        if s == label then return rows[i + 1] end
+    end
+    return nil
+end
+local rows = panel_rows({ratings = {[2] = 1244.4}})
+check("the info box carries a rating row", row_value(rows, "RATING") ~= nil,
+      table.concat(rows, "|"))
+check("and prints it rounded", row_value(rows, "RATING") == "1244",
+      tostring(row_value(rows, "RATING")))
+
+-- A seat with no rating is a watcher, and a dash is the honest answer rather
+-- than a zero, which would read as the worst pilot in the room.
+rows = panel_rows({ratings = {}})
+check("an unrated seat reads as a dash rather than a zero",
+      row_value(rows, "RATING") == "--", tostring(row_value(rows, "RATING")))
 
 -- --- whose side a pilot is on ----------------------------------------------
 
