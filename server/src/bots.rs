@@ -621,10 +621,16 @@ async fn bot_token(who: &str, secrets: &Mutex<HashMap<String, String>>) -> Optio
             s
         }
     };
+    // `/v1/session` and not `/v1/login`: session is secret-in-token-out,
+    // login is name-and-password. A bot account never holds a password, so
+    // asking login was answered 403 for every bot in the fleet, each one then
+    // joined tokenless, and no death a bot was part of could file. The pilot
+    // log kept flowing, which is what made the ladder's silence look like a
+    // rating bug instead of this.
     let body = serde_json::json!({ "secret": secret }).to_string();
-    let reply = crate::meta::call(&meta, "/v1/login", &body)
+    let reply = crate::meta::call(&meta, "/v1/session", &body)
         .await
-        .map_err(|e| println!("bots: {who} cannot log in: {e}"))
+        .map_err(|e| println!("bots: {who} cannot begin a session: {e}"))
         .ok()?;
     Some(reply.get("token")?.as_str()?.to_string())
 }
