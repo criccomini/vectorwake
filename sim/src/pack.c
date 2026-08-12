@@ -329,7 +329,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  * count in hand. Both travel because the client predicts laying one: without
  * them it either cannot find the weapon at all or lets a pilot put down more
  * than the room allows and watches the server delete them. */
-#define CFG_VERSION 13
+#define CFG_VERSION 14
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     wr w = {out, out + cap, 0};
@@ -399,6 +399,7 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w8(&w, p->count);
         w16(&w, p->spacing);
         w32(&w, (uint32_t)p->energy);
+        w32(&w, (uint32_t)p->energy_up);
         w16(&w, p->delay);
         w32(&w, (uint32_t)p->recoil);
     }
@@ -519,6 +520,7 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         p->count = (uint8_t)r8(&r);
         p->spacing = (uint16_t)r16(&r);
         p->energy = (int32_t)r32(&r);
+        p->energy_up = (int32_t)r32(&r);
         p->delay = (uint16_t)r16(&r);
         p->recoil = (int32_t)r32(&r);
     }

@@ -337,6 +337,12 @@ typedef struct {
     uint8_t count;        /* projectiles per shot */
     uint16_t spacing;     /* heading units between them; 65536 is a full turn */
     int32_t energy;       /* Q10 to fire */
+    /* Energy a rung adds, for a trigger whose rungs are not separate
+     * patterns. A bomb ladder charges more per rung by being a pattern per
+     * rung; a mine is one pattern wearing the pilot's bomb rung, so without
+     * this the rung that widens its blast costs nothing extra.
+     * LandmineFireEnergyUpgrade. */
+    int32_t energy_up;
     uint16_t delay;       /* ticks of cooldown */
     int32_t recoil;       /* Q16 px/tick backwards on the ship that fired */
 } sim_fire_pattern;

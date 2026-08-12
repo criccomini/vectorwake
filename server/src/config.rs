@@ -266,9 +266,13 @@ pub struct WeaponConfig {
     /// Px of blast, falling off to nothing at the rim. 0 lands on one hull.
     pub blast: Option<i32>,
     /// Px of blast one rung adds, for a weapon whose rung is not a ladder of
-    /// its own. A mine is a charge, so every mine is one spec and the rung it
-    /// wears is the layer's bomb rung.
+    /// its own. A mine is one spec and the rung it wears is the layer's bomb
+    /// rung.
     pub blast_up: Option<i32>,
+    /// Energy one rung adds to the cost of firing, for the same weapon and the
+    /// same reason: a bomb ladder charges more per rung by being a pattern per
+    /// rung, and a mine has only the one.
+    pub energy_up: Option<i32>,
     /// Px/s/10 everything hostile inside the reach is set to. Not an impulse
     /// and not distance-scaled: the far edge is shoved as hard as the middle.
     /// Damage is optional; this is the whole of a repel.

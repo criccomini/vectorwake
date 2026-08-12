@@ -2795,6 +2795,52 @@ int main(void) {
     }
 
     {
+        /* What laying one costs, and what the rung adds to it.
+         *
+         * LandmineFireEnergy is 270 against the bomb's 300 and the upgrade is
+         * 150 against the bomb's 50, so a mine starts cheaper and ends dearer:
+         * a rung 3 mine costs 570 where a rung 3 bomb costs 400. That is the
+         * original's own arrangement and it is the thing stopping the rung
+         * being free on the weapon that does not have to be aimed.
+         *
+         * A mine is one pattern for every rung, so this needs `energy_up` the
+         * way its blast needs `blast_up`: the bomb ladder charges per rung by
+         * being a pattern per rung and has somewhere to put the number. It was
+         * resolved bare here at first, which priced every rung at the first
+         * one and made the widest blast in the game free. */
+        const uint16_t MINE = SIM_BTN_MINE;
+        int32_t cost[3];
+        for (int lvl = 0; lvl < 3; lvl++) {
+            sim_state s;
+            sim_init(&s, 1);
+            sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+            s.ships[0].level[SIM_TRIG_BOMB] = (uint8_t)lvl;
+            int32_t e0 = s.ships[0].energy;
+            step_n(&s, &cfg, MINE, 0, 1);
+            CHECK(s.weapon_count == 1, "a mine went down");
+            cost[lvl] = e0 - s.ships[0].energy;
+        }
+        CHECK(cost[1] > cost[0] && cost[2] > cost[1],
+              "a rung of the ladder costs more to lay");
+        /* The steps are equal, which is what an upgrade per rung means, and
+         * measured against each other rather than against a literal so a tick
+         * of recharge in the same step cancels out. */
+        CHECK(cost[2] - cost[1] == cost[1] - cost[0],
+              "and each rung adds the same again");
+
+        /* Refused rather than half-charged when the bar cannot cover it. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].level[SIM_TRIG_BOMB] = 2;
+        s.ships[0].energy = cost[2] / 2;
+        int32_t before = s.ships[0].energy;
+        step_n(&s, &cfg, MINE, 0, 1);
+        CHECK(s.weapon_count == 0, "a bar that cannot pay lays nothing");
+        CHECK(s.ships[0].energy >= before, "and is not charged for it");
+    }
+
+    {
         /* You have mines because you have bombs.
          *
          * No inventory, no green, nothing to run out of: a fresh hull that has

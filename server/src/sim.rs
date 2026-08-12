@@ -109,6 +109,10 @@ pub struct sim_fire_pattern {
     pub count: u8,
     pub spacing: u16,
     pub energy: i32,
+    /// Energy a rung adds, for a trigger whose rungs are not separate
+    /// patterns. LandmineFireEnergyUpgrade; a mine is one pattern wearing the
+    /// pilot's bomb rung.
+    pub energy_up: i32,
     pub delay: u16,
     pub recoil: i32,
 }

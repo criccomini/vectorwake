@@ -560,10 +560,15 @@ static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
      * fragment is a bullet of whatever the thrower's guns were, so its damage
      * climbs with a number rather than by pointing at another row. */
     if (sp->damage_up) sp->damage += level * sp->damage_up;
-    /* And a rung of blast, for the other one. A mine is a charge, so it is one
-     * spec wearing the pilot's bomb rung rather than a row per rung, and this
-     * is what makes that rung worth anything. */
+    /* And a rung of blast, for the other one. A mine is one pattern wearing
+     * the pilot's bomb rung rather than a row per rung, and this is what makes
+     * that rung worth anything. */
     if (sp->blast_up) sp->blast += level * sp->blast_up;
+    /* What that rung costs, for the same reason and on the pattern rather than
+     * the spec: a bomb ladder charges more per rung by being a different
+     * pattern per rung, and a weapon with one pattern has nowhere else to put
+     * it. Without this the rung that widens a mine's hole is free. */
+    if (p && p->energy_up) p->energy += level * p->energy_up;
     if ((n = sim_mod_get(mods, SIM_MOD_SHRAPNEL)) != 0)
         sp->splinter = cfg->mod_splinter[n < SIM_MAX_RUNGS ? n : SIM_MAX_RUNGS - 1];
     if ((n = sim_mod_get(mods, SIM_MOD_FREEZE)) != 0)
@@ -1738,10 +1743,22 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                                            sh->level[SIM_TRIG_BOMB]);
             sim_fire_pattern mp;
             sim_weapon_spec ms;
+            /* The bomb trigger's add-ons and its rung, because that is what
+             * this round is. Multifire is the one stripped: it multiplies a
+             * pattern rather than transforming a round, and one press putting
+             * three mines on the floor spends the hull's whole allowance in a
+             * single tick.
+             *
+             * Resolved *with* both, rather than bare: what a mine costs
+             * climbs with the rung the way a bomb's does, and a bare resolve
+             * priced every rung at the first one. */
+            uint16_t mm = sim_mod_set(sh->mods[SIM_TRIG_BOMB],
+                                      SIM_MOD_MULTI, 0);
             /* A hull with no rack lays nothing: a mine is a bomb you did not
              * throw, so having one to throw is the whole of the licence. */
             if (rack != SIM_NO_PATTERN
-                && resolve(cfg, cfg->mine, 0, 0, &mp, &ms)
+                && resolve(cfg, cfg->mine, mm, sh->level[SIM_TRIG_BOMB],
+                           &mp, &ms)
                 && sh->energy > mp.energy) {
                 int out = 0;
                 for (uint16_t w = 0; w < next->weapon_count; w++) {
@@ -1753,17 +1770,9 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                         + (int32_t)(((int64_t)(cls->fore + 512) * dx) >> 15);
                     int32_t my = sh->y
                         + (int32_t)(((int64_t)(cls->fore + 512) * dy) >> 15);
-                    /* The bomb trigger's add-ons and its rung, because that is
-                     * what this round is. Multifire is the one stripped: it
-                     * multiplies a pattern rather than transforming a round,
-                     * and one press putting three mines on the floor spends
-                     * the hull's whole allowance in a single tick.
-                     *
-                     * The fragments are bullets of the layer's *gun* rung and
+                    /* The fragments are bullets of the layer's *gun* rung and
                      * bounce if their bullets do, read here at the laying
                      * exactly as a thrown bomb reads it at the throw. */
-                    uint16_t mm = sim_mod_set(sh->mods[SIM_TRIG_BOMB],
-                                              SIM_MOD_MULTI, 0);
                     spawn_pattern(next, cfg, cfg->mine, (uint8_t)i, sh->team,
                                   mx, my, sh->vx, sh->vy, sh->heading, 0, mm,
                                   sh->level[SIM_TRIG_BOMB],

@@ -1070,6 +1070,7 @@ impl Room {
         unsafe {
             if let Some(v) = w.recoil { p.recoil = sim::sim_units_speed(v); }
             if let Some(v) = w.energy { p.energy = sim::sim_units_energy(v); }
+            if let Some(v) = w.energy_up { p.energy_up = sim::sim_units_energy(v); }
         }
         if let Some(v) = w.count { p.count = v; }
         if let Some(v) = w.delay { p.delay = v; }
@@ -8643,7 +8644,8 @@ mod tests {
         let (base, warn) = tuned("");
         assert!(warn.is_empty(), "{warn:?}");
         let anvil = ai::class_index("Anvil").unwrap();
-        assert_eq!(base.cfg.classes[anvil].mine_max, 4, "four, out of the box");
+        assert_eq!(base.cfg.classes[anvil].mine_max, 5,
+                   "five, which is the original's own MaxMines");
 
         let (w, warn) = tuned(r#"
             [[arena.ships]]
@@ -8660,7 +8662,7 @@ mod tests {
                    "and a zone can take a hull out of the business");
         // Hulls the file did not name keep the baseline's, the way every other
         // per-ship number here does.
-        assert_eq!(w.cfg.classes[ai::class_index("Wedge").unwrap()].mine_max, 4,
+        assert_eq!(w.cfg.classes[ai::class_index("Wedge").unwrap()].mine_max, 5,
                    "a hull the file passed over is untouched");
     }
 

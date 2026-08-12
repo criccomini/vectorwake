@@ -44,6 +44,7 @@ sim_fire_pattern              sim_weapon_spec
   count     how many              life         ticks before it runs out
   spacing   heading units apart   on_wall      end · bounce · pass
   energy    cost of the shot      bounces      walls survived, if bouncing
+  energy_up more per rung          still        laid rather than thrown
   delay     cooldown ticks        trigger      px from a hull that counts as arriving
   recoil    kick on the shooter   expire_ends  whether running out counts as arriving
                                   splinter     a pattern fired where it ended
@@ -155,7 +156,9 @@ mines.
 What limits it is **`mine_max`**, how many of yours may be lying about at once.
 It is per hull and a zone sets it, which makes it the whole of the balance
 knob: zero is a hull that never mines, and a big number is a hull that papers
-a lane. The baseline gives everybody four. That count is walked out of the
+a lane. Five apiece, which is MaxMines in the original's own vanilla settings
+and is five on all eight of its ships. Twenty is the highest that setting may
+be *set* to and is nobody's value. That count is walked out of the
 weapon table rather than kept on the ship, so every way a mine can leave the
 world gives the slot back -- a wall, its own timer, a repel turning it into a
 bomb -- and no counter can drift from it. Dying does not clear your minefield,
@@ -166,9 +169,15 @@ and still yours.
 Two minutes of `life`, and a zone moves it the way it moves any weapon's:
 `[[arena.weapons]] name = "mine"`, `life = 12000`. That clock is the whole
 of how long the ground a minefield denies stays denied, so it is a map setting
-as much as a weapon one and worth reaching for before the damage. The original
-calls it MineAliveTime and bounds it at two seconds to ten minutes; it ships no
-default we can read, so the two minutes is ours.
+as much as a weapon one and worth reaching for before the damage. The original calls it MineAliveTime, bounds it at two seconds to ten minutes,
+and its vanilla settings run it at exactly this: 12000 hundredths.
+
+Laying one costs 270 energy and 150 more per bomb rung, against the 300 and 50
+of throwing one, and locks the triggers for 125 ticks against a bomb's 150.
+So a mine is cheaper and quicker than the bomb it is at rung one and dearer by
+rung three -- 570 against 400 -- which is what stops the rung being free on the
+weapon that does not have to be aimed. All four are the original's:
+LandmineFireEnergy, LandmineFireEnergyUpgrade and LandmineFireDelay.
 
 `still` is the only field the weapon needed that the model did not already
 have, and it is there because every other round in the game wants the

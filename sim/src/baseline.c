@@ -106,6 +106,15 @@ static const sim_class_units flight = {
 #define BOMB_ENERGY_UP   50   /* BombFireEnergyUpgrade, per level */
 #define BOMB_THRUST     400   /* BombThrust: the recoil of letting one go */
 #define BOMB_BLAST       80   /* BombExplodePixels, for an L1 bomb */
+/* Laying one, against the 300 and 150 throwing one costs. A mine is a little
+ * cheaper and a little quicker than the bomb it is, which is the original's
+ * own arrangement rather than a lever of ours. The upgrade is steeper than the
+ * bomb's 50: a rung 3 mine costs 570 where a rung 3 bomb costs 400, which is
+ * what stops the rung being free on the weapon that does not have to be
+ * aimed. */
+#define MINE_ENERGY     270   /* LandmineFireEnergy */
+#define MINE_ENERGY_UP  150   /* LandmineFireEnergyUpgrade, per level */
+#define MINE_DELAY      125   /* LandmineFireDelay */
 
 /* The charge slots the baseline uses. A zone can fill the other two. */
 #define CH_REPEL 0
@@ -192,39 +201,39 @@ static const class_row rows[SIM_MAX_CLASSES] = {
        started at L2 where everyone else started at L1, and this core has no
        equivalent: every hull spawns on the bottom rung and climbs by green.
 
-       Four mines apiece, and that number is ours: the original bounds
-       MaxMines at twenty and its ships differ, but a mine here is new enough
-       that a roster shape for it would be invented rather than measured. Four
-       holds a doorway without papering a lane, and a zone is where a hull
-       becomes the mining one.
+       Five mines apiece, which is MaxMines in the original's own vanilla
+       settings: five on all eight of its ships, so this is one of the numbers
+       that does *not* vary by hull there and the roster does not differentiate
+       on it here either. Twenty is the highest the setting may be set to and
+       is nobody's value; a zone is where a hull becomes the mining one.
 
        gun  bomb  barrels  gun add-ons  bomb add-ons   repel burst   mines */
-    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}, 4},
+    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}, 5},
     /* Wedge and Anvil are the bombers, so they are the hulls that hold the
        most shrapnel, which here is a deeper rung on the add-on rather than
        the count the original's ShrapnelMax is. */
     {3, 2, 1, GUN_ALL,
-     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}, 4},
+     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}, 5},
     /* Spread is Chord's and freeze is ours: neither has a setting in the
        original, so add-on ceilings are where our roster still lives. */
     {3, 2, 1, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE) | M1(SIM_MOD_FREEZE),
-     BOMB_ALL,                                             {3, 3, 0, 0}, 4},
+     BOMB_ALL,                                             {3, 3, 0, 0}, 5},
     /* The Leviathan: MaxBombs 3. */
     {3, 3, 1, GUN_ALL,
-     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}, 4},
-    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}, 4},
+     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}, 5},
+    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}, 5},
     /* Facet carries the Terrier's DoubleBarrel, the one hull that fires two
        abreast for one pull. The multifire ceiling of two is Chord's as well,
        so the barrels are what actually tell the two spread hulls apart: the
        Chord has to find greens to fan at all, and the Facet is already
        throwing a wall of lead the moment it spawns. */
     {3, 2, 2, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE), BOMB_ALL,
-                                                           {3, 3, 0, 0}, 4},
+                                                           {3, 3, 0, 0}, 5},
     /* Lattice is the Lancaster: BombBounceCount is 1 on that ship and 0 on
        every other, so bombs that come back off a wall are its alone. Push is
        ours and stays with it for the same reason. */
     {3, 2, 1, GUN_ALL,
-     BOMB_ALL | M2(SIM_MOD_BOUNCE) | M2(SIM_MOD_PUSH),     {3, 3, 0, 0}, 4},
+     BOMB_ALL | M2(SIM_MOD_BOUNCE) | M2(SIM_MOD_PUSH),     {3, 3, 0, 0}, 5},
 };
 #undef GUN_ALL
 #undef BOMB_ALL
@@ -610,8 +619,9 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         memset(&mf, 0, sizeof mf);
         mf.spec = (uint8_t)sim_add_spec(cfg, &mn);
         mf.count = 1;
-        mf.energy = sim_units_energy(BOMB_ENERGY);
-        mf.delay = BOMB_DELAY;
+        mf.energy = sim_units_energy(MINE_ENERGY);
+        mf.energy_up = sim_units_energy(MINE_ENERGY_UP);
+        mf.delay = MINE_DELAY;
         cfg->mine = (uint8_t)sim_add_pattern(cfg, &mf);
     }
 
