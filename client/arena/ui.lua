@@ -1236,14 +1236,31 @@ local function scores(me, pilots, watchers)
         local r = rows[n]
         if not r then r = {} rows[n] = r end
         r.i = i
-        r.k = sim.ship_kills(i)
-        r.d = sim.ship_deaths(i)
-        r.p = sim.ship_points(i)
-        -- What killing them pays right now, which is the one number on this
-        -- row that is about the next thirty seconds rather than about the
-        -- last hour.
-        r.b = sim.ship_bounty(i)
         local p = pilots[i]
+        -- Where the numbers come from depends on whether this seat is in the
+        -- snapshot at all. Snapshots carry what this client could lawfully
+        -- see, so a pilot on the far side of the map is not in the simulation
+        -- and reading their kills out of it would answer zero for everybody
+        -- out of sight.
+        --
+        -- The simulation for seats we can see, because it lands twenty times a
+        -- second and your own kill should appear the moment it happens; the
+        -- roster otherwise, which carries every seat in the arena twice a
+        -- second and is exactly what a scoreboard wants of the rest.
+        if sim.ship_active(i) == 1 then
+            r.k = sim.ship_kills(i)
+            r.d = sim.ship_deaths(i)
+            r.p = sim.ship_points(i)
+            -- What killing them pays right now, which is the one number on
+            -- this row that is about the next thirty seconds rather than
+            -- about the last hour.
+            r.b = sim.ship_bounty(i)
+        else
+            r.k = (p and p.k) or 0
+            r.d = (p and p.d) or 0
+            r.p = (p and p.p) or 0
+            r.b = (p and p.b) or 0
+        end
         r.name = (p and p.name) or ("ship " .. i)
         -- The roster's own flag. This used to look for a local bot object,
         -- which the client no longer flies and the server never sends, so the
@@ -1252,7 +1269,12 @@ local function scores(me, pilots, watchers)
         -- What the zone is willing to say this seat is, which is a stronger
         -- statement than "AI" and is what the counts below are made of.
         r.label = (p and p.label) or "unknown"
-        r.mine = sim.ship_team(i) == view_team
+        -- The side, from the roster for the same reason the score is: a seat
+        -- outside the snapshot has no team byte in the simulation, and every
+        -- pilot out of sight reading as team zero would put half the arena on
+        -- your side of the board.
+        local team = (sim.ship_active(i) == 1) and sim.ship_team(i) or (p and p.team)
+        r.mine = team == view_team
         r.watch = false
     end
     -- Then whoever is watching. They are in the room without being in the

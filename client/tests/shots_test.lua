@@ -49,6 +49,11 @@ local air = {}
 _G.sim = {
     MAX_CHARGES = 2,
     ship_count = function() return room.count end,
+    -- A seat the snapshot carries at all. Filtered snapshots leave far
+    -- seats out entirely, so the board asks this before reading a score
+    -- out of the simulation; in here every seat the room models is
+    -- present.
+    ship_active = function() return 1 end,
     ship_alive = function(i) return room.alive[i] and 1 or 0 end,
     ship_cooldown = function(i) return room.cd[i] or 0 end,
     ship_charge = function() return 0 end,

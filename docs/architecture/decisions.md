@@ -1792,3 +1792,52 @@ which the first real investigation will say; or the fleet wants to follow one
 person across arenas in a single session, which needs the meta-layer to mint the
 session at `/v1/session` and carry it in the token, and is a bigger change than
 it looks because a token is reminted every fifteen minutes.
+
+## 43. A snapshot carries what you could lawfully see
+
+**Decided:** ships and rounds are filtered to the interest radius that already
+governed prizes, and the scores move to the roster so a scoreboard survives it.
+
+**Why:** two problems with one shape, and the second is the one that matters.
+
+The bytes were measurable and bad. A live client was pulling 312 KB/s against
+a target of 30, and parsing the real wire said 77.6% of it was rounds, of which
+only 20.9% were inside the radius. Four fifths of the traffic was bullets from
+fights nobody here could see.
+
+The sight was worse and had no number on it. Every client was sent the
+position, velocity, energy and held buttons of every ship on the map, twenty
+times a second. A maphack against that is not an exploit, it is a rendering
+choice: draw what you were sent. Subspace lost this fight for a decade, and
+its own arena settings gate seeing another pilot's energy behind a capability
+we were granting to everybody implicitly.
+
+Both are the same fix, because the reason to send a distant ship and the reason
+to send a distant bullet are the same reason, and it was never a good one.
+
+**Cost:** the wire changed, so `CLIENT_PROTOCOL` went to 8 and a stale build is
+refused with a reload rather than left misreading an arena. Ships travel behind
+a presence bitmap, because a ship index is identity for the roster, the kill
+feed and the team lists and renumbering would break all three. The scoreboard
+grew a branch: the simulation for seats it can see, the roster for the rest,
+because the roster is the only channel that still knows about everybody. And
+`sim_pack_around` is no longer a prize filter with a misleading name, so the
+constant is `INTEREST` now.
+
+One bug was closed on the way, and it was live. The whole-room exemption keyed
+off `Player::bot`, which is what a client says about itself at join. Anybody
+could declare themselves a bot from any address and be handed the map. It keys
+off the token's label now, which is derived from an account and cannot be
+asserted, so a third-party bot is filtered exactly like the person running it.
+
+**Measured:** 312 KB/s to 24.4 KB/s against a full fifty-two ship room, under
+the 30 KB/s target it was ten times over. Prediction error improved rather than
+degraded, 0.75/0.38 px worst/mean to 0.61/0.24, with no corrections: a client
+not told about distant rounds cannot mispredict them. Simulation behavior is
+untouched, which the golden hashes confirm by not moving.
+
+**Reconsider if:** a zone wants a whole-arena spectator view, which is now a
+capability rather than a default and would want the watcher path to ask for it;
+or fights cluster so hard that the surviving in-radius rounds are still the
+budget, which is what the record diets are for and what the live number after
+this lands will say.

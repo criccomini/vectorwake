@@ -185,9 +185,51 @@ can arrive at. Safe because an unpack replaces the state outright, so nothing
 goes stale, and because prediction runs off the same core and the same rng and
 reaches the same prizes inside the radius it was told about.
 
-Everything that is not a prize still travels whole. Ships, weapons and flags
-are few and all of them matter: a scoreboard names every pilot in the arena,
-and a client that was not told about a ship could not draw its name.
+That was the first cut, and it aged badly. It reasoned that ships and weapons
+were few, which stopped being true: a room fills to fifty-one bots, and the
+measurement below found nearly four hundred rounds in the air at once.
+
+**Ships and rounds now go through the same radius**, and that change is about
+two things at once.
+
+The bytes. Measured on the live arena by parsing weapon positions out of the
+real wire and testing each against the radius, **20.9% of 191,115
+weapon-snapshots fell inside it**. Rounds were 77.6% of a snapshot, so four
+fifths of the traffic was bullets from fights the viewer could not see.
+
+The sight. A snapshot used to hand every client the position, velocity, energy
+and held buttons of every ship on the map, so a maphack was not an exploit but
+a rendering choice: draw what you were sent. This is the game the original
+lost, and its own answer was to gate seeing other pilots' energy behind a
+capability. A client is now told about what it could lawfully look at, and a
+modified one has nothing else to draw. The boundary is worth stating plainly:
+inside the radius everything still travels, because prediction needs it, so
+near-field ESP survives. The property bought is "no knowledge beyond lawful
+sight", not "no knowledge at all".
+
+Three details make it work. Ships travel behind a **presence bitmap** rather
+than a shortened array, because a ship index is identity for the roster, the
+kill feed and the team lists; the count stays the arena's and absent seats
+arrive inactive. Rounds need no bitmap, since a weapon index is not identity
+and the array is rebuilt from the wire every snapshot. And **the scores moved
+to the roster**, which already carried every seat in the arena twice a second,
+so a board can still name and score a pilot the snapshot leaves out. The client
+prefers the simulation for seats it can see, because that arrives twenty times
+a second, and the roster for the rest.
+
+The exemption is our own bots, and it is keyed on the token's label rather than
+on what the client said about itself at join. That distinction is the whole of
+it: the old test was `Player::bot`, the declaration, so anybody could declare
+themselves a bot from any address and be handed every ship on the map. The
+label is derived from the account a token was minted for and cannot be
+asserted, so a third-party bot is filtered exactly like the person running it.
+Flags still travel whole, being few and being objectives every pilot is
+entitled to know the state of.
+
+Measured against a full fifty-two ship room: **312 KB/s to 24.4 KB/s**, with
+prediction error improving from 0.75/0.38 px worst/mean to 0.61/0.24 and no
+corrections. The improvement is not a paradox: a client that is not told about
+distant rounds cannot mispredict them.
 
 Measured on one state with nine ships at the map's real spawns, packed both
 ways: **2898 to 1323 bytes, 56.6 to 25.8 KB/s, 54% off** -- and under the

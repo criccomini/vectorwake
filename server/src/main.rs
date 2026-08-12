@@ -43,8 +43,17 @@ const SNAPSHOT_EVERY: u32 = 5; // 20 Hz
 /// Four times the radar's reach, which is the furthest a client can see one
 /// by any means. A hull tops out at 490 px/s and a snapshot period is 50 ms,
 /// so a ship covers 24 px between snapshots against 3136 px of margin beyond
-/// the radar -- the boundary is not somewhere a player can arrive at.
-const PRIZE_INTEREST: i32 = 256 * 16 * 256;
+/// the radar: the boundary is not somewhere a player can arrive at.
+///
+/// It governs ships and rounds as well as prizes now, which is two changes
+/// wearing one constant. The bytes: rounds were 78% of a snapshot and four
+/// fifths of them belonged to fights the viewer could not see, measured on
+/// the live arena at 20.9% of 191,115 weapon-snapshots inside the radius.
+/// And the sight: a snapshot used to hand every client the position, heading
+/// and energy of every ship on the map, so a maphack was not an exploit but
+/// a rendering choice. Now a client is told about what it could lawfully
+/// look at, and a modified one has nothing else to draw.
+const INTEREST: i32 = 256 * 16 * 256;
 /// Humans a zone admits when its file says nothing. The room may hold more
 /// seats than this: `max_ships` sizes the room, and this bounds how many of its
 /// seats people get, which is what leaves room for the bot roster.
@@ -120,7 +129,14 @@ const JOIN_WATCH: u8 = 2;
 ///
 /// 6 added spectating: the watcher section on the roster, the subject byte's
 /// wider meaning, and `S2C_ONAIR`.
-const CLIENT_PROTOCOL: u8 = 7;
+///
+/// 8 filtered snapshots: a presence bitmap ahead of the ship records, rounds
+/// culled to the interest radius, and the scores moved onto the roster so a
+/// board can still name a seat it is no longer shown. Every one of those is a
+/// layout change, and a build that misread any of them would draw an arena
+/// that is not there, so the bump is what turns a deploy race into a refusal
+/// and a reload rather than a garbled room.
+const CLIENT_PROTOCOL: u8 = 8;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -2455,12 +2471,25 @@ impl Room {
             // microseconds of a fifty millisecond period. The bytes saved are
             // worth far more than the pack costs.
             let sh = &self.world.state.ships[p.ship as usize];
-            // A declared bot gets every prize. The radius exists to keep human
-            // snapshot bytes down across the internet; the bot server sits on
-            // loopback, and it predicts each room in one world shared by all
-            // its pilots, which is only sound if any one bot's snapshot is the
-            // whole room's truth. Prizes were the one thing packed per player.
-            let radius = if p.bot { -1 } else { PRIZE_INTEREST };
+            // Our own bots get the whole room. They sit on loopback, and the
+            // bot server predicts each room in one world shared by all its
+            // pilots, which is only sound if any one bot's snapshot is the
+            // whole room's truth. It costs no egress and it buys no sight
+            // anybody could act on, since the process holding it is ours.
+            //
+            // The label rather than the declaration, and that is the whole
+            // point of this line. `p.bot` is what the client said about
+            // itself at join, and anybody may say it: before this, declaring
+            // yourself a bot from any address on the internet was a request
+            // for the position, heading and energy of every ship on the map,
+            // granted. The label is derived from the account the token was
+            // minted for and cannot be asserted by a client, so a third-party
+            // bot is now filtered exactly like the person running it.
+            let house = self
+                .names
+                .get(&p.ship)
+                .is_some_and(|s| s.label == token::Label::HouseBot.to_byte());
+            let radius = if house { -1 } else { INTEREST };
             let n = self.world.pack_around(buf, sh.x, sh.y, radius);
             if n <= 0 {
                 continue;
@@ -2493,7 +2522,7 @@ impl Room {
                 continue;
             }
             let sh = &self.world.state.ships[t as usize];
-            let n = self.world.pack_around(buf, sh.x, sh.y, PRIZE_INTEREST);
+            let n = self.world.pack_around(buf, sh.x, sh.y, INTEREST);
             if n <= 0 {
                 continue;
             }
@@ -2579,7 +2608,7 @@ impl Room {
                 (mid, mid, 255u8)
             }
         };
-        let n = self.world.pack_around(buf, cx, cy, PRIZE_INTEREST);
+        let n = self.world.pack_around(buf, cx, cy, INTEREST);
         if n > 0 {
             let mut msg = Vec::with_capacity(n as usize + 6);
             msg.push(S2C_SNAPSHOT);
@@ -2689,6 +2718,18 @@ impl Room {
     /// once bots could be somebody else's and a pilot could be a guest we
     /// genuinely cannot vouch for, and guessing on a player's behalf is the
     /// one thing this field must not do.
+    ///
+    /// The scores ride here too, and that is what keeps a scoreboard whole
+    /// once snapshots stopped being. A client is no longer told about a ship
+    /// on the far side of the map, so it can no longer read that ship's kills
+    /// out of the simulation; this channel already carried every seat in the
+    /// arena on a slow clock, which is exactly the shape a scoreboard wants.
+    /// Eleven bytes a seat at half a hertz is a fifth of a kilobyte a second
+    /// against the three hundred the cull took off.
+    ///
+    /// Team comes with them because the board groups by side, and a seat you
+    /// cannot see is still a seat on somebody's team. It says nothing about
+    /// where they are, which is the line this whole change draws.
     fn roster_msg(&self) -> Vec<u8> {
         let mut m = vec![S2C_ROSTER];
         m.push(self.names.len() as u8);
@@ -2701,6 +2742,12 @@ impl Room {
             // that number has been earned yet, and an unearned rating should
             // not be shown as if it had been.
             m.push(self.rating.games_of(&seat.rid).min(255) as u8);
+            let sh = &self.world.state.ships[*ship as usize];
+            m.push(sh.team);
+            m.extend_from_slice(&sh.kills.to_le_bytes());
+            m.extend_from_slice(&sh.deaths.to_le_bytes());
+            m.extend_from_slice(&sh.points.to_le_bytes());
+            m.extend_from_slice(&sh.earned.to_le_bytes());
             let bytes = seat.name.as_bytes();
             let len = bytes.len().min(24) as u8;
             m.push(len);
@@ -6819,19 +6866,28 @@ mod tests {
         assert_eq!(n, a.names.len(), "the count has to match what follows it");
         assert!(n >= 2, "the bots and the player we seated");
 
+        // Seventeen bytes of header now, not six: the scores came here when
+        // snapshots stopped carrying every seat, and a board reading a seat it
+        // can no longer see reads it off this message.
+        const HEAD: usize = 17;
         let mut o = 2;
         let mut read: HashMap<u8, (String, u8)> = HashMap::new();
         for _ in 0..n {
-            assert!(o + 6 <= m.len(), "an entry header ran off the end");
+            assert!(o + HEAD <= m.len(), "an entry header ran off the end");
             let ship = m[o];
             let label = m[o + 1];
             let _rating = i16::from_le_bytes([m[o + 2], m[o + 3]]);
             let _games = m[o + 4];
-            let len = m[o + 5] as usize;
-            assert!(o + 6 + len <= m.len(), "a name ran off the end");
-            let name = String::from_utf8(m[o + 6..o + 6 + len].to_vec())
+            let _team = m[o + 5];
+            let _kills = u16::from_le_bytes([m[o + 6], m[o + 7]]);
+            let _deaths = u16::from_le_bytes([m[o + 8], m[o + 9]]);
+            let _points = u32::from_le_bytes([m[o + 10], m[o + 11], m[o + 12], m[o + 13]]);
+            let _earned = u16::from_le_bytes([m[o + 14], m[o + 15]]);
+            let len = m[o + 16] as usize;
+            assert!(o + HEAD + len <= m.len(), "a name ran off the end");
+            let name = String::from_utf8(m[o + HEAD..o + HEAD + len].to_vec())
                 .expect("names are sanitised to printable ascii before they get here");
-            o += 6 + len;
+            o += HEAD + len;
             assert!(read.insert(ship, (name, label)).is_none(), "ship {ship} twice");
         }
         // The watcher section: count, then label and name per watcher. Walked
@@ -6892,6 +6948,128 @@ mod tests {
             .collect()
     }
 
+    /// Put a seat far enough away that no radius short of the whole map
+    /// reaches it. The interest radius is 256 tiles; this is most of a
+    /// thousand.
+    fn send_far(a: &mut Room, ship: u8) {
+        let sh = &mut a.world.state.ships[ship as usize];
+        sh.x = 900 * 16 * 256;
+        sh.y = 900 * 16 * 256;
+    }
+
+    #[test]
+    fn a_human_is_not_told_where_the_far_side_of_the_map_is() {
+        // The cheating half, as bytes. A snapshot used to carry the position,
+        // heading and energy of every ship in the arena to every client, so a
+        // maphack was not an exploit, it was a rendering choice. Now a seat
+        // outside the radius is absent, and absent is not "zeroed but there":
+        // there is no record to read at all.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (near, _, mut rx) = seat_rx(&mut a, "near");
+        let far = seat_human(&mut a, "far");
+        send_far(&mut a, far);
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        a.broadcast_snapshot(&mut buf);
+        let got = snapshots(&drain(&mut rx));
+        let last = got.last().expect("a snapshot arrived");
+
+        let mut w = sim::World::new(1);
+        assert!(w.apply_snapshot(&last[6..]), "the snapshot unpacks");
+        assert_eq!(w.state.ship_count, a.world.state.ship_count,
+                   "the seat count is still the arena's, so indices keep meaning");
+        assert!(w.state.ships[near as usize].active != 0, "I am in my own snapshot");
+        assert_eq!(w.state.ships[far as usize].active, 0,
+                   "and the far seat is not");
+        assert_eq!(
+            (w.state.ships[far as usize].x, w.state.ships[far as usize].y),
+            (0, 0),
+            "with nothing left behind to read a position out of"
+        );
+    }
+
+    #[test]
+    fn declaring_yourself_a_bot_no_longer_buys_the_whole_map() {
+        // The hole this closes. The exemption used to key off `Player::bot`,
+        // which is what the client said about itself at join, so anybody could
+        // declare from any address and be handed every ship on the map. It
+        // keys off the token's label now, which a client cannot assert.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (_, _, mut rx) = seat_rx(&mut a, "claims-to-be-a-bot");
+        // Same shape as a third-party bot: declared, and labelled by the token
+        // rather than by the claim.
+        let id = *a.players.iter().find(|(_, p)| p.name == "claims-to-be-a-bot").unwrap().0;
+        let ship = a.players[&id].ship;
+        a.players.get_mut(&id).unwrap().bot = true;
+        if let Some(seat) = a.names.get_mut(&ship) {
+            seat.bot = true;
+            seat.label = token::Label::ThirdPartyBot.to_byte();
+        }
+        let far = seat_human(&mut a, "far");
+        send_far(&mut a, far);
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        a.broadcast_snapshot(&mut buf);
+        let got = snapshots(&drain(&mut rx));
+        let last = got.last().expect("a snapshot arrived");
+        let mut w = sim::World::new(1);
+        assert!(w.apply_snapshot(&last[6..]));
+        assert_eq!(w.state.ships[far as usize].active, 0,
+                   "a declared bot is filtered exactly like the person running it");
+    }
+
+    #[test]
+    fn our_own_bots_are_still_sent_the_whole_room() {
+        // The exemption that has to survive: the bot server predicts a room in
+        // one world shared by all its pilots, so any one bot's snapshot has to
+        // be the whole room's truth. It sits on loopback, so it costs no
+        // egress, and the process holding the sight is ours.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
+        let mut seat = Seat::guest("house".to_string(), true);
+        seat.label = token::Label::HouseBot.to_byte();
+        a.join(seat, 0, 32, tx).expect("a seat");
+        let far = seat_human(&mut a, "far");
+        send_far(&mut a, far);
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        a.broadcast_snapshot(&mut buf);
+        let got = snapshots(&drain(&mut rx));
+        let last = got.last().expect("a snapshot arrived");
+        let mut w = sim::World::new(1);
+        assert!(w.apply_snapshot(&last[6..]));
+        assert!(w.state.ships[far as usize].active != 0,
+                "ours sees the whole room");
+    }
+
+    #[test]
+    fn the_roster_still_scores_a_seat_the_snapshot_leaves_out() {
+        // What keeps a scoreboard whole once snapshots stopped being. A client
+        // cannot read a far seat's kills out of the simulation any more, so
+        // they ride the roster, which already carried every seat in the arena
+        // on a slow clock.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let _near = seat_human(&mut a, "near");
+        let far = seat_human(&mut a, "far");
+        send_far(&mut a, far);
+        a.world.state.ships[far as usize].kills = 7;
+        a.world.state.ships[far as usize].deaths = 3;
+
+        let m = a.roster_msg();
+        let n = m[1] as usize;
+        let mut o = 2;
+        let mut found = None;
+        for _ in 0..n {
+            let ship = m[o];
+            let kills = u16::from_le_bytes([m[o + 6], m[o + 7]]);
+            let deaths = u16::from_le_bytes([m[o + 8], m[o + 9]]);
+            let len = m[o + 16] as usize;
+            if ship == far { found = Some((kills, deaths)); }
+            o += 17 + len;
+        }
+        assert_eq!(found, Some((7, 3)), "the far seat's score is on the roster");
+    }
+
     #[test]
     fn a_watchers_snapshot_is_the_followed_pilots_sight_exactly() {
         // Bound sight's whole guarantee, as bytes: what a same-side watcher
@@ -6916,16 +7094,17 @@ mod tests {
 
         let sh = &a.world.state.ships[target as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
-        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, PRIZE_INTEREST);
+        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, INTEREST);
         assert!(n > 0);
         assert_eq!(&last[6..], &fresh[..n as usize], "byte for byte");
     }
 
     #[test]
     fn following_a_bot_never_inherits_its_whole_room_stream() {
-        // A declared bot is sent radius -1, the whole prize table. The watcher
-        // behind it gets the human radius at the bot's position, or the
-        // channel's economics leak through the one seat that sees everything.
+        // A watcher gets the interest radius at the followed hull whatever
+        // that hull's own stream looks like. It matters most when the subject
+        // is one of ours, which is sent the whole room: sight must not be
+        // inheritable, or the one seat that sees everything becomes a door.
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let bots = seat_bots(&mut a, 1);
         let (_, wid, mut rx) = seat_rx(&mut a, "watching");
@@ -6938,7 +7117,7 @@ mod tests {
         let last = got.last().expect("a follow snapshot");
         let sh = &a.world.state.ships[bots[0] as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
-        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, PRIZE_INTEREST);
+        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, INTEREST);
         assert_eq!(&last[6..], &fresh[..n as usize], "human radius, always");
     }
 

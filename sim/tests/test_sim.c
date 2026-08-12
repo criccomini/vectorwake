@@ -3418,11 +3418,88 @@ int main(void) {
             }
             CHECK(got == near, "every prize inside the radius was sent");
 
-            /* Everything that is not a prize still travels whole: a client
-             * that was not told about a ship could not name it. */
-            CHECK(cut.ship_count == s.ship_count, "every ship still travels");
-            CHECK(cut.weapon_count == s.weapon_count, "and every projectile");
-            CHECK(cut.flag_count == s.flag_count, "and every flag");
+            /* Ships and rounds are filtered by the same radius, and that is
+             * the half of this that is about cheating rather than bytes: a
+             * client is not told where anybody is that it could not lawfully
+             * see, so a modified one has nothing beyond its own sight to
+             * draw. Flags still travel whole, being few and being objectives
+             * every pilot is entitled to know the state of.
+             *
+             * The seat count is the arena's either way. Indices are identity
+             * for the roster, the kill feed and the team lists, so a filtered
+             * snapshot keeps them and marks the absent seats inactive. */
+            CHECK(cut.ship_count == s.ship_count, "the seat count is the arena's");
+            CHECK(cut.flag_count == s.flag_count, "and every flag travels");
+
+            int ship_near = 0, ship_far = 0;
+            for (int i = 0; i < s.ship_count; i++) {
+                if (!s.ships[i].active) continue;
+                int64_t dx = (int64_t)s.ships[i].x - cx;
+                int64_t dy = (int64_t)s.ships[i].y - cy;
+                if (dx * dx + dy * dy <= (int64_t)R * R) {
+                    ship_near++;
+                    CHECK(cut.ships[i].active, "a ship inside the radius is sent");
+                    CHECK(cut.ships[i].x == s.ships[i].x
+                          && cut.ships[i].y == s.ships[i].y
+                          && cut.ships[i].energy == s.ships[i].energy,
+                          "and arrives unchanged");
+                } else {
+                    ship_far++;
+                    CHECK(!cut.ships[i].active,
+                          "a ship outside it is not sent at all");
+                    CHECK(cut.ships[i].x == 0 && cut.ships[i].y == 0
+                          && cut.ships[i].energy == 0,
+                          "and leaves nothing behind to read");
+                }
+            }
+            CHECK(ship_near > 0 && ship_far > 0, "the seats straddle the radius");
+
+            int wnear = 0;
+            for (uint16_t i = 0; i < s.weapon_count; i++) {
+                int64_t dx = (int64_t)s.weapons[i].x - cx;
+                int64_t dy = (int64_t)s.weapons[i].y - cy;
+                if (dx * dx + dy * dy <= (int64_t)R * R) wnear++;
+            }
+            CHECK(cut.weapon_count == wnear, "only the near rounds are sent");
+            for (uint16_t i = 0; i < cut.weapon_count; i++) {
+                int64_t dx = (int64_t)cut.weapons[i].x - cx;
+                int64_t dy = (int64_t)cut.weapons[i].y - cy;
+                CHECK(dx * dx + dy * dy <= (int64_t)R * R,
+                      "and every round that arrived is one of them");
+            }
+        }
+
+        /* A negative radius is the whole state, and has to stay bit-identical
+         * to it: the replay tool, the golden hashes and every test above pack
+         * that way, so a filtered format that changed the unfiltered bytes
+         * would be a format change wearing a disguise. */
+        {
+            int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1);
+            CHECK(whole == n, "an unfiltered pack is the same size as sim_pack");
+            sim_state all;
+            CHECK(sim_unpack(&all, buf, whole) == 0, "and unpacks");
+            CHECK(sim_hash(&all) == sim_hash(&back),
+                  "and carries the whole arena");
+        }
+
+        /* The bitmap is read a byte at a time and a seat count is rarely a
+         * multiple of eight, so the seats either side of a byte boundary are
+         * where an off-by-one would live. Packed around one seat with a
+         * radius of zero, exactly that seat comes back. */
+        for (int pick = 0; pick < s.ship_count; pick++) {
+            if (!s.ships[pick].active) continue;
+            int m = sim_pack_around(&s, buf, sizeof buf,
+                                    s.ships[pick].x, s.ships[pick].y, 0);
+            CHECK(m > 0, "a pack around one seat succeeds");
+            sim_state one;
+            CHECK(sim_unpack(&one, buf, m) == 0, "and unpacks");
+            for (int i = 0; i < s.ship_count; i++) {
+                int want = s.ships[i].active
+                           && s.ships[i].x == s.ships[pick].x
+                           && s.ships[i].y == s.ships[pick].y;
+                CHECK(!one.ships[i].active == !want,
+                      "each seat is present exactly when it is in range");
+            }
         }
 
         CHECK(sim_pack(&s, buf, 8) == -1, "packing reports an undersized buffer");

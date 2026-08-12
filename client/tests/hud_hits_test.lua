@@ -65,6 +65,11 @@ local sim = {
     ship_x = function(i) return 100 + i * 180 end,
     ship_y = function(i) return 100 + i * 120 end,
     ship_heading = function() return 0 end,
+    -- A seat the snapshot carries at all. Filtered snapshots leave far
+    -- seats out entirely, so the board asks this before reading a score
+    -- out of the simulation; in here every seat the room models is
+    -- present.
+    ship_active = function() return 1 end,
     ship_alive = function(i) return room.alive[i] == false and 0 or 1 end,
     ship_team = function(i) return room.teams[i] or 0 end,
     -- Nobody is riding anybody unless a test says so.
