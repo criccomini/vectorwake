@@ -3045,28 +3045,27 @@ local function mark_about(cx, cy, r, col)
     u:seg(cx, ry(cy - r * 0.05), cx, ry(cy + r * 0.45), 1.4 * S, col, true)
 end
 
--- Discord's own mark, traced from Discord's own file.
+-- Discord's mark, traced from Discord's own file and drawn the way this rail
+-- draws everything: a faint fill and an outline, in whatever color the stop is
+-- wearing.
 --
--- Two things about this one are not ours to decide, and both were got wrong
--- before the guidelines were read. discord.com/branding says "please do not
--- edit, change, distort, recolor, or reconfigure the Discord logo", and lists
--- three colors it may appear in: Blurple, black, or white.
+-- It was a solid Blurple silhouette for a commit, because discord.com/branding
+-- says "please do not edit, change, distort, recolor, or reconfigure the
+-- Discord logo" and names three colors it may appear in. Chris has that call
+-- and made it: a stop that neither lights with its neighbors nor is drawn like
+-- them is a foreign object on the rail, and a recognizable outline linking to
+-- somebody's own server is what half the web does. The shape is exact; only
+-- the ink and the fill are the rail's.
 --
--- So it does not take the `col` every other mark here takes. A rail stop
--- normally lights by turning its mark from slate to team blue, and this one
--- cannot: it stays Blurple lit or not. Nothing is lost, because a selected
--- stop already draws a lit field, a bar reaching toward the stage, and its
--- label in ink. The mark was never the only thing saying where you are.
+-- The geometry is the official path, sampled into rings and triangulated with
+-- the eyes as holes, because the layer has no path, no bezier and no even-odd
+-- rule to do it with at runtime. Baked rather than computed at load: it is the
+-- same answer every time, and an ear clipper in the client would be a hundred
+-- lines to arrive at a constant.
 --
--- And it is a filled silhouette with the eyes cut out of it, rather than the
--- outline-and-two-dots the rest of the rail is drawn as. That is the shape
--- the logo is; an outline of it would be a reconfiguration.
---
--- The geometry is the official path from Discord's own asset, sampled into a
--- polygon and triangulated with the eyes as holes, because the layer has no
--- path, no bezier and no even-odd rule to do it with at runtime. Baked here
--- rather than computed at load: it is the same answer every time, and an ear
--- clipper in the client would be a hundred lines to arrive at a constant.
+-- The triangles are still what fills it. Stroking the rings alone would leave
+-- the eyes as unfilled shapes rather than holes, which is the same picture on
+-- this background and the wrong one the moment anything is behind it.
 --
 -- Forty samples around the body and twelve around each eye. Eighty was tried
 -- and is indistinguishable at the thirteen points the rail gives this, which
@@ -3112,19 +3111,27 @@ local CLYDE_T = {
     28, 64, 63, 63, 40, 28,
 }
 
--- Blurple, and not from the palette: `pal` is this game's colors and this is
--- somebody else's, held at the one value their guidelines name.
-local BLURPLE = pal.rgb(0x5865F2)
+-- Where each closed ring begins and ends in CLYDE_V, in vertices: the body,
+-- then an eye each. Ranges rather than a second copy of the points, since the
+-- triangulation was built by laying the rings out in exactly this order.
+local CLYDE_RINGS = {{1, 40}, {41, 52}, {53, 64}}
 
-local function mark_discord(cx, cy, r)
-    -- Sized to the mark's own width, which is the wider of its two axes, so it
-    -- fills the room a stop gives it the way the round marks beside it do.
+local function mark_discord(cx, cy, r, col)
     for i = 1, #CLYDE_T, 3 do
-        local a1, b1, c1 = CLYDE_T[i] * 2 - 1, CLYDE_T[i + 1] * 2 - 1,
-                           CLYDE_T[i + 2] * 2 - 1
-        u:tri(cx + CLYDE_V[a1] * r, ry(cy + CLYDE_V[a1 + 1] * r),
-              cx + CLYDE_V[b1] * r, ry(cy + CLYDE_V[b1 + 1] * r),
-              cx + CLYDE_V[c1] * r, ry(cy + CLYDE_V[c1 + 1] * r), BLURPLE)
+        local t = {CLYDE_T[i] * 2 - 1, CLYDE_T[i + 1] * 2 - 1,
+                   CLYDE_T[i + 2] * 2 - 1}
+        u:tri(cx + CLYDE_V[t[1]] * r, ry(cy + CLYDE_V[t[1] + 1] * r),
+              cx + CLYDE_V[t[2]] * r, ry(cy + CLYDE_V[t[2] + 1] * r),
+              cx + CLYDE_V[t[3]] * r, ry(cy + CLYDE_V[t[3] + 1] * r),
+              pal.a(col, 0.10))
+    end
+    for _, ring in ipairs(CLYDE_RINGS) do
+        local pts = {}
+        for k = ring[1], ring[2] do
+            pts[#pts + 1] = cx + CLYDE_V[k * 2 - 1] * r
+            pts[#pts + 1] = ry(cy + CLYDE_V[k * 2] * r)
+        end
+        u:outline(pts, 1.2 * S, col, true)
     end
 end
 
