@@ -291,6 +291,37 @@ Measured against the same fifty-two ship room, one pilot declaring a 56-tile
 window against one that declares nothing: **25.7 KB/s to 15.2**, another 41%
 off, with the rounds in range falling from 32.6 to 19.2.
 
+Confirmed on the live arena afterwards, and the confirmation took two goes for a
+reason worth writing down. Comparing two separate sessions proved nothing: fight
+density moves more than the window does, and the first live pair came back
+showing the narrow window costing *more*, on a run where the pilot took four
+kills. So the pilot now switches its own window every hundred snapshots inside
+one session, and both arms sample the same fight:
+
+```
+                snaps   mean B   KB/s   rounds   ships   furthest ship
+declares 255     1632    2,524   49.3     59.2     5.4   max 160.0t  p95 159.3t
+declares 56      1567    1,352   26.4     33.6     1.9   max  84.0t  p95  82.0t
+```
+
+The bytes are the point, but the last column is the proof. A declared window is
+a geometric claim, so it holds or it does not whatever the fight is doing: the
+ceiling arm reaches exactly 160.0 tiles and the narrow arm exactly 84.0, which
+is 56 floored at the radar's 60 plus the 24 tiles of slack. Neither exceeds its
+bound. `tools/pilot --view <tiles>` reports both as `reach(ship/round tiles)`,
+and rounds clamp with ships: 160.0/160.0 against 84.0/84.0.
+
+The first wrong reading turned out not to be noise either. The arena was simply
+not running this code. `image.yml` takes the last push to main and
+cancels the rest, which is right, but it means a commit's own image build can be
+cancelled by whatever lands behind it: five consecutive server images were, and
+the one live when the measurement ran was this change's parent. The invariant
+still holds, since the workflow has no path filter and the last push in any
+burst builds everything before it. But a measurement against production is
+worthless without knowing which build production is running, and the honest way
+to know is to test the behavior rather than read a version. That is what the
+reach column does.
+
 One sharp edge came out of filtering ships, and it is worth writing down
 because nothing about it is obvious. A proximity fuse latches a ship index, and
 `sim_step` reads that seat and ends the round the moment it is inactive. An
@@ -333,10 +364,21 @@ War, 6 pilots       20.0/s      24.5 KB/s   worst 0.50, mean 0.12-0.30
 Chaos, 4 pilots     20.0/s      16.7 KB/s   worst 0.50, mean 0.27-0.32
 ```
 
-0.50 px is a hard ceiling rather than an average: every pilot in every run hits
-exactly it and none exceeds it, which is what fixed-point rounding looks like
-when the two sides agree. Chaos is cheaper per client than War because it has no
-flags to carry.
+Those error figures are wrong, and the way they were wrong is worth keeping.
+The harness stepped the core a single tick and compared it against the next
+snapshot, which arrives five ticks later, so four ticks of ordinary flight were
+charged to the client. It then divided by 4096 and called the answer pixels,
+but positions are Q8 and 4096 units is a tile, so the inflated number was
+shrunk by sixteen on the way out. Two bugs of opposite sign landed on a figure
+plausible enough that nobody went looking, and the reading of 0.50 as a hard
+ceiling of fixed-point rounding was then reverse-engineered from it. Ship
+positions travel as full 32-bit words with nothing rounded, so there was never
+such a floor to find. Both bugs are fixed in `tools/pilot`.
+
+Compare against these instead. On a local link with the clock adapted, **0.04 px
+worst and 0.00 px mean over 497 snapshots**; against the live arena, mean **0.01
+px** with a worst case of a few pixels, which is one jittery sample rather than
+drift. Chaos is cheaper per client than War because it has no flags to carry.
 
 Death is the only thing that diverges, and it is not a prediction failure: a
 respawn teleports the ship, so comparing a still-flying prediction against a

@@ -12,6 +12,7 @@ with the server's next snapshot.
     python3 pilot.py wss://play.vectorwake.net/dir war 4 30   # directory zone pilots seconds
     python3 pilot.py --direct ws://127.0.0.1:9001 "" 2 20     # one arena, no browse
     python3 pilot.py --direct --adapt ws://127.0.0.1:9001 "" 3 15   # steer the clock
+    python3 pilot.py --direct --view 56 ws://127.0.0.1:9001 "" 1 30 # claim a window
 
 It browses first, like a client does. Which instance serves which zone is
 decided by the instances themselves and differs between deploys, so an address
@@ -24,11 +25,32 @@ Needs `pip install websockets`.
 ## Reading the output
 
 `predict_err(worst/mean px)` is the one to watch. A client that predicts
-correctly holds a worst case of 0.50 px, which is fixed-point rounding, and a
-mean well under that. A settings or wire mismatch shows up here as a growing
-divergence and nowhere else -- a zone that raised a hull's top speed without the
-settings traveling measured 11 px of peak error while every other check on the
-connection stayed green.
+correctly agrees with the server almost exactly: on a local link with the clock
+adapted, 0.04 px at worst and 0.00 px on average over 497 snapshots. Against
+the live fleet the mean holds at 0.01 px and the worst case is a few pixels,
+which is one jittery sample rather than drift. A settings or wire mismatch shows
+up here as a growing divergence and nowhere else: a zone that raised a hull's
+top speed without the settings traveling measured 11 px of peak error while
+every other check on the connection stayed green.
+
+Two bugs used to sit in that number and hide each other. It stepped the core one
+tick and compared the result against the next snapshot, which is five ticks
+later, so four ticks of ordinary flight were charged to the client as error. Then
+it divided by 4096 and called the answer pixels, but positions are Q8 and 4096
+units is a tile, so the inflated number was shrunk by sixteen on the way out.
+What came out looked like sub-pixel agreement and was read that way. Anything
+quoting a `predict_err` figure from before this was fixed is reading tiles of a
+four-tick drift.
+
+`reach(ship/round tiles)` is how far the furthest ship and the furthest round
+any snapshot carried were from the pilot's own hull. The server culls what it
+sends to an interest radius, and this is that claim checked from the far end
+rather than believed: a number larger than the window is the server handing a
+client something it could not lawfully see, which is a maphack waiting to be
+written. Declare a window with `--view <tiles>`, floored at the radar and capped
+at the zone ceiling. Against the live arena, a pilot that declares nothing
+reaches exactly 160.0 tiles for both, and one that declares 56 reaches exactly
+84.0, which is that window plus the slack the server adds.
 
 `corrections` counts samples thrown out because the ship died or respawned
 between the prediction and the snapshot. Those measure a teleport rather than a

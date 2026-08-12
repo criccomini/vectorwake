@@ -58,6 +58,11 @@ void vw_step(vw *c, unsigned char ship, unsigned short buttons) {
 unsigned int vw_tick(vw *c)        { return c->cur.tick; }
 int vw_ship_count(vw *c)           { return c->cur.ship_count; }
 int vw_weapon_count(vw *c)         { return c->cur.weapon_count; }
+/* Where a round is, so the harness can ask how far the furthest thing it was
+ * sent actually is. That distance is the interest radius seen from outside:
+ * the server's own claim about what it culls, checked rather than believed. */
+int vw_wx(vw *c, int i)            { return c->cur.weapons[i].x; }
+int vw_wy(vw *c, int i)            { return c->cur.weapons[i].y; }
 int vw_active(vw *c, int i)        { return c->cur.ships[i].active; }
 int vw_alive(vw *c, int i)         { return c->cur.ships[i].alive; }
 int vw_x(vw *c, int i)             { return c->cur.ships[i].x; }

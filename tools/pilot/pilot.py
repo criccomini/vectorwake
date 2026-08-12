@@ -23,7 +23,7 @@ import websockets
 
 SO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libvwprobe.so")
 
-C2S_JOIN, C2S_INPUT, C2S_SHIP = 1, 2, 5
+C2S_JOIN, C2S_INPUT, C2S_SHIP, C2S_VIEW = 1, 2, 5, 11
 # The client wire's version, checked by the zone before it reads anything else
 # in a join. Bumped when the join or the roster changes shape.
 PROTOCOL = 8
@@ -39,6 +39,16 @@ BTN_LEFT, BTN_RIGHT, BTN_THRUST, BTN_REVERSE, BTN_FIRE, BTN_BOMB = 1, 2, 4, 8, 1
 # that is comfortably early is left alone rather than trimmed every snapshot.
 LAG_TARGET, LAG_SLACK, LEAD_MAX = -2, 3, 40
 
+# The simulation's position scale, straight out of sim.h: positions are Q8
+# pixels, and a tile is sixteen of them. Distances here are reported in tiles
+# because that is the unit the interest radius is written in.
+PX, TILE = 256.0, 4096.0
+
+# Ticks the simulation runs between two snapshots, which is what a client
+# predicts across: 100 Hz stepped, 20 Hz sent. Must match the server's
+# `SNAPSHOT_EVERY`.
+SNAPSHOT_EVERY = 5
+
 
 def lib():
     l = ctypes.CDLL(SO)
@@ -53,13 +63,15 @@ def lib():
               "vw_spec_count", "vw_flag_count"):
         getattr(l, n).argtypes = [ctypes.c_void_p]
     for n in ("vw_active", "vw_alive", "vw_x", "vw_y", "vw_vx", "vw_vy",
-              "vw_energy", "vw_kills", "vw_deaths", "vw_team", "vw_cls"):
+              "vw_energy", "vw_kills", "vw_deaths", "vw_team", "vw_cls",
+              "vw_wx", "vw_wy"):
         getattr(l, n).argtypes = [ctypes.c_void_p, ctypes.c_int]
     return l
 
 
 class Pilot:
-    def __init__(self, url, zone, name, seconds, seed, lead=0, adapt=False):
+    def __init__(self, url, zone, name, seconds, seed, lead=0, adapt=False,
+                 view=0):
         self.url, self.zone, self.name, self.seconds = url, zone, name, seconds
         self.rng = random.Random(seed)
         self.L = lib()
@@ -72,6 +84,14 @@ class Pilot:
         # actually put a player in.
         self.room = 0
         self.landed = None
+        # Tiles of map this pilot claims to draw, sent as C2S_VIEW. Zero is a
+        # client that never says, which is served the ceiling.
+        self.view = view
+        # Tiles to the furthest ship and the furthest round any snapshot
+        # carried. This is the cull measured from the far end: the server says
+        # it sends nothing outside an interest radius, and these two numbers
+        # are what a client can prove about that claim from its own seat.
+        self.reach = dict(ship=0.0, round=0.0)
         self.n = dict(snaps=0, bytes=0, roster=0, kills=0, banner=0,
                       map=0, settings=0, bad=0)
         self.seen = dict(moved=False, fired=False, energy_lo=None, energy_hi=None,
@@ -102,16 +122,21 @@ class Pilot:
         self.specs = None
 
     def predict_error(self, buttons):
-        """Step the core forward one tick and remember where it thinks we are.
+        """Fly the gap between two snapshots and remember where it lands.
 
         The next snapshot says where the server actually put us. A client that
-        predicts correctly sees these agree to within a pixel or two; a wire
-        format or a settings mismatch shows up here as a growing divergence,
-        which no amount of "it connected" would reveal.
+        predicts correctly sees these agree closely; a wire format or a settings
+        mismatch shows up here as a growing divergence, which no amount of "it
+        connected" would reveal.
+
+        The step count has to be the snapshot gap. Predicting fewer ticks than
+        elapse between two snapshots charges the client for flight it never got
+        wrong.
         """
         if self.me is None:
             return
-        self.L.vw_step(self.c, self.me, buttons)
+        for _ in range(SNAPSHOT_EVERY):
+            self.L.vw_step(self.c, self.me, buttons)
         # Remember the ship's liveness with the prediction. A death and respawn
         # teleports the ship, and comparing a still-flying prediction against a
         # fresh spawn point measures the teleport, not the prediction. Those are
@@ -172,6 +197,37 @@ class Pilot:
             self.lead_seen["lo"] = min(self.lead_seen["lo"], self.lead)
             self.lead_seen["hi"] = max(self.lead_seen["hi"], self.lead)
 
+    def note_reach(self):
+        """How far out this snapshot reached, in tiles, ships and rounds apart.
+
+        Distance from this pilot's own hull, which is what the server culls
+        around. A number here larger than the window asked for is the server
+        handing a client something it could not lawfully see, which is the
+        maphack question stated as an inequality.
+        """
+        if self.me is None:
+            return
+        mx, my = self.L.vw_x(self.c, self.me), self.L.vw_y(self.c, self.me)
+
+        def far(n, gx, gy):
+            d = 0.0
+            for i in range(n):
+                dx, dy = (gx(i) - mx) / TILE, (gy(i) - my) / TILE
+                d = max(d, (dx * dx + dy * dy) ** 0.5)
+            return d
+
+        act = [i for i in range(self.L.vw_ship_count(self.c))
+               if self.L.vw_active(self.c, i) == 1 and i != self.me]
+        if act:
+            self.reach["ship"] = max(self.reach["ship"], far(
+                len(act), lambda k: self.L.vw_x(self.c, act[k]),
+                lambda k: self.L.vw_y(self.c, act[k])))
+        w = self.L.vw_weapon_count(self.c)
+        if w:
+            self.reach["round"] = max(self.reach["round"], far(
+                w, lambda i: self.L.vw_wx(self.c, i),
+                lambda i: self.L.vw_wy(self.c, i)))
+
     def note_snapshot(self, payload):
         if self.L.vw_apply(self.c, payload, len(payload)) != 0:
             self.n["bad"] += 1
@@ -184,8 +240,10 @@ class Pilot:
         if getattr(self, "_pred", None) is not None and self.me is not None:
             px, py, palive, pdeaths = self._pred
             ax, ay = self.L.vw_x(self.c, self.me), self.L.vw_y(self.c, self.me)
-            # Q12 fixed point: 4096 units to the pixel.
-            err = max(abs(px - ax), abs(py - ay)) / 4096.0
+            # Reported in pixels, and position is Q8, so the divisor is 256.
+            # Dividing by 4096 gives tiles, which is sixteen times smaller and
+            # reads as sub-pixel agreement when it is nothing of the sort.
+            err = max(abs(px - ax), abs(py - ay)) / PX
             respawned = (self.L.vw_deaths(self.c, self.me) != pdeaths
                          or self.L.vw_alive(self.c, self.me) != palive)
             if respawned:
@@ -199,6 +257,7 @@ class Pilot:
         now = time.monotonic()
         self.first_snap_at = self.first_snap_at or now
         self.last_snap_at = now
+        self.note_reach()
         self.seen["ships"] = max(self.seen["ships"], self.L.vw_ship_count(self.c))
         self.seen["flags"] = max(self.seen["flags"], self.L.vw_flag_count(self.c))
         if self.L.vw_weapon_count(self.c) > 0:
@@ -233,6 +292,8 @@ class Pilot:
             # pilot that never read a room list asks for.
             await ws.send(bytes([C2S_JOIN, self.rng.randrange(8), PROTOCOL, 0,
                                  len(z), len(n), self.room or 0]) + z + n)
+            if self.view:
+                await ws.send(bytes([C2S_VIEW, min(self.view, 255)]))
 
             async def drive():
                 # Real flight: hold a turn for a while, thrust, and fire in
@@ -324,6 +385,9 @@ class Pilot:
         kbps = n["bytes"] / dur / 1024 if dur > 0.5 else 0
         return (f"  {self.name}: zone={self.zone_name!r} ship={self.me} "
                 f"snaps={n['snaps']} ({rate:.1f}/s, {kbps:.1f} KB/s) "
+                f"view={self.view or 'none'} "
+                f"reach(ship/round tiles)={self.reach['ship']:.1f}/"
+                f"{self.reach['round']:.1f} "
                 f"ships={s['ships']} flags={s['flags']} "
                 f"moved={'yes' if s['moved'] else 'NO'} "
                 f"weapons_seen={'yes' if s['fired'] else 'NO'} "
@@ -380,16 +444,24 @@ async def main():
     adapt = False
     if args and args[0] == "--adapt":
         adapt, args = True, args[1:]
+    # Tiles of map to claim, which decides how much the server sends back. The
+    # reach in the report is the answer: a window asked for and never exceeded
+    # is the cull working, and one exceeded is a maphack waiting to be written.
+    view = 0
+    if args and args[0] == "--view":
+        view, args = int(args[1]), args[2:]
     url, zone, count, seconds = args[0], args[1], int(args[2]), float(args[3])
     if not direct:
         arena = await resolve(url, zone)
         print(f"=== directory {url} says {zone!r} is at {arena}")
         url = arena
-    pilots = [Pilot(url, zone, f"probe{i:02d}", seconds, 1000 + i, lead, adapt)
+    pilots = [Pilot(url, zone, f"probe{i:02d}", seconds, 1000 + i, lead, adapt,
+                    view)
               for i in range(count)]
     done = await asyncio.gather(*(p.fly() for p in pilots), return_exceptions=True)
     print(f"=== {count} pilots, {seconds:.0f}s, {url} zone={zone} "
-          f"lead={lead}{' adaptive' if adapt else ''}")
+          f"lead={lead}{' adaptive' if adapt else ''}"
+          f"{f' view={view}' if view else ''}")
     for d in done:
         print(d.report() if isinstance(d, Pilot) else f"  harness error: {d!r}")
 
