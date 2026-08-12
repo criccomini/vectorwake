@@ -8,8 +8,10 @@
 -- has no way to catch. And the block can run off the edge of the window it is
 -- drawn in, which only happens on the window nobody develops on.
 --
--- So this reads the bindings out of game.input_binding and measures the drawn
--- text out of the real M.hud, rather than trusting either to a second copy.
+-- So this measures the drawn text out of the real M.hud rather than trusting
+-- it to a second copy, and reads the rows out of arena/binds.lua, which is
+-- where the keys actually are once a pilot has moved one. That the keys in
+-- that list are keys the engine reports at all is binds_test's job.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -129,6 +131,10 @@ local function frame(w, h, dens, open)
     return out
 end
 
+-- The list as the table draws it: every control, with the key it is on.
+local binds = require("arena.binds")
+local ROWS = binds.rows()
+
 local function says(f, s)
     for _, t in ipairs(f) do
         if string.upper(t.s) == string.upper(s) then return t end
@@ -157,7 +163,7 @@ end
 do
     local f = frame(1280, 800, 1, false)
     local leaked = nil
-    for _, r in ipairs(ui.HELP_ROWS) do
+    for _, r in ipairs(ROWS) do
         if says(f, r.what) then leaked = r.what end
     end
     check("nothing of it is drawn while it is shut", leaked == nil, leaked)
@@ -169,9 +175,9 @@ do
     local f = frame(1280, 800, 1, true)
     check("it names itself", says(f, "CONTROLS") ~= nil)
     local missing = {}
-    for _, r in ipairs(ui.HELP_ROWS) do
+    for _, r in ipairs(ROWS) do
         local d = says(f, r.what)
-        if not (d and at_row(f, r.key, d.y) and at_row(f, r.name, d.y)) then
+        if not (d and at_row(f, r.show, d.y) and at_row(f, r.name, d.y)) then
             missing[#missing + 1] = r.name
         end
     end
@@ -187,9 +193,9 @@ end
 do
     local f = frame(1280, 800, 1, true)
     local kx, nx, dx = {}, {}, {}
-    for _, r in ipairs(ui.HELP_ROWS) do
+    for _, r in ipairs(ROWS) do
         local d = says(f, r.what)
-        kx[#kx + 1] = at_row(f, r.key, d.y).left
+        kx[#kx + 1] = at_row(f, r.show, d.y).left
         nx[#nx + 1] = at_row(f, r.name, d.y).left
         dx[#dx + 1] = d.left
     end
@@ -225,51 +231,6 @@ for _, win in ipairs({{1280, 800, 1}, {844 * 2, 390 * 2, 2}, {640, 480, 1}}) do
           off == nil, off)
 end
 
--- --- and it lists the keys the game actually answers to --------------------
---
--- The one check worth more than all the others. A table naming a key that
--- does nothing is worse than no table, because a reader has no way to tell
--- which of the two is wrong.
-
-do
-    local binding = io.open("client/main/game.input_binding")
-    check("the bindings can be read", binding ~= nil)
-    local src = binding and binding:read("*a") or ""
-    if binding then binding:close() end
-
-    -- Every physical key the arena binds, by the name this table would use.
-    local BOUND = {}
-    for input in src:gmatch("input:%s*KEY_(%u+)") do BOUND[input] = true end
-
-    -- What each row's key column says, mapped to the binding's own names.
-    -- Written out because a table saying "Space" and a binding saying
-    -- KEY_SPACE are the same key and neither spelling is wrong.
-    local AS = {
-        ["← →"] = {"LEFT", "RIGHT"}, ["↑"] = {"UP"}, ["↓"] = {"DOWN"},
-        ["Space"] = {"SPACE"}, ["Tab"] = {"TAB"}, ["Q"] = {"Q"},
-        ["W"] = {"W"}, ["A"] = {"A"}, ["`"] = {"BACKQUOTE"},
-        ["D"] = {"D"}, ["M"] = {"M"}, ["P"] = {"P"},
-        ["H  ?"] = {"H", "SLASH"}, ["Esc"] = {"ESC"},
-    }
-    local unbound, unmapped = {}, {}
-    for _, r in ipairs(ui.HELP_ROWS) do
-        local keys = AS[r.key]
-        if not keys then
-            unmapped[#unmapped + 1] = r.key
-        else
-            for _, k in ipairs(keys) do
-                if not BOUND[k] then
-                    unbound[#unbound + 1] = r.name .. " (" .. k .. ")"
-                end
-            end
-        end
-    end
-    check("every key in the table is one this test knows", #unmapped == 0,
-          table.concat(unmapped, ", "))
-    check("and every one of them is bound in the arena", #unbound == 0,
-          table.concat(unbound, ", "))
-end
-
 -- --- and a phone is told about the controls it cannot read ----------------
 --
 -- These rows were written out a second time in the menu once, and drifted:
@@ -288,11 +249,11 @@ do
     -- Wearing no label a player can read, so a phone learns them here or not
     -- at all. The dial is a picture, the pads are marks, and DROP is behind a
     -- card you reach by tapping your own name.
-    local MUST_SAY = {"Rudder", "Thrusters", "Guns", "Bombs", "Repel",
-                      "Burst", "Mine", "Multifire", "Map", "Detach",
-                      "Players"}
+    local MUST_SAY = {"turn left", "thrust", "guns", "bombs", "charge 1",
+                      "charge 2", "mine", "multifire", "map", "drop off",
+                      "players"}
     local pad = {}
-    for _, r in ipairs(ui.HELP_ROWS) do pad[r.name] = r.pad end
+    for _, r in ipairs(ROWS) do pad[r.name] = r.pad end
 
     local silent = {}
     for _, name in ipairs(MUST_SAY) do
@@ -304,19 +265,25 @@ do
     -- The two that say nothing, and why. Reverse has no gesture at all, by
     -- decision; help is the page being read. Anything else arriving with no
     -- `pad` is a control a phone has quietly lost.
+    -- The ones that say nothing, and why. Reverse has no gesture at all, by
+    -- decision; the controls page is the page being read; turn right shares
+    -- the stick with turn left and is named by it; the third and fourth
+    -- charge keys are slots nothing in the baseline fills, and a rail cell for
+    -- a charge no hull carries is a control a thumb cannot work either.
+    -- Anything else arriving with no `pad` is a control a phone has lost.
+    local QUIET = {reverse = true, controls = true, ["turn right"] = true,
+                   ["charge 3"] = true, ["charge 4"] = true}
     local mute = {}
-    for _, r in ipairs(ui.HELP_ROWS) do
-        if not r.pad and r.name ~= "Reverse" and r.name ~= "Help" then
-            mute[#mute + 1] = r.name
-        end
+    for _, r in ipairs(ROWS) do
+        if not r.pad and not QUIET[r.name] then mute[#mute + 1] = r.name end
     end
-    check("and only reverse and help are keyboard-only", #mute == 0,
+    check("and only the deliberate ones are keyboard-only", #mute == 0,
           table.concat(mute, ", "))
 
     -- A thumb sentence that names a key is a sentence written for the wrong
     -- device, which is the shape the drift took last time.
     local keyed = {}
-    for _, r in ipairs(ui.HELP_ROWS) do
+    for _, r in ipairs(ROWS) do
         if r.pad and (r.pad:find("[Pp]ress ") or r.pad:find("[Kk]ey")) then
             keyed[#keyed + 1] = r.name
         end
@@ -327,10 +294,10 @@ do
     -- What a phone is handed is every row a thumb can work, which is the
     -- whole list less the two that say nothing.
     local thumbed = 0
-    for _, r in ipairs(ui.HELP_ROWS) do if r.pad then thumbed = thumbed + 1 end end
+    for _, r in ipairs(ROWS) do if r.pad then thumbed = thumbed + 1 end end
     check("a phone is offered every control it can work",
-          thumbed == #ui.HELP_ROWS - 2,
-          thumbed .. " of " .. #ui.HELP_ROWS)
+          thumbed == #ROWS - 5,
+          thumbed .. " of " .. #ROWS)
 
     -- And the menu builds its page from this list rather than from a second
     -- copy, which is the whole point of the list being shared. Read out of
@@ -339,9 +306,9 @@ do
     local mf = io.open("client/arena/menu.lua")
     local mbody = mf and mf:read("*a") or ""
     if mf then mf:close() end
-    check("and the menu's help page is generated from it",
-          mbody:find('require("arena.controls")', 1, true) ~= nil
-          and mbody:match("help = {board = true, rows = function"),
+    check("and the menu's controls page is generated from it",
+          mbody:find('require("arena.binds")', 1, true) ~= nil
+          and mbody:match("for i, c in ipairs%(binds%.rows%(%)%) do"),
           "menu.lua writes its own rows again")
 end
 

@@ -1,11 +1,13 @@
--- The help page's drawn keyboard, measured rather than looked at.
+-- The controls page, measured rather than looked at.
 --
 --     lua5.1 client/tests/board_test.lua
 --
--- The board is mesh geometry nobody can see in CI, and its two easy failures
--- are silent: a key drawn over another key, and a cluster drawn outside the
--- panel. Both are plain arithmetic about rectangles, so this runs the real
--- `M.menu` against a recording layer and does the arithmetic.
+-- The page is mesh geometry nobody can see in CI, and its easy failures are
+-- silent: a key drawn over another key, a cluster drawn outside the panel, a
+-- chip whose key has run back under its own name, and a list of controls the
+-- picture above it disagrees with. All of it is arithmetic about rectangles,
+-- so this runs the real `M.menu` against a recording layer and does the
+-- arithmetic.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -22,7 +24,9 @@ end
 local W, H = 1280, 800
 
 -- The layer, recording frames and rects in bottom-left coordinates the way
--- the mesh takes them.
+-- the mesh takes them. The frame's thickness comes with it: a key with a
+-- control on it is stroked heavier than an empty one, and that is the only
+-- way from out here to tell a lit key from a dead one.
 local frames, rects = {}, {}
 local layer = {}
 local function noop() end
@@ -31,8 +35,8 @@ for _, name in ipairs({"disc", "flush", "outline", "quad", "reset", "ring",
                        "tri_fade"}) do
     layer[name] = noop
 end
-layer.frame = function(_, x, y, w, h)
-    frames[#frames + 1] = {x = x, y = H - y - h, w = w, h = h}
+layer.frame = function(_, x, y, w, h, t)
+    frames[#frames + 1] = {x = x, y = H - y - h, w = w, h = h, t = t}
 end
 layer.rect = function(_, x, y, w, h)
     rects[#rects + 1] = {x = x, y = H - y - h, w = w, h = h}
@@ -48,10 +52,30 @@ package.loaded["arena.world"] = {build_overview = noop, forget_overview = noop,
                                  radar_doors = {}}
 
 local ui = require("arena.ui")
+local binds = require("arena.binds")
+
+-- The page's rows, built the way arena/menu.lua builds them, so this measures
+-- the list the game actually draws rather than a list written out here.
+local function chip_rows(arming)
+    local rows = {}
+    for i, c in ipairs(binds.rows()) do
+        rows[i] = {label = c.name, detail = c.show, cat = c.cat,
+                   control = c.id, key = c.key, fixed = c.fixed,
+                   arming = arming == c.id, pick = true, index = i}
+    end
+    rows[#rows + 1] = {label = "defaults", pick = true, reset = true,
+                       index = #rows + 1}
+    return rows
+end
+
+local function view(sel, arming)
+    return {depth = 2, sel = sel or 1, closable = true, home = false,
+            board = true, chips = true, arming = arming ~= nil,
+            rows = chip_rows(arming)}
+end
 
 ui.begin(layer, W, H, 1, false)
-ui.menu({depth = 2, sel = 1, closable = true,
-         home = false, board = true, rows = {}})
+ui.menu(view(1))
 ui.finish()
 
 -- Every frame drawn while the board is up is a key outline; the panel edges
@@ -90,7 +114,7 @@ check("the board stays inside the screen",
 check("the board is as wide as a board",
       maxx - minx > 300, "width " .. (maxx - minx))
 
--- The text stays inside the panel too: captions are the widest lines.
+-- The text stays inside the panel too.
 local st = package.loaded["arena.state"]
 local wide = 0
 for k = 1, st.n do
@@ -106,90 +130,143 @@ frames, rects = {}, {}
 ui.begin(layer, W, H, 1, true)
 ui.menu({depth = 2, sel = 1, closable = true,
          home = false, board = true,
-         rows = {{label = "steer", detail = "left thumb", index = 1}}})
+         rows = {{label = "rudder", detail = "left thumb", index = 1}}})
 ui.finish()
 check("a touchscreen gets rows, not a picture of keys", #frames == 0,
       "frames: " .. #frames)
 
--- Every color the board lights a key in has a word under it, and the words
--- are the whole of the explanation now that the line of prose naming the
--- interface keys is gone.
-local LEGEND_WORDS = {}
-for _, w in ipairs({"fly", "guns", "multifire", "bombs", "charges", "players",
-                    "map", "menu"}) do
-    -- Keyed in one case: the interface sets what it says in capitals, and
-    -- what this is looking for is the words.
-    LEGEND_WORDS[string.upper(w)] = true
-end
+-- --- the chips --------------------------------------------------------------
+--
+-- The picture cannot say which of four charge keys is which, which is the
+-- whole reason the chips are under it. So every control has to be named down
+-- there, and its key has to be readable beside the name rather than under it.
 
--- The page takes the room a desktop window has, and gives it back when the
--- window has not got it. Both directions bound the same drawing: the board
--- is as tall as it is wide, so a short window is as much a limit as a narrow
--- one, and the width backs off until the whole thing fits.
-local function draw_at(w, h)
+local function draw_at(w, h, sel, arming)
     -- The recorder flips y against H, so that has to be this window's height
     -- before anything is drawn into it.
     H = h
     frames, rects = {}, {}
     st.n = 0
+    ui.hits = {}
     ui.begin(layer, w, h, 1, false)
-    ui.menu({depth = 2, sel = 1, closable = true,
-             home = false, board = true, rows = {}})
+    ui.menu(view(sel, arming))
     ui.finish()
     local x0, x1, y0, y1 = math.huge, 0, math.huge, 0
     for _, f in ipairs(frames) do
         x0, x1 = math.min(x0, f.x), math.max(x1, f.x + f.w)
         y0, y1 = math.min(y0, f.y), math.max(y1, f.y + f.h)
     end
-    -- How far right the keys themselves reach, which is the board's own
-    -- width and what the legend under it has to stay inside.
-    local keyx1 = x1
-    -- The captions hang below the last key row, so the drawing reaches
-    -- further down than the keys do. Take the text into account or the fit
-    -- check passes on a page whose last line is off the bottom.
-    local legend = 0
+    local said, lit = {}, 0
+    for _, f in ipairs(frames) do
+        -- A key carrying a control is stroked at 1.1, an empty one at 0.8.
+        if f.t > 1 then lit = lit + 1 end
+    end
     for k = 1, st.n do
         local t = st.text[k]
         y1 = math.max(y1, h - t.y + t.px)
         local reach = t.x + (t.pivot ~= "right" and #t.s * t.px * 0.62 or 0)
         x1 = math.max(x1, reach)
-        if LEGEND_WORDS[string.upper(t.s)] then
-            legend = math.max(legend, reach)
-        end
+        said[string.upper(t.s)] = {x = t.x, px = t.px, pivot = t.pivot,
+                                   reach = reach}
     end
-    return {x0 = x0, x1 = x1, y0 = y0, y1 = y1, keyx1 = keyx1,
-            legend = legend, keyh = frames[1] and frames[1].h}
+    return {x0 = x0, x1 = x1, y0 = y0, y1 = y1, said = said, lit = lit,
+            keyh = frames[1] and frames[1].h, hits = #ui.hits}
 end
 
 for _, shape in ipairs({{1280, 800}, {1920, 1080}, {900, 600}, {1400, 400},
                         {700, 500}}) do
     local b = draw_at(shape[1], shape[2])
-    check(string.format("%dx%d keeps the board on screen", shape[1], shape[2]),
+    check(string.format("%dx%d keeps the page on screen", shape[1], shape[2]),
           b.x0 >= 0 and b.x1 <= shape[1] and b.y0 >= 0 and b.y1 <= shape[2],
-          string.format("extent %.0f..%.0f x %.0f..%.0f", b.x0, b.x1, b.y0, b.y1))
+          string.format("extent %.0f..%.0f x %.0f..%.0f",
+                        b.x0, b.x1, b.y0, b.y1))
 end
 
--- The legend wraps rather than running off the end of the board. Eight
--- colors and their words fit across a wide board and do not fit across a
--- narrow one, and a line that overflowed would carry away the last two of
--- them. Since the captions naming those keys are gone, the legend is the only
--- place the page says what they are.
-for _, shape in ipairs({{1280, 800}, {1920, 1080}, {1400, 400}, {900, 600},
-                        {700, 500}}) do
+-- Every control named, at every shape. A page that quietly drops the last two
+-- chips off the bottom is the failure this is here for: the list is the only
+-- place the four charge keys are told apart.
+for _, shape in ipairs({{1280, 800}, {1920, 1080}, {900, 600}, {1400, 400}}) do
     local b = draw_at(shape[1], shape[2])
-    check(string.format("%dx%d keeps the legend inside the board",
-                        shape[1], shape[2]),
-          b.legend > 0 and b.legend <= b.keyx1 + 1,
-          string.format("legend reaches %.0f, board ends %.0f", b.legend,
-                        b.keyx1))
+    local missing = {}
+    for _, c in ipairs(binds.rows()) do
+        if not b.said[string.upper(c.name)] then
+            missing[#missing + 1] = c.name
+        end
+    end
+    check(string.format("%dx%d names every control", shape[1], shape[2]),
+          #missing == 0, table.concat(missing, ", "))
+end
+
+-- The key sits beside the name rather than back under it. Both are on one
+-- chip, so the right-aligned key's left edge has to clear the end of the name.
+local b = draw_at(1280, 800)
+local clashes = {}
+for _, c in ipairs(binds.rows()) do
+    local name = b.said[string.upper(c.name)]
+    local key = b.said[string.upper(c.show)]
+    -- The key column is right-aligned, so `x` is its right edge; back off by
+    -- what the glyphs take. Only where the two are on the same line, which a
+    -- shared row height makes a question about the name's own chip.
+    if name and key and key.pivot == "right" then
+        local left = key.x - #c.show * key.px * 0.62
+        if left < name.reach and math.abs(left - name.x) < 400 then
+            clashes[#clashes + 1] = c.name
+        end
+    end
+end
+check("a chip's key clears its name", #clashes == 0,
+      table.concat(clashes, ", "))
+
+-- Every chip is pressable. The page is walked by a cursor and by a pointer,
+-- and a chip with no hit box under it is a control a mouse cannot reach.
+check("every chip publishes a hit box", b.hits >= #binds.rows() + 1,
+      b.hits .. " boxes for " .. (#binds.rows() + 1) .. " chips")
+
+-- Every key a control may be put on is drawn. A catalog offering a key the
+-- picture does not show is a key nobody can find, and the page's whole claim
+-- is that what you see is what you may press.
+do
+    local keys = require("arena.keys")
+    local shown = draw_at(1280, 800)
+    local unseen = {}
+    for _, k in ipairs(keys.list) do
+        -- The arrows are triangles rather than words, so they are counted by
+        -- the cluster's four frames instead of by what is written on them.
+        if k.label and not shown.said[string.upper(k.label)] then
+            unseen[#unseen + 1] = k.id
+        end
+    end
+    check("every bindable key is drawn on the board", #unseen == 0,
+          table.concat(unseen, ", "))
+end
+
+-- Arming takes the light off the board. Every key but the one that is asking
+-- drops to the outline an unbound key wears, which is what says the whole
+-- keyboard is an answer.
+local resting = draw_at(1280, 800, 5)
+local asking = draw_at(1280, 800, 5, "guns")
+check("resting, the bound keys are lit", resting.lit > 8,
+      "lit " .. resting.lit)
+check("arming lights one key and no other", asking.lit == 1,
+      "lit " .. asking.lit)
+
+-- And it is the key of the control that is asking, not of the row the cursor
+-- happens to be on. They are the same row in the game, since arming is what
+-- enter does to the row under the cursor; reading the cursor for it anyway let
+-- the board light one key while the chip with the empty slot in it sat
+-- somewhere else, which is the page contradicting itself in the one state it
+-- exists for.
+do
+    local elsewhere = draw_at(1280, 800, 1, "guns")
+    check("and it is the asking control's key, not the cursor's",
+          elsewhere.lit == 1, "lit " .. elsewhere.lit)
 end
 
 -- And the point of all of it: on a desktop window the keys are drawn at a
 -- size somebody can read across a desk, not at the width of a phone's menu
--- column. Forty points is comfortably past what the fixed 460 column gave.
-local big = draw_at(1280, 800)
-check("a desktop window draws a readable board", (big.keyh or 0) > 40,
-      "key height " .. tostring(big.keyh))
+-- column.
+check("a desktop window draws a readable board", (resting.keyh or 0) > 30,
+      "key height " .. tostring(resting.keyh))
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

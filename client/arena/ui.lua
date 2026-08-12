@@ -18,6 +18,7 @@
 -- at the point of drawing.
 
 local pal = require("arena.palette")
+local keyset = require("arena.keys")
 local marks = require("arena.marks")
 local state = require("arena.state")
 local world = require("arena.world")
@@ -36,6 +37,10 @@ local menu_up = false
 local PAD = 14
 local PANEL_X, PANEL_Y = 12, 10
 local FONT = 13
+-- The menu's own face, against the mono everything in flight is set in. Up
+-- here with the other constants because both the controls page and the stage
+-- rows below it set type in it.
+local MENU_FONT = "menu"
 local LINE = 18
 -- Two triggers, one line each in the status panel. Read once rather than
 -- from `sim` per frame: the panel's height needs it before it draws.
@@ -2091,16 +2096,19 @@ end
 -- does. Held open rather than hovered, so reading it is a decision a player
 -- makes once and not something that happens to them while they are flying.
 --
--- Static. What a particular hull is carrying is the corner stack's job and it
--- draws that already; this is the keyboard, which is the same on every ship in
--- every room, and a table that rearranged itself would be a reference you
--- cannot learn.
+-- What a particular hull is carrying is the corner stack's job and it draws
+-- that already; this is the keyboard, which is the same in every room.
+--
+-- Asked for each time it is drawn rather than held, because the keys are a
+-- pilot's to move now. It used to be the list itself, on the argument that a
+-- table which rearranged itself would be a reference you cannot learn; that is
+-- still true of a table that rearranges on its own, and false of one that says
+-- what you last told it.
 --
 -- Keyboard only, and that is not an oversight: a touchscreen has no key to
--- open it with and no keys to list. The menu's help page is what a phone gets,
--- and it names thumbs because thumbs are what a phone has.
-local HELP_ROWS = require("arena.controls")
-M.HELP_ROWS = HELP_ROWS
+-- open it with and no keys to list. The menu's controls page is what a phone
+-- gets, and it names thumbs because thumbs are what a phone has.
+local binds = require("arena.binds")
 
 -- Whether the table is up. The arena owns the key; this owns the drawing.
 M.help = false
@@ -2119,6 +2127,10 @@ local function glyph_w(s, px)
 end
 
 local function help_table()
+    -- Where the controls are now, not where they started. The same list the
+    -- menu's page draws, so the table under H and the chips under the board
+    -- cannot say different things about the same key.
+    local bound = binds.rows()
     local fs = (M.compact and 11 or 13) * S
     local rowh = fs * 1.65
     local pad = 18 * S
@@ -2126,15 +2138,15 @@ local function help_table()
     -- than guessed, since the sentences are what decides the width and they
     -- are the one column that cannot be allowed to wrap.
     local kw, nw, dw = 0, 0, 0
-    for _, r in ipairs(HELP_ROWS) do
-        kw = math.max(kw, glyph_w(r.key, fs))
+    for _, r in ipairs(bound) do
+        kw = math.max(kw, glyph_w(r.show, fs))
         nw = math.max(nw, glyph_w(r.name, fs))
         dw = math.max(dw, glyph_w(r.what, fs))
     end
     local gap = 14 * S
     local w = pad * 2 + kw + gap + nw + gap + dw
     local head = fs * 1.9
-    local h = pad * 2 + head + #HELP_ROWS * rowh
+    local h = pad * 2 + head + #bound * rowh
     -- Shrunk to fit rather than clipped, because a window narrower than the
     -- longest sentence is a window this has to work in anyway.
     local room = W - 24 * S
@@ -2144,7 +2156,7 @@ local function help_table()
         kw, nw = kw * scale, nw * scale
         head = head * scale
         w = room
-        h = pad * 2 + head + #HELP_ROWS * rowh
+        h = pad * 2 + head + #bound * rowh
     end
     local x, y = (W - w) / 2, (H - h) / 2
 
@@ -2161,13 +2173,13 @@ local function help_table()
     local nx = kx + kw + gap
     local dx = nx + nw + gap
     local was = case
-    for i, r in ipairs(HELP_ROWS) do
+    for i, r in ipairs(bound) do
         local ty = y + pad + head + (i - 0.5) * rowh
         -- The key in the color a key is drawn in everywhere else, the name in
         -- ink, and the sentence dimmer than both: three weights so the eye can
         -- run down one column without reading the other two.
         case = "upper"
-        txt(r.key, kx, ty, fs, pal.a(pal.FRIEND, 0.95))
+        txt(r.show, kx, ty, fs, pal.a(pal.FRIEND, 0.95))
         txt(r.name, nx, ty, fs, pal.a(pal.INK, 0.92))
         -- Prose, and set as prose. The rest of the interface shouts.
         case = "sentence"
@@ -2682,18 +2694,37 @@ end
 --
 -- Widths are in key units so the board scales with the panel. The rows are
 -- the standard board's, minus the function row nothing binds.
+-- The keys and how wide each one is, and nothing about what any of them
+-- does. What a key does is the view's to say now, since it is a pilot's to
+-- change; this is the shape of a keyboard, which is not.
 local BOARD = {
-    {{"esc", 1.3, "menu"}, {"~", 1, "multi"}, {"1"}, {"2"}, {"3"}, {"4"},
+    {{"esc", 1.3}, {"~", 1}, {"1"}, {"2"}, {"3"}, {"4"},
      {"5"}, {"6"}, {"7"}, {"8"}, {"9"}, {"0"}},
-    {{"tab", 1.7, "bomb"}, {"Q", 1, "charge"}, {"W", 1, "charge"}, {"E"},
-     {"R"}, {"T"}, {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1, "players"}},
-    {{"caps", 2.0}, {"A", 1, "charge"}, {"S", 1, "charge"}, {"D", 1, "drone"},
+    {{"tab", 1.7}, {"Q", 1}, {"W", 1}, {"E"},
+     {"R"}, {"T"}, {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1}},
+    {{"caps", 2.0}, {"A", 1}, {"S", 1}, {"D", 1},
      {"F"},
-     {"G"}, {"H", 1, "help"}, {"J"}, {"K"}, {"L"}},
+     {"G"}, {"H", 1}, {"J"}, {"K"}, {"L"}},
     {{"shift", 2.25}, {"Z"}, {"X"}, {"C"}, {"V"},
-     {"B"}, {"N"}, {"M", 1, "map"}},
-    {{"ctrl", 1.6, "gun2"}, {"space", 6.2, "gun"}},
+     {"B"}, {"N"}, {"M", 1}},
+    {{"ctrl", 1.6}, {"space", 6.2}},
 }
+
+-- Which row of the page sits on which key of the picture, built once per draw.
+-- The chips and the board are the same list read two ways, and this is where
+-- the second reading happens: one table, so they cannot disagree about where
+-- a control is.
+--
+-- Keyed by what the board writes on a key rather than by the key's own name,
+-- because that is what the drawing loop below has in its hand.
+local function bind_map(v)
+    local out = {}
+    for i, r in ipairs(v.rows or {}) do
+        local k = r.key and keyset.by_id[r.key]
+        if k then out[k.label or k.id] = {row = r, i = i} end
+    end
+    return out
+end
 -- The board is 12.4 units across, and the arrow cluster hangs off its right
 -- edge over the two bottom rows, where the letter rows have already ended.
 local BOARD_UNITS = 12.4
@@ -2707,26 +2738,6 @@ local BOARD_UNITS = 12.4
 local KEY_LETTER = 0.40   -- a single character, against key height
 local KEY_WORD = 0.30     -- "shift", "space": the ones that have to fit across
 
--- What each color means, in the order the legend reads.
---
--- Every lit key is on this list, which is the point of it: the three keys
--- that open something used to share one gray and a line of prose naming them
--- one after another, so the picture said "these do interface things" and the
--- caption did the actual work. A color apiece and a word in the legend says
--- it once.
-local BOARD_CATS = {
-    {key = "fly", word = "fly"},
-    {key = "gun", word = "guns"},
-    {key = "multi", word = "multifire"},
-    {key = "bomb", word = "bombs"},
-    {key = "charge", word = "charges"},
-    {key = "drone", word = "drop off"},
-    {key = "players", word = "players"},
-    {key = "map", word = "map"},
-    {key = "menu", word = "menu"},
-    {key = "help", word = "controls"},
-}
-
 -- Hues nothing else in the legend is wearing, which is what a legend needs
 -- and all it needs. Multifire takes the color the green that grants it is
 -- drawn in, so the one key that is a gun in a different mode reads as a
@@ -2738,7 +2749,7 @@ local BOARD_CATS = {
 -- under it and the key itself all looked switched off. Amber instead, which
 -- nothing else on this page is wearing.
 local function board_col(cat)
-    if cat == "gun" or cat == "gun2" then return pal.FRIEND end
+    if cat == "gun" then return pal.FRIEND end
     if cat == "multi" then return pal.MOD_COL end
     if cat == "bomb" then return pal.BOMB end
     if cat == "charge" then return pal.CHARGE_COL end
@@ -2756,60 +2767,13 @@ local function board_col(cat)
     return nil
 end
 
--- The legend, sized off the key like everything else here so a wide board
--- does not end up captioned in type meant for a narrow one.
-local LEG_GAP = 8         -- * S, between legend lines
-
-local function legend_size(kh)
-    return math.max((FONT - 3) * S, kh * 0.34)
-end
-
-local function entry_w(word, lsize)
-    return lsize * 0.7 + 6 * S + text_w(word, lsize) + 18 * S
-end
-
-local function pack_legend(w, lsize)
-    local lines, line, used = {}, {}, 0
-    for _, c in ipairs(BOARD_CATS) do
-        local ew = entry_w(c.word, lsize)
-        if #line > 0 and used + ew > w then
-            lines[#lines + 1] = line
-            line, used = {}, 0
-        end
-        line[#line + 1] = c
-        used = used + ew
-    end
-    if #line > 0 then lines[#lines + 1] = line end
-    return lines
-end
-
--- How the legend falls into lines at this width, as a list of lines. Nine
--- words and their swatches do not fit across every board, and one that ran off
--- the edge would take the last of them with it, which are the ones nothing
--- else on the page explains.
---
--- Filled to the edge and then wrapped, the ninth word sits alone under a full
--- line and reads as a mistake, so the lines are evened out instead: pack to
--- the share each line would carry, then let that share grow until it fits
--- back into the number of lines the width allows.
-local function legend_lines(w, lsize)
-    local want = #pack_legend(w, lsize)
-    if want < 2 then return pack_legend(w, lsize) end
-    local total = 0
-    for _, c in ipairs(BOARD_CATS) do
-        total = total + entry_w(c.word, lsize)
-    end
-    local try = total / want
-    while try < w do
-        local lines = pack_legend(try, lsize)
-        if #lines <= want then return lines end
-        try = try * 1.04
-    end
-    return pack_legend(w, lsize)
-end
-
 -- One key: an outline in its function's color with a hint of fill, or a
 -- faint outline for a key the game does not use. `cy` is the row's top.
+--
+-- `dimmed` is Ctrl and nothing else: a gun the browser only surrenders in
+-- fullscreen, drawn at half light so the board says "sometimes" without a
+-- footnote on it. It is not in the list of controls because it cannot be
+-- moved, so the picture is the only thing that knows about it.
 local function board_key(bx, cy, kw, kh, label, cat, dimmed)
     local col = board_col(cat)
     if col and not dimmed then
@@ -2845,64 +2809,171 @@ end
 
 -- The whole board, drawn into the panel at `x, top`, `w` wide. Returns its
 -- height so the caller can size the panel around it.
-local function board(x, top, w)
+local function board(x, top, w, v)
+    v = v or {}
+    local on = bind_map(v)
+    -- While a control is waiting for a key, every other key is a place it
+    -- could land, so the board stops saying what it holds and starts saying
+    -- what is free: everything drops to the outline an unbound key wears and
+    -- the only lit thing left is the one that is asking.
+    local arming = v.arming
     local unit = w / BOARD_UNITS
     local kh = unit * 0.82
     local pitch = kh + 3 * S
+    -- Which key the picture puts a bracket round, and which one stays lit
+    -- while everything else goes dark. Resting, both are the cursor. Asking,
+    -- both are the control that is asking, which is the row's own flag rather
+    -- than the cursor: they are the same row in the game, and reading the
+    -- cursor for it would let the page light one key while the chip with the
+    -- empty slot in it was somewhere else.
+    local function state_of(hit_row)
+        if not hit_row then return false, false end
+        if arming then
+            local asking = hit_row.row.arming == true
+            return asking, asking
+        end
+        return hit_row.i == v.sel, false
+    end
+
+    local function draw(bx, cy, kw, label)
+        local hit_row = on[label]
+        local cat = hit_row and hit_row.row.cat
+        local sel, keep = state_of(hit_row)
+        -- Ctrl is the one key on the board whose control is not in the list:
+        -- it fires guns, it cannot be moved, and the browser only surrenders
+        -- it in fullscreen. So the picture carries it on its own, at half
+        -- light, which is the board saying "sometimes" without a footnote.
+        if label == "ctrl" then cat = "gun" end
+        if arming and not keep then cat = nil end
+        board_key(bx, cy, kw, kh, label, cat, label == "ctrl")
+        -- The cursor: the same chamfered bracket that holds a cluster together
+        -- everywhere else, round the key whose chip the cursor is on. Not a
+        -- second color, so the key goes on saying what it does.
+        if sel then
+            bracket(bx - 3 * S, cy - 3 * S, kw + 6 * S, kh + 6 * S,
+                    pal.a(pal.INK, arming and 0.95 or 0.7), 9 * S, 3 * S)
+        end
+    end
     for r, row in ipairs(BOARD) do
         local bx = x
         local cy = top + (r - 1) * pitch
         for _, k in ipairs(row) do
             local kw = (k[2] or 1) * unit - 3 * S
-            board_key(bx, cy, kw, kh, k[1], k[3], k[3] == "gun2")
+            draw(bx, cy, kw, k[1])
             bx = bx + (k[2] or 1) * unit
         end
     end
     -- The arrows, as the inverted T they are on the board: up over down, in
     -- the corner the two bottom rows leave empty. Each entry is a column, a
     -- row off the shift row, and the direction its triangle points.
-    local fly = board_col("fly")
     local aw = unit * 0.92
     local ax = x + w - 3 * aw
-    for _, d in ipairs({{1, 0, 0, -1}, {0, 1, -1, 0}, {1, 1, 0, 1},
-                        {2, 1, 1, 0}}) do
+    for _, d in ipairs({{1, 0, 0, -1, "up"}, {0, 1, -1, 0, "left"},
+                        {1, 1, 0, 1, "down"}, {2, 1, 1, 0, "right"}}) do
         local kx = ax + d[1] * aw
         local cy = top + (3 + d[2]) * pitch
         local kw = aw - 3 * S
-        rect(kx, cy, kw, kh, pal.a(fly, 0.08))
-        u:frame(kx, ry(cy, kh), kw, kh, 1.1 * S, pal.a(fly, 0.75))
-        board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4], pal.a(fly, 0.95))
-    end
-
-    -- The legend, laid out where it was measured: same call, same answer, so
-    -- a page sized for two lines cannot be drawn with three.
-    local lsize = legend_size(kh)
-    local sw = lsize * 0.7
-    local ly = top + 5 * pitch + 10 * S
-    for _, line in ipairs(legend_lines(w, lsize)) do
-        local lx = x
-        for _, c in ipairs(line) do
-            local col = board_col(c.key)
-            rect(lx, ly + lsize * 0.2, sw, sw, pal.a(col, 0.9))
-            txt(c.word, lx + sw + 6 * S, ly + lsize / 2, lsize,
-                pal.a(pal.DIM, 0.95))
-            lx = lx + entry_w(c.word, lsize)
+        local hit_row = on[d[5]]
+        local sel, keep = state_of(hit_row)
+        local cat = hit_row and hit_row.row.cat
+        if arming and not keep then cat = nil end
+        local col = board_col(cat)
+        if col then
+            rect(kx, cy, kw, kh, pal.a(col, 0.08))
+            u:frame(kx, ry(cy, kh), kw, kh, 1.1 * S, pal.a(col, 0.75))
+            board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4], pal.a(col, 0.95))
+        else
+            u:frame(kx, ry(cy, kh), kw, kh, 0.8 * S, pal.a(pal.DIM, 0.22))
+            board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4],
+                        pal.a(pal.DIM, 0.4))
         end
-        ly = ly + lsize + LEG_GAP * S
+        if sel then
+            bracket(kx - 3 * S, cy - 3 * S, kw + 6 * S, kh + 6 * S,
+                    pal.a(pal.INK, arming and 0.95 or 0.7), 9 * S, 3 * S)
+        end
     end
 
-    return (ly - top) + 2 * S
+    return 5 * pitch + 2 * S
 end
 
 -- What the board will ask for, so the panel can be sized before drawing it.
--- Every term here is one the drawing uses, in the same order it uses them:
--- five key rows, the gap to the legend, and however many lines the legend
--- falls into at this width.
+-- Five rows of keys and the gap under them, which is every term the drawing
+-- uses, in the order it uses them.
 local function board_height(w)
     local kh = (w / BOARD_UNITS) * 0.82
-    local lsize = legend_size(kh)
-    return 5 * (kh + 3 * S) + 10 * S
-        + #legend_lines(w, lsize) * (lsize + LEG_GAP * S) + 2 * S
+    return 5 * (kh + 3 * S) + 2 * S
+end
+
+-- Every control, with the key it is on, under the picture of the board.
+--
+-- The board alone cannot answer "where is my second charge": four charge keys
+-- share one color on it, and a key is under thirty points across at the widest
+-- this page ever draws it, which has no room for a word under the letter. So
+-- the page keeps both, and they are the same list drawn twice on purpose. The
+-- board says where the hand goes; the chips say what each key is for and are
+-- where one is changed.
+--
+-- Three columns, because sixteen rows down one column is a list that scrolls,
+-- and a list scrolling under a picture is no longer the same page as the
+-- picture: you would be moving the answers past a diagram that stayed still.
+local CHIP_COLS = 3
+local CHIP_ROW = 26      -- * S
+-- Between the last row of keys and the first row of chips.
+local CHIP_GAP = 18      -- * S
+
+local function chip_lines(n)
+    return math.ceil(n / CHIP_COLS)
+end
+
+-- `rh` is a row's height, which the caller works out rather than this: what
+-- the board can give up and what the chips need are one sum, and it is done
+-- once where the page is measured.
+local function chips(x, top, w, v, rh)
+    local cw = w / CHIP_COLS
+    -- Type off the row, the same way the board sizes a letter off its key, so
+    -- a page squeezed into a short window comes out smaller rather than
+    -- overlapping itself.
+    local fs = math.min(12.5 * S, rh * 0.48)
+    for i, r in ipairs(v.rows) do
+        local cx = x + ((i - 1) % CHIP_COLS) * cw
+        local cy = top + math.floor((i - 1) / CHIP_COLS) * rh
+        local hot = i == v.sel
+        if hot then
+            rect(cx - 6 * S, cy, cw - 4 * S, rh,
+                 pal.a(pal.FRIEND, r.arming and 0.22 or 0.16))
+        end
+        -- The row that puts everything back is not a control and wears no
+        -- swatch, so the column of colors down the left is exactly the set of
+        -- things that have a key.
+        local hue = board_col(r.cat) or pal.DIM
+        if not r.reset then
+            rect(cx, cy + rh / 2 - 3.5 * S, 7 * S, 7 * S,
+                 pal.a(hue, hot and 1 or 0.8))
+        end
+        txt(r.label or "", cx + 15 * S, cy + rh / 2, fs,
+            pal.a(pal.INK, hot and 1 or 0.8), nil, MENU_FONT)
+        -- The key, in the face the numbers in flight are set in, because it is
+        -- a reading off the machine rather than a word anybody chose. Verbatim
+        -- for the same reason: "Esc" is what is written on the key.
+        --
+        -- While this one is asking, the column is empty and lit. The row that
+        -- wants a key is the row with no key in it, and the sentence saying so
+        -- is at the foot of the page rather than in a column too narrow to
+        -- hold it.
+        if r.arming then
+            local slot = 18 * S
+            rect(cx + cw - 26 * S - slot, cy + rh / 2 - 1 * S, slot, 2 * S,
+                 pal.a(hue, 0.55 + 0.45 * math.sin(M.now * 6)))
+        elseif r.detail then
+            -- A control that cannot move is written in the shade every
+            -- unpressable thing here is written in, which says so without a
+            -- word for it.
+            local ink = r.fixed and pal.DIM or hue
+            txt(r.detail, cx + cw - 26 * S, cy + rh / 2, fs,
+                pal.a(ink, hot and 1 or 0.75), "right", nil, true)
+        end
+        if r.pick then hit(cx - 6 * S, cy, cw - 4 * S, rh, "stage", i) end
+    end
 end
 
 -- --- the menu -------------------------------------------------------------
@@ -2934,8 +3005,6 @@ end
 -- either half, which is the one thing the keyboard cannot do and the reason
 -- the stage publishes its own hit boxes. Resting on a row is the other: it
 -- lights, because it moves the same cursor the arrows move.
-
-local MENU_FONT = "menu"
 
 -- How far under the top of the block the stage's first row sits: the rule
 -- that introduces the list, and the way out sitting over it. The rail starts
@@ -4165,10 +4234,41 @@ function M.menu(v)
     -- are, and the rule was a third line of furniture between them.
     if v.board and not M.touching then
         -- The widest board the stage has the height for, backed off rather
-        -- than solved, the same way the page used to do it.
+        -- than solved, the same way the page used to do it. What the chips
+        -- want comes off the room first, since they are the half of this page
+        -- that has to be readable: a board that has shrunk is still a picture
+        -- of a keyboard, and a chip that has shrunk is a key you cannot read.
         local bw = avail
-        while bw > 240 * S and board_height(bw) > room do bw = bw * 0.94 end
-        board(tx, top, bw)
+        -- The chip's own row height, which is not the stage row height below:
+        -- one is a line in a grid of names and keys, the other is a row of a
+        -- list, and they are sized against different things.
+        local chip_h = CHIP_ROW * S
+        if v.chips then
+            local lines = chip_lines(#v.rows)
+            -- The board gives way first, down to its floor, and then the
+            -- chips do. That order is the argument for the page: a keyboard
+            -- drawn smaller is still a picture of where your hand goes, and a
+            -- chip drawn smaller is a key you cannot read.
+            while bw > 240 * S
+                  and board_height(bw) + lines * chip_h + CHIP_GAP * S > room do
+                bw = bw * 0.94
+            end
+            local left = room - board_height(bw) - CHIP_GAP * S
+            if lines * chip_h > left then
+                chip_h = math.max(left / lines, 0)
+            end
+        else
+            while bw > 240 * S and board_height(bw) > room do bw = bw * 0.94 end
+        end
+        local used = board(tx, top, bw, v)
+        -- The chips take the stage's width rather than the board's. In a
+        -- column as narrow as a backed-off keyboard the key runs back under
+        -- the name it belongs to, and there is nothing above them to line up
+        -- with in any case.
+        if v.chips then
+            chips(tx, top + used + CHIP_GAP * S, avail - 14 * S, v,
+                  chip_h)
+        end
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else
@@ -4246,6 +4346,12 @@ function M.menu(v)
     -- happened.
     if v.note then
         txt(v.note, tx, sy + sh - 4 * S, 12 * S, pal.a(pal.HURT, 0.95))
+    elseif v.foot then
+        -- The same line, for something that worked. It is the one thing on the
+        -- controls page that is about the whole page rather than about a row,
+        -- which is why it is down here and not in a column: what the page is
+        -- waiting for, or what it just did.
+        txt(v.foot, tx, sy + sh - 4 * S, 12 * S, pal.a(pal.DIM, 0.9))
     end
 
     -- A press that missed everything is a press on the arena behind, and over

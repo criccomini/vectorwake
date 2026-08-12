@@ -708,17 +708,18 @@ rail_view.rail_hover = nil
 -- --- the controls page fits on the device it was written for --------------
 --
 -- It is the longest page the menu has, and it grew: the touch rows come from
--- arena/controls.lua now, twelve of them against the five somebody kept by
--- hand. Twelve two-line rows on a phone held sideways is the case that
+-- arena/controls.lua now, a dozen of them against the five somebody kept by
+-- hand. A dozen two-line rows on a phone held sideways is the case that
 -- decides whether that was a good idea, and no other check here covers it,
 -- since the rest draw three rows and a rail.
 
 do
-    local controls = require("arena.controls")
+    local binds = require("arena.binds")
     local pad_rows = {}
-    for _, c in ipairs(controls) do
+    for _, c in ipairs(binds.rows()) do
         if c.pad then
-            pad_rows[#pad_rows + 1] = {label = string.lower(c.name), detail = c.pad}
+            pad_rows[#pad_rows + 1] = {label = c.pad_name or c.name,
+                                       detail = c.pad}
         end
     end
     -- A phone held sideways, in drawable pixels at two per point, which is
