@@ -86,6 +86,7 @@ jobs:
           # and defaulted to admin.localhost everywhere the variable is
           # unset. The runs above already cover unset; this covers named.
           docker run --rm -e VW_HOST=play.example.invalid -e VW_ROUTES \
+            -e VW_SITE_HOST=example.invalid \
             -e VW_ADMIN_HOST=admin.example.invalid \
             -v "$PWD/deploy/caddy:/etc/caddy:ro" caddy:2-alpine \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

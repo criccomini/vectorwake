@@ -53,6 +53,18 @@ if ! grep -q '^VW_ADMIN_HOST=' .env 2>/dev/null; then
 	esac
 fi
 
+# Hosts that predate the public site do not name it. A central host already
+# knows the answer from play.<domain>; arena hosts keep the variable absent and
+# serve only the local fallback from the compose file.
+if ! grep -q '^VW_SITE_HOST=' .env 2>/dev/null; then
+	case $(sed -n 's/^VW_ROLE=//p' .env) in
+	central|all)
+		front=$(sed -n 's/^VW_HOST=//p' .env)
+		[ -n "$front" ] && printf 'VW_SITE_HOST=%s\n' "${front#*.}" >>.env
+		;;
+	esac
+fi
+
 # The running image, read off the first game container this host's role has.
 # Central runs a directory and no arena, an arena host the reverse, so the
 # services are tried in turn rather than assumed.

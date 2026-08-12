@@ -80,6 +80,42 @@ http:// {
 	import /etc/caddy/conf.d/{$VW_ROUTES}*.caddy
 }
 
+# The public front page. The game keeps its own origin at play.<domain> because
+# its same-origin socket policy is part of the join path; this site is the quiet
+# door in front of it. Static files come straight from the checkout, so a push
+# moves the page without building or restarting a game process.
+{$VW_SITE_HOST:vectorwake.localhost} {
+	encode zstd gzip
+
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+	}
+
+	# Keep the community door stable without copying the raw invite out of the
+	# game origin, where decision 39 says it lives.
+	redir /discord https://play.vectorwake.net/discord 302
+
+	# The landing page uses the exact display and instrument fonts from the
+	# client, plus its existing browser mark. They are mounted read-only beside
+	# the page rather than copied into a second brand kit.
+	handle_path /assets/* {
+		header Cache-Control "public, max-age=604800"
+		root * /srv/site-assets
+		file_server
+	}
+
+	handle {
+		# File names are stable, so revalidate them on every load. ETags keep an
+		# unchanged visit cheap and a deploy visible.
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
+}
+
 # The admin panel, on a name of its own. An earlier surface lived at /admin
 # behind basic auth and was removed as weight; this one earned its way back
 # when accounts arrived, because "the admin flag on a vectorwake account" is
