@@ -2431,6 +2431,18 @@ local function debug_hud(o, top)
         {"ships", tostring(sim.ship_count())},
         {"shots", tostring(sim.weapon_count())},
     }
+    -- How full the two world layers are, and what they refused. A layer past
+    -- its capacity says nothing at all: the geometry simply stops being drawn.
+    -- So a starfield that thinned out on a big monitor read as a rendering
+    -- fault for as long as it took somebody to measure it, and the `+` here is
+    -- how many vertices a layer turned away last frame.
+    for _, name in ipairs({"fill", "glow"}) do
+        local L = o.layers and o.layers[name]
+        if L then
+            lines[#lines + 1] = {name, string.format("%d / %d", L.n, L.cap) ..
+                                 (L.dropped > 0 and (" +" .. L.dropped) or "")}
+        end
+    end
     -- Wrapped into as many columns as the room below the dial can hold. A
     -- phone in landscape is about four hundred points tall and the dial has
     -- most of that: one column of twelve rows at a size worth reading runs

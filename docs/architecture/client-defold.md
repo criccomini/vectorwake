@@ -117,6 +117,20 @@ walks far enough, so the cost tracks the view rather than the map. The window is
 meshed whole and held whole, which is why its capacity is fitted to what a build
 actually used rather than guessed at.
 
+The fill and glow layers follow the window too, and for the same reason the
+terrain does. The camera holds a fixed zoom, so a wider window sees more world
+and therefore more starfield, and most of what those two layers carry is
+starfield. Their capacity is computed from the view's half-extents against the
+table the stars are drawn from, so the budget cannot drift from the drawing. A
+fixed capacity is the wrong shape here in a way that hides itself: a layer past
+its cap does not raise, it stops writing, so the geometry described after the
+overflow is simply absent from the frame. That is what a fixed 6144 vertices
+did on a monitor around 2240 points wide, where the two far depths of the
+starfield filled the buffer on their own and the near stars came and went
+depending on how much of the field was behind rock. Both layers now report
+their fill and their refusals in the debug readout, so the next one of these is
+a number somebody can read rather than an artifact somebody has to explain.
+
 Projectiles are drawn straight from the core's arrays rather than spawned as
 objects, which keeps them exactly where the simulation says they are and avoids
 the instance ceiling entirely.

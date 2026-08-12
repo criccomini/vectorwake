@@ -854,6 +854,12 @@ function init(self)
         -- sized against what a heavy frame actually measures (fill 2.8k, glow
         -- 3.8k, ui 2.1k) with room to spare rather than by an order of
         -- magnitude.
+        --
+        -- The two world layers are then resized to the window, because half of
+        -- what they hold is starfield and how much of that is on screen is a
+        -- property of the window rather than of the build: see
+        -- world.world_budget, and the viewport message that applies it. These
+        -- are the opening guess for the frames before one arrives.
         fill = vec.layer("#fill", 6144),
         -- Raised from 8192 with the detailed hulls. A hull costs up to 780
         -- vertices where the old outline and spine cost 134, so the old
@@ -1879,6 +1885,13 @@ function update(self, dt)
             rooms = my_rooms(), room = net.room,
             fps = self.fps, frame_ms = self.frame_ms,
             rx_rate = self.rx_rate, tx_rate = self.tx_rate,
+            -- The two world layers themselves, for the debug readout: how
+            -- full each one is and whether it refused anything. A layer past
+            -- its capacity does not raise, it stops drawing, so the only way
+            -- to find out used to be to notice the missing geometry and guess
+            -- why. The numbers are last frame's, since the counts are settled
+            -- by the flush that happens after this is drawn.
+            layers = layers,
         })
     end
     if menu.open then ui.menu(menu.view()) end
@@ -2231,9 +2244,24 @@ function on_message(self, message_id, message)
                 static_tx = nil
             end
         end
-        -- The window the terrain has to cover, and the room the two static
-        -- layers need to hold it. Both follow the view: see STATIC_STEP.
         if layers and message.hw and message.hw > 0 then
+            -- The two per-frame world layers, sized to how much world the
+            -- window can see, since most of what they hold is starfield.
+            -- Applied here rather than deferred the way the static layers
+            -- are: those are only built when the camera leaves its window, so
+            -- handing one an empty buffer loses the terrain until it moves,
+            -- while these are written from nothing every frame anyway. A
+            -- message is dispatched before the update that draws, so the
+            -- buffer swapped in here is filled before anything reads it. A
+            -- capacity that has not changed is a no-op, and they move in
+            -- steps, so dragging a window edge does not allocate per frame.
+            local fill_cap, glow_cap = world.world_budget(message.hw,
+                                                          message.hh)
+            layers.fill:resize(fill_cap)
+            layers.glow:resize(glow_cap)
+            -- The window the terrain has to cover, and the room the two
+            -- static layers need to hold it. Both follow the view: see
+            -- STATIC_STEP.
             local need = math.max(message.hw, message.hh) / 16
             local want = math.ceil(need) + STATIC_STEP + 1
             if want < STATIC_MIN then want = STATIC_MIN end

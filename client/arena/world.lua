@@ -402,6 +402,84 @@ for _, L in ipairs(STARS) do
     L.bloom = pal.a(L.col, 0.30)
 end
 
+-- What a star costs where it is drawn: a rect on the fill layer, and on the
+-- near layer sometimes an eight-segment halo on the glow layer. Published
+-- because the budget below is only as good as the drawing agreeing with it,
+-- and a test that watches the drawing is how that stays true.
+local STAR_VERTS = 6
+local HALO_SEGS = 8
+local HALO_VERTS = HALO_SEGS * 3
+M.STAR_VERTS, M.HALO_SEGS = STAR_VERTS, HALO_SEGS
+
+-- Room for everything in the world that is not a star, in vertices, on each
+-- of the two per-frame layers.
+--
+-- Unlike the starfield these do not follow the window: what fills them is
+-- hulls, bolts, blasts and prizes, and how many of those are on screen is a
+-- property of the room. Sixty-four seats of detailed hull is past the glow
+-- figure already and always has been; see the ceiling note where the layers
+-- are made.
+local FILL_FIGHT = 3072
+local GLOW_FIGHT = 24576
+
+-- Capacities move in steps of this, so dragging a window edge does not
+-- allocate a new buffer on every frame of the drag.
+local BUDGET_STEP = 1024
+
+-- The most a frame of starfield can ask for at this view size, in vertices,
+-- on the fill layer and on the glow layer.
+--
+-- This is a bound rather than a measurement, and deliberately so: a capacity
+-- that is short does not report anything, it just stops drawing, which is the
+-- bug this exists to prevent. So the worst case is taken at face value. Every
+-- cell in range carries a star and every near star blooms, which overshoots
+-- the real count by about a third on the fill layer and by a lot on the glow
+-- one, where a bloom is one star in seventeen. Tightening the glow figure
+-- would buy back a few hundred vertices at a laptop's size, against a fight
+-- allowance of twenty-four thousand, in exchange for a margin somebody has to
+-- keep measuring. The bound as written can be read off the table above, so it
+-- moves when the table does.
+--
+-- `floor(u + d) - floor(u)` is at most `floor(d) + 1` whatever `u` is, so the
+-- cell counts hold wherever the camera happens to sit inside a cell.
+function M.star_cost(hw, hh)
+    local f, g = 0, 0
+    for li = 1, #STARS do
+        local L = STARS[li]
+        local cells = (math.floor(2 * hw / L.cell) + 2) *
+                      (math.floor(2 * hh / L.cell) + 2)
+        f = f + cells * STAR_VERTS
+        if L.k > 0.5 then g = g + cells * HALO_VERTS end
+    end
+    return f, g
+end
+
+-- What the two per-frame world layers should hold for a view this size.
+--
+-- The camera holds a fixed zoom per decision 13, so the window decides how
+-- much world is on screen and therefore how many stars are in it. A capacity
+-- picked for one window is wrong for every other one, and wrong in the
+-- direction that loses geometry: at 6144 vertices the far and middle layers
+-- alone fill the buffer somewhere around 2100 points of width, and the near
+-- stars, the big bright ones, stop being drawn. Whether they come back is then
+-- a question of how much of the field is behind rock at that moment, which
+-- changes as you fly, so they flicker.
+--
+-- Growth is linear in the window's area and the constant is small. At 28
+-- bytes a vertex the fill layer runs about 200 kB a frame on a laptop and 860
+-- kB on a 4K window, while the glow layer barely moves, since what fills it is
+-- the fight rather than the sky. That is a fair price on a machine driving 4K,
+-- and the reason there is no ceiling here the way there is on the terrain
+-- window, whose cost is the square of its half-width in tiles.
+local function step(n)
+    return math.ceil(n / BUDGET_STEP) * BUDGET_STEP
+end
+
+function M.world_budget(hw, hh)
+    local f, g = M.star_cost(hw, hh)
+    return step(f + FILL_FIGHT), step(g + GLOW_FIGHT)
+end
+
 function M.stars(fill, glow, cam_x, cam_y, hw, hh)
     for li = 1, #STARS do
         local L = STARS[li]
@@ -431,7 +509,8 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                         -- One in a while is close enough to bloom. Additive,
                         -- so it reads as light rather than a bigger dot.
                         if bloom and s % 17 == 0 then
-                            glow:halo(px + size / 2, py + size / 2, 5, 8, bloom)
+                            glow:halo(px + size / 2, py + size / 2, 5,
+                                      HALO_SEGS, bloom)
                         end
                     end
                 end
