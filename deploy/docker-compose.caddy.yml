@@ -48,7 +48,7 @@ services:
       # The public site is a second static root on the same Caddy. This label
       # makes adding that site part of the service config, which is what gets
       # an already-running proxy recreated once to read the new site block.
-      vw.site: landing-v3
+      vw.site: landing-v4
     security_opt:
       - no-new-privileges:true
     # Caddy is the one thing here that binds privileged ports, so it keeps
