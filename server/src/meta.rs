@@ -1829,40 +1829,151 @@ async fn apply(
 
 // ------------------------------------------------------------------ client
 
-/// A POST to the meta-layer, hand-rolled over a plain socket for the same
-/// reason `admin.rs` hand-rolls its responder: a handful of request shapes, and
-/// a client library would be the larger change. TLS is Caddy's job on a real
-/// deployment, as it already is for every other listener in the fleet.
+/// Where a `VW_META` value actually points.
 ///
-/// This is the only way anything in this binary talks to the service, so an
-/// arena's rated events and the bot server's account claims share one parser
-/// and one set of failure messages.
-pub async fn call(base: &str, path: &str, body: &str) -> Result<serde_json::Value, String> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+/// A function with a return value rather than four lines inside `call`,
+/// because those four lines were wrong for a year and nothing could say so.
+/// They stripped `http://` and no other scheme, so an `https://` base fell
+/// through to `split_once('/')`, which found the slash inside `https://` and
+/// came back with a host of `https:` and a path of `//play.vectorwake.net/...`.
+/// The host then looked like it carried a port, so it was dialled as written
+/// and the kernel answered `invalid port value`.
+///
+/// That was invisible until the fleet grew past one host. An arena beside the
+/// meta-layer is pointed at loopback and never takes this path; an arena on
+/// its own box is pointed at the front door over https by `provision.sh`, and
+/// from that moment it could not file a rated event, could not file a pilot
+/// event, and its bot server could not claim a single account. All three go
+/// through here, and all three failed the same way and stayed quiet about it.
+struct Endpoint {
+    tls: bool,
+    /// What `connect` dials. Carries the port, whether it was written down or
+    /// implied by the scheme.
+    addr: String,
+    /// What the `Host` header says, which keeps a non-default port because
+    /// that is what the header is for.
+    authority: String,
+    /// What the certificate has to match, which never carries a port.
+    server_name: String,
+    /// Any path the base carried, ahead of the route's own.
+    prefix: String,
+}
 
+fn endpoint(base: &str) -> Endpoint {
     let rest = base.trim_end_matches('/');
-    let rest = rest.strip_prefix("http://").unwrap_or(rest);
-    let (host, prefix) = match rest.split_once('/') {
+    let (tls, rest) = match rest.strip_prefix("https://") {
+        Some(r) => (true, r),
+        // No scheme is http, which is how a loopback address written bare in
+        // `.env` has always reached the port beside it.
+        None => (false, rest.strip_prefix("http://").unwrap_or(rest)),
+    };
+    let (authority, prefix) = match rest.split_once('/') {
         Some((h, p)) => (h, format!("/{p}")),
         None => (rest, String::new()),
     };
-    let addr = if host.contains(':') { host.to_string() } else { format!("{host}:80") };
-    let mut s = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        tokio::net::TcpStream::connect(&addr),
-    )
-    .await
-    .map_err(|_| format!("{addr} did not answer"))?
-    .map_err(|e| format!("cannot reach {addr}: {e}"))?;
-    let req = format!(
-        "POST {prefix}{path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
+    let server_name = authority.split(':').next().unwrap_or(authority).to_string();
+    let addr = if authority.contains(':') {
+        authority.to_string()
+    } else {
+        format!("{authority}:{}", if tls { 443 } else { 80 })
+    };
+    Endpoint { tls, addr, authority: authority.to_string(), server_name, prefix }
+}
+
+/// The roots and the cipher suite for an outbound https call, built once.
+///
+/// `install_crypto` in main.rs has already named the provider by the time
+/// anything calls this, which is load-bearing: rustls panics rather than
+/// choosing when two are compiled in, and this binary has two.
+///
+/// `VW_META_CA` extends the public roots, read the same way and from the same
+/// file as the database client below reads it. A front door with a publicly
+/// trusted certificate needs nothing; a laptop behind Caddy's internal CA, or
+/// a host whose egress is inspected, hands this one path its issuer instead of
+/// being unable to file anything.
+fn tls_client() -> &'static tokio_rustls::TlsConnector {
+    static CONNECTOR: std::sync::OnceLock<tokio_rustls::TlsConnector> = std::sync::OnceLock::new();
+    CONNECTOR.get_or_init(|| {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        if let Ok(path) = std::env::var("VW_META_CA") {
+            match std::fs::read(&path) {
+                Ok(pem) => {
+                    let mut rd = std::io::BufReader::new(&pem[..]);
+                    let added = rustls_pemfile::certs(&mut rd)
+                        .flatten()
+                        .filter(|c| roots.add(c.clone()).is_ok())
+                        .count();
+                    println!("meta: trusting {added} certificate(s) from {path}");
+                }
+                Err(e) => println!("meta: cannot read VW_META_CA {path}: {e}"),
+            }
+        }
+        let cfg = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        tokio_rustls::TlsConnector::from(Arc::new(cfg))
+    })
+}
+
+/// Write the request, read until the far end closes. Generic over the socket
+/// so the plaintext and TLS paths are the same code rather than two copies
+/// that drift.
+async fn round_trip<S>(mut s: S, req: &str) -> Result<String, String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     s.write_all(req.as_bytes()).await.map_err(|e| format!("{e}"))?;
     let mut out = Vec::new();
-    s.read_to_end(&mut out).await.map_err(|e| format!("{e}"))?;
-    let text = String::from_utf8_lossy(&out).to_string();
+    if let Err(e) = s.read_to_end(&mut out).await {
+        // A peer that closes a TLS connection without close_notify is a
+        // truncation, and rustls reports it rather than hiding it. With a
+        // whole reply already in hand that is the close it is, so the error
+        // matters only when nothing arrived.
+        if out.is_empty() {
+            return Err(format!("{e}"));
+        }
+    }
+    Ok(String::from_utf8_lossy(&out).to_string())
+}
+
+/// A POST to the meta-layer, hand-rolled for the same reason `admin.rs`
+/// hand-rolls its responder: a handful of request shapes, and a client library
+/// would be the larger change. Plaintext to a port on this host, TLS through
+/// the front door when the base says https, which is how an arena on its own
+/// box reaches a meta-layer that is not beside it.
+///
+/// This is the only way anything in this binary talks to the service, so an
+/// arena's rated events, its pilot events and the bot server's account claims
+/// share one parser and one set of failure messages.
+pub async fn call(base: &str, path: &str, body: &str) -> Result<serde_json::Value, String> {
+    let e = endpoint(base);
+    let tcp = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::net::TcpStream::connect(&e.addr),
+    )
+    .await
+    .map_err(|_| format!("{} did not answer", e.addr))?
+    .map_err(|err| format!("cannot reach {}: {err}", e.addr))?;
+    let req = format!(
+        "POST {}{path} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        e.prefix,
+        e.authority,
+        body.len()
+    );
+    let text = if e.tls {
+        let name = rustls::pki_types::ServerName::try_from(e.server_name.clone())
+            .map_err(|_| format!("{} is not a name a certificate can carry", e.server_name))?;
+        let s = tls_client()
+            .connect(name, tcp)
+            .await
+            .map_err(|err| format!("cannot negotiate TLS with {}: {err}", e.addr))?;
+        round_trip(s, &req).await?
+    } else {
+        round_trip(tcp, &req).await?
+    };
     let status = text.lines().next().unwrap_or("no reply").to_string();
     let payload = text.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
     if !status.contains(" 200 ") {
@@ -2256,6 +2367,46 @@ mod tests {
             // The scoreboard's widest column: nothing generated may outgrow it.
             assert!(n.len() <= 12, "{n} is wider than the scoreboard");
         }
+    }
+
+    #[test]
+    fn a_meta_url_comes_apart_the_way_it_was_written() {
+        // The regression. `https://play.vectorwake.net/meta` is what
+        // provision.sh writes on an arena host, and it used to parse as a
+        // host of "https:" dialled on a port of nothing, which took out
+        // rated events, pilot events and every bot account at once.
+        let e = endpoint("https://play.vectorwake.net/meta");
+        assert!(e.tls, "https is TLS");
+        assert_eq!(e.addr, "play.vectorwake.net:443", "443 is implied by the scheme");
+        assert_eq!(e.server_name, "play.vectorwake.net");
+        assert_eq!(e.authority, "play.vectorwake.net");
+        assert_eq!(e.prefix, "/meta", "the base's own path leads the route's");
+    }
+
+    #[test]
+    fn a_loopback_meta_url_is_unchanged() {
+        // What a host running both writes, in all three spellings that have
+        // ever appeared in a .env. None of them is TLS and none of them
+        // acquires a port it did not ask for.
+        for base in ["http://127.0.0.1:9400", "127.0.0.1:9400", "http://127.0.0.1:9400/"] {
+            let e = endpoint(base);
+            assert!(!e.tls, "{base} is plaintext");
+            assert_eq!(e.addr, "127.0.0.1:9400", "{base}");
+            assert_eq!(e.authority, "127.0.0.1:9400", "{base} keeps its port in the header");
+            assert_eq!(e.prefix, "", "{base} has no path of its own");
+        }
+    }
+
+    #[test]
+    fn a_written_port_beats_the_scheme() {
+        // A front door on a port of its own, which is what a staging host or
+        // a laptop running Caddy on 8443 looks like. The certificate is still
+        // checked against the name alone.
+        let e = endpoint("https://play.localhost:8443/meta");
+        assert!(e.tls);
+        assert_eq!(e.addr, "play.localhost:8443", "the written port wins over 443");
+        assert_eq!(e.server_name, "play.localhost", "a cert name carries no port");
+        assert_eq!(e.authority, "play.localhost:8443");
     }
 
     #[test]

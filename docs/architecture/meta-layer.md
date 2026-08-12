@@ -403,9 +403,23 @@ any design this repository has ever had.
 ## Operations
 
 One more container beside the directory on the existing host, and the managed
-Postgres in the same region. Arenas and the bot server reach it on loopback
-through `VW_META`, rather than through the public address the catalog carries
-for clients, so their traffic never leaves the box. The account secret is a random 256-bit bearer
+Postgres in the same region. Arenas and the bot server reach it through
+`VW_META` rather than through the public address the catalog carries for
+clients, and where that points depends on the shape of the fleet. On a host
+that runs both it is loopback and the traffic never leaves the box, which is
+the case this was designed for and the only one it handled for a long time. An
+arena on its own host has no meta-layer beside it, so `provision.sh` points it
+at the front door over https and the client speaks TLS.
+
+That second case was broken from the day it was written, and silently. The
+client stripped `http://` and no other scheme, so an https base parsed into a
+host of `https:` on a port of nothing and every call failed at the connect. It
+took out rated events, pilot events and bot account claims together, because
+all three go through the one client, and it left a fleet that looked healthy:
+arenas served, players flew, the ladder simply never moved. There is a parsing
+test per spelling now. `VW_META_CA` extends the trusted roots for this client
+as it already did for the database one, which a laptop behind Caddy's internal
+CA needs and a public front door does not. The account secret is a random 256-bit bearer
 value, minted by the service and carried only over TLS; the password, the one
 credential a person chooses, is stored argon2-hashed rather than sha256,
 because chosen strings are guessable and minted ones are not. There is no external dependency at all: no mail
