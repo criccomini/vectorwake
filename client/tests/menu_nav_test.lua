@@ -920,6 +920,53 @@ do
     menu.foot = nil
 end
 
+-- --- and the view carries what the board needs to draw itself -------------
+--
+-- The rows the page holds and the rows it hands the renderer are two shapes,
+-- and the second is built by copying named fields out of the first. A field
+-- that gets renamed on one side and not the other is invisible from both: the
+-- page goes on holding the right answer and the drawing goes on asking for a
+-- name nothing sets. That shipped once. Every key on the board came out
+-- unlit, because the chords were in the rows and `keys` was being read from a
+-- flattened row that still said `key`.
+--
+-- board_test builds its own rows and cannot see this; it is only visible from
+-- the far end of `M.view`.
+
+do
+    local binds = require("arena.binds")
+    binds.reset()
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.click_rail(top_index("controls"))
+    local v = menu.view()
+    local mute, unnamed = {}, {}
+    for _, r in ipairs(v.rows) do
+        -- Every row but the one that resets everything stands for a control,
+        -- and every control has a chord and a color band.
+        if not r.reset then
+            if not (r.keys and #r.keys > 0) then
+                mute[#mute + 1] = tostring(r.label)
+            end
+            if not r.cat then unnamed[#unnamed + 1] = tostring(r.label) end
+        end
+    end
+    check("every drawn row carries the keys it is on", #mute == 0,
+          table.concat(mute, ", "))
+    check("and the color band the board lights it in", #unnamed == 0,
+          table.concat(unnamed, ", "))
+
+    -- And a chord arrives whole rather than as its trigger.
+    local mine = nil
+    for _, r in ipairs(v.rows) do
+        if r.control == "mine" then mine = r end
+    end
+    check("a chord reaches the drawing with both its keys",
+          mine ~= nil and #mine.keys == 2
+          and table.concat(mine.keys, "+") == "shift+tab",
+          mine and table.concat(mine.keys or {}, "+") or "no mine row")
+end
+
 -- --- the discord stop leaves, rather than going somewhere in here ----------
 --
 -- Every other stop on the rail pushes a page onto the stack. This one hands a

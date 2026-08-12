@@ -822,7 +822,7 @@ local function view_row(r, i)
         -- control is in, which key it is on so the board can be lit from the
         -- same list, whether it is the one waiting for a key, and whether it
         -- is the row that puts everything back.
-        cat = r.cat, control = r.control, key = r.key, fixed = r.fixed,
+        cat = r.cat, control = r.control, keys = r.keys, fixed = r.fixed,
         arming = r.arming, reset = r.reset,
         pick = (r.go or r.act) ~= nil,
         mark = r.mark and r.mark() or false,
