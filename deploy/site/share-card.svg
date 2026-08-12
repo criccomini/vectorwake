@@ -59,7 +59,7 @@
   </g>
   <rect x="1" y="1" width="1198" height="628" fill="none" stroke="#1d2838" stroke-width="2"/>
 
-  <g transform="translate(72 62) scale(.55)" stroke-width="1.2" stroke-linejoin="miter">
+  <g transform="translate(72 62) scale(.55)" stroke-width="0.6" stroke-linejoin="miter">
     <path fill="#ffa552" stroke="#ffa552" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
     <path fill="#3f4b60" stroke="#3f4b60" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
     <path fill="#4fd6ff" stroke="#4fd6ff" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>

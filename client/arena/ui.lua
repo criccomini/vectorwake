@@ -3910,6 +3910,23 @@ local MK_WD, MK_GAP = 0.50, 1 / 12
 local MK_ROW, MK_ROW_GAP, MK_WEIGHT = 0.48, 0.04, 0.075
 local MK_SPAN = 3 * MK_WD + 2 * MK_GAP
 
+-- How much wider a diagonal is drawn than a vertical, so that the two read at
+-- the same weight.
+--
+-- The two are measured differently and have to be. A vertical is drawn with
+-- `seg`, whose width is square to the stroke; a diagonal is drawn with
+-- `seg_flat`, which cuts its ends flat and level and therefore measures its
+-- width across, horizontally. A stroke falling half as far across as it does
+-- down is 1.118 times as long as it is tall, so a horizontal width of w lays
+-- down only 0.894w of actual ink, and the wakes came out a tenth lighter than
+-- the verticals they land on: the same shape, drawn in two weights.
+--
+-- The site's mark carries this correction as a pair of round numbers, 4 across
+-- the diagonal against 3.6 for the vertical, and those are the numbers copied
+-- here rather than the exact secant, so the drawn mark and the SVG one are the
+-- same drawing rather than two drawings that agree to within half a percent.
+local MK_WAKE_W = 4 / 3.6
+
 -- How wide the mark stands, against its own height.
 function M.logo_width(h)
     return h * MK_ROW * MK_SPAN
@@ -3950,7 +3967,9 @@ local function mk_stroke(st, ox, oy, h, w, col, p)
     if st.wake then
         -- The flat cut keeps the top and bottom edges level as the wake grows.
         -- Its color stays solid from the bullet back to the starting point.
-        u:seg_flat(x1, ry(y1), ex, ry(ey), w, col)
+        -- Widened across, because that is the direction this cut measures in:
+        -- see MK_WAKE_W.
+        u:seg_flat(x1, ry(y1), ex, ry(ey), w * MK_WAKE_W, col)
     else
         u:seg(x1, ry(y1), ex, ry(ey), w, col)
     end

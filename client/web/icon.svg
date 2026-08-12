@@ -1,27 +1,16 @@
-<!-- The full-size Vectorwake icon. It uses the two-row site mark at its
-     ordinary weight. The tab has a heavier cut in favicon.svg. -->
+<!-- The full-size Vectorwake icon, for the installed app.
+     The same drawing the site header carries, at the same weights: the two
+     rows of three wedges as filled shapes, solid, with the ordinary 0.6 cut.
+     favicon.svg is this shape again at the heavier 3.5 cut, which is the one
+     difference between a tab and an installed icon.
+     It was a set of stroked lines with a gradient fading each diagonal out
+     toward its start, which made the install icon the one place the mark was
+     drawn a different way and read a different weight. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <defs>
-    <clipPath id="top"><rect x="0" y="81" width="512" height="168"/></clipPath>
-    <clipPath id="bottom"><rect x="0" y="263" width="512" height="168"/></clipPath>
-    <linearGradient id="t0" gradientUnits="userSpaceOnUse" x1="116" y1="81" x2="200" y2="249"><stop offset="0" stop-color="#ffa552" stop-opacity="0"/><stop offset="1" stop-color="#ffa552"/></linearGradient>
-    <linearGradient id="t1" gradientUnits="userSpaceOnUse" x1="214" y1="81" x2="298" y2="249"><stop offset="0" stop-color="#3f4b60" stop-opacity="0"/><stop offset="1" stop-color="#3f4b60"/></linearGradient>
-    <linearGradient id="t2" gradientUnits="userSpaceOnUse" x1="312" y1="81" x2="396" y2="249"><stop offset="0" stop-color="#3f4b60" stop-opacity="0"/><stop offset="1" stop-color="#3f4b60"/></linearGradient>
-    <linearGradient id="b0" gradientUnits="userSpaceOnUse" x1="116" y1="263" x2="200" y2="431"><stop offset="0" stop-color="#3f4b60" stop-opacity="0"/><stop offset="1" stop-color="#3f4b60"/></linearGradient>
-    <linearGradient id="b1" gradientUnits="userSpaceOnUse" x1="214" y1="263" x2="298" y2="431"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff"/></linearGradient>
-    <linearGradient id="b2" gradientUnits="userSpaceOnUse" x1="312" y1="263" x2="396" y2="431"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff"/></linearGradient>
-  </defs>
-  <path d="M0,0H512V512H0Z" fill="#05070c"/>
-  <path d="M116,81 L200,249" fill="none" stroke="url(#t0)" stroke-width="12.6" clip-path="url(#top)"/>
-  <path d="M200,249 L200,81" fill="none" stroke="#ffa552" stroke-width="12.6" clip-path="url(#top)"/>
-  <path d="M214,81 L298,249" fill="none" stroke="url(#t1)" stroke-width="12.6" clip-path="url(#top)"/>
-  <path d="M298,249 L298,81" fill="none" stroke="#3f4b60" stroke-width="12.6" clip-path="url(#top)"/>
-  <path d="M312,81 L396,249" fill="none" stroke="url(#t2)" stroke-width="12.6" clip-path="url(#top)"/>
-  <path d="M396,249 L396,81" fill="none" stroke="#3f4b60" stroke-width="12.6" clip-path="url(#top)"/>
-  <path d="M116,263 L200,431" fill="none" stroke="url(#b0)" stroke-width="12.6" clip-path="url(#bottom)"/>
-  <path d="M200,431 L200,263" fill="none" stroke="#3f4b60" stroke-width="12.6" clip-path="url(#bottom)"/>
-  <path d="M214,263 L298,431" fill="none" stroke="url(#b1)" stroke-width="12.6" clip-path="url(#bottom)"/>
-  <path d="M298,431 L298,263" fill="none" stroke="#4fd6ff" stroke-width="12.6" clip-path="url(#bottom)"/>
-  <path d="M312,263 L396,431" fill="none" stroke="url(#b2)" stroke-width="12.6" clip-path="url(#bottom)"/>
-  <path d="M396,431 L396,263" fill="none" stroke="#4fd6ff" stroke-width="12.6" clip-path="url(#bottom)"/>
+  <path d="M0 0H512V512H0Z" fill="#05070c"/>
+  <g transform="translate(109 74) scale(3.5)" stroke-width="0.6" stroke-linejoin="miter">
+    <path fill="#ffa552" stroke="#ffa552" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+    <path fill="#3f4b60" stroke="#3f4b60" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+    <path fill="#4fd6ff" stroke="#4fd6ff" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+  </g>
 </svg>

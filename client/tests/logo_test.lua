@@ -135,13 +135,29 @@ check("each row spaces its wedges evenly", gap_ok)
 -- One width across the whole mark, the wakes' two ends included. A wake drawn
 -- thinner than the vertical it lands on reads as a different kind of stroke,
 -- and small enough it reads as a shadow behind the letters.
+--
+-- Measured square to each stroke rather than as the number handed to the
+-- layer, because the two calls do not measure the same way: a vertical's
+-- width is across the stroke, and a wake's is horizontal, since its ends are
+-- cut flat and level. Passing one number to both drew the wakes a tenth
+-- lighter than the verticals they land on, which is the same shape in two
+-- weights and exactly what this check was meant to catch.
+local function weight_of(sg)
+    local dx, dy = sg.x2 - sg.x1, sg.y2 - sg.y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    if sg.kind ~= "flat" or len < 1e-9 then return sg.w end
+    return sg.w * math.abs(dy) / len
+end
+
 local thin, thick = math.huge, 0
 for _, sg in ipairs(segs) do
-    for _, wd in ipairs({sg.w, sg.w0 or sg.w}) do
-        thin, thick = math.min(thin, wd), math.max(thick, wd)
-    end
+    local wd = weight_of(sg)
+    thin, thick = math.min(thin, wd), math.max(thick, wd)
 end
-check("every stroke is the same width", thick - thin < 0.01,
+-- Within a percent, which is the rounding the site's own numbers carry: 4
+-- across a diagonal against 3.6 for a vertical is a perpendicular 3.578
+-- against 3.6.
+check("every stroke carries the same weight", thick - thin < thick * 0.01,
       string.format("%.2f to %.2f px", thin, thick))
 
 -- Orange begins the top row, cyan finishes the bottom one, and dark slate
@@ -158,78 +174,144 @@ check("the mark carries the approved row colors",
                     hue(W3[4].d.col), hue(W3[5].d.col),
                     hue(W3[6].d.col)}, " "))
 
--- --- against the file the page actually carries ----------------------------
+-- --- against the drawing every other surface carries ------------------------
 
-local f = assert(io.open("client/web/icon.svg", "r"),
-                 "run me from the repository root")
-local svg = f:read("*a")
-f:close()
-
--- Every stroke the icon draws, as its two endpoints, in file order. The tile
--- is the one path with no L in it.
+-- The mark exists six times over as SVG: the site header and footer, the admin
+-- panel, the share card, three favicons and the installed app icon. All of
+-- them are the same three fills, and this reads that path data once and holds
+-- the drawn mark to it.
 --
--- All twelve are strokes of one width. What tells a wake from a vertical in the
--- file is what paints it: a wake takes a gradient and a vertical takes a
--- color. The tile takes neither, which is how it is left out.
+-- The installed icon used to be the exception. It was built from stroked lines
+-- with a gradient fading each diagonal out toward its start, so the one place
+-- the mark was drawn a different way was also the one place it read a
+-- different weight, and nothing compared the two constructions.
+local function read(path)
+    local f = assert(io.open(path, "r"), "run me from the repository root")
+    local s = f:read("*a")
+    f:close()
+    return s
+end
+
+-- The three fills, in row order: the wedge that opens the top row, the six
+-- that carry the middle, and the pair that closes the bottom.
+-- The first of each, because a page can carry the mark more than once: the
+-- site puts it in the header and again in the footer.
+local function fills(src)
+    local out = {}
+    for _, head in ipairs({"M0 2h4l24 48h%-4z", "M28 2h4l24 48h%-4z",
+                           "M28 54h4l24 48h%-4z"}) do
+        out[#out + 1] = src:match('d="(' .. head .. '[^"]*)"')
+    end
+    return out
+end
+
+local SITE = fills(read("deploy/site/index.html"))
+check("the site draws the mark in three fills",
+      #SITE == 3 and SITE[1] and SITE[2] and SITE[3], #SITE .. " found")
+
+-- Every other surface carries that same drawing. The favicons differ from the
+-- rest only in how heavily the fills are cut, which is deliberate and is the
+-- one thing not compared here.
+for _, place in ipairs({
+    {"the admin panel", "deploy/admin/index.html"},
+    {"the share card", "deploy/site/share-card.svg"},
+    {"the installed app icon", "client/web/icon.svg"},
+    {"the tab icon", "client/web/favicon.svg"},
+    {"the site tab icon", "deploy/site/favicon.svg"},
+    {"the admin tab icon", "deploy/admin/favicon.svg"},
+}) do
+    local got = fills(read(place[2]))
+    local same = true
+    for i = 1, 3 do same = same and got[i] ~= nil and got[i] == SITE[i] end
+    check(place[1] .. " draws the site's mark", same,
+          #got .. " fills, first " .. tostring(got[1]))
+end
+
+-- Nothing fades. The diagonals are solid wherever the mark is drawn, which is
+-- what the install icon stopped doing on its own.
+for _, place in ipairs({
+    {"the installed app icon", "client/web/icon.svg"},
+    {"the site header", "deploy/site/index.html"},
+    {"the admin panel", "deploy/admin/index.html"},
+}) do
+    check("no gradient paints " .. place[1],
+          not read(place[2]):find("mark%-grad")
+          and not read(place[2]):find('stroke="url%(#[tb]%d'),
+          "a diagonal takes a gradient")
+end
+
+-- And one weight, everywhere the mark is cut the ordinary way. The site sets
+-- it in CSS and the standalone files set it on the group.
+-- Taken off the group that holds the mark, or off the CSS rule that dresses
+-- it, rather than off the first stroke-width in the file: the share card
+-- draws its own border before it draws the mark.
+local function cut(src)
+    return tonumber(src:match('stroke%-width:%s*([%d%.]+)'))
+        or tonumber(src:match('<g[^>]-stroke%-width="([%d%.]+)"'))
+end
+local ORDINARY = cut(read("deploy/site/site.css"))
+check("the site names an ordinary cut", ORDINARY ~= nil, tostring(ORDINARY))
+for _, place in ipairs({
+    {"the admin panel", "deploy/admin/admin.css"},
+    {"the share card", "deploy/site/share-card.svg"},
+    {"the installed app icon", "client/web/icon.svg"},
+}) do
+    check(place[1] .. " cuts the mark to the same width",
+          cut(read(place[2])) == ORDINARY,
+          tostring(cut(read(place[2]))) .. " against " .. tostring(ORDINARY))
+end
+
+-- Now the shape itself, as centerlines and widths taken off the fills.
+--
+-- A diagonal is a parallelogram cut flat top and bottom: `M{x} {y}h{w}l{dx}
+-- {dy}h-{w}z`, so its width is measured across and its centerline runs from
+-- half a width in. A vertical is a plain bar. Both give a centerline and a
+-- width, which is exactly what the layer is handed.
+local N = "([%-%d%.]+)"
+local DIAGONAL = "M" .. N .. " " .. N .. "h" .. N .. "l" .. N .. " " .. N .. "h"
+local VERTICAL = "M" .. N .. " " .. N .. "h" .. N .. "v" .. N .. "h"
+
 local want = {}
-for d, rest in svg:gmatch('<path d="(M[^"]-)"([^>]*)>') do
-    local x1, y1, x2, y2 =
-        d:match("^M([%-%d%.]+),([%-%d%.]+) L([%-%d%.]+),([%-%d%.]+)$")
-    local grad = rest:find('stroke="url%(#')
-    if x1 and (grad or rest:find('stroke="#')) then
-        want[#want + 1] = {tonumber(x1), tonumber(y1), tonumber(x2),
-                           tonumber(y2), fade = grad}
+for _, d in ipairs(SITE) do
+    for x, y, w, dx, dy in d:gmatch(DIAGONAL) do
+        x, y, w, dx, dy = tonumber(x), tonumber(y), tonumber(w), tonumber(dx), tonumber(dy)
+        want[#want + 1] = {x + w / 2, y, x + w / 2 + dx, y + dy, w = w, flat = true}
+    end
+    -- Bottom to top, which is the way the mark draws it: the bullet lands on
+    -- the baseline and climbs the vertical from there.
+    for x, y, w, dy in d:gmatch(VERTICAL) do
+        x, y, w, dy = tonumber(x), tonumber(y), tonumber(w), tonumber(dy)
+        want[#want + 1] = {x + w / 2, y + dy, x + w / 2, y, w = w, up = true}
     end
 end
-check("the icon holds the same twelve strokes", #want == 12,
-      "strokes: " .. #want)
+check("the fills hold twelve strokes", #want == 12, "strokes: " .. #want)
 
--- Drawn at the icon's own scale and center, so the two can be compared
--- outright rather than through a transform this file would have to invent.
+-- In the order the mark is drawn in: down a diagonal, then up the vertical it
+-- lands on, wedge by wedge and row by row.
+-- Sorted while still in the file's own downward y, so the top row comes
+-- first. A stroke's row is where it starts, and a vertical starts low.
+local function row_of(s) return math.min(s[2], s[4]) end
+table.sort(want, function(a, b)
+    if math.abs(row_of(a) - row_of(b)) > 1 then return row_of(a) < row_of(b) end
+    if math.abs(a[1] - b[1]) > 0.5 then return a[1] < b[1] end
+    return (a.flat and 0 or 1) < (b.flat and 0 or 1)
+end)
+
+-- Drawn at a size that makes one row of the file one row of the mark, so the
+-- two can be compared as numbers rather than through a transform this file
+-- would have to invent. The file's rows are 48 tall and MK_ROW of the mark's
+-- height is one row.
 segs = {}
+local ROW = 48
 ui.begin(layer, 512, 512, 1, false, 0)
-ui.logo(256, 256, MK, 1, true)
+ui.logo(256, 256, ROW / 0.48, 1, true)
 ui.finish()
+check("the drawn mark holds twelve strokes too", #segs == 12,
+      "strokes: " .. #segs)
 
--- The install icon keeps its gradient wakes, while the game draws the same
--- geometry in solid color.
-local faded, drawn_fade = 0, 0
-for i = 1, math.min(#want, #segs) do
-    if want[i].fade then faded = faded + 1 end
-    if segs[i].kind == "fade" then drawn_fade = drawn_fade + 1 end
-end
-check("the icon keeps six faded wakes and the game keeps them solid",
-      faded == 6 and drawn_fade == 0,
-      faded .. " in the file, " .. drawn_fade .. " drawn")
-
--- And the file draws them all at one width too.
-local widths = {}
-for wd in svg:gmatch('stroke%-width="([%d%.]+)"') do widths[#widths + 1] = wd end
-local same = #widths == 12
-for _, wd in ipairs(widths) do same = same and wd == widths[1] end
-check("at one width in the file as well", same,
-      table.concat(widths, " "))
-
--- The ordinary mark is centered in its tile with enough room for the stroke.
-local sw = tonumber(widths[1]) or 0
-local lo, hi = math.huge, -math.huge
-for _, a in ipairs(want) do
-    lo, hi = math.min(lo, a[1], a[3]), math.max(hi, a[1], a[3])
-end
--- The wake ends square across its own direction and the vertical wears a
--- square cap, so the two ends of the drawing reach different distances.
-local pad_l, pad_r = lo - sw * 0.447, 512 - (hi + sw * 0.5)
-check("the mark clears both edges of the tile", pad_l > 2 and pad_r > 2,
-      string.format("%.1f left, %.1f right", pad_l, pad_r))
-check("and is centered in it",
-      math.abs(pad_l - pad_r) < 1,
-      string.format("%.1f left, %.1f right", pad_l, pad_r))
-
--- The file reckons y downward, as SVG does. What the layer is handed has been
--- flipped into the layer's own upward y, so one of the two has to come back.
---
--- Compared after each is moved to its own origin, because only the shape is
--- shared when the mark sits beside the wordmark.
+-- The file reckons y downward, as SVG does, and the layer has already been
+-- handed the flip. Compared after each is moved to its own origin, because
+-- only the shape is shared: where the mark sits is the caller's business.
 local function moved(pts)
     local x, y = math.huge, math.huge
     for _, p in ipairs(pts) do
@@ -237,28 +319,33 @@ local function moved(pts)
     end
     local out = {}
     for i, p in ipairs(pts) do
-        out[i] = {p[1] - x, p[2] - y, p[3] - x, p[4] - y}
+        out[i] = {p[1] - x, p[2] - y, p[3] - x, p[4] - y, w = p.w}
     end
     return out
 end
+
 local from_file, from_lua = {}, {}
 for i, a in ipairs(want) do
-    from_file[i] = {a[1], 512 - a[2], a[3], 512 - a[4]}
+    from_file[i] = {a[1], -a[2], a[3], -a[4], w = a.w}
 end
 for i, sg in ipairs(segs) do
-    from_lua[i] = {sg.x1, sg.y1, sg.x2, sg.y2}
+    from_lua[i] = {sg.x1, sg.y1, sg.x2, sg.y2, w = sg.w}
 end
 from_file, from_lua = moved(from_file), moved(from_lua)
-local worst = 0
+
+local worst, worst_w = 0, 0
 for i = 1, math.min(#from_file, #from_lua) do
     for k = 1, 4 do
         worst = math.max(worst, math.abs(from_file[i][k] - from_lua[i][k]))
     end
+    worst_w = math.max(worst_w, math.abs(from_file[i].w - from_lua[i].w))
 end
--- A tenth is what the file rounds to, so anything inside a quarter of a pixel
+-- A tenth is what the file rounds to, so anything inside a quarter of a unit
 -- is the same drawing written two ways.
-check("the drawn mark matches the shipped icon", worst < 0.25,
-      string.format("worst end off by %.2f px", worst))
+check("the drawn mark matches the drawing every page carries", worst < 0.25,
+      string.format("worst end off by %.2f", worst))
+check("at the same widths, diagonals included", worst_w < 0.25,
+      string.format("worst width off by %.2f", worst_w))
 
 -- --- and it draws itself ---------------------------------------------------
 
@@ -378,9 +465,16 @@ local function lockup(w, h)
     -- test is the one beside this word, so the strokes are grouped by the
     -- width they were drawn at, which is a mark's own size, and the group that
     -- ends nearest the left of the name wins.
+    --
+    -- Grouped by the weight a mark is drawn at rather than by the number each
+    -- stroke was handed, since a diagonal is handed a wider one to come out
+    -- the same weight as the vertical it lands on. Taking that widening back
+    -- off puts all twelve of a mark's strokes in one group again.
     local by_w = {}
     for _, sg in ipairs(mark_segs()) do
-        local k = string.format("%.3f", sg.w or 0)
+        local base = sg.w or 0
+        if sg.kind == "flat" then base = base * 3.6 / 4 end
+        local k = string.format("%.3f", base)
         by_w[k] = by_w[k] or {}
         table.insert(by_w[k], sg)
     end
