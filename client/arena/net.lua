@@ -129,8 +129,8 @@ local present = nil
 -- same light and noise the events would have made.
 M.snap_deaths = {}
 M.snap_blasts = {}
--- Hits and detonations the free-run never lived through, found on the other
--- road: relived inside the rollback replay, or vanished under a snapshot.
+-- Hits the free-run never lived through, relived inside the rollback
+-- replay.
 --
 -- The replay walks the same ticks the free-run already stepped, so its
 -- events used to be discarded wholesale, and rightly, because most of them
@@ -139,10 +139,7 @@ M.snap_blasts = {}
 -- inside a rollback, since the snapshot that introduces it arrives after
 -- the free-run has passed the crossing tick: every close-range hit landed
 -- silently, no flash, no jolt, no sound, just an energy bar that dipped.
--- The `lived` ledger below is what tells a rerun from news. And a round of
--- ours the local simulation flew past a hull the server says it hit simply
--- vanishes from a snapshot, so that road queues here too, pinned to the
--- hull it plainly ended on when one is close enough to name.
+-- The `lived` ledger below is what tells a rerun from news.
 M.snap_hits = {}
 
 -- The sides this room holds, as this client is allowed to see them: the
@@ -543,20 +540,16 @@ local function capture_world()
     local flying = {}
     local tick = sim.tick()
     for i = 0, sim.weapon_count() - 1 do
-        local x, y, spec, wvx, wvy, team, life, owner, _, level =
-            sim.weapon_at(i)
+        local x, y, spec, _, _, _, life, owner, _, level = sim.weapon_at(i)
         -- The rung rides along for the one blast whose color lives on the
         -- round rather than in the spec table: a mine wears its layer's bomb
         -- rung, and a detonation reconstructed after the fact should flash in
-        -- the color the mine sat there in. The velocity rides along for the
-        -- backtrack in `harvest_world`: a round that ended on the server
-        -- kept flying here until the snapshot said so, and where it was is
-        -- not where it ended.
+        -- the color the mine sat there in.
         flying[born_key(tick, spec, life, owner)] =
-            {x = x, y = y, vx = wvx, vy = wvy, spec = spec, life = life,
-             owner = owner, team = team, level = level}
+            {x = x, y = y, spec = spec, life = life, owner = owner,
+             level = level}
     end
-    return {alive = alive, vx = vx, vy = vy, flying = flying, tick = tick}
+    return {alive = alive, vx = vx, vy = vy, flying = flying}
 end
 
 -- And what the snapshot did without saying so, against that.
@@ -592,16 +585,6 @@ local function harvest_world(before)
     -- from where the mine sat. Finding one is what tells a scatter from a
     -- detonation. The radius is generous against jitter, and the cost of a
     -- rare mismatch is one missing flash rather than a false one.
-    -- A round that vanished under this snapshot ended on the server up to a
-    -- snapshot's width before it was packed, and the local copy kept flying
-    -- the whole time the news was in transit. Walking it back down its own
-    -- course to about the middle of that window puts the light near where
-    -- the round actually died rather than where its ghost had reached,
-    -- which for a bullet at speed is the difference between a flash on the
-    -- hull and a flash in the open space beyond it. A mine has no velocity,
-    -- so the walk moves nothing it should not.
-    local back = before.tick - snap_tick + 2
-    if back < 0 then back = 0 end
     local born = nil
     for _, w in pairs(flying) do
         if w.life > 20 and sim.spec_blast(w.spec) > 0 then
@@ -627,32 +610,8 @@ local function harvest_world(before)
                 end
             end
             if not scattered then
-                w.x = w.x - w.vx * back
-                w.y = w.y - w.vy * back
                 M.snap_blasts[#M.snap_blasts + 1] = w
             end
-        elseif w.life > 20 then
-            -- A blast-less round gone mid-flight ended on something, and
-            -- the local simulation, which predicts walls exactly, was not
-            -- expecting it to: almost always a hull it flew past here and
-            -- the server says it hit. Name the hull when one stands near
-            -- the walked-back point, so the flash lands on the ship and
-            -- moves with it; without one the round died to something this
-            -- client never saw, a repel's shove usually, and a small burst
-            -- at the point is all there is to honestly draw.
-            local bx = w.x - w.vx * back
-            local by = w.y - w.vy * back
-            local hit = nil
-            for i = 0, sim.ship_count() - 1 do
-                if sim.ship_active(i) == 1 and i ~= w.owner
-                    and sim.ship_team(i) ~= w.team
-                    and math.abs(sim.ship_x(i) - bx) < 32
-                    and math.abs(sim.ship_y(i) - by) < 32 then
-                    hit = i
-                    break
-                end
-            end
-            M.snap_hits[#M.snap_hits + 1] = {ship = hit, x = bx, y = by}
         end
     end
 end

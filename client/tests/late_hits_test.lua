@@ -1,17 +1,15 @@
 -- The rollback's news reaches the drawing, and its reruns do not. This
 -- drives net.lua through snapshots whose replay relives ticks the free-run
--- already stepped, which is every rollback, and checks the three roads:
+-- already stepped, which is every rollback, and checks both roads:
 --
 --     lua5.1 client/tests/late_hits_test.lua
 --
 -- A hit the free-run already reported is not reported again, however many
 -- rollbacks relive its tick. A hit that only ever happens inside a rollback,
 -- because the round that lands it arrived in a snapshot after the free-run
--- had passed the crossing tick, queues on `snap_hits` exactly once. A blast
--- that only happens inside a rollback queues on `snap_blasts` with the
--- event's own position unpacked. And a blast-less round that vanishes under
--- a snapshot is walked back down its course and pinned to the hull standing
--- there, which is the flash a shot that really landed had been owed.
+-- had passed the crossing tick, queues on `snap_hits` exactly once. And a
+-- blast that only happens inside a rollback queues on `snap_blasts` with
+-- the event's own position unpacked.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -31,10 +29,8 @@ local tick = 1000
 -- Events the simulation reports for a tick, whichever step lives it: the
 -- free-run first, then every rollback that walks across it again.
 local events = {}
--- What a snapshot hands the world when it is applied.
+-- The tick a snapshot hands the world when it is applied.
 local apply_tick = nil
-local apply_weapons = nil
-local weapons = {}
 
 local EV_HIT, EV_EXPIRE = 3, 4
 
@@ -46,7 +42,6 @@ _G.sim = {
     step = function() tick = tick + 1 end,
     apply_snapshot = function()
         tick = apply_tick
-        weapons = apply_weapons or weapons
         return 0
     end,
     smooth_capture = function() end,
@@ -59,17 +54,9 @@ _G.sim = {
     ship_vel = function() return 0, 0 end,
     ship_x_raw = function() return 0 end,
     ship_y_raw = function() return 0 end,
-    ship_x = function(i) return i == 1 and 480 or 0 end,
-    ship_y = function(i) return i == 1 and 505 or 0 end,
-    ship_team = function(i) return i end,
-    weapon_count = function() return #weapons end,
-    weapon_at = function(i)
-        local w = weapons[i + 1]
-        return w.x, w.y, w.spec, w.vx, w.vy, w.team, w.life, w.owner, 0,
-               w.level
-    end,
+    weapon_count = function() return 0 end,
+    weapon_at = function() end,
     spec_life = function() return 100 end,
-    -- Spec 7 blasts, spec 1 is a bullet.
     spec_blast = function(spec) return spec == 7 and 40 or 0 end,
     spec_still = function() return false end,
     event_count = function() return #(events[tick] or {}) end,
@@ -157,26 +144,13 @@ check("and the next rollback does not queue it again",
 local blasts0 = #net.snap_blasts
 events[5005] = {{EV_EXPIRE, 7, 255,
                  2 * 268435456 + 100 * 16384 + 200}}
--- And a bullet of ours the snapshot deletes mid-flight: flying at capture,
--- gone after. Walked back (5005 - 5004 + 2) ticks at 5 px a tick, from 500
--- to 485, it stands beside the enemy hull at (480, 505), which names it.
-weapons = {{x = 500, y = 500, spec = 1, vx = 5, vy = 0, team = 0,
-            life = 60, owner = 0, level = 0}}
 apply_tick = 5004
-apply_weapons = {}
 snapshot(5004)
 check("a blast lived only in rollback queues",
       #net.snap_blasts == blasts0 + 1, tostring(#net.snap_blasts))
 local b = net.snap_blasts[#net.snap_blasts]
 check("with the event's own position and rung",
       b.x == 100 and b.y == 200 and b.spec == 7 and b.level == 2)
-check("a vanished bullet queues a late hit", #net.snap_hits == 2,
-      tostring(#net.snap_hits))
-local h = net.snap_hits[2]
-check("walked back down its course", h.x == 485 and h.y == 500,
-      tostring(h.x) .. "," .. tostring(h.y))
-check("and pinned to the hull standing there", h.ship == 1,
-      tostring(h.ship))
 
 if fails > 0 then os.exit(1) end
 print("all fine")

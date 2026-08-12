@@ -353,8 +353,7 @@ a lead plus a snapshot's age old. Prediction concludes no death but the
 pilot's own ([decision 40](decisions.md)), and no bomb on anybody but them
 either ([decision 43](decisions.md)): a detonation guessed against a coasting
 hull is a blast the next snapshot may take back, so bombs fly through remote
-hulls locally and their real endings arrive as snapshot state changes, drawn
-walked back down the round's course to near where it actually died. The
+hulls locally and their real endings arrive as snapshot state changes. The
 rollback replay's events are read for news rather than discarded along the
 way, because a round fired closer than the lead's worth of flight time only
 ever crosses your hull inside a rollback; before that reading, every

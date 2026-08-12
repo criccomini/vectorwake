@@ -1820,14 +1820,11 @@ baseline zero and is bit-for-bit unchanged, so the golden hashes did not
 move.
 
 The confirmed endings already had a road home. `snap_blasts` drew the blasts
-the prediction mistimed; it draws all of them now, and it stopped drawing
-them where the dead round's ghost had reached: the local copy keeps flying
-while the news is in transit, so the harvest walks it back down its own
-course to about the middle of the window it died in, which for a bomb at
-speed is the difference between a ring on the hull and a ring in the space
-beyond it.
+the prediction mistimed, and it draws all of them now, at the position the
+local copy had flown to by the time the news landed, since the round keeps
+flying here while its ending is in transit.
 
-The same pass repaired the two holes beside it, because all three were one
+The same pass repaired the hole beside it, because the two were one
 complaint from the cockpit. Events emitted inside the rollback replay were
 discarded wholesale, correctly for the reruns that most of them are, and
 wrongly for the news: a round fired closer than the lead's worth of flight
@@ -1835,22 +1832,20 @@ time only ever crosses your hull *inside* a rollback, since the snapshot
 introducing it arrives after the free-run has passed the crossing tick, so
 every close-range hit landed with no flash, no jolt and no sound. A ledger of
 what each tick already reported now tells the two apart, and the news queues
-on `snap_hits` for the same light the live event would have made. And a
-blast-less round of yours that vanishes under a snapshot, which is what your
-bullet hitting a dodging hull looks like from here, walks back the same way
-and pins its flash to the hull standing at the point, so a shot that landed
-stops reading as a shot that skipped through.
+on `snap_hits` for the same light the live event would have made.
 
 **Cost:** your bombs land their blast on remote hulls roughly a round trip
 plus up to a snapshot late, the bargain kills have made since decision 40,
 and blast and kill now arrive together instead of the blast running ahead.
-The bomb visibly overflies its victim for that beat before the ring lands.
-Splash a bomb would have dealt your own hull through a remote detonation
-waits for the snapshot too, so that sliver of energy corrects silently. The
-ledger is a table per predicted tick, purged with the input log.
+The bomb visibly overflies its victim for that beat, and the ring lands
+where the overflight had reached rather than where the round died. Splash a
+bomb would have dealt your own hull through a remote detonation waits for
+the snapshot too, so that sliver of energy corrects silently. The ledger is
+a table per predicted tick, purged with the input log.
 
-**Reconsider if:** the walked-back placement reads wrong at range, where the
-guess spreads over the snapshot window. The next lever is the zone announcing
-bomb endings the way it announces kills, spec, victim and position on the
-reliable lane, which buys exact placement pinned to the victim at a message
-rate bounded by bombs that actually land.
+**Reconsider if:** the overflown placement reads wrong at range. Walking the
+dead round back down its own course toward the snapshot's tick was tried
+first and rolled back, so the next lever is the zone announcing bomb endings
+the way it announces kills, spec, victim and position on the reliable lane,
+which buys exact placement pinned to the victim at a message rate bounded by
+bombs that actually land.
