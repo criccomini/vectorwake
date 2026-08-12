@@ -235,11 +235,42 @@ end
 
 -- A solid, constant-width segment with horizontal ends. The brand mark uses
 -- this cut so the top and bottom stay level while each diagonal is drawn.
+--
+-- Antialiased exactly the way `seg` is, and for the same reason: one alpha
+-- sample per pixel and no argument, so a hard-edged quad two pixels wide is a
+-- staircase wherever it leans. This was the one stroke in the client drawn
+-- without that treatment and the only one that leans by construction, and the
+-- mark's diagonals came out visibly thinner and rougher than the verticals
+-- they land on -- worst at the size the mark is drawn beside the name, where
+-- the stroke is about two pixels and the ramp is most of it.
+--
+-- The ramp is laid horizontally, like the width, so the ends stay flat. It is
+-- sized so that what it comes to square to the stroke is the one pixel `seg`
+-- puts there: a stroke leaning half as far across as it runs down is longer
+-- than it is tall by that ratio, and the ramp has to be stretched by the same
+-- ratio to land a pixel wide on the screen.
 function Layer:seg_flat(x1, y1, x2, y2, width, col)
-    if math.abs(x2 - x1) + math.abs(y2 - y1) < 1e-6 then return end
-    local h = width * 0.5
-    self:tri(x1 - h, y1, x2 - h, y2, x2 + h, y2, col)
-    self:tri(x1 - h, y1, x2 + h, y2, x1 + h, y1, col)
+    local dx, dy = x2 - x1, y2 - y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    -- A stroke with no fall to it has no level cut to keep, and the stretch
+    -- below has nothing to divide by.
+    if len < 1e-6 or math.abs(dy) < 1e-6 then return end
+    local px = self.px * len / math.abs(dy)
+    local w, a = width, col[4]
+    if w < px then a = a * w / px w = px end
+    local hc, ho = (w - px) * 0.5, (w + px) * 0.5
+    local c = col
+    if a ~= col[4] then
+        dimmed[1], dimmed[2], dimmed[3], dimmed[4] = col[1], col[2], col[3], a
+        c = dimmed
+    end
+    if hc > 1e-6 then
+        self:quad(x1 - hc, y1, x2 - hc, y2, x2 + hc, y2, x1 + hc, y1, c)
+    end
+    self:tri_fade(x1 + hc, y1, 1, x2 + hc, y2, 1, x2 + ho, y2, 0, c)
+    self:tri_fade(x1 + hc, y1, 1, x2 + ho, y2, 0, x1 + ho, y1, 0, c)
+    self:tri_fade(x1 - hc, y1, 1, x2 - hc, y2, 1, x2 - ho, y2, 0, c)
+    self:tri_fade(x1 - hc, y1, 1, x2 - ho, y2, 0, x1 - ho, y1, 0, c)
 end
 
 -- Unit circles, cached per segment count. Trigonometry inside a draw loop is
