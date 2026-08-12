@@ -714,7 +714,6 @@ local function on_snapshot(s)
         and not (M.watching and snap_tick - sent >= WATCH_REWIND) then
         return
     end
-    snap_tick = sent
     local body = string.sub(s, 7)
 
     -- Watching. No prediction to reconcile, no clock to steer, no inputs to
@@ -723,13 +722,14 @@ local function on_snapshot(s)
     -- already treated while flying. The subject byte is the one thing the
     -- header says that flying never needed: whose eyes these are.
     if M.watching then
-        M.subject = string.byte(s, 2)
         sim.smooth_capture()
         local before = capture_world()
         if sim.apply_snapshot(body) ~= 0 then
             lost(SNAP_UNREADABLE)
             return
         end
+        snap_tick = sent
+        M.subject = string.byte(s, 2)
         M.stats.snaps = M.stats.snaps + 1
         settling = nil
         quiet = 0
@@ -746,7 +746,6 @@ local function on_snapshot(s)
     -- tick it was stamped for.
     local acked = u32(string.byte(s, 3), string.byte(s, 4),
                       string.byte(s, 5), string.byte(s, 6))
-
     -- Raw, not what the screen is showing. This measures how far the
     -- prediction missed by, and a number that has had render smoothing folded
     -- into it measures the smoothing instead.
@@ -761,6 +760,7 @@ local function on_snapshot(s)
         lost(SNAP_UNREADABLE)
         return
     end
+    snap_tick = sent
     M.stats.snaps = M.stats.snaps + 1
     settling = nil
     quiet = 0
@@ -1256,7 +1256,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     local w = wtx()
     if wt and wt ~= "" and w and w.supported() and not wt_avoid[wt] then
         dial_wt(wt)
-        return true
+        return not M.lost
     end
     -- A malformed address throws in the dial rather than failing
     -- asynchronously, and an unhandled error in init would take the whole

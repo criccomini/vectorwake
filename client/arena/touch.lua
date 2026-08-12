@@ -295,13 +295,21 @@ function M.on_touch(action, w, h, s, claimed)
                 fired = z
             end
         elseif t.released then
-            if stick and stick.id == t.id then stick = nil end
-            if guns == t.id then guns = nil end
-            if bombs == t.id then bombs = nil end
+            M.release(t.id)
         elseif stick and stick.id == t.id then
             stick.x, stick.y = tx, ty
         end
     end
+end
+
+-- Forget one finger wherever its release was consumed. The arena handles UI
+-- presses before flight controls, so one finger can open a panel in the same
+-- batch that another leaves a pad. Passing that release through here first
+-- keeps the panel's early return from leaving the other control held.
+function M.release(id)
+    if stick and stick.id == id then stick = nil end
+    if guns == id then guns = nil end
+    if bombs == id then bombs = nil end
 end
 
 -- Lifting a finger outside the window does not always produce a release, so

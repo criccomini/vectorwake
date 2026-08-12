@@ -153,5 +153,17 @@ check("with the fan gone the cell is not there to press",
       touch.fired_multi() == false)
 touch.release_all()
 
+-- A UI press can consume a whole multitouch batch. The arena forwards releases
+-- through this narrow path first, so the pad held by another finger still lets
+-- go even when the rest of the action belongs to the panel.
+touch.has_bomb = true
+L = touch.layout(W, H, 1)
+touch.on_touch({touch = {{id = 9, pressed = true,
+                          screen_x = L.guns.x, screen_y = L.guns.y}}}, W, H, 1)
+check("a held gun reaches the buttons", has(touch.bits(0), sim.BTN_FIRE))
+touch.release(9)
+check("a release consumed by the UI still clears it",
+      not has(touch.bits(0), sim.BTN_FIRE))
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

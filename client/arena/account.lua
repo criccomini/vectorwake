@@ -36,6 +36,11 @@ local secret = ""
 -- first one has answered, and a session leaves an orphan behind it.
 local minting = false
 local signing_in = false
+-- Which secret the request in flight belongs to, and a serial that makes its
+-- reply harmless after another secret starts a newer session. A login can land
+-- while the automatic session from page load is still traveling.
+local signing_secret = nil
+local session_serial = 0
 local SAVE = sys.get_save_file("vectorwake", "account")
 -- A token is good for fifteen minutes. Refreshing at ten leaves a wide margin
 -- for a slow reply and for a player who sat in the menu.
@@ -110,11 +115,20 @@ end
 -- frame the meta-layer's address becomes known and every ten minutes after.
 -- This is also the heartbeat the guest sweeper reads: an account that has not
 -- begun a session in a week is one the server hands back to the name pool.
-local function session()
-    if signing_in then return end
+local function session(done, force)
+    -- Repeated directory replies may ask for the same missing token while its
+    -- request is already in flight. A deliberate account change is forced and
+    -- supersedes it; a different secret does so without needing the flag.
+    if signing_in and signing_secret == secret and not force then return end
+    session_serial = session_serial + 1
+    local mine = session_serial
+    local mine_secret = secret
     signing_in = true
-    post("/v1/session", {secret = secret}, function(r, err)
+    signing_secret = mine_secret
+    post("/v1/session", {secret = mine_secret}, function(r, err)
+        if mine ~= session_serial or mine_secret ~= secret then return end
         signing_in = false
+        signing_secret = nil
         if not r then
             -- A refused secret means the account behind it is gone or banned,
             -- and either way this client cannot use it again. A guest swept
@@ -128,6 +142,7 @@ local function session()
                 M.claimed = false
                 save()
             end
+            if done then done(false, M.note) end
             return
         end
         M.token = r.token or ""
@@ -137,6 +152,7 @@ local function session()
         M.note = ""
         refreshed_at = now()
         publish_account()
+        if done then done(true) end
     end)
 end
 
@@ -200,8 +216,9 @@ function M.claim(password, cb)
         -- The label a pilot wears comes from the token, so it is stale until
         -- the next session. Ask for one now rather than leaving them reading
         -- "guest" after the thing that fixes it.
-        session()
-        if cb then cb(true) end
+        session(function(ok, why)
+            if cb then cb(ok, why) end
+        end, true)
     end)
 end
 
@@ -219,8 +236,9 @@ function M.login(name, password, cb)
         M.account = r.account or 0
         M.token = ""
         save()
-        session()
-        if cb then cb(true) end
+        session(function(ok, why)
+            if cb then cb(ok, why) end
+        end, true)
     end)
 end
 

@@ -545,7 +545,10 @@ local bg_want, bgglow_want = nil, nil
 -- band below is wide enough that a layer does not thrash between two sizes on
 -- a ship flying back and forth across one wall.
 local function fit_static(layer, dropped)
-    local used = layer.n + dropped
+    -- The extension reports vertices written and shapes refused. A refused
+    -- static shape can be a six-vertex quad, so count the worst case here. The
+    -- retry is then large enough for the exact build that overflowed it.
+    local used = layer.n + dropped * 6
     local want = math.max(TUNE.STATIC_FLOOR, math.ceil(used * 1.5))
     if used > layer.cap * 0.9 or want < layer.cap * 0.55 then
         return want
@@ -876,6 +879,18 @@ end
 -- first drawn frame.
 function init(self)
     msg.post(".", "acquire_input_focus")
+    -- Browsers and mobile operating systems can take a finger or key without
+    -- delivering its release. Nothing held before that boundary is still a
+    -- deliberate input when the game gets focus back.
+    window.set_listener(function(_, event)
+        if event == window.WINDOW_EVENT_FOCUS_LOST
+            or event == window.WINDOW_EVENT_ICONFIED then
+            held = {}
+            tapped = {}
+            owner = {}
+            touch.release_all()
+        end
+    end)
     math.randomseed(1)
     -- Before anything can ask for a sound. The components start out pointed at
     -- silence and this is what puts audio behind them.
@@ -957,12 +972,13 @@ function init(self)
         -- and a snapshot carries state, not rules.
         menu.home = false
         menu.note = "joining"
-        net.connect(url, menu.class,
-                    sys.get_config_string("vectorwake.name", "pilot"),
-                    function(why)
-                        menu.note = why
-                        go_home(self, "zones")
-                    end)
+        local started = net.connect(
+            url, menu.class, sys.get_config_string("vectorwake.name", "pilot"),
+            function(why)
+                menu.note = why
+                go_home(self, "zones")
+            end)
+        if not started then return end
         self.online = true
         self.joining = 0
         return
@@ -975,30 +991,12 @@ function init(self)
     -- flying. The rail is still beside it, one press left.
     go_home(self, "zones")
 
-    -- Let go of everything when the window does.
-    --
-    -- A key released while the page is not focused produces no keyup for the
-    -- page to hear, so the press stays in `held` forever: come back to the tab
-    -- and the ship is still thrusting, or still turning, with nothing on the
-    -- keyboard down. A modifier stuck that way is worse than a stuck thrust,
-    -- because chords are resolved by reading `held` and a phantom Shift hands
-    -- every later press to the wrong binding.
-    --
-    -- Nothing else in the client claims this listener, and Defold allows one.
-    window.set_listener(function(_, event)
-        if event == window.WINDOW_EVENT_FOCUS_LOST then
-            held = {}
-            owner = {}
-            touch.release_all()
-        end
-    end)
 end
 
 function final(self)
-    msg.post(".", "release_input_focus")
-    -- The listener outlives this script otherwise, and it closes over tables
-    -- this script owns.
     window.set_listener(nil)
+    touch.release_all()
+    msg.post(".", "release_input_focus")
 end
 
 -- Whether a ship is burning its engine this frame, which is the only thing on
@@ -2152,12 +2150,14 @@ function enter_game(self, address, zone_name, wt, room, watch)
     -- The one address serves the whole join: the directory named it, and
     -- the zone's name travels with the request so an instance that has
     -- since changed game refuses rather than surprising anybody.
-    net.connect(address, menu.class, menu.name, function(why)
+    local started = net.connect(address, menu.class, menu.name, function(why)
         menu.note = why
         go_home(self, "zones")
     end, zone_name, watch, wt, room)
+    if not started then return false end
     self.online = true
     self.joining = 0
+    return true
 end
 
 -- May this pilot spend a hull, right now?
@@ -2647,7 +2647,14 @@ function on_input(self, action_id, action)
         -- Every touch that went down this frame, not just whichever one the
         -- engine decided was primary: on a phone the finger that reaches the
         -- button is often the second one down.
-        if action.touch then touch.note_used() end
+        if action.touch then
+            touch.note_used()
+            -- UI presses below may consume the whole action. Release every
+            -- other finger first so a pad cannot remain held behind that return.
+            for _, t in ipairs(action.touch) do
+                if t.released then touch.release(t.id) end
+            end
+        end
 
         -- Whichever list is up, dragged. It could only ever be scrolled by a
         -- wheel, and a phone has no wheel, so on glass the list simply stopped
