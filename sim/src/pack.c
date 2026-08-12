@@ -173,9 +173,27 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w32(&w, (uint32_t)p->vx);
         w32(&w, (uint32_t)p->vy);
         w16(&w, p->life);
-        w8(&w, p->fuse_target);
-        w16(&w, p->fuse);
-        w32(&w, (uint32_t)p->near);
+        /* A proximity fuse that has latched a seat this viewer is not being
+         * sent travels unarmed.
+         *
+         * It has to, and finding out why is the one sharp edge in filtering
+         * ships. The fuse holds a ship index, and `sim_step` reads
+         * `next->ships[fuse_target]` and ends the round the moment that seat
+         * is inactive. An absent seat is a zeroed seat, so a client would
+         * detonate the bomb immediately while the server flew it on: a
+         * phantom explosion at the edge of the view, every time a round
+         * inside the radius latched somebody just outside it.
+         *
+         * Unarmed is the honest thing to say rather than a workaround. The
+         * client is being told it does not know what this round is tracking,
+         * which is true, and the fuse is the server's to resolve anyway. It
+         * costs the client nothing: an unarmed round flies straight, and the
+         * next snapshot is fifty milliseconds away. */
+        int blind = p->fuse_target != 255
+                    && (p->fuse_target >= s->ship_count || !here[p->fuse_target]);
+        w8(&w, blind ? 255 : p->fuse_target);
+        w16(&w, blind ? 0 : p->fuse);
+        w32(&w, blind ? 0 : (uint32_t)p->near);
         w8(&w, p->level);
         w8(&w, p->shrap_level);
         w8(&w, p->shrap_bounce);

@@ -3454,6 +3454,18 @@ int main(void) {
             }
             CHECK(ship_near > 0 && ship_far > 0, "the seats straddle the radius");
 
+            /* A round whose fuse latched a seat outside the radius travels
+             * unarmed. Without this the client reads the fuse against a seat
+             * it was not sent, finds it inactive, and detonates a bomb the
+             * server is still flying: an explosion at the edge of the view
+             * that never happened. */
+            for (uint16_t i = 0; i < cut.weapon_count; i++) {
+                uint8_t ft = cut.weapons[i].fuse_target;
+                if (ft == 255) continue;
+                CHECK(ft < cut.ship_count && cut.ships[ft].active,
+                      "an armed fuse names a seat that was sent");
+            }
+
             int wnear = 0;
             for (uint16_t i = 0; i < s.weapon_count; i++) {
                 int64_t dx = (int64_t)s.weapons[i].x - cx;

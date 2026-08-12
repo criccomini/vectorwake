@@ -262,6 +262,16 @@ and it is the honest shape of this: a pilot in a quiet corner is at the target,
 a pilot in the middle of the room's one big fight is twice it, because
 everything the cull removes is by definition somewhere you are not.
 
+One sharp edge came out of filtering ships, and it is worth writing down
+because nothing about it is obvious. A proximity fuse latches a ship index, and
+`sim_step` reads that seat and ends the round the moment it is inactive. An
+absent seat is a zeroed seat, so a round inside the radius that had latched
+somebody just outside it detonated on the client while the server flew it on:
+a phantom explosion at the edge of the view. Such a round now travels unarmed,
+which is the honest statement rather than a workaround, since the client is
+being told it does not know what the round is tracking and the fuse was always
+the server's to resolve.
+
 One operator-facing number had to change with it. `bw/seat` divided the whole
 process's snapshot bytes by every seat, and a room seats fifty-one house bots
 against a handful of people. Those bots are on loopback and are sent the whole
