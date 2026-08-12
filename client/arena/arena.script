@@ -764,8 +764,44 @@ end
 
 -- One predicted tick. The server owns the arena, so this sends buttons and
 -- replays its own ship; nothing else in the world is stepped here.
+-- Whether the mine input was down on the previous step, so a held chord asks
+-- once rather than a hundred times a second.
+local mine_was_down = false
+
+-- Why nothing happened when you asked for a mine.
+--
+-- The core simply refuses: a trigger that costs a bar for nothing is worse
+-- than one that does nothing, so a mine over the ceiling is not fired and not
+-- charged for. That is right and it is silent, and silence on a keypress reads
+-- as a dropped input rather than as a rule. On a phone the rail says it -- the
+-- cell's pips are the room left, and none lit is a full field -- but there are
+-- no pips on a keyboard.
+--
+-- Asked here rather than reported by the core, because the client already
+-- holds both numbers to draw those pips with and a refusal is not simulation
+-- state: nothing about the world changed, so there is nothing to put in a
+-- snapshot and nobody else to tell.
+--
+-- Only the ceiling gets a line. A mine refused for want of energy, inside a
+-- safe zone, or on a hull with no rack is a refusal a player can already see
+-- the cause of; being full is the one that is invisible.
+local function mine_refused(b)
+    local down = has(b, sim.BTN_MINE)
+    local edge = down and not mine_was_down
+    mine_was_down = down
+    if not edge or net.watching or not net.connected then return end
+    local seat = net.me
+    if sim.ship_alive(seat) ~= 1 then return end
+    local cap = sim.mine_max(seat)
+    if cap > 0 and sim.mines_out(seat) >= cap then
+        notify("no room for another mine", pal.BOMB, true)
+    end
+end
+
 local function step_once()
-    if net.step(my_buttons()) then drain_events() end
+    local b = my_buttons()
+    mine_refused(b)
+    if net.step(b) then drain_events() end
     -- The safe-zone clock, on the tick rather than the frame, because the room
     -- counts ticks and a frame is not one. A watcher has no hull to be in one,
     -- and a dead pilot is not sitting anywhere: both reset, which is what the

@@ -146,6 +146,22 @@ check("a green you flew through is", shown("+ BOMB") ~= nil)
 frame(844, 390, {MY_KILL})
 check("and so is a kill you made", shown("you killed other") ~= nil)
 
+-- A refusal, which is the one line here that reports something *not*
+-- happening. It is a bare string rather than a table of named parts, because
+-- nobody is named in it -- the same shape a green's line takes -- and it has
+-- to survive the same filter: told on a phone, where the mine cell's pips
+-- would otherwise be the only sign, and told to the pilot who pressed the key
+-- rather than to the room.
+local FULL = {text = "no room for another mine", col = pal.BOMB, t = 0,
+              mine = true}
+frame(844, 390, {FULL})
+check("being told your minefield is full reaches a phone",
+      shown("no room for another mine") ~= nil)
+
+frame(844, 390, {{text = "no room for another mine", col = pal.BOMB, t = 0}})
+check("and the same words about somebody else would not",
+      shown("no room for another mine") == nil)
+
 -- --- one at a time ---------------------------------------------------------
 
 -- Newest first, the way the arena inserts them. Two of yours means the newer
