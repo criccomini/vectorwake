@@ -73,42 +73,38 @@ friction = 12
 # read the card the wait carries.
 respawn_delay = 400
 
-# Where a ship comes back: not the map's spawn tiles, but a square in the
-# middle of the map, which is what the original did before it had spawn points.
+# Where a ship comes back: on the map's own spawn points, but not exactly on
+# them. Each arrival lands on a random tile within this many of the point it
+# drew, and it draws a fresh one on every death.
 #
-# The number is not the original's, and the first attempt at this took the
-# original's and was unplayable. `Misc:WarpRadiusLimit=20` in the reference
-# server's settings clamps a formula that would otherwise have asked for 266 and
-# up, so a stock zone dropped everyone into a 37-tile square at the center. Ours
-# is a radius rather than a width, which made it 18, and 18 killed people as
-# they arrived.
+# Exactly on the point is the wrong answer here even though the points are
+# right. Alpha holds 64 seats with four in five bot-filled, so a live room is
+# about 51 ships against 16 points on this map: three pilots to a tile, arriving
+# on top of each other with nothing between them. The radius is what turns a
+# point into a place.
 #
-# It does not transfer because this room is denser than anything that clamp was
-# written for. Alpha holds 64 seats and the bot server keeps four in five warm,
-# so a live room is about 51 ships, all of them hostile to each other across ten
-# teams. Measured over 300 draws of 51 ships on this map, against a bullet that
-# crosses 12.5 tiles a second and reaches 69:
+# Sized by the crowd it has to spread, measured as seconds of bullet flight to
+# the nearest enemy. Over 300 draws of 51 ships on this map, against a bullet
+# that crosses 12.5 tiles a second:
 #
 #     radius   nearest enemy   as bullet flight
-#         18      2.7 tiles           0.2 s
-#         60      8.8                 0.7
-#        150     22.5                 1.8
-#        250     37.3                 3.0
-#        389     58.1                 4.6
+#          0      0.0 tiles           0.0 s
+#         15     11.3                 0.9
+#         30     22.3                 1.8
+#         60     40.1                 3.2
+#        100     55.1                 4.4
 #
-# 250 is where a fresh pilot gets about three seconds before anything already
-# in the air can reach them, which is a moment to pick a direction. 389 is what
-# the original's own formula asks for at 51 players once the clamp is off, and
-# it buys another 1.6 seconds for a mean flight home of 16.7 s against 12.1 s,
-# which is back to what the spawn tiles cost and the reason this zone stopped
-# using them.
+# 60 gives a fresh pilot about three seconds before anything already in the air
+# can reach them, which is a moment to pick a direction. It is also how far
+# radar reaches, so an arrival appears at the edge of what somebody sitting on
+# the point can see rather than in the middle of it.
 #
-# No radius makes an arrival safe here. A bullet reaches 69 tiles and the widest
-# box that still counts as a spawn area leaves the mean under that, so the
-# nearest enemy is always nominally in range; what a radius buys is the seconds
-# before that matters. The other levers, if this is still too hot, are
-# `spawn_prizes` and `respawn_delay`.
-spawn_radius = 250
+# This zone spent a day spawning everybody around the center of the map instead,
+# with the points ignored. It came off: a single landing zone is one place for
+# ten mutually hostile teams to meet, and the map stops having ends worth
+# holding. The other levers, if arrivals are still too hot, are `spawn_prizes`
+# and `respawn_delay`.
+spawn_radius = 60
 
 # A minute in a safe zone and the room takes the seat back. Nothing can reach a
 # ship in a safe zone and it cannot shoot out of one, so parking there is a seat

@@ -439,16 +439,16 @@ int SafeLimit(lua_State* L) {
     return 1;
 }
 
-// Whether to mark the map's spawn tiles, as one answer rather than two
-// settings the drawing has to combine.
+// Whether to mark the map's spawn tiles.
 //
-// A radius means nobody arrives on those tiles, so a mark on one is wrong
-// rather than merely unwanted, and no zone setting should be able to ask for
-// it. That is why the radius is folded in here instead of being handed to the
-// drawing beside `show_spawns`: a caller that reads two numbers is a caller
-// that can read one of them and forget the other.
+// This used to fold `spawn_radius` in and refuse the mark whenever a zone set
+// one, because a radius then meant "ignore the tiles and scatter about the
+// middle" and a mark on a tile nobody arrived at was a lie. A radius is now
+// how precisely a ship lands on the tile, so the tile is still the answer to
+// where somebody is about to appear and the mark is still true. What it is no
+// longer is exact, which is the honest reading of a mark on a map anyway.
 int ShowSpawns(lua_State* L) {
-    lua_pushboolean(L, g_cfg.show_spawns && g_cfg.spawn_radius == 0);
+    lua_pushboolean(L, g_cfg.show_spawns);
     return 1;
 }
 

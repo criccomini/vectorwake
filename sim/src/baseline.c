@@ -255,12 +255,10 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     /* Spawn on the map's own tiles. Every map we ship carries them, and a
      * baseline that scattered ships round the middle instead would be the
      * baseline overruling the map. A zone that wants the scatter sets a
-     * radius, sized against the crowd that will share it. The original's own
-     * works out at 18, because `WarpRadiusLimit=20` in the settings its
-     * reference server ships clamps a formula that would have asked for 266,
-     * and 18 was unplayable in a room of 51: two and a half tiles to the
-     * nearest enemy, a fifth of a second of bullet flight, dead on arrival.
-     * Alpha runs 250 for about three seconds of it. */
+     * radius, which spreads arrivals around the point rather than moving
+     * them off it. Size it against the crowd that will share it, measured as
+     * seconds of bullet flight to the nearest enemy: Alpha runs 60 for a bit
+     * over three seconds at the 51 ships one of its rooms holds. */
     cfg->spawn_radius = 0;
     /* And a client marks those tiles, because a pilot who cannot see where
      * they are about to arrive cannot decide anything about it. */

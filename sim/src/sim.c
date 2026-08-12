@@ -336,41 +336,47 @@ static int32_t tile_mid(int32_t t) {
     return t * SIM_TILE_PX * 256 + SIM_TILE_PX * 128;
 }
 
-/* Where a ship of this team goes now. See `spawn_radius` in the header for
- * which of the two arrangements a zone is asking for and why.
+/* Where a ship of this team goes now: on the map's own spawn point for this
+ * team, or somewhere within `spawn_radius` tiles of it. See the header for
+ * what a zone is choosing between.
+ *
+ * The point comes first and the radius is applied to it, which is the whole
+ * shape of this. An earlier version made the radius mean "ignore the tiles and
+ * scatter about the middle of the map", and that is a different game: it
+ * throws every side into one place and the map stops having ends. Here the
+ * map still says where a side belongs and the radius only says how precisely
+ * a ship lands there.
  *
  * The scatter is a square rather than a disc, and that is inherited on
  * purpose: the original's was a square too, in spite of its own configuration
  * help calling it a circle, and rejecting the corners costs a multiply per
  * candidate to buy something no pilot can tell is there.
  *
- * Sixteen tries at open ground, then the center tile whatever is on it. The
- * original took a hundred, but ours is a map that is ninety-seven per cent
- * open, so a draw that fails sixteen times is a radius sitting on a structure
- * rather than a run of bad luck, and a hundred tries would not fix it either.
+ * Sixteen tries at open ground, then the spawn point itself. The original took
+ * a hundred; ours is a map that is ninety-seven per cent open and whose spawn
+ * points are placed with thirteen tiles of clear ground around them, so a draw
+ * that fails sixteen times is a radius reaching into a structure rather than a
+ * run of bad luck, and the point it falls back to is the one tile here that is
+ * guaranteed to be clear.
  *
- * `nth` walks the tiles on the tile path and is ignored on the other. Rolling
- * for randomness is the caller's job there, because the room wants the next
- * tile rather than a random one: an arrival that draws is an arrival that can
- * draw the tile the last one got, and the point of walking them is that eight
- * pilots entering together do not stack. */
+ * `nth` chooses the point, on both paths. The room passes a counter so
+ * arrivals walk the tiles rather than stacking; a respawn passes a roll, so a
+ * death sends you to a different one. */
 static void pick_spawn(const sim_settings *cfg, uint32_t *rng, uint32_t tick,
                        uint8_t team, uint8_t cls, uint32_t nth,
                        int32_t *x, int32_t *y) {
-    const int32_t mid = SIM_MAP_TILES / 2;
+    /* A map naming no starts at all falls back to the middle, which is a poor
+     * answer and a loud one. That beats scattering ships through whatever the
+     * map happens to have at the origin, and with a radius set it is also the
+     * arrangement the original had before it had spawn points: everybody
+     * around the center. */
+    int32_t cx = SIM_MAP_TILES / 2, cy = SIM_MAP_TILES / 2;
+    uint16_t mx = 0, my = 0;
+    if (sim_map_spawn(cfg->map, team, nth, &mx, &my)) { cx = mx; cy = my; }
 
     if (cfg->spawn_radius == 0) {
-        uint16_t tx = 0, ty = 0;
-        if (!sim_map_spawn(cfg->map, team, nth, &tx, &ty)) {
-            /* A map naming no starts at all, with no radius set to stand in
-             * for them. The center is a poor answer and a loud one, which
-             * beats scattering ships through whatever the map has at the
-             * origin. */
-            *x = *y = tile_mid(mid);
-            return;
-        }
-        *x = tile_mid(tx);
-        *y = tile_mid(ty);
+        *x = tile_mid(cx);
+        *y = tile_mid(cy);
         return;
     }
 
@@ -386,13 +392,13 @@ static void pick_spawn(const sim_settings *cfg, uint32_t *rng, uint32_t tick,
     uint32_t span = (uint32_t)r * 2u + 1u;
     for (int n = 0; n < 16; n++) {
         *rng = xorshift32(*rng);
-        int32_t tx = mid + (int32_t)((*rng >> 8) % span) - r;
+        int32_t tx = cx + (int32_t)((*rng >> 8) % span) - r;
         *rng = xorshift32(*rng);
-        int32_t ty = mid + (int32_t)((*rng >> 8) % span) - r;
-        /* A radius wider than the map is legal and means "anywhere", the way
-         * the original's 1024 did. Clamped inside the border the index paints
-         * rather than rejected, so a wide radius still fills the map instead
-         * of throwing away every draw that lands past the edge. */
+        int32_t ty = cy + (int32_t)((*rng >> 8) % span) - r;
+        /* A radius that reaches past the edge is legal, the way the original's
+         * 1024 was. Clamped inside the border the index paints rather than
+         * rejected, so a point near a corner still spreads instead of throwing
+         * away every draw that lands outside. */
         if (tx < 1) tx = 1; else if (tx > SIM_MAP_TILES - 2) tx = SIM_MAP_TILES - 2;
         if (ty < 1) ty = 1; else if (ty > SIM_MAP_TILES - 2) ty = SIM_MAP_TILES - 2;
         int32_t px = tile_mid(tx), py = tile_mid(ty);
@@ -402,7 +408,8 @@ static void pick_spawn(const sim_settings *cfg, uint32_t *rng, uint32_t tick,
             return;
         }
     }
-    *x = *y = tile_mid(mid);
+    *x = tile_mid(cx);
+    *y = tile_mid(cy);
 }
 
 void sim_spawn_point(sim_state *s, const sim_settings *cfg, uint8_t team,

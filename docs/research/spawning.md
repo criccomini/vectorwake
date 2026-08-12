@@ -227,14 +227,21 @@ the room, and only a team change redraws it. Subspace redraws on every respawn.
 The one other thing that picks a spawn tile at random is a wormhole, which drops
 you on one without touching where your next death will put you.
 
-One thing the original's numbers do not carry across, learned by shipping
-them. Alpha took the 18 that falls out of `WarpRadiusLimit=20` and pilots died
-as they arrived, because a room here is about 51 ships across ten mutually
-hostile teams and 18 puts the nearest of them two and a half tiles away, a
-fifth of a second of bullet flight. The clamp was written for rooms that were
-not this dense. What transfers is the arrangement, not the radius, and the
-measure to size it against is seconds of bullet flight to the nearest enemy
-rather than tiles.
+We took the radius and put it somewhere else, which is worth recording because
+copying the original's arrangement wholesale was tried first and came off in a
+day. `spawn_radius` here scatters a ship around the point the map named for its
+side, rather than around the center of the map with the points ignored. The
+original could not have done that: it had no points until Continuum 0.38, and
+by then the fallback was the thing nobody was configuring.
+
+The two numbers that came out of trying it the original's way are worth keeping
+too. Alpha took the 18 that falls out of `WarpRadiusLimit=20` and pilots died as
+they arrived, because a room here is about 51 ships across ten mutually hostile
+teams and 18 puts the nearest of them two and a half tiles away, a fifth of a
+second of bullet flight. Widening it to 250 fixed that and broke something
+else: one landing zone for ten sides is a map with no ends worth holding. So
+the measure to size a radius against is seconds of bullet flight to the nearest
+enemy, and the place to apply it is the map's own points.
 
 Where our maps' spawn tiles come from, and why there are eight a side, is in
 [map-measurements.md](map-measurements.md) under "The spawns are not the

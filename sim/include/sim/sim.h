@@ -495,26 +495,27 @@ typedef struct {
     int32_t bounce;   /* restitution on the axis that hit, out of 16 */
     int32_t friction; /* retained speed along the wall, out of 16 */
     uint16_t respawn_delay; /* ticks dead before respawn */
-    /* Where a ship comes back, as one number rather than a mode.
+    /* How precisely a ship lands on the map's spawn point for its side.
      *
-     * Zero uses the map's own spawn tiles. That is what a map drawn with two
-     * home ends wants: `sim_map_spawn` walks them, a roster spreads across
-     * them, and a side forms up before it flies anywhere.
+     * Zero puts it exactly on the tile, which stacks a roster: the point is
+     * one tile, and at a room's worth of ships several arrive on the same one
+     * with nothing between them. Above zero the ship lands on a random tile
+     * within this many of the point instead, redrawn on every death.
      *
-     * Above zero the tiles are ignored and a ship lands on a random tile
-     * within this many of the map's center, which is the arrangement the
-     * original had before it had spawn points at all. It buys one thing:
-     * everybody is the same distance from the middle. Our own generator
-     * scatters a team's starts across nearly half the map, so under tiles two
-     * pilots on one side can be twenty seconds apart on the way back to a
-     * fight. It costs the obvious thing: one landing zone is one place to
-     * be shot at, and how badly depends on how many ships share the box rather
-     * than on anything about the map. Tune it by seconds of bullet flight to
-     * the nearest enemy, not by the radius. The original's own number works
-     * out at 18, and at the 51 ships one of our rooms holds that leaves two
-     * and a half tiles, a fifth of a second, and pilots died as they arrived;
-     * a couple of hundred tiles buys the three seconds it takes to pick a
-     * direction. */
+     * The point is chosen first and this is applied to it, which is the shape
+     * worth holding on to. A radius that meant "ignore the tiles and scatter
+     * about the middle of the map" was tried and is a different game: every
+     * side lands in one place and the map stops having ends. Here the map
+     * still says where a side belongs.
+     *
+     * Size it by seconds of bullet flight to the nearest enemy rather than by
+     * tiles, because what it is really spreading is a crowd. At the 51 ships
+     * one of our rooms holds, a radius of 15 leaves 11 tiles and under a
+     * second, 30 leaves 22 tiles, and 60 leaves 40 tiles and a bit over three
+     * seconds, which is long enough to pick a direction. A map that names no
+     * spawn points at all has nothing to aim at, and there the radius falls
+     * back to scattering about the center, which is what the original did
+     * before it had spawn points. */
     uint16_t spawn_radius;
     /* Whether a client marks the map's spawn tiles. Render only: nothing in
      * this core reads it, and it travels here so the room and the client read

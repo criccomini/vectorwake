@@ -34,7 +34,7 @@
 <meta name="theme-color" content="#05070c">
 <meta name="description" content="Operator panel for a vectorwake deployment.">
 <title>vectorwake admin</title>
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.svg" type="image/svg+xml" sizes="any">
 <link rel="preload" href="mono.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="admin.css">
 </head>
@@ -45,12 +45,10 @@
 
 <header class="bar">
   <h1>
-    <!-- The same hull the favicon draws, and the same four-point outline the
-         client puts on the field. Inline so it takes the ink color and needs
-         no second request. -->
-    <svg class="mark" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true" focusable="false">
-      <path d="M16 4 L27 28 L16 21 L5 28 Z" fill="none" stroke="currentColor"
-            stroke-width="2.5" stroke-linejoin="round"/>
+    <svg class="mark" viewBox="0 0 84 104" width="18" height="22" aria-hidden="true" focusable="false">
+      <path class="mark-amber" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+      <path class="mark-muted" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+      <path class="mark-cyan" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
     </svg>
     vectorwake <span class="dim">admin</span>
   </h1>

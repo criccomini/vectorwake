@@ -91,7 +91,7 @@ function layer:fan(pts)
     shapes[#shapes + 1] = o
 end
 for _, n in ipairs({"flush", "frame", "halo", "reset", "ring",
-                    "ring_fade", "seg_fade", "skirt", "tri",
+                    "ring_fade", "seg_fade", "seg_flat", "skirt", "tri",
                     "tri_fade"}) do
     layer[n] = function() end
 end

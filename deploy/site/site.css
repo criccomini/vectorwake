@@ -17,6 +17,7 @@
   --dim: #7c8da6;
   --friend: #4fd6ff;
   --enemy: #ffa552;
+  --mark-muted: #3f4b60;
   --bomb: #ff5ea8;
   --line: #1d2838;
   --deep-line: #101722;
@@ -109,26 +110,32 @@ button {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 11px;
+  gap: 9px;
   font-family: var(--display);
   font-size: 18px;
   letter-spacing: 0.01em;
 }
 
 .brand-mark {
-  width: 27px;
+  width: 18px;
   height: 22px;
   overflow: visible;
-  fill: none;
-  stroke-width: 3.6;
-  stroke-linecap: square;
+  stroke-width: 0.6;
+  stroke-linejoin: miter;
 }
 
 .mark-amber {
+  fill: var(--enemy);
   stroke: var(--enemy);
 }
 
+.mark-muted {
+  fill: var(--mark-muted);
+  stroke: var(--mark-muted);
+}
+
 .mark-cyan {
+  fill: var(--friend);
   stroke: var(--friend);
 }
 

@@ -29,6 +29,7 @@ local layer = {n = 0, rects = {}}
 local function noop(self) self.n = self.n + 1 end
 for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline",
                        "quad", "reset", "ring", "seg", "seg_fade",
+                       "seg_flat",
                        "skirt", "tri", "tri_fade"}) do
     layer[name] = noop
 end
