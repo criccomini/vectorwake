@@ -31,19 +31,32 @@ local sfx = require("arena.sfx")
 local ui = require("arena.ui")
 local vec = require("render.vec")
 
-local TICK_HZ = 100
-local DT = 1 / TICK_HZ
-local MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
-local DETAIL_R2 = world.DETAIL_RANGE * world.DETAIL_RANGE
+-- Every tuned number in this file, on one table rather than on fifteen locals.
+--
+-- LuaJIT allows a function sixty upvalues, and `update` is one frame of a game:
+-- it reaches the modules above, the state below, and a constant wherever a
+-- constant is wanted. Counted individually those came to sixty-six and the
+-- bundle stopped compiling, with an error naming a line nine hundred lines from
+-- anything to do with the cause. A table is one upvalue however much it holds,
+-- so the ceiling stops being something a new constant can walk into.
+--
+-- Each number is still declared where it is explained, beside the code that
+-- reads it. This is only the namespace they share.
+local TUNE = {}
+
+TUNE.TICK_HZ = 100
+TUNE.DT = 1 / TUNE.TICK_HZ
+TUNE.MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
+TUNE.DETAIL_R2 = world.DETAIL_RANGE * world.DETAIL_RANGE
 
 -- The drawn cursor holds for this long after the mouse stops, then fades out
 -- over the second span. Long enough that a read of the scoreboard does not
 -- lose the pointer mid-thought, short enough that a keyboard flight is not
 -- flown around an arrow parked in the middle of the screen.
-local CURSOR_HOLD = 2.0
-local CURSOR_FADE = 0.5
+TUNE.CURSOR_HOLD = 2.0
+TUNE.CURSOR_FADE = 0.5
 
-local CLASS_NAMES = {"Apex", "Wedge", "Chord", "Anvil",
+TUNE.CLASS_NAMES = {"Apex", "Wedge", "Chord", "Anvil",
                      "Cipher", "Facet", "Lattice"}
 
 local held = {}
@@ -176,10 +189,10 @@ local layers = nil
 -- player can plainly see over. Rebuilding does not close it, because the
 -- window is recentered rather than widened, which is why it reads as a gap
 -- that follows you.
-local STATIC_STEP = 16
+TUNE.STATIC_STEP = 16
 -- What a 1280-wide window needs, and the floor: a window smaller than this
 -- gains nothing from meshing less, and the home screen has no viewport yet.
-local STATIC_MIN = 56
+TUNE.STATIC_MIN = 56
 -- A ceiling on one rebuild, in tiles either side. The window is meshed whole
 -- and held whole, so its cost is the square of this: 137 is a 3840-wide
 -- drawable with its rebuild margin intact, and asks about 22 MB of the two
@@ -188,17 +201,19 @@ local STATIC_MIN = 56
 -- wall display. Note this is CSS pixels rather than device ones: a dense
 -- display folds its density into the zoom, so a retina laptop sees the same
 -- amount of world as a plain one and asks for the same window.
-local STATIC_MAX = 137
-local static_half = STATIC_MIN
+TUNE.STATIC_MAX = 137
+local static_half = TUNE.STATIC_MIN
 -- What a static layer starts at before any build has said what it needs, and
 -- the floor it is never taken below. The window is meshed rarely and drawn
 -- always, so what a capacity really costs is a per-frame one: the mesh
 -- component submits the whole buffer every frame, degenerate or not, and a
 -- capacity chosen for the densest tile of the map is paid for over the empty
 -- ones too. So these are a starting guess and `fit_static` below moves them.
-local STATIC_SEED = 16384
-local STATIC_FLOOR = 8192
-local static_tx, static_ty = nil, nil
+TUNE.STATIC_SEED = 16384
+TUNE.STATIC_FLOOR = 8192
+-- Where the static field was last rebuilt. A table for the reason TUNE is
+-- one: a pair of bare locals is a pair of upvalues in `update`.
+local static = {tx = nil, ty = nil}
 -- Forward declared: leaving a zone is reached both from a menu row and from a
 -- socket that dropped, and one of those runs above the place that knows what
 -- a menu action means.
@@ -516,7 +531,7 @@ local bg_want, bgglow_want = nil, nil
 -- a ship flying back and forth across one wall.
 local function fit_static(layer, dropped)
     local used = layer.n + dropped
-    local want = math.max(STATIC_FLOOR, math.ceil(used * 1.5))
+    local want = math.max(TUNE.STATIC_FLOOR, math.ceil(used * 1.5))
     if used > layer.cap * 0.9 or want < layer.cap * 0.55 then
         return want
     end
@@ -535,7 +550,7 @@ local function rebuild_static(tx, ty)
             tx, ty = 512, 512
         end
     end
-    static_tx, static_ty = tx, ty
+    static.tx, static.ty = tx, ty
     -- Spawns and goals are drawn in the color of whoever owns them, and the
     -- terrain is built long before the frame that draws a ship, so the team
     -- goes in here rather than being passed down every call.
@@ -571,7 +586,7 @@ local function clear_static()
     layers.bg:flush()
     layers.bgglow:reset()
     layers.bgglow:flush()
-    static_tx, static_ty = nil, nil
+    static.tx, static.ty = nil, nil
 end
 
 -- Back to the menu with nothing behind it.
@@ -847,8 +862,8 @@ function init(self)
         -- see fit_static. They used to be fixed at 32768 and 98304, chosen for
         -- the densest window of the densest map and paid for over every empty
         -- one.
-        bg = vec.layer("#bg", STATIC_SEED),
-        bgglow = vec.layer("#bgglow", STATIC_SEED),
+        bg = vec.layer("#bg", TUNE.STATIC_SEED),
+        bgglow = vec.layer("#bgglow", TUNE.STATIC_SEED),
         -- These three go up every frame, whole, however little of them is
         -- used, so the headroom is bandwidth spent on nothing, and these are
         -- sized against what a heavy frame actually measures (fill 2.8k, glow
@@ -959,15 +974,15 @@ end
 --
 -- Purely visual, per decision 5: nothing here touches the simulation, and a
 -- rolled hull's collision radius is whatever the core says it is.
-local TAU = 2 * math.pi
-local FULL_TURN = 3.0        -- rad/s of turn that earns the whole bank;
+TUNE.TAU = 2 * math.pi
+TUNE.FULL_TURN = 3.0        -- rad/s of turn that earns the whole bank;
                              -- an unupgraded hull turns at about pi
 -- Radians of roll at that rate. Fifty-four degrees, so a hull holding a turn
 -- draws at 58% of its width against the 75% it did: the first pass was a lean
 -- you had to be told about. Past about sixty the wings foreshorten faster than
 -- the eye reads them as wings and the class stops being legible from its
 -- silhouette, which identity.md puts above any of this.
-local MAX_BANK = 0.95
+TUNE.MAX_BANK = 0.95
 
 local function ship_roll(i, heading, dt)
     local s = rolls[i]
@@ -985,11 +1000,11 @@ local function ship_roll(i, heading, dt)
         s.v = 0
         return 0
     end
-    local rate = dh / 65536 * TAU / dt
+    local rate = dh / 65536 * TUNE.TAU / dt
     s.v = s.v + (rate - s.v) * (1 - math.exp(-dt / 0.11))
-    local k = s.v / FULL_TURN
+    local k = s.v / TUNE.FULL_TURN
     if k > 1 then k = 1 elseif k < -1 then k = -1 end
-    return k * MAX_BANK
+    return k * TUNE.MAX_BANK
 end
 
 function update(self, dt)
@@ -1079,7 +1094,7 @@ function update(self, dt)
     if self.online then
         accum = accum + math.min(dt, 0.25)
         local steps = 0
-        while accum >= DT and steps < MAX_CATCHUP do
+        while accum >= TUNE.DT and steps < TUNE.MAX_CATCHUP do
             -- Read once, before anything asks for the buttons, and cleared
             -- after the step that spends it.
             charge_tap = touch.fired_charge() or key_charge
@@ -1095,10 +1110,10 @@ function update(self, dt)
             charge_tap = nil
             multi_tap = false
             mine_tap = false
-            accum = accum - DT
+            accum = accum - TUNE.DT
             steps = steps + 1
         end
-        if steps == MAX_CATCHUP then accum = 0 end
+        if steps == TUNE.MAX_CATCHUP then accum = 0 end
     else
         accum = 0
     end
@@ -1469,7 +1484,7 @@ function update(self, dt)
     -- Set even when there is no game: the menu's drifting starfield does not
     -- ask the core for anything, but a stale alpha left over from the last
     -- arena would be waiting for the next one.
-    sim.render_alpha(accum / DT)
+    sim.render_alpha(accum / TUNE.DT)
     if live then sim.smooth_decay(dt) end
     local cx, cy
     if live then
@@ -1490,8 +1505,8 @@ function update(self, dt)
         -- so the window is rebuilt once the camera has walked far enough that
         -- its edge is getting close to the screen.
         local ctx, cty = math.floor(cx / 16), math.floor(cy / 16)
-        if not static_tx or math.abs(ctx - static_tx) >= STATIC_STEP
-           or math.abs(cty - static_ty) >= STATIC_STEP then
+        if not static.tx or math.abs(ctx - static.tx) >= TUNE.STATIC_STEP
+           or math.abs(cty - static.ty) >= TUNE.STATIC_STEP then
             rebuild_static(ctx, cty)
         end
     else
@@ -1584,7 +1599,7 @@ function update(self, dt)
             rebuild_static()
         end
 
-        local t = sim.tick() / TICK_HZ
+        local t = sim.tick() / TUNE.TICK_HZ
         local my_team = eye_team()
         local mine_buttons = my_buttons()
 
@@ -1667,7 +1682,7 @@ function update(self, dt)
                 world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
                            sim.ship_y(i), hdg, col, {
                     mine = i == me,
-                    far = dx * dx + dy * dy > DETAIL_R2,
+                    far = dx * dx + dy * dy > TUNE.DETAIL_R2,
                     thrusting = burning(i, mine_buttons, sim.BTN_THRUST),
                     reversing = burning(i, mine_buttons, sim.BTN_REVERSE),
                     flicker = (sim.tick() * 7 + i * 13) % 11 / 11,
@@ -1831,7 +1846,7 @@ function update(self, dt)
             -- mark that says so is the one courtesy the channel owes.
             on_air = net.on_air,
             watchers = net.watchers,
-            class_names = CLASS_NAMES, menu_open = menu.open,
+            class_names = TUNE.CLASS_NAMES, menu_open = menu.open,
             -- The server's roster, because those are other people's names and
             -- only it knows them.
             pilots = net.pilots,
@@ -1911,8 +1926,8 @@ function update(self, dt)
         -- both exits cheap: a retired cursor is never polled for again
         -- until the mouse says something new.
         local ok, out = pcall(html5.run, "window.vwPointerOut?1:0")
-        local a = math.min(1, (CURSOR_HOLD + CURSOR_FADE - self.cursor_idle)
-                              / CURSOR_FADE)
+        local a = math.min(1, (TUNE.CURSOR_HOLD + TUNE.CURSOR_FADE - self.cursor_idle)
+                              / TUNE.CURSOR_FADE)
         -- The word a hovered instrument shows lives and dies with the arrow.
         -- Retiring the position is what takes it away, since the interface is
         -- handed a pointer only while there is one: a hand that has gone still
@@ -2228,31 +2243,31 @@ function on_message(self, message_id, message)
             -- again. Forgetting where it was centered is what asks for that.
             if px ~= self.px then
                 self.px = px
-                static_tx = nil
+                static.tx = nil
             end
         end
         -- The window the terrain has to cover, and the room the two static
-        -- layers need to hold it. Both follow the view: see STATIC_STEP.
+        -- layers need to hold it. Both follow the view: see TUNE.STATIC_STEP.
         if layers and message.hw and message.hw > 0 then
             local need = math.max(message.hw, message.hh) / 16
-            local want = math.ceil(need) + STATIC_STEP + 1
-            if want < STATIC_MIN then want = STATIC_MIN end
-            if want > STATIC_MAX then
+            local want = math.ceil(need) + TUNE.STATIC_STEP + 1
+            if want < TUNE.STATIC_MIN then want = TUNE.STATIC_MIN end
+            if want > TUNE.STATIC_MAX then
                 -- Said once, because a gap on a window this wide is now a
                 -- deliberate ceiling rather than the bug it used to be, and
                 -- somebody looking at one deserves to find out why.
-                if static_half ~= STATIC_MAX then
+                if static_half ~= TUNE.STATIC_MAX then
                     print(string.format(
                         "TERRAIN: view wants %d tiles either side, holding at %d",
-                        want, STATIC_MAX))
+                        want, TUNE.STATIC_MAX))
                 end
-                want = STATIC_MAX
+                want = TUNE.STATIC_MAX
             end
             if want ~= static_half then
                 static_half = want
                 -- The capacities follow from what the next build measures,
                 -- not from the window: see fit_static.
-                static_tx = nil
+                static.tx = nil
             end
         end
     end
