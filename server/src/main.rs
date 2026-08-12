@@ -2552,7 +2552,10 @@ impl Room {
                 .get(&p.ship)
                 .is_some_and(|s| s.label == token::Label::HouseBot.to_byte());
             let radius = if house { -1 } else { radius_for(p.view) };
-            let n = self.world.pack_around(buf, sh.x, sh.y, radius);
+            // Their own seat, so their own rounds travel however far behind
+            // them they are. That is the minefield: everything else a pilot
+            // fires is spent within seconds and inside the radius anyway.
+            let n = self.world.pack_around(buf, sh.x, sh.y, radius, p.ship);
             if n <= 0 {
                 continue;
             }
@@ -2594,7 +2597,7 @@ impl Room {
                 continue;
             }
             let sh = &self.world.state.ships[t as usize];
-            let n = self.world.pack_around(buf, sh.x, sh.y, INTEREST);
+            let n = self.world.pack_around(buf, sh.x, sh.y, INTEREST, t);
             if n <= 0 {
                 continue;
             }
@@ -2680,7 +2683,7 @@ impl Room {
                 (mid, mid, 255u8)
             }
         };
-        let n = self.world.pack_around(buf, cx, cy, INTEREST);
+        let n = self.world.pack_around(buf, cx, cy, INTEREST, subject);
         if n > 0 {
             let mut msg = Vec::with_capacity(n as usize + 6);
             msg.push(S2C_SNAPSHOT);
@@ -7108,6 +7111,61 @@ mod tests {
     }
 
     #[test]
+    fn a_pilot_is_still_told_about_the_minefield_they_flew_away_from() {
+        // The other half of the same filter, and the half that was wrong.
+        //
+        // A mine sits for two minutes while the pilot who laid it leaves, so
+        // it is the one round that goes out of the radius without ending.
+        // Filtered by distance like any other round it simply stopped being in
+        // the snapshot, and a client reads a round that stops existing as a
+        // round that went off: the pilot was shown their minefield detonating
+        // behind them seconds after laying it, with the arena still flying it.
+        // Their own client then laid a sixth mine, because it could no longer
+        // count the five, and the arena refused that too.
+        //
+        // Measured on alpha before the fix: every mine laid left its layer's
+        // own snapshot inside about seven seconds, against a real median life
+        // of fifty-two.
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (me, _, mut rx) = seat_rx(&mut a, "layer");
+
+        let laid = a.world.state.ships[me as usize];
+        a.world.step(&[sim::sim_input { ship: me, buttons: sim::BTN_MINE }]);
+        assert_eq!(a.world.state.weapon_count, 1, "a mine is in the world");
+        let mine = a.world.state.weapons[0];
+        assert_eq!(mine.owner, me, "and it is this pilot's");
+
+        // Off to the far side, well past any radius a client may ask for.
+        send_far(&mut a, me);
+        let sh = &a.world.state.ships[me as usize];
+        let gap = ((sh.x - laid.x) as i64).abs();
+        assert!(gap > INTEREST as i64, "the pilot is further off than the ceiling");
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        a.broadcast_snapshot(&mut buf);
+        let got = snapshots(&drain(&mut rx));
+        let last = got.last().expect("a snapshot arrived");
+        let mut w = sim::World::new(1);
+        assert!(w.apply_snapshot(&last[6..]), "the snapshot unpacks");
+        assert_eq!(w.state.weapon_count, 1, "their own mine is still in it");
+        assert_eq!((w.state.weapons[0].x, w.state.weapons[0].y), (mine.x, mine.y),
+                   "at the pixel they left it on");
+        assert_eq!(w.state.weapons[0].life, mine.life, "and on the clock it has");
+
+        // And it is theirs that travels, not everybody's: the pilot next to
+        // them, equally far from the mine, is told nothing about it.
+        let (stranger, _, mut rx2) = seat_rx(&mut a, "stranger");
+        send_far(&mut a, stranger);
+        a.broadcast_snapshot(&mut buf);
+        let got = snapshots(&drain(&mut rx2));
+        let last = got.last().expect("a snapshot for the stranger");
+        let mut w2 = sim::World::new(1);
+        assert!(w2.apply_snapshot(&last[6..]));
+        assert_eq!(w2.state.weapon_count, 0,
+                   "somebody else's mine that far off is not their business");
+    }
+
+    #[test]
     fn declaring_yourself_a_bot_no_longer_buys_the_whole_map() {
         // The hole this closes. The exemption used to key off `Player::bot`,
         // which is what the client said about itself at join, so anybody could
@@ -7213,7 +7271,7 @@ mod tests {
 
         let sh = &a.world.state.ships[target as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
-        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, INTEREST);
+        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, INTEREST, target);
         assert!(n > 0);
         assert_eq!(&last[6..], &fresh[..n as usize], "byte for byte");
     }
@@ -7236,7 +7294,7 @@ mod tests {
         let last = got.last().expect("a follow snapshot");
         let sh = &a.world.state.ships[bots[0] as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
-        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, INTEREST);
+        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, INTEREST, bots[0]);
         assert_eq!(&last[6..], &fresh[..n as usize], "human radius, always");
     }
 

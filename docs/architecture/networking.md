@@ -217,8 +217,20 @@ so a board can still name and score a pilot the snapshot leaves out. The client
 prefers the simulation for seats it can see, because that arrives twenty times
 a second, and the roster for the rest.
 
-The exemption is our own bots, and it is keyed on the token's label rather than
-on what the client said about itself at join. That distinction is the whole of
+**A pilot's own rounds are exempt from the radius**, which is what a minefield
+needs. Every argument above rests on a round being spent within seconds and
+never leaving the hull that fired it; a mine sits for two minutes while its
+layer flies off, so it is the one round that crosses the boundary outward
+without ending. Filtered like the rest it simply stopped being in the snapshot,
+and a client reads a round that stops existing as a round that went off: a
+pilot on alpha was shown their whole minefield detonating behind them within
+seconds of laying it, and their client, no longer able to count the five mines
+out, predicted a sixth the arena refused. It costs at most five records a
+snapshot and leaks nothing, since a pilot knows where they laid their own
+mines.
+
+The other exemption is our own bots, and it is keyed on the token's label
+rather than on what the client said about itself at join. That distinction is the whole of
 it: the old test was `Player::bot`, the declaration, so anybody could declare
 themselves a bot from any address and be handed every ship on the map. The
 label is derived from the account a token was minted for and cannot be

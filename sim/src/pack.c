@@ -50,11 +50,11 @@ static int within(int32_t x, int32_t y, int32_t cx, int32_t cy,
 }
 
 int sim_pack(const sim_state *s, uint8_t *out, int cap) {
-    return sim_pack_around(s, out, cap, 0, 0, -1);
+    return sim_pack_around(s, out, cap, 0, 0, -1, 255);
 }
 
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
-                    int32_t cx, int32_t cy, int32_t radius) {
+                    int32_t cx, int32_t cy, int32_t radius, uint8_t viewer) {
     wr w = {out, out + cap, 0};
     int64_t r2 = (int64_t)radius * radius;
 
@@ -138,7 +138,8 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w8(&w, sh->carrier);
     }
 
-    /* Rounds in the air, near ones only.
+    /* Rounds in the air, near ones only, plus this viewer's own wherever they
+     * are.
      *
      * Measured on the live arena, four fifths of them belong to fights nobody
      * here can see: 20.9% of 191,115 weapon-snapshots fell inside the radius.
@@ -152,16 +153,27 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
      * radius is 256 tiles, a client can draw about thirty, and the quickest
      * round crosses well under a hundred pixels in the fifty milliseconds
      * before the next snapshot. Nothing arrives from outside the radius
-     * without a snapshot in between announcing it. */
+     * without a snapshot in between announcing it.
+     *
+     * That argument holds for a round and not for a minefield, which is what
+     * the owner test is doing here. A bullet is spent in a second or two and
+     * never leaves the pilot who fired it; a mine sits for two minutes while
+     * the pilot flies off, and measured on alpha every mine laid dropped out
+     * of its own layer's snapshot inside seven seconds. See the note in
+     * pack.h. Costing at most a pilot's five mines a snapshot, so the
+     * bandwidth answer above is untouched. */
     uint16_t sent = 0;
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *p = &s->weapons[i];
-        sent = (uint16_t)(sent + (within(p->x, p->y, cx, cy, radius, r2) ? 1 : 0));
+        sent = (uint16_t)(sent + ((p->owner == viewer
+                                   || within(p->x, p->y, cx, cy, radius, r2))
+                                  ? 1 : 0));
     }
     w16(&w, sent);
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *p = &s->weapons[i];
-        if (!within(p->x, p->y, cx, cy, radius, r2)) continue;
+        if (p->owner != viewer
+            && !within(p->x, p->y, cx, cy, radius, r2)) continue;
         w8(&w, p->spec);
         w8(&w, p->left);
         w8(&w, p->depth);
