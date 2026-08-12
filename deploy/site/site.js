@@ -58,10 +58,14 @@ function setupGameplayFilm() {
   const videos = [...film.querySelectorAll("[data-gameplay-take]")];
   if (videos.length !== 2) return;
 
-  const clipStart = 3.2;
-  const clipEnd = 7.5;
+  const clips = [
+    { start: 0.15, end: 4.45 },
+    { start: 4.75, end: 9 },
+    { start: 9.35, end: 13.65 },
+  ];
   const crossfadeSeconds = 0.85;
   let active = 0;
+  let clip = 0;
   let crossing = false;
   let frame;
   let run = 0;
@@ -104,12 +108,13 @@ function setupGameplayFilm() {
     if (token !== run) return;
 
     active = 0;
+    clip = 0;
     crossing = false;
     videos.forEach((video, index) => {
       video.pause();
       video.classList.toggle("is-active", index === active);
     });
-    videos[active].currentTime = clipStart;
+    videos[active].currentTime = clips[clip].start;
     try {
       await videos[active].play();
     } catch (_) {
@@ -120,9 +125,10 @@ function setupGameplayFilm() {
       if (crossing || token !== run) return;
       crossing = true;
       const next = 1 - active;
+      const nextClip = (clip + 1) % clips.length;
       const outgoing = videos[active];
       const incoming = videos[next];
-      incoming.currentTime = clipStart;
+      incoming.currentTime = clips[nextClip].start;
       try {
         await incoming.play();
       } catch (_) {
@@ -138,15 +144,16 @@ function setupGameplayFilm() {
       window.setTimeout(() => {
         if (token !== run) return;
         outgoing.pause();
-        outgoing.currentTime = clipStart;
+        outgoing.currentTime = clips[clip].start;
         active = next;
+        clip = nextClip;
         crossing = false;
       }, crossfadeSeconds * 1000);
     };
 
     const tick = () => {
       if (token !== run) return;
-      if (videos[active].currentTime >= clipEnd - crossfadeSeconds) crossfade();
+      if (videos[active].currentTime >= clips[clip].end - crossfadeSeconds) crossfade();
       frame = requestAnimationFrame(tick);
     };
     tick();
