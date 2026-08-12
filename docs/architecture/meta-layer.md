@@ -55,7 +55,8 @@ framework would be the larger change.
 | `/v1/admin/pilot` | the admin panel | One pilot by call sign or number: kind, standing, the dates. Behind the account flag |
 | `/v1/admin/ban` | the admin panel | A fleet ban, which takes effect at the next token issuance. Refuses accounts that hold the flag |
 | `/v1/admin/bans` | the admin panel | Every account currently marked, with its reason |
-| `/v1/admin/events` | the admin panel | One pilot's recent history out of the pilot log, or one stay out of it. Read-only, and the only route that reads that table |
+| `/v1/admin/events` | the admin panel | One pilot's recent history out of the pilot log, or one stay out of it |
+| `/v1/admin/recent` | the admin panel | The same log across the fleet, people or bots, optionally one kind, within a time bound. Reports when each kind last filed, so an empty answer says which sort of empty it is |
 | `/v1/admin/rename` | the admin panel | Sets a pilot's call sign to a typed one, or deals a fresh one when nothing is typed. Refuses a taken name and refuses a bot, whose name is its roster identity |
 | `/v1/admin/admins` | the admin panel | Who holds the flag |
 

@@ -103,6 +103,66 @@
       </table>
     </div>
 
+    <!-- What the fleet has seen lately, across every arena. Above the pilot
+         table on purpose: this is the section somebody scans, and a call sign
+         in it opens that pilot's card below, so noticing something and going
+         to look at it is one click.
+
+         People and bots are separate views rather than one mixed feed. A room
+         runs fifty-one bots against a handful of players, so mixing them is a
+         page of bot arrivals with everything worth reading pushed off the end.
+         It is also what the index wants. -->
+    <h2 id="recent-head">Recent</h2>
+    <div class="row" id="recent-controls">
+      <div class="field">
+        <label for="recent-who">who</label>
+        <select id="recent-who">
+          <option value="people" selected>people</option>
+          <option value="bots">bots</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="recent-kind">what</label>
+        <select id="recent-kind">
+          <option value="" selected>everything</option>
+          <option value="denied">denied</option>
+          <option value="join">join</option>
+          <option value="leave">leave</option>
+          <option value="ship">ship</option>
+          <option value="team">team</option>
+          <option value="watch">watch</option>
+          <option value="on_air">on_air</option>
+          <option value="login">login</option>
+          <option value="rename">rename</option>
+          <option value="ban">ban</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="recent-hours">since</label>
+        <select id="recent-hours">
+          <option value="1">an hour ago</option>
+          <option value="24" selected>a day ago</option>
+          <option value="168">a week ago</option>
+          <option value="720">a month ago</option>
+        </select>
+      </div>
+    </div>
+    <p id="recent-note" class="dim" role="status" aria-live="polite"></p>
+    <div class="scroller">
+      <table id="recent">
+        <caption class="sr">What the fleet has seen lately, newest first</caption>
+        <thead><tr>
+          <th scope="col">at</th>
+          <th scope="col">pilot</th>
+          <th scope="col">what</th>
+          <th scope="col">detail</th>
+          <th scope="col">where</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="recent-empty" class="dim" hidden></p>
+
     <h2 id="pilot-head">Pilot</h2>
     <!-- No button beside it: typing is the whole interaction, and a button
          that repeats what the keystrokes already did is a button that invites

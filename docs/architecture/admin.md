@@ -194,6 +194,19 @@ because there is nothing on the other end of it. The drift note stays outside
 the link, since it is the panel's reading of the row rather than part of the
 sha.
 
+Above the pilot table is Recent, the same log read across the whole fleet
+rather than one pilot at a time. People and bots are separate views rather than
+one feed, because a room runs fifty-one bots against a handful of players and
+mixing them is a page of bot arrivals with everything worth reading pushed off
+the end of it. A call sign in it opens that pilot's card below, so noticing
+something and going to look at it is one click.
+
+Its note line reports when the log last took a row of each kind, whether or not
+the current filter matched anything. An empty table otherwise has two meanings
+that look identical and want opposite responses: nothing matches what you
+asked, which is a filter to widen, or nothing is arriving, which is a fleet to
+go and look at.
+
 The pilot table filters as you type, over call signs and account numbers, and
 there is no button beside the box: the keystrokes are the whole interaction,
 and a button that repeats them invites somebody to wonder what it does
@@ -278,12 +291,13 @@ carries counts and not names, so an operator cannot see who is in a room.
 Kick works by call sign against every instance, which is enough to act on a
 report and not enough to notice one.
 
-The pilot log closed the smaller half of that. Acting on a report is now
-checkable, since the card says what the fleet saw. Noticing one is still not:
-the log is read one pilot at a time, on purpose, and nothing watches it for
-patterns. Turning it into something that notices is a different feature with a
-different hazard, and [networking.md](networking.md) has already ruled out the
-version of it that watches how people fly.
+The pilot log closed the smaller half of that. Acting on a report is
+checkable now, since the card says what the fleet saw, and the Recent section
+above it is the fleet-wide read that arrived a day later because an operator
+wanted one. What still does not exist is anything that watches on somebody's
+behalf: an operator looks, or the log says nothing. No alert, no threshold, no
+score. [networking.md](networking.md) rules out the version of this that
+watches how people fly, and that is untouched.
 
 The name is its own certificate, which this file's opening comment prices as
 the thing a mistake can burn. Taken anyway, and as isolation rather than

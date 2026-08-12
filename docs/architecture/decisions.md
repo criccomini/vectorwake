@@ -1734,10 +1734,12 @@ event and eight account events from the meta-layer itself. Every arena row
 carries a session, which is one connection and rides on the seat, because
 sitting out and flying again reissue every other handle a pilot has.
 
-The panel reads it under the pilot card, one pilot at a time, and that is the
-whole of the read surface. Nothing watches the log for patterns, which keeps
-this on the acting side of the line admin.md draws between acting on a report
-and noticing one.
+The panel reads it two ways: under a pilot's card, and fleet-wide in a Recent
+section that separates people from bots. The second one crosses the line
+admin.md draws between acting on a report and noticing one, and it is here
+because the deployment asked for it. What stays true is that nothing watches on
+anybody's behalf. There is no alert, no threshold and no score, so the log
+answers a question when somebody asks it and is silent otherwise.
 
 Three things it is not, each ruled out by something already written down.
 

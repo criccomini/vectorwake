@@ -203,7 +203,7 @@ form { margin: 0; }
 .field { display: grid; gap: 0.3rem; }
 label { color: var(--dim); font-size: 0.9em; }
 
-input {
+input, select {
   background: #0a0f18;
   border: 1px solid var(--line);
   border-radius: 2px;
@@ -215,6 +215,9 @@ input {
   width: 100%;
 }
 input::placeholder { color: #4b586b; }
+/* A menu is as wide as what it holds rather than as wide as the row, which is
+   what the text fields want and no picker does. */
+select { width: auto; }
 
 button {
   background: transparent;

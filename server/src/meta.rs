@@ -1312,19 +1312,21 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             let session = s("session");
             // Newest first, because a report is about something that just
             // happened. The page reverses what it draws.
-            let q = "select to_char(at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
-                            coalesce(session, ''), kind, coalesce(name, ''), bot,
-                            zone, instance, room, tick, detail
-                     from pilot_events";
+            let q = "select to_char(pe.at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                            coalesce(pe.session, ''), pe.kind,
+                            coalesce(nullif(pe.name, ''), n.call_sign, ''), pe.bot,
+                            pe.zone, pe.instance, pe.room, pe.tick, pe.detail
+                     from pilot_events pe
+                     left join names n on n.account = pe.pilot";
             let rows = if !session.is_empty() {
                 db.query(
-                    &format!("{q} where session = $1 order by at desc, id desc limit 200"),
+                    &format!("{q} where pe.session = $1 order by pe.at desc, pe.id desc limit 200"),
                     &[&session],
                 )
                 .await
             } else if let Some(id) = account {
                 db.query(
-                    &format!("{q} where pilot = $1 order by at desc, id desc limit 200"),
+                    &format!("{q} where pe.pilot = $1 order by pe.at desc, pe.id desc limit 200"),
                     &[&id],
                 )
                 .await
@@ -1349,6 +1351,108 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     // round number, which is how somebody concludes a pilot
                     // stopped doing anything at exactly 200 events.
                     "capped": rs.len() == 200,
+                })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // The pilot log across the whole fleet, newest first.
+        //
+        // The other read of the same table, and a different question: the one
+        // above asks what somebody did, this asks what is happening. It is
+        // what [admin.md](admin.md) calls noticing, which this panel spent a
+        // while deliberately not doing, and the reason it is here now is that
+        // the deployment asked for it. What has not changed is that nothing
+        // watches this on anybody's behalf. An operator looks, or it says
+        // nothing.
+        //
+        // People or bots, never both at once, and that is the whole reason
+        // this is usable. A room runs 51 bots against a handful of players, so
+        // a mixed feed is bot arrivals with the interesting rows pushed off
+        // the end of it. It also happens to be what the index wants: with
+        // `pilot_events_sweep` on (bot, at), one value of `bot` and a time
+        // bound is a range scan, and an unfiltered `order by at desc` is not.
+        "/v1/admin/recent" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let bots = body.get("bots").and_then(|v| v.as_bool()).unwrap_or(false);
+            // Bounded by time as well as by count, so a rare kind cannot turn
+            // this into a walk of the whole table looking for two hundred
+            // refusals that are not there.
+            let hours = body
+                .get("hours")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(24)
+                .clamp(1, 24 * 30) as i32;
+            let kind = s("kind");
+            // The call sign falls back to the account's current one. A row
+            // the arena filed carries the name as it read at the time, which
+            // is the honest one; a row the meta-layer filed about an account
+            // carries none at all, and `#1` is a worse answer than a name
+            // when both are available.
+            let q = "select to_char(pe.at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                            coalesce(pe.session, ''), pe.kind,
+                            coalesce(nullif(pe.name, ''), n.call_sign, ''), pe.pilot,
+                            pe.zone, pe.instance, pe.room, pe.detail
+                     from pilot_events pe
+                     left join names n on n.account = pe.pilot
+                     where pe.bot = $1 and pe.at > now() - make_interval(hours => $2)";
+            let rows = if kind.is_empty() {
+                db.query(&format!("{q} order by pe.at desc, pe.id desc limit 200"), &[&bots, &hours])
+                    .await
+            } else {
+                db.query(
+                    &format!("{q} and pe.kind = $3 order by pe.at desc, pe.id desc limit 200"),
+                    &[&bots, &hours, &kind],
+                )
+                .await
+            };
+            // When the newest row of each kind landed, whatever the filter
+            // above selected. Without it an empty table has two very different
+            // meanings that look identical: nothing matches what you asked
+            // for, or nothing is arriving at all. The first is a filter to
+            // widen and the second is a fleet to go and look at.
+            //
+            // Two scalar subqueries rather than one `group by bot`, which
+            // reads as the tidier statement and is not: grouping walks every
+            // row of the index to find two maxima, and a subquery per value
+            // is a backward index seek that stops at the first. Measured at
+            // 120,000 rows it is 0.08ms against 15ms, and the gap is the
+            // whole table, so it grows with the log while this does not.
+            let mut newest = serde_json::Map::new();
+            if let Ok(r) = db
+                .query_one(
+                    "select to_char((select max(at) from pilot_events where not bot)
+                                    at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                            to_char((select max(at) from pilot_events where bot)
+                                    at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS')",
+                    &[],
+                )
+                .await
+            {
+                for (i, who) in ["people", "bots"].iter().enumerate() {
+                    if let Some(t) = r.get::<_, Option<String>>(i) {
+                        newest.insert((*who).into(), serde_json::Value::String(t));
+                    }
+                }
+            }
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    "events": rs.iter().map(|r| serde_json::json!({
+                        "at": r.get::<_, String>(0),
+                        "session": r.get::<_, String>(1),
+                        "kind": r.get::<_, String>(2),
+                        "name": r.get::<_, String>(3),
+                        "pilot": r.get::<_, Option<i64>>(4),
+                        "zone": r.get::<_, String>(5),
+                        "instance": r.get::<_, String>(6),
+                        "room": r.get::<_, Option<i32>>(7),
+                        "detail": r.get::<_, serde_json::Value>(8),
+                    })).collect::<Vec<_>>(),
+                    "capped": rs.len() == 200,
+                    "hours": hours,
+                    "newest": newest,
                 })),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }

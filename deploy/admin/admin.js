@@ -71,6 +71,7 @@ function show(section) {
 // numbers again.
 const FLEET_REFRESH_MS = 5000;
 let ticking = null;
+let pulsing = null;
 // Who wrote what is in the fleet note. The refresh clears its own messages
 // and leaves a command's alone, because a redraw arriving a second after a
 // click used to wipe the only confirmation the click produced.
@@ -81,13 +82,16 @@ async function arrive(name) {
   show(panel);
   el("lookup-q").focus();
   refresh();
-  // Only the fleet is on a timer. Bans and admins change when an operator
-  // changes them, and this page is where that happens.
+  // The fleet and the feed are the two that move on their own. Bans and
+  // admins change when an operator changes them, and this page is where that
+  // happens.
   if (!ticking) ticking = setInterval(() => drawFleet().catch(() => {}), FLEET_REFRESH_MS);
+  if (!pulsing) pulsing = setInterval(() => drawRecent().catch(() => {}), RECENT_REFRESH_MS);
 }
 
 function refresh() {
   drawFleet().catch(() => {});
+  drawRecent().catch(() => {});
   drawPilots(el("lookup-q").value.trim()).catch(() => {});
   drawBans().catch(() => {});
   drawAdmins().catch(() => {});
@@ -149,6 +153,7 @@ function eject(why) {
   secret = "";
   shown = null;
   if (ticking) { clearInterval(ticking); ticking = null; }
+  if (pulsing) { clearInterval(pulsing); pulsing = null; }
   el("pilot").hidden = true;
   el("pilot-edit").hidden = true;
   el("activity").hidden = true;
@@ -553,6 +558,97 @@ async function drawBans() {
   el("bans").hidden = rows.length === 0;
 }
 
+// ------------------------------------------------------------------ recent
+
+// How often the feed redraws. Slower than the fleet, because this is a
+// database query rather than a number the directory already holds, and
+// because what it shows changes on the scale of somebody joining a game.
+const RECENT_REFRESH_MS = 15000;
+
+// How long ago a timestamp was, in the words a note line wants. The server
+// sends UTC without a zone, so it is read as UTC rather than as local.
+function ago(utc) {
+  const then = Date.parse(utc.replace(" ", "T") + "Z");
+  if (Number.isNaN(then)) return utc;
+  const s = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (s < 90) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 90) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}
+
+async function drawRecent() {
+  const who = el("recent-who").value;
+  const body = {
+    secret,
+    bots: who === "bots",
+    kind: el("recent-kind").value,
+    hours: Number(el("recent-hours").value),
+  };
+  let r;
+  try {
+    r = await post("/v1/admin/recent", body);
+  } catch (e) {
+    tell("recent-note", /no such route/i.test(e.message)
+      ? "this needs a newer meta-layer than the one running; it will fill in once the deploy lands"
+      : e.message);
+    return;
+  }
+  const list = r.events || [];
+  fill("recent", list.map((v) => {
+    // The call sign opens the card below, so noticing something here and
+    // going to look at it is one click rather than a retype.
+    let cell = v.name || "(none)";
+    if (v.pilot) {
+      const pick = document.createElement("button");
+      pick.type = "button";
+      pick.className = "link pick";
+      pick.textContent = v.name || `#${v.pilot}`;
+      pick.addEventListener("click", () => {
+        el("lookup-q").value = `#${v.pilot}`;
+        lookup(`#${v.pilot}`);
+      });
+      cell = pick;
+    }
+    return [
+      v.at,
+      cell,
+      [v.kind, NOTABLE(v) ? "bad" : ""],
+      [describe(v), "wrap"],
+      v.zone ? `${v.zone}${v.room === null ? "" : ` r${v.room}`} ${v.instance}` : "",
+    ];
+  }));
+  el("recent").hidden = list.length === 0;
+
+  // What the note says when the table is empty is the whole value of this
+  // section on a quiet fleet. "Nothing matches" and "nothing is arriving"
+  // look identical in a blank table and mean completely different things, so
+  // the newest row of each kind is reported whether or not it is on screen.
+  const newest = r.newest || {};
+  const pulse = ["people", "bots"]
+    .filter((k) => newest[k])
+    .map((k) => `${k} ${ago(newest[k])}`)
+    .join(", ");
+  const empty = el("recent-empty");
+  if (list.length) {
+    tell("recent-note", r.capped
+      ? `the most recent 200. last filed: ${pulse}`
+      : `${list.length} event${list.length === 1 ? "" : "s"}. last filed: ${pulse}`);
+    empty.hidden = true;
+  } else {
+    tell("recent-note", "");
+    empty.hidden = false;
+    empty.textContent = pulse
+      ? `Nothing from ${who} matching that. The log is being written: last filed ${pulse}.`
+      : "The log holds nothing at all yet. Either no arena has filed since it " +
+        "was deployed, or reporting is off on the ones that have.";
+  }
+}
+
+["recent-who", "recent-kind", "recent-hours"].forEach((id) =>
+  el(id).addEventListener("change", () => drawRecent().catch(() => {})));
+
 // ---------------------------------------------------------------- activity
 
 // The pilot log, under the card. Either the whole of one pilot's history or
@@ -576,11 +672,24 @@ function heldFor(ticks) {
 // An unknown kind falls through to its raw detail rather than to nothing. The
 // arena can learn a new event before this file does, and a row that says
 // something unfamiliar beats a row that says nothing.
+// Label-and-value pairs, dropping the ones that are not there. A row can
+// always be missing a field: an arena a version ahead or behind writes a
+// different shape, and this page meets both during a deploy. Printing the
+// word "undefined" at an operator is worse than printing nothing, because it
+// reads as something the fleet recorded.
+function bits(...pairs) {
+  return pairs
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => (k ? `${k} ${v}` : `${v}`))
+    .join(", ");
+}
+
 function describe(e) {
   const d = e.detail || {};
   switch (e.kind) {
     case "join":
-      return `hull ${d.class}, slot ${d.ship}, side ${d.team}, over ${d.transport}`;
+      return bits(["hull", d.class], ["slot", d.ship], ["side", d.team],
+                  ["over", d.transport]);
     case "denied": {
       // The sentence the pilot was actually sent, which is the thing they are
       // quoting when they report it. The claimed name rides along only when
@@ -590,39 +699,41 @@ function describe(e) {
       return d.claimed && d.claimed !== e.name ? `${why} (claimed ${d.claimed})` : why;
     }
     case "watch":
-      return d.any ? `side ${d.team}, staff sight` : `side ${d.team}`;
+      return bits(["side", d.team], [null, d.any ? "staff sight" : null]);
     case "ship":
-      return `hull ${d.from} to ${d.to}`;
+      return bits([null, d.from === undefined ? null : `hull ${d.from} to ${d.to}`]);
     case "team":
-      return `side ${d.from} to ${d.to}${d.public ? "" : ", private"}`;
+      return bits([null, d.from === undefined ? null : `side ${d.from} to ${d.to}`],
+                  [null, d.public === false ? "private" : null]);
     case "found":
-      return `${d.name || "a side"} (side ${d.team})`;
+      return bits([null, d.name], ["side", d.team]);
     case "invite":
-      return `slot ${d.to}`;
+      return bits(["slot", d.to]);
     case "sit_out":
       return d.why === "safe" ? "moved by the safe-zone sweep" : "asked to sit out";
     case "fly":
-      return `hull ${d.class}, slot ${d.ship}, side ${d.team}`;
+      return bits(["hull", d.class], ["slot", d.ship], ["side", d.team]);
     case "on_air":
-      return `slot ${d.ship} watched`;
+      return bits([null, d.ship === undefined ? null : `slot ${d.ship} watched`]);
     case "leave":
-      return `${d.why}, held ${heldFor(d.held)}` +
-        (d.quit_loss ? ", settled as a quit" : "");
+      return bits([null, d.why],
+                  [null, d.held === undefined ? null : `held ${heldFor(d.held)}`],
+                  [null, d.quit_loss ? "settled as a quit" : null]);
     case "account":
-      return `dealt ${d.name}`;
+      return bits(["dealt", d.name]);
     case "claim":
       return "password set";
     case "login":
       return "signed in on a new device";
     case "rename":
-      return `${d.from ? `${d.from} to ` : ""}${d.to}, by ${d.by === "self" ? "self" : `#${d.by}`}`;
+      return bits([null, d.from], [d.from ? "to" : null, d.to],
+                  ["by", d.by === "self" ? "self" : d.by && `#${d.by}`]);
     case "ban":
-      return `by #${d.by}${d.reason ? `: ${d.reason}` : ""}`;
+      return bits(["by", d.by && `#${d.by}`], [null, d.reason]);
     case "unban":
-      return `by #${d.by}`;
     case "grant":
     case "revoke":
-      return `by #${d.by}`;
+      return bits(["by", d.by && `#${d.by}`]);
     default:
       return Object.keys(d).length ? JSON.stringify(d) : "";
   }
