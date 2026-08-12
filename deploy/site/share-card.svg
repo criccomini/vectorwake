@@ -31,11 +31,29 @@
 
   <rect width="1200" height="630" fill="#05070c"/>
   <g clip-path="url(#frame)">
-    <!-- 1280x720 into 1200x630: cover and centre, so the ship and its fan stay in
-         frame rather than being letterboxed against the card's own black. -->
+    <!-- Zoomed to 1.2 and pinned to the left edge, which is a crop rather than a
+         composition: the frame carries the pilot's own radar and kill feed in its
+         top right, and a card is not a screenshot of somebody's session. Neither
+         belongs in a preview, and both are unreadable at embed size anyway.
+
+         The window is source x 180 to 1000 and y 50 to 480, which is 1280x720
+         drawn at 1.463 and pushed up and left. That leaves out, in order of how
+         badly each one wanted to be left out: the radar and the kill feed past
+         x 1000, a pilot's nameplate at x 40 that otherwise lands under the
+         wordmark and reads as a typo, the MENU and PLAYERS chips along the top,
+         and the charge rail down the bottom left. What is left is the hull and
+         the fan of tracers running back from it, which is the only part of the
+         frame that says what the game is.
+
+         The hull sits at roughly 673,446, which is under the deck line rather
+         than through it. That is the constraint that fixes the vertical window:
+         a ship drawn across the word "mobile" reads as a rendering fault.
+
+         Cropped rather than masked. A rectangle painted over that corner reads
+         as a rectangle painted over that corner. -->
     <image href="media/gameplay-poster.jpg" xlink:href="media/gameplay-poster.jpg"
-           x="0" y="0" width="1200" height="630"
-           preserveAspectRatio="xMidYMid slice"/>
+           x="-263" y="-73" width="1873" height="1053"
+           preserveAspectRatio="none"/>
     <rect width="1200" height="630" fill="url(#scrimx)"/>
     <rect width="1200" height="630" fill="url(#scrimy)"/>
   </g>
@@ -54,9 +72,9 @@
 
   <!-- Bottom right, which is where a card's eye lands last and where the thing to
        press belongs. The URL takes the corner it left. -->
-  <g transform="translate(896 496)" font-family="DejaVu Sans Mono, monospace" letter-spacing="1.5">
-    <rect width="232" height="60" fill="#4fd6ff"/>
-    <text x="116" y="39" fill="#02050a" font-size="19" font-weight="700" text-anchor="middle">PLAY FOR FREE</text>
+  <g transform="translate(938 496)" font-family="DejaVu Sans Mono, monospace" letter-spacing="1.5">
+    <rect width="190" height="60" fill="#4fd6ff"/>
+    <text x="95" y="39" fill="#02050a" font-size="19" font-weight="700" text-anchor="middle">PLAY NOW</text>
   </g>
   <text x="72" y="545" fill="#7c8da6" font-family="DejaVu Sans Mono, monospace" font-size="16" letter-spacing="1.5">vectorwake.net</text>
 </svg>
