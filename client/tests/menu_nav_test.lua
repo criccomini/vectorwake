@@ -61,6 +61,7 @@ package.loaded["arena.account"] = account
 package.loaded["arena.net"] = {
     teams = {}, my_team = 0, may_found = false,
     my_team_name = function() return "" end,
+    transport = function() return {} end,
     protocol = 5, invite = function() end,
 }
 local rolled = 0
@@ -82,6 +83,7 @@ package.loaded["arena.sfx"] = {ui = function() end, master_gain = function() end
                                music_gain = function() end}
 _G.sys = {get_config_string = function(_, d) return d end,
           get_config_int = function(_, d) return d end,
+          get_engine_info = function() return {version = "test"} end,
           get_save_file = function() return "/tmp/vw-test-save" end,
           load = function() return {} end, save = function() return true end,
           get_sys_info = function() return {system_name = "Linux"} end}
@@ -852,6 +854,30 @@ do
     check("a refusal puts nothing on screen", menu.view().ask == nil,
           tostring(menu.view().ask and menu.view().ask.head))
 
+    -- The account is minted before a player has a reason to visit the bare
+    -- site, so the about page carries the two documents that govern it.
+    for label, url in pairs({privacy = "https://vectorwake.net/privacy",
+                             terms = "https://vectorwake.net/terms"}) do
+        asked = nil
+        menu.stack = {"root"}
+        menu.sel = {}
+        menu.ask = nil
+        _G.sys.open_url = function(got, attrs)
+            asked = {url = got, target = attrs and attrs.target}
+            return true
+        end
+        menu.click_rail(top_index("about"))
+        local row = nil
+        for i, entry in ipairs(menu.view().rows) do
+            if entry.label == label then row = i end
+        end
+        check("about carries " .. label, row ~= nil, "absent")
+        if row then menu.click_stage(row) end
+        check(label .. " opens the public document",
+              asked and asked.url == url and asked.target == "_blank",
+              asked and asked.url or "nothing asked")
+    end
+
     -- And an engine with no open_url at all does not take the menu down.
     menu.stack = {"root"}
     menu.sel = {}
@@ -890,6 +916,30 @@ do
         end
     end
     check("and no other stop does", #strays == 0, table.concat(strays, ", "))
+end
+
+-- Policy rows navigate the current browser tab. A new tab requested from
+-- the game loop is outside the original tap and mobile browsers block it.
+do
+    local js
+    _G.html5 = {run = function(code) js = code return "" end}
+    for label, url in pairs({privacy = "https://vectorwake.net/privacy",
+                             terms = "https://vectorwake.net/terms"}) do
+        js = nil
+        menu.stack = {"root"}
+        menu.sel = {}
+        menu.click_rail(top_index("about"))
+        local row = nil
+        for i, entry in ipairs(menu.view().rows) do
+            if entry.label == label then row = i end
+        end
+        if row then menu.click_stage(row) end
+        check("a browser navigates to " .. label,
+              js and js:find("window.location.assign", 1, true)
+                  and js:find(url, 1, true),
+              tostring(js))
+    end
+    _G.html5 = nil
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

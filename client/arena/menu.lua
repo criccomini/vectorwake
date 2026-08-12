@@ -675,6 +675,10 @@ local NODES = {
                 end
                 return "none yet"
             end},
+            {label = "privacy", detail = "vectorwake.net/privacy",
+             verbatim = true, act = "privacy"},
+            {label = "terms", detail = "vectorwake.net/terms",
+             verbatim = true, act = "terms"},
         }
         -- The browser's own account of a refused dial, verbatim, and only
         -- when there is one. A dial that timed out has nothing to report and
@@ -1241,6 +1245,18 @@ function M.view()
     return out
 end
 
+local function open_external(url)
+    if html5 then
+        -- A same-tab navigation is not a popup, so phones do not block it
+        -- when the canvas reports the press a frame later. The policy pages
+        -- carry a Play link back to the game.
+        pcall(html5.run, "window.location.assign(\"" .. url .. "\")")
+    else
+        pcall(sys.open_url, url, {target = "_blank"})
+    end
+    return nil
+end
+
 -- Activate the selected row. Returns an action for the arena, or nil.
 local function activate()
     local rows = rows_of(node())
@@ -1292,6 +1308,10 @@ local function activate()
         -- page has a real anchor over this stop and the tap never gets here.
         pcall(sys.open_url, DISCORD, {target = "_blank"})
         return nil
+    elseif r.act == "privacy" then
+        return open_external("https://vectorwake.net/privacy")
+    elseif r.act == "terms" then
+        return open_external("https://vectorwake.net/terms")
     elseif r.act == "install" then
         -- One tap where the browser allows one. Where it does not, the row
         -- says where the button is, which is all anybody needs and is what

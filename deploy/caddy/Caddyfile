@@ -117,8 +117,38 @@ http:// {
 		file_server
 	}
 
-	# Stable, readable addresses over two static documents. The profile script
-	# reads the account number from the final path segment.
+	# Stable, readable addresses over static documents. The profile script reads
+	# the account number from the final path segment.
+	handle /privacy {
+		rewrite * /privacy.html
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
+	handle /terms {
+		rewrite * /terms.html
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
+	handle /retention {
+		rewrite * /retention.html
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
+	handle /delete {
+		rewrite * /delete.html
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
+	handle /support {
+		rewrite * /support.html
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
 	handle /pilots {
 		rewrite * /pilots.html
 		header Cache-Control "no-cache"

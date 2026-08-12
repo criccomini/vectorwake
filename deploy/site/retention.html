@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05070c">
+  <meta name="description" content="The retention schedule for Vectorwake accounts, gameplay records, and browser storage.">
+  <link rel="canonical" href="https://vectorwake.net/retention">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+  <link rel="stylesheet" href="/site.css">
+  <title>Data retention / vectorwake</title>
+</head>
+<body class="directory-page policy-page">
+  <a class="skip-link" href="#main">Skip to retention schedule</a>
+
+  <header class="site-header is-scrolled">
+    <a class="brand" href="/" aria-label="Vectorwake home">
+      <svg class="brand-mark" viewBox="0 0 84 104" aria-hidden="true">
+        <path class="mark-amber" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+        <path class="mark-muted" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+        <path class="mark-cyan" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a class="nav-pilots" href="/pilots">Pilots</a>
+      <a href="/support">Support</a>
+      <a class="nav-play" href="https://play.vectorwake.net">Play</a>
+    </nav>
+  </header>
+
+  <main id="main" class="policy-main">
+    <header class="policy-intro section-pad">
+      <p class="directory-kicker">Effective August 12, 2026</p>
+      <h1>Retention</h1>
+      <p class="policy-lede">A game record should live only as long as it still has a job. This is the current schedule.</p>
+    </header>
+
+    <div class="policy-layout section-pad">
+      <nav class="policy-index" aria-label="Policy pages">
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a class="is-current" href="/retention" aria-current="page">Retention</a>
+        <a href="/delete">Delete an account</a>
+        <a href="/support">Support</a>
+      </nav>
+
+      <article class="policy-copy">
+        <section>
+          <h2>Current schedule</h2>
+          <dl class="retention-list">
+            <div>
+              <dt>Idle guest accounts</dt>
+              <dd><strong>7 days after the last session.</strong> The account, device credential, generated call sign, current rating, and career totals are deleted. Rated match rows already applied to other pilots remain without a live account or call-sign link.</dd>
+            </div>
+            <div>
+              <dt>Claimed accounts</dt>
+              <dd><strong>Until deletion is requested.</strong> This includes the account number, generated call sign, credential hashes, current ratings, career totals, account dates, and moderation state.</dd>
+            </div>
+            <div>
+              <dt>Human pilot activity</dt>
+              <dd><strong>90 days.</strong> Joins, refusals, room and ship changes, combat outcomes, session length, and disconnect reasons are kept for support, moderation, and debugging.</dd>
+            </div>
+            <div>
+              <dt>Bot pilot activity</dt>
+              <dd><strong>7 days.</strong> These rows diagnose Vectorwake's own AI and are produced far more often than human activity.</dd>
+            </div>
+            <div>
+              <dt>Human rated matches</dt>
+              <dd><strong>No scheduled expiry.</strong> The event log is the audit trail behind ratings and records each participant by internal account number. It does not contain an email address, IP address, password, or chosen display name.</dd>
+            </div>
+            <div>
+              <dt>Bot-only rated matches</dt>
+              <dd><strong>21 days.</strong> Career totals survive in the current stats table, while the detailed bot-only events expire.</dd>
+            </div>
+            <div>
+              <dt>Session tokens</dt>
+              <dd><strong>15 minutes.</strong> The client renews them as needed. A token contains account and rating claims signed by the account service.</dd>
+            </div>
+            <div>
+              <dt>Rate-limit addresses</dt>
+              <dd><strong>For an active window of up to 1 hour.</strong> After that, an address stops affecting requests. A dormant entry may remain in memory until later traffic prunes it or the process restarts. It is not written to the game database.</dd>
+            </div>
+            <div>
+              <dt>Browser account storage</dt>
+              <dd><strong>Until you forget the pilot, clear site data, or delete the account.</strong> This device stores its random secret and account number locally.</dd>
+            </div>
+            <div>
+              <dt>Website count cache</dt>
+              <dd><strong>6 hours.</strong> The landing site caches public GitHub star and Discord member counts in the browser.</dd>
+            </div>
+            <div>
+              <dt>Infrastructure backups</dt>
+              <dd><strong>Provider-controlled recovery cycle.</strong> Deletion from the live database may not immediately remove a record from an encrypted disaster-recovery backup. Vectorwake does not use backups for ordinary account access.</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section>
+          <h2>Why rated matches last longer</h2>
+          <p>A rating is a projection of match results. Removing one result can change every later calculation for several pilots, so human rated events remain as the competition record. After account deletion, the internal number in that record no longer resolves to a call sign or credential.</p>
+          <p>This policy may change if Vectorwake adopts seasons or another rating model that no longer needs the full history.</p>
+        </section>
+
+        <section>
+          <h2>Your account</h2>
+          <p>You do not have to wait for a scheduled expiry. Follow the <a href="/delete">account deletion process</a> to remove a claimed account and its public profile.</p>
+        </section>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer policy-footer">
+    <a class="brand footer-brand" href="/" aria-label="Vectorwake home">
+      <svg class="brand-mark" viewBox="0 0 84 104" aria-hidden="true">
+        <path class="mark-amber" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+        <path class="mark-muted" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+        <path class="mark-cyan" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav aria-label="Footer navigation">
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/retention">Data</a>
+      <a href="/delete">Delete account</a>
+      <a href="/support">Support</a>
+    </nav>
+  </footer>
+</body>
+</html>

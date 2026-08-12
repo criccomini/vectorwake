@@ -5,12 +5,11 @@
 #
 # client/web/icon.svg is the mark, and logo_test holds it to what ui.lua draws,
 # so cutting the icon from that file rather than redrawing it keeps another
-# drawing of the mark from existing. One thing changes on the way to Discord:
-#
-# Full bleed. The tile is chamfered in the file because the page shows it
-# square. Discord masks a server icon to a circle, so a chamfer arrives as a
-# bite out of the rim rather than as a corner, which is the same mistake iOS
-# would make of it.
+# drawing of the mark from existing. Nothing about it changes on the way here
+# any more: the tile was chamfered at two corners and this file squared it,
+# because Discord masks a server icon to a circle and a chamfer arrives there
+# as a bite out of the rim rather than as a corner. The chamfer is gone from
+# the source now, so the icon is the mark as it stands.
 #
 # Discord takes PNG rather than SVG. librsvg makes the raster when it is
 # available, with the screenshot browser as a fallback.
@@ -26,8 +25,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SVG = ROOT / "client" / "web" / "icon.svg"
 OUT = pathlib.Path(__file__).resolve().parent / "icon.png"
 SIZE = 512
-TILE = 'M92,0H512V420L420,512H0V92Z'
-FULL = 'M0,0H512V512H0Z'
+# The tile, square. Checked rather than substituted: this file used to cut the
+# chamfer off, and what it does now is refuse to ship an icon whose tile has
+# gone back to a shape a circular mask would bite into.
+TILE = 'M0,0H512V512H0Z'
 
 CHROME = next((p for p in ["/opt/pw-browsers/chromium",
                            "/Applications/Google Chrome.app/Contents/MacOS/"
@@ -50,8 +51,7 @@ def cut(svg):
     if len(verts) != 3:
         sys.exit(f"{SVG}: found {len(verts)} vertical positions, expected 3")
     if TILE not in svg:
-        sys.exit(f"{SVG}: the tile path moved, so this cut needs rewriting")
-    svg = svg.replace(TILE, FULL)
+        sys.exit(f"{SVG}: the tile is not the full square this expects")
     return svg
 
 

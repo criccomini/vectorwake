@@ -11,7 +11,7 @@
     <linearGradient id="b1" gradientUnits="userSpaceOnUse" x1="214" y1="263" x2="298" y2="431"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff"/></linearGradient>
     <linearGradient id="b2" gradientUnits="userSpaceOnUse" x1="312" y1="263" x2="396" y2="431"><stop offset="0" stop-color="#4fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#4fd6ff"/></linearGradient>
   </defs>
-  <path d="M92,0H512V420L420,512H0V92Z" fill="#05070c"/>
+  <path d="M0,0H512V512H0Z" fill="#05070c"/>
   <path d="M116,81 L200,249" fill="none" stroke="url(#t0)" stroke-width="12.6" clip-path="url(#top)"/>
   <path d="M200,249 L200,81" fill="none" stroke="#ffa552" stroke-width="12.6" clip-path="url(#top)"/>
   <path d="M214,81 L298,249" fill="none" stroke="url(#t1)" stroke-width="12.6" clip-path="url(#top)"/>
