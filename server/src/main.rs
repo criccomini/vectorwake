@@ -8705,6 +8705,18 @@ mod tests {
         let mine = w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize];
         assert_eq!(mine.life, 12_000, "alpha's mines sit for two minutes");
         assert_eq!(mine.still, 1, "and are still mines");
+
+        // Five apiece, on every hull in the room. Alpha does not write this
+        // out: its ships section says in as many words that what is uniform
+        // stays unwritten, and five is uniform in the original's own settings
+        // too. So the assertion lives here rather than seven times in a TOML
+        // file, and it is what would catch the baseline moving underneath the
+        // zone -- which is the only way this number can change without
+        // somebody meaning to.
+        for c in 0..w.cfg.class_count as usize {
+            assert_eq!(w.cfg.classes[c].mine_max, 5,
+                       "hull {c} may have five mines out");
+        }
     }
 
     /// The baseline fills two charge slots and leaves two empty. Naming an

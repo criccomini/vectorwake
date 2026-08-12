@@ -234,6 +234,17 @@ damage = 515
 name = "mine"
 life = 12000
 
+# Five mines a hull, everywhere in this room, which is what the baseline
+# already says and what the original's own vanilla settings say too: MaxMines
+# is 5 on all eight of its ships. Not written per hull below, because the ships
+# section only carries what differs and this differs nowhere. Twenty is the
+# highest the setting may be set to and is nobody's value.
+#
+# It is the whole balance knob for mines: there is no ammunition, so how many
+# of one pilot's may lie about at once is the only limit there is. Make a hull
+# the mining one with `mine_max = 9` in its block, or take it out of the
+# business with 0.
+
 # Facet fires slower than everything else, which is the price of its second
 # barrel. A ladder is a weapon per rung, so all three rungs say it.
 [[arena.weapons]]
