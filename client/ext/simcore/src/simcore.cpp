@@ -341,6 +341,11 @@ SHIP_GETTER(ShipYRaw, s->y / 256.0)
 SHIP_GETTER(ShipHeadingRaw, s->heading)
 SHIP_GETTER(ShipAlive, s->alive)
 SHIP_GETTER(ShipActive, s->active)
+int ShipPrivate(lua_State* L) {
+    int i = CheckShip(L);
+    lua_pushboolean(L, g_cur->ships[i].public_only == 0);
+    return 1;
+}
 SHIP_GETTER(ShipTeam, s->team)
 // Who this ship is riding, or 255. What the drawing needs to put a gunner's
 // drone on the right hull, and what the panel needs to offer the right verb.
@@ -1141,6 +1146,7 @@ const luaL_reg kFunctions[] = {
     {"ship_heading", ShipHeading},
     {"ship_alive", ShipAlive},
     {"ship_active", ShipActive},
+    {"ship_private", ShipPrivate},
     {"ship_team", ShipTeam},
     {"ship_carrier", ShipCarrier},
     {"ship_class", ShipClass},

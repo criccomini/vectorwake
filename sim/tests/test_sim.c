@@ -2048,6 +2048,43 @@ int main(void) {
     }
 
     {
+        /* A prediction client may consume the visible green, but it does not
+         * roll or apply the server-secret result. */
+        sim_settings w = cfg;
+        w.deathless = 1;
+        w.spawn_prizes = 0;
+        w.prize_delay = 0;
+        sim_state s, next;
+        sim_events ev;
+        sim_init(&s, 77);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        s.prizes[0].active = 1;
+        s.prizes[0].x = s.ships[0].x;
+        s.prizes[0].y = s.ships[0].y;
+        s.prizes[0].life = 100;
+        sim_ship before = s.ships[0];
+        sim_step(&next, &s, NULL, 0, &w, &ev);
+        CHECK(!next.prizes[0].active, "prediction removes a touched green");
+        CHECK(memcmp(next.ships[0].up, before.up, sizeof before.up) == 0
+              && memcmp(next.ships[0].level, before.level, sizeof before.level) == 0
+              && memcmp(next.ships[0].mods, before.mods, sizeof before.mods) == 0
+              && memcmp(next.ships[0].charge, before.charge, sizeof before.charge) == 0,
+              "but applies no guessed outcome");
+        int announced = 0;
+        for (uint16_t i = 0; i < ev.count; i++)
+            announced += ev.e[i].type == SIM_EV_PRIZE;
+        CHECK(announced == 0, "and emits no guessed prize event");
+
+        w.spawn_prizes = 30;
+        next.ships[0].alive = 0;
+        next.ships[0].respawn_at = 1;
+        sim_step(&s, &next, NULL, 0, &w, &ev);
+        CHECK(s.ships[0].alive, "prediction still advances the respawn");
+        CHECK(sim_bounty(&s.ships[0]) == 0,
+              "but does not invent a server-secret respawn kit");
+    }
+
+    {
         /* Losing an energy step clamps the bar down to the new ceiling rather
          * than leaving a pilot over it. */
         sim_settings w = cfg;
@@ -3361,6 +3398,24 @@ int main(void) {
         CHECK(sim_unpack(&back, buf, n) == 0, "a snapshot unpacks");
         CHECK(sim_hash(&back) == sim_hash(&s), "the round trip is exact");
 
+        /* Network snapshots never reveal the prize stream. Two otherwise
+         * identical states with different future prize decisions produce the
+         * same bytes. */
+        {
+            static uint8_t a_buf[SIM_PACK_MAX], b_buf[SIM_PACK_MAX];
+            sim_state other = s;
+            other.prize_rng ^= 0x5a5aa5a5u;
+            other.prize_timer ^= 37;
+            int an = sim_pack_around(&s, a_buf, sizeof a_buf, s.ships[0].x,
+                                     s.ships[0].y, 84 * SIM_TILE_PX * 256,
+                                     0, 0, 0);
+            int bn = sim_pack_around(&other, b_buf, sizeof b_buf, other.ships[0].x,
+                                     other.ships[0].y, 84 * SIM_TILE_PX * 256,
+                                     0, 0, 0);
+            CHECK(an > 0 && an == bn && memcmp(a_buf, b_buf, an) == 0,
+                  "network bytes hide prize randomness and timing");
+        }
+
         /* A message longer than this build knows how to read is refused.
          *
          * This is the case that reached a player. Three fields were added to the
@@ -3426,7 +3481,7 @@ int main(void) {
             }
             CHECK(near > 0 && far > 0, "the field straddles the radius");
 
-            int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R, 255);
+            int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R, 255, 0, 0);
             CHECK(m > 0 && m < n, "a filtered snapshot is smaller");
             sim_state cut;
             CHECK(sim_unpack(&cut, buf, m) == 0, "and unpacks");
@@ -3468,9 +3523,16 @@ int main(void) {
                     ship_near++;
                     CHECK(cut.ships[i].active, "a ship inside the radius is sent");
                     CHECK(cut.ships[i].x == s.ships[i].x
-                          && cut.ships[i].y == s.ships[i].y
-                          && cut.ships[i].energy == s.ships[i].energy,
-                          "and arrives unchanged");
+                          && cut.ships[i].y == s.ships[i].y,
+                          "and its public state arrives unchanged");
+                    CHECK((i == 0) == !cut.ships[i].public_only,
+                          "only the owner receives private ship state");
+                    if (i == 0)
+                        CHECK(cut.ships[i].energy == s.ships[i].energy,
+                              "the owner's energy travels");
+                    else
+                        CHECK(cut.ships[i].energy == 0,
+                              "remote energy is not public");
                 } else {
                     ship_far++;
                     CHECK(!cut.ships[i].active,
@@ -3537,7 +3599,7 @@ int main(void) {
 
             const int32_t R = 84 * 16 * 256;    /* the floor a client gets */
             int32_t vx = m.ships[0].x, vy = m.ships[0].y;
-            int n2 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 0);
+            int n2 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 0, 0, 0);
             sim_state mine_seen;
             CHECK(n2 > 0 && sim_unpack(&mine_seen, buf, n2) == 0,
                   "the layer's own snapshot packs");
@@ -3548,7 +3610,7 @@ int main(void) {
                   && mine_seen.weapons[0].life == m.weapons[0].life,
                   "at the pixel and on the clock it actually has");
 
-            int n3 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 1);
+            int n3 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 1, 1, 0);
             sim_state stranger;
             CHECK(n3 > 0 && sim_unpack(&stranger, buf, n3) == 0,
                   "and so does somebody else's from the same place");
@@ -3557,7 +3619,7 @@ int main(void) {
 
             /* 255 is nobody, and it has to be: every round is owned by a seat,
              * so the sentinel can never be somebody by accident. */
-            int n5 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 255);
+            int n5 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 255, 255, 0);
             sim_state nobody;
             CHECK(n5 > 0 && sim_unpack(&nobody, buf, n5) == 0, "packs");
             CHECK(nobody.weapon_count == 0, "and carries no round's exception");
@@ -3565,7 +3627,7 @@ int main(void) {
             /* And the exception is the owner rather than the distance: from
              * next to the mine, everybody is told about it. */
             int n4 = sim_pack_around(&m, buf, sizeof buf,
-                                     m.weapons[0].x, m.weapons[0].y, R, 1);
+                                     m.weapons[0].x, m.weapons[0].y, R, 1, 1, 0);
             sim_state near_by;
             CHECK(n4 > 0 && sim_unpack(&near_by, buf, n4) == 0, "packs");
             CHECK(near_by.weapon_count == 1,
@@ -3577,7 +3639,8 @@ int main(void) {
          * that way, so a filtered format that changed the unfiltered bytes
          * would be a format change wearing a disguise. */
         {
-            int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255);
+            int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255, 255,
+                                        SIM_PACK_PRIVATE_ALL | SIM_PACK_SECRET);
             CHECK(whole == n, "an unfiltered pack is the same size as sim_pack");
             sim_state all;
             CHECK(sim_unpack(&all, buf, whole) == 0, "and unpacks");
@@ -3592,7 +3655,8 @@ int main(void) {
         for (int pick = 0; pick < s.ship_count; pick++) {
             if (!s.ships[pick].active) continue;
             int m = sim_pack_around(&s, buf, sizeof buf,
-                                    s.ships[pick].x, s.ships[pick].y, 0, 255);
+                                    s.ships[pick].x, s.ships[pick].y, 0, 255,
+                                    (uint8_t)pick, 0);
             CHECK(m > 0, "a pack around one seat succeeds");
             sim_state one;
             CHECK(sim_unpack(&one, buf, m) == 0, "and unpacks");
@@ -3824,7 +3888,8 @@ int main(void) {
             sim_state s2;
             step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);   /* down: toggles once */
             CHECK(s.ships[id].multi_off, "the key goes down and it toggles");
-            int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255);
+            int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255, 255,
+                                    SIM_PACK_PRIVATE_ALL | SIM_PACK_SECRET);
             CHECK(m > 0, "the state packs");
             CHECK(sim_unpack(&s2, buf, m) == 0, "and reads back");
             CHECK(s2.ships[id].btn_prev == SIM_BTN_MULTI,

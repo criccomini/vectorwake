@@ -50,17 +50,23 @@ static int within(int32_t x, int32_t y, int32_t cx, int32_t cy,
 }
 
 int sim_pack(const sim_state *s, uint8_t *out, int cap) {
-    return sim_pack_around(s, out, cap, 0, 0, -1, 255);
+    return sim_pack_around(s, out, cap, 0, 0, -1, 255, 255,
+                           SIM_PACK_PRIVATE_ALL | SIM_PACK_SECRET);
 }
 
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
-                    int32_t cx, int32_t cy, int32_t radius, uint8_t viewer) {
+                    int32_t cx, int32_t cy, int32_t radius, uint8_t viewer,
+                    uint8_t owner, uint8_t options) {
     wr w = {out, out + cap, 0};
     int64_t r2 = (int64_t)radius * radius;
 
     w32(&w, s->tick);
     w32(&w, s->rng);
-    w16(&w, s->prize_timer);
+    w8(&w, options & SIM_PACK_SECRET);
+    if (options & SIM_PACK_SECRET) {
+        w32(&w, s->prize_rng);
+        w16(&w, s->prize_timer);
+    }
 
     /* Which ships this viewer is told about, as a bitmap ahead of the records.
      *
@@ -96,7 +102,8 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
     for (int i = 0; i < s->ship_count; i++) {
         const sim_ship *sh = &s->ships[i];
         if (!here[i]) continue;
-        w8(&w, (uint32_t)(sh->active | (sh->alive << 1)));
+        int private = (options & SIM_PACK_PRIVATE_ALL) || i == owner;
+        w8(&w, (uint32_t)(sh->active | (sh->alive << 1) | (private << 2)));
         w8(&w, sh->cls);
         w8(&w, sh->team);
         w32(&w, (uint32_t)sh->x);
@@ -104,38 +111,37 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w32(&w, (uint32_t)sh->vx);
         w32(&w, (uint32_t)sh->vy);
         w16(&w, sh->heading);
-        w32(&w, (uint32_t)sh->energy);
-        w16(&w, sh->fire_cooldown[SIM_TRIG_GUN]);
-        w16(&w, sh->fire_cooldown[SIM_TRIG_BOMB]);
         w16(&w, sh->repel);
         w32(&w, (uint32_t)sh->repel_speed);
-        w16(&w, sh->respawn_at);
-        w32(&w, (uint32_t)sh->spawn_x);
-        w32(&w, (uint32_t)sh->spawn_y);
         w16(&w, sh->kills);
         w16(&w, sh->deaths);
-        for (int u = 0; u < SIM_UP_COUNT; u++) w8(&w, sh->up[u]);
-        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
-            w8(&w, sh->level[t]);
-            w16(&w, sh->mods[t]);
-        }
-        for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, sh->charge[k]);
-        /* Whether this pilot has multifire switched off. It travels because a
-         * client predicting its own shots has to know, and because the
-         * interface says which way the toggle is set.
-         *
-         * And last tick's buttons with it, which looks like sending an input
-         * back to the machine that sent it. It is not optional: `sim_unpack`
-         * clears the state it fills, so without this the edge detector wakes
-         * up thinking nothing was held, and a key still down when a snapshot
-         * lands reads as a fresh press. At ten snapshots a second a pilot
-         * holding the key for a moment toggles four times on the client and
-         * once on the server. */
-        w8(&w, sh->multi_off);
-        w16(&w, sh->btn_prev);
-        w16(&w, sh->earned);
+        int32_t bounty = sim_bounty(sh);
+        if (bounty < 0) bounty = 0;
+        if (bounty > UINT16_MAX) bounty = UINT16_MAX;
+        w16(&w, (uint32_t)bounty);
         w32(&w, sh->points);
         w8(&w, sh->carrier);
+        if (private) {
+            w32(&w, (uint32_t)sh->energy);
+            w16(&w, sh->fire_cooldown[SIM_TRIG_GUN]);
+            w16(&w, sh->fire_cooldown[SIM_TRIG_BOMB]);
+            w16(&w, sh->stall);
+            w16(&w, sh->respawn_at);
+            w32(&w, (uint32_t)sh->spawn_x);
+            w32(&w, (uint32_t)sh->spawn_y);
+            for (int u = 0; u < SIM_UP_COUNT; u++) w8(&w, sh->up[u]);
+            for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+                w8(&w, sh->level[t]);
+                w16(&w, sh->mods[t]);
+            }
+            for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, sh->charge[k]);
+            /* These are needed only by the owner prediction. The edge state
+             * prevents a held toggle from becoming a fresh press after every
+             * snapshot. */
+            w8(&w, sh->multi_off);
+            w16(&w, sh->btn_prev);
+            w16(&w, sh->earned);
+        }
     }
 
     /* Rounds in the air, near ones only, plus this viewer's own wherever they
@@ -256,7 +262,14 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
 
     s->tick = r32(&r);
     s->rng = r32(&r);
-    s->prize_timer = (uint16_t)r16(&r);
+    uint32_t options = r8(&r);
+    if (options & ~SIM_PACK_SECRET) return -1;
+    if (options & SIM_PACK_SECRET) {
+        s->prize_rng = r32(&r);
+        s->prize_timer = (uint16_t)r16(&r);
+    } else {
+        s->prize_rng = 1;
+    }
 
     uint32_t ships = r8(&r);
     if (ships > SIM_MAX_SHIPS) return -1;
@@ -272,6 +285,8 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         uint32_t flags = r8(&r);
         sh->active = (uint8_t)(flags & 1);
         sh->alive = (uint8_t)((flags >> 1) & 1);
+        int private = (int)((flags >> 2) & 1);
+        sh->public_only = (uint8_t)!private;
         sh->cls = (uint8_t)r8(&r);
         /* A hull index off the wire is an array index everywhere it lands:
          * settings->classes is SIM_MAX_CLASSES wide, and both the stepping
@@ -286,28 +301,37 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         sh->vx = (int32_t)r32(&r);
         sh->vy = (int32_t)r32(&r);
         sh->heading = (uint16_t)r16(&r);
-        sh->energy = (int32_t)r32(&r);
-        sh->fire_cooldown[SIM_TRIG_GUN] = (uint16_t)r16(&r);
-        sh->fire_cooldown[SIM_TRIG_BOMB] = (uint16_t)r16(&r);
         sh->repel = (uint16_t)r16(&r);
         sh->repel_speed = (int32_t)r32(&r);
-        sh->respawn_at = (uint16_t)r16(&r);
-        sh->spawn_x = (int32_t)r32(&r);
-        sh->spawn_y = (int32_t)r32(&r);
         sh->kills = (uint16_t)r16(&r);
         sh->deaths = (uint16_t)r16(&r);
-        for (int u = 0; u < SIM_UP_COUNT; u++) sh->up[u] = (uint8_t)r8(&r);
-        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
-            sh->level[t] = (uint8_t)r8(&r);
-            sh->mods[t] = (uint16_t)r16(&r);
-        }
-        for (int k = 0; k < SIM_MAX_CHARGES; k++)
-            sh->charge[k] = (uint8_t)r8(&r);
-        sh->multi_off = (uint8_t)r8(&r);
-        sh->btn_prev = (uint16_t)r16(&r);
-        sh->earned = (uint16_t)r16(&r);
+        uint16_t bounty = (uint16_t)r16(&r);
         sh->points = r32(&r);
         sh->carrier = (uint8_t)r8(&r);
+        if (private) {
+            sh->energy = (int32_t)r32(&r);
+            sh->fire_cooldown[SIM_TRIG_GUN] = (uint16_t)r16(&r);
+            sh->fire_cooldown[SIM_TRIG_BOMB] = (uint16_t)r16(&r);
+            sh->stall = (uint16_t)r16(&r);
+            sh->respawn_at = (uint16_t)r16(&r);
+            sh->spawn_x = (int32_t)r32(&r);
+            sh->spawn_y = (int32_t)r32(&r);
+            for (int u = 0; u < SIM_UP_COUNT; u++) sh->up[u] = (uint8_t)r8(&r);
+            for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+                sh->level[t] = (uint8_t)r8(&r);
+                sh->mods[t] = (uint16_t)r16(&r);
+            }
+            for (int k = 0; k < SIM_MAX_CHARGES; k++)
+                sh->charge[k] = (uint8_t)r8(&r);
+            sh->multi_off = (uint8_t)r8(&r);
+            sh->btn_prev = (uint16_t)r16(&r);
+            sh->earned = (uint16_t)r16(&r);
+        } else {
+            /* `sim_bounty` remains useful to rendering code without exposing
+             * which upgrades make up the number. With every private count at
+             * zero, the public bounty is exactly `earned`. */
+            sh->earned = bounty;
+        }
     }
 
     uint32_t weapons = r16(&r);

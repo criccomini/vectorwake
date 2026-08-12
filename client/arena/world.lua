@@ -2160,8 +2160,8 @@ local function blast_rung(r)
     return k > 0 and k or 0
 end
 
--- Somebody else's repel, drawn from the only evidence there is: the count in
--- their charge slot going down.
+-- Remember private charge counts for the owner. Remote counts are withheld;
+-- their one-tick blast arrives through `M.remote_charge` instead.
 --
 -- A repel is a weapon whose life is one tick. It is spawned and gone inside a
 -- single step, so it reaches the state a snapshot is packed from only when the
@@ -2174,12 +2174,9 @@ end
 -- charges this week and now a room is full of shoves with no explanation
 -- attached to four fifths of them.
 --
--- So this reads the inventory instead, which is in every snapshot. A remote
--- pilot's count is authoritative and moves only when one lands: prediction
--- runs their ship with no buttons, so nothing local can spend their charges,
--- and a drop is a charge spent. Only for a charge that leaves nothing behind
--- to look at, which is what the life test is: a burst puts twenty-four rounds
--- in the air and draws itself.
+-- The old client inferred this from every pilot's inventory. That made exact
+-- enemy charge counts public. The arena now sends the action only to views
+-- whose fixed fairness circle contains the firing ship.
 -- The perspective seat's team, guarded. The arena hands these functions 255
 -- while watching a room through nobody's eyes, and 255 is a byte that indexes
 -- no seat: it belongs to no side, so everything reads as hostile, which is
@@ -2195,6 +2192,9 @@ function M.charges(me, sfx)
         local seen = charge_seen[i]
         if not seen then seen = {} charge_seen[i] = seen end
         local alive = sim.ship_alive(i) == 1
+        if sim.ship_private and not sim.ship_private(i) then
+            charge_seen[i] = {alive = alive}
+        else
         for k = 0, sim.MAX_CHARGES - 1 do
             local held = sim.ship_charge(i, k)
             local was = seen[k]
@@ -2217,11 +2217,24 @@ function M.charges(me, sfx)
             seen[k] = held
         end
         seen.alive = alive
+        end
     end
     -- Seats past the end of the room belong to nobody now, and holding their
     -- counts would greet whoever takes one with a shockwave.
     for i in pairs(charge_seen) do
         if i >= n then charge_seen[i] = nil end
+    end
+end
+
+-- Draw a remote charge action announced by the arena. Most charges leave
+-- rounds that already draw themselves. A one-tick blast does not survive to a
+-- snapshot, so it is the case this explicit public event restores.
+function M.remote_charge(slot, x, y, sfx)
+    local spec = sim.charge_spec(slot)
+    local blast = spec >= 0 and spec_blast(spec) or 0
+    if spec >= 0 and blast > 0 and spec_life(spec) <= 1 then
+        fx.detonate(x, y, blast, bomb_col(spec_level(spec)))
+        sfx("blast", x, y, blast_rung(blast))
     end
 end
 
@@ -2635,20 +2648,7 @@ function M.events(me, sfx)
             fx.wave(x, y, 5, 30, 0.3, 4, pal.CHARGE_COL)
             sfx("charge", x, y)
         elseif ty == sim.EV_PRIZE then
-            -- v is +1 for an upgrade and -1 for rust. A green that took
-            -- something has to look and sound like a loss, or the one
-            -- mechanic that costs you anything is invisible.
-            local x, y = sim.ship_x(a), sim.ship_y(a)
-            local col = (v < 0) and pal.RUST or pal.prize(b)
-            if v < 0 then
-                fx.wave(x, y, 5, 22, 0.4, 3, col)
-                fx.burst(x, y, 5, 40, 0.45, 1.2, col)
-                sfx("rust", x, y)
-            else
-                fx.wave(x, y, 4, 26, 0.35, 3, col)
-                fx.burst(x, y, 6, 60, 0.5, 1.4, col)
-                sfx("prize", x, y)
-            end
+            M.prize(a, b, v, sfx)
         elseif ty == sim.EV_FLAG_TAKE then
             local x, y = sim.ship_x(a), sim.ship_y(a)
             local col = (sim.ship_team(a) == team_of(me)) and pal.FRIEND or pal.ENEMY
@@ -2656,6 +2656,24 @@ function M.events(me, sfx)
             fx.burst(x, y, 5, 55, 0.4, 1.4, pal.a(col, 0.8))
             sfx("flag", x, y)
         end
+    end
+end
+
+-- Draw one prize outcome the authority announced. Prediction may remove the
+-- green that was touched, but the type and whether it rusted come only from
+-- this event.
+function M.prize(ship, ty, delta, sfx)
+    if ship < 0 or ship >= sim.ship_count() or sim.ship_active(ship) ~= 1 then return end
+    local x, y = sim.ship_x(ship), sim.ship_y(ship)
+    local col = (delta < 0) and pal.RUST or pal.prize(ty)
+    if delta < 0 then
+        fx.wave(x, y, 5, 22, 0.4, 3, col)
+        fx.burst(x, y, 5, 40, 0.45, 1.2, col)
+        sfx("rust", x, y)
+    else
+        fx.wave(x, y, 4, 26, 0.35, 3, col)
+        fx.burst(x, y, 6, 60, 0.5, 1.4, col)
+        sfx("prize", x, y)
     end
 end
 

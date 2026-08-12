@@ -190,6 +190,11 @@ int32_t sim_eff_recharge(const sim_ship_class *c, const sim_ship *s) {
 void sim_init(sim_state *s, uint32_t seed) {
     memset(s, 0, sizeof *s);
     s->rng = seed ? seed : 1u;
+    /* A distinct, nonzero stream for prize outcomes and placement. A network
+     * client receives `rng` for deterministic flight prediction and never
+     * receives this value. */
+    s->prize_rng = xorshift32(s->rng ^ 0x9e3779b9u);
+    if (s->prize_rng == 0) s->prize_rng = 1u;
     /* Nobody is riding anybody, and zero is a ship index rather than a way of
      * saying so. Every slot, not only the ones in use: the hash reads to
      * `ship_count` and a slot that was never spawned still has to agree
@@ -251,7 +256,7 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
     sh->x = sh->spawn_x = x_px * 256;
     sh->y = sh->spawn_y = y_px * 256;
     sh->heading = heading;
-    outfit(sh, cfg, &s->rng);
+    outfit(sh, cfg, &s->prize_rng);
     sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
     return i;
 }
@@ -1082,7 +1087,7 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     sh->fire_cooldown[SIM_TRIG_BOMB] = 0;
     /* Rerolled for the new hull rather than carried across: the roster row
      * changed, so the old items may not be things this hull can hold. */
-    outfit(sh, cfg, &s->rng);
+    outfit(sh, cfg, &s->prize_rng);
     sh->energy = sim_eff_max_energy(&cfg->classes[cls], sh);
     return 0;
 }
@@ -1441,8 +1446,8 @@ static void spawn_prize(sim_state *s, const sim_settings *cfg) {
      * zero, so greens do not all pile up around whoever holds the first seat. */
     int host = -1;
     if (s->ship_count > 0) {
-        s->rng = xorshift32(s->rng);
-        int start = (int)(s->rng % (uint32_t)s->ship_count);
+        s->prize_rng = xorshift32(s->prize_rng);
+        int start = (int)(s->prize_rng % (uint32_t)s->ship_count);
         for (int k = 0; k < s->ship_count; k++) {
             int i = (start + k) % s->ship_count;
             if (s->ships[i].active && s->ships[i].alive) { host = i; break; }
@@ -1454,20 +1459,20 @@ static void spawn_prize(sim_state *s, const sim_settings *cfg) {
         int32_t tx, ty;
         if (host >= 0) {
             const int32_t R = SIM_PRIZE_NEAR_HI;
-            s->rng = xorshift32(s->rng);
-            int32_t ox = (int32_t)(s->rng % (uint32_t)(2 * R + 1)) - R;
-            s->rng = xorshift32(s->rng);
-            int32_t oy = (int32_t)(s->rng % (uint32_t)(2 * R + 1)) - R;
+            s->prize_rng = xorshift32(s->prize_rng);
+            int32_t ox = (int32_t)(s->prize_rng % (uint32_t)(2 * R + 1)) - R;
+            s->prize_rng = xorshift32(s->prize_rng);
+            int32_t oy = (int32_t)(s->prize_rng % (uint32_t)(2 * R + 1)) - R;
             if (ox * ox + oy * oy < SIM_PRIZE_NEAR_LO * SIM_PRIZE_NEAR_LO) continue;
             tx = s->ships[host].x / (SIM_TILE_PX * 256) + ox;
             ty = s->ships[host].y / (SIM_TILE_PX * 256) + oy;
             if (tx < cfg->prize_lo || tx > cfg->prize_hi) continue;
             if (ty < cfg->prize_lo || ty > cfg->prize_hi) continue;
         } else {
-            s->rng = xorshift32(s->rng);
-            tx = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
-            s->rng = xorshift32(s->rng);
-            ty = cfg->prize_lo + (int32_t)(s->rng % (uint32_t)span);
+            s->prize_rng = xorshift32(s->prize_rng);
+            tx = cfg->prize_lo + (int32_t)(s->prize_rng % (uint32_t)span);
+            s->prize_rng = xorshift32(s->prize_rng);
+            ty = cfg->prize_lo + (int32_t)(s->prize_rng % (uint32_t)span);
         }
         if (solid(cfg->map, cfg, s->tick, tx, ty)) continue;
         if (SIM_TILE_CLASS(sim_tile_at(cfg->map, tx, ty)) == SIM_TILE_SAFE)
@@ -1495,6 +1500,15 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
             if (!hull_reaches(&cfg->classes[sh->cls], sh->heading,
                               sh->x, sh->y, p->x, p->y, cfg->prize_radius))
                 continue;
+            /* A prediction client may conclude that the green was touched,
+             * but it cannot roll the secret outcome. The next authoritative
+             * snapshot supplies the owner state and the server sends the
+             * outcome as a reliable event. */
+            if (cfg->deathless) {
+                p->active = 0;
+                live--;
+                break;
+            }
             /* Every green is takeable by everybody; what it turns out to be
              * is rolled here, from what this hull could ever hold. A pilot
              * already at that ceiling is still told what they found -- the
@@ -1502,7 +1516,7 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
              * up reads as a broken pickup, and one that is eaten in silence
              * is a green that lies. */
             int delta = 1;
-            uint8_t got = sim_take_prize(sh, cfg, &s->rng, &delta);
+            uint8_t got = sim_take_prize(sh, cfg, &s->prize_rng, &delta);
             /* Collecting energy or recharge should feel immediate rather than
              * arriving over the next few seconds. Losing one is not the same
              * shape: the bar is clamped down to the new ceiling rather than
@@ -1597,7 +1611,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 sh->x = sh->spawn_x;
                 sh->y = sh->spawn_y;
                 sh->vx = sh->vy = 0;
-                outfit(sh, cfg, &next->rng);
+                if (!cfg->deathless) outfit(sh, cfg, &next->prize_rng);
                 sh->energy = sim_eff_max_energy(cls, sh);
                 sh->fire_cooldown[SIM_TRIG_GUN] = 0;
                 sh->fire_cooldown[SIM_TRIG_BOMB] = 0;
@@ -1904,7 +1918,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * deliberately faster than any hull. A pilot can still steer and
          * thrust throughout; they simply cannot exceed the ceiling. */
         if (sh->repel > 0) sh->repel--;
-        {
+        if (!sh->public_only) {
             int64_t mag2 = (int64_t)sh->vx * sh->vx + (int64_t)sh->vy * sh->vy;
             int64_t max = e_speed;
             if (sh->repel > 0 && sh->repel_speed > max) max = sh->repel_speed;
@@ -2384,12 +2398,14 @@ uint64_t sim_hash(const sim_state *s) {
     uint64_t h = 0xcbf29ce484222325ULL;
     h = hash_u32(h, s->tick);
     h = hash_u32(h, s->rng);
+    h = hash_u32(h, s->prize_rng);
     h = hash_u32(h, s->ship_count);
     h = hash_u32(h, s->weapon_count);
     for (int i = 0; i < s->ship_count; i++) {
         const sim_ship *sh = &s->ships[i];
         h = hash_u32(h, (uint32_t)(sh->active | (sh->alive << 8) |
-                                   (sh->cls << 16) | (sh->team << 24)));
+                                   (sh->public_only << 16) | (sh->cls << 24)));
+        h = hash_u32(h, sh->team);
         h = hash_u32(h, (uint32_t)sh->x);
         h = hash_u32(h, (uint32_t)sh->y);
         h = hash_u32(h, (uint32_t)sh->vx);

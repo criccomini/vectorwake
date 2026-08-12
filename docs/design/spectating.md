@@ -106,6 +106,8 @@ Nothing the room polices. The human cap, the fill target, the bot ballast and
 the drain all read `players`, and a watcher is not in it, so `max_watchers` is
 its own dial: a bandwidth number, eight by default, because a watcher is zero
 tick time and a full player's egress, and egress is the fleet's whole bill.
+Both a client that arrives watching and a pilot who voluntarily sits out take
+one of those slots; a full gallery leaves the pilot in their hull.
 
 They are in the roster, though, by name, in a second section after the ships.
 The roster exists so you know who is in the room with you, and an unnamed

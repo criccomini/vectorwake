@@ -8,9 +8,10 @@
 //! is the account model. Two properties are worth keeping in mind while
 //! reading:
 //!
-//! Nothing on the join path calls this service. It mints a signed token, and
-//! arenas verify the signature with a key the catalog carries, so an outage
-//! here costs claiming and persistence but never play.
+//! Identity verification on the join path stays offline: this service mints a
+//! signed token and arenas verify it with a catalog key. Rated admission
+//! also claims a renewable lease here, which is how one account is kept to one
+//! active rated session across arena processes.
 //!
 //! It holds no email addresses or third-party identities. Pilot records contain
 //! generated call signs, ratings, hashed random secrets and argon2-hashed
@@ -254,6 +255,17 @@ create table if not exists client_errors (
 );
 alter table client_errors add column if not exists account bigint;
 create index if not exists client_errors_by_last on client_errors (last_at desc);
+-- One live rated connection per account across the fleet. Arenas renew the row
+-- while the socket lives and release it on a clean departure. The timestamp is
+-- a lease so a dead process cannot lock an account forever.
+create table if not exists active_rated_sessions (
+    account  bigint primary key references accounts(id) on delete cascade,
+    session  text not null,
+    instance text not null,
+    touched  timestamptz not null default now()
+);
+create index if not exists active_rated_sessions_by_touch
+    on active_rated_sessions (touched);
 ";
 
 /// How long a pilot's own rows live. Long enough to answer a report weeks after
@@ -998,6 +1010,63 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 return (500, serde_json::json!({ "error": e }));
             }
             (200, serde_json::json!({ "secret": secret, "account": account, "owner": owner }))
+        }
+
+        // The cross-fleet seat lock for rated play. A claim is also a renewal
+        // when the same session already owns the row. An abandoned row expires
+        // after three minutes, beyond the arena's quiet-socket timeout.
+        "/v1/rated-session/claim" => {
+            if meta.catalog.pool_for_token(&s("pool_token")).is_none() {
+                return (403, serde_json::json!({ "error": "unknown pool token" }));
+            }
+            let Some(account) = body.get("account").and_then(|v| v.as_i64()).filter(|v| *v > 0)
+            else {
+                return (400, serde_json::json!({ "error": "a rated session needs an account" }));
+            };
+            let session = s("session");
+            if session.is_empty() {
+                return (400, serde_json::json!({ "error": "a rated session needs an id" }));
+            }
+            let instance = s("instance");
+            let row = db
+                .query_opt(
+                    "insert into active_rated_sessions (account, session, instance, touched)
+                     values ($1, $2, $3, now())
+                     on conflict (account) do update
+                     set session = excluded.session,
+                         instance = excluded.instance,
+                         touched = now()
+                     where active_rated_sessions.session = excluded.session
+                        or active_rated_sessions.touched < now() - interval '180 seconds'
+                     returning session",
+                    &[&account, &session, &instance],
+                )
+                .await;
+            match row {
+                Ok(row) => (200, serde_json::json!({ "claimed": row.is_some() })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        "/v1/rated-session/release" => {
+            if meta.catalog.pool_for_token(&s("pool_token")).is_none() {
+                return (403, serde_json::json!({ "error": "unknown pool token" }));
+            }
+            let Some(account) = body.get("account").and_then(|v| v.as_i64()).filter(|v| *v > 0)
+            else {
+                return (400, serde_json::json!({ "error": "a rated session needs an account" }));
+            };
+            let session = s("session");
+            match db
+                .execute(
+                    "delete from active_rated_sessions where account = $1 and session = $2",
+                    &[&account, &session],
+                )
+                .await
+            {
+                Ok(_) => (200, serde_json::json!({ "released": true })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
         }
 
         // An arena handing off what it rated. The log is the durable artifact
@@ -2561,6 +2630,42 @@ pub async fn call(base: &str, path: &str, body: &str) -> Result<serde_json::Valu
         return Err(why);
     }
     serde_json::from_str(payload).map_err(|e| format!("unreadable reply: {e}"))
+}
+
+/// Claim or renew the fleet-wide rated seat for one account.
+pub async fn claim_rated_session(
+    base: &str,
+    pool_token: &str,
+    account: u64,
+    session: &str,
+    instance: &str,
+) -> Result<bool, String> {
+    let body = serde_json::json!({
+        "pool_token": pool_token,
+        "account": account,
+        "session": session,
+        "instance": instance,
+    })
+    .to_string();
+    let reply = call(base, "/v1/rated-session/claim", &body).await?;
+    Ok(reply.get("claimed").and_then(|v| v.as_bool()).unwrap_or(false))
+}
+
+/// Release a rated seat. The route is idempotent, so cleanup can call it
+/// after any connection ending without first proving the row still exists.
+pub async fn release_rated_session(
+    base: &str,
+    pool_token: &str,
+    account: u64,
+    session: &str,
+) -> Result<(), String> {
+    let body = serde_json::json!({
+        "pool_token": pool_token,
+        "account": account,
+        "session": session,
+    })
+    .to_string();
+    call(base, "/v1/rated-session/release", &body).await.map(|_| ())
 }
 
 // ------------------------------------------------------------------ server

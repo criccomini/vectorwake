@@ -1870,3 +1870,45 @@ capability rather than a default and would want the watcher path to ask for it;
 or fights cluster so hard that the surviving in-radius rounds are still the
 budget, which is what the record diets are for and what the live number after
 this lands will say.
+
+## 44. Fair sight and rated concurrency are server policy
+
+**Decided:** human snapshots use one server-defined 84-tile radius, public ship
+records exclude owner state, prize decisions use an unshipped random stream,
+and one account may hold one active rated session across the fleet.
+
+**Why:** each client-controlled input was an allowance rather than a fact. A
+window declaration widened sight, a spectator camera inherited the subject's
+private record, the prediction seed revealed future greens, sitting out could
+discard a wounded hull, and the same account could enter rated rooms on two
+arena processes. Local limits did not cover any of those boundaries.
+
+The sight radius now comes from the arena. A camera subject controls centering
+and which minefield remains in view, while a separate owner byte controls the
+private ship tail. Public records carry motion, side, score, bounty, shove and
+carrier state. Energy, cooldowns, upgrades, rungs, add-ons, charges, respawn
+state and input edges stay in the owner tail. Follow and channel snapshots name
+no owner. Remote one-tick charges use a filtered public action message, so the
+effect remains visible without putting the remaining inventory on the wire.
+
+The core keeps a public prediction generator and a private prize generator.
+Network snapshots omit the latter and its timer. A deathless prediction client
+removes a green it touched but applies no guessed grant; the arena sends the
+collector `S2C_PRIZE` and the next snapshot carries the resulting owner state.
+
+Rated exclusion is a renewable row in the meta-layer, keyed by account. The
+arena claims before seating an authenticated account, renews every thirty
+seconds, and releases on disconnect. A three-minute expiry recovers a row left
+by a dead process. Watching without a hull takes no claim; sitting out from a
+rated seat keeps the connection's existing claim. Every entrance to the stands
+counts against `max_watchers`, and a voluntary entrance also requires the full
+energy gate used by hull and side changes.
+
+**Cost:** the snapshot wire changed and `CLIENT_PROTOCOL` moved to 9. New rated
+joins depend on a meta-layer round trip and fail closed when exclusion cannot
+be checked, while active rooms and guests remain independent of that service.
+
+**Reconsider if:** measured traffic makes 84 tiles too expensive, in which case
+the replacement is another server policy rather than a client declaration; or
+the product wants multiple simultaneous rated seats under one accountable
+party, which needs an explicit party model instead of an account loophole.

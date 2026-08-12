@@ -178,11 +178,11 @@ per-event cap bounds each death, so the disguise is short, but a short disguise
 in a low room is still somebody's bad night. If it becomes a pattern, the lever
 is the `admission` bar rather than making guests slower to create.
 
-Concurrent sessions. Two tabs share one guest secret, so one account can hold
-two seats in one room, and two seats under one mind can feed each other kills.
-Refusing the second session is simple and punishes households behind one
-browser profile; allowing it invites collusion the repeat-kill dampener only
-partly prices in.
+Concurrent rated sessions. One account may hold one active rated session across
+the fleet. Arenas claim a renewable meta-layer lease before seating an
+authenticated account and release it when the connection ends. Watching without
+a hull does not claim a lease, but sitting out from a rated seat keeps the one
+the connection already holds.
 
 Recovery. A guest has none by design, and now a claimed pilot's recovery is
 only as good as wherever they kept the password. Whether "there is no reset"

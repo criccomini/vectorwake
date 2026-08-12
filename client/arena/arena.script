@@ -776,6 +776,20 @@ local function drain_events()
     -- yours", the reading a watcher wants.
     local view = eye() or 255
     world.events(view, sfx.play)
+    for _, p in ipairs(net.prizes) do
+        if not net.watching and me < sim.ship_count() then
+            world.prize(me, p.type, p.delta, sfx.play)
+            local col, name = pal.prize(p.type)
+            local up = p.delta >= 0
+            if not up then col = pal.RUST end
+            notify((up and "+ " or "- ") .. name, col, true)
+        end
+    end
+    if #net.prizes > 0 then net.prizes = {} end
+    for _, charge in ipairs(net.charge_events) do
+        world.remote_charge(charge.slot, charge.x, charge.y, sfx.play)
+    end
+    if #net.charge_events > 0 then net.charge_events = {} end
     -- What the events cannot say, because they are this client's own
     -- simulation talking and it simulates one pilot. Both of these read the
     -- state instead, so they go here rather than in the loop below.
@@ -1804,8 +1818,10 @@ function update(self, dt)
                 -- bar is gone: without this a pilot at eight percent and a
                 -- pilot at ninety would be told the same thing in the same
                 -- color, and the length of a 22-pixel bar is not a warning.
-                local frac = sim.ship_energy(i) / math.max(1, sim.ship_max_energy(i))
-                if frac < 0.995 then
+                local private = not sim.ship_private or sim.ship_private(i)
+                local frac = private
+                    and sim.ship_energy(i) / math.max(1, sim.ship_max_energy(i)) or 1
+                if private and frac < 0.995 then
                     local bar_col = col
                     if i == me then
                         if frac < 0.2 then bar_col = pal.HURT
@@ -1825,8 +1841,8 @@ function update(self, dt)
                     for k = 1, #aboard do
                         local g = aboard[k]
                         riders[#riders + 1] = sim.ship_heading(g)
-                        riders[#riders + 1] =
-                            sim.ship_energy(g) / math.max(1, sim.ship_max_energy(g))
+                        riders[#riders + 1] = (not sim.ship_private or sim.ship_private(g))
+                            and sim.ship_energy(g) / math.max(1, sim.ship_max_energy(g)) or 1
                         riders[#riders + 1] = col
                         riders[#riders + 1] = g == me
                     end
@@ -1939,6 +1955,7 @@ function update(self, dt)
         -- the delayed channel asking the core about a seat that cannot exist.
         local hud_me = me
         if watching then hud_me = e end
+        if hud_me and sim.ship_private and not sim.ship_private(hud_me) then hud_me = nil end
         ui.hud({
             me = hud_me,
             -- Watching, and what of: a particular hull, or the room's own
@@ -2371,11 +2388,6 @@ function on_message(self, message_id, message)
             -- static layers need to hold it. Both follow the view: see
             -- TUNE.STATIC_STEP.
             local need = math.max(message.hw, message.hh) / 16
-            -- And tell the zone, which sends what this client can draw rather
-            -- than the whole room. The same number the terrain window is built
-            -- from, since the question is the same one: how far out does this
-            -- window reach. A no-op when it has not changed.
-            net.set_view(need + TUNE.STATIC_STEP)
             local want = math.ceil(need) + TUNE.STATIC_STEP + 1
             if want < TUNE.STATIC_MIN then want = TUNE.STATIC_MIN end
             if want > TUNE.STATIC_MAX then

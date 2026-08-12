@@ -21,15 +21,6 @@ local C2S_WATCH = 9
 -- Ride a teammate as a gunner, or 255 to get off. A request like the rest:
 -- the core decides, and the answer is the carrier byte of the next snapshot.
 local C2S_ATTACH = 10
--- How much of the map this client is drawing, as tiles either side of the
--- camera. The zone sends what a client can see rather than the whole room, so
--- telling it the window is what turns a wide monitor and a phone into
--- different amounts of traffic instead of the same amount.
---
--- Additive: a zone that predates it ignores the opcode, and one that has it
--- serves the ceiling until this arrives. So there is no protocol bump beside
--- it and no version of either side that has to be refused.
-local C2S_VIEW = 11
 -- The one flag a player sets in a join: this client came to watch, not to
 -- fly. The class byte is ignored, no ship is spawned, and the seat taken is a
 -- watcher's. The other bit is JOIN_BOT, which a player never sets.
@@ -41,11 +32,12 @@ local S2C_MAP, S2C_SETTINGS, S2C_YIELD, S2C_TEAMS = 9, 10, 11, 12
 -- channel's camera picks you without asking, so being told is the one
 -- courtesy it owes: two minutes on air is something a pilot can play around.
 local S2C_ONAIR = 13
+local S2C_PRIZE, S2C_CHARGE = 14, 15
 
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 8
+local CLIENT_PROTOCOL = 9
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -57,21 +49,14 @@ local DENY_FULL, DENY_DRAINING, DENY_WRONG_ZONE = 1, 2, 3
 -- Named for the table's sake rather than for this file's: nothing here tests
 -- for them, because neither is worth retrying and the generic path already
 -- says so. Written down so the numbering is readable next to the three above.
--- luacheck: ignore DENY_BANNED DENY_VERSION
-local DENY_BANNED, DENY_VERSION = 4, 5
+-- luacheck: ignore DENY_BANNED DENY_VERSION DENY_RATED_SESSION
+local DENY_BANNED, DENY_VERSION, DENY_RATED_SESSION = 4, 5, 6
 -- True when picking the same game again would plausibly land somewhere with
 -- room. The refusal drops the player back on the games list either way, so
 -- this only decides how the reason is worded.
 local RETRYABLE = {
     [DENY_FULL] = true, [DENY_DRAINING] = true, [DENY_WRONG_ZONE] = true,
 }
-
--- What the window is, and what the zone has been told it is. Two variables
--- because they come apart on a reconnect: sitting out and flying again arrive
--- as fresh welcomes, and the new life has been told nothing however long the
--- old one knew.
-local want_view = nil
-local sent_view = nil
 
 M.connected = false
 M.me = 0
@@ -111,6 +96,12 @@ M.ratings = {}
 -- that arrives from before the death: one kill printed once per snapshot.
 -- The zone says each death exactly once, to everyone.
 M.kills = {}
+-- Authoritative prize rolls waiting for the frame that draws their effect and
+-- feed line. The prediction core removes a touched green but never rolls it.
+M.prizes = {}
+-- Public charge actions inside the server's fairness circle. These name the
+-- charge that was used, never how many remain in the private inventory.
+M.charge_events = {}
 
 -- People arriving and leaving, drained into feed lines the same way. Worked
 -- out here by comparing one roster against the last rather than sent, because
@@ -340,6 +331,8 @@ local function hangup()
     -- drains them afterwards against a seat number that has been reset and a
     -- roster that has been emptied.
     M.kills = {}
+    M.prizes = {}
+    M.charge_events = {}
     M.comings = {}
     M.snap_deaths = {}
     M.snap_blasts = {}
@@ -355,6 +348,11 @@ local predicted_tick = 0
 
 local function u16(a, b) return a + b * 256 end
 local function u32(a, b, c, d) return a + b * 256 + c * 65536 + d * 16777216 end
+local function i32(a, b, c, d)
+    local v = u32(a, b, c, d)
+    if v >= 2147483648 then v = v - 4294967296 end
+    return v
+end
 local function i16(a, b)
     local v = u16(a, b)
     if v >= 32768 then v = v - 65536 end
@@ -858,11 +856,6 @@ local function on_message(s)
         -- life that ended, and a channel view can move the tick backwards
         -- across the delay, which the rollback machinery must never see.
         M.me = string.byte(s, 2)
-        -- A fresh life has told the zone nothing about its window, however
-        -- long the last one knew. Said again here rather than waiting for a
-        -- resize, which on a client that never resizes is never.
-        sent_view = nil
-        if want_view then M.set_view(want_view) end
         -- Which room this is, as the server numbered it. Never what was asked
         -- for: a room can fill between a list being read and a key landing,
         -- and the corner of the screen is the one place that must not be
@@ -915,6 +908,16 @@ local function on_message(s)
         end
     elseif kind == S2C_ONAIR then
         M.on_air = string.byte(s, 2) == 1
+    elseif kind == S2C_PRIZE and #s >= 3 then
+        local delta = string.byte(s, 3)
+        if delta >= 128 then delta = delta - 256 end
+        M.prizes[#M.prizes + 1] = {type = string.byte(s, 2), delta = delta}
+    elseif kind == S2C_CHARGE and #s >= 11 then
+        M.charge_events[#M.charge_events + 1] = {
+            ship = string.byte(s, 2), slot = string.byte(s, 3),
+            x = i32(string.byte(s, 4, 7)) / 256,
+            y = i32(string.byte(s, 8, 11)) / 256,
+        }
     elseif kind == S2C_YIELD then
         -- The zone wants this seat back. Only ever sent to a client that
         -- declared itself a bot, so a player never sees it; handled anyway,
@@ -1191,6 +1194,8 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     M.pilots = {}
     M.ratings = {}
     M.kills = {}
+    M.prizes = {}
+    M.charge_events = {}
     -- Back to knowing nobody, so the next room's first roster seeds rather
     -- than announcing everyone in it as having just walked in.
     M.comings = {}
@@ -1281,25 +1286,6 @@ local function ask(msg)
     if not M.connected or not (conn or wt_live) then return false end
     send_reliable(msg)
     return true
-end
-
--- Tell the zone how far this client draws, in tiles either side of the camera.
---
--- Rounded up and clamped to a byte. The server floors it at the radar's reach
--- and caps it at its own ceiling, so an over-estimate costs nothing and an
--- under-estimate is the only thing that could pop a ship in at the edge; when
--- in doubt this rounds up.
-function M.set_view(tiles)
-    local v = math.ceil(tiles or 0)
-    if v < 1 then v = 1 end
-    if v > 255 then v = 255 end
-    want_view = v
-    if v == sent_view then return false end
-    if ask(string.char(C2S_VIEW, v)) then
-        sent_view = v
-        return true
-    end
-    return false
 end
 
 function M.set_class(cls)

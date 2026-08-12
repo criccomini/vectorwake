@@ -1,4 +1,4 @@
--- Somebody else's repel, drawn from their charge count going down.
+-- Somebody else's repel, drawn from a public action without their inventory.
 --
 --     lua5.1 client/tests/charges_test.lua
 --
@@ -8,13 +8,10 @@
 -- no weapon and no expiry, and the shove arrives with nothing attached to it.
 -- `server/src/main.rs` pins that fact from the other side.
 --
--- So `world.charges` reads the firer's inventory instead. What it must not do
--- is fire on everything else that moves a charge count: your own hull, which
--- your own simulation already draws; a pilot picking a charge up; a seat
--- emptying or filling as somebody leaves and somebody else arrives; or a
--- charge like the burst, which puts twenty-four rounds in the air and needs no
--- help being seen. Each of those drew a shockwave at some point while this was
--- being written.
+-- Remote charge counts are owner-private now. The arena sends the slot and
+-- position only when the action is inside the recipient's fairness circle.
+-- This pins the client half: count changes disclose and draw nothing, while
+-- the explicit action restores the one-tick blast that cannot reach a snapshot.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -62,6 +59,7 @@ _G.sim = {
     -- present.
     ship_active = function() return 1 end,
     ship_alive = function(i) return room.alive[i] and 1 or 0 end,
+    ship_private = function(i) return i == 0 end,
     ship_charge = function(i, k) return (room.charge[i] or {})[k] or 0 end,
     ship_x = function(i) return 100 + i * 10 end,
     ship_y = function() return 200 end,
@@ -101,8 +99,13 @@ check("the first look draws nothing", look() == 0,
 -- --- a stranger spends a repel ---------------------------------------------
 
 hold(1, 0, 2)
-check("a stranger's repel is drawn", look() == 1, "drew " .. #drawn)
-check("at their hull", drawn[1] and drawn[1].x == 110 and drawn[1].y == 200)
+check("a private remote count draws nothing", look() == 0, "drew " .. #drawn)
+
+drawn, heard = {}, {}
+world.remote_charge(0, 110, 200, sfx)
+check("the public action draws the repel", #drawn == 1, "drew " .. #drawn)
+check("at its authoritative position",
+      drawn[1] and drawn[1].x == 110 and drawn[1].y == 200)
 check("at the blast's own size", drawn[1] and drawn[1].r == 512,
       "radius " .. tostring(drawn[1] and drawn[1].r))
 check("and heard", #heard == 1 and heard[1].name == "blast")
@@ -115,16 +118,12 @@ check("and at the size of the hole it makes",
       heard[1] and heard[1].lvl and heard[1].lvl >= 3,
       "rung " .. tostring(heard[1] and heard[1].lvl))
 
-check("and only once", look() == 0, "drew " .. #drawn)
-
 -- And the mapping is the bomb ladder's own radii, not a guess: 80 pixels a
 -- rung, so a 240 pixel hole is the one a rung two bomb makes and gets that
 -- rung's sound.
 CHARGE_SPEC[0] = 13
-hold(1, 0, 3)
-look()
-hold(1, 0, 2)
-look()
+drawn, heard = {}, {}
+world.remote_charge(0, 110, 200, sfx)
 check("a blast the size of a rung two bomb sounds like one",
       #heard == 1 and heard[1].lvl == 2,
       "rung " .. tostring(heard[1] and heard[1].lvl))
@@ -136,63 +135,26 @@ hold(ME, 0, 2)
 check("your own repel is left to your own simulation", look() == 0,
       "drew " .. #drawn)
 
-hold(1, 0, 3)
-check("picking one up is not spending one", look() == 0, "drew " .. #drawn)
-
-hold(2, 1, 2)
-check("a burst draws itself and is not drawn again", look() == 0,
-      "drew " .. #drawn)
-
--- A pilot who dies and respawns is re-outfitted, which moves counts in both
--- directions without anybody spending anything.
-room.alive[1] = false
-hold(1, 0, 0)
-check("a hull that died is not spending charges", look() == 0,
-      "drew " .. #drawn)
-room.alive[1] = true
-hold(1, 0, 3)
-look()
-hold(1, 0, 2)
-check("and it draws again once they are back and flying", look() == 1,
-      "drew " .. #drawn)
-
--- A seat that empties and is taken by somebody new starts from what they hold,
--- not from what the last pilot left in it.
-room.count = 2
-look()
-room.count = 3
-room.alive[2] = true
-hold(2, 0, 1)
-check("an arrival in a vacated seat is not a repel", look() == 0,
-      "drew " .. #drawn)
-
--- --- a zone with no repel at all -------------------------------------------
-
--- Every zone names its own charges, and one that puts something else in slot
--- zero must not have it drawn as a shove.
 CHARGE_SPEC[0] = 11
-hold(1, 0, 3)
-look()
-hold(1, 0, 2)
-check("a slot holding a long-lived round is not drawn", look() == 0,
+drawn, heard = {}, {}
+world.remote_charge(0, 110, 200, sfx)
+check("a slot holding a burst is not drawn again", #drawn == 0,
       "drew " .. #drawn)
 
 -- The one that needs the life test on its own: it has a blast, so every other
 -- guard here lets it through, and it is already drawing itself.
 CHARGE_SPEC[0] = 12
-hold(1, 0, 3)
-look()
-hold(1, 0, 2)
+drawn, heard = {}, {}
+world.remote_charge(0, 110, 200, sfx)
 check("a charge that flies and then goes off is not drawn twice",
-      look() == 0, "drew " .. #drawn)
+      #drawn == 0, "drew " .. #drawn)
 CHARGE_SPEC[0] = 10
 
 -- And one that leaves the slot empty entirely.
 CHARGE_SPEC[0] = nil
-hold(1, 0, 3)
-look()
-hold(1, 0, 2)
-check("an empty slot is not drawn", look() == 0, "drew " .. #drawn)
+drawn, heard = {}, {}
+world.remote_charge(0, 110, 200, sfx)
+check("an empty slot is not drawn", #drawn == 0, "drew " .. #drawn)
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

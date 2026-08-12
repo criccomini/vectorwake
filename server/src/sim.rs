@@ -43,6 +43,8 @@ pub const EV_BOUNCE: u8 = 2;
 pub const EV_HIT: u8 = 3;
 pub const EV_DEATH: u8 = 4;
 pub const EV_SPAWN: u8 = 5;
+pub const EV_PRIZE: u8 = 7;
+pub const EV_CHARGE: u8 = 8;
 pub const EV_FLAG_TAKE: u8 = 9;
 pub const EV_FLAG_DROP: u8 = 10;
 
@@ -238,6 +240,8 @@ pub struct sim_settings {
 pub struct sim_ship {
     pub active: u8,
     pub alive: u8,
+    /// One when a network snapshot carried only this ship's public record.
+    pub public_only: u8,
     pub cls: u8,
     pub team: u8,
     pub x: i32,
@@ -343,6 +347,7 @@ pub struct sim_weapon {
 pub struct sim_state {
     pub tick: u32,
     pub rng: u32,
+    pub prize_rng: u32,
     pub ship_count: u8,
     pub weapon_count: u16,
     pub prize_timer: u16,
@@ -409,7 +414,8 @@ extern "C" {
     /// plus what killing has earned. Derived, never stored.
     pub fn sim_bounty(sh: *const sim_ship) -> i32;
     pub fn sim_pack_around(s: *const sim_state, out: *mut u8, cap: c_int,
-                           cx: i32, cy: i32, radius: i32, viewer: u8) -> c_int;
+                           cx: i32, cy: i32, radius: i32, viewer: u8,
+                           owner: u8, options: u8) -> c_int;
     pub fn sim_sizeof_state() -> u32;
     pub fn sim_offsetof_settings_max_ships() -> u32;
     pub fn sim_eff_max_ships(cfg: *const sim_settings) -> u8;
@@ -461,6 +467,7 @@ extern "C" {
 }
 
 pub const PACK_MAX: usize = 64 * 1024;
+pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
 pub const TRIG_COUNT: usize = 2;
@@ -758,10 +765,10 @@ impl World {
     /// `viewer`'s own rounds wherever they are. Pass 255 for nobody's. See the
     /// note on `sim_pack_around` in sim/include/sim/pack.h.
     pub fn pack_around(&self, out: &mut [u8], cx: i32, cy: i32, radius: i32,
-                       viewer: u8) -> i32 {
+                       viewer: u8, owner: u8, options: u8) -> i32 {
         unsafe {
             sim_pack_around(&*self.state, out.as_mut_ptr(), out.len() as c_int,
-                            cx, cy, radius, viewer)
+                            cx, cy, radius, viewer, owner, options)
         }
     }
 
@@ -803,6 +810,17 @@ impl World {
         unsafe { sim_eff_max_energy(&self.cfg.classes[cls], &self.state.ships[ship]) }
     }
 
+    pub fn bounty(&self, ship: usize) -> i32 {
+        unsafe { sim_bounty(&self.state.ships[ship]) }
+    }
+
+    /// The common gate for voluntarily replacing a hull or leaving it behind:
+    /// the ship exists, is alive, and has a full bar.
+    pub fn may_reset_ship(&self, ship: usize) -> bool {
+        let sh = &self.state.ships[ship];
+        sh.active != 0 && sh.alive != 0 && sh.energy >= self.eff_max_energy(ship)
+    }
+
     /// Hand a ship the zone's opening greens: the same roll, off the same
     /// generator, that the core runs for a ship it spawns itself.
     ///
@@ -815,7 +833,7 @@ impl World {
     pub fn outfit(&mut self, ship: usize) {
         for _ in 0..self.cfg.spawn_prizes {
             let sh: *mut sim_ship = &mut self.state.ships[ship];
-            let rng: *mut u32 = &mut self.state.rng;
+            let rng: *mut u32 = &mut self.state.prize_rng;
             unsafe { sim_take_prize(sh, &*self.cfg, rng, std::ptr::null_mut()) };
         }
     }
