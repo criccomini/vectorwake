@@ -312,15 +312,25 @@ bound. `tools/pilot --view <tiles>` reports both as `reach(ship/round tiles)`,
 and rounds clamp with ships: 160.0/160.0 against 84.0/84.0.
 
 The first wrong reading turned out not to be noise either. The arena was simply
-not running this code. `image.yml` takes the last push to main and
-cancels the rest, which is right, but it means a commit's own image build can be
-cancelled by whatever lands behind it: five consecutive server images were, and
-the one live when the measurement ran was this change's parent. The invariant
-still holds, since the workflow has no path filter and the last push in any
-burst builds everything before it. But a measurement against production is
-worthless without knowing which build production is running, and the honest way
-to know is to test the behavior rather than read a version. That is what the
-reach column does.
+not running this code. `image.yml` takes the last push to main and cancels the
+rest, so a commit's own image build can be cancelled by whatever lands behind
+it. Five consecutive server images were, and the build live when the measurement
+ran was this change's parent.
+
+Nothing is lost that way, because the workflow has no path filter and any run
+that succeeds publishes an image containing every commit before it. What is not
+guaranteed is that a run succeeds at all. An image takes about 3.2 minutes to
+build, and in that burst the pushes came 21, 87, 37 and 34 seconds apart, so
+every one was cancelled; the run that finally published cleared the next push by
+about 45 seconds. Push faster than the build for long enough and nothing
+publishes at all, for as long as it lasts. Nothing retries, and nothing compares
+the `prod` tag against main's head, so a run that fails rather than getting
+cancelled leaves the fleet on old code with a single red mark to say so.
+
+The lesson for measurement is the smaller half of that but the one that cost the
+evening: a reading taken against production means nothing without knowing which
+build production is running, and the honest way to know is to test the behavior
+rather than read a version. That is what the reach column does.
 
 One sharp edge came out of filtering ships, and it is worth writing down
 because nothing about it is obvious. A proximity fuse latches a ship index, and
