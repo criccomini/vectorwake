@@ -131,6 +131,62 @@ create index if not exists rated_events_botsweep on rated_events (at) where bots
 -- null, which the index does not mind.
 alter table rated_events add column if not exists event_id bigint;
 create unique index if not exists rated_events_once on rated_events (event_id);
+-- The final blow, separate from the damage credits that move ratings. Older
+-- rows cannot answer this, so it is nullable; the career-stat backfill below
+-- uses the largest credited share for those rows and every new row is exact.
+alter table rated_events add column if not exists killer bigint;
+create index if not exists rated_events_by_killer on rated_events (killer, at)
+    where killer is not null;
+-- The public career line. This survives the short retention on bot-only rated
+-- events, which is what makes an all-time bot total possible without keeping
+-- their round-the-clock combat log forever.
+create table if not exists pilot_stats (
+    account  bigint primary key references accounts(id) on delete cascade,
+    kills    bigint not null default 0,
+    deaths   bigint not null default 0,
+    assists  bigint not null default 0
+);
+-- Seed the projection once for pilots whose fights predate it. Exact killers
+-- were not present in those rows, so the largest damage share gets the kill
+-- and every other contributor gets an assist. ON CONFLICT keeps later starts
+-- from replaying the backfill over live counters.
+with event_parties as (
+    select re.victim, re.credits,
+           coalesce(re.killer, top_credit.account) as killer
+    from rated_events re
+    left join lateral (
+        select (item.credit->>'account')::bigint as account
+        from jsonb_array_elements(re.credits) as item(credit)
+        order by (item.credit->>'weight')::double precision desc,
+                 (item.credit->>'account')::bigint
+        limit 1
+    ) top_credit on true
+), deaths as (
+    select victim as account, count(*)::bigint as n
+    from event_parties group by victim
+), kills as (
+    select killer as account, count(*)::bigint as n
+    from event_parties
+    where killer is not null and killer <> victim
+    group by killer
+), assists as (
+    select (item.credit->>'account')::bigint as account, count(*)::bigint as n
+    from event_parties ep
+    cross join lateral jsonb_array_elements(ep.credits) as item(credit)
+    where (item.credit->>'account')::bigint <> coalesce(ep.killer, -1)
+    group by (item.credit->>'account')::bigint
+), participants as (
+    select account from deaths
+    union select account from kills
+    union select account from assists
+)
+insert into pilot_stats (account, kills, deaths, assists)
+select a.id, coalesce(k.n, 0), coalesce(d.n, 0), coalesce(s.n, 0)
+from accounts a join participants p on p.account = a.id
+left join kills k on k.account = a.id
+left join deaths d on d.account = a.id
+left join assists s on s.account = a.id
+on conflict (account) do nothing;
 -- What happened to a pilot, as opposed to what it did to their rating. An
 -- arena is the only thing that sees a refusal at the door, a hull change or the
 -- difference between quitting and being kicked, and none of it survived the
@@ -863,6 +919,184 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     failed[0]
                 );
                 (500, serde_json::json!({ "stored": stored, "failed": failed.len(), "error": failed[0] }))
+            }
+        }
+
+        // ------------------------------------------------ public pilots
+        //
+        // The public ladder carries only game facts. Account standing,
+        // credentials, moderation state, and last activity stay on the admin
+        // routes below. Banned accounts are omitted rather than marked.
+        "/v1/pilots" => {
+            if !meta.throttle.allow(&format!("pilots:{ip}"), 600, hour) {
+                return (429, serde_json::json!({ "error": "too many pilot lookups; wait a while" }));
+            }
+            let q: String = s("q").trim().chars().take(40).collect();
+            let provisional = rating::PROVISIONAL_GAMES as i32;
+            let limit = body.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 100);
+            let offset = body.get("offset").and_then(|v| v.as_i64()).unwrap_or(0).max(0);
+            let rows = db
+                .query(
+                    "with visible as (
+                         select a.id, n.call_sign, a.kind
+                         from accounts a join names n on n.account = a.id
+                         where not a.banned
+                     ), ladder as (
+                         select r.account, r.class,
+                                rank() over (partition by r.class order by r.rating desc) as pos,
+                                count(*) over (partition by r.class) as of_n
+                         from ratings r join visible v on v.id = r.account
+                         where r.games >= $2
+                     ), best as (
+                         select distinct on (r.account)
+                                r.account, r.class, r.rating, r.games
+                         from ratings r join visible v on v.id = r.account
+                         order by r.account, r.games desc, r.rating desc, r.class
+                     )
+                     select v.id, v.call_sign, v.kind,
+                            b.class, b.rating, b.games, l.pos, l.of_n,
+                            coalesce(ps.kills, 0), coalesce(ps.deaths, 0),
+                            coalesce(ps.assists, 0)
+                     from visible v
+                     left join best b on b.account = v.id
+                     left join ladder l on l.account = v.id and l.class = b.class
+                     left join pilot_stats ps on ps.account = v.id
+                     where $1 = '' or strpos(lower(v.call_sign), lower($1)) > 0
+                     order by l.pos nulls last, b.rating desc nulls last,
+                              lower(v.call_sign), v.id
+                     limit $3 offset $4",
+                    &[&q, &provisional, &limit, &offset],
+                )
+                .await;
+            let total: i64 = db
+                .query_one(
+                    "select count(*) from accounts a join names n on n.account = a.id
+                     where not a.banned
+                       and ($1 = '' or strpos(lower(n.call_sign), lower($1)) > 0)",
+                    &[&q],
+                )
+                .await
+                .map(|r| r.get(0))
+                .unwrap_or(0);
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    "total": total,
+                    "offset": offset,
+                    "limit": limit,
+                    "default_class": DEFAULT_CLASS,
+                    "pilots": rs.iter().map(|r| {
+                        let kind: i16 = r.get(2);
+                        let score: Option<f64> = r.get(4);
+                        let games: Option<i32> = r.get(5);
+                        let tier = match (score, games) {
+                            (Some(s), Some(g)) if g as u32 >= rating::PROVISIONAL_GAMES => {
+                                Some(rating::tier(s))
+                            }
+                            _ => None,
+                        };
+                        serde_json::json!({
+                            "account": r.get::<_, i64>(0),
+                            "name": r.get::<_, String>(1),
+                            "kind": match kind_of(kind) {
+                                Kind::Human => "human",
+                                Kind::HouseBot => "house bot",
+                                Kind::ThirdPartyBot => "third-party bot",
+                            },
+                            "class": r.get::<_, Option<String>>(3),
+                            "rating": score,
+                            "games": games,
+                            "tier": tier,
+                            "rank": r.get::<_, Option<i64>>(6),
+                            "of": r.get::<_, Option<i64>>(7),
+                            "kills": r.get::<_, i64>(8),
+                            "deaths": r.get::<_, i64>(9),
+                            "assists": r.get::<_, i64>(10),
+                        })
+                    }).collect::<Vec<_>>(),
+                })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        "/v1/pilot" => {
+            if !meta.throttle.allow(&format!("pilots:{ip}"), 600, hour) {
+                return (429, serde_json::json!({ "error": "too many pilot lookups; wait a while" }));
+            }
+            let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
+            let pilot = db
+                .query_opt(
+                    "select a.id, n.call_sign, a.kind,
+                            coalesce(ps.kills, 0), coalesce(ps.deaths, 0),
+                            coalesce(ps.assists, 0)
+                     from accounts a join names n on n.account = a.id
+                     left join pilot_stats ps on ps.account = a.id
+                     where a.id = $1 and not a.banned",
+                    &[&account],
+                )
+                .await;
+            let pilot = match pilot {
+                Ok(Some(row)) => row,
+                Ok(None) => return (404, serde_json::json!({ "error": "no such pilot" })),
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            let provisional = rating::PROVISIONAL_GAMES as i32;
+            let ratings = db
+                .query(
+                    "with visible_ratings as (
+                         select r.account, r.class, r.rating, r.games
+                         from ratings r
+                         join accounts a on a.id = r.account and not a.banned
+                         join names n on n.account = a.id
+                     ), ladder as (
+                         select account, class,
+                                rank() over (partition by class order by rating desc) as pos,
+                                count(*) over (partition by class) as of_n
+                         from visible_ratings where games >= $2
+                     )
+                     select r.class, r.rating, r.games, l.pos, l.of_n
+                     from ratings r
+                     left join ladder l on l.account = r.account and l.class = r.class
+                     where r.account = $1
+                     order by r.games desc, r.rating desc, r.class",
+                    &[&account, &provisional],
+                )
+                .await;
+            match ratings {
+                Ok(rs) => {
+                    let kind: i16 = pilot.get(2);
+                    (200, serde_json::json!({
+                        "default_class": DEFAULT_CLASS,
+                        "pilot": {
+                            "account": pilot.get::<_, i64>(0),
+                            "name": pilot.get::<_, String>(1),
+                            "kind": match kind_of(kind) {
+                                Kind::Human => "human",
+                                Kind::HouseBot => "house bot",
+                                Kind::ThirdPartyBot => "third-party bot",
+                            },
+                            "kills": pilot.get::<_, i64>(3),
+                            "deaths": pilot.get::<_, i64>(4),
+                            "assists": pilot.get::<_, i64>(5),
+                            "ratings": rs.iter().map(|r| {
+                                let score: f64 = r.get(1);
+                                let games: i32 = r.get(2);
+                                serde_json::json!({
+                                    "class": r.get::<_, String>(0),
+                                    "rating": score,
+                                    "games": games,
+                                    "tier": if games as u32 >= rating::PROVISIONAL_GAMES {
+                                        Some(rating::tier(score))
+                                    } else {
+                                        None
+                                    },
+                                    "rank": r.get::<_, Option<i64>>(3),
+                                    "of": r.get::<_, Option<i64>>(4),
+                                })
+                            }).collect::<Vec<_>>(),
+                        }
+                    }))
+                }
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
 
@@ -1758,6 +1992,7 @@ async fn ingest(
     let after = ev.get("victim_after").and_then(|v| v.as_f64()).unwrap_or(0.0);
     let tick = ev.get("tick").and_then(|v| v.as_i64()).unwrap_or(0);
     let victim_kind = ev.get("victim_kind").and_then(|v| v.as_i64()).unwrap_or(0) as i16;
+    let killer = ev.get("killer").and_then(|v| v.as_i64());
     // Absent means keep, which is the safe direction: an arena too old to
     // send this is not one whose events should quietly expire.
     let bots_only = ev.get("bots_only").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -1773,8 +2008,8 @@ async fn ingest(
         .execute(
             "insert into rated_events
                (event_id, class, zone, instance, tick, victim, victim_kind,
-                victim_before, victim_after, credits, bots_only)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                victim_before, victim_after, credits, bots_only, killer)
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
              on conflict (event_id) do nothing",
             &[
                 &event_id,
@@ -1788,6 +2023,7 @@ async fn ingest(
                 &after,
                 &serde_json::Value::Array(credits.clone()),
                 &bots_only,
+                &killer,
             ],
         )
         .await
@@ -1808,6 +2044,41 @@ async fn ingest(
         let d = c.get("after").and_then(|v| v.as_f64()).unwrap_or(0.0)
             - c.get("before").and_then(|v| v.as_f64()).unwrap_or(0.0);
         apply(&db, who, class, d).await?;
+    }
+    // Career totals are a projection of the same exactly-once event. Keeping
+    // them in this transaction means a retry cannot double-count a fight and
+    // an old bot-only event can be swept without erasing the bot's career.
+    db.execute(
+        "insert into pilot_stats (account, deaths) values ($1, 1)
+         on conflict (account) do update
+         set deaths = pilot_stats.deaths + 1",
+        &[&victim],
+    )
+    .await
+    .map_err(|e| format!("cannot count death: {e}"))?;
+    if let Some(killer) = killer.filter(|who| *who != victim) {
+        db.execute(
+            "insert into pilot_stats (account, kills) values ($1, 1)
+             on conflict (account) do update
+             set kills = pilot_stats.kills + 1",
+            &[&killer],
+        )
+        .await
+        .map_err(|e| format!("cannot count kill: {e}"))?;
+    }
+    for c in credits {
+        let who = c.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
+        if who == 0 || Some(who) == killer {
+            continue;
+        }
+        db.execute(
+            "insert into pilot_stats (account, assists) values ($1, 1)
+             on conflict (account) do update
+             set assists = pilot_stats.assists + 1",
+            &[&who],
+        )
+        .await
+        .map_err(|e| format!("cannot count assist: {e}"))?;
     }
     db.commit().await.map_err(|e| format!("cannot commit: {e}"))
 }

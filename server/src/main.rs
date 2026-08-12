@@ -1924,7 +1924,7 @@ impl Room {
                 None
             };
             if let Some(r) = rated.as_ref() {
-                self.hand_off(r);
+                self.hand_off(r, None);
                 // The feed line, on the same wire as any kill, because the
                 // death is real and should read like one. Credited to the
                 // largest contributor still seated; if they have all left
@@ -2321,7 +2321,7 @@ impl Room {
             // accounts to file it against. Appending to the spool is a
             // buffered write to a local file, so a tick never waits on it.
             if let Some(r) = rated.as_ref() {
-                self.hand_off(r);
+                self.hand_off(r, Some(&kname));
             }
             self.note_death(victim, killer, paid);
             let mut m = vec![S2C_KILL];
@@ -2366,7 +2366,7 @@ impl Room {
     /// room and forgotten when it ends, which is what having no account means,
     /// so sending them would be reporting a pilot nobody can look up. An event
     /// where nobody at all has an account is not sent.
-    fn hand_off(&mut self, r: &rating::RatedEvent) {
+    fn hand_off(&mut self, r: &rating::RatedEvent, killer: Option<&str>) {
         let Some(&victim) = self.accounts.get(&r.victim) else {
             // The victim carries the negative half of the exchange. Without
             // them there is no event, only unbalanced credit.
@@ -2396,6 +2396,7 @@ impl Room {
             id: rand::random(),
             tick: r.tick,
             victim,
+            killer: killer.and_then(|who| self.accounts.get(who)).copied(),
             victim_kind: u8::from(self.rating.is_bot(&r.victim)),
             victim_before: r.victim_before,
             victim_after: r.victim_after,
@@ -7426,10 +7427,11 @@ mod tests {
             victim_before: 1200.0,
             victim_after: 1184.0,
             credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
-        });
+        }, Some("a1"));
         {
             let s = sp.lock().unwrap();
             assert_eq!(s.len(), 1, "both had accounts, so the event travels");
+            assert_eq!(s.last().and_then(|event| event.killer), Some(1));
         }
 
         // A guest contributes nothing durable, because there is nobody to file
@@ -7440,7 +7442,7 @@ mod tests {
             victim_before: 1184.0,
             victim_after: 1170.0,
             credits: vec![("some guest".into(), 1.0, 1200.0, 1214.0)],
-        });
+        }, Some("some guest"));
         // And a guest victim is not an event at all: the negative half of the
         // exchange has nowhere to land.
         a.hand_off(&rating::RatedEvent {
@@ -7449,7 +7451,7 @@ mod tests {
             victim_before: 1200.0,
             victim_after: 1184.0,
             credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
-        });
+        }, Some("a1"));
         assert_eq!(sp.lock().unwrap().len(), 1, "neither half-formed event travelled");
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -7487,13 +7489,13 @@ mod tests {
             sp.lock().unwrap().last().expect("an event").bots_only
         };
 
-        a.hand_off(&ev("bot2", "bot1"));
+        a.hand_off(&ev("bot2", "bot1"), Some("bot1"));
         assert!(flag_of(&sp), "machines all the way down, so it may expire");
 
-        a.hand_off(&ev("bot2", "human"));
+        a.hand_off(&ev("bot2", "human"), Some("human"));
         assert!(!flag_of(&sp), "a person did the killing, so the row is a career");
 
-        a.hand_off(&ev("human", "bot1"));
+        a.hand_off(&ev("human", "bot1"), Some("bot1"));
         assert!(!flag_of(&sp), "a person did the dying, which counts the same");
 
         // The case the loop could get wrong: one human buried in a crowd of
@@ -7508,7 +7510,7 @@ mod tests {
                 ("bot1".into(), 0.5, 1200.0, 1208.0),
                 ("human".into(), 0.5, 1200.0, 1208.0),
             ],
-        });
+        }, Some("human"));
         assert!(!flag_of(&sp), "one person among the machines keeps the row");
         let _ = std::fs::remove_dir_all(&d);
     }

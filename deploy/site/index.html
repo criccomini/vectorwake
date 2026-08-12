@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#05070c">
-  <meta name="description" content="Vectorwake is a free top-down space MMO with inertial combat, persistent rankings, and AI pilots that play by the same rules.">
+  <meta name="description" content="Vectorwake is free top-down multiplayer space combat for desktop and mobile, with inertial flight, seven ships, persistent pilots, and fair AI.">
   <link rel="canonical" href="https://vectorwake.net/">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
   <link rel="stylesheet" href="/site.css">
-  <title>vectorwake / top-down space combat</title>
+  <title>vectorwake / multiplayer space combat</title>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to the fight</a>
@@ -23,16 +23,15 @@
       <span>vectorwake</span>
     </a>
     <nav class="site-nav" aria-label="Main navigation">
-      <a href="#rankings">Rankings</a>
-      <a href="#bots">Bots</a>
-      <a class="discord-button nav-discord" href="https://play.vectorwake.net/discord" data-discord-link>
+      <a class="nav-pilots" href="/pilots">Pilots</a>
+      <a class="discord-button nav-discord" href="https://play.vectorwake.net/discord" target="_blank" rel="noopener noreferrer" data-discord-link>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M8.3 6.4a10.2 10.2 0 0 1 7.4 0 12.8 12.8 0 0 1 3.1 8.1 12.7 12.7 0 0 1-5.1 3.4l-1.1-1.5c.7-.2 1.3-.5 1.9-.9a6.1 6.1 0 0 1-5 0c.6.4 1.2.7 1.9.9l-1.1 1.5a12.7 12.7 0 0 1-5.1-3.4 12.8 12.8 0 0 1 3.1-8.1Zm1.5 7.3c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Zm4.4 0c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Z"/>
         </svg>
         <span class="discord-label">Discord</span>
         <span class="discord-members" aria-label="Member count" hidden><span aria-hidden="true">●</span> <span data-discord-count></span></span>
       </a>
-      <a class="github-button nav-github" href="https://github.com/criccomini/vectorwake" data-github-link>
+      <a class="github-button nav-github" href="https://github.com/criccomini/vectorwake" target="_blank" rel="noopener noreferrer" data-github-link>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.1 1.2a10.8 10.8 0 0 1 5.7 0C14.6 5 15.6 5 15.6 5c.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z"/>
         </svg>
@@ -52,14 +51,13 @@
       <div class="hero-shade" aria-hidden="true"></div>
       <div class="hero-copy">
         <p class="hero-wordmark" aria-hidden="true">vectorwake</p>
-        <h1 id="hero-title">Every shot<br>makes you easier<br>to kill.</h1>
-        <p class="hero-deck">Top-down space combat, live in your browser. Totally free on desktop and mobile.</p>
+        <h1 id="hero-title">Massively multiplayer<br>space combat.</h1>
+        <p class="hero-deck">Top-down multiplayer space combat, live in your browser. Totally free on desktop and mobile.</p>
         <div class="hero-actions">
           <a class="button button-primary" href="https://play.vectorwake.net">
             <span>Enter the arena</span>
             <span aria-hidden="true">↗</span>
           </a>
-          <a class="text-link" href="#rankings">See the rankings <span aria-hidden="true">↓</span></a>
         </div>
       </div>
       <p class="hero-proof"><strong>Totally free.</strong><span>Desktop + mobile.</span></p>
@@ -67,39 +65,55 @@
 
     <section class="founder-letter section-pad" aria-label="A letter from Chris">
       <div class="founder-letter-copy reveal">
-        <p>I grew up playing a game called SubSpace. It was the first massively multiplayer online video game I ever played. I fell in love with it. Not just the game, but the community, the competition, the leagues, the squads. Vectorwake is my modern twist on this classic. It is free and will remain so. <a href="https://play.vectorwake.net">Start playing now!</a> I'm on <a href="https://play.vectorwake.net/discord">Discord</a> and I'd love your feedback.</p>
+        <p>I grew up playing a game called SubSpace. It was the first massively multiplayer online video game I ever played. I fell in love with it. Not just the game, but the community, the competition, the leagues, the squads. Vectorwake is my modern twist on this classic. It is free and will remain so. <a href="https://play.vectorwake.net">Start playing now!</a> I'm on <a href="https://play.vectorwake.net/discord" target="_blank" rel="noopener noreferrer">Discord</a> and I'd love your feedback.</p>
         <p class="founder-signoff">Cheers,<br>Chris</p>
       </div>
     </section>
 
-    <section class="rankings section-pad" id="rankings" aria-labelledby="rankings-title">
-      <h2 id="rankings-title">Rankings</h2>
-      <div class="section-copy reveal">
-        <p class="section-statement">Every fight counts.</p>
-        <p>Your call sign keeps a rating between games. Kills and deaths move it, no matter who is in the other ship. Humans and AI share one ladder.</p>
-      </div>
-    </section>
-
-    <section class="bots section-pad" id="bots" aria-labelledby="bots-title">
-      <h2 id="bots-title">Bots</h2>
-      <div class="section-copy reveal">
-        <p class="section-statement">They play the same game.</p>
-        <p>Vectorwake's bots join through the same door as everyone else. They see the same arena and send the same controls, with no private feed from the server. They fill empty seats, leave when humans arrive, and carry ratings of their own.</p>
-      </div>
-    </section>
-
-    <section class="final-cta" aria-labelledby="cta-title">
-      <div class="cta-copy section-pad">
-        <h2 id="cta-title">You have a browser.<br>That is enough.</h2>
-        <p>Totally free on desktop and mobile. Open the arena and fly.</p>
-        <div class="hero-actions">
-          <a class="button button-primary" href="https://play.vectorwake.net">
-            <span>Play vectorwake</span>
-            <span aria-hidden="true">↗</span>
-          </a>
-          <a class="text-link" href="https://play.vectorwake.net/discord">Join Discord <span aria-hidden="true">↗</span></a>
-        </div>
-      </div>
+    <section class="features section-pad" aria-labelledby="features-title">
+      <h2 id="features-title">Features</h2>
+      <ul class="feature-list">
+        <li class="reveal">
+          <h3>Play anywhere</h3>
+          <p>Open the arena on desktop or mobile. Keyboard, mouse, and touch controls all fly the same browser client.</p>
+        </li>
+        <li class="reveal">
+          <h3>Live multiplayer</h3>
+          <p>Fight in live rooms with players and AI spread across small teams. New rooms open as the fleet fills.</p>
+        </li>
+        <li class="reveal">
+          <h3>Seven ships</h3>
+          <p>Fly an interceptor, bomber, skirmisher, heavy, stealth ship, brawler, or area-denial hull. Each has its own shape, weapons, and job.</p>
+        </li>
+        <li class="reveal">
+          <h3>Inertial flight</h3>
+          <p>Momentum never bleeds away. Carry speed through turns, line up for narrow corridors, and bounce off walls.</p>
+        </li>
+        <li class="reveal">
+          <h3>One energy pool</h3>
+          <p>Energy is both health and ammunition. A hard volley leaves less of your ship between you and the next hit.</p>
+        </li>
+        <li class="reveal">
+          <h3>Midfight upgrades</h3>
+          <p>Collect greens to level guns and bombs, add multifire, bounce, proximity, or shrapnel, and pick up repels, bursts, and mines.</p>
+        </li>
+        <li class="reveal">
+          <h3>Fly as a gunner</h3>
+          <p>Attach to a teammate and aim from their hull, or carry independently aimed gunners while you fly.</p>
+        </li>
+        <li class="reveal">
+          <h3>Fair AI</h3>
+          <p>Bots see the same arena and send the same controls as everyone else. They fill empty seats and leave them to arriving players.</p>
+        </li>
+        <li class="reveal">
+          <h3>Persistent pilots</h3>
+          <p>Keep your call sign and rating between games. Claim your pilot with a password to bring the same career to another device.</p>
+        </li>
+        <li class="reveal">
+          <h3>Free and open source</h3>
+          <p>Vectorwake is free and will remain so. <a href="https://github.com/criccomini/vectorwake" target="_blank" rel="noopener noreferrer">The source is available on GitHub.</a></p>
+        </li>
+      </ul>
     </section>
   </main>
 
@@ -114,8 +128,9 @@
     </a>
     <nav aria-label="Footer navigation">
       <a href="https://play.vectorwake.net">Play</a>
-      <a href="https://play.vectorwake.net/discord">Discord</a>
-      <a href="https://github.com/criccomini/vectorwake">GitHub</a>
+      <a href="/pilots">Pilots</a>
+      <a href="https://play.vectorwake.net/discord" target="_blank" rel="noopener noreferrer">Discord</a>
+      <a href="https://github.com/criccomini/vectorwake" target="_blank" rel="noopener noreferrer">GitHub</a>
     </nav>
   </footer>
 

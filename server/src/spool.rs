@@ -34,6 +34,10 @@ pub struct Event {
     pub id: i64,
     pub tick: u32,
     pub victim: u64,
+    /// The account that landed the final blow. None for a combat quit or when
+    /// the killer was a guest with no durable account.
+    #[serde(default)]
+    pub killer: Option<u64>,
     pub victim_kind: u8,
     pub victim_before: f64,
     pub victim_after: f64,
@@ -281,6 +285,7 @@ mod tests {
             id: (tick as i64) << 32 | victim as i64,
             tick,
             victim,
+            killer: Some(7),
             victim_kind: 0,
             victim_before: 1200.0,
             victim_after: 1184.0,
@@ -401,6 +406,7 @@ mod tests {
         // The field names are the wire contract with the meta-layer's ingest,
         // so they are asserted rather than assumed.
         assert!(text.contains("\"victim\":9"));
+        assert!(text.contains("\"killer\":7"));
         assert!(text.contains("\"victim_before\":1200.0"));
         assert!(text.contains("\"account\":7"));
     }

@@ -94,6 +94,16 @@ http:// {
 		X-Content-Type-Options "nosniff"
 	}
 
+	# Public career data, kept same-origin so the site needs neither CORS nor a
+	# second hostname. These two routes expose game statistics only; account and
+	# moderation fields remain behind the admin surface.
+	handle /v1/pilots {
+		reverse_proxy 127.0.0.1:9400
+	}
+	handle /v1/pilot {
+		reverse_proxy 127.0.0.1:9400
+	}
+
 	# Keep the community door stable without copying the raw invite out of the
 	# game origin, where decision 39 says it lives.
 	redir /discord https://play.vectorwake.net/discord 302
@@ -104,6 +114,21 @@ http:// {
 	handle_path /assets/* {
 		header Cache-Control "public, max-age=604800"
 		root * /srv/site-assets
+		file_server
+	}
+
+	# Stable, readable addresses over two static documents. The profile script
+	# reads the account number from the final path segment.
+	handle /pilots {
+		rewrite * /pilots.html
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
+	handle /pilots/* {
+		rewrite * /pilot.html
+		header Cache-Control "no-cache"
+		root * /srv/site
 		file_server
 	}
 

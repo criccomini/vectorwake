@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05070c">
+  <meta name="description" content="A Vectorwake pilot profile with career combat totals and rating history.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+  <link rel="stylesheet" href="/site.css">
+  <title>Pilot / vectorwake</title>
+</head>
+<body class="directory-page" data-pilots-page="profile">
+  <a class="skip-link" href="#main">Skip to profile</a>
+
+  <header class="site-header is-scrolled" data-header>
+    <a class="brand" href="/" aria-label="Vectorwake home">
+      <svg class="brand-mark" viewBox="0 0 84 104" aria-hidden="true">
+        <path class="mark-amber" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+        <path class="mark-muted" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+        <path class="mark-cyan" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a class="nav-pilots is-current" href="/pilots" aria-current="page">Pilots</a>
+      <a class="discord-button nav-discord" href="https://play.vectorwake.net/discord" target="_blank" rel="noopener noreferrer" data-discord-link>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8.3 6.4a10.2 10.2 0 0 1 7.4 0 12.8 12.8 0 0 1 3.1 8.1 12.7 12.7 0 0 1-5.1 3.4l-1.1-1.5c.7-.2 1.3-.5 1.9-.9a6.1 6.1 0 0 1-5 0c.6.4 1.2.7 1.9.9l-1.1 1.5a12.7 12.7 0 0 1-5.1-3.4 12.8 12.8 0 0 1 3.1-8.1Zm1.5 7.3c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Zm4.4 0c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Z"/>
+        </svg>
+        <span class="discord-label">Discord</span>
+        <span class="discord-members" aria-label="Member count" hidden><span aria-hidden="true">●</span> <span data-discord-count></span></span>
+      </a>
+      <a class="github-button nav-github" href="https://github.com/criccomini/vectorwake" target="_blank" rel="noopener noreferrer" data-github-link>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.1 1.2a10.8 10.8 0 0 1 5.7 0C14.6 5 15.6 5 15.6 5c.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z"/>
+        </svg>
+        <span class="github-label">GitHub</span>
+        <span class="github-stars" aria-label="Star count" hidden><span aria-hidden="true">★</span> <span data-github-count></span></span>
+      </a>
+      <a class="nav-play" href="https://play.vectorwake.net">Play</a>
+    </nav>
+  </header>
+
+  <main id="main" class="directory-main">
+    <article class="pilot-profile section-pad" aria-labelledby="profile-name">
+      <p class="profile-back"><a href="/pilots">← All pilots</a></p>
+      <header class="profile-heading">
+        <p class="directory-kicker" id="profile-kind">Pilot profile</p>
+        <h1 id="profile-name">Loading…</h1>
+      </header>
+
+      <p class="profile-status" id="profile-status" role="status" aria-live="polite">Loading career…</p>
+
+      <dl class="profile-scoreboard" id="profile-scoreboard" hidden>
+        <div><dt>Rank</dt><dd id="profile-rank">Not ranked</dd></div>
+        <div><dt>Tier</dt><dd id="profile-tier">Unrated</dd></div>
+        <div><dt>Rating</dt><dd id="profile-rating">Unrated</dd></div>
+        <div><dt>Kills</dt><dd id="profile-kills">0</dd></div>
+        <div><dt>Deaths</dt><dd id="profile-deaths">0</dd></div>
+        <div><dt>Assists</dt><dd id="profile-assists">0</dd></div>
+        <div><dt>K/D</dt><dd id="profile-kd">0.00</dd></div>
+        <div><dt>Rated events</dt><dd id="profile-games">0</dd></div>
+      </dl>
+
+      <section class="profile-ratings" id="profile-ratings" aria-labelledby="ratings-title" hidden>
+        <h2 id="ratings-title">Ratings</h2>
+        <div class="pilot-table-wrap">
+          <table class="pilot-table ratings-table">
+            <caption>Rating and rank by competition class</caption>
+            <thead>
+              <tr>
+                <th scope="col">Class</th>
+                <th scope="col">Tier</th>
+                <th scope="col" class="number">Rating</th>
+                <th scope="col" class="number">Rank</th>
+                <th scope="col" class="number">Rated</th>
+              </tr>
+            </thead>
+            <tbody id="profile-rating-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="profile-cta" id="profile-cta" hidden>
+        <p>Meet them in the arena.</p>
+        <a class="button button-primary" href="https://play.vectorwake.net">
+          <span>Start playing</span>
+          <span aria-hidden="true">↗</span>
+        </a>
+      </footer>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <a class="brand footer-brand" href="/" aria-label="Vectorwake home">
+      <svg class="brand-mark" viewBox="0 0 84 104" aria-hidden="true">
+        <path class="mark-amber" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+        <path class="mark-muted" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+        <path class="mark-cyan" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav aria-label="Footer navigation">
+      <a href="https://play.vectorwake.net">Play</a>
+      <a href="/pilots">Pilots</a>
+      <a href="https://play.vectorwake.net/discord" target="_blank" rel="noopener noreferrer">Discord</a>
+      <a href="https://github.com/criccomini/vectorwake" target="_blank" rel="noopener noreferrer">GitHub</a>
+    </nav>
+  </footer>
+
+  <script src="/site.js" defer></script>
+  <script src="/pilots.js" defer></script>
+</body>
+</html>

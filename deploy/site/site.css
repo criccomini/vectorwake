@@ -287,9 +287,7 @@ button {
 }
 
 .hero h1,
-.rankings h2,
-.bots h2,
-.final-cta h2 {
+.features h2 {
   margin: 0;
   font-family: var(--display);
   font-weight: 500;
@@ -349,24 +347,6 @@ button {
 .button:hover {
   transform: translateY(-2px);
   background: transparent;
-  color: var(--friend);
-}
-
-.text-link {
-  display: inline-flex;
-  gap: 12px;
-  align-items: center;
-  padding-block: 6px;
-  border-bottom: 1px solid var(--dim);
-  color: var(--ink);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  transition: color 150ms ease, border-color 150ms ease;
-}
-
-.text-link:hover {
-  border-color: var(--friend);
   color: var(--friend);
 }
 
@@ -453,89 +433,427 @@ button {
   line-height: 1.25;
 }
 
-.rankings,
-.bots {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
-  gap: clamp(60px, 9vw, 150px);
-  align-items: start;
-  min-height: 78svh;
+.features {
   padding-block: clamp(120px, 16vw, 220px);
   border-top: 1px solid var(--line);
 }
 
-.rankings h2,
-.bots h2 {
-  margin: 0;
+.features h2 {
+  margin: 0 0 clamp(70px, 10vw, 140px);
   color: var(--ink);
-  font-size: clamp(96px, 15vw, 230px);
-  line-height: 0.72;
+  font-size: clamp(76px, 11vw, 168px);
+  line-height: 0.75;
   letter-spacing: -0.055em;
 }
 
-.section-copy {
-  align-self: end;
-  max-width: 560px;
-}
-
-.section-copy p {
+.feature-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--line);
+  list-style: none;
 }
 
-.section-statement {
+.feature-list li {
+  min-height: 215px;
+  padding: 36px clamp(24px, 4vw, 64px);
+  border-top: 1px solid var(--line);
+}
+
+.feature-list li:nth-child(odd) {
+  padding-left: 0;
+  border-right: 1px solid var(--line);
+}
+
+.feature-list li:nth-child(even) {
+  padding-right: 0;
+}
+
+.feature-list h3 {
+  margin: 0;
   color: var(--friend);
   font-family: var(--display);
-  font-size: clamp(42px, 5vw, 76px);
-  line-height: 0.9;
-  letter-spacing: -0.035em;
+  font-size: clamp(25px, 2.8vw, 40px);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 0.95;
   text-transform: uppercase;
 }
 
-.section-copy p:last-child,
-.final-cta p {
+.feature-list p {
+  max-width: 510px;
+  margin: 24px 0 0;
   color: #91a2b9;
   font-size: 13px;
-  line-height: 1.95;
+  line-height: 1.85;
 }
 
-.section-copy p:last-child {
-  max-width: 520px;
-  margin-top: 30px;
-}
-
-.bots {
-  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
-}
-
-.bots h2 {
-  order: 2;
-  color: var(--friend);
-  text-align: right;
-}
-
-.bots .section-copy {
-  order: 1;
-}
-
-.bots .section-statement {
+.feature-list a {
   color: var(--ink);
+  border-bottom: 1px solid var(--dim);
 }
 
-.final-cta {
+.feature-list a:hover {
+  color: var(--friend);
+  border-color: var(--friend);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.directory-page .site-header {
+  border-color: rgb(29 40 56 / 0.75);
+  background: rgb(5 7 12 / 0.92);
+  backdrop-filter: blur(14px);
+}
+
+.site-nav .is-current {
+  color: var(--friend);
+}
+
+.directory-main {
+  min-height: calc(100svh - 150px);
+  padding-top: 76px;
+}
+
+.directory-intro {
+  padding-top: clamp(100px, 13vw, 190px);
+  padding-bottom: clamp(72px, 8vw, 120px);
+}
+
+.directory-kicker {
+  margin: 0 0 28px;
+  color: var(--friend);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.directory-kicker.is-bot {
+  color: var(--enemy);
+}
+
+.directory-intro h1,
+.profile-heading h1 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(88px, 14vw, 210px);
+  font-weight: 500;
+  letter-spacing: -0.06em;
+  line-height: 0.72;
+  text-transform: uppercase;
+}
+
+.directory-lede {
+  max-width: 650px;
+  margin: clamp(42px, 5vw, 70px) 0 0;
+  color: #a7b6cb;
+  font-size: clamp(14px, 1.3vw, 18px);
+  line-height: 1.8;
+}
+
+.pilot-directory {
+  padding-bottom: clamp(120px, 14vw, 200px);
+}
+
+.pilot-filter {
   display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto auto;
+  gap: 24px;
   align-items: center;
-  min-height: 72svh;
+  padding: 22px 0;
   border-block: 1px solid var(--line);
 }
 
-.final-cta h2 {
-  max-width: 1000px;
-  margin-top: 0;
-  font-size: clamp(56px, 8vw, 124px);
+.pilot-filter label {
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
 }
 
-.final-cta p {
-  margin-top: 28px;
+.pilot-filter input {
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid #35445a;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 15px var(--mono);
+}
+
+.pilot-filter input:focus {
+  border-color: var(--friend);
+}
+
+.pilot-filter input::placeholder {
+  color: #53647c;
+}
+
+.filter-submit,
+.filter-clear,
+.pilot-pager button {
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.filter-submit,
+.pilot-pager button {
+  border-bottom: 1px solid var(--friend);
+}
+
+.filter-clear {
+  color: var(--dim);
+}
+
+.filter-submit:hover,
+.filter-clear:hover,
+.pilot-pager button:hover:not(:disabled) {
+  color: var(--friend);
+}
+
+.pilot-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.pilot-table {
+  width: 100%;
+  min-width: 990px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.pilot-table caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.pilot-table th {
+  height: 58px;
+  color: var(--dim);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.pilot-table td {
+  height: 78px;
+  padding: 13px 24px 13px 0;
+  border-top: 1px solid var(--line);
+  color: #bac8d9;
+  font-size: 12px;
+}
+
+.pilot-table th.number,
+.pilot-table td.number {
+  padding-right: 0;
+  padding-left: 24px;
+  text-align: right;
+}
+
+.pilot-table .rank-cell {
+  width: 100px;
+  color: var(--friend);
+}
+
+.pilot-identity {
+  min-width: 220px;
+}
+
+.pilot-identity a {
+  display: block;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 24px;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.pilot-identity a:hover {
+  color: var(--friend);
+}
+
+.pilot-kind,
+.tier-cell span {
+  display: block;
+  margin-top: 7px;
+  color: var(--dim);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.pilot-kind.is-bot {
+  color: var(--enemy);
+}
+
+.tier-cell {
+  color: var(--ink) !important;
+  text-transform: uppercase;
+}
+
+.table-message {
+  height: 160px !important;
+  color: var(--dim) !important;
+  text-align: center;
+}
+
+.pilot-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+  min-height: 82px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pilot-pager p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.pilot-pager > div {
+  display: flex;
+  gap: 26px;
+}
+
+.pilot-pager button:disabled {
+  border-color: var(--line);
+  color: #3e4b5d;
+  cursor: default;
+}
+
+.pilot-profile {
+  padding-top: clamp(72px, 9vw, 130px);
+  padding-bottom: clamp(120px, 14vw, 200px);
+}
+
+.profile-back {
+  margin: 0 0 clamp(72px, 10vw, 150px);
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.profile-back a:hover {
+  color: var(--friend);
+}
+
+.profile-heading h1 {
+  max-width: 1200px;
+  color: var(--friend);
+  font-size: clamp(64px, 11vw, 170px);
+  overflow-wrap: anywhere;
+}
+
+.profile-status {
+  margin: 50px 0;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.profile-scoreboard {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: clamp(70px, 9vw, 130px) 0 0;
+  border-block: 1px solid var(--line);
+}
+
+.profile-scoreboard div {
+  min-height: 150px;
+  padding: 28px 24px 28px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.profile-scoreboard div:nth-last-child(-n + 4) {
+  border-bottom: 0;
+}
+
+.profile-scoreboard dt {
+  color: var(--dim);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.profile-scoreboard dd {
+  margin: 28px 0 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(30px, 3.4vw, 52px);
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.profile-ratings {
+  margin-top: clamp(100px, 13vw, 190px);
+}
+
+.profile-ratings h2 {
+  margin: 0 0 clamp(45px, 6vw, 80px);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(54px, 8vw, 118px);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 0.8;
+  text-transform: uppercase;
+}
+
+.ratings-table {
+  min-width: 680px;
+}
+
+.profile-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 36px;
+  margin-top: clamp(100px, 13vw, 190px);
+  padding-top: 44px;
+  border-top: 1px solid var(--line);
+}
+
+.profile-cta p {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(28px, 3.3vw, 48px);
+  text-transform: uppercase;
+}
+
+.directory-page .site-footer {
+  border-top: 1px solid var(--line);
 }
 
 .site-footer {
@@ -586,7 +904,7 @@ button {
     padding-inline: 20px;
   }
 
-  .site-nav > a:not(.nav-play):not(.nav-github):not(.nav-discord) {
+  .site-nav > a:not(.nav-play):not(.nav-github):not(.nav-discord):not(.nav-pilots) {
     display: none;
   }
 
@@ -611,24 +929,8 @@ button {
     bottom: 28px;
   }
 
-  .rankings,
-  .bots {
-    grid-template-columns: 1fr;
-    gap: 70px;
-    min-height: auto;
-  }
-
   .founder-letter-copy {
     grid-column: 3 / span 8;
-  }
-
-  .bots h2,
-  .bots .section-copy {
-    order: initial;
-  }
-
-  .bots h2 {
-    text-align: left;
   }
 
   .site-footer {
@@ -636,11 +938,31 @@ button {
     gap: 30px;
     padding-block: 44px;
   }
+
+  .directory-main {
+    padding-top: 66px;
+  }
+
+  .profile-scoreboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-scoreboard div:nth-last-child(-n + 4) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .profile-scoreboard div:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
 }
 
 @media (max-width: 620px) {
   .brand {
     font-size: 16px;
+  }
+
+  .site-header .brand > span {
+    display: none;
   }
 
   .nav-github .github-label,
@@ -692,16 +1014,6 @@ button {
     bottom: 22px;
   }
 
-  .final-cta h2 {
-    font-size: clamp(40px, 13vw, 66px);
-  }
-
-  .rankings,
-  .bots {
-    gap: 48px;
-    padding-block: 110px;
-  }
-
   .founder-letter {
     display: block;
     min-height: auto;
@@ -717,20 +1029,88 @@ button {
     line-height: 1.8;
   }
 
-  .bots h2 {
-    font-size: clamp(78px, 27vw, 130px);
+  .features {
+    padding-block: 110px;
   }
 
-  .rankings h2 {
-    font-size: clamp(60px, 20vw, 94px);
+  .features h2 {
+    margin-bottom: 72px;
+    font-size: clamp(64px, 21vw, 96px);
   }
 
-  .section-statement {
-    font-size: clamp(42px, 14vw, 58px);
+  .feature-list {
+    grid-template-columns: 1fr;
   }
 
-  .final-cta {
-    min-height: 620px;
+  .feature-list li {
+    min-height: auto;
+    padding: 34px 0 38px;
+  }
+
+  .feature-list li:nth-child(odd) {
+    border-right: 0;
+  }
+
+  .directory-intro {
+    padding-top: 90px;
+    padding-bottom: 70px;
+  }
+
+  .directory-intro h1 {
+    font-size: clamp(76px, 27vw, 118px);
+  }
+
+  .directory-lede {
+    margin-top: 36px;
+  }
+
+  .pilot-filter {
+    grid-template-columns: 1fr auto auto;
+    gap: 18px;
+  }
+
+  .pilot-filter label {
+    grid-column: 1 / -1;
+  }
+
+  .pilot-table {
+    min-width: 900px;
+  }
+
+  .pilot-pager {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-block: 24px;
+  }
+
+  .pilot-profile {
+    padding-top: 68px;
+  }
+
+  .profile-back {
+    margin-bottom: 74px;
+  }
+
+  .profile-heading h1 {
+    font-size: clamp(58px, 20vw, 94px);
+  }
+
+  .profile-scoreboard {
+    margin-top: 70px;
+  }
+
+  .profile-scoreboard div {
+    min-height: 122px;
+    padding-top: 24px;
+  }
+
+  .profile-scoreboard dd {
+    margin-top: 22px;
+  }
+
+  .profile-cta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .site-footer {
@@ -741,6 +1121,7 @@ button {
 
   .site-footer nav {
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }
 

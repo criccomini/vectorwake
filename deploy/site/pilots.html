@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05070c">
+  <meta name="description" content="Browse Vectorwake pilots and bots by rank, tier, rating, kills, deaths, assists, and K/D.">
+  <link rel="canonical" href="https://vectorwake.net/pilots">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+  <link rel="stylesheet" href="/site.css">
+  <title>Pilots / vectorwake</title>
+</head>
+<body class="directory-page" data-pilots-page="directory">
+  <a class="skip-link" href="#main">Skip to pilots</a>
+
+  <header class="site-header is-scrolled" data-header>
+    <a class="brand" href="/" aria-label="Vectorwake home">
+      <svg class="brand-mark" viewBox="0 0 84 104" aria-hidden="true">
+        <path class="mark-amber" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+        <path class="mark-muted" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+        <path class="mark-cyan" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a class="nav-pilots is-current" href="/pilots" aria-current="page">Pilots</a>
+      <a class="discord-button nav-discord" href="https://play.vectorwake.net/discord" target="_blank" rel="noopener noreferrer" data-discord-link>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8.3 6.4a10.2 10.2 0 0 1 7.4 0 12.8 12.8 0 0 1 3.1 8.1 12.7 12.7 0 0 1-5.1 3.4l-1.1-1.5c.7-.2 1.3-.5 1.9-.9a6.1 6.1 0 0 1-5 0c.6.4 1.2.7 1.9.9l-1.1 1.5a12.7 12.7 0 0 1-5.1-3.4 12.8 12.8 0 0 1 3.1-8.1Zm1.5 7.3c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Zm4.4 0c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Z"/>
+        </svg>
+        <span class="discord-label">Discord</span>
+        <span class="discord-members" aria-label="Member count" hidden><span aria-hidden="true">●</span> <span data-discord-count></span></span>
+      </a>
+      <a class="github-button nav-github" href="https://github.com/criccomini/vectorwake" target="_blank" rel="noopener noreferrer" data-github-link>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.1 1.2a10.8 10.8 0 0 1 5.7 0C14.6 5 15.6 5 15.6 5c.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z"/>
+        </svg>
+        <span class="github-label">GitHub</span>
+        <span class="github-stars" aria-label="Star count" hidden><span aria-hidden="true">★</span> <span data-github-count></span></span>
+      </a>
+      <a class="nav-play" href="https://play.vectorwake.net">Play</a>
+    </nav>
+  </header>
+
+  <main id="main" class="directory-main">
+    <header class="directory-intro section-pad">
+      <p class="directory-kicker">Humans and AI. One ladder.</p>
+      <h1>Pilots</h1>
+      <p class="directory-lede">Every persistent call sign in the fleet. Rankings settle after ten rated events.</p>
+    </header>
+
+    <section class="pilot-directory section-pad" aria-labelledby="pilot-table-title">
+      <h2 class="sr-only" id="pilot-table-title">Pilot standings</h2>
+      <form class="pilot-filter" id="pilot-filter" role="search">
+        <label for="pilot-search">Find a pilot</label>
+        <input id="pilot-search" name="q" type="search" maxlength="40" autocomplete="off" placeholder="Call sign">
+        <button class="filter-submit" type="submit">Search</button>
+        <button class="filter-clear" id="pilot-clear" type="button" hidden>Clear</button>
+      </form>
+
+      <div class="pilot-table-wrap">
+        <table class="pilot-table">
+          <caption>Persistent human and bot pilots, ordered by settled rank</caption>
+          <thead>
+            <tr>
+              <th scope="col">Rank</th>
+              <th scope="col">Pilot</th>
+              <th scope="col">Tier</th>
+              <th scope="col" class="number">Rating</th>
+              <th scope="col" class="number">Kills</th>
+              <th scope="col" class="number">Deaths</th>
+              <th scope="col" class="number">Assists</th>
+              <th scope="col" class="number">K/D</th>
+              <th scope="col" class="number">Rated</th>
+            </tr>
+          </thead>
+          <tbody id="pilot-rows">
+            <tr><td class="table-message" colspan="9">Loading pilots…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pilot-pager">
+        <p id="pilot-range" role="status" aria-live="polite">Loading pilots…</p>
+        <div>
+          <button id="pilot-previous" type="button">Previous</button>
+          <button id="pilot-next" type="button">Next</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a class="brand footer-brand" href="/" aria-label="Vectorwake home">
+      <svg class="brand-mark" viewBox="0 0 84 104" aria-hidden="true">
+        <path class="mark-amber" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+        <path class="mark-muted" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+        <path class="mark-cyan" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav aria-label="Footer navigation">
+      <a href="https://play.vectorwake.net">Play</a>
+      <a href="/pilots">Pilots</a>
+      <a href="https://play.vectorwake.net/discord" target="_blank" rel="noopener noreferrer">Discord</a>
+      <a href="https://github.com/criccomini/vectorwake" target="_blank" rel="noopener noreferrer">GitHub</a>
+    </nav>
+  </footer>
+
+  <script src="/site.js" defer></script>
+  <script src="/pilots.js" defer></script>
+</body>
+</html>
