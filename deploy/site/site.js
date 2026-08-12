@@ -416,9 +416,91 @@ function setupHeader() {
   update();
 }
 
+function setupGameplayFilm() {
+  const video = document.querySelector("[data-gameplay]");
+  if (!video) return;
+
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (reducedMotion || connection?.saveData) return;
+
+  video.src = video.dataset.src;
+  const play = () => video.play().catch(() => {});
+  if (!("IntersectionObserver" in window)) {
+    play();
+    return;
+  }
+
+  const observer = new IntersectionObserver(([entry]) => {
+    if (entry.isIntersecting) {
+      play();
+    } else {
+      video.pause();
+    }
+  }, { threshold: 0.1 });
+  observer.observe(video);
+}
+
+function setupGitHubStars() {
+  const counts = document.querySelectorAll("[data-github-count]");
+  const links = document.querySelectorAll("[data-github-link]");
+  if (!counts.length) return;
+
+  const cacheKey = "vectorwake-github-stars";
+  const cacheAge = 6 * 60 * 60 * 1000;
+  const formatter = new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  });
+
+  const paint = (count) => {
+    counts.forEach((element) => {
+      element.textContent = formatter.format(count);
+    });
+    const noun = count === 1 ? "star" : "stars";
+    links.forEach((link) => {
+      link.setAttribute("aria-label", `Vectorwake on GitHub, ${count.toLocaleString("en-US")} ${noun}`);
+    });
+  };
+
+  let cached;
+  try {
+    cached = JSON.parse(localStorage.getItem(cacheKey));
+  } catch (_) {
+    cached = null;
+  }
+
+  if (Number.isInteger(cached?.count)) {
+    paint(cached.count);
+    if (Date.now() - cached.savedAt < cacheAge) return;
+  }
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 4000);
+  fetch("https://api.github.com/repos/criccomini/vectorwake", { signal: controller.signal })
+    .then((response) => {
+      if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+      return response.json();
+    })
+    .then((repository) => {
+      if (!Number.isInteger(repository.stargazers_count)) return;
+      paint(repository.stargazers_count);
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          count: repository.stargazers_count,
+          savedAt: Date.now(),
+        }));
+      } catch (_) {
+        return;
+      }
+    })
+    .catch(() => {})
+    .finally(() => window.clearTimeout(timeout));
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll("[data-battlefield]").forEach((canvas) => new BattleScene(canvas));
   document.querySelectorAll("[data-cta-field]").forEach((canvas) => new BattleScene(canvas, true));
+  setupGameplayFilm();
+  setupGitHubStars();
   setupHullSelector();
   setupEnergyDemo();
   setupReveals();
