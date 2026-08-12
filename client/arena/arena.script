@@ -2278,6 +2278,11 @@ function on_message(self, message_id, message)
             -- static layers need to hold it. Both follow the view: see
             -- TUNE.STATIC_STEP.
             local need = math.max(message.hw, message.hh) / 16
+            -- And tell the zone, which sends what this client can draw rather
+            -- than the whole room. The same number the terrain window is built
+            -- from, since the question is the same one: how far out does this
+            -- window reach. A no-op when it has not changed.
+            net.set_view(need + TUNE.STATIC_STEP)
             local want = math.ceil(need) + TUNE.STATIC_STEP + 1
             if want < TUNE.STATIC_MIN then want = TUNE.STATIC_MIN end
             if want > TUNE.STATIC_MAX then

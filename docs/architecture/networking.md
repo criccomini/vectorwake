@@ -262,6 +262,35 @@ and it is the honest shape of this: a pilot in a quiet corner is at the target,
 a pilot in the middle of the room's one big fight is twice it, because
 everything the cull removes is by definition somewhere you are not.
 
+### The radius is the client's window, not a constant
+
+160 tiles is the ceiling rather than the answer. It was sized against
+`TUNE.STATIC_MAX`, the widest terrain window the client will build, and almost
+nobody is at the ceiling: `TUNE.STATIC_MIN` is 56 and an ordinary window sits
+between. Sending everyone the widest case is sending most people four times
+what they can draw.
+
+So a client says. `C2S_VIEW` carries one byte of tiles either side of the
+camera, sent from the same measurement the terrain window is built from and
+again on every welcome, since sitting out and flying again arrive as fresh
+welcomes and a new life has been told nothing. The server floors it at the
+radar's own reach, because a blip sixty tiles out is a blip whether or not it
+is on screen, adds the slack, and caps it at the ceiling.
+
+The number comes from a client, so what a lie can do is the whole question:
+nothing. It picks how much you are sent, it is clamped at both ends, and the
+top of the range is what everybody had before. Claiming the world asks for what
+you already had.
+
+It is additive, which is why no protocol bump came with it. The arena's
+dispatch ignores an opcode it does not know, so an older client never sends
+this and is served the ceiling, and a newer client against an older arena is
+simply not heard. Neither has to be refused.
+
+Measured against the same fifty-two ship room, one pilot declaring a 56-tile
+window against one that declares nothing: **25.7 KB/s to 15.2**, another 41%
+off, with the rounds in range falling from 32.6 to 19.2.
+
 One sharp edge came out of filtering ships, and it is worth writing down
 because nothing about it is obvious. A proximity fuse latches a ship index, and
 `sim_step` reads that seat and ends the round the moment it is inactive. An

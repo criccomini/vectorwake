@@ -115,6 +115,29 @@ const C2S_INVITE: u8 = 8;
 /// dead, on another side, short of a full bar, or reaching for a hull that
 /// carries nobody or is already full.
 const C2S_ATTACH: u8 = 10;
+/// How much of the map this client is drawing, as tiles either side of its
+/// camera. Sent at join and whenever the window changes size.
+///
+/// Additive on purpose, and that is why there is no protocol bump beside it:
+/// the dispatch ignores an opcode it does not know, so an old client simply
+/// never sends this and is served the ceiling, exactly as before. A message
+/// rather than a join field because a window is resized mid-flight and a
+/// value taken once at the door goes stale the first time somebody
+/// full-screens.
+///
+/// Trusted only downward. It picks how much a client is sent, so claiming a
+/// huge view would be a request for the whole map; the value is clamped to
+/// the ceiling below and floored at the radar's own reach, which means the
+/// worst a lie can do is ask for what it already had.
+const C2S_VIEW: u8 = 11;
+/// Tiles the radar draws ships at, and so the floor under any view: a hull
+/// sixty tiles away is a blip on the dial whether or not it is on screen.
+/// `client/arena/ui.lua` calls this SPAN and world.lua repeats it.
+const RADAR_TILES: i32 = 60;
+/// Slack over whatever a client says it draws, in tiles. A hull at 490 px/s
+/// covers 24 px in a snapshot period and the quickest round 15, so 24 tiles
+/// of margin is sixteen periods of warning for the fastest thing in the game.
+const VIEW_SLACK: i32 = 24;
 /// `[C2S_WATCH, ship]`: whose eyes to borrow. From a player it means sit out,
 /// from a watcher it means look somewhere else. 255 asks for the room channel.
 ///
@@ -150,6 +173,21 @@ const JOIN_WATCH: u8 = 2;
 /// that is not there, so the bump is what turns a deploy race into a refusal
 /// and a reload rather than a garbled room.
 const CLIENT_PROTOCOL: u8 = 8;
+
+/// What one seat is sent, given what it says it draws.
+///
+/// Zero means a client that has never said, which is every client older than
+/// this and every one for the moment before its first view message lands: it
+/// gets the ceiling, which is what everybody got before. Otherwise the window
+/// it claims, floored at the radar and capped at the ceiling, so the answer is
+/// never larger than the old one and never smaller than what the dial needs.
+fn radius_for(view: u8) -> i32 {
+    if view == 0 {
+        return INTEREST;
+    }
+    let tiles = (view as i32).max(RADAR_TILES) + VIEW_SLACK;
+    (tiles * 16 * 256).min(INTEREST)
+}
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -280,6 +318,9 @@ struct Player {
     /// things and nothing else: the roster label, whether the seat counts
     /// against the human cap, and whether the seat can be taken away.
     bot: bool,
+    /// Tiles either side of its camera this client says it is drawing, or 0
+    /// from one that has never said. See `C2S_VIEW`.
+    view: u8,
     /// Consecutive ticks spent inside a safe zone. Counted here rather than in
     /// the core, which has no model of a seat and nothing to do with one; the
     /// limit it is measured against travels in the settings so the client can
@@ -1435,6 +1476,9 @@ impl Room {
                 pending: Default::default(),
                 last_input_tick: 0,
                 applied_tick: 0,
+                // Until this client says what it draws, it is served the
+                // ceiling. See `C2S_VIEW`.
+                view: 0,
                 name,
                 rid,
                 bot,
@@ -2507,7 +2551,7 @@ impl Room {
                 .names
                 .get(&p.ship)
                 .is_some_and(|s| s.label == token::Label::HouseBot.to_byte());
-            let radius = if house { -1 } else { INTEREST };
+            let radius = if house { -1 } else { radius_for(p.view) };
             let n = self.world.pack_around(buf, sh.x, sh.y, radius);
             if n <= 0 {
                 continue;
@@ -5302,6 +5346,22 @@ pub(crate) async fn serve_client(
                     }
                 }
             }
+            C2S_VIEW => {
+                // How much of the map this client draws, so it is sent that
+                // and not the ceiling. One byte of tiles; `radius_for` floors
+                // it at the radar and caps it at the ceiling, so a client
+                // claiming the world gets what it already had.
+                if data.len() >= 2 {
+                    if let Some((room, pid)) = seat {
+                        let mut z = zone.lock().await;
+                        if let Some(a) = z.rooms.get_mut(room) {
+                            if let Some(p) = a.players.get_mut(&pid) {
+                                p.view = data[1];
+                            }
+                        }
+                    }
+                }
+            }
             C2S_ATTACH => {
                 // Climb onto a teammate, or drop off. Every condition is the
                 // core's, and the answer is the next snapshot: a gunner is a
@@ -5433,6 +5493,7 @@ mod tests {
         // sends: these tests are about which tick a button lands on.
         std::mem::forget(rx);
         Player {
+            view: 0,
             ship: 0,
             buttons: 0,
             pending: Default::default(),
@@ -6988,6 +7049,31 @@ mod tests {
         let sh = &mut a.world.state.ships[ship as usize];
         sh.x = 900 * 16 * 256;
         sh.y = 900 * 16 * 256;
+    }
+
+    #[test]
+    fn a_view_picks_the_radius_and_can_only_ask_for_less() {
+        // The number comes from a client, so what it can do is the whole
+        // question. It may ask for less than the ceiling and never for more,
+        // and it may never ask for less than the radar draws, because a blip
+        // at sixty tiles is a blip whether or not it is on screen.
+        assert_eq!(radius_for(0), INTEREST, "a client that never said gets the ceiling");
+        assert_eq!(radius_for(255), INTEREST, "and one claiming the world gets no more");
+        assert_eq!(radius_for(200), INTEREST, "nor one claiming more than the ceiling");
+
+        let small = radius_for(40);
+        assert!(small < INTEREST, "a small window is served less");
+        assert_eq!(small, (RADAR_TILES + VIEW_SLACK) * 16 * 256,
+                   "and is floored at what the radar reaches, plus slack");
+
+        let wide = radius_for(100);
+        assert_eq!(wide, (100 + VIEW_SLACK) * 16 * 256, "a wide window gets its own");
+        assert!(wide > small && wide < INTEREST, "between the floor and the ceiling");
+
+        // Monotone, so a resize never costs a client sight it had.
+        for v in 1..=254u8 {
+            assert!(radius_for(v) <= radius_for(v + 1), "view {v} is not monotone");
+        }
     }
 
     #[test]
