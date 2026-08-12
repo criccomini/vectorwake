@@ -4395,6 +4395,12 @@ async fn main() {
                 };
             term.recv().await;
             zone.lock().await.file_departures();
+            // The WebTransport goodbye. TCP players get theirs from the
+            // kernel the moment this process dies; QUIC players get only
+            // what is said before it does, and an unclosed session leaves
+            // them coasting in a ghost room until the browser's idle timer
+            // notices, tens of seconds later.
+            wt::shutdown().await;
             println!("stopped; departures are on file");
             std::process::exit(0);
         });

@@ -568,6 +568,19 @@ behind the welcome's own gate: one in hand means both lanes spoke. The window
 is wider than the dial's because it carries the map, and a slow link is not a
 stalled one.
 
+A proven session keeps a quiet clock of its own, because of how a QUIC peer
+dies. The kernel closes a dead process's TCP sockets, so the WebSocket's
+players get their hangup within a second of an arena going down; QUIC lives in
+userspace and a killed arena says nothing, which left a WebTransport player
+coasting in a ghost room until the browser's own idle timer noticed, tens of
+seconds later: every hull drifting on its last course, and nothing killable,
+because deaths only ever arrive as snapshots. Eight seconds without a snapshot
+is a dead wire on any network worth playing over, and it is reported rather
+than redialled, since mid-game the seat is gone whichever wire comes next. The
+arena does its half on the way out: SIGTERM closes the WebTransport endpoint
+before the process exits, so a deploy's restart reads as a hangup rather than
+as eight seconds of drift.
+
 Which is why both readouts say which door a connection came through, since
 otherwise nothing would. The debug readout carries it in flight, as `wt` or
 `ws` beside the lag and the lead. The menu's about page carries it in words,

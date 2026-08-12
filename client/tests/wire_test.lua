@@ -313,6 +313,65 @@ for _ = 1, 6 do net.tick(1) end
 check("one snapshot settles the session", ws.dialled == 0
       and net.stats.wire == "wt", "dialled " .. ws.dialled)
 
+-- --- the quiet clock, on a session that has proven itself --------------------
+--
+-- A killed arena says nothing over QUIC: the kernel closes a dead process's
+-- TCP sockets, so the WebSocket gets its hangup within a second, but a QUIC
+-- peer's death is pure silence until the browser's own idle timer gives up,
+-- tens of seconds later. A player spends them in a ghost room, every hull
+-- coasting and nothing killable. Eight seconds without a snapshot is a dead
+-- wire on any network worth playing over, and it is reported rather than
+-- redialled: mid-game the seat is gone whichever wire comes next.
+
+net = fresh_net()
+why = nil
+net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos",
+            false, "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(1, 3, 0, 0, 0, 0)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
+for _ = 1, 60 do net.tick(0.1) end
+check("six quiet seconds are not a verdict", why == nil and net.connected)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5100)})
+for _ = 1, 60 do net.tick(0.1) end
+check("a snapshot rewinds the quiet clock", why == nil and net.connected)
+for _ = 1, 25 do net.tick(0.1) end
+check("a proven session that goes silent is reported",
+      why == "the zone went quiet" and not net.connected, tostring(why))
+check("and reported rather than redialled", ws.dialled == 0,
+      "dialled " .. ws.dialled)
+
+-- A tab waking from the background hands the first frame a monster dt, with
+-- the queued snapshots right behind it. One frame must never be the whole
+-- verdict, however large.
+net = fresh_net()
+why = nil
+net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos",
+            false, "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(1, 3, 0, 0, 0, 0)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
+net.tick(30)
+check("one monster frame is not eight seconds of silence",
+      why == nil and net.connected, tostring(why))
+
+-- The socket is silent the same way when a NAT eats it mid-hold, and the
+-- clock owes it the same reading.
+net = fresh_net()
+why = nil
+net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos",
+            false, "")
+ws.cb(nil, ws.handle, {event = websocket.EVENT_CONNECTED})
+ws.cb(nil, ws.handle, {event = websocket.EVENT_MESSAGE,
+                       message = string.char(1, 3, 0, 0, 0, 0)})
+ws.cb(nil, ws.handle, {event = websocket.EVENT_MESSAGE,
+                       message = snapshot(3, 5000)})
+for _ = 1, 85 do net.tick(0.1) end
+check("a silent socket gets the same verdict",
+      why == "the zone went quiet", tostring(why))
+
 -- A session that dies while settling is a loss with a reason, and the clock
 -- dies with it rather than redialling over the report.
 net = fresh_net()

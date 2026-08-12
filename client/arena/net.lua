@@ -253,6 +253,16 @@ local settling = nil
 -- one. It still fires inside the arena's own ten-second give-up, so the
 -- socket gets its turn before the player is sent back to the menu.
 local WT_SETTLE = 5
+-- Seconds since the last snapshot of a proven session, nil until one lands.
+-- The settle clock's mid-game sibling, and it exists because of how a QUIC
+-- peer dies: the kernel closes a dead process's TCP sockets, so the WebSocket
+-- gets a hangup within a second, but QUIC lives in userspace and a killed
+-- arena sends nothing. The browser's own idle timer is tens of seconds, and a
+-- player spends them in a ghost room: every hull coasting on its last course,
+-- nothing killable, nothing said. Snapshots come twenty a second, so a wire
+-- this quiet this long is dead on any network worth playing over.
+local quiet = nil
+local QUIET_LIMIT = 8
 -- The last snapshot tick applied, for the reorder guard in `on_snapshot`.
 local snap_tick = 0
 
@@ -296,9 +306,15 @@ local function lost(why)
     -- noticed a minute later.
     if conn then pcall(websocket.disconnect, conn) end
     conn = nil
+    -- The WebTransport session gets the same hangup the socket does: a
+    -- quiet-loss leaves one open in the page, and a ghost session's eventual
+    -- browser-timeout close arriving later is an event about nothing.
+    local w = wtx()
+    if w then pcall(w.disconnect) end
     wt_live = false
     pending = nil
     settling = nil
+    quiet = nil
     if on_lost_cb then on_lost_cb(why) end
 end
 local predicted_tick = 0
@@ -648,6 +664,7 @@ local function on_snapshot(s)
         M.subject = string.byte(s, 2)
         M.stats.snaps = M.stats.snaps + 1
         settling = nil
+        quiet = 0
         sim.smooth_capture()
         local before = capture_world()
         if sim.apply_snapshot(body) ~= 0 then return end
@@ -666,6 +683,7 @@ local function on_snapshot(s)
                       string.byte(s, 5), string.byte(s, 6))
     M.stats.snaps = M.stats.snaps + 1
     settling = nil
+    quiet = 0
 
     -- Raw, not what the screen is showing. This measures how far the
     -- prediction missed by, and a number that has had render smoothing folded
@@ -1024,6 +1042,18 @@ function M.tick(dt)
         settling = settling + dt
         if settling >= WT_SETTLE then fall_back() end
     end
+    -- The quiet clock, on a session that has already proven itself. A loss
+    -- here is reported rather than redialled: mid-game the seat and the score
+    -- are gone whichever wire comes next, and the player should see why. Each
+    -- frame's contribution is capped because a backgrounded tab hands the
+    -- first frame back a monster dt: a real outage is many frames of silence,
+    -- and a tab waking up is one big one with the backlog right behind it.
+    if quiet and M.connected then
+        quiet = quiet + math.min(dt, 0.1)
+        if quiet >= QUIET_LIMIT then
+            lost("the zone went quiet")
+        end
+    end
 end
 
 -- A connection that never lands, or one that drops, has to be reportable:
@@ -1066,6 +1096,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
                rx = 0, tx = 0, msgs = 0, wire = "ws"}
     M.lost = nil
     snap_tick = 0
+    quiet = nil
     -- The zone we came from should not have its name or its banner still on
     -- screen while the next one is being reached.
     M.me = 0
@@ -1228,6 +1259,7 @@ function M.disconnect()
     wt_live = false
     pending = nil
     settling = nil
+    quiet = nil
     M.connected = false
 end
 

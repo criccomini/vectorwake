@@ -61,6 +61,25 @@ const IDLE: Duration = Duration::from_secs(90);
 /// WebSocket listener when `wt_listen` is configured; never instead of it,
 /// because UDP is blocked on enough networks that QUIC can only ever be the
 /// preferred door, not the only one.
+/// The live endpoint, kept where the shutdown path can reach it. A killed
+/// process says nothing over QUIC: the kernel closes TCP sockets for the
+/// dead, so WebSocket players get their hangup for free, but a WebTransport
+/// session left unclosed is discovered by the browser's idle timer, tens of
+/// seconds a player spends in a ghost room. Set once when the endpoint binds.
+static LIVE: std::sync::OnceLock<Arc<Endpoint<endpoint_side::Server>>> =
+    std::sync::OnceLock::new();
+
+/// Close every WebTransport session, for the SIGTERM path. The close frame
+/// leaves on the endpoint's own driver, so the bounded wait afterwards is
+/// what gives it a moment to reach the wire before the process exits; a hang
+/// here can only cost the moment, and the sessions it would miss are the ones
+/// a kill was already going to lose.
+pub async fn shutdown() {
+    let Some(endpoint) = LIVE.get() else { return };
+    endpoint.close(VarInt::from_u32(0), b"zone restarting");
+    let _ = tokio::time::timeout(Duration::from_millis(250), endpoint.wait_idle()).await;
+}
+
 pub async fn run(listen: String, cert: String, key: String, zone: Arc<Mutex<ArenaServer>>) {
     let addr: std::net::SocketAddr = match listen.parse() {
         Ok(a) => a,
@@ -98,6 +117,7 @@ pub async fn run(listen: String, cert: String, key: String, zone: Arc<Mutex<Aren
         }
     };
     println!("vectorwake arena server listening on https://{addr} (webtransport)");
+    let _ = LIVE.set(endpoint.clone());
     // Said in a number as well as in a line of log, because the log is on a
     // host nobody is reading and this is on a page anybody can. Until the
     // endpoint binds, this stays zero: an arena that never found its
