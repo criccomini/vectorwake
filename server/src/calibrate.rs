@@ -1263,6 +1263,320 @@ those hulls, so read their rows knowing the map is in them.",
     })
 }
 
+/* ---- the team tournament ----------------------------------------------
+ *
+ * Everything above fights one hull against one hull, which is the only way to
+ * price a kit or a stat and the wrong way to ask what a roster is like to play.
+ * Alpha is teams. A hull whose job is to deny ground, screen a bomber or spend
+ * itself for a trade has nothing to do in a duel and no way to show it, and
+ * ships.md says so of the Lattice in as many words: it scores less than
+ * anything else and decides more fights than its stats suggest.
+ *
+ * So this fills both sides at random and reads a hull off the sides it was on.
+ * Every seat is one observation: a hull that keeps turning up on winning teams
+ * is worth having, whether or not it is the thing collecting the kills.
+ *
+ * Random rather than balanced on purpose. A hull that appears on both sides
+ * cancels, which costs a little power and buys the estimate its honesty: no
+ * arrangement of mine decides which hulls meet which.
+ */
+
+/// One hull's line in the team tournament.
+pub struct TeamRow {
+    pub name: &'static str,
+    pub class: u8,
+    /// Seats this hull filled, and how they ended. A seat is the unit here
+    /// rather than a match, because a match holds several of the same hull.
+    pub seats: u32,
+    pub won: u32,
+    pub drawn: u32,
+    pub kills: u32,
+    /// Times this seat was killed, counted off the alive edge rather than off
+    /// anybody's kill column: a blast has no owner test, so a pilot can end
+    /// their own life and it belongs in this number all the same.
+    pub deaths: u32,
+    pub shots: [u32; sim::TRIG_COUNT],
+    pub hits: u32,
+    pub damage: u64,
+    pub self_damage: u64,
+    pub greens: u32,
+    pub converted: u32,
+}
+
+impl TeamRow {
+    pub fn win_rate(&self) -> f64 {
+        win_rate_of(self.won, self.seats - self.won - self.drawn, self.drawn)
+    }
+    pub fn margin(&self) -> f64 {
+        margin_of(self.won, self.seats - self.won - self.drawn, self.drawn)
+    }
+}
+
+/// What one seat did in one match.
+#[derive(Clone, Copy, Default)]
+pub struct Seat {
+    pub class: u8,
+    pub team: u8,
+    pub kills: u32,
+    pub deaths: u32,
+    pub shots: [u32; sim::TRIG_COUNT],
+    pub hits: u32,
+    pub damage: u64,
+    pub self_damage: u64,
+    pub greens: u32,
+    pub converted: u32,
+}
+
+/// One match: `lineup` seated in order, the first half on team 0.
+///
+/// Ends when a side reaches `KILL_TARGET` per player, so a four a side match
+/// runs to twenty, or when the clock does. A match that ran out of clock is
+/// still scored on kills, because a team ahead on the board when time expires
+/// has out-fought the other one whether or not it finished the job.
+pub fn team_match(lineup: &[u8], skill: f32, greens: u32, salt: u32,
+                  tuning: Option<&config::ArenaConfig>, map: &Arena)
+                  -> (Vec<Seat>, bool) {
+    let per_side = lineup.len() / 2;
+    let Some(mut world) = map.build(salt) else { return (Vec::new(), false) };
+    let route = nav::Nav::build(&world.map);
+    if let Some(c) = tuning {
+        crate::Room::apply_config(&mut world, c);
+    }
+    world.cfg.spawn_prizes = 0;
+    world.cfg.prize_max = 0;
+    world.cfg.spawn_radius = 0;
+
+    let mut seats: Vec<Seat> = Vec::with_capacity(lineup.len());
+    let mut ships: Vec<u8> = Vec::with_capacity(lineup.len());
+    let mut prng: Vec<u32> = Vec::with_capacity(lineup.len());
+    for (i, &cls) in lineup.iter().enumerate() {
+        let team = (i / per_side) as u8;
+        let heading = if team == 0 { 0 } else { 32768 };
+        let id = world.spawn_on_map(cls, team, (i % per_side) as u32, heading);
+        if id < 0 {
+            return (Vec::new(), false);
+        }
+        ships.push(id as u8);
+        prng.push((salt.wrapping_mul(2654435761).wrapping_add(i as u32 * 2246822519)
+                   ^ 0x9E37_79B9) | 1);
+        seats.push(Seat { class: cls, team, ..Default::default() });
+    }
+    for i in 0..ships.len() {
+        seats[i].converted += green(&mut world, ships[i] as usize, greens, &mut prng[i]);
+        seats[i].greens += greens;
+    }
+
+    let mut bots: Vec<ai::Bot> = ships
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| {
+            let mut b = ai::Bot::new(s, skill);
+            b.reseed(salt.wrapping_mul(2246822519) ^ (i as u32).wrapping_mul(2654435761));
+            b
+        })
+        .collect();
+
+    let trig_of: Vec<_> = lineup.iter().map(|&c| spec_triggers(&world.cfg, c)).collect();
+    let mut alive_was = vec![true; ships.len()];
+    let target = KILL_TARGET as u32 * per_side as u32;
+    let mut decided = false;
+
+    for _ in 0..MATCH_TICKS {
+        // The look is decided before the think, because `think` takes the bot
+        // mutably and `looks_due` reads it: asking inside the call borrows the
+        // same bot twice.
+        let mut inputs: Vec<sim::sim_input> = Vec::with_capacity(ships.len());
+        for i in 0..ships.len() {
+            let own = ai::own(&world, ships[i]);
+            let look = bots[i].looks_due().then(|| ai::scan(&world, ships[i]));
+            inputs.push(sim::sim_input {
+                ship: ships[i],
+                buttons: bots[i].think(&own, &route, look),
+            });
+        }
+        world.step(&inputs);
+
+        {
+            let ev = &*world.events;
+            for k in 0..ev.count as usize {
+                let e = ev.e[k];
+                match e.etype {
+                    sim::EV_FIRE => {
+                        if let Some(i) = ships.iter().position(|&s| s == e.a) {
+                            if let Some(&t) = trig_of[i].get(&e.b) {
+                                seats[i].shots[t] += 1;
+                            }
+                        }
+                    }
+                    sim::EV_HIT => {
+                        if let Some(i) = ships.iter().position(|&s| s == e.b) {
+                            if e.a == e.b {
+                                seats[i].self_damage += e.v.max(0) as u64;
+                            } else {
+                                seats[i].hits += 1;
+                                seats[i].damage += e.v.max(0) as u64;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        for i in 0..ships.len() {
+            let alive = world.state.ships[ships[i] as usize].alive != 0;
+            if alive && !alive_was[i] {
+                seats[i].converted += green(&mut world, ships[i] as usize, greens, &mut prng[i]);
+                seats[i].greens += greens;
+            }
+            if !alive && alive_was[i] {
+                seats[i].deaths += 1;
+            }
+            alive_was[i] = alive;
+        }
+
+        let mut side = [0u32; 2];
+        for i in 0..ships.len() {
+            side[seats[i].team as usize] += world.state.ships[ships[i] as usize].kills as u32;
+        }
+        if side[0] >= target || side[1] >= target {
+            decided = true;
+            break;
+        }
+    }
+
+    for i in 0..ships.len() {
+        seats[i].kills = world.state.ships[ships[i] as usize].kills as u32;
+    }
+    (seats, decided)
+}
+
+/// Fill both sides at random, `matches` times, and read each hull off its seats.
+pub fn run_teams(per_side: usize, matches: u32, greens: u32, skill: f32,
+                 tuning: Option<&config::ArenaConfig>, map: &Arena,
+                 verbose: bool) -> Vec<TeamRow> {
+    let n = ai::CLASS_NAMES.len();
+    let mut rows: Vec<TeamRow> = (0..n)
+        .map(|i| TeamRow {
+            name: ai::CLASS_NAMES[i], class: i as u8, seats: 0, won: 0, drawn: 0,
+            kills: 0, deaths: 0, shots: [0; sim::TRIG_COUNT], hits: 0,
+            damage: 0, self_damage: 0, greens: 0, converted: 0,
+        })
+        .collect();
+
+    // The draw is the state's own generator rather than anything of the host's,
+    // so a run repeats. Salt walks, so no two matches share a lineup by
+    // construction of the seed alone.
+    let mut rng = 0x5eed_1eafu32;
+    let mut undecided = 0u32;
+    for m in 0..matches {
+        let mut lineup = Vec::with_capacity(per_side * 2);
+        for _ in 0..per_side * 2 {
+            rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+            lineup.push((rng % n as u32) as u8);
+        }
+        let (seats, decided) = team_match(&lineup, skill, greens, m, tuning, map);
+        if seats.is_empty() {
+            continue;
+        }
+        if !decided {
+            undecided += 1;
+        }
+        let mut side = [0u32; 2];
+        for s in &seats {
+            side[s.team as usize] += s.kills;
+        }
+        let winner = match side[0].cmp(&side[1]) {
+            std::cmp::Ordering::Greater => Some(0u8),
+            std::cmp::Ordering::Less => Some(1u8),
+            std::cmp::Ordering::Equal => None,
+        };
+        for s in &seats {
+            let r = &mut rows[s.class as usize];
+            r.seats += 1;
+            match winner {
+                Some(w) if w == s.team => r.won += 1,
+                None => r.drawn += 1,
+                _ => {}
+            }
+            r.kills += s.kills;
+            r.deaths += s.deaths;
+            r.hits += s.hits;
+            r.damage += s.damage;
+            r.self_damage += s.self_damage;
+            r.greens += s.greens;
+            r.converted += s.converted;
+            for t in 0..sim::TRIG_COUNT {
+                r.shots[t] += s.shots[t];
+            }
+        }
+        if verbose && (m + 1) % 100 == 0 {
+            println!("{}/{} matches", m + 1, matches);
+        }
+    }
+    if verbose {
+        // Eight ships on a real map rarely reach twenty kills inside the five
+        // minutes, so most matches are timed rather than raced. That is the
+        // better instrument anyway: every lineup gets the same clock and the
+        // score is the kill difference when it stops. Printed because a run
+        // where matches suddenly start finishing early is a run whose lethality
+        // moved, and that is worth noticing rather than averaging over.
+        println!("{} of {matches} matches reached the kill target; the rest were \
+scored on the difference when the clock stopped", matches - undecided);
+    }
+    rows
+}
+
+/// The team report: a line per hull, read off the seats it filled.
+pub fn report_teams(rows: &[TeamRow], per_side: usize, skill: f32, greens: u32,
+                    matches: u32, zone: &str, map: &str) -> serde_json::Value {
+    println!(
+        "\nteam tournament: {per_side} a side, {zone} tuning on the {map}, skill \
+{skill:.2}, {greens} greens a life, {matches} matches, lineups drawn at random"
+    );
+    println!(
+        "\n{:<10} {:>7} {:>7} {:>7} {:>8} {:>8} {:>8} {:>8} {:>7}",
+        "hull", "win%", "+-95%", "seats", "kills/s", "deaths/s", "K/D", "hit/pull", "conv%"
+    );
+    for r in rows {
+        let fired: u32 = r.shots.iter().sum();
+        let s = r.seats.max(1) as f64;
+        println!(
+            "{:<10} {:>7.1} {:>7.1} {:>7} {:>8.2} {:>8.2} {:>8.2} {:>8.2} {:>7.1}",
+            r.name,
+            100.0 * r.win_rate(),
+            r.margin(),
+            r.seats,
+            r.kills as f64 / s,
+            r.deaths as f64 / s,
+            r.kills as f64 / r.deaths.max(1) as f64,
+            r.hits as f64 / fired.max(1) as f64,
+            100.0 * r.converted as f64 / r.greens.max(1) as f64,
+        );
+    }
+    // A hull is only as measured as the seats it drew, and a random lineup does
+    // not deal them evenly. Worth printing rather than assuming.
+    let lo = rows.iter().map(|r| r.seats).min().unwrap_or(0);
+    let hi = rows.iter().map(|r| r.seats).max().unwrap_or(0);
+    println!(
+        "\nseats ran {lo} to {hi} across the roster, so the widest interval above \
+is the one to read the board by."
+    );
+
+    serde_json::json!({
+        "per_side": per_side, "tuning": zone, "map": map, "skill": skill,
+        "greens_per_life": greens, "matches": matches,
+        "hulls": rows.iter().map(|r| serde_json::json!({
+            "name": r.name, "class": r.class, "seats": r.seats, "won": r.won,
+            "drawn": r.drawn, "win_rate": r.win_rate(), "win_rate_margin": r.margin(),
+            "kills": r.kills, "deaths": r.deaths,
+            "gun_shots": r.shots[sim::TRIG_GUN], "bomb_shots": r.shots[sim::TRIG_BOMB],
+            "hits": r.hits, "damage": r.damage, "self_damage": r.self_damage,
+            "greens_offered": r.greens, "greens_converted": r.converted,
+        })).collect::<Vec<_>>(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

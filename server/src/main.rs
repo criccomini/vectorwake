@@ -4086,6 +4086,79 @@ fn run_hull_tournament() {
     }
 }
 
+/// `calibrate teams <matches> <per_side> <greens> <zone> <dir> [map]`: sides
+/// drawn at random, scored by the seats each hull filled.
+///
+/// The hull tournament fights one against one, which cannot see a hull whose
+/// job is to hold ground or screen somebody. This fills both sides from the
+/// roster at random and asks a simpler question of every seat: did the side it
+/// was on win. A hull that keeps turning up on winning teams is worth having,
+/// whether or not it is the one collecting kills.
+///
+/// Writes `teams.json`, which nothing loads.
+fn run_team_tournament() {
+    let matches: u32 = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(200);
+    let per_side: usize = std::env::args().nth(4).and_then(|s| s.parse().ok()).unwrap_or(4);
+    let greens: u32 = std::env::args().nth(5).and_then(|s| s.parse().ok()).unwrap_or(30);
+    let zone = std::env::args().nth(6).unwrap_or_else(|| "baseline".into());
+    let dir = std::env::args().nth(7).unwrap_or_else(|| ".".into());
+    let map = std::env::args().nth(8).unwrap_or_else(|| "arena".into());
+
+    if per_side == 0 || per_side > 16 {
+        println!("teams: {per_side} a side is not a game");
+        std::process::exit(1);
+    }
+
+    let builder = match map.as_str() {
+        "pit" => calibrate::Arena::Built(sim::build_pit),
+        "arena" => calibrate::Arena::Built(sim::build_arena),
+        path => match std::fs::read(path) {
+            Ok(bytes) => calibrate::Arena::Packed(std::sync::Arc::new(bytes)),
+            Err(e) => {
+                println!("teams: {path:?} is not `pit`, not `arena`, and will not open: {e}");
+                std::process::exit(1);
+            }
+        },
+    };
+
+    // The pit seats two facing each other and nothing else. Eight ships want a
+    // map with starts on it, so this refuses rather than piling them on one
+    // tile and calling the result a team game.
+    if matches!(builder, calibrate::Arena::Built(_)) && map == "pit" {
+        println!("teams: the pit has two spawn tiles; use `arena` or a packed map");
+        std::process::exit(1);
+    }
+
+    let tuning = if zone == "baseline" {
+        None
+    } else {
+        let cat = match catalog::load("catalog") {
+            Ok(c) => c,
+            Err(e) => { println!("teams: {e}"); std::process::exit(1); }
+        };
+        let Some(def) = cat.zone(&zone) else {
+            println!("teams: no zone named {zone:?} in the catalog");
+            std::process::exit(1);
+        };
+        Some(def.arena.clone())
+    };
+
+    const SKILL: f32 = 0.50;
+    println!(
+        "{per_side} a side under {zone} tuning on the {map}: {matches} matches at \
+{greens} greens a life"
+    );
+    let rows = calibrate::run_teams(per_side, matches, greens, SKILL,
+                                   tuning.as_ref(), &builder, true);
+    let doc = calibrate::report_teams(&rows, per_side, SKILL, greens, matches, &zone, &map);
+
+    let path = format!("{dir}/teams.json");
+    match std::fs::write(&path, serde_json::to_string_pretty(&doc).expect("serialize")) {
+        Ok(()) => println!("\nwrote {path}"),
+        Err(e) => println!("\ncould not write {path}: {e}"),
+    }
+}
+
 /// Where the directories are. `VW_DIRECTORY` names a host, which is resolved,
 /// so one hostname with several records is a whole deployment and a directory can
 /// be added or moved without touching an arena server. That is the DNS decision
@@ -4236,6 +4309,8 @@ async fn main() {
             run_stage_tournament();
         } else if std::env::args().nth(2).as_deref() == Some("hulls") {
             run_hull_tournament();
+        } else if std::env::args().nth(2).as_deref() == Some("teams") {
+            run_team_tournament();
         } else {
             run_calibration();
         }
