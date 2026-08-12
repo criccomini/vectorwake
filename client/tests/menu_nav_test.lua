@@ -921,7 +921,7 @@ end
 -- Policy rows navigate the current browser tab. A new tab requested from
 -- the game loop is outside the original tap and mobile browsers block it.
 do
-    local js = nil
+    local js
     _G.html5 = {run = function(code) js = code return "" end}
     for label, url in pairs({privacy = "https://vectorwake.net/privacy",
                              terms = "https://vectorwake.net/terms"}) do
