@@ -57,7 +57,13 @@ local ui = require("arena.ui")
 local pal = require("arena.palette")
 
 local RAIL = {}
-for i, n in ipairs({"zones", "ship", "pilot", "settings", "help", "about"}) do
+-- The rail at its longest, which is what a pilot in a game with sides sees:
+-- zones, ship, pilot, team, settings, help, discord, about. Every mark the
+-- rail can wear is therefore drawn at least once here, and a mark that throws
+-- is a menu that will not open. The change before this shipped a crash in a
+-- drawing path no test ever ran.
+for i, n in ipairs({"zones", "ship", "pilot", "team", "settings", "help",
+                    "discord", "about"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 

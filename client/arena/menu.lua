@@ -417,6 +417,12 @@ local NODES = {
              detail = function() return M.name end, go = "pilot"},
             {label = "settings", icon = "settings", go = "settings"},
             {label = "help", icon = "help", go = "help"},
+            -- The one stop that leaves. Every other row on this rail opens a
+            -- page of the game's own; this hands the browser somewhere else,
+            -- which is why it sits at the bottom next to the row that says
+            -- what the game is rather than up among the ones you fly with.
+            {label = "discord", icon = "discord", detail = "chat with us",
+             act = "discord"},
             {label = "about", icon = "about", go = "about"},
         }
         -- Sides are a thing a room has, so the row appears with the room and
@@ -1257,6 +1263,26 @@ local function activate()
         return "team"
     elseif r.act == "found" then
         return "found"
+    elseif r.act == "discord" then
+        -- A new tab, and the game keeps running behind it: nothing here is
+        -- paused, and a player who came to ask a question has not asked to
+        -- leave the room they are in.
+        --
+        -- The redirect rather than the invite itself. `deploy/caddy` owns
+        -- /discord and the site's own button points at the same path, so an
+        -- invite that has to be reissued is one line of Caddy and not a
+        -- client release that every open tab is behind.
+        --
+        -- A browser may refuse to open it. Defold hands input to the game on
+        -- its own loop rather than inside the click handler, so the call is
+        -- not always inside the gesture a popup blocker wants to see, and
+        -- there is no way to ask in advance. Refused, the address is worth
+        -- more on screen than in a console nobody has open.
+        local url = "https://play.vectorwake.net/discord"
+        local ok, opened = pcall(sys.open_url, url, {target = "_blank"})
+        if ok and opened ~= false then return nil end
+        M.confirm(url, {{label = "ok", act = "ok"}})
+        return nil
     elseif r.act == "install" then
         -- One tap where the browser allows one. Where it does not, the row
         -- says where the button is, which is all anybody needs and is what

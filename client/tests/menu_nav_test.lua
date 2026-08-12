@@ -801,5 +801,67 @@ menu.click_rail(help_at)
 check("every stop is reachable", menu.stack[2] == "help",
       table.concat(menu.stack, "/"))
 
+-- --- the discord stop leaves, rather than going somewhere in here ----------
+--
+-- Every other stop on the rail pushes a page onto the stack. This one hands a
+-- URL to the browser and leaves the stack where it was, so the two things
+-- worth pinning are that it opens the right address in a new tab and that it
+-- does not quietly navigate the menu somewhere as well.
+
+do
+    local asked = nil
+    _G.sys.open_url = function(url, attrs)
+        asked = {url = url, target = attrs and attrs.target}
+        return true
+    end
+
+    menu.open = true
+    menu.home = true
+    menu.stack = {"root"}
+    menu.sel = {}
+    local at = top_index("discord")
+    check("the rail carries a discord stop", at ~= nil, "absent")
+    -- Its own mark, or it would draw the fallback and read as an about row.
+    local icon = nil
+    for _, r in ipairs(menu.view().rail) do
+        if r.label == "discord" then icon = r.icon end
+    end
+    check("and it wears its own mark", icon == "discord", tostring(icon))
+
+    menu.click_rail(at)
+    check("tapping it asks the browser to open the invite",
+          asked and asked.url == "https://play.vectorwake.net/discord",
+          asked and asked.url or "nothing asked")
+    check("in a new tab", asked and asked.target == "_blank",
+          asked and tostring(asked.target))
+    -- The redirect, not the invite: an invite that has to be reissued should
+    -- be one line of Caddy rather than a client release.
+    check("and it is the redirect rather than a discord.gg link",
+          asked and not asked.url:find("discord.gg", 1, true))
+    check("the menu stays where it was", #menu.stack == 1,
+          table.concat(menu.stack, "/"))
+
+    -- A browser that refuses gets the address on screen instead, since Defold
+    -- hands input to the game outside the click handler and a popup blocker
+    -- may well say no.
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.note = nil
+    _G.sys.open_url = function() return false end
+    menu.click_rail(top_index("discord"))
+    local card = menu.view().ask
+    check("a refused popup shows the address",
+          card and tostring(card.head):find("play.vectorwake.net/discord",
+                                            1, true) ~= nil,
+          card and tostring(card.head) or "no card")
+
+    -- And an engine with no open_url at all does not take the menu down.
+    menu.stack = {"root"}
+    menu.sel = {}
+    _G.sys.open_url = nil
+    local ok = pcall(menu.click_rail, top_index("discord"))
+    check("an engine without open_url survives the tap", ok)
+end
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

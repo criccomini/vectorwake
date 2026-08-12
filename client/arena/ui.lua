@@ -3045,6 +3045,42 @@ local function mark_about(cx, cy, r, col)
     u:seg(cx, ry(cy - r * 0.05), cx, ry(cy + r * 0.45), 1.4 * S, col, true)
 end
 
+-- Somewhere to talk, drawn as a thing said rather than as a logo.
+--
+-- Discord's own mark is Discord's, and a rail of shapes this game drew with
+-- one trademark set among them reads as a sponsorship. A speech bubble is what
+-- every interface has meant by "say something" for thirty years, and the row
+-- beside it already carries the word.
+--
+-- Squared off with the corners cut rather than rounded, because every other
+-- mark here is straight lines and arcs of a circle, and a bubble drawn with
+-- the smooth curve of a chat app would be the one soft shape on the rail.
+local function mark_discord(cx, cy, r, col)
+    local w, h = r * 1.7, r * 1.25
+    local c = r * 0.3
+    local x0, y0 = cx - w / 2, cy - h / 2 - r * 0.18
+    -- The tail comes off the bottom left, below the body's own edge, so the
+    -- outline walks one closed shape and the corner cuts stay on the corners.
+    local pts = {
+        x0 + c, ry(y0), x0 + w - c, ry(y0),
+        x0 + w, ry(y0 + c), x0 + w, ry(y0 + h - c),
+        x0 + w - c, ry(y0 + h),
+        x0 + w * 0.42, ry(y0 + h),
+        x0 + w * 0.24, ry(y0 + h + r * 0.42),
+        x0 + w * 0.26, ry(y0 + h),
+        x0 + c, ry(y0 + h), x0, ry(y0 + h - c), x0, ry(y0 + c),
+    }
+    u:fan(pts, pal.a(col, 0.10))
+    u:outline(pts, 1.2 * S, col, true)
+    -- Two lines of something said. Three read as a paragraph at this size and
+    -- closed the bubble up; one read as a strikethrough.
+    for _, k in ipairs({0.30, 0.62}) do
+        local y = y0 + h * k
+        u:seg(x0 + w * 0.22, ry(y), x0 + w * (k < 0.5 and 0.78 or 0.60),
+              ry(y), 1.0 * S, pal.a(col, 0.65), true)
+    end
+end
+
 local function mark_leave(cx, cy, r, col)
     -- A doorway with the arrow going out of it, drawn open on the side the
     -- arrow leaves by so the shape says which way it means.
@@ -3065,7 +3101,7 @@ end
 
 local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                settings = mark_settings, help = mark_help, about = mark_about,
-               leave = mark_leave}
+               discord = mark_discord, leave = mark_leave}
 
 local function draw_mark(kind, cx, cy, r, col, cls)
     if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end
@@ -3807,8 +3843,19 @@ function M.menu(v)
         -- over the stage the lit word is the only thing on screen that says
         -- which page this is.
         rw = 150 * S
-        local pitch = math.min(math.max((H - head - 3 * margin) / n,
-                                        38 * S), 58 * S)
+        -- A stop is 38 points at least, so a thumb has something to land on,
+        -- and 58 at most, so six of them in a tall window do not drift apart
+        -- into a list of unrelated things.
+        --
+        -- The floor gives way before the screen edge does, which it did not
+        -- until a test drew the rail at its real length. Eight stops is what a
+        -- pilot in a game with sides gets, and at 38 apiece that is 304 points
+        -- of rail on a phone held sideways with 390 of screen: the last stops
+        -- ran off the bottom, where a thumb cannot reach them at all. A small
+        -- target is worse than a comfortable one and better than none.
+        local room = H - head - 3 * margin - STAGE_TOP * S
+        local pitch = math.min(math.max(room / n, 38 * S), 58 * S)
+        if pitch * n > room then pitch = room / n end
         rh = pitch * n
         -- The rail hangs from the top of the block, starting where the stage's
         -- first row starts. Centered in the block instead, six stops in a tall
