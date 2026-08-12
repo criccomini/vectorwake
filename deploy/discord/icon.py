@@ -3,13 +3,13 @@
 #
 #     python3 deploy/discord/icon.py            # rewrites deploy/discord/icon.png
 #
-# client/web/icon.svg is the mark, and logo_test holds it to what ui.lua draws,
-# so cutting the icon from that file rather than redrawing it keeps another
-# drawing of the mark from existing. Nothing about it changes on the way here
-# any more: the tile was chamfered at two corners and this file squared it,
-# because Discord masks a server icon to a circle and a chamfer arrives there
-# as a bite out of the rim rather than as a corner. The chamfer is gone from
-# the source now, so the icon is the mark as it stands.
+# client/web/icon.svg is the mark, and logo_test holds it to the drawing every
+# other surface carries, so cutting the icon from that file rather than
+# redrawing it keeps another drawing of the mark from existing. Nothing about
+# it changes on the way here any more: the tile was chamfered at two corners
+# and this file squared it, because Discord masks a server icon to a circle and
+# a chamfer arrives there as a bite out of the rim rather than as a corner. The
+# chamfer is gone from the source now, so the icon is the mark as it stands.
 #
 # Discord takes PNG rather than SVG. librsvg makes the raster when it is
 # available, with the screenshot browser as a fallback.
@@ -28,7 +28,7 @@ SIZE = 512
 # The tile, square. Checked rather than substituted: this file used to cut the
 # chamfer off, and what it does now is refuse to ship an icon whose tile has
 # gone back to a shape a circular mask would bite into.
-TILE = 'M0,0H512V512H0Z'
+TILE = 'M0 0H512V512H0Z'
 
 CHROME = next((p for p in ["/opt/pw-browsers/chromium",
                            "/Applications/Google Chrome.app/Contents/MacOS/"
@@ -43,10 +43,12 @@ RSVG = shutil.which("rsvg-convert")
 def cut(svg):
     """Make the source tile full bleed for Discord's circular mask."""
     svg = svg[svg.index("<svg"):]
-    # A vertical is the path whose ends share an x. There are two rows, so the
-    # three x positions each occur twice.
-    verts = sorted(set(float(m) for m in
-                       re.findall(r'<path d="M([\d.]+),[\d.]+ L\1,[\d.]+"',
+    # A vertical is a bar in the fill data: over by its width, down the row,
+    # and back. There are two rows of three, so the three x positions each
+    # occur twice. The mark used to be stroked lines here and is filled shapes
+    # now, which is the whole of why this reads the way it does.
+    verts = sorted(set(float(x) for x, _ in
+                       re.findall(r'M([\d.]+) [\d.]+h([\d.]+)v[\d.]+h-\2z',
                                   svg)))
     if len(verts) != 3:
         sys.exit(f"{SVG}: found {len(verts)} vertical positions, expected 3")

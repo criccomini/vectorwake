@@ -229,7 +229,7 @@ SHIM = """
     // wedges. Orange begins the upper row, cyan finishes the lower one, and
     // the other strokes use the site's dark slate.
     // Every number here has a twin in ui.lua, and logo_test holds that one to
-    // client/web/icon.svg, so all three drawings of the mark are one shape.
+    // client/web/icon.svg, so all four drawings of the mark are one shape.
     var MK_WD = 0.50, MK_GAP = 1 / 12, MK_WEIGHT = 0.075;
     var MK_ROW = 0.48, MK_ROW_GAP = 0.04;
     var LOGO_EM = 0.74, LOGO_GAP = 0.30, LOGO_DROP = 0.12;
@@ -245,27 +245,30 @@ SHIM = """
       var baselines = [top + rh, top + 2 * rh + mh * MK_ROW_GAP];
       var hues = [[ENEMY, MUTED, MUTED], [MUTED, FRIEND, FRIEND]];
       var lw = Math.max(1, rh * MK_WEIGHT);
-      g.lineWidth = lw;
+      // Half-widths. A vertical is measured square to itself; a diagonal is
+      // measured across, because its ends are cut flat and level, and the
+      // site's mark carries the difference between the two as a pair of round
+      // numbers: 4 across a diagonal against 3.6 for a vertical. Drawn as
+      // filled shapes rather than stroked lines so that cut is what it says.
+      var hv = lw * 0.5, hd = lw * (4 / 3.6) * 0.5;
       for (var row = 0; row < 2; row++) {
         var base = baselines[row];
         for (var i = 0; i < 3; i++) {
           var x = ox + i * (MK_WD + MK_GAP) * rh;
           var col = hues[row][i];
-          var gr = g.createLinearGradient(x, base - rh,
-                                          x + MK_WD * rh, base);
-          gr.addColorStop(0, col + "00");
-          gr.addColorStop(1, col);
-          g.strokeStyle = gr;
-          g.lineCap = "butt";
+          var vx = x + MK_WD * rh;
+          // Solid, the whole way down. This faded each diagonal out toward
+          // its start, which made the page a player waits on the one place
+          // the mark was drawn differently from everywhere else it appears.
+          g.fillStyle = col;
           g.beginPath();
-          g.moveTo(x, base - rh);
-          g.lineTo(x + MK_WD * rh, base);
-          g.stroke();
-          g.strokeStyle = col;
-          g.beginPath();
-          g.moveTo(x + MK_WD * rh, base);
-          g.lineTo(x + MK_WD * rh, base - rh);
-          g.stroke();
+          g.moveTo(x - hd, base - rh);
+          g.lineTo(vx - hd, base);
+          g.lineTo(vx + hd, base);
+          g.lineTo(x + hd, base - rh);
+          g.closePath();
+          g.fill();
+          g.fillRect(vx - hv, base - rh, lw, rh);
         }
       }
     }

@@ -347,6 +347,57 @@ check("the drawn mark matches the drawing every page carries", worst < 0.25,
 check("at the same widths, diagonals included", worst_w < 0.25,
       string.format("worst width off by %.2f", worst_w))
 
+-- --- and the mark the page draws before the engine exists ------------------
+
+-- There is a fourth drawing of it, and it is the first one anybody sees: the
+-- loader in client/tools/single_file.py paints a starfield and this lockup on
+-- a canvas while five megabytes of engine compile, seconds before the client
+-- can draw anything at all.
+--
+-- It went on fading each diagonal out toward its start long after every other
+-- surface had stopped, because it is JavaScript inside a Python string in the
+-- packer and nothing here had ever looked at it. Its own comment claimed every
+-- number in it had a twin in ui.lua, which is exactly the kind of claim worth
+-- checking rather than believing.
+local loader = read("client/tools/single_file.py")
+local uisrc = read("client/arena/ui.lua")
+
+check("the loader draws its diagonals solid",
+      not loader:find("createLinearGradient"),
+      "a gradient is still built for the mark")
+
+-- The constants, against the ones ui.lua keeps. Written differently in the two
+-- languages, so each is read on its own terms and compared as a number.
+local function num(src, pat)
+    return tonumber(src:match(pat))
+end
+for _, k in ipairs({
+    {"MK_WD", "local MK_WD, MK_GAP = ([%d%.]+),", "var MK_WD = ([%d%.]+),"},
+    {"MK_WEIGHT", "MK_ROW_GAP, MK_WEIGHT = [%d%.]+, [%d%.]+, ([%d%.]+)",
+     "MK_WEIGHT = ([%d%.]+);"},
+    {"MK_ROW", "local MK_ROW, MK_ROW_GAP.- = ([%d%.]+),", "var MK_ROW = ([%d%.]+),"},
+    {"MK_ROW_GAP", "local MK_ROW, MK_ROW_GAP.- = [%d%.]+, ([%d%.]+),",
+     "MK_ROW_GAP = ([%d%.]+);"},
+    {"LOGO_EM", "local LOGO_EM, LOGO_GAP, LOGO_DROP = ([%d%.]+),",
+     "var LOGO_EM = ([%d%.]+),"},
+    {"LOGO_GAP", "local LOGO_EM, LOGO_GAP, LOGO_DROP = [%d%.]+, ([%d%.]+),",
+     "LOGO_GAP = ([%d%.]+),"},
+    {"LOGO_DROP", "LOGO_GAP, LOGO_DROP = [%d%.]+, [%d%.]+, ([%d%.]+)",
+     "LOGO_DROP = ([%d%.]+);"},
+}) do
+    local mine, theirs = num(uisrc, k[2]), num(loader, k[3])
+    check("the loader's " .. k[1] .. " is the client's",
+          mine ~= nil and theirs ~= nil and math.abs(mine - theirs) < 1e-9,
+          tostring(theirs) .. " against " .. tostring(mine))
+end
+
+-- And the widening that keeps a diagonal the same weight as the vertical it
+-- lands on, which both of them have to apply or the two marks read
+-- differently at the same size.
+check("the loader widens its diagonals the same way",
+      loader:find("4 / 3%.6") ~= nil and uisrc:find("4 / 3%.6") ~= nil,
+      "one of the two is not carrying the site's 4-against-3.6")
+
 -- --- and it draws itself ---------------------------------------------------
 
 -- On the menu the mark is drawn stroke by stroke by a bullet that bounces off
