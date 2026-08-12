@@ -3115,27 +3115,46 @@ local function mark_settings(cx, cy, r, col)
     end
 end
 
--- A keycap, which is what the page it opens is made of.
+-- The arrow cluster, which is what the page it opens is a picture of.
 --
--- It carried a question mark for as long as the page was called help. The page
--- sets the keys now, and a key with a `?` on it is a key with a `?` on it: the
--- one glyph the board does not draw. What is left is the cap itself, and the
--- cap alone is a box, so the top face is drawn inside it. Two chamfered
--- outlines, the same diagonal everything else here is cut on.
+-- It carried a question mark for as long as the page was called help, then a
+-- blank keycap for about an hour: a key with a `?` on it is a key with a `?`
+-- on it, and a key with nothing on it is a box. The four keys everybody
+-- already flies with are the only drawing here that says "keyboard" at the
+-- size a rail mark gets, and they are the same inverted T the board draws
+-- lower down the same page.
+--
+-- Sized off the key rather than off the mark, so the gaps and the chamfers
+-- stay in proportion when the rail draws this larger or smaller.
 local function mark_controls(cx, cy, r, col)
-    local function cap(w, h, c, dy, ink, fill)
-        local x0, y0 = cx - w / 2, cy - h / 2 + dy
-        local pts = {x0 + c, ry(y0), x0 + w, ry(y0), x0 + w, ry(y0 + h - c),
-                     x0 + w - c, ry(y0 + h), x0, ry(y0 + h), x0, ry(y0 + c)}
-        if fill then u:fan(pts, pal.a(col, fill)) end
-        u:outline(pts, ink * S, pal.a(col, 1), true)
+    local k = r * 0.66                 -- one key
+    local g = k * 0.14                 -- and the air around it
+    local pitch = k + g
+    -- A shallower cut than the mark beside it takes. The diagonal is the
+    -- house's, but it is a fraction of the shape it is cut off, and a third of
+    -- an eight-point key is most of its corner: at that size the square reads
+    -- as a hexagon and four of them read as a honeycomb.
+    local c = k * 0.19
+    local function key(gx, gy, dx, dy)
+        local x0 = cx + gx * pitch - k / 2
+        local y0 = cy + gy * pitch - k / 2
+        local pts = {x0 + c, ry(y0), x0 + k, ry(y0), x0 + k, ry(y0 + k - c),
+                     x0 + k - c, ry(y0 + k), x0, ry(y0 + k), x0, ry(y0 + c)}
+        u:fan(pts, pal.a(col, 0.10))
+        u:outline(pts, 1.1 * S, col, true)
+        -- The head alone, not a stem: at this size a shaft is one row of
+        -- pixels that reads as a smudge across the middle of the key.
+        local a = k * 0.2
+        u:tri(cx + gx * pitch + dx * a, ry(cy + gy * pitch + dy * a),
+              cx + gx * pitch - dx * a + dy * a,
+              ry(cy + gy * pitch - dy * a - dx * a),
+              cx + gx * pitch - dx * a - dy * a,
+              ry(cy + gy * pitch - dy * a + dx * a), col)
     end
-    cap(r * 1.62, r * 1.62, r * 0.32, 0, 1.2, 0.10)
-    -- The face, sitting high on the cap: what shows under it is the front of
-    -- the key, and it is the difference between a keycap seen from above and
-    -- a box drawn inside a box. A narrower face reads as a picture frame, so
-    -- this is most of the width and lifted rather than centered.
-    cap(r * 1.04, r * 0.9, r * 0.18, -r * 0.17, 1.0, nil)
+    key(0, -0.5, 0, -1)
+    key(-1, 0.5, -1, 0)
+    key(0, 0.5, 0, 1)
+    key(1, 0.5, 1, 0)
 end
 
 local function mark_about(cx, cy, r, col)
