@@ -842,6 +842,201 @@ button {
   border-top: 1px solid var(--line);
 }
 
+.policy-main {
+  min-height: calc(100svh - 150px);
+  padding-top: 76px;
+}
+
+.policy-intro {
+  padding-top: clamp(92px, 11vw, 160px);
+  padding-bottom: clamp(68px, 8vw, 112px);
+  border-bottom: 1px solid var(--line);
+}
+
+.policy-intro h1 {
+  max-width: 1080px;
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(76px, 12vw, 176px);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+  line-height: 0.75;
+  text-transform: uppercase;
+}
+
+.policy-lede {
+  max-width: 720px;
+  margin: clamp(42px, 5vw, 68px) 0 0;
+  color: #a7b6cb;
+  font-size: clamp(14px, 1.25vw, 18px);
+  line-height: 1.8;
+}
+
+.policy-layout {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 760px);
+  justify-content: space-between;
+  gap: clamp(70px, 10vw, 160px);
+  padding-block: clamp(76px, 9vw, 136px) clamp(120px, 14vw, 200px);
+}
+
+.policy-index {
+  position: sticky;
+  top: 116px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.policy-index a {
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 9px;
+  letter-spacing: 0.11em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.policy-index a:hover,
+.policy-index a.is-current {
+  color: var(--friend);
+}
+
+.policy-copy {
+  min-width: 0;
+}
+
+.policy-copy section {
+  padding: 0 0 clamp(64px, 7vw, 96px);
+}
+
+.policy-copy section + section {
+  padding-top: clamp(58px, 6vw, 84px);
+  border-top: 1px solid var(--line);
+}
+
+.policy-copy h2 {
+  margin: 0 0 32px;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(32px, 4.2vw, 56px);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+.policy-copy h3 {
+  margin: 42px 0 14px;
+  color: var(--friend);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.policy-copy p,
+.policy-copy li,
+.retention-list dd {
+  color: #a7b6cb;
+  font-size: 13px;
+  line-height: 1.85;
+}
+
+.policy-copy p {
+  margin: 0 0 20px;
+}
+
+.policy-copy p:last-child {
+  margin-bottom: 0;
+}
+
+.policy-copy a {
+  color: var(--ink);
+  border-bottom: 1px solid var(--friend);
+}
+
+.policy-copy a:hover {
+  color: var(--friend);
+}
+
+.policy-copy strong {
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.policy-copy ul,
+.policy-copy ol {
+  margin: 26px 0 0;
+  padding-left: 22px;
+}
+
+.policy-copy li {
+  padding-left: 8px;
+  margin-bottom: 12px;
+}
+
+.process-list {
+  counter-reset: process;
+  list-style: none;
+  padding: 0 !important;
+}
+
+.process-list li {
+  position: relative;
+  min-height: 54px;
+  padding: 0 0 22px 54px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 22px;
+}
+
+.process-list li::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--friend);
+  counter-increment: process;
+  content: counter(process, decimal-leading-zero);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.retention-list {
+  margin: 0;
+}
+
+.retention-list > div {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(0, 1.5fr);
+  gap: 36px;
+  padding: 27px 0;
+  border-top: 1px solid var(--line);
+}
+
+.retention-list > div:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+.retention-list dt {
+  color: var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+
+.retention-list dd {
+  margin: 0;
+}
+
+.policy-footer {
+  border-top: 1px solid var(--line);
+}
+
 .site-footer {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -861,8 +1056,9 @@ button {
 
 .site-footer nav {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 24px;
+  gap: 16px 24px;
 }
 
 .site-footer nav a:hover {
@@ -927,6 +1123,25 @@ button {
 
   .directory-main {
     padding-top: 66px;
+  }
+
+  .policy-main {
+    padding-top: 66px;
+  }
+
+  .policy-layout {
+    grid-template-columns: 1fr;
+    gap: 68px;
+  }
+
+  .policy-index {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .policy-index a {
+    padding: 14px 12px 14px 0;
   }
 
   .profile-scoreboard {
@@ -1044,6 +1259,30 @@ button {
 
   .directory-intro h1 {
     font-size: clamp(76px, 27vw, 118px);
+  }
+
+  .policy-intro {
+    padding-top: 90px;
+    padding-bottom: 70px;
+  }
+
+  .policy-intro h1 {
+    font-size: clamp(66px, 21vw, 102px);
+    overflow-wrap: anywhere;
+  }
+
+  .policy-layout {
+    gap: 54px;
+    padding-top: 58px;
+  }
+
+  .policy-index {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .retention-list > div {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   .directory-lede {

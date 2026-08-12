@@ -164,6 +164,18 @@ The remaining lifecycle commands are printed by running `./deploy/fleet.sh` with
 - `fleet.sh rm <name>` destroys the instance and its DNS record, but deliberately leaves the certificate volume for the replacement.
 - `fleet.sh db destroy` permanently deletes every account, rating, and rated event in the managed database. The script asks for the database label before doing it. Take a `pg_dump` first.
 
+### Delete one account
+
+Privacy requests are verified through the support process on the public site. The admin panel shows the account number. Once the request is verified, run the reviewed deletion transaction:
+
+```sh
+psql "$(./deploy/fleet.sh db --url)" \
+  -v account_id=<account-number> \
+  -f deploy/account-delete.sql
+```
+
+The script prints the account and any registered bot accounts, then requires the word `DELETE`. It removes credentials, names, ratings, career totals, and linked pilot activity. Rated match rows remain because they are the audit trail behind other pilots' ratings; without the deleted account row, their internal number no longer resolves to a call sign or credential.
+
 ## Releases and updates
 
 Pushes to `main` build the server and client images in [GitHub Actions](../.github/workflows/). The server image uses an immutable `sha-<commit>` tag and a moving `prod` tag. Production hosts normally follow `prod`.

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05070c">
+  <meta name="description" content="How Vectorwake collects, uses, shares, and protects account and gameplay data.">
+  <link rel="canonical" href="https://vectorwake.net/privacy">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+  <link rel="stylesheet" href="/site.css">
+  <title>Privacy / vectorwake</title>
+</head>
+<body class="directory-page policy-page">
+  <a class="skip-link" href="#main">Skip to privacy notice</a>
+
+  <header class="site-header is-scrolled">
+    <a class="brand" href="/" aria-label="Vectorwake home">
+      <svg class="brand-mark" viewBox="0 0 84 104" aria-hidden="true">
+        <path class="mark-amber" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+        <path class="mark-muted" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+        <path class="mark-cyan" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a class="nav-pilots" href="/pilots">Pilots</a>
+      <a href="/support">Support</a>
+      <a class="nav-play" href="https://play.vectorwake.net">Play</a>
+    </nav>
+  </header>
+
+  <main id="main" class="policy-main">
+    <header class="policy-intro section-pad">
+      <p class="directory-kicker">Effective August 12, 2026</p>
+      <h1>Privacy</h1>
+      <p class="policy-lede">Vectorwake keeps enough information to run accounts, rankings, and the fleet. It has no ads, tracking analytics, or data broker business.</p>
+    </header>
+
+    <div class="policy-layout section-pad">
+      <nav class="policy-index" aria-label="Policy pages">
+        <a class="is-current" href="/privacy" aria-current="page">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/retention">Retention</a>
+        <a href="/delete">Delete an account</a>
+        <a href="/support">Support</a>
+      </nav>
+
+      <article class="policy-copy">
+        <section>
+          <h2>Who runs Vectorwake</h2>
+          <p>Chris Riccomini operates Vectorwake. This notice covers vectorwake.net, play.vectorwake.net, the browser game, the public pilot directory, and the game servers.</p>
+          <p>Use the <a href="/support">support page</a> for privacy questions or requests.</p>
+        </section>
+
+        <section>
+          <h2>What the game keeps</h2>
+          <h3>Account information</h3>
+          <p>The server assigns an internal account number and a generated call sign. It records when the account was created and last used, whether it is banned, and its current ratings and career totals. If you claim a pilot, the server stores a password hash. It never stores the password itself.</p>
+          <p>Each signed-in device receives a random device secret. The server stores only its hash. The browser stores the secret and account number on that device so you do not have to sign in every time.</p>
+
+          <h3>Gameplay information</h3>
+          <p>The fleet records joins, refusals, rooms, ship and team changes, kills, deaths, assists, session length, and the reason a session ended. Rated match records include the internal account numbers involved, rating changes, zone, server instance, and match tick.</p>
+
+          <h3>Connection and security information</h3>
+          <p>The account service uses an IP address temporarily to limit account creation, login guesses, searches, and renames. These counters stop affecting requests after at most one hour. Dormant entries are pruned during later traffic or when the process restarts, and they are not written to the game database. Hosting providers still receive ordinary network information needed to deliver the site and game.</p>
+
+          <h3>Website storage</h3>
+          <p>The public site stores GitHub star and Discord member counts in browser storage for six hours. Vectorwake does not set advertising or analytics cookies.</p>
+
+          <p>Vectorwake does not ask for an email address, phone number, payment information, real name, location, or social account. Players cannot submit a custom call sign or chat message.</p>
+        </section>
+
+        <section>
+          <h2>What is public</h2>
+          <p>Claimed pilots and registered bots appear in the public pilot directory. A profile can show the generated call sign, whether the pilot is human or AI, rank, tier, ratings, kills, deaths, assists, and rated event count. Guests do not have public career pages.</p>
+          <p>Public pages may be copied or cached by browsers, search engines, and other people. Deleting an account removes the live profile, but Vectorwake cannot erase copies held outside its systems.</p>
+        </section>
+
+        <section>
+          <h2>Why the information is used</h2>
+          <ul>
+            <li>To create accounts, sign devices in, and admit pilots to games.</li>
+            <li>To calculate ratings, rankings, and career totals.</li>
+            <li>To operate the public pilot directory.</li>
+            <li>To investigate connection failures, disputed results, cheating, and abuse.</li>
+            <li>To keep the service secure and understand whether it is working.</li>
+          </ul>
+          <p>Where data protection law asks for a legal basis, Vectorwake processes account and gameplay information to provide the service you request and for the legitimate interests described above. It relies on consent where the law requires it.</p>
+        </section>
+
+        <section>
+          <h2>Who receives information</h2>
+          <p>Vultr hosts the website, game servers, and PostgreSQL database in the United States. Its systems process the network and account information needed to provide that infrastructure.</p>
+          <p>The landing page asks GitHub and Discord for public repository and community counts. Those services receive the connection information that normally accompanies a web request. Vectorwake does not attach an account number, call sign, or gameplay history to those requests. Following a GitHub or Discord link puts you under that service's privacy policy and terms.</p>
+          <p>Vectorwake may disclose information when required by law, to protect the service or another person, or during a transfer of the project. It does not sell personal information, share it for behavioral advertising, or use it for targeted advertising.</p>
+        </section>
+
+        <section>
+          <h2>Retention and deletion</h2>
+          <p>Different records have different lifetimes. Human activity logs last 90 days. Rated matches involving a human currently have no scheduled expiry because they support the rating record. The full schedule is on the <a href="/retention">retention page</a>.</p>
+          <p>You may ask for a copy, correction, or deletion of information connected to your account. The <a href="/delete">deletion page</a> explains the process and what remains after deletion. Vectorwake will not treat you differently for making a privacy request.</p>
+        </section>
+
+        <section id="children">
+          <h2>Children</h2>
+          <p>Vectorwake is a general-audience game for people age 13 or older. Do not use the game if you are under 13. Some countries set a higher minimum age for online services, and that higher age applies.</p>
+          <p>If you are a parent or guardian and believe a child under 13 has used Vectorwake, contact an admin through the <a href="/support">support page</a>. The account and identifiable activity will be investigated and removed according to the <a href="/delete">deletion process</a>.</p>
+        </section>
+
+        <section>
+          <h2>Security and international use</h2>
+          <p>Connections use encryption in transit. Passwords use Argon2id hashes, device secrets are random and stored as hashes, and the managed database encrypts data at rest. No security measure can make an online service risk-free.</p>
+          <p>Vectorwake is operated and hosted in the United States. If you use it elsewhere, your information is transferred to and processed in the United States.</p>
+        </section>
+
+        <section>
+          <h2>Changes to this notice</h2>
+          <p>The effective date at the top changes when this notice changes. Material changes will also be announced through the project site or Discord before they take effect when practical.</p>
+        </section>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer policy-footer">
+    <a class="brand footer-brand" href="/" aria-label="Vectorwake home">
+      <svg class="brand-mark" viewBox="0 0 84 104" aria-hidden="true">
+        <path class="mark-amber" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
+        <path class="mark-muted" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
+        <path class="mark-cyan" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav aria-label="Footer navigation">
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/retention">Data</a>
+      <a href="/delete">Delete account</a>
+      <a href="/support">Support</a>
+    </nav>
+  </footer>
+</body>
+</html>
