@@ -1711,3 +1711,84 @@ the panel.
 when one flag stops being an authority model; or a password behind fleet
 reach stops being comfortable, in which case a passkey bolts onto the login
 without moving anything else.
+
+---
+
+## 42. The arena keeps a pilot log, with an expiry on every row
+
+**Status:** accepted
+
+A room knows things no other process can reconstruct afterwards, and keeps none
+of them. Which of five refusals a client was handed at the door, whether a
+departure was a quit or a seat taken back for somebody arriving, which hull
+somebody swapped into and when: all of it lives for one tick. `rated_events`
+records what a fight did to a number and nothing about the stay it happened in.
+So when a player reports being bounced, the only party who knows why is the
+player, and [admin.md](admin.md) already notes that an operator can act on a
+report and not notice one.
+
+So arenas file a second log to the meta-layer, `pilot_events`, on the road the
+rated log already built: append a line, let the tick move on, drain the batch in
+the background, refuse a replay on an arena-minted id. Thirteen kinds of arena
+event and eight account events from the meta-layer itself.
+
+Two of the thirteen are combat, and they arrived a day after the rest, because
+the first cut kept kills out on the rule that `rated_events` already holds
+every death and a log should not say things twice. The rule held and the log
+was useless: a session read as a join and a leave with an hour of silence
+between them, which its first operator noticed within the hour. The
+human-involving deaths are filed here too now, `died` and `kill`, a row per
+human participant and nothing for the machines. The rated log keeps the
+authority on ratings and the full credit list; these rows put the death in the
+story of a stay. Every arena row
+carries a session, which is one connection and rides on the seat, because
+sitting out and flying again reissue every other handle a pilot has.
+
+The panel reads it two ways: under a pilot's card, and fleet-wide in a Recent
+section that separates people from bots. The second one crosses the line
+admin.md draws between acting on a report and noticing one, and it is here
+because the deployment asked for it. What stays true is that nothing watches on
+anybody's behalf. There is no alert, no threshold and no score, so the log
+answers a question when somebody asks it and is silent otherwise.
+
+Three things it is not, each ruled out by something already written down.
+
+It holds no addresses. An arena never learns one, and the meta-layer's stated
+best property is that a breach would disclose a ladder rather than anybody's
+identity. A behavior log keyed to where somebody lives spends that, so
+correlating two accounts to one household is the thing this cannot do.
+[community.md](../design/community.md) says a change to that property arrives as
+its own record, and this is not it.
+
+It is not an anti-cheat feed.
+[networking.md](networking.md) says aim assistance is a behavioral detection
+problem we are not solving in the architecture, and this does not reopen it.
+
+And nothing in it is kept. The rated log keeps human rows forever because a
+rating is a claim that may have to be replayed; this makes no such claim, and
+past ninety days it is a record of how people play held by a service whose
+appeal is holding nothing of the sort. Bot rows go at seven days, and there are
+two orders of magnitude more of them.
+
+Two ceilings, because half of these are things a pilot can do as fast as they
+can press a key. A session files at most 200 rows, and only changes that took
+effect are rows at all. Refusals get their own ceiling of 60 a minute per arena,
+since a client looping on one gets a fresh session every time and so never meets
+the first cap.
+
+**Cost:** A second spool file and a second drain task on every arena, and a
+`Seat` that now carries a session. `Room::leave` grew a reason parameter, which
+touched all five of its callers and is the change that makes the log worth
+having. The stop signal is handled now, so a converge files a `leave` for every
+open session before the process goes; before that, every deploy cut the open
+stories short, and the first session anybody inspected was one of them. The
+human-involving death rows repeat a fact the rated log holds, which is the
+price of a session that reads whole; the repeat is bounded by there being
+humans in the fight. Rows expire, so a question asked late enough has no answer, and the
+ninety-day figure is a guess at how late that is rather than a measurement.
+
+**Reconsider if:** the ninety days turns out to be wrong in either direction,
+which the first real investigation will say; or the fleet wants to follow one
+person across arenas in a single session, which needs the meta-layer to mint the
+session at `/v1/session` and carry it in the token, and is a bigger change than
+it looks because a token is reminted every fifteen minutes.

@@ -27,8 +27,8 @@ whole of the games. Deploys are a git push picked up by a systemd timer.
 Target, from hosting.md:
 
 ```
-central (one small instance)          play.vectorwake.net
-  caddy, directory, meta, client page
+central (one small instance)          vectorwake.net, play.vectorwake.net
+  caddy, public site, directory, meta, client page
   -> managed Postgres, same region
 
 arena host (any region, any count)    <name>.vectorwake.net
@@ -200,9 +200,10 @@ with the front door's public `wss` and `https` on that role alone. The token
 travels over TLS, which is what the directory's refusal of credentials in the
 clear requires.
 
-Nothing moved. `play.vectorwake.net` still holds the page, the directory and the
-meta-layer, so the address baked into the client and the meta url riding the
-catalog both stay true.
+The game origin did not move. `play.vectorwake.net` still holds the client, the
+directory, and the meta-layer, so the address baked into the client and the
+meta url riding the catalog both stay true. The bare site joined the same host
+under its own Caddy block and follows it during a DNS cutover.
 
 What is not proven: no host of the `central` or `arena` role has ever booted. All
 three shapes parse under compose, all of Caddy's adapt, and the `.env` each role

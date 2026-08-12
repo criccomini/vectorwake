@@ -12,7 +12,7 @@
 #   __POOL_TOKEN__  __BRANCH__  __DEPLOY_KEY_B64__
 #   __META_DATABASE__  __META_KEY__  __ACCOUNTS__  __REGION__
 #   __POOL_DIGEST__  __META_VERIFY__
-#   __ROLE__  __HOST__  __ADMIN_HOST__  __FRONT__
+#   __ROLE__  __HOST__  __SITE_HOST__  __ADMIN_HOST__  __FRONT__
 #
 # The meta-layer's are, unlike the tokens, not minted per host: the database is
 # one database however many hosts read it. They arrive the same way regardless,
@@ -242,6 +242,7 @@ VW_ROLE=$ROLE
 COMPOSE_FILE=$COMPOSE
 VW_HOST=__HOST__
 VW_ROUTES=$ROUTES
+VW_SITE_HOST=__SITE_HOST__
 VW_ADMIN_HOST=__ADMIN_HOST__
 VW_DIRECTORY=$ARENA_DIRECTORY
 VW_META=$ARENA_META

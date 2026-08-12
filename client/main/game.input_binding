@@ -91,6 +91,14 @@ key_trigger {
   action: "drone"
 }
 key_trigger {
+  input: KEY_H
+  action: "help"
+}
+key_trigger {
+  input: KEY_SLASH
+  action: "help"
+}
+key_trigger {
   input: KEY_BACKQUOTE
   action: "multi"
 }

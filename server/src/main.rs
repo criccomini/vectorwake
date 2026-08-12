@@ -20,6 +20,7 @@ mod meta;
 mod metrics;
 mod modes;
 mod nav;
+mod pilot;
 mod rating;
 mod select;
 mod sim;
@@ -256,6 +257,11 @@ struct Player {
     /// draw the same countdown. Reset the moment the hull is outside, so this
     /// is dwell rather than a total.
     safe: u16,
+    /// The room's tick when this pilot took the seat, so a departure can say
+    /// how long they held it. A room's own tick rather than a clock, because
+    /// the two things anybody compares this against, a golden trace and the
+    /// rest of the log, are both in ticks.
+    joined: u32,
     tx: mpsc::Sender<Message>,
 }
 
@@ -524,6 +530,11 @@ struct Seat {
     /// it was minted. This is how a career crosses zones without an arena
     /// asking anybody anything.
     carried: Option<Vec<token::ClassRating>>,
+    /// Which connection this is, for the pilot log. On the seat rather than
+    /// beside the socket because the two places a pilot's handles are reissued
+    /// underneath them, sitting out and flying again, both carry the seat
+    /// across and neither is a new session.
+    session: pilot::Session,
 }
 
 impl Seat {
@@ -543,6 +554,7 @@ impl Seat {
             },
             account: None,
             carried: None,
+            session: pilot::Session::new("none"),
         }
     }
 }
@@ -551,6 +563,47 @@ impl Seat {
 /// sign, which is the other thing that lands in this namespace.
 fn account_rid(account: u64) -> String {
     format!("a{account}")
+}
+
+/// File one line of the pilot log.
+///
+/// Every emitter in this file ends up here. It is a free function rather than
+/// a method because the two callers that matter hold different things: a room
+/// knows its number and its tick, and the door knows neither and still has to
+/// record the refusal it just sent.
+///
+/// Nothing here can fail in a way a caller should handle. A poisoned lock, an
+/// unarmed spool and a session out of budget all mean the same thing to the
+/// game, which is that play continues and this line is not written down.
+fn file_event(
+    pilots: &std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>,
+    session: &pilot::Session,
+    kind: &str,
+    who: Option<&Seat>,
+    room: Option<u32>,
+    tick: u32,
+    detail: serde_json::Value,
+) {
+    let Ok(mut s) = pilots.lock() else { return };
+    // Budget is spent only when there is somewhere for the row to go, so a
+    // deployment with no meta-layer does not quietly exhaust every session's
+    // allowance against a spool that writes nothing. Combat is exempt from
+    // spending altogether: see `pilot::budgeted`.
+    if !s.armed() || (pilot::budgeted(kind) && !session.spend()) {
+        return;
+    }
+    s.push(pilot::Event {
+        id: rand::random(),
+        at: fleet::now_ms(),
+        session: session.id.clone(),
+        kind: kind.to_string(),
+        pilot: who.and_then(|w| w.account),
+        name: who.map(|w| w.name.clone()).unwrap_or_default(),
+        bot: who.map(|w| w.bot).unwrap_or(false),
+        room,
+        tick,
+        detail,
+    });
 }
 
 /// One simulation: a world, the pilots seated in it, and the rules they are
@@ -589,7 +642,11 @@ struct Room {
     /// Where rated events go on their way out of this process. Shared with
     /// every other room here, because the spool is a property of the process
     /// and its disk rather than of a room.
-    spool: std::sync::Arc<std::sync::Mutex<spool::Spool>>,
+    spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
+    /// And where the pilot log goes. A second spool rather than a second kind
+    /// of row in the first, because the two land in different tables and are
+    /// kept for different lengths of time.
+    pilots: std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>,
     /// Rating id to account, for the pilots in this room that have one.
     ///
     /// It outlives the seat on purpose. A pilot who leaves can still appear as
@@ -1097,7 +1154,8 @@ impl Room {
             // Replaced by the process's own the moment an arena server takes
             // ownership. A room built and never handed one writes nothing,
             // which is the right answer for a room in a test.
-            spool: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::new("/nonexistent"))),
+            spool: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::rated("/nonexistent"))),
+            pilots: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::pilot("/nonexistent"))),
             next_id: 1,
             rating: rating::Rating::new(),
             mode: Box::new(modes::FreeForAll),
@@ -1169,7 +1227,25 @@ impl Room {
     /// every arrival that did not just get up out of a chair in this room.
     fn join(&mut self, seat: Seat, class: u8, max_players: usize,
             tx: mpsc::Sender<Message>) -> Option<u64> {
-        self.join_on(seat, class, max_players, None, tx)
+        let logged = seat.clone();
+        let id = self.join_on(seat, class, max_players, None, tx)?;
+        // After the seat is real, so the log never claims an arrival the caps
+        // refused. The hull is read back rather than echoed: the core clamps a
+        // class it does not have, and what the pilot is flying is the useful
+        // number.
+        let ship = self.players[&id].ship;
+        self.note(
+            pilot::JOIN,
+            &logged,
+            serde_json::json!({
+                "class": self.world.state.ships[ship as usize].cls,
+                "ship": ship,
+                "team": self.world.state.ships[ship as usize].team,
+                "label": logged.label,
+                "transport": logged.session.transport,
+            }),
+        );
+        Some(id)
     }
 
     /// `max_players` is the zone's, which used to be a constant here while the
@@ -1327,6 +1403,7 @@ impl Room {
                 rid,
                 bot,
                 safe: 0,
+                joined: self.world.state.tick,
                 tx,
             },
         );
@@ -1384,7 +1461,7 @@ impl Room {
             println!("seat {ship} taken back from {} for an arriving pilot", p.name);
             let _ = p.tx.try_send(Message::Binary(vec![S2C_YIELD]));
         }
-        self.leave(id);
+        self.leave(id, pilot::why::EVICTED);
         Some(ship)
     }
 
@@ -1405,7 +1482,7 @@ impl Room {
             if let Some(p) = self.players.get(id) {
                 let _ = p.tx.try_send(Message::Binary(vec![S2C_YIELD]));
             }
-            self.leave(*id);
+            self.leave(*id, pilot::why::DRAINED);
         }
         ids.len()
     }
@@ -1590,8 +1667,20 @@ impl Room {
             self.send_teams(ship);
             return false;
         }
+        let from = self.world.state.ships[ship as usize].team;
         let moved = self.world.set_ship_team(ship, team);
         if moved {
+            // Only a crossing that happened. Both gates above are silent to
+            // the pilot, and a log that recorded the asking would mostly
+            // record hurt pilots pressing a key that did nothing.
+            if let Some(seat) = self.names.get(&ship).cloned() {
+                let public = self.teams.get(&team).is_some_and(|t| t.public);
+                self.note(
+                    pilot::TEAM,
+                    &seat,
+                    serde_json::json!({ "from": from, "to": team, "public": public }),
+                );
+            }
             // The side they left may have been its last member's.
             self.reap_teams();
             self.broadcast_teams();
@@ -1611,6 +1700,14 @@ impl Room {
             return false;
         };
         if self.join_team(ship, byte) {
+            // Beside the `team` row the crossing already wrote, because
+            // founding is the act a player took and crossing is how it was
+            // carried out. A side appearing with one member on it is also the
+            // shape of somebody hiding from a team game.
+            if let Some(seat) = self.names.get(&ship).cloned() {
+                let name = self.teams.get(&byte).map(|t| t.name.clone()).unwrap_or_default();
+                self.note(pilot::FOUND, &seat, serde_json::json!({ "team": byte, "name": name }));
+            }
             return true;
         }
         self.teams.remove(&byte);
@@ -1631,6 +1728,13 @@ impl Room {
             return false;
         }
         self.invites.entry(to).or_default().insert(team);
+        // Any member may invite and there is no kick to go with it, so an
+        // invitation is the one thing a pilot can aim at another pilot without
+        // shooting. Recorded for that reason rather than for the side change,
+        // which the invitee's own `team` row covers if they accept.
+        if let Some(seat) = self.names.get(&from).cloned() {
+            self.note(pilot::INVITE, &seat, serde_json::json!({ "to": to, "team": team }));
+        }
         // The invitee's list is the one that changed, but the inviter wants to
         // see that it went, so everybody gets the new one.
         self.broadcast_teams();
@@ -1723,6 +1827,57 @@ impl Room {
         self.invites.retain(|_, s| !s.is_empty());
     }
 
+    /// One line of the pilot log, stamped with this room's number and tick.
+    fn note(&self, kind: &str, seat: &Seat, detail: serde_json::Value) {
+        file_event(
+            &self.pilots,
+            &seat.session,
+            kind,
+            Some(seat),
+            Some(self.number),
+            self.world.state.tick,
+            detail,
+        );
+    }
+
+    /// One death, into the pilot log, from whichever path resolved it.
+    ///
+    /// A row for the human who died and a row for the human who did it, and
+    /// nothing when both parties are machines, which is most of every hour.
+    /// `rated_events` remains the authority on what the death did to the
+    /// ladder; these rows are what put it in the story of a session, where a
+    /// join followed by an hour of silence used to stand in for the whole
+    /// evening. Assists are deliberately left to the rated log: one death is
+    /// at most two rows here, not one per contributor.
+    fn note_death(&self, victim: u8, killer: u8, paid: i32) {
+        let bounty = paid.clamp(0, u16::MAX as i32);
+        if let Some(seat) = self.names.get(&victim) {
+            if !seat.bot {
+                let seat = seat.clone();
+                self.note(
+                    pilot::DIED,
+                    &seat,
+                    serde_json::json!({ "by": self.name_of(killer), "bounty": bounty }),
+                );
+            }
+        }
+        // A self-kill has no second party to credit, and crediting the victim
+        // with their own destruction would count it twice.
+        if victim == killer {
+            return;
+        }
+        if let Some(seat) = self.names.get(&killer) {
+            if !seat.bot {
+                let seat = seat.clone();
+                self.note(
+                    pilot::KILL,
+                    &seat,
+                    serde_json::json!({ "of": self.name_of(victim), "bounty": bounty }),
+                );
+            }
+        }
+    }
+
     /// A pilot goes, and their seat is retired rather than handed on.
     ///
     /// Handing it to a fresh bot is what this used to do, and it was the
@@ -1730,7 +1885,12 @@ impl Room {
     /// now, and should not, because filling is the bot server's job and it is
     /// watching. The slot is reusable either way, since the core gives an
     /// inactive one to the next arrival rather than only ever appending.
-    fn leave(&mut self, id: u64) {
+    ///
+    /// `why` is one of [`pilot::why`]. Five callers reach this and they used to
+    /// be indistinguishable afterwards, which made the commonest question about
+    /// any departure, whether the pilot quit or the room took the seat,
+    /// unanswerable from anything the fleet kept.
+    fn leave(&mut self, id: u64, why: &str) {
         if let Some(p) = self.players.remove(&id) {
             // A quit under fire is a death. The rating settles on death, and
             // a leave used to drop the damage ledger unsettled, which made
@@ -1748,7 +1908,10 @@ impl Room {
             // This is bookkeeping about a fight that already happened, not a
             // death in the world, so no mode hook fires and no bounty pays.
             let tick = self.world.state.tick;
-            let losing = {
+            // A restart is the process leaving, not the pilot: settling it
+            // as a quit would charge everyone who happened to be mid-fight
+            // when a deploy landed with a death they did not choose.
+            let losing = why != pilot::why::RESTART && {
                 let sh = &self.world.state.ships[p.ship as usize];
                 let ceiling = self.world.eff_max_energy(p.ship as usize).max(1);
                 sh.alive != 0
@@ -1779,6 +1942,18 @@ impl Room {
                         .map(|(s, _)| *s)
                 });
                 if let (Some(ks), Some(krid)) = (seat, top) {
+                    // The killer's half of a quit. The victim's own row is
+                    // the LEAVE below, marked as a quit; a `died` here too
+                    // would say the same thing twice about one departure.
+                    if let Some(kseat) = self.names.get(&ks).cloned() {
+                        if !kseat.bot {
+                            self.note(
+                                pilot::KILL,
+                                &kseat,
+                                serde_json::json!({ "of": p.name, "quit": true }),
+                            );
+                        }
+                    }
                     let vr = self.rating.rating_of(&p.rid).round() as i16;
                     let kr = self.rating.rating_of(&krid).round() as i16;
                     let mut m = vec![S2C_KILL, p.ship, ks];
@@ -1798,6 +1973,22 @@ impl Room {
                     }
                     self.channel.pending_kills.push(m);
                 }
+            }
+            // Filed before the seat is torn down, since the seat is what says
+            // who this was. `held` is the whole of what the log knows about
+            // how long somebody stayed, so a session that ends without one of
+            // these ended with the process rather than with the pilot.
+            if let Some(seat) = self.names.get(&p.ship).cloned() {
+                self.note(
+                    pilot::LEAVE,
+                    &seat,
+                    serde_json::json!({
+                        "why": why,
+                        "ship": p.ship,
+                        "held": self.world.state.tick.saturating_sub(p.joined),
+                        "quit_loss": rated.is_some(),
+                    }),
+                );
             }
             let sh = &mut self.world.state.ships[p.ship as usize];
             sh.active = 0;
@@ -1842,7 +2033,12 @@ impl Room {
     /// seat change, not a reconnect: map, settings and socket all stay. The
     /// side they sat out from is remembered, and it is what their follow asks
     /// are checked against until they fly again.
-    fn sit_out(&mut self, id: u64, want: u8, any: bool) -> bool {
+    ///
+    /// `swept` says the safe-zone timer moved them rather than the pilot
+    /// asking. The two are the same operation and read very differently in a
+    /// log: one is a player taking a break and the other is the room deciding
+    /// they were loitering.
+    fn sit_out(&mut self, id: u64, want: u8, any: bool, swept: bool) -> bool {
         let Some(p) = self.players.get(&id) else {
             return false;
         };
@@ -1852,7 +2048,12 @@ impl Room {
             return false;
         };
         let team = self.world.state.ships[ship as usize].team;
-        self.leave(id);
+        self.note(
+            pilot::SIT_OUT,
+            &seat,
+            serde_json::json!({ "why": if swept { "safe" } else { "asked" }, "ship": ship }),
+        );
+        self.leave(id, pilot::why::SAT_OUT);
         let mode = self.watch_mode(Some(team), any, want);
         self.watchers.insert(
             id,
@@ -1911,6 +2112,15 @@ impl Room {
         let id = self.next_id;
         self.next_id += 1;
         let team = self.watch_team();
+        self.note(
+            pilot::WATCH,
+            &seat,
+            // Staff sight is a grant the catalog wrote down, and a log of who
+            // watched what is thin without it: the difference between a
+            // spectator on the shared feed and somebody who may follow any
+            // hull in the room is the whole of what this event is about.
+            serde_json::json!({ "any": any, "team": team }),
+        );
         self.watchers.insert(
             id,
             Watcher { seat, team, any, mode: WatchMode::Channel, tx },
@@ -1936,9 +2146,23 @@ impl Room {
         let seat = self.watchers.get(&id)?.seat.clone();
         let tx = self.watchers.get(&id)?.tx.clone();
         let back = self.watchers.get(&id)?.team;
+        let logged = seat.clone();
         let new_id = self.join_on(seat, class, max_players, back, tx.clone())?;
         self.watchers.remove(&id);
         let ship = self.players[&new_id].ship;
+        // Not a `join`: the same connection, the same session, and a stay the
+        // log should read as continuous. A room that filled while they sat
+        // there refuses above and writes nothing, which is the case worth
+        // being able to tell apart.
+        self.note(
+            pilot::FLY,
+            &logged,
+            serde_json::json!({
+                "class": self.world.state.ships[ship as usize].cls,
+                "ship": ship,
+                "team": self.world.state.ships[ship as usize].team,
+            }),
+        );
         let mut m = vec![S2C_WELCOME, ship];
         m.extend_from_slice(&self.world.state.tick.to_le_bytes());
         let _ = tx.try_send(Message::Binary(m));
@@ -2047,7 +2271,7 @@ impl Room {
             // to a question they did not ask. The staff grant that widens this
             // is a property of a watch request, and nobody made this one; the
             // first request they do make carries it.
-            self.sit_out(id, 255, false);
+            self.sit_out(id, 255, false, true);
         }
     }
 
@@ -2099,6 +2323,7 @@ impl Room {
             if let Some(r) = rated.as_ref() {
                 self.hand_off(r);
             }
+            self.note_death(victim, killer, paid);
             let mut m = vec![S2C_KILL];
             m.push(victim);
             m.push(killer);
@@ -2436,6 +2661,14 @@ impl Room {
             if let Some(p) = self.players.values().find(|p| p.ship == *ship) {
                 let _ = p.tx.try_send(Message::Binary(vec![S2C_ONAIR, 1]));
             }
+            // The rising edge only. A pilot is told on the wire that they are
+            // being watched, and what the room disclosed about somebody who
+            // did not choose to be watched is worth being able to answer for
+            // later. Bounded by real spectating: with nobody in the stands
+            // this set is empty and no row is ever written.
+            if let Some(seat) = self.names.get(ship).cloned() {
+                self.note(pilot::ON_AIR, &seat, serde_json::json!({ "ship": ship }));
+            }
         }
         self.on_air = lit;
     }
@@ -2640,7 +2873,7 @@ struct ArenaServer {
     cfg: config::ConfigWatcher,
     /// Rated events on their way to the meta-layer. One per process, shared
     /// with every room, and inert on a deployment without accounts.
-    spool: std::sync::Arc<std::sync::Mutex<spool::Spool>>,
+    spools: spool::Spools,
     /// The zone this process is serving, empty when it is running the built-in
     /// room because no catalog reached it.
     zone_name: String,
@@ -2887,7 +3120,8 @@ impl ArenaServer {
         // arrives, and then the bytes are the only source there is.
         let mut fresh = Self::build_room(&z, self.rooms.first().map(|r| &r.world))?;
         fresh.number = self.free_room_number();
-        fresh.spool = self.spool.clone();
+        fresh.spool = self.spools.rated.clone();
+        fresh.pilots = self.spools.pilots.clone();
         prime_ratings(&mut fresh.rating, &self.ladder);
         self.rooms.push(fresh);
         let n = self.rooms.len();
@@ -2907,7 +3141,10 @@ impl ArenaServer {
     /// is down. What a pilot gets for arriving without one is a seat: they fly
     /// as an unknown guest under the name they gave, and nothing durable is
     /// written for them.
-    fn identify(&self, presented: &str, fallback_name: &str, declared_bot: bool)
+    /// `session` is this connection's, minted before the first refusal so that
+    /// a pilot who never gets in still has their door events tied together.
+    fn identify(&self, presented: &str, fallback_name: &str, declared_bot: bool,
+                session: &pilot::Session)
         -> Result<Seat, String>
     {
         let guest = |name: &str| Seat {
@@ -2925,6 +3162,7 @@ impl ArenaServer {
             rid: name.to_string(),
             account: None,
             carried: None,
+            session: session.clone(),
         };
         let key = self
             .catalog
@@ -2967,6 +3205,7 @@ impl ArenaServer {
             rid: account_rid(claims.account),
             account: Some(claims.account),
             carried: Some(claims.ratings),
+            session: session.clone(),
         })
     }
 
@@ -3018,7 +3257,7 @@ impl ArenaServer {
         if !reporting_enabled() {
             if !self.said_quiet {
                 self.said_quiet = true;
-                let held = self.spool.lock().map(|s| s.len()).unwrap_or(0);
+                let held = self.spools.rated.lock().map(|s| s.len()).unwrap_or(0);
                 println!(
                     "spool: VW_REPORT is off, rated events are not filed{}",
                     if held > 0 {
@@ -3041,9 +3280,7 @@ impl ArenaServer {
         let token = std::env::var("VW_TOKEN").unwrap_or_default();
         let (zone, class, instance) =
             (self.zone_name.clone(), self.rating_class(), self.fleet.instance.clone());
-        if let Ok(mut s) = self.spool.lock() {
-            s.aim(&url, &token, &zone, &class, &instance);
-        }
+        self.spools.aim(&url, &token, &zone, &class, &instance);
     }
 
     /// Whether this zone admits only pilots who have claimed their account.
@@ -3230,6 +3467,21 @@ impl ArenaServer {
         gone
     }
 
+    /// The process is about to go, so every seated pilot's departure gets
+    /// written down first. Without this a deploy read as a fleet of joins
+    /// that never ended: the converge recreates the container, the sockets
+    /// die with it, and the leave that a closing socket files never runs
+    /// because nothing is left to run it. The spool is an append to a local
+    /// file, so the rows survive to the next boot and drain from there.
+    fn file_departures(&mut self) {
+        for r in self.rooms.iter_mut() {
+            let ids: Vec<u64> = r.players.keys().copied().collect();
+            for id in ids {
+                r.leave(id, pilot::why::RESTART);
+            }
+        }
+    }
+
     /// An operator verb from a directory. `unknown_verb` is what lets a
     /// directory be newer than an arena without either pretending.
     fn run_command(&mut self, c: &fleet::Command) -> (&'static str, String) {
@@ -3274,7 +3526,7 @@ impl ArenaServer {
                         .map(|(id, _)| *id)
                         .collect();
                     for id in &ids {
-                        r.leave(*id);
+                        r.leave(*id, pilot::why::KICKED);
                     }
                     if !ids.is_empty() {
                         hit += ids.len();
@@ -3290,6 +3542,7 @@ impl ArenaServer {
             "restart" => {
                 println!("restart asked for by {:?}; exiting so the supervisor restarts us",
                          c.actor);
+                self.file_departures();
                 // The container platform owns restarts. Exiting is the whole
                 // implementation, and it is the honest one.
                 std::process::exit(0);
@@ -3362,7 +3615,8 @@ impl ArenaServer {
         // replaced by this one, so counting their numbers would reserve names
         // that are being given up in the same breath.
         room.number = Self::lowest_free(&self.elsewhere_in_zone(&z.name));
-        room.spool = self.spool.clone();
+        room.spool = self.spools.rated.clone();
+        room.pilots = self.spools.pilots.clone();
         prime_ratings(&mut room.rating, &self.ladder);
         // Tell the bots before the room they are in stops existing. Rule 1 means
         // no human is here to tell, but bots are: an instance with only bots in
@@ -3513,12 +3767,12 @@ impl ArenaServer {
     ///
     /// A standalone arena is the exception and says so out loud: see
     /// `serve_local`.
-    fn new(cfg: config::ConfigWatcher, spool: std::sync::Arc<std::sync::Mutex<spool::Spool>>,
+    fn new(cfg: config::ConfigWatcher, spools: spool::Spools,
            ladder: HashMap<String, f64>) -> Self {
         ArenaServer {
             rooms: Vec::new(),
             cfg,
-            spool,
+            spools,
             zone_name: String::new(),
             catalog: None,
             tick_us: 0,
@@ -3538,7 +3792,8 @@ impl ArenaServer {
     /// client dialling this address chose the address, not a listing.
     fn serve_local(&mut self) {
         let mut room = Room::new_from(&self.cfg.current);
-        room.spool = self.spool.clone();
+        room.spool = self.spools.rated.clone();
+        room.pilots = self.spools.pilots.clone();
         prime_ratings(&mut room.rating, &self.ladder);
         self.rooms = vec![room];
     }
@@ -4023,8 +4278,9 @@ async fn main() {
     }
     // The one thing an arena's disk holds besides its instance id: rated
     // events waiting for the meta-layer.
-    let spool = std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::new(&dir)));
-    tokio::spawn(spool::drain_loop(spool.clone()));
+    let spools = spool::Spools::open(&dir);
+    tokio::spawn(spool::drain_loop(spools.rated.clone()));
+    tokio::spawn(spool::drain_loop(spools.pilots.clone()));
     let ladder = load_ladder(&dir);
     let local = std::path::Path::new(&dir).join("ladder.json").exists();
     println!(
@@ -4048,7 +4304,26 @@ async fn main() {
         watcher.current.wt_cert.clone(),
         watcher.current.wt_key.clone(),
     );
-    let zone = Arc::new(Mutex::new(ArenaServer::new(watcher, spool, ladder)));
+    let zone = Arc::new(Mutex::new(ArenaServer::new(watcher, spools, ladder)));
+    // The stop signal, which is how every converge ends this process: file
+    // each open session's departure, then go. Compose allows ten seconds
+    // between the signal and the kill, and this is a lock and a few file
+    // appends. SIGKILL after a hang loses exactly what it lost before this
+    // existed, which is the bounded loss the spool design already accepts.
+    {
+        let zone = zone.clone();
+        tokio::spawn(async move {
+            let mut term =
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    Ok(t) => t,
+                    Err(_) => return,
+                };
+            term.recv().await;
+            zone.lock().await.file_departures();
+            println!("stopped; departures are on file");
+            std::process::exit(0);
+        });
+    }
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("bind failed");
@@ -4343,7 +4618,7 @@ async fn main() {
                 }
             });
 
-            serve_client(zone, inbound, tx.clone()).await;
+            serve_client(zone, inbound, tx.clone(), "ws").await;
             // The handler is done with this connection; the reader must not
             // keep the socket alive waiting on a peer that already went.
             reader.abort();
@@ -4378,9 +4653,16 @@ pub(crate) async fn serve_client(
     zone: Arc<Mutex<ArenaServer>>,
     mut inbound: mpsc::Receiver<Vec<u8>>,
     tx: mpsc::Sender<Message>,
+    transport: &'static str,
 ) {
     // Held for the life of the connection, however this function leaves.
     let _conn = metrics::ConnGuard::new();
+    // This connection's name in the pilot log, minted before anything can be
+    // refused so that a pilot who never gets through the door still has their
+    // attempts tied together. Nothing is written until something happens: a
+    // socket that opens and says nothing leaves no trace, which is what keeps
+    // a port scan from being a write amplifier.
+    let session = pilot::Session::new(transport);
     // This connection's id in the arena, once it has joined.
     // Which room, and which id within it.
     let mut seat: Option<(usize, u64)> = None;
@@ -4444,7 +4726,50 @@ pub(crate) async fn serve_client(
                 // A refusal has to say which of five things went wrong,
                 // because three mean "try another instance" and two mean
                 // "stop trying". The code is the first byte after the tag.
-                let deny = |code: u8, why: &str| {
+                //
+                // It is also the one thing that happens to a pilot which
+                // leaves no other trace anywhere: the connection closes and
+                // the only party that knows why is the one being refused. So
+                // the same closure that builds the message files the row.
+                //
+                // `who` is the seat where the door has got far enough to have
+                // one. Three of these refusals happen before any token is
+                // read and cannot name an account; the rest can, and it
+                // matters that they do. A refusal is the event an operator is
+                // most often asked about, and one filed against nobody is one
+                // that never appears in the pilot it happened to.
+                let pilots = z.spools.pilots.clone();
+                let deny = |code: u8, why: &str, who: Option<&Seat>| {
+                    // A bot bouncing off a full instance is the fill loop
+                    // working, not an event. It is also the only refusal that
+                    // happens by the thousand, so leaving it out is most of
+                    // what keeps this log about people.
+                    let routine = is_bot && code == DENY_FULL;
+                    if !routine && pilot::refusal_budget(fleet::now_ms()) {
+                        file_event(
+                            &pilots,
+                            &session,
+                            pilot::DENIED,
+                            who,
+                            None,
+                            0,
+                            // `claimed` is what the client typed, kept even
+                            // where a seat vouched for a name, because the
+                            // two disagreeing is worth seeing. Where there is
+                            // no seat it is the only handle the row has, and
+                            // it is recorded as an assertion rather than as
+                            // identity.
+                            serde_json::json!({
+                                "code": code,
+                                "why": why,
+                                "claimed": claimed_name,
+                                "zone": want,
+                                "protocol": proto,
+                                "transport": transport,
+                                "bot": is_bot,
+                            }),
+                        );
+                    }
                     let mut m = vec![S2C_DENIED, code];
                     m.extend_from_slice(why.as_bytes());
                     m
@@ -4455,6 +4780,7 @@ pub(crate) async fn serve_client(
                     let _ = tx.try_send(Message::Binary(deny(
                         DENY_VERSION,
                         &format!("this zone speaks protocol {CLIENT_PROTOCOL}"),
+                        None,
                     )));
                     break;
                 }
@@ -4464,7 +4790,7 @@ pub(crate) async fn serve_client(
                 // instance serves instead, which is the empty string, and a
                 // player would read `this instance serves "" now`.
                 if z.rooms.is_empty() {
-                    let _ = tx.try_send(Message::Binary(deny(DENY_WRONG_ZONE, NO_ZONE_YET)));
+                    let _ = tx.try_send(Message::Binary(deny(DENY_WRONG_ZONE, NO_ZONE_YET, None)));
                     break;
                 }
                 // A player picked a game, not an address. This instance may
@@ -4479,6 +4805,7 @@ pub(crate) async fn serve_client(
                             "this instance serves {:?} now; re-browse",
                             z.zone_name
                         ),
+                        None,
                     )));
                     break;
                 }
@@ -4486,10 +4813,10 @@ pub(crate) async fn serve_client(
                 // against a key that arrived with the catalog: no
                 // call to the meta-layer, which is what lets it be
                 // down without shutting the door.
-                let seat_of = match z.identify(&presented, &claimed_name, is_bot) {
+                let seat_of = match z.identify(&presented, &claimed_name, is_bot, &session) {
                     Ok(s) => s,
                     Err(why) => {
-                        let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, &why)));
+                        let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, &why, None)));
                         break;
                     }
                 };
@@ -4501,6 +4828,7 @@ pub(crate) async fn serve_client(
                     let _ = tx.try_send(Message::Binary(deny(
                         DENY_BANNED,
                         "this zone is for claimed pilots; keep your pilot in the menu first",
+                        Some(&seat_of),
                     )));
                     break;
                 }
@@ -4510,13 +4838,18 @@ pub(crate) async fn serve_client(
                 // meta-layer refuses a banned account its token, so a
                 // banned pilot arrives holding nothing.
                 if z.is_banned(&name) {
-                    let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, "you are banned here")));
+                    let _ = tx.try_send(Message::Binary(deny(
+                        DENY_BANNED,
+                        "you are banned here",
+                        Some(&seat_of),
+                    )));
                     break;
                 }
                 if z.draining {
                     let _ = tx.try_send(Message::Binary(deny(
                         DENY_DRAINING,
                         "this arena is draining; try another instance",
+                        Some(&seat_of),
                     )));
                     break;
                 }
@@ -4533,9 +4866,17 @@ pub(crate) async fn serve_client(
                     // branch is here because an index into an empty list is a
                     // panic, and a door is the wrong place to keep one.
                     let Some(idx) = z.room_to_watch() else {
-                        let _ = tx.try_send(Message::Binary(deny(DENY_WRONG_ZONE, NO_ZONE_YET)));
+                        let _ = tx.try_send(Message::Binary(deny(
+                            DENY_WRONG_ZONE,
+                            NO_ZONE_YET,
+                            Some(&seat_of),
+                        )));
                         break;
                     };
+                    // Kept back for the refusal below, which needs to name
+                    // whoever it turned away and cannot, once the seat has
+                    // gone into the room.
+                    let refused = seat_of.clone();
                     let joined =
                         z.rooms[idx].watch_join(seat_of, watch_any, tx.clone());
                     match joined {
@@ -4561,6 +4902,7 @@ pub(crate) async fn serve_client(
                             let _ = tx.try_send(Message::Binary(deny(
                                 DENY_FULL,
                                 "this room has all the watchers it wants",
+                                Some(&refused),
                             )));
                         }
                     }
@@ -4588,6 +4930,7 @@ pub(crate) async fn serve_client(
                         } else {
                             "no room here; try another instance of this zone"
                         },
+                        Some(&seat_of),
                     )));
                     break;
                 };
@@ -4595,6 +4938,10 @@ pub(crate) async fn serve_client(
                 // own ladders, so putting a returning player's rating in
                 // room zero would leave them unrated wherever they landed.
                 z.restore_pilot(idx, &seat_of);
+                // Same reason as the watcher path above: the seat goes into
+                // the room, and the refusal that follows a failed seating
+                // still has to say who it was for.
+                let refused = seat_of.clone();
                 let a = &mut z.rooms[idx];
                 if let Some(new_id) = a.join(seat_of, class, cap, tx.clone()) {
                     seat = Some((idx, new_id));
@@ -4618,7 +4965,11 @@ pub(crate) async fn serve_client(
                     // which of their doors are open to this arrival.
                     a.broadcast_teams();
                 } else {
-                    let _ = tx.try_send(Message::Binary(deny(DENY_FULL, "no seat in that room")));
+                    let _ = tx.try_send(Message::Binary(deny(
+                        DENY_FULL,
+                        "no seat in that room",
+                        Some(&refused),
+                    )));
                 }
                 // A join changes the count a directory reports, and a
                 // stale count is a directory routing players to the wrong
@@ -4644,7 +4995,23 @@ pub(crate) async fn serve_client(
                         if let Some(a) = z.rooms.get_mut(room) {
                             let ship = a.players.get(&pid).map(|p| p.ship);
                             if let Some(ship) = ship {
+                                let was = a.world.state.ships[ship as usize].cls;
                                 a.world.set_ship_class(ship, cls);
+                                // Read back, not echoed. The core refuses this
+                                // for anyone dead or short of a full bar and
+                                // says nothing about it, so the asking and the
+                                // happening are different events and only one
+                                // of them is worth a row.
+                                let now = a.world.state.ships[ship as usize].cls;
+                                if now != was {
+                                    if let Some(s) = a.names.get(&ship).cloned() {
+                                        a.note(
+                                            pilot::SHIP,
+                                            &s,
+                                            serde_json::json!({ "from": was, "to": now }),
+                                        );
+                                    }
+                                }
                             }
                         }
                     } else if let Some((room, wid)) = watch {
@@ -4684,7 +5051,7 @@ pub(crate) async fn serve_client(
                     let mut z = zone.lock().await;
                     if let Some((room, pid)) = seat {
                         if let Some(a) = z.rooms.get_mut(room) {
-                            if a.sit_out(pid, want, watch_any) {
+                            if a.sit_out(pid, want, watch_any, false) {
                                 watch = Some((room, pid));
                                 seat = None;
                             } else if a.watchers.contains_key(&pid) {
@@ -4804,7 +5171,7 @@ pub(crate) async fn serve_client(
     if let Some((room, pid)) = seat {
         let mut z = zone.lock().await;
         if let Some(a) = z.rooms.get_mut(room) {
-            a.leave(pid);
+            a.leave(pid, pilot::why::LEFT);
             // And the stands, in case the room moved this id there without
             // the task hearing about it. `leave` finds nothing then, and the
             // watcher row would outlive the socket.
@@ -4897,6 +5264,7 @@ mod tests {
             rid: "probe".into(),
             bot: false,
             safe: 0,
+            joined: 0,
             tx,
         }
     }
@@ -5147,7 +5515,7 @@ mod tests {
     fn a_signed_token_names_the_pilot_and_their_account() {
         let z = serving_with_accounts();
         let t = a_token(token::Kind::Human, true, "Vesper 47", vec![]);
-        let seat = z.identify(&t, "whatever the client typed", false).expect("verifies");
+        let seat = z.identify(&t, "whatever the client typed", false, &pilot::Session::new("ws")).expect("verifies");
         // The name comes from the token, not from the client. A pilot cannot
         // wear somebody else's call sign by asking to.
         assert_eq!(seat.name, "Vesper 47");
@@ -5160,7 +5528,7 @@ mod tests {
     fn a_guest_is_unknown_rather_than_human() {
         let z = serving_with_accounts();
         let t = a_token(token::Kind::Human, false, "Talon 3", vec![]);
-        let seat = z.identify(&t, "", false).expect("verifies");
+        let seat = z.identify(&t, "", false, &pilot::Session::new("ws")).expect("verifies");
         assert_eq!(seat.label, token::Label::Unknown.to_byte(),
                    "an unclaimed account is somebody we cannot vouch for");
         assert_eq!(seat.account, Some(4242), "which does not make them anonymous");
@@ -5170,16 +5538,16 @@ mod tests {
     fn a_house_bot_and_a_third_party_bot_are_told_apart() {
         let z = serving_with_accounts();
         let house = z
-            .identify(&a_token(token::Kind::HouseBot, true, "Nine", vec![]), "", true)
+            .identify(&a_token(token::Kind::HouseBot, true, "Nine", vec![]), "", true, &pilot::Session::new("ws"))
             .expect("verifies");
         assert_eq!(house.label, token::Label::HouseBot.to_byte());
         let theirs = z
-            .identify(&a_token(token::Kind::ThirdPartyBot, true, "Someone", vec![]), "", true)
+            .identify(&a_token(token::Kind::ThirdPartyBot, true, "Someone", vec![]), "", true, &pilot::Session::new("ws"))
             .expect("verifies");
         assert_eq!(theirs.label, token::Label::ThirdPartyBot.to_byte());
         // And a bot flying with no account at all is somebody else's by
         // definition, since ours all have one.
-        let undeclared = z.identify("", "Anon", true).expect("no token is still a seat");
+        let undeclared = z.identify("", "Anon", true, &pilot::Session::new("ws")).expect("no token is still a seat");
         assert_eq!(undeclared.label, token::Label::ThirdPartyBot.to_byte());
         assert_eq!(undeclared.account, None);
     }
@@ -5190,11 +5558,11 @@ mod tests {
         // A bot account that stayed quiet would sit in a human seat wearing a
         // human's label, which is the one thing the declaration exists to stop.
         let quiet_bot = a_token(token::Kind::HouseBot, true, "Nine", vec![]);
-        assert!(z.identify(&quiet_bot, "", false).is_err());
+        assert!(z.identify(&quiet_bot, "", false, &pilot::Session::new("ws")).is_err());
         // And a human account claiming the bot exemption takes a seat that the
         // cap was supposed to protect.
         let loud_human = a_token(token::Kind::Human, true, "Vesper 47", vec![]);
-        assert!(z.identify(&loud_human, "", true).is_err());
+        assert!(z.identify(&loud_human, "", true, &pilot::Session::new("ws")).is_err());
     }
 
     #[test]
@@ -5205,13 +5573,13 @@ mod tests {
             account: 1, kind: token::Kind::Human, claimed: true,
             name: "Impostor".into(), expires: token::now_secs() + 600, ratings: vec![],
         });
-        assert!(z.identify(&forged, "", false).is_err(), "another key is not our key");
+        assert!(z.identify(&forged, "", false, &pilot::Session::new("ws")).is_err(), "another key is not our key");
 
         let stale = token::mint(&meta_key(), &token::Claims {
             account: 1, kind: token::Kind::Human, claimed: true,
             name: "Yesterday".into(), expires: token::now_secs() - 1, ratings: vec![],
         });
-        let why = z.identify(&stale, "", false).expect_err("expired");
+        let why = z.identify(&stale, "", false, &pilot::Session::new("ws")).expect_err("expired");
         assert!(why.contains("log in again"), "an expired token is a login, not an accusation");
     }
 
@@ -5221,7 +5589,7 @@ mod tests {
         // like from inside a room: play continues, nothing durable is written.
         let z = serving(1, 6, 16);
         let t = a_token(token::Kind::Human, true, "Vesper 47", vec![]);
-        let seat = z.identify(&t, "Local Name", false).expect("a seat regardless");
+        let seat = z.identify(&t, "Local Name", false, &pilot::Session::new("ws")).expect("a seat regardless");
         assert_eq!(seat.account, None, "no key in the catalog, so no token is read");
         assert_eq!(seat.name, "Local Name");
         assert_eq!(seat.label, token::Label::Unknown.to_byte());
@@ -5234,7 +5602,7 @@ mod tests {
             token::ClassRating { class: "arena".into(), rating: 1640.0, games: 40 },
             token::ClassRating { class: "hockey".into(), rating: 1000.0, games: 5 },
         ]);
-        let seat = z.identify(&t, "", false).expect("verifies");
+        let seat = z.identify(&t, "", false, &pilot::Session::new("ws")).expect("verifies");
         let rid = seat.rid.clone();
         z.restore_pilot(0, &seat);
         // The zone's mode is the class, and this one is an arena.
@@ -5247,15 +5615,15 @@ mod tests {
         let fresh = a_token_for(99, token::Kind::Human, true, "Newcomer", vec![
             token::ClassRating { class: "hockey".into(), rating: 1900.0, games: 99 },
         ]);
-        let fresh = z.identify(&fresh, "", false).expect("verifies");
+        let fresh = z.identify(&fresh, "", false, &pilot::Session::new("ws")).expect("verifies");
         z.restore_pilot(0, &fresh);
         assert_eq!(z.rooms[0].rating.games_of(&fresh.rid), 0);
     }
 
     /// A spool aimed nowhere, which is what a room that is not handing off
     /// anywhere holds. Writes nothing, because it is not armed.
-    fn test_spool() -> std::sync::Arc<std::sync::Mutex<spool::Spool>> {
-        std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::new("/nonexistent")))
+    fn test_spool() -> spool::Spools {
+        spool::Spools::open("/nonexistent")
     }
 
     /// A zone process already serving that definition. No config file and no
@@ -5919,7 +6287,7 @@ mod tests {
         room.rating.damage(tick, &prey_rid, &hunter_rid, 1000, false);
         let ceiling = room.world.eff_max_energy(ship as usize);
         room.world.state.ships[ship as usize].energy = ceiling / 4;
-        room.leave(prey);
+        room.leave(prey, pilot::why::LEFT);
 
         assert_eq!(room.rating.log.len(), 1, "the quit settled as a death");
         assert_eq!(room.rating.log[0].victim, prey_rid);
@@ -5952,7 +6320,7 @@ mod tests {
         // an ordinary leave and the pending credit dies with it.
         let tick = room.world.state.tick;
         room.rating.damage(tick, &prey_rid, &hunter_rid, 200, false);
-        room.leave(prey);
+        room.leave(prey, pilot::why::LEFT);
 
         assert!(room.rating.log.is_empty(), "nothing settled");
         assert_eq!(room.rating.rating_of(&prey_rid), 1200.0);
@@ -5989,7 +6357,7 @@ mod tests {
             sh.vx = 12345;
         }
         let flown_to = z.rooms[0].world.state.ships[ship as usize].x;
-        z.rooms[0].leave(id);
+        z.rooms[0].leave(id, pilot::why::LEFT);
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
         let id2 = z.rooms[0].join(Seat::guest("second", false), 0, 16, tx).expect("a seat");
@@ -6434,7 +6802,7 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let target = seat_human(&mut a, "flown");
         let (_, wid, mut rx) = seat_rx(&mut a, "watching");
-        assert!(a.sit_out(wid, target, false), "a pilot can sit out");
+        assert!(a.sit_out(wid, target, false, false), "a pilot can sit out");
         assert_eq!(
             a.watchers[&wid].mode,
             WatchMode::Follow(target),
@@ -6463,7 +6831,7 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let bots = seat_bots(&mut a, 1);
         let (_, wid, mut rx) = seat_rx(&mut a, "watching");
-        assert!(a.sit_out(wid, bots[0], false));
+        assert!(a.sit_out(wid, bots[0], false, false));
         assert_eq!(a.watchers[&wid].mode, WatchMode::Follow(bots[0]));
 
         let mut buf = vec![0u8; sim::PACK_MAX];
@@ -6489,7 +6857,7 @@ mod tests {
             a.world.state.ships[vantage as usize].team,
             "the arrivals spread over the two sides"
         );
-        assert!(a.sit_out(wid, keel, false), "sitting out succeeds");
+        assert!(a.sit_out(wid, keel, false, false), "sitting out succeeds");
         assert_eq!(
             a.watchers[&wid].mode,
             WatchMode::Channel,
@@ -6556,7 +6924,7 @@ mod tests {
     fn sitting_out_and_flying_again_is_a_despawn_and_a_spawn() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let (ship, id, mut rx) = seat_rx(&mut a, "pilot");
-        assert!(a.sit_out(id, 255, false));
+        assert!(a.sit_out(id, 255, false, false));
         assert_eq!(a.world.state.ships[ship as usize].active, 0, "the hull despawned");
         assert_eq!(a.humans(), 0);
         assert!(a.names.is_empty(), "the seat is genuinely empty");
@@ -6747,7 +7115,7 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
         let (ship, id, _rx) = seat_rx(&mut a, "sat-out");
         let mine = a.world.state.ships[ship as usize].team;
-        assert!(a.sit_out(id, 255, false));
+        assert!(a.sit_out(id, 255, false, false));
 
         let m = a.watcher_teams_msg(&a.watchers[&id]);
         assert_eq!(m[0], S2C_TEAMS);
@@ -6826,7 +7194,7 @@ mod tests {
         // would not pick: a tie goes to the first.
         a.world.state.ships[ship as usize].team = 1;
 
-        assert!(a.sit_out(id, 255, false));
+        assert!(a.sit_out(id, 255, false, false));
         assert_eq!(a.watchers[&id].team, Some(1));
         assert_eq!(a.seat_team(ship, false), 0, "what a re-pick would have said");
 
@@ -6846,7 +7214,7 @@ mod tests {
         );
         let (ship, id, _rx) = seat_rx(&mut a, "pilot");
         let mine = a.world.state.ships[ship as usize].team;
-        assert!(a.sit_out(id, 255, false));
+        assert!(a.sit_out(id, 255, false, false));
 
         let taker = seat_human(&mut a, "taker");
         assert_eq!(a.world.state.ships[taker as usize].team, mine, "their chair");
@@ -6863,7 +7231,7 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let (target, _, mut rx) = seat_rx(&mut a, "flown");
         let (_, wid, _w) = seat_rx(&mut a, "watching");
-        assert!(a.sit_out(wid, target, false));
+        assert!(a.sit_out(wid, target, false, false));
         assert_eq!(a.watchers[&wid].mode, WatchMode::Follow(target));
 
         let mut buf = vec![0u8; sim::PACK_MAX];
@@ -6894,11 +7262,11 @@ mod tests {
         // The bar is on the label, so it is on the account rather than on
         // anything the client said about itself.
         let guest = z
-            .identify(&a_token(token::Kind::Human, false, "Talon 3", vec![]), "", false)
+            .identify(&a_token(token::Kind::Human, false, "Talon 3", vec![]), "", false, &pilot::Session::new("ws"))
             .expect("verifies");
         assert_eq!(guest.label, token::Label::Unknown.to_byte());
         let claimed = z
-            .identify(&a_token(token::Kind::Human, true, "Vesper 47", vec![]), "", false)
+            .identify(&a_token(token::Kind::Human, true, "Vesper 47", vec![]), "", false, &pilot::Session::new("ws"))
             .expect("verifies");
         assert_eq!(claimed.label, token::Label::Human.to_byte());
     }
@@ -6936,7 +7304,7 @@ mod tests {
         let t = a_token_for(77, token::Kind::Human, true, "Veteran", vec![
             token::ClassRating { class: "arena".into(), rating: 1640.0, games: 40 },
         ]);
-        let seat = z.identify(&t, "", false).expect("verifies");
+        let seat = z.identify(&t, "", false, &pilot::Session::new("ws")).expect("verifies");
         let rid = seat.rid.clone();
         assert_eq!(z.rooms[0].rating.games_of(&rid), 0, "not until they join");
         z.restore_pilot(0, &seat);
@@ -6951,12 +7319,12 @@ mod tests {
         let d = std::env::temp_dir().join(format!("vw-handoff-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        let mut sp = spool::Spool::new(d.to_str().unwrap());
-        sp.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
-        let sp = std::sync::Arc::new(std::sync::Mutex::new(sp));
+        let spools = spool::Spools::open(d.to_str().unwrap());
+        spools.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
+        let sp = spools.rated.clone();
 
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, sp.clone(), HashMap::new());
+        let mut z = ArenaServer::new(cfg, spools, HashMap::new());
         z.serve_zone(&wire_zone(1, 6, 16)).expect("a room");
         let a = &mut z.rooms[0];
         a.accounts.insert("a1".into(), 1);
@@ -7004,12 +7372,12 @@ mod tests {
         let d = std::env::temp_dir().join(format!("vw-botsonly-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        let mut sp = spool::Spool::new(d.to_str().unwrap());
-        sp.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
-        let sp = std::sync::Arc::new(std::sync::Mutex::new(sp));
+        let spools = spool::Spools::open(d.to_str().unwrap());
+        spools.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
+        let sp = spools.rated.clone();
 
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, sp.clone(), HashMap::new());
+        let mut z = ArenaServer::new(cfg, spools, HashMap::new());
         z.serve_zone(&wire_zone(1, 6, 16)).expect("a room");
         let a = &mut z.rooms[0];
         for (rid, account) in [("bot1", 1u64), ("bot2", 2), ("human", 3)] {
@@ -7025,7 +7393,7 @@ mod tests {
             victim_after: 1184.0,
             credits: vec![(killer.into(), 1.0, 1200.0, 1216.0)],
         };
-        let flag_of = |sp: &std::sync::Arc<std::sync::Mutex<spool::Spool>>| {
+        let flag_of = |sp: &std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>| {
             sp.lock().unwrap().last().expect("an event").bots_only
         };
 
@@ -7052,6 +7420,268 @@ mod tests {
             ],
         });
         assert!(!flag_of(&sp), "one person among the machines keeps the row");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // ---- the pilot log -------------------------------------------------
+
+    /// An arena with both spools armed at an address nothing answers on, so
+    /// rows are written and never drained. Returns the zone and the pilot
+    /// spool to read back.
+    fn logging_arena(
+        name: &str,
+    ) -> (ArenaServer, std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>, std::path::PathBuf) {
+        let d = std::env::temp_dir().join(format!("vw-pilotlog-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let spools = spool::Spools::open(d.to_str().unwrap());
+        spools.aim("http://127.0.0.1:1", "tok", "chaos", "arena", "i1");
+        let pilots = spools.pilots.clone();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, spools, HashMap::new());
+        z.serve_zone(&wire_zone(1, 6, 16)).expect("a room");
+        (z, pilots, d)
+    }
+
+    /// Every row filed so far, oldest first.
+    fn rows(
+        p: &std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>,
+    ) -> Vec<pilot::Event> {
+        let s = p.lock().unwrap();
+        (0..s.len())
+            .filter_map(|i| s.nth(i).cloned())
+            .collect()
+    }
+
+    fn kinds(evs: &[pilot::Event]) -> Vec<&str> {
+        evs.iter().map(|e| e.kind.as_str()).collect()
+    }
+
+    /// The five ways a seat can end were one funnel with no reason on it, so
+    /// afterwards a quit and a kick were the same absence. This is the whole
+    /// point of the log, so it is the first thing asserted.
+    #[test]
+    fn a_departure_records_which_kind_it_was() {
+        let (mut z, pilots, d) = logging_arena("why");
+        let cap = z.max_players();
+        let a = &mut z.rooms[0];
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let quitter = a.join(Seat::guest("Quitter", false), 0, cap, tx).unwrap();
+        a.leave(quitter, pilot::why::LEFT);
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let kicked = a.join(Seat::guest("Kicked", false), 0, cap, tx).unwrap();
+        a.leave(kicked, pilot::why::KICKED);
+
+        // A bot's seat taken back for somebody at the door, which is the room
+        // deciding rather than the pilot.
+        seat_bots(a, 1);
+        a.evict_bot().expect("a bot to evict");
+
+        let filed = rows(&pilots);
+        let departures: Vec<(&str, &str)> = filed
+            .iter()
+            .filter(|e| e.kind == pilot::LEAVE)
+            .map(|e| {
+                (
+                    e.name.as_str(),
+                    e.detail.get("why").and_then(|v| v.as_str()).unwrap_or(""),
+                )
+            })
+            .collect();
+        assert_eq!(
+            departures,
+            vec![
+                ("Quitter", pilot::why::LEFT),
+                ("Kicked", pilot::why::KICKED),
+                (ai::individual(0).name.as_str(), pilot::why::EVICTED),
+            ],
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// One connection is one session however many times the pilot's handles
+    /// are reissued underneath them. Sitting out retires the seat and flying
+    /// again allocates a fresh player id, and a log that keyed on either would
+    /// cut a single stay into three unrelated ones.
+    #[test]
+    fn a_stay_keeps_one_session_across_sitting_out() {
+        let (mut z, pilots, d) = logging_arena("session");
+        let cap = z.max_players();
+        let a = &mut z.rooms[0];
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let id = a.join(Seat::guest("Wanderer", false), 0, cap, tx).unwrap();
+
+        assert!(a.sit_out(id, 255, false, false), "gives up the hull");
+        let back = a.fly(id, 1, cap).expect("and takes one again");
+        assert_ne!(back, id, "with a new player id, which is the trap");
+        a.leave(back, pilot::why::LEFT);
+
+        let filed = rows(&pilots);
+        assert_eq!(
+            kinds(&filed),
+            vec![pilot::JOIN, pilot::SIT_OUT, pilot::LEAVE, pilot::FLY, pilot::LEAVE],
+            "the sit-out files its own row and the departure it is made of",
+        );
+        let one: std::collections::HashSet<&str> =
+            filed.iter().map(|e| e.session.as_str()).collect();
+        assert_eq!(one.len(), 1, "all of it is one stay");
+        assert!(filed.iter().all(|e| e.name == "Wanderer"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The core refuses a hull change for anyone dead or short of a full bar
+    /// and says nothing about it. Only what took effect is a row, or the log
+    /// would mostly hold hurt pilots pressing a key that did nothing.
+    #[test]
+    fn only_a_hull_change_that_happened_is_written_down() {
+        let (mut z, pilots, d) = logging_arena("ship");
+        let cap = z.max_players();
+        let a = &mut z.rooms[0];
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = a.join(Seat::guest("Swapper", false), 0, cap, tx).unwrap();
+        let ship = a.players[&id].ship;
+
+        // Hurt, so the core will not swap them.
+        a.world.state.ships[ship as usize].energy = 1;
+        let was = a.world.state.ships[ship as usize].cls;
+        a.world.set_ship_class(ship, 3);
+        assert_eq!(a.world.state.ships[ship as usize].cls, was, "refused, as set up");
+
+        let filed = rows(&pilots);
+        assert_eq!(kinds(&filed), vec![pilot::JOIN], "the refusal is not an event");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A guest has no account, and the row still has to be worth keeping: the
+    /// call sign is the only handle they have.
+    #[test]
+    fn a_guest_is_logged_under_a_name_and_no_account() {
+        let (mut z, pilots, d) = logging_arena("guest");
+        let cap = z.max_players();
+        let a = &mut z.rooms[0];
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        a.join(Seat::guest("Pilot 12", false), 0, cap, tx).unwrap();
+
+        let filed = rows(&pilots);
+        assert_eq!(filed.len(), 1);
+        assert_eq!(filed[0].pilot, None, "no account to file it against");
+        assert_eq!(filed[0].name, "Pilot 12");
+        assert_eq!(filed[0].room, Some(a.number), "the number, not the list position");
+        assert!(filed[0].at > 1_700_000_000_000, "stamped by the arena, in millis");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A room with nowhere to send writes nothing at all, which is the same
+    /// off switch the rated spool has. It also must not spend a session's
+    /// budget while doing it.
+    #[test]
+    fn without_a_meta_layer_the_log_is_silent() {
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        z.serve_zone(&wire_zone(1, 6, 16)).expect("a room");
+        let cap = z.max_players();
+        let seat = Seat::guest("Nobody", false);
+        let session = seat.session.clone();
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = z.rooms[0].join(seat, 0, cap, tx).unwrap();
+        z.rooms[0].leave(id, pilot::why::LEFT);
+        assert_eq!(z.spools.pilots.lock().unwrap().len(), 0);
+        assert_eq!(session.filed(), 0, "and no allowance was spent on nothing");
+    }
+
+    /// Combat is the story of a session, and the log left it out for a day:
+    /// a join and a leave with an hour of silence between them. A death files
+    /// a row for each human in it and nothing for the machines, which are
+    /// most of every hour.
+    #[test]
+    fn a_death_is_two_rows_for_people_and_none_for_machines() {
+        let (mut z, pilots, d) = logging_arena("death");
+        let cap = z.max_players();
+        let a = &mut z.rooms[0];
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let hunter = a.join(Seat::guest("Hunter", false), 0, cap, tx).unwrap();
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let prey = a.join(Seat::guest("Prey", false), 0, cap, tx).unwrap();
+        let (hs, ps) = (a.players[&hunter].ship, a.players[&prey].ship);
+        let bots = seat_bots(a, 2);
+
+        a.note_death(ps, hs, 120);
+        let filed = rows(&pilots);
+        let combat: Vec<(&str, &str)> = filed
+            .iter()
+            .filter(|e| e.kind == pilot::DIED || e.kind == pilot::KILL)
+            .map(|e| (e.kind.as_str(), e.name.as_str()))
+            .collect();
+        assert_eq!(combat, vec![("died", "Prey"), ("kill", "Hunter")]);
+        assert_eq!(
+            filed.iter().find(|e| e.kind == pilot::DIED).unwrap().detail["by"],
+            "Hunter",
+        );
+
+        a.note_death(bots[0], bots[1], 60);
+        assert_eq!(rows(&pilots).len(), filed.len(), "machines file nothing");
+
+        // A self-kill is one row: crediting the victim with their own
+        // destruction would say it twice.
+        a.note_death(hs, hs, 0);
+        let after = rows(&pilots);
+        assert_eq!(after.len(), filed.len() + 1);
+        assert_eq!(after.last().unwrap().kind, pilot::DIED);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A converge used to cut every open session's story short: the join was
+    /// on file and the departure never happened, because a killed process
+    /// runs no socket cleanup. The stop path writes them all down, and it
+    /// does not settle anybody's fight as a quit on the way, because the
+    /// process leaving is not the pilot leaving.
+    #[test]
+    fn a_restart_files_every_departure_without_charging_a_quit() {
+        let (mut z, pilots, d) = logging_arena("restart");
+        let cap = z.max_players();
+        let a = &mut z.rooms[0];
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = a.join(Seat::guest("Bystander", false), 0, cap, tx).unwrap();
+        let ship = a.players[&id].ship;
+        // Mid-fight when the deploy lands: alive, nearly dead, ledger hot.
+        a.rating.damage(a.world.state.tick, "Bystander", "Somebody", 500, false);
+        a.world.state.ships[ship as usize].energy = 1;
+
+        z.file_departures();
+        let filed = rows(&pilots);
+        let end = filed.iter().find(|e| e.kind == pilot::LEAVE).expect("a departure on file");
+        assert_eq!(end.detail["why"], pilot::why::RESTART);
+        assert_eq!(
+            end.detail["quit_loss"], false,
+            "a deploy is not the pilot quitting a fight",
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// One pilot cannot make the fleet's database grow without bound. Sitting
+    /// out and flying again is free and can be done in a loop, so the ceiling
+    /// is on the connection rather than on any one thing it does.
+    #[test]
+    fn one_connection_cannot_file_without_limit() {
+        let (mut z, pilots, d) = logging_arena("cap");
+        let cap = z.max_players();
+        let a = &mut z.rooms[0];
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let mut id = a.join(Seat::guest("Loop", false), 0, cap, tx).unwrap();
+        for _ in 0..pilot::PER_SESSION {
+            assert!(a.sit_out(id, 255, false, false));
+            id = a.fly(id, 0, cap).expect("a seat is still there");
+        }
+        let filed = rows(&pilots);
+        assert_eq!(
+            filed.len(),
+            pilot::PER_SESSION as usize,
+            "the loop is bounded at the cap, not by how long somebody keeps going",
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -7091,7 +7721,7 @@ mod tests {
         let mid = z.rooms.iter().position(|r| r.number == 2).expect("room two");
         let ids: Vec<u64> = z.rooms[mid].players.keys().copied().collect();
         for id in ids {
-            z.rooms[mid].leave(id);
+            z.rooms[mid].leave(id, pilot::why::LEFT);
         }
         z.reclaim_rooms();
         assert_eq!(numbers(&z), vec![1, 3], "the survivors keep their names");
@@ -7116,7 +7746,7 @@ mod tests {
         let mid = z.rooms.iter().position(|r| r.number == 2).expect("room two");
         let ids: Vec<u64> = z.rooms[mid].players.keys().copied().collect();
         for id in ids {
-            z.rooms[mid].leave(id);
+            z.rooms[mid].leave(id, pilot::why::LEFT);
         }
         z.reclaim_rooms();
         let i = z.room_for_join().expect("room");
@@ -7280,7 +7910,7 @@ mod tests {
         for r in 1..3 {
             let ids: Vec<u64> = z.rooms[r].players.keys().copied().collect();
             for id in ids {
-                z.rooms[r].leave(id);
+                z.rooms[r].leave(id, pilot::why::LEFT);
             }
         }
         z.reclaim_rooms();
@@ -7288,7 +7918,7 @@ mod tests {
 
         let ids: Vec<u64> = z.rooms[0].players.keys().copied().collect();
         for id in ids {
-            z.rooms[0].leave(id);
+            z.rooms[0].leave(id, pilot::why::LEFT);
         }
         z.reclaim_rooms();
         assert_eq!(z.rooms.len(), 1, "and the first survives being empty");
@@ -7417,7 +8047,7 @@ mod tests {
                 }
             }
             for id in seated {
-                z.rooms[0].leave(id);
+                z.rooms[0].leave(id, pilot::why::LEFT);
             }
         }
 

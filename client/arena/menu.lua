@@ -34,6 +34,7 @@ local callsign = require("arena.callsign")
 local directory = require("arena.directory")
 local install = require("arena.install")
 local sfx = require("arena.sfx")
+local controls = require("arena.controls")
 
 local M = {}
 
@@ -526,13 +527,21 @@ local NODES = {
     -- controls and the board would be a picture of keys the device has not
     -- got. The layout itself is decision 33: the original's keys where the
     -- browser permits them, the nearest safe key where it does not.
-    help = {board = true, rows = {
-        {label = "steer", detail = "left thumb: point where you want the nose"},
-        {label = "fire", detail = "right pads: guns, then bombs"},
-        {label = "multifire", detail = "tap the fan cell to switch it off"},
-        {label = "charges", detail = "tap a charge pad to spend it"},
-        {label = "who", detail = "tap a pilot on the scoreboard"},
-    }},
+    -- Built from arena/controls.lua rather than written out here, which is
+    -- what these rows used to be. Two hand-kept lists of the same facts drift,
+    -- and these did: they were describing a game with no map on the dial and
+    -- nobody riding anybody, months after both landed. A row with no `pad` is
+    -- a control a thumb cannot work and is left out rather than named.
+    help = {board = true, rows = function()
+        local rows = {}
+        for _, c in ipairs(controls) do
+            if c.pad then
+                rows[#rows + 1] = {label = string.lower(c.name),
+                                   detail = c.pad}
+            end
+        end
+        return rows
+    end},
 
     -- What this build is, rather than what the game is.
     --

@@ -24,6 +24,8 @@ use rand::Rng;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::catalog::sha256_hex;
+use crate::pilot;
+use crate::rating;
 use crate::token::{self, ClassRating, Claims, Kind};
 
 /// The default mode class. A zone declares which class it rates into, and a
@@ -129,7 +131,67 @@ create index if not exists rated_events_botsweep on rated_events (at) where bots
 -- null, which the index does not mind.
 alter table rated_events add column if not exists event_id bigint;
 create unique index if not exists rated_events_once on rated_events (event_id);
+-- What happened to a pilot, as opposed to what it did to their rating. An
+-- arena is the only thing that sees a refusal at the door, a hull change or the
+-- difference between quitting and being kicked, and none of it survived the
+-- tick that produced it. See decisions.md 42 and the event list in
+-- meta-layer.md.
+--
+-- No foreign key to accounts, for the reason rated_events has none: the guest
+-- sweeper would otherwise cascade a week-old pilot's history away, and what
+-- happened stays happened. No address column either, and that one is a
+-- property to keep rather than a column nobody got round to. The arena could
+-- not fill it if it wanted to.
+create table if not exists pilot_events (
+    id        bigserial primary key,
+    -- Stamped by the arena, not defaulted here: a spool that drains an hour
+    -- late would otherwise file an hour of history as having happened at once,
+    -- which is exactly the outage you were trying to read.
+    at        timestamptz not null default now(),
+    -- One connection. Null for the rows the meta-layer writes about an account
+    -- itself, which happen with no arena and no socket involved.
+    session   text,
+    -- The account, where there is one. Guests fly under a call sign alone.
+    pilot     bigint,
+    name      text not null default '',
+    bot       boolean not null default false,
+    kind      text not null,
+    zone      text not null default '',
+    instance  text not null default '',
+    room      integer,
+    tick      bigint not null default 0,
+    detail    jsonb not null default '{}',
+    event_id  bigint
+);
+-- Reconstructing one stay, which is the question this table exists to answer.
+-- Partial, because the meta-layer's own rows carry no session and there is no
+-- reason to index a null nobody will ask for.
+create index if not exists pilot_events_by_session on pilot_events (session, at)
+    where session is not null;
+-- And one pilot's history across every stay, which is how a session gets found
+-- in the first place. Partial for the same reason: most rows in a busy fleet
+-- are guests, and a guest is only ever reachable through their session.
+create index if not exists pilot_events_by_pilot on pilot_events (pilot, at)
+    where pilot is not null;
+-- Idempotency, exactly as rated_events does it: the arena mints event_id when
+-- it files, delivery is at-least-once, and the second arrival of a row has to
+-- be refused rather than stored twice. The meta-layer's own rows leave it null,
+-- which a unique index does not mind.
+create unique index if not exists pilot_events_once on pilot_events (event_id);
+-- Retention reads exactly this, and both halves of it. Unlike rated_events,
+-- nothing here is kept forever: a per-pilot behavior log with no expiry is a
+-- different thing from a ladder, and the fleet's database is 25 GB.
+create index if not exists pilot_events_sweep on pilot_events (bot, at);
 ";
+
+/// How long a pilot's own rows live. Long enough to answer a report weeks after
+/// somebody filed it and to read a season out of the log, short enough that the
+/// fleet is not accumulating a permanent record of how everybody plays.
+const PILOT_EVENT_DAYS: i32 = 90;
+/// And how long a bot's do. These are debugging material for our own software
+/// with a half-life of about a day, and there are two orders of magnitude more
+/// of them: 153 bot connections cycle through the fleet around the clock.
+const BOT_EVENT_DAYS: i32 = 7;
 
 pub struct Meta {
     pool: Pool,
@@ -481,6 +543,7 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 Ok(n) => n,
                 Err(e) => return (500, serde_json::json!({ "error": e })),
             };
+            note_account(&db, pilot::ACCOUNT, account, serde_json::json!({ "name": name })).await;
             (200, serde_json::json!({ "secret": secret, "account": account, "name": name }))
         }
 
@@ -559,6 +622,9 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             if let Err(e) = add_credential(&db, account, "password", &hashed).await {
                 return (500, serde_json::json!({ "error": e }));
             }
+            // Also what a password change looks like, since the route serves
+            // both. The log says a credential moved, not which.
+            note_account(&db, pilot::CLAIM, account, serde_json::json!({})).await;
             (200, serde_json::json!({ "ok": true }))
         }
 
@@ -604,6 +670,12 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             let _ = db
                 .execute("update accounts set last_seen = now() where id = $1", &[&account])
                 .await;
+            // A new device holding this account. One of these is somebody
+            // moving to a phone; a run of them is the shape worth being able
+            // to see. The refusals are not logged: they are throttled per
+            // address and per name already, and a row per guess would let a
+            // guessing script size the table.
+            note_account(&db, pilot::LOGIN, account, serde_json::json!({})).await;
             (200, serde_json::json!({ "secret": secret, "account": account }))
         }
 
@@ -619,7 +691,16 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 return (429, serde_json::json!({ "error": "that is plenty of rerolling. Try again later" }));
             }
             match christen(&db, account).await {
-                Ok(name) => (200, serde_json::json!({ "name": name })),
+                Ok(name) => {
+                    note_account(
+                        &db,
+                        pilot::RENAME,
+                        account,
+                        serde_json::json!({ "to": name, "by": "self" }),
+                    )
+                    .await;
+                    (200, serde_json::json!({ "name": name }))
+                }
                 Err(e) => (500, serde_json::json!({ "error": e })),
             }
         }
@@ -751,6 +832,40 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
         }
 
+        // The other thing an arena hands off: what happened to the pilots in
+        // it. Same envelope and same auth as the rated events above, a
+        // different table at the far end, and no projection to keep in step,
+        // because this log is not a source of truth for anything the game
+        // reads back. See docs/architecture/meta-layer.md.
+        "/v1/pilot-events" => {
+            if meta.catalog.pool_for_token(&s("pool_token")).is_none() {
+                return (403, serde_json::json!({ "error": "unknown pool token" }));
+            }
+            let zone = s("zone");
+            let instance = s("instance");
+            let empty = Vec::new();
+            let events = body.get("events").and_then(|v| v.as_array()).unwrap_or(&empty);
+            let mut stored = 0usize;
+            let mut failed: Vec<String> = Vec::new();
+            for ev in events {
+                match ingest_pilot(&db, &zone, &instance, ev).await {
+                    Ok(()) => stored += 1,
+                    Err(e) => failed.push(e),
+                }
+            }
+            if failed.is_empty() {
+                (200, serde_json::json!({ "stored": stored }))
+            } else {
+                println!(
+                    "meta: {} of {} pilot events refused: {}",
+                    failed.len(),
+                    events.len(),
+                    failed[0]
+                );
+                (500, serde_json::json!({ "stored": stored, "failed": failed.len(), "error": failed[0] }))
+            }
+        }
+
         // ---------------------------------------------------- admin panel
         //
         // The routes behind the account flag, called by the static page at
@@ -845,6 +960,17 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     println!(
                         "meta: admin {actor} set banned={banned} on {account}: {reason:?}"
                     );
+                    // Beside the stdout line, because a moderation record that
+                    // lives only in a container's logs is one nobody can look
+                    // up. The actor is the account the secret resolved to, not
+                    // anything the caller said about itself.
+                    note_account(
+                        &db,
+                        if banned { pilot::BAN } else { pilot::UNBAN },
+                        account,
+                        serde_json::json!({ "by": actor, "reason": reason }),
+                    )
+                    .await;
                     (200, serde_json::json!({ "account": account, "banned": banned }))
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
@@ -977,6 +1103,13 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             match set_name(&db, account, &name).await {
                 Ok(()) => {
                     println!("meta: admin {actor} renamed {account} from {was:?} to {name:?}");
+                    note_account(
+                        &db,
+                        pilot::RENAME,
+                        account,
+                        serde_json::json!({ "from": was, "to": name, "by": actor }),
+                    )
+                    .await;
                     (200, serde_json::json!({ "account": account, "name": name }))
                 }
                 // The index is the arbiter, and it says this one is held.
@@ -1008,19 +1141,56 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             // typing one should not stop the number being one.
             let number: i64 = q.trim_start_matches('#').parse().unwrap_or(-1);
             let q = q.to_string();
+            // Standing on the ladder, in two pieces because they answer to
+            // different rules.
+            //
+            // `best` is the one rating a single row can honestly stand for:
+            // the class this pilot has played most, ties broken by the higher
+            // number so the answer is stable rather than whichever row the
+            // planner reached first. It carries the provisional ones too,
+            // since "still placing" is worth showing and is not the same as
+            // unrated.
+            //
+            // `ladder` is the position, and it is computed only over pilots
+            // who are out of provisional. Ranking the placing ones would push
+            // everybody else down the board for a number that is not settled
+            // yet, so they hold no position until they have one. Ties share a
+            // position, which is what `rank` does and what a ladder means.
+            //
+            // Both scan `ratings`, which holds a row per account per class and
+            // is therefore bounded by the account table rather than by play.
+            // At that size the scan is far cheaper than the round trip; if
+            // accounts ever reach the point where it is not, this wants an
+            // index on (class, rating) and a materialised board.
+            let provisional = rating::PROVISIONAL_GAMES as i32;
             let rows = db
                 .query(
-                    "select a.id, coalesce(n.call_sign, ''), a.kind, a.banned, a.admin,
+                    "with ladder as (
+                         select account, class,
+                                rank() over (partition by class order by rating desc) as pos,
+                                count(*) over (partition by class) as of_n
+                         from ratings where games >= $3
+                     ),
+                     best as (
+                         select distinct on (account) account, class, rating, games
+                         from ratings
+                         order by account, games desc, rating desc
+                     )
+                     select a.id, coalesce(n.call_sign, ''), a.kind, a.banned, a.admin,
                             exists (select 1 from credentials c
                                     where c.account = a.id and c.method = 'password'),
-                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI')
-                     from accounts a left join names n on n.account = a.id
+                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI'),
+                            b.class, b.rating, b.games, l.pos, l.of_n
+                     from accounts a
+                     left join names n on n.account = a.id
+                     left join best b on b.account = a.id
+                     left join ladder l on l.account = a.id and l.class = b.class
                      where $1 = ''
                         or strpos(lower(coalesce(n.call_sign, '')), lower($1)) > 0
                         or a.id = $2
                      order by a.last_seen desc
                      limit 100",
-                    &[&q, &number],
+                    &[&q, &number, &provisional],
                 )
                 .await;
             match rows {
@@ -1029,8 +1199,29 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     // showing a hundred rows can say whether that is all of
                     // them or the first hundred.
                     "capped": rs.len() == 100,
+                    // The two constants the page would otherwise have to keep
+                    // a copy of to draw a standing: how many games place a
+                    // pilot, and which class needs no naming. Sent once per
+                    // reply rather than once per row, and sent at all so that
+                    // moving either one in rating.rs moves it everywhere.
+                    "provisional": rating::PROVISIONAL_GAMES,
+                    "default_class": DEFAULT_CLASS,
                     "pilots": rs.iter().map(|r| {
                         let kind: i16 = r.get(2);
+                        // The band, computed here rather than on the page: the
+                        // thresholds live in rating.rs and a second copy of
+                        // them in JavaScript is a second copy to forget when
+                        // they move. Null while a pilot is still placing,
+                        // which is a different thing from Green and reads as
+                        // one.
+                        let games: Option<i32> = r.get(9);
+                        let score: Option<f64> = r.get(8);
+                        let tier = match (score, games) {
+                            (Some(s), Some(g)) if g as u32 >= rating::PROVISIONAL_GAMES => {
+                                Some(rating::tier(s))
+                            }
+                            _ => None,
+                        };
                         serde_json::json!({
                             "account": r.get::<_, i64>(0),
                             "name": r.get::<_, String>(1),
@@ -1043,6 +1234,12 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                             "admin": r.get::<_, bool>(4),
                             "claimed": r.get::<_, bool>(5),
                             "last_seen": r.get::<_, String>(6),
+                            "class": r.get::<_, Option<String>>(7),
+                            "rating": score,
+                            "games": games,
+                            "tier": tier,
+                            "rank": r.get::<_, Option<i64>>(10),
+                            "of": r.get::<_, Option<i64>>(11),
                         })
                     }).collect::<Vec<_>>(),
                 })),
@@ -1118,6 +1315,13 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 Ok(0) => (404, serde_json::json!({ "error": "no such account" })),
                 Ok(_) => {
                     println!("meta: admin {actor} set admin={admin} on account {account}");
+                    note_account(
+                        &db,
+                        if admin { pilot::GRANT } else { pilot::REVOKE },
+                        account,
+                        serde_json::json!({ "by": actor }),
+                    )
+                    .await;
                     (200, serde_json::json!({ "account": account, "admin": admin }))
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
@@ -1148,6 +1352,172 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                         "reason": r.get::<_, String>(2),
                         "last_seen": r.get::<_, String>(3),
                     })).collect::<Vec<_>>(),
+                })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // One pilot's recent history, out of the pilot log.
+        //
+        // This is the half of acting on a report that the panel could not do:
+        // [admin.md](admin.md) noted that an operator can act on a report and
+        // not notice one, and until there was a log the acting was on the
+        // reporter's word alone. Read-only, and deliberately: nothing here
+        // edits, because the log is a record of what happened and an operator
+        // who could revise it would be holding a different kind of thing.
+        //
+        // By account, or by session for the whole of one stay. A session is
+        // asked for by name rather than searched, since the only way to have
+        // one is to have seen it in an answer to this route.
+        "/v1/admin/events" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let account = body.get("account").and_then(|v| v.as_i64());
+            let session = s("session");
+            // Newest first, because a report is about something that just
+            // happened. The page reverses what it draws.
+            let q = "select to_char(pe.at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                            coalesce(pe.session, ''), pe.kind,
+                            coalesce(nullif(pe.name, ''), n.call_sign, ''), pe.bot,
+                            pe.zone, pe.instance, pe.room, pe.tick, pe.detail
+                     from pilot_events pe
+                     left join names n on n.account = pe.pilot";
+            let rows = if !session.is_empty() {
+                db.query(
+                    &format!("{q} where pe.session = $1 order by pe.at desc, pe.id desc limit 200"),
+                    &[&session],
+                )
+                .await
+            } else if let Some(id) = account {
+                db.query(
+                    &format!("{q} where pe.pilot = $1 order by pe.at desc, pe.id desc limit 200"),
+                    &[&id],
+                )
+                .await
+            } else {
+                return (400, serde_json::json!({ "error": "an account or a session" }));
+            };
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    "events": rs.iter().map(|r| serde_json::json!({
+                        "at": r.get::<_, String>(0),
+                        "session": r.get::<_, String>(1),
+                        "kind": r.get::<_, String>(2),
+                        "name": r.get::<_, String>(3),
+                        "bot": r.get::<_, bool>(4),
+                        "zone": r.get::<_, String>(5),
+                        "instance": r.get::<_, String>(6),
+                        "room": r.get::<_, Option<i32>>(7),
+                        "tick": r.get::<_, i64>(8),
+                        "detail": r.get::<_, serde_json::Value>(9),
+                    })).collect::<Vec<_>>(),
+                    // Said rather than left for the operator to infer from a
+                    // round number, which is how somebody concludes a pilot
+                    // stopped doing anything at exactly 200 events.
+                    "capped": rs.len() == 200,
+                })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // The pilot log across the whole fleet, newest first.
+        //
+        // The other read of the same table, and a different question: the one
+        // above asks what somebody did, this asks what is happening. It is
+        // what [admin.md](admin.md) calls noticing, which this panel spent a
+        // while deliberately not doing, and the reason it is here now is that
+        // the deployment asked for it. What has not changed is that nothing
+        // watches this on anybody's behalf. An operator looks, or it says
+        // nothing.
+        //
+        // People or bots, never both at once, and that is the whole reason
+        // this is usable. A room runs 51 bots against a handful of players, so
+        // a mixed feed is bot arrivals with the interesting rows pushed off
+        // the end of it. It also happens to be what the index wants: with
+        // `pilot_events_sweep` on (bot, at), one value of `bot` and a time
+        // bound is a range scan, and an unfiltered `order by at desc` is not.
+        "/v1/admin/recent" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let bots = body.get("bots").and_then(|v| v.as_bool()).unwrap_or(false);
+            // Bounded by time as well as by count, so a rare kind cannot turn
+            // this into a walk of the whole table looking for two hundred
+            // refusals that are not there.
+            let hours = body
+                .get("hours")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(24)
+                .clamp(1, 24 * 30) as i32;
+            let kind = s("kind");
+            // The call sign falls back to the account's current one. A row
+            // the arena filed carries the name as it read at the time, which
+            // is the honest one; a row the meta-layer filed about an account
+            // carries none at all, and `#1` is a worse answer than a name
+            // when both are available.
+            let q = "select to_char(pe.at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                            coalesce(pe.session, ''), pe.kind,
+                            coalesce(nullif(pe.name, ''), n.call_sign, ''), pe.pilot,
+                            pe.zone, pe.instance, pe.room, pe.detail
+                     from pilot_events pe
+                     left join names n on n.account = pe.pilot
+                     where pe.bot = $1 and pe.at > now() - make_interval(hours => $2)";
+            let rows = if kind.is_empty() {
+                db.query(&format!("{q} order by pe.at desc, pe.id desc limit 200"), &[&bots, &hours])
+                    .await
+            } else {
+                db.query(
+                    &format!("{q} and pe.kind = $3 order by pe.at desc, pe.id desc limit 200"),
+                    &[&bots, &hours, &kind],
+                )
+                .await
+            };
+            // When the newest row of each kind landed, whatever the filter
+            // above selected. Without it an empty table has two very different
+            // meanings that look identical: nothing matches what you asked
+            // for, or nothing is arriving at all. The first is a filter to
+            // widen and the second is a fleet to go and look at.
+            //
+            // Two scalar subqueries rather than one `group by bot`, which
+            // reads as the tidier statement and is not: grouping walks every
+            // row of the index to find two maxima, and a subquery per value
+            // is a backward index seek that stops at the first. Measured at
+            // 120,000 rows it is 0.08ms against 15ms, and the gap is the
+            // whole table, so it grows with the log while this does not.
+            let mut newest = serde_json::Map::new();
+            if let Ok(r) = db
+                .query_one(
+                    "select to_char((select max(at) from pilot_events where not bot)
+                                    at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                            to_char((select max(at) from pilot_events where bot)
+                                    at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS')",
+                    &[],
+                )
+                .await
+            {
+                for (i, who) in ["people", "bots"].iter().enumerate() {
+                    if let Some(t) = r.get::<_, Option<String>>(i) {
+                        newest.insert((*who).into(), serde_json::Value::String(t));
+                    }
+                }
+            }
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    "events": rs.iter().map(|r| serde_json::json!({
+                        "at": r.get::<_, String>(0),
+                        "session": r.get::<_, String>(1),
+                        "kind": r.get::<_, String>(2),
+                        "name": r.get::<_, String>(3),
+                        "pilot": r.get::<_, Option<i64>>(4),
+                        "zone": r.get::<_, String>(5),
+                        "instance": r.get::<_, String>(6),
+                        "room": r.get::<_, Option<i32>>(7),
+                        "detail": r.get::<_, serde_json::Value>(8),
+                    })).collect::<Vec<_>>(),
+                    "capped": rs.len() == 200,
+                    "hours": hours,
+                    "newest": newest,
                 })),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
@@ -1365,6 +1735,71 @@ async fn ingest(
         apply(&db, who, class, d).await?;
     }
     db.commit().await.map_err(|e| format!("cannot commit: {e}"))
+}
+
+/// One line of the pilot log, into the table.
+///
+/// Simpler than its rating counterpart in the one way that matters: there is no
+/// projection to keep in step, so a row is one insert and needs no transaction
+/// around it. The dedup index does the same work here that it does there, and
+/// a second arrival is reported as success so the arena's spool lets go of it.
+async fn ingest_pilot(
+    db: &Client,
+    zone: &str,
+    instance: &str,
+    ev: &serde_json::Value,
+) -> Result<(), String> {
+    let Some(event_id) = ev.get("id").and_then(|v| v.as_i64()) else {
+        return Err("no event id".into());
+    };
+    let kind = ev.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
+    if kind.is_empty() {
+        return Err("no kind".into());
+    }
+    // Milliseconds on the wire, a timestamp in the column. The arena has no
+    // date library and does not need one to say when something happened.
+    let at = ev.get("at").and_then(|v| v.as_u64()).unwrap_or(0) as f64 / 1000.0;
+    let session = ev.get("session").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+    let pilot = ev.get("pilot").and_then(|v| v.as_i64());
+    let name = ev.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+    let bot = ev.get("bot").and_then(|v| v.as_bool()).unwrap_or(false);
+    let room = ev.get("room").and_then(|v| v.as_i64()).map(|r| r as i32);
+    let tick = ev.get("tick").and_then(|v| v.as_i64()).unwrap_or(0);
+    let detail = ev.get("detail").cloned().unwrap_or(serde_json::json!({}));
+
+    db.execute(
+        "insert into pilot_events
+           (event_id, at, session, pilot, name, bot, kind, zone, instance,
+            room, tick, detail)
+         values ($1, to_timestamp($2::float8), $3, $4, $5, $6, $7, $8, $9,
+                 $10, $11, $12)
+         on conflict (event_id) do nothing",
+        &[
+            &event_id, &at, &session, &pilot, &name, &bot, &kind, &zone,
+            &instance, &room, &tick, &detail,
+        ],
+    )
+    .await
+    .map(|_| ())
+    .map_err(|e| format!("cannot store pilot event: {e}"))
+}
+
+/// One line of the pilot log about an account rather than a stay: created,
+/// claimed, renamed, banned. No session, no room, no arena.
+///
+/// Best effort by design. These sit inside routes whose job is something else,
+/// and a pilot must not be refused a login because the log would not take the
+/// row. A failure says so on stdout and the route carries on.
+async fn note_account(db: &Client, kind: &str, account: i64, detail: serde_json::Value) {
+    if let Err(e) = db
+        .execute(
+            "insert into pilot_events (kind, pilot, detail) values ($1, $2, $3)",
+            &[&kind, &account, &detail],
+        )
+        .await
+    {
+        println!("meta: cannot note {kind} for account {account}: {e}");
+    }
 }
 
 /// One pilot's rating moves by one delta, and their game count by one.
@@ -1717,6 +2152,47 @@ pub async fn run() {
                 {
                     Ok(n) if n > 0 => println!("meta: retired {n} bot-only rated event(s)"),
                     Err(e) => println!("meta: retention pass failed: {e}"),
+                    _ => {}
+                }
+            }
+        });
+    }
+
+    // The same sweeper for the pilot log, and here nothing is kept forever.
+    //
+    // The rated log keeps every row with a person in it because a rating is a
+    // claim about that person which may have to be replayed years later. This
+    // log makes no such claim: it says where somebody was and what they pressed,
+    // which answers a report, an outage or a question about ship popularity for
+    // as long as anybody is going to ask, and after that is just a record of how
+    // people play kept by a service whose best property is holding nothing of
+    // the sort. So the humans expire too, at ninety days.
+    //
+    // Bot rows go far sooner. There are two orders of magnitude more of them
+    // and their whole value is debugging our own software this week.
+    {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                tick.tick().await;
+                let Ok(db) = pool.get().await else { continue };
+                // One statement over both windows, bounded like the pass
+                // above. `pilot_events_sweep` is on (bot, at), so each half is
+                // its own index scan rather than a walk of the table.
+                match db
+                    .execute(
+                        "delete from pilot_events where ctid in (
+                           select ctid from pilot_events
+                           where (bot and at < now() - make_interval(days => $1))
+                              or (not bot and at < now() - make_interval(days => $2))
+                           limit 50000)",
+                        &[&BOT_EVENT_DAYS, &PILOT_EVENT_DAYS],
+                    )
+                    .await
+                {
+                    Ok(n) if n > 0 => println!("meta: retired {n} pilot event(s)"),
+                    Err(e) => println!("meta: pilot log retention pass failed: {e}"),
                     _ => {}
                 }
             }

@@ -103,6 +103,68 @@
       </table>
     </div>
 
+    <!-- What the fleet has seen lately, across every arena. Above the pilot
+         table on purpose: this is the section somebody scans, and a call sign
+         in it opens that pilot's card below, so noticing something and going
+         to look at it is one click.
+
+         People and bots are separate views rather than one mixed feed. A room
+         runs fifty-one bots against a handful of players, so mixing them is a
+         page of bot arrivals with everything worth reading pushed off the end.
+         It is also what the index wants. -->
+    <h2 id="recent-head">Recent</h2>
+    <div class="row" id="recent-controls">
+      <div class="field">
+        <label for="recent-who">who</label>
+        <select id="recent-who">
+          <option value="people" selected>people</option>
+          <option value="bots">bots</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="recent-kind">what</label>
+        <select id="recent-kind">
+          <option value="" selected>everything</option>
+          <option value="denied">denied</option>
+          <option value="join">join</option>
+          <option value="leave">leave</option>
+          <option value="died">died</option>
+          <option value="kill">kill</option>
+          <option value="ship">ship</option>
+          <option value="team">team</option>
+          <option value="watch">watch</option>
+          <option value="on_air">on_air</option>
+          <option value="login">login</option>
+          <option value="rename">rename</option>
+          <option value="ban">ban</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="recent-hours">since</label>
+        <select id="recent-hours">
+          <option value="1">an hour ago</option>
+          <option value="24" selected>a day ago</option>
+          <option value="168">a week ago</option>
+          <option value="720">a month ago</option>
+        </select>
+      </div>
+    </div>
+    <p id="recent-note" class="dim" role="status" aria-live="polite"></p>
+    <div class="scroller">
+      <table id="recent">
+        <caption class="sr">What the fleet has seen lately, newest first</caption>
+        <thead><tr>
+          <th scope="col">at</th>
+          <th scope="col">pilot</th>
+          <th scope="col">what</th>
+          <th scope="col">detail</th>
+          <th scope="col">where</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="recent-empty" class="dim" hidden></p>
+
     <h2 id="pilot-head">Pilot</h2>
     <!-- No button beside it: typing is the whole interaction, and a button
          that repeats what the keystrokes already did is a button that invites
@@ -119,9 +181,16 @@
       <table id="pilots">
         <caption class="sr">Pilots matching the filter, most recently seen
           first</caption>
+        <!-- Rank, rating and tier are three readings of one standing and each
+             answers a question the other two do not: where they sit against
+             everybody else, the number the matchmaker reads, and the band a
+             player is actually shown. -->
         <thead><tr>
           <th scope="col">account</th><th scope="col">call sign</th>
           <th scope="col">kind</th><th scope="col">standing</th>
+          <th scope="col" class="n">rank</th>
+          <th scope="col" class="n">rating</th>
+          <th scope="col">tier</th>
           <th scope="col">last seen</th>
         </tr></thead>
         <tbody></tbody>
@@ -149,6 +218,43 @@
         <button id="kick-button" type="button">kick</button>
         <button id="admin-button" type="button"></button>
       </form>
+    </div>
+
+    <!-- What the fleet saw this pilot do, drawn with the card above and
+         hidden with it. This is the half of acting on a report that the panel
+         could not do before: admin.md notes that an operator can act on a
+         report and not notice one, and until the pilot log existed the acting
+         was on the reporter's word alone.
+
+         Read-only, and no controls in it. The log is a record of what
+         happened, and an operator who could revise it would be holding a
+         different kind of thing. -->
+    <!-- The heading stays put whether or not a pilot is picked, the way Log
+         and Bans do. It used to live inside the block below and vanish with
+         it, which meant an operator reading down the page saw Fleet, Pilot,
+         Log, Bans, Admins and no sign this existed at all. A section nobody
+         can see is a section nobody uses. -->
+    <h2 id="activity-head">Activity</h2>
+    <p id="activity-none" class="dim">Pick a pilot above to see what the fleet
+      saw them do.</p>
+    <div id="activity" hidden>
+      <p id="activity-note" class="dim" role="status" aria-live="polite"></p>
+      <div class="scroller">
+        <table id="events">
+          <caption class="sr">What this pilot did, newest first</caption>
+          <thead><tr>
+            <th scope="col">at</th>
+            <th scope="col">what</th>
+            <th scope="col">detail</th>
+            <th scope="col">where</th>
+            <th scope="col">stay</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="events-empty" class="dim" hidden>Nothing recorded. The log keeps
+        ninety days, and a pilot who has not flown in that time has aged out
+        of it.</p>
     </div>
 
     <h2 id="log-head">Log</h2>

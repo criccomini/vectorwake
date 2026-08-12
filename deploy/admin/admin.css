@@ -203,7 +203,7 @@ form { margin: 0; }
 .field { display: grid; gap: 0.3rem; }
 label { color: var(--dim); font-size: 0.9em; }
 
-input {
+input, select {
   background: #0a0f18;
   border: 1px solid var(--line);
   border-radius: 2px;
@@ -215,6 +215,9 @@ input {
   width: 100%;
 }
 input::placeholder { color: #4b586b; }
+/* A menu is as wide as what it holds rather than as wide as the row, which is
+   what the text fields want and no picker does. */
+select { width: auto; }
 
 button {
   background: transparent;
@@ -458,6 +461,12 @@ dialog .field { margin-bottom: 1rem; }
   }
   /* A cell with nothing in it says nothing at all on a phone. */
   td:empty { display: none; }
+  /* A cell holding a link-button lines its text up with the plain values
+     above and below it. The cell is a two-column grid, so a button stretches
+     into the value column and then centers its own label, which left the one
+     value on a card that is a link sitting in the middle of the row while
+     everything else began at the same margin. */
+  td > button.link { justify-self: start; }
   /* Full size on a phone: these are the buttons that stop a running game,
      and a thumb should not have to aim. */
   .acts { padding-top: 0.35rem; }

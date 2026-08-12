@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+# signal is for the arena's stop handler, which files every open session's
+# departure in the pilot log before a converge replaces the container.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }
 # rustls-tls so a directory can poll a wss zone; without a TLS client
 # feature connect_async refuses a wss address outright.
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }

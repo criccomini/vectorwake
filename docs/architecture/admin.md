@@ -194,10 +194,69 @@ because there is nothing on the other end of it. The drift note stays outside
 the link, since it is the panel's reading of the row rather than part of the
 sha.
 
+Above the pilot table is Recent, the same log read across the whole fleet
+rather than one pilot at a time. People and bots are separate views rather than
+one feed, because a room runs fifty-one bots against a handful of players and
+mixing them is a page of bot arrivals with everything worth reading pushed off
+the end of it. A call sign in it opens that pilot's card below, so noticing
+something and going to look at it is one click.
+
+Its note line reports when the log last took a row of each kind, whether or not
+the current filter matched anything. An empty table otherwise has two meanings
+that look identical and want opposite responses: nothing matches what you
+asked, which is a filter to widen, or nothing is arriving, which is a fleet to
+go and look at.
+
 The pilot table filters as you type, over call signs and account numbers, and
 there is no button beside the box: the keystrokes are the whole interaction,
 and a button that repeats them invites somebody to wonder what it does
-differently. Picking a row opens that pilot's card.
+differently. Picking a row opens that pilot's card, and under the card is what
+the fleet saw them do.
+
+Each row carries a standing in three readings, because they answer questions
+that are not the same one. **rank** is the position on the ladder, **rating**
+is the number the matchmaker reads, and **tier** is the band, which is the only
+one of the three a player is ever shown per
+[rating.md](../design/rating.md). Two things follow from how rating works and
+are worth knowing before reading the column. A pilot holds one rating per mode
+class, so the row shows the class they have played most and names it when it is
+not the default one; the rank is their position on that ladder rather than on
+some merged board. And a pilot still inside their provisional games has a
+rating but no position, since ranking an unsettled number would push everybody
+else down for it, so the cell reads `placing 4/10` and the rank is empty. Bots
+hold accounts and are rated like anybody else, which is the point of them, so
+the top of a ladder can be one and that is the system working rather than a
+bug.
+
+That heading is up whether or not anybody is picked, the way Log and Bans are,
+and says to pick a pilot when nothing is. It lived inside the block it labels
+for one afternoon, which meant the section did not exist until you had already
+found it: an operator reading down the page saw Fleet, Pilot, Log, Bans,
+Admins, and nothing to suggest the log was there at all.
+
+That last part is the half of acting on a report the panel could not do. An
+operator with a complaint in front of them had the reporter's word and a kick,
+and no way to check one against anything. Now the card carries the pilot's
+recent history out of the log
+[meta-layer.md](meta-layer.md#the-pilot-log) describes: arrivals, refusals
+with the sentence the pilot was actually sent, hull and side changes,
+departures with the reason and whether the fight was being lost. Refusals and
+quits are drawn in the color the rest of the page gives to something wrong,
+because those are the two an operator is scanning for.
+
+Each row names the stay it belongs to, and opening one narrows the table to
+that stay alone. A pilot's history runs across several and a report is usually
+about one of them.
+
+It is written out rather than shown as the JSON it arrives as. An operator
+reading a complaint should not have to know the wire to use the page, so a
+departure reads `left, held 2m 0s, settled as a quit` and a hull change reads
+`hull 0 to 3`. An event kind the page has not learned falls through to its raw
+detail rather than to nothing, because the arena can ship a new one before
+these files do.
+
+Nothing in it edits. The log is a record of what happened, and an operator who
+could revise it would be holding a different kind of thing.
 
 Two deployment-wide faults show there and nowhere else. Two directories on
 different catalog versions is a publish that half landed, which the fleet
@@ -246,6 +305,14 @@ The verbs need one more thing before kicking is comfortable: `RoomView`
 carries counts and not names, so an operator cannot see who is in a room.
 Kick works by call sign against every instance, which is enough to act on a
 report and not enough to notice one.
+
+The pilot log closed the smaller half of that. Acting on a report is
+checkable now, since the card says what the fleet saw, and the Recent section
+above it is the fleet-wide read that arrived a day later because an operator
+wanted one. What still does not exist is anything that watches on somebody's
+behalf: an operator looks, or the log says nothing. No alert, no threshold, no
+score. [networking.md](networking.md) rules out the version of this that
+watches how people fly, and that is untouched.
 
 The name is its own certificate, which this file's opening comment prices as
 the thing a mistake can burn. Taken anyway, and as isolation rather than

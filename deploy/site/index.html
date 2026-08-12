@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05070c">
+  <meta name="description" content="Vectorwake is a fast top-down space MMO. Fly an original vector hull in your browser and spend the same energy bar on weapons and survival.">
+  <link rel="canonical" href="https://vectorwake.net/">
+  <link rel="icon" href="/assets/web/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/site.css">
+  <title>vectorwake / top-down space combat</title>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the fight</a>
+
+  <header class="site-header" data-header>
+    <a class="brand" href="#top" aria-label="Vectorwake home">
+      <svg class="brand-mark" viewBox="0 0 132 104" aria-hidden="true">
+        <path class="mark-amber" d="M2 2 26 50V2M30 2l24 48V2M58 2l24 48V2"/>
+        <path class="mark-cyan" d="M30 54l24 48V54M58 54l24 48V54M86 54l24 48V54"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="#flight">Flight</a>
+      <a href="#fleet">Hulls</a>
+      <a class="discord-button nav-discord" href="https://play.vectorwake.net/discord" data-discord-link>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8.3 6.4a10.2 10.2 0 0 1 7.4 0 12.8 12.8 0 0 1 3.1 8.1 12.7 12.7 0 0 1-5.1 3.4l-1.1-1.5c.7-.2 1.3-.5 1.9-.9a6.1 6.1 0 0 1-5 0c.6.4 1.2.7 1.9.9l-1.1 1.5a12.7 12.7 0 0 1-5.1-3.4 12.8 12.8 0 0 1 3.1-8.1Zm1.5 7.3c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Zm4.4 0c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Z"/>
+        </svg>
+        <span class="discord-label">Discord</span>
+        <span class="discord-members" aria-label="Member count" hidden><span aria-hidden="true">●</span> <span data-discord-count></span></span>
+      </a>
+      <a class="github-button nav-github" href="https://github.com/criccomini/vectorwake" data-github-link>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.1 1.2a10.8 10.8 0 0 1 5.7 0C14.6 5 15.6 5 15.6 5c.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z"/>
+        </svg>
+        <span class="github-label">GitHub</span>
+        <span class="github-stars" aria-label="Star count" hidden><span aria-hidden="true">★</span> <span data-github-count></span></span>
+      </a>
+      <a class="nav-play" href="https://play.vectorwake.net">Play</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <video class="gameplay-film" data-gameplay data-src="/media/gameplay.webm" poster="/media/gameplay-poster.jpg" autoplay muted loop playsinline preload="none" disablepictureinpicture disableremoteplayback aria-hidden="true"></video>
+      <div class="hero-shade" aria-hidden="true"></div>
+      <p class="hero-wordmark" aria-hidden="true">vectorwake</p>
+      <div class="hero-copy">
+        <h1 id="hero-title">Every shot makes you easier to kill.</h1>
+        <p class="hero-deck">Top-down space combat in your browser. Every shot comes out of the bar keeping your ship alive.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="https://play.vectorwake.net">
+            <span>Play free</span>
+            <span aria-hidden="true">↗</span>
+          </a>
+          <a class="text-link" href="#manual">How flight works <span aria-hidden="true">↓</span></a>
+        </div>
+      </div>
+      <p class="hero-proof"><strong>Totally free.</strong><span>Desktop + mobile.</span></p>
+    </section>
+
+    <section class="manual" id="manual" aria-labelledby="manual-title">
+      <header class="manual-thesis reveal">
+        <h2 id="manual-title">One bar decides whether you can shoot and whether you survive.</h2>
+        <p>Vectorwake is a fast space MMO built around inertial flight and expensive decisions.</p>
+      </header>
+
+      <article class="energy" id="energy" aria-labelledby="energy-title">
+        <div class="energy-instrument reveal" data-energy-demo>
+          <div class="instrument-topline">
+            <span>A01 / Apex</span>
+            <span data-energy-state>Armed</span>
+          </div>
+          <div class="energy-readout">
+            <span class="energy-label">NRG</span>
+            <strong data-energy-value>1350</strong>
+          </div>
+          <div class="energy-track" role="img" aria-label="Energy level demonstration">
+            <span data-energy-bar></span>
+            <i class="energy-danger"></i>
+          </div>
+          <div class="shot-field" data-shot-field aria-hidden="true">
+            <svg class="demo-ship" viewBox="-14 -24 28 40">
+              <polygon points="0,-21 1.6,-12 2.6,-5 6.5,1 11,9 8.5,11.5 3.5,6.5 3,10.5 0,11.5 -3,10.5 -3.5,6.5 -8.5,11.5 -11,9 -6.5,1 -2.6,-5 -1.6,-12"/>
+              <path d="M0-19.8 2.6-5 6.5 1M0-19.8-2.6-5-6.5 1"/>
+            </svg>
+            <span class="aim-line"></span>
+            <span class="target-ring"></span>
+          </div>
+          <div class="instrument-footer">
+            <span>Weapons and hull share this bar.</span>
+            <button type="button" data-energy-reset>Reset</button>
+          </div>
+        </div>
+        <div class="energy-copy reveal">
+          <h3 id="energy-title">Spend 360.<br>Hope you did not need it.</h3>
+          <p>Weapons and incoming damage use the same energy pool. Panic fire makes the next hit lethal.</p>
+          <button class="demo-trigger" type="button" data-fire>
+            <span>Fire L3</span>
+            <span>−360 NRG</span>
+          </button>
+        </div>
+      </article>
+
+      <article class="flight" id="flight" aria-labelledby="flight-title">
+        <div class="flight-visual reveal" aria-hidden="true">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="wake wake-one"></div>
+          <div class="wake wake-two"></div>
+          <svg class="flight-ship" viewBox="-22 -24 44 48">
+            <polygon points="0,-13.5 5.5,-12 11.5,-7.5 16.5,-.5 18,4 14.5,6 11,2.5 6.5,-1.5 2.5,-3.5 0,-3.8 -2.5,-3.5 -6.5,-1.5 -11,2.5 -14.5,6 -18,4 -16.5,-.5 -11.5,-7.5 -5.5,-12"/>
+            <path d="M4-10.6 13.2-3.2M-4-10.6-13.2-3.2M2.5-3.5 5.5-11.6M-2.5-3.5-5.5-11.6"/>
+          </svg>
+          <span class="vector-label label-course">COURSE 071.4</span>
+          <span class="vector-label label-speed">SPD 4300</span>
+          <span class="vector-label label-drift">DRIFT +18°</span>
+        </div>
+        <div class="flight-copy reveal">
+          <h3 id="flight-title">Your nose and your velocity are two different things.</h3>
+          <p>Momentum keeps its old instructions after you turn. There is no lock-on. If the shot lands, you aimed it.</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="fleet" id="fleet" aria-labelledby="fleet-title">
+      <header class="fleet-head reveal">
+        <h2 id="fleet-title">Seven hulls.</h2>
+        <p>Each silhouette tells you what it can do before you can read the pilot's name.</p>
+      </header>
+
+      <div class="shipyard">
+        <div class="hull-stage" data-hull-stage aria-live="polite"></div>
+        <div class="hull-copy">
+          <p class="hull-number" data-hull-number>01 / 07</p>
+          <p class="hull-role" data-hull-role>Interceptor</p>
+          <h3 data-hull-name>Apex</h3>
+          <p data-hull-copy>Fast enough to catch anything. Thin enough to regret it.</p>
+        </div>
+        <div class="hull-spec" aria-hidden="true">
+          <span data-hull-stat-one>SPD 4900</span>
+          <span data-hull-stat-two>ROT 420</span>
+        </div>
+      </div>
+
+      <div class="hull-selector" data-hull-selector role="group" aria-label="Choose a hull"></div>
+    </section>
+
+    <section class="world" aria-labelledby="world-title">
+      <div class="world-scope reveal" aria-label="Vectorwake world model">
+        <div class="scope-ring scope-ring-a"></div>
+        <div class="scope-ring scope-ring-b"></div>
+        <div class="scope-cross scope-cross-x"></div>
+        <div class="scope-cross scope-cross-y"></div>
+        <span class="scope-node node-a">PILOT</span>
+        <span class="scope-node node-b">BOT</span>
+        <span class="scope-node node-c">RATING</span>
+        <strong>ONE<br>LADDER</strong>
+      </div>
+      <div class="world-copy reveal">
+        <h2 id="world-title">Your call sign stays when the match ends.</h2>
+        <p>Claim it once and the ladder keeps score. Humans and autonomous pilots fly the same physics.</p>
+        <a class="github-button github-button-wide" href="https://github.com/criccomini/vectorwake" data-github-link>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.1 1.2a10.8 10.8 0 0 1 5.7 0C14.6 5 15.6 5 15.6 5c.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z"/>
+          </svg>
+          <span>GitHub</span>
+          <span class="github-stars" aria-label="Star count" hidden><span aria-hidden="true">★</span> <span data-github-count></span></span>
+        </a>
+      </div>
+    </section>
+
+    <section class="launch" aria-labelledby="launch-title">
+      <div class="launch-copy">
+        <h2 id="launch-title">Open the game in a browser.</h2>
+        <p>It costs nothing and works on desktop and mobile.</p>
+      </div>
+      <a class="launch-button" href="https://play.vectorwake.net">
+        <span>Play vectorwake</span>
+        <span aria-hidden="true">↗</span>
+      </a>
+      <div class="launch-links">
+        <a href="https://play.vectorwake.net/discord">Discord ↗</a>
+        <a href="https://github.com/criccomini/vectorwake">GitHub ↗</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a class="brand footer-brand" href="#top" aria-label="Back to top">
+      <svg class="brand-mark" viewBox="0 0 132 104" aria-hidden="true">
+        <path class="mark-amber" d="M2 2 26 50V2M30 2l24 48V2M58 2l24 48V2"/>
+        <path class="mark-cyan" d="M30 54l24 48V54M58 54l24 48V54M86 54l24 48V54"/>
+      </svg>
+      <span>vectorwake</span>
+    </a>
+    <nav aria-label="Footer navigation">
+      <a href="https://play.vectorwake.net">Play</a>
+      <a href="https://play.vectorwake.net/discord">Discord</a>
+      <a href="https://github.com/criccomini/vectorwake">GitHub</a>
+    </nav>
+  </footer>
+
+  <script src="/site.js" defer></script>
+</body>
+</html>

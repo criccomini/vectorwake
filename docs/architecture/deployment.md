@@ -15,6 +15,9 @@ to hosts that scale independently is [scaling-plan.md](scaling-plan.md).
 ## The shape
 
 ```
+  vectorwake.net, 443                  checkout
+      /      ──────────────────────►  deploy/site/
+
   play.vectorwake.net, 443             loopback
       /      ──────────────────────►  client/dist/, on disk
       /dir   ──────────────────────►  directory :9000
@@ -54,10 +57,15 @@ is the only cost this deployment has.
 Everything runs `--network host`, so the services reach each other on loopback
 and only Caddy listens on a public port.
 
-**One hostname, paths underneath.** `play.vectorwake.net` serves the client at
+**One game hostname, paths underneath.** `play.vectorwake.net` serves the client at
 `/`, the directory at `/dir`, and the arena at `/a1`. One port is one thing to
 open and nothing between a player and the game objects to it, and adding an
 arena is a path rather than a DNS record.
+
+The bare `vectorwake.net` is a separate static site. It points at the same
+central host but has no game routes and no reason to share the client's socket
+policy. Caddy reads it from `deploy/site/` in the checkout. A page edit ships
+with the updater and does not rebuild the client bundle or restart an arena.
 
 **One arena process, and it is not one room.** A process runs one zone's
 configuration and holds as many rooms of it as that zone's `max_rooms` allows,
@@ -78,13 +86,13 @@ answering 200 because Caddy was fine. One name means one certificate to lose.
 **A host is one of three shapes, and today one host is all of them.** The
 processes are split across compose files by what they are: `caddy.yml` is the
 proxy, which every host runs; `central.yml` is the front door, the directory a
-player browses and the meta-layer they sign in to and the page itself;
+player browses, the meta-layer they sign in to, and the game page itself;
 `arena.yml` is the games and the bots that fill them. A role is which of those
 a host runs, and it reaches the host as `COMPOSE_FILE` in the generated `.env`,
 so nothing else on the box has to know: provisioning, the updater and a command
 typed by hand all say `docker compose --env-file .env` and get the right shape.
 
-The name follows the same rule. `VW_HOST` is the name a host *serves*, which is
+The name follows the same rule. `VW_HOST` is the game name a host *serves*, which is
 not the machine it is: a central host answers for `play.vectorwake.net`
 whichever instance is underneath it, because that address is in the catalog's
 meta url and baked into the client, so a rebuild moves a DNS record rather than
@@ -92,6 +100,10 @@ a client release. An arena host serves its own name and has a certificate
 within a minute of booting. `VW_ROUTES` picks the matching Caddy snippets out
 of `deploy/caddy/conf.d`, which is why an arena host has no `/dir` route at all
 rather than one pointing at a directory that is not there.
+
+`VW_SITE_HOST` names the bare site on a central host. `fleet.sh point play`
+moves its apex record and the admin record beside the game name, so rebuilding
+the central host cannot leave either static surface on the old address.
 
 **Deploys are a push, not a reinstall.** A timer on the host converges on what
 `main` and the registry say, every minute, and says nothing when neither moved.

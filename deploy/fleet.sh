@@ -86,6 +86,9 @@ REGION=${VW_REGION:-atl}
 # baked directory address, and the one an arena host anywhere dials to register.
 # A central host serves it; an arena host serves its own name and points here.
 FRONT=${VW_FRONT:-play.$DOMAIN}
+# The site in front of the game. It rides with the front door but keeps the
+# bare name, while the game stays at play.<domain> for its same-origin sockets.
+SITE_HOST=${VW_SITE_HOST:-$DOMAIN}
 # The admin panel's name. It rides with the front: both belong to whichever
 # host is central, so `point` moves the pair together.
 ADMIN_HOST=${VW_ADMIN_HOST:-admin.$DOMAIN}
@@ -282,12 +285,12 @@ render() {
 	*)     meta_db=${VW_META_DATABASE:-} meta_key=${VW_META_KEY:-} ;;
 	esac
 
-	# The panel's name goes only to the host that serves it. An arena host
-	# gets an empty value, which the compose file turns into admin.localhost,
-	# a site nobody dials and no certificate authority is asked about.
+	# The public site's and panel's names go only to the host that serves them.
+	# An arena host gets empty values, which compose turns into local names no
+	# certificate authority sees.
 	case $role in
-	arena) admin_host= ;;
-	*)     admin_host=$ADMIN_HOST ;;
+	arena) site_host= admin_host= ;;
+	*)     site_host=$SITE_HOST admin_host=$ADMIN_HOST ;;
 	esac
 
 	# The public halves, which the catalog names with `env:` rather than
@@ -326,6 +329,7 @@ render() {
 		-e "s|__POOL_TOKEN__|$VW_POOL_TOKEN|g" \
 		-e "s|__ROLE__|$role|g" \
 		-e "s|__HOST__|$(serves "$role" "$name")|g" \
+		-e "s|__SITE_HOST__|$site_host|g" \
 		-e "s|__ADMIN_HOST__|$admin_host|g" \
 		-e "s|__FRONT__|$FRONT|g" \
 		-e "s|__BRANCH__|$BRANCH|g" \
@@ -554,6 +558,10 @@ cmd_new() {
 # and the caller's are in use.
 converge_record() {
 	cr_name=$1 cr_ip=$2
+	case $cr_name in
+	@) cr_display=$DOMAIN ;;
+	*) cr_display=$cr_name.$DOMAIN ;;
+	esac
 	cr_rec=$(vultr dns record list "$DOMAIN" -o json | jq -r --arg n "$cr_name" \
 		'[.records[] | select(.name == $n and .type == "A")][0] // empty')
 	cr_rid=$(printf '%s' "$cr_rec" | jq -r '.id // empty')
@@ -561,20 +569,21 @@ converge_record() {
 	if [ -z "$cr_rid" ]; then
 		vultr_do dns record create "$DOMAIN" --type A --name "$cr_name" \
 			--data "$cr_ip" --ttl "$TTL" >/dev/null
-		echo "fleet: $cr_name.$DOMAIN -> $cr_ip (created)"
+		echo "fleet: $cr_display -> $cr_ip (created)"
 	elif [ "$cr_old" != "$cr_ip" ]; then
 		vultr_do dns record update "$DOMAIN" "$cr_rid" --data "$cr_ip" --ttl "$TTL" >/dev/null
-		echo "fleet: $cr_name.$DOMAIN -> $cr_ip (moved from $cr_old)"
+		echo "fleet: $cr_display -> $cr_ip (moved from $cr_old)"
 	fi
 }
 
-# The names that follow the front door wherever it points. The panel's is
-# one: admin.<domain> belongs to whichever host is central, so a cutover
-# that moved only the front would strand the panel on the old box. Runs on
-# every exit of cmd_point, including "already points there", which is how
-# the record gets created the first time without a command of its own.
+# The names that follow the front door wherever it points. The bare site and
+# admin.<domain> belong to whichever host is central, so a cutover that moved
+# only play.<domain> would strand both on the old box. Runs on every exit of
+# cmd_point, including "already points there", which creates a missing record
+# without adding another command.
 ride_along() {
 	if [ "$name.$DOMAIN" = "$FRONT" ]; then
+		converge_record "@" "$1"
 		converge_record "${ADMIN_HOST%%.*}" "$1"
 	fi
 }

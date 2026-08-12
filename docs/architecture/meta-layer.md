@@ -20,6 +20,7 @@ records why this is our own service rather than Nakama.
 | credentials | account, method (`secret`, `password`, `steam`, more later), identifier or hash. A human account whose only credential is its secret is a guest |
 | names | account, call sign, unique fleet-wide under a case-insensitive index |
 | rated_events | the log [rating.md](../design/rating.md) specifies: participants, weights, ratings before and after, arena, mode class, opponent kind, timestamp |
+| pilot_events | what happened to a pilot rather than to their rating: arrivals, refusals, hull and side changes, departures and why, tied together by a session. See [the pilot log](#the-pilot-log) |
 | ratings | account, mode class, rating, games. A projection, rebuildable from `rated_events` at any time |
 
 A house bot needs no table of its own: the roster individual's name *is* its
@@ -47,12 +48,15 @@ framework would be the larger change.
 | `/v1/bot` | the bot server, with a pool token | The account for one roster individual, the same one every time. A new one is seeded from the calibrated ladder |
 | `/v1/bot/register` | anyone, with a claimed account | A third-party bot account under that owner, who answers for it |
 | `/v1/events` | an arena, with a pool token | Rated events, appended to the log and applied to the projection |
+| `/v1/pilot-events` | an arena, with a pool token | The pilot log, appended. No projection to keep in step, because nothing the game reads back is derived from it |
 | `/v1/admin/fleet` | the admin panel | Every instance the directory on this host has observed, relayed from it over loopback, plus the catalog version and whether its verifying key is the one this process signs with |
 | `/v1/admin/pilots` | the admin panel | Pilots matching what an operator has typed, most recently seen first, searched in the database rather than filtered in the page |
 | `/v1/admin/grant` | the admin panel | Gives or takes the admin flag. Claimed humans only, and never the last admin |
 | `/v1/admin/pilot` | the admin panel | One pilot by call sign or number: kind, standing, the dates. Behind the account flag |
 | `/v1/admin/ban` | the admin panel | A fleet ban, which takes effect at the next token issuance. Refuses accounts that hold the flag |
 | `/v1/admin/bans` | the admin panel | Every account currently marked, with its reason |
+| `/v1/admin/events` | the admin panel | One pilot's recent history out of the pilot log, or one stay out of it |
+| `/v1/admin/recent` | the admin panel | The same log across the fleet, people or bots, optionally one kind, within a time bound. Reports when each kind last filed, so an empty answer says which sort of empty it is |
 | `/v1/admin/rename` | the admin panel | Sets a pilot's call sign to a typed one, or deals a fresh one when nothing is typed. Refuses a taken name and refuses a bot, whose name is its roster identity |
 | `/v1/admin/admins` | the admin panel | Who holds the flag |
 
@@ -199,6 +203,135 @@ order of 15 MB a day until it empties and is reclaimed. Not a database problem
 and not urgent, since a room that never empties is a room somebody is enjoying,
 but it is the same unbounded thing in a place nobody is watching.
 
+## The pilot log
+
+`rated_events` answers what a fight did to somebody's number. It does not
+answer where they were, how they got in, or why they stopped being there, and
+those are the questions anybody actually asks when something goes wrong. A room
+knows all of it and keeps none of it: the tick that produced the fact is the
+last thing that holds it. When a player says they were bounced from a zone, the
+only party that knows which of five refusals they were given is the player.
+
+So there is a second log, on the same road as the first. An arena appends a
+line to `pilot.jsonl`, the tick moves on, and a background task posts batches
+to `/v1/pilot-events`. Same pool credential, same at-least-once delivery, same
+arena-minted id and unique index making a replay harmless. What is different is
+that nothing is projected from it. No part of the running game reads this table,
+so a row that never arrives costs a question somebody cannot answer later and
+nothing else.
+
+### What a session is
+
+Every row carries a session, which is one connection to one arena, minted at
+the door before anything can be refused. It rides on the seat rather than
+beside the socket, and that placement is the whole trick: a pilot's handles get
+reissued underneath them twice over, because sitting out retires the seat and
+flying again allocates a fresh player id in a room whose position in the
+arena's list may have moved. Keying on any of those would cut one stay into
+unrelated pieces.
+
+A session does not span arenas. Crossing to another zone is a new connection
+and a new session, and the thing that ties those together is the account, which
+is on every row a pilot with one produces. Guests have no account, so a guest's
+history is exactly one session long. That is a real limit and the honest one:
+the alternative is a durable handle for somebody who has deliberately not told
+us who they are.
+
+### What is tracked
+
+Thirteen kinds from an arena. Eleven are changes of state rather than things
+that happen every tick, and two are combat. Combat started outside this log on
+the reasoning that `rated_events` already keeps every death and a log should
+not say things twice; what that produced was a session that read as a join and
+a leave with an hour of silence between them. So the human-involving deaths
+are filed here too, as the pilot's own rows. The rated log stays the authority
+on what a death did to the ladder, this one says it happened to this person in
+this room, and bot-on-bot deaths, the overwhelming bulk of every hour, still
+never enter. Firing and hitting stay out: they are per-tick, and the sim is
+where they live.
+
+| Kind | When | Carries |
+|---|---|---|
+| `join` | seated in a room | hull, sim slot, side, label, transport |
+| `denied` | refused at the door | the deny code, the sentence sent back, the name and zone claimed, protocol, transport |
+| `watch` | arrived to spectate | the side they were seated on, and whether they hold the `watch` capability |
+| `ship` | a hull change that took effect | from, to |
+| `team` | crossed to a side | from, to, whether the side is public |
+| `found` | founded a private side | its byte and generated name |
+| `invite` | invited somebody to one | who |
+| `sit_out` | gave up a hull for the stands | whether they asked or the safe-zone sweep moved them |
+| `fly` | took a hull again | hull, sim slot, side |
+| `on_air` | became somebody's subject | the slot |
+| `leave` | the seat ended | why, the slot, ticks held, and whether it settled as a quit |
+| `died` | their hull was destroyed | who by, and what it paid |
+| `kill` | they destroyed somebody | who, what it paid, and whether the victim quit the fight |
+
+`leave` is the one that repays the most work. Five callers reach `Room::leave`,
+a quit, a sit-out, a bot evicted for an arriving human, a bot sent home by a
+drain, and an operator's kick, and until this log existed they were
+indistinguishable afterwards. The reason is now a parameter, so the commonest
+question about any departure has an answer.
+
+Eight more kinds are written by the meta-layer itself, about an account rather
+than a stay: `account`, `claim`, `login`, `rename`, `ban`, `unban`, `grant` and
+`revoke`. These carry no session, because there is no connection to tie them to
+and inventing one would suggest a continuity that is not there. Failed logins
+are not among them. They are already throttled per address and per name, and a
+row per guess would let a guessing script size the table.
+
+### What it deliberately holds no room for
+
+No addresses. An arena never learns one, since the accept discards the peer and
+the WebTransport session is never asked, and that is a property to keep rather
+than a gap to fill. The meta-layer's best quality is that a breach would
+disclose a ladder rather than anybody's identity, and a log of how each person
+plays, keyed to where they live, is the fastest way to spend it. Correlating two
+accounts to one household is the thing this log cannot do, and it is the reason
+[community.md](../design/community.md) says a change to that property arrives as
+its own decision record.
+
+Nor is it an anti-cheat feed. [networking.md](networking.md) says aim assistance
+is a behavioral detection problem we are not solving in the architecture, and
+this does not reopen that. It moves one narrower line: [admin.md](admin.md)
+notes that an operator can act on a report and not notice one, and this is the
+half that lets them act, by making a report checkable against what the fleet saw.
+
+### What it costs, and the two ceilings
+
+Both ceilings exist because half of these are things a pilot can do as fast as
+they can press a key.
+
+A session files at most 200 rows, and combat is exempt from the count: a death
+is gated by the simulation, which charges a respawn and a flight back before
+the next one is possible, so it cannot be flooded, and a long evening of honest
+flying must not exhaust the allowance the departure at the end of it needs.
+Everything else in an honest stay is somewhere between five and twenty rows,
+so reaching the cap is itself the finding, and past it the pilot keeps playing
+while the log stops growing on their account. Only changes that
+took effect are written at all, which removes most of the rest: the core
+refuses a hull or side change for anyone dead or short of a full bar and says
+nothing about it, so the asking and the happening are different events and only
+one is a row.
+
+Refusals need their own ceiling, because a client looping on one gets a fresh
+connection and so a fresh allowance every time, which makes the flooder the cap
+cannot see the same client most worth recording. An arena writes at most 60 a
+minute. A bot bouncing off a full instance is left out entirely, since that is
+the fill ladder working and it is the only refusal that happens by the thousand.
+
+Retention is where this differs most from `rated_events`, and it is stated here
+because the section above says plainly that space is what runs out. Nothing in
+this table is kept forever. A rated row with a person in it is a claim about
+that person that may have to be replayed years later; a pilot event is not, and
+after long enough it is just a record of how people play, held by a service
+whose whole appeal is holding nothing of the sort. So the same hourly sweeper
+runs a second bounded pass: bot rows at seven days, everybody at ninety.
+
+The rate follows the players rather than the bots, which is the point of
+leaving routine bot refusals out. A stay is a handful of rows against the 1.8
+deaths a second Chaos alone resolves at fill, so this table is a small fraction
+of the one beside it and, unlike that one, it converges instead of growing.
+
 ## Turning it on over a running fleet
 
 Two things do not happen by themselves, and both were found by turning it on.
@@ -218,6 +351,8 @@ throwaway account.
 ## Turning reporting off
 
 `VW_REPORT=0` on an arena stops it filing anything, and stops nothing else.
+Both logs, the rated events and the pilot log, since both spools are aimed
+together and neither is aimed when the switch is off.
 
 Pilots still sign in, still arrive carrying the rating they earned, and still
 watch it move on the scoreboard, because a room rates its own exchanges and
