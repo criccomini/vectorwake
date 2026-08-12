@@ -449,7 +449,7 @@ local NODES = {
             -- be. It was a wall of prose about energy and bounty, then a
             -- picture of a keyboard, and it is now where the keys are set:
             -- "help" is the one word of the three that describes none of it.
-            {label = "controls", icon = "help", go = "help"},
+            {label = "controls", icon = "controls", go = "controls"},
             -- The one stop that leaves. Every other row on this rail opens a
             -- page of the game's own; this hands the browser somewhere else,
             -- which is why it sits at the bottom next to the row that says
@@ -580,8 +580,8 @@ local NODES = {
     -- Sixteen rows down one column would scroll, and a list that scrolls under
     -- a picture stops being the same page as the picture: you would be moving
     -- the answers past a diagram that stayed still.
-    help = {board = true, chips = true, grid = true, cols = 3,
-            rows = function()
+    controls = {board = true, chips = true, grid = true, cols = 3,
+                rows = function()
         local rows = {}
         for i, c in ipairs(binds.rows()) do
             if M.touching then
@@ -1232,8 +1232,8 @@ function M.tick(dt)
     -- nothing over it. A pointer can leave that page without ever pressing
     -- one, since the keyboard is taken but the mouse is not, so this is where
     -- the state is let go rather than in each of the four ways out.
-    if M.arming and (M.at() ~= "help" or M.ask) then M.arming = nil end
-    if M.at() ~= "help" then M.foot = nil end
+    if M.arming and (M.at() ~= "controls" or M.ask) then M.arming = nil end
+    if M.at() ~= "controls" then M.foot = nil end
     if M.at() ~= "zones" then
         zone_synced = false
         -- And forget where the cursor was. Every other page is a place you

@@ -3098,15 +3098,27 @@ local function mark_settings(cx, cy, r, col)
     end
 end
 
-local function mark_help(cx, cy, r, col)
-    -- A key off the board the page draws, with the question on it.
-    local w, h, c = r * 1.5, r * 1.5, r * 0.3
-    local x0, y0 = cx - w / 2, cy - h / 2
-    local pts = {x0 + c, ry(y0), x0 + w, ry(y0), x0 + w, ry(y0 + h - c),
-                 x0 + w - c, ry(y0 + h), x0, ry(y0 + h), x0, ry(y0 + c)}
-    u:fan(pts, pal.a(col, 0.10))
-    u:outline(pts, 1.2 * S, col, true)
-    txt("?", cx, cy, r * 1.25, col, "center")
+-- A keycap, which is what the page it opens is made of.
+--
+-- It carried a question mark for as long as the page was called help. The page
+-- sets the keys now, and a key with a `?` on it is a key with a `?` on it: the
+-- one glyph the board does not draw. What is left is the cap itself, and the
+-- cap alone is a box, so the top face is drawn inside it. Two chamfered
+-- outlines, the same diagonal everything else here is cut on.
+local function mark_controls(cx, cy, r, col)
+    local function cap(w, h, c, dy, ink, fill)
+        local x0, y0 = cx - w / 2, cy - h / 2 + dy
+        local pts = {x0 + c, ry(y0), x0 + w, ry(y0), x0 + w, ry(y0 + h - c),
+                     x0 + w - c, ry(y0 + h), x0, ry(y0 + h), x0, ry(y0 + c)}
+        if fill then u:fan(pts, pal.a(col, fill)) end
+        u:outline(pts, ink * S, pal.a(col, 1), true)
+    end
+    cap(r * 1.62, r * 1.62, r * 0.32, 0, 1.2, 0.10)
+    -- The face, sitting high on the cap: what shows under it is the front of
+    -- the key, and it is the difference between a keycap seen from above and
+    -- a box drawn inside a box. A narrower face reads as a picture frame, so
+    -- this is most of the width and lifted rather than centered.
+    cap(r * 1.04, r * 0.9, r * 0.18, -r * 0.17, 1.0, nil)
 end
 
 local function mark_about(cx, cy, r, col)
@@ -3224,8 +3236,8 @@ local function mark_ship(cx, cy, r, col, cls)
 end
 
 local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
-               settings = mark_settings, help = mark_help, about = mark_about,
-               discord = mark_discord, leave = mark_leave}
+               settings = mark_settings, controls = mark_controls,
+               about = mark_about, discord = mark_discord, leave = mark_leave}
 
 local function draw_mark(kind, cx, cy, r, col, cls)
     if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end

@@ -1261,6 +1261,29 @@ function update(self, dt)
 
     if menu.open then
         menu.tick(dt)
+        -- Where the pointer is over the anchor the page lays across a rail
+        -- stop, since while it is there the canvas is not what the browser is
+        -- pointing at and the engine reports nothing: no movement, no
+        -- position, and a cursor stuck wherever it last saw one. The stop lit
+        -- and went out as the pointer crossed the edge of the element that
+        -- exists to make it pressable.
+        --
+        -- Only while there is an anchor up, which is only ever a menu screen,
+        -- and by the same crossing the card's own keys use.
+        if html5 and self.link_dom then
+            local ok, at = pcall(html5.run,
+                                 "window.vwLinkAt ? vwLinkAt() : ''")
+            local ax, ay = nil, nil
+            if ok and type(at) == "string" then
+                ax, ay = string.match(at, "^(%-?[%d%.]+),(%-?[%d%.]+)$")
+            end
+            if ax then
+                local d = self.density or 1
+                self.cursor_x = tonumber(ax) * d
+                self.cursor_y = (self.vh or 0) - tonumber(ay) * d
+                self.cursor_idle = 0
+            end
+        end
         if hover_menu(self.cursor_x, self.cursor_y, self.vh or 0) then
             sfx.ui("ui_move")
         end

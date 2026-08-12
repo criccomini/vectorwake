@@ -353,7 +353,7 @@ end
 -- last one. A lockup is where the finished mark sits, not where the bullet is.
 local function lockup(w, h)
     local rail = {}
-    for i, n in ipairs({"zones", "ship", "pilot", "settings", "help",
+    for i, n in ipairs({"zones", "ship", "pilot", "settings", "controls",
                         "about"}) do
         rail[i] = {label = n, icon = n, index = i}
     end

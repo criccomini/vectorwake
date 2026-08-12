@@ -824,7 +824,7 @@ menu.stack = {"root"}
 menu.sel = {}
 local help_at = top_index("controls")
 menu.click_rail(help_at)
-check("every stop is reachable", menu.stack[2] == "help",
+check("every stop is reachable", menu.stack[2] == "controls",
       table.concat(menu.stack, "/"))
 
 -- --- the discord stop leaves, rather than going somewhere in here ----------

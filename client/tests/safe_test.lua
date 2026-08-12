@@ -209,7 +209,7 @@ check("the topmost steps down by the top inset",
 -- ground: the indicator is allowed to overlap a thumbstick.
 local B_INS = 34
 local MENU_RAIL = {}
-for i, nm in ipairs({"zones", "ship", "pilot", "settings", "help", "about"}) do
+for i, nm in ipairs({"zones", "ship", "pilot", "settings", "controls", "about"}) do
     MENU_RAIL[i] = {label = nm, icon = nm, index = i}
 end
 

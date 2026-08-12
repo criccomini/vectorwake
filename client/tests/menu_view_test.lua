@@ -62,7 +62,7 @@ local RAIL = {}
 -- rail can wear is therefore drawn at least once here, and a mark that throws
 -- is a menu that will not open. The change before this shipped a crash in a
 -- drawing path no test ever ran.
-for i, n in ipairs({"zones", "ship", "pilot", "team", "settings", "help",
+for i, n in ipairs({"zones", "ship", "pilot", "team", "settings", "controls",
                     "discord", "about"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
@@ -758,7 +758,7 @@ end
 
 do
     local RAIL2 = {}
-    for i, n in ipairs({"zones", "ship", "pilot", "settings", "help",
+    for i, n in ipairs({"zones", "ship", "pilot", "settings", "controls",
                         "discord", "about"}) do
         RAIL2[i] = {label = n, icon = n, index = i}
     end
@@ -801,6 +801,29 @@ do
           home = true, closable = false, rows = {}}, 1280, 800)
     check("a rail with no link publishes none", ui.link_dom == nil,
           tostring(ui.link_dom))
+
+    -- And the two halves of the crossing still know each other's name.
+    --
+    -- The anchor is a real element over the canvas, so while the pointer is
+    -- on it the canvas is not what the browser is pointing at: no movement
+    -- reaches the engine, the drawn cursor freezes, and the flag that hides
+    -- it when a pointer leaves the canvas has already been set. The stop lit
+    -- and went out as the pointer crossed the edge of the element that exists
+    -- to make it pressable. The page reports the position instead, and this
+    -- is the only place a rename can be caught: nothing in Lua can call it.
+    local tf = io.open("client/web/engine_template.html")
+    local tpl = tf and tf:read("*a") or ""
+    if tf then tf:close() end
+    local af = io.open("client/arena/arena.script")
+    local arena = af and af:read("*a") or ""
+    if af then af:close() end
+    check("the page reports where the pointer is over the link",
+          tpl:find("window.vwLinkAt", 1, true) ~= nil
+          and tpl:find("window.vwPointerOut = false", 1, true) ~= nil,
+          "engine_template.html no longer answers for the anchor")
+    check("and the arena asks it",
+          arena:find("vwLinkAt", 1, true) ~= nil,
+          "arena.script no longer polls it")
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

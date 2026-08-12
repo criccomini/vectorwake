@@ -722,6 +722,17 @@
 			// to land on something that is already a link.
 			var link_spec = null;
 			var link_box = document.getElementById('vw-link');
+			// Where the pointer is over that anchor, in the same CSS pixels the
+			// spec is laid out in, or '' when it is somewhere else.
+			//
+			// The anchor is a real element over the canvas, so while the
+			// pointer is on it the canvas is not the hit-test target: it hears
+			// no movement, the engine reports no position, and the game's own
+			// cursor freezes at the edge where it last saw one. The stop under
+			// it lit and went out as the pointer crossed the boundary. So the
+			// element that is in the way reports what it is in the way of.
+			var link_at = '';
+			window.vwLinkAt = function () { return link_at; };
 			window.vwLink = function (spec) {
 				spec = spec || '';
 				if (spec === link_spec) return '';
@@ -729,6 +740,7 @@
 				if (spec === '') {
 					link_box.className = '';
 					link_box.innerHTML = '';
+					link_at = '';
 					return '';
 				}
 				var f = spec.split(',');
@@ -738,6 +750,26 @@
 					a = document.createElement('a');
 					a.target = '_blank';
 					a.rel = 'noopener noreferrer';
+					// Entering this is leaving the canvas as far as the
+					// browser is concerned, and the flag below is what takes
+					// the drawn arrow off the screen when a pointer leaves.
+					// Both are set here so the crossing is not a flicker: a
+					// leave fires before the matching enter, so canvas to
+					// anchor ends false and anchor to anywhere else ends true
+					// until the canvas says otherwise.
+					a.addEventListener('mouseenter', function () {
+						window.vwPointerOut = false;
+					});
+					a.addEventListener('mousemove', function (e) {
+						var box = link_box.getBoundingClientRect();
+						link_at = (e.clientX - box.left) + ','
+							+ (e.clientY - box.top);
+						window.vwPointerOut = false;
+					});
+					a.addEventListener('mouseleave', function () {
+						link_at = '';
+						window.vwPointerOut = true;
+					});
 					link_box.appendChild(a);
 				}
 				// Everything after the fourth comma, since a URL has its own.
