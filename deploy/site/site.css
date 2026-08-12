@@ -526,11 +526,6 @@ button {
   padding-top: 76px;
 }
 
-.directory-intro {
-  padding-top: clamp(100px, 13vw, 190px);
-  padding-bottom: clamp(72px, 8vw, 120px);
-}
-
 .directory-kicker {
   margin: 0 0 28px;
   color: var(--friend);
@@ -543,7 +538,6 @@ button {
   color: var(--enemy);
 }
 
-.directory-intro h1,
 .profile-heading h1 {
   margin: 0;
   color: var(--ink);
@@ -552,18 +546,10 @@ button {
   font-weight: 500;
   letter-spacing: -0.06em;
   line-height: 0.72;
-  text-transform: uppercase;
-}
-
-.directory-lede {
-  max-width: 650px;
-  margin: clamp(42px, 5vw, 70px) 0 0;
-  color: #a7b6cb;
-  font-size: clamp(14px, 1.3vw, 18px);
-  line-height: 1.8;
 }
 
 .pilot-directory {
+  padding-top: clamp(72px, 9vw, 130px);
   padding-bottom: clamp(120px, 14vw, 200px);
 }
 
@@ -693,7 +679,6 @@ button {
   font-size: 24px;
   letter-spacing: -0.01em;
   line-height: 1;
-  text-transform: uppercase;
 }
 
 .pilot-identity a:hover {
@@ -774,6 +759,7 @@ button {
   color: var(--friend);
   font-size: clamp(64px, 11vw, 170px);
   overflow-wrap: anywhere;
+  text-transform: none;
 }
 
 .profile-status {

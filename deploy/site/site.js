@@ -71,6 +71,7 @@ function setupGameplayFilm() {
   let run = 0;
   let loadPromise;
   let objectUrl;
+  let isVisible = true;
 
   const load = () => {
     if (loadPromise) return loadPromise;
@@ -159,23 +160,28 @@ function setupGameplayFilm() {
     tick();
   };
 
+  window.addEventListener("pagehide", (event) => {
+    stop();
+    if (!event.persisted && objectUrl) URL.revokeObjectURL(objectUrl);
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted && isVisible) start();
+  });
+
   if (!("IntersectionObserver" in window)) {
     start();
     return;
   }
 
   const observer = new IntersectionObserver(([entry]) => {
-    if (entry.isIntersecting) {
+    isVisible = entry.isIntersecting;
+    if (isVisible) {
       start();
     } else {
       stop();
     }
   }, { threshold: 0.1 });
   observer.observe(film);
-  window.addEventListener("pagehide", () => {
-    stop();
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-  }, { once: true });
 }
 
 function setupGitHubStars() {
