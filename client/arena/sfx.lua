@@ -331,17 +331,6 @@ end
 -- simulation's ladder can be longer than the kit is, and a weapon that stops
 -- making a sound at rung five would be a strange way to find that out.
 function M.play(name, x, y, variant)
-    -- Asked here so a family already at its ceiling costs nothing further,
-    -- and recorded below, once this sound is known to be one somebody can
-    -- actually hear. Spending it up here charged the budget for the sounds
-    -- that were about to be dropped for being too far away, which in a room
-    -- where most of the shooting is off screen is nearly all of them: three
-    -- inaudible guns across the map used up the frame's guns, and the one
-    -- fired at your elbow arrived to find the ceiling reached. The ceiling is
-    -- meant to bound the sounds that start, not the events that happen.
-    local n = (spent[name] or 0) + 1
-    if n > (BUDGET[name] or DEFAULT_BUDGET) then return end
-
     if variant then
         local hi = top[name]
         if not hi then
@@ -365,6 +354,11 @@ function M.play(name, x, y, variant)
         if pan > 1 then pan = 1 elseif pan < -1 then pan = -1 end
     end
 
+    -- Only a voice that can be heard spends the family's allowance. Counting
+    -- before the distance checks lets three offscreen shots silence the gun
+    -- beside the listener, which turns the budget into an event-order lottery.
+    local n = (spent[name] or 0) + 1
+    if n > (BUDGET[name] or DEFAULT_BUDGET) then return end
     spent[name] = n
 
     M.fire(variant and (name .. variant) or name, {

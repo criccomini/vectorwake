@@ -26,11 +26,15 @@ end
 -- --- the world, as a counter ------------------------------------------------
 
 local tick = 1000
+local reject_snapshot = false
 _G.sim = {
     tick = function() return tick end,
     replay = function() tick = tick + 1 end,
     step = function() tick = tick + 1 end,
-    apply_snapshot = function() return 0 end,
+    apply_snapshot = function()
+        if reject_snapshot then reject_snapshot = false return -1 end
+        return 0
+    end,
     smooth_capture = function() end,
     smooth_settle = function() end,
     smooth_reset = function() end,
@@ -111,8 +115,9 @@ end
 -- --- the preferred wire -----------------------------------------------------
 
 local net = fresh_net()
-net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
-            "https://zone:9443")
+local lost_reason = nil
+net.connect("wss://zone/a1", 0, "pilot", function(why) lost_reason = why end,
+            "chaos", false, "https://zone:9443")
 check("an advertised door is dialled first", wt.dialled == 1 and ws.dialled == 0)
 check("and it is the advertised address", wt.url == "https://zone:9443")
 check("the readout names the wire", net.stats.wire == "wt")
@@ -145,6 +150,17 @@ check("a snapshot from behind is dropped", net.stats.snaps == 1,
       "applied " .. net.stats.snaps)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5001)})
 check("and the next fresh one lands", net.stats.snaps == 2)
+
+-- A pack the core refuses has not happened. It is not counted, and the client
+-- reports that this build cannot read the zone rather than calling a broken
+-- connection healthy.
+reject_snapshot = true
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 9000)})
+check("a rejected snapshot is not counted", net.stats.snaps == 2,
+      "applied " .. net.stats.snaps)
+check("and ends the unreadable connection", not net.connected
+      and lost_reason == "the zone sent a snapshot this client cannot read",
+      tostring(lost_reason))
 
 -- --- nothing before the welcome ---------------------------------------------
 --
@@ -490,6 +506,21 @@ _G.webtransport = nil
 net = fresh_net()
 check("with no extension it reports it cannot", not net.transport().able)
 _G.webtransport = saved
+
+-- Address parsing can fail before connect returns. The loss callback fires in
+-- that same stack, and the false return is what keeps the arena from marking
+-- the already-failed join as online again.
+local ws_connect = websocket.connect
+websocket.connect = function() error("bad address") end
+net = fresh_net()
+why = nil
+local started = net.connect("not a zone", 0, "pilot", function(w) why = w end,
+                            "", false, nil)
+check("a synchronous dial failure returns false", not started,
+      tostring(started))
+check("and reports its reason once", why == "that address is not a zone URL",
+      tostring(why))
+websocket.connect = ws_connect
 
 if fails > 0 then os.exit(1) end
 print("all fine")

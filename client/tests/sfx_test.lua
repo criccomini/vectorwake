@@ -145,6 +145,17 @@ if #played ~= 3 then fails = fails + 1 end
 print(string.format("%-38s -> %-10s %s", "four rungs in one frame", #played,
                     #played == 3 and "ok" or "FAIL, wanted 3"))
 
+-- Events outside the listener's range are not voices and spend no budget. If
+-- they did, the order the world happens to enumerate its shots in would let
+-- three distant guns silence the one beside the player.
+played = {}
+sfx.frame()
+for _ = 1, 3 do sfx.play("gun", 900, 0, 0) end
+sfx.play("gun", 0, 0, 0)
+if #played ~= 1 then fails = fails + 1 end
+print(string.format("%-38s -> %-10s %s", "distant guns leave room for a near one",
+                    #played, #played == 1 and "ok" or "FAIL, wanted 1"))
+
 -- Every sound the kit renders needs somewhere to go. A name in sfx.c with no
 -- component behind it installs nothing and plays nothing, and the only symptom
 -- is one sound missing from a game nobody is listening to that closely.
