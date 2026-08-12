@@ -3557,9 +3557,8 @@ end
 -- row, cyan finishes the lower one, and the other strokes use the dark slate
 -- from the site mark.
 --
--- The diagonals are wakes, thin and clear where they leave and full where they
--- land, which is what a thing arriving looks like everywhere else in this
--- game. The verticals stand.
+-- The diagonals are wakes. The bullet reveals each one as a solid stroke, then
+-- climbs the vertical beside it.
 --
 -- Drawn here rather than imported, because the interface has no way to put a
 -- picture on screen and would not want one: everything else is strokes into a
@@ -3587,7 +3586,7 @@ local function mk_strokes()
     local out = {}
     for i = 0, 2 do
         local x = i * (MK_WD + MK_GAP)
-        out[#out + 1] = {x, 1, x + MK_WD, 0, wedge = i, fade = true}
+        out[#out + 1] = {x, 1, x + MK_WD, 0, wedge = i, wake = true}
         out[#out + 1] = {x + MK_WD, 0, x + MK_WD, 1, wedge = i}
     end
     return out
@@ -3611,13 +3610,10 @@ local function mk_stroke(st, ox, oy, h, w, col, p)
     local x1, y1 = ox + st[1] * h, oy - st[2] * h
     local x2, y2 = ox + st[3] * h, oy - st[4] * h
     local ex, ey = x1 + (x2 - x1) * p, y1 + (y2 - y1) * p
-    local a = (col[4] or 1)
-    if st.fade then
-        -- One width the whole way, so a wake and a vertical are the same line
-        -- and only the light in it changes. Tapering the wake as well made the
-        -- two read as different strokes, and at small sizes the diagonal
-        -- disappeared behind a bar.
-        u:seg_fade_flat(x1, ry(y1), ex, ry(ey), w, 0, a * p, col)
+    if st.wake then
+        -- The flat cut keeps the top and bottom edges level as the wake grows.
+        -- Its color stays solid from the bullet back to the starting point.
+        u:seg_flat(x1, ry(y1), ex, ry(ey), w, col)
     else
         u:seg(x1, ry(y1), ex, ry(ey), w, col)
     end
@@ -3629,7 +3625,7 @@ end
 local function logo_row(ox, oy, h, w, hue, t, alpha)
     local bx, by, bcol
     for i, st in ipairs(MK_STROKES) do
-        local span = st.fade and MK_FALL or MK_RISE
+        local span = st.wake and MK_FALL or MK_RISE
         local col = hue[st.wedge + 1]
         if t >= span then
             mk_stroke(st, ox, oy, h, w, col, 1)
@@ -3637,7 +3633,7 @@ local function logo_row(ox, oy, h, w, hue, t, alpha)
             -- A bounce off the baseline, and the hop across to the next wedge
             -- at the top. Neither draws any of the mark; the first is a flash
             -- where the bullet turned and the second is the bullet in transit.
-            if st.fade then
+            if st.wake then
                 if t < MK_FLASH then
                     local f = 1 - t / MK_FLASH
                     u:ring(ox + st[3] * h, ry(oy), h * 0.10 * (1.6 - f),

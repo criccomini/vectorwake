@@ -28,7 +28,7 @@ local function noop() end
 for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset", "ring",
                        "skirt", "tri", "tri_fade", "fan", "seg_glow",
                        "glow_band", "halo", "ring_fade", "seg_fade",
-                       "seg_fade_flat"}) do
+                       "seg_flat"}) do
     layer[name] = noop
 end
 layer.frame = function(_, x, y, w, h)

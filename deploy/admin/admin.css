@@ -137,8 +137,16 @@ h1 {
   margin: 0;
 }
 
-/* The mark sits on the baseline of the words rather than above them. */
-.mark { flex: none; }
+/* The mark sits on the baseline of the words rather than above them. Its
+   outline adds a fraction of a pixel at this size. */
+.mark {
+  flex: none;
+  stroke-width: 0.6;
+  stroke-linejoin: miter;
+}
+.mark-amber { fill: var(--enemy); stroke: var(--enemy); }
+.mark-muted { fill: #3f4b60; stroke: #3f4b60; }
+.mark-cyan { fill: var(--friend); stroke: var(--friend); }
 
 /* ------------------------------------------------------------------- rail */
 

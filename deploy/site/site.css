@@ -120,18 +120,23 @@ button {
   width: 18px;
   height: 22px;
   overflow: visible;
+  stroke-width: 0.6;
+  stroke-linejoin: miter;
 }
 
 .mark-amber {
   fill: var(--enemy);
+  stroke: var(--enemy);
 }
 
 .mark-muted {
   fill: var(--mark-muted);
+  stroke: var(--mark-muted);
 }
 
 .mark-cyan {
   fill: var(--friend);
+  stroke: var(--friend);
 }
 
 .site-nav {

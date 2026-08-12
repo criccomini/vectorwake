@@ -701,10 +701,11 @@ into a vertical. The rows share the same three x positions, with a narrow gap
 between them. Orange starts the upper row, cyan finishes the lower row, and the
 remaining wedges use the dark slate from the site.
 
-The diagonals are wakes. They fade in where they leave and reach full color
-where they land. The verticals stand at one weight with the wakes. Drawing
-either part at a second weight makes the diagonal look like a shadow instead
-of half of the same stroke.
+The diagonals are wakes. The install icon fades them in where they leave and
+brings them to full color where they land. In the game they stay solid while
+the bullet draws them. The verticals stand at one weight with the wakes.
+Drawing either part at a second weight makes the diagonal look like a shadow
+instead of half of the same stroke.
 
 On the menu, a bullet draws each row. Both bullets use the same clock, so the
 two rows fall, bounce, rise, and hop together. The run restarts after the mark

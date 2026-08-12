@@ -50,9 +50,9 @@ layer.seg_fade = function(_, x1, y1, x2, y2, w1, w2, a1, a2, col)
     segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2, w0 = w1,
                        w = w2, col = col, a = a2, kind = "fade"}
 end
-layer.seg_fade_flat = function(_, x1, y1, x2, y2, w, a1, a2, col)
-    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2, w0 = w,
-                       w = w, col = col, a = a2, kind = "fade"}
+layer.seg_flat = function(_, x1, y1, x2, y2, w, col)
+    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2,
+                       w = w, col = col, kind = "flat"}
 end
 layer.outline = noop
 
@@ -78,6 +78,15 @@ ui.logo(W / 2, H / 2, MK, 1, true)
 ui.finish()
 
 check("the mark is twelve strokes", #segs == 12, "segments: " .. #segs)
+
+local solid_wakes, faded_wakes = 0, 0
+for _, sg in ipairs(segs) do
+    if sg.kind == "flat" then solid_wakes = solid_wakes + 1 end
+    if sg.kind == "fade" then faded_wakes = faded_wakes + 1 end
+end
+check("the game draws all six wakes in solid color",
+      solid_wakes == 6 and faded_wakes == 0,
+      solid_wakes .. " solid, " .. faded_wakes .. " faded")
 
 -- Six wedges: a diagonal and a vertical meeting on each row's baseline.
 local function wedges()
@@ -182,19 +191,15 @@ ui.begin(layer, 512, 512, 1, false, 0)
 ui.logo(256, 256, MK, 1, true)
 ui.finish()
 
--- And the same six of them fade. Which six is not a detail the shape
--- survives losing: fade the verticals instead and the mark falls upward.
+-- The install icon keeps its gradient wakes, while the game draws the same
+-- geometry in solid color.
 local faded, drawn_fade = 0, 0
 for i = 1, math.min(#want, #segs) do
     if want[i].fade then faded = faded + 1 end
     if segs[i].kind == "fade" then drawn_fade = drawn_fade + 1 end
-    if (want[i].fade ~= nil) ~= (segs[i].kind == "fade") then
-        faded = -1
-        break
-    end
 end
-check("the icon fades the strokes the mark fades",
-      faded == 6 and drawn_fade == 6,
+check("the icon keeps six faded wakes and the game keeps them solid",
+      faded == 6 and drawn_fade == 0,
       faded .. " in the file, " .. drawn_fade .. " drawn")
 
 -- And the file draws them all at one width too.
@@ -296,6 +301,9 @@ check("both rows start on the same frame",
       #early_segs == 2
       and math.abs(early_segs[1].y1 - early_segs[2].y1) > MK * 0.45,
       #early_segs .. " active strokes")
+check("the moving wakes stay solid",
+      #early_segs == 2
+      and early_segs[1].kind == "flat" and early_segs[2].kind == "flat")
 check("and is gone once it has finished", late_dots == 0,
       late_dots .. " dots")
 
@@ -508,14 +516,19 @@ check("the public and admin sites use that favicon",
 
 local site_page = read_file("deploy/site/index.html")
 local admin_page = read_file("deploy/admin/index.html")
+local site_css = read_file("deploy/site/site.css")
+local admin_css = read_file("deploy/admin/admin.css")
 check("both sites link the weighted favicon",
       site_page:find('href="/favicon.svg"', 1, true)
       and admin_page:find('href="favicon.svg"', 1, true))
 check("the admin header carries the two-row mark",
       admin_page:find('viewBox="0 0 84 104"', 1, true)
-      and admin_page:find('fill="#ffa552"', 1, true)
-      and admin_page:find('fill="#3f4b60"', 1, true)
-      and admin_page:find('fill="#4fd6ff"', 1, true))
+      and admin_page:find('class="mark%-amber"')
+      and admin_page:find('class="mark%-muted"')
+      and admin_page:find('class="mark%-cyan"'))
+check("the public and admin header marks use the slightly heavier cut",
+      site_css:find("stroke%-width: 0%.6")
+      and admin_css:find("stroke%-width: 0%.6"))
 
 local function png_size(body)
     local function n32(i)

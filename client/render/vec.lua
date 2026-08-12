@@ -240,16 +240,13 @@ function Layer:seg_fade(x1, y1, x2, y2, w1, w2, a1, a2, col)
                   x1 - ax, y1 - ay, a1, col)
 end
 
--- A constant-width trail with horizontal ends. The brand mark uses this cut:
--- each diagonal has the same horizontal weight as the vertical it lands on,
--- and the top and bottom stay level while the stroke is being drawn.
-function Layer:seg_fade_flat(x1, y1, x2, y2, width, a1, a2, col)
+-- A solid, constant-width segment with horizontal ends. The brand mark uses
+-- this cut so the top and bottom stay level while each diagonal is drawn.
+function Layer:seg_flat(x1, y1, x2, y2, width, col)
     if math.abs(x2 - x1) + math.abs(y2 - y1) < 1e-6 then return end
     local h = width * 0.5
-    self:tri_fade(x1 - h, y1, a1, x2 - h, y2, a2,
-                  x2 + h, y2, a2, col)
-    self:tri_fade(x1 - h, y1, a1, x2 + h, y2, a2,
-                  x1 + h, y1, a1, col)
+    self:tri(x1 - h, y1, x2 - h, y2, x2 + h, y2, col)
+    self:tri(x1 - h, y1, x2 + h, y2, x1 + h, y1, col)
 end
 
 -- Unit circles, cached per segment count. Trigonometry inside a draw loop is

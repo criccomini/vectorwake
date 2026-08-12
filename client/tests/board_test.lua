@@ -27,7 +27,7 @@ local frames, rects = {}, {}
 local layer = {}
 local function noop() end
 for _, name in ipairs({"disc", "flush", "outline", "quad", "reset", "ring",
-                       "seg", "seg_fade", "seg_fade_flat", "skirt", "tri",
+                       "seg", "seg_fade", "seg_flat", "skirt", "tri",
                        "tri_fade"}) do
     layer[name] = noop
 end

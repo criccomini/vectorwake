@@ -39,7 +39,7 @@ function layer:seg_fade(x1, y1, x2, y2, w1, w2)
     local w = math.max(w1, w2)
     box(x1 - w, y1 - w, x2 + w, y2 + w)
 end
-function layer:seg_fade_flat(x1, y1, x2, y2, w)
+function layer:seg_flat(x1, y1, x2, y2, w)
     box(x1 - w, y1 - w, x2 + w, y2 + w)
 end
 function layer:disc(x, y, r) box(x - r, y - r, x + r, y + r) end
