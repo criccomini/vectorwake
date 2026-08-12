@@ -285,6 +285,11 @@ end
 -- flame, so the first call would swallow the tap and the one that mattered
 -- would see nothing.
 local charge_tap = nil
+-- Declared here and defined down with the menu acts, because update() above
+-- the definition rejoins with it: a local is resolved at compile time, and a
+-- function written above the `local` it uses reads a nil global instead. That
+-- exact mistake is the reason the lint job exists.
+local enter_game
 -- Whether this step carries a press of the fan cell. Beside `charge_tap`
 -- because it is the same shape of thing: a control's tap, latched by the
 -- interface and spent by exactly one simulation step.
@@ -1174,6 +1179,19 @@ function update(self, dt)
     -- The arena reads the name off the token, so the menu showing a different
     -- one would be showing a name nobody else can see.
     menu.adopt_account_name()
+    -- And when the whole identity has moved under a live seat -- a login, a
+    -- reroll, a logout whose fresh guest has landed -- the client rejoins the
+    -- same game as whoever it now is. The zone binds a seat's identity once,
+    -- at the join, and it stays the truth of the roster and the ratings for
+    -- the life of the connection: without this, the scoreboard showed the old
+    -- name to everyone and every kill kept crediting the old account. A
+    -- change of pilot costs the ship, which is honest, since the old pilot's
+    -- bounty and kit were never the new one's to keep.
+    if self.online and net.connected and not self.joining
+        and net.identity_moved(menu.name, account.account) then
+        local j = net.last_join()
+        if j then enter_game(self, j.url, j.zone, j.wt, j.room, j.watch) end
+    end
 
     -- What the confirm card on your own game offers depends on which of your
     -- two lives this is, so the menu is told every frame, like the class.
@@ -1881,6 +1899,47 @@ end
 -- The menu names an action and decides nothing; this is the only place that
 -- knows what any of them mean, which is what keeps the tree a description of
 -- itself rather than a second copy of the game.
+-- Into a game: everything a join tears down and dials, shared by the row a
+-- player presses and the rejoin the client makes when its identity moves.
+function enter_game(self, address, zone_name, wt, room, watch)
+    -- Whatever we were in, we are leaving. `net.connect` drops the old
+    -- socket itself, but the world it filled is this script's to clear.
+    net.disconnect()
+    feed = {}
+    hurt = 0
+    safe_ticks = 0
+    multi_was = nil
+    flown_ok = false
+    held_kit = nil
+    marks.hold(nil)
+    fx.reset()
+    ui.clear_payouts()
+    world.forget_specs()
+    sim.init(0x5eed)
+    clear_static()
+    me = 0
+    directory.close()
+    ui.details = false
+    ui.map = false
+    -- The rooms panel is left standing. Moving room is the one join that
+    -- happens from inside a list, and the list is where you were looking:
+    -- shutting it would answer the press by taking away the thing that
+    -- asked the question, and you arrive with no idea which of them you
+    -- landed in. Its question is dropped, though, since that was about a
+    -- press that has now happened.
+    ui.room_ask = nil
+    menu.note = "joining " .. zone_name
+    -- The one address serves the whole join: the directory named it, and
+    -- the zone's name travels with the request so an instance that has
+    -- since changed game refuses rather than surprising anybody.
+    net.connect(address, menu.class, menu.name, function(why)
+        menu.note = why
+        go_home(self, "zones")
+    end, zone_name, watch, wt, room)
+    self.online = true
+    self.joining = 0
+end
+
 function apply_menu(self, act)
     if act == "ship" then
         -- With no game on, this is simply the hull you will arrive in.
@@ -2004,48 +2063,14 @@ function apply_menu(self, act)
         if html5 and touch.used then
             pcall(html5.run, "window.vwFullOnPlay && window.vwFullOnPlay()")
         end
-        -- Whatever we were in, we are leaving. `net.connect` drops the old
-        -- socket itself, but the world it filled is this script's to clear.
-        net.disconnect()
-        feed = {}
-        hurt = 0
-        safe_ticks = 0
-        multi_was = nil
-        flown_ok = false
-        held_kit = nil
-        marks.hold(nil)
-        fx.reset()
-        ui.clear_payouts()
-        world.forget_specs()
-        sim.init(0x5eed)
-        clear_static()
-        me = 0
-        directory.close()
-        ui.details = false
-        ui.map = false
-        -- The rooms panel is left standing. Moving room is the one join that
-        -- happens from inside a list, and the list is where you were looking:
-        -- shutting it would answer the press by taking away the thing that
-        -- asked the question, and you arrive with no idea which of them you
-        -- landed in. Its question is dropped, though, since that was about a
-        -- press that has now happened.
-        ui.room_ask = nil
         menu.zone = r.zone
         menu.save_identity()
-        menu.note = "joining " .. r.name
-        -- The one address serves the whole join: the directory named it, and
-        -- the zone's name travels with the request so an instance that has
-        -- since changed game refuses rather than surprising anybody.
-        net.connect(r.address, menu.class, menu.name, function(why)
-            menu.note = why
-            go_home(self, "zones")
-        end, r.zone, menu.spectate, r.wt, menu.chosen_room)
+        enter_game(self, r.address, r.zone, r.wt, menu.chosen_room,
+                   menu.spectate)
         -- Spent. A room is named by the press that named it and by nothing
         -- afterwards: a reconnect the client makes on its own belongs wherever
         -- the ladder puts it, not wherever somebody clicked ten minutes ago.
         menu.chosen_room = nil
-        self.online = true
-        self.joining = 0
         return
     end
 

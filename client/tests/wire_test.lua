@@ -84,7 +84,8 @@ _G.webtransport = {
     send_unreliable = function(data) wt.unsent[#wt.unsent + 1] = data end,
 }
 
-package.loaded["arena.account"] = {token = nil}
+local account_stub = {token = nil, account = 7}
+package.loaded["arena.account"] = account_stub
 
 -- The module keeps its transport memory for the life of the client, which is
 -- the point of `wt_avoid` and the enemy of a test that needs a fresh one.
@@ -312,6 +313,46 @@ wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 for _ = 1, 6 do net.tick(1) end
 check("one snapshot settles the session", ws.dialled == 0
       and net.stats.wire == "wt", "dialled " .. ws.dialled)
+
+-- --- the pilot a seat wears ---------------------------------------------------
+--
+-- A join binds the seat to whoever the client was at that moment, and the
+-- zone never hears about the identity again: the roster and every kill filed
+-- belong to that pilot for the life of the connection. So when the client
+-- stops being that pilot -- a login, a reroll, a logout whose fresh guest has
+-- landed -- the connection has to say so, and the arena rejoins on its word.
+
+net = fresh_net()
+account_stub.account = 7
+net.connect("wss://zone/a1", 0, "Nimbus 101", function() end, "chaos", false,
+            "https://zone:9443")
+check("a fresh join wears the client's own identity",
+      not net.identity_moved("Nimbus 101", 7))
+check("a reroll moves it", net.identity_moved("Vesper 412", 7))
+check("a login moves it whatever the name says",
+      net.identity_moved("Nimbus 101", 9))
+-- Between a logout and the guest that replaces it the client is briefly
+-- nobody, and nobody is not an identity to chase: chasing it would rejoin as
+-- an empty name and then rejoin again when the guest landed.
+check("the gap between logout and a fresh guest is not a move",
+      not net.identity_moved("", 0))
+check("but the guest who lands is", net.identity_moved("Talon 88", 8))
+
+-- The join this connection was made with, handed back for the rejoin: the
+-- same doors, the same room, the same side of the flying/watching line.
+local j = net.last_join()
+check("the last join hands back its own doors",
+      j.url == "wss://zone/a1" and j.zone == "chaos"
+          and j.wt == "https://zone:9443" and j.watch == false,
+      j and (tostring(j.url) .. " " .. tostring(j.zone)) or "nil")
+
+-- And the rejoin re-binds: whoever connects is the seat's pilot now.
+account_stub.account = 9
+net.connect("wss://zone/a1", 0, "Vesper 412", function() end, "chaos", false,
+            "https://zone:9443")
+check("a rejoin wears the new identity",
+      not net.identity_moved("Vesper 412", 9))
+account_stub.account = 7
 
 -- --- the quiet clock, on a session that has proven itself --------------------
 --
