@@ -907,14 +907,25 @@ function rank(p) {
 // thresholds and the default class live in rating.rs and meta.rs and a second
 // copy here is a second copy to forget when they move.
 //
-// Three states and they are genuinely different: a band, still placing with
-// the count so far, and never rated at all. The class comes along only when it
-// is not the default one, so today it says nothing and the day duels are rated
-// it stops the column quietly comparing two ladders.
+// Four states, and the last two are the reason this is not a one-liner.
+//
+// A pilot gets a row in `ratings` when a rated event first credits them, not
+// when the account is made, so a deployment where nobody has died yet has an
+// accounts table and an empty ladder. That is the ordinary state of a new
+// fleet and it says `unrated`, because a column of eight blanks reads as a
+// panel that is broken rather than as a fleet that has not fought. It cost an
+// hour of looking for a bug that was not there to learn that.
+//
+// Blank is kept for the one case where this page genuinely does not know: a
+// meta-layer too old to send any of these fields. `provisional` rides on the
+// reply for exactly that, since it is present whenever the feature is and
+// absent whenever it is not, and saying `unrated` off the back of a field the
+// server never sent would be a confident lie about somebody's standing.
 function tier(p, r) {
+  if (r.provisional == null) return "";
   if (p.tier) return p.class === r.default_class ? p.tier : `${p.tier} (${p.class})`;
   if (p.games != null) return `placing ${p.games}/${r.provisional}`;
-  return "";
+  return "unrated";
 }
 
 async function drawPilots(q) {

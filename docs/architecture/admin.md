@@ -228,6 +228,16 @@ hold accounts and are rated like anybody else, which is the point of them, so
 the top of a ladder can be one and that is the system working rather than a
 bug.
 
+A pilot gets a row in `ratings` when a rated event first credits them and not
+when the account is made, so a fleet where nobody has died yet has a full
+accounts table and an empty ladder. Every tier cell then says `unrated`, which
+is the state saying so rather than three blank columns that read as a broken
+panel. Blank is reserved for the one case where the page genuinely does not
+know: a meta-layer too old to send these fields at all. It tells the two apart
+by whether the reply carried `provisional`, since claiming somebody is unrated
+on the strength of a field the server never sent would be a confident lie about
+their standing.
+
 That heading is up whether or not anybody is picked, the way Log and Bans are,
 and says to pick a pilot when nothing is. It lived inside the block it labels
 for one afternoon, which meant the section did not exist until you had already
