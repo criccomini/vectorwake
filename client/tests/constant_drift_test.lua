@@ -1,0 +1,201 @@
+-- The numbers the client keeps a second copy of.
+--
+--     lua5.1 client/tests/constant_drift_test.lua
+--
+-- Some facts about this game are written down in more than one language. A
+-- tile is sixteen pixels in the core's C, in the renderer's Lua and in the
+-- radar's arithmetic; the radar reaches sixty tiles in the client, in the
+-- zone that culls snapshots to it and in the bots that see by it; the rating
+-- bands are a table in Rust and a table in Lua. Every one of those copies is
+-- held to the others by a comment, and a comment is not a check.
+--
+-- So this reads the authoritative side out of the C, the Rust and the map
+-- tool, the same way hull_fit_test reads collision extents out of
+-- sim/src/baseline.c, and fails here rather than on somebody's screen. It is
+-- deliberately not a suggestion about where the constants ought to live: it
+-- is the guard that says when the copies have parted.
+
+package.path = "client/?.lua;" .. package.path
+
+local fails = 0
+local function check(name, ok, detail)
+    if ok then
+        print("ok   " .. name)
+    else
+        fails = fails + 1
+        print("FAIL " .. name .. (detail and ("  -- " .. detail) or ""))
+    end
+end
+
+local function read(path)
+    local f = assert(io.open(path, "r"), "cannot open " .. path)
+    local s = f:read("*a")
+    f:close()
+    return s
+end
+
+-- --- the sizes the core defines ---------------------------------------------
+
+local simh = read("sim/include/sim/sim.h")
+local function define(src, name)
+    return tonumber(src:match("#define%s+" .. name .. "%s+(%-?%d+)"))
+end
+
+local TILE_PX = define(simh, "SIM_TILE_PX")
+local MAP_TILES = define(simh, "SIM_MAP_TILES")
+local MAX_CLASSES = define(simh, "SIM_MAX_CLASSES")
+check("sim.h names a tile size", TILE_PX ~= nil)
+check("sim.h names a map size", MAP_TILES ~= nil)
+check("sim.h names a class count", MAX_CLASSES ~= nil)
+
+local worldsrc = read("client/arena/world.lua")
+check("world.lua's TILE is the core's tile",
+      tonumber(worldsrc:match("local TILE = (%d+)")) == TILE_PX,
+      "sim.h says " .. tostring(TILE_PX))
+-- The map's width is folded into the renderer's tile keys and its wall walk,
+-- as a literal in both places.
+check("world.lua keys tiles by the core's map width",
+      worldsrc:match("ty %* " .. MAP_TILES .. " %+ tx") ~= nil,
+      "expected ty * " .. MAP_TILES .. " + tx")
+check("world.lua's last tile is the core's last tile",
+      tonumber(worldsrc:match("local LAST = (%d+)")) == MAP_TILES - 1,
+      "sim.h says " .. tostring(MAP_TILES - 1))
+
+-- The hull count, which the menu clamps a saved hull against and the wire is
+-- refused for exceeding.
+local menusrc = read("client/arena/menu.lua")
+local hullblock = menusrc:match("local HULLS = {(.-)\n}")
+local hulls = 0
+if hullblock then
+    for _ in hullblock:gmatch('{"') do hulls = hulls + 1 end
+end
+check("the menu lists exactly the core's classes", hulls == MAX_CLASSES,
+      "menu has " .. hulls .. ", sim.h says " .. tostring(MAX_CLASSES))
+
+-- --- the radar's reach ------------------------------------------------------
+--
+-- Four copies: the renderer's window, the dial's span, the floor the zone
+-- filters snapshots at, and how far a bot can see. A client drawing further
+-- than the zone sends grows a blind ring at the edge of the dial; one drawing
+-- less throws away detail it was sent.
+
+local uisrc = read("client/arena/ui.lua")
+local mainrs = read("server/src/main.rs")
+local aisrc = read("server/src/ai.rs")
+
+local reach = tonumber(worldsrc:match("local RADAR_TILES = (%d+)"))
+check("world.lua names a radar reach", reach ~= nil)
+check("the dial spans the same reach",
+      tonumber(uisrc:match("local SPAN = (%d+) %* " .. TILE_PX)) == reach,
+      "world.lua says " .. tostring(reach))
+check("the zone filters at the same reach",
+      tonumber(mainrs:match("const RADAR_TILES: i32 = (%d+)")) == reach,
+      "world.lua says " .. tostring(reach))
+check("a bot sees the same reach",
+      tonumber(aisrc:match("pub const SIGHT: f32 = (%d+)%.0 %* " ..
+                           TILE_PX .. "%.0")) == reach,
+      "world.lua says " .. tostring(reach))
+
+-- The slack the static terrain window keeps beyond the radar has to stay
+-- wider than the step that window moves in, or terrain blinks in at the edge
+-- between one rebuild and the next. Both sides are literals in different
+-- files, tied by a comment.
+local arenasrc = read("client/arena/arena.script")
+local slack = tonumber(worldsrc:match("local RADAR_SLACK = (%d+)"))
+local step = tonumber(arenasrc:match("STATIC_STEP = (%d+)"))
+check("the terrain window's slack clears its step",
+      slack and step and slack > step,
+      "slack " .. tostring(slack) .. ", step " .. tostring(step))
+
+-- --- the tile variants the map tool writes ----------------------------------
+--
+-- The renderer draws rocks and stations from these, and an unknown variant
+-- falls through to a plain wall without complaining, so a renumbering here is
+-- silent at build time and at run time both.
+
+local lvl = read("sim/tools/lvl2vw.c")
+
+-- The renderer declares these singly and in pairs, so both shapes are read.
+local variants = {}
+-- [%w_] rather than %w: Lua's %w is letters and digits and stops at the
+-- underscore in the middle of a name like V_ROCK_BODY.
+for name, val in worldsrc:gmatch("local (V_[%w_]+) = (%d+)") do
+    variants[name] = tonumber(val)
+end
+for a, b, x, y in worldsrc:gmatch("local (V_[%w_]+), (V_[%w_]+) = (%d+), (%d+)") do
+    variants[a], variants[b] = tonumber(x), tonumber(y)
+end
+
+for _, name in ipairs({"V_BORDER", "V_ROCK_A", "V_ROCK_B", "V_ROCK_BIG",
+                       "V_ROCK_BODY", "V_STATION", "V_STATION_BODY"}) do
+    local want = define(lvl, name)
+    check("world.lua's " .. name .. " is the map tool's",
+          want ~= nil and variants[name] == want,
+          "lvl2vw.c says " .. tostring(want) ..
+              ", world.lua " .. tostring(variants[name]))
+end
+
+-- --- the rating bands -------------------------------------------------------
+--
+-- Asked of the client rather than read out of it: the wire carries a raw
+-- rating and a count of games and the client decides the band, so the band is
+-- behaviour and can be probed. The server's table is the authority.
+
+local ratingrs = read("server/src/rating.rs")
+local provisional = tonumber(ratingrs:match("PROVISIONAL_GAMES: u32 = (%d+)"))
+check("rating.rs names a provisional count", provisional ~= nil)
+
+local bands = {}
+for name, floor in ratingrs:gmatch('%("(%a+)",%s*([%w_:%.%-]+)%),') do
+    bands[#bands + 1] = {name = name, floor = tonumber(floor)}
+end
+check("rating.rs names five bands", #bands == 5, "found " .. #bands)
+
+_G.websocket = {DATA_TYPE_BINARY = 1, EVENT_CONNECTED = "connected",
+                EVENT_MESSAGE = "message", EVENT_DISCONNECTED = "disconnected",
+                EVENT_ERROR = "error", connect = function() return {id = 1} end,
+                send = function() end, disconnect = function() end}
+_G.sys = {get_config_string = function(_, d) return d or "" end,
+          get_save_file = function() return "/dev/null" end,
+          save = function() return true end, load = function() return {} end,
+          get_engine_info = function() return {version = "test"} end}
+_G.http = {request = function() end}
+_G.json = {encode = function() return "{}" end, decode = function() return {} end}
+_G.timer = {delay = function() end}
+_G.sim = setmetatable({}, {__index = function() return function() return 0 end end})
+
+local net = require("arena.net")
+
+check("a pilot below the provisional count is placing",
+      net.tier(1500, provisional - 1) == "placing",
+      tostring(net.tier(1500, provisional - 1)))
+check("a pilot at the provisional count has a band",
+      net.tier(1500, provisional) ~= "placing")
+
+-- Each band's floor names that band, and a hair under it names the one below.
+for i, b in ipairs(bands) do
+    if b.floor then
+        check("rating " .. b.floor .. " is " .. b.name,
+              net.tier(b.floor, provisional) == b.name,
+              "client says " .. tostring(net.tier(b.floor, provisional)))
+        local below = bands[i - 1]
+        if below then
+            check("just under " .. b.floor .. " is " .. below.name,
+                  net.tier(b.floor - 1, provisional) == below.name,
+                  "client says " ..
+                      tostring(net.tier(b.floor - 1, provisional)))
+        end
+    else
+        -- The bottom band is unbounded below, so there is no rating without a
+        -- name. Anything beneath the next floor up belongs to it.
+        check("the bottom band is " .. b.name,
+              net.tier(-100000, provisional) == b.name,
+              "client says " .. tostring(net.tier(-100000, provisional)))
+    end
+end
+
+if fails > 0 then
+    print(fails .. " failed")
+    os.exit(1)
+end
+print("all ok")

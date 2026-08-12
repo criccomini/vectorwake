@@ -253,8 +253,4 @@ function M.draw(glow)
     end
 end
 
-function M.count()
-    return np, nw
-end
-
 return M

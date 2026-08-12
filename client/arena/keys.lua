@@ -123,9 +123,6 @@ function M.show(id)
     return k and k.show or "none"
 end
 
--- The four the arrow cluster draws, in the order it draws them.
-M.ARROWS = {"up", "left", "down", "right"}
-
 -- Which keys are held rather than pressed, for the one purpose that has to
 -- know: putting a chord in an order. Shift and Tab and Tab and Shift are the
 -- same thing to the hand that does them, so they are made the same thing here

@@ -36,13 +36,6 @@ local attach, reset, rebind = vwbuf.attach, vwbuf.reset, vwbuf.rebind
 local w_tri, w_tri_fade = vwbuf.tri, vwbuf.tri_fade
 local w_quad, w_rect, finish = vwbuf.quad, vwbuf.rect, vwbuf.finish
 
--- The busiest frame this layer has had, everything it has refused to draw for
--- want of room, and what it holds. A capacity set too tight does not raise
--- anything: geometry just stops appearing.
-function Layer:stats()
-    return vwbuf.stats(self.id)
-end
-
 -- url: the mesh component to feed. capacity: vertices, which is three per
 -- triangle and the hard ceiling on how much a layer can draw in a frame.
 --
