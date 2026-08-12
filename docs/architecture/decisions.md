@@ -1792,3 +1792,65 @@ which the first real investigation will say; or the fleet wants to follow one
 person across arenas in a single session, which needs the meta-layer to mint the
 session at `/v1/session` and carry it in the token, and is a bigger change than
 it looks because a token is reminted every fifteen minutes.
+
+---
+
+## 43. Prediction concludes no bomb on anybody but your own pilot
+
+**Status:** accepted
+
+The predicted ticks run the whole simulation, weapon endings included, and a
+bomb's ending is a conclusion about where a remote hull is: contact needs its
+box, a proximity fuse arms on a square around it. Remote hulls coast between
+snapshots, and the free-run holds them a lead plus a snapshot's age past the
+last truth, a dozen ticks and more on a real link. A three-tile sensor
+reaches about fifty pixels along an axis and a coasting hull is wrong by tens
+of them in any turn, so the client kept concluding detonations the zone never
+performed: a blast drawn and heard, then the next snapshot putting the bomb
+back in the air beyond it. An explosion that takes itself back is decision
+40's failure one notch down, and it gets the same rule. With `deathless` set,
+anything with a blast neither contact-ends on, arms its fuse on, nor
+concludes an armed fuse against any hull but `mortal_ship`. The last clause
+is not redundant: fuse state rides in snapshots, so a bomb can arrive here
+already armed by the server, and it holds its shot all the same. Walls and
+expiry are exact on a known course and stay concluded locally, and bullets
+are exempt, because a bullet's false ending is a spark rather than an
+explosion and its instant feedback is worth that price. The server keeps the
+baseline zero and is bit-for-bit unchanged, so the golden hashes did not
+move.
+
+The confirmed endings already had a road home. `snap_blasts` drew the blasts
+the prediction mistimed; it draws all of them now, and it stopped drawing
+them where the dead round's ghost had reached: the local copy keeps flying
+while the news is in transit, so the harvest walks it back down its own
+course to about the middle of the window it died in, which for a bomb at
+speed is the difference between a ring on the hull and a ring in the space
+beyond it.
+
+The same pass repaired the two holes beside it, because all three were one
+complaint from the cockpit. Events emitted inside the rollback replay were
+discarded wholesale, correctly for the reruns that most of them are, and
+wrongly for the news: a round fired closer than the lead's worth of flight
+time only ever crosses your hull *inside* a rollback, since the snapshot
+introducing it arrives after the free-run has passed the crossing tick, so
+every close-range hit landed with no flash, no jolt and no sound. A ledger of
+what each tick already reported now tells the two apart, and the news queues
+on `snap_hits` for the same light the live event would have made. And a
+blast-less round of yours that vanishes under a snapshot, which is what your
+bullet hitting a dodging hull looks like from here, walks back the same way
+and pins its flash to the hull standing at the point, so a shot that landed
+stops reading as a shot that skipped through.
+
+**Cost:** your bombs land their blast on remote hulls roughly a round trip
+plus up to a snapshot late, the bargain kills have made since decision 40,
+and blast and kill now arrive together instead of the blast running ahead.
+The bomb visibly overflies its victim for that beat before the ring lands.
+Splash a bomb would have dealt your own hull through a remote detonation
+waits for the snapshot too, so that sliver of energy corrects silently. The
+ledger is a table per predicted tick, purged with the input log.
+
+**Reconsider if:** the walked-back placement reads wrong at range, where the
+guess spreads over the snapshot window. The next lever is the zone announcing
+bomb endings the way it announces kills, spec, victim and position on the
+reliable lane, which buys exact placement pinned to the victim at a message
+rate bounded by bombs that actually land.

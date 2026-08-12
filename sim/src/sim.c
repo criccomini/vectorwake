@@ -2228,6 +2228,22 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 const sim_ship *sh = &next->ships[i];
                 if (!sh->active || !sh->alive) continue;
                 if ((uint8_t)i == w->owner || sh->team == w->team) continue;
+                /* A prediction client concludes no bomb on anybody but its
+                 * own pilot (decision 43, the same bargain as decision 40's
+                 * deaths). A detonation this instance concludes against a
+                 * coasting hull is a blast the next snapshot may take back,
+                 * and a taken-back explosion reads worse than a slightly
+                 * late true one. So in a deathless instance anything that
+                 * blasts flies straight through every hull but the mortal
+                 * one, fuse and contact alike, and its real ending arrives
+                 * as a snapshot state change the client already turns into
+                 * light and sound. Bullets are exempt: their false endings
+                 * are a spark rather than an explosion, and their instant
+                 * feedback is worth that price. Walls and expiry are exact
+                 * either way and stay concluded locally. */
+                if (cfg->deathless && spec->blast > 0
+                    && (uint8_t)i != cfg->mortal_ship)
+                    continue;
                 int64_t ddx = (int64_t)w->x - hull[i].x;
                 int64_t ddy = (int64_t)w->y - hull[i].y;
                 int64_t along = (ddx * hull[i].fx + ddy * hull[i].fy) >> 15;
@@ -2269,8 +2285,16 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * nothing left to be near.
          *
          * The walls above still win, because a bomb that reaches one has
-         * arrived at something whatever its fuse thinks. */
-        if (!ended && w->fuse_target != 255) {
+         * arrived at something whatever its fuse thinks.
+         *
+         * A deathless instance never arms a fuse on a hull other than its
+         * mortal one, but fuse state also rides in from snapshots, so an
+         * armed bomb can arrive here already watching somebody. The same
+         * rule holds: only the mortal hull's fuse concludes locally, and a
+         * bomb watching anyone else keeps flying until the zone says
+         * otherwise. */
+        if (!ended && w->fuse_target != 255
+            && !(cfg->deathless && w->fuse_target != cfg->mortal_ship)) {
             const sim_ship *ft = &next->ships[w->fuse_target];
             if (!ft->active || !ft->alive || ft->team == w->team) {
                 ended = 1;

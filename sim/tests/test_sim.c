@@ -1065,6 +1065,94 @@ int main(void) {
         CHECK(c.deaths == 1, "and its death is reported");
     }
 
+    /* A deathless instance concludes no bomb on anybody but its mortal
+     * pilot either (decision 43). A detonation guessed against a coasting
+     * hull is a blast the next snapshot may take back, so a bomb flies
+     * straight through every other hull, contact and fuse alike, and its
+     * real ending arrives as a snapshot state change. Bullets are exempt,
+     * which the decision 40 test above already pins: its hits landed under
+     * `deathless` with `mortal_ship` 255. */
+    {
+        const int32_t GAP = 200;
+        /* Dead ahead: contact would land it, and must not. */
+        for (int mortal = 0; mortal < 2; mortal++) {
+            sim_settings dc = cfg;
+            dc.deathless = 1;
+            dc.mortal_ship = mortal ? 1 : 255;
+            sim_state s;
+            sim_init(&s, 1);
+            sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dc);
+            sim_spawn(&s, APEX, 1, 8192, 8192 - GAP, 0, &dc);
+            int32_t e0 = s.ships[1].energy;
+            step_n(&s, &dc, SIM_BTN_BOMB, 0, 200);
+            if (mortal) {
+                CHECK(e0 - s.ships[1].energy > 0,
+                      "a bomb still lands on the one hull named mortal");
+            } else {
+                CHECK(s.ships[1].energy == e0,
+                      "a deathless instance contact-ends no bomb on a "
+                      "remote hull");
+            }
+        }
+
+        /* Past the flank with a fuse armed on the shot: the sensor would
+         * catch it, and must not even arm. */
+        for (int mortal = 0; mortal < 2; mortal++) {
+            sim_settings dc = cfg;
+            dc.deathless = 1;
+            dc.mortal_ship = mortal ? 1 : 255;
+            sim_state s;
+            sim_init(&s, 1);
+            sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dc);
+            sim_spawn(&s, APEX, 1, 8192 + 40, 8192 - GAP, 0, &dc);
+            s.ships[0].mods[SIM_TRIG_BOMB] =
+                sim_mod_set(s.ships[0].mods[SIM_TRIG_BOMB], SIM_MOD_PROX, 1);
+            int32_t e0 = s.ships[1].energy;
+            step_n(&s, &dc, SIM_BTN_BOMB, 0, 200);
+            if (mortal) {
+                CHECK(e0 - s.ships[1].energy > 0,
+                      "the mortal hull still trips the fuse");
+            } else {
+                CHECK(s.ships[1].energy == e0,
+                      "and no fuse arms on a remote hull");
+            }
+        }
+
+        /* Fuse state rides in from snapshots, so an armed bomb can exist
+         * here without this instance having armed it. It still may not
+         * conclude against a remote hull. */
+        {
+            sim_settings dc = cfg;
+            dc.deathless = 1;
+            dc.mortal_ship = 255;
+            dc.prox_delay = 5;
+            sim_weapon_spec sp = dc.specs[gun_of(&dc, APEX)->spec];
+            sp.speed = 0;
+            sp.trigger = 60 * 256;
+            sp.blast = 80 * 256;
+            sim_fire_pattern fp = *gun_of(&dc, APEX);
+            fp.spec = (uint8_t)sim_add_spec(&dc, &sp);
+            dc.classes[APEX].trigger[SIM_TRIG_GUN][0] =
+                (uint8_t)sim_add_pattern(&dc, &fp);
+            sim_state s;
+            sim_init(&s, 1);
+            sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dc);
+            sim_spawn(&s, APEX, 1, 8192, 8192 - GAP, 0, &dc);
+            step_n(&s, &dc, SIM_BTN_FIRE, 0, 1);
+            CHECK(s.weapon_count == 1, "the test round left");
+            s.weapons[0].x = s.ships[1].x + 55 * 256;
+            s.weapons[0].y = s.ships[1].y;
+            s.weapons[0].vx = s.weapons[0].vy = 0;
+            s.weapons[0].fuse_target = 1;
+            s.weapons[0].fuse = 5;
+            s.weapons[0].near = 55 * 256;
+            step_n(&s, &dc, 0, 0, 8);
+            CHECK(s.weapon_count == 1,
+                  "an armed fuse from a snapshot holds its shot on a "
+                  "remote hull");
+        }
+    }
+
     /* Changing hull is a respawn, not a costume change, and it leaves the
      * rest of the arena exactly where it was. */
     {

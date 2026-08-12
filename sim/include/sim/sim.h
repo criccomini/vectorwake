@@ -567,9 +567,14 @@ typedef struct {
      * energy instead of dying. A kill a client concludes about a coasting
      * remote hull is an explosion the next snapshot may take back, so a
      * remote death only ever arrives as a snapshot state change, which the
-     * client already turns into light and sound (decision 40). Neither
-     * field is packed or hashed: this is a fact about who is simulating,
-     * not about the world. */
+     * client already turns into light and sound (decision 40). Bombs and
+     * mines follow the same rule one notch down (decision 43): anything
+     * with a blast neither contact-ends on, arms its fuse on, nor
+     * concludes an armed fuse against any hull but `mortal_ship`, because
+     * a detonation guessed against a coasting hull is a blast the next
+     * snapshot may take back. Bullets still land everywhere, walls and
+     * expiry still end everything. Neither field is packed or hashed:
+     * this is a fact about who is simulating, not about the world. */
     uint8_t deathless;
     uint8_t mortal_ship;
     const sim_map *map;    /* geometry; not part of rolled-back state */

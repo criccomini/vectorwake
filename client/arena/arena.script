@@ -717,8 +717,17 @@ local function drain_events()
     for _, w in ipairs(net.snap_blasts) do
         world.late_blast(w, sfx.play)
     end
+    -- Hits the free-run never lived: relived inside a rollback, or read off
+    -- a round that vanished under a snapshot. The screen tint is the same
+    -- one the live event sets, because to the pilot these are the same
+    -- fact arriving by a slower road.
+    for _, h in ipairs(net.snap_hits) do
+        world.late_hit(h, view, sfx.play)
+        if h.ship == me then hurt = 1 end
+    end
     if #net.snap_deaths > 0 then net.snap_deaths = {} end
     if #net.snap_blasts > 0 then net.snap_blasts = {} end
+    if #net.snap_hits > 0 then net.snap_hits = {} end
     for i = 0, sim.event_count() - 1 do
         local ty, a, b, v = sim.event_at(i)
         if ty == sim.EV_HIT and a == me then

@@ -347,6 +347,19 @@ The clock steering rides in the same mechanism, deliberately: a snapshot that
 trims the lead by a tick moves every hull by a tick of flight, which is exactly
 the kind of jump worth walking off rather than cutting to.
 
+Two rules bound what the predicted ticks may conclude, both priced against the
+same fact: a conclusion about a remote hull rests on a coasted position that is
+a lead plus a snapshot's age old. Prediction concludes no death but the
+pilot's own ([decision 40](decisions.md)), and no bomb on anybody but them
+either ([decision 43](decisions.md)): a detonation guessed against a coasting
+hull is a blast the next snapshot may take back, so bombs fly through remote
+hulls locally and their real endings arrive as snapshot state changes, drawn
+walked back down the round's course to near where it actually died. The
+rollback replay's events are read for news rather than discarded along the
+way, because a round fired closer than the lead's worth of flight time only
+ever crosses your hull inside a rollback; before that reading, every
+close-range hit landed with no flash, no jolt and no sound.
+
 Both live in the extension rather than at the twenty call sites that draw a
 position, because one of those being missed is worse than none of them being
 fixed. A hull that judders against its own health bar reads as broken in a way a

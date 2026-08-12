@@ -48,6 +48,8 @@ _G.sim = {
     weapon_at = function() end,
     spec_life = function() return 0 end,
     spec_blast = function() return 0 end,
+    event_count = function() return 0 end,
+    event_at = function() end,
 }
 
 local sent = {}

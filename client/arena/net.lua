@@ -119,15 +119,31 @@ local present = nil
 
 -- Deaths and bomb endings the local simulation never announced, found by
 -- comparing the world the client had with the world a snapshot handed it. A
--- snapshot replaces state outright and emits no events, and anything emitted
--- inside the rollback replay is cleared by the next step before anyone reads
--- it. This queue began as a patch for kills the prediction mistimed, 15% of
--- deaths against a server on loopback; since decision 40 it is the road every
--- remote death takes, because prediction is no longer allowed to conclude
--- one. The arena drains these into the same light and noise the events would
--- have made.
+-- snapshot replaces state outright and emits no events, and the rollback
+-- replay's own event buffer is cleared by the next step before the drawing
+-- reads it; `live_events` harvests the news out of it first, and the rest
+-- of what it emits is reruns. This queue began as a patch for kills the
+-- prediction mistimed, 15% of deaths against a server on loopback; since
+-- decision 40 it is the road every remote death takes, because prediction
+-- is no longer allowed to conclude one. The arena drains these into the
+-- same light and noise the events would have made.
 M.snap_deaths = {}
 M.snap_blasts = {}
+-- Hits and detonations the free-run never lived through, found on the other
+-- road: relived inside the rollback replay, or vanished under a snapshot.
+--
+-- The replay walks the same ticks the free-run already stepped, so its
+-- events used to be discarded wholesale, and rightly, because most of them
+-- are reruns of light already drawn. But some are news. A round fired
+-- closer than the lead's worth of flight time only ever crosses this hull
+-- inside a rollback, since the snapshot that introduces it arrives after
+-- the free-run has passed the crossing tick: every close-range hit landed
+-- silently, no flash, no jolt, no sound, just an energy bar that dipped.
+-- The `lived` ledger below is what tells a rerun from news. And a round of
+-- ours the local simulation flew past a hull the server says it hit simply
+-- vanishes from a snapshot, so that road queues here too, pinned to the
+-- hull it plainly ended on when one is close enough to name.
+M.snap_hits = {}
 
 -- The sides this room holds, as this client is allowed to see them: the
 -- zone's own, the one you are on, and any that has invited you. Each row is
@@ -181,6 +197,14 @@ M.settings_epoch = 0
 local conn = nil
 local on_lost_cb = nil
 local input_log = {}
+-- What each tick's step already reported, one small set per tick: hit keys
+-- and detonation keys the drawing has had its chance at. The rollback
+-- replays ticks the free-run has stepped before, twenty times a second, so
+-- without this every hit would draw once per snapshot for as long as it
+-- stayed inside the replay window. Written by the free-run and by the
+-- harvest in `on_snapshot`, purged alongside the input log, and reset
+-- wherever the input log is, because it is keyed by the same clock.
+local lived = {}
 -- The last thing this watcher asked to look at, so the keepalive in `step`
 -- repeats the ask rather than quietly resetting a follow to the channel.
 -- Declared up here because `connect` resets them and Lua scopes a local from
@@ -519,16 +543,20 @@ local function capture_world()
     local flying = {}
     local tick = sim.tick()
     for i = 0, sim.weapon_count() - 1 do
-        local x, y, spec, _, _, _, life, owner, _, level = sim.weapon_at(i)
+        local x, y, spec, wvx, wvy, team, life, owner, _, level =
+            sim.weapon_at(i)
         -- The rung rides along for the one blast whose color lives on the
         -- round rather than in the spec table: a mine wears its layer's bomb
         -- rung, and a detonation reconstructed after the fact should flash in
-        -- the color the mine sat there in.
+        -- the color the mine sat there in. The velocity rides along for the
+        -- backtrack in `harvest_world`: a round that ended on the server
+        -- kept flying here until the snapshot said so, and where it was is
+        -- not where it ended.
         flying[born_key(tick, spec, life, owner)] =
-            {x = x, y = y, spec = spec, life = life, owner = owner,
-             level = level}
+            {x = x, y = y, vx = wvx, vy = wvy, spec = spec, life = life,
+             owner = owner, team = team, level = level}
     end
-    return {alive = alive, vx = vx, vy = vy, flying = flying}
+    return {alive = alive, vx = vx, vy = vy, flying = flying, tick = tick}
 end
 
 -- And what the snapshot did without saying so, against that.
@@ -564,6 +592,16 @@ local function harvest_world(before)
     -- from where the mine sat. Finding one is what tells a scatter from a
     -- detonation. The radius is generous against jitter, and the cost of a
     -- rare mismatch is one missing flash rather than a false one.
+    -- A round that vanished under this snapshot ended on the server up to a
+    -- snapshot's width before it was packed, and the local copy kept flying
+    -- the whole time the news was in transit. Walking it back down its own
+    -- course to about the middle of that window puts the light near where
+    -- the round actually died rather than where its ghost had reached,
+    -- which for a bullet at speed is the difference between a flash on the
+    -- hull and a flash in the open space beyond it. A mine has no velocity,
+    -- so the walk moves nothing it should not.
+    local back = before.tick - snap_tick + 2
+    if back < 0 then back = 0 end
     local born = nil
     for _, w in pairs(flying) do
         if w.life > 20 and sim.spec_blast(w.spec) > 0 then
@@ -589,7 +627,88 @@ local function harvest_world(before)
                 end
             end
             if not scattered then
+                w.x = w.x - w.vx * back
+                w.y = w.y - w.vy * back
                 M.snap_blasts[#M.snap_blasts + 1] = w
+            end
+        elseif w.life > 20 then
+            -- A blast-less round gone mid-flight ended on something, and
+            -- the local simulation, which predicts walls exactly, was not
+            -- expecting it to: almost always a hull it flew past here and
+            -- the server says it hit. Name the hull when one stands near
+            -- the walked-back point, so the flash lands on the ship and
+            -- moves with it; without one the round died to something this
+            -- client never saw, a repel's shove usually, and a small burst
+            -- at the point is all there is to honestly draw.
+            local bx = w.x - w.vx * back
+            local by = w.y - w.vy * back
+            local hit = nil
+            for i = 0, sim.ship_count() - 1 do
+                if sim.ship_active(i) == 1 and i ~= w.owner
+                    and sim.ship_team(i) ~= w.team
+                    and math.abs(sim.ship_x(i) - bx) < 32
+                    and math.abs(sim.ship_y(i) - by) < 32 then
+                    hit = i
+                    break
+                end
+            end
+            M.snap_hits[#M.snap_hits + 1] = {ship = hit, x = bx, y = by}
+        end
+    end
+end
+
+-- Walk the events of the tick a step just lived, and remember them under
+-- its number. The free-run calls this to record what the drawing is about
+-- to get. The rollback calls it with `harvest` set, and anything not
+-- already recorded there is news the free-run never lived: a round that
+-- arrived in a snapshot after the free-run had passed its crossing tick,
+-- which is every shot fired closer than the lead's worth of flight time.
+-- Those queue for the same light and noise the live event would have made,
+-- once, because the ledger keeps the next twenty rollbacks from queueing
+-- them again.
+--
+-- Only hits and blasts are worth harvesting. Deaths have their own road
+-- through `snap_deaths`, fire is never relived because no remote trigger
+-- is ever predicted, and the rest is cosmetic enough that a rerun would
+-- cost more than the news is worth.
+local function live_events(t, harvest)
+    local n = sim.event_count()
+    if n == 0 then return end
+    local seen = lived[t]
+    if not seen then
+        seen = {}
+        lived[t] = seen
+    end
+    for i = 0, n - 1 do
+        local ty, a, _, v = sim.event_at(i)
+        if ty == sim.EV_HIT then
+            -- One hit's light per hull per tick. Two rounds landing on the
+            -- same tick share a flash, which nobody has ever counted, and
+            -- the key stays stable when a corrected replay moves the
+            -- damage by a point.
+            local key = "h" .. a
+            if not seen[key] then
+                seen[key] = true
+                if harvest then
+                    M.snap_hits[#M.snap_hits + 1] = {ship = a, dmg = v}
+                end
+            end
+        elseif ty == sim.EV_EXPIRE and sim.spec_blast(a) > 0 then
+            local key = "e" .. v
+            if not seen[key] then
+                seen[key] = true
+                if harvest then
+                    -- The payload is the same packed word world.lua reads:
+                    -- two fourteen-bit coordinates with the rung above
+                    -- them. Unpacked here so the queue's entries all look
+                    -- like a captured round to `late_blast`.
+                    M.snap_blasts[#M.snap_blasts + 1] = {
+                        x = math.floor(v / 16384) % 16384,
+                        y = v % 16384,
+                        spec = a,
+                        level = math.floor(v / 268435456) % 4,
+                    }
+                end
             end
         end
     end
@@ -718,6 +837,13 @@ local function on_snapshot(s)
     for t = from + 1, last do
         sim.replay(M.me, input_log[t] or 0)
         steps = steps + 1
+        -- The replay mostly reruns ticks the free-run already stepped, and
+        -- its events used to be discarded wholesale for exactly that
+        -- reason. But a round this snapshot introduced was not in those
+        -- ticks the first time they ran, and if it crosses a hull inside
+        -- this walk, this walk is the only place the crossing ever
+        -- happens. Harvest what the ledger has not seen; drop the reruns.
+        live_events(t, true)
     end
     if steps > M.stats.rewind then M.stats.rewind = steps end
 
@@ -735,6 +861,9 @@ local function on_snapshot(s)
 
     for t in pairs(input_log) do
         if t < from - 400 then input_log[t] = nil end
+    end
+    for t in pairs(lived) do
+        if t < from - 400 then lived[t] = nil end
     end
     predicted_tick = sim.tick()
 end
@@ -782,6 +911,9 @@ local function on_message(s)
         local watching = M.me == 255
         if watching ~= M.watching then
             input_log = {}
+            -- Keyed by the same clock as the input log, wrong for the same
+            -- reason across the switch.
+            lived = {}
             predicted_tick = 0
             sim.smooth_reset()
             M.stats.lag, M.stats.lead = 0, 0
@@ -1057,6 +1189,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     M.invited = {}
     M.snap_deaths = {}
     M.snap_blasts = {}
+    M.snap_hits = {}
     -- Built whole rather than cleared field by field, so a field added above
     -- cannot be a field somebody forgot to reset here. The clock offset is
     -- among them and is earned rather than remembered: a new arena's latency
@@ -1089,6 +1222,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     -- happens to be younger that is thousands of extra steps every snapshot,
     -- which a player reads as their ship moving at several times its speed.
     input_log = {}
+    lived = {}
     predicted_tick = 0
     -- And whatever the drawing was still owed in the last room. An offset is
     -- about a hull in an arena; carried across, it draws the next one beside
@@ -1214,6 +1348,10 @@ function M.step(buttons)
     send_unreliable(msg)
     M.stats.tx = M.stats.tx + #msg
     sim.replay(M.me, buttons)
+    -- The drawing gets this tick's events right after this returns, so put
+    -- them in the ledger: the rollback will relive this tick twenty times
+    -- and must not report the same light again.
+    live_events(predicted_tick)
     return true
 end
 

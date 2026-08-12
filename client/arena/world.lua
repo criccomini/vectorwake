@@ -2405,6 +2405,31 @@ function M.corpse(i, vx, vy, me, sfx)
     sfx("death", x, y)
 end
 
+-- A hit the free-run never lived through, drawn as the live event would
+-- have drawn it. Two shapes arrive here: a harvested EV_HIT names the hull
+-- and carries the damage, and a round that vanished under a snapshot names
+-- the hull when the walk-back found one standing there, or only the point
+-- where it died when nothing was. The named hull gets the victim's flash at
+-- wherever it is drawn now, so the light moves with the ship; the bare
+-- point gets the same small burst a blast-less ending draws, and no sound,
+-- because a round that died to nothing nameable has nothing to say.
+function M.late_hit(h, me, sfx)
+    if h.ship then
+        local x, y = sim.ship_x(h.ship), sim.ship_y(h.ship)
+        local col = (sim.ship_team(h.ship) == team_of(me)) and pal.FRIEND
+            or pal.ENEMY
+        fx.burst(x, y, 5, 130, 0.26, 1.8, pal.hot(col, 0.6, 1))
+        if h.ship == me and h.dmg then
+            local frac = h.dmg / math.max(1, sim.ship_max_energy(h.ship))
+            if frac > 1 then frac = 1 end
+            fx.jolt(0.18 + frac * 1.25)
+        end
+        sfx("hit", x, y)
+    else
+        fx.burst(h.x, h.y, 4, 90, 0.22, 1.5, pal.a(pal.INK, 0.9))
+    end
+end
+
 function M.late_blast(w, sfx)
     -- The rung comes off the round for a mine, exactly as the live drawing
     -- reads it: every mine is one spec, so the spec table answers a rung one
