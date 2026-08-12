@@ -233,7 +233,7 @@ button {
   overflow: hidden;
   background: #03050a url("/media/gameplay-poster.jpg") center / cover no-repeat;
   filter: saturate(0.88) contrast(1.12) brightness(0.8);
-  transform: scale(1.01);
+  transform: scale(1.12) translateY(50px);
 }
 
 .gameplay-take {

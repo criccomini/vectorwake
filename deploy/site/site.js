@@ -58,8 +58,8 @@ function setupGameplayFilm() {
   const videos = [...film.querySelectorAll("[data-gameplay-take]")];
   if (videos.length !== 2) return;
 
-  const clipStart = 0.3;
-  const clipEnd = 5.2;
+  const clipStart = 3.2;
+  const clipEnd = 7.5;
   const crossfadeSeconds = 0.85;
   let active = 0;
   let crossing = false;
