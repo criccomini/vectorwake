@@ -92,24 +92,40 @@ body::before {
 
 /* ---------------------------------------------------------------- skeleton */
 
-.bar, main {
-  max-width: 62rem;
+/* Header across the top, navigation down the left, one view to the right of
+   it. `minmax(0, 1fr)` on the content column rather than plain `1fr`, because
+   a grid track sizes to its content by default and a table wide enough to
+   scroll would push the whole layout sideways instead of scrolling inside its
+   own box. */
+.shell {
+  max-width: 84rem;
   margin: 0 auto;
+  display: grid;
+  grid-template-columns: 12.5rem minmax(0, 1fr);
+  grid-template-areas: "bar bar" "rail main";
+  column-gap: clamp(1.5rem, 3vw, 3rem);
   /* Clear of a notch on a phone held sideways. */
   padding-inline: max(var(--pad), env(safe-area-inset-left),
                       env(safe-area-inset-right));
 }
 
 .bar {
+  grid-area: bar;
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap);
   align-items: baseline;
   justify-content: space-between;
-  padding-block: clamp(1.25rem, 4vw, 2rem) 0.75rem;
+  padding-block: clamp(1.25rem, 4vw, 2rem) 0.9rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: clamp(1.25rem, 3vw, 2rem);
 }
 
-main { padding-bottom: max(4rem, env(safe-area-inset-bottom)); }
+main {
+  grid-area: main;
+  min-width: 0;
+  padding-bottom: max(4rem, env(safe-area-inset-bottom));
+}
 
 h1 {
   display: flex;
@@ -124,19 +140,165 @@ h1 {
 /* The hull sits on the baseline of the words rather than above them. */
 .mark { flex: none; color: var(--friend); }
 
+/* ------------------------------------------------------------------- rail */
+
+/* The four views. It follows the page down rather than scrolling away with
+   it, because the reason to look at the nav is usually that you have read to
+   the bottom of something and want to be somewhere else. */
+.rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: var(--pad);
+  align-self: start;
+}
+
+.rail a {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  color: var(--ink);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  font-size: 0.9em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: color 90ms linear, border-color 90ms linear, background 90ms linear;
+}
+.rail a:hover { color: var(--ink); background: var(--panel); }
+
+/* The acting edge marks where you are, the same cyan the game puts on the
+   thing you are flying. The glow is the one effect on this page and it is
+   the game's own: identity.md asks for geometry and glow rather than
+   texture, and two pixels of it on one element is the difference between an
+   instrument and a document. */
+.rail a[aria-current="page"] {
+  color: var(--friend);
+  border-left-color: var(--friend);
+  background: var(--panel);
+  box-shadow: -1px 0 8px -2px var(--friend);
+}
+
+/* The index in front of the name, which is what makes the four read as a
+   numbered list of stations rather than four links that happen to be stacked.
+   Subordinate to the label by color and size, and no further: at the hairline
+   color it measured 1.35:1, and a number nobody can read is not a subtle
+   number, it is noise with a shape. The hierarchy comes from `--dim` against
+   the label's `--ink` instead, which both clear what WCAG asks of text this
+   size. */
+.rail .glyph {
+  color: var(--dim);
+  font-size: 0.8em;
+  letter-spacing: 0;
+}
+.rail a[aria-current="page"] .glyph { color: var(--friend); opacity: 0.7; }
+
+/* -------------------------------------------------------------- headings */
+
 h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink);
+  margin: 0 0 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+/* A heading inside a view, which is a rung below the view's own name and has
+   to read as one. No rule under it: the table below already draws a line
+   under its headings and two within a centimetre reads as a mistake. */
+h3 {
   font-size: 0.78rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--dim);
   margin: clamp(2rem, 5vw, 2.75rem) 0 0.75rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--line);
 }
 
-/* The first heading in a section does not need the space above it. */
-section > h2:first-child { margin-top: 0.5rem; }
+/* --------------------------------------------------------------- tiles */
+
+/* The numbers read from a chair away. `auto-fit` rather than four columns, so
+   a phone gets two rows of two and nothing has to know how many tiles there
+   are.
+
+   10rem is the track, and the number matters: at 7rem a phone fitted three
+   across, which left the fourth tile alone beside an empty cell, and an empty
+   cell in this grid is a filled rectangle because the gaps are the background
+   showing through. Ten fits two on a phone and all four on anything wider. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-bottom: 1.5rem;
+}
+
+.tile {
+  background: var(--panel);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.tile .v {
+  font-size: clamp(1.5rem, 1.2rem + 1.4vw, 2.1rem);
+  line-height: 1;
+  color: var(--ink);
+}
+.tile .k {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+}
+
+/* ---------------------------------------------------------------- pager */
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  margin-top: 0.75rem;
+}
+/* The count sits between the two controls and takes the slack, so `previous`
+   and `next` land at the ends of the table they page rather than huddling
+   together in the middle of it. */
+.pager span { flex: 1 1 auto; }
+.pager button { min-height: 2.25rem; padding: 0.3rem 0.9rem; }
+.pager button[disabled] {
+  opacity: 0.35;
+  cursor: default;
+  border-color: var(--hair);
+}
+.pager button[disabled]:hover { color: var(--dim); border-color: var(--hair); }
+
+/* ----------------------------------------------------------------- card */
+
+/* One pilot, lifted off the field so it reads as a thing that was opened
+   rather than more of the table above it. The acting edge down its left says
+   which one, the same way the rail says which view. */
+.card {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--friend);
+  background: var(--panel);
+  padding: clamp(1rem, 3vw, 1.5rem);
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+/* ---------------------------------------------------------------- views */
+
+/* One at a time. `hidden` does the work and the stylesheet's `[hidden]` rule
+   above makes it stick. */
+.view { display: block; }
 
 /* The front door gets the middle of the screen rather than the top left
    corner of it. There is nothing else on the page at that moment, and a form
@@ -340,12 +502,20 @@ table {
 }
 caption { text-align: left; }
 
+/* Not sticky, and it is worth saying why so nobody adds it back. Every table
+   sits in a `.scroller` for its horizontal overflow, and a box with
+   `overflow-x: auto` computes `overflow-y` to `auto` as well, which makes it
+   the scroll container a sticky heading sticks to. It then holds still
+   relative to a box that never scrolls vertically, so it leaves the screen
+   with its rows. Measured: after scrolling 600px the heading sat at -325.
+   Pagination is what actually fixed the problem it was reaching for, since
+   a page is twenty-five rows and not the whole table. */
 th {
   text-align: left;
   font-weight: 400;
   color: var(--dim);
   border-bottom: 1px solid var(--line);
-  padding: 0.3rem 1rem 0.3rem 0;
+  padding: 0.4rem 1rem 0.4rem 0;
   white-space: nowrap;
 }
 td {
@@ -426,6 +596,38 @@ dialog .field { margin-bottom: 1rem; }
 /* Narrow screens get cards instead of a grid. Every cell keeps its column's
    name beside it, so a phone reads the same facts in the same words rather
    than a squeezed table or a sideways scroll. */
+/* The rail cannot be a column on a phone: a fifth of a 390px screen is not a
+   column, it is a margin with words in it. So it lays out across the top
+   instead, scrolling sideways if four names do not fit, and the marker moves
+   from the left edge to the bottom one because that is where a tab strip
+   carries it. */
+@media (max-width: 60rem) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "bar" "rail" "main";
+  }
+  .bar { margin-bottom: 0.75rem; }
+  .rail {
+    flex-direction: row;
+    position: static;
+    gap: 0;
+    margin-bottom: 1.5rem;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--line);
+    /* A strip that scrolls should not also bounce the page. */
+    overscroll-behavior-x: contain;
+  }
+  .rail a {
+    border-left: none;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .rail a[aria-current="page"] {
+    border-bottom-color: var(--friend);
+    box-shadow: 0 1px 8px -2px var(--friend);
+  }
+}
+
 @media (max-width: 46rem) {
   table, thead, tbody, tr, td { display: block; width: 100%; }
   /* A card has one value per line, so nothing needs holding on one line and
@@ -485,6 +687,12 @@ dialog .field { margin-bottom: 1rem; }
    beside it are not squeezed into a third of one, and they share the next
    row evenly instead of wrapping one at a time. */
 @media (max-width: 30rem) {
+  /* Four station names and their indices do not fit across a phone, and the
+     names are the half worth keeping: a strip that scrolls to reach its last
+     tab hides that the tab is there. */
+  .rail .glyph { display: none; }
+  .rail a { padding-inline: 0.6rem; letter-spacing: 0.04em; }
+
   .row { align-items: stretch; }
   .row .grow { flex: 1 1 100%; max-width: none; }
   .row > button { flex: 1 1 7rem; }

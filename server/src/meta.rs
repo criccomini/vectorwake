@@ -1163,6 +1163,15 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             // accounts ever reach the point where it is not, this wants an
             // index on (class, rating) and a materialised board.
             let provisional = rating::PROVISIONAL_GAMES as i32;
+            // One page of the table. The page picks the size so a phone and a
+            // desktop can ask for different amounts of the same list, and both
+            // are clamped here because the number arrives from a client.
+            let limit = body
+                .get("limit")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(25)
+                .clamp(1, 200);
+            let offset = body.get("offset").and_then(|v| v.as_i64()).unwrap_or(0).max(0);
             let rows = db
                 .query(
                     "with ladder as (
@@ -1189,16 +1198,33 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                         or strpos(lower(coalesce(n.call_sign, '')), lower($1)) > 0
                         or a.id = $2
                      order by a.last_seen desc
-                     limit 100",
-                    &[&q, &number, &provisional],
+                     limit $4 offset $5",
+                    &[&q, &number, &provisional, &limit, &offset],
                 )
                 .await;
+            // How many the filter matches in total, so the page can say which
+            // slice of what it is showing. A second statement rather than a
+            // window function on the first: `count(*) over ()` would make
+            // every row carry it, and this predicate touches only accounts and
+            // names, so it costs an index scan over a table bounded by how
+            // many people have ever played rather than by how much they have.
+            let total: i64 = db
+                .query_one(
+                    "select count(*) from accounts a
+                     left join names n on n.account = a.id
+                     where $1 = ''
+                        or strpos(lower(coalesce(n.call_sign, '')), lower($1)) > 0
+                        or a.id = $2",
+                    &[&q, &number],
+                )
+                .await
+                .map(|r| r.get(0))
+                .unwrap_or(0);
             match rows {
                 Ok(rs) => (200, serde_json::json!({
-                    // Said rather than inferred from the length, so a page
-                    // showing a hundred rows can say whether that is all of
-                    // them or the first hundred.
-                    "capped": rs.len() == 100,
+                    "total": total,
+                    "offset": offset,
+                    "limit": limit,
                     // The two constants the page would otherwise have to keep
                     // a copy of to draw a standing: how many games place a
                     // pilot, and which class needs no naming. Sent once per
@@ -1375,6 +1401,13 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
             let account = body.get("account").and_then(|v| v.as_i64());
             let session = s("session");
+            let (limit, offset) = page_of(body);
+            // One more than asked for, which is how the page knows there is a
+            // next one. A `count(*)` would be the tidier answer and the wrong
+            // one: this table takes most of 300,000 rows a day, so counting a
+            // pilot's whole history to draw a footer is work that grows
+            // forever to say something the extra row says for nothing.
+            let probe = limit + 1;
             // Newest first, because a report is about something that just
             // happened. The page reverses what it draws.
             let q = "select to_char(pe.at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
@@ -1385,38 +1418,42 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                      left join names n on n.account = pe.pilot";
             let rows = if !session.is_empty() {
                 db.query(
-                    &format!("{q} where pe.session = $1 order by pe.at desc, pe.id desc limit 200"),
-                    &[&session],
+                    &format!("{q} where pe.session = $1 order by pe.at desc, pe.id desc \
+                              limit $2 offset $3"),
+                    &[&session, &probe, &offset],
                 )
                 .await
             } else if let Some(id) = account {
                 db.query(
-                    &format!("{q} where pe.pilot = $1 order by pe.at desc, pe.id desc limit 200"),
-                    &[&id],
+                    &format!("{q} where pe.pilot = $1 order by pe.at desc, pe.id desc \
+                              limit $2 offset $3"),
+                    &[&id, &probe, &offset],
                 )
                 .await
             } else {
                 return (400, serde_json::json!({ "error": "an account or a session" }));
             };
             match rows {
-                Ok(rs) => (200, serde_json::json!({
-                    "events": rs.iter().map(|r| serde_json::json!({
-                        "at": r.get::<_, String>(0),
-                        "session": r.get::<_, String>(1),
-                        "kind": r.get::<_, String>(2),
-                        "name": r.get::<_, String>(3),
-                        "bot": r.get::<_, bool>(4),
-                        "zone": r.get::<_, String>(5),
-                        "instance": r.get::<_, String>(6),
-                        "room": r.get::<_, Option<i32>>(7),
-                        "tick": r.get::<_, i64>(8),
-                        "detail": r.get::<_, serde_json::Value>(9),
-                    })).collect::<Vec<_>>(),
-                    // Said rather than left for the operator to infer from a
-                    // round number, which is how somebody concludes a pilot
-                    // stopped doing anything at exactly 200 events.
-                    "capped": rs.len() == 200,
-                })),
+                Ok(rs) => {
+                    let more = rs.len() as i64 > limit;
+                    (200, serde_json::json!({
+                        "events": rs.iter().take(limit as usize).map(|r| serde_json::json!({
+                            "at": r.get::<_, String>(0),
+                            "session": r.get::<_, String>(1),
+                            "kind": r.get::<_, String>(2),
+                            "name": r.get::<_, String>(3),
+                            "bot": r.get::<_, bool>(4),
+                            "zone": r.get::<_, String>(5),
+                            "instance": r.get::<_, String>(6),
+                            "room": r.get::<_, Option<i32>>(7),
+                            "tick": r.get::<_, i64>(8),
+                            "detail": r.get::<_, serde_json::Value>(9),
+                        })).collect::<Vec<_>>(),
+                        "offset": offset,
+                        "limit": limit,
+                        "more": more,
+                    }))
+                }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
@@ -1463,13 +1500,22 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                      from pilot_events pe
                      left join names n on n.account = pe.pilot
                      where pe.bot = $1 and pe.at > now() - make_interval(hours => $2)";
+            // One more than asked for, so the footer knows whether there is a
+            // next page without counting a table that takes most of 300,000
+            // rows a day. See `/v1/admin/events`, which pages the same way.
+            let (limit, offset) = page_of(body);
+            let probe = limit + 1;
             let rows = if kind.is_empty() {
-                db.query(&format!("{q} order by pe.at desc, pe.id desc limit 200"), &[&bots, &hours])
-                    .await
+                db.query(
+                    &format!("{q} order by pe.at desc, pe.id desc limit $3 offset $4"),
+                    &[&bots, &hours, &probe, &offset],
+                )
+                .await
             } else {
                 db.query(
-                    &format!("{q} and pe.kind = $3 order by pe.at desc, pe.id desc limit 200"),
-                    &[&bots, &hours, &kind],
+                    &format!("{q} and pe.kind = $3 order by pe.at desc, pe.id desc \
+                              limit $4 offset $5"),
+                    &[&bots, &hours, &kind, &probe, &offset],
                 )
                 .await
             };
@@ -1503,22 +1549,27 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 }
             }
             match rows {
-                Ok(rs) => (200, serde_json::json!({
-                    "events": rs.iter().map(|r| serde_json::json!({
-                        "at": r.get::<_, String>(0),
-                        "session": r.get::<_, String>(1),
-                        "kind": r.get::<_, String>(2),
-                        "name": r.get::<_, String>(3),
-                        "pilot": r.get::<_, Option<i64>>(4),
-                        "zone": r.get::<_, String>(5),
-                        "instance": r.get::<_, String>(6),
-                        "room": r.get::<_, Option<i32>>(7),
-                        "detail": r.get::<_, serde_json::Value>(8),
-                    })).collect::<Vec<_>>(),
-                    "capped": rs.len() == 200,
-                    "hours": hours,
-                    "newest": newest,
-                })),
+                Ok(rs) => {
+                    let more = rs.len() as i64 > limit;
+                    (200, serde_json::json!({
+                        "events": rs.iter().take(limit as usize).map(|r| serde_json::json!({
+                            "at": r.get::<_, String>(0),
+                            "session": r.get::<_, String>(1),
+                            "kind": r.get::<_, String>(2),
+                            "name": r.get::<_, String>(3),
+                            "pilot": r.get::<_, Option<i64>>(4),
+                            "zone": r.get::<_, String>(5),
+                            "instance": r.get::<_, String>(6),
+                            "room": r.get::<_, Option<i32>>(7),
+                            "detail": r.get::<_, serde_json::Value>(8),
+                        })).collect::<Vec<_>>(),
+                        "offset": offset,
+                        "limit": limit,
+                        "more": more,
+                        "hours": hours,
+                        "newest": newest,
+                    }))
+                }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
@@ -1828,6 +1879,19 @@ async fn apply(
 }
 
 // ------------------------------------------------------------------ client
+
+/// How much of a list a request asked for, clamped.
+///
+/// Both numbers arrive from a client, so neither is trusted: a limit of a
+/// million is a request to read the table into memory and a negative offset is
+/// a syntax error at the far end. The default is a screen's worth rather than
+/// everything, because a page that has to draw its way out of a slow answer
+/// has already lost.
+fn page_of(body: &serde_json::Value) -> (i64, i64) {
+    let limit = body.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 200);
+    let offset = body.get("offset").and_then(|v| v.as_i64()).unwrap_or(0).max(0);
+    (limit, offset)
+}
 
 /// Where a `VW_META` value actually points.
 ///

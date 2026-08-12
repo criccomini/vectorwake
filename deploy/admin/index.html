@@ -11,6 +11,16 @@
      client/arena/palette.lua and mean what they mean in the game, so cyan
      is the acting edge and orange is the destructive one.
 
+     Four views rather than one scroll. Everything used to sit on a single
+     page in the order it was built, so an operator looking for a ban
+     scrolled past the fleet, the feed, a pilot card and a command log to
+     find it, and the page grew a section every time the panel did. The
+     views are routed on the hash, which keeps this one file, one session
+     and one origin: separate documents would each re-check the flag and
+     re-fetch on every click, and the CSP would have to be repeated per
+     file. A hash is still a place you can bookmark and still what the back
+     button walks.
+
      Script and style live in files beside this one rather than inline,
      because the site's CSP says default-src 'self' and that is what makes a
      stray script in rendered text a non-event. Keep it that way. -->
@@ -31,6 +41,8 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
+<div class="shell">
+
 <header class="bar">
   <h1>
     <!-- The same hull the favicon draws, and the same four-point outline the
@@ -47,6 +59,24 @@
     <button id="logout" type="button">sign out</button>
   </p>
 </header>
+
+<!-- Real links rather than buttons, so the hash they carry is what routes the
+     page and a middle click or a bookmark does what it looks like it does.
+     Hidden until there is something to navigate. -->
+<nav class="rail" id="rail" aria-label="Sections" hidden>
+  <a href="#fleet" id="nav-fleet" data-view="fleet">
+    <span class="glyph" aria-hidden="true">01</span> Fleet
+  </a>
+  <a href="#pilots" id="nav-pilots" data-view="pilots">
+    <span class="glyph" aria-hidden="true">02</span> Pilots
+  </a>
+  <a href="#activity" id="nav-activity" data-view="activity">
+    <span class="glyph" aria-hidden="true">03</span> Activity
+  </a>
+  <a href="#access" id="nav-access" data-view="access">
+    <span class="glyph" aria-hidden="true">04</span> Access
+  </a>
+</nav>
 
 <main id="main">
   <noscript>
@@ -73,233 +103,278 @@
     <p id="login-note" class="note" role="status" aria-live="polite"></p>
   </section>
 
-  <section id="panel" aria-labelledby="fleet-head" hidden>
-    <h2 id="fleet-head">Fleet</h2>
-    <p id="fleet-head-line" class="lede"></p>
-    <p id="fleet-note" class="note" role="status" aria-live="polite"></p>
-    <div class="scroller">
-      <table id="fleet">
-        <caption class="sr">Every arena instance this deployment's directory
-          has observed</caption>
-        <!-- Health first, because that is what gets scanned: an operator
-             reads down `state` and stops at the row that is not `ok`. The
-             five numbers server.md names trail to the right, where they are
-             for investigating rather than noticing. -->
-        <thead><tr>
-          <th scope="col">instance</th><th scope="col">zone</th>
-          <th scope="col">region</th>
-          <th scope="col">state</th>
-          <th scope="col" class="n">players</th><th scope="col" class="n">bots</th>
-          <th scope="col">rooms</th>
-          <th scope="col" class="n">tick</th>
-          <th scope="col" class="n">bw/seat</th>
-          <th scope="col" class="n">snapshot</th>
-          <th scope="col" class="n">queue</th>
-          <th scope="col" class="n">lag/s</th>
-          <th scope="col">build</th>
-          <th scope="col"><span class="sr">actions</span></th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
+  <div id="panel" hidden>
 
-    <!-- What the fleet has seen lately, across every arena. Above the pilot
-         table on purpose: this is the section somebody scans, and a call sign
-         in it opens that pilot's card below, so noticing something and going
-         to look at it is one click.
+    <!-- ---------------------------------------------------------- fleet -->
+    <section class="view" id="view-fleet" aria-labelledby="fleet-head">
+      <h2 id="fleet-head">Fleet</h2>
+
+      <!-- The four numbers somebody opens a dashboard to read, big enough to
+           read from a chair away. Tiles rather than a sentence because these
+           are the ones checked at a glance and the sentence below them is the
+           one read when a tile looks wrong. -->
+      <div class="tiles">
+        <div class="tile"><span class="v" id="stat-arenas">0</span><span class="k">arenas</span></div>
+        <div class="tile"><span class="v" id="stat-players">0</span><span class="k">playing</span></div>
+        <div class="tile"><span class="v" id="stat-bots">0</span><span class="k">bots</span></div>
+        <div class="tile"><span class="v" id="stat-rooms">0</span><span class="k">rooms</span></div>
+      </div>
+
+      <p id="fleet-head-line" class="lede"></p>
+      <p id="fleet-note" class="note" role="status" aria-live="polite"></p>
+      <div class="scroller">
+        <table id="fleet">
+          <caption class="sr">Every arena instance this deployment's directory
+            has observed</caption>
+          <!-- Health first, because that is what gets scanned: an operator
+               reads down `state` and stops at the row that is not `ok`. The
+               five numbers server.md names trail to the right, where they are
+               for investigating rather than noticing. -->
+          <thead><tr>
+            <th scope="col">instance</th><th scope="col">zone</th>
+            <th scope="col">region</th>
+            <th scope="col">state</th>
+            <th scope="col" class="n">players</th><th scope="col" class="n">bots</th>
+            <th scope="col">rooms</th>
+            <th scope="col" class="n">tick</th>
+            <th scope="col" class="n">bw/seat</th>
+            <th scope="col" class="n">snapshot</th>
+            <th scope="col" class="n">queue</th>
+            <th scope="col" class="n">lag/s</th>
+            <th scope="col">build</th>
+            <th scope="col"><span class="sr">actions</span></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <!-- The command log lives with the fleet because the fleet is where the
+           commands are sent from, and a verb and its answer a moment later are
+           one thing read in one place. -->
+      <h3 id="log-head">Command log</h3>
+      <div class="scroller">
+        <table id="audit">
+          <caption class="sr">Operator commands and the answers arenas gave</caption>
+          <thead><tr>
+            <th scope="col">at</th><th scope="col">who</th><th scope="col">did</th>
+            <th scope="col">to</th><th scope="col" class="wrap">said</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="audit-empty" class="dim" hidden>No commands sent since the directory
+        last started.</p>
+    </section>
+
+    <!-- --------------------------------------------------------- pilots -->
+    <section class="view" id="view-pilots" aria-labelledby="pilot-head" hidden>
+      <h2 id="pilot-head">Pilots</h2>
+      <!-- No button beside it: typing is the whole interaction, and a button
+           that repeats what the keystrokes already did is a button that invites
+           somebody to wonder what it does differently. -->
+      <div class="field">
+        <label for="lookup-q" class="sr">filter by call sign or account number</label>
+        <input id="lookup-q" type="search" placeholder="filter by call sign, or #account"
+               autocapitalize="off" spellcheck="false"
+               autocomplete="off" aria-controls="pilots">
+      </div>
+      <p id="lookup-note" class="note" role="status" aria-live="polite"></p>
+
+      <div class="scroller">
+        <table id="pilots">
+          <caption class="sr">Pilots matching the filter, most recently seen
+            first</caption>
+          <!-- Rank, rating and tier are three readings of one standing and each
+               answers a question the other two do not: where they sit against
+               everybody else, the number the matchmaker reads, and the band a
+               player is actually shown. -->
+          <thead><tr>
+            <th scope="col">account</th><th scope="col">call sign</th>
+            <th scope="col">kind</th><th scope="col">standing</th>
+            <th scope="col" class="n">rank</th>
+            <th scope="col" class="n">rating</th>
+            <th scope="col">tier</th>
+            <th scope="col">last seen</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager" id="pilots-pager">
+        <button type="button" data-step="-1" class="quiet">previous</button>
+        <span id="pilots-note" class="dim" role="status" aria-live="polite"></span>
+        <button type="button" data-step="1" class="quiet">next</button>
+      </div>
+
+      <div class="card" id="pilot-card" hidden>
+        <dl id="pilot"></dl>
+        <div id="pilot-edit">
+          <form id="name-form" class="row">
+            <div class="field grow">
+              <label for="name-text">call sign</label>
+              <input id="name-text" maxlength="24" autocapitalize="off"
+                     spellcheck="false" placeholder="a new call sign">
+            </div>
+            <button id="name-button">rename</button>
+            <button id="reroll-button" type="button">reroll</button>
+          </form>
+          <form id="ban-form" class="row">
+            <div class="field grow">
+              <label for="ban-reason">standing</label>
+              <input id="ban-reason" placeholder="reason for the ban">
+            </div>
+            <button id="ban-button"></button>
+            <button id="kick-button" type="button">kick</button>
+            <button id="admin-button" type="button"></button>
+          </form>
+        </div>
+      </div>
+
+      <!-- What the fleet saw this pilot do, drawn with the card above and
+           hidden with it. This is the half of acting on a report that the panel
+           could not do before: admin.md notes that an operator can act on a
+           report and not notice one, and until the pilot log existed the acting
+           was on the reporter's word alone.
+
+           Read-only, and no controls in it. The log is a record of what
+           happened, and an operator who could revise it would be holding a
+           different kind of thing. -->
+      <h3 id="activity-head">This pilot's activity</h3>
+      <p id="activity-none" class="dim">Pick a call sign above to see what the
+        fleet saw them do.</p>
+      <div id="activity" hidden>
+        <p id="activity-note" class="note" role="status" aria-live="polite"></p>
+        <div class="scroller">
+          <table id="events">
+            <caption class="sr">What this pilot did, newest first</caption>
+            <thead><tr>
+              <th scope="col">at</th>
+              <th scope="col">what</th>
+              <th scope="col" class="wrap">detail</th>
+              <th scope="col">where</th>
+              <th scope="col">stay</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="pager" id="events-pager">
+          <button type="button" data-step="-1" class="quiet">previous</button>
+          <span id="events-range" class="dim" role="status" aria-live="polite"></span>
+          <button type="button" data-step="1" class="quiet">next</button>
+        </div>
+        <p id="events-empty" class="dim" hidden>Nothing recorded. The log keeps
+          ninety days, and a pilot who has not flown in that time has aged out
+          of it.</p>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------- activity -->
+    <!-- What the fleet has seen lately, across every arena. A call sign in it
+         opens that pilot's card on the Pilots view, so noticing something and
+         going to look at it is one click.
 
          People and bots are separate views rather than one mixed feed. A room
          runs fifty-one bots against a handful of players, so mixing them is a
          page of bot arrivals with everything worth reading pushed off the end.
          It is also what the index wants. -->
-    <h2 id="recent-head">Recent</h2>
-    <div class="row" id="recent-controls">
-      <div class="field">
-        <label for="recent-who">who</label>
-        <select id="recent-who">
-          <option value="people" selected>people</option>
-          <option value="bots">bots</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="recent-kind">what</label>
-        <select id="recent-kind">
-          <option value="" selected>everything</option>
-          <option value="denied">denied</option>
-          <option value="join">join</option>
-          <option value="leave">leave</option>
-          <option value="died">died</option>
-          <option value="kill">kill</option>
-          <option value="ship">ship</option>
-          <option value="team">team</option>
-          <option value="watch">watch</option>
-          <option value="on_air">on_air</option>
-          <option value="login">login</option>
-          <option value="rename">rename</option>
-          <option value="ban">ban</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="recent-hours">since</label>
-        <select id="recent-hours">
-          <option value="1">an hour ago</option>
-          <option value="24" selected>a day ago</option>
-          <option value="168">a week ago</option>
-          <option value="720">a month ago</option>
-        </select>
-      </div>
-    </div>
-    <p id="recent-note" class="dim" role="status" aria-live="polite"></p>
-    <div class="scroller">
-      <table id="recent">
-        <caption class="sr">What the fleet has seen lately, newest first</caption>
-        <thead><tr>
-          <th scope="col">at</th>
-          <th scope="col">pilot</th>
-          <th scope="col">what</th>
-          <th scope="col">detail</th>
-          <th scope="col">where</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p id="recent-empty" class="dim" hidden></p>
-
-    <h2 id="pilot-head">Pilot</h2>
-    <!-- No button beside it: typing is the whole interaction, and a button
-         that repeats what the keystrokes already did is a button that invites
-         somebody to wonder what it does differently. -->
-    <div class="field">
-      <label for="lookup-q" class="sr">filter by call sign or account number</label>
-      <input id="lookup-q" type="search" placeholder="filter by call sign, or #account"
-             autocapitalize="off" spellcheck="false"
-             autocomplete="off" aria-controls="pilots">
-    </div>
-    <p id="lookup-note" class="note" role="status" aria-live="polite"></p>
-
-    <div class="scroller">
-      <table id="pilots">
-        <caption class="sr">Pilots matching the filter, most recently seen
-          first</caption>
-        <!-- Rank, rating and tier are three readings of one standing and each
-             answers a question the other two do not: where they sit against
-             everybody else, the number the matchmaker reads, and the band a
-             player is actually shown. -->
-        <thead><tr>
-          <th scope="col">account</th><th scope="col">call sign</th>
-          <th scope="col">kind</th><th scope="col">standing</th>
-          <th scope="col" class="n">rank</th>
-          <th scope="col" class="n">rating</th>
-          <th scope="col">tier</th>
-          <th scope="col">last seen</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p id="pilots-note" class="dim" role="status" aria-live="polite"></p>
-    <dl id="pilot" hidden></dl>
-
-    <div id="pilot-edit" hidden>
-      <form id="name-form" class="row">
-        <div class="field grow">
-          <label for="name-text">call sign</label>
-          <input id="name-text" maxlength="24" autocapitalize="off"
-                 spellcheck="false" placeholder="a new call sign">
+    <section class="view" id="view-activity" aria-labelledby="recent-head" hidden>
+      <h2 id="recent-head">Activity</h2>
+      <div class="row" id="recent-controls">
+        <div class="field">
+          <label for="recent-who">who</label>
+          <select id="recent-who">
+            <option value="people" selected>people</option>
+            <option value="bots">bots</option>
+          </select>
         </div>
-        <button id="name-button">rename</button>
-        <button id="reroll-button" type="button">reroll</button>
-      </form>
-      <form id="ban-form" class="row">
-        <div class="field grow">
-          <label for="ban-reason">standing</label>
-          <input id="ban-reason" placeholder="reason for the ban">
+        <div class="field">
+          <label for="recent-kind">what</label>
+          <select id="recent-kind">
+            <option value="" selected>everything</option>
+            <option value="denied">denied</option>
+            <option value="join">join</option>
+            <option value="leave">leave</option>
+            <option value="died">died</option>
+            <option value="kill">kill</option>
+            <option value="ship">ship</option>
+            <option value="team">team</option>
+            <option value="watch">watch</option>
+            <option value="on_air">on_air</option>
+            <option value="login">login</option>
+            <option value="rename">rename</option>
+            <option value="ban">ban</option>
+          </select>
         </div>
-        <button id="ban-button"></button>
-        <button id="kick-button" type="button">kick</button>
-        <button id="admin-button" type="button"></button>
-      </form>
-    </div>
-
-    <!-- What the fleet saw this pilot do, drawn with the card above and
-         hidden with it. This is the half of acting on a report that the panel
-         could not do before: admin.md notes that an operator can act on a
-         report and not notice one, and until the pilot log existed the acting
-         was on the reporter's word alone.
-
-         Read-only, and no controls in it. The log is a record of what
-         happened, and an operator who could revise it would be holding a
-         different kind of thing. -->
-    <!-- The heading stays put whether or not a pilot is picked, the way Log
-         and Bans do. It used to live inside the block below and vanish with
-         it, which meant an operator reading down the page saw Fleet, Pilot,
-         Log, Bans, Admins and no sign this existed at all. A section nobody
-         can see is a section nobody uses. -->
-    <h2 id="activity-head">Activity</h2>
-    <p id="activity-none" class="dim">Pick a pilot above to see what the fleet
-      saw them do.</p>
-    <div id="activity" hidden>
-      <p id="activity-note" class="dim" role="status" aria-live="polite"></p>
+        <div class="field">
+          <label for="recent-hours">since</label>
+          <select id="recent-hours">
+            <option value="1">an hour ago</option>
+            <option value="24" selected>a day ago</option>
+            <option value="168">a week ago</option>
+            <option value="720">a month ago</option>
+          </select>
+        </div>
+      </div>
+      <p id="recent-note" class="note" role="status" aria-live="polite"></p>
       <div class="scroller">
-        <table id="events">
-          <caption class="sr">What this pilot did, newest first</caption>
+        <table id="recent">
+          <caption class="sr">What the fleet has seen lately, newest first</caption>
           <thead><tr>
             <th scope="col">at</th>
+            <th scope="col">pilot</th>
             <th scope="col">what</th>
-            <th scope="col">detail</th>
+            <th scope="col" class="wrap">detail</th>
             <th scope="col">where</th>
-            <th scope="col">stay</th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
-      <p id="events-empty" class="dim" hidden>Nothing recorded. The log keeps
-        ninety days, and a pilot who has not flown in that time has aged out
-        of it.</p>
-    </div>
+      <div class="pager" id="recent-pager">
+        <button type="button" data-step="-1" class="quiet">previous</button>
+        <span id="recent-range" class="dim" role="status" aria-live="polite"></span>
+        <button type="button" data-step="1" class="quiet">next</button>
+      </div>
+      <p id="recent-empty" class="dim" hidden></p>
+    </section>
 
-    <h2 id="log-head">Log</h2>
-    <div class="scroller">
-      <table id="audit">
-        <caption class="sr">Operator commands and the answers arenas gave</caption>
-        <thead><tr>
-          <th scope="col">at</th><th scope="col">who</th><th scope="col">did</th>
-          <th scope="col">to</th><th scope="col">said</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p id="audit-empty" class="dim" hidden>No commands sent since the directory
-      last started.</p>
+    <!-- --------------------------------------------------------- access -->
+    <!-- Bans and admins together, because both answer one question: who is
+         allowed to do what. They were two sections at opposite ends of a long
+         page, which is two scrolls to compare a list against its opposite. -->
+    <section class="view" id="view-access" aria-labelledby="access-head" hidden>
+      <h2 id="access-head">Access</h2>
 
-    <h2 id="bans-head">Bans</h2>
-    <div class="scroller">
-      <table id="bans">
-        <caption class="sr">Accounts currently refused a session token</caption>
-        <thead><tr>
-          <th scope="col">account</th><th scope="col">call sign</th>
-          <th scope="col">reason</th><th scope="col">last seen</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p id="bans-empty" class="dim" hidden>Nobody is banned.</p>
-    <p id="bans-note" class="note" role="status" aria-live="polite"></p>
+      <h3 id="bans-head">Bans</h3>
+      <div class="scroller">
+        <table id="bans">
+          <caption class="sr">Accounts currently refused a session token</caption>
+          <thead><tr>
+            <th scope="col">account</th><th scope="col">call sign</th>
+            <th scope="col" class="wrap">reason</th><th scope="col">last seen</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="bans-empty" class="dim" hidden>Nobody is banned.</p>
+      <p id="bans-note" class="note" role="status" aria-live="polite"></p>
 
-    <h2 id="admins-head">Admins</h2>
-    <div class="scroller">
-      <table id="admins">
-        <caption class="sr">Accounts that hold the admin flag</caption>
-        <thead><tr>
-          <th scope="col">account</th><th scope="col">call sign</th>
-          <th scope="col">last seen</th>
-          <th scope="col"><span class="sr">actions</span></th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p id="admins-note" class="note" role="status" aria-live="polite"></p>
-  </section>
+      <h3 id="admins-head">Admins</h3>
+      <div class="scroller">
+        <table id="admins">
+          <caption class="sr">Accounts that hold the admin flag</caption>
+          <thead><tr>
+            <th scope="col">account</th><th scope="col">call sign</th>
+            <th scope="col">last seen</th>
+            <th scope="col"><span class="sr">actions</span></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="admins-note" class="note" role="status" aria-live="polite"></p>
+    </section>
+
+  </div>
 </main>
+</div>
 
 <!-- Asking before something disruptive. A dialog rather than confirm() and
      prompt(): those cannot be drawn to this art direction, some browsers

@@ -169,13 +169,43 @@ the page and its API share an origin and nothing needs CORS. Static for the
 reason the top of this document gives: it wants tables, forms and text entry,
 which the game client refuses to draw on purpose.
 
+Four views rather than one scroll: **Fleet**, **Pilots**, **Activity** and
+**Access**. Everything used to sit on a single page in the order it was built,
+so finding a ban meant scrolling past the fleet, the feed, a pilot card and a
+command log, and the page grew a section every time the panel did.
+
+They are routed on the hash rather than served as four documents. Four
+documents would each re-check the flag, re-fetch everything and repeat the CSP
+for navigation inside one session, and since the panel is a directory of static
+files, a path per view would need a rewrite rule in Caddy to survive a reload.
+A hash is still somewhere you can bookmark and still what the back button
+walks, and costs none of that.
+
 It opens on the fleet, because "is anything wrong right now" is the question
-somebody opens a dashboard for. Every registered instance with its zone,
-region, occupancy, rooms and tick time, and a state that reads `ok` or names
-the one thing worth knowing: unverified, silent, a tick near budget, a queue
-that is not draining, lag actions taken, a drain announced, capped. Above it
-the totals, the catalog version, and the key check below. Under that the pilot
-table with ban and unban, the ban list, and who holds the flag.
+somebody opens a dashboard for. Four tiles carry the numbers that get read from
+across a desk, and under them every registered instance with its zone, region,
+occupancy, rooms and tick time, and a state that reads `ok` or names the one
+thing worth knowing: unverified, silent, a tick near budget, a queue that is
+not draining, lag actions taken, a drain announced, capped. The catalog
+version, the build and the key check sit in the line above the table, and the
+command log sits below it, because the fleet is where commands are sent from
+and a verb with its answer a moment later is one thing read in one place.
+
+Pilots holds the filter, the table, the card a call sign opens and that pilot's
+history. Activity is the same log across the whole fleet. Access is bans and
+admins together, since both answer one question about who may do what and they
+used to sit at opposite ends of a long page.
+
+The pilot table and both event tables page twenty-five rows at a time. The
+pilot table's footer counts, because the accounts it reads are bounded by how
+many people have ever played and an index scan over that is cheap. The event
+tables do not: `pilot_events` takes most of 300,000 rows a day, so counting a
+history to draw a footer is work that grows forever, and they ask for
+twenty-six rows instead and report whether the extra one arrived. The footer
+reads the same either way. Where a page starts comes from the reply rather than
+from a constant on the page, since the server clamps what it was asked for and
+a client deriving the answer from its own number lies the moment the two
+disagree.
 
 Two columns link out, and both lead to the thing you want next after reading
 the row. An instance name goes to the provider's console page for the machine

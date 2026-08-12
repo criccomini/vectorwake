@@ -60,9 +60,108 @@ function show(section) {
   login.hidden = section !== login;
   panel.hidden = section !== panel;
   // Who you are belongs in the header, which is outside both sections, so it
-  // is shown and hidden with them rather than by them.
+  // is shown and hidden with them rather than by them. The rail goes the same
+  // way: four links to places you cannot reach are worse than no links.
   el("who-line").hidden = section !== panel;
+  el("rail").hidden = section !== panel;
 }
+
+// -------------------------------------------------------------- paging
+
+// How many rows a page of a table is. One number for all three, because a
+// screen holds about this many of any of them and an operator who has learned
+// what `next` costs on one table should not relearn it on the next.
+const PAGE = 25;
+
+// Which page each table is on, by the name its pager and note line use. Reset
+// to zero whenever what is being paged changes, since page four of a filter
+// nobody typed yet is an empty table and a puzzle.
+const pages = { pilots: 0, recent: 0, events: 0 };
+
+// Draw one table's footer: which rows these are, out of how many, and whether
+// the two controls can go anywhere.
+//
+// `total` when the server counted, and `more` when it did not. The pilot table
+// is bounded by how many people have ever played, so counting it is an index
+// scan and worth it; the event log takes most of 300,000 rows a day, so it
+// answers "is there another page" with one extra row instead. The footer reads
+// the same either way, which is the point of doing it here.
+function pager(name, { empty, noun, shown, from, total, more }) {
+  const box = el(`${name}-pager`);
+  const [prev, next] = box.querySelectorAll("button");
+  prev.disabled = from === 0;
+  next.disabled = !more;
+  // The controls go when a list fits on one page, because two dead buttons
+  // say nothing. The line between them stays: it is where the count goes and,
+  // for the pilot table, where `paint` writes a draw that failed, so hiding
+  // the box would take the error report with it.
+  const alone = from === 0 && !more;
+  prev.hidden = alone;
+  next.hidden = alone;
+
+  const line = el(name === "pilots" ? "pilots-note" : `${name}-range`);
+  if (!shown) {
+    line.textContent = from === 0 ? empty : "nothing on this page";
+    return;
+  }
+  const of = total == null ? "" : ` of ${total}`;
+  const s = total === 1 || (total == null && shown === 1) ? "" : "s";
+  line.textContent = shown === 1 && !of
+    ? `${noun} ${from + 1}`
+    : `${noun}${s} ${from + 1} to ${from + shown}${of}`;
+}
+
+// Both controls on every pager, wired once. `data-step` says which way, and
+// the table redraws from the server rather than from anything held here: a
+// page of a list that is still moving should be the page as it is now.
+for (const [name, redraw] of [
+  ["pilots", () => drawPilots(el("lookup-q").value.trim())],
+  ["recent", () => drawRecent()],
+  ["events", () => drawEvents()],
+]) {
+  for (const b of document.querySelectorAll(`#${name}-pager button`)) {
+    b.addEventListener("click", () => {
+      pages[name] = Math.max(0, pages[name] + Number(b.dataset.step));
+      paint(name === "recent" ? "recent" : name === "events" ? "activity" : "pilots", redraw);
+    });
+  }
+}
+
+// ----------------------------------------------------------------- routing
+
+// Four views, one at a time, chosen by the hash.
+//
+// The hash rather than four documents. Each would re-check the flag, re-fetch
+// everything and repeat the CSP, for navigation between parts of one session;
+// and the panel is served as static files from a directory, so a path per view
+// would need a rewrite rule in Caddy to survive a reload. A hash is still
+// somewhere you can bookmark, still what the back button walks, and costs
+// none of that.
+const VIEWS = ["fleet", "pilots", "activity", "access"];
+
+function route() {
+  const want = location.hash.replace(/^#/, "");
+  const view = VIEWS.includes(want) ? want : VIEWS[0];
+  for (const v of VIEWS) {
+    el(`view-${v}`).hidden = v !== view;
+    const link = el(`nav-${v}`);
+    // `aria-current` rather than a class, because "this is the one you are on"
+    // is what it means, and the stylesheet can hang off it just as well.
+    if (view === v) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  return view;
+}
+
+// A hash the page did not put there is a click on a nav link or the back
+// button, and both mean draw that view now rather than at the next refresh.
+addEventListener("hashchange", () => {
+  const view = route();
+  if (panel.hidden) return;
+  if (view === "activity") paint("recent", drawRecent);
+  if (view === "pilots") paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
+  if (view === "access") { paint("bans", drawBans); paint("admins", drawAdmins); }
+});
 
 // ------------------------------------------------------------------ sign in
 
@@ -118,7 +217,7 @@ function paint(name, run) {
 async function arrive(name) {
   el("who").textContent = name;
   show(panel);
-  el("lookup-q").focus();
+  route();
   refresh();
   // The fleet and the feed are the two that move on their own. Bans and
   // admins change when an operator changes them, and this page is where that
@@ -192,8 +291,7 @@ function eject(why) {
   shown = null;
   if (ticking) { clearInterval(ticking); ticking = null; }
   if (pulsing) { clearInterval(pulsing); pulsing = null; }
-  el("pilot").hidden = true;
-  el("pilot-edit").hidden = true;
+  el("pilot-card").hidden = true;
   el("activity").hidden = true;
   el("activity-none").hidden = false;
   shownWas = null;
@@ -509,6 +607,24 @@ function draw(f) {
   const players = f.instances.reduce((n, i) => n + i.players, 0);
   const bots = f.instances.reduce((n, i) => n + i.bots, 0);
   const bad = f.instances.filter((i) => trouble(i)[1] === "bad").length;
+
+  // The same totals as tiles, which is what gets read from across a desk. The
+  // room count adds up what each instance is holding rather than counting
+  // instances, since one arena with four rooms and four with one are the same
+  // number of rooms and very different fleets. An instance too old to send
+  // its rooms whole sends a count, and both shapes add up the same.
+  // Not `rooms`, which is the name of the function three lines up that draws
+  // one instance's. A const shadows it for the whole of this scope, so the
+  // row builder above reached the binding before it was initialised and every
+  // fleet draw threw. Caught in one page load by the guard added an hour ago,
+  // which is the argument for it in one line.
+  const roomsHeld = f.instances.reduce(
+    (n, i) => n + (Array.isArray(i.rooms) ? i.rooms.length : Number(i.rooms) || 0), 0);
+  el("stat-arenas").textContent = f.instances.length;
+  el("stat-players").textContent = players;
+  el("stat-bots").textContent = bots;
+  el("stat-rooms").textContent = roomsHeld;
+
   const head = el("fleet-head-line");
   head.textContent = "";
   const say = (text, cls) => {
@@ -625,6 +741,8 @@ async function drawRecent() {
     bots: who === "bots",
     kind: el("recent-kind").value,
     hours: Number(el("recent-hours").value),
+    limit: PAGE,
+    offset: pages.recent * PAGE,
   };
   let r;
   try {
@@ -671,10 +789,16 @@ async function drawRecent() {
     .map((k) => `${k} ${ago(newest[k])}`)
     .join(", ");
   const empty = el("recent-empty");
+  pager("recent", {
+    empty: "nothing matching that",
+    noun: "event",
+    shown: list.length,
+    from: r.offset == null ? pages.recent * PAGE : r.offset,
+    total: null,
+    more: Boolean(r.more),
+  });
   if (list.length) {
-    tell("recent-note", r.capped
-      ? `the most recent 200. last filed: ${pulse}`
-      : `${list.length} event${list.length === 1 ? "" : "s"}. last filed: ${pulse}`);
+    tell("recent-note", `last filed: ${pulse}`);
     empty.hidden = true;
   } else {
     tell("recent-note", "");
@@ -686,8 +810,13 @@ async function drawRecent() {
   }
 }
 
+// A changed filter is a different list, and page four of it is an empty table
+// and a puzzle.
 ["recent-who", "recent-kind", "recent-hours"].forEach((id) =>
-  el(id).addEventListener("change", () => paint("recent", drawRecent)));
+  el(id).addEventListener("change", () => {
+    pages.recent = 0;
+    paint("recent", drawRecent);
+  }));
 
 // ---------------------------------------------------------------- activity
 
@@ -796,7 +925,10 @@ async function drawEvents() {
   el("activity-none").hidden = Boolean(shown);
   if (!shown) { box.hidden = true; return; }
   box.hidden = false;
-  const body = stay ? { secret, session: stay } : { secret, account: shown.account };
+  const page = { limit: PAGE, offset: pages.events * PAGE };
+  const body = stay
+    ? { secret, session: stay, ...page }
+    : { secret, account: shown.account, ...page };
   let r;
   try {
     r = await post("/v1/admin/events", body);
@@ -819,7 +951,7 @@ async function drawEvents() {
     pick.type = "button";
     pick.className = "link pick";
     pick.textContent = v.session ? v.session.slice(0, 8) : "";
-    if (v.session) pick.addEventListener("click", () => { stay = v.session; drawEvents(); });
+    if (v.session) pick.addEventListener("click", () => { stay = v.session; pages.events = 0; drawEvents(); });
     return [
       v.at,
       [v.kind, NOTABLE(v) ? "bad" : ""],
@@ -833,20 +965,27 @@ async function drawEvents() {
   el("events-empty").hidden = list.length > 0 || Boolean(stay);
   el("events").hidden = list.length === 0;
 
+  pager("events", {
+    empty: "nothing recorded",
+    noun: "event",
+    shown: list.length,
+    from: r.offset == null ? pages.events * PAGE : r.offset,
+    total: null,
+    more: Boolean(r.more),
+  });
+
   const note = el("activity-note");
   note.textContent = "";
   if (stay) {
-    note.append(`one stay, ${list.length} event${list.length === 1 ? "" : "s"}. `);
+    note.append("one stay. ");
     const all = document.createElement("button");
     all.type = "button";
     all.className = "link";
     all.textContent = "show the whole history";
-    all.addEventListener("click", () => { stay = null; drawEvents(); });
+    all.addEventListener("click", () => { stay = null; pages.events = 0; drawEvents(); });
     note.append(all);
-  } else if (r.capped) {
-    note.textContent = "the most recent 200; open a stay to read one of them in full";
   } else if (list.length) {
-    note.textContent = `${list.length} event${list.length === 1 ? "" : "s"}, newest first`;
+    note.textContent = "newest first; open a stay to read one of them in full";
   }
 }
 
@@ -872,9 +1011,8 @@ function drawPilot(p) {
   row("standing", p.banned ? `banned: ${p.reason || "no reason recorded"}` : "in good standing",
       p.banned ? "bad" : "good");
   if (p.admin) row("admin", "yes", "good");
-  dl.hidden = false;
 
-  el("pilot-edit").hidden = false;
+  el("pilot-card").hidden = false;
   // A bot's name is how its roster identity is found, so the server refuses
   // to rename one at all. Saying so by not drawing the controls beats saying
   // it in a refusal.
@@ -963,7 +1101,8 @@ function tier(p, r) {
 async function drawPilots(q) {
   let r;
   try {
-    r = await post("/v1/admin/pilots", { secret, q: q || "" });
+    r = await post("/v1/admin/pilots",
+                   { secret, q: q || "", limit: PAGE, offset: pages.pilots * PAGE });
   } catch (e) {
     // The page and the server update on different clocks: these files ship
     // from the checkout in about a minute, the binary ships as an image once
@@ -996,25 +1135,42 @@ async function drawPilots(q) {
       p.last_seen,
     ];
   }));
-  const note = el("pilots-note");
-  if (!list.length) {
-    note.textContent = q ? `nobody matches ${q}` : "no pilots yet";
-  } else if (r.capped) {
-    note.textContent = "the first 100, most recently seen first; keep typing to narrow it";
-  } else {
-    note.textContent = `${list.length} pilot${list.length === 1 ? "" : "s"}`;
-  }
+  // A total the server counted, so the footer can say which slice of what it
+  // is showing rather than "the first hundred", which never said how many
+  // hundreds there were.
+  // Straight from the reply rather than recomputed from PAGE. The server
+  // clamps what it was asked for, so the page it actually returned is the only
+  // one that can be described honestly, and a client deriving the answer from
+  // its own constant is a client that lies the moment the two disagree.
+  const from = r.offset == null ? pages.pilots * PAGE : r.offset;
+  const total = r.total == null ? null : r.total;
+  pager("pilots", {
+    empty: q ? `nobody matches ${q}` : "no pilots yet",
+    noun: "pilot",
+    shown: list.length,
+    from,
+    total,
+    more: total == null ? list.length >= PAGE : from + list.length < total,
+  });
 }
 
 el("lookup-q").addEventListener("input", (ev) => {
   clearTimeout(typing);
   const q = ev.target.value.trim();
+  pages.pilots = 0;
   typing = setTimeout(() => paint("pilots", () => drawPilots(q)), 180);
 });
 
 async function lookup(q) {
   const note = el("lookup-note");
   tell("lookup-note", "");
+  // The card lives on the Pilots view and this is reached from the Activity
+  // feed too, where a call sign is the obvious thing to click. Without this it
+  // opened a card on a view you were not looking at, which reads as a click
+  // that did nothing at all.
+  if (location.hash !== "#pilots") location.hash = "#pilots";
+  // A fresh pilot is a fresh history, so it starts at the first page of it.
+  pages.events = 0;
   const body = { secret };
   const m = q.match(/^#?(\d+)$/);
   if (m) body.account = Number(m[1]);
@@ -1022,8 +1178,7 @@ async function lookup(q) {
   try {
     drawPilot(await post("/v1/admin/pilot", body));
   } catch (e) {
-    el("pilot").hidden = true;
-    el("pilot-edit").hidden = true;
+    el("pilot-card").hidden = true;
     el("activity").hidden = true;
     el("activity-none").hidden = false;
     shown = null;
