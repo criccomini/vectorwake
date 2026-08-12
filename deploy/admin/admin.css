@@ -150,7 +150,7 @@ h1 {
 
 /* ------------------------------------------------------------------- rail */
 
-/* The four views. It follows the page down rather than scrolling away with
+/* The five main views. It follows the page down rather than scrolling away with
    it, because the reason to look at the nav is usually that you have read to
    the bottom of something and want to be somewhere else. */
 .rail {
@@ -630,6 +630,36 @@ td.wrap {
   max-width: 30rem;
 }
 
+.error-detail { min-width: min(22rem, 38vw); }
+.error-detail summary {
+  cursor: pointer;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.error-detail[open] summary { color: var(--friend); }
+.error-stack {
+  max-height: 18rem;
+  overflow: auto;
+  margin: 0.75rem 0 0;
+  padding: 0.75rem;
+  border-left: 2px solid var(--friend);
+  background: var(--bg);
+  color: var(--dim);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.error-meta {
+  margin: 0.65rem 0 0;
+  color: var(--dim);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.error-origin { min-width: 10rem; max-width: 16rem; overflow-wrap: anywhere; }
+
 /* The rooms an instance holds, as the numbers a player would use. The count
    leads, the rooms follow it, and a full one wears the enemy's color because
    full is the state that turns players away. */
@@ -686,7 +716,7 @@ dialog .field { margin-bottom: 1rem; }
    than a squeezed table or a sideways scroll. */
 /* The rail cannot be a column on a phone: a fifth of a 390px screen is not a
    column, it is a margin with words in it. So it lays out across the top
-   instead, scrolling sideways if four names do not fit, and the marker moves
+   instead, scrolling sideways if five names do not fit, and the marker moves
    from the left edge to the bottom one because that is where a tab strip
    carries it. */
 @media (max-width: 60rem) {
@@ -774,9 +804,11 @@ dialog .field { margin-bottom: 1rem; }
    beside it are not squeezed into a third of one, and they share the next
    row evenly instead of wrapping one at a time. */
 @media (max-width: 30rem) {
-  /* Four names across a phone is tight, and a strip that scrolls to reach
+  /* Five names across a phone is tight, and a strip that scrolls to reach
      its last tab hides that the tab is there. */
   .rail a { padding-inline: 0.6rem; letter-spacing: 0.04em; }
+
+  .error-detail { min-width: 0; }
 
   .row { align-items: stretch; }
   .row .grow { flex: 1 1 100%; max-width: none; }

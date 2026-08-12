@@ -61,14 +61,14 @@ function show(section) {
   panel.hidden = section !== panel;
   // Who you are belongs in the header, which is outside both sections, so it
   // is shown and hidden with them rather than by them. The rail goes the same
-  // way: four links to places you cannot reach are worse than no links.
+  // way: links to places you cannot reach are worse than no links.
   el("who-line").hidden = section !== panel;
   el("rail").hidden = section !== panel;
 }
 
 // -------------------------------------------------------------- paging
 
-// How many rows a page of a table is. One number for all three, because a
+// How many rows a page of a table is. One number for every paged list, because a
 // screen holds about this many of any of them and an operator who has learned
 // what `next` costs on one table should not relearn it on the next.
 const PAGE = 25;
@@ -76,7 +76,7 @@ const PAGE = 25;
 // Which page each table is on, by the name its pager and note line use. Reset
 // to zero whenever what is being paged changes, since page four of a filter
 // nobody typed yet is an empty table and a puzzle.
-const pages = { pilots: 0, recent: 0, events: 0 };
+const pages = { pilots: 0, recent: 0, errors: 0, events: 0 };
 
 // Draw one table's footer: which rows these are, out of how many, and whether
 // the two controls can go anywhere.
@@ -133,32 +133,33 @@ function pager(name, { empty, noun, shown, from, total, more, paged = true }) {
 for (const [name, redraw] of [
   ["pilots", () => drawPilots(el("lookup-q").value.trim())],
   ["recent", () => drawRecent()],
+  ["errors", () => drawErrors()],
   ["events", () => drawEvents()],
 ]) {
   for (const b of document.querySelectorAll(`#${name}-pager button`)) {
     b.addEventListener("click", () => {
       pages[name] = Math.max(0, pages[name] + Number(b.dataset.step));
-      paint(name === "recent" ? "recent" : name === "events" ? "activity" : "pilots", redraw);
+      paint(name === "events" ? "activity" : name, redraw);
     });
   }
 }
 
 // ----------------------------------------------------------------- routing
 
-// Four views, one at a time, chosen by the hash.
+// Five main views, one at a time, chosen by the hash.
 //
-// The hash rather than four documents. Each would re-check the flag, re-fetch
+// The hash rather than five documents. Each would re-check the flag, re-fetch
 // everything and repeat the CSP, for navigation between parts of one session;
 // and the panel is served as static files from a directory, so a path per view
 // would need a rewrite rule in Caddy to survive a reload. A hash is still
 // somewhere you can bookmark, still what the back button walks, and costs
 // none of that.
-const VIEWS = ["fleet", "pilots", "activity", "access", "pilot"];
+const VIEWS = ["fleet", "pilots", "activity", "errors", "access", "pilot"];
 
-// The rail holds four; `pilot` is the fifth and is reached by link rather than
+// The rail holds the main views; `pilot` is reached by link rather than
 // by nav, because there is no such thing as "the pilot page" until you have
 // picked one.
-const RAILED = VIEWS.slice(0, 4);
+const RAILED = VIEWS.filter((view) => view !== "pilot");
 
 // Who the pilot view is currently showing, so a redraw after a rename or a ban
 // knows which account to ask for again.
@@ -195,6 +196,7 @@ addEventListener("hashchange", () => {
   const view = route();
   if (panel.hidden) return;
   if (view === "activity") paint("recent", drawRecent);
+  if (view === "errors") paint("errors", drawErrors);
   if (view === "pilots") paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
   if (view === "access") { paint("bans", drawBans); paint("admins", drawAdmins); }
   if (view === "pilot") paint("pilot", () => lookup(`#${onPilot}`));
@@ -202,11 +204,11 @@ addEventListener("hashchange", () => {
 
 // A call sign, anywhere on this panel, pointing at that pilot's page.
 //
-// One function because there are five places a person is named (the pilot
-// table, the activity feed, a pilot's own history, the ban list and the admin
-// list) and they were four different things: two of them buttons that opened a
-// card, two of them plain text that did nothing. A real link is middle
-// clickable, has an address you can send somebody, and needs no handler.
+// One function because a person is named in six places: the pilot table, the
+// activity feed, a pilot's own history, the ban list, the admin list and client
+// errors. Before it, some were buttons that opened a card and others were plain
+// text that did nothing. A real link is middle clickable, has an address you
+// can send somebody, and needs no handler.
 function pilotLink(account, name) {
   const text = name || (account ? `#${account}` : "(none)");
   if (!account) return text;
@@ -241,6 +243,7 @@ const NOTES = {
   bans: "bans-note",
   admins: "admins-note",
   activity: "activity-note",
+  errors: "errors-note",
 };
 
 // Draw a table, and say so when it cannot be drawn.
@@ -284,6 +287,7 @@ async function arrive(name) {
 function refresh() {
   paint("fleet", drawFleet);
   paint("recent", drawRecent);
+  paint("errors", drawErrors);
   paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
   paint("bans", drawBans);
   paint("admins", drawAdmins);
@@ -878,6 +882,67 @@ el("kinds-clear").addEventListener("click", () => {
   pages.recent = 0;
   paint("recent", drawRecent);
 });
+
+// ----------------------------------------------------------- client errors
+
+function errorDetail(error) {
+  const details = document.createElement("details");
+  details.className = "error-detail";
+  const summary = document.createElement("summary");
+  summary.textContent = `${error.kind}: ${error.message}`;
+  details.append(summary);
+
+  if (error.stack) {
+    const stack = document.createElement("pre");
+    stack.className = "error-stack";
+    stack.textContent = error.stack;
+    details.append(stack);
+  }
+  const meta = document.createElement("p");
+  meta.className = "error-meta";
+  meta.textContent = `first seen ${error.first_at} UTC${error.user_agent ? ` · ${error.user_agent}` : ""}`;
+  details.append(meta);
+  return details;
+}
+
+async function drawErrors() {
+  const r = await post("/v1/admin/errors", {
+    secret,
+    limit: PAGE,
+    offset: pages.errors * PAGE,
+  });
+  const list = r.errors || [];
+  el("errors-hour").textContent = r.groups_1h || 0;
+  el("errors-day").textContent = r.groups_24h || 0;
+  el("errors-groups").textContent = r.groups || 0;
+  el("errors-hits").textContent = r.occurrences || 0;
+  fill("errors", list.map((error) => {
+    const last = document.createElement("time");
+    last.dateTime = error.last_at.replace(" ", "T") + "Z";
+    last.title = `${error.last_at} UTC`;
+    last.textContent = ago(error.last_at);
+    return [
+      last,
+      error.account ? pilotLink(error.account, `#${error.account}`) : "(startup)",
+      [errorDetail(error), "wrap"],
+      error.build || "(unknown)",
+      [`${error.origin || ""}${error.page || ""}` || "(unknown)", "wrap error-origin"],
+      [error.occurrences, "n"],
+    ];
+  }));
+  el("errors").hidden = list.length === 0;
+  el("errors-empty").hidden = list.length > 0;
+  tell("errors-note", "");
+  pager("errors", {
+    empty: "no browser errors",
+    noun: "group",
+    shown: list.length,
+    from: r.offset,
+    total: r.groups,
+    more: Boolean(r.more),
+    paged: r.offset != null,
+  });
+}
 
 // ---------------------------------------------------------------- activity
 

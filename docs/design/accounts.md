@@ -90,6 +90,18 @@ build be the same pilot.
 The client offers the claim on the pilot page and never blocks play on it. A
 player who declines stays a guest and loses nothing but durability.
 
+A seat is bound to one identity for the life of its connection. The zone
+reads the name and the token once, at the join, and what it binds there is
+what the roster shows everyone and what every kill is filed against until
+the connection ends; there is no message that rebinds a live seat, because a
+seat carrying two accounts' halves of one life is a ledger nobody can settle.
+So when the client's identity moves under a live game -- a login, a reroll, a
+logout whose fresh guest has landed -- the client rejoins the same game as
+whoever it now is. The rejoin costs the ship, which is the honest price: the
+old pilot's bounty, kit and score were never the new one's to keep. Claiming
+is the one identity event that costs nothing, because it changes no name and
+no account: the pilot you claimed is the pilot you were.
+
 ## Human, bot, unknown
 
 Every seat carries one of three labels, and the scoreboard and the roster the

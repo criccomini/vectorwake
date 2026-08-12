@@ -12,10 +12,10 @@
 //! arenas verify the signature with a key the catalog carries, so an outage
 //! here costs claiming and persistence but never play.
 //!
-//! It holds no personal data. There are no email addresses and no third-party
-//! identities, only generated call signs, ratings, hashed random secrets and
-//! argon2-hashed passwords, so what a breach discloses is a ladder plus a
-//! cracking exercise that leads back to nothing but the ladder.
+//! It holds no email addresses or third-party identities. Pilot records contain
+//! generated call signs, ratings, hashed random secrets and argon2-hashed
+//! passwords. Browser error groups also carry a bounded message, stack, build,
+//! page path, user agent and reported account number for thirty days.
 
 use std::sync::Arc;
 
@@ -238,6 +238,22 @@ create unique index if not exists pilot_events_once on pilot_events (event_id);
 -- nothing here is kept forever: a per-pilot behavior log with no expiry is a
 -- different thing from a ladder, and the fleet's database is 25 GB.
 create index if not exists pilot_events_sweep on pilot_events (bot, at);
+create table if not exists client_errors (
+    fingerprint text primary key,
+    first_at    timestamptz not null default now(),
+    last_at     timestamptz not null default now(),
+    occurrences bigint not null default 1,
+    kind        text not null,
+    message     text not null,
+    stack       text not null default '',
+    build       text not null default '',
+    origin      text not null default '',
+    page        text not null default '',
+    user_agent  text not null default '',
+    account     bigint references accounts(id) on delete cascade
+);
+alter table client_errors add column if not exists account bigint;
+create index if not exists client_errors_by_last on client_errors (last_at desc);
 ";
 
 /// How long a pilot's own rows live. Long enough to answer a report weeks after
@@ -248,6 +264,10 @@ const PILOT_EVENT_DAYS: i32 = 90;
 /// with a half-life of about a day, and there are two orders of magnitude more
 /// of them: 153 bot connections cycle through the fleet around the clock.
 const BOT_EVENT_DAYS: i32 = 7;
+/// Browser diagnostics are useful across a release cycle, then stale. The
+/// clock restarts when a grouped error happens again so a live fault remains
+/// visible while an old one falls away.
+const CLIENT_ERROR_DAYS: i32 = 30;
 
 pub struct Meta {
     pool: Pool,
@@ -256,9 +276,9 @@ pub struct Meta {
     /// an arena handing off rated events and the bot server claiming its
     /// roster's accounts.
     catalog: crate::catalog::Catalog,
-    /// Per-address and per-name counters for the two routes an attacker has
-    /// a reason to hammer: guest creation burns call signs and login guesses
-    /// passwords.
+    /// Per-address and per-name counters for routes an attacker has a reason
+    /// to hammer. Guest creation burns call signs, login guesses passwords,
+    /// and browser diagnostics otherwise offer a cheap public write path.
     throttle: Throttle,
 }
 
@@ -422,6 +442,79 @@ fn clean_name(given: &str) -> String {
     }
 }
 
+struct ClientError {
+    kind: String,
+    message: String,
+    stack: String,
+    build: String,
+    origin: String,
+    page: String,
+    user_agent: String,
+    account: Option<i64>,
+}
+
+/// Remove long hexadecimal runs before a browser diagnostic reaches durable
+/// storage. Device secrets and their hashes are 64 hexadecimal characters, so
+/// a report that accidentally quotes one keeps the shape of the error without
+/// keeping the credential.
+fn redact_long_hex(input: &str) -> String {
+    fn flush(out: &mut String, run: &mut String) {
+        if run.len() >= 48 {
+            out.push_str("[redacted]");
+        } else {
+            out.push_str(run);
+        }
+        run.clear();
+    }
+
+    let mut out = String::with_capacity(input.len());
+    let mut run = String::new();
+    for c in input.chars() {
+        if c.is_ascii_hexdigit() {
+            run.push(c);
+        } else {
+            flush(&mut out, &mut run);
+            out.push(c);
+        }
+    }
+    flush(&mut out, &mut run);
+    out
+}
+
+fn clean_client_text(given: &str, limit: usize, multiline: bool) -> String {
+    let cleaned: String = given
+        .chars()
+        .filter(|c| !c.is_control() || (multiline && (*c == '\n' || *c == '\t')))
+        .collect();
+    redact_long_hex(cleaned.trim()).chars().take(limit).collect()
+}
+
+fn client_error_of(body: &serde_json::Value) -> Result<ClientError, &'static str> {
+    let field = |name: &str| body.get(name).and_then(|v| v.as_str()).unwrap_or("");
+    let kind = match field("kind") {
+        "promise" => "promise",
+        "console" => "console",
+        "resource" => "resource",
+        _ => "error",
+    }
+    .to_string();
+    let message = clean_client_text(field("message"), 512, false);
+    if message.is_empty() {
+        return Err("an error report needs a message");
+    }
+    let page = field("page").split(|c| c == '?' || c == '#').next().unwrap_or("");
+    Ok(ClientError {
+        kind,
+        message,
+        stack: clean_client_text(field("stack"), 4096, true),
+        build: clean_client_text(field("build"), 80, false),
+        origin: clean_client_text(field("origin"), 120, false),
+        page: clean_client_text(page, 240, false),
+        user_agent: clean_client_text(field("user_agent"), 256, false),
+        account: body.get("account").and_then(|v| v.as_i64()).filter(|v| *v > 0),
+    })
+}
+
 // ---------------------------------------------------------------- accounts
 
 async fn create_account(db: &Client, kind: i16, owner: Option<i64>) -> Result<i64, String> {
@@ -569,15 +662,70 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
 /// reason `admin.rs` hand-rolls it: the surface is small and a framework
 /// would be the larger change.
 async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (u16, serde_json::Value) {
+    let hour = std::time::Duration::from_secs(3600);
+    if path == "/v1/client-error"
+        && (!meta.throttle.allow(&format!("client-error:{ip}"), 30, hour)
+            || !meta.throttle.allow("client-error:all", 2000, hour))
+    {
+        return (429, serde_json::json!({ "error": "too many error reports; wait a while" }));
+    }
     let db = match meta.db().await {
         Ok(d) => d,
         Err(e) => return (503, serde_json::json!({ "error": e })),
     };
     let s = |v: &str| body.get(v).and_then(|x| x.as_str()).unwrap_or("").to_string();
-    let hour = std::time::Duration::from_secs(3600);
     let quarter = std::time::Duration::from_secs(900);
 
     match path {
+        // A browser sends this without credentials because some failures occur
+        // before the account is loaded. The account ID is reported context,
+        // not authentication. Repeated faults fold into one row per account,
+        // build and stack so the table stays useful during a failure storm.
+        "/v1/client-error" => {
+            let report = match client_error_of(body) {
+                Ok(report) => report,
+                Err(error) => return (400, serde_json::json!({ "error": error })),
+            };
+            let fingerprint = sha256_hex(
+                format!(
+                    "{}\n{}\n{}\n{}\n{}",
+                    report.kind,
+                    report.message,
+                    report.stack,
+                    report.build,
+                    report.account.unwrap_or(0)
+                )
+                .as_bytes(),
+            );
+            let stored = db
+                .execute(
+                    "insert into client_errors
+                       (fingerprint, kind, message, stack, build, origin, page, user_agent, account)
+                     values ($1, $2, $3, $4, $5, $6, $7, $8,
+                             (select id from accounts where id = $9))
+                     on conflict (fingerprint) do update
+                     set last_at = now(), occurrences = client_errors.occurrences + 1,
+                         origin = excluded.origin, page = excluded.page,
+                         user_agent = excluded.user_agent",
+                    &[
+                        &fingerprint,
+                        &report.kind,
+                        &report.message,
+                        &report.stack,
+                        &report.build,
+                        &report.origin,
+                        &report.page,
+                        &report.user_agent,
+                        &report.account,
+                    ],
+                )
+                .await;
+            match stored {
+                Ok(_) => (200, serde_json::json!({ "ok": true })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
         // Nobody signs up. The first time a client runs it asks for an
         // account and stores what it gets back, and that is the whole flow.
         // The call sign is the server's to give: a name a client could
@@ -1692,6 +1840,73 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
         }
 
+        // Browser failures, grouped by the pieces that identify one fault.
+        // An account is present once the client has loaded it, and absent for
+        // startup failures. It is a lead for diagnosis, not proof of who sent
+        // the report, because this public route cannot authenticate a browser
+        // that failed before authentication itself was ready.
+        "/v1/admin/errors" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let (limit, offset) = page_of(body);
+            let probe = limit + 1;
+            let summary = db
+                .query_one(
+                    "select
+                         count(*) filter (where last_at >= now() - interval '1 hour')::bigint,
+                         count(*) filter (where last_at >= now() - interval '24 hours')::bigint,
+                         count(*)::bigint,
+                         coalesce(sum(occurrences), 0)::bigint
+                     from client_errors",
+                    &[],
+                )
+                .await;
+            let rows = db
+                .query(
+                    "select
+                         to_char(first_at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                         to_char(last_at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                         occurrences, kind, message, stack, build, origin, page,
+                         user_agent, account
+                     from client_errors
+                     order by last_at desc
+                     limit $1 offset $2",
+                    &[&probe, &offset],
+                )
+                .await;
+            match (summary, rows) {
+                (Ok(summary), Ok(rows)) => {
+                    let more = rows.len() as i64 > limit;
+                    (200, serde_json::json!({
+                        "groups_1h": summary.get::<_, i64>(0),
+                        "groups_24h": summary.get::<_, i64>(1),
+                        "groups": summary.get::<_, i64>(2),
+                        "occurrences": summary.get::<_, i64>(3),
+                        "offset": offset,
+                        "limit": limit,
+                        "more": more,
+                        "errors": rows.iter().take(limit as usize).map(|r| serde_json::json!({
+                            "first_at": r.get::<_, String>(0),
+                            "last_at": r.get::<_, String>(1),
+                            "occurrences": r.get::<_, i64>(2),
+                            "kind": r.get::<_, String>(3),
+                            "message": r.get::<_, String>(4),
+                            "stack": r.get::<_, String>(5),
+                            "build": r.get::<_, String>(6),
+                            "origin": r.get::<_, String>(7),
+                            "page": r.get::<_, String>(8),
+                            "user_agent": r.get::<_, String>(9),
+                            "account": r.get::<_, Option<i64>>(10),
+                        })).collect::<Vec<_>>(),
+                    }))
+                }
+                (Err(e), _) | (_, Err(e)) => {
+                    (500, serde_json::json!({ "error": format!("{e}") }))
+                }
+            }
+        }
+
         // The pilot log across the whole fleet, newest first.
         //
         // The other read of the same table, and a different question: the one
@@ -2669,6 +2884,34 @@ pub async fn run() {
         });
     }
 
+    // Browser error groups are operational diagnostics rather than game
+    // history. A fault that keeps happening remains visible, while a quiet
+    // group disappears thirty days after its last occurrence.
+    {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                tick.tick().await;
+                let Ok(db) = pool.get().await else { continue };
+                match db
+                    .execute(
+                        "delete from client_errors where ctid in (
+                           select ctid from client_errors
+                           where last_at < now() - make_interval(days => $1)
+                           limit 5000)",
+                        &[&CLIENT_ERROR_DAYS],
+                    )
+                    .await
+                {
+                    Ok(n) if n > 0 => println!("meta: retired {n} client error group(s)"),
+                    Err(e) => println!("meta: client error retention pass failed: {e}"),
+                    _ => {}
+                }
+            }
+        });
+    }
+
     let verifying = token::to_hex(signing.verifying_key().as_bytes());
     let meta = Arc::new(Meta { pool, signing, catalog, throttle: Throttle::default() });
     let listener = match tokio::net::TcpListener::bind(&addr).await {
@@ -2842,6 +3085,43 @@ mod tests {
         assert_eq!(clean_name("bad\u{1}name"), "badname");
         assert_eq!(clean_name(&"x".repeat(80)).len(), 24);
         assert_eq!(clean_name("   "), "");
+    }
+
+    #[test]
+    fn client_errors_are_bounded_and_drop_credentials() {
+        let secret = "a".repeat(64);
+        let body = serde_json::json!({
+            "kind": "promise",
+            "message": format!("request failed for {secret}"),
+            "stack": format!("trace {secret}\n{}", "x".repeat(5000)),
+            "build": "launch",
+            "origin": "https://play.vectorwake.net",
+            "page": "/arena?secret=should-not-survive#room",
+            "user_agent": "Vector\u{1}Wake",
+            "account": 42,
+        });
+        let error = client_error_of(&body).expect("a valid browser error");
+        assert_eq!(error.kind, "promise");
+        assert!(error.message.contains("[redacted]"));
+        assert!(!error.message.contains(&secret));
+        assert!(error.stack.contains("[redacted]"));
+        assert!(error.stack.chars().count() <= 4096);
+        assert_eq!(error.page, "/arena");
+        assert_eq!(error.user_agent, "VectorWake");
+        assert_eq!(error.account, Some(42));
+    }
+
+    #[test]
+    fn client_errors_need_a_message_and_normalize_the_kind() {
+        assert!(client_error_of(&serde_json::json!({})).is_err());
+        let error = client_error_of(&serde_json::json!({
+            "kind": "invented",
+            "message": "broken",
+            "account": -1,
+        }))
+        .expect("a message is enough");
+        assert_eq!(error.kind, "error");
+        assert_eq!(error.account, None);
     }
 
 }

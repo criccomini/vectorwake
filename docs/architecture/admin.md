@@ -169,12 +169,12 @@ the page and its API share an origin and nothing needs CORS. Static for the
 reason the top of this document gives: it wants tables, forms and text entry,
 which the game client refuses to draw on purpose.
 
-Four views rather than one scroll: **Fleet**, **Pilots**, **Activity** and
-**Access**. Everything used to sit on a single page in the order it was built,
+Five main views rather than one scroll: **Fleet**, **Pilots**, **Activity**,
+**Errors** and **Access**. Everything used to sit on a single page in the order it was built,
 so finding a ban meant scrolling past the fleet, the feed, a pilot card and a
 command log, and the page grew a section every time the panel did.
 
-They are routed on the hash rather than served as four documents. Four
+They are routed on the hash rather than served as five documents. Five
 documents would each re-check the flag, re-fetch everything and repeat the CSP
 for navigation inside one session, and since the panel is a directory of static
 files, a path per view would need a rewrite rule in Caddy to survive a reload.
@@ -198,10 +198,14 @@ which a dropdown can only answer by growing a combination per pair. None ticked
 under **what** means every kind, and none ticked under **who** means nothing at
 all, which reads backwards until you notice that nobody expresses "no filter"
 by ticking twelve boxes and everybody expresses it by leaving them alone.
-Access is bans and admins together, since both answer one question about who
-may do what and they used to sit at opposite ends of a long page.
+Errors holds browser failures grouped by build, stack, and reported account.
+The summary says how many groups were active in the last hour and day, while an
+expanded row gives the bounded stack and user agent. The account number links
+to the pilot page, so a report and the pilot's recent activity are one click
+apart. Access is bans and admins together, since both answer one question about
+who may do what and they used to sit at opposite ends of a long page.
 
-A fifth view, `#pilot/<account>`, is one pilot: their card, the controls that
+A sixth view, `#pilot/<account>`, is one pilot: their card, the controls that
 act on them, and their history. It is reached by link rather than from the
 rail, because there is no such thing as the pilot page until you have picked
 one. It used to be a card at the bottom of the list, under whichever page of
@@ -212,7 +216,7 @@ it, and they all do now: the pilot table, the activity feed, a pilot's own
 history, the ban list and the admin list were four different things, two of
 them buttons that opened a card and two of them plain text that did nothing.
 
-The pilot table and both event tables page twenty-five rows at a time. The
+The pilot table, both event tables, and error table page twenty-five rows at a time. The
 pilot table's footer counts, because the accounts it reads are bounded by how
 many people have ever played and an index scan over that is cheap. The event
 tables do not: `pilot_events` takes most of 300,000 rows a day, so counting a

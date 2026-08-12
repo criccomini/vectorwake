@@ -1570,8 +1570,8 @@ server, because the hard part is rented.
 
 The integration is one-way by rule. The fleet publishes into Discord, an
 invite link, presence, release notes, and never reads from it. No Discord
-identity enters the meta-layer, which holds no personal data and depends on
-no external service, and a Discord user id would be both. Nothing in the
+identity enters the meta-layer, which depends on no external service, and a
+Discord user id would break both rules. Nothing in the
 fleet waits on Discord or fails when it is down.
 
 The one address that reaches the server is `vectorwake.net/discord`, a Caddy

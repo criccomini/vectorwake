@@ -1328,8 +1328,14 @@ local function activate()
         -- sign is the only name anybody has here, it is the name on the
         -- scoreboard of every game this pilot has flown, and the row that
         -- shows it used to replace it on the press with nothing said.
-        M.confirm("your call sign is " .. M.name,
-                  {{label = "roll", act = "reroll"}, {label = "keep"}})
+        -- Mid-game the roll is also a respawn, because a new name is a new
+        -- pilot and the seat is rejoined to wear it. Said on the card rather
+        -- than discovered: the one thing this row does is ask first.
+        local head = "your call sign is " .. M.name
+        if not M.home then
+            head = head .. ". A new one respawns your ship"
+        end
+        M.confirm(head, {{label = "roll", act = "reroll"}, {label = "keep"}})
         return nil
     elseif r.act == "join" then
         local pick = directory.rows[r.value]

@@ -607,6 +607,9 @@ local act8 = menu.step({go = true})
 check("rolling a call sign asks first",
       act8 == nil and menu.ask ~= nil and menu.name == was,
       tostring(act8) .. ", name " .. tostring(menu.name))
+-- At home the card asks only about the name; there is no ship to cost.
+check("and at home says nothing about respawning",
+      not string.find(menu.ask.head, "respawns"), menu.ask.head)
 menu.step({back = true})
 check("and escape keeps the one you have",
       menu.name == was and menu.ask == nil, tostring(menu.name))
@@ -644,6 +647,27 @@ check("and escape walks away from the refusal",
       tostring(menu.ask))
 account.refuse = nil
 
+menu.ask = nil
+menu.stack = {"root"}
+menu.sel = {}
+
+-- --- mid-game, the same card owes one more sentence -------------------------
+--
+-- A new name is a new pilot, and a new pilot gets a fresh seat: the client
+-- rejoins the game on its own, which costs the ship. The card is the one
+-- place that can say so before it happens, and this is the row whose whole
+-- design is asking first.
+
+menu.home = false
+menu.stack = {"root"}
+menu.sel = {}
+menu.click_rail(top_index("pilot"))
+menu.step({go = true})
+check("mid-game the card says a roll respawns your ship",
+      menu.ask ~= nil and string.find(menu.ask.head, "respawns your ship") ~= nil,
+      tostring(menu.ask and menu.ask.head))
+menu.step({back = true})
+menu.home = true
 menu.ask = nil
 menu.stack = {"root"}
 menu.sel = {}

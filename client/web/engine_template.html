@@ -14,6 +14,22 @@
 	<meta name="theme-color" content="#05070d">
 	<meta name="color-scheme" content="dark">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="description" content="Play Vectorwake, free live multiplayer space combat in your browser on desktop and mobile.">
+	<meta property="og:type" content="website">
+	<meta property="og:site_name" content="Vectorwake">
+	<meta property="og:title" content="Play Vectorwake">
+	<meta property="og:description" content="Enter the arena for free live multiplayer space combat in your browser.">
+	<meta property="og:url" content="https://play.vectorwake.net/">
+	<meta property="og:image" content="https://vectorwake.net/play-share-card.png">
+	<meta property="og:image:width" content="1200">
+	<meta property="og:image:height" content="630">
+	<meta property="og:image:alt" content="Enter the Vectorwake arena.">
+	<meta name="twitter:card" content="summary_large_image">
+	<meta name="twitter:title" content="Play Vectorwake">
+	<meta name="twitter:description" content="Enter the arena for free live multiplayer space combat in your browser.">
+	<meta name="twitter:image" content="https://vectorwake.net/play-share-card.png">
+	<meta name="twitter:image:alt" content="Enter the Vectorwake arena.">
+	<link rel="canonical" href="https://play.vectorwake.net/">
 
 	<!-- Written out rather than {{project.title}} {{project.version}}, which
 	is what a tab said before: "vectorwake 34cdcf4+". The title is lower case
@@ -400,8 +416,92 @@
 			} catch (e) { return ""; }
 			return "1";
 		};
-	</script>
-	<script id='engine-loader' type='text/javascript' src="dmloader.js"></script>
+		</script>
+		<script>
+			// Browser diagnostics stop at eight distinct reports per page. The
+			// server groups repeats across pages and builds, while this guard keeps
+			// one broken frame from spending the network on the same fact.
+			(function () {
+				var sent = 0;
+				var seen = Object.create(null);
+				var endpoint = '/meta/v1/client-error';
+
+				function clean(value, limit, multiline) {
+					var text = String(value == null ? '' : value);
+					text = text.replace(/[a-f0-9]{48,}/gi, '[redacted]');
+					text = multiline
+						? text.replace(/[^\x09\x0a\x20-\x7e]/g, '')
+						: text.replace(/[^\x20-\x7e]/g, ' ');
+					return text.trim().slice(0, limit);
+				}
+
+				function textOf(value) {
+					if (value instanceof Error) return value.message || value.name;
+					if (typeof value === 'string') return value;
+					if (value == null || typeof value === 'number' || typeof value === 'boolean') {
+						return String(value);
+					}
+					return Object.prototype.toString.call(value);
+				}
+
+				function report(kind, message, stack) {
+					try {
+						message = clean(message, 512, false);
+						stack = clean(stack, 4096, true);
+						if (!message || sent >= 8 || typeof fetch !== 'function') return;
+						var key = kind + '\n' + message + '\n' + stack;
+						if (seen[key]) return;
+						seen[key] = true;
+						sent += 1;
+						fetch(endpoint, {
+							method: 'POST',
+							headers: { 'content-type': 'application/json' },
+							body: JSON.stringify({
+								kind: kind,
+								message: message,
+								stack: stack,
+								build: '{{project.version}}',
+								origin: location.origin,
+								page: location.pathname,
+								user_agent: navigator.userAgent,
+								account: Number(window.vwAccount) || 0
+							}),
+							keepalive: true
+						}).catch(function () {});
+					} catch (ignored) {}
+				}
+
+				addEventListener('error', function (event) {
+					if (event.error || event.message) {
+						var error = event.error;
+						report('error', event.message || textOf(error), error && error.stack);
+						return;
+					}
+					var target = event.target || {};
+					var source = target.src || target.href || target.currentSrc || '';
+					try { source = new URL(source, location.href).pathname; } catch (ignored) {}
+					report('resource', 'resource failed: ' + (source || target.tagName || 'unknown'), '');
+				}, true);
+
+				addEventListener('unhandledrejection', function (event) {
+					var reason = event.reason;
+					report('promise', textOf(reason), reason && reason.stack);
+				});
+
+				var originalError = console.error;
+				console.error = function () {
+					originalError.apply(console, arguments);
+					var parts = [];
+					var stack = '';
+					for (var i = 0; i < arguments.length; i++) {
+						parts.push(textOf(arguments[i]));
+						if (!stack && arguments[i] && arguments[i].stack) stack = arguments[i].stack;
+					}
+					report('console', parts.join(' '), stack);
+				};
+			})();
+		</script>
+		<script id='engine-loader' type='text/javascript' src="dmloader.js"></script>
 	<script id='engine-setup' type='text/javascript'>
 		// The canvas is the window, sized by hand.
 		//

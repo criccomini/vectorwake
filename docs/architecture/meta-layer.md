@@ -22,6 +22,7 @@ records why this is our own service rather than Nakama.
 | rated_events | the log [rating.md](../design/rating.md) specifies: participants, weights, ratings before and after, arena, mode class, opponent kind, timestamp |
 | pilot_events | what happened to a pilot rather than to their rating: arrivals, refusals, hull and side changes, departures and why, tied together by a session. See [the pilot log](#the-pilot-log) |
 | ratings | account, mode class, rating, games. A projection, rebuildable from `rated_events` at any time |
+| client_errors | grouped browser failures: account, build, message, stack, page, user agent, first and last occurrence, and count. Deleted thirty days after the latest occurrence |
 
 A house bot needs no table of its own: the roster individual's name *is* its
 credential, a `house` row in `credentials`, so claiming the account for one is
@@ -49,6 +50,7 @@ framework would be the larger change.
 | `/v1/bot/register` | anyone, with a claimed account | A third-party bot account under that owner, who answers for it |
 | `/v1/events` | an arena, with a pool token | Rated events, appended to the log and applied to the projection |
 | `/v1/pilot-events` | an arena, with a pool token | The pilot log, appended. No projection to keep in step, because nothing the game reads back is derived from it |
+| `/v1/client-error` | the browser client | Adds or increments a bounded error group for this build and reported account. Throttled per address and across the service |
 | `/v1/admin/fleet` | the admin panel | Every instance the directory on this host has observed, relayed from it over loopback, plus the catalog version and whether its verifying key is the one this process signs with |
 | `/v1/admin/pilots` | the admin panel | Pilots matching what an operator has typed, most recently seen first, searched in the database rather than filtered in the page |
 | `/v1/admin/grant` | the admin panel | Gives or takes the admin flag. Claimed humans only, and never the last admin |
@@ -57,6 +59,7 @@ framework would be the larger change.
 | `/v1/admin/bans` | the admin panel | Every account currently marked, with its reason |
 | `/v1/admin/events` | the admin panel | One pilot's recent history out of the pilot log, or one stay out of it |
 | `/v1/admin/recent` | the admin panel | The same log across the fleet, people or bots, optionally one kind, within a time bound. Reports when each kind last filed, so an empty answer says which sort of empty it is |
+| `/v1/admin/errors` | the admin panel | Browser error groups, newest first, with one-hour and one-day summaries |
 | `/v1/admin/rename` | the admin panel | Sets a pilot's call sign to a typed one, or deals a fresh one when nothing is typed. Refuses a taken name and refuses a bot, whose name is its roster identity |
 | `/v1/admin/admins` | the admin panel | Who holds the flag |
 
@@ -422,11 +425,13 @@ as it already did for the database one, which a laptop behind Caddy's internal
 CA needs and a public front door does not. The account secret is a random 256-bit bearer
 value, minted by the service and carried only over TLS; the password, the one
 credential a person chooses, is stored argon2-hashed rather than sha256,
-because chosen strings are guessable and minted ones are not. There is no external dependency at all: no mail
-sender, no OAuth registration, nothing to sign up for. The service also holds
-no personal data, no email addresses, and no names beyond generated call
-signs, so a breach would disclose a ladder rather than anybody's identity, and
-vectorwake.net's mail-free DNS stays exactly as the security pass left it.
+because chosen strings are guessable and minted ones are not. There is no
+external dependency at all: no mail sender, no OAuth registration, nothing to
+sign up for. The service holds no email addresses and no names beyond generated
+call signs. Browser diagnostics add an account number, user agent and bounded
+failure context for thirty days, which is enough to debug one pilot's client
+without adding a new identity source. Vectorwake.net's mail-free DNS stays
+exactly as the security pass left it.
 
 ## What it does not do
 

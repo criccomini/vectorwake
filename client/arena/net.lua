@@ -978,6 +978,28 @@ local function dial_wt(wt_url)
     if not ok then fall_back() end
 end
 
+-- Whether the pilot this connection wears is still the pilot the client is.
+-- True after a mid-game login, a reroll, or a logout whose fresh guest has
+-- landed, and the reading that says the seat belongs to somebody the client
+-- has stopped being: the roster shows the old name to everyone, and every
+-- kill still credits the old account. An empty name is the moment between a
+-- logout and the guest that replaces it, when the client is briefly nobody,
+-- and nobody is not an identity to chase.
+function M.identity_moved(name, acct)
+    if not M.joined or name == "" or name == nil then return false end
+    return M.joined.name ~= name or M.joined.account ~= (acct or 0)
+end
+
+-- The join this connection was made with, for whoever has to make it again.
+-- A copy rather than the table, because the caller feeds it back into
+-- `connect`, which resets the original mid-read.
+function M.last_join()
+    if not join_args then return nil end
+    return {url = join_args.url, zone = join_args.zone,
+            wt = join_args.wt or "", watch = join_args.watch,
+            room = join_args.room}
+end
+
 -- What is carrying this connection, and what would carry the next one.
 --
 -- Facts rather than a sentence: the about page composes the words, because
@@ -1128,6 +1150,11 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     on_lost_cb = on_lost
     join_args = {url = url, class = class, name = name, zone = zone,
                  watch = watch, wt = wt, room = room}
+    -- The pilot this seat is about to wear. The zone binds a seat's identity
+    -- exactly once, from this join's name and token, and never hears about
+    -- either again: the roster, the ratings and every kill filed for the life
+    -- of the connection belong to whoever this was at this moment.
+    M.joined = {name = name, account = account.account or 0}
 
     -- The preferred wire first, when there is one to prefer: an address from
     -- the directory, an extension in this build, a browser that has the API,

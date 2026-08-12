@@ -62,7 +62,10 @@
           <p>The fleet records joins, refusals, rooms, ship and team changes, kills, deaths, assists, session length, and the reason a session ended. Rated match records include the internal account numbers involved, rating changes, zone, server instance, and match tick.</p>
 
           <h3>Connection and security information</h3>
-          <p>The account service uses an IP address temporarily to limit account creation, login guesses, searches, and renames. These counters stop affecting requests after at most one hour. Dormant entries are pruned during later traffic or when the process restarts, and they are not written to the game database. Hosting providers still receive ordinary network information needed to deliver the site and game.</p>
+          <p>The account service uses an IP address temporarily to limit account creation, login guesses, searches, renames, and client error reports. These counters stop affecting requests after at most one hour. Dormant entries are pruned during later traffic or when the process restarts, and they are not written to the game database. Hosting providers still receive ordinary network information needed to deliver the site and game.</p>
+
+          <h3>Client error reports</h3>
+          <p>When the browser game encounters an error, it may send the error type, message, stack trace, client build, page path, browser user agent, and the internal account number known to the client. Startup errors may arrive before an account number is available. The reporter does not read or attach the device secret, password, controls, chat, or gameplay state. Long hexadecimal strings are removed before storage to avoid keeping a credential that appears in an error by mistake.</p>
 
           <h3>Website storage</h3>
           <p>The public site stores GitHub star and Discord member counts in browser storage for six hours. Vectorwake does not set advertising or analytics cookies.</p>
@@ -97,7 +100,7 @@
 
         <section>
           <h2>Retention and deletion</h2>
-          <p>Different records have different lifetimes. Human activity logs last 90 days. Rated matches involving a human currently have no scheduled expiry because they support the rating record. The full schedule is on the <a href="/retention">retention page</a>.</p>
+          <p>Different records have different lifetimes. Human activity logs last 90 days. Client error groups last 30 days after their latest occurrence. Rated matches involving a human currently have no scheduled expiry because they support the rating record. The full schedule is on the <a href="/retention">retention page</a>.</p>
           <p>You may ask for a copy, correction, or deletion of information connected to your account. The <a href="/delete">deletion page</a> explains the process and what remains after deletion. Vectorwake will not treat you differently for making a privacy request.</p>
         </section>
 
