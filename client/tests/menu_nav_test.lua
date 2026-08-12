@@ -822,7 +822,7 @@ html5 = nil
 
 menu.stack = {"root"}
 menu.sel = {}
-local help_at = top_index("help")
+local help_at = top_index("controls")
 menu.click_rail(help_at)
 check("every stop is reachable", menu.stack[2] == "help",
       table.concat(menu.stack, "/"))

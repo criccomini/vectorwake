@@ -1,22 +1,18 @@
 key_trigger {
-  input: KEY_LEFT
-  action: "turn_left"
+  input: KEY_ESC
+  action: "menu"
 }
 key_trigger {
-  input: KEY_RIGHT
-  action: "turn_right"
+  input: KEY_ENTER
+  action: "select"
 }
 key_trigger {
-  input: KEY_UP
-  action: "thrust"
+  input: KEY_BACKSPACE
+  action: "backspace"
 }
 key_trigger {
-  input: KEY_DOWN
-  action: "reverse"
-}
-key_trigger {
-  input: KEY_SPACE
-  action: "guns"
+  input: KEY_SLASH
+  action: "help"
 }
 key_trigger {
   input: KEY_LCTRL
@@ -27,16 +23,188 @@ key_trigger {
   action: "guns_ctrl"
 }
 key_trigger {
+  input: KEY_BACKQUOTE
+  action: "k_tick"
+}
+key_trigger {
+  input: KEY_TILDE
+  action: "k_tick"
+}
+key_trigger {
+  input: KEY_1
+  action: "k_1"
+}
+key_trigger {
+  input: KEY_2
+  action: "k_2"
+}
+key_trigger {
+  input: KEY_3
+  action: "k_3"
+}
+key_trigger {
+  input: KEY_4
+  action: "k_4"
+}
+key_trigger {
+  input: KEY_5
+  action: "k_5"
+}
+key_trigger {
+  input: KEY_6
+  action: "k_6"
+}
+key_trigger {
+  input: KEY_7
+  action: "k_7"
+}
+key_trigger {
+  input: KEY_8
+  action: "k_8"
+}
+key_trigger {
+  input: KEY_9
+  action: "k_9"
+}
+key_trigger {
+  input: KEY_0
+  action: "k_0"
+}
+key_trigger {
   input: KEY_TAB
-  action: "bombs"
+  action: "k_tab"
+}
+key_trigger {
+  input: KEY_Q
+  action: "k_q"
+}
+key_trigger {
+  input: KEY_W
+  action: "k_w"
+}
+key_trigger {
+  input: KEY_E
+  action: "k_e"
+}
+key_trigger {
+  input: KEY_R
+  action: "k_r"
+}
+key_trigger {
+  input: KEY_T
+  action: "k_t"
+}
+key_trigger {
+  input: KEY_Y
+  action: "k_y"
+}
+key_trigger {
+  input: KEY_U
+  action: "k_u"
+}
+key_trigger {
+  input: KEY_I
+  action: "k_i"
+}
+key_trigger {
+  input: KEY_O
+  action: "k_o"
+}
+key_trigger {
+  input: KEY_P
+  action: "k_p"
+}
+key_trigger {
+  input: KEY_A
+  action: "k_a"
+}
+key_trigger {
+  input: KEY_S
+  action: "k_s"
+}
+key_trigger {
+  input: KEY_D
+  action: "k_d"
+}
+key_trigger {
+  input: KEY_F
+  action: "k_f"
+}
+key_trigger {
+  input: KEY_G
+  action: "k_g"
+}
+key_trigger {
+  input: KEY_H
+  action: "k_h"
+}
+key_trigger {
+  input: KEY_J
+  action: "k_j"
+}
+key_trigger {
+  input: KEY_K
+  action: "k_k"
+}
+key_trigger {
+  input: KEY_L
+  action: "k_l"
 }
 key_trigger {
   input: KEY_LSHIFT
-  action: "mine_mod"
+  action: "k_shift"
 }
 key_trigger {
   input: KEY_RSHIFT
-  action: "mine_mod"
+  action: "k_shift"
+}
+key_trigger {
+  input: KEY_Z
+  action: "k_z"
+}
+key_trigger {
+  input: KEY_X
+  action: "k_x"
+}
+key_trigger {
+  input: KEY_C
+  action: "k_c"
+}
+key_trigger {
+  input: KEY_V
+  action: "k_v"
+}
+key_trigger {
+  input: KEY_B
+  action: "k_b"
+}
+key_trigger {
+  input: KEY_N
+  action: "k_n"
+}
+key_trigger {
+  input: KEY_M
+  action: "k_m"
+}
+key_trigger {
+  input: KEY_SPACE
+  action: "k_space"
+}
+key_trigger {
+  input: KEY_UP
+  action: "k_up"
+}
+key_trigger {
+  input: KEY_LEFT
+  action: "k_left"
+}
+key_trigger {
+  input: KEY_DOWN
+  action: "k_down"
+}
+key_trigger {
+  input: KEY_RIGHT
+  action: "k_right"
 }
 mouse_trigger {
   input: MOUSE_BUTTON_LEFT
@@ -57,62 +225,6 @@ mouse_trigger {
 touch_trigger {
   input: TOUCH_MULTI
   action: "touch"
-}
-key_trigger {
-  input: KEY_Q
-  action: "charge_1"
-}
-key_trigger {
-  input: KEY_W
-  action: "charge_2"
-}
-key_trigger {
-  input: KEY_A
-  action: "charge_3"
-}
-key_trigger {
-  input: KEY_S
-  action: "charge_4"
-}
-key_trigger {
-  input: KEY_P
-  action: "details"
-}
-key_trigger {
-  input: KEY_ENTER
-  action: "select"
-}
-key_trigger {
-  input: KEY_ESC
-  action: "menu"
-}
-key_trigger {
-  input: KEY_M
-  action: "map"
-}
-key_trigger {
-  input: KEY_BACKSPACE
-  action: "backspace"
-}
-key_trigger {
-  input: KEY_D
-  action: "drone"
-}
-key_trigger {
-  input: KEY_H
-  action: "help"
-}
-key_trigger {
-  input: KEY_SLASH
-  action: "help"
-}
-key_trigger {
-  input: KEY_BACKQUOTE
-  action: "multi"
-}
-key_trigger {
-  input: KEY_TILDE
-  action: "multi"
 }
 text_trigger {
   input: TEXT

@@ -34,7 +34,8 @@ local callsign = require("arena.callsign")
 local directory = require("arena.directory")
 local install = require("arena.install")
 local sfx = require("arena.sfx")
-local controls = require("arena.controls")
+local binds = require("arena.binds")
+local keyset = require("arena.keys")
 
 local M = {}
 
@@ -58,6 +59,20 @@ M.hover = nil           -- the stage row a pointer is resting on
 M.rail_hover = nil      -- and the rail stop, which works the same way
 M.note = nil            -- set by the arena when a connection fails
 M.screen = nil          -- the drawable and its insets, for the about page
+-- Whether a thumb is driving this rather than a keyboard, set by the arena
+-- each frame. The controls page is the one page whose rows depend on it: on
+-- glass there is no board to draw and no key column to fill in, so the same
+-- list comes out as gestures instead.
+M.touching = false
+
+-- Which control is waiting for a key, and nothing while none is. It is the
+-- whole of the binding mode: the page draws the board dark around it and the
+-- arena hands it the next press instead of walking the cursor with it.
+M.arming = nil
+-- One line under the controls page: what it is waiting for, or what it just
+-- did. Cleared by anything that moves the cursor, so it is never a caption on
+-- a row that has since changed.
+M.foot = nil
 
 -- A question the menu wants answered before it will do anything else, and
 -- nothing while there is none. Whoever raises it fills in the words and what
@@ -145,6 +160,10 @@ function M.save_identity()
     pcall(sys.save, SAVE, {
         name = M.name, class = M.class, volume = M.volume, music = M.music,
         cap = M.cap, zone = M.zone, spectate = M.spectate,
+        -- Only the keys that have been moved, so a stock keyboard writes
+        -- nothing here at all and a control this build stops carrying does
+        -- not leave a line behind it. See arena/binds.lua.
+        keys = binds.save_table(),
     })
 end
 
@@ -165,6 +184,10 @@ function M.load_identity()
         -- What you last chose to arrive as. Saved beside the hull because it
         -- is an answer to the same question the hull answers.
         M.spectate = d.spectate == true
+        -- Whatever survives being read against this build's key list. A
+        -- missing table is a stock keyboard, which is what `load` does with
+        -- nothing.
+        binds.load(d.keys)
     else
         M.name = callsign.generate()
         M.save_identity()
@@ -422,7 +445,11 @@ local NODES = {
             {label = "pilot", icon = "pilot",
              detail = function() return M.name end, go = "pilot"},
             {label = "settings", icon = "settings", go = "settings"},
-            {label = "help", icon = "help", go = "help"},
+            -- Named for what the page is rather than for what it used to
+            -- be. It was a wall of prose about energy and bounty, then a
+            -- picture of a keyboard, and it is now where the keys are set:
+            -- "help" is the one word of the three that describes none of it.
+            {label = "controls", icon = "help", go = "help"},
             -- The one stop that leaves. Every other row on this rail opens a
             -- page of the game's own; this hands the browser somewhere else,
             -- which is why it sits at the bottom next to the row that says
@@ -544,13 +571,38 @@ local NODES = {
     -- and these did: they were describing a game with no map on the dial and
     -- nobody riding anybody, months after both landed. A row with no `pad` is
     -- a control a thumb cannot work and is left out rather than named.
-    help = {board = true, rows = function()
+    -- On a keyboard the page draws the keyboard, and every control on it is a
+    -- chip under the picture carrying the key it is on. The chips are rows
+    -- like any other page's, so the cursor, the pointer and the hit boxes are
+    -- the ones every list here already has; what is different is that they are
+    -- laid out three across, which is what `grid` and `cols` say.
+    --
+    -- Sixteen rows down one column would scroll, and a list that scrolls under
+    -- a picture stops being the same page as the picture: you would be moving
+    -- the answers past a diagram that stayed still.
+    help = {board = true, chips = true, grid = true, cols = 3,
+            rows = function()
         local rows = {}
-        for _, c in ipairs(controls) do
-            if c.pad then
-                rows[#rows + 1] = {label = string.lower(c.name),
-                                   detail = c.pad}
+        for i, c in ipairs(binds.rows()) do
+            if M.touching then
+                -- No board and no key column on glass, so the page falls back
+                -- to what a thumb does. A control with no `pad` cannot be
+                -- worked by one at all and is left out rather than named.
+                if c.pad then
+                    rows[#rows + 1] = {label = c.pad_name or c.name,
+                                       detail = c.pad}
+                end
+            else
+                rows[i] = {label = c.name, detail = c.show, cat = c.cat,
+                           control = c.id, key = c.key, fixed = c.fixed,
+                           arming = M.arming == c.id,
+                           act = "bind", pick = true}
             end
+        end
+        if not M.touching then
+            -- Last, and after every control, because it is about all of them.
+            rows[#rows + 1] = {label = "defaults", act = "defaults",
+                               pick = true, reset = true}
         end
         return rows
     end},
@@ -766,9 +818,63 @@ local function view_row(r, i)
         hull = r.hull, figure = r.figure, role = r.role,
         players = r.players, bots = r.bots, live = r.live,
         choice = ci, choices = cn,
+        -- What the controls page needs to draw a chip: which color band the
+        -- control is in, which key it is on so the board can be lit from the
+        -- same list, whether it is the one waiting for a key, and whether it
+        -- is the row that puts everything back.
+        cat = r.cat, control = r.control, key = r.key, fixed = r.fixed,
+        arming = r.arming, reset = r.reset,
         pick = (r.go or r.act) ~= nil,
         mark = r.mark and r.mark() or false,
     }
+end
+
+-- A key arrived while a control was asking for one. Returns whether anything
+-- moved, which is what the arena sounds.
+--
+-- A key already spoken for trades: the two controls swap, and the line at the
+-- foot says so, because a pilot who put `map` on W and found their burst had
+-- gone somewhere would otherwise have to hunt for it. Nothing is ever left
+-- without a key, which is the property that makes this safe to do with no
+-- confirmation on it at all.
+function M.bind_key(key)
+    local id = M.arming
+    if not id then return false end
+    M.arming = nil
+    local moved, ok = binds.set(id, key)
+    if not ok then
+        -- The one refusal worth a sentence: a key that is on the board and is
+        -- not ours to give away. Everything else that lands here is a press
+        -- that changed nothing, and saying "that is already where it is" to
+        -- somebody who just pressed the key it is on is noise.
+        M.foot = nil
+        return true
+    end
+    M.save_identity()
+    local name = nil
+    for _, c in ipairs(binds.rows()) do
+        if c.id == id then name = c.name end
+    end
+    if moved then
+        local other = nil
+        for _, c in ipairs(binds.rows()) do
+            if c.id == moved then other = c end
+        end
+        M.foot = string.format("%s is on %s; %s took the key it left",
+                               name, keyset.show(key), other and other.name or "")
+    else
+        M.foot = string.format("%s is on %s", name, keyset.show(key))
+    end
+    return true
+end
+
+-- Escape, while a control is asking. It goes back to where it was, which is
+-- the answer that changes nothing, the same as every other question here.
+function M.cancel_bind()
+    if not M.arming then return false end
+    M.arming = nil
+    M.foot = nil
+    return true
 end
 
 local function row_index(rows)
@@ -1065,6 +1171,11 @@ function M.close()
     -- be waiting on the next thing to open the menu, which is a player pressing
     -- escape mid-fight and being asked something they have forgotten.
     M.ask = nil
+    -- The same rule for a control waiting on a key, and a harder one: it holds
+    -- the whole keyboard while it is up, so left standing behind a shut menu
+    -- it would swallow the next press of anything.
+    M.arming = nil
+    M.foot = nil
     -- The row as well as the level. Resetting only the stack left the root
     -- sitting on whatever was last chosen there, so escape-then-enter went
     -- wherever you went last time rather than into the first row, the same
@@ -1117,6 +1228,12 @@ function M.tick(dt)
     -- second or two after the page loads rather than at the moment it is
     -- asked.
     install.tick(dt)
+    -- A control can only be waiting for a key on the page that asked, with
+    -- nothing over it. A pointer can leave that page without ever pressing
+    -- one, since the keyboard is taken but the mouse is not, so this is where
+    -- the state is let go rather than in each of the four ways out.
+    if M.arming and (M.at() ~= "help" or M.ask) then M.arming = nil end
+    if M.at() ~= "help" then M.foot = nil end
     if M.at() ~= "zones" then
         zone_synced = false
         -- And forget where the cursor was. Every other page is a place you
@@ -1175,6 +1292,13 @@ function M.view()
                  -- device gets one is ui.lua's call, since only it knows
                  -- whether there is a keyboard to draw a picture of.
                  board = nd.board or false,
+                 -- And for its rows to be laid out under that keyboard as
+                 -- chips rather than down a column.
+                 chips = nd.chips or false,
+                 -- Whether one of them is waiting for a key, which the board
+                 -- reads to go dark around it.
+                 arming = M.arming ~= nil,
+                 foot = M.foot,
                  rows = {}}
     for i, r in ipairs(rows) do
         out.rows[i] = view_row(r, i)
@@ -1214,6 +1338,7 @@ function M.view()
         if pick and pick.go and NODES[pick.go] then
             local nd2 = NODES[pick.go]
             out.board = nd2.board or false
+            out.chips = nd2.chips or false
             out.empty = nd2.empty and nd2.empty() or nil
             out.rows = {}
             for i, r in ipairs(rows_of(nd2)) do
@@ -1307,6 +1432,24 @@ local function activate()
         -- Only ever reached off the web, or from a key. In a browser the
         -- page has a real anchor over this stop and the tap never gets here.
         pcall(sys.open_url, DISCORD, {target = "_blank"})
+        return nil
+    elseif r.act == "bind" then
+        -- The row stops saying where its control is and starts asking where
+        -- it should go. Everything about that state is one field: the page
+        -- reads it to draw the board dark and the chip empty, and
+        -- `arena.script` reads it to hand the next key here instead of to the
+        -- cursor.
+        if r.fixed then
+            M.note = "escape is how you leave this page; it stays where it is"
+            return nil
+        end
+        M.arming = r.control
+        M.note = nil
+        return nil
+    elseif r.act == "defaults" then
+        binds.reset()
+        M.save_identity()
+        M.foot = "every key is back where it started"
         return nil
     elseif r.act == "privacy" then
         return open_external("https://vectorwake.net/privacy")
@@ -1438,9 +1581,18 @@ function M.step(keys)
     -- instead, and down, which should have gone to the row below, went one
     -- ship to the right. Enter is still the only thing that picks.
     if nd.grid and #M.stack > 1 and n > 0 then
-        local cols = math.max(1, math.min(M.cols, n))
+        -- The hull page is as wide as the window lets it be and says so every
+        -- frame; the controls page is three across whatever the window does,
+        -- because a chip is a name and a key rather than a drawing and four of
+        -- them across a narrow panel would put the key back under the name.
+        local cols = math.max(1, math.min(nd.cols or M.cols, n))
         local i = row_index(rows)
         if keys.back then return escape() end
+        -- The line at the foot is about the press that put it there. Moving
+        -- the cursor is the next press, so it goes.
+        if keys.up or keys.down or keys.left or keys.right then
+            M.foot = nil
+        end
         -- The edges wrap, along the row for right and through the list for up
         -- and down, so nothing on this page is out of reach in one press.
         --
