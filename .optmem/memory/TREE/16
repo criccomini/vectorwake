@@ -1,8 +1,4 @@
 Working on vectorwake, a Subspace-like space MMO: shipped client, transport and roster work, vendored the Clanker Constitution as house rules, and built its mines end to end from design through the wire.                                                                                    
 Facet second barrel is worth +20.7 pts and bare hull balance is hitbox area. Maps need a drill A/B, not a density check. Admin panel shipped, then VW_ADMIN_TOKEN retired for operator SQL. Death cards gone for arena/guide.lua. American spelling is house style.                            
 The admin panel grew a full operator console: fleet view, pilot edits, typed renames, panel-granted admins. Ranking shipped with tiers and an AI farm brake. Spawn radius is sized by seconds of bullet flight. The help system was built and then removed at Chris request.                   
-<<<<<<< HEAD
-Controls live in arena/controls.lua under H. Pilot log shipped (Spool<T>, sessions, died/kill, SIGTERM leave), admin panel reads it; tiers Newb..Legend; Cipher priced 1300; reporting outage peeled in layers, bot_token /v1/login-not-session still drops bot rated events.                  
-=======
 Controls live in arena/controls.lua and H/? table, including touch. Pilot log has sessions, kills/deaths/restart leaves, no IP; Admin Activity reads it. Ladder: Newb/Wing/Lead/Ace/Legend. Cipher costs 1300. Meta supports HTTPS. Hero is 3 clips. Site mark 18x22/9px.                      
->>>>>>> origin/main

@@ -1,6 +1,2 @@
 Working on vectorwake, a Subspace-like space MMO: client, transport, roster, mines, admin panel and a trigger-based help system shipped; Clanker Constitution vendored as house rules; balance measured by drill A/B; American spelling is house style.                                        
-<<<<<<< HEAD
-The operator era: admin panel, pilot log (Spool<T>, sessions, died/kill), ranking live with tiers Newb..Legend and the farm brake, Cipher priced 1300, controls in arena/controls.lua. Reporting outage peeled in layers; bot_token /v1/login-not-session still drops bot rated events.        
-=======
 Admin is a full operator console with fleet, pilot edits, typed renames, access and activity from no-IP pilot logs. Tiers: Newb/Wing/Lead/Ace/Legend; AI farm brake. Controls source is arena/controls.lua; H/? table remains, old trigger help removed. Site mark 18x22/9px.                  
->>>>>>> origin/main
