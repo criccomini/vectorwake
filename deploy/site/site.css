@@ -14,16 +14,17 @@
   color-scheme: dark;
   --bg: #05070c;
   --ink: #dfe9f5;
-  --dim: #8190a6;
+  --dim: #7c8da6;
   --friend: #4fd6ff;
   --enemy: #ffa552;
   --bomb: #ff5ea8;
   --line: #1d2838;
   --deep-line: #101722;
+  --panel: #080c14;
   --green: #7fe3a0;
   --display: "Vector Display", "Arial Narrow", sans-serif;
   --mono: "Vector Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --edge: max(36px, calc((100vw - 1520px) / 2));
+  --page: min(1440px, calc(100vw - 72px));
 }
 
 * {
@@ -89,19 +90,19 @@ button {
 .site-header {
   position: fixed;
   inset: 0 0 auto;
-  z-index: 50;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 76px;
-  padding-inline: var(--edge);
+  padding: 0 max(36px, calc((100vw - 1440px) / 2));
   border-bottom: 1px solid transparent;
   transition: background 180ms ease, border-color 180ms ease;
 }
 
 .site-header.is-scrolled {
-  border-color: rgb(29 40 56 / 0.8);
-  background: rgb(5 7 12 / 0.9);
+  border-color: rgb(29 40 56 / 0.75);
+  background: rgb(5 7 12 / 0.88);
   backdrop-filter: blur(14px);
 }
 
@@ -111,6 +112,7 @@ button {
   gap: 11px;
   font-family: var(--display);
   font-size: 18px;
+  letter-spacing: 0.01em;
 }
 
 .brand-mark {
@@ -133,19 +135,18 @@ button {
 .site-nav {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 22px;
   color: var(--dim);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
-.site-nav > a:not(.github-button, .discord-button, .nav-play) {
-  margin-right: 12px;
+.site-nav a {
   transition: color 150ms ease;
 }
 
-.site-nav > a:not(.github-button, .discord-button, .nav-play):hover {
+.site-nav a:hover {
   color: var(--ink);
 }
 
@@ -153,13 +154,13 @@ button {
 .discord-button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
+  gap: 9px;
+  padding: 9px 11px;
   border: 1px solid #364256;
-  background: rgb(8 12 20 / 0.78);
+  background: rgb(8 12 20 / 0.74);
   color: var(--ink);
-  font-size: 9px;
-  letter-spacing: 0.1em;
+  font-size: 10px;
+  letter-spacing: 0.09em;
   line-height: 1;
   text-transform: uppercase;
   transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
@@ -182,12 +183,10 @@ button {
 
 .github-stars,
 .discord-members {
-  min-width: 21px;
-  padding-left: 8px;
+  padding-left: 9px;
   border-left: 1px solid #364256;
   color: var(--friend);
   font-variant-numeric: tabular-nums;
-  text-align: center;
 }
 
 .discord-members > span:first-child {
@@ -196,125 +195,147 @@ button {
   vertical-align: 1px;
 }
 
-.nav-play {
-  padding: 11px 17px;
+.site-nav .nav-github,
+.site-nav .nav-discord {
+  padding-block: 8px;
+  letter-spacing: 0.09em;
+}
+
+.site-nav .nav-play {
+  padding: 10px 16px;
   border: 1px solid var(--friend);
   background: var(--friend);
   color: #02050a;
-  transition: background 150ms ease, border-color 150ms ease;
 }
 
-.nav-play:hover {
-  border-color: #a7efff;
-  background: #a7efff;
-}
-
-main {
-  overflow: hidden;
-}
-
-section,
-article,
-h2,
-h3 {
-  scroll-margin-top: 76px;
+.site-nav .nav-play:hover {
+  border-color: #9aebff;
+  background: #9aebff;
+  color: #02050a;
 }
 
 .hero {
   position: relative;
-  min-height: max(760px, 100svh);
+  min-height: 100svh;
   overflow: hidden;
   border-bottom: 1px solid var(--line);
-  background: #020409;
+  background: #03050a;
+}
+
+.gameplay-film,
+.cta-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .gameplay-film {
+  overflow: hidden;
+  background: #03050a url("/media/gameplay-poster.jpg") center / cover no-repeat;
+  filter: saturate(0.88) contrast(1.12) brightness(0.8);
+  transform: scale(1.01);
+}
+
+.gameplay-take {
   position: absolute;
-  inset: 0 0 0 12vw;
-  width: 88vw;
+  inset: 0;
+  width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center;
-  background: #03050a url("/media/gameplay-poster.jpg") center / cover no-repeat;
-  filter: saturate(0.84) contrast(1.14) brightness(0.78);
-  transform: scale(1.012);
+  opacity: 0;
+  transition: opacity 850ms linear;
+}
+
+.gameplay-take.is-active {
+  opacity: 1;
 }
 
 .hero-shade {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(270deg, rgb(5 7 12 / 0.94) 0%, rgb(5 7 12 / 0.72) 31%, transparent 64%),
-    linear-gradient(0deg, rgb(5 7 12 / 0.96) 0%, transparent 38%),
-    linear-gradient(90deg, rgb(5 7 12 / 0.88), transparent 17%);
+    linear-gradient(90deg, rgb(5 7 12 / 0.96) 0%, rgb(5 7 12 / 0.76) 39%, rgb(5 7 12 / 0.08) 76%),
+    linear-gradient(0deg, rgb(5 7 12 / 0.8) 0%, transparent 32%);
   pointer-events: none;
 }
 
-.hero-wordmark {
-  position: absolute;
+.hero-copy {
+  position: relative;
   z-index: 2;
-  bottom: -0.075em;
-  left: -0.035em;
-  margin: 0;
+  width: var(--page);
+  margin: 0 auto;
+  padding-top: clamp(126px, 18vh, 190px);
+}
+
+.hero-wordmark {
+  margin: 0 0 10px -0.035em;
   color: var(--ink);
   font-family: var(--display);
-  font-size: clamp(130px, 18.6vw, 310px);
-  line-height: 0.72;
-  letter-spacing: -0.065em;
-  white-space: nowrap;
+  font-size: clamp(68px, 11.7vw, 186px);
+  line-height: 0.78;
+  letter-spacing: -0.06em;
   opacity: 0;
-  animation: hero-wordmark-in 850ms 160ms cubic-bezier(.2, .8, .2, 1) forwards;
+  animation: hero-in 720ms 120ms ease forwards;
 }
 
-.hero-copy {
-  position: absolute;
-  z-index: 3;
-  top: clamp(130px, 17vh, 180px);
-  right: var(--edge);
-  width: min(420px, calc(100vw - 72px));
-  padding-left: 24px;
-  border-left: 1px solid var(--friend);
-  opacity: 0;
-  animation: hero-copy-in 700ms 320ms ease forwards;
-}
-
-.hero h1 {
+.hero h1,
+.declaration h2,
+.energy h2,
+.flight h2,
+.fleet h2,
+.world h2,
+.final-cta h2 {
   margin: 0;
-  color: var(--friend);
   font-family: var(--display);
-  font-size: clamp(44px, 4.8vw, 72px);
   font-weight: 500;
-  line-height: 0.93;
-  letter-spacing: -0.035em;
   text-transform: uppercase;
 }
 
+.hero h1 {
+  max-width: 760px;
+  color: var(--friend);
+  font-size: clamp(42px, 6.2vw, 94px);
+  line-height: 0.88;
+  letter-spacing: -0.045em;
+  opacity: 0;
+  animation: hero-in 720ms 210ms ease forwards;
+}
+
 .hero-deck {
-  max-width: 390px;
-  margin: 25px 0 0;
-  color: #aab8ca;
-  font-size: 13px;
+  max-width: 540px;
+  margin: 26px 0 0;
+  color: #a7b6cb;
+  font-size: clamp(13px, 1.15vw, 16px);
   line-height: 1.8;
+  opacity: 0;
+  animation: hero-in 720ms 300ms ease forwards;
 }
 
 .hero-actions {
   display: flex;
   align-items: center;
-  gap: 26px;
-  margin-top: 30px;
+  gap: 30px;
+  margin-top: 34px;
+}
+
+.hero .hero-actions {
+  opacity: 0;
+  animation: hero-in 720ms 390ms ease forwards;
 }
 
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  min-width: 188px;
-  padding: 15px 17px;
+  min-width: 228px;
+  padding: 16px 18px;
   border: 1px solid var(--friend);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
 .button-primary {
@@ -330,12 +351,12 @@ h3 {
 
 .text-link {
   display: inline-flex;
+  gap: 12px;
   align-items: center;
-  gap: 10px;
   padding-block: 6px;
   border-bottom: 1px solid var(--dim);
   color: var(--ink);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   transition: color 150ms ease, border-color 150ms ease;
@@ -348,151 +369,134 @@ h3 {
 
 .hero-proof {
   position: absolute;
-  z-index: 3;
-  top: 46%;
-  left: var(--edge);
+  z-index: 2;
+  right: max(36px, calc((100vw - 1440px) / 2));
+  bottom: 38px;
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 4px;
   margin: 0;
   font-family: var(--display);
+  text-align: right;
   text-transform: uppercase;
-  transform: rotate(-90deg) translateX(-50%);
-  transform-origin: left top;
 }
 
 .hero-proof strong {
   color: var(--friend);
-  font-size: 24px;
+  font-size: clamp(24px, 2.4vw, 36px);
   font-weight: 500;
+  letter-spacing: -0.02em;
 }
 
 .hero-proof span {
   color: var(--ink);
-  font-size: 14px;
+  font-size: clamp(14px, 1.4vw, 19px);
+  letter-spacing: 0.05em;
 }
 
-@keyframes hero-wordmark-in {
-  from { opacity: 0; transform: translateY(30px); }
+@keyframes hero-in {
+  from { opacity: 0; transform: translateY(18px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes hero-copy-in {
-  from { opacity: 0; transform: translateX(24px); }
-  to { opacity: 1; transform: translateX(0); }
+.section-pad {
+  width: var(--page);
+  margin-inline: auto;
 }
 
-.manual {
-  position: relative;
-  padding: clamp(120px, 13vw, 220px) var(--edge) clamp(130px, 12vw, 190px);
-  border-bottom: 1px solid var(--line);
-  background:
-    linear-gradient(var(--deep-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--deep-line) 1px, transparent 1px),
-    var(--bg);
-  background-size: 72px 72px;
-}
-
-.manual::before {
-  position: absolute;
-  top: 5vw;
-  right: -0.04em;
-  color: transparent;
-  content: "1350";
-  font-family: var(--display);
-  font-size: clamp(180px, 27vw, 470px);
-  line-height: 0.72;
-  letter-spacing: -0.04em;
-  -webkit-text-stroke: 1px rgb(79 214 255 / 0.1);
-  pointer-events: none;
-}
-
-.manual-thesis {
-  position: relative;
-  z-index: 2;
+.declaration {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 24px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.55fr);
+  gap: clamp(50px, 9vw, 150px);
+  align-items: start;
+  padding-block: clamp(110px, 15vw, 220px);
 }
 
-.manual-thesis h2 {
-  grid-column: 2 / span 8;
-  margin: 0;
-  font-family: var(--display);
-  font-size: clamp(58px, 7.8vw, 120px);
-  font-weight: 400;
-  line-height: 0.93;
-  letter-spacing: -0.045em;
-  text-transform: uppercase;
+.declaration h2,
+.energy h2,
+.flight h2,
+.fleet h2,
+.world h2,
+.final-cta h2 {
+  font-size: clamp(46px, 6.2vw, 92px);
+  line-height: 0.94;
+  letter-spacing: -0.04em;
 }
 
-.manual-thesis p {
-  grid-column: 10 / span 3;
-  align-self: end;
-  margin: 0 0 8px;
-  color: #9aaac0;
-  font-size: 12px;
-  line-height: 1.9;
+.declaration h2 {
+  color: var(--ink);
+}
+
+.declaration > p,
+.energy-copy > p,
+.flight-copy > p,
+.fleet-head > p,
+.world-copy > p,
+.final-cta p {
+  color: #91a2b9;
+  font-size: 13px;
+  line-height: 1.95;
+}
+
+.declaration > p {
+  margin: 5px 0 0;
 }
 
 .energy {
-  position: relative;
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  align-items: end;
-  gap: 24px;
-  min-height: 760px;
-  margin-top: clamp(130px, 16vw, 250px);
+  grid-template-columns: 0.8fr 1.35fr;
+  gap: clamp(50px, 8vw, 130px);
+  align-items: center;
+  min-height: 100svh;
+  padding-block: 110px;
+  border-top: 1px solid var(--line);
 }
 
-.energy-instrument {
-  position: relative;
-  grid-column: 4 / 13;
-  grid-row: 1;
-  min-height: 640px;
-  overflow: hidden;
-  border-block: 1px solid var(--line);
-  background:
-    linear-gradient(var(--deep-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--deep-line) 1px, transparent 1px),
-    rgb(5 7 12 / 0.72);
-  background-size: 54px 54px;
-}
-
-.energy-copy {
-  position: relative;
-  z-index: 3;
-  grid-column: 1 / 6;
-  grid-row: 1;
-  align-self: end;
-  margin-bottom: 70px;
-  padding: 35px 40px 35px 0;
-  background: var(--bg);
-}
-
-.energy-copy h3,
-.flight-copy h3 {
-  margin: 0;
-  font-family: var(--display);
-  font-size: clamp(45px, 5.4vw, 82px);
-  font-weight: 400;
-  line-height: 0.94;
-  letter-spacing: -0.035em;
-  text-transform: uppercase;
+.energy-copy h2,
+.flight-copy h2,
+.world-copy h2 {
+  margin-top: 0;
 }
 
 .energy-copy > p,
 .flight-copy > p,
-.fleet-head > p,
 .world-copy > p {
-  color: #96a6bb;
-  font-size: 12px;
-  line-height: 1.9;
+  max-width: 470px;
+  margin: 28px 0 0;
 }
 
-.energy-copy > p {
-  max-width: 400px;
-  margin: 25px 0 0;
+.demo-trigger {
+  display: flex;
+  justify-content: space-between;
+  width: min(100%, 360px);
+  margin-top: 36px;
+  padding: 15px 0;
+  border: 0;
+  border-block: 1px solid var(--line);
+  background: transparent;
+  color: var(--enemy);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: padding 160ms ease, color 160ms ease;
+}
+
+.demo-trigger:hover {
+  padding-inline: 8px;
+  color: #ffc188;
+}
+
+.energy-instrument {
+  position: relative;
+  min-height: 600px;
+  overflow: hidden;
+  border-block: 1px solid var(--line);
+  background:
+    linear-gradient(var(--deep-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--deep-line) 1px, transparent 1px);
+  background-size: 54px 54px;
 }
 
 .instrument-topline,
@@ -536,22 +540,22 @@ h3 {
 .energy-readout {
   position: absolute;
   z-index: 2;
-  top: 76px;
+  top: 82px;
   left: 0;
   display: flex;
   align-items: baseline;
-  gap: 25px;
+  gap: 28px;
 }
 
 .energy-label {
   color: var(--green);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.2em;
 }
 
 .energy-readout strong {
   font-family: var(--display);
-  font-size: clamp(82px, 10vw, 150px);
+  font-size: clamp(76px, 9vw, 136px);
   font-weight: 400;
   line-height: 1;
   letter-spacing: -0.04em;
@@ -560,7 +564,7 @@ h3 {
 .energy-track {
   position: absolute;
   z-index: 2;
-  top: 215px;
+  top: 210px;
   right: 0;
   left: 0;
   height: 6px;
@@ -628,6 +632,7 @@ h3 {
   transform: translateY(-50%);
   border: 1px solid rgb(255 165 82 / 0.7);
   border-radius: 50%;
+  box-shadow: 0 0 24px rgb(255 165 82 / 0.13);
 }
 
 .target-ring::before,
@@ -651,28 +656,6 @@ h3 {
   width: 1px;
 }
 
-.demo-trigger {
-  display: flex;
-  justify-content: space-between;
-  width: min(100%, 360px);
-  margin-top: 34px;
-  padding: 14px 0;
-  border: 0;
-  border-block: 1px solid var(--line);
-  background: transparent;
-  color: var(--enemy);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: padding 160ms ease, color 160ms ease;
-}
-
-.demo-trigger:hover {
-  padding-inline: 8px;
-  color: #ffc188;
-}
-
 .demo-shot {
   position: absolute;
   z-index: 3;
@@ -687,7 +670,7 @@ h3 {
 }
 
 @keyframes demo-fire {
-  to { transform: translateX(680px); opacity: 0; }
+  to { transform: translateX(470px); opacity: 0; }
 }
 
 .energy-instrument.is-low .energy-track > span {
@@ -699,20 +682,18 @@ h3 {
 }
 
 .flight {
-  position: relative;
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: clamp(60px, 8vw, 140px);
   align-items: center;
-  gap: 24px;
-  min-height: 820px;
-  margin-top: clamp(100px, 14vw, 220px);
+  min-height: 100svh;
+  padding-block: 120px;
+  border-top: 1px solid var(--line);
 }
 
 .flight-visual {
   position: relative;
-  grid-column: 1 / 10;
-  grid-row: 1;
-  min-height: 720px;
+  min-height: min(720px, 78vw);
   overflow: hidden;
   border-left: 1px solid var(--line);
 }
@@ -724,117 +705,119 @@ h3 {
 }
 
 .orbit-one {
-  inset: 4% 5% 12% -18%;
+  inset: 8% 5% 18% -22%;
 }
 
 .orbit-two {
-  inset: 20% 20% 28% 0;
+  inset: 24% 18% 34% -5%;
   border-style: dashed;
 }
 
 .wake {
   position: absolute;
-  left: 13%;
-  width: 80%;
+  left: 14%;
+  width: 78%;
   height: 1px;
   transform-origin: left;
-  background: linear-gradient(90deg, transparent, rgb(79 214 255 / 0.35), transparent);
+  background: linear-gradient(90deg, transparent, rgb(79 214 255 / 0.32), transparent);
 }
 
 .wake-one {
-  top: 44%;
+  top: 45%;
   transform: rotate(-19deg);
 }
 
 .wake-two {
-  top: 57%;
-  transform: rotate(-8deg);
+  top: 52%;
+  transform: rotate(-13deg);
+  opacity: 0.45;
 }
 
 .flight-ship {
   position: absolute;
-  top: 45%;
-  left: 56%;
-  width: clamp(190px, 23vw, 360px);
-  transform: translate(-50%, -50%) rotate(31deg);
+  top: 38%;
+  left: 53%;
+  width: clamp(130px, 19vw, 260px);
   overflow: visible;
-  fill: rgb(14 41 54 / 0.9);
+  transform: translate(-50%, -50%) rotate(55deg);
+  fill: rgb(17 48 62 / 0.92);
   stroke: var(--friend);
-  stroke-width: 0.4;
-  filter: drop-shadow(0 0 16px rgb(79 214 255 / 0.3));
+  stroke-width: 0.5;
+  filter: drop-shadow(0 0 12px rgb(79 214 255 / 0.42));
   animation: ship-drift 5s ease-in-out infinite;
 }
 
 .flight-ship path {
   fill: none;
-  stroke: #a7b9d0;
-  stroke-width: 0.28;
+  stroke: #9fb6d4;
+  stroke-width: 0.35;
 }
 
 @keyframes ship-drift {
-  50% { transform: translate(-47%, -54%) rotate(34deg); }
+  50% { transform: translate(-45%, -57%) rotate(58deg); }
 }
 
 .vector-label {
   position: absolute;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  background: var(--bg);
   color: var(--dim);
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.12em;
 }
 
-.label-course { top: 12%; left: 8%; }
-.label-speed { right: 15%; bottom: 19%; color: var(--friend); }
-.label-drift { right: 10%; top: 26%; color: var(--enemy); }
+.label-course { top: 14%; left: 7%; }
+.label-speed { right: 4%; bottom: 25%; color: var(--friend); }
+.label-drift { right: 12%; top: 16%; color: var(--enemy); }
 
-.flight-copy {
-  position: relative;
-  z-index: 3;
-  grid-column: 8 / 13;
-  grid-row: 1;
-  padding: 42px 0 42px 48px;
-  background: var(--bg);
+.flight-facts {
+  display: grid;
+  gap: 0;
+  margin-top: 44px;
+  border-top: 1px solid var(--line);
 }
 
-.flight-copy > p {
-  max-width: 420px;
-  margin: 25px 0 0;
-}
-
-.fleet {
-  position: relative;
-  min-height: 980px;
-  overflow: hidden;
+.flight-facts span {
+  padding: 14px 0;
   border-bottom: 1px solid var(--line);
-  background: #03060b;
-}
-
-.fleet-head {
-  position: absolute;
-  z-index: 5;
-  top: 88px;
-  left: var(--edge);
-  width: min(330px, calc(100vw - 72px));
-}
-
-.fleet-head h2 {
-  margin: 0;
-  font-family: var(--display);
-  font-size: clamp(54px, 6vw, 90px);
-  font-weight: 400;
-  line-height: 0.9;
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
+.flight-facts span::before {
+  content: "+";
+  display: inline-block;
+  width: 32px;
+  color: var(--enemy);
+}
+
+.fleet {
+  padding-top: 130px;
+  border-top: 1px solid var(--line);
+}
+
+.fleet-head {
+  display: grid;
+  grid-template-columns: 1.2fr 0.52fr;
+  gap: 60px;
+  align-items: end;
+  margin-bottom: 70px;
+}
+
+.fleet-head h2 {
+  margin-top: 0;
+}
+
 .fleet-head > p {
-  margin: 22px 0 0;
+  margin: 0 0 4px;
 }
 
 .shipyard {
   position: relative;
-  min-height: 980px;
+  display: grid;
+  grid-template-columns: 1.6fr 0.72fr;
+  min-height: 670px;
+  border-block: 1px solid var(--line);
   background:
     linear-gradient(var(--deep-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--deep-line) 1px, transparent 1px);
@@ -842,74 +825,78 @@ h3 {
 }
 
 .hull-stage {
-  position: absolute;
-  inset: 0;
+  position: relative;
   display: grid;
   place-items: center;
+  min-width: 0;
   overflow: hidden;
+  border-right: 1px solid var(--line);
 }
 
 .hull-stage::before,
 .hull-stage::after {
   position: absolute;
-  border: 1px solid rgb(79 214 255 / 0.13);
-  border-radius: 50%;
+  z-index: 0;
   content: "";
-}
-
-.hull-stage::before {
-  width: min(67vw, 900px);
-  height: min(67vw, 900px);
+  width: min(52vw, 560px);
+  height: min(52vw, 560px);
+  border: 1px solid rgb(79 214 255 / 0.17);
+  border-radius: 50%;
 }
 
 .hull-stage::after {
-  width: min(45vw, 610px);
-  height: min(45vw, 610px);
+  width: min(32vw, 350px);
+  height: min(32vw, 350px);
   border-style: dashed;
 }
 
 .hull-stage svg {
   position: relative;
   z-index: 2;
-  width: min(63vw, 840px);
-  height: min(63vw, 840px);
+  width: min(48vw, 520px);
+  height: min(48vw, 520px);
   overflow: visible;
-  transform: rotate(-8deg);
+  filter: drop-shadow(0 0 18px rgb(79 214 255 / 0.45));
+  animation: hull-enter 420ms cubic-bezier(.2, .8, .2, 1);
 }
 
-.hull-axis {
-  stroke: rgb(79 214 255 / 0.08);
-  stroke-width: 0.08;
-  stroke-dasharray: 0.6 1.2;
-}
-
-.hull-ghost {
-  fill: none;
-  stroke: rgb(79 214 255 / 0.13);
-  stroke-width: 0.12;
-}
-
-.hull-body {
+.hull-stage .hull-body {
   fill: url("#hull-fill");
   stroke: var(--friend);
-  stroke-width: 0.18;
-  filter: drop-shadow(0 0 1.2px var(--friend)) drop-shadow(0 0 5px rgb(79 214 255 / 0.35));
+  stroke-width: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+
+.hull-stage .hull-ghost {
+  fill: none;
+  stroke: rgb(79 214 255 / 0.16);
+  stroke-width: 0.45;
+  vector-effect: non-scaling-stroke;
+}
+
+.hull-stage .hull-axis {
+  stroke: rgb(255 165 82 / 0.35);
+  stroke-width: 0.35;
+  stroke-dasharray: 1 2;
+  vector-effect: non-scaling-stroke;
+}
+
+@keyframes hull-enter {
+  from { opacity: 0; transform: scale(0.82) rotate(-4deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
 }
 
 .hull-copy {
-  position: absolute;
-  z-index: 4;
-  right: var(--edge);
-  bottom: 78px;
-  width: min(470px, 38vw);
-  text-align: right;
+  align-self: end;
+  padding: 52px clamp(30px, 4vw, 70px) 76px;
 }
 
 .hull-number,
-.hull-role {
+.hull-role,
+.hull-copy > p {
   margin: 0;
-  font-size: 9px;
-  letter-spacing: 0.15em;
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -918,52 +905,49 @@ h3 {
 }
 
 .hull-role {
-  margin-top: 18px;
+  margin-top: 50px;
   color: var(--enemy);
 }
 
 .hull-copy h3 {
-  margin: 2px -0.04em 0 0;
+  margin: 10px 0 24px;
   font-family: var(--display);
-  font-size: clamp(100px, 14vw, 220px);
+  font-size: clamp(58px, 7vw, 106px);
   font-weight: 400;
-  line-height: 0.75;
-  letter-spacing: -0.04em;
+  line-height: 0.9;
+  letter-spacing: -0.05em;
   text-transform: uppercase;
 }
 
 .hull-copy > p:last-child {
-  max-width: 340px;
-  margin: 30px 0 0 auto;
-  color: #9aaac0;
-  font-size: 12px;
+  max-width: 300px;
+  color: #9eacc0;
   line-height: 1.8;
+  text-transform: none;
 }
 
 .hull-spec {
   position: absolute;
-  z-index: 4;
-  top: 50%;
-  left: var(--edge);
-  display: grid;
-  gap: 10px;
+  top: 28px;
+  right: 28px;
+  display: flex;
+  gap: 20px;
   color: var(--dim);
   font-size: 9px;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.12em;
 }
 
 .hull-selector {
-  position: absolute;
-  z-index: 6;
-  bottom: 72px;
-  left: var(--edge);
   display: grid;
-  width: 170px;
+  grid-template-columns: repeat(7, 1fr);
+  width: var(--page);
+  margin: 0 auto;
+  padding-bottom: 140px;
 }
 
 .hull-selector button {
   position: relative;
-  padding: 9px 0;
+  padding: 19px 8px 18px;
   border: 0;
   border-bottom: 1px solid var(--line);
   background: transparent;
@@ -973,38 +957,54 @@ h3 {
   text-align: left;
   text-transform: uppercase;
   cursor: pointer;
-  transition: color 150ms ease, padding 150ms ease;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.hull-selector button::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 1px;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: var(--friend);
+  transition: transform 180ms ease;
 }
 
 .hull-selector button:hover,
 .hull-selector button[aria-pressed="true"] {
-  padding-left: 13px;
   color: var(--friend);
 }
 
 .hull-selector button[aria-pressed="true"]::before {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  color: var(--friend);
-  content: ">";
-  transform: translateY(-50%);
+  transform: scaleX(1);
 }
 
 .world {
-  position: relative;
-  min-height: 900px;
-  overflow: hidden;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg);
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 90px;
+  align-items: center;
+  min-height: 100svh;
+  padding-block: 130px;
+  border-top: 1px solid var(--line);
+}
+
+.world-copy .github-button {
+  margin-top: 34px;
+}
+
+.github-button-wide {
+  gap: 12px;
+  padding: 13px 15px;
 }
 
 .world-scope {
-  position: absolute;
-  top: -10vw;
-  left: -11vw;
-  width: min(78vw, 980px);
+  position: relative;
   aspect-ratio: 1;
+  max-width: 720px;
   overflow: hidden;
   border: 1px solid var(--line);
   background:
@@ -1014,16 +1014,16 @@ h3 {
 
 .scope-ring {
   position: absolute;
-  border: 1px solid rgb(79 214 255 / 0.26);
+  border: 1px solid rgb(79 214 255 / 0.25);
   border-radius: 50%;
 }
 
-.scope-ring-a { inset: 9%; }
-.scope-ring-b { inset: 30%; border-style: dashed; }
+.scope-ring-a { inset: 10%; }
+.scope-ring-b { inset: 28%; border-style: dashed; }
 
 .scope-cross {
   position: absolute;
-  background: rgb(79 214 255 / 0.17);
+  background: rgb(79 214 255 / 0.13);
 }
 
 .scope-cross-x { top: 50%; right: 0; left: 0; height: 1px; }
@@ -1036,7 +1036,7 @@ h3 {
   transform: translate(-50%, -50%);
   color: var(--friend);
   font-family: var(--display);
-  font-size: clamp(70px, 9vw, 138px);
+  font-size: clamp(48px, 6vw, 92px);
   font-weight: 400;
   line-height: 0.8;
   text-align: center;
@@ -1047,7 +1047,7 @@ h3 {
   padding: 6px 9px;
   border: 1px solid currentColor;
   background: var(--bg);
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.12em;
 }
 
@@ -1055,109 +1055,37 @@ h3 {
 .node-b { right: 8%; bottom: 26%; color: var(--enemy); }
 .node-c { bottom: 9%; left: 28%; color: var(--bomb); }
 
-.world-copy {
-  position: absolute;
-  z-index: 3;
-  top: 29%;
-  right: var(--edge);
-  width: min(470px, 36vw);
-}
-
-.world-copy h2 {
-  margin: 0;
-  font-family: var(--display);
-  font-size: clamp(54px, 5.2vw, 84px);
-  font-weight: 400;
-  line-height: 0.92;
-  letter-spacing: -0.035em;
-  text-transform: uppercase;
-}
-
-.world-copy > p {
-  max-width: 420px;
-  margin: 26px 0 0;
-}
-
-.world-copy .github-button {
-  margin-top: 30px;
-  padding: 13px 15px;
-}
-
-.launch {
+.final-cta {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(300px, 0.8fr) minmax(460px, 1.2fr) 150px;
-  min-height: 280px;
-  border-bottom: 1px solid var(--line);
-}
-
-.launch-copy {
-  display: flex;
-  justify-content: center;
-  flex-direction: column;
-  padding: 50px var(--edge);
-}
-
-.launch-copy h2 {
-  margin: 0;
-  font-family: var(--display);
-  font-size: clamp(38px, 3.8vw, 58px);
-  font-weight: 400;
-  line-height: 0.95;
-  text-transform: uppercase;
-}
-
-.launch-copy p {
-  max-width: 390px;
-  margin: 18px 0 0;
-  color: var(--dim);
-  font-size: 11px;
-  line-height: 1.7;
-}
-
-.launch-button {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 55px;
-  background: var(--friend);
-  color: var(--bg);
-  font-family: var(--display);
-  font-size: clamp(50px, 6vw, 92px);
-  line-height: 0.85;
-  text-transform: uppercase;
-  transition: background 160ms ease, padding 160ms ease;
+  min-height: 88svh;
+  overflow: hidden;
+  border-block: 1px solid var(--line);
 }
 
-.launch-button:hover {
-  padding-inline: 65px 45px;
-  background: #9aebff;
+.cta-copy {
+  position: relative;
+  z-index: 2;
 }
 
-.launch-links {
-  display: grid;
-  align-content: end;
-  border-left: 1px solid var(--line);
+.final-cta h2 {
+  max-width: 1000px;
+  margin-top: 0;
+  font-size: clamp(56px, 8vw, 124px);
 }
 
-.launch-links a {
-  padding: 18px;
-  border-top: 1px solid var(--line);
-  color: var(--dim);
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.launch-links a:hover {
-  color: var(--friend);
+.final-cta p {
+  margin-top: 28px;
 }
 
 .site-footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  min-height: 130px;
-  padding-inline: var(--edge);
+  min-height: 150px;
+  width: var(--page);
+  margin: 0 auto;
   color: var(--dim);
   font-size: 9px;
   letter-spacing: 0.1em;
@@ -1170,6 +1098,7 @@ h3 {
 
 .site-footer nav {
   display: flex;
+  justify-content: flex-end;
   gap: 24px;
 }
 
@@ -1188,369 +1117,285 @@ h3 {
   transform: translateY(0);
 }
 
-@media (max-width: 1100px) {
-  .site-nav > a:not(.github-button, .discord-button, .nav-play) {
-    display: none;
-  }
-
-  .gameplay-film {
-    left: 0;
-    width: 100%;
-  }
-
-  .manual-thesis h2 {
-    grid-column: 1 / span 9;
-  }
-
-  .manual-thesis p {
-    grid-column: 10 / span 3;
-  }
-
-  .energy-instrument {
-    grid-column: 3 / 13;
-  }
-
-  .energy-copy {
-    grid-column: 1 / 7;
-  }
-
-  .flight-visual {
-    grid-column: 1 / 11;
-  }
-
-  .flight-copy {
-    grid-column: 7 / 13;
-  }
-
-  .launch {
-    grid-template-columns: 0.8fr 1.2fr;
-  }
-
-  .launch-links {
-    display: none;
-  }
-}
-
-@media (max-width: 760px) {
+@media (max-width: 980px) {
   :root {
-    --edge: 20px;
+    --page: min(100% - 40px, 760px);
   }
 
   .site-header {
-    height: 64px;
+    height: 66px;
+    padding-inline: 20px;
   }
 
-  .site-nav {
-    gap: 6px;
-  }
-
-  .github-label,
-  .discord-label {
+  .site-nav > a:not(.nav-play):not(.nav-github):not(.nav-discord) {
     display: none;
   }
 
-  .github-button,
-  .discord-button {
-    gap: 6px;
-    padding: 8px;
+  .site-nav {
+    gap: 12px;
   }
 
-  .github-stars,
-  .discord-members {
-    padding-left: 6px;
+  .hero-copy {
+    padding-top: 126px;
   }
 
-  .nav-play {
-    padding: 10px 13px;
+  .hero-wordmark {
+    font-size: clamp(64px, 18.5vw, 124px);
+  }
+
+  .hero h1 {
+    font-size: clamp(44px, 10vw, 76px);
+  }
+
+  .hero-proof {
+    right: 20px;
+    bottom: 28px;
+  }
+
+  .declaration,
+  .energy,
+  .flight,
+  .fleet-head,
+  .world {
+    grid-template-columns: 1fr;
+  }
+
+  .declaration {
+    gap: 32px;
+  }
+
+  .declaration > p,
+  .fleet-head > p {
+    max-width: 520px;
+  }
+
+  .energy {
+    gap: 70px;
+  }
+
+  .energy-instrument {
+    min-height: 560px;
+  }
+
+  .flight {
+    gap: 70px;
+  }
+
+  .flight-visual {
+    min-height: 600px;
+    order: 2;
+  }
+
+  .flight-copy {
+    order: 1;
+  }
+
+  .fleet-head {
+    align-items: start;
+  }
+
+  .shipyard {
+    grid-template-columns: 1fr;
+  }
+
+  .hull-stage {
+    min-height: 540px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .hull-stage svg {
+    width: min(72vw, 460px);
+    height: min(72vw, 460px);
+  }
+
+  .hull-stage::before { width: min(78vw, 520px); height: min(78vw, 520px); }
+  .hull-stage::after { width: min(52vw, 340px); height: min(52vw, 340px); }
+
+  .hull-copy {
+    min-height: 300px;
+  }
+
+  .hull-selector {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .world-scope {
+    width: 100%;
+  }
+
+  .site-footer {
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    padding-block: 44px;
+  }
+}
+
+@media (max-width: 620px) {
+  .brand {
+    font-size: 16px;
+  }
+
+  .nav-github .github-label,
+  .nav-discord .discord-label {
+    display: none;
+  }
+
+  .site-nav .nav-play {
+    padding: 9px 12px;
   }
 
   .hero {
-    min-height: 820px;
-  }
-
-  .gameplay-film {
-    inset: 0;
-    width: 100%;
+    min-height: 840px;
   }
 
   .hero-shade {
     background:
-      linear-gradient(0deg, rgb(5 7 12 / 0.97) 0%, rgb(5 7 12 / 0.6) 58%, rgb(5 7 12 / 0.2) 100%),
-      linear-gradient(90deg, rgb(5 7 12 / 0.6), transparent);
-  }
-
-  .hero-wordmark {
-    bottom: 0;
-    font-size: clamp(80px, 27vw, 150px);
+      linear-gradient(0deg, rgb(5 7 12 / 0.96) 0%, rgb(5 7 12 / 0.58) 62%, rgb(5 7 12 / 0.12) 100%),
+      linear-gradient(90deg, rgb(5 7 12 / 0.7), transparent);
   }
 
   .hero-copy {
-    top: 118px;
-    right: 20px;
-    left: 20px;
-    width: auto;
-    padding-left: 16px;
+    padding-top: 124px;
+  }
+
+  .hero-wordmark {
+    margin-bottom: 18px;
+    font-size: clamp(58px, 18vw, 95px);
+    line-height: 0.9;
   }
 
   .hero h1 {
-    max-width: 460px;
-    font-size: clamp(46px, 14vw, 72px);
+    font-size: clamp(44px, 13.5vw, 68px);
   }
 
   .hero-deck {
-    max-width: 350px;
+    max-width: 340px;
+    margin-top: 24px;
   }
 
   .hero-actions {
     align-items: flex-start;
     flex-direction: column;
-    gap: 18px;
+    gap: 22px;
   }
 
   .hero-proof {
-    top: auto;
     right: 20px;
-    bottom: 115px;
-    left: auto;
-    align-items: flex-end;
-    flex-direction: column;
-    gap: 2px;
-    text-align: right;
-    transform: none;
+    bottom: 22px;
   }
 
-  .hero-proof strong {
-    font-size: 21px;
+  .declaration h2,
+  .energy h2,
+  .flight h2,
+  .fleet h2,
+  .world h2,
+  .final-cta h2 {
+    font-size: clamp(40px, 13vw, 66px);
   }
 
-  .hero-proof span {
-    font-size: 12px;
-  }
-
-  .manual {
-    padding-block: 110px 120px;
-    background-size: 54px 54px;
-  }
-
-  .manual::before {
-    top: 50px;
-    font-size: 55vw;
-  }
-
-  .manual-thesis {
-    display: block;
-  }
-
-  .manual-thesis h2 {
-    font-size: clamp(48px, 14vw, 76px);
-  }
-
-  .manual-thesis p {
-    max-width: 360px;
-    margin-top: 30px;
-  }
-
-  .energy {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    margin-top: 110px;
+  .energy,
+  .flight,
+  .world {
+    padding-block: 96px;
   }
 
   .energy-instrument {
-    order: 1;
-    width: 100%;
-    min-height: 520px;
-  }
-
-  .energy-copy {
-    order: 2;
-    width: calc(100% - 24px);
-    margin: -36px 0 0 24px;
-    padding: 34px 0 0 24px;
-    border-left: 1px solid var(--friend);
-  }
-
-  .energy-copy h3,
-  .flight-copy h3 {
-    font-size: clamp(44px, 12.5vw, 64px);
+    min-height: 510px;
   }
 
   .energy-readout strong {
-    font-size: 84px;
+    font-size: 76px;
   }
 
   .energy-track {
-    top: 190px;
+    top: 184px;
   }
 
   .shot-field {
-    top: 225px;
+    top: 220px;
   }
 
   .instrument-footer > span {
-    max-width: 190px;
+    max-width: 210px;
     line-height: 1.5;
   }
 
-  .flight {
-    display: block;
-    min-height: 0;
-    margin-top: 130px;
-  }
-
   .flight-visual {
-    min-height: 520px;
+    min-height: 460px;
   }
 
-  .flight-copy {
-    width: calc(100% - 24px);
-    margin: -80px 0 0 24px;
-    padding: 34px 0 0 24px;
-    border-left: 1px solid var(--friend);
+  .flight-ship {
+    width: 160px;
   }
 
   .fleet {
-    min-height: 850px;
+    padding-top: 96px;
   }
 
   .fleet-head {
-    position: relative;
-    top: auto;
-    left: auto;
-    width: auto;
-    padding: 82px 20px 0;
-  }
-
-  .fleet-head h2 {
-    font-size: 60px;
+    margin-bottom: 50px;
   }
 
   .shipyard {
-    min-height: 590px;
-    background-size: 54px 54px;
+    min-height: 0;
   }
 
-  .hull-stage::before {
-    width: 120vw;
-    height: 120vw;
-  }
-
-  .hull-stage::after {
-    width: 84vw;
-    height: 84vw;
-  }
-
-  .hull-stage svg {
-    width: 105vw;
-    height: 105vw;
+  .hull-stage {
+    min-height: 410px;
   }
 
   .hull-copy {
-    right: 20px;
-    bottom: 34px;
-    width: calc(100% - 40px);
+    min-height: 270px;
+    padding: 34px 20px 52px;
   }
 
   .hull-copy h3 {
-    font-size: clamp(88px, 28vw, 130px);
+    font-size: 62px;
+  }
+
+  .hull-role {
+    margin-top: 34px;
   }
 
   .hull-spec {
-    top: 35%;
-    left: 20px;
+    top: 18px;
+    right: 18px;
   }
 
   .hull-selector {
-    position: relative;
-    bottom: auto;
-    left: auto;
-    display: flex;
-    width: 100%;
-    overflow-x: auto;
-    border-top: 1px solid var(--line);
-    scrollbar-width: none;
-  }
-
-  .hull-selector::-webkit-scrollbar {
-    display: none;
-  }
-
-  .hull-selector button {
-    flex: 0 0 auto;
-    padding: 15px 18px;
-    border-right: 1px solid var(--line);
-    border-bottom: 0;
-  }
-
-  .hull-selector button:hover,
-  .hull-selector button[aria-pressed="true"] {
-    padding-left: 25px;
-  }
-
-  .hull-selector button[aria-pressed="true"]::before {
-    left: 11px;
+    grid-template-columns: repeat(2, 1fr);
+    padding-bottom: 96px;
   }
 
   .world {
-    min-height: 850px;
+    gap: 58px;
   }
 
-  .world-scope {
-    top: -8vw;
-    left: -52vw;
-    width: 145vw;
+  .scope-node {
+    font-size: 7px;
   }
 
-  .world-copy {
-    top: auto;
-    right: 20px;
-    bottom: 82px;
-    width: calc(100% - 40px);
-    padding: 30px 0 0 24px;
-    border-left: 1px solid var(--friend);
-    background: rgb(5 7 12 / 0.92);
-  }
-
-  .world-copy h2 {
-    font-size: clamp(48px, 13vw, 68px);
-  }
-
-  .launch {
-    display: block;
-  }
-
-  .launch-copy {
-    padding: 70px 20px;
-  }
-
-  .launch-button {
-    min-height: 190px;
-    padding: 30px 20px;
-    font-size: clamp(42px, 14.5vw, 64px);
-    letter-spacing: -0.02em;
-  }
-
-  .launch-button:hover {
-    padding-inline: 28px 12px;
+  .final-cta {
+    min-height: 760px;
   }
 
   .site-footer {
-    min-height: 150px;
-    padding-block: 38px;
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .site-footer nav {
+    justify-content: flex-start;
   }
 }
 
-@media (max-width: 430px) {
-  .site-header .brand > span {
+@media (max-width: 380px) {
+  .site-header .brand > span,
+  .nav-github .github-label,
+  .nav-discord .discord-label {
     display: none;
-  }
-
-  .site-footer {
-    align-items: flex-start;
-    flex-direction: column;
-    justify-content: center;
-    gap: 28px;
   }
 }
 
