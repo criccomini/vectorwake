@@ -53,32 +53,29 @@ max_ships = 64
 
 respawn_delay = 400   # ticks, so four seconds
 
-# Where a ship comes back, as one number rather than a style.
+# How precisely a ship lands on the map's spawn point for its side.
 #
-# Zero, the default, uses the map's own spawn tiles, redrawn on every death.
-# Above zero ignores them and drops a ship on a random tile within that many of
-# the map's center, which is what the original did before it had spawn points.
+# Zero, the default, puts it exactly on the tile. Above zero it lands on a
+# random tile within that many of the point instead, redrawn on every death.
+# The point is chosen first either way, so the map still decides which part of
+# it a side comes back to.
 #
-# The trade is distance against exposure. Our generator spreads a side's starts
-# over nearly half the map, so under tiles one pilot can be five seconds from
-# the middle and their team mate twenty-six. A radius makes everybody the same
-# distance from it and turns one patch of ground into the only place anyone
-# arrives.
+# Exactly on the tile stacks a roster: a point is one tile, and a room with more
+# ships than the map has points puts several of them on the same one with
+# nothing between them. Size the radius by the crowd it has to spread, measured
+# as seconds of bullet flight to the nearest enemy rather than in tiles. Alpha
+# runs 60 for a bit over three seconds at the 51 ships one of its rooms holds;
+# the numbers behind that are written out in catalog/zones/alpha/zone.toml.
 #
-# Size it by the crowd, not by the map. The original's own number comes to 18,
-# because WarpRadiusLimit=20 in its reference settings clamps a formula that
-# would have asked for 266, and 18 was unplayable in a room of 51: it put a
-# fresh pilot two and a half tiles from the nearest enemy, a fifth of a second
-# of bullet flight, and they died on arrival. Tune against that flight time.
-# Alpha runs 250 for about three seconds of it, with the numbers written out in
-# catalog/zones/alpha/zone.toml.
+# A map that names no spawn points has nothing to aim at, and there a radius
+# scatters about the center of the map, which is what the original did before it
+# had spawn points at all.
 #
-# spawn_radius = 250
+# spawn_radius = 60
 
-# Whether a client marks the map's spawn tiles. Ignored when spawn_radius is
-# set, because then nobody arrives on them. Worth turning off in a mode that
+# Whether a client marks the map's spawn tiles. Worth turning off in a mode that
 # does not want one side's home end advertised to the other: the mark is drawn
-# for every spawn on the map, the enemy's included.
+# for every spawn on the map, the enemy's included and in the enemy's color.
 #
 # show_spawns = true
 

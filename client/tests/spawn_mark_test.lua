@@ -2,17 +2,14 @@
 --
 --     lua5.1 client/tests/spawn_mark_test.lua
 --
--- Two rings on a spawn tile are a promise about where a pilot is going to
--- appear, and there are two ways for that promise to be false. A zone can set
--- a spawn radius, in which case nobody arrives on those tiles at all and the
--- rings point at nothing. Or a zone can want its home ends kept quiet, which
+-- Two rings on a spawn tile say where a pilot is about to appear, give or take
+-- whatever `spawn_radius` the zone set. A zone can want that kept quiet, and it
 -- is not a hypothetical preference: the mark is drawn for every spawn on the
 -- map, the enemy's included and in the enemy's color, so anybody flying can
 -- read where the other side comes back.
 --
--- The core folds both answers into one call rather than handing the drawing
--- two numbers to combine, so what is checked here is that the drawing asks and
--- obeys. What the core folds together is checked in sim/tests/test_sim.c.
+-- What is checked here is that the drawing asks the core and obeys the answer.
+-- Where a ship actually lands is checked in sim/tests/test_sim.c.
 
 package.path = "client/?.lua;" .. package.path
 

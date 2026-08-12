@@ -3867,28 +3867,57 @@ int main(void) {
             CHECK(moved, "a run of deaths does not reuse one tile");
         }
 
-        /* The radius. Ignores the tiles, stays inside the box, and is the
-         * same box for both sides: the point of it is that everybody is the
-         * same distance from the middle. */
+        /* The radius lands you near one of the map's points rather than on
+         * it. Near, and not somewhere else: the point still decides which part
+         * of the map a side comes back to, which is the whole difference from
+         * the arrangement this replaced. */
         {
             sim_settings rc = sc;
             rc.spawn_radius = 40;
             sim_state s;
             sim_init(&s, 3);
-            const int32_t mid = (SIM_MAP_TILES / 2) * SIM_TILE_PX * 256
-                              + SIM_TILE_PX * 128;
             const int32_t reach = 40 * SIM_TILE_PX * 256;
-            int off_row = 0;
+            const int32_t row = 200 * SIM_TILE_PX * 256 + SIM_TILE_PX * 128;
+            int off_point = 0;
             for (uint32_t n = 0; n < 200; n++) {
                 int32_t x = 0, y = 0;
-                sim_spawn_point(&s, &rc, (uint8_t)(n & 1), APEX, n, &x, &y);
+                sim_spawn_point(&s, &rc, 0, APEX, n, &x, &y);
+                int near_one = 0;
+                for (int i = 0; i < 4; i++) {
+                    int32_t px = SPAWN_TX[i] * SIM_TILE_PX * 256
+                               + SIM_TILE_PX * 128;
+                    if (x >= px - reach && x <= px + reach
+                            && y >= row - reach && y <= row + reach)
+                        near_one = 1;
+                }
+                CHECK(near_one, "a radius spawn stays within reach of a point");
+                if (x != SPAWN_TX[0] * SIM_TILE_PX * 256 + SIM_TILE_PX * 128
+                        && y != row)
+                    off_point = 1;
+            }
+            CHECK(off_point, "and does not sit exactly on one every time");
+        }
+
+        /* A map naming no starts at all is the one case where the radius
+         * scatters about the middle, which is what the original did before it
+         * had spawn points. */
+        {
+            sim_settings bc;
+            memset(&bc, 0, sizeof bc);
+            sim_settings_baseline(&bc, m);   /* the plain walled map: no spawns */
+            bc.spawn_radius = 30;
+            sim_state s;
+            sim_init(&s, 17);
+            const int32_t mid = (SIM_MAP_TILES / 2) * SIM_TILE_PX * 256
+                              + SIM_TILE_PX * 128;
+            const int32_t reach = 30 * SIM_TILE_PX * 256;
+            for (uint32_t n = 0; n < 100; n++) {
+                int32_t x = 0, y = 0;
+                sim_spawn_point(&s, &bc, 0, APEX, n, &x, &y);
                 CHECK(x >= mid - reach && x <= mid + reach
                           && y >= mid - reach && y <= mid + reach,
-                      "a radius spawn stays inside its box");
-                if (y != 200 * SIM_TILE_PX * 256 + SIM_TILE_PX * 128)
-                    off_row = 1;
+                      "with no points to aim at, the middle is the point");
             }
-            CHECK(off_row, "and ignores the map's spawn tiles");
         }
 
         /* Deterministic, which is the whole reason the roll is in here rather
