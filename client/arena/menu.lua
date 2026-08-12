@@ -1273,15 +1273,20 @@ local function activate()
         -- invite that has to be reissued is one line of Caddy and not a
         -- client release that every open tab is behind.
         --
-        -- A browser may refuse to open it. Defold hands input to the game on
-        -- its own loop rather than inside the click handler, so the call is
-        -- not always inside the gesture a popup blocker wants to see, and
-        -- there is no way to ask in advance. Refused, the address is worth
-        -- more on screen than in a console nobody has open.
+        -- On the web the page opens it, through `vwOpen` in the template,
+        -- which clicks an anchor. This was `sys.open_url` for both, and on a
+        -- phone it reported failure: the card that went up with the address
+        -- and an OK on it was a fallback for a popup blocker, and a card is
+        -- not a link. The result is deliberately not checked now, because
+        -- there is nothing better to do with a no and asking produced the
+        -- card. Native builds keep `sys.open_url`, which is the only thing
+        -- there is off the web and does work there.
         local url = "https://play.vectorwake.net/discord"
-        local ok, opened = pcall(sys.open_url, url, {target = "_blank"})
-        if ok and opened ~= false then return nil end
-        M.confirm(url, {{label = "ok", act = "ok"}})
+        if html5 then
+            pcall(html5.run, "window.vwOpen && window.vwOpen(\"" .. url .. "\")")
+        else
+            pcall(sys.open_url, url, {target = "_blank"})
+        end
         return nil
     elseif r.act == "install" then
         -- One tap where the browser allows one. Where it does not, the row

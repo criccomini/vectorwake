@@ -283,6 +283,40 @@
 			try { e.prompt(); } catch (err) {}
 			return "1";
 		};
+
+		// Open a link in a new tab.
+		//
+		// sys.open_url was what did this, and on a phone it reported failure
+		// and the menu put the address up in a card with an OK on it, which
+		// is not a link, it is an apology. A clicked anchor is what a browser
+		// is least suspicious of: window.open from anywhere but a click
+		// handler is what popup blockers exist to stop, and every mobile
+		// browser is stricter about it than a desktop one.
+		//
+		// The engine hands input to the game from its own loop rather than
+		// from the listener, so this never runs inside the tap. It runs about
+		// a frame after one, which is well inside the few seconds of
+		// transient activation a browser keeps afterwards, and that is what
+		// makes the anchor land.
+		//
+		// noopener because the new tab has no business holding a handle on
+		// the one running the game.
+		window.vwOpen = function (url) {
+			try {
+				var a = document.createElement("a");
+				a.href = url;
+				a.target = "_blank";
+				a.rel = "noopener noreferrer";
+				a.style.display = "none";
+				document.body.appendChild(a);
+				a.click();
+				a.remove();
+				return "1";
+			} catch (err) {
+				try { window.open(url, "_blank", "noopener"); return "1"; }
+				catch (e2) { return ""; }
+			}
+		};
 	})();
 	</script>
 </head>

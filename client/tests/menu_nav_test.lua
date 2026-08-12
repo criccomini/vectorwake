@@ -841,19 +841,16 @@ do
     check("the menu stays where it was", #menu.stack == 1,
           table.concat(menu.stack, "/"))
 
-    -- A browser that refuses gets the address on screen instead, since Defold
-    -- hands input to the game outside the click handler and a popup blocker
-    -- may well say no.
+    -- Nothing is put on screen when the browser says no, and there is no
+    -- browser here to say yes: a card with the address and an OK on it is
+    -- what a phone actually got, and a card is not a link.
     menu.stack = {"root"}
     menu.sel = {}
     menu.note = nil
     _G.sys.open_url = function() return false end
     menu.click_rail(top_index("discord"))
-    local card = menu.view().ask
-    check("a refused popup shows the address",
-          card and tostring(card.head):find("play.vectorwake.net/discord",
-                                            1, true) ~= nil,
-          card and tostring(card.head) or "no card")
+    check("a refusal puts nothing on screen", menu.view().ask == nil,
+          tostring(menu.view().ask and menu.view().ask.head))
 
     -- And an engine with no open_url at all does not take the menu down.
     menu.stack = {"root"}
@@ -861,6 +858,35 @@ do
     _G.sys.open_url = nil
     local ok = pcall(menu.click_rail, top_index("discord"))
     check("an engine without open_url survives the tap", ok)
+end
+
+-- --- and on the web the page opens it -------------------------------------
+--
+-- sys.open_url was doing both, and on a phone it reported failure. The page
+-- clicks an anchor instead, which is the thing a browser is least suspicious
+-- of, so the web path goes through the template rather than the engine.
+
+do
+    local js = nil
+    _G.html5 = {run = function(src) js = src return "1" end}
+    _G.sys.open_url = function() error("the web must not reach open_url") end
+
+    menu.open = true
+    menu.home = true
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.note = nil
+    local ok = pcall(menu.click_rail, top_index("discord"))
+    check("a browser opens it through the page", ok and js ~= nil,
+          tostring(js))
+    check("by the template's own opener",
+          js and js:find("vwOpen", 1, true) ~= nil, tostring(js))
+    check("and it is handed the invite",
+          js and js:find("https://play.vectorwake.net/discord", 1, true),
+          tostring(js))
+    check("with no card raised", menu.view().ask == nil,
+          tostring(menu.view().ask and menu.view().ask.head))
+    _G.html5 = nil
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
