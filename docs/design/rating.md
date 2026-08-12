@@ -177,7 +177,7 @@ game.
 
 What a player sees is a tier rather than a number, and nothing at all until
 they are out of provisional. The bands live in `server/src/rating.rs`, from
-Green to Legend. This began as an open question below and the shipped answer
+Newb to Legend. This began as an open question below and the shipped answer
 has held: a number invites anxiety over ten-point noise, and a coarse band
 moves only when something real has changed.
 

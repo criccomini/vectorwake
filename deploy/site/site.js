@@ -1,15 +1,5 @@
 "use strict";
 
-const COLORS = {
-  bg: "#05070c",
-  grid: "#121a26",
-  friend: "#4fd6ff",
-  enemy: "#ffa552",
-  bomb: "#ff5ea8",
-  ink: "#dfe9f5",
-  dim: "#6c7a90",
-};
-
 const HULLS = [
   {
     name: "Apex",
@@ -70,190 +60,6 @@ function polygonPoints(poly) {
     points.push(`${poly[i]},${-poly[i + 1]}`);
   }
   return points.join(" ");
-}
-
-function drawHull(ctx, hull, x, y, angle, scale, color, alpha = 1) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-  ctx.scale(scale, -scale);
-  ctx.beginPath();
-  ctx.moveTo(hull.poly[0], hull.poly[1]);
-  for (let i = 2; i < hull.poly.length; i += 2) {
-    ctx.lineTo(hull.poly[i], hull.poly[i + 1]);
-  }
-  ctx.closePath();
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = color === COLORS.friend ? "#0d2632" : "#2b1b12";
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 0.65 / scale;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 7 / scale;
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-}
-
-class BattleScene {
-  constructor(canvas, quiet = false) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext("2d");
-    this.quiet = quiet;
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.width = 0;
-    this.height = 0;
-    this.pointer = { x: 0, y: 0 };
-    this.stars = Array.from({ length: quiet ? 50 : 130 }, (_, i) => ({
-      x: ((i * 67 + 13) % 997) / 997,
-      y: ((i * 149 + 71) % 991) / 991,
-      z: 0.3 + ((i * 37) % 70) / 100,
-    }));
-    this.ships = quiet ? [] : [
-      { x: 0.66, y: 0.37, vx: -2.5, vy: 1.5, hull: 0, a: -2.08, color: COLORS.friend, scale: 1.7 },
-      { x: 0.79, y: 0.61, vx: -1.5, vy: -0.4, hull: 5, a: -1.78, color: COLORS.enemy, scale: 1.45 },
-      { x: 0.57, y: 0.72, vx: 1.1, vy: -1.7, hull: 4, a: 0.48, color: COLORS.enemy, scale: 1.12 },
-      { x: 0.88, y: 0.22, vx: -1.8, vy: 1.2, hull: 2, a: -2.3, color: COLORS.friend, scale: 0.72 },
-    ];
-    this.bolts = [];
-    this.last = 0;
-    this.spawnClock = 0;
-    this.resize = this.resize.bind(this);
-    this.frame = this.frame.bind(this);
-    window.addEventListener("resize", this.resize, { passive: true });
-    if (!quiet) {
-      canvas.closest(".hero").addEventListener("pointermove", (event) => {
-        const rect = canvas.getBoundingClientRect();
-        this.pointer.x = event.clientX / rect.width - 0.5;
-        this.pointer.y = event.clientY / rect.height - 0.5;
-      }, { passive: true });
-    }
-    this.resize();
-    if (reducedMotion) {
-      this.render(0);
-    } else {
-      requestAnimationFrame(this.frame);
-    }
-  }
-
-  resize() {
-    const rect = this.canvas.getBoundingClientRect();
-    this.width = Math.max(1, rect.width);
-    this.height = Math.max(1, rect.height);
-    this.canvas.width = Math.round(this.width * this.dpr);
-    this.canvas.height = Math.round(this.height * this.dpr);
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-  }
-
-  spawnBolt(time) {
-    const origin = this.ships[Math.floor(time / 900) % this.ships.length];
-    const speed = 280;
-    this.bolts.push({
-      x: origin.x * this.width,
-      y: origin.y * this.height,
-      vx: Math.cos(origin.a) * speed,
-      vy: Math.sin(origin.a) * speed,
-      color: origin.color === COLORS.friend ? COLORS.friend : COLORS.enemy,
-      life: 1,
-    });
-  }
-
-  frame(time) {
-    const dt = Math.min((time - this.last) / 1000 || 0, 0.04);
-    this.last = time;
-    if (!document.hidden) {
-      this.update(dt, time);
-      this.render(time);
-    }
-    requestAnimationFrame(this.frame);
-  }
-
-  update(dt, time) {
-    if (this.quiet) return;
-    this.spawnClock += dt;
-    if (this.spawnClock > 0.68) {
-      this.spawnClock = 0;
-      this.spawnBolt(time);
-    }
-    for (const ship of this.ships) {
-      ship.x += ship.vx * dt / this.width;
-      ship.y += ship.vy * dt / this.height;
-      if (ship.x < 0.52) ship.x = 0.92;
-      if (ship.x > 0.95) ship.x = 0.54;
-      if (ship.y < 0.14) ship.y = 0.84;
-      if (ship.y > 0.88) ship.y = 0.16;
-    }
-    this.bolts = this.bolts.filter((bolt) => {
-      bolt.x += bolt.vx * dt;
-      bolt.y += bolt.vy * dt;
-      bolt.life -= dt * 0.72;
-      return bolt.life > 0 && bolt.x > -80 && bolt.x < this.width + 80 && bolt.y > -80 && bolt.y < this.height + 80;
-    });
-  }
-
-  render(time) {
-    const ctx = this.ctx;
-    ctx.clearRect(0, 0, this.width, this.height);
-    ctx.fillStyle = COLORS.bg;
-    ctx.fillRect(0, 0, this.width, this.height);
-
-    const gridSize = this.quiet ? 96 : 82;
-    const offsetX = this.pointer.x * 8;
-    const offsetY = this.pointer.y * 8;
-    ctx.strokeStyle = this.quiet ? "#101722" : COLORS.grid;
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.52;
-    for (let x = (offsetX % gridSize) - gridSize; x < this.width + gridSize; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, this.height);
-      ctx.stroke();
-    }
-    for (let y = (offsetY % gridSize) - gridSize; y < this.height + gridSize; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(this.width, y);
-      ctx.stroke();
-    }
-
-    for (const star of this.stars) {
-      const x = ((star.x * this.width) + this.pointer.x * star.z * -20 + this.width) % this.width;
-      const y = ((star.y * this.height) + this.pointer.y * star.z * -20 + this.height) % this.height;
-      ctx.globalAlpha = 0.2 + star.z * 0.55;
-      ctx.fillStyle = star.z > 0.75 ? "#93a9c8" : "#4a6089";
-      ctx.fillRect(x, y, star.z > 0.75 ? 1.5 : 1, star.z > 0.75 ? 1.5 : 1);
-    }
-
-    if (!this.quiet) {
-      ctx.globalAlpha = 1;
-      for (const bolt of this.bolts) {
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, bolt.life);
-        ctx.strokeStyle = bolt.color;
-        ctx.shadowColor = bolt.color;
-        ctx.shadowBlur = 10;
-        ctx.lineWidth = 2.2;
-        ctx.beginPath();
-        ctx.moveTo(bolt.x, bolt.y);
-        ctx.lineTo(bolt.x - bolt.vx * 0.08, bolt.y - bolt.vy * 0.08);
-        ctx.stroke();
-        ctx.restore();
-      }
-      this.ships.forEach((ship, index) => {
-        const bob = Math.sin(time / 1100 + index) * 2;
-        drawHull(ctx, HULLS[ship.hull], ship.x * this.width + offsetX * 0.5, ship.y * this.height + offsetY * 0.5 + bob, ship.a - Math.PI / 2, ship.scale, ship.color, index === 2 ? 0.7 : 1);
-      });
-    } else {
-      ctx.save();
-      ctx.globalAlpha = 0.7;
-      ctx.strokeStyle = COLORS.friend;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(this.width * 0.78, this.height * 0.52, Math.min(this.width, this.height) * 0.2, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-    ctx.globalAlpha = 1;
-  }
 }
 
 function setupHullSelector() {
@@ -455,10 +261,11 @@ function setupGitHubStars() {
   const paint = (count) => {
     counts.forEach((element) => {
       element.textContent = formatter.format(count);
+      element.closest(".github-stars").hidden = count < 10;
     });
-    const noun = count === 1 ? "star" : "stars";
     links.forEach((link) => {
-      link.setAttribute("aria-label", `Vectorwake on GitHub, ${count.toLocaleString("en-US")} ${noun}`);
+      const countLabel = count >= 10 ? `, ${count.toLocaleString("en-US")} stars` : "";
+      link.setAttribute("aria-label", `Vectorwake on GitHub${countLabel}`);
     });
   };
 
@@ -497,10 +304,61 @@ function setupGitHubStars() {
     .finally(() => window.clearTimeout(timeout));
 }
 
+function setupDiscordCount() {
+  const counts = document.querySelectorAll("[data-discord-count]");
+  const links = document.querySelectorAll("[data-discord-link]");
+  if (!counts.length) return;
+
+  const cacheKey = "vectorwake-discord-members";
+  const cacheAge = 6 * 60 * 60 * 1000;
+  const paint = (count) => {
+    counts.forEach((element) => {
+      element.textContent = count.toLocaleString("en-US");
+      element.closest(".discord-members").hidden = count < 10;
+    });
+    links.forEach((link) => {
+      const countLabel = count >= 10 ? `, ${count.toLocaleString("en-US")} members` : "";
+      link.setAttribute("aria-label", `Join Vectorwake on Discord${countLabel}`);
+    });
+  };
+
+  let cached;
+  try {
+    cached = JSON.parse(localStorage.getItem(cacheKey));
+  } catch (_) {
+    cached = null;
+  }
+
+  if (Number.isInteger(cached?.count)) {
+    paint(cached.count);
+    if (Date.now() - cached.savedAt < cacheAge) return;
+  }
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 4000);
+  fetch("https://discord.com/api/v10/invites/jyb4YBcY5Z?with_counts=true", { signal: controller.signal })
+    .then((response) => {
+      if (!response.ok) throw new Error(`Discord returned ${response.status}`);
+      return response.json();
+    })
+    .then((invite) => {
+      const count = invite.approximate_member_count ?? invite.profile?.member_count;
+      if (!Number.isInteger(count)) return;
+      paint(count);
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({ count, savedAt: Date.now() }));
+      } catch (_) {
+        return;
+      }
+    })
+    .catch(() => {})
+    .finally(() => window.clearTimeout(timeout));
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll("[data-cta-field]").forEach((canvas) => new BattleScene(canvas, true));
   setupGameplayFilm();
   setupGitHubStars();
+  setupDiscordCount();
   setupHullSelector();
   setupEnergyDemo();
   setupReveals();

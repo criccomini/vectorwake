@@ -65,7 +65,7 @@ pub const QUIT_WINDOW: u32 = 300;
 /// long stretch between a pilot who has clearly arrived and the handful who
 /// are the reason anybody knows the zone's name.
 pub const TIERS: [(&str, f64); 5] = [
-    ("Green", f64::NEG_INFINITY),
+    ("Newb", f64::NEG_INFINITY),
     ("Wing", 1050.0),
     ("Lead", 1200.0),
     ("Ace", 1350.0),
@@ -505,8 +505,8 @@ mod tests {
 
     #[test]
     fn every_rating_has_a_tier() {
-        assert_eq!(tier(-999.0), "Green", "the floor is unbounded below");
-        assert_eq!(tier(1049.0), "Green");
+        assert_eq!(tier(-999.0), "Newb", "the floor is unbounded below");
+        assert_eq!(tier(1049.0), "Newb");
         assert_eq!(tier(1050.0), "Wing");
         assert_eq!(tier(1200.0), "Lead");
         assert_eq!(tier(1699.0), "Ace", "the widest band runs to the top one");

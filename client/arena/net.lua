@@ -315,7 +315,7 @@ end
 -- not watching a number twitch after every death.
 local TIERS = {
     {1700, "Legend"}, {1350, "Ace"}, {1200, "Lead"},
-    {1050, "Wing"}, {-1e9, "Green"},
+    {1050, "Wing"}, {-1e9, "Newb"},
 }
 local PROVISIONAL_GAMES = 10
 
@@ -324,7 +324,7 @@ function M.tier(rating, games)
     for _, t in ipairs(TIERS) do
         if rating >= t[1] then return t[2] end
     end
-    return "Green"
+    return "Newb"
 end
 
 -- Built up beside the live roster and swapped in whole, rather than cleared and
