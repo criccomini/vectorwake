@@ -33,9 +33,15 @@ local admin = read("deploy/admin/admin.js")
 check("the landing page names its large share card",
       has(landing, 'property="og:image" content="https://vectorwake.net/share-card.png"')
       and has(landing, 'name="twitter:card" content="summary_large_image"'))
-check("the game page names its own large share card",
-      has(game, 'property="og:image" content="https://vectorwake.net/play-share-card.png"')
+-- One card, named by both pages. The game page used to carry its own, which
+-- meant two images to keep current and one of them was always the stale one:
+-- a link to play.vectorwake.net and a link to vectorwake.net are the same game
+-- and should not preview as two different products.
+check("the game page names the same large share card",
+      has(game, 'property="og:image" content="https://vectorwake.net/share-card.png"')
       and has(game, 'name="twitter:card" content="summary_large_image"'))
+check("and no page still asks for the retired one",
+      not has(game, "play-share-card") and not has(landing, "play-share-card"))
 check("the game page reports bounded browser failures",
       has(game, "'/meta/v1/client-error'")
       and has(game, "sent >= 8")
@@ -57,10 +63,8 @@ local function png_size(path)
     return u32(17), u32(21)
 end
 
-for _, name in ipairs({"share-card.png", "play-share-card.png"}) do
-    local width, height = png_size("deploy/site/" .. name)
-    check(name .. " is the social-card size", width == 1200 and height == 630,
-          width .. "x" .. height)
-end
+local width, height = png_size("deploy/site/share-card.png")
+check("share-card.png is the social-card size", width == 1200 and height == 630,
+      width .. "x" .. height)
 
 if fails > 0 then os.exit(1) end
