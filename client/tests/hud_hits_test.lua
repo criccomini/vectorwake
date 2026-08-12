@@ -598,7 +598,7 @@ check("under a label saying what it is", drew("TIER"))
 frame({pilots = {[0] = {name = "you", label = "human"},
                  [1] = {name = "someone", label = "human", tier = "placing"}}})
 check("a pilot still placing says so", drew("placing"), drawn())
-check("and is not given the bottom band instead", not drew("Green"))
+check("and is not given the bottom band instead", not drew("Newb"))
 
 -- A roster that never carried one at all. The row is still drawn, because a
 -- panel with a hole where a row belongs reads as a bug rather than as
