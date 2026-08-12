@@ -549,7 +549,7 @@ button {
 }
 
 .pilot-directory {
-  padding-top: clamp(72px, 9vw, 130px);
+  padding-top: 0;
   padding-bottom: clamp(120px, 14vw, 200px);
 }
 
@@ -559,7 +559,7 @@ button {
   gap: 24px;
   align-items: center;
   padding: 22px 0;
-  border-block: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .pilot-filter label {
