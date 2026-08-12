@@ -1743,6 +1743,28 @@ function update(self, dt)
         world.prizes(fill, glow, t, cull)
         world.weapons(fill, glow, t, cull)
 
+        -- Who is riding whom, once for the room rather than once per hull.
+        --
+        -- Every drawn hull used to ask every seat whether it was riding this
+        -- one, which is the room squared and almost always answers no: a
+        -- sixty-four seat game with twenty hulls on screen crossed into the
+        -- core about thirteen hundred extra times a frame to find the handful
+        -- of gunners, or none. Ascending g here is the order the flat list
+        -- below was built in, so the ring is drawn exactly as before.
+        local mounted = nil
+        for g = 0, sim.ship_count() - 1 do
+            local c = sim.ship_carrier(g)
+            if c ~= 255 and sim.ship_alive(g) == 1 then
+                mounted = mounted or {}
+                local l = mounted[c]
+                if not l then
+                    l = {}
+                    mounted[c] = l
+                end
+                l[#l + 1] = g
+            end
+        end
+
         for i = 0, sim.ship_count() - 1 do
             -- Yours is always drawn: the camera is on it, so it cannot be off
             -- screen, and a frame that skipped it would be a frame with no
@@ -1799,9 +1821,11 @@ function update(self, dt)
                 -- here rather than inside the renderer because the renderer
                 -- draws one ship and knows nothing about the rest of the room.
                 local riders = nil
-                for g = 0, sim.ship_count() - 1 do
-                    if sim.ship_carrier(g) == i and sim.ship_alive(g) == 1 then
-                        riders = riders or {}
+                local aboard = mounted and mounted[i]
+                if aboard then
+                    riders = {}
+                    for k = 1, #aboard do
+                        local g = aboard[k]
                         riders[#riders + 1] = sim.ship_heading(g)
                         riders[#riders + 1] =
                             sim.ship_energy(g) / math.max(1, sim.ship_max_energy(g))

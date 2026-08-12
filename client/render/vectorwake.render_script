@@ -127,8 +127,24 @@ function update(self)
     -- laid out against the wrong one lands off the edge of the screen. The
     -- half-extents and the density go with it, so neither the interface nor
     -- the touch layer keeps its own copy of the projection.
-    msg.post("main:/arena#arena", "viewport",
-             {w = w, h = h, hw = half_w, hh = half_h, density = density})
+    --
+    -- Only when one of them has moved. These change on a resize, on a display
+    -- swap and on a zoom, and were posted sixty times a second regardless: a
+    -- table allocated and copied into the message queue every frame, and an
+    -- arena that answered by re-deriving the starfield budget, re-checking two
+    -- layer capacities, restating its interest window to the zone and
+    -- recomputing the terrain window, all from numbers it had already been
+    -- given. Nothing downstream wants the repetition: the view the zone is
+    -- told is deduplicated on the wire and resent from the welcome after a
+    -- reconnect, and the rest are pure functions of these five.
+    if self.vp_w ~= w or self.vp_h ~= h or self.vp_hw ~= half_w
+       or self.vp_hh ~= half_h or self.vp_density ~= density then
+        self.vp_w, self.vp_h = w, h
+        self.vp_hw, self.vp_hh = half_w, half_h
+        self.vp_density = density
+        msg.post("main:/arena#arena", "viewport",
+                 {w = w, h = h, hw = half_w, hh = half_h, density = density})
+    end
 end
 
 function on_message(self, message_id, message)
