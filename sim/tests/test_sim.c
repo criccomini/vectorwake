@@ -3426,7 +3426,7 @@ int main(void) {
             }
             CHECK(near > 0 && far > 0, "the field straddles the radius");
 
-            int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R);
+            int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R, 255);
             CHECK(m > 0 && m < n, "a filtered snapshot is smaller");
             sim_state cut;
             CHECK(sim_unpack(&cut, buf, m) == 0, "and unpacks");
@@ -3509,12 +3509,75 @@ int main(void) {
             }
         }
 
+        /* Except a pilot's own, which travel however far off they are.
+         *
+         * This is the minefield. A mine sits for two minutes and the pilot who
+         * laid it flies away, so it is the one round that leaves the radius
+         * without ending, and a client that stops being told about it draws it
+         * detonating and then lays a sixth mine because it can no longer count
+         * the five. Measured on alpha, every mine laid left its own layer's
+         * snapshot inside seven seconds while the arena flew it on for the
+         * best part of a minute.
+         *
+         * Written as the round the pilot owns rather than as the mine they
+         * own: their bullets are inside the radius by construction, so the
+         * narrower rule buys nothing and reads as a special case. */
+        {
+            sim_state m;
+            sim_init(&m, 3);
+            int layer = sim_spawn(&m, APEX, 0, 2048, 2048, 0, &cfg);
+            int other = sim_spawn(&m, APEX, 1, 2200, 2048, 0, &cfg);
+            CHECK(layer == 0 && other == 1, "two pilots, two sides");
+            step_n(&m, &cfg, SIM_BTN_MINE, 0, 1);
+            CHECK(m.weapon_count == 1, "one of them lays a mine");
+            /* Somewhere the radius below cannot reach. Moved rather than
+             * flown, because what is under test is the filter and not how
+             * long the trip takes. */
+            m.ships[0].x += 400 * 16 * 256;
+
+            const int32_t R = 84 * 16 * 256;    /* the floor a client gets */
+            int32_t vx = m.ships[0].x, vy = m.ships[0].y;
+            int n2 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 0);
+            sim_state mine_seen;
+            CHECK(n2 > 0 && sim_unpack(&mine_seen, buf, n2) == 0,
+                  "the layer's own snapshot packs");
+            CHECK(mine_seen.weapon_count == 1,
+                  "and still carries the mine they left behind");
+            CHECK(mine_seen.weapons[0].x == m.weapons[0].x
+                  && mine_seen.weapons[0].y == m.weapons[0].y
+                  && mine_seen.weapons[0].life == m.weapons[0].life,
+                  "at the pixel and on the clock it actually has");
+
+            int n3 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 1);
+            sim_state stranger;
+            CHECK(n3 > 0 && sim_unpack(&stranger, buf, n3) == 0,
+                  "and so does somebody else's from the same place");
+            CHECK(stranger.weapon_count == 0,
+                  "which is told nothing about a mine that far away");
+
+            /* 255 is nobody, and it has to be: every round is owned by a seat,
+             * so the sentinel can never be somebody by accident. */
+            int n5 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 255);
+            sim_state nobody;
+            CHECK(n5 > 0 && sim_unpack(&nobody, buf, n5) == 0, "packs");
+            CHECK(nobody.weapon_count == 0, "and carries no round's exception");
+
+            /* And the exception is the owner rather than the distance: from
+             * next to the mine, everybody is told about it. */
+            int n4 = sim_pack_around(&m, buf, sizeof buf,
+                                     m.weapons[0].x, m.weapons[0].y, R, 1);
+            sim_state near_by;
+            CHECK(n4 > 0 && sim_unpack(&near_by, buf, n4) == 0, "packs");
+            CHECK(near_by.weapon_count == 1,
+                  "a stranger standing on the minefield sees it");
+        }
+
         /* A negative radius is the whole state, and has to stay bit-identical
          * to it: the replay tool, the golden hashes and every test above pack
          * that way, so a filtered format that changed the unfiltered bytes
          * would be a format change wearing a disguise. */
         {
-            int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1);
+            int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255);
             CHECK(whole == n, "an unfiltered pack is the same size as sim_pack");
             sim_state all;
             CHECK(sim_unpack(&all, buf, whole) == 0, "and unpacks");
@@ -3529,7 +3592,7 @@ int main(void) {
         for (int pick = 0; pick < s.ship_count; pick++) {
             if (!s.ships[pick].active) continue;
             int m = sim_pack_around(&s, buf, sizeof buf,
-                                    s.ships[pick].x, s.ships[pick].y, 0);
+                                    s.ships[pick].x, s.ships[pick].y, 0, 255);
             CHECK(m > 0, "a pack around one seat succeeds");
             sim_state one;
             CHECK(sim_unpack(&one, buf, m) == 0, "and unpacks");
@@ -3761,7 +3824,7 @@ int main(void) {
             sim_state s2;
             step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);   /* down: toggles once */
             CHECK(s.ships[id].multi_off, "the key goes down and it toggles");
-            int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1);
+            int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255);
             CHECK(m > 0, "the state packs");
             CHECK(sim_unpack(&s2, buf, m) == 0, "and reads back");
             CHECK(s2.ships[id].btn_prev == SIM_BTN_MULTI,

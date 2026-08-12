@@ -1840,11 +1840,30 @@ by the same reasoning as decision 40. And the scoreboard's drawing read
 out-of-sight name wore one shared color; the row takes its side from the
 roster now, as its sort already did.
 
+Mines were the third piece, and they arrived later because there were no mines
+yet. The argument for filtering a round by distance is that it is spent within
+seconds and never leaves the hull that fired it, so nothing can enter the view
+without a snapshot announcing it first. A mine breaks both halves: it sits for
+two minutes and the pilot flies away from it. Filtered like any other round it
+simply stopped being in the snapshot, and a client reads a round that stops
+existing as a round that went off, so the pilot was shown their own minefield
+detonating behind them while the arena flew it on. Their client then laid a
+sixth mine, because it could no longer count the five, and that one really did
+vanish, this time as a blast at their own nose. A pilot's own rounds now travel
+however far off they are, which costs at most their five mines a snapshot.
+
 **Measured:** 312 KB/s to 24.4 KB/s against a full fifty-two ship room, under
 the 30 KB/s target it was ten times over. Prediction error improved rather than
 degraded, 0.75/0.38 px worst/mean to 0.61/0.24, with no corrections: a client
 not told about distant rounds cannot mispredict them. Simulation behavior is
 untouched, which the golden hashes confirm by not moving.
+
+On the mines: one pilot mining for two minutes on alpha laid twelve, and all
+twelve left that pilot's own snapshot while the arena was still flying them.
+The ones the run was long enough to time went at four and a half to seven
+seconds after being laid, against real lifetimes with a median of fifty-two
+seconds and nothing under three. None leave now, on the same seed, and every
+one of the twelve lasts exactly as long as it did before.
 
 **Reconsider if:** a zone wants a whole-arena spectator view, which is now a
 capability rather than a default and would want the watcher path to ask for it;

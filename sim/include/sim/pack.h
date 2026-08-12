@@ -14,16 +14,16 @@ extern "C" {
 /* Write s into out. Returns bytes written, or -1 if cap was too small. */
 int sim_pack(const sim_state *s, uint8_t *out, int cap);
 
-/* The same snapshot, carrying only the prizes within `radius` of a point.
+/* The same snapshot, carrying only what is within `radius` of a point.
  *
  * Prizes are most of a snapshot -- two hundred of them outweigh the ships and
  * every projectile in the air together -- and a client can only ever see the
  * handful inside its radar, sixty tiles out. Sending it the rest is bytes for
- * something it has no way to look at.
+ * something it has no way to look at. Ships and rounds are filtered for the
+ * same reason and for one more: a snapshot that named every hull on the map
+ * made a maphack a rendering choice rather than an exploit.
  *
- * Everything else still travels whole. Ships, weapons and flags are few and
- * all of them matter: a scoreboard names every pilot in the arena and a
- * client that was not told about a ship could not draw its name.
+ * Flags still travel whole, since a scoreboard names them all.
  *
  * Safe because an unpack replaces the state outright, so nothing goes stale,
  * and because a radius is chosen far enough out that no ship can cross into
@@ -31,9 +31,20 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap);
  * client steps the same core off the same rng and reaches the same prizes
  * inside the radius it was told about.
  *
+ * `viewer` is the seat this snapshot is for, or 255 for nobody. Its own rounds
+ * travel however far away they are, and that exception is the whole of what a
+ * pilot's minefield needs to survive the trip home. Every other round is spent
+ * within seconds and near the hull that fired it, so the radius is the only
+ * rule they ever meet; a mine is the one round a pilot leaves behind and comes
+ * back to, and filtering it by distance told the client the mine had gone. The
+ * client draws a round that stops existing as a round that went off, its own
+ * prediction lays a sixth mine because it can no longer see the five, and the
+ * pilot is shown a minefield detonating behind them that is still sitting
+ * there.
+ *
  * A negative radius means everything, which is what `sim_pack` passes. */
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
-                    int32_t cx, int32_t cy, int32_t radius);
+                    int32_t cx, int32_t cy, int32_t radius, uint8_t viewer);
 
 /* Read a snapshot into s. Returns 0, or -1 on malformed input. */
 int sim_unpack(sim_state *s, const uint8_t *in, int len);

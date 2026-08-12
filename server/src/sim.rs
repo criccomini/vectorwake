@@ -409,7 +409,7 @@ extern "C" {
     /// plus what killing has earned. Derived, never stored.
     pub fn sim_bounty(sh: *const sim_ship) -> i32;
     pub fn sim_pack_around(s: *const sim_state, out: *mut u8, cap: c_int,
-                           cx: i32, cy: i32, radius: i32) -> c_int;
+                           cx: i32, cy: i32, radius: i32, viewer: u8) -> c_int;
     pub fn sim_sizeof_state() -> u32;
     pub fn sim_offsetof_settings_max_ships() -> u32;
     pub fn sim_eff_max_ships(cfg: *const sim_settings) -> u8;
@@ -754,12 +754,14 @@ impl World {
         unsafe { sim_pack(&*self.state, out.as_mut_ptr(), out.len() as c_int) }
     }
 
-    /// A snapshot carrying only the prizes within `radius` of a point. See
-    /// the note on `sim_pack_around` in sim/include/sim/pack.h.
-    pub fn pack_around(&self, out: &mut [u8], cx: i32, cy: i32, radius: i32) -> i32 {
+    /// A snapshot carrying only what is within `radius` of a point, plus
+    /// `viewer`'s own rounds wherever they are. Pass 255 for nobody's. See the
+    /// note on `sim_pack_around` in sim/include/sim/pack.h.
+    pub fn pack_around(&self, out: &mut [u8], cx: i32, cy: i32, radius: i32,
+                       viewer: u8) -> i32 {
         unsafe {
             sim_pack_around(&*self.state, out.as_mut_ptr(), out.len() as c_int,
-                            cx, cy, radius)
+                            cx, cy, radius, viewer)
         }
     }
 
