@@ -365,6 +365,16 @@ path: the spool is simply never aimed, and an unaimed spool writes nothing and
 posts nothing. That is checked in `spool.rs`, which is the invariant the switch
 rests on.
 
+The aiming runs on the first tick and every three thousand after it. The first
+tick is the part that had to be learned: it used to run only on the repeat, so
+a spool wrote nothing for the first thirty seconds of every process. That reads
+as harmless and is not, because of what happens in those thirty seconds. A
+converge restarts an arena, its fifty-one bots reconnect within a few, and
+every one of those arrivals fell inside the window and was dropped. So did the
+arrival of anybody whose game had just been restarted underneath them, which is
+everybody who was playing. An arena could run for an hour and file almost
+nothing, and the only symptom was an empty log.
+
 The default is on, and deliberately that way round. Reporting is what the
 ladder is made of, so a deployment that quietly kept its results to itself
 would be a worse surprise than one that quietly sent them: the off switch has

@@ -496,8 +496,13 @@ function draw(f) {
   // that agree is a converge that landed; one that does not is a converge
   // that half did, which every other number here would go on reporting as
   // perfectly healthy.
-  const others = [f.directory_build, ...f.instances.map((i) => i.build)].filter(Boolean);
+  const all = [f.directory_build, ...f.instances.map((i) => i.build)];
+  const others = all.filter(Boolean);
   const drifted = others.filter((b) => b !== f.build).length;
+  // A process that reports no build at all used to be dropped here, so the
+  // one state this line exists to catch, a converge that half landed, could
+  // hide behind a blank field and read as agreement. Silence is not a match.
+  const silent = all.length - others.length;
   if (f.build) {
     // The same sha the rows carry, linked the same way, because two spellings
     // of one commit eight lines apart reads as a bug in whichever is plainer.
@@ -507,6 +512,9 @@ function draw(f) {
     say(line);
     if (drifted) {
       say(`${drifted} process(es) on another build; a converge landed on some of the fleet and not the rest.`, "bad");
+    }
+    if (silent) {
+      say(`${silent} process(es) name no build, so whether they match cannot be told from here.`, "bad");
     }
   }
 

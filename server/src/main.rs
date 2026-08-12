@@ -4463,7 +4463,16 @@ async fn main() {
                 if n % 300 == 0 {
                     z.reload();
                 }
-                if n % 3000 == 0 {
+                // Offset by one so the first pass is the first tick rather
+                // than thirty seconds in. The address and the token are
+                // environment variables and are readable immediately; the
+                // repeat is for the catalog, which arrives later and can
+                // change. Aiming late meant a spool that wrote nothing for
+                // the first half minute of every process, so each converge
+                // dropped the arrivals of everyone who reconnected promptly,
+                // which is everyone: a client whose arena restarts comes
+                // straight back.
+                if n % 3000 == 1 {
                     z.aim_spool();
                 }
                 // Every room, in order. The process holds one arena per room and
