@@ -1802,6 +1802,16 @@ function update(self, dt)
     -- nothing else. The keyboard opening resizes the canvas, which moves
     -- the card, and the moved card arrives here as an ordinary change.
     if html5 then
+        -- The link the page lays over a rail stop, on the same terms as the
+        -- card's fields: published every frame, sent only when it changes.
+        local link = ui.link_dom
+        if link ~= self.link_dom then
+            self.link_dom = link
+            if html5 then
+                pcall(html5.run,
+                      "window.vwLink && vwLink('" .. (link or "") .. "')")
+            end
+        end
         local spec = ui.ask_dom
         if spec ~= self.ask_dom then
             self.ask_dom = spec

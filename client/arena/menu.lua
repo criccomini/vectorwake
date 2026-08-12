@@ -105,6 +105,12 @@ M.cols = 4
 -- is. The one piece of focus this client moves on anybody's behalf is the
 -- caret into the first line as a card comes up, and it hands it straight back
 -- to the canvas when the card goes.
+-- Where the community is. The Caddy redirect rather than the invite itself,
+-- so an invite that has to be reissued is one line of configuration and not a
+-- client release every open tab is behind. The rail row carries it for the
+-- page to lay a link over, and `activate` opens it where there is no page.
+local DISCORD = "https://play.vectorwake.net/discord"
+
 M.name = "pilot"
 M.directory = "ws://127.0.0.1:9000"
 M.zone = ""
@@ -422,7 +428,7 @@ local NODES = {
             -- which is why it sits at the bottom next to the row that says
             -- what the game is rather than up among the ones you fly with.
             {label = "discord", icon = "discord", detail = "chat with us",
-             act = "discord"},
+             act = "discord", link = DISCORD},
             {label = "about", icon = "about", go = "about"},
         }
         -- Sides are a thing a room has, so the row appears with the room and
@@ -1185,7 +1191,7 @@ function M.view()
         local d = r.detail
         if type(d) == "function" then d = d() end
         out.rail[i] = {label = r.label, icon = r.icon or "about",
-                       detail = d, index = i}
+                       detail = d, index = i, link = r.link}
     end
     if #M.stack == 1 then
         out.rail_sel = sel
@@ -1273,20 +1279,18 @@ local function activate()
         -- invite that has to be reissued is one line of Caddy and not a
         -- client release that every open tab is behind.
         --
-        -- On the web the page opens it, through `vwOpen` in the template,
-        -- which clicks an anchor. This was `sys.open_url` for both, and on a
-        -- phone it reported failure: the card that went up with the address
-        -- and an OK on it was a fallback for a popup blocker, and a card is
-        -- not a link. The result is deliberately not checked now, because
-        -- there is nothing better to do with a no and asking produced the
-        -- card. Native builds keep `sys.open_url`, which is the only thing
-        -- there is off the web and does work there.
-        local url = "https://play.vectorwake.net/discord"
-        if html5 then
-            pcall(html5.run, "window.vwOpen && window.vwOpen(\"" .. url .. "\")")
-        else
-            pcall(sys.open_url, url, {target = "_blank"})
-        end
+        -- Off the web, or from a key. In a browser the page keeps a real
+        -- anchor over this stop, so a tap never arrives here at all: nothing
+        -- the client does from its own loop is inside the gesture, and a tab
+        -- opened outside one is what a popup blocker stops. Two attempts went
+        -- that way first, sys.open_url and then an anchor clicked from Lua,
+        -- and both worked on a desktop and were blocked on every phone.
+        --
+        -- The result is not checked. There is nothing better to do with a no,
+        -- and asking is what put a card with the address on it up before.
+        -- Only ever reached off the web, or from a key. In a browser the
+        -- page has a real anchor over this stop and the tap never gets here.
+        pcall(sys.open_url, DISCORD, {target = "_blank"})
         return nil
     elseif r.act == "install" then
         -- One tap where the browser allows one. Where it does not, the row

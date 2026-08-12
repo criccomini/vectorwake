@@ -124,6 +124,35 @@
 	#vw-ask.vw-up {
 		display: block;
 	}
+
+	/* A real link, laid over the rail stop that points at one.
+	   Everything else in this menu is drawn on a canvas and answered by
+	   the engine a frame later, and a browser will not open a tab for
+	   something that happened a frame after a tap: desktop allowed it,
+	   every phone called it a popup and blocked it. So the stop that
+	   leaves the game has an actual anchor over it and the finger lands
+	   on that. Transparent, because the mark under it is the button. */
+	#vw-link {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		margin: 0;
+		display: none;
+		pointer-events: none;
+		z-index: 2;
+	}
+	#vw-link.vw-up {
+		display: block;
+	}
+	#vw-link a {
+		position: absolute;
+		display: block;
+		pointer-events: auto;
+		background: transparent;
+		-webkit-tap-highlight-color: rgba(0,0,0,0);
+	}
 	#vw-ask .vw-in {
 		position: absolute;
 		pointer-events: auto;
@@ -284,39 +313,6 @@
 			return "1";
 		};
 
-		// Open a link in a new tab.
-		//
-		// sys.open_url was what did this, and on a phone it reported failure
-		// and the menu put the address up in a card with an OK on it, which
-		// is not a link, it is an apology. A clicked anchor is what a browser
-		// is least suspicious of: window.open from anywhere but a click
-		// handler is what popup blockers exist to stop, and every mobile
-		// browser is stricter about it than a desktop one.
-		//
-		// The engine hands input to the game from its own loop rather than
-		// from the listener, so this never runs inside the tap. It runs about
-		// a frame after one, which is well inside the few seconds of
-		// transient activation a browser keeps afterwards, and that is what
-		// makes the anchor land.
-		//
-		// noopener because the new tab has no business holding a handle on
-		// the one running the game.
-		window.vwOpen = function (url) {
-			try {
-				var a = document.createElement("a");
-				a.href = url;
-				a.target = "_blank";
-				a.rel = "noopener noreferrer";
-				a.style.display = "none";
-				document.body.appendChild(a);
-				a.click();
-				a.remove();
-				return "1";
-			} catch (err) {
-				try { window.open(url, "_blank", "noopener"); return "1"; }
-				catch (e2) { return ""; }
-			}
-		};
 	})();
 	</script>
 </head>
@@ -339,6 +335,7 @@
 			<!-- A real form, so a password manager recognizes one. Empty
 			until the client raises a card that asks for typing. -->
 			<form id="vw-ask" autocomplete="on" action="#"></form>
+			<div id="vw-link"></div>
 		</div>
 		<div class="buttons-background">
 {{#html5.show_fullscreen_button}}
@@ -611,6 +608,48 @@
 			// autocomplete,maxlength', then optionally '|name' for the
 			// call sign a manager should file the password under. Empty
 			// takes the form down.
+			// Where a link belongs on the canvas, and where it goes.
+			//
+			// "x,y,w,h,url" in CSS pixels, or "" for none. Unchanged specs are
+			// left alone so the client may call this every frame.
+			//
+			// This is the second attempt. The first asked the browser to open a
+			// tab from Lua, a frame after the tap, first through sys.open_url and
+			// then by clicking an anchor built on the spot. Desktop allowed both.
+			// No phone did: a tab opened outside a real click handler is what a
+			// popup blocker is for, and a frame later is outside. Nothing the game
+			// can do from its own loop is inside that gesture, so the gesture has
+			// to land on something that is already a link.
+			var link_spec = null;
+			var link_box = document.getElementById('vw-link');
+			window.vwLink = function (spec) {
+				spec = spec || '';
+				if (spec === link_spec) return '';
+				link_spec = spec;
+				if (spec === '') {
+					link_box.className = '';
+					link_box.innerHTML = '';
+					return '';
+				}
+				var f = spec.split(',');
+				if (f.length < 5) return '';
+				var a = link_box.querySelector('a');
+				if (!a) {
+					a = document.createElement('a');
+					a.target = '_blank';
+					a.rel = 'noopener noreferrer';
+					link_box.appendChild(a);
+				}
+				// Everything after the fourth comma, since a URL has its own.
+				a.href = f.slice(4).join(',');
+				a.style.left = f[0] + 'px';
+				a.style.top = f[1] + 'px';
+				a.style.width = f[2] + 'px';
+				a.style.height = f[3] + 'px';
+				link_box.className = 'vw-up';
+				return '1';
+			};
+
 			var ask_form = document.getElementById('vw-ask');
 			var ask_spec = null;
 			var ask_go = false;

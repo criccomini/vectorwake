@@ -748,5 +748,59 @@ do
           drawn .. " of " .. #pad_rows)
 end
 
+-- --- the page is told where to put the link -------------------------------
+--
+-- The stop that leaves the game is a real anchor laid over the canvas by the
+-- page, because a tab opened a frame after a tap is a popup as far as every
+-- phone is concerned. What the client owes the page is where that stop landed
+-- and where it goes, in the CSS pixels the page lays out in.
+
+do
+    local RAIL2 = {}
+    for i, n in ipairs({"zones", "ship", "pilot", "settings", "help",
+                        "discord", "about"}) do
+        RAIL2[i] = {label = n, icon = n, index = i}
+    end
+    RAIL2[6].link = "https://play.vectorwake.net/discord"
+
+    for _, shape in ipairs({{1280, 800, 1}, {844 * 2, 390 * 2, 2}}) do
+        draw({depth = 1, sel = 1, rail = RAIL2, rail_sel = 1, focus = "rail",
+              home = true, closable = false, rows = {}},
+             shape[1], shape[2], shape[3] == 2)
+        local box = ui.link_dom
+        check(string.format("%dx%d publishes a link box", shape[1], shape[2]),
+              box ~= nil, "none")
+        if box then
+            local x, y, w, h, url =
+                box:match("^([%d%.%-]+),([%d%.%-]+),([%d%.%-]+),([%d%.%-]+),(.+)$")
+            check("  and it parses into a box and an address",
+                  x and url == "https://play.vectorwake.net/discord",
+                  tostring(box))
+            -- Big enough for a finger, and inside the window it is drawn in.
+            -- ui.lua publishes CSS pixels by dividing by the density, and
+            -- this harness always draws at one, so here the two are the same
+            -- number and the window is compared as given.
+            if x then
+                x, y, w, h = tonumber(x), tonumber(y), tonumber(w), tonumber(h)
+                check("  and it is a target a thumb can hit",
+                      w >= 24 and h >= 24,
+                      string.format("%.0f by %.0f", w, h))
+                check("  and it is on the screen",
+                      x >= -1 and y >= -1
+                      and x + w <= shape[1] + 1 and y + h <= shape[2] + 1,
+                      string.format("%.0f,%.0f %.0fx%.0f in %dx%d",
+                                    x, y, w, h, shape[1], shape[2]))
+            end
+        end
+    end
+
+    -- And nothing is published when no stop on the rail is a link, or the
+    -- page would keep an invisible anchor over a menu that has none.
+    draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 1, focus = "rail",
+          home = true, closable = false, rows = {}}, 1280, 800)
+    check("a rail with no link publishes none", ui.link_dom == nil,
+          tostring(ui.link_dom))
+end
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

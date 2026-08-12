@@ -614,6 +614,7 @@ function M.begin(layer, w, h, density, touching, now)
     -- the reason the hit list is: a card that is no longer drawn has no
     -- lines, and the way to say so is to stop saying otherwise.
     M.ask_dom = nil
+    M.link_dom = nil
 end
 
 function M.finish()
@@ -4067,6 +4068,24 @@ function M.menu(v)
                 -- the phone and not a panel floating above the indicator.
                 rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, H - ry_, lit)
             end
+        end
+        -- A stop that leaves the game gets a real link laid over it by the
+        -- page. Nothing the client does from its own loop is inside the tap
+        -- that asked for it, and a browser will not open a tab for anything
+        -- else, so the finger has to land on an anchor rather than on the
+        -- canvas. Published in CSS pixels, which is what the page lays out
+        -- in; everything here is drawable ones.
+        if e.link then
+            local lx, ly, lw, lh
+            if vertical then
+                lx, ly = rx - 6 * S, cy - pitch / 2 + 3 * S
+                lw, lh = rw + 6 * S, pitch - 6 * S
+            else
+                lx, ly = cx - pitch / 2 + 3 * S, ry_
+                lw, lh = pitch - 6 * S, H - ry_
+            end
+            M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
+                                       lx / S, ly / S, lw / S, lh / S, e.link)
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
         if vertical then

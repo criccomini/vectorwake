@@ -860,33 +860,36 @@ do
     check("an engine without open_url survives the tap", ok)
 end
 
--- --- and on the web the page opens it -------------------------------------
+-- --- and on the web the page holds a real link over it --------------------
 --
--- sys.open_url was doing both, and on a phone it reported failure. The page
--- clicks an anchor instead, which is the thing a browser is least suspicious
--- of, so the web path goes through the template rather than the engine.
+-- Nothing the client does from its own loop is inside the tap that asked for
+-- it, and a browser will not open a tab for anything else: desktop allowed a
+-- frame-late window.open, every phone called it a popup and blocked it. So
+-- the row carries its address for the page to lay an anchor over, and the
+-- finger lands on that rather than on the canvas.
 
 do
-    local js = nil
-    _G.html5 = {run = function(src) js = src return "1" end}
-    _G.sys.open_url = function() error("the web must not reach open_url") end
-
     menu.open = true
     menu.home = true
     menu.stack = {"root"}
     menu.sel = {}
-    menu.note = nil
-    local ok = pcall(menu.click_rail, top_index("discord"))
-    check("a browser opens it through the page", ok and js ~= nil,
-          tostring(js))
-    check("by the template's own opener",
-          js and js:find("vwOpen", 1, true) ~= nil, tostring(js))
-    check("and it is handed the invite",
-          js and js:find("https://play.vectorwake.net/discord", 1, true),
-          tostring(js))
-    check("with no card raised", menu.view().ask == nil,
-          tostring(menu.view().ask and menu.view().ask.head))
-    _G.html5 = nil
+    local link = nil
+    for _, r in ipairs(menu.view().rail) do
+        if r.label == "discord" then link = r.link end
+    end
+    check("the rail stop carries its address", link ~= nil, "none")
+    check("and it is the redirect",
+          link == "https://play.vectorwake.net/discord", tostring(link))
+
+    -- No other stop does, or the page would put a link over a page of the
+    -- game's own.
+    local strays = {}
+    for _, r in ipairs(menu.view().rail) do
+        if r.link and r.label ~= "discord" then
+            strays[#strays + 1] = r.label
+        end
+    end
+    check("and no other stop does", #strays == 0, table.concat(strays, ", "))
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
