@@ -3045,77 +3045,86 @@ local function mark_about(cx, cy, r, col)
     u:seg(cx, ry(cy - r * 0.05), cx, ry(cy + r * 0.45), 1.4 * S, col, true)
 end
 
--- Discord's own mark.
+-- Discord's own mark, traced from Discord's own file.
 --
--- A speech bubble stood here first, on the reasoning that a trademark among
--- shapes this game drew would read as a sponsorship. Chris asked for the real
--- one, and it is the right call: Discord's brand guidelines ask for exactly
--- this use, a link to a server wearing the mark, and the website's own button
--- already carries it. A bubble is what you draw when you cannot use the logo.
+-- Two things about this one are not ours to decide, and both were got wrong
+-- before the guidelines were read. discord.com/branding says "please do not
+-- edit, change, distort, recolor, or reconfigure the Discord logo", and lists
+-- three colors it may appear in: Blurple, black, or white.
 --
--- Traced, not converted. The layer fills triangle fans and strokes polylines;
--- it has no path, no bezier and no even-odd rule, so the curves are sampled
--- into a polygon and the eyes are drawn on rather than punched out.
+-- So it does not take the `col` every other mark here takes. A rail stop
+-- normally lights by turning its mark from slate to team blue, and this one
+-- cannot: it stays Blurple lit or not. Nothing is lost, because a selected
+-- stop already draws a lit field, a bar reaching toward the stage, and its
+-- label in ink. The mark was never the only thing saying where you are.
 --
--- The numbers were settled by rendering them, not by reading them. Three arch
--- depths were drawn side by side at full size and again at the thirteen points
--- the rail actually gives this, because the shallow one read as a helmet and
--- the deep one as a bat, and neither is legible at the size that matters. What
--- is here is the middle one.
+-- And it is a filled silhouette with the eyes cut out of it, rather than the
+-- outline-and-two-dots the rest of the rail is drawn as. That is the shape
+-- the logo is; an outline of it would be a reconfiguration.
 --
--- A unit box, y down, scaled by `r`: the crown as the arc it is, then down the
--- right flank, out to the right foot, up the hem, and mirrored back.
-local CLYDE = (function()
-    local p = {}
-    local function at(x, y) p[#p + 1] = x p[#p + 1] = y end
-    -- The crown, left to right. Nine samples is where the dome stops showing
-    -- its corners at this size.
-    for k = 0, 8 do
-        local ang = math.pi * (1 - k / 8)
-        at(math.cos(ang) * 0.86, -0.28 - math.sin(ang) * 0.48)
-    end
-    at(0.95, 0.12) at(1.00, 0.48) at(0.88, 0.74)
-    at(0.58, 0.60) at(0.28, 0.50) at(0.00, 0.46)
-    at(-0.28, 0.50) at(-0.58, 0.60)
-    at(-0.88, 0.74) at(-1.00, 0.48) at(-0.95, 0.12)
-    return p
-end)()
+-- The geometry is the official path from Discord's own asset, sampled into a
+-- polygon and triangulated with the eyes as holes, because the layer has no
+-- path, no bezier and no even-odd rule to do it with at runtime. Baked here
+-- rather than computed at load: it is the same answer every time, and an ear
+-- clipper in the client would be a hundred lines to arrive at a constant.
+--
+-- Forty samples around the body and twelve around each eye. Eighty was tried
+-- and is indistinguishable at the thirteen points the rail gives this, which
+-- is the only size it is ever drawn at.
+--
+-- A unit box, y down, x from -1 to 1. Indices are one-based triples into it.
+local CLYDE_V = {
+    0.6930, -0.6418, 0.5295, -0.7066, 0.3600, -0.7536, 0.2374, -0.6812,
+    0.0754, -0.6762, -0.1000, -0.6750, -0.2474, -0.7018, -0.3826, -0.7487,
+    -0.5515, -0.6995, -0.7087, -0.6219, -0.8084, -0.4523, -0.8856, -0.2838,
+    -0.9418, -0.1164, -0.9785, 0.0501, -0.9974, 0.2158, -1.0000, 0.3806,
+    -0.9505, 0.5322, -0.7921, 0.6299, -0.6363, 0.7041, -0.4828, 0.7536,
+    -0.3896, 0.6045, -0.5178, 0.5176, -0.4173, 0.5048, -0.2470, 0.5547,
+    -0.0746, 0.5787, 0.0982, 0.5770, 0.2697, 0.5496, 0.4382, 0.4963,
+    0.4956, 0.5287, 0.3990, 0.6248, 0.5009, 0.7527, 0.6551, 0.6956,
+    0.8112, 0.6188, 0.9698, 0.5178, 1.0000, 0.3409, 0.9924, 0.1609,
+    0.9664, -0.0123, 0.9228, -0.1790, 0.8623, -0.3394, 0.7857, -0.4938,
+    -0.3322, 0.2720, -0.4228, 0.2444, -0.4874, 0.1718, -0.5120, 0.0699,
+    -0.4875, -0.0317, -0.4230, -0.1039, -0.3318, -0.1313, -0.2401, -0.1034,
+    -0.1758, -0.0309, -0.1524, 0.0703, -0.1767, 0.1720, -0.2411, 0.2444,
+    0.3327, 0.2720, 0.2421, 0.2444, 0.1774, 0.1718, 0.1528, 0.0699,
+    0.1774, -0.0317, 0.2419, -0.1040, 0.3332, -0.1313, 0.4248, -0.1034,
+    0.4891, -0.0308, 0.5125, 0.0705, 0.4883, 0.1721, 0.4241, 0.2445,
+}
 
-local function mark_discord(cx, cy, r, col)
-    local sx, sy = r * 1.02, r * 0.90
-    -- The fill is a fan from the middle rather than from a vertex, because the
-    -- hem arches up between the feet and a fan from any point on the rim would
-    -- lay triangles outside the shape.
-    local fan = {cx, ry(cy)}
-    local edge = {}
-    for i = 1, #CLYDE, 2 do
-        local x, y = cx + CLYDE[i] * sx, ry(cy + CLYDE[i + 1] * sy)
-        fan[#fan + 1] = x
-        fan[#fan + 1] = y
-        edge[#edge + 1] = x
-        edge[#edge + 1] = y
-    end
-    -- Closed by hand: a fan makes one triangle per edge, and the last edge is
-    -- the one back to where it started. `outline` closes itself.
-    fan[#fan + 1] = edge[1]
-    fan[#fan + 1] = edge[2]
-    u:fan(fan, pal.a(col, 0.10))
-    u:outline(edge, 1.2 * S, col, true)
+local CLYDE_T = {
+    49, 56, 55, 57, 56, 49, 45, 44, 15, 15, 14, 13,
+    13, 12, 11, 11, 10, 9, 9, 8, 7, 4, 3, 2,
+    2, 1, 40, 40, 39, 38, 38, 37, 36, 36, 35, 34,
+    34, 33, 32, 32, 31, 30, 28, 27, 26, 26, 25, 24,
+    22, 21, 20, 20, 19, 18, 18, 17, 16, 16, 15, 44,
+    50, 49, 55, 58, 57, 49, 46, 45, 15, 15, 13, 11,
+    11, 9, 7, 4, 2, 40, 40, 38, 36, 36, 34, 32,
+    32, 30, 29, 28, 26, 24, 22, 20, 18, 18, 16, 44,
+    51, 50, 55, 59, 58, 49, 46, 15, 11, 11, 7, 6,
+    5, 4, 40, 40, 36, 32, 28, 24, 23, 22, 18, 44,
+    52, 51, 55, 59, 49, 48, 47, 46, 11, 11, 6, 5,
+    40, 32, 29, 23, 22, 44, 41, 52, 55, 59, 48, 47,
+    47, 11, 5, 40, 29, 28, 23, 44, 43, 41, 55, 54,
+    59, 47, 5, 23, 43, 42, 41, 54, 53, 60, 59, 5,
+    23, 42, 41, 61, 60, 5, 28, 23, 41, 61, 5, 40,
+    28, 41, 53, 62, 61, 40, 28, 53, 64, 63, 62, 40,
+    28, 64, 63, 63, 40, 28,
+}
 
-    -- The eyes, drawn on rather than cut out. In the mark itself they are the
-    -- background showing through a solid silhouette, and there is no hole to
-    -- cut here: the wash behind the rail changes with the panel and the mark
-    -- changes color when its stop is lit, so a hole would have to be painted
-    -- in a color neither of them knows. Solid against a faint body is what
-    -- every other mark on this rail does with its details.
-    --
-    -- Two discs apiece, stacked, since the layer draws circles and these are
-    -- taller than they are wide.
-    local er = r * 0.16
-    for _, ex in ipairs({-0.33, 0.33}) do
-        local x = cx + ex * sx
-        u:disc(x, ry(cy - er * 0.38), er, 10, col)
-        u:disc(x, ry(cy + er * 0.38), er, 10, col)
+-- Blurple, and not from the palette: `pal` is this game's colors and this is
+-- somebody else's, held at the one value their guidelines name.
+local BLURPLE = pal.rgb(0x5865F2)
+
+local function mark_discord(cx, cy, r)
+    -- Sized to the mark's own width, which is the wider of its two axes, so it
+    -- fills the room a stop gives it the way the round marks beside it do.
+    for i = 1, #CLYDE_T, 3 do
+        local a1, b1, c1 = CLYDE_T[i] * 2 - 1, CLYDE_T[i + 1] * 2 - 1,
+                           CLYDE_T[i + 2] * 2 - 1
+        u:tri(cx + CLYDE_V[a1] * r, ry(cy + CLYDE_V[a1 + 1] * r),
+              cx + CLYDE_V[b1] * r, ry(cy + CLYDE_V[b1 + 1] * r),
+              cx + CLYDE_V[c1] * r, ry(cy + CLYDE_V[c1 + 1] * r), BLURPLE)
     end
 end
 
