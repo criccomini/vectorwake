@@ -16,8 +16,9 @@
 --
 -- `id` is the name the press arrives under in `arena.script`, so it is not
 -- free: adding a control here without a hand for it there is a row that says
--- a key does something it does not. `key` is where it starts, which a pilot
--- may move; arena/binds.lua holds where it actually is.
+-- a key does something it does not. `keys` is the chord it starts on, held
+-- together and triggered by the last of them, which a pilot may move;
+-- arena/binds.lua holds where it actually is.
 --
 -- `cat` is which color the board draws the key in and which swatch the chip
 -- carries. It groups rather than identifies, which is the reason the chips
@@ -36,66 +37,73 @@ return {
     -- on separate keys, and a single row could only ever offer them as a
     -- pair. `pad_name` puts them back together for the phone, where the stick
     -- covers both and there is nothing to separate.
-    {id = "turn_left", name = "turn left", cat = "fly", key = "left",
+    {id = "turn_left", name = "turn left", cat = "fly", keys = {"left"},
      what = "Turns your ship left.",
      pad_name = "rudder",
      pad = "left thumb: point where you want the nose"},
-    {id = "turn_right", name = "turn right", cat = "fly", key = "right",
+    {id = "turn_right", name = "turn right", cat = "fly", keys = {"right"},
      what = "Turns your ship right."},
-    {id = "thrust", name = "thrust", cat = "fly", key = "up",
+    {id = "thrust", name = "thrust", cat = "fly", keys = {"up"},
      what = "Drives your ship forward.",
      pad = "left thumb: push it away from the middle"},
     -- No thumb for this one. The stick points the nose, and a control that
     -- meant "the way you are not facing" would need a second gesture for a
     -- thing a pilot can do by turning round.
-    {id = "reverse", name = "reverse", cat = "fly", key = "down",
+    {id = "reverse", name = "reverse", cat = "fly", keys = {"down"},
      what = "Drives your ship backward."},
-    {id = "guns", name = "guns", cat = "gun", key = "space",
+    {id = "guns", name = "guns", cat = "gun", keys = {"space"},
      what = "Fires your rapid weapon.",
      pad = "the big pad on the right"},
-    {id = "bombs", name = "bombs", cat = "bomb", key = "tab",
+    {id = "bombs", name = "bombs", cat = "bomb", keys = {"tab"},
      what = "Fires a heavy weapon that detonates on impact.",
      pad = "the smaller pad beside the guns"},
     -- Not a weapon of its own and not a charge: the bomb trigger held
-    -- differently. It sits next to bombs and wears the bomb's color for that
-    -- reason, and it is the one control whose key is worked with another.
-    {id = "mine_mod", name = "mine", cat = "bomb", key = "shift",
-     what = "Held with the bomb key, lays a mine instead of throwing one.",
+    -- differently, which is the original's own chord and the reason this is
+    -- the one control that starts on two keys. It sits next to bombs and
+    -- wears the bomb's color.
+    --
+    -- Shift and the bomb key used to be wired together in `arena.script`, so
+    -- moving the bomb key moved the mine chord with it. They are two bindings
+    -- now and neither follows the other: putting bombs on K leaves the mine on
+    -- Shift+Tab until it is moved as well, which the page shows.
+    {id = "mine", name = "mine", cat = "bomb", keys = {"shift", "tab"},
+     what = "Lays a mine instead of throwing a bomb.",
      pad = "tap the mine cell above the guns"},
-    -- The charge keys are positions rather than weapons. Each one spends the
-    -- next slot the hull you are in actually carries, so the first key is
-    -- your repel on a ship that has one and your burst on a ship that does
-    -- not. Naming them for what they usually spend is what the last version
-    -- of this file did, and it went on saying "mine" for a month after mines
-    -- stopped being a charge at all.
-    {id = "charge_1", name = "charge 1", cat = "charge", key = "q",
-     what = "Spends the first charge your ship carries.",
+    -- The charge keys are positions under the skin: each spends the next slot
+    -- the hull you are in actually carries, so on a ship with no repel the
+    -- first key spends the burst. They are named for what the slots hold,
+    -- because that is what the corner stack calls them while you fly and a
+    -- page that called them "charge 1" was asking a pilot to learn a second
+    -- name for the same thing.
+    --
+    -- Two, not four. The core carries four slots and the baseline fills two:
+    -- the third was the mine until mines became the bomb trigger's other
+    -- posture, and the fourth has never held anything. A key for a charge no
+    -- hull can carry is a row on this page that does nothing when pressed.
+    {id = "charge_1", name = "repel", cat = "charge", keys = {"q"},
+     what = "Pushes enemy fire and ships away from you.",
      pad = "tap its cell above the guns"},
-    {id = "charge_2", name = "charge 2", cat = "charge", key = "w",
-     what = "Spends the second charge your ship carries.",
+    {id = "charge_2", name = "burst", cat = "charge", keys = {"w"},
+     what = "Fires bullets in every direction at once.",
      pad = "tap its cell above the guns"},
-    {id = "charge_3", name = "charge 3", cat = "charge", key = "a",
-     what = "Spends the third charge your ship carries."},
-    {id = "charge_4", name = "charge 4", cat = "charge", key = "s",
-     what = "Spends the fourth charge your ship carries."},
-    {id = "multi", name = "multifire", cat = "multi", key = "tick",
+    {id = "multi", name = "multifire", cat = "multi", keys = {"tick"},
      what = "Fans your gun wider for more energy per shot.",
      pad = "tap the fan cell to switch it off"},
-    {id = "drone", name = "drop off", cat = "drone", key = "d",
+    {id = "drone", name = "drop off", cat = "drone", keys = {"d"},
      what = "Drops you off a ship you are riding.",
      pad = "your own row on the scoreboard carries DROP"},
-    {id = "map", name = "map", cat = "map", key = "m",
+    {id = "map", name = "map", cat = "map", keys = {"m"},
      what = "Shows the whole arena instead of the radar.",
      pad = "tap the dial"},
-    {id = "details", name = "players", cat = "players", key = "p",
+    {id = "details", name = "players", cat = "players", keys = {"p"},
      what = "Lists everyone here and what they are worth.",
      pad = "tap the scoreboard; a teammate's card offers ATTACH"},
-    {id = "help", name = "controls", cat = "help", key = "h",
+    {id = "help", name = "controls", cat = "help", keys = {"h"},
      what = "Shows this table."},
     -- Last, and the one row on the page that cannot move. Escape is how you
     -- leave every card, every page and this table, so a pilot who bound it to
     -- something else would have taken away the key they need to undo it.
-    {id = "menu", name = "menu", cat = "menu", key = "esc", fixed = true,
+    {id = "menu", name = "menu", cat = "menu", keys = {"esc"}, fixed = true,
      what = "Opens the menu.",
      pad = "tap MENU"},
 }

@@ -853,15 +853,18 @@ do
     menu.sel[menu.at()] = map_at
     local _, moved = menu.click_key("z")
     check("clicking a free key moves the control under the cursor",
-          moved and binds.key_of.map == "z", tostring(binds.key_of.map))
+          moved and binds.chord_of.map[1] == "z",
+          table.concat(binds.chord_of.map, "+"))
     check("and the page says so", (menu.foot or ""):find("map is on Z") ~= nil,
           tostring(menu.foot))
 
     -- A key somebody else is on: the two trade, and nothing is left over.
     local _, traded = menu.click_key("space")
     check("clicking a taken key trades", traded
-          and binds.key_of.map == "space" and binds.key_of.guns == "z",
-          tostring(binds.key_of.map) .. " / " .. tostring(binds.key_of.guns))
+          and binds.chord_of.map[1] == "space"
+          and binds.chord_of.guns[1] == "z",
+          table.concat(binds.chord_of.map, "+") .. " / "
+          .. table.concat(binds.chord_of.guns, "+"))
 
     -- The menu key is nobody's to move, and the page says why rather than
     -- doing nothing. It is the one refusal a pointer can reach: the board
@@ -875,7 +878,7 @@ do
     menu.foot = nil
     menu.click_key("j")
     check("the menu control refuses a key and says why",
-          binds.key_of.menu == "esc"
+          binds.chord_of.menu[1] == "esc"
           and (menu.foot or ""):find("escape") ~= nil,
           tostring(menu.foot))
     check("and escape is not a key the board offers",
@@ -897,8 +900,16 @@ do
     menu.arming = "bombs"
     local _, armed = menu.click_key("k")
     check("a click answers whichever control is asking",
-          armed and binds.key_of.bombs == "k" and menu.arming == nil,
-          tostring(binds.key_of.bombs))
+          armed and binds.chord_of.bombs[1] == "k" and menu.arming == nil,
+          table.concat(binds.chord_of.bombs, "+"))
+
+    -- A chord comes off the keyboard rather than a click, since there is no
+    -- holding two keys down in one press of a mouse.
+    menu.arming = "map"
+    local chorded = menu.bind_chord({"shift", "j"})
+    check("a chord typed at an asking control lands whole",
+          chorded and table.concat(binds.chord_of.map, "+") == "shift+j",
+          table.concat(binds.chord_of.map, "+"))
 
     -- Every key the picture draws is one the catalog will take. The board
     -- publishes a box per key and this is the other end of that promise.

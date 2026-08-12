@@ -60,7 +60,7 @@ local function chip_rows(arming)
     local rows = {}
     for i, c in ipairs(binds.rows()) do
         rows[i] = {label = c.name, detail = c.show, cat = c.cat,
-                   control = c.id, key = c.key, fixed = c.fixed,
+                   control = c.id, keys = c.keys, fixed = c.fixed,
                    arming = arming == c.id, pick = true, index = i}
     end
     rows[#rows + 1] = {label = "defaults", pick = true, reset = true,
@@ -238,6 +238,16 @@ do
     end
     check("every bindable key is drawn on the board", #unseen == 0,
           table.concat(unseen, ", "))
+end
+
+-- A chord lights whole. Mines are Shift and the bomb key, and the bomb key is
+-- also the bomb: reading the shortest chord for the armed state left the board
+-- lighting half of what it was waiting to be told, which is a page asking for
+-- a binding while showing a different one.
+do
+    local asking = draw_at(1280, 800, 7, "mine")
+    check("a chord lights every key it is made of", asking.lit == 3,
+          "lit " .. asking.lit)
 end
 
 -- And every one of them is pressable. The picture is a control surface, not a

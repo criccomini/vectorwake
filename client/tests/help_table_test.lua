@@ -249,8 +249,8 @@ do
     -- Wearing no label a player can read, so a phone learns them here or not
     -- at all. The dial is a picture, the pads are marks, and DROP is behind a
     -- card you reach by tapping your own name.
-    local MUST_SAY = {"turn left", "thrust", "guns", "bombs", "charge 1",
-                      "charge 2", "mine", "multifire", "map", "drop off",
+    local MUST_SAY = {"turn left", "thrust", "guns", "bombs", "repel",
+                      "burst", "mine", "multifire", "map", "drop off",
                       "players"}
     local pad = {}
     for _, r in ipairs(ROWS) do pad[r.name] = r.pad end
@@ -267,12 +267,9 @@ do
     -- `pad` is a control a phone has quietly lost.
     -- The ones that say nothing, and why. Reverse has no gesture at all, by
     -- decision; the controls page is the page being read; turn right shares
-    -- the stick with turn left and is named by it; the third and fourth
-    -- charge keys are slots nothing in the baseline fills, and a rail cell for
-    -- a charge no hull carries is a control a thumb cannot work either.
-    -- Anything else arriving with no `pad` is a control a phone has lost.
-    local QUIET = {reverse = true, controls = true, ["turn right"] = true,
-                   ["charge 3"] = true, ["charge 4"] = true}
+    -- the stick with turn left and is named by it. Anything else arriving with
+    -- no `pad` is a control a phone has quietly lost.
+    local QUIET = {reverse = true, controls = true, ["turn right"] = true}
     local mute = {}
     for _, r in ipairs(ROWS) do
         if not r.pad and not QUIET[r.name] then mute[#mute + 1] = r.name end
@@ -296,7 +293,7 @@ do
     local thumbed = 0
     for _, r in ipairs(ROWS) do if r.pad then thumbed = thumbed + 1 end end
     check("a phone is offered every control it can work",
-          thumbed == #ROWS - 5,
+          thumbed == #ROWS - 3,
           thumbed .. " of " .. #ROWS)
 
     -- And the menu builds its page from this list rather than from a second

@@ -594,7 +594,7 @@ local NODES = {
                 end
             else
                 rows[i] = {label = c.name, detail = c.show, cat = c.cat,
-                           control = c.id, key = c.key, fixed = c.fixed,
+                           control = c.id, keys = c.keys, fixed = c.fixed,
                            arming = M.arming == c.id,
                            act = "bind", pick = true}
             end
@@ -844,9 +844,9 @@ end
 -- gone somewhere would otherwise have to hunt for it. Nothing is ever left
 -- without a key, which is the property that makes this safe to do with no
 -- confirmation on it at all.
-local function bind_to(id, key)
+local function bind_to(id, chord)
     M.arming = nil
-    local moved, ok = binds.set(id, key)
+    local moved, ok = binds.set(id, chord)
     if not ok then
         -- The one refusal worth a sentence: a control that is not ours to
         -- move. Everything else that lands here is a press that changed
@@ -860,19 +860,20 @@ local function bind_to(id, key)
     M.save_identity()
     local name = control_name(id)
     if moved then
-        M.foot = string.format("%s is on %s; %s took the key it left",
-                               name, keyset.show(key),
+        M.foot = string.format("%s is on %s; %s took the keys it left",
+                               name, keyset.chord(chord),
                                control_name(moved) or "")
     else
-        M.foot = string.format("%s is on %s", name, keyset.show(key))
+        M.foot = string.format("%s is on %s", name, keyset.chord(chord))
     end
     return true
 end
 
--- A key arrived while a control was asking for one.
-function M.bind_key(key)
+-- A chord arrived while a control was asking for one: everything that was
+-- held, in the order it went down, from the page that watched a hand do it.
+function M.bind_chord(chord)
     if not M.arming then return false end
-    return bind_to(M.arming, key)
+    return bind_to(M.arming, chord)
 end
 
 -- Escape, while a control is asking. It goes back to where it was, which is
@@ -1452,6 +1453,14 @@ local function activate()
         end
         M.arming = r.control
         M.note = nil
+        -- What the page is waiting for, said once. The chip's key column has
+        -- gone empty and the board has gone dark around one key, which says
+        -- something is being asked without saying what may be answered: two
+        -- keys held together are a binding as much as one is, and nothing on
+        -- screen could show that.
+        M.foot = string.format(
+            "press a key for %s, or two together; escape leaves it alone",
+            r.label or "it")
         return nil
     elseif r.act == "defaults" then
         binds.reset()
@@ -1769,7 +1778,10 @@ function M.click_key(key)
         M.foot = "pick a control first, then a key to put it on"
         return nil, true
     end
-    return nil, bind_to(id, key)
+    -- One key, since that is what a click carries. A chord is two keys held
+    -- together and there is no holding in a click, so the keyboard is the only
+    -- way to make one; the page says so while it is waiting.
+    return nil, bind_to(id, {key})
 end
 
 -- The x on the panel. It shuts the menu rather than stepping back a level,

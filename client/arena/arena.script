@@ -64,6 +64,14 @@ local held = {}
 -- in `held`. Presses are latched here and consumed by whatever reads them,
 -- which is how the menu gets a keystroke that flight does not need.
 local tapped = {}
+-- What each key press turned into, so its release takes the same thing down.
+-- Not cleared every frame the way `tapped` is: a key is held across frames and
+-- this is the record of what it is holding.
+local owner = {}
+-- The keys that came up this frame, cleared beside `tapped`. One caller: the
+-- controls page, which knows a chord is finished when the first of its keys
+-- is let go.
+local lifted = {}
 local me = 0
 -- Watching rather than flying. While this is set, `me` is 255 and must never
 -- reach a `sim.*` accessor: the extension refuses an index that wide, loudly,
@@ -244,6 +252,10 @@ local function bit_for(action)
             -- doing the edge here as well would make two places that have to
             -- agree about one press.
             [hash("multi")] = sim.BTN_MULTI,
+            -- A chord rather than a key, and nothing here has to know that:
+            -- the press arrives under this name or under `bombs`, and which
+            -- one it was is settled before it gets here. See arena/binds.lua.
+            [hash("mine")] = sim.BTN_MINE,
             -- The mouse buttons are their own actions rather than aliases of
             -- guns and bombs. A browser synthesises a click from every touch,
             -- so while they shared a name, one tap anywhere on a phone was a
@@ -363,18 +375,15 @@ local function my_buttons()
     -- however it was made.
     if multi_tap then bits[sim.BTN_MULTI] = true end
 
-    -- Shift and the bomb key together lay a mine, which is the original's own
-    -- chord and the reason `mine_mod` is a modifier rather than a key of its
-    -- own: a mine is not a third weapon, it is the bomb trigger held
-    -- differently, and the input should say so with the same finger.
+    -- The mine pad on glass, which is the only way to lay one without a
+    -- keyboard. It lands in the same bit the chord holds down, so the core
+    -- sees one press however it was made.
     --
-    -- The bomb bit comes back off, or one press would ask for both and the
-    -- core would throw a bomb as well as posting a mine. The mine pad on glass
-    -- lands in the same bit for the same reason the fan cell does.
-    if bits[sim.BTN_BOMB] and held[hash("mine_mod")] then
-        bits[sim.BTN_BOMB] = nil
-        bits[sim.BTN_MINE] = true
-    end
+    -- Shift and the bomb key used to be wired together here, because a mine
+    -- was the bomb trigger held differently rather than a control of its own.
+    -- Bindings are chords now and `mine` is one, so the press arrives already
+    -- knowing which of the two it was: Shift+Tab beats Tab whenever Shift is
+    -- down, and the bomb bit is never set to have to be taken off again.
     if mine_tap then bits[sim.BTN_MINE] = true end
 
     local b = 0
@@ -1058,16 +1067,33 @@ function update(self, dt)
         local moved = false
         if tapped[hash("menu")] then
             moved = menu.cancel_bind()
+            self.chord = nil
         else
+            -- A chord is read by watching a hand rather than by counting
+            -- keys. Everything pressed goes on the list, and the list is the
+            -- answer the moment the first of them comes back up: Shift, Tab,
+            -- let go, and the binding is Shift+Tab. One key is the same
+            -- gesture with one key in it, so there is no second rule for it
+            -- and no timer anywhere.
+            self.chord = self.chord or {}
             for _, k in ipairs(keys.list) do
                 if tapped[hash(k.action)] then
-                    moved = menu.bind_key(k.id)
-                    break
+                    self.chord[#self.chord + 1] = k.id
                 end
+            end
+            local done = false
+            for _, k in ipairs(keys.list) do
+                if lifted[hash(k.action)] then done = true break end
+            end
+            if done and #self.chord > 0 then
+                moved = menu.bind_chord(self.chord)
+                self.chord = nil
             end
         end
         if moved then sfx.ui("ui_go") end
         tapped = {}
+    elseif self.chord then
+        self.chord = nil
     end
 
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
@@ -1088,7 +1114,7 @@ function update(self, dt)
     -- Latched like the pad's tap, and for the same reason: the press has to
     -- survive until a simulation step spends it.
     if not menu.open then
-        for i = 1, 4 do
+        for i = 1, 2 do
             if tapped[hash("charge_" .. i)] then
                 tapped[hash("charge_" .. i)] = nil
                 local slot = my_slots()[i]
@@ -1370,6 +1396,7 @@ function update(self, dt)
         end
     end
     tapped = {}
+    lifted = {}
 
     if self.online and net.connected then
         me = net.me
@@ -2713,15 +2740,32 @@ function on_input(self, action_id, action)
     -- rest of this file reads and the reason none of it knows a binding
     -- happened. A key nothing is bound to latches once and is simply never
     -- asked about.
+    --
+    -- Which control that is depends on what else is down, since a binding may
+    -- be a chord: Shift and Tab together are a mine where Tab alone is a bomb.
+    -- The question is asked on the press and the answer is remembered, so a
+    -- key goes on holding whatever it started until it comes up. Deciding
+    -- again on the release would let a modifier lifted early hand the press to
+    -- the barer binding halfway through, which is a bomb thrown by letting go
+    -- of shift.
     local name = action_id
-    local did = binds.action(name)
     if action.pressed then
         held[name] = true
         tapped[name] = true
-        if did then held[did] = true; tapped[did] = true end
+        local did = binds.on_press(name, held)
+        if did then
+            owner[name] = did
+            held[did] = true
+            tapped[did] = true
+        end
     end
     if action.released then
         held[name] = nil
-        if did then held[did] = nil end
+        lifted[name] = true
+        local did = owner[name]
+        if did then
+            held[did] = nil
+            owner[name] = nil
+        end
     end
 end

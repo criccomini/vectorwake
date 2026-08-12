@@ -95,15 +95,18 @@ end
 do
     local unknown, seen, twice = {}, {}, {}
     for _, c in ipairs(controls) do
-        if not keys.by_id[c.key] then
-            unknown[#unknown + 1] = c.id .. " -> " .. tostring(c.key)
+        for _, key in ipairs(c.keys) do
+            if not keys.by_id[key] then
+                unknown[#unknown + 1] = c.id .. " -> " .. tostring(key)
+            end
         end
-        if seen[c.key] then twice[#twice + 1] = c.key end
-        seen[c.key] = true
+        local at = table.concat(c.keys, "+")
+        if seen[at] then twice[#twice + 1] = at end
+        seen[at] = true
     end
-    check("every control starts on a key that exists", #unknown == 0,
+    check("every control starts on keys that exist", #unknown == 0,
           table.concat(unknown, ", "))
-    check("and no two controls start on the same key", #twice == 0,
+    check("and no two controls start on the same chord", #twice == 0,
           table.concat(twice, ", "))
 
     -- A control the arena never looks for is a row that says a key does
@@ -128,14 +131,16 @@ end
 -- --- swapping ---------------------------------------------------------------
 
 local function key_of(id)
-    return binds.key_of[id]
+    local chord = binds.chord_of[id]
+    return chord and table.concat(chord, "+")
 end
 
 local function nothing_unbound()
     for _, c in ipairs(controls) do
-        if not binds.key_of[c.id] then return c.id end
-        if binds.control_of[binds.key_of[c.id]] ~= c.id then
-            return c.id .. " is not what its key points back to"
+        local at = key_of(c.id)
+        if not at then return c.id end
+        if binds.control_of[at] ~= c.id then
+            return c.id .. " is not what its chord points back to"
         end
     end
     return nil
@@ -147,14 +152,14 @@ do
           and key_of("guns") == "space")
 
     -- A free key: nothing displaced.
-    local moved, ok = binds.set("thrust", "e")
+    local moved, ok = binds.set("thrust", {"e"})
     check("a control moves to a free key", ok and moved == nil
           and key_of("thrust") == "e")
     check("and its old key is free", binds.control_of["up"] == nil)
 
     -- A taken key: the two trade, and both keep one.
     binds.reset()
-    local other = binds.set("thrust", "w")
+    local other = binds.set("thrust", {"w"})
     check("a taken key trades", other == "charge_2"
           and key_of("thrust") == "w" and key_of("charge_2") == "up",
           tostring(other) .. " / " .. tostring(key_of("charge_2")))
@@ -163,22 +168,22 @@ do
 
     -- The key it is already on: nothing happens, and it says so.
     binds.reset()
-    local _, changed = binds.set("guns", "space")
+    local _, changed = binds.set("guns", {"space"})
     check("binding a control to the key it is on changes nothing",
           changed == false and key_of("guns") == "space")
 
     -- Escape is not anybody's to take, in either direction.
     binds.reset()
-    local _, took = binds.set("menu", "j")
+    local _, took = binds.set("menu", {"j"})
     check("the menu key cannot be moved",
           took == false and key_of("menu") == "esc")
-    local _, stole = binds.set("map", "esc")
+    local _, stole = binds.set("map", {"esc"})
     check("and nothing can be moved onto it",
           stole == false and key_of("map") == "m")
 
     -- A key that is not in the catalog at all.
     binds.reset()
-    local _, wild = binds.set("map", "f13")
+    local _, wild = binds.set("map", {"f13"})
     check("a key the catalog does not carry is refused",
           wild == false and key_of("map") == "m")
 end
@@ -188,19 +193,62 @@ end
 -- The whole reason the rest of the client knows nothing about any of this: a
 -- press on a key arrives under the name of the thing the key does.
 
+local function press(held, ...)
+    local down = {}
+    for _, a in ipairs({...}) do down[a] = true end
+    for k in pairs(held or {}) do down[k] = true end
+    local last = select(select("#", ...), ...)
+    return binds.on_press(last, down)
+end
+
 do
     binds.reset()
     check("a press routes to what is on the key",
-          binds.action("k_space") == "guns"
-          and binds.action("k_up") == "thrust")
-    binds.set("thrust", "w")
+          press(nil, "k_space") == "guns"
+          and press(nil, "k_up") == "thrust")
+    binds.set("thrust", {"w"})
     check("and follows it when it moves",
-          binds.action("k_w") == "thrust"
-          and binds.action("k_up") == "charge_2")
+          press(nil, "k_w") == "thrust"
+          and press(nil, "k_up") == "charge_2")
     check("a key with nothing on it routes nowhere",
-          binds.action("k_f") == nil)
+          press(nil, "k_f") == nil)
     check("and so does an action that is not a key",
-          binds.action("select") == nil)
+          press(nil, "select") == nil)
+end
+
+-- --- chords -----------------------------------------------------------------
+--
+-- Two controls may share a trigger as long as their modifiers differ, which is
+-- the whole of what makes Shift+Tab a mine while Tab alone is a bomb.
+
+do
+    binds.reset()
+    check("mines start on the original's own chord",
+          key_of("mine") == "shift+tab", tostring(key_of("mine")))
+    check("the bare trigger is still the bomb",
+          press(nil, "k_tab") == "bombs")
+    check("and the chord beats it when the modifier is down",
+          press({k_shift = true}, "k_tab") == "mine")
+    check("while the modifier on its own is nobody's",
+          press(nil, "k_shift") == nil)
+
+    -- Order is the hand's, not the list's: the same two keys are one binding
+    -- however they were typed.
+    binds.reset()
+    local _, ok = binds.set("map", {"tab", "shift"})
+    check("a chord typed backwards is the same chord",
+          ok and key_of("map") == "shift+tab", tostring(key_of("map")))
+    check("and it displaced the control that was on it",
+          key_of("mine") == "m", tostring(key_of("mine")))
+
+    -- A chord and its own trigger are different bindings, so putting one on a
+    -- key the other already uses is not a conflict.
+    binds.reset()
+    local moved2 = binds.set("map", {"shift", "space"})
+    check("a chord over a bare key displaces nothing", moved2 == nil
+          and key_of("guns") == "space" and key_of("map") == "shift+space")
+    check("and both still route", press(nil, "k_space") == "guns"
+          and press({k_shift = true}, "k_space") == "map")
 end
 
 -- --- saving -----------------------------------------------------------------
@@ -210,22 +258,36 @@ do
     check("a stock keyboard saves nothing at all",
           binds.save_table() == nil)
 
-    binds.set("thrust", "w")
+    binds.set("thrust", {"w"})
     local saved = binds.save_table()
-    check("a moved key is saved", saved ~= nil and saved.thrust == "w")
+    check("a moved key is saved",
+          saved ~= nil and saved.thrust and saved.thrust[1] == "w")
     check("and so is the one it displaced",
-          saved ~= nil and saved.charge_2 == "up")
+          saved ~= nil and saved.charge_2 and saved.charge_2[1] == "up")
 
     binds.reset()
     binds.load(saved)
     check("and reading it back puts them where they were",
           key_of("thrust") == "w" and key_of("charge_2") == "up")
 
+    -- A chord survives the trip as well, which is the case a list has over a
+    -- string and the reason the file holds one.
+    binds.reset()
+    binds.set("map", {"shift", "j"})
+    binds.load(binds.save_table())
+    check("and a chord comes back as a chord",
+          key_of("map") == "shift+j", tostring(key_of("map")))
+
     -- A file from a build that carried keys this one does not. Honored, it
     -- would bind a control to a press that can never arrive.
-    binds.load({thrust = "f13", map = "z"})
+    binds.load({thrust = {"f13"}, map = {"z"}})
     check("a saved key this build has dropped is discarded",
           key_of("thrust") == "up" and key_of("map") == "z")
+
+    -- And a file written before chords existed, where a binding was one key.
+    binds.load({map = "z"})
+    check("a bare key in an older file is read as a chord of one",
+          key_of("map") == "z", tostring(key_of("map")))
 
     binds.load("not a table")
     check("and rubbish in the file is the defaults", key_of("thrust") == "up")

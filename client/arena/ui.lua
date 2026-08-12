@@ -2767,11 +2767,36 @@ local BOARD = {
 --
 -- Keyed by what the board writes on a key rather than by the key's own name,
 -- because that is what the drawing loop below has in its hand.
+--
+-- A binding may be a chord, so a key can belong to more than one control:
+-- Shift is half of the mine and Tab is the whole of the bomb and half of the
+-- mine as well. The shortest chord wins the color, which is the binding a hand
+-- falls back to and the one the key would fire on its own; every chord the key
+-- is in still counts for the cursor, so resting on the mine brackets both of
+-- its keys rather than one.
 local function bind_map(v)
     local out = {}
     for i, r in ipairs(v.rows or {}) do
-        local k = r.key and keyset.by_id[r.key]
-        if k then out[k.label or k.id] = {row = r, i = i} end
+        for _, id in ipairs(r.keys or {}) do
+            local k = keyset.by_id[id]
+            local at = k and (k.label or k.id)
+            if at then
+                local e = out[at]
+                if not e then
+                    e = {on = {}, n = math.huge}
+                    out[at] = e
+                end
+                -- The shortest chord owns the color: it is the binding the
+                -- key would fire on its own, and the one a hand falls back to.
+                if #r.keys < e.n then e.row, e.n = r, #r.keys end
+                e.on[i] = true
+                -- And whichever chord is asking owns the whole key while it
+                -- is, however long it is. Mines are Shift and Tab, and Tab is
+                -- also the bomb: reading the shortest chord for this left the
+                -- board lighting half the chord it was waiting to be told.
+                if r.arming then e.asking = r end
+            end
+        end
     end
     return out
 end
@@ -2883,16 +2908,20 @@ local function board(x, top, w, v)
     local function state_of(hit_row)
         if not hit_row then return false, false end
         if arming then
-            local asking = hit_row.row.arming == true
+            local asking = hit_row.asking ~= nil
             return asking, asking
         end
-        return hit_row.i == v.sel, false
+        -- `on` is every row this key is part of, so a key that is a modifier
+        -- for one control and the whole of another lights under the cursor of
+        -- either. The color still comes from the shortest of them.
+        return hit_row.on[v.sel] == true, false
     end
 
     local function draw(bx, cy, kw, label)
         local hit_row = on[label]
         local cat = hit_row and hit_row.row.cat
         local sel, keep = state_of(hit_row)
+        if keep and hit_row.asking then cat = hit_row.asking.cat end
         -- Ctrl is the one key on the board whose control is not in the list:
         -- it fires guns, it cannot be moved, and the browser only surrenders
         -- it in fullscreen. So the picture carries it on its own, at half
@@ -2937,6 +2966,7 @@ local function board(x, top, w, v)
         local hit_row = on[d[5]]
         local sel, keep = state_of(hit_row)
         local cat = hit_row and hit_row.row.cat
+        if keep and hit_row.asking then cat = hit_row.asking.cat end
         if arming and not keep then cat = nil end
         local col = board_col(cat)
         if col then
@@ -3031,7 +3061,17 @@ local function chips(x, top, w, v, rh)
             -- unpressable thing here is written in, which says so without a
             -- word for it.
             local ink = r.fixed and pal.DIM or hue
-            txt(r.detail, cx + cw - 26 * S, cy + rh / 2, fs,
+            -- A chord is three or four times as wide as a key, and the name
+            -- it has to sit beside does not get any shorter for it. Set down
+            -- until the pair fits rather than letting one run under the other,
+            -- which is what the board does to a word on a one-unit key.
+            local ks = fs
+            local room = cw - 26 * S - 15 * S - glyph_w(r.label or "", fs)
+                - 10 * S
+            while ks > fs * 0.6 and glyph_w(r.detail, ks) > room do
+                ks = ks * 0.94
+            end
+            txt(r.detail, cx + cw - 26 * S, cy + rh / 2, ks,
                 pal.a(ink, hot and 1 or 0.75), "right", nil, true)
         end
         if r.pick then hit(cx - 6 * S, cy, cw - 4 * S, rh, "stage", i) end
@@ -3169,24 +3209,23 @@ end
 -- size a rail mark gets, and they are the same inverted T the board draws
 -- lower down the same page.
 --
--- Sized off the key rather than off the mark, so the gaps and the chamfers
--- stay in proportion when the rail draws this larger or smaller.
+-- Plain boxes, not the cut corner the rest of the interface takes. The
+-- diagonal is a fraction of the shape it cuts, and a fifth of an eight-point
+-- key is a pixel and a half: at that size it is not a chamfer, it is a
+-- ragged corner, and four of them read as damage rather than as a house
+-- style. The board further down the page keeps the cut, because its keys are
+-- three times the size.
+--
+-- Sized off the key rather than off the mark, so the gaps stay in proportion
+-- when the rail draws this larger or smaller.
 local function mark_controls(cx, cy, r, col)
     local k = r * 0.66                 -- one key
-    local g = k * 0.14                 -- and the air around it
-    local pitch = k + g
-    -- A shallower cut than the mark beside it takes. The diagonal is the
-    -- house's, but it is a fraction of the shape it is cut off, and a third of
-    -- an eight-point key is most of its corner: at that size the square reads
-    -- as a hexagon and four of them read as a honeycomb.
-    local c = k * 0.19
+    local pitch = k + k * 0.14         -- and the air around it
     local function key(gx, gy, dx, dy)
         local x0 = cx + gx * pitch - k / 2
         local y0 = cy + gy * pitch - k / 2
-        local pts = {x0 + c, ry(y0), x0 + k, ry(y0), x0 + k, ry(y0 + k - c),
-                     x0 + k - c, ry(y0 + k), x0, ry(y0 + k), x0, ry(y0 + c)}
-        u:fan(pts, pal.a(col, 0.10))
-        u:outline(pts, 1.1 * S, col, true)
+        rect(x0, y0, k, k, pal.a(col, 0.10))
+        u:frame(x0, ry(y0, k), k, k, 1.1 * S, col)
         -- The head alone, not a stem: at this size a shaft is one row of
         -- pixels that reads as a smudge across the middle of the key.
         local a = k * 0.2

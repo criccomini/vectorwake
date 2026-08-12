@@ -109,8 +109,31 @@ for _, set in ipairs({M.list, M.fixed}) do
     end
 end
 
+function M.show(id)
+    local k = M.by_id[id]
+    return k and k.show or "none"
+end
+
 -- The four the arrow cluster draws, in the order it draws them.
 M.ARROWS = {"up", "left", "down", "right"}
+
+-- Which keys are held rather than pressed, for the one purpose that has to
+-- know: putting a chord in an order. Shift and Tab and Tab and Shift are the
+-- same thing to the hand that does them, so they are made the same thing here
+-- rather than two bindings a pilot has to tell apart. Shift is the only one on
+-- the board that is both a modifier and a key anything may be bound to; ctrl
+-- is a modifier the browser keeps.
+M.MODS = {shift = true}
+
+-- How a chord is written: the keys it is made of, joined. Not a sentence and
+-- not a picture, because it is a reading off the machine and the plus is what
+-- every machine in the world writes between two keys held together.
+function M.chord(list)
+    if not list or #list == 0 then return "none" end
+    local out = {}
+    for i, id in ipairs(list) do out[i] = M.show(id) end
+    return table.concat(out, "+")
+end
 
 -- Whether anything may be put on this key. Membership of `list` and nothing
 -- else: `fixed` carries the same shape so the page can write a word on those
@@ -123,11 +146,6 @@ function M.bindable(id)
         if b == k then return true end
     end
     return false
-end
-
-function M.show(id)
-    local k = M.by_id[id]
-    return k and k.show or "none"
 end
 
 return M
