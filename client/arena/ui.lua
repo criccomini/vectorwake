@@ -3204,41 +3204,36 @@ end
 --
 -- It carried a question mark for as long as the page was called help, then a
 -- blank keycap for about an hour: a key with a `?` on it is a key with a `?`
--- on it, and a key with nothing on it is a box. The four keys everybody
--- already flies with are the only drawing here that says "keyboard" at the
--- size a rail mark gets, and they are the same inverted T the board draws
--- lower down the same page.
+-- on it, and a key with nothing on it is a box. Four boxes in the shape the
+-- arrow keys make are a keyboard, and the shape is doing all of the work,
+-- which is why there is nothing drawn on them.
 --
--- Plain boxes, not the cut corner the rest of the interface takes. The
--- diagonal is a fraction of the shape it cuts, and a fifth of an eight-point
--- key is a pixel and a half: at that size it is not a chamfer, it is a
--- ragged corner, and four of them read as damage rather than as a house
--- style. The board further down the page keeps the cut, because its keys are
--- three times the size.
+-- Arrowheads were, briefly. At the size a rail mark gets they are four
+-- triangles about three pixels on a side, and what they add to the inverted T
+-- is clutter rather than meaning: the T is already the only thing on a
+-- keyboard with that outline.
+--
+-- Plain boxes for the same reason the heads went. The cut corner is a
+-- fraction of the shape it cuts, and a fifth of an eight-point key is a pixel
+-- and a half: at that size it is not a chamfer, it is a ragged corner. The
+-- board further down the page keeps the cut, its keys being three times the
+-- size.
 --
 -- Sized off the key rather than off the mark, so the gaps stay in proportion
 -- when the rail draws this larger or smaller.
 local function mark_controls(cx, cy, r, col)
     local k = r * 0.66                 -- one key
     local pitch = k + k * 0.14         -- and the air around it
-    local function key(gx, gy, dx, dy)
+    local function key(gx, gy)
         local x0 = cx + gx * pitch - k / 2
         local y0 = cy + gy * pitch - k / 2
         rect(x0, y0, k, k, pal.a(col, 0.10))
         u:frame(x0, ry(y0, k), k, k, 1.1 * S, col)
-        -- The head alone, not a stem: at this size a shaft is one row of
-        -- pixels that reads as a smudge across the middle of the key.
-        local a = k * 0.2
-        u:tri(cx + gx * pitch + dx * a, ry(cy + gy * pitch + dy * a),
-              cx + gx * pitch - dx * a + dy * a,
-              ry(cy + gy * pitch - dy * a - dx * a),
-              cx + gx * pitch - dx * a - dy * a,
-              ry(cy + gy * pitch - dy * a + dx * a), col)
     end
-    key(0, -0.5, 0, -1)
-    key(-1, 0.5, -1, 0)
-    key(0, 0.5, 0, 1)
-    key(1, 0.5, 1, 0)
+    key(0, -0.5)
+    key(-1, 0.5)
+    key(0, 0.5)
+    key(1, 0.5)
 end
 
 local function mark_about(cx, cy, r, col)
