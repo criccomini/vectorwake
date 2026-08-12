@@ -197,7 +197,32 @@ sha.
 The pilot table filters as you type, over call signs and account numbers, and
 there is no button beside the box: the keystrokes are the whole interaction,
 and a button that repeats them invites somebody to wonder what it does
-differently. Picking a row opens that pilot's card.
+differently. Picking a row opens that pilot's card, and under the card is what
+the fleet saw them do.
+
+That last part is the half of acting on a report the panel could not do. An
+operator with a complaint in front of them had the reporter's word and a kick,
+and no way to check one against anything. Now the card carries the pilot's
+recent history out of the log
+[meta-layer.md](meta-layer.md#the-pilot-log) describes: arrivals, refusals
+with the sentence the pilot was actually sent, hull and side changes,
+departures with the reason and whether the fight was being lost. Refusals and
+quits are drawn in the color the rest of the page gives to something wrong,
+because those are the two an operator is scanning for.
+
+Each row names the stay it belongs to, and opening one narrows the table to
+that stay alone. A pilot's history runs across several and a report is usually
+about one of them.
+
+It is written out rather than shown as the JSON it arrives as. An operator
+reading a complaint should not have to know the wire to use the page, so a
+departure reads `left, held 2m 0s, settled as a quit` and a hull change reads
+`hull 0 to 3`. An event kind the page has not learned falls through to its raw
+detail rather than to nothing, because the arena can ship a new one before
+these files do.
+
+Nothing in it edits. The log is a record of what happened, and an operator who
+could revise it would be holding a different kind of thing.
 
 Two deployment-wide faults show there and nowhere else. Two directories on
 different catalog versions is a publish that half landed, which the fleet
@@ -246,6 +271,13 @@ The verbs need one more thing before kicking is comfortable: `RoomView`
 carries counts and not names, so an operator cannot see who is in a room.
 Kick works by call sign against every instance, which is enough to act on a
 report and not enough to notice one.
+
+The pilot log closed the smaller half of that. Acting on a report is now
+checkable, since the card says what the fleet saw. Noticing one is still not:
+the log is read one pilot at a time, on purpose, and nothing watches it for
+patterns. Turning it into something that notices is a different feature with a
+different hazard, and [networking.md](networking.md) has already ruled out the
+version of it that watches how people fly.
 
 The name is its own certificate, which this file's opening comment prices as
 the thing a mistake can burn. Taken anyway, and as isolation rather than

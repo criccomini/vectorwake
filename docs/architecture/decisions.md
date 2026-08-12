@@ -1734,6 +1734,11 @@ event and eight account events from the meta-layer itself. Every arena row
 carries a session, which is one connection and rides on the seat, because
 sitting out and flying again reissue every other handle a pilot has.
 
+The panel reads it under the pilot card, one pilot at a time, and that is the
+whole of the read surface. Nothing watches the log for patterns, which keeps
+this on the acting side of the line admin.md draws between acting on a report
+and noticing one.
+
 Three things it is not, each ruled out by something already written down.
 
 It holds no addresses. An arena never learns one, and the meta-layer's stated

@@ -4641,8 +4641,15 @@ pub(crate) async fn serve_client(
                 // leaves no other trace anywhere: the connection closes and
                 // the only party that knows why is the one being refused. So
                 // the same closure that builds the message files the row.
+                //
+                // `who` is the seat where the door has got far enough to have
+                // one. Three of these refusals happen before any token is
+                // read and cannot name an account; the rest can, and it
+                // matters that they do. A refusal is the event an operator is
+                // most often asked about, and one filed against nobody is one
+                // that never appears in the pilot it happened to.
                 let pilots = z.spools.pilots.clone();
-                let deny = |code: u8, why: &str| {
+                let deny = |code: u8, why: &str, who: Option<&Seat>| {
                     // A bot bouncing off a full instance is the fill loop
                     // working, not an event. It is also the only refusal that
                     // happens by the thousand, so leaving it out is most of
@@ -4653,14 +4660,15 @@ pub(crate) async fn serve_client(
                             &pilots,
                             &session,
                             pilot::DENIED,
-                            None,
+                            who,
                             None,
                             0,
-                            // The name is what the client claimed, not one
-                            // this room has vouched for: most of these
-                            // refusals happen before any token is read, and
-                            // recording it as identity would be recording an
-                            // assertion as a fact.
+                            // `claimed` is what the client typed, kept even
+                            // where a seat vouched for a name, because the
+                            // two disagreeing is worth seeing. Where there is
+                            // no seat it is the only handle the row has, and
+                            // it is recorded as an assertion rather than as
+                            // identity.
                             serde_json::json!({
                                 "code": code,
                                 "why": why,
@@ -4682,6 +4690,7 @@ pub(crate) async fn serve_client(
                     let _ = tx.try_send(Message::Binary(deny(
                         DENY_VERSION,
                         &format!("this zone speaks protocol {CLIENT_PROTOCOL}"),
+                        None,
                     )));
                     break;
                 }
@@ -4691,7 +4700,7 @@ pub(crate) async fn serve_client(
                 // instance serves instead, which is the empty string, and a
                 // player would read `this instance serves "" now`.
                 if z.rooms.is_empty() {
-                    let _ = tx.try_send(Message::Binary(deny(DENY_WRONG_ZONE, NO_ZONE_YET)));
+                    let _ = tx.try_send(Message::Binary(deny(DENY_WRONG_ZONE, NO_ZONE_YET, None)));
                     break;
                 }
                 // A player picked a game, not an address. This instance may
@@ -4706,6 +4715,7 @@ pub(crate) async fn serve_client(
                             "this instance serves {:?} now; re-browse",
                             z.zone_name
                         ),
+                        None,
                     )));
                     break;
                 }
@@ -4716,7 +4726,7 @@ pub(crate) async fn serve_client(
                 let seat_of = match z.identify(&presented, &claimed_name, is_bot, &session) {
                     Ok(s) => s,
                     Err(why) => {
-                        let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, &why)));
+                        let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, &why, None)));
                         break;
                     }
                 };
@@ -4728,6 +4738,7 @@ pub(crate) async fn serve_client(
                     let _ = tx.try_send(Message::Binary(deny(
                         DENY_BANNED,
                         "this zone is for claimed pilots; keep your pilot in the menu first",
+                        Some(&seat_of),
                     )));
                     break;
                 }
@@ -4737,13 +4748,18 @@ pub(crate) async fn serve_client(
                 // meta-layer refuses a banned account its token, so a
                 // banned pilot arrives holding nothing.
                 if z.is_banned(&name) {
-                    let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, "you are banned here")));
+                    let _ = tx.try_send(Message::Binary(deny(
+                        DENY_BANNED,
+                        "you are banned here",
+                        Some(&seat_of),
+                    )));
                     break;
                 }
                 if z.draining {
                     let _ = tx.try_send(Message::Binary(deny(
                         DENY_DRAINING,
                         "this arena is draining; try another instance",
+                        Some(&seat_of),
                     )));
                     break;
                 }
@@ -4760,9 +4776,17 @@ pub(crate) async fn serve_client(
                     // branch is here because an index into an empty list is a
                     // panic, and a door is the wrong place to keep one.
                     let Some(idx) = z.room_to_watch() else {
-                        let _ = tx.try_send(Message::Binary(deny(DENY_WRONG_ZONE, NO_ZONE_YET)));
+                        let _ = tx.try_send(Message::Binary(deny(
+                            DENY_WRONG_ZONE,
+                            NO_ZONE_YET,
+                            Some(&seat_of),
+                        )));
                         break;
                     };
+                    // Kept back for the refusal below, which needs to name
+                    // whoever it turned away and cannot, once the seat has
+                    // gone into the room.
+                    let refused = seat_of.clone();
                     let joined =
                         z.rooms[idx].watch_join(seat_of, watch_any, tx.clone());
                     match joined {
@@ -4788,6 +4812,7 @@ pub(crate) async fn serve_client(
                             let _ = tx.try_send(Message::Binary(deny(
                                 DENY_FULL,
                                 "this room has all the watchers it wants",
+                                Some(&refused),
                             )));
                         }
                     }
@@ -4815,6 +4840,7 @@ pub(crate) async fn serve_client(
                         } else {
                             "no room here; try another instance of this zone"
                         },
+                        Some(&seat_of),
                     )));
                     break;
                 };
@@ -4822,6 +4848,10 @@ pub(crate) async fn serve_client(
                 // own ladders, so putting a returning player's rating in
                 // room zero would leave them unrated wherever they landed.
                 z.restore_pilot(idx, &seat_of);
+                // Same reason as the watcher path above: the seat goes into
+                // the room, and the refusal that follows a failed seating
+                // still has to say who it was for.
+                let refused = seat_of.clone();
                 let a = &mut z.rooms[idx];
                 if let Some(new_id) = a.join(seat_of, class, cap, tx.clone()) {
                     seat = Some((idx, new_id));
@@ -4845,7 +4875,11 @@ pub(crate) async fn serve_client(
                     // which of their doors are open to this arrival.
                     a.broadcast_teams();
                 } else {
-                    let _ = tx.try_send(Message::Binary(deny(DENY_FULL, "no seat in that room")));
+                    let _ = tx.try_send(Message::Binary(deny(
+                        DENY_FULL,
+                        "no seat in that room",
+                        Some(&refused),
+                    )));
                 }
                 // A join changes the count a directory reports, and a
                 // stale count is a directory routing players to the wrong

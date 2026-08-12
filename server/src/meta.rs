@@ -1292,6 +1292,68 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
         }
 
+        // One pilot's recent history, out of the pilot log.
+        //
+        // This is the half of acting on a report that the panel could not do:
+        // [admin.md](admin.md) noted that an operator can act on a report and
+        // not notice one, and until there was a log the acting was on the
+        // reporter's word alone. Read-only, and deliberately: nothing here
+        // edits, because the log is a record of what happened and an operator
+        // who could revise it would be holding a different kind of thing.
+        //
+        // By account, or by session for the whole of one stay. A session is
+        // asked for by name rather than searched, since the only way to have
+        // one is to have seen it in an answer to this route.
+        "/v1/admin/events" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let account = body.get("account").and_then(|v| v.as_i64());
+            let session = s("session");
+            // Newest first, because a report is about something that just
+            // happened. The page reverses what it draws.
+            let q = "select to_char(at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                            coalesce(session, ''), kind, coalesce(name, ''), bot,
+                            zone, instance, room, tick, detail
+                     from pilot_events";
+            let rows = if !session.is_empty() {
+                db.query(
+                    &format!("{q} where session = $1 order by at desc, id desc limit 200"),
+                    &[&session],
+                )
+                .await
+            } else if let Some(id) = account {
+                db.query(
+                    &format!("{q} where pilot = $1 order by at desc, id desc limit 200"),
+                    &[&id],
+                )
+                .await
+            } else {
+                return (400, serde_json::json!({ "error": "an account or a session" }));
+            };
+            match rows {
+                Ok(rs) => (200, serde_json::json!({
+                    "events": rs.iter().map(|r| serde_json::json!({
+                        "at": r.get::<_, String>(0),
+                        "session": r.get::<_, String>(1),
+                        "kind": r.get::<_, String>(2),
+                        "name": r.get::<_, String>(3),
+                        "bot": r.get::<_, bool>(4),
+                        "zone": r.get::<_, String>(5),
+                        "instance": r.get::<_, String>(6),
+                        "room": r.get::<_, Option<i32>>(7),
+                        "tick": r.get::<_, i64>(8),
+                        "detail": r.get::<_, serde_json::Value>(9),
+                    })).collect::<Vec<_>>(),
+                    // Said rather than left for the operator to infer from a
+                    // round number, which is how somebody concludes a pilot
+                    // stopped doing anything at exactly 200 events.
+                    "capped": rs.len() == 200,
+                })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
         // The fleet, as the directory on this host has observed it. Relayed
         // rather than served here: the directory holds the registrations and
         // this process holds the only thing that can check an admin flag, so

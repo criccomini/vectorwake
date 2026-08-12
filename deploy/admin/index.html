@@ -151,6 +151,36 @@
       </form>
     </div>
 
+    <!-- What the fleet saw this pilot do, drawn with the card above and
+         hidden with it. This is the half of acting on a report that the panel
+         could not do before: admin.md notes that an operator can act on a
+         report and not notice one, and until the pilot log existed the acting
+         was on the reporter's word alone.
+
+         Read-only, and no controls in it. The log is a record of what
+         happened, and an operator who could revise it would be holding a
+         different kind of thing. -->
+    <div id="activity" hidden>
+      <h2 id="activity-head">Activity</h2>
+      <p id="activity-note" class="dim" role="status" aria-live="polite"></p>
+      <div class="scroller">
+        <table id="events">
+          <caption class="sr">What this pilot did, newest first</caption>
+          <thead><tr>
+            <th scope="col">at</th>
+            <th scope="col">what</th>
+            <th scope="col">detail</th>
+            <th scope="col">where</th>
+            <th scope="col">stay</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="events-empty" class="dim" hidden>Nothing recorded. The log keeps
+        ninety days, and a pilot who has not flown in that time has aged out
+        of it.</p>
+    </div>
+
     <h2 id="log-head">Log</h2>
     <div class="scroller">
       <table id="audit">

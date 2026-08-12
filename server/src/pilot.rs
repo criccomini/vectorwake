@@ -74,6 +74,12 @@ pub const JOIN: &str = "join";
 /// Refused at the door. `detail`: the deny code and the sentence sent with it.
 /// The one event here that can be written for somebody who never got in, which
 /// is exactly why it is worth writing.
+///
+/// Carries the account wherever the door got far enough to know it, which is
+/// every refusal after the token is read. Three happen before that and can only
+/// record the name the client claimed. The distinction is the difference
+/// between a refusal that shows up in the pilot it happened to and one that
+/// shows up nowhere.
 pub const DENIED: &str = "denied";
 /// Arrived to watch rather than to fly.
 pub const WATCH: &str = "watch";

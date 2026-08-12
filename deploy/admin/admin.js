@@ -18,6 +18,11 @@ const login = el("login"), panel = el("panel");
 let secret = localStorage.getItem(KEY) || "";
 // The pilot the lookup found, so the ban button knows its target and sense.
 let shown = null;
+// Which pilot the activity table is drawn for, so looking the same one up
+// again after a rename or a ban keeps the stay an operator was reading, and
+// which stay that is. Null means their whole history.
+let shownWas = null;
+let stay = null;
 
 async function post(path, body) {
   let r;
@@ -146,6 +151,9 @@ function eject(why) {
   if (ticking) { clearInterval(ticking); ticking = null; }
   el("pilot").hidden = true;
   el("pilot-edit").hidden = true;
+  el("activity").hidden = true;
+  shownWas = null;
+  stay = null;
   tell("login-note", why || "");
   show(login);
 }
@@ -544,6 +552,144 @@ async function drawBans() {
   el("bans").hidden = rows.length === 0;
 }
 
+// ---------------------------------------------------------------- activity
+
+// The pilot log, under the card. Either the whole of one pilot's history or
+// one stay out of it, which is what `stay` holds.
+//
+// A room's tick is a hundred a second, so ticks are what the arena counts in
+// and seconds are what an operator reads in.
+const TICKS_PER_SEC = 100;
+
+function heldFor(ticks) {
+  const s = Math.round((ticks || 0) / TICKS_PER_SEC);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+// One event as a sentence. The row is the point of this table, so the detail
+// column is written out rather than shown as the JSON it arrives as: an
+// operator reading a report should not have to know the wire to use the page.
+//
+// An unknown kind falls through to its raw detail rather than to nothing. The
+// arena can learn a new event before this file does, and a row that says
+// something unfamiliar beats a row that says nothing.
+function describe(e) {
+  const d = e.detail || {};
+  switch (e.kind) {
+    case "join":
+      return `hull ${d.class}, slot ${d.ship}, side ${d.team}, over ${d.transport}`;
+    case "denied": {
+      // The sentence the pilot was actually sent, which is the thing they are
+      // quoting when they report it. The claimed name rides along only when
+      // it disagrees with the account's, since two names on one refusal is
+      // worth seeing and one repeated is noise.
+      const why = d.why || "refused";
+      return d.claimed && d.claimed !== e.name ? `${why} (claimed ${d.claimed})` : why;
+    }
+    case "watch":
+      return d.any ? `side ${d.team}, staff sight` : `side ${d.team}`;
+    case "ship":
+      return `hull ${d.from} to ${d.to}`;
+    case "team":
+      return `side ${d.from} to ${d.to}${d.public ? "" : ", private"}`;
+    case "found":
+      return `${d.name || "a side"} (side ${d.team})`;
+    case "invite":
+      return `slot ${d.to}`;
+    case "sit_out":
+      return d.why === "safe" ? "moved by the safe-zone sweep" : "asked to sit out";
+    case "fly":
+      return `hull ${d.class}, slot ${d.ship}, side ${d.team}`;
+    case "on_air":
+      return `slot ${d.ship} watched`;
+    case "leave":
+      return `${d.why}, held ${heldFor(d.held)}` +
+        (d.quit_loss ? ", settled as a quit" : "");
+    case "account":
+      return `dealt ${d.name}`;
+    case "claim":
+      return "password set";
+    case "login":
+      return "signed in on a new device";
+    case "rename":
+      return `${d.from ? `${d.from} to ` : ""}${d.to}, by ${d.by === "self" ? "self" : `#${d.by}`}`;
+    case "ban":
+      return `by #${d.by}${d.reason ? `: ${d.reason}` : ""}`;
+    case "unban":
+      return `by #${d.by}`;
+    case "grant":
+    case "revoke":
+      return `by #${d.by}`;
+    default:
+      return Object.keys(d).length ? JSON.stringify(d) : "";
+  }
+}
+
+// Refusals and quits are the two an operator is scanning for, so they carry
+// the color the rest of the page gives to something wrong.
+const NOTABLE = (e) =>
+  e.kind === "denied" || e.kind === "ban" || (e.kind === "leave" && e.detail?.quit_loss);
+
+async function drawEvents() {
+  const box = el("activity");
+  if (!shown) { box.hidden = true; return; }
+  box.hidden = false;
+  const body = stay ? { secret, session: stay } : { secret, account: shown.account };
+  let r;
+  try {
+    r = await post("/v1/admin/events", body);
+  } catch (e) {
+    // Same deploy race the pilot list handles: these files ship from the
+    // checkout in a minute and the binary ships once CI has built it, so a
+    // route this page knows can be one the meta-layer has not learned.
+    tell("activity-note", /no such route/i.test(e.message)
+      ? "this needs a newer meta-layer than the one running; it will fill in once the deploy lands"
+      : e.message);
+    fill("events", []);
+    el("events-empty").hidden = true;
+    return;
+  }
+  const list = r.events || [];
+  fill("events", list.map((v) => {
+    // The stay opens on its own. A pilot's history runs across several and
+    // reading one out of the middle is most of what a report needs.
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "link pick";
+    pick.textContent = v.session ? v.session.slice(0, 8) : "";
+    if (v.session) pick.addEventListener("click", () => { stay = v.session; drawEvents(); });
+    return [
+      v.at,
+      [v.kind, NOTABLE(v) ? "bad" : ""],
+      [describe(v), "wrap"],
+      // An account event happened with no arena involved, and a dash there
+      // would read as a room whose name went missing.
+      v.zone ? `${v.zone}${v.room === null ? "" : ` r${v.room}`} ${v.instance}` : "",
+      v.session ? pick : "",
+    ];
+  }));
+  el("events-empty").hidden = list.length > 0 || Boolean(stay);
+  el("events").hidden = list.length === 0;
+
+  const note = el("activity-note");
+  note.textContent = "";
+  if (stay) {
+    note.append(`one stay, ${list.length} event${list.length === 1 ? "" : "s"}. `);
+    const all = document.createElement("button");
+    all.type = "button";
+    all.className = "link";
+    all.textContent = "show the whole history";
+    all.addEventListener("click", () => { stay = null; drawEvents(); });
+    note.append(all);
+  } else if (r.capped) {
+    note.textContent = "the most recent 200; open a stay to read one of them in full";
+  } else if (list.length) {
+    note.textContent = `${list.length} event${list.length === 1 ? "" : "s"}, newest first`;
+  }
+}
+
 // ------------------------------------------------------------------- pilot
 
 function drawPilot(p) {
@@ -593,7 +739,14 @@ function drawPilot(p) {
   flag.hidden = !grantable;
   flag.textContent = p.admin ? "revoke admin" : "make admin";
   flag.className = p.admin ? "ban" : "";
+
+  // A different pilot starts on their whole history rather than inheriting
+  // whichever stay the last one was opened to.
+  if (!shownWas || shownWas !== p.account) stay = null;
+  shownWas = p.account;
+  drawEvents().catch(() => {});
 }
+
 
 // ------------------------------------------------------------------ pilots
 
@@ -667,7 +820,10 @@ async function lookup(q) {
   } catch (e) {
     el("pilot").hidden = true;
     el("pilot-edit").hidden = true;
+    el("activity").hidden = true;
     shown = null;
+    shownWas = null;
+    stay = null;
     tell(note.id, e.message);
   }
 }
