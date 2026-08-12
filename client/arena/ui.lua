@@ -2749,16 +2749,15 @@ end
 -- does. What a key does is the view's to say now, since it is a pilot's to
 -- change; this is the shape of a keyboard, which is not.
 local BOARD = {
-    {{"esc", 1.3}, {"~", 1}, {"1"}, {"2"}, {"3"}, {"4"},
-     {"5"}, {"6"}, {"7"}, {"8"}, {"9"}, {"0"}},
-    {{"tab", 1.7}, {"Q", 1}, {"W", 1}, {"E"},
-     {"R"}, {"T"}, {"Y"}, {"U"}, {"I"}, {"O"}, {"P", 1}},
-    {{"caps", 2.0}, {"A", 1}, {"S", 1}, {"D", 1},
-     {"F"},
-     {"G"}, {"H", 1}, {"J"}, {"K"}, {"L"}},
-    {{"shift", 2.25}, {"Z"}, {"X"}, {"C"}, {"V"},
-     {"B"}, {"N"}, {"M", 1}},
-    {{"ctrl", 1.6}, {"space", 6.2}},
+    {{"esc", 1.0}, {"~"}, {"1"}, {"2"}, {"3"}, {"4"}, {"5"}, {"6"}, {"7"},
+     {"8"}, {"9"}, {"0"}, {"-"}, {"="}, {"bksp", 1.0}},
+    {{"tab", 1.5}, {"Q"}, {"W"}, {"E"}, {"R"}, {"T"}, {"Y"}, {"U"}, {"I"},
+     {"O"}, {"P"}, {"["}, {"]"}, {"\\", 1.5}},
+    {{"caps", 1.75}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H"}, {"J"}, {"K"},
+     {"L"}, {";"}, {"'"}, {"enter", 2.25}},
+    {{"shift", 2.25}, {"Z"}, {"X"}, {"C"}, {"V"}, {"B"}, {"N"}, {"M"},
+     {","}, {"."}, {"/"}, {"shift", 2.75}},
+    {{"ctrl", 1.6}, {"space", 13.4}},
 }
 
 -- Which row of the page sits on which key of the picture, built once per draw.
@@ -2776,9 +2775,13 @@ local function bind_map(v)
     end
     return out
 end
--- The board is 12.4 units across, and the arrow cluster hangs off its right
--- edge over the two bottom rows, where the letter rows have already ended.
-local BOARD_UNITS = 12.4
+-- Fifteen units of main block, then the arrow cluster beside it, where it is
+-- on the keyboard this is a picture of. It used to hang off the right of the
+-- two bottom rows, in the space a board that stopped at M left empty; the
+-- board runs to the punctuation now and that space is a row of keys.
+local BOARD_MAIN = 15
+local BOARD_GAP = 0.4
+local BOARD_UNITS = BOARD_MAIN + BOARD_GAP + 3
 -- How wide the page that draws it may go, against the 460 every other page
 -- takes. A menu of six words does not want the room; a picture of a keyboard
 -- does, and on a desktop window there is a thousand points of it going spare.
@@ -2904,6 +2907,13 @@ local function board(x, top, w, v)
             bracket(bx - 3 * S, cy - 3 * S, kw + 6 * S, kh + 6 * S,
                     pal.a(pal.INK, arming and 0.95 or 0.7), 9 * S, 3 * S)
         end
+        -- And the key itself is the control. A picture of a keyboard with a
+        -- list of keys under it, where only the list answers a click, is a
+        -- diagram somebody has to be told is not the thing.
+        local k = keyset.by_label[label]
+        if k and keyset.bindable(k.id) then
+            hit(bx, cy, kw, kh, "key", k.id)
+        end
     end
     for r, row in ipairs(BOARD) do
         local bx = x
@@ -2917,8 +2927,8 @@ local function board(x, top, w, v)
     -- The arrows, as the inverted T they are on the board: up over down, in
     -- the corner the two bottom rows leave empty. Each entry is a column, a
     -- row off the shift row, and the direction its triangle points.
-    local aw = unit * 0.92
-    local ax = x + w - 3 * aw
+    local aw = unit
+    local ax = x + (BOARD_MAIN + BOARD_GAP) * unit
     for _, d in ipairs({{1, 0, 0, -1, "up"}, {0, 1, -1, 0, "left"},
                         {1, 1, 0, 1, "down"}, {2, 1, 1, 0, "right"}}) do
         local kx = ax + d[1] * aw
@@ -2942,6 +2952,7 @@ local function board(x, top, w, v)
             bracket(kx - 3 * S, cy - 3 * S, kw + 6 * S, kh + 6 * S,
                     pal.a(pal.INK, arming and 0.95 or 0.7), 9 * S, 3 * S)
         end
+        hit(kx, cy, kw, kh, "key", d[5])
     end
 
     return 5 * pitch + 2 * S

@@ -39,8 +39,8 @@ local hash_fn = _G.hash or function(s) return s end
 local function rebuild()
     routed = {}
     for id, key in pairs(M.key_of) do
-        local k = keys.by_id[key]
-        if k and k.action then routed[hash_fn(k.action)] = hash_fn(id) end
+        local k = keys.bindable(key) and keys.by_id[key]
+        if k then routed[hash_fn(k.action)] = hash_fn(id) end
     end
 end
 
@@ -82,8 +82,11 @@ end
 -- are answered false rather than silently, since the page draws the refusal.
 function M.set(id, key)
     if M.fixed(id) then return nil, false end
-    local k = keys.by_id[key]
-    if not k or not k.action then return nil, false end
+    -- Bindable, which is not the same as known: the board draws escape, caps,
+    -- enter, backspace and ctrl, and this file can write any of their names in
+    -- a list. None of them has a trigger for a press to arrive under, so a
+    -- control put on one would be a control on a key that never reports.
+    if not keys.bindable(key) then return nil, false end
     local was = M.key_of[id]
     if was == key then return nil, false end
     local other = M.control_of[key]

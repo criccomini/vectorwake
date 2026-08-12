@@ -827,6 +827,88 @@ menu.click_rail(help_at)
 check("every stop is reachable", menu.stack[2] == "controls",
       table.concat(menu.stack, "/"))
 
+-- --- a key on the drawn board is a control, not a diagram ------------------
+--
+-- The page draws a keyboard and lists the controls under it, and for a while
+-- only the list answered a press: you could point at the key a control was on
+-- and nothing happened, which is a picture somebody has to be told is not the
+-- thing. A click on a key goes to whichever control is asking, and to the one
+-- under the cursor when none is.
+
+do
+    local binds = require("arena.binds")
+    local keyset = require("arena.keys")
+    binds.reset()
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.click_rail(top_index("controls"))
+
+    -- The cursor on `map`, and a key nothing is using.
+    local rows = menu.view().rows
+    local map_at = nil
+    for i, r in ipairs(rows) do
+        if r.control == "map" then map_at = i end
+    end
+    check("the controls page lists the map key", map_at ~= nil)
+    menu.sel[menu.at()] = map_at
+    local _, moved = menu.click_key("z")
+    check("clicking a free key moves the control under the cursor",
+          moved and binds.key_of.map == "z", tostring(binds.key_of.map))
+    check("and the page says so", (menu.foot or ""):find("map is on Z") ~= nil,
+          tostring(menu.foot))
+
+    -- A key somebody else is on: the two trade, and nothing is left over.
+    local _, traded = menu.click_key("space")
+    check("clicking a taken key trades", traded
+          and binds.key_of.map == "space" and binds.key_of.guns == "z",
+          tostring(binds.key_of.map) .. " / " .. tostring(binds.key_of.guns))
+
+    -- The menu key is nobody's to move, and the page says why rather than
+    -- doing nothing. It is the one refusal a pointer can reach: the board
+    -- publishes no box for escape, so the other half of the pair cannot be
+    -- clicked at all.
+    local menu_at = nil
+    for i, r in ipairs(rows) do
+        if r.control == "menu" then menu_at = i end
+    end
+    menu.sel[menu.at()] = menu_at
+    menu.foot = nil
+    menu.click_key("j")
+    check("the menu control refuses a key and says why",
+          binds.key_of.menu == "esc"
+          and (menu.foot or ""):find("escape") ~= nil,
+          tostring(menu.foot))
+    check("and escape is not a key the board offers",
+          not keyset.bindable("esc"))
+
+    -- The row that resets everything is not a control, so a key has nothing
+    -- to land on and the page says which half of the gesture is missing.
+    menu.sel[menu.at()] = #rows
+    menu.foot = nil
+    menu.click_key("j")
+    check("a key clicked with no control under the cursor binds nothing",
+          binds.control_of.j == nil
+          and (menu.foot or ""):find("pick a control") ~= nil,
+          tostring(menu.foot))
+
+    -- And while a control is asking, the click answers that rather than the
+    -- cursor, which are the same row in the game and need not be here.
+    menu.sel[menu.at()] = map_at
+    menu.arming = "bombs"
+    local _, armed = menu.click_key("k")
+    check("a click answers whichever control is asking",
+          armed and binds.key_of.bombs == "k" and menu.arming == nil,
+          tostring(binds.key_of.bombs))
+
+    -- Every key the picture draws is one the catalog will take. The board
+    -- publishes a box per key and this is the other end of that promise.
+    check("and the board only offers keys that bind",
+          keyset.bindable("backslash") and keyset.bindable("slash")
+          and not keyset.bindable("caps") and not keyset.bindable("enter"))
+    binds.reset()
+    menu.foot = nil
+end
+
 -- --- the discord stop leaves, rather than going somewhere in here ----------
 --
 -- Every other stop on the rail pushes a page onto the stack. This one hands a

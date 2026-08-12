@@ -11,10 +11,6 @@ key_trigger {
   action: "backspace"
 }
 key_trigger {
-  input: KEY_SLASH
-  action: "help"
-}
-key_trigger {
   input: KEY_LCTRL
   action: "guns_ctrl"
 }
@@ -71,6 +67,14 @@ key_trigger {
   action: "k_0"
 }
 key_trigger {
+  input: KEY_MINUS
+  action: "k_minus"
+}
+key_trigger {
+  input: KEY_EQUALS
+  action: "k_equals"
+}
+key_trigger {
   input: KEY_TAB
   action: "k_tab"
 }
@@ -115,6 +119,18 @@ key_trigger {
   action: "k_p"
 }
 key_trigger {
+  input: KEY_LBRACKET
+  action: "k_lbracket"
+}
+key_trigger {
+  input: KEY_RBRACKET
+  action: "k_rbracket"
+}
+key_trigger {
+  input: KEY_BACKSLASH
+  action: "k_backslash"
+}
+key_trigger {
   input: KEY_A
   action: "k_a"
 }
@@ -151,6 +167,14 @@ key_trigger {
   action: "k_l"
 }
 key_trigger {
+  input: KEY_SEMICOLON
+  action: "k_semicolon"
+}
+key_trigger {
+  input: KEY_QUOTE
+  action: "k_quote"
+}
+key_trigger {
   input: KEY_LSHIFT
   action: "k_shift"
 }
@@ -185,6 +209,18 @@ key_trigger {
 key_trigger {
   input: KEY_M
   action: "k_m"
+}
+key_trigger {
+  input: KEY_COMMA
+  action: "k_comma"
+}
+key_trigger {
+  input: KEY_PERIOD
+  action: "k_period"
+}
+key_trigger {
+  input: KEY_SLASH
+  action: "k_slash"
 }
 key_trigger {
   input: KEY_SPACE

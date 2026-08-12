@@ -829,43 +829,50 @@ local function view_row(r, i)
     }
 end
 
--- A key arrived while a control was asking for one. Returns whether anything
--- moved, which is what the arena sounds.
+local function control_name(id)
+    for _, c in ipairs(binds.rows()) do
+        if c.id == id then return c.name end
+    end
+    return nil
+end
+
+-- Put `id` on `key`, and say what happened. Returns whether anything moved,
+-- which is what the arena sounds.
 --
 -- A key already spoken for trades: the two controls swap, and the line at the
 -- foot says so, because a pilot who put `map` on W and found their burst had
 -- gone somewhere would otherwise have to hunt for it. Nothing is ever left
 -- without a key, which is the property that makes this safe to do with no
 -- confirmation on it at all.
-function M.bind_key(key)
-    local id = M.arming
-    if not id then return false end
+local function bind_to(id, key)
     M.arming = nil
     local moved, ok = binds.set(id, key)
     if not ok then
-        -- The one refusal worth a sentence: a key that is on the board and is
-        -- not ours to give away. Everything else that lands here is a press
-        -- that changed nothing, and saying "that is already where it is" to
-        -- somebody who just pressed the key it is on is noise.
-        M.foot = nil
+        -- The one refusal worth a sentence: a control that is not ours to
+        -- move. Everything else that lands here is a press that changed
+        -- nothing, and saying "that is already where it is" to somebody who
+        -- pressed the key it is already on is noise.
+        M.foot = binds.fixed(id)
+            and "escape is how you leave this page; it stays where it is"
+            or nil
         return true
     end
     M.save_identity()
-    local name = nil
-    for _, c in ipairs(binds.rows()) do
-        if c.id == id then name = c.name end
-    end
+    local name = control_name(id)
     if moved then
-        local other = nil
-        for _, c in ipairs(binds.rows()) do
-            if c.id == moved then other = c end
-        end
         M.foot = string.format("%s is on %s; %s took the key it left",
-                               name, keyset.show(key), other and other.name or "")
+                               name, keyset.show(key),
+                               control_name(moved) or "")
     else
         M.foot = string.format("%s is on %s", name, keyset.show(key))
     end
     return true
+end
+
+-- A key arrived while a control was asking for one.
+function M.bind_key(key)
+    if not M.arming then return false end
+    return bind_to(M.arming, key)
 end
 
 -- Escape, while a control is asking. It goes back to where it was, which is
@@ -1740,6 +1747,29 @@ function M.click(index)
     if not M.open then return nil, false end
     M.sel[M.stack[#M.stack]] = index
     return activate(), true
+end
+
+-- A key on the drawn board was clicked. It goes to whichever control is
+-- asking, and to the one under the cursor when none is: the picture is the
+-- same list as the chips, so pointing at a key is the other half of the
+-- gesture that pointing at a chip started.
+--
+-- No arming step in that second case, on purpose. Arming exists because a
+-- keyboard has to be told which of its own presses is an answer rather than a
+-- control; a click carries the key it means, so there is nothing to be told.
+function M.click_key(key)
+    if not M.open then return nil, false end
+    local id = M.arming
+    if not id then
+        local rows = rows_of(node())
+        local r = rows[row_index(rows)]
+        id = r and r.control
+    end
+    if not id then
+        M.foot = "pick a control first, then a key to put it on"
+        return nil, true
+    end
+    return nil, bind_to(id, key)
 end
 
 -- The x on the panel. It shuts the menu rather than stepping back a level,

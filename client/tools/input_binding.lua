@@ -25,9 +25,6 @@ end
 trigger("key", "KEY_ESC", "menu")
 trigger("key", "KEY_ENTER", "select")
 trigger("key", "KEY_BACKSPACE", "backspace")
--- The one key that opens the controls table without being the one bound to
--- it, so a keyboard nobody can read their way around still has a way in.
-trigger("key", "KEY_SLASH", "help")
 -- Continuum's own gun key, honored only under the keyboard lock. Not
 -- bindable: the browser keeps it unless the page is fullscreen, and a control
 -- on a key that arrives half the time is worse than one on no key at all.

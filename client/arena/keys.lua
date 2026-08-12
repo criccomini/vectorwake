@@ -13,16 +13,13 @@
 -- whole of what makes rebinding possible: `arena.script` looks up what the key
 -- is for and latches the press under that instead. See arena/binds.lua.
 --
--- Three keys the board draws are missing on purpose. Escape is how you leave
--- anything here, so binding a control to it would be handing away the way out.
--- Caps does nothing anywhere. Ctrl is the original's gun key and stays wired
--- to guns alone, because the browser only surrenders it in fullscreen: a
--- control bound to a key that arrives half the time is worse than one bound to
--- nothing, and the board already draws it at half light for the same reason.
---
--- Enter, backspace and the slash are off the list too, and for a different
--- reason: they work the menu and the controls table, and those have to keep
--- working whatever a pilot has done to the rest of the keyboard.
+-- Five keys the board draws are in `fixed` rather than here, and every one of
+-- them is a key something else on the page is reached by. Escape leaves any
+-- card, page or table; enter chooses; backspace rubs out. Caps does nothing
+-- anywhere. Ctrl is the original's gun key and stays wired to guns alone,
+-- because the browser only surrenders it in fullscreen: a control on a key
+-- that arrives half the time is worse than one on no key at all, which is why
+-- the board draws it at half light.
 
 local M = {}
 
@@ -41,6 +38,8 @@ M.list = {
     K("5", "5", "5", "KEY_5"), K("6", "6", "6", "KEY_6"),
     K("7", "7", "7", "KEY_7"), K("8", "8", "8", "KEY_8"),
     K("9", "9", "9", "KEY_9"), K("0", "0", "0", "KEY_0"),
+    K("minus", "-", "-", "KEY_MINUS"),
+    K("equals", "=", "=", "KEY_EQUALS"),
 
     K("tab", "tab", "Tab", "KEY_TAB"),
     K("q", "Q", "Q", "KEY_Q"), K("w", "W", "W", "KEY_W"),
@@ -48,12 +47,17 @@ M.list = {
     K("t", "T", "T", "KEY_T"), K("y", "Y", "Y", "KEY_Y"),
     K("u", "U", "U", "KEY_U"), K("i", "I", "I", "KEY_I"),
     K("o", "O", "O", "KEY_O"), K("p", "P", "P", "KEY_P"),
+    K("lbracket", "[", "[", "KEY_LBRACKET"),
+    K("rbracket", "]", "]", "KEY_RBRACKET"),
+    K("backslash", "\\", "\\", "KEY_BACKSLASH"),
 
     K("a", "A", "A", "KEY_A"), K("s", "S", "S", "KEY_S"),
     K("d", "D", "D", "KEY_D"), K("f", "F", "F", "KEY_F"),
     K("g", "G", "G", "KEY_G"), K("h", "H", "H", "KEY_H"),
     K("j", "J", "J", "KEY_J"), K("k", "K", "K", "KEY_K"),
     K("l", "L", "L", "KEY_L"),
+    K("semicolon", ";", ";", "KEY_SEMICOLON"),
+    K("quote", "'", "'", "KEY_QUOTE"),
 
     -- Either shift, one control. The chord that lays a mine is held with the
     -- hand that is not on the bomb key, and which hand that is depends on
@@ -63,6 +67,9 @@ M.list = {
     K("c", "C", "C", "KEY_C"), K("v", "V", "V", "KEY_V"),
     K("b", "B", "B", "KEY_B"), K("n", "N", "N", "KEY_N"),
     K("m", "M", "M", "KEY_M"),
+    K("comma", ",", ",", "KEY_COMMA"),
+    K("period", ".", ".", "KEY_PERIOD"),
+    K("slash", "/", "/", "KEY_SLASH"),
 
     K("space", "space", "Space", "KEY_SPACE"),
 
@@ -76,11 +83,19 @@ M.list = {
 
 -- Drawn on the board, named in a list, and never bound to anything. They are
 -- here so the rest of the client can ask what to write on them without a
--- second table of key names, and out of `M.list` so nothing offers them.
+-- second table of key names, and out of `M.list` so nothing offers them. No
+-- `action`, because there is no trigger for one to arrive under: a control put
+-- on one of these would be a control on a press that never comes.
+local function F(id, label, show)
+    return {id = id, label = label, show = show}
+end
+
 M.fixed = {
-    K("esc", "esc", "Esc", "KEY_ESC"),
-    K("caps", "caps", "Caps", nil),
-    K("ctrl", "ctrl", "Ctrl", "KEY_LCTRL", "KEY_RCTRL"),
+    F("esc", "esc", "Esc"),
+    F("bksp", "bksp", "Backspace"),
+    F("caps", "caps", "Caps"),
+    F("enter", "enter", "Enter"),
+    F("ctrl", "ctrl", "Ctrl"),
 }
 
 M.by_id = {}
@@ -96,6 +111,19 @@ end
 
 -- The four the arrow cluster draws, in the order it draws them.
 M.ARROWS = {"up", "left", "down", "right"}
+
+-- Whether anything may be put on this key. Membership of `list` and nothing
+-- else: `fixed` carries the same shape so the page can write a word on those
+-- keys, and asking for an `action` would be asking the wrong question the day
+-- one of them grows a trigger for some other reason.
+function M.bindable(id)
+    local k = M.by_id[id]
+    if not k then return false end
+    for _, b in ipairs(M.list) do
+        if b == k then return true end
+    end
+    return false
+end
 
 function M.show(id)
     local k = M.by_id[id]

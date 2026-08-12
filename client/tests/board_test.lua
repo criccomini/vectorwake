@@ -240,6 +240,29 @@ do
           table.concat(unseen, ", "))
 end
 
+-- And every one of them is pressable. The picture is a control surface, not a
+-- diagram: a key you can point at and cannot click is the thing this page
+-- spent a version being.
+do
+    local keys = require("arena.keys")
+    draw_at(1280, 800)
+    local offered = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "key" then offered[r.value] = true end
+    end
+    local silent, stray = {}, {}
+    for _, k in ipairs(keys.list) do
+        if not offered[k.id] then silent[#silent + 1] = k.id end
+    end
+    for id in pairs(offered) do
+        if not keys.bindable(id) then stray[#stray + 1] = id end
+    end
+    check("every bindable key answers a press", #silent == 0,
+          table.concat(silent, ", "))
+    check("and no key that cannot be bound offers to be", #stray == 0,
+          table.concat(stray, ", "))
+end
+
 -- Arming takes the light off the board. Every key but the one that is asking
 -- drops to the outline an unbound key wears, which is what says the whole
 -- keyboard is an answer.

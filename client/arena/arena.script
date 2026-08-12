@@ -2503,6 +2503,11 @@ function on_input(self, action_id, action)
                 local act, moved
                 if r.action == "stage" then
                     act, moved = menu.click_stage(r.value)
+                elseif r.action == "key" then
+                    -- A key on the drawn board. The picture is the same list
+                    -- as the chips under it, so it answers a press the same
+                    -- way one of them does.
+                    act, moved = menu.click_key(r.value)
                 elseif r.action == "rail" then
                     act, moved = menu.click_rail(r.value)
                 elseif r.action == "close" then
