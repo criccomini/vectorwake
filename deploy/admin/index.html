@@ -160,8 +160,15 @@
          Read-only, and no controls in it. The log is a record of what
          happened, and an operator who could revise it would be holding a
          different kind of thing. -->
+    <!-- The heading stays put whether or not a pilot is picked, the way Log
+         and Bans do. It used to live inside the block below and vanish with
+         it, which meant an operator reading down the page saw Fleet, Pilot,
+         Log, Bans, Admins and no sign this existed at all. A section nobody
+         can see is a section nobody uses. -->
+    <h2 id="activity-head">Activity</h2>
+    <p id="activity-none" class="dim">Pick a pilot above to see what the fleet
+      saw them do.</p>
     <div id="activity" hidden>
-      <h2 id="activity-head">Activity</h2>
       <p id="activity-note" class="dim" role="status" aria-live="polite"></p>
       <div class="scroller">
         <table id="events">

@@ -200,6 +200,12 @@ and a button that repeats them invites somebody to wonder what it does
 differently. Picking a row opens that pilot's card, and under the card is what
 the fleet saw them do.
 
+That heading is up whether or not anybody is picked, the way Log and Bans are,
+and says to pick a pilot when nothing is. It lived inside the block it labels
+for one afternoon, which meant the section did not exist until you had already
+found it: an operator reading down the page saw Fleet, Pilot, Log, Bans,
+Admins, and nothing to suggest the log was there at all.
+
 That last part is the half of acting on a report the panel could not do. An
 operator with a complaint in front of them had the reporter's word and a kick,
 and no way to check one against anything. Now the card carries the pilot's

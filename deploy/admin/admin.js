@@ -152,6 +152,7 @@ function eject(why) {
   el("pilot").hidden = true;
   el("pilot-edit").hidden = true;
   el("activity").hidden = true;
+  el("activity-none").hidden = false;
   shownWas = null;
   stay = null;
   tell("login-note", why || "");
@@ -634,6 +635,9 @@ const NOTABLE = (e) =>
 
 async function drawEvents() {
   const box = el("activity");
+  // The prompt and the table are the two halves of one section, so exactly
+  // one of them is up at any time.
+  el("activity-none").hidden = Boolean(shown);
   if (!shown) { box.hidden = true; return; }
   box.hidden = false;
   const body = stay ? { secret, session: stay } : { secret, account: shown.account };
@@ -821,6 +825,7 @@ async function lookup(q) {
     el("pilot").hidden = true;
     el("pilot-edit").hidden = true;
     el("activity").hidden = true;
+    el("activity-none").hidden = false;
     shown = null;
     shownWas = null;
     stay = null;
