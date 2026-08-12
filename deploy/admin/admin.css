@@ -137,8 +137,8 @@ h1 {
   margin: 0;
 }
 
-/* The hull sits on the baseline of the words rather than above them. */
-.mark { flex: none; color: var(--friend); }
+/* The mark sits on the baseline of the words rather than above them. */
+.mark { flex: none; }
 
 /* ------------------------------------------------------------------- rail */
 

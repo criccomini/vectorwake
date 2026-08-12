@@ -58,13 +58,9 @@ server's configuration gets reviewed in git like everything else here.
 
 The icon is the client's own mark, cut for a round tile by
 `deploy/discord/icon.py` out of `client/web/icon.svg` rather than redrawn.
-Two things change on the way, and both are the reasons the tab and the home
-screen already differ from each other: full bleed, because Discord masks an
-icon to a circle and would read the file's chamfer as a bite out of the rim,
-and stood on its middle vertical, because three wedges are nearly twice as
-wide as they are tall and centring the box they fill leaves the standing
-strokes visibly right of center. It keeps the mark's own hairline, since
-nothing here asks for it at sixteen pixels.
+The cut is full bleed because Discord masks the icon to a circle and would read
+the file's chamfer as a bite out of the rim. It keeps the ordinary line weight
+used by the installed app icon. The heavier cut is only for browser tabs.
 
 ## The door
 

@@ -696,58 +696,31 @@ flying, on a build that takes six minutes to publish.
 
 ## The mark
 
-Six strokes, `\|\|\|`, read as the V of vector and the W of wake. Each wedge
-is a diagonal falling into a vertical and meeting it on the baseline; the first
-is the V, in the color the interface gives the other side, and the second and
-third together are the W, in yours. One gap throughout, so nothing marks where
-one letter stops and the next starts and the run reads as one gesture: you get
-the letters out of it the way you get them out of the name.
+Two aligned rows of `\|\|\|` make the mark. Each wedge is a diagonal falling
+into a vertical. The rows share the same three x positions, with a narrow gap
+between them. Orange starts the upper row, cyan finishes the lower row, and the
+remaining wedges use the dark slate from the site.
 
-The diagonals are wakes, dark where they leave and full where they land, which
-is what a thing arriving looks like everywhere else in this game. The verticals
-stand. Every one of the six is the same hairline, so what changes along a wake
-is the light in it and not the line: drawn at two weights the wakes read as
-shadows cast by the verticals rather than as strokes of the same word. That is
-the whole vocabulary, and it is the same one the weapon marks are drawn in,
-which is the argument for it: a wordmark made of strokes belongs to an
-interface that has nothing else in it.
+The diagonals are wakes. They fade in where they leave and reach full color
+where they land. The verticals stand at one weight with the wakes. Drawing
+either part at a second weight makes the diagonal look like a shadow instead
+of half of the same stroke.
 
-What it replaced was two hulls passing on a course off vertical. That was a
-picture of the game; this is the name, which is what a wordmark is for.
+On the menu, a bullet draws each row. Both bullets use the same clock, so the
+two rows fall, bounce, rise, and hop together. The run restarts after the mark
+has not been drawn for a moment. Opening the menu therefore replays it without
+adding another piece of menu state.
 
-On the menu it draws itself. A bullet falls down the first diagonal, bounces
-off the baseline where the vertical stands, runs up it, hops to the next wedge
-and does it again, six strokes in about a second, and the mark is left standing
-when it finishes. Nothing tells it the menu opened: the run restarts whenever
-the mark has not been drawn for a moment, so every way into the menu replays it
-and nothing has to remember to ask.
+`client/web/icon.svg` is the ordinary cut used for installed app icons.
+`client/web/favicon.svg` is the heavier cut used in browser tabs. `ui.logo` in
+`arena/ui.lua` draws the ordinary cut into a mesh layer because the interface
+does not place bitmap art. The preboot canvas in `client/tools/single_file.py`
+draws the same finished mark while the engine loads.
 
-It exists twice, which is the risk worth knowing about. `client/web/icon.svg`
-is the source the page template carries as three data URIs, and `ui.logo` in
-`arena/ui.lua` draws the same six strokes beside the wordmark, because the
-interface has no way to put a picture on screen and would not want one.
-`lua5.1 client/tests/logo_test.lua` reads the shipped SVG's own coordinates and
-holds the Lua to them, so the two cannot drift apart without CI saying so. It
-also checks what makes the mark a word rather than a pattern, that each wake
-lands where its vertical stands and that the three wedges are evenly spaced,
-and it drives the animation to make sure it starts from nothing and finishes
-into the shape itself rather than into an approximation of it.
-
-The page carries two cuts of the mark: a hairline on the home screen and one
-at twice that line on the tab. Both are placed the same way, and the placement
-is the interesting part.
-
-Three wedges are one and three quarters as wide as they are tall. Dropped into
-a square tile and centered on the box they fill, they are a fringe across the
-middle sitting visibly right of center, because the wakes trail left of the
-verticals and weigh almost nothing while doing it. So both cuts stand on their
-middle vertical instead. That puts the three standing strokes evenly about the
-center line with the same margin outside each of the outer two, and runs the
-faded end of the first wake off the left edge, which costs nothing: a wake
-fades in from nothing over its first fifth and there is no ink there to lose.
-
-The tab's cut is heavier for the ordinary reason. At sixteen pixels the logo's
-hairline is a hairline, and a stroke that fine is under a pixel on a tab.
+`lua5.1 client/tests/logo_test.lua` reads the icon's coordinates and compares
+them with the Lua renderer. It checks the two aligned rows, their colors, their
+shared clock, and the embedded browser assets. That keeps the favicon, manifest
+icons, install icon, and in-game drawing tied to the two source SVG files.
 
 ## The repel nobody could see
 

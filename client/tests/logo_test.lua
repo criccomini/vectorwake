@@ -1,22 +1,14 @@
--- The mark, in the two places it exists.
+-- The mark, everywhere it exists.
 --
 --     lua5.1 client/tests/logo_test.lua
 --
--- It is drawn twice: as strokes into a mesh layer by `ui.logo`, and as a path
--- in `client/web/icon.svg`, which the page template carries as its home-screen
--- icon. Two drawings of one shape drift, and nothing on screen would say so.
--- So this reads the shipped SVG's own coordinates and holds the Lua to them.
+-- `ui.logo` draws it into a mesh layer. `client/web/icon.svg` supplies the
+-- installed app icons, and `client/web/favicon.svg` supplies the heavier tab
+-- cut. This reads the ordinary SVG's coordinates and holds the Lua to them.
+-- It also checks every copy embedded in the single-file deployment.
 --
--- The tab is deliberately not that shape, and the end of this file checks the
--- one thing that decision was made for.
---
--- It also checks the thing that makes the mark a word rather than a pattern:
--- six strokes in three wedges, each a diagonal landing on the baseline where a
--- vertical stands, one gap throughout so no space says where the V stops and
--- the W starts, and the V in one team's color with the W in the other's.
---
--- And it drives the animation, because the mark draws itself stroke by stroke
--- on the menu and a mark that never finishes is a mark nobody sees.
+-- The animation test matters too. Each row has a bullet, and both rows must use
+-- the same clock instead of drawing one after the other.
 --
 -- And it checks the lockup, which is the third place the mark appears and the
 -- one nothing was watching. The mark shipped a full em and a bit tall and
@@ -46,7 +38,7 @@ for _, n in ipairs({"arc", "flush", "frame", "quad", "rect", "reset", "ring",
                     "skirt", "tri", "tri_fade", "fan"}) do
     layer[n] = noop
 end
--- The bullet, which is the one thing on the mark that is not a stroke.
+-- Each animated row has a bullet, the only part that is not a stroke.
 local dots = {}
 layer.disc = function(_, x, y, r) dots[#dots + 1] = {x = x, y = y, r = r} end
 layer.halo = noop
@@ -57,6 +49,10 @@ end
 layer.seg_fade = function(_, x1, y1, x2, y2, w1, w2, a1, a2, col)
     segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2, w0 = w1,
                        w = w2, col = col, a = a2, kind = "fade"}
+end
+layer.seg_fade_flat = function(_, x1, y1, x2, y2, w, a1, a2, col)
+    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2, w0 = w,
+                       w = w, col = col, a = a2, kind = "fade"}
 end
 layer.outline = noop
 
@@ -74,18 +70,16 @@ package.loaded["arena.world"] = {build_overview = noop, forget_overview = noop,
 
 local ui = require("arena.ui")
 
--- The mark, drawn still at a size that leaves the stroke floor out of it, and
--- the size the icon is cut at: the mark is wider than it is tall, so this is
--- what stands it in a square tile with room on every side.
+-- At 350 px the two 168 px rows land on the icon's coordinates exactly.
 local pal = require("arena.palette")
-local MK = 264
+local MK = 350
 ui.begin(layer, W, H, 1, false, 0)
 ui.logo(W / 2, H / 2, MK, 1, true)
 ui.finish()
 
-check("the mark is six strokes", #segs == 6, "segments: " .. #segs)
+check("the mark is twelve strokes", #segs == 12, "segments: " .. #segs)
 
--- Three wedges: a diagonal and a vertical meeting on the baseline.
+-- Six wedges: a diagonal and a vertical meeting on each row's baseline.
 local function wedges()
     local out = {}
     for i = 1, #segs, 2 do
@@ -96,7 +90,7 @@ local function wedges()
     return out
 end
 local W3 = wedges()
-check("in three wedges", #W3 == 3, #W3 .. " wedges")
+check("in two rows of three wedges", #W3 == 6, #W3 .. " wedges")
 
 local worst_join, worst_vert = 0, 0
 for _, wg in ipairs(W3) do
@@ -107,7 +101,7 @@ for _, wg in ipairs(W3) do
     worst_vert = math.max(worst_vert, math.abs(wg.v.x1 - wg.v.x2))
     -- And the diagonal is a diagonal.
     check("the wake falls across as well as down",
-          math.abs(wg.d.x2 - wg.d.x1) > MK * 0.3,
+          math.abs(wg.d.x2 - wg.d.x1) > MK * 0.2,
           string.format("%.1f px across", math.abs(wg.d.x2 - wg.d.x1)))
 end
 check("each wake lands where its vertical stands", worst_join < 0.5,
@@ -115,16 +109,19 @@ check("each wake lands where its vertical stands", worst_join < 0.5,
 check("and the verticals are vertical", worst_vert < 0.01,
       string.format("%.2f px of lean", worst_vert))
 
--- One gap throughout. A word space between the V and the W would make the
--- mark two letters set beside each other; there isn't one, and the reader
--- gets V and W out of the run by reading it.
-local gaps = {}
-for i = 2, #W3 do
-    gaps[#gaps + 1] = W3[i].d.x1 - W3[i - 1].v.x1
+-- The rows share their x positions, and each has one gap throughout.
+local aligned, gap_ok = true, true
+for i = 1, 3 do
+    aligned = aligned and math.abs(W3[i].d.x1 - W3[i + 3].d.x1) < 0.5
+        and math.abs(W3[i].v.x1 - W3[i + 3].v.x1) < 0.5
 end
-check("the three wedges are evenly spaced",
-      #gaps == 2 and math.abs(gaps[1] - gaps[2]) < 0.5,
-      string.format("%.1f then %.1f", gaps[1] or -1, gaps[2] or -1))
+for row = 0, 1 do
+    local a, b, c = W3[row * 3 + 1], W3[row * 3 + 2], W3[row * 3 + 3]
+    local g1, g2 = b.d.x1 - a.v.x1, c.d.x1 - b.v.x1
+    gap_ok = gap_ok and math.abs(g1 - g2) < 0.5
+end
+check("the rows use the same three x positions", aligned)
+check("each row spaces its wedges evenly", gap_ok)
 
 -- One width across the whole mark, the wakes' two ends included. A wake drawn
 -- thinner than the vertical it lands on reads as a different kind of stroke,
@@ -138,15 +135,19 @@ end
 check("every stroke is the same width", thick - thin < 0.01,
       string.format("%.2f to %.2f px", thin, thick))
 
--- The V is the other side's color and the W is yours, which is the only
--- thing in the mark that says where one letter stops.
+-- Orange begins the top row, cyan finishes the bottom one, and dark slate
+-- carries the other wedges.
 local function hue(c) return c and string.format("%.3f,%.3f", c[1], c[2]) end
-check("the V wears one side and the W the other",
+check("the mark carries the approved row colors",
       hue(W3[1].d.col) == hue(pal.ENEMY)
-      and hue(W3[2].d.col) == hue(pal.FRIEND)
-      and hue(W3[3].d.col) == hue(pal.FRIEND),
-      table.concat({tostring(hue(W3[1].d.col)), tostring(hue(W3[2].d.col)),
-                    tostring(hue(W3[3].d.col))}, " "))
+      and hue(W3[2].d.col) == hue(pal.MARK_MUTED)
+      and hue(W3[3].d.col) == hue(pal.MARK_MUTED)
+      and hue(W3[4].d.col) == hue(pal.MARK_MUTED)
+      and hue(W3[5].d.col) == hue(pal.FRIEND)
+      and hue(W3[6].d.col) == hue(pal.FRIEND),
+      table.concat({hue(W3[1].d.col), hue(W3[2].d.col), hue(W3[3].d.col),
+                    hue(W3[4].d.col), hue(W3[5].d.col),
+                    hue(W3[6].d.col)}, " "))
 
 -- --- against the file the page actually carries ----------------------------
 
@@ -155,23 +156,24 @@ local f = assert(io.open("client/web/icon.svg", "r"),
 local svg = f:read("*a")
 f:close()
 
--- Every stroke the icon draws, as its two endpoints, in the order the file
--- lists them. The tile is the one path with no L in it.
+-- Every stroke the icon draws, as its two endpoints, in file order. The tile
+-- is the one path with no L in it.
 --
--- All six are strokes of one width. What tells a wake from a vertical in the
+-- All twelve are strokes of one width. What tells a wake from a vertical in the
 -- file is what paints it: a wake takes a gradient and a vertical takes a
 -- color. The tile takes neither, which is how it is left out.
 local want = {}
 for d, rest in svg:gmatch('<path d="(M[^"]-)"([^>]*)>') do
     local x1, y1, x2, y2 =
         d:match("^M([%-%d%.]+),([%-%d%.]+) L([%-%d%.]+),([%-%d%.]+)$")
-    local grad = rest:find("url%(#")
+    local grad = rest:find('stroke="url%(#')
     if x1 and (grad or rest:find('stroke="#')) then
         want[#want + 1] = {tonumber(x1), tonumber(y1), tonumber(x2),
                            tonumber(y2), fade = grad}
     end
 end
-check("the icon holds the same six strokes", #want == 6, "strokes: " .. #want)
+check("the icon holds the same twelve strokes", #want == 12,
+      "strokes: " .. #want)
 
 -- Drawn at the icon's own scale and center, so the two can be compared
 -- outright rather than through a transform this file would have to invent.
@@ -180,7 +182,7 @@ ui.begin(layer, 512, 512, 1, false, 0)
 ui.logo(256, 256, MK, 1, true)
 ui.finish()
 
--- And the same three of them fade. Which three is not a detail the shape
+-- And the same six of them fade. Which six is not a detail the shape
 -- survives losing: fade the verticals instead and the mark falls upward.
 local faded, drawn_fade = 0, 0
 for i = 1, math.min(#want, #segs) do
@@ -192,23 +194,18 @@ for i = 1, math.min(#want, #segs) do
     end
 end
 check("the icon fades the strokes the mark fades",
-      faded == 3 and drawn_fade == 3,
+      faded == 6 and drawn_fade == 6,
       faded .. " in the file, " .. drawn_fade .. " drawn")
 
 -- And the file draws them all at one width too.
 local widths = {}
 for wd in svg:gmatch('stroke%-width="([%d%.]+)"') do widths[#widths + 1] = wd end
-local same = #widths == 6
+local same = #widths == 12
 for _, wd in ipairs(widths) do same = same and wd == widths[1] end
 check("at one width in the file as well", same,
       table.concat(widths, " "))
 
--- Where it stands in the tile, which nothing above checks any more now that
--- the two drawings are compared on shape alone. Both ends matter and for
--- different reasons: the mark shipped once with its last vertical 12 px off
--- the right edge and read as having fallen against it, and biasing left far
--- enough to fix that will eventually run the first wake's thin end off the
--- left edge, which is a hard cut across a gradient.
+-- The ordinary mark is centered in its tile with enough room for the stroke.
 local sw = tonumber(widths[1]) or 0
 local lo, hi = math.huge, -math.huge
 for _, a in ipairs(want) do
@@ -219,18 +216,15 @@ end
 local pad_l, pad_r = lo - sw * 0.447, 512 - (hi + sw * 0.5)
 check("the mark clears both edges of the tile", pad_l > 2 and pad_r > 2,
       string.format("%.1f left, %.1f right", pad_l, pad_r))
-check("and sits left of center in it, where its weight is not",
-      pad_r > pad_l * 3 and pad_r < pad_l * 25,
+check("and is centered in it",
+      math.abs(pad_l - pad_r) < 1,
       string.format("%.1f left, %.1f right", pad_l, pad_r))
 
 -- The file reckons y downward, as SVG does. What the layer is handed has been
 -- flipped into the layer's own upward y, so one of the two has to come back.
 --
--- Compared after each is moved to its own origin, because the two are the same
--- shape in two different places and only the shape is shared. The icon stands
--- in a square tile and is biased left inside it, since the wakes arrive out of
--- nothing and the drawing weighs to the right of the box it fills. The
--- wordmark stands next to a word and is placed against that instead.
+-- Compared after each is moved to its own origin, because only the shape is
+-- shared when the mark sits beside the wordmark.
 local function moved(pts)
     local x, y = math.huge, math.huge
     for _, p in ipairs(pts) do
@@ -289,14 +283,19 @@ local function animated(from, to)
 end
 
 local early, early_dots = animated(100, 100.05)
+local early_segs = segs
 local mid_ink = animated(100, 100.5)
 local late, late_dots = animated(100, 104)
 check("the mark starts from almost nothing", early < late * 0.2,
       string.format("%.0f px of %.0f", early, late))
 check("and is under way in the middle", mid_ink > early and mid_ink < late,
       string.format("%.0f px against %.0f and %.0f", mid_ink, early, late))
-check("a bullet leads it while it draws", early_dots > 0,
+check("a bullet leads each row while it draws", early_dots == 6,
       early_dots .. " dots")
+check("both rows start on the same frame",
+      #early_segs == 2
+      and math.abs(early_segs[1].y1 - early_segs[2].y1) > MK * 0.45,
+      #early_segs .. " active strokes")
 check("and is gone once it has finished", late_dots == 0,
       late_dots .. " dots")
 
@@ -323,8 +322,8 @@ check("and it finishes into the shape itself",
 -- what is measured is what a player is shown.
 local state = package.loaded["arena.state"]
 
--- The mark's own strokes, picked back out of a whole menu: the two team
--- colors at full strength, and nothing else the menu draws is that.
+-- The mark's own strokes, picked back out of a whole menu by its three colors
+-- at full strength.
 local function mark_segs()
     local found = {}
     for _, sg in ipairs(segs) do
@@ -332,7 +331,7 @@ local function mark_segs()
         -- At full strength: the menu marks a selected row with a rule in the
         -- team color too, and that one is drawn at 0.95.
         if c and (c[4] or 1) > 0.99 then
-            for _, team in ipairs({pal.FRIEND, pal.ENEMY}) do
+            for _, team in ipairs({pal.FRIEND, pal.ENEMY, pal.MARK_MUTED}) do
                 if c[1] == team[1] and c[2] == team[2] and c[3] == team[3] then
                     found[#found + 1] = sg
                 end
@@ -379,7 +378,7 @@ local function lockup(w, h)
     end
     local mk, best
     for _, group in pairs(by_w) do
-        if #group == 6 and word then
+        if #group == 12 and word then
             local right = 0
             for _, sg in ipairs(group) do
                 right = math.max(right, sg.x1, sg.x2)
@@ -457,29 +456,14 @@ if L and narrow then
                         (L.y1 - L.y0) / L.size))
 end
 
--- --- the tab ---------------------------------------------------------------
+-- --- browser and install icons ---------------------------------------------
 
--- The favicon is the mark at a heavier cut, stood on its middle vertical.
---
--- Which is the thing worth checking, because it is the thing that is easy to
--- undo. Three wedges are 1.75 as wide as they are tall, so a square tile holds
--- them at barely half its height; the mark earns the tile back by being placed
--- on its verticals instead of on the box it fills, which puts the standing
--- part of it evenly about the center and runs the faded end of the first wake
--- off the left edge. A cut centered the ordinary way sits visibly right and
--- looks like nobody measured.
 local tpl = assert(io.open("client/web/engine_template.html", "r"),
                    "run me from the repository root")
 local page = tpl:read("*a")
 tpl:close()
 
-local b64 = page:match('rel="icon" type="image/svg%+xml" '
-                       .. 'href="data:image/svg%+xml;base64,([^"]+)"')
-check("the page carries a favicon", b64 ~= nil, "no svg icon link")
-
--- Enough of a base64 decoder to read a small SVG back out of the page. The
--- alternative is trusting a comment, which is what let the tab drift in the
--- first place.
+-- Enough of a base64 decoder to compare the embedded files byte for byte.
 local function unb64(s)
     local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
                   .. "0123456789+/"
@@ -503,44 +487,85 @@ local function unb64(s)
     return table.concat(out)
 end
 
-if b64 then
-    local icon = unb64(b64)
-    -- Every stroke, and which of them is a vertical: a wake takes a gradient
-    -- and a vertical takes a color, the same way the mark's own file is read
-    -- further up.
-    local verts, all = {}, 0
-    for d, rest in icon:gmatch('<path d="(M[^"]-)"([^>]*)>') do
-        local x1, y1, _, y2 =
-            d:match("^M([%-%d%.]+),([%-%d%.]+) L([%-%d%.]+),([%-%d%.]+)$")
-        if x1 then
-            all = all + 1
-            if rest:find('stroke="#') then
-                verts[#verts + 1] = {x = tonumber(x1),
-                                     h = math.abs(tonumber(y2) - tonumber(y1))}
-            end
-        end
-    end
-    check("the tab carries the mark, six strokes", all == 6,
-          all .. " strokes")
-    if #verts == 3 then
-        table.sort(verts, function(a, b) return a.x < b.x end)
-        -- The whole placement: the middle vertical on the tile's own center.
-        check("the middle vertical stands on the tile's center",
-              math.abs(verts[2].x - 256) < 0.6,
-              string.format("%.1f against 256", verts[2].x))
-        -- Which leaves the outer two the same distance out, so the standing
-        -- part of the mark is symmetric whatever the wakes do to its left.
-        local l, r = 256 - verts[1].x, verts[3].x - 256
-        check("with the other two evenly either side of it",
-              math.abs(l - r) < 0.6, string.format("%.1f then %.1f", l, r))
-        -- Heavier than the mark's own cut, which is why it reads at sixteen
-        -- points where a hairline does not.
-        check("cut heavier than a hairline", verts[1].h > 0,
-              string.format("%.0f px tall", verts[1].h))
-    else
-        check("three verticals among them", false, #verts .. " verticals")
-    end
+local function read_file(path)
+    local fh = assert(io.open(path, "rb"), "cannot read " .. path)
+    local body = fh:read("*a")
+    fh:close()
+    return body
 end
+
+local favicon = read_file("client/web/favicon.svg")
+check("the favicon uses the heavier cut",
+      favicon:find('stroke%-width="3%.5"') ~= nil)
+check("the favicon carries both rows and all three colors",
+      favicon:find("M0 2", 1, true) and favicon:find("M0 54", 1, true)
+      and favicon:find("#ffa552", 1, true)
+      and favicon:find("#3f4b60", 1, true)
+      and favicon:find("#4fd6ff", 1, true))
+check("the public and admin sites use that favicon",
+      read_file("deploy/site/favicon.svg") == favicon
+      and read_file("deploy/admin/favicon.svg") == favicon)
+
+local site_page = read_file("deploy/site/index.html")
+local admin_page = read_file("deploy/admin/index.html")
+check("both sites link the weighted favicon",
+      site_page:find('href="/favicon.svg"', 1, true)
+      and admin_page:find('href="favicon.svg"', 1, true))
+check("the admin header carries the two-row mark",
+      admin_page:find('viewBox="0 0 84 104"', 1, true)
+      and admin_page:find('fill="#ffa552"', 1, true)
+      and admin_page:find('fill="#3f4b60"', 1, true)
+      and admin_page:find('fill="#4fd6ff"', 1, true))
+
+local function png_size(body)
+    local function n32(i)
+        local a, b, c, d = body:byte(i, i + 3)
+        return ((a * 256 + b) * 256 + c) * 256 + d
+    end
+    if body:sub(1, 8) ~= "\137PNG\r\n\26\n" then return 0, 0 end
+    return n32(17), n32(21)
+end
+
+for _, spec in ipairs({
+    {"client/web/favicon-64.png", 64},
+    {"client/web/apple-touch-icon.png", 180},
+    {"client/web/icon-192.png", 192},
+    {"client/web/icon-512.png", 512},
+}) do
+    local pw, ph = png_size(read_file(spec[1]))
+    check(spec[1] .. " has the declared size",
+          pw == spec[2] and ph == spec[2], pw .. "x" .. ph)
+end
+
+local assets = {
+    {"the page embeds the source favicon",
+     page:match('rel="icon" type="image/svg%+xml" '
+                .. 'href="data:image/svg%+xml;base64,([^"]+)"'),
+     favicon},
+    {"the page embeds the 64 px fallback",
+     page:match('rel="icon" type="image/png" sizes="64x64" '
+                .. 'href="data:image/png;base64,([^"]+)"'),
+     read_file("client/web/favicon-64.png")},
+    {"the page embeds the Apple icon",
+     page:match('rel="apple%-touch%-icon" '
+                .. 'href="data:image/png;base64,([^"]+)"'),
+     read_file("client/web/apple-touch-icon.png")},
+    {"the manifest embeds its 192 px icon",
+     page:match('var ICON192 = "data:image/png;base64,([^"]+)"'),
+     read_file("client/web/icon-192.png")},
+    {"the manifest embeds its 512 px icon",
+     page:match('var ICON512 = "data:image/png;base64,([^"]+)"'),
+     read_file("client/web/icon-512.png")},
+}
+for _, asset in ipairs(assets) do
+    local name, b64, source = asset[1], asset[2], asset[3]
+    check(name, b64 and unb64(b64) == source,
+          b64 and "embedded bytes differ" or "data URI missing")
+end
+
+check("the web manifest lists both install icons",
+      page:find("{src: ICON192", 1, true)
+      and page:find("{src: ICON512", 1, true))
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

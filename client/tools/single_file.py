@@ -225,44 +225,48 @@ SHIM = """
                      function () {});
     } catch (e) {}
 
-    // The mark, in the units ui.lua keeps it in: three wedges of a diagonal
-    // landing on the baseline where a vertical stands, one gap throughout, the
-    // first wedge in the enemy's amber and the other two in the friendly cyan.
+    // The mark, in the units ui.lua keeps it in: two aligned rows of three
+    // wedges. Orange begins the upper row, cyan finishes the lower one, and
+    // the other strokes use the site's dark slate.
     // Every number here has a twin in ui.lua, and logo_test holds that one to
     // client/web/icon.svg, so all three drawings of the mark are one shape.
-    var MK_WD = 0.50, MK_GAP = 0.09, MK_WEIGHT = 0.033;
+    var MK_WD = 0.50, MK_GAP = 1 / 12, MK_WEIGHT = 0.075;
+    var MK_ROW = 0.48, MK_ROW_GAP = 0.04;
     var LOGO_EM = 0.74, LOGO_GAP = 0.30, LOGO_DROP = 0.12;
-    var MK_SPAN = 3 * MK_WD + 2 * MK_GAP;
+    var MK_SPAN = (3 * MK_WD + 2 * MK_GAP) * MK_ROW;
     var INK = "#dfe9f5", FRIEND = "#4fd6ff", ENEMY = "#ffa552";
+    var MUTED = "#3f4b60";
 
     // `ox` is the mark's left edge and `oy` its baseline, which is how
     // mk_stroke reads them.
     function mark(ox, oy, mh) {
-      var lw = Math.max(1, mh * MK_WEIGHT);
+      var rh = mh * MK_ROW;
+      var top = oy - mh;
+      var baselines = [top + rh, top + 2 * rh + mh * MK_ROW_GAP];
+      var hues = [[ENEMY, MUTED, MUTED], [MUTED, FRIEND, FRIEND]];
+      var lw = Math.max(1, rh * MK_WEIGHT);
       g.lineWidth = lw;
-      for (var i = 0; i < 3; i++) {
-        var x = ox + i * (MK_WD + MK_GAP) * mh;
-        var col = i === 0 ? ENEMY : FRIEND;
-        // The wake. One width the whole way and only the light in it changes,
-        // which is what seg_fade draws: nothing at the top, full at the
-        // baseline. Tapering it as well made it read as a different stroke.
-        var gr = g.createLinearGradient(x, oy - mh, x + MK_WD * mh, oy);
-        gr.addColorStop(0, col + "00");
-        gr.addColorStop(1, col);
-        g.strokeStyle = gr;
-        g.lineCap = "butt";
-        g.beginPath();
-        g.moveTo(x, oy - mh);
-        g.lineTo(x + MK_WD * mh, oy);
-        g.stroke();
-        // And the vertical it lands on, square-capped, which is what `cap`
-        // does to a seg.
-        g.strokeStyle = col;
-        g.lineCap = "square";
-        g.beginPath();
-        g.moveTo(x + MK_WD * mh, oy);
-        g.lineTo(x + MK_WD * mh, oy - mh);
-        g.stroke();
+      for (var row = 0; row < 2; row++) {
+        var base = baselines[row];
+        for (var i = 0; i < 3; i++) {
+          var x = ox + i * (MK_WD + MK_GAP) * rh;
+          var col = hues[row][i];
+          var gr = g.createLinearGradient(x, base - rh,
+                                          x + MK_WD * rh, base);
+          gr.addColorStop(0, col + "00");
+          gr.addColorStop(1, col);
+          g.strokeStyle = gr;
+          g.lineCap = "butt";
+          g.beginPath();
+          g.moveTo(x, base - rh);
+          g.lineTo(x + MK_WD * rh, base);
+          g.stroke();
+          g.strokeStyle = col;
+          g.beginPath();
+          g.moveTo(x + MK_WD * rh, base);
+          g.lineTo(x + MK_WD * rh, base - rh);
+          g.stroke();
+        }
       }
     }
 

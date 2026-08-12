@@ -52,7 +52,8 @@ local function put(...)
 end
 
 local layer = {}
-for _, name in ipairs({"seg", "seg_fade", "disc", "halo", "ring", "ring_fade",
+for _, name in ipairs({"seg", "seg_fade", "seg_fade_flat", "disc", "halo",
+                       "ring", "ring_fade",
                        "arc", "rect", "frame", "tri", "tri_fade", "outline",
                        "fan", "quad", "skirt", "flush", "reset"}) do
     layer[name] = function(_, ...) put(name, ...) end

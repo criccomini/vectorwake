@@ -24,6 +24,7 @@ M.INK       = rgb(0xdfe9f5)
 M.DIM       = rgb(0x6c7a90)
 M.FRIEND    = rgb(0x4fd6ff)
 M.ENEMY     = rgb(0xffa552)
+M.MARK_MUTED = rgb(0x3f4b60)
 M.BOMB      = rgb(0xff5ea8)
 M.WHITE     = rgb(0xffffff)
 

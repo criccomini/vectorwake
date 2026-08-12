@@ -3550,14 +3550,12 @@ local function ship_grid(x, y, w, h, v, focused)
     end
 end
 
--- The mark: six strokes, \|\|\|, read as a V and then a W.
+-- The mark: two aligned rows of \|\|\|.
 --
 -- Each wedge is a diagonal falling into a vertical and meeting it on the
--- baseline. The first wedge is the V of vector, in the color the interface
--- gives the other side; the second and third together are the W of wake, in
--- yours. One gap throughout, so nothing marks where one letter stops and the
--- next starts and the run reads as one gesture: you get the letters out of it
--- the way you get them out of the name.
+-- baseline. The rows share their three x positions. Orange begins the upper
+-- row, cyan finishes the lower one, and the other strokes use the dark slate
+-- from the site mark.
 --
 -- The diagonals are wakes, thin and clear where they leave and full where they
 -- land, which is what a thing arriving looks like everywhere else in this
@@ -3569,17 +3567,20 @@ end
 -- client that could not be drawn at any size. The page carries the same shape
 -- as `client/web/icon.svg`, and logo_test holds the two to each other.
 --
--- What it replaces is two hulls passing on a course off the vertical. That was
--- a picture of the game; this is the name, which is what a wordmark is for.
-local MK_WD, MK_GAP, MK_WEIGHT = 0.50, 0.09, 0.033
+-- The row and gap ratios are the 48/4/48 construction used by the site SVG.
+-- A row is half as tall as the old mark, so its pen is measured against the
+-- row rather than the full two-row height.
+local MK_WD, MK_GAP = 0.50, 1 / 12
+local MK_ROW, MK_ROW_GAP, MK_WEIGHT = 0.48, 0.04, 0.075
+local MK_SPAN = 3 * MK_WD + 2 * MK_GAP
 
 -- How wide the mark stands, against its own height.
 function M.logo_width(h)
-    return h * (3 * MK_WD + 2 * MK_GAP)
+    return h * MK_ROW * MK_SPAN
 end
 
--- Where each stroke starts and ends, in units of the mark's height, with the
--- mark's left edge and baseline at the origin and y up. Six of them, in the
+-- Where each stroke starts and ends, in units of one row's height, with the
+-- row's left edge and baseline at the origin and y up. Six of them, in the
 -- order a bullet would draw them: down the diagonal, bounce, up the vertical,
 -- across to the next.
 local function mk_strokes()
@@ -3593,7 +3594,7 @@ local function mk_strokes()
 end
 local MK_STROKES = mk_strokes()
 
--- How long the bullet spends on each piece, and how long a bounce shows for.
+-- How long each bullet spends on a piece, and how long a bounce shows for.
 local MK_FALL, MK_RISE, MK_HOP, MK_FLASH = 0.17, 0.12, 0.07, 0.22
 
 -- When the run started. Reset whenever the mark has not been drawn for a
@@ -3614,37 +3615,18 @@ local function mk_stroke(st, ox, oy, h, w, col, p)
     if st.fade then
         -- One width the whole way, so a wake and a vertical are the same line
         -- and only the light in it changes. Tapering the wake as well made the
-        -- two read as different strokes, and at favicon size it read as three
-        -- bars with something faint behind them.
-        u:seg_fade(x1, ry(y1), ex, ry(ey), w, w, 0, a * p, col)
+        -- two read as different strokes, and at small sizes the diagonal
+        -- disappeared behind a bar.
+        u:seg_fade_flat(x1, ry(y1), ex, ry(ey), w, 0, a * p, col)
     else
-        u:seg(x1, ry(y1), ex, ry(ey), w, col, true)
+        u:seg(x1, ry(y1), ex, ry(ey), w, col)
     end
     return ex, ey
 end
 
--- `h` is the mark's height and (cx, cy) its center. `still` draws the finished
--- shape and nothing else, which is what anything not on the menu wants.
-function M.logo(cx, cy, h, alpha, still)
-    alpha = alpha or 1
-    local ox = cx - M.logo_width(h) / 2
-    local oy = cy + h / 2
-    -- Against the mark's own height, so the weight travels with it rather than
-    -- with the window. One drawable pixel is the floor, and at this weight the
-    -- menu's own two sizes are close enough to it that they mostly sit on it:
-    -- anything finer is not a lighter line, it is a line drawn some of the
-    -- time.
-    local w = math.max(1 * S, h * MK_WEIGHT)
-    local hue = {pal.a(pal.ENEMY, alpha), pal.a(pal.FRIEND, alpha),
-                 pal.a(pal.FRIEND, alpha)}
-
-    if not still and M.now - logo_seen > 0.25 then logo_t0 = M.now end
-    if not still then logo_seen = M.now end
-    local t = still and math.huge or (M.now - logo_t0)
-
-    -- Walk the strokes in the order they are drawn, spending the clock as we
-    -- go. What is behind the bullet is drawn whole, what it is on is drawn as
-    -- far as it has got, and what is ahead of it is not there yet.
+-- One row gets its own bullet and clock cursor. Both rows are called with the
+-- same elapsed time, so they fall, bounce, rise and hop together.
+local function logo_row(ox, oy, h, w, hue, t, alpha)
     local bx, by, bcol
     for i, st in ipairs(MK_STROKES) do
         local span = st.fade and MK_FALL or MK_RISE
@@ -3679,16 +3661,44 @@ function M.logo(cx, cy, h, alpha, still)
             break
         end
     end
-    -- The bullet: the same dot the corner draws on the end of a gun's line,
-    -- with its glow stepped out of discs rather than taken from `halo`. A
-    -- halo would read a shade softer and costs the mark the one property that
-    -- makes it portable, which is that it is drawn out of the two primitives
-    -- every surface in this client already has.
+    return bx, by, bcol
+end
+
+-- The bullet is the same dot the corner draws on the end of a gun's line,
+-- with its glow stepped out of discs rather than taken from `halo`.
+local function logo_bullet(bx, by, w, bcol)
     if bx then
         local a = bcol[4] or 1
         u:disc(bx, ry(by), w * 3.0, 12, pal.a(bcol, a * 0.16))
         u:disc(bx, ry(by), w * 1.9, 10, pal.a(bcol, a * 0.30))
         u:disc(bx, ry(by), w * 1.15, 10, bcol)
+    end
+end
+
+-- `h` is the full two-row height and (cx, cy) its center. `still` draws the
+-- finished shape and nothing else, which is what anything not on the menu
+-- wants.
+function M.logo(cx, cy, h, alpha, still)
+    alpha = alpha or 1
+    local rh = h * MK_ROW
+    local ox = cx - M.logo_width(h) / 2
+    local top = cy - h / 2
+    local oy = {top + rh, top + 2 * rh + h * MK_ROW_GAP}
+    local w = math.max(1 * S, rh * MK_WEIGHT)
+    local hue = {
+        {pal.a(pal.ENEMY, alpha), pal.a(pal.MARK_MUTED, alpha),
+         pal.a(pal.MARK_MUTED, alpha)},
+        {pal.a(pal.MARK_MUTED, alpha), pal.a(pal.FRIEND, alpha),
+         pal.a(pal.FRIEND, alpha)},
+    }
+
+    if not still and M.now - logo_seen > 0.25 then logo_t0 = M.now end
+    if not still then logo_seen = M.now end
+    local t = still and math.huge or (M.now - logo_t0)
+
+    for row = 1, 2 do
+        local bx, by, bcol = logo_row(ox, oy[row], rh, w, hue[row], t, alpha)
+        logo_bullet(bx, by, w, bcol)
     end
 end
 
