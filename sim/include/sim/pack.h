@@ -11,6 +11,12 @@ extern "C" {
 /* Largest snapshot a full arena can produce. */
 #define SIM_PACK_MAX (64 * 1024)
 
+/* Network snapshots normally carry one owner-only ship tail and no secret
+ * randomness. The whole-state replay path uses both options; trusted house
+ * bots use only the first. */
+#define SIM_PACK_PRIVATE_ALL 0x01u
+#define SIM_PACK_SECRET      0x02u
+
 /* Write s into out. Returns bytes written, or -1 if cap was too small. */
 int sim_pack(const sim_state *s, uint8_t *out, int cap);
 
@@ -28,10 +34,10 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap);
  * Safe because an unpack replaces the state outright, so nothing goes stale,
  * and because a radius is chosen far enough out that no ship can cross into
  * the gap between one snapshot and the next. Prediction is unaffected: a
- * client steps the same core off the same rng and reaches the same prizes
- * inside the radius it was told about.
+ * client steps the same core off the public prediction generator. Prize
+ * outcomes use a separate server-only generator and arrive authoritatively.
  *
- * `viewer` is the seat this snapshot is for, or 255 for nobody. Its own rounds
+ * `viewer` is the camera seat, or 255 for nobody. Its own rounds
  * travel however far away they are, and that exception is the whole of what a
  * pilot's minefield needs to survive the trip home. Every other round is spent
  * within seconds and near the hull that fired it, so the radius is the only
@@ -42,9 +48,16 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap);
  * pilot is shown a minefield detonating behind them that is still sitting
  * there.
  *
+ * `owner` is the only ship whose owner-only state travels. It is separate from
+ * `viewer` because a spectator may borrow a pilot's camera without becoming
+ * that pilot. `SIM_PACK_PRIVATE_ALL` is reserved for trusted in-process users.
+ * `SIM_PACK_SECRET` includes prize randomness and its timer and must not be
+ * used for a network client.
+ *
  * A negative radius means everything, which is what `sim_pack` passes. */
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
-                    int32_t cx, int32_t cy, int32_t radius, uint8_t viewer);
+                    int32_t cx, int32_t cy, int32_t radius, uint8_t viewer,
+                    uint8_t owner, uint8_t options);
 
 /* Read a snapshot into s. Returns 0, or -1 on malformed input. */
 int sim_unpack(sim_state *s, const uint8_t *in, int len);

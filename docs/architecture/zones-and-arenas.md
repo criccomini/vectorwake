@@ -445,8 +445,8 @@ being paired should not cost a round trip to a directory.
 
 ### What a refusal has to say
 
-A join can fail for five reasons and the client has to tell them apart, because
-three of them mean "try another instance" and two mean "stop trying":
+A join can fail for six reasons and the client has to tell them apart, because
+three of them mean "try another instance" and three mean "stop trying":
 
 | Reason | The client should |
 |---|---|
@@ -455,6 +455,7 @@ three of them mean "try another instance" and two mean "stop trying":
 | Zone no longer served here | Re-browse; the instance changed zone under it |
 | Banned | Say so and stop |
 | Bad protocol version | Say so and stop; the build is stale |
+| Account already in a rated session | Say so and stop |
 
 `S2C_DENIED` carries the code in its first byte and then the sentence, so a client
 acts on the first three without parsing English.
@@ -628,4 +629,7 @@ never had to answer: live follow is your own side only, everyone else gets the
 room channel, one shared feed per room running a zone-set delay behind, and
 the subject is told they are on air. [design/spectating.md](../design/spectating.md)
 says why each of those is load-bearing. The duel queue and lag response's
-force-to-spectator now have the state they were waiting on.
+force-to-spectator now have the state they were waiting on. Every route into
+the stands, including voluntary sit-out, counts against `max_watchers`.
+Voluntary sit-out also uses the alive-and-full-energy gate for hull and side
+changes, so it cannot discard a losing hull during a fight.

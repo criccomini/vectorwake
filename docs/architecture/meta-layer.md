@@ -83,9 +83,10 @@ pointed at a fleet without accounts simply never signs in.
 A session is the client presenting its device secret and receiving a
 token: account id, kind, label, call sign, a rating snapshot per mode class,
 and an expiry, fifteen minutes by default. The token carries an Ed25519
-signature, and every arena holds the verifying key, so admission is a signature
-check and a clock. Nothing on the join path talks to the meta-layer or to
-Postgres.
+signature, and every arena holds the verifying key, so identity admission is a
+signature check and a clock. Rated admission also claims a short lease
+from the meta-layer. That lease is the cross-fleet rule that one account may
+hold one active rated session.
 
 This is the property [server.md](server.md) has been protecting since before
 the service existed: identity is an opaque token the session layer validates,
@@ -395,13 +396,17 @@ exactly where they are.
 
 ## When it is down
 
-The meta-layer is allowed to be down, and the fleet's job is to make that
-boring. A client holding a live token joins and plays normally. A client with
-an expired token, or none, still flies: the arena admits it as an unknown
-guest with a room-local name and rates nothing, which is exactly what every
-pilot was before this service existed. What an outage costs is persistence and
-claiming, never play, and never the arena tick, which touches no database in
-any design this repository has ever had.
+The meta-layer is allowed to be down without stopping a room that is already
+running. Existing rated leases renew every thirty seconds and have three
+minutes of slack, so a short outage does not eject a live pilot. A new rated
+session is refused while exclusion cannot be checked. A client with no
+account token can still enter as an unknown guest and rates nothing. The arena
+tick never touches the database; only the connection boundary does.
+
+`active_rated_sessions` holds one row per account. A claim succeeds for an
+unclaimed account, for the session already holding the row, or after the row
+has gone untouched for three minutes. Clean disconnects release immediately;
+the timeout recovers from a dead arena process.
 
 ## Operations
 

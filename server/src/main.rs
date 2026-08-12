@@ -37,36 +37,24 @@ use tokio_tungstenite::tungstenite::Message;
 
 const TICK_HZ: u64 = 100;
 const SNAPSHOT_EVERY: u32 = 5; // 20 Hz
-/// How far from a player a prize has to be before it is left out of that
-/// player's snapshot, in Q8 pixels. 160 tiles.
-///
-/// Sized against what a client can actually draw, which is the honest bound.
-/// `TUNE.STATIC_MAX` in arena.script holds the terrain window at 137 tiles
-/// either side and says so out loud when a view asks for more, and the radar
-/// reaches 60. So 137 is the furthest anything can be rendered, and this is
-/// that plus 23 tiles.
-///
-/// What has to cross that margin before the next snapshot announces it:
-/// a hull at 490 px/s covers 24 px in the 50 ms period, and the quickest
-/// round in the baseline is `sim_units_speed(3000)`, 300 px/s, which covers
-/// 15. Against 368 px of margin that is fifteen periods of warning for the
-/// fastest thing in the game.
-///
-/// It was 256 tiles, which came from an argument about prizes: four times the
-/// radar's reach, chosen when this filtered nothing else. Ships and rounds
-/// care about the render window rather than the radar, and the area ratio is
-/// what pays: (160/256) squared is 0.39, so the same rule costs 61% fewer
-/// rounds in range.
-///
-/// It governs ships and rounds as well as prizes now, which is two changes
-/// wearing one constant. The bytes: rounds were 78% of a snapshot and four
-/// fifths of them belonged to fights the viewer could not see, measured on
-/// the live arena at 20.9% of 191,115 weapon-snapshots inside the radius.
-/// And the sight: a snapshot used to hand every client the position, heading
-/// and energy of every ship on the map, so a maphack was not an exploit but
-/// a rendering choice. Now a client is told about what it could lawfully
-/// look at, and a modified one has nothing else to draw.
-const INTEREST: i32 = 160 * 16 * 256;
+/// One sight boundary chosen by the server for every human view. It covers
+/// the sixty-tile radar plus twenty-four tiles of arrival margin, so a client
+/// cannot widen disclosure by claiming a larger window.
+const FAIR_INTEREST: i32 = 84 * 16 * 256;
+
+fn fair_contains_xy(cx: i32, cy: i32, x: i32, y: i32) -> bool {
+    let dx = x as i64 - cx as i64;
+    let dy = y as i64 - cy as i64;
+    dx * dx + dy * dy <= (FAIR_INTEREST as i64) * (FAIR_INTEREST as i64)
+}
+
+fn fair_contains(world: &sim::World, center: u8, subject: u8) -> bool {
+    let Some(center) = world.state.ships.get(center as usize) else { return false };
+    let Some(subject) = world.state.ships.get(subject as usize) else { return false };
+    center.active != 0
+        && subject.active != 0
+        && fair_contains_xy(center.x, center.y, subject.x, subject.y)
+}
 /// Humans a zone admits when its file says nothing. The room may hold more
 /// seats than this: `max_ships` sizes the room, and this bounds how many of its
 /// seats people get, which is what leaves room for the bot roster.
@@ -115,29 +103,6 @@ const C2S_INVITE: u8 = 8;
 /// dead, on another side, short of a full bar, or reaching for a hull that
 /// carries nobody or is already full.
 const C2S_ATTACH: u8 = 10;
-/// How much of the map this client is drawing, as tiles either side of its
-/// camera. Sent at join and whenever the window changes size.
-///
-/// Additive on purpose, and that is why there is no protocol bump beside it:
-/// the dispatch ignores an opcode it does not know, so an old client simply
-/// never sends this and is served the ceiling, exactly as before. A message
-/// rather than a join field because a window is resized mid-flight and a
-/// value taken once at the door goes stale the first time somebody
-/// full-screens.
-///
-/// Trusted only downward. It picks how much a client is sent, so claiming a
-/// huge view would be a request for the whole map; the value is clamped to
-/// the ceiling below and floored at the radar's own reach, which means the
-/// worst a lie can do is ask for what it already had.
-const C2S_VIEW: u8 = 11;
-/// Tiles the radar draws ships at, and so the floor under any view: a hull
-/// sixty tiles away is a blip on the dial whether or not it is on screen.
-/// `client/arena/ui.lua` calls this SPAN and world.lua repeats it.
-const RADAR_TILES: i32 = 60;
-/// Slack over whatever a client says it draws, in tiles. A hull at 490 px/s
-/// covers 24 px in a snapshot period and the quickest round 15, so 24 tiles
-/// of margin is sixteen periods of warning for the fastest thing in the game.
-const VIEW_SLACK: i32 = 24;
 /// `[C2S_WATCH, ship]`: whose eyes to borrow. From a player it means sit out,
 /// from a watcher it means look somewhere else. 255 asks for the room channel.
 ///
@@ -172,22 +137,7 @@ const JOIN_WATCH: u8 = 2;
 /// layout change, and a build that misread any of them would draw an arena
 /// that is not there, so the bump is what turns a deploy race into a refusal
 /// and a reload rather than a garbled room.
-const CLIENT_PROTOCOL: u8 = 8;
-
-/// What one seat is sent, given what it says it draws.
-///
-/// Zero means a client that has never said, which is every client older than
-/// this and every one for the moment before its first view message lands: it
-/// gets the ceiling, which is what everybody got before. Otherwise the window
-/// it claims, floored at the radar and capped at the ceiling, so the answer is
-/// never larger than the old one and never smaller than what the dial needs.
-fn radius_for(view: u8) -> i32 {
-    if view == 0 {
-        return INTEREST;
-    }
-    let tiles = (view as i32).max(RADAR_TILES) + VIEW_SLACK;
-    (tiles * 16 * 256).min(INTEREST)
-}
+const CLIENT_PROTOCOL: u8 = 9;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -230,7 +180,7 @@ const S2C_KILL: u8 = 4;
 const S2C_BANNER: u8 = 5;
 const S2C_ZONE: u8 = 6;
 const S2C_DENIED: u8 = 7;
-/// Why a join was refused. Three of these mean "try another instance" and two
+/// Why a join was refused. Three of these mean "try another instance" and three
 /// mean "stop trying", which is the distinction a client cannot make from a
 /// sentence. See the refusal table in docs/architecture/zones-and-arenas.md.
 const DENY_FULL: u8 = 1;
@@ -238,6 +188,7 @@ const DENY_DRAINING: u8 = 2;
 const DENY_WRONG_ZONE: u8 = 3;
 const DENY_BANNED: u8 = 4;
 const DENY_VERSION: u8 = 5;
+const DENY_RATED_SESSION: u8 = 6;
 /// What an instance that has not been told which zone it is says at its door,
 /// written once because both doors say it: the join, and the watcher behind it.
 const NO_ZONE_YET: &str = "this instance is not serving a zone yet; re-browse";
@@ -269,6 +220,14 @@ const S2C_TEAMS: u8 = 12;
 /// them is knowing it: two minutes on camera is something a pilot can play
 /// around, and only if they are told.
 const S2C_ONAIR: u8 = 13;
+/// `[S2C_PRIZE, type, delta]`, sent only to the pilot who collected it. The
+/// roll is server-secret; snapshots carry the resulting owner state and this
+/// message carries the immediate effect and feed line.
+const S2C_PRIZE: u8 = 14;
+/// `[S2C_CHARGE, ship, slot, x, y]`, a public action without the private
+/// inventory count. Sent only to views whose fixed fairness circle contains
+/// the firing ship; x and y are signed Q8 positions.
+const S2C_CHARGE: u8 = 15;
 
 /// Watchers a room admits when its zone says nothing. Deliberately low: a
 /// watcher is a full player's egress, and egress is the fleet's whole bill.
@@ -318,9 +277,6 @@ struct Player {
     /// things and nothing else: the roster label, whether the seat counts
     /// against the human cap, and whether the seat can be taken away.
     bot: bool,
-    /// Tiles either side of its camera this client says it is drawing, or 0
-    /// from one that has never said. See `C2S_VIEW`.
-    view: u8,
     /// Consecutive ticks spent inside a safe zone. Counted here rather than in
     /// the core, which has no model of a seat and nothing to do with one; the
     /// limit it is measured against travels in the settings so the client can
@@ -392,6 +348,7 @@ struct ChannelFrame {
     /// the camera: with a delay on the channel those are seconds apart.
     subject: u8,
     kills: Vec<Vec<u8>>,
+    charges: Vec<Vec<u8>>,
     msg: Vec<u8>,
 }
 
@@ -412,6 +369,10 @@ struct Channel {
     ring: std::collections::VecDeque<ChannelFrame>,
     /// Kills waiting for the next frame.
     pending_kills: Vec<Vec<u8>>,
+    /// Public charge actions waiting for the next frame. The ship byte stays
+    /// beside each message until the frame center is known, so an event
+    /// outside that frame's fairness circle is discarded rather than leaked.
+    pending_charges: Vec<(i32, i32, Vec<u8>)>,
     delay: u32,
     /// Its own generator, not the simulation's: the pick must not perturb the
     /// state the golden traces hash.
@@ -426,6 +387,7 @@ impl Channel {
             hold: 0,
             ring: std::collections::VecDeque::new(),
             pending_kills: Vec::new(),
+            pending_charges: Vec::new(),
             delay: DEFAULT_CHANNEL_DELAY,
             rng: 0x9e3779b97f4a7c15,
         }
@@ -1476,9 +1438,6 @@ impl Room {
                 pending: Default::default(),
                 last_input_tick: 0,
                 applied_tick: 0,
-                // Until this client says what it draws, it is served the
-                // ceiling. See `C2S_VIEW`.
-                view: 0,
                 name,
                 rid,
                 bot,
@@ -2119,10 +2078,16 @@ impl Room {
     /// log: one is a player taking a break and the other is the room deciding
     /// they were loitering.
     fn sit_out(&mut self, id: u64, want: u8, any: bool, swept: bool) -> bool {
+        if self.watchers.len() >= self.max_watchers {
+            return false;
+        }
         let Some(p) = self.players.get(&id) else {
             return false;
         };
         let ship = p.ship;
+        if !swept && !self.world.may_reset_ship(ship as usize) {
+            return false;
+        }
         let tx = p.tx.clone();
         let Some(seat) = self.names.get(&ship).cloned() else {
             return false;
@@ -2362,6 +2327,33 @@ impl Room {
 
     fn score_events(&mut self) {
         let tick = self.world.state.tick;
+        let events = self.world.events.e[..self.world.events.count as usize].to_vec();
+        for e in events {
+            if e.etype == sim::EV_PRIZE {
+                if let Some(p) = self.players.values().find(|p| p.ship == e.a) {
+                    let delta = (e.v.clamp(i8::MIN as i32, i8::MAX as i32) as i8) as u8;
+                    let _ = p.tx.try_send(Message::Binary(vec![S2C_PRIZE, e.b, delta]));
+                }
+            } else if e.etype == sim::EV_CHARGE {
+                let Some(sh) = self.world.state.ships.get(e.a as usize) else { continue };
+                let mut m = vec![S2C_CHARGE, e.a, e.b];
+                m.extend_from_slice(&sh.x.to_le_bytes());
+                m.extend_from_slice(&sh.y.to_le_bytes());
+                for p in self.players.values() {
+                    if p.ship != e.a && fair_contains(&self.world, p.ship, e.a) {
+                        let _ = p.tx.try_send(Message::Binary(m.clone()));
+                    }
+                }
+                for w in self.watchers.values() {
+                    if let WatchMode::Follow(subject) = w.mode {
+                        if fair_contains(&self.world, subject, e.a) {
+                            let _ = w.tx.try_send(Message::Binary(m.clone()));
+                        }
+                    }
+                }
+                self.channel.pending_charges.push((sh.x, sh.y, m));
+            }
+        }
         // Borrowed, not cloned. This runs every tick of every room, and the
         // clone it replaces copied a map of names and account ids at 100 Hz to
         // serve events that mostly do not happen.
@@ -2556,11 +2548,14 @@ impl Room {
                 .names
                 .get(&p.ship)
                 .is_some_and(|s| s.label == token::Label::HouseBot.to_byte());
-            let radius = if house { -1 } else { radius_for(p.view) };
+            let radius = if house { -1 } else { FAIR_INTEREST };
             // Their own seat, so their own rounds travel however far behind
             // them they are. That is the minefield: everything else a pilot
             // fires is spent within seconds and inside the radius anyway.
-            let n = self.world.pack_around(buf, sh.x, sh.y, radius, p.ship);
+            let options = if house { sim::PACK_PRIVATE_ALL } else { 0 };
+            let n = self.world.pack_around(
+                buf, sh.x, sh.y, radius, p.ship, p.ship, options,
+            );
             if n <= 0 {
                 continue;
             }
@@ -2589,9 +2584,9 @@ impl Room {
         metrics::SEATS_OUT.set(out_seats);
 
         // Watchers riding one pilot's eyes, live. Packed at the followed hull
-        // with the human radius whatever the target's own stream gets: a
-        // declared bot is sent the whole prize table, and a watcher who
-        // inherited that would hold sight no human lawfully has.
+        // with the server's fixed human radius. The subject supplies the
+        // camera and minefield perspective, not owner state: watching a pilot
+        // does not disclose their energy, inventory, cooldowns or upgrades.
         let mut fallen: Vec<u64> = Vec::new();
         for (id, w) in self.watchers.iter() {
             let WatchMode::Follow(t) = w.mode else { continue };
@@ -2602,7 +2597,7 @@ impl Room {
                 continue;
             }
             let sh = &self.world.state.ships[t as usize];
-            let n = self.world.pack_around(buf, sh.x, sh.y, INTEREST, t);
+            let n = self.world.pack_around(buf, sh.x, sh.y, FAIR_INTEREST, t, 255, 0);
             if n <= 0 {
                 continue;
             }
@@ -2688,17 +2683,22 @@ impl Room {
                 (mid, mid, 255u8)
             }
         };
-        let n = self.world.pack_around(buf, cx, cy, INTEREST, subject);
+        let n = self.world.pack_around(buf, cx, cy, FAIR_INTEREST, subject, 255, 0);
         if n > 0 {
             let mut msg = Vec::with_capacity(n as usize + 6);
             msg.push(S2C_SNAPSHOT);
             msg.push(subject);
             msg.extend_from_slice(&0u32.to_le_bytes());
             msg.extend_from_slice(&buf[..n as usize]);
+            let charges = std::mem::take(&mut self.channel.pending_charges)
+                .into_iter()
+                .filter_map(|(x, y, msg)| fair_contains_xy(cx, cy, x, y).then_some(msg))
+                .collect();
             self.channel.ring.push_back(ChannelFrame {
                 tick: self.world.state.tick,
                 subject,
                 kills: std::mem::take(&mut self.channel.pending_kills),
+                charges,
                 msg,
             });
         }
@@ -2725,6 +2725,9 @@ impl Room {
                 }
                 for k in &f.kills {
                     let _ = w.tx.try_send(Message::Binary(k.clone()));
+                }
+                for charge in &f.charges {
+                    let _ = w.tx.try_send(Message::Binary(charge.clone()));
                 }
                 metrics::SNAPSHOT_BYTES.add(f.msg.len() as u64);
                 if w.tx.try_send(Message::Binary(f.msg.clone())).is_err() {
@@ -2827,7 +2830,8 @@ impl Room {
             m.extend_from_slice(&sh.kills.to_le_bytes());
             m.extend_from_slice(&sh.deaths.to_le_bytes());
             m.extend_from_slice(&sh.points.to_le_bytes());
-            m.extend_from_slice(&sh.earned.to_le_bytes());
+            let bounty = self.world.bounty(*ship as usize).clamp(0, u16::MAX as i32) as u16;
+            m.extend_from_slice(&bounty.to_le_bytes());
             let bytes = seat.name.as_bytes();
             let len = bytes.len().min(24) as u8;
             m.push(len);
@@ -3035,6 +3039,66 @@ struct ArenaServer {
     /// a room used to go back to the disk for it and named a path relative to
     /// the working directory, which on the fleet is not where it lives.
     ladder: HashMap<String, f64>,
+}
+
+/// A renewable fleet-wide claim that this connection is the account's one
+/// active rated session. The meta-layer owns exclusion; the arena owns the
+/// socket lifetime and therefore the renew and release calls.
+struct RatedLease {
+    base: String,
+    pool_token: String,
+    instance: String,
+    account: u64,
+    session: String,
+    touched: std::time::Instant,
+}
+
+impl RatedLease {
+    async fn claim(
+        base: String,
+        pool_token: String,
+        instance: String,
+        account: u64,
+        session: String,
+    ) -> Result<Option<RatedLease>, String> {
+        let claimed = meta::claim_rated_session(
+            &base, &pool_token, account, &session, &instance,
+        )
+        .await?;
+        Ok(claimed.then(|| RatedLease {
+            base,
+            pool_token,
+            instance,
+            account,
+            session,
+            touched: std::time::Instant::now(),
+        }))
+    }
+
+    async fn renew(&mut self) -> Result<bool, String> {
+        self.touched = std::time::Instant::now();
+        meta::claim_rated_session(
+            &self.base,
+            &self.pool_token,
+            self.account,
+            &self.session,
+            &self.instance,
+        )
+        .await
+    }
+
+    async fn release(self) {
+        if let Err(e) = meta::release_rated_session(
+            &self.base,
+            &self.pool_token,
+            self.account,
+            &self.session,
+        )
+        .await
+        {
+            println!("rated session release failed for account {}: {e}", self.account);
+        }
+    }
 }
 
 impl ArenaServer {
@@ -3439,6 +3503,21 @@ impl ArenaServer {
         } else {
             m
         }
+    }
+
+    /// Where this arena claims rated seats. An authenticated account without
+    /// these credentials cannot be admitted safely: treating a missing meta
+    /// route as permission would recreate the multi-room allowance bypass.
+    fn rated_lease_args(&self) -> Result<(String, String, String), String> {
+        let base = match std::env::var("VW_META") {
+            Ok(v) if !v.is_empty() => v,
+            _ => self.catalog.as_ref().map(|c| c.meta_url.clone()).unwrap_or_default(),
+        };
+        let pool_token = std::env::var("VW_TOKEN").unwrap_or_default();
+        if base.is_empty() || pool_token.is_empty() {
+            return Err("rated session service is not configured".into());
+        }
+        Ok((base, pool_token, self.fleet.instance.clone()))
     }
 
     /// Give back rooms nobody is in, keeping the first. A process shrinks as
@@ -4900,6 +4979,7 @@ pub(crate) async fn serve_client(
     // At most one of the two is set; sitting out and taking a hull
     // again move between them on the same socket.
     let mut watch: Option<(usize, u64)> = None;
+    let mut rated_lease: Option<RatedLease> = None;
     // Whether this pilot holds the `watch` capability, decided once at
     // the door where the token was checked, because the ask arrives
     // later on a message that carries no identity.
@@ -4919,6 +4999,27 @@ pub(crate) async fn serve_client(
         };
         if data.is_empty() {
             continue;
+        }
+        if rated_lease
+            .as_ref()
+            .is_some_and(|lease| lease.touched.elapsed() >= std::time::Duration::from_secs(30))
+        {
+            let renewed = rated_lease.as_mut().unwrap().renew().await;
+            match renewed {
+                Ok(true) => {}
+                Ok(false) => {
+                    let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
+                    m.extend_from_slice(b"this account is active in another rated session");
+                    let _ = tx.try_send(Message::Binary(m));
+                    break;
+                }
+                Err(e) => {
+                    // Keep the live socket during a short meta outage. The
+                    // three-minute lease and thirty-second retry leave five
+                    // more chances before another arena can take the row.
+                    println!("rated session renewal failed: {e}");
+                }
+            }
         }
         match data[0] {
             C2S_STATUS => {
@@ -4953,8 +5054,8 @@ pub(crate) async fn serve_client(
                 .to_string();
                 let mut z = zone.lock().await;
 
-                // A refusal has to say which of five things went wrong,
-                // because three mean "try another instance" and two mean
+                // A refusal has to say which of six things went wrong,
+                // because three mean "try another instance" and three mean
                 // "stop trying". The code is the first byte after the tag.
                 //
                 // It is also the one thing that happens to a pilot which
@@ -5083,6 +5184,77 @@ pub(crate) async fn serve_client(
                     )));
                     break;
                 }
+                if flags & JOIN_WATCH == 0 {
+                    if let Some(account) = seat_of.account {
+                        let (base, pool_token, instance) = match z.rated_lease_args() {
+                            Ok(v) => v,
+                            Err(e) => {
+                                let _ = tx.try_send(Message::Binary(deny(
+                                    DENY_RATED_SESSION,
+                                    &format!("cannot open a rated session: {e}"),
+                                    Some(&seat_of),
+                                )));
+                                break;
+                            }
+                        };
+                        drop(z);
+                        let claimed = RatedLease::claim(
+                            base,
+                            pool_token,
+                            instance,
+                            account,
+                            session.id.clone(),
+                        )
+                        .await;
+                        let lease = match claimed {
+                            Ok(Some(lease)) => lease,
+                            Ok(None) => {
+                                let _ = tx.try_send(Message::Binary(deny(
+                                    DENY_RATED_SESSION,
+                                    "this account is active in another rated session",
+                                    Some(&seat_of),
+                                )));
+                                break;
+                            }
+                            Err(e) => {
+                                let _ = tx.try_send(Message::Binary(deny(
+                                    DENY_RATED_SESSION,
+                                    &format!("cannot open a rated session: {e}"),
+                                    Some(&seat_of),
+                                )));
+                                break;
+                            }
+                        };
+                        z = zone.lock().await;
+                        // The lock was released for the meta call. Selection
+                        // may have changed this process in the meantime, so
+                        // the door conditions that can move are checked again
+                        // before the claim becomes a seat.
+                        if z.rooms.is_empty() || (!want.is_empty() && want != z.zone_name) {
+                            rated_lease = Some(lease);
+                            let _ = tx.try_send(Message::Binary(deny(
+                                DENY_WRONG_ZONE,
+                                "this instance changed games while the rated seat was checked; re-browse",
+                                Some(&seat_of),
+                            )));
+                            break;
+                        }
+                        if z.draining || z.is_banned(&name) {
+                            rated_lease = Some(lease);
+                            let _ = tx.try_send(Message::Binary(deny(
+                                if z.draining { DENY_DRAINING } else { DENY_BANNED },
+                                if z.draining {
+                                    "this arena began draining while the rated seat was checked"
+                                } else {
+                                    "you are banned here"
+                                },
+                                Some(&seat_of),
+                            )));
+                            break;
+                        }
+                        rated_lease = Some(lease);
+                    }
+                }
                 let _ = tx.try_send(Message::Binary(z.zone_msg()));
                 watch_any = z.watch_any(&seat_of);
                 // Arrived to watch. No seat, no side, no live follow:
@@ -5200,6 +5372,7 @@ pub(crate) async fn serve_client(
                         "no seat in that room",
                         Some(&refused),
                     )));
+                    break;
                 }
                 // A join changes the count a directory reports, and a
                 // stale count is a directory routing players to the wrong
@@ -5245,26 +5418,88 @@ pub(crate) async fn serve_client(
                             }
                         }
                     } else if let Some((room, wid)) = watch {
+                        let (carried, lease_args) = {
+                            let z = zone.lock().await;
+                            let carried = z
+                                .rooms
+                                .get(room)
+                                .and_then(|a| a.watchers.get(&wid))
+                                .map(|w| w.seat.clone());
+                            let args = if rated_lease.is_none() {
+                                carried
+                                    .as_ref()
+                                    .filter(|s| s.account.is_some())
+                                    .map(|_| z.rated_lease_args())
+                                    .transpose()
+                            } else {
+                                Ok(None)
+                            };
+                            (carried, args)
+                        };
+                        let mut candidate = None;
+                        if let Some((base, pool_token, instance)) = match lease_args {
+                            Ok(v) => v,
+                            Err(e) => {
+                                let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
+                                m.extend_from_slice(format!("cannot open a rated session: {e}").as_bytes());
+                                let _ = tx.try_send(Message::Binary(m));
+                                continue;
+                            }
+                        } {
+                            let account = carried.as_ref().and_then(|s| s.account).unwrap();
+                            match RatedLease::claim(
+                                base,
+                                pool_token,
+                                instance,
+                                account,
+                                session.id.clone(),
+                            )
+                            .await
+                            {
+                                Ok(Some(lease)) => candidate = Some(lease),
+                                Ok(None) => {
+                                    let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
+                                    m.extend_from_slice(
+                                        b"this account is active in another rated session",
+                                    );
+                                    let _ = tx.try_send(Message::Binary(m));
+                                    continue;
+                                }
+                                Err(e) => {
+                                    let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
+                                    m.extend_from_slice(
+                                        format!("cannot open a rated session: {e}").as_bytes(),
+                                    );
+                                    let _ = tx.try_send(Message::Binary(m));
+                                    continue;
+                                }
+                            }
+                        }
                         let mut z = zone.lock().await;
                         let cap = z.max_players();
                         // The rating they carried in comes back with
                         // them, exactly as it would at the door.
-                        let carried = z
-                            .rooms
-                            .get(room)
-                            .and_then(|a| a.watchers.get(&wid))
-                            .map(|w| w.seat.clone());
                         if let Some(s) = carried.as_ref() {
                             z.restore_pilot(room, s);
                         }
+                        let mut flew = false;
                         if let Some(a) = z.rooms.get_mut(room) {
                             if let Some(new_id) = a.fly(wid, cls, cap) {
                                 watch = None;
                                 seat = Some((room, new_id));
+                                flew = true;
                             }
                         }
                         // A human entered the game count.
                         z.push_status();
+                        drop(z);
+                        if flew {
+                            if candidate.is_some() {
+                                rated_lease = candidate;
+                            }
+                        } else if let Some(lease) = candidate {
+                            lease.release().await;
+                        }
                     }
                 }
             }
@@ -5354,22 +5589,6 @@ pub(crate) async fn serve_client(
                     }
                 }
             }
-            C2S_VIEW => {
-                // How much of the map this client draws, so it is sent that
-                // and not the ceiling. One byte of tiles; `radius_for` floors
-                // it at the radar and caps it at the ceiling, so a client
-                // claiming the world gets what it already had.
-                if data.len() >= 2 {
-                    if let Some((room, pid)) = seat {
-                        let mut z = zone.lock().await;
-                        if let Some(a) = z.rooms.get_mut(room) {
-                            if let Some(p) = a.players.get_mut(&pid) {
-                                p.view = data[1];
-                            }
-                        }
-                    }
-                }
-            }
             C2S_ATTACH => {
                 // Climb onto a teammate, or drop off. Every condition is the
                 // core's, and the answer is the next snapshot: a gunner is a
@@ -5439,6 +5658,10 @@ pub(crate) async fn serve_client(
         // No push_status: a watcher was never in the counts.
     }
 
+    if let Some(lease) = rated_lease {
+        lease.release().await;
+    }
+
 }
 
 #[cfg(test)]
@@ -5501,7 +5724,6 @@ mod tests {
         // sends: these tests are about which tick a button lands on.
         std::mem::forget(rx);
         Player {
-            view: 0,
             ship: 0,
             buttons: 0,
             pending: Default::default(),
@@ -7050,9 +7272,7 @@ mod tests {
             .collect()
     }
 
-    /// Put a seat far enough away that no radius short of the whole map
-    /// reaches it. The interest radius is 256 tiles; this is most of a
-    /// thousand.
+    /// Put a seat far outside the server's fixed fairness radius.
     fn send_far(a: &mut Room, ship: u8) {
         let sh = &mut a.world.state.ships[ship as usize];
         sh.x = 900 * 16 * 256;
@@ -7060,28 +7280,8 @@ mod tests {
     }
 
     #[test]
-    fn a_view_picks_the_radius_and_can_only_ask_for_less() {
-        // The number comes from a client, so what it can do is the whole
-        // question. It may ask for less than the ceiling and never for more,
-        // and it may never ask for less than the radar draws, because a blip
-        // at sixty tiles is a blip whether or not it is on screen.
-        assert_eq!(radius_for(0), INTEREST, "a client that never said gets the ceiling");
-        assert_eq!(radius_for(255), INTEREST, "and one claiming the world gets no more");
-        assert_eq!(radius_for(200), INTEREST, "nor one claiming more than the ceiling");
-
-        let small = radius_for(40);
-        assert!(small < INTEREST, "a small window is served less");
-        assert_eq!(small, (RADAR_TILES + VIEW_SLACK) * 16 * 256,
-                   "and is floored at what the radar reaches, plus slack");
-
-        let wide = radius_for(100);
-        assert_eq!(wide, (100 + VIEW_SLACK) * 16 * 256, "a wide window gets its own");
-        assert!(wide > small && wide < INTEREST, "between the floor and the ceiling");
-
-        // Monotone, so a resize never costs a client sight it had.
-        for v in 1..=254u8 {
-            assert!(radius_for(v) <= radius_for(v + 1), "view {v} is not monotone");
-        }
+    fn the_fairness_radius_is_the_radar_plus_arrival_margin() {
+        assert_eq!(FAIR_INTEREST, 84 * 16 * 256);
     }
 
     #[test]
@@ -7116,6 +7316,70 @@ mod tests {
     }
 
     #[test]
+    fn a_prize_outcome_is_sent_only_after_the_server_rolls_it() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (ship, _id, mut rx) = seat_rx(&mut a, "collector");
+        drain(&mut rx);
+        a.world.cfg.prize_delay = 0;
+        let sh = a.world.state.ships[ship as usize];
+        a.world.state.prizes[0] = sim::sim_prize {
+            active: 1,
+            x: sh.x,
+            y: sh.y,
+            life: 100,
+        };
+        a.tick();
+        let messages = drain(&mut rx);
+        let prize = messages
+            .iter()
+            .find(|m| m.first() == Some(&S2C_PRIZE))
+            .expect("the collector receives the authoritative outcome");
+        assert_eq!(prize.len(), 3);
+        assert!(prize[1] < sim::PRIZE_COUNT as u8, "the rolled type is on the tree");
+        assert!(prize[2] == 1 || prize[2] == 0xff, "the sign is grant or rust");
+    }
+
+    #[test]
+    fn a_charge_action_reveals_no_inventory_and_stays_inside_fair_sight() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (shooter, _, mut shooter_rx) = seat_rx(&mut a, "shooter");
+        let (near, _, mut near_rx) = seat_rx(&mut a, "near");
+        let (far, _, mut far_rx) = seat_rx(&mut a, "far");
+        let origin = a.world.state.ships[shooter as usize];
+        a.world.state.ships[near as usize].x = origin.x;
+        a.world.state.ships[near as usize].y = origin.y;
+        send_far(&mut a, far);
+        drain(&mut shooter_rx);
+        drain(&mut near_rx);
+        drain(&mut far_rx);
+
+        a.world.state.ships[shooter as usize].charge[0] = 3;
+        a.world.step(&[sim::sim_input { ship: shooter, buttons: sim::BTN_USE }]);
+        a.score_events();
+
+        let near_messages = drain(&mut near_rx);
+        let charge = near_messages
+            .iter()
+            .find(|m| m.first() == Some(&S2C_CHARGE))
+            .expect("a nearby observer receives the public action");
+        assert_eq!(charge.len(), 11);
+        assert_eq!((charge[1], charge[2]), (shooter, 0));
+        assert_eq!(
+            i32::from_le_bytes(charge[3..7].try_into().unwrap()),
+            a.world.state.ships[shooter as usize].x,
+        );
+        assert!(
+            drain(&mut shooter_rx).iter().all(|m| m.first() != Some(&S2C_CHARGE)),
+            "the owner already predicts the action",
+        );
+        assert!(
+            drain(&mut far_rx).iter().all(|m| m.first() != Some(&S2C_CHARGE)),
+            "the action does not leak beyond fair sight",
+        );
+        assert_eq!(charge.len(), 11, "no remaining inventory count travels");
+    }
+
+    #[test]
     fn a_pilot_is_still_told_about_the_minefield_they_flew_away_from() {
         // The other half of the same filter, and the half that was wrong.
         //
@@ -7144,7 +7408,7 @@ mod tests {
         send_far(&mut a, me);
         let sh = &a.world.state.ships[me as usize];
         let gap = ((sh.x - laid.x) as i64).abs();
-        assert!(gap > INTEREST as i64, "the pilot is further off than the ceiling");
+        assert!(gap > FAIR_INTEREST as i64, "the pilot is outside fair sight");
 
         let mut buf = vec![0u8; sim::PACK_MAX];
         a.broadcast_snapshot(&mut buf);
@@ -7276,9 +7540,35 @@ mod tests {
 
         let sh = &a.world.state.ships[target as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
-        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, INTEREST, target);
+        let n = a.world.pack_around(
+            &mut fresh, sh.x, sh.y, FAIR_INTEREST, target, 255, 0,
+        );
         assert!(n > 0);
         assert_eq!(&last[6..], &fresh[..n as usize], "byte for byte");
+    }
+
+    #[test]
+    fn follow_does_not_restore_the_old_160_tile_disclosure() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let target = seat_human(&mut a, "flown");
+        let (_, wid, mut rx) = seat_rx(&mut a, "watching");
+        let hidden = seat_human(&mut a, "hidden");
+        let center = a.world.state.ships[target as usize];
+        a.world.state.ships[hidden as usize].x = center.x + 120 * 16 * 256;
+        a.world.state.ships[hidden as usize].y = center.y;
+        assert!(a.sit_out(wid, target, false, false));
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        a.broadcast_snapshot(&mut buf);
+        let got = snapshots(&drain(&mut rx));
+        let last = got.last().expect("a follow snapshot arrived");
+        let mut view = sim::World::new(1);
+        assert!(view.apply_snapshot(&last[6..]));
+        assert_eq!(
+            view.state.ships[hidden as usize].active,
+            0,
+            "a ship inside the old 160-tile ceiling but outside fair sight stays hidden",
+        );
     }
 
     #[test]
@@ -7299,7 +7589,9 @@ mod tests {
         let last = got.last().expect("a follow snapshot");
         let sh = &a.world.state.ships[bots[0] as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
-        let n = a.world.pack_around(&mut fresh, sh.x, sh.y, INTEREST, bots[0]);
+        let n = a.world.pack_around(
+            &mut fresh, sh.x, sh.y, FAIR_INTEREST, bots[0], 255, 0,
+        );
         assert_eq!(&last[6..], &fresh[..n as usize], "human radius, always");
     }
 
@@ -7511,6 +7803,32 @@ mod tests {
             a.watch_join(Seat::guest("two", false), false, tx).is_none(),
             "the cap is a bandwidth number and it holds"
         );
+    }
+
+    #[test]
+    fn sitting_out_needs_the_same_full_bar_as_a_hull_change() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (ship, id, _rx) = seat_rx(&mut a, "wounded");
+        let full = a.world.eff_max_energy(ship as usize);
+        a.world.state.ships[ship as usize].energy = full - 1;
+        assert!(!a.sit_out(id, 255, false, false), "a wounded pilot keeps the hull");
+        assert!(a.players.contains_key(&id));
+        assert!(!a.watchers.contains_key(&id));
+
+        a.world.state.ships[ship as usize].energy = full;
+        assert!(a.sit_out(id, 255, false, false), "a whole pilot may sit out");
+    }
+
+    #[test]
+    fn sitting_out_counts_against_the_watcher_limit() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        a.max_watchers = 1;
+        let (tx, _keep) = mpsc::channel(OUT_QUEUE);
+        a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        let (_, id, _rx) = seat_rx(&mut a, "pilot");
+        assert!(!a.sit_out(id, 255, false, false));
+        assert!(a.players.contains_key(&id), "the cap refuses without despawning");
+        assert_eq!(a.watchers.len(), 1);
     }
 
     #[test]
@@ -9299,9 +9617,8 @@ mod one_tick_weapons {
     /// It is spawned in the ship phase and ends in the weapon phase of the
     /// very next step, so the only snapshot that can carry it is one packed on
     /// the tick it was fired. At `SNAPSHOT_EVERY` of 5 that is one shove in
-    /// five with a picture on it, and the other four reach a watcher as ships
-    /// moving for no visible reason. The client draws those from the firer's
-    /// charge count instead; see `M.charges` in client/arena/world.lua.
+    /// five with a picture on it. The explicit public charge event covers the
+    /// other four without shipping the firer's private inventory.
     ///
     /// This is here to fail if that stops being true, because the day a repel
     /// lives long enough to be packed is the day the client should go back to

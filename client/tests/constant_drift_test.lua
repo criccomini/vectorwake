@@ -74,23 +74,24 @@ check("the menu lists exactly the core's classes", hulls == MAX_CLASSES,
 
 -- --- the radar's reach ------------------------------------------------------
 --
--- Four copies: the renderer's window, the dial's span, the floor the zone
--- filters snapshots at, and how far a bot can see. A client drawing further
--- than the zone sends grows a blind ring at the edge of the dial; one drawing
--- less throws away detail it was sent.
+-- The dial and bots use the sixty-tile radar reach. The zone adds the same
+-- twenty-four-tile arrival margin the renderer keeps around that reach.
 
 local uisrc = read("client/arena/ui.lua")
 local mainrs = read("server/src/main.rs")
 local aisrc = read("server/src/ai.rs")
+local arenasrc = read("client/arena/arena.script")
 
 local reach = tonumber(worldsrc:match("local RADAR_TILES = (%d+)"))
 check("world.lua names a radar reach", reach ~= nil)
 check("the dial spans the same reach",
       tonumber(uisrc:match("local SPAN = (%d+) %* " .. TILE_PX)) == reach,
       "world.lua says " .. tostring(reach))
-check("the zone filters at the same reach",
-      tonumber(mainrs:match("const RADAR_TILES: i32 = (%d+)")) == reach,
-      "world.lua says " .. tostring(reach))
+local fair = tonumber(mainrs:match("const FAIR_INTEREST: i32 = (%d+) %*"))
+local slack = tonumber(worldsrc:match("local RADAR_SLACK = (%d+)"))
+check("the zone filters at radar reach plus arrival margin",
+      fair == reach + slack,
+      "client says " .. tostring(reach + slack) .. ", zone says " .. tostring(fair))
 check("a bot sees the same reach",
       tonumber(aisrc:match("pub const SIGHT: f32 = (%d+)%.0 %* " ..
                            TILE_PX .. "%.0")) == reach,
@@ -100,8 +101,6 @@ check("a bot sees the same reach",
 -- wider than the step that window moves in, or terrain blinks in at the edge
 -- between one rebuild and the next. Both sides are literals in different
 -- files, tied by a comment.
-local arenasrc = read("client/arena/arena.script")
-local slack = tonumber(worldsrc:match("local RADAR_SLACK = (%d+)"))
 local step = tonumber(arenasrc:match("STATIC_STEP = (%d+)"))
 check("the terrain window's slack clears its step",
       slack and step and slack > step,

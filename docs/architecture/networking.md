@@ -274,54 +274,21 @@ and it is the honest shape of this: a pilot in a quiet corner is at the target,
 a pilot in the middle of the room's one big fight is twice it, because
 everything the cull removes is by definition somewhere you are not.
 
-### The radius is the client's window, not a constant
+### The fairness radius is server-defined
 
-160 tiles is the ceiling rather than the answer. It was sized against
-`TUNE.STATIC_MAX`, the widest terrain window the client will build, and almost
-nobody is at the ceiling: `TUNE.STATIC_MIN` is 56 and an ordinary window sits
-between. Sending everyone the widest case is sending most people four times
-what they can draw.
+Every human snapshot uses one 84-tile radius: the sixty-tile radar plus
+twenty-four tiles of arrival margin. The client no longer declares a view
+radius. A modified client therefore cannot widen disclosure by claiming a
+larger window, and a very wide legitimate window does not become permission
+to see more of the arena.
 
-So a client says. `C2S_VIEW` carries one byte of tiles either side of the
-camera, sent from the same measurement the terrain window is built from and
-again on every welcome, since sitting out and flying again arrive as fresh
-welcomes and a new life has been told nothing. The server floors it at the
-radar's own reach, because a blip sixty tiles out is a blip whether or not it
-is on screen, adds the slack, and caps it at the ceiling.
+Flying, live follow, and the delayed room channel use the same radius. A
+followed pilot supplies the camera center and the minefield perspective, but
+not the recipient's ownership. The watcher receives public ship records only.
 
-The number comes from a client, so what a lie can do is the whole question:
-nothing. It picks how much you are sent, it is clamped at both ends, and the
-top of the range is what everybody had before. Claiming the world asks for what
-you already had.
-
-It is additive, which is why no protocol bump came with it. The arena's
-dispatch ignores an opcode it does not know, so an older client never sends
-this and is served the ceiling, and a newer client against an older arena is
-simply not heard. Neither has to be refused.
-
-Measured against the same fifty-two ship room, one pilot declaring a 56-tile
-window against one that declares nothing: **25.7 KB/s to 15.2**, another 41%
-off, with the rounds in range falling from 32.6 to 19.2.
-
-Confirmed on the live arena afterwards, and the confirmation took two goes for a
-reason worth writing down. Comparing two separate sessions proved nothing: fight
-density moves more than the window does, and the first live pair came back
-showing the narrow window costing *more*, on a run where the pilot took four
-kills. So the pilot now switches its own window every hundred snapshots inside
-one session, and both arms sample the same fight:
-
-```
-                snaps   mean B   KB/s   rounds   ships   furthest ship
-declares 255     1632    2,524   49.3     59.2     5.4   max 160.0t  p95 159.3t
-declares 56      1567    1,352   26.4     33.6     1.9   max  84.0t  p95  82.0t
-```
-
-The bytes are the point, but the last column is the proof. A declared window is
-a geometric claim, so it holds or it does not whatever the fight is doing: the
-ceiling arm reaches exactly 160.0 tiles and the narrow arm exactly 84.0, which
-is 56 floored at the radar's 60 plus the 24 tiles of slack. Neither exceeds its
-bound. `tools/pilot --view <tiles>` reports both as `reach(ship/round tiles)`,
-and rounds clamp with ships: 160.0/160.0 against 84.0/84.0.
+House bots retain their signed whole-room position stream because their shared
+room model requires it. The grant comes from the token label, not the bot bit a
+client declares, and it still omits the server's prize random stream.
 
 The first wrong reading turned out not to be noise either. The arena was simply
 not running this code. `image.yml` takes the last push to main and cancels the
@@ -566,30 +533,31 @@ did not die, cannot teleport, and cannot fire faster than the settings allow,
 because none of those are things a client asserts.
 
 What remains is the class of cheats that make a legitimate client better:
-aimbots, and clients that render information the player should not have. Those
-need different answers, and the second is decided but not built. Today a
-snapshot carries the whole room to every client, and the 60-tile sight limit
-is drawn by the client rather than enforced by the wire, so a modified client
-reads the map. The answer, when it is worth its weight, is a visibility filter
-where snapshots pack, the mechanism behind Subspace's `Misc:SeeEnergy`, with
-full view becoming a named capability like the staff powers the catalog
-already carries: granted per account and zone, held by the house fleet, whose
-shared prediction needs whole-room snapshots, and by staff. The bot flag a
-client declares at join grants the whole prize table in the meantime, which is
-this capability issued by the wrong authority, the client itself; the filter
-and the capability ship together, because until data is withheld there is
-nothing for a grant to open.
+aimbots, and clients that render information the player should not have. The
+wire answers the second in two dimensions. It omits ships and rounds outside
+the fixed fairness radius, and it sends public and owner ship records in
+different shapes.
 
-The leak has depth as well as reach. A packed ship is the whole ship: exact
-energy, charge counts, greens held, weapon rungs. A modified client can put an
-energy bar over every enemy, which is precisely the read `SeeEnergy` existed
-to gate, and can know whether a pilot still holds a repel before committing to
-the rush that repel would answer. So the filter, when it comes, trims fields
-as well as culling distant ships. One dependency to mind by then: the
-legitimate client reads remote charge counts to draw other people's repels,
-because a one-tick weapon never survives into a snapshot. Withholding those
-counts means sending the shove as its own message the way kills are sent,
-which is the cleaner shape anyway.
+A public record contains the facts needed to draw and extrapolate a hull:
+identity, side, position, velocity, heading, shove state, score, bounty, and
+carrier. Energy, cooldowns, spawn state, upgrades, weapon rungs, add-ons,
+charges, toggle edges, and earned-bounty composition travel only in the owner
+tail. A spectator camera does not confer ownership, so following another pilot
+does not include that tail. House bots may receive every private tail through
+their signed label, but an ordinary client cannot request the grant.
+
+A one-tick repel used to be drawn by watching the remote pilot's charge count
+fall, which made the private count necessary for presentation. `S2C_CHARGE`
+now carries only the public action, slot, and position to views whose fairness
+circle contains it. The client can draw the shove without learning how many
+answers that enemy has left.
+
+Prize randomness is separate from prediction randomness. Network snapshots
+carry the deterministic stream used for flight and projectiles, but never the
+stream used to place greens or roll their results. A prediction client may
+remove a green it touched; only the arena applies the result. `S2C_PRIZE`
+carries the rolled type and grant-or-rust sign to the collector, and the next
+snapshot carries the resulting private inventory.
 
 A filter has a ceiling worth stating: clients can pool their lawful sights,
 which is a scout team and is answered like one, with seats, visibility on

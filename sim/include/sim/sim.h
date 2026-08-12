@@ -610,6 +610,11 @@ typedef struct {
 typedef struct {
     uint8_t active;
     uint8_t alive;
+    /* Set only by `sim_unpack` for a remote record whose owner-only tail was
+     * withheld. Authoritative states and owner records leave it clear. The
+     * prediction core uses it to avoid applying limits derived from inventory
+     * it was deliberately not told about. */
+    uint8_t public_only;
     uint8_t cls;   /* index into settings.classes */
     uint8_t team;
     int32_t x, y;
@@ -825,6 +830,10 @@ typedef struct {
 typedef struct {
     uint32_t tick;
     uint32_t rng;
+    /* Prize rolls and green placement are server decisions. This stream is
+     * distinct from the prediction stream above and is omitted from every
+     * network snapshot. */
+    uint32_t prize_rng;
     uint8_t ship_count;
     uint16_t weapon_count;
     uint16_t prize_timer;
