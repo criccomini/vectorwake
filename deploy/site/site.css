@@ -222,8 +222,7 @@ button {
   background: #03050a;
 }
 
-.gameplay-film,
-.cta-field {
+.gameplay-film {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -281,11 +280,8 @@ button {
 }
 
 .hero h1,
-.declaration h2,
-.energy h2,
-.flight h2,
-.fleet h2,
-.world h2,
+.rankings h2,
+.bots h2,
 .final-cta h2 {
   margin: 0;
   font-family: var(--display);
@@ -405,668 +401,79 @@ button {
   margin-inline: auto;
 }
 
-.declaration {
+.rankings,
+.bots {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.55fr);
-  gap: clamp(50px, 9vw, 150px);
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: clamp(60px, 9vw, 150px);
   align-items: start;
-  padding-block: clamp(110px, 15vw, 220px);
+  min-height: 78svh;
+  padding-block: clamp(120px, 16vw, 220px);
+  border-top: 1px solid var(--line);
 }
 
-.declaration h2,
-.energy h2,
-.flight h2,
-.fleet h2,
-.world h2,
-.final-cta h2 {
-  font-size: clamp(46px, 6.2vw, 92px);
-  line-height: 0.94;
-  letter-spacing: -0.04em;
-}
-
-.declaration h2 {
+.rankings h2,
+.bots h2 {
+  margin: 0;
   color: var(--ink);
+  font-size: clamp(96px, 15vw, 230px);
+  line-height: 0.72;
+  letter-spacing: -0.055em;
 }
 
-.declaration > p,
-.energy-copy > p,
-.flight-copy > p,
-.fleet-head > p,
-.world-copy > p,
+.section-copy {
+  align-self: end;
+  max-width: 560px;
+}
+
+.section-copy p {
+  margin: 0;
+}
+
+.section-statement {
+  color: var(--friend);
+  font-family: var(--display);
+  font-size: clamp(42px, 5vw, 76px);
+  line-height: 0.9;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+}
+
+.section-copy p:last-child,
 .final-cta p {
   color: #91a2b9;
   font-size: 13px;
   line-height: 1.95;
 }
 
-.declaration > p {
-  margin: 5px 0 0;
+.section-copy p:last-child {
+  max-width: 520px;
+  margin-top: 30px;
 }
 
-.energy {
-  display: grid;
-  grid-template-columns: 0.8fr 1.35fr;
-  gap: clamp(50px, 8vw, 130px);
-  align-items: center;
-  min-height: 100svh;
-  padding-block: 110px;
-  border-top: 1px solid var(--line);
+.bots {
+  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
 }
 
-.energy-copy h2,
-.flight-copy h2,
-.world-copy h2 {
-  margin-top: 0;
-}
-
-.energy-copy > p,
-.flight-copy > p,
-.world-copy > p {
-  max-width: 470px;
-  margin: 28px 0 0;
-}
-
-.demo-trigger {
-  display: flex;
-  justify-content: space-between;
-  width: min(100%, 360px);
-  margin-top: 36px;
-  padding: 15px 0;
-  border: 0;
-  border-block: 1px solid var(--line);
-  background: transparent;
-  color: var(--enemy);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: padding 160ms ease, color 160ms ease;
-}
-
-.demo-trigger:hover {
-  padding-inline: 8px;
-  color: #ffc188;
-}
-
-.energy-instrument {
-  position: relative;
-  min-height: 600px;
-  overflow: hidden;
-  border-block: 1px solid var(--line);
-  background:
-    linear-gradient(var(--deep-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--deep-line) 1px, transparent 1px);
-  background-size: 54px 54px;
-}
-
-.instrument-topline,
-.instrument-footer {
-  position: absolute;
-  z-index: 3;
-  right: 0;
-  left: 0;
-  display: flex;
-  justify-content: space-between;
-  color: var(--dim);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.instrument-topline {
-  top: 0;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.instrument-footer {
-  bottom: 0;
-  align-items: center;
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
-}
-
-.instrument-footer button {
-  padding: 0;
-  border: 0;
-  background: transparent;
+.bots h2 {
+  order: 2;
   color: var(--friend);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
+  text-align: right;
 }
 
-.energy-readout {
-  position: absolute;
-  z-index: 2;
-  top: 82px;
-  left: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 28px;
+.bots .section-copy {
+  order: 1;
 }
 
-.energy-label {
-  color: var(--green);
-  font-size: 11px;
-  letter-spacing: 0.2em;
+.bots .section-statement {
+  color: var(--ink);
 }
-
-.energy-readout strong {
-  font-family: var(--display);
-  font-size: clamp(76px, 9vw, 136px);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: -0.04em;
-}
-
-.energy-track {
-  position: absolute;
-  z-index: 2;
-  top: 210px;
-  right: 0;
-  left: 0;
-  height: 6px;
-  background: #111a26;
-}
-
-.energy-track > span {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 100%;
-  background: var(--green);
-  box-shadow: 0 0 20px rgb(127 227 160 / 0.45);
-  transition: width 320ms cubic-bezier(.2, .8, .2, 1), background 200ms ease;
-}
-
-.energy-danger {
-  position: absolute;
-  top: -5px;
-  bottom: -5px;
-  left: 22%;
-  width: 1px;
-  background: var(--enemy);
-}
-
-.shot-field {
-  position: absolute;
-  inset: 250px 0 60px;
-  overflow: hidden;
-}
-
-.demo-ship {
-  position: absolute;
-  top: 50%;
-  left: 18%;
-  width: 72px;
-  transform: translate(-50%, -50%) rotate(90deg);
-  overflow: visible;
-  fill: rgb(20 54 68 / 0.9);
-  stroke: var(--friend);
-  stroke-width: 0.8;
-  filter: drop-shadow(0 0 6px rgb(79 214 255 / 0.35));
-}
-
-.demo-ship path {
-  fill: none;
-  stroke: #9fb6d4;
-  stroke-width: 0.45;
-}
-
-.aim-line {
-  position: absolute;
-  top: 50%;
-  right: 13%;
-  left: 23%;
-  height: 1px;
-  background: linear-gradient(90deg, rgb(79 214 255 / 0.35), transparent);
-}
-
-.target-ring {
-  position: absolute;
-  top: 50%;
-  right: 7%;
-  width: 66px;
-  height: 66px;
-  transform: translateY(-50%);
-  border: 1px solid rgb(255 165 82 / 0.7);
-  border-radius: 50%;
-  box-shadow: 0 0 24px rgb(255 165 82 / 0.13);
-}
-
-.target-ring::before,
-.target-ring::after {
-  position: absolute;
-  content: "";
-  background: var(--enemy);
-}
-
-.target-ring::before {
-  top: 50%;
-  right: -8px;
-  left: -8px;
-  height: 1px;
-}
-
-.target-ring::after {
-  top: -8px;
-  bottom: -8px;
-  left: 50%;
-  width: 1px;
-}
-
-.demo-shot {
-  position: absolute;
-  z-index: 3;
-  top: calc(50% - 2px);
-  left: 23%;
-  width: 38px;
-  height: 4px;
-  border-radius: 4px;
-  background: var(--enemy);
-  box-shadow: 0 0 8px var(--enemy), 0 0 22px rgb(255 165 82 / 0.6);
-  animation: demo-fire 500ms linear forwards;
-}
-
-@keyframes demo-fire {
-  to { transform: translateX(470px); opacity: 0; }
-}
-
-.energy-instrument.is-low .energy-track > span {
-  background: var(--enemy);
-}
-
-.energy-instrument.is-empty .energy-track > span {
-  background: #ff505a;
-}
-
-.flight {
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: clamp(60px, 8vw, 140px);
-  align-items: center;
-  min-height: 100svh;
-  padding-block: 120px;
-  border-top: 1px solid var(--line);
-}
-
-.flight-visual {
-  position: relative;
-  min-height: min(720px, 78vw);
-  overflow: hidden;
-  border-left: 1px solid var(--line);
-}
-
-.orbit {
-  position: absolute;
-  border: 1px solid rgb(79 214 255 / 0.2);
-  border-radius: 50%;
-}
-
-.orbit-one {
-  inset: 8% 5% 18% -22%;
-}
-
-.orbit-two {
-  inset: 24% 18% 34% -5%;
-  border-style: dashed;
-}
-
-.wake {
-  position: absolute;
-  left: 14%;
-  width: 78%;
-  height: 1px;
-  transform-origin: left;
-  background: linear-gradient(90deg, transparent, rgb(79 214 255 / 0.32), transparent);
-}
-
-.wake-one {
-  top: 45%;
-  transform: rotate(-19deg);
-}
-
-.wake-two {
-  top: 52%;
-  transform: rotate(-13deg);
-  opacity: 0.45;
-}
-
-.flight-ship {
-  position: absolute;
-  top: 38%;
-  left: 53%;
-  width: clamp(130px, 19vw, 260px);
-  overflow: visible;
-  transform: translate(-50%, -50%) rotate(55deg);
-  fill: rgb(17 48 62 / 0.92);
-  stroke: var(--friend);
-  stroke-width: 0.5;
-  filter: drop-shadow(0 0 12px rgb(79 214 255 / 0.42));
-  animation: ship-drift 5s ease-in-out infinite;
-}
-
-.flight-ship path {
-  fill: none;
-  stroke: #9fb6d4;
-  stroke-width: 0.35;
-}
-
-@keyframes ship-drift {
-  50% { transform: translate(-45%, -57%) rotate(58deg); }
-}
-
-.vector-label {
-  position: absolute;
-  color: var(--dim);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-}
-
-.label-course { top: 14%; left: 7%; }
-.label-speed { right: 4%; bottom: 25%; color: var(--friend); }
-.label-drift { right: 12%; top: 16%; color: var(--enemy); }
-
-.flight-facts {
-  display: grid;
-  gap: 0;
-  margin-top: 44px;
-  border-top: 1px solid var(--line);
-}
-
-.flight-facts span {
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line);
-  color: var(--dim);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.flight-facts span::before {
-  content: "+";
-  display: inline-block;
-  width: 32px;
-  color: var(--enemy);
-}
-
-.fleet {
-  padding-top: 130px;
-  border-top: 1px solid var(--line);
-}
-
-.fleet-head {
-  display: grid;
-  grid-template-columns: 1.2fr 0.52fr;
-  gap: 60px;
-  align-items: end;
-  margin-bottom: 70px;
-}
-
-.fleet-head h2 {
-  margin-top: 0;
-}
-
-.fleet-head > p {
-  margin: 0 0 4px;
-}
-
-.shipyard {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1.6fr 0.72fr;
-  min-height: 670px;
-  border-block: 1px solid var(--line);
-  background:
-    linear-gradient(var(--deep-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--deep-line) 1px, transparent 1px);
-  background-size: 72px 72px;
-}
-
-.hull-stage {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-width: 0;
-  overflow: hidden;
-  border-right: 1px solid var(--line);
-}
-
-.hull-stage::before,
-.hull-stage::after {
-  position: absolute;
-  z-index: 0;
-  content: "";
-  width: min(52vw, 560px);
-  height: min(52vw, 560px);
-  border: 1px solid rgb(79 214 255 / 0.17);
-  border-radius: 50%;
-}
-
-.hull-stage::after {
-  width: min(32vw, 350px);
-  height: min(32vw, 350px);
-  border-style: dashed;
-}
-
-.hull-stage svg {
-  position: relative;
-  z-index: 2;
-  width: min(48vw, 520px);
-  height: min(48vw, 520px);
-  overflow: visible;
-  filter: drop-shadow(0 0 18px rgb(79 214 255 / 0.45));
-  animation: hull-enter 420ms cubic-bezier(.2, .8, .2, 1);
-}
-
-.hull-stage .hull-body {
-  fill: url("#hull-fill");
-  stroke: var(--friend);
-  stroke-width: 0.55;
-  vector-effect: non-scaling-stroke;
-}
-
-.hull-stage .hull-ghost {
-  fill: none;
-  stroke: rgb(79 214 255 / 0.16);
-  stroke-width: 0.45;
-  vector-effect: non-scaling-stroke;
-}
-
-.hull-stage .hull-axis {
-  stroke: rgb(255 165 82 / 0.35);
-  stroke-width: 0.35;
-  stroke-dasharray: 1 2;
-  vector-effect: non-scaling-stroke;
-}
-
-@keyframes hull-enter {
-  from { opacity: 0; transform: scale(0.82) rotate(-4deg); }
-  to { opacity: 1; transform: scale(1) rotate(0); }
-}
-
-.hull-copy {
-  align-self: end;
-  padding: 52px clamp(30px, 4vw, 70px) 76px;
-}
-
-.hull-number,
-.hull-role,
-.hull-copy > p {
-  margin: 0;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.hull-number {
-  color: var(--dim);
-}
-
-.hull-role {
-  margin-top: 50px;
-  color: var(--enemy);
-}
-
-.hull-copy h3 {
-  margin: 10px 0 24px;
-  font-family: var(--display);
-  font-size: clamp(58px, 7vw, 106px);
-  font-weight: 400;
-  line-height: 0.9;
-  letter-spacing: -0.05em;
-  text-transform: uppercase;
-}
-
-.hull-copy > p:last-child {
-  max-width: 300px;
-  color: #9eacc0;
-  line-height: 1.8;
-  text-transform: none;
-}
-
-.hull-spec {
-  position: absolute;
-  top: 28px;
-  right: 28px;
-  display: flex;
-  gap: 20px;
-  color: var(--dim);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-}
-
-.hull-selector {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  width: var(--page);
-  margin: 0 auto;
-  padding-bottom: 140px;
-}
-
-.hull-selector button {
-  position: relative;
-  padding: 19px 8px 18px;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  background: transparent;
-  color: var(--dim);
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  text-align: left;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 150ms ease, border-color 150ms ease;
-}
-
-.hull-selector button::before {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 1px;
-  transform: scaleX(0);
-  transform-origin: left;
-  background: var(--friend);
-  transition: transform 180ms ease;
-}
-
-.hull-selector button:hover,
-.hull-selector button[aria-pressed="true"] {
-  color: var(--friend);
-}
-
-.hull-selector button[aria-pressed="true"]::before {
-  transform: scaleX(1);
-}
-
-.world {
-  display: grid;
-  grid-template-columns: 0.85fr 1.15fr;
-  gap: 90px;
-  align-items: center;
-  min-height: 100svh;
-  padding-block: 130px;
-  border-top: 1px solid var(--line);
-}
-
-.world-copy .github-button {
-  margin-top: 34px;
-}
-
-.github-button-wide {
-  gap: 12px;
-  padding: 13px 15px;
-}
-
-.world-scope {
-  position: relative;
-  aspect-ratio: 1;
-  max-width: 720px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at center, rgb(79 214 255 / 0.07), transparent 46%),
-    #060910;
-}
-
-.scope-ring {
-  position: absolute;
-  border: 1px solid rgb(79 214 255 / 0.25);
-  border-radius: 50%;
-}
-
-.scope-ring-a { inset: 10%; }
-.scope-ring-b { inset: 28%; border-style: dashed; }
-
-.scope-cross {
-  position: absolute;
-  background: rgb(79 214 255 / 0.13);
-}
-
-.scope-cross-x { top: 50%; right: 0; left: 0; height: 1px; }
-.scope-cross-y { top: 0; bottom: 0; left: 50%; width: 1px; }
-
-.world-scope strong {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: var(--friend);
-  font-family: var(--display);
-  font-size: clamp(48px, 6vw, 92px);
-  font-weight: 400;
-  line-height: 0.8;
-  text-align: center;
-}
-
-.scope-node {
-  position: absolute;
-  padding: 6px 9px;
-  border: 1px solid currentColor;
-  background: var(--bg);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-}
-
-.node-a { top: 15%; left: 49%; color: var(--friend); }
-.node-b { right: 8%; bottom: 26%; color: var(--enemy); }
-.node-c { bottom: 9%; left: 28%; color: var(--bomb); }
 
 .final-cta {
-  position: relative;
   display: grid;
   align-items: center;
-  min-height: 88svh;
-  overflow: hidden;
+  min-height: 72svh;
   border-block: 1px solid var(--line);
-}
-
-.cta-copy {
-  position: relative;
-  z-index: 2;
 }
 
 .final-cta h2 {
@@ -1152,76 +559,20 @@ button {
     bottom: 28px;
   }
 
-  .declaration,
-  .energy,
-  .flight,
-  .fleet-head,
-  .world {
+  .rankings,
+  .bots {
     grid-template-columns: 1fr;
-  }
-
-  .declaration {
-    gap: 32px;
-  }
-
-  .declaration > p,
-  .fleet-head > p {
-    max-width: 520px;
-  }
-
-  .energy {
     gap: 70px;
+    min-height: auto;
   }
 
-  .energy-instrument {
-    min-height: 560px;
+  .bots h2,
+  .bots .section-copy {
+    order: initial;
   }
 
-  .flight {
-    gap: 70px;
-  }
-
-  .flight-visual {
-    min-height: 600px;
-    order: 2;
-  }
-
-  .flight-copy {
-    order: 1;
-  }
-
-  .fleet-head {
-    align-items: start;
-  }
-
-  .shipyard {
-    grid-template-columns: 1fr;
-  }
-
-  .hull-stage {
-    min-height: 540px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .hull-stage svg {
-    width: min(72vw, 460px);
-    height: min(72vw, 460px);
-  }
-
-  .hull-stage::before { width: min(78vw, 520px); height: min(78vw, 520px); }
-  .hull-stage::after { width: min(52vw, 340px); height: min(52vw, 340px); }
-
-  .hull-copy {
-    min-height: 300px;
-  }
-
-  .hull-selector {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  .world-scope {
-    width: 100%;
+  .bots h2 {
+    text-align: left;
   }
 
   .site-footer {
@@ -1285,99 +636,30 @@ button {
     bottom: 22px;
   }
 
-  .declaration h2,
-  .energy h2,
-  .flight h2,
-  .fleet h2,
-  .world h2,
   .final-cta h2 {
     font-size: clamp(40px, 13vw, 66px);
   }
 
-  .energy,
-  .flight,
-  .world {
-    padding-block: 96px;
+  .rankings,
+  .bots {
+    gap: 48px;
+    padding-block: 110px;
   }
 
-  .energy-instrument {
-    min-height: 510px;
+  .bots h2 {
+    font-size: clamp(78px, 27vw, 130px);
   }
 
-  .energy-readout strong {
-    font-size: 76px;
+  .rankings h2 {
+    font-size: clamp(70px, 24vw, 112px);
   }
 
-  .energy-track {
-    top: 184px;
-  }
-
-  .shot-field {
-    top: 220px;
-  }
-
-  .instrument-footer > span {
-    max-width: 210px;
-    line-height: 1.5;
-  }
-
-  .flight-visual {
-    min-height: 460px;
-  }
-
-  .flight-ship {
-    width: 160px;
-  }
-
-  .fleet {
-    padding-top: 96px;
-  }
-
-  .fleet-head {
-    margin-bottom: 50px;
-  }
-
-  .shipyard {
-    min-height: 0;
-  }
-
-  .hull-stage {
-    min-height: 410px;
-  }
-
-  .hull-copy {
-    min-height: 270px;
-    padding: 34px 20px 52px;
-  }
-
-  .hull-copy h3 {
-    font-size: 62px;
-  }
-
-  .hull-role {
-    margin-top: 34px;
-  }
-
-  .hull-spec {
-    top: 18px;
-    right: 18px;
-  }
-
-  .hull-selector {
-    grid-template-columns: repeat(2, 1fr);
-    padding-bottom: 96px;
-  }
-
-  .world {
-    gap: 58px;
-  }
-
-  .scope-node {
-    font-size: 7px;
+  .section-statement {
+    font-size: clamp(42px, 14vw, 58px);
   }
 
   .final-cta {
-    min-height: 760px;
+    min-height: 620px;
   }
 
   .site-footer {

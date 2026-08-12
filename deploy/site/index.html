@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#05070c">
-  <meta name="description" content="Vectorwake is a fast top-down space MMO. Fly an original vector hull in your browser and spend the same energy bar on weapons and survival.">
+  <meta name="description" content="Vectorwake is a free top-down space MMO with inertial combat, persistent rankings, and AI pilots that play by the same rules.">
   <link rel="canonical" href="https://vectorwake.net/">
   <link rel="icon" href="/assets/web/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/site.css">
@@ -22,8 +22,8 @@
       <span>vectorwake</span>
     </a>
     <nav class="site-nav" aria-label="Main navigation">
-      <a href="#flight">Flight</a>
-      <a href="#fleet">Hulls</a>
+      <a href="#rankings">Rankings</a>
+      <a href="#bots">Bots</a>
       <a class="discord-button nav-discord" href="https://play.vectorwake.net/discord" data-discord-link>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M8.3 6.4a10.2 10.2 0 0 1 7.4 0 12.8 12.8 0 0 1 3.1 8.1 12.7 12.7 0 0 1-5.1 3.4l-1.1-1.5c.7-.2 1.3-.5 1.9-.9a6.1 6.1 0 0 1-5 0c.6.4 1.2.7 1.9.9l-1.1 1.5a12.7 12.7 0 0 1-5.1-3.4 12.8 12.8 0 0 1 3.1-8.1Zm1.5 7.3c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Zm4.4 0c.8 0 1.4-.8 1.4-1.7s-.6-1.7-1.4-1.7-1.4.8-1.4 1.7.6 1.7 1.4 1.7Z"/>
@@ -58,131 +58,29 @@
             <span>Enter the arena</span>
             <span aria-hidden="true">↗</span>
           </a>
-          <a class="text-link" href="#fleet">Meet the hulls <span aria-hidden="true">↓</span></a>
+          <a class="text-link" href="#rankings">See the rankings <span aria-hidden="true">↓</span></a>
         </div>
       </div>
       <p class="hero-proof"><strong>Totally free.</strong><span>Desktop + mobile.</span></p>
     </section>
 
-    <section class="declaration section-pad" aria-labelledby="declaration-title">
-      <h2 id="declaration-title">The space between<br>shots is the game.</h2>
-      <p>Vectorwake is a fast, top-down space MMO built around inertial flight and expensive decisions. It keeps the great systems of 1990s arena combat. Everything you see and hear is ours.</p>
-    </section>
-
-    <section class="energy section-pad" id="energy" aria-labelledby="energy-title">
-      <div class="energy-copy reveal">
-        <h2 id="energy-title">Spend your life<br>to fire.</h2>
-        <p>Weapons and incoming damage spend the same energy pool. Panic fire makes the next hit lethal. Hold the trigger and you may still have a way out.</p>
-        <button class="demo-trigger" type="button" data-fire>
-          <span>Fire L3</span>
-          <span>−360 NRG</span>
-        </button>
-      </div>
-
-      <div class="energy-instrument reveal" data-energy-demo>
-        <div class="instrument-topline">
-          <span>A01 / Apex</span>
-          <span data-energy-state>Armed</span>
-        </div>
-        <div class="energy-readout">
-          <span class="energy-label">NRG</span>
-          <strong data-energy-value>1350</strong>
-        </div>
-        <div class="energy-track" role="img" aria-label="Energy level demonstration">
-          <span data-energy-bar></span>
-          <i class="energy-danger"></i>
-        </div>
-        <div class="shot-field" data-shot-field aria-hidden="true">
-          <svg class="demo-ship" viewBox="-14 -24 28 40">
-            <polygon points="0,-21 1.6,-12 2.6,-5 6.5,1 11,9 8.5,11.5 3.5,6.5 3,10.5 0,11.5 -3,10.5 -3.5,6.5 -8.5,11.5 -11,9 -6.5,1 -2.6,-5 -1.6,-12"/>
-            <path d="M0-19.8 2.6-5 6.5 1M0-19.8-2.6-5-6.5 1"/>
-          </svg>
-          <span class="aim-line"></span>
-          <span class="target-ring"></span>
-        </div>
-        <div class="instrument-footer">
-          <span>Weapons and hull share this bar.</span>
-          <button type="button" data-energy-reset>Reset</button>
-        </div>
+    <section class="rankings section-pad" id="rankings" aria-labelledby="rankings-title">
+      <h2 id="rankings-title">Rankings</h2>
+      <div class="section-copy reveal">
+        <p class="section-statement">Every fight counts.</p>
+        <p>Your call sign keeps a rating between games. Kills and deaths move it, no matter who is in the other ship. Humans and AI share one ladder.</p>
       </div>
     </section>
 
-    <section class="flight section-pad" id="flight" aria-labelledby="flight-title">
-      <div class="flight-visual reveal" aria-hidden="true">
-        <div class="orbit orbit-one"></div>
-        <div class="orbit orbit-two"></div>
-        <div class="wake wake-one"></div>
-        <div class="wake wake-two"></div>
-        <svg class="flight-ship" viewBox="-22 -24 44 48">
-          <polygon points="0,-13.5 5.5,-12 11.5,-7.5 16.5,-.5 18,4 14.5,6 11,2.5 6.5,-1.5 2.5,-3.5 0,-3.8 -2.5,-3.5 -6.5,-1.5 -11,2.5 -14.5,6 -18,4 -16.5,-.5 -11.5,-7.5 -5.5,-12"/>
-          <path d="M4-10.6 13.2-3.2M-4-10.6-13.2-3.2M2.5-3.5 5.5-11.6M-2.5-3.5-5.5-11.6"/>
-        </svg>
-        <span class="vector-label label-course">COURSE 071.4</span>
-        <span class="vector-label label-speed">SPD 4300</span>
-        <span class="vector-label label-drift">DRIFT +18°</span>
-      </div>
-      <div class="flight-copy reveal">
-        <h2 id="flight-title">Point the nose.<br>Keep the drift.</h2>
-        <p>Momentum does what you told it to do, even after you change your mind. Turn through your own wake, take the shot, and leave room for the wall.</p>
-        <div class="flight-facts">
-          <span>No lock-on</span>
-          <span>No lanes</span>
-          <span>No free shot</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="fleet" id="fleet" aria-labelledby="fleet-title">
-      <div class="fleet-head section-pad">
-        <div>
-          <h2 id="fleet-title">Pick a problem.<br>Fly the answer.</h2>
-        </div>
-        <p>Every class has a silhouette you can read at speed and a reason to exist. Choose the job before you choose the ship.</p>
-      </div>
-
-      <div class="shipyard">
-        <div class="hull-stage" data-hull-stage aria-live="polite"></div>
-        <div class="hull-copy">
-          <p class="hull-number" data-hull-number>01 / 07</p>
-          <p class="hull-role" data-hull-role>Interceptor</p>
-          <h3 data-hull-name>Apex</h3>
-          <p data-hull-copy>Fast enough to catch anything. Thin enough to regret it.</p>
-        </div>
-        <div class="hull-spec" aria-hidden="true">
-          <span data-hull-stat-one>SPD 4900</span>
-          <span data-hull-stat-two>ROT 420</span>
-        </div>
-      </div>
-
-      <div class="hull-selector" data-hull-selector role="group" aria-label="Choose a hull"></div>
-    </section>
-
-    <section class="world section-pad" aria-labelledby="world-title">
-      <div class="world-copy reveal">
-        <h2 id="world-title">The arena remembers<br>your name.</h2>
-        <p>Claim a call sign and the ladder keeps score. Humans and autonomous pilots fly the same physics and hold places on the same ranking.</p>
-        <a class="github-button github-button-wide" href="https://github.com/criccomini/vectorwake" data-github-link>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.1 1.2a10.8 10.8 0 0 1 5.7 0C14.6 5 15.6 5 15.6 5c.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z"/>
-          </svg>
-          <span>GitHub</span>
-          <span class="github-stars" aria-label="Star count" hidden><span aria-hidden="true">★</span> <span data-github-count></span></span>
-        </a>
-      </div>
-      <div class="world-scope reveal" aria-label="Vectorwake world model">
-        <div class="scope-ring scope-ring-a"></div>
-        <div class="scope-ring scope-ring-b"></div>
-        <div class="scope-cross scope-cross-x"></div>
-        <div class="scope-cross scope-cross-y"></div>
-        <span class="scope-node node-a">PILOT</span>
-        <span class="scope-node node-b">BOT</span>
-        <span class="scope-node node-c">RATING</span>
-        <strong>ONE<br>LADDER</strong>
+    <section class="bots section-pad" id="bots" aria-labelledby="bots-title">
+      <h2 id="bots-title">Bots</h2>
+      <div class="section-copy reveal">
+        <p class="section-statement">They play the same game.</p>
+        <p>Vectorwake's bots join through the same door as everyone else. They see the same arena and send the same controls, with no private feed from the server. They fill empty seats, leave when humans arrive, and carry ratings of their own.</p>
       </div>
     </section>
 
     <section class="final-cta" aria-labelledby="cta-title">
-      <canvas class="cta-field" data-cta-field aria-hidden="true"></canvas>
       <div class="cta-copy section-pad">
         <h2 id="cta-title">You have a browser.<br>That is enough.</h2>
         <p>Totally free on desktop and mobile. Open the arena and fly.</p>
