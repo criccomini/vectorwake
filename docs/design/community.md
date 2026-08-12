@@ -56,11 +56,13 @@ by name, asserts the guild settings, and deletes nothing, so repairing a
 drifted server or rebuilding one after a disaster is a rerun, and the
 server's configuration gets reviewed in git like everything else here.
 
-The icon is the client's own mark, cut for a round tile by
-`deploy/discord/icon.py` out of `client/web/icon.svg` rather than redrawn.
-The cut is full bleed because Discord masks the icon to a circle and would read
-the file's chamfer as a bite out of the rim. It keeps the ordinary line weight
-used by the installed app icon. The heavier cut is only for browser tabs.
+The icon is the client's own mark, taken by `deploy/discord/icon.py` out of
+`client/web/icon.svg` rather than redrawn. The tile used to be chamfered at
+two corners and that script squared it, because Discord masks the icon to a
+circle and would have read the chamfer as a bite out of the rim; the chamfer
+is gone from the source now, so the script checks the tile is square rather
+than making it so. It keeps the ordinary line weight used by the installed app
+icon. The heavier cut is only for browser tabs.
 
 ## The door
 
