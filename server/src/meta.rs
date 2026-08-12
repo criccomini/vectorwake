@@ -25,6 +25,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::catalog::sha256_hex;
 use crate::pilot;
+use crate::rating;
 use crate::token::{self, ClassRating, Claims, Kind};
 
 /// The default mode class. A zone declares which class it rates into, and a
@@ -1140,19 +1141,56 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             // typing one should not stop the number being one.
             let number: i64 = q.trim_start_matches('#').parse().unwrap_or(-1);
             let q = q.to_string();
+            // Standing on the ladder, in two pieces because they answer to
+            // different rules.
+            //
+            // `best` is the one rating a single row can honestly stand for:
+            // the class this pilot has played most, ties broken by the higher
+            // number so the answer is stable rather than whichever row the
+            // planner reached first. It carries the provisional ones too,
+            // since "still placing" is worth showing and is not the same as
+            // unrated.
+            //
+            // `ladder` is the position, and it is computed only over pilots
+            // who are out of provisional. Ranking the placing ones would push
+            // everybody else down the board for a number that is not settled
+            // yet, so they hold no position until they have one. Ties share a
+            // position, which is what `rank` does and what a ladder means.
+            //
+            // Both scan `ratings`, which holds a row per account per class and
+            // is therefore bounded by the account table rather than by play.
+            // At that size the scan is far cheaper than the round trip; if
+            // accounts ever reach the point where it is not, this wants an
+            // index on (class, rating) and a materialised board.
+            let provisional = rating::PROVISIONAL_GAMES as i32;
             let rows = db
                 .query(
-                    "select a.id, coalesce(n.call_sign, ''), a.kind, a.banned, a.admin,
+                    "with ladder as (
+                         select account, class,
+                                rank() over (partition by class order by rating desc) as pos,
+                                count(*) over (partition by class) as of_n
+                         from ratings where games >= $3
+                     ),
+                     best as (
+                         select distinct on (account) account, class, rating, games
+                         from ratings
+                         order by account, games desc, rating desc
+                     )
+                     select a.id, coalesce(n.call_sign, ''), a.kind, a.banned, a.admin,
                             exists (select 1 from credentials c
                                     where c.account = a.id and c.method = 'password'),
-                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI')
-                     from accounts a left join names n on n.account = a.id
+                            to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI'),
+                            b.class, b.rating, b.games, l.pos, l.of_n
+                     from accounts a
+                     left join names n on n.account = a.id
+                     left join best b on b.account = a.id
+                     left join ladder l on l.account = a.id and l.class = b.class
                      where $1 = ''
                         or strpos(lower(coalesce(n.call_sign, '')), lower($1)) > 0
                         or a.id = $2
                      order by a.last_seen desc
                      limit 100",
-                    &[&q, &number],
+                    &[&q, &number, &provisional],
                 )
                 .await;
             match rows {
@@ -1161,8 +1199,29 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     // showing a hundred rows can say whether that is all of
                     // them or the first hundred.
                     "capped": rs.len() == 100,
+                    // The two constants the page would otherwise have to keep
+                    // a copy of to draw a standing: how many games place a
+                    // pilot, and which class needs no naming. Sent once per
+                    // reply rather than once per row, and sent at all so that
+                    // moving either one in rating.rs moves it everywhere.
+                    "provisional": rating::PROVISIONAL_GAMES,
+                    "default_class": DEFAULT_CLASS,
                     "pilots": rs.iter().map(|r| {
                         let kind: i16 = r.get(2);
+                        // The band, computed here rather than on the page: the
+                        // thresholds live in rating.rs and a second copy of
+                        // them in JavaScript is a second copy to forget when
+                        // they move. Null while a pilot is still placing,
+                        // which is a different thing from Green and reads as
+                        // one.
+                        let games: Option<i32> = r.get(9);
+                        let score: Option<f64> = r.get(8);
+                        let tier = match (score, games) {
+                            (Some(s), Some(g)) if g as u32 >= rating::PROVISIONAL_GAMES => {
+                                Some(rating::tier(s))
+                            }
+                            _ => None,
+                        };
                         serde_json::json!({
                             "account": r.get::<_, i64>(0),
                             "name": r.get::<_, String>(1),
@@ -1175,6 +1234,12 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                             "admin": r.get::<_, bool>(4),
                             "claimed": r.get::<_, bool>(5),
                             "last_seen": r.get::<_, String>(6),
+                            "class": r.get::<_, Option<String>>(7),
+                            "rating": score,
+                            "games": games,
+                            "tier": tier,
+                            "rank": r.get::<_, Option<i64>>(10),
+                            "of": r.get::<_, Option<i64>>(11),
                         })
                     }).collect::<Vec<_>>(),
                 })),
