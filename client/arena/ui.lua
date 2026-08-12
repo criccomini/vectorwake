@@ -3045,39 +3045,77 @@ local function mark_about(cx, cy, r, col)
     u:seg(cx, ry(cy - r * 0.05), cx, ry(cy + r * 0.45), 1.4 * S, col, true)
 end
 
--- Somewhere to talk, drawn as a thing said rather than as a logo.
+-- Discord's own mark.
 --
--- Discord's own mark is Discord's, and a rail of shapes this game drew with
--- one trademark set among them reads as a sponsorship. A speech bubble is what
--- every interface has meant by "say something" for thirty years, and the row
--- beside it already carries the word.
+-- A speech bubble stood here first, on the reasoning that a trademark among
+-- shapes this game drew would read as a sponsorship. Chris asked for the real
+-- one, and it is the right call: Discord's brand guidelines ask for exactly
+-- this use, a link to a server wearing the mark, and the website's own button
+-- already carries it. A bubble is what you draw when you cannot use the logo.
 --
--- Squared off with the corners cut rather than rounded, because every other
--- mark here is straight lines and arcs of a circle, and a bubble drawn with
--- the smooth curve of a chat app would be the one soft shape on the rail.
+-- Traced, not converted. The layer fills triangle fans and strokes polylines;
+-- it has no path, no bezier and no even-odd rule, so the curves are sampled
+-- into a polygon and the eyes are drawn on rather than punched out.
+--
+-- The numbers were settled by rendering them, not by reading them. Three arch
+-- depths were drawn side by side at full size and again at the thirteen points
+-- the rail actually gives this, because the shallow one read as a helmet and
+-- the deep one as a bat, and neither is legible at the size that matters. What
+-- is here is the middle one.
+--
+-- A unit box, y down, scaled by `r`: the crown as the arc it is, then down the
+-- right flank, out to the right foot, up the hem, and mirrored back.
+local CLYDE = (function()
+    local p = {}
+    local function at(x, y) p[#p + 1] = x p[#p + 1] = y end
+    -- The crown, left to right. Nine samples is where the dome stops showing
+    -- its corners at this size.
+    for k = 0, 8 do
+        local ang = math.pi * (1 - k / 8)
+        at(math.cos(ang) * 0.86, -0.28 - math.sin(ang) * 0.48)
+    end
+    at(0.95, 0.12) at(1.00, 0.48) at(0.88, 0.74)
+    at(0.58, 0.60) at(0.28, 0.50) at(0.00, 0.46)
+    at(-0.28, 0.50) at(-0.58, 0.60)
+    at(-0.88, 0.74) at(-1.00, 0.48) at(-0.95, 0.12)
+    return p
+end)()
+
 local function mark_discord(cx, cy, r, col)
-    local w, h = r * 1.7, r * 1.25
-    local c = r * 0.3
-    local x0, y0 = cx - w / 2, cy - h / 2 - r * 0.18
-    -- The tail comes off the bottom left, below the body's own edge, so the
-    -- outline walks one closed shape and the corner cuts stay on the corners.
-    local pts = {
-        x0 + c, ry(y0), x0 + w - c, ry(y0),
-        x0 + w, ry(y0 + c), x0 + w, ry(y0 + h - c),
-        x0 + w - c, ry(y0 + h),
-        x0 + w * 0.42, ry(y0 + h),
-        x0 + w * 0.24, ry(y0 + h + r * 0.42),
-        x0 + w * 0.26, ry(y0 + h),
-        x0 + c, ry(y0 + h), x0, ry(y0 + h - c), x0, ry(y0 + c),
-    }
-    u:fan(pts, pal.a(col, 0.10))
-    u:outline(pts, 1.2 * S, col, true)
-    -- Two lines of something said. Three read as a paragraph at this size and
-    -- closed the bubble up; one read as a strikethrough.
-    for _, k in ipairs({0.30, 0.62}) do
-        local y = y0 + h * k
-        u:seg(x0 + w * 0.22, ry(y), x0 + w * (k < 0.5 and 0.78 or 0.60),
-              ry(y), 1.0 * S, pal.a(col, 0.65), true)
+    local sx, sy = r * 1.02, r * 0.90
+    -- The fill is a fan from the middle rather than from a vertex, because the
+    -- hem arches up between the feet and a fan from any point on the rim would
+    -- lay triangles outside the shape.
+    local fan = {cx, ry(cy)}
+    local edge = {}
+    for i = 1, #CLYDE, 2 do
+        local x, y = cx + CLYDE[i] * sx, ry(cy + CLYDE[i + 1] * sy)
+        fan[#fan + 1] = x
+        fan[#fan + 1] = y
+        edge[#edge + 1] = x
+        edge[#edge + 1] = y
+    end
+    -- Closed by hand: a fan makes one triangle per edge, and the last edge is
+    -- the one back to where it started. `outline` closes itself.
+    fan[#fan + 1] = edge[1]
+    fan[#fan + 1] = edge[2]
+    u:fan(fan, pal.a(col, 0.10))
+    u:outline(edge, 1.2 * S, col, true)
+
+    -- The eyes, drawn on rather than cut out. In the mark itself they are the
+    -- background showing through a solid silhouette, and there is no hole to
+    -- cut here: the wash behind the rail changes with the panel and the mark
+    -- changes color when its stop is lit, so a hole would have to be painted
+    -- in a color neither of them knows. Solid against a faint body is what
+    -- every other mark on this rail does with its details.
+    --
+    -- Two discs apiece, stacked, since the layer draws circles and these are
+    -- taller than they are wide.
+    local er = r * 0.16
+    for _, ex in ipairs({-0.33, 0.33}) do
+        local x = cx + ex * sx
+        u:disc(x, ry(cy - er * 0.38), er, 10, col)
+        u:disc(x, ry(cy + er * 0.38), er, 10, col)
     end
 end
 
