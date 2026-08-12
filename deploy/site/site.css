@@ -651,7 +651,7 @@ button {
   }
 
   .rankings h2 {
-    font-size: clamp(70px, 24vw, 112px);
+    font-size: clamp(60px, 20vw, 94px);
   }
 
   .section-statement {
