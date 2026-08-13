@@ -331,12 +331,10 @@ async fn drive(rig: std::sync::Weak<Rig>) {
             let buttons = seat.brain.think(&own, &seat.route, fresh);
             rig.buttons[ship as usize].store(buttons, Ordering::Relaxed);
             if seat.sent != Some(buttons) {
-                let mut m = vec![crate::C2S_INPUT];
-                m.extend_from_slice(&buttons.to_le_bytes());
                 // The tick this input produces, not the last one finished,
                 // which is what `net.lua` stamps and what the arena's queue
                 // reads: an input naming a tick waits for it.
-                m.extend_from_slice(&(tick + 1).to_le_bytes());
+                let m = crate::input_message(tick + 1, &[buttons]);
                 if seat.tx.try_send(Ctl::Frame(m)).is_ok() {
                     seat.sent = Some(buttons);
                 }
@@ -972,9 +970,7 @@ async fn fly(
                         None => 0,
                     };
                     if sent != Some(buttons) {
-                        let mut m = vec![crate::C2S_INPUT];
-                        m.extend_from_slice(&buttons.to_le_bytes());
-                        m.extend_from_slice(&(tick + 1).to_le_bytes());
+                        let m = crate::input_message(tick + 1, &[buttons]);
                         if sink.send(Message::Binary(m)).await.is_err() {
                             break;
                         }

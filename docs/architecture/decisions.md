@@ -1928,3 +1928,55 @@ remain in the owner-only tail.
 
 **Cost:** five bytes per visible ship per snapshot. The ship record layout
 changed, so `CLIENT_PROTOCOL` moved to 10.
+
+## 46. Inputs repair loss and combat news waits for its picture
+
+**Decided:** every input datagram repeats four tick-stamped states, reliable
+combat events name their authoritative tick, and remote presentation runs near
+estimated server time instead of inheriting the pilot's full input lead.
+
+**Why:** three clean-looking numbers hid three different failures.
+
+A WebTransport input was sent once. That was acceptable for a held direction,
+where the next state repairs the hand, but not for a charge, mine or touch
+toggle that exists for one tick. Losing that datagram erased the action on the
+server after the client had already shown it. The newest later tick still came
+back acknowledged, so the clock readout stayed healthy while the snapshot took
+the action away.
+
+The clock readout also called input scheduling margin round-trip latency. It
+cannot be that: the target margin is negative. The actual estimate is lead plus
+margin, which cancels the client's clock offset. Finally, the only correction
+number belonged to the local hull's X and Y. Remote ships could be wrong in
+position or heading without moving it at all.
+
+Protocol 11 makes the input packet a base tick followed by one to four
+consecutive button states. The server replaces overlap still queued and ignores
+a repeated tick already consumed. One lost packet is repaired ten milliseconds
+later, normally while every repeated tick is still in the future.
+
+Kills and public charge actions now carry the simulation tick that produced
+them. The client holds either until it has applied a snapshot at that tick or
+later, and deduplicates the delayed room-channel copy by tick and subject. A
+reliable stream can pass a snapshot datagram without letting the feed spoil the
+result.
+
+The authoritative predicted core still runs to the local input tick. Rendering
+backs remote hulls and rounds down to half the estimated round trip beyond the
+latest snapshot, which is a practical estimate of current server time on a
+roughly symmetric path. Heading extends the average rotation observed across
+two snapshots, rather than guessing from one bot button. Remote heading debt
+decays on a twenty-five-millisecond half-life and is capped at twelve degrees.
+The debug view now reports input margin, estimated round trip, snapshot gaps,
+rolling p95 remote corrections and the correction debt still visible.
+
+**Cost:** steady input traffic grows from seven to fourteen bytes per tick,
+about 0.7 KB/s of uplink. The presentation horizon assumes roughly symmetric
+latency and linear motion for a few ticks. Walls, pushes and direction changes
+can still prove that estimate wrong; the next snapshot remains authoritative
+and the new metrics put a number on the miss.
+
+**Reconsider if:** remote correction p95 remains large on WebTransport. The next
+step is a snapshot lane with a higher cadence for nearby combat, justified by
+measured correction and bandwidth together rather than by another smoothing
+constant.

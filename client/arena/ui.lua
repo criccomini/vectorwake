@@ -2494,9 +2494,9 @@ end
 -- centisecond. It replaces "online  err 0.0 / 1 px", which was the client's
 -- own debugging left on a player's screen: nobody flying has ever made a
 -- decision on a prediction error in pixels.
-local function link(lag)
+local function link(rtt)
     local q = 4
-    if lag > 24 then q = 1 elseif lag > 12 then q = 2 elseif lag > 6 then q = 3 end
+    if rtt > 24 then q = 1 elseif rtt > 12 then q = 2 elseif rtt > 6 then q = 3 end
     local pad = (M.compact and 8 or PAD) * S
     local right = W - SR - pad
     local base = ST + pad + 13 * S
@@ -2562,11 +2562,26 @@ local function debug_hud(o, top)
         {"fps", string.format("%.0f", o.fps or 0)},
         {"frame", string.format("%.1f ms", (o.frame_ms or 0))},
         {"wire", st.wire or "ws"},
-        {"lag", string.format("%d cs", st.lag or 0)},
+        {"margin", string.format("%+d ticks", st.input_margin or 0)},
+        {"rtt", string.format("~%d ms", (st.rtt or 0) * 10)},
         {"lead", string.format("%d ticks", st.lead or 0)},
-        {"err", string.format("%.1f / %.1f px", st.err or 0, st.err_max or 0)},
-        {"rewind", string.format("%d ticks", st.rewind or 0)},
-        {"snaps", tostring(st.snaps or 0)},
+        {"self", string.format("%.1f / %.1f px", st.self_err or 0,
+                                st.self_err_max or 0)},
+        {"remote", string.format("%.1f / %.1f / %.1f px",
+                                  st.remote_pos or 0, st.remote_pos_p95 or 0,
+                                  st.remote_pos_max or 0)},
+        {"turn", string.format("%.1f / %.1f / %.1f deg",
+                                st.remote_turn or 0, st.remote_turn_p95 or 0,
+                                st.remote_turn_max or 0)},
+        {"debt", string.format("%.1f px / %.1f deg", st.smooth_pos or 0,
+                                st.smooth_turn or 0)},
+        {"replay", string.format("%d / %d ticks", st.replay or 0,
+                                  st.replay_max or 0)},
+        {"snaps", string.format("%.1f Hz / %.0f / %.0f ms", st.snap_hz or 0,
+                                 st.snap_gap_ms or 0,
+                                 st.snap_gap_max_ms or 0)},
+        {"loss", string.format("%d miss / %d late", st.snap_missed or 0,
+                                st.snap_reordered or 0)},
         {"down", string.format("%.1f kB/s", (o.rx_rate or 0) / 1000)},
         {"up", string.format("%.1f kB/s", (o.tx_rate or 0) / 1000)},
         {"tick", tostring(sim.tick())},
@@ -2735,7 +2750,7 @@ function M.hud(o)
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
     if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
-    link(o.lag or 0)
+    link(o.rtt or 0)
     coords(me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on

@@ -567,8 +567,7 @@ mod tests {
         // steers its clock by. Seeing it come back is seeing the datagram
         // lane work end to end.
         let named = tick + 20;
-        let mut input = vec![crate::C2S_INPUT, 1, 0];
-        input.extend_from_slice(&named.to_le_bytes());
+        let input = crate::input_message(named, &[1]);
         conn.send_datagram(&input).expect("the input sends");
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {

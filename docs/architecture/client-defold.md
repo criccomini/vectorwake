@@ -76,15 +76,17 @@ browser throttles the frame callback the loop is driven from.
 
 ## Prediction and reconciliation
 
-The client predicts its own ship and coasts everybody else. There is no
-interpolation buffer: remote ships are carried forward by the same core, holding
-whatever they were last doing, until the next snapshot corrects them. That is why
-the clock lead is bounded, since the further ahead the client runs, the longer
-those ships coast on stale intent.
+The client predicts its own ship and coasts everybody else. The core runs the
+whole world to the pilot's future input tick, but remote presentation stops near
+estimated server time. Positions and rounds are backed up along their velocity;
+heading extends the average turn observed across the last two snapshots. It does
+not hold a sampled remote button, which proved unstable against bots.
 
-Inputs are stamped with the tick they apply to and kept. A snapshot carries the
-last tick the server had applied from this client, so on arrival the client
-accepts the state wholesale and replays its own inputs from that tick forward.
+Inputs are stamped with the tick they apply to and kept. Every datagram repeats
+up to four recent states. A snapshot carries the newest tick the server has
+received from this client, while the snapshot body names the state tick. On
+arrival the client accepts the state wholesale and replays its own inputs from
+the state tick forward.
 The replay is one ship's buttons over a handful of ticks, which is cheap enough
 to do inside a frame.
 

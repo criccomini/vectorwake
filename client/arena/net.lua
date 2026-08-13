@@ -37,7 +37,7 @@ local S2C_PRIZE, S2C_CHARGE = 14, 15
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 10
+local CLIENT_PROTOCOL = 11
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -159,8 +159,20 @@ M.invited = {}
 -- steering. `rx` and `tx` are bytes since the socket opened; a rate is the
 -- difference between two readings, which the reader takes rather than keeping
 -- a second clock here.
-M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0,
-           rx = 0, tx = 0, msgs = 0, wire = "ws"}
+local function fresh_stats(wire)
+    return {
+        snaps = 0, snap_hz = 0, snap_gap_ms = 0, snap_gap_max_ms = 0,
+        snap_missed = 0, snap_reordered = 0,
+        self_err = 0, self_err_max = 0,
+        remote_pos = 0, remote_pos_p95 = 0, remote_pos_max = 0,
+        remote_turn = 0, remote_turn_p95 = 0, remote_turn_max = 0,
+        smooth_pos = 0, smooth_turn = 0,
+        replay = 0, replay_max = 0,
+        input_margin = 0, rtt = 0, lead = 0,
+        rx = 0, tx = 0, msgs = 0, wire = wire or "ws",
+    }
+end
+M.stats = fresh_stats("ws")
 
 -- Where this client's clock wants to sit, measured in ticks of input lag: how
 -- long after we stamp an input the server is still to reach that tick.
@@ -272,6 +284,53 @@ local quiet = nil
 local QUIET_LIMIT = 8
 -- The last snapshot tick applied, for the reorder guard in `on_snapshot`.
 local snap_tick = 0
+-- Reliable news and snapshots use independent WebTransport lanes. Hold news
+-- until an authoritative snapshot at or beyond its tick has landed, so the
+-- feed and effects cannot announce state the picture has not shown.
+local pending_kills, pending_charges = {}, {}
+local seen_kills, seen_charges = {}, {}
+local net_clock, last_snap_at = 0, nil
+local SNAP_TICKS = 5
+-- The room channel trails live play by five seconds by default. Twenty seconds
+-- keeps enough identity to reject that delayed copy without retaining every
+-- event for the life of the connection.
+local EVENT_MEMORY = 2000
+local CORRECTION_SAMPLES = 512
+local pos_samples, turn_samples, sample_at = {}, {}, 1
+
+local function sample_correction(pos, turn)
+    pos_samples[sample_at], turn_samples[sample_at] = pos, turn
+    sample_at = sample_at % CORRECTION_SAMPLES + 1
+end
+
+local function percentile(values, q)
+    if #values == 0 then return 0 end
+    local ordered = {}
+    for i, v in ipairs(values) do ordered[i] = v end
+    table.sort(ordered)
+    return ordered[math.max(1, math.ceil(#ordered * q))]
+end
+
+local function note_snapshot(sent)
+    if snap_tick ~= 0 and sent > snap_tick then
+        local gap = sent - snap_tick
+        if gap > SNAP_TICKS then
+            M.stats.snap_missed = M.stats.snap_missed
+                + math.max(0, math.floor(gap / SNAP_TICKS) - 1)
+        end
+    end
+    if last_snap_at then
+        local gap = net_clock - last_snap_at
+        M.stats.snap_gap_ms = gap * 1000
+        M.stats.snap_gap_max_ms = math.max(M.stats.snap_gap_max_ms, gap * 1000)
+        if gap > 0 then
+            local hz = 1 / gap
+            M.stats.snap_hz = M.stats.snap_hz == 0 and hz
+                or M.stats.snap_hz * 0.9 + hz * 0.1
+        end
+    end
+    last_snap_at = net_clock
+end
 
 -- The extension is a global on builds that carry it and absent everywhere
 -- else, tests and native alike, so it is fetched rather than named.
@@ -285,11 +344,10 @@ local function send_reliable(msg)
     end
 end
 
--- Inputs only: state the next message supersedes. Over WebTransport this is
--- a datagram, sent once and never retransmitted, because a retransmitted
--- input would arrive naming a tick the room has already run. On the
--- WebSocket it is the same socket as everything else, which is the problem
--- the datagram exists to solve.
+-- Inputs only. Each datagram carries a short tick-stamped repair window, so it
+-- needs no transport retransmission and a fresh packet can replace one lost in
+-- flight. On the WebSocket it is the same socket as everything else, which is
+-- the problem the datagram exists to solve.
 local function send_unreliable(msg)
     if wt_live then
         pcall(wtx().send_unreliable, msg)
@@ -333,6 +391,8 @@ local function hangup()
     M.kills = {}
     M.prizes = {}
     M.charge_events = {}
+    pending_kills, pending_charges = {}, {}
+    seen_kills, seen_charges = {}, {}
     M.comings = {}
     M.snap_deaths = {}
     M.snap_blasts = {}
@@ -533,17 +593,15 @@ end
 -- snapshot from before a death revives the victim, and the next predicted ticks
 -- kill them again, so one death printed a line per rollback. The zone says each
 -- one exactly once.
-local function on_kill(s)
-    local victim, killer = string.byte(s, 2), string.byte(s, 3)
-    local vr = i16(string.byte(s, 4), string.byte(s, 5))
-    local kr = i16(string.byte(s, 6), string.byte(s, 7))
+local function publish_kill(e)
+    local victim, killer = e.victim, e.killer
+    local vr, kr = e.vr, e.kr
     -- Byte 8 is the contributor count, which nothing here reads yet, and the
     -- payout follows it. Read like every other u16 on the wire rather than
     -- padded with `or 0`: the padding was there for a deploy window against a
     -- zone one image older, and a zone one image older cannot be reached at
     -- all, because the protocol number is checked before a join is answered.
-    local paid = u16(string.byte(s, 9), string.byte(s, 10))
-    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = paid}
+    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid}
     M.ratings[victim] = vr
     M.ratings[killer] = kr
     -- A rated death is a game played, which is what decides whether the number
@@ -556,6 +614,61 @@ local function on_kill(s)
             p.tier = M.tier(M.ratings[ship], p.games)
         end
     end
+end
+
+local function publish_timed_events()
+    local waiting = {}
+    for _, e in ipairs(pending_kills) do
+        if e.tick <= snap_tick then publish_kill(e) else waiting[#waiting + 1] = e end
+    end
+    pending_kills = waiting
+    waiting = {}
+    for _, e in ipairs(pending_charges) do
+        if e.tick <= snap_tick then
+            M.charge_events[#M.charge_events + 1] = e
+        else
+            waiting[#waiting + 1] = e
+        end
+    end
+    pending_charges = waiting
+    local oldest = math.max(0, snap_tick - EVENT_MEMORY)
+    for key, tick in pairs(seen_kills) do
+        if tick < oldest then seen_kills[key] = nil end
+    end
+    for key, tick in pairs(seen_charges) do
+        if tick < oldest then seen_charges[key] = nil end
+    end
+end
+
+local function on_kill(s)
+    if #s < 14 then return end
+    local e = {
+        victim = string.byte(s, 2), killer = string.byte(s, 3),
+        vr = i16(string.byte(s, 4), string.byte(s, 5)),
+        kr = i16(string.byte(s, 6), string.byte(s, 7)),
+        paid = u16(string.byte(s, 9), string.byte(s, 10)),
+        tick = u32(string.byte(s, 11, 14)),
+    }
+    local key = e.tick .. ":" .. e.victim .. ":" .. e.killer
+    if seen_kills[key] then return end
+    seen_kills[key] = e.tick
+    if e.tick <= snap_tick then publish_kill(e)
+    else pending_kills[#pending_kills + 1] = e end
+end
+
+local function on_charge(s)
+    if #s < 15 then return end
+    local e = {
+        ship = string.byte(s, 2), slot = string.byte(s, 3),
+        x = i32(string.byte(s, 4, 7)) / 256,
+        y = i32(string.byte(s, 8, 11)) / 256,
+        tick = u32(string.byte(s, 12, 15)),
+    }
+    local key = e.tick .. ":" .. e.ship .. ":" .. e.slot
+    if seen_charges[key] then return end
+    seen_charges[key] = e.tick
+    if e.tick <= snap_tick then M.charge_events[#M.charge_events + 1] = e
+    else pending_charges[#pending_charges + 1] = e end
 end
 
 -- What names a round on both sides of a snapshot: its owner, its spec and
@@ -571,10 +684,14 @@ end
 -- What the client believes, held across a snapshot that is about to replace
 -- it: who was flying, how fast they were going, and every round in the air.
 local function capture_world()
-    local alive, vx, vy = {}, {}, {}
+    local alive, vx, vy, x, y, heading = {}, {}, {}, {}, {}, {}
     for i = 0, sim.ship_count() - 1 do
         alive[i] = sim.ship_alive(i)
         vx[i], vy[i] = sim.ship_vel(i)
+        if alive[i] == 1 and sim.ship_active(i) == 1 then
+            x[i], y[i] = sim.ship_x_raw(i), sim.ship_y_raw(i)
+            heading[i] = sim.ship_heading_raw(i)
+        end
     end
     local flying = {}
     local tick = sim.tick()
@@ -588,7 +705,32 @@ local function capture_world()
             {x = x, y = y, spec = spec, life = life, owner = owner,
              level = level}
     end
-    return {alive = alive, vx = vx, vy = vy, flying = flying}
+    return {alive = alive, vx = vx, vy = vy, x = x, y = y,
+            heading = heading, flying = flying}
+end
+
+local function measure_remote_corrections(before)
+    local pos_max, turn_max = 0, 0
+    for i = 0, sim.ship_count() - 1 do
+        if i ~= M.me and before.x[i] and sim.ship_active(i) == 1
+            and sim.ship_alive(i) == 1 then
+            local dx = sim.ship_x_raw(i) - before.x[i]
+            local dy = sim.ship_y_raw(i) - before.y[i]
+            local pos = math.sqrt(dx * dx + dy * dy)
+            local dh = sim.ship_heading_raw(i) - before.heading[i]
+            dh = (dh + 32768) % 65536 - 32768
+            local turn = math.abs(dh) * 360 / 65536
+            pos_max, turn_max = math.max(pos_max, pos), math.max(turn_max, turn)
+            sample_correction(pos, turn)
+        end
+    end
+    M.stats.remote_pos, M.stats.remote_turn = pos_max, turn_max
+    M.stats.remote_pos_max = math.max(M.stats.remote_pos_max, pos_max)
+    M.stats.remote_turn_max = math.max(M.stats.remote_turn_max, turn_max)
+    if M.stats.snaps % 20 == 0 then
+        M.stats.remote_pos_p95 = percentile(pos_samples, 0.95)
+        M.stats.remote_turn_p95 = percentile(turn_samples, 0.95)
+    end
 end
 
 -- And what the snapshot did without saying so, against that.
@@ -710,6 +852,7 @@ local function on_snapshot(s)
                      string.byte(s, 9), string.byte(s, 10))
     if snap_tick ~= 0 and sent <= snap_tick
         and not (M.watching and snap_tick - sent >= WATCH_REWIND) then
+        M.stats.snap_reordered = M.stats.snap_reordered + 1
         return
     end
     local body = string.sub(s, 7)
@@ -726,15 +869,19 @@ local function on_snapshot(s)
             lost(SNAP_UNREADABLE)
             return
         end
+        note_snapshot(sent)
         snap_tick = sent
         M.subject = string.byte(s, 2)
         M.stats.snaps = M.stats.snaps + 1
         settling = nil
         quiet = 0
+        sim.remote_horizon(-1, 255)
+        measure_remote_corrections(before)
         sim.smooth_settle()
         -- Kills and detonations the free-run never lived through still owe
         -- their light and noise; a watcher is here for the explosions.
         harvest_world(before)
+        publish_timed_events()
         predicted_tick = sim.tick()
         return
     end
@@ -758,6 +905,7 @@ local function on_snapshot(s)
         lost(SNAP_UNREADABLE)
         return
     end
+    note_snapshot(sent)
     snap_tick = sent
     M.stats.snaps = M.stats.snaps + 1
     settling = nil
@@ -785,15 +933,22 @@ local function on_snapshot(s)
     -- the gap is what actually happened; filling it with zero would insert a
     -- phantom frame of hands-off flying that the server never saw.
     if acked > 1 then
-        local lag = from - acked
-        M.stats.lag = lag
-        if lag > LAG_TARGET and predicted_tick - from < LEAD_MAX then
+        local margin = from - acked
+        M.stats.input_margin = margin
+        if margin > LAG_TARGET and predicted_tick - from < LEAD_MAX then
             predicted_tick = predicted_tick + 1
             input_log[predicted_tick] = input_log[predicted_tick - 1] or 0
-        elseif lag < LAG_TARGET - LAG_SLACK and predicted_tick > from then
+        elseif margin < LAG_TARGET - LAG_SLACK and predicted_tick > from then
             predicted_tick = predicted_tick - 1
         end
         M.stats.lead = predicted_tick - from
+        -- Lead contains downlink age and the clock offset; margin contains
+        -- uplink age minus that offset. Their sum cancels the offset and is the
+        -- round trip in simulation ticks.
+        M.stats.rtt = math.max(0, M.stats.lead + margin)
+        sim.remote_horizon(math.floor(M.stats.rtt / 2 + 0.5), M.me)
+    else
+        sim.remote_horizon(-1, M.me)
     end
 
     local last = predicted_tick
@@ -803,19 +958,25 @@ local function on_snapshot(s)
         sim.replay(M.me, input_log[t] or 0)
         steps = steps + 1
     end
-    if steps > M.stats.rewind then M.stats.rewind = steps end
+    M.stats.replay = steps
+    if steps > M.stats.replay_max then M.stats.replay_max = steps end
+
+    measure_remote_corrections(before)
 
     -- Everything the snapshot and the replay moved is now owed to the drawing,
     -- which pays it off over the next tenth of a second.
     sim.smooth_settle()
 
     harvest_world(before)
+    publish_timed_events()
 
     local dx, dy = sim.ship_x_raw(M.me) - px, sim.ship_y_raw(M.me) - py
     local err = math.sqrt(dx * dx + dy * dy)
-    M.stats.err = err
+    M.stats.self_err = err
     -- The first snapshots after joining are a teleport, not a misprediction.
-    if M.stats.snaps > 3 and err > M.stats.err_max then M.stats.err_max = err end
+    if M.stats.snaps > 3 and err > M.stats.self_err_max then
+        M.stats.self_err_max = err
+    end
 
     for t in pairs(input_log) do
         if t < from - 400 then input_log[t] = nil end
@@ -868,7 +1029,7 @@ local function on_message(s)
             input_log = {}
             predicted_tick = 0
             sim.smooth_reset()
-            M.stats.lag, M.stats.lead = 0, 0
+            M.stats.input_margin, M.stats.rtt, M.stats.lead = 0, 0, 0
             -- The reorder guard's clock belongs to the life that ended: the
             -- channel runs behind live, so coming back to a hull must not
             -- read every live snapshot as older than the delayed one.
@@ -912,12 +1073,8 @@ local function on_message(s)
         local delta = string.byte(s, 3)
         if delta >= 128 then delta = delta - 256 end
         M.prizes[#M.prizes + 1] = {type = string.byte(s, 2), delta = delta}
-    elseif kind == S2C_CHARGE and #s >= 11 then
-        M.charge_events[#M.charge_events + 1] = {
-            ship = string.byte(s, 2), slot = string.byte(s, 3),
-            x = i32(string.byte(s, 4, 7)) / 256,
-            y = i32(string.byte(s, 8, 11)) / 256,
-        }
+    elseif kind == S2C_CHARGE then
+        on_charge(s)
     elseif kind == S2C_YIELD then
         -- The zone wants this seat back. Only ever sent to a client that
         -- declared itself a bot, so a player never sees it; handled anyway,
@@ -1148,6 +1305,7 @@ end
 -- the browser would notice on its own tens of seconds later, and a player
 -- staring at "joining" for that long has already given up.
 function M.tick(dt)
+    net_clock = net_clock + dt
     if pending then
         pending = pending + dt
         if pending >= WT_PATIENCE then fall_back() end
@@ -1212,10 +1370,11 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     -- among them and is earned rather than remembered: a new arena's latency
     -- is its own, so the lead starts at nothing and climbs into place over
     -- the first second.
-    M.stats = {snaps = 0, err = 0, err_max = 0, rewind = 0, lag = 0, lead = 0,
-               rx = 0, tx = 0, msgs = 0, wire = "ws"}
+    M.stats = fresh_stats("ws")
     M.lost = nil
     snap_tick = 0
+    net_clock, last_snap_at = 0, nil
+    pos_samples, turn_samples, sample_at = {}, {}, 1
     quiet = nil
     -- The zone we came from should not have its name or its banner still on
     -- screen while the next one is being reached.
@@ -1362,11 +1521,21 @@ function M.step(buttons)
     predicted_tick = sim.tick() + 1
     input_log[predicted_tick] = buttons
     local t = predicted_tick
-    local msg = string.char(
-        C2S_INPUT,
-        buttons % 256, math.floor(buttons / 256) % 256,
-        t % 256, math.floor(t / 256) % 256,
-        math.floor(t / 65536) % 256, math.floor(t / 16777216) % 256)
+    local first, count = t, 1
+    while count < 4 and input_log[first - 1] ~= nil do
+        first, count = first - 1, count + 1
+    end
+    local msg = {
+        string.char(C2S_INPUT, count,
+                    first % 256, math.floor(first / 256) % 256,
+                    math.floor(first / 65536) % 256,
+                    math.floor(first / 16777216) % 256)
+    }
+    for tick = first, t do
+        local b = input_log[tick]
+        msg[#msg + 1] = string.char(b % 256, math.floor(b / 256) % 256)
+    end
+    msg = table.concat(msg)
     send_unreliable(msg)
     M.stats.tx = M.stats.tx + #msg
     sim.replay(M.me, buttons)

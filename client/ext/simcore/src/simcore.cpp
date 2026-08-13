@@ -54,6 +54,16 @@ sim_state g_snap;
 // is. 255 until net.lua says who we are, which is also what watching is:
 // nobody dies locally, and every death arrives as the zone's news.
 uint8_t g_mortal_ship = 255;
+// The ship this client predicts, learned from replay. Remote presentation may
+// use a shorter timeline, while this hull and its rounds stay immediate.
+int g_local_ship = -1;
+int g_remote_horizon = -1;
+uint32_t g_snapshot_tick = 0;
+uint32_t g_last_snapshot_tick = 0;
+bool g_last_snapshot_valid = false;
+uint16_t g_last_snapshot_h[SIM_MAX_SHIPS];
+uint8_t g_last_snapshot_live[SIM_MAX_SHIPS];
+double g_turn_rate[SIM_MAX_SHIPS];
 
 void ReapplyMortal() {
     g_cfg.deathless = 1;
@@ -163,6 +173,7 @@ int Step(lua_State* L) {
 int Replay(lua_State* L) {
     sim_input in;
     in.ship = (uint8_t)CheckShip(L);
+    g_local_ship = in.ship;
     in.buttons = (uint16_t)luaL_checkinteger(L, 2);
     sim_step(g_nxt, g_cur, &in, 1, &g_cfg, &g_ev);
     sim_state* t = g_cur;
@@ -182,7 +193,32 @@ int ApplySnapshot(lua_State* L) {
     }
     memcpy(g_net, data, len);
     int rc = sim_unpack(&g_snap, g_net, (int)len);
-    if (rc == 0) *g_cur = g_snap;
+    if (rc == 0) {
+        uint32_t gap = g_snap.tick - g_last_snapshot_tick;
+        bool forward = g_last_snapshot_valid && g_snap.tick > g_last_snapshot_tick
+                       && gap <= 100;
+        for (int i = 0; i < SIM_MAX_SHIPS; i++) {
+            const sim_ship* s = &g_snap.ships[i];
+            bool live = i < g_snap.ship_count && s->active && s->alive;
+            if (forward && live && g_last_snapshot_live[i]) {
+                int32_t dh = (int32_t)s->heading - (int32_t)g_last_snapshot_h[i];
+                if (dh > 32768) dh -= 65536;
+                if (dh < -32768) dh += 65536;
+                // A turn beyond ninety degrees between snapshots is a spawn or
+                // another discontinuity, not a rate worth extending.
+                g_turn_rate[i] = (dh < 16384 && dh > -16384)
+                    ? (double)dh / (double)gap : 0.0;
+            } else {
+                g_turn_rate[i] = 0.0;
+            }
+            g_last_snapshot_h[i] = s->heading;
+            g_last_snapshot_live[i] = live ? 1 : 0;
+        }
+        g_snapshot_tick = g_snap.tick;
+        g_last_snapshot_tick = g_snap.tick;
+        g_last_snapshot_valid = true;
+        *g_cur = g_snap;
+    }
     lua_pushnumber(L, rc);
     return 1;
 }
@@ -214,32 +250,27 @@ int ApplySnapshot(lua_State* L) {
 float g_alpha = 0.0f;
 float g_off_x[SIM_MAX_SHIPS];
 float g_off_y[SIM_MAX_SHIPS];
-// The heading's own owed correction, in turn units, decayed with the two
-// above. Position always had this and heading never did, and under coasting
-// the difference is the whole of how a remote ship rotates: prediction holds
-// no buttons for it, so its heading is frozen between snapshots and all of
-// its actual turning arrives in fifty-millisecond lumps. A full-rate turn is
-// ten degrees a lump, which drew as a 20 Hz stairstep. Note this eases only
-// corrections of the past; it predicts nothing, which is the line the
-// held-button experiment crossed and the reason that one is gone.
+// The heading's owed correction, in turn units. Remote heading uses a shorter
+// decay than position because the nose is aiming information. The observed
+// turn rate handles motion between snapshots; this offset only hides a miss
+// after the next snapshot proves it wrong.
 float g_off_h[SIM_MAX_SHIPS];
-int32_t g_held_x[SIM_MAX_SHIPS];
-int32_t g_held_y[SIM_MAX_SHIPS];
-uint16_t g_held_h[SIM_MAX_SHIPS];
+double g_held_x[SIM_MAX_SHIPS];
+double g_held_y[SIM_MAX_SHIPS];
+double g_held_h[SIM_MAX_SHIPS];
 uint8_t g_held[SIM_MAX_SHIPS];
 
 // Past this, it is a teleport and not a correction. Four tiles: a respawn, a
 // wormhole and a repel all clear it, and nothing a mispredicted hull does comes
 // near it.
 const double SMOOTH_SNAP = 64.0;
-// The heading's own snap and ceiling, in turn units. Ninety degrees is not a
-// correction: a hull facing somewhere genuinely else -- a respawn -- should
-// appear facing it, because easing that reads as a swivel. Thirty degrees caps
-// the lie, and it is a tighter proportion than the position cap on purpose:
-// an enemy's nose is aiming information, and the smoothing may delay it but
-// must never bury it.
+// The heading's own snap and ceilings, in turn units. Ninety degrees is not a
+// correction: a hull facing somewhere genuinely else should appear facing it.
+// The local camera keeps the old thirty-degree budget. Remote aim gets twelve,
+// because an enemy's nose is combat information rather than scenery.
 const double TURN_SNAP = 65536.0 * 90.0 / 360.0;
-const double TURN_MAX = 65536.0 * 30.0 / 360.0;
+const double TURN_MAX_LOCAL = 65536.0 * 30.0 / 360.0;
+const double TURN_MAX_REMOTE = 65536.0 * 12.0 / 360.0;
 
 // And a ceiling on what the drawing may be lying by at any moment, so a stream
 // of corrections in one direction cannot accumulate into a ship drawn somewhere
@@ -305,25 +336,57 @@ bool ship_continuous(const sim_ship* p, const sim_ship* c) {
 // Where a hull is, as the frame being drawn should show it: between the last
 // two ticks, plus whatever the drawing is still owed from the last correction.
 // Everything that draws asks for this, which is why it is the plain name.
-#define SHIP_SEEN(NAME, AXIS, OFF)                                     \
-    int NAME(lua_State* L) {                                           \
-        int i = CheckShip(L);                                          \
-        const sim_ship* c = &g_cur->ships[i];                          \
-        const sim_ship* p = &g_nxt->ships[i];                          \
-        double v = ship_continuous(p, c) ? blend(p->AXIS, c->AXIS)     \
-                                         : c->AXIS / 256.0;            \
-        lua_pushnumber(L, v + OFF[i]);                                 \
-        return 1;                                                      \
-    }
-SHIP_SEEN(ShipX, x, g_off_x)
-SHIP_SEEN(ShipY, y, g_off_y)
+int remote_backoff(int i) {
+    if (i == g_local_ship || g_remote_horizon < 0
+        || g_cur->tick < g_snapshot_tick) return 0;
+    uint32_t ahead = g_cur->tick - g_snapshot_tick;
+    return ahead > (uint32_t)g_remote_horizon
+        ? (int)(ahead - (uint32_t)g_remote_horizon) : 0;
+}
 
-int ShipHeading(lua_State* L) {
-    int i = CheckShip(L);
+double ship_seen_x_base(int i) {
+    const sim_ship* c = &g_cur->ships[i];
+    const sim_ship* p = &g_nxt->ships[i];
+    double v = ship_continuous(p, c) ? blend(p->x, c->x) : c->x / 256.0;
+    return v - remote_backoff(i) * c->vx / 65536.0;
+}
+
+double ship_seen_y_base(int i) {
+    const sim_ship* c = &g_cur->ships[i];
+    const sim_ship* p = &g_nxt->ships[i];
+    double v = ship_continuous(p, c) ? blend(p->y, c->y) : c->y / 256.0;
+    return v - remote_backoff(i) * c->vy / 65536.0;
+}
+
+double ship_seen_h_base(int i) {
     const sim_ship* c = &g_cur->ships[i];
     const sim_ship* p = &g_nxt->ships[i];
     double h = ship_continuous(p, c) ? blend_turn(p->heading, c->heading)
                                      : (double)c->heading;
+    if (i != g_local_ship && g_snapshot_tick <= g_cur->tick) {
+        uint32_t ahead = g_cur->tick - g_snapshot_tick;
+        uint32_t horizon = g_remote_horizon < 0 ? ahead
+            : (uint32_t)g_remote_horizon < ahead
+                ? (uint32_t)g_remote_horizon : ahead;
+        h += g_turn_rate[i] * horizon;
+    }
+    while (h < 0.0) h += 65536.0;
+    while (h >= 65536.0) h -= 65536.0;
+    return h;
+}
+
+#define SHIP_SEEN(NAME, BASE, OFF)                                     \
+    int NAME(lua_State* L) {                                           \
+        int i = CheckShip(L);                                          \
+        lua_pushnumber(L, BASE(i) + OFF[i]);                           \
+        return 1;                                                      \
+    }
+SHIP_SEEN(ShipX, ship_seen_x_base, g_off_x)
+SHIP_SEEN(ShipY, ship_seen_y_base, g_off_y)
+
+int ShipHeading(lua_State* L) {
+    int i = CheckShip(L);
+    double h = ship_seen_h_base(i);
     // Plus whatever turn the drawing still owes from the last correction,
     // exactly as the position getters add theirs.
     h += (double)g_off_h[i];
@@ -816,8 +879,15 @@ int WeaponAt(lua_State* L) {
     const sim_weapon* w = &g_cur->weapons[i];
     const sim_weapon* p = &g_nxt->weapons[i];
     bool same = has_prev() && weapon_continuous(p, w);
-    lua_pushnumber(L, same ? blend(p->x, w->x) : w->x / 256.0);
-    lua_pushnumber(L, same ? blend(p->y, w->y) : w->y / 256.0);
+    double x = same ? blend(p->x, w->x) : w->x / 256.0;
+    double y = same ? blend(p->y, w->y) : w->y / 256.0;
+    int back = remote_backoff(w->owner);
+    if (w->owner != g_local_ship && back > 0) {
+        x -= back * w->vx / 65536.0;
+        y -= back * w->vy / 65536.0;
+    }
+    lua_pushnumber(L, x);
+    lua_pushnumber(L, y);
     lua_pushnumber(L, w->spec);
     lua_pushnumber(L, w->vx / 65536.0);
     lua_pushnumber(L, w->vy / 65536.0);
@@ -1030,12 +1100,9 @@ int SmoothCapture(lua_State* L) {
     for (int i = 0; i < g_cur->ship_count && i < SIM_MAX_SHIPS; i++) {
         const sim_ship* c = &g_cur->ships[i];
         g_held[i] = c->active && c->alive;
-        // The raw tick rather than the blended position: the offset is a
-        // correction to the tick grid, and the blend rides on top of whatever
-        // it comes out as. Folding the blend in here would count it twice.
-        g_held_x[i] = c->x;
-        g_held_y[i] = c->y;
-        g_held_h[i] = c->heading;
+        g_held_x[i] = ship_seen_x_base(i);
+        g_held_y[i] = ship_seen_y_base(i);
+        g_held_h[i] = ship_seen_h_base(i);
     }
     for (int i = g_cur->ship_count; i < SIM_MAX_SHIPS; i++) g_held[i] = 0;
     return 0;
@@ -1055,8 +1122,8 @@ int SmoothSettle(lua_State* L) {
             g_off_x[i] = g_off_y[i] = g_off_h[i] = 0.0f;
             continue;
         }
-        double ox = g_off_x[i] + (g_held_x[i] - c->x) / 256.0;
-        double oy = g_off_y[i] + (g_held_y[i] - c->y) / 256.0;
+        double ox = g_off_x[i] + g_held_x[i] - ship_seen_x_base(i);
+        double oy = g_off_y[i] + g_held_y[i] - ship_seen_y_base(i);
         double d2 = ox * ox + oy * oy;
         if (d2 > SMOOTH_SNAP * SMOOTH_SNAP) {
             // A teleport. Nothing to smooth: a respawn or a wormhole is
@@ -1073,7 +1140,7 @@ int SmoothSettle(lua_State* L) {
 
         // The heading's owed turn, by the short way round the circle, since
         // an angle has no long way worth easing through.
-        int32_t dh = (int32_t)g_held_h[i] - (int32_t)c->heading;
+        int32_t dh = (int32_t)g_held_h[i] - (int32_t)ship_seen_h_base(i);
         if (dh > 32768) dh -= 65536;
         if (dh < -32768) dh += 65536;
         double oh = g_off_h[i] + (double)dh;
@@ -1081,10 +1148,12 @@ int SmoothSettle(lua_State* L) {
         if (oh < -32768.0) oh += 65536.0;
         if (oh > TURN_SNAP || oh < -TURN_SNAP) {
             oh = 0.0;
-        } else if (oh > TURN_MAX) {
-            oh = TURN_MAX;
-        } else if (oh < -TURN_MAX) {
-            oh = -TURN_MAX;
+        }
+        double turn_max = i == g_local_ship ? TURN_MAX_LOCAL : TURN_MAX_REMOTE;
+        if (oh > turn_max) {
+            oh = turn_max;
+        } else if (oh < -turn_max) {
+            oh = -turn_max;
         }
         g_off_h[i] = (float)oh;
     }
@@ -1104,10 +1173,13 @@ int SmoothDecay(lua_State* L) {
     double half = luaL_optnumber(L, 2, 0.08);
     if (dt <= 0.0 || half <= 0.0) return 0;
     float k = (float)pow(0.5, dt / half);
+    // Remote aim is current combat information. It pays correction debt much
+    // faster than position so a smooth hull does not point behind its rounds.
+    float turn_k = (float)pow(0.5, dt / 0.025);
     for (int i = 0; i < SIM_MAX_SHIPS; i++) {
         g_off_x[i] *= k;
         g_off_y[i] *= k;
-        g_off_h[i] *= k;
+        g_off_h[i] *= i == g_local_ship ? k : turn_k;
         // Under a hundredth of a pixel it is arithmetic nobody can see, and
         // leaving it running means every hull carries a decaying number for the
         // rest of the session.
@@ -1129,7 +1201,38 @@ int SmoothReset(lua_State* L) {
         g_held[i] = 0;
     }
     g_alpha = 0.0f;
+    g_local_ship = -1;
+    g_remote_horizon = -1;
+    g_last_snapshot_valid = false;
+    g_snapshot_tick = 0;
     return 0;
+}
+
+// How many ticks beyond the latest snapshot remote presentation should show.
+// The predicted world may run farther ahead to put local inputs on time.
+int RemoteHorizon(lua_State* L) {
+    g_remote_horizon = (int)luaL_checkinteger(L, 1);
+    int local = (int)luaL_optinteger(L, 2, -1);
+    g_local_ship = local >= 0 && local < SIM_MAX_SHIPS ? local : -1;
+    return 0;
+}
+
+// The largest correction still visible on a remote hull, in pixels and
+// degrees. Raw reconciliation and presentation debt are separate metrics.
+int SmoothStats(lua_State* L) {
+    int local = (int)luaL_optinteger(L, 1, g_local_ship);
+    double pos_max = 0.0, turn_max = 0.0;
+    for (int i = 0; i < g_cur->ship_count && i < SIM_MAX_SHIPS; i++) {
+        const sim_ship* s = &g_cur->ships[i];
+        if (i == local || !s->active || !s->alive) continue;
+        double pos = sqrt(g_off_x[i] * g_off_x[i] + g_off_y[i] * g_off_y[i]);
+        double turn = fabs(g_off_h[i]) * 360.0 / 65536.0;
+        if (pos > pos_max) pos_max = pos;
+        if (turn > turn_max) turn_max = turn;
+    }
+    lua_pushnumber(L, pos_max);
+    lua_pushnumber(L, turn_max);
+    return 2;
 }
 
 const luaL_reg kFunctions[] = {
@@ -1205,6 +1308,8 @@ const luaL_reg kFunctions[] = {
     {"smooth_settle", SmoothSettle},
     {"smooth_decay", SmoothDecay},
     {"smooth_reset", SmoothReset},
+    {"remote_horizon", RemoteHorizon},
+    {"smooth_stats", SmoothStats},
     {"apply_map", ApplyMap},
     {"apply_settings", ApplySettings},
     {"set_mortal", SetMortal},

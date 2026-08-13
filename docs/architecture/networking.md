@@ -60,13 +60,14 @@ the messages themselves.
 
 ## Client to server
 
-The client sends one input command per simulation tick, batched into a datagram
-every other tick or so:
+The client sends one input datagram per simulation tick. Each carries up to four
+consecutive states, oldest first:
 
 ```
-input_command {
-  u16 buttons         // thrust, reverse, left, right, fire, bomb, use, slot
-  u32 tick            // the tick this input applies to
+input_datagram {
+  u8  count           // one through four
+  u32 first_tick      // tick belonging to the first state
+  u16 buttons[count]  // one state per consecutive tick
 }
 ```
 
@@ -87,9 +88,10 @@ There is no aim field. Aiming is the nose, per
 surface, and an aimbot has nothing to write to that the ship's own rotation
 rate does not clamp.
 
-Commands are cumulative and cheap, so each datagram repeats the last several.
-Losing a datagram then costs nothing as long as the next arrives within the
-window, which is the standard trick and it works here because inputs are tiny.
+Each datagram repeats the last several states. Losing one costs nothing as long
+as the next arrives before the repeated tick is simulated. The server replaces
+overlap still waiting in its queue and ignores ticks it already consumed, so a
+repair cannot spend a one-tick action twice.
 
 That is nearly the whole client-to-server surface for gameplay. Everything else
 is arena changes, ship changes, and requests, all reliable and all rare.
@@ -415,11 +417,15 @@ The response is the four-metric, four-threshold model described in
 [server.md](server.md). It stays in the server rather than in the simulation,
 because it is policy and policy is configuration.
 
-Clock sync is explicit, and it needs no timestamps. Every snapshot header
-already carries the newest input tick the server has received from that client,
-so the gap between it and the tick the snapshot was packed on *is* the round
-trip, measured in the only unit the simulation cares about. A positive gap means
-inputs are arriving after the ticks they name.
+Clock sync is explicit, and it needs no wall-clock timestamps. Every snapshot
+header carries the newest input tick the server has received from that client.
+Snapshot tick minus received input tick is the input scheduling margin. Positive
+means inputs arrived after the ticks they named; negative means the queue has
+them early. It is not round-trip latency and can be negative by design.
+
+The client's lead from that same snapshot contains downlink age plus its clock
+offset. Input margin contains uplink age minus that offset. Adding the two
+cancels the offset, giving an estimated round trip in simulation ticks.
 
 The client steers on that number: one tick of lead added or given back per
 snapshot, twenty times a second, aiming to sit about two ticks early with a dead
@@ -434,15 +440,16 @@ late inputs are in the first second while it converges. That is on loopback,
 where the whole figure is send cadence and snapshot timing rather than distance,
 so a real link starts further behind and the loop simply settles further ahead.
 
-The cost of running ahead is paid by everyone else on your screen. Remote
-ships have no inputs to predict from and coast on their last known velocity
-between snapshots, so a larger lead means a longer coast. Frictionless flight
-makes coasting an unusually good predictor, which is why the cost is mild, but
-it is the reason the lead is the smallest number that works rather than a
-comfortable margin.
+The predicted core still runs every ship to the pilot's input tick, because
+collisions need one coherent world. Presentation does not have to inherit that
+future. Remote hulls and rounds are backed up along their velocity to half the
+estimated round trip beyond the snapshot, a symmetric estimate of current
+server time. The local hull and its rounds stay on the immediate predicted
+timeline. Frictionless flight makes this short linear adjustment useful; every
+snapshot remains the authority around walls and sudden pushes.
 
-Holding each remote ship's last-seen buttons through the predicted ticks --
-`btn_prev` already rides in every snapshot -- was tried and reverted within a
+Holding each remote ship's last-seen buttons through the predicted ticks was
+tried and reverted within a
 day. It survived a two-human test, because people hold keys for hundreds of
 milliseconds, and fell apart in a room of bots, whose bang-bang steering flips
 buttons faster than snapshots sample them: the button a snapshot catches is
@@ -450,6 +457,10 @@ wrong about half the time, and holding it for the lead amplifies dither into
 hulls twitching at snapshot rate. The lesson is written down because the idea
 will look good again someday: an extrapolator here has to be right about the
 median ship in the room, and the median ship is a bot.
+
+Heading uses a different observation. The difference between two authoritative
+headings is an average turn rate over the snapshot interval, not one sampled
+button. The renderer extends that rate only to the remote presentation horizon.
 
 That lead is the client's only latency compensation. We are not doing lag
 compensation by rewinding the server, and the reason is in the next section.
@@ -478,24 +489,16 @@ a 144 Hz screen. Interpolation makes the sim rate and the refresh rate
 independent, which is the property actually wanted.
 
 **The snapshot against the extrapolation.** A snapshot lands twenty times a
-second and replaces state outright, so a remote ship extrapolated wrong snaps to
-the truth. `smooth_capture` and `smooth_settle` bracket the correction: whatever
-the screen was asserting about each hull is held, and the difference between it
-and the truth is carried as a per-ship offset that decays on an eighty
-millisecond half-life. Past four tiles it is a teleport rather than a correction
--- a respawn, a wormhole -- and snaps, because easing one reads as a ship being
-dragged rather than arriving. Forty pixels caps what the drawing may be lying by
-at any moment. Both numbers were cut once -- to fifty milliseconds and sixteen
-pixels, priced against a shot visibly passing through a hull drawn somewhere its
-box is not -- and restored within a day. The mechanism also carries the clock
-steering for the pilot's own camera, and on a live link those corrections are
-small, frequent, and alternating in sign; the decay sets how much of each one
-shows before the next cancels it, and at fifty milliseconds the sum read as the
-whole screen juddering at snapshot rate. A wall measured in a player's recording
-stepped backwards seven pixels every few frames. Detonations are pinned to hulls
-from the other side: a weapon's ending names the hull it ended on, and the
-renderer moves the blast by that hull's current offset so the ring stays on the
-ship the shooter is looking at.
+second and replaces state outright, so a remote ship extrapolated wrong must
+move to the truth. `smooth_capture` and `smooth_settle` bracket the correction:
+whatever the screen was asserting about each hull is held, and the difference
+is carried as a per-ship offset. Position keeps its eighty-millisecond half-life
+and forty-pixel ceiling. Remote heading pays its debt on a twenty-five-millisecond
+half-life and may lie by at most twelve degrees, because the nose is aiming
+information. The local hull keeps the older thirty-degree budget so small clock
+steering changes do not shake the camera. Past four tiles, or ninety degrees,
+the change is a teleport and snaps. Detonations remain pinned to the corrected
+hull so the blast and target move together.
 
 The clock steering rides in the same mechanism, deliberately: a snapshot that
 trims the lead by a tick moves every hull by a tick of flight, which is exactly
@@ -509,10 +512,9 @@ siblings are the exceptions: measuring how far a prediction missed by, and
 reading what the pilot's own hands asked for, are the two things that must not be
 told a comfortable story.
 
-What this does *not* do is interpolate remote ships from the past, the way a
-Source-lineage game renders everyone 100 ms back. Aiming here is the nose, so
-showing a remote ship where it was would systematically shift where players aim
-at it. Extrapolation stays; these two smooth how it is presented.
+What this does *not* do is put remote ships in a fixed interpolation buffer, the
+way a Source-lineage game renders everyone about 100 ms back. The horizon moves
+with measured latency and stays ahead of the latest snapshot.
 
 One more pass-through had nothing to do with the network at all. The weapon
 hit test sampled once per tick, at the end of the tick's travel, and a round
@@ -580,12 +582,11 @@ Revisit if the shooting feels wrong at 150 ms.
 Whether 20 Hz snapshots are enough for the weapon density a busy arena
 generates, or whether projectiles need their own faster channel.
 
-How large the corrections on a remote ship actually are at 150 ms and 3% loss,
-now that there is something absorbing them. That number, rather than own-ship
-prediction error, is what the WebTransport door was built to shrink, and
-`tools/pilot` measures the wrong one for it. With both doors live the question
-has a control group: the same fleet serves both wires, so the comparison is
-waiting in the metrics rather than in a lab.
+How large the corrections on a remote ship actually are at 150 ms and 3% loss.
+The debug readout now reports rolling p95 and lifetime maximum position and
+heading corrections, plus the largest smoothing debt still visible. With both
+doors live the question has a control group: the same fleet serves both wires,
+so the next decision can use play data rather than own-ship error.
 
 What share of real clients actually lands on WebTransport. Every QUIC failure
 is silent by design, one fallback per session, so only counting per wire says
@@ -739,7 +740,8 @@ as eight seconds of drift.
 
 Which is why both readouts say which door a connection came through, since
 otherwise nothing would. The debug readout carries it in flight, as `wt` or
-`ws` beside the lag and the lead. The menu's about page carries it in words,
+`ws` beside input margin, estimated round trip and lead. The menu's about page
+carries it in words,
 because that page is what somebody quotes into a bug report: it names the
 transport and what it is made of, QUIC datagrams against TLS over TCP, and
 when a pilot is on the socket having been offered the other door it says that

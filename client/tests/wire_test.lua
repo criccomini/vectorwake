@@ -38,6 +38,7 @@ _G.sim = {
     smooth_capture = function() end,
     smooth_settle = function() end,
     smooth_reset = function() end,
+    remote_horizon = function() end,
     set_mortal = function() end,
     ship_count = function() return 2 end,
     ship_alive = function() return 1 end,
@@ -45,6 +46,7 @@ _G.sim = {
     ship_vel = function() return 0, 0 end,
     ship_x_raw = function() return 0 end,
     ship_y_raw = function() return 0 end,
+    ship_heading_raw = function() return 0 end,
     weapon_count = function() return 0 end,
     weapon_at = function() end,
     spec_life = function() return 0 end,
@@ -143,6 +145,23 @@ check("inputs ride the unreliable lane", #wt.unsent == 1
       tostring(#wt.unsent))
 check("and nothing leaks onto the socket", ws.dialled == 0)
 
+-- The next datagram carries the tick before it as well. Treat the first as
+-- lost and the second still contains the exact state that disappeared with it.
+net.step(0x1234)
+net.step(0)
+local repaired = wt.unsent[#wt.unsent]
+local count = string.byte(repaired, 2)
+local previous = 7 + (count - 2) * 2
+local current = previous + 2
+local first_buttons = string.byte(repaired, previous)
+    + string.byte(repaired, previous + 1) * 256
+local second_buttons = string.byte(repaired, current)
+    + string.byte(repaired, current + 1) * 256
+check("a fresh datagram repairs a lost input", count >= 2
+      and first_buttons == 0x1234 and second_buttons == 0,
+      string.format("count %d, buttons %04x %04x", count, first_buttons,
+                    second_buttons))
+
 -- --- the reorder guard ------------------------------------------------------
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 4999)})
@@ -151,12 +170,31 @@ check("a snapshot from behind is dropped", net.stats.snaps == 1,
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5001)})
 check("and the next fresh one lands", net.stats.snaps == 2)
 
+-- Reliable events can pass the datagram carrying the state that depicts them.
+-- They wait for that authoritative tick, then become visible together.
+local kill = string.char(4, 1, 0, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
+local charge = string.char(15, 1, 0)
+    .. string.char(0, 1, 0, 0, 0, 2, 0, 0) .. u32le(5010)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = kill})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = charge})
+check("combat news waits for its snapshot",
+      #net.kills == 0 and #net.charge_events == 0)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5010)})
+check("combat news lands with its authoritative tick",
+      #net.kills == 1 and #net.charge_events == 1)
+-- The delayed room channel may carry the same event again. Tick identity keeps
+-- that second copy from printing twice when a pilot has just sat out.
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = kill})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = charge})
+check("combat news is idempotent",
+      #net.kills == 1 and #net.charge_events == 1)
+
 -- A pack the core refuses has not happened. It is not counted, and the client
 -- reports that this build cannot read the zone rather than calling a broken
 -- connection healthy.
 reject_snapshot = true
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 9000)})
-check("a rejected snapshot is not counted", net.stats.snaps == 2,
+check("a rejected snapshot is not counted", net.stats.snaps == 3,
       "applied " .. net.stats.snaps)
 check("and ends the unreadable connection", not net.connected
       and lost_reason == "the zone sent a snapshot this client cannot read",

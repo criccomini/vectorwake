@@ -93,7 +93,53 @@ const C2S_JOIN: u8 = 1;
 /// session token, came back empty, and an empty name is the one thing
 /// `sanitize_name` answers with that word.
 const C2S_JOIN_HEADER: usize = 7;
+/// `[C2S_INPUT, count, first_tick, buttons...]`: up to four consecutive input
+/// states, oldest first. Every client tick repeats a short history so losing a
+/// datagram does not erase a tap. The tick on each state makes overlap safe.
 const C2S_INPUT: u8 = 2;
+const INPUT_HISTORY: usize = 4;
+
+fn input_message(first_tick: u32, buttons: &[u16]) -> Vec<u8> {
+    assert!(!buttons.is_empty() && buttons.len() <= INPUT_HISTORY);
+    let mut msg = Vec::with_capacity(6 + buttons.len() * 2);
+    msg.push(C2S_INPUT);
+    msg.push(buttons.len() as u8);
+    msg.extend_from_slice(&first_tick.to_le_bytes());
+    for &b in buttons {
+        msg.extend_from_slice(&b.to_le_bytes());
+    }
+    msg
+}
+
+struct InputRecords<'a> {
+    first: u32,
+    buttons: &'a [u8],
+    at: usize,
+}
+
+impl Iterator for InputRecords<'_> {
+    type Item = (u32, u16);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.buttons.get(self.at * 2..self.at * 2 + 2)?;
+        let tick = self.first.wrapping_add(self.at as u32);
+        self.at += 1;
+        Some((tick, u16::from_le_bytes(bytes.try_into().ok()?)))
+    }
+}
+
+fn input_records(data: &[u8]) -> Option<InputRecords<'_>> {
+    let count = *data.get(1)? as usize;
+    if count == 0 || count > INPUT_HISTORY || data.len() != 6 + count * 2 {
+        return None;
+    }
+    let first = u32::from_le_bytes(data.get(2..6)?.try_into().ok()?);
+    Some(InputRecords {
+        first,
+        buttons: &data[6..],
+        at: 0,
+    })
+}
 const C2S_SHIP: u8 = 5;
 /// The three asks a pilot can make about sides, all of them requests rather
 /// than assertions: cross to a side, found one, invite somebody to mine. None
@@ -147,7 +193,10 @@ const JOIN_WATCH: u8 = 2;
 /// 10 made energy and its capacity rung part of the public record again. They
 /// form the health bar that visible opponents use to read a fight, not private
 /// loadout information.
-const CLIENT_PROTOCOL: u8 = 10;
+///
+/// 11 repeats recent inputs and timestamps combat events. A stale client would
+/// otherwise lose one-tick controls and present news ahead of its snapshot.
+const CLIENT_PROTOCOL: u8 = 11;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -234,7 +283,7 @@ const S2C_ONAIR: u8 = 13;
 /// roll is server-secret; snapshots carry the resulting owner state and this
 /// message carries the immediate effect and feed line.
 const S2C_PRIZE: u8 = 14;
-/// `[S2C_CHARGE, ship, slot, x, y]`, a public action without the private
+/// `[S2C_CHARGE, ship, slot, x, y, tick]`, a public action without the private
 /// inventory count. Sent only to views whose fixed fairness circle contains
 /// the firing ship; x and y are signed Q8 positions.
 const S2C_CHARGE: u8 = 15;
@@ -444,7 +493,7 @@ impl Player {
             // first and oldest second, and the pilot's newest press would be
             // undone by a packet describing a tick that has already been and
             // gone.
-            if tick >= self.applied_tick {
+            if tick > self.applied_tick {
                 self.applied_tick = tick;
                 self.buttons = buttons;
             }
@@ -2243,6 +2292,7 @@ impl Room {
                     // A quit pays no bounty: points are the sim's to award
                     // and the sim saw no death.
                     m.extend_from_slice(&0u16.to_le_bytes());
+                    m.extend_from_slice(&tick.to_le_bytes());
                     for pl in self.players.values() {
                         let _ = pl.tx.try_send(Message::Binary(m.clone()));
                     }
@@ -2583,6 +2633,7 @@ impl Room {
                 let mut m = vec![S2C_CHARGE, e.a, e.b];
                 m.extend_from_slice(&sh.x.to_le_bytes());
                 m.extend_from_slice(&sh.y.to_le_bytes());
+                m.extend_from_slice(&tick.to_le_bytes());
                 for p in self.players.values() {
                     if p.ship != e.a && fair_contains(&self.world, p.ship, e.a) {
                         let _ = p.tx.try_send(Message::Binary(m.clone()));
@@ -2658,6 +2709,7 @@ impl Room {
             // because a bounty is a few dozen points and the field should
             // not inherit i32 from the event struct.
             m.extend_from_slice(&(paid.clamp(0, u16::MAX as i32) as u16).to_le_bytes());
+            m.extend_from_slice(&tick.to_le_bytes());
             for p in self.players.values() {
                 let _ = p.tx.try_send(Message::Binary(m.clone()));
             }
@@ -6118,23 +6170,18 @@ pub(crate) async fn serve_client(
                 }
             }
             C2S_INPUT => {
-                // buttons: u16, tick: u32. The tick says which tick this
-                // input belongs to, and it is honoured: an input for a
-                // tick this room has not reached waits for it, so a
-                // client whose clock leads ours applies the same buttons
-                // on the same tick number we do. One that arrives late
-                // takes effect now, which is what the server did with
-                // every input before this and is still the right answer
-                // for a client with no lead.
-                if data.len() >= 7 {
+                // A short consecutive history, oldest first. Overlap is
+                // deliberate: a fresh datagram repairs a lost predecessor,
+                // while `schedule` ignores ticks already consumed.
+                if let Some(records) = input_records(&data) {
                     if let Some((room, pid)) = seat {
-                        let buttons = u16::from_le_bytes([data[1], data[2]]);
-                        let t = u32::from_le_bytes([data[3], data[4], data[5], data[6]]);
                         let mut z = zone.lock().await;
                         if let Some(a) = z.rooms.get_mut(room) {
                             let now = a.world.state.tick + 1;
                             if let Some(p) = a.players.get_mut(&pid) {
-                                p.schedule(t, buttons, now);
+                                for (tick, buttons) in records {
+                                    p.schedule(tick, buttons, now);
+                                }
                             }
                         }
                     }
@@ -6295,6 +6342,30 @@ mod tests {
         // And the lane still works forwards: the next tick's input lands.
         p.schedule(204, 0, 204);
         assert_eq!(p.buttons_at(204), 0);
+    }
+
+    #[test]
+    fn a_repeat_of_the_last_consumed_tick_is_ignored() {
+        let mut p = a_player();
+        p.schedule(201, sim::BTN_FIRE, 203);
+        assert_eq!(p.buttons_at(203), sim::BTN_FIRE);
+        p.schedule(201, 0, 204);
+        assert_eq!(
+            p.buttons_at(204),
+            sim::BTN_FIRE,
+            "a repeated history entry undid the tick already consumed"
+        );
+    }
+
+    #[test]
+    fn an_input_message_carries_a_consecutive_repair_window() {
+        let msg = input_message(40, &[1, 2, 4, 8]);
+        assert_eq!(
+            input_records(&msg).map(|records| records.collect::<Vec<_>>()),
+            Some(vec![(40, 1), (41, 2), (42, 4), (43, 8)])
+        );
+        assert!(input_records(&[C2S_INPUT, 0, 0, 0, 0, 0]).is_none());
+        assert!(input_records(&[C2S_INPUT, 5, 0, 0, 0, 0]).is_none());
     }
 
     /// Ticks arrive in order on this transport, but the clamp can lower one, so
@@ -7462,6 +7533,12 @@ mod tests {
         assert_eq!(m[0], S2C_KILL);
         assert_eq!(m[1], ship, "the victim's seat");
         assert_eq!(m[2], room.players[&hunter].ship, "credited to the hunter");
+        assert_eq!(m.len(), 14);
+        assert_eq!(
+            u32::from_le_bytes(m[10..14].try_into().unwrap()),
+            room.world.state.tick,
+            "the feed names the authoritative tick"
+        );
     }
 
     #[test]
@@ -8117,7 +8194,7 @@ mod tests {
             .iter()
             .find(|m| m.first() == Some(&S2C_CHARGE))
             .expect("a nearby observer receives the public action");
-        assert_eq!(charge.len(), 11);
+        assert_eq!(charge.len(), 15);
         assert_eq!((charge[1], charge[2]), (shooter, 0));
         assert_eq!(
             i32::from_le_bytes(charge[3..7].try_into().unwrap()),
@@ -8135,7 +8212,12 @@ mod tests {
                 .all(|m| m.first() != Some(&S2C_CHARGE)),
             "the action does not leak beyond fair sight",
         );
-        assert_eq!(charge.len(), 11, "no remaining inventory count travels");
+        assert_eq!(
+            u32::from_le_bytes(charge[11..15].try_into().unwrap()),
+            a.world.state.tick,
+            "the action names the snapshot that may present it"
+        );
+        assert_eq!(charge.len(), 15, "no remaining inventory count travels");
     }
 
     #[test]

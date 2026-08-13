@@ -1607,6 +1607,9 @@ function update(self, dt)
     -- arena would be waiting for the next one.
     sim.render_alpha(accum / TUNE.DT)
     if live then sim.smooth_decay(dt) end
+    if live and ui.debug then
+        net.stats.smooth_pos, net.stats.smooth_turn = sim.smooth_stats(me)
+    end
     local cx, cy
     if live then
         -- What the menu calls your hull is whatever you are flying, asked
@@ -1663,7 +1666,7 @@ function update(self, dt)
                     .. ((p and p.ai) and "*" or "")
             end
             print(string.format("tick %d  ships %d  err %.2fpx  roster %s",
-                sim.tick(), sim.ship_count(), net.stats.err,
+                sim.tick(), sim.ship_count(), net.stats.self_err,
                 table.concat(who, " ")))
         else
             print(string.format("menu  zone %s  games %d  %s",
@@ -2037,12 +2040,10 @@ function update(self, dt)
             -- Flags are drawn as flags now, so the banner is only for the
             -- things that are genuinely a sentence.
             banner = net.banner,
-            -- The round trip, in ticks of a centisecond, which the readout
-            -- above the dial turns into four bars. The prediction error that
-            -- used to be printed here was this client debugging itself on a
-            -- player's screen; it is in the debug readout now, behind the
-            -- bars, where somebody who wants it can ask for it.
-            lag = net.stats.lag,
+            -- The estimated round trip, in ticks of a centisecond, which the
+            -- readout above the dial turns into four bars. Input scheduling
+            -- margin is separate and lives in the debug readout.
+            rtt = net.stats.rtt,
             stats = net.stats, zone = net.zone,
             -- Every room of this game and which one we are in, for the chip
             -- in the corner and the panel it opens. Both are absent until the
