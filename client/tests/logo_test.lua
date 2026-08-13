@@ -188,9 +188,12 @@ tris = {}
 ui.begin(layer, 512, 512, 1, false, math.pi / (2 * 1.7))
 ui.logo(256, 256, 104)
 ui.finish()
+local edge_span = triangle_span()
 check("the menu logo turns around its vertical axis",
-      math.abs(triangle_span() / full_span - 0.2) < 0.000001,
-      string.format("span ratio %.3f", triangle_span() / full_span))
+      edge_span / full_span > 0.30 and edge_span / full_span < 0.32,
+      string.format("span ratio %.3f", edge_span / full_span))
+check("the turning logo draws a rear face and solid edge",
+      #tris == 84, "triangles: " .. #tris)
 
 local ui_source = read_file("client/arena/ui.lua")
 check("the game mesh stores the canonical colored outlines",

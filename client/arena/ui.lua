@@ -4044,6 +4044,24 @@ local MK_GAP = {
 local MK_GAP_TRI = {10, 1, 2, 4, 5, 6, 4, 6, 7, 3, 4, 7,
                     3, 7, 8, 2, 3, 8, 2, 8, 9, 2, 9, 10}
 
+-- Ten logo units is about two screen pixels beside the menu wordmark. The
+-- depth disappears face-on and reaches that full width edge-on, so the mark
+-- keeps its exact approved silhouette at rest and gains a visible edge only
+-- while it turns.
+local MK_DEPTH = 10
+local MK_ORANGE_BACK = {pal.LOGO_ORANGE[1] * 0.30,
+                        pal.LOGO_ORANGE[2] * 0.30,
+                        pal.LOGO_ORANGE[3] * 0.30, 1}
+local MK_ORANGE_SIDE = {pal.LOGO_ORANGE[1] * 0.48,
+                        pal.LOGO_ORANGE[2] * 0.48,
+                        pal.LOGO_ORANGE[3] * 0.48, 1}
+local MK_CYAN_BACK = {pal.LOGO_CYAN[1] * 0.30,
+                      pal.LOGO_CYAN[2] * 0.30,
+                      pal.LOGO_CYAN[3] * 0.30, 1}
+local MK_CYAN_SIDE = {pal.LOGO_CYAN[1] * 0.48,
+                      pal.LOGO_CYAN[2] * 0.48,
+                      pal.LOGO_CYAN[3] * 0.48, 1}
+
 local function logo_poly(points, tris, ox, oy, k, squash, col)
     for i = 1, #tris, 3 do
         local a, b, c = tris[i], tris[i + 1], tris[i + 2]
@@ -4056,6 +4074,23 @@ local function logo_poly(points, tris, ox, oy, k, squash, col)
     end
 end
 
+-- Join the rear and front copies around a polygon's perimeter. Each edge is a
+-- pair of triangles, which turns the offset duplicate into a solid thickness
+-- instead of a drop shadow. The front face is drawn last and hides the half of
+-- each strip that should be behind it.
+local function logo_sides(points, bx, fx, oy, k, squash, col)
+    local n = #points / 2
+    for i = 1, n do
+        local j = i % n + 1
+        local ax = (points[i * 2 - 1] - MK_W / 2) * k * squash
+        local ay = ry(oy + points[i * 2] * k)
+        local cx = (points[j * 2 - 1] - MK_W / 2) * k * squash
+        local cy = ry(oy + points[j * 2] * k)
+        F.layer:tri(bx + ax, ay, bx + cx, cy, fx + cx, cy, col)
+        F.layer:tri(bx + ax, ay, fx + cx, cy, fx + ax, ay, col)
+    end
+end
+
 function M.logo_width(h)
     return h * MK_W / MK_H
 end
@@ -4063,17 +4098,35 @@ end
 function M.logo(cx, cy, h, alpha, still)
     alpha = alpha or 1
     local k = h / MK_H
-    -- Match the selected hull's turn on the ship stage. The mark is another
-    -- flat top-down silhouette, so the same orthographic squeeze gives it the
-    -- same vertical-axis rotation without inventing perspective for one of
-    -- them. `still` keeps asset tests and non-menu callers front-on.
-    local squash = vertical_turn(not still and F.now * 1.7 or nil)
-    local ox, oy = cx, cy - MK_H * k / 2
-    logo_poly(MK_ORANGE, MK_ORANGE_TRI, ox, oy, k, squash,
+    -- Match the selected hull's turn on the ship stage, then separate a dark
+    -- rear face from the colored front face as it turns. The separation is
+    -- the projected thickness of a solid mark: zero face-on, widest edge-on,
+    -- and reversed naturally on the other half of the rotation. `still` keeps
+    -- asset tests and non-menu callers front-on.
+    local turn = not still and F.now * 1.7 or nil
+    local squash = vertical_turn(turn)
+    local depth = turn and math.sin(turn) * MK_DEPTH * k / 2 or 0
+    local bx, fx = cx - depth, cx + depth
+    local oy = cy - MK_H * k / 2
+    if math.abs(depth) > 0.001 then
+        logo_poly(MK_ORANGE, MK_ORANGE_TRI, bx, oy, k, squash,
+                  pal.a(MK_ORANGE_BACK, alpha))
+        logo_poly(MK_CYAN, MK_CYAN_TRI, bx, oy, k, squash,
+                  pal.a(MK_CYAN_BACK, alpha))
+        logo_poly(MK_GAP, MK_GAP_TRI, bx, oy, k, squash,
+                  pal.a(pal.LOGO_GAP, alpha))
+        logo_sides(MK_ORANGE, bx, fx, oy, k, squash,
+                   pal.a(MK_ORANGE_SIDE, alpha))
+        logo_sides(MK_CYAN, bx, fx, oy, k, squash,
+                   pal.a(MK_CYAN_SIDE, alpha))
+        logo_sides(MK_GAP, bx, fx, oy, k, squash,
+                   pal.a(pal.LOGO_GAP, alpha))
+    end
+    logo_poly(MK_ORANGE, MK_ORANGE_TRI, fx, oy, k, squash,
               pal.a(pal.LOGO_ORANGE, alpha))
-    logo_poly(MK_CYAN, MK_CYAN_TRI, ox, oy, k, squash,
+    logo_poly(MK_CYAN, MK_CYAN_TRI, fx, oy, k, squash,
               pal.a(pal.LOGO_CYAN, alpha))
-    logo_poly(MK_GAP, MK_GAP_TRI, ox, oy, k, squash,
+    logo_poly(MK_GAP, MK_GAP_TRI, fx, oy, k, squash,
               pal.a(pal.LOGO_GAP, alpha))
 end
 
