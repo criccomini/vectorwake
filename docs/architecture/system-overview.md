@@ -149,9 +149,9 @@ zone settings are expressed in those units. Rendering runs at whatever the
 display does. The client interpolates between the last two authoritative states
 for remote players and predicts its own.
 
-Snapshots go out at a lower rate than the tick, defaulting to 20 Hz, with
-position for nearby players sent more often than for distant ones. See
-[networking.md](networking.md).
+Snapshots go out at 20 Hz outside combat and 50 Hz when a hostile hull or
+projectile is nearby. Each is a complete state replacement inside the server's
+fixed fairness circle. See [networking.md](networking.md).
 
 ## Where each Subspace idea landed
 

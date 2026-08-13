@@ -2040,6 +2040,7 @@ function update(self, dt)
             -- Flags are drawn as flags now, so the banner is only for the
             -- things that are genuinely a sentence.
             banner = net.banner,
+            lag_notice = net.lag_notice,
             -- The estimated round trip, in ticks of a centisecond, which the
             -- readout above the dial turns into four bars. Input scheduling
             -- margin is separate and lives in the debug readout.

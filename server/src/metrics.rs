@@ -223,11 +223,11 @@ impl Rate {
     }
 }
 
-/// Snapshot bytes as a rate, and drops as a rate. See `Rate`.
+/// Snapshot bytes and lag actions as rates. See `Rate`.
 pub static BYTES_RATE: Rate = Rate::new();
 /// The same, over the seats a snapshot is actually filtered for.
 pub static OUT_RATE: Rate = Rate::new();
-pub static DROP_RATE: Rate = Rate::new();
+pub static LAG_RATE: Rate = Rate::new();
 
 /// Messages dropped because a client's queue was full.
 ///
@@ -235,6 +235,9 @@ pub static DROP_RATE: Rate = Rate::new();
 /// invisible one: a roster that went missing this way had a scoreboard reading
 /// "ship 5" for a whole session before anybody worked out why.
 pub static SEND_DROPPED: Counter = Counter::new();
+/// Server-authoritative restrictions applied because a connection exceeded
+/// its zone's lag thresholds.
+pub static LAG_ACTIONS: Counter = Counter::new();
 /// The WebTransport door: whether it is open, and who has come through it.
 ///
 /// Two numbers because they answer two different questions and only one of
@@ -497,6 +500,12 @@ pub fn render() -> String {
         "vw_send_dropped_total",
         "Messages dropped on a full client queue.",
         SEND_DROPPED.get(),
+    );
+    counter(
+        &mut out,
+        "vw_lag_actions_total",
+        "Weapon, objective, and spectator restrictions applied for lag.",
+        LAG_ACTIONS.get(),
     );
     counter(
         &mut out,

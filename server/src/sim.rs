@@ -29,6 +29,7 @@ pub const BTN_BOMB: u16 = 32;
 /// which charge is ready is the client's business and not simulation state.
 pub const BTN_USE: u16 = 64;
 pub const BTN_SLOT_SHIFT: u16 = 7;
+pub const BTN_MULTI: u16 = 0x0200;
 /// Lay a mine: the bomb trigger's other posture, not a charge.
 pub const BTN_MINE: u16 = 0x0400;
 

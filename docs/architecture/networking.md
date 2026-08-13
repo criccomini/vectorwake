@@ -61,13 +61,14 @@ the messages themselves.
 ## Client to server
 
 The client sends one input datagram per simulation tick. Each carries up to four
-consecutive states, oldest first:
+independently named states and the snapshots this client has received:
 
 ```
 input_datagram {
   u8  count           // one through four
-  u32 first_tick      // tick belonging to the first state
-  u16 buttons[count]  // one state per consecutive tick
+  u32 snapshot_ack    // newest snapshot sequence received
+  u32 snapshot_mask   // that sequence and the 31 before it
+  { u32 tick, u16 buttons } inputs[count]
 }
 ```
 
@@ -88,10 +89,13 @@ There is no aim field. Aiming is the nose, per
 surface, and an aimbot has nothing to write to that the ship's own rotation
 rate does not clamp.
 
-Each datagram repeats the last several states. Losing one costs nothing as long
-as the next arrives before the repeated tick is simulated. The server replaces
-overlap still waiting in its queue and ignores ticks it already consumed, so a
-repair cannot spend a one-tick action twice.
+Each snapshot echoes the newest accepted input tick and a 32-bit receipt window.
+The client sends the current state, then fills the remaining records with holes
+from that window and the newest unacknowledged states. A lost one-tick action is
+therefore named and repaired directly. Before the first acknowledgement arrives,
+the newest states still get several independent rides. The server replaces a
+repeat still waiting in its queue and ignores one already consumed, so a repair
+cannot spend an action twice.
 
 That is nearly the whole client-to-server surface for gameplay. Everything else
 is arena changes, ship changes, and requests, all reliable and all rare.
@@ -125,28 +129,39 @@ different tables do not agree on what an index means.
 A client that cannot decode either message loses the connection with a reason
 rather than playing on against rules it has guessed.
 
-Snapshots at 20 Hz by default, carrying the authoritative state of everything
-the player can see:
+Snapshots run at 20 Hz outside combat. A pilot with a hostile hull or an active
+combat projectile within 32 tiles moves to a 50 Hz lane. Both lanes carry the
+same complete server-filtered view, so the faster lane does not create a second
+fairness boundary or make distant entities blink out:
 
 ```
-snapshot {
+snapshot_header {
+  u8  subject
+  u32 input_ack
+  u32 input_mask
+  u32 sequence
+  u16 server_rtt_ms
+  u16 server_jitter_ms
+  u8  downstream_loss_percent
+  u8  combat_loss_percent
+  u8  upstream_loss_percent
+  u8  lag_policy_state
+  u8  weapon_suppression_percent
+}
+simulation_pack {
   u32 tick
-  u32 baseline_tick      // what this is encoded against
   ships[]                // id, position, velocity, heading, energy, status
   weapons[]              // id, type, position, velocity, ttl
-  events[]               // fired, hit, killed, prize, flag, goal
+  flags[]
+  prizes[]
 }
 ```
 
-Three things keep it small. Fields are quantized to the sim's own fixed-point
-scales, so no conversion happens on the wire. Values are delta-encoded against
-the last snapshot the client acknowledged. And relevance is graded by distance:
-ships near you update every snapshot, ships across the map update every fourth,
-and ships outside radar range are radar blips rather than full state.
-
-Events are the interesting part. The client already predicted its own movement,
-so a snapshot that matches costs nothing. What the client cannot predict is
-whether a shot hit, and events are how it finds out.
+Fields use the sim's fixed-point scales, so no conversion happens on the wire.
+Every pack is a complete state replacement inside the server's fixed fairness
+circle. That makes a lost snapshot self-repairing. Reliable kill, charge, and
+pickup outcomes carry their authoritative tick and wait at the client until a
+snapshot at that tick has arrived.
 
 ## Bandwidth budget
 
@@ -396,10 +411,10 @@ that size rather than compressing further, and it would put an inflate step in
 front of a loader that already needs a shim to stop it streaming. Measured, not
 assumed: 4,034,007 bytes of HTML, 1,549,745 after brotli.
 
-Rough arithmetic at 20 Hz: 40 ships at roughly 16 bytes each after delta
-encoding is 640 bytes, plus projectiles and events, so call it 1 KB per snapshot
-and 20 KB/s. Upstream is trivial: 8 bytes per tick at 100 Hz, batched, is under
-1 KB/s.
+The ordinary lane budgets about 1 KB for a complete filtered snapshot, or
+20 KB/s at 20 Hz. A full selective input packet is 34 bytes at 100 Hz, or
+3.4 KB/s upstream. The combat lane can raise downstream snapshot traffic to
+two and a half times the ordinary rate while a fight is nearby.
 
 When a link cannot carry that, the server throttles by priority the way ASSS
 does: weapons and positions outrank everything else, some share of bandwidth is
@@ -409,9 +424,13 @@ near you does.
 
 ## Lag handling
 
-Measurement mirrors Subspace: timestamps in both directions, acknowledgement
-round-trip times, and packet counters compared periodically, with the client
-reporting its own view because neither side alone sees the truth.
+Measurement mirrors Subspace, adapted to a snapshot protocol. Inputs carry a
+selective snapshot acknowledgement. Because the acknowledged snapshot tick and
+the input arrival tick are both server ticks, the arena gets a round-trip sample
+without trusting a client clock. Variation between consecutive samples measures
+jitter. The same receipt window measures ordinary and
+combat-lane downlink loss separately. Missing named input ticks measure upstream
+loss.
 
 The response is the four-metric, four-threshold model described in
 [server.md](server.md). It stays in the server rather than in the simulation,
@@ -428,10 +447,9 @@ offset. Input margin contains uplink age minus that offset. Adding the two
 cancels the offset, giving an estimated round trip in simulation ticks.
 
 The client steers on that number: one tick of lead added or given back per
-snapshot, twenty times a second, aiming to sit about two ticks early with a dead
-band so a clock that is comfortably ahead is left alone. From a cold start it
-settles in under a second, and it never jumps, because a jump is itself the
-correction this exists to remove.
+snapshot, aiming to keep four future input attempts in flight. A selective hole
+temporarily widens that margin to seven. From a cold start it settles without a
+clock jump, because a jump is itself the correction this exists to remove.
 
 Measured against a local arena, three pilots for fifteen seconds. Without a
 lead, inputs ran a mean of 2.7 ticks late and never once arrived early. With the
@@ -487,14 +505,17 @@ the unit conversions in `sim.c` bake in the thousand, and it would still alias o
 a 144 Hz screen. Interpolation makes the sim rate and the refresh rate
 independent, which is the property actually wanted.
 
-**The snapshot against the extrapolation.** A snapshot lands twenty times a
-second and replaces state outright, so a remote ship extrapolated wrong must
+**The snapshot against the extrapolation.** A snapshot replaces state outright,
+so a remote ship extrapolated wrong must
 move to the truth. `smooth_capture` and `smooth_settle` bracket the correction:
 whatever the screen was asserting about each hull is held, and the difference
-is carried as a per-ship offset. Position and heading use an eighty-millisecond
-half-life. Forty pixels and thirty degrees cap what the drawing may owe; past
-four tiles or ninety degrees, the change is a teleport and snaps. Detonations
-remain pinned to the corrected hull so the blast and target move together.
+is carried as a per-ship offset. The local camera keeps an 80 ms half-life, a
+40 px position budget, and a 30 degree heading budget. Remote hulls use a
+separate 50 ms half-life, a 16 px position budget, and a 15 degree heading
+budget. Large remote corrections snap sooner. Tightening an opponent's
+presentation therefore cannot turn the pilot's own clock steering into camera
+judder. Detonations remain pinned to the corrected hull so the blast and target
+move together.
 
 The clock steering rides in the same mechanism, deliberately: a snapshot that
 trims the lead by a tick moves every hull by a tick of flight, which is exactly
@@ -574,9 +595,6 @@ makes you die behind cover, and Subspace's slow projectiles do not need it.
 Revisit if the shooting feels wrong at 150 ms.
 
 ## Open questions
-
-Whether 20 Hz snapshots are enough for the weapon density a busy arena
-generates, or whether projectiles need their own faster channel.
 
 How large the corrections on a remote ship actually are at 150 ms and 3% loss.
 The debug readout now reports rolling p95 and lifetime maximum position and

@@ -2563,7 +2563,9 @@ local function debug_hud(o, top)
         {"frame", string.format("%.1f ms", (o.frame_ms or 0))},
         {"wire", st.wire or "ws"},
         {"margin", string.format("%+d ticks", st.input_margin or 0)},
-        {"rtt", string.format("~%d ms", (st.rtt or 0) * 10)},
+        {"rtt", string.format("%d ms / %d jitter / ~%d est",
+                               st.server_rtt_ms or 0, st.jitter_ms or 0,
+                               (st.rtt or 0) * 10)},
         {"lead", string.format("%d ticks", st.lead or 0)},
         {"self", string.format("%.1f / %.1f px", st.self_err or 0,
                                 st.self_err_max or 0)},
@@ -2587,6 +2589,12 @@ local function debug_hud(o, top)
                                  st.snap_gap_max_ms or 0)},
         {"loss", string.format("%d miss / %d late", st.snap_missed or 0,
                                 st.snap_reordered or 0)},
+        {"path", string.format("%d / %d / %d%% down/fight/up",
+                                st.down_loss or 0, st.combat_loss or 0,
+                                st.up_loss or 0)},
+        {"input", string.format("%d holes / %d%% weapons",
+                                 st.input_holes or 0,
+                                 st.weapon_suppression or 0)},
         {"down", string.format("%.1f kB/s", (o.rx_rate or 0) / 1000)},
         {"up", string.format("%.1f kB/s", (o.tx_rate or 0) / 1000)},
         {"tick", tostring(sim.tick())},
@@ -2807,6 +2815,10 @@ function M.hud(o)
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
             pal.a(pal.INK, 0.92), "center")
+    end
+    if o.lag_notice and o.lag_notice ~= "" then
+        txt(o.lag_notice, W / 2, 92 * S, (M.compact and 10 or 13) * S,
+            pal.a(pal.HURT, 0.95), "center")
     end
     if not o.watch and sim.ship_alive(me) == 0 then
         txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,

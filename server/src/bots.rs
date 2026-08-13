@@ -334,7 +334,7 @@ async fn drive(rig: std::sync::Weak<Rig>) {
                 // The tick this input produces, not the last one finished,
                 // which is what `net.lua` stamps and what the arena's queue
                 // reads: an input naming a tick waits for it.
-                let m = crate::input_message(tick + 1, &[buttons]);
+                let m = crate::input_message(0, 0, &[(tick + 1, buttons)]);
                 if seat.tx.try_send(Ctl::Frame(m)).is_ok() {
                     seat.sent = Some(buttons);
                 }
@@ -856,7 +856,7 @@ async fn fly(
                             }
                         }
                     }
-                    Some(crate::S2C_SNAPSHOT) if data.len() > 6 => {
+                    Some(crate::S2C_SNAPSHOT) if data.len() > crate::SNAPSHOT_HEADER => {
                         if let Sight::Shared(rig) = &sight {
                             // One connection feeds the room; everybody
                             // else's copy of the same truth is dropped here,
@@ -866,7 +866,7 @@ async fn fly(
                                 0, me, Ordering::Relaxed, Ordering::Relaxed);
                             if rig.pen.load(Ordering::Relaxed) == me {
                                 if let Ok(mut w) = rig.world.lock() {
-                                    w.apply_snapshot(&data[6..]);
+                                    w.apply_snapshot(&data[crate::SNAPSHOT_HEADER..]);
                                 }
                             }
                         }
@@ -923,8 +923,8 @@ async fn fly(
                         Some(crate::S2C_SETTINGS) => {
                             w.apply_settings(&data[1..]);
                         }
-                        Some(crate::S2C_SNAPSHOT) if data.len() > 6 => {
-                            w.apply_snapshot(&data[6..]);
+                        Some(crate::S2C_SNAPSHOT) if data.len() > crate::SNAPSHOT_HEADER => {
+                            w.apply_snapshot(&data[crate::SNAPSHOT_HEADER..]);
                         }
                         Some(crate::S2C_YIELD) => break,
                         _ => {}
@@ -970,7 +970,7 @@ async fn fly(
                         None => 0,
                     };
                     if sent != Some(buttons) {
-                        let m = crate::input_message(tick + 1, &[buttons]);
+                        let m = crate::input_message(0, 0, &[(tick + 1, buttons)]);
                         if sink.send(Message::Binary(m)).await.is_err() {
                             break;
                         }

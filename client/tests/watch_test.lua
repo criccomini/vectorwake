@@ -81,6 +81,19 @@ local function sent_kinds()
     return table.concat(out, ",")
 end
 
+local function le32(v)
+    return string.char(v % 256, math.floor(v / 256) % 256,
+                       math.floor(v / 65536) % 256,
+                       math.floor(v / 16777216) % 256)
+end
+
+local snapshot_seq = 0
+local function snapshot(subject, at)
+    snapshot_seq = snapshot_seq + 1
+    return string.char(2, subject) .. le32(0) .. le32(0)
+        .. le32(snapshot_seq) .. string.rep("\0", 9) .. le32(at) .. "body"
+end
+
 -- --- flying first -----------------------------------------------------------
 
 net.connect("ws://zone", 0, "pilot", function() end)
@@ -94,7 +107,7 @@ check("a ship in the welcome is flying", net.me == 3 and not net.watching)
 
 -- A snapshot, so `step` stops holding the frame. Header, then a body the
 -- stubbed unpacker accepts.
-deliver(string.char(2, 3, 0, 0, 0, 0) .. "body")
+deliver(snapshot(3, 1000))
 check("the snapshot landed", net.stats.snaps == 1)
 
 local replays = calls.replay
@@ -116,7 +129,7 @@ check("and never replays a ship it does not have", calls.replay == replays)
 check("but the world still steps", calls.step == steps + 1,
       "a watcher that stops stepping is a slideshow")
 
-deliver(string.char(2, 1, 0, 0, 0, 0) .. "body")
+deliver(snapshot(1, 1001))
 check("the subject byte says whose eyes these are", net.subject == 1)
 check("and the snapshot was taken whole", calls.apply >= 2)
 check("without a rollback replay behind it", calls.replay == replays)

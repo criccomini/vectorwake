@@ -37,6 +37,16 @@ use tokio_tungstenite::tungstenite::Message;
 
 const TICK_HZ: u64 = 100;
 const SNAPSHOT_EVERY: u32 = 5; // 20 Hz
+const COMBAT_SNAPSHOT_EVERY: u32 = 2; // 50 Hz
+const COMBAT_INTEREST: i32 = 32 * 16 * 256;
+
+fn snapshot_lanes(frame: u32) -> (bool, bool) {
+    (
+        frame % SNAPSHOT_EVERY == 0,
+        frame % COMBAT_SNAPSHOT_EVERY == 0,
+    )
+}
+
 /// One sight boundary chosen by the server for every human view. It covers
 /// the sixty-tile radar plus twenty-four tiles of arrival margin, so a client
 /// cannot widen disclosure by claiming a larger window.
@@ -58,6 +68,36 @@ fn fair_contains(world: &sim::World, center: u8, subject: u8) -> bool {
     center.active != 0
         && subject.active != 0
         && fair_contains_xy(center.x, center.y, subject.x, subject.y)
+}
+
+fn near_combat(world: &sim::World, ship: u8) -> bool {
+    let Some(me) = world.state.ships.get(ship as usize) else {
+        return false;
+    };
+    if me.active == 0 || me.alive == 0 {
+        return false;
+    }
+    let close = |x: i32, y: i32| {
+        let dx = x as i64 - me.x as i64;
+        let dy = y as i64 - me.y as i64;
+        dx * dx + dy * dy <= (COMBAT_INTEREST as i64) * (COMBAT_INTEREST as i64)
+    };
+    if world.state.ships[..world.state.ship_count as usize]
+        .iter()
+        .enumerate()
+        .any(|(i, other)| {
+            i != ship as usize
+                && other.active != 0
+                && other.alive != 0
+                && other.team != me.team
+                && close(other.x, other.y)
+        })
+    {
+        return true;
+    }
+    world.state.weapons[..world.state.weapon_count as usize]
+        .iter()
+        .any(|weapon| (weapon.owner == ship || weapon.team != me.team) && close(weapon.x, weapon.y))
 }
 /// Humans a zone admits when its file says nothing. The room may hold more
 /// seats than this: `max_ships` sizes the room, and this bounds how many of its
@@ -93,51 +133,53 @@ const C2S_JOIN: u8 = 1;
 /// session token, came back empty, and an empty name is the one thing
 /// `sanitize_name` answers with that word.
 const C2S_JOIN_HEADER: usize = 7;
-/// `[C2S_INPUT, count, first_tick, buttons...]`: up to four consecutive input
-/// states, oldest first. Every client tick repeats a short history so losing a
-/// datagram does not erase a tap. The tick on each state makes overlap safe.
+/// `[C2S_INPUT, count, snapshot ack, snapshot mask, (tick, buttons)...]`.
+/// Records name their own ticks, so a packet can repair a hole without spending
+/// its whole budget on the consecutive states around it. The snapshot receipt
+/// window gives the arena downlink loss and round-trip samples on its own clock.
 const C2S_INPUT: u8 = 2;
 const INPUT_HISTORY: usize = 4;
+const LAG_WEAPON_BUTTONS: u16 =
+    sim::BTN_FIRE | sim::BTN_BOMB | sim::BTN_USE | sim::BTN_MINE | sim::BTN_MULTI;
 
-fn input_message(first_tick: u32, buttons: &[u16]) -> Vec<u8> {
-    assert!(!buttons.is_empty() && buttons.len() <= INPUT_HISTORY);
-    let mut msg = Vec::with_capacity(6 + buttons.len() * 2);
+fn input_message(snapshot_ack: u32, snapshot_mask: u32, records: &[(u32, u16)]) -> Vec<u8> {
+    assert!(!records.is_empty() && records.len() <= INPUT_HISTORY);
+    let mut msg = Vec::with_capacity(10 + records.len() * 6);
     msg.push(C2S_INPUT);
-    msg.push(buttons.len() as u8);
-    msg.extend_from_slice(&first_tick.to_le_bytes());
-    for &b in buttons {
-        msg.extend_from_slice(&b.to_le_bytes());
+    msg.push(records.len() as u8);
+    msg.extend_from_slice(&snapshot_ack.to_le_bytes());
+    msg.extend_from_slice(&snapshot_mask.to_le_bytes());
+    for &(tick, buttons) in records {
+        msg.extend_from_slice(&tick.to_le_bytes());
+        msg.extend_from_slice(&buttons.to_le_bytes());
     }
     msg
 }
 
-struct InputRecords<'a> {
-    first: u32,
-    buttons: &'a [u8],
-    at: usize,
+struct InputPacket {
+    snapshot_ack: u32,
+    snapshot_mask: u32,
+    records: Vec<(u32, u16)>,
 }
 
-impl Iterator for InputRecords<'_> {
-    type Item = (u32, u16);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let bytes = self.buttons.get(self.at * 2..self.at * 2 + 2)?;
-        let tick = self.first.wrapping_add(self.at as u32);
-        self.at += 1;
-        Some((tick, u16::from_le_bytes(bytes.try_into().ok()?)))
-    }
-}
-
-fn input_records(data: &[u8]) -> Option<InputRecords<'_>> {
+fn input_packet(data: &[u8]) -> Option<InputPacket> {
     let count = *data.get(1)? as usize;
-    if count == 0 || count > INPUT_HISTORY || data.len() != 6 + count * 2 {
+    if count == 0 || count > INPUT_HISTORY || data.len() != 10 + count * 6 {
         return None;
     }
-    let first = u32::from_le_bytes(data.get(2..6)?.try_into().ok()?);
-    Some(InputRecords {
-        first,
-        buttons: &data[6..],
-        at: 0,
+    let snapshot_ack = u32::from_le_bytes(data.get(2..6)?.try_into().ok()?);
+    let snapshot_mask = u32::from_le_bytes(data.get(6..10)?.try_into().ok()?);
+    let mut records = Vec::with_capacity(count);
+    for at in 0..count {
+        let start = 10 + at * 6;
+        let tick = u32::from_le_bytes(data.get(start..start + 4)?.try_into().ok()?);
+        let buttons = u16::from_le_bytes(data.get(start + 4..start + 6)?.try_into().ok()?);
+        records.push((tick, buttons));
+    }
+    Some(InputPacket {
+        snapshot_ack,
+        snapshot_mask,
+        records,
     })
 }
 const C2S_SHIP: u8 = 5;
@@ -196,7 +238,10 @@ const JOIN_WATCH: u8 = 2;
 ///
 /// 11 repeats recent inputs and timestamps combat events. A stale client would
 /// otherwise lose one-tick controls and present news ahead of its snapshot.
-const CLIENT_PROTOCOL: u8 = 11;
+///
+/// 12 adds selective input and snapshot acknowledgments, server lag policy,
+/// and the nearby-combat snapshot lane.
+const CLIENT_PROTOCOL: u8 = 12;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -234,6 +279,7 @@ const C2S_STATUS: u8 = directory::STATUS_REQUEST;
 // Server to client
 const S2C_WELCOME: u8 = 1;
 const S2C_SNAPSHOT: u8 = 2;
+const SNAPSHOT_HEADER: usize = 23;
 const S2C_ROSTER: u8 = 3;
 const S2C_KILL: u8 = 4;
 const S2C_BANNER: u8 = 5;
@@ -287,6 +333,10 @@ const S2C_PRIZE: u8 = 14;
 /// inventory count. Sent only to views whose fixed fairness circle contains
 /// the firing ship; x and y are signed Q8 positions.
 const S2C_CHARGE: u8 = 15;
+/// `[S2C_LAG, state, weapon percent, ping, jitter, three loss rates]`.
+/// The arena sends it on policy changes and periodically while a restriction
+/// remains active, so a player is never left guessing why an action was denied.
+const S2C_LAG: u8 = 16;
 
 /// Watchers a room admits when its zone says nothing. Deliberately low: a
 /// watcher is a full player's egress, and egress is the fleet's whole bill.
@@ -298,6 +348,266 @@ const DEFAULT_CHANNEL_DELAY: u32 = 500;
 /// How long the channel holds one subject, in ticks. Long enough to catch a
 /// fight's arc, short enough that a room's whole cast comes round.
 const CHANNEL_HOLD: u32 = 9000;
+
+#[derive(Clone, Copy, Default)]
+struct LossRate {
+    value: f64,
+    samples: u32,
+}
+
+impl LossRate {
+    fn observe(&mut self, lost: bool, window: u32) {
+        self.samples = self.samples.saturating_add(1);
+        let width = self.samples.min(window.max(1)) as f64;
+        self.value += ((lost as u8 as f64) - self.value) / width;
+    }
+
+    fn percent(self) -> u8 {
+        (self.value * 100.0).round().clamp(0.0, 100.0) as u8
+    }
+}
+
+struct SentSnapshot {
+    seq: u32,
+    tick: u32,
+    combat: bool,
+    received: bool,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+struct LagDecision {
+    no_flags: bool,
+    weapon_percent: u8,
+    spectate: bool,
+}
+
+struct LagUpdate {
+    decision: LagDecision,
+    notify: bool,
+}
+
+struct LagTracker {
+    age: u32,
+    snapshot_seq: u32,
+    snapshots: std::collections::VecDeque<SentSnapshot>,
+    last_snapshot_ack: u32,
+    rtt_ticks: f64,
+    jitter_ticks: f64,
+    last_rtt_ticks: Option<f64>,
+    rtt_samples: u32,
+    down_loss: LossRate,
+    combat_loss: LossRate,
+    up_loss: LossRate,
+    decision: LagDecision,
+    healthy_ticks: u32,
+    severe_ticks: u32,
+    last_notice: u32,
+}
+
+impl Default for LagTracker {
+    fn default() -> Self {
+        LagTracker {
+            age: 0,
+            snapshot_seq: 0,
+            snapshots: Default::default(),
+            last_snapshot_ack: 0,
+            rtt_ticks: 0.0,
+            jitter_ticks: 0.0,
+            last_rtt_ticks: None,
+            rtt_samples: 0,
+            down_loss: Default::default(),
+            combat_loss: Default::default(),
+            up_loss: Default::default(),
+            decision: Default::default(),
+            healthy_ticks: 0,
+            severe_ticks: 0,
+            last_notice: 0,
+        }
+    }
+}
+
+impl LagTracker {
+    fn sent_snapshot(&mut self, tick: u32, combat: bool, window: u32) -> u32 {
+        self.snapshot_seq = self.snapshot_seq.wrapping_add(1).max(1);
+        self.snapshots.push_back(SentSnapshot {
+            seq: self.snapshot_seq,
+            tick,
+            combat,
+            received: false,
+        });
+        while self.snapshots.len() > 96 {
+            if let Some(old) = self.snapshots.pop_front() {
+                if old.combat {
+                    self.combat_loss.observe(!old.received, window);
+                } else {
+                    self.down_loss.observe(!old.received, window);
+                }
+            }
+        }
+        self.snapshot_seq
+    }
+
+    fn acknowledge_snapshots(&mut self, ack: u32, mask: u32, now: u32, window: u32) {
+        if ack == 0 || ack > self.snapshot_seq {
+            return;
+        }
+        for sent in &mut self.snapshots {
+            let behind = ack.saturating_sub(sent.seq);
+            if sent.seq <= ack && behind < 32 && mask & (1u32 << behind) != 0 {
+                sent.received = true;
+            }
+        }
+        if ack > self.last_snapshot_ack {
+            if let Some(sent) = self.snapshots.iter().find(|s| s.seq == ack) {
+                let sample = now.saturating_sub(sent.tick) as f64;
+                let n = self.rtt_samples.saturating_add(1).min(window.max(1)) as f64;
+                self.rtt_ticks += (sample - self.rtt_ticks) / n;
+                if let Some(last) = self.last_rtt_ticks {
+                    self.jitter_ticks += ((sample - last).abs() - self.jitter_ticks) / n;
+                }
+                self.last_rtt_ticks = Some(sample);
+                self.rtt_samples = self.rtt_samples.saturating_add(1);
+            }
+            self.last_snapshot_ack = ack;
+        }
+        while self
+            .snapshots
+            .front()
+            .is_some_and(|s| s.seq.saturating_add(31) < ack)
+        {
+            let old = self.snapshots.pop_front().expect("front exists");
+            if old.combat {
+                self.combat_loss.observe(!old.received, window);
+            } else {
+                self.down_loss.observe(!old.received, window);
+            }
+        }
+    }
+
+    fn observe_input(&mut self, missing: bool, window: u32) {
+        self.up_loss.observe(missing, window);
+    }
+
+    fn suppression(value: f64, start: u32, full: u32) -> u8 {
+        if start == 0 || value < start as f64 {
+            return 0;
+        }
+        if full <= start || value >= full as f64 {
+            return 100;
+        }
+        (((value - start as f64) * 100.0) / (full - start) as f64)
+            .round()
+            .clamp(1.0, 100.0) as u8
+    }
+
+    fn tick(&mut self, cfg: &config::LagConfig, bot: bool, now: u32) -> LagUpdate {
+        self.age = self.age.saturating_add(1);
+        if bot || self.age < cfg.sample_ticks {
+            return LagUpdate {
+                decision: self.decision,
+                notify: false,
+            };
+        }
+
+        let before = self.decision;
+        let ping_ms = self.rtt_ticks * 10.0;
+        let jitter_ms = self.jitter_ticks * 10.0;
+        let down = self.down_loss.value * 100.0;
+        let combat = self.combat_loss.value * 100.0;
+        let up = self.up_loss.value * 100.0;
+        let raw_no_flags = ping_ms >= cfg.no_flags_ping_ms as f64
+            || jitter_ms >= cfg.no_flags_jitter_ms as f64
+            || down >= cfg.no_flags_down_loss_pct as f64
+            || combat >= cfg.no_flags_combat_loss_pct as f64
+            || up >= cfg.no_flags_up_loss_pct as f64;
+        let raw_weapon =
+            Self::suppression(ping_ms, cfg.weapon_start_ping_ms, cfg.weapon_full_ping_ms)
+                .max(Self::suppression(
+                    jitter_ms,
+                    cfg.weapon_start_jitter_ms,
+                    cfg.weapon_full_jitter_ms,
+                ))
+                .max(Self::suppression(
+                    down,
+                    cfg.weapon_start_down_loss_pct,
+                    cfg.weapon_full_down_loss_pct,
+                ))
+                .max(Self::suppression(
+                    combat,
+                    cfg.weapon_start_combat_loss_pct,
+                    cfg.weapon_full_combat_loss_pct,
+                ));
+        let severe = ping_ms >= cfg.spectate_ping_ms as f64
+            || jitter_ms >= cfg.spectate_jitter_ms as f64
+            || down >= cfg.spectate_down_loss_pct as f64
+            || combat >= cfg.spectate_combat_loss_pct as f64
+            || up >= cfg.spectate_up_loss_pct as f64;
+
+        if raw_no_flags || raw_weapon > 0 {
+            self.healthy_ticks = 0;
+            self.decision.no_flags = raw_no_flags;
+            self.decision.weapon_percent = raw_weapon;
+        } else {
+            self.healthy_ticks = self.healthy_ticks.saturating_add(1);
+            if self.healthy_ticks >= cfg.recover_ticks {
+                self.decision.no_flags = false;
+                self.decision.weapon_percent = 0;
+            }
+        }
+        self.severe_ticks = if severe {
+            self.severe_ticks.saturating_add(1)
+        } else {
+            0
+        };
+        self.decision.spectate = severe && self.severe_ticks >= cfg.spectate_ticks.max(1);
+
+        let notify = self.decision != before
+            || (self.decision != LagDecision::default()
+                && (self.last_notice == 0 || now.saturating_sub(self.last_notice) >= 500));
+        if notify {
+            self.last_notice = now;
+        }
+        LagUpdate {
+            decision: self.decision,
+            notify,
+        }
+    }
+
+    fn notice(&self) -> Vec<u8> {
+        let state = self.policy_state();
+        let ping = (self.rtt_ticks * 10.0).round().clamp(0.0, u16::MAX as f64) as u16;
+        let jitter = (self.jitter_ticks * 10.0)
+            .round()
+            .clamp(0.0, u16::MAX as f64) as u16;
+        let mut msg = vec![S2C_LAG, state, self.decision.weapon_percent];
+        msg.extend_from_slice(&ping.to_le_bytes());
+        msg.extend_from_slice(&jitter.to_le_bytes());
+        msg.push(self.down_loss.percent());
+        msg.push(self.combat_loss.percent());
+        msg.push(self.up_loss.percent());
+        msg
+    }
+
+    fn policy_state(&self) -> u8 {
+        u8::from(self.decision.no_flags)
+            | (u8::from(self.decision.weapon_percent > 0) << 1)
+            | (u8::from(self.decision.spectate) << 2)
+    }
+
+    fn append_telemetry(&self, msg: &mut Vec<u8>) {
+        let ping = (self.rtt_ticks * 10.0).round().clamp(0.0, u16::MAX as f64) as u16;
+        let jitter = (self.jitter_ticks * 10.0)
+            .round()
+            .clamp(0.0, u16::MAX as f64) as u16;
+        msg.extend_from_slice(&ping.to_le_bytes());
+        msg.extend_from_slice(&jitter.to_le_bytes());
+        msg.push(self.down_loss.percent());
+        msg.push(self.combat_loss.percent());
+        msg.push(self.up_loss.percent());
+        msg.push(self.policy_state());
+        msg.push(self.decision.weapon_percent);
+    }
+}
 
 struct Player {
     ship: u8,
@@ -314,10 +624,11 @@ struct Player {
     /// the pilot brakes several ticks before the server does and sees itself
     /// corrected back into motion.
     pending: std::collections::BTreeMap<u32, u16>,
-    /// Highest input tick this client has sent, echoed back in snapshots so
-    /// it knows how far its prediction has been confirmed, and so it can
-    /// measure how late its inputs are arriving.
-    last_input_tick: u32,
+    /// Newest accepted input tick and the selective receipt window behind it.
+    /// A client repairs the zeroes instead of guessing that the last few
+    /// consecutive ticks are the ones a datagram lost.
+    input_ack: u32,
+    input_mask: u32,
     /// The newest tick whose buttons are the ones being held.
     ///
     /// `pending` is keyed by tick and so never applies two out of order, but a
@@ -325,10 +636,15 @@ struct Player {
     /// safe because arrival order was send order. Inputs are datagrams now and
     /// two of them can swap, so without this a stale packet overwrote a newer
     /// one that had already been applied and the pilot's press was undone
-    /// until the next frame's datagram. `last_input_tick` cannot stand in for
-    /// it: that one counts ticks that are still waiting in `pending`, and
+    /// until the next frame's datagram. `input_ack` cannot stand in for it:
+    /// that one counts ticks that are still waiting in `pending`, and
     /// would refuse the late input the moment a client stamped anything ahead.
     applied_tick: u32,
+    lag: LagTracker,
+    /// Server-secret stream for proportional weapon suppression. It stays out
+    /// of the deterministic simulation and cannot be scheduled around by a
+    /// client that knows the room tick.
+    lag_rng: u64,
     name: String,
     /// What this pilot's rating movement is filed under. See `Seat::rid`.
     rid: rating::Id,
@@ -374,6 +690,13 @@ enum WatchMode {
     /// The room channel: the shared, delayed feed. The default, and the floor
     /// every unlawful ask falls to.
     Channel,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SitOutWhy {
+    Asked,
+    Safe,
+    Lag,
 }
 
 /// A connection with a seat in the roster and no ship in the simulation.
@@ -464,6 +787,44 @@ impl Channel {
 }
 
 impl Player {
+    fn record_input_tick(&mut self, tick: u32) -> bool {
+        if self.input_ack == 0 || tick > self.input_ack {
+            let shift = tick.saturating_sub(self.input_ack);
+            self.input_mask = if self.input_ack == 0 || shift >= 32 {
+                1
+            } else {
+                (self.input_mask << shift) | 1
+            };
+            self.input_ack = tick;
+            return true;
+        }
+        let behind = self.input_ack - tick;
+        if behind >= 32 {
+            return false;
+        }
+        let bit = 1u32 << behind;
+        let fresh = self.input_mask & bit == 0;
+        self.input_mask |= bit;
+        fresh
+    }
+
+    fn received_input(&self, tick: u32) -> bool {
+        if self.input_ack < tick {
+            return false;
+        }
+        let behind = self.input_ack - tick;
+        behind < 32 && self.input_mask & (1u32 << behind) != 0
+    }
+
+    fn suppress_weapon(&mut self, percent: u8) -> bool {
+        let mut x = self.lag_rng;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.lag_rng = x;
+        x % 100 < percent as u64
+    }
+
     /// File an input for the tick it names.
     ///
     /// An input for a tick already simulated is applied now instead. That is
@@ -472,8 +833,8 @@ impl Player {
     /// docs/architecture/networking.md rules out, and a client with no lead at
     /// all keeps working exactly as it did.
     fn schedule(&mut self, tick: u32, buttons: u16, now: u32) {
-        // Clamp before recording. `last_input_tick` is echoed back so a client
-        // can measure how late its inputs are arriving, so it has to be a tick
+        // Clamp before recording. `input_ack` is echoed back so a client can
+        // measure how late its inputs are arriving, so it has to be a tick
         // this arena agreed to: a client stamping u32::MAX would otherwise pin
         // its own echo at u32::MAX forever and steer its clock off the readout.
         // That only ever hurts the client that did it, which is exactly why it
@@ -486,7 +847,7 @@ impl Player {
         // overflow that release builds swallowed and debug builds refused to
         // start on.
         let tick = tick.min(now.saturating_add(INPUT_LEAD_MAX));
-        self.last_input_tick = self.last_input_tick.max(tick);
+        self.record_input_tick(tick);
         if tick <= now {
             // Only if it is not older than what is already held. Two late
             // datagrams that swapped in flight would otherwise land newest
@@ -770,6 +1131,8 @@ struct Room {
     max_teams: u8,
     max_humans_per_team: u16,
     max_bots_per_team: u16,
+    /// Tunable connection-quality thresholds for this zone.
+    lag_policy: config::LagConfig,
     /// Standing invitations, by the ship they were extended to. A private team
     /// admits nobody else. Cleared with the seat, because a seat is furniture
     /// and the next occupant was invited to nothing.
@@ -1353,6 +1716,7 @@ impl Room {
         for w in Room::apply_config(&mut a.world, &cfg.arena) {
             println!("zone: {w}");
         }
+        a.lag_policy = cfg.arena.lag.clone();
         a
     }
 
@@ -1426,6 +1790,7 @@ impl Room {
             max_teams: 255,
             max_humans_per_team: 255,
             max_bots_per_team: 255,
+            lag_policy: Default::default(),
             invites: HashMap::new(),
             name_cursor: 0,
             bot_fill: catalog::DEFAULT_BOT_FILL,
@@ -1665,8 +2030,11 @@ impl Room {
                 ship,
                 buttons: 0,
                 pending: Default::default(),
-                last_input_tick: 0,
+                input_ack: 0,
+                input_mask: 0,
                 applied_tick: 0,
+                lag: Default::default(),
+                lag_rng: rand::random::<u64>().max(1),
                 name,
                 rid,
                 bot,
@@ -2367,6 +2735,15 @@ impl Room {
     /// log: one is a player taking a break and the other is the room deciding
     /// they were loitering.
     fn sit_out(&mut self, id: u64, want: u8, any: bool, swept: bool) -> bool {
+        let why = if swept {
+            SitOutWhy::Safe
+        } else {
+            SitOutWhy::Asked
+        };
+        self.sit_out_for(id, want, any, why)
+    }
+
+    fn sit_out_for(&mut self, id: u64, want: u8, any: bool, why: SitOutWhy) -> bool {
         if self.watchers.len() >= self.max_watchers {
             return false;
         }
@@ -2374,7 +2751,7 @@ impl Room {
             return false;
         };
         let ship = p.ship;
-        if !swept && !self.world.may_reset_ship(ship as usize) {
+        if why == SitOutWhy::Asked && !self.world.may_reset_ship(ship as usize) {
             return false;
         }
         let tx = p.tx.clone();
@@ -2385,7 +2762,14 @@ impl Room {
         self.note(
             pilot::SIT_OUT,
             &seat,
-            serde_json::json!({ "why": if swept { "safe" } else { "asked" }, "ship": ship }),
+            serde_json::json!({
+                "why": match why {
+                    SitOutWhy::Asked => "asked",
+                    SitOutWhy::Safe => "safe",
+                    SitOutWhy::Lag => "lag",
+                },
+                "ship": ship,
+            }),
         );
         self.leave(id, pilot::why::SAT_OUT);
         let mode = self.watch_mode(Some(team), any, want);
@@ -2542,13 +2926,54 @@ impl Room {
         // for here, between the queue and the step, reading the world directly;
         // their inputs now arrive on sockets like everybody else's and this
         // function cannot tell which is which.
-        for p in self.players.values_mut() {
+        let mut no_flags = [false; sim::MAX_SHIPS];
+        let mut spectate = Vec::new();
+        for (id, p) in self.players.iter_mut() {
+            if p.input_ack != 0 {
+                let missing = !p.received_input(now);
+                p.lag.observe_input(missing, self.lag_policy.sample_ticks);
+            }
+            let update = p.lag.tick(&self.lag_policy, p.bot, now);
+            if update.notify {
+                let _ = p.tx.try_send(Message::Binary(p.lag.notice()));
+            }
+            no_flags[p.ship as usize] = update.decision.no_flags;
+            if update.decision.spectate {
+                spectate.push(*id);
+            }
+            let mut buttons = p.buttons_at(now);
+            if update.decision.weapon_percent > 0 && buttons & LAG_WEAPON_BUTTONS != 0 {
+                if p.suppress_weapon(update.decision.weapon_percent) {
+                    buttons &= !LAG_WEAPON_BUTTONS;
+                    metrics::LAG_ACTIONS.inc();
+                }
+            }
             inputs.push(sim::sim_input {
                 ship: p.ship,
-                buttons: p.buttons_at(now),
+                buttons,
             });
         }
+        let flags_before = self.world.state.flags;
         self.world.step(&inputs);
+        if no_flags.iter().any(|v| *v) {
+            let mut write = 0usize;
+            let count = self.world.events.count as usize;
+            for read in 0..count {
+                let event = self.world.events.e[read];
+                let denied = event.etype == sim::EV_FLAG_TAKE
+                    && no_flags.get(event.a as usize).copied().unwrap_or(false);
+                if denied {
+                    metrics::LAG_ACTIONS.inc();
+                    if let Some(flag) = self.world.state.flags.get_mut(event.b as usize) {
+                        *flag = flags_before[event.b as usize];
+                    }
+                } else {
+                    self.world.events.e[write] = event;
+                    write += 1;
+                }
+            }
+            self.world.events.count = write as u16;
+        }
         self.score_events();
         self.sweep_safe();
 
@@ -2565,6 +2990,18 @@ impl Room {
         self.banner = std::mem::take(&mut ctx.banner);
         if ctx.finished {
             self.finished = true;
+        }
+        for id in spectate {
+            if self.sit_out_for(id, 255, false, SitOutWhy::Lag) {
+                metrics::LAG_ACTIONS.inc();
+            } else if let Some(tx) = self.players.get(&id).map(|p| p.tx.clone()) {
+                let mut denied = vec![S2C_DENIED, 0];
+                denied.extend_from_slice(b"connection quality exceeded this room's limits");
+                let _ = tx.try_send(Message::Binary(denied));
+                let _ = tx.try_send(Message::Binary(vec![S2C_YIELD]));
+                self.leave(id, pilot::why::KICKED);
+                metrics::LAG_ACTIONS.inc();
+            }
         }
     }
 
@@ -2814,13 +3251,10 @@ impl Room {
         }
     }
 
-    fn broadcast_snapshot(&mut self, buf: &mut [u8]) {
-        // Seats this pass filtered a snapshot for, which is every seat that is
-        // not one of ours. Counted here rather than derived from the player
-        // counts, because the split that matters is loopback against the
-        // network and neither `total_players` nor `total_bots` draws that line.
-        let mut out_seats: i64 = 0;
-        for p in self.players.values() {
+    fn broadcast_player_snapshots(&mut self, buf: &mut [u8], combat_lane: bool) {
+        let world = &self.world;
+        let names = &self.names;
+        for p in self.players.values_mut() {
             // Packed per player rather than once for everybody, so each is
             // sent only the prizes near its own ship. Prizes are most of a
             // snapshot -- two hundred of them outweigh the ships and every
@@ -2830,7 +3264,7 @@ impl Room {
             // A pack is under two microseconds, so sixteen of them is thirty
             // microseconds of a fifty millisecond period. The bytes saved are
             // worth far more than the pack costs.
-            let sh = &self.world.state.ships[p.ship as usize];
+            let sh = &world.state.ships[p.ship as usize];
             // Our own bots get the whole room. They sit on loopback, and the
             // bot server predicts each room in one world shared by all its
             // pilots, which is only sound if any one bot's snapshot is the
@@ -2845,25 +3279,32 @@ impl Room {
             // granted. The label is derived from the account the token was
             // minted for and cannot be asserted by a client, so a third-party
             // bot is now filtered exactly like the person running it.
-            let house = self
-                .names
+            let house = names
                 .get(&p.ship)
                 .is_some_and(|s| s.label == token::Label::HouseBot.to_byte());
+            let fast = !house && near_combat(world, p.ship);
+            if fast != combat_lane {
+                continue;
+            }
             let radius = if house { -1 } else { FAIR_INTEREST };
             // Their own seat, so their own rounds travel however far behind
             // them they are. That is the minefield: everything else a pilot
             // fires is spent within seconds and inside the radius anyway.
             let options = if house { sim::PACK_PRIVATE_ALL } else { 0 };
-            let n = self
-                .world
-                .pack_around(buf, sh.x, sh.y, radius, p.ship, p.ship, options);
+            let n = world.pack_around(buf, sh.x, sh.y, radius, p.ship, p.ship, options);
             if n <= 0 {
                 continue;
             }
-            let mut msg = Vec::with_capacity(n as usize + 10);
+            let seq =
+                p.lag
+                    .sent_snapshot(world.state.tick, combat_lane, self.lag_policy.sample_ticks);
+            let mut msg = Vec::with_capacity(n as usize + 27);
             msg.push(S2C_SNAPSHOT);
             msg.push(p.ship);
-            msg.extend_from_slice(&p.last_input_tick.to_le_bytes());
+            msg.extend_from_slice(&p.input_ack.to_le_bytes());
+            msg.extend_from_slice(&p.input_mask.to_le_bytes());
+            msg.extend_from_slice(&seq.to_le_bytes());
+            p.lag.append_telemetry(&mut msg);
             msg.extend_from_slice(&buf[..n as usize]);
             // Counted here rather than at the socket: this is the byte the
             // room decided to send, and egress is what a host bills for.
@@ -2875,14 +3316,32 @@ impl Room {
             // pulling seventeen.
             if !house {
                 metrics::SNAPSHOT_BYTES_OUT.add(msg.len() as u64);
-                out_seats += 1;
             }
             metrics::SNAPSHOT_LAST.set(msg.len() as i64);
             if p.tx.try_send(Message::Binary(msg)).is_err() {
                 metrics::SEND_DROPPED.inc();
             }
         }
-        metrics::SEATS_OUT.set(out_seats);
+        if !combat_lane {
+            // Network seats, whether this particular pass selected them or
+            // the combat lane did. This is the denominator for all outbound
+            // snapshot bytes, not a count of messages on one cadence.
+            let network_seats = self
+                .players
+                .values()
+                .filter(|p| {
+                    !self
+                        .names
+                        .get(&p.ship)
+                        .is_some_and(|s| s.label == token::Label::HouseBot.to_byte())
+                })
+                .count() as i64;
+            metrics::SEATS_OUT.set(network_seats);
+        }
+    }
+
+    fn broadcast_snapshot(&mut self, buf: &mut [u8]) {
+        self.broadcast_player_snapshots(buf, false);
 
         // Watchers riding one pilot's eyes, live. Packed at the followed hull
         // with the server's fixed human radius. The subject supplies the
@@ -2906,12 +3365,15 @@ impl Room {
             if n <= 0 {
                 continue;
             }
-            let mut msg = Vec::with_capacity(n as usize + 6);
+            let mut msg = Vec::with_capacity(n as usize + 23);
             msg.push(S2C_SNAPSHOT);
             // Whose eyes these are, which is what the watcher's camera reads.
             msg.push(t);
             // No input to acknowledge: a watcher sends none.
             msg.extend_from_slice(&0u32.to_le_bytes());
+            msg.extend_from_slice(&0u32.to_le_bytes());
+            msg.extend_from_slice(&0u32.to_le_bytes());
+            msg.extend_from_slice(&[0; 9]);
             msg.extend_from_slice(&buf[..n as usize]);
             metrics::SNAPSHOT_BYTES.add(msg.len() as u64);
             metrics::SNAPSHOT_LAST.set(msg.len() as i64);
@@ -2990,10 +3452,13 @@ impl Room {
             .world
             .pack_around(buf, cx, cy, FAIR_INTEREST, subject, 255, 0);
         if n > 0 {
-            let mut msg = Vec::with_capacity(n as usize + 6);
+            let mut msg = Vec::with_capacity(n as usize + 23);
             msg.push(S2C_SNAPSHOT);
             msg.push(subject);
             msg.extend_from_slice(&0u32.to_le_bytes());
+            msg.extend_from_slice(&0u32.to_le_bytes());
+            msg.extend_from_slice(&0u32.to_le_bytes());
+            msg.extend_from_slice(&[0; 9]);
             msg.extend_from_slice(&buf[..n as usize]);
             let charges = std::mem::take(&mut self.channel.pending_charges)
                 .into_iter()
@@ -3911,6 +4376,7 @@ impl ArenaServer {
         room.set_teams(&def);
         room.mode = modes::build(&z.mode, def.arena.flags, room.public_teams);
         room.bot_fill = def.bot_fill();
+        room.lag_policy = def.arena.lag.clone();
         room.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
         room.channel.delay = def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
         if z.mode == "warzone" {
@@ -3968,6 +4434,7 @@ impl ArenaServer {
                             r.world.cfg.max_ships = m;
                         }
                         r.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
+                        r.lag_policy = def.arena.lag.clone();
                         r.channel.delay = def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
                         r.broadcast_settings();
                     }
@@ -4414,6 +4881,7 @@ impl ArenaServer {
                 for w in Room::apply_config(&mut r.world, &block) {
                     println!("zone: {w}");
                 }
+                r.lag_policy = block.lag.clone();
                 r.broadcast_settings();
             }
         }
@@ -4502,12 +4970,11 @@ impl ArenaServer {
                         .per_sec(crate::metrics::SNAPSHOT_BYTES_OUT.get(), fleet::now_ms());
                     (per_sec / seats) as u32
                 },
-                // A lag action is this process degrading a connection that
-                // cannot keep up, which it does by dropping rather than
-                // waiting. As a rate, because the counter behind it only
-                // ever climbs and a fleet view wants to know about now.
-                lag_actions: crate::metrics::DROP_RATE
-                    .per_sec(crate::metrics::SEND_DROPPED.get(), fleet::now_ms())
+                // Objective, weapon, and spectator restrictions applied per
+                // second. Queue drops have their own metric and are transport
+                // backpressure rather than the gameplay policy this names.
+                lag_actions: crate::metrics::LAG_RATE
+                    .per_sec(crate::metrics::LAG_ACTIONS.get(), fleet::now_ms())
                     as u32,
             },
         }
@@ -5221,7 +5688,7 @@ async fn main() {
                 // ticks them all on this thread: at 16 us for sixty-four ships
                 // and 1.6 for two, a hundred duel rooms is a sixth of a core, so
                 // there is nothing here a pool would buy.
-                let snap = n % SNAPSHOT_EVERY == 0;
+                let (snap, combat_snap) = snapshot_lanes(n);
                 // The roster, on a slow clock rather than only when it changes.
                 //
                 // Every name a client shows comes from that one message, and
@@ -5239,6 +5706,9 @@ async fn main() {
                 let t0 = std::time::Instant::now();
                 for a in z.rooms.iter_mut() {
                     a.tick();
+                    if combat_snap {
+                        a.broadcast_player_snapshots(&mut buf, true);
+                    }
                     if snap {
                         a.broadcast_snapshot(&mut buf);
                         a.broadcast_banner();
@@ -6170,19 +6640,28 @@ pub(crate) async fn serve_client(
                 }
             }
             C2S_INPUT => {
-                // A short consecutive history, oldest first. Overlap is
-                // deliberate: a fresh datagram repairs a lost predecessor,
-                // while `schedule` ignores ticks already consumed.
-                if let Some(records) = input_records(&data) {
+                // Selective records repair the exact zeroes in the receipt
+                // window. The snapshot receipt window beside them measures
+                // the other direction on the arena's own clock.
+                if let Some(packet) = input_packet(&data) {
                     if let Some((room, pid)) = seat {
                         let mut z = zone.lock().await;
-                        if let Some(a) = z.rooms.get_mut(room) {
-                            let now = a.world.state.tick + 1;
-                            if let Some(p) = a.players.get_mut(&pid) {
-                                for (tick, buttons) in records {
-                                    p.schedule(tick, buttons, now);
-                                }
-                            }
+                        let Some(a) = z.rooms.get_mut(room) else {
+                            return;
+                        };
+                        let now = a.world.state.tick + 1;
+                        let sample_ticks = a.lag_policy.sample_ticks;
+                        let Some(p) = a.players.get_mut(&pid) else {
+                            return;
+                        };
+                        p.lag.acknowledge_snapshots(
+                            packet.snapshot_ack,
+                            packet.snapshot_mask,
+                            now,
+                            sample_ticks,
+                        );
+                        for (tick, buttons) in packet.records {
+                            p.schedule(tick, buttons, now);
                         }
                     }
                 }
@@ -6283,8 +6762,11 @@ mod tests {
             ship: 0,
             buttons: 0,
             pending: Default::default(),
-            last_input_tick: 0,
+            input_ack: 0,
+            input_mask: 0,
             applied_tick: 0,
+            lag: Default::default(),
+            lag_rng: 1,
             name: "probe".into(),
             rid: "probe".into(),
             bot: false,
@@ -6358,14 +6840,195 @@ mod tests {
     }
 
     #[test]
-    fn an_input_message_carries_a_consecutive_repair_window() {
-        let msg = input_message(40, &[1, 2, 4, 8]);
+    fn an_input_message_carries_selective_repair_records() {
+        let records = [(40, 1), (42, 4), (47, 8)];
+        let msg = input_message(12, 0b1011, &records);
+        let packet = input_packet(&msg).expect("valid input packet");
+        assert_eq!(packet.snapshot_ack, 12);
+        assert_eq!(packet.snapshot_mask, 0b1011);
+        assert_eq!(packet.records, records);
+        assert!(input_packet(&[C2S_INPUT, 0, 0, 0, 0, 0, 0, 0, 0, 0]).is_none());
         assert_eq!(
-            input_records(&msg).map(|records| records.collect::<Vec<_>>()),
-            Some(vec![(40, 1), (41, 2), (42, 4), (43, 8)])
+            input_packet(&[C2S_INPUT, 5, 0, 0, 0, 0, 0, 0, 0, 0]).map(|packet| packet.records),
+            None
         );
-        assert!(input_records(&[C2S_INPUT, 0, 0, 0, 0, 0]).is_none());
-        assert!(input_records(&[C2S_INPUT, 5, 0, 0, 0, 0]).is_none());
+    }
+
+    #[test]
+    fn input_receipts_preserve_holes_and_accept_repairs() {
+        let mut p = a_player();
+        p.schedule(40, 1, 30);
+        p.schedule(42, 4, 30);
+        assert_eq!(p.input_ack, 42);
+        assert_eq!(p.input_mask & 0b111, 0b101, "tick 41 remains a hole");
+        p.schedule(41, 2, 30);
+        assert_eq!(p.input_mask & 0b111, 0b111, "the selective repair lands");
+    }
+
+    #[test]
+    fn snapshot_receipts_measure_round_trip_on_the_server_clock() {
+        let mut lag = LagTracker::default();
+        let first = lag.sent_snapshot(100, false, 500);
+        let second = lag.sent_snapshot(105, true, 500);
+        lag.acknowledge_snapshots(second, 0b11, 113, 500);
+        assert_eq!(first, 1);
+        assert_eq!(second, 2);
+        assert_eq!(lag.rtt_ticks, 8.0, "the newest snapshot took eight ticks");
+        assert!(lag.snapshots.iter().all(|s| s.received));
+
+        let third = lag.sent_snapshot(120, false, 500);
+        lag.acknowledge_snapshots(third, 1, 140, 500);
+        assert_eq!(lag.rtt_ticks, 14.0, "round trip is averaged on the server");
+        assert_eq!(lag.jitter_ticks, 6.0, "jitter follows the RTT delta");
+    }
+
+    #[test]
+    fn lag_policy_uses_downlink_quality_for_weapons_but_not_uplink_loss() {
+        let mut cfg = config::LagConfig {
+            sample_ticks: 1,
+            weapon_start_down_loss_pct: 10,
+            weapon_full_down_loss_pct: 20,
+            weapon_start_combat_loss_pct: 10,
+            weapon_full_combat_loss_pct: 20,
+            no_flags_up_loss_pct: 10,
+            ..Default::default()
+        };
+        cfg.weapon_start_ping_ms = u32::MAX;
+        cfg.weapon_full_ping_ms = u32::MAX;
+        let mut lag = LagTracker::default();
+        lag.up_loss.value = 1.0;
+        let upstream = lag.tick(&cfg, false, 1).decision;
+        assert!(upstream.no_flags, "upstream loss may deny objectives");
+        assert_eq!(upstream.weapon_percent, 0, "it must not suppress weapons");
+
+        lag.down_loss.value = 0.20;
+        let downstream = lag.tick(&cfg, false, 2).decision;
+        assert_eq!(downstream.weapon_percent, 100);
+    }
+
+    #[test]
+    fn full_lag_suppression_removes_weapon_inputs_before_the_step() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        a.lag_policy.sample_ticks = 1;
+        a.lag_policy.weapon_start_down_loss_pct = 1;
+        a.lag_policy.weapon_full_down_loss_pct = 2;
+        a.lag_policy.spectate_ticks = u32::MAX;
+        let (_ship, id, _rx) = seat_rx(&mut a, "lossy");
+        let p = a.players.get_mut(&id).expect("pilot remains seated");
+        p.lag.down_loss.value = 1.0;
+        p.buttons = sim::BTN_FIRE;
+
+        a.tick();
+
+        assert_eq!(
+            a.world.state.weapon_count, 0,
+            "the shot never enters the sim"
+        );
+        assert_eq!(
+            a.players[&id].buttons,
+            sim::BTN_FIRE,
+            "the held input survives"
+        );
+    }
+
+    #[test]
+    fn lagged_pilots_cannot_take_flags() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        a.lag_policy.sample_ticks = 1;
+        a.lag_policy.spectate_ticks = u32::MAX;
+        let (ship, id, _rx) = seat_rx(&mut a, "lossy");
+        a.players.get_mut(&id).unwrap().lag.up_loss.value = 1.0;
+        let sh = a.world.state.ships[ship as usize];
+        let flag = &mut a.world.state.flags[0];
+        flag.active = 1;
+        flag.carried = 0;
+        flag.team = sim::TEAM_NONE;
+        flag.x = sh.x;
+        flag.y = sh.y;
+        flag.cooldown = 0;
+        let before = *flag;
+
+        a.tick();
+
+        let after = a.world.state.flags[0];
+        assert_eq!(after.carried, before.carried, "the pickup is rolled back");
+        assert_eq!(after.team, before.team, "the flag keeps its prior owner");
+        assert!(a.world.events.e[..a.world.events.count as usize]
+            .iter()
+            .all(|event| event.etype != sim::EV_FLAG_TAKE));
+    }
+
+    #[test]
+    fn sustained_severe_lag_moves_a_pilot_to_the_stands() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        a.lag_policy.sample_ticks = 1;
+        a.lag_policy.spectate_ticks = 1;
+        a.lag_policy.spectate_up_loss_pct = 1;
+        let (_ship, id, _rx) = seat_rx(&mut a, "lossy");
+        a.players.get_mut(&id).unwrap().lag.up_loss.value = 1.0;
+
+        a.tick();
+
+        assert!(!a.players.contains_key(&id));
+        assert!(a.watchers.contains_key(&id));
+    }
+
+    #[test]
+    fn nearby_hostiles_select_the_combat_snapshot_lane() {
+        let mut world = sim::World::new(1);
+        let me = world.spawn(0, 0, 500, 500, 0) as u8;
+        let hostile = world.spawn(0, 1, 531, 500, 0) as u8;
+        assert!(near_combat(&world, me));
+        world.state.ships[hostile as usize].x += 2 * sim::TILE_PX * 256;
+        assert!(!near_combat(&world, me));
+    }
+
+    #[test]
+    fn combat_snapshot_delivery_runs_at_fifty_hertz() {
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let (me, _id, mut rx) = seat_rx(&mut a, "near");
+        let hostile = seat_human(&mut a, "hostile");
+        assert_ne!(
+            a.world.state.ships[me as usize].team,
+            a.world.state.ships[hostile as usize].team
+        );
+        let mine = a.world.state.ships[me as usize];
+        let other = &mut a.world.state.ships[hostile as usize];
+        other.x = mine.x + 31 * sim::TILE_PX * 256;
+        other.y = mine.y;
+        drain(&mut rx);
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for frame in 1..=10 {
+            let (ordinary, combat) = snapshot_lanes(frame);
+            if combat {
+                a.broadcast_player_snapshots(&mut buf, true);
+            }
+            if ordinary {
+                a.broadcast_player_snapshots(&mut buf, false);
+            }
+        }
+        assert_eq!(
+            snapshots(&drain(&mut rx)).len(),
+            5,
+            "nearby combat gets five snapshots in ten ticks"
+        );
+
+        a.world.state.ships[hostile as usize].x = mine.x + 33 * sim::TILE_PX * 256;
+        for frame in 11..=20 {
+            let (ordinary, combat) = snapshot_lanes(frame);
+            if combat {
+                a.broadcast_player_snapshots(&mut buf, true);
+            }
+            if ordinary {
+                a.broadcast_player_snapshots(&mut buf, false);
+            }
+        }
+        assert_eq!(
+            snapshots(&drain(&mut rx)).len(),
+            2,
+            "ordinary play gets two snapshots in ten ticks"
+        );
     }
 
     /// Ticks arrive in order on this transport, but the clamp can lower one, so
@@ -6413,7 +7076,7 @@ mod tests {
     fn the_echoed_tick_is_the_one_that_was_accepted() {
         let mut p = a_player();
         p.schedule(u32::MAX, sim::BTN_FIRE, 100);
-        assert_eq!(p.last_input_tick, 100 + INPUT_LEAD_MAX);
+        assert_eq!(p.input_ack, 100 + INPUT_LEAD_MAX);
     }
 
     /// A room that has been up for 497 days is at u32::MAX. The ceiling has to
@@ -8118,7 +8781,10 @@ mod tests {
         let last = got.last().expect("a snapshot arrived");
 
         let mut w = sim::World::new(1);
-        assert!(w.apply_snapshot(&last[6..]), "the snapshot unpacks");
+        assert!(
+            w.apply_snapshot(&last[SNAPSHOT_HEADER..]),
+            "the snapshot unpacks"
+        );
         assert_eq!(
             w.state.ship_count, a.world.state.ship_count,
             "the seat count is still the arena's, so indices keep meaning"
@@ -8262,7 +8928,10 @@ mod tests {
         let got = snapshots(&drain(&mut rx));
         let last = got.last().expect("a snapshot arrived");
         let mut w = sim::World::new(1);
-        assert!(w.apply_snapshot(&last[6..]), "the snapshot unpacks");
+        assert!(
+            w.apply_snapshot(&last[SNAPSHOT_HEADER..]),
+            "the snapshot unpacks"
+        );
         assert_eq!(w.state.weapon_count, 1, "their own mine is still in it");
         assert_eq!(
             (w.state.weapons[0].x, w.state.weapons[0].y),
@@ -8282,7 +8951,7 @@ mod tests {
         let got = snapshots(&drain(&mut rx2));
         let last = got.last().expect("a snapshot for the stranger");
         let mut w2 = sim::World::new(1);
-        assert!(w2.apply_snapshot(&last[6..]));
+        assert!(w2.apply_snapshot(&last[SNAPSHOT_HEADER..]));
         assert_eq!(
             w2.state.weapon_count, 0,
             "somebody else's mine that far off is not their business"
@@ -8319,7 +8988,7 @@ mod tests {
         let got = snapshots(&drain(&mut rx));
         let last = got.last().expect("a snapshot arrived");
         let mut w = sim::World::new(1);
-        assert!(w.apply_snapshot(&last[6..]));
+        assert!(w.apply_snapshot(&last[SNAPSHOT_HEADER..]));
         assert_eq!(
             w.state.ships[far as usize].active, 0,
             "a declared bot is filtered exactly like the person running it"
@@ -8345,7 +9014,7 @@ mod tests {
         let got = snapshots(&drain(&mut rx));
         let last = got.last().expect("a snapshot arrived");
         let mut w = sim::World::new(1);
-        assert!(w.apply_snapshot(&last[6..]));
+        assert!(w.apply_snapshot(&last[SNAPSHOT_HEADER..]));
         assert!(
             w.state.ships[far as usize].active != 0,
             "ours sees the whole room"
@@ -8410,7 +9079,11 @@ mod tests {
             .world
             .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, target, 255, 0);
         assert!(n > 0);
-        assert_eq!(&last[6..], &fresh[..n as usize], "byte for byte");
+        assert_eq!(
+            &last[SNAPSHOT_HEADER..],
+            &fresh[..n as usize],
+            "byte for byte"
+        );
     }
 
     #[test]
@@ -8429,7 +9102,7 @@ mod tests {
         let got = snapshots(&drain(&mut rx));
         let last = got.last().expect("a follow snapshot arrived");
         let mut view = sim::World::new(1);
-        assert!(view.apply_snapshot(&last[6..]));
+        assert!(view.apply_snapshot(&last[SNAPSHOT_HEADER..]));
         assert_eq!(
             view.state.ships[hidden as usize].active, 0,
             "a ship inside the old 160-tile ceiling but outside fair sight stays hidden",
@@ -8457,7 +9130,11 @@ mod tests {
         let n = a
             .world
             .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, bots[0], 255, 0);
-        assert_eq!(&last[6..], &fresh[..n as usize], "human radius, always");
+        assert_eq!(
+            &last[SNAPSHOT_HEADER..],
+            &fresh[..n as usize],
+            "human radius, always"
+        );
     }
 
     #[test]
@@ -8519,7 +9196,11 @@ mod tests {
         assert!(!s1.is_empty(), "the ring warmed up and served");
         assert_eq!(s1, s2, "every channel watcher gets identical bytes");
         for m in &s1 {
-            let frame = u32::from_le_bytes([m[6], m[7], m[8], m[9]]);
+            let frame = u32::from_le_bytes(
+                m[SNAPSHOT_HEADER..SNAPSHOT_HEADER + 4]
+                    .try_into()
+                    .expect("snapshot tick"),
+            );
             assert!(
                 frame + a.channel.delay <= a.world.state.tick,
                 "a served frame is at least the dial behind the room: \

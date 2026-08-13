@@ -133,12 +133,19 @@ the read loop rather than anything structural.
 ## Lag response
 
 Lifted almost intact from ASSS, because it encodes operational experience we do
-not have. The server measures average ping, downstream loss, weapon-packet loss,
-and upstream loss per player, and applies four thresholds per metric: force to
-spectator, disallow flag and ball pickup, start ignoring weapons, and ignore all
-weapons. Between the two weapon thresholds the ignored fraction interpolates,
-and the maximum across metrics wins. Upstream loss never triggers weapon
-ignoring, since it already hurts the player who has it.
+not have. The server measures average round trip, jitter, ordinary snapshot loss,
+nearby-combat snapshot loss, and upstream input loss per player. Each zone sets
+thresholds for objective pickup, proportional weapon suppression, and forced
+spectating. The maximum weapon fraction across round trip and the two downlink
+loss classes wins. Upstream loss never suppresses weapons, since it already
+hurts the player who has it.
+
+The measurements use selective acknowledgement windows in both directions.
+Round trip compares a server snapshot tick with the server tick where its
+acknowledgement arrives, so no client clock enters the policy. A five-second
+sample floor, five-second recovery period, and fifteen-second severe hold are
+the defaults. A room with no spectator capacity disconnects a pilot who reaches
+the final threshold rather than leaving an unplayable hull in the match.
 
 One change from the original: when the server suppresses something, it tells the
 client. ASSS clears a player's antiwarp bit inside a no-antiwarp region while
@@ -238,8 +245,9 @@ client that stopped reading into a memory leak with a socket on the end of it --
 two hundred stalled clients in one room took a process from 8 MB to 450 MB in
 twenty-five seconds, measured, and the bound holds it to a tenth of that. Reported
 depth is the worst-off connection in the process, because that is the one whose
-player is losing frames. Disconnecting a client that stays at the bound is a lag
-action, and lag actions are still deferred.
+player is losing frames. Queue drops and gameplay lag actions are separate
+metrics: `vw_send_dropped_total` reports transport backpressure, while
+`vw_lag_actions_total` reports objective, weapon, and spectator restrictions.
 
 ## Open questions
 

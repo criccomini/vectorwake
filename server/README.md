@@ -28,8 +28,8 @@ Then open the client, put the URL in the box, and press CONNECT.
   `build.rs`. The server reimplements no game rule.
 - `ai.rs` holds the AI pilots. They produce an input bitfield and nothing
   else, from a view no better than a human's.
-- `main.rs` runs one arena at 100 Hz and broadcasts a snapshot every fifth
-  tick (20 Hz).
+- `main.rs` runs one arena at 100 Hz. Pilots receive snapshots at 20 Hz outside
+  combat and 50 Hz while a hostile hull or projectile is nearby.
 
 ## Protocol
 
@@ -41,15 +41,14 @@ about the format.
 | Direction | Byte 0 | Payload |
 |---|---|---|
 | C2S | 1 | join: class, name |
-| C2S | 2 | input: buttons u16, tick u32 (the tick it applies to, and honoured) |
+| C2S | 2 | input receipt window and up to four independently named button states |
 | S2C | 1 | welcome: your ship id, tick |
-| S2C | 2 | snapshot: your ship, acked input tick, packed state |
+| S2C | 2 | snapshot: subject, input receipt window, sequence, lag telemetry, packed state |
 | S2C | 3 | roster: ship, is-ai flag, name |
 
-Snapshots are whole rather than delta-encoded. A busy arena costs about
-11 KB/s per client, well inside the 30 KB/s budget in
-docs/architecture/networking.md, so delta encoding is an optimization we have
-not needed yet.
+Snapshots are whole rather than delta-encoded. The ordinary lane stays inside
+the 30 KB/s budget in docs/architecture/networking.md. Nearby combat spends
+more bandwidth to reduce authoritative correction age.
 
 UDP for native clients is the same message format on a different socket and
 is not built.

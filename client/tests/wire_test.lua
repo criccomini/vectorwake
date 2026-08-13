@@ -31,8 +31,11 @@ _G.sim = {
     tick = function() return tick end,
     replay = function() tick = tick + 1 end,
     step = function() tick = tick + 1 end,
-    apply_snapshot = function()
+    apply_snapshot = function(body)
         if reject_snapshot then reject_snapshot = false return -1 end
+        tick = string.byte(body, 1) + string.byte(body, 2) * 256
+            + string.byte(body, 3) * 65536
+            + string.byte(body, 4) * 16777216
         return 0
     end,
     smooth_capture = function() end,
@@ -107,10 +110,30 @@ local function u32le(v)
                        math.floor(v / 16777216) % 256)
 end
 
--- A snapshot as the wire carries it: kind, subject, acked tick, then the
--- pack, whose first field is the simulation tick.
-local function snapshot(ship, sim_tick)
-    return string.char(2, ship, 0, 0, 0, 0) .. u32le(sim_tick) .. "rest"
+local snapshot_seq = 0
+-- A snapshot as the wire carries it: subject, input receipt window, sequence,
+-- lag telemetry, then the pack, whose first field is the simulation tick.
+local function snapshot(ship, sim_tick, input_ack, input_mask)
+    snapshot_seq = snapshot_seq + 1
+    return string.char(2, ship) .. u32le(input_ack or 0)
+        .. u32le(input_mask or 0) .. u32le(snapshot_seq)
+        .. string.char(80, 0, 5, 0, 2, 3, 4, 0, 0)
+        .. u32le(sim_tick) .. "rest"
+end
+
+local function records(message)
+    local out = {}
+    for i = 0, string.byte(message, 2) - 1 do
+        local at = 11 + i * 6
+        local named = string.byte(message, at)
+            + string.byte(message, at + 1) * 256
+            + string.byte(message, at + 2) * 65536
+            + string.byte(message, at + 3) * 16777216
+        local buttons = string.byte(message, at + 4)
+            + string.byte(message, at + 5) * 256
+        out[named] = buttons
+    end
+    return out
 end
 
 -- --- the preferred wire -----------------------------------------------------
@@ -137,11 +160,25 @@ wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 check("the welcome and the snapshot land", net.connected
       and net.stats.snaps == 1)
+check("server lag telemetry reaches the readout",
+      net.stats.server_rtt_ms == 80 and net.stats.jitter_ms == 5
+      and net.stats.down_loss == 2
+      and net.stats.combat_loss == 3 and net.stats.up_loss == 4)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(16, 3, 50, 120, 0, 25, 0, 20, 30, 10)})
+check("server lag policy is visible to the pilot",
+      net.lag_notice:find("objectives locked", 1, true)
+      and net.lag_notice:find("50%% weapons suppressed"))
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(16, 0, 0, 80, 0, 5, 0, 2, 3, 4)})
+check("the lag notice clears when policy recovers", net.lag_notice == "")
 
 net.step(0)
 check("inputs ride the unreliable lane", #wt.unsent == 1
       and string.byte(wt.unsent[1], 1) == 2,
       tostring(#wt.unsent))
+check("inputs acknowledge the snapshot receipt window",
+      string.byte(wt.unsent[1], 3) == 1 and string.byte(wt.unsent[1], 7) == 1)
 check("and nothing leaks onto the socket", ws.dialled == 0)
 
 -- The next datagram carries the tick before it as well. Treat the first as
@@ -150,24 +187,30 @@ net.step(0x1234)
 net.step(0)
 local repaired = wt.unsent[#wt.unsent]
 local count = string.byte(repaired, 2)
-local previous = 7 + (count - 2) * 2
-local current = previous + 2
-local first_buttons = string.byte(repaired, previous)
-    + string.byte(repaired, previous + 1) * 256
-local second_buttons = string.byte(repaired, current)
-    + string.byte(repaired, current + 1) * 256
+local repair_records = records(repaired)
+local pressed_tick = nil
+for named, value in pairs(repair_records) do
+    if value == 0x1234 then pressed_tick = named end
+end
 check("a fresh datagram repairs a lost input", count >= 2
-      and first_buttons == 0x1234 and second_buttons == 0,
-      string.format("count %d, buttons %04x %04x", count, first_buttons,
-                    second_buttons))
+      and pressed_tick ~= nil, "count " .. count)
+
+-- The server has received the ticks on either side but not the press itself.
+-- Once that selective zero comes back, the next packet spends a record on the
+-- hole even though it is no longer in the newest consecutive tail.
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 5001, pressed_tick + 1, 0x5)})
+net.step(0)
+check("an acknowledged input hole is repaired directly",
+      records(wt.unsent[#wt.unsent])[pressed_tick] == 0x1234)
 
 -- --- the reorder guard ------------------------------------------------------
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 4999)})
-check("a snapshot from behind is dropped", net.stats.snaps == 1,
+check("a snapshot from behind is dropped", net.stats.snaps == 2,
       "applied " .. net.stats.snaps)
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5001)})
-check("and the next fresh one lands", net.stats.snaps == 2)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5002)})
+check("and the next fresh one lands", net.stats.snaps == 3)
 
 -- Reliable events can pass the datagram carrying the state that depicts them.
 -- They wait for that authoritative tick, then become visible together.
@@ -193,7 +236,7 @@ check("combat news is idempotent",
 -- connection healthy.
 reject_snapshot = true
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 9000)})
-check("a rejected snapshot is not counted", net.stats.snaps == 3,
+check("a rejected snapshot is not counted", net.stats.snaps == 4,
       "applied " .. net.stats.snaps)
 check("and ends the unreadable connection", not net.connected
       and lost_reason == "the zone sent a snapshot this client cannot read",

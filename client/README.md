@@ -682,9 +682,10 @@ already a sentence and a second clause on the end of it is one more thing to
 read past.
 
 The four link bars are the whole of the connection readout a player gets.
-Clicking them opens the numbers behind it: frame rate, input margin, estimated
-round trip, clock lead, local and remote corrections, visible smoothing debt,
-snapshot gaps, bytes each way, tick, and what is in the room.
+Clicking them opens the numbers behind it: frame rate, client and server round
+trip estimates, input margin and receipt holes, clock lead, local and remote
+corrections, visible smoothing debt, snapshot gaps, ordinary, combat, and input
+loss, server weapon suppression, bytes each way, tick, and what is in the room.
 That is for whoever is working on the client, which is why it is behind a click
 on the thing it is about rather than in the menu, and why it takes the feed's
 strip while it is up.

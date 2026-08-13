@@ -2011,3 +2011,51 @@ miss instead of one introduced by presentation.
 **Reconsider if:** measured remote correction remains large after this revert.
 Use a collision-aware state buffer or a faster snapshot lane rather than
 rewriting coordinates outside the simulation.
+
+## 48. Loss repair, lag policy, and combat presentation have separate budgets
+
+**Decided:** protocol 12 uses selective acknowledgements for input and snapshot
+delivery. The arena measures each pilot's round trip, ordinary snapshot loss,
+combat-lane loss, and input loss. Zone-defined thresholds may deny flag pickup,
+suppress a proportional share of weapon inputs, or move a persistently severe
+connection to the stands. Nearby combat receives full lawful snapshots at
+50 Hz. Local and remote render corrections use separate limits.
+
+**Why:** repeating the newest four consecutive inputs handled one lost packet,
+but it could not identify an older hole after later inputs arrived. A selective
+32-tick receipt window can. The client sends the current input, any acknowledged
+holes that can still arrive in time, then the newest unacknowledged history.
+Four ticks of scheduling margin give each input several independent rides, and
+a detected hole temporarily widens that margin to seven.
+
+The server previously had no per-player lag measurement or gameplay response.
+Snapshot acknowledgements now provide round-trip samples using only server
+ticks and the variation between them provides jitter, plus separate loss rates
+for the 20 Hz ordinary lane and the 50 Hz nearby-combat lane. Missing named
+inputs provide upstream loss. Upstream loss
+may deny objectives or force spectating, but it never suppresses weapons because
+the missing inputs already did that. Proportional suppression uses a
+server-secret random stream outside the deterministic simulation, so a modified
+client cannot schedule shots around a known pattern.
+
+The live debug capture that prompted the change had an estimated 80 ms round
+trip, a 12-tick prediction lead, no local correction, and remote correction
+peaking near 100 px. Tightening one shared smoothing constant had already made
+the local camera judder. The local path therefore keeps its 80 ms half-life and
+40 px budget. Remote hulls use a 50 ms half-life and a 16 px budget, with lower
+heading and snap thresholds. A nearby fight also gets fresher authority instead
+of asking presentation smoothing to hide stale state.
+
+The combat lane sends the same complete server-filtered snapshot as the ordinary
+lane. It does not send a smaller radius, because applying a partial replacement
+would delete lawful distant state between ordinary snapshots.
+
+**Cost:** input packets grow to at most 34 bytes, and each player snapshot gains
+17 bytes of acknowledgement and lag telemetry. A nearby fight can consume two
+and a half times the normal snapshot bandwidth. Packing remains per player and
+the fleet metrics report the resulting egress.
+
+**Reconsider if:** measured combat egress is too high. Change the server's lane
+selection or add a state format that can apply partial updates without deleting
+the rest of the lawful view. Do not reduce the fairness circle or merge local
+camera smoothing back into the remote correction budget.

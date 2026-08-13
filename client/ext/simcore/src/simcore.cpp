@@ -194,12 +194,12 @@ int ApplySnapshot(lua_State* L) {
 // two on others at 60 Hz, and by one or none at 120: a speed ripple on every
 // frame of every screen, on the camera and everything in it. Interpolating
 // between the last two ticks by where the frame actually falls costs one tick
-// of visual latency -- ten milliseconds, less than a frame anywhere -- and buys
+// of visual latency, ten milliseconds and less than a frame anywhere, and buys
 // a constant one in place of a random nought-to-ten. Constant latency is
 // invisible. Varying latency is the judder.
 //
-// The other jitter is the network's. A snapshot lands twenty times a second and
-// replaces state outright, so a remote ship that was extrapolated wrong snaps to
+// The other jitter is the network's. A snapshot replaces state outright, so a
+// remote ship that was extrapolated wrong snaps to
 // the truth. `smooth_capture` and `smooth_settle` bracket that: whatever the
 // screen was last asserting about a ship is held, and the difference between it
 // and the truth is carried as an offset that decays away over about a tenth of a
@@ -218,8 +218,7 @@ float g_off_y[SIM_MAX_SHIPS];
 // above. Position always had this and heading never did, and under coasting
 // the difference is the whole of how a remote ship rotates: prediction holds
 // no buttons for it, so its heading is frozen between snapshots and all of
-// its actual turning arrives in fifty-millisecond lumps. A full-rate turn is
-// ten degrees a lump, which drew as a 20 Hz stairstep. Note this eases only
+// its actual turning arrives in snapshot-sized lumps. Note this eases only
 // corrections of the past; it predicts nothing, which is the line the
 // held-button experiment crossed and the reason that one is gone.
 float g_off_h[SIM_MAX_SHIPS];
@@ -228,30 +227,22 @@ int32_t g_held_y[SIM_MAX_SHIPS];
 uint16_t g_held_h[SIM_MAX_SHIPS];
 uint8_t g_held[SIM_MAX_SHIPS];
 
-// Past this, it is a teleport and not a correction. Four tiles: a respawn, a
-// wormhole and a repel all clear it, and nothing a mispredicted hull does comes
-// near it.
-const double SMOOTH_SNAP = 64.0;
-// The heading's own snap and ceiling, in turn units. Ninety degrees is not a
-// correction: a hull facing somewhere genuinely else, such as a respawn,
-// should appear facing it. Thirty degrees caps the lie because an enemy's nose
-// is aiming information and smoothing must not bury it.
-const double TURN_SNAP = 65536.0 * 90.0 / 360.0;
-const double TURN_MAX = 65536.0 * 30.0 / 360.0;
-
-// And a ceiling on what the drawing may be lying by at any moment, so a stream
-// of corrections in one direction cannot accumulate into a ship drawn somewhere
-// it has never been.
-//
-// Forty, and it went to sixteen once and came straight back. The tightening
-// reasoned about remote hulls -- a bullet is drawn true while the hull lies,
-// so a smaller lie means a smaller gap a shot can visibly cross -- but the
-// mechanism also carries the clock steering for the pilot's own camera, and
-// on a real link those corrections arrive small, frequent, and alternating.
-// The budget does not decide their size, the decay decides their visibility,
-// and cutting both turned a slide the eye forgave into a judder the whole
-// screen shared. See the video-measured wall track in the revert commit.
-const double SMOOTH_MAX = 40.0;
+// Local clock steering moves the camera, while a remote correction moves one
+// target against truthful projectiles. They need different limits. The local
+// envelope keeps the measured camera stability. The remote envelope stops an
+// opponent being drawn more than one tile away from the server's position and
+// clears large discontinuities sooner.
+const double LOCAL_POS_SNAP = 64.0;
+const double REMOTE_POS_SNAP = 48.0;
+const double LOCAL_POS_MAX = 40.0;
+const double REMOTE_POS_MAX = 16.0;
+const double LOCAL_TURN_SNAP = 65536.0 * 90.0 / 360.0;
+const double REMOTE_TURN_SNAP = 65536.0 * 45.0 / 360.0;
+const double LOCAL_TURN_MAX = 65536.0 * 30.0 / 360.0;
+const double REMOTE_TURN_MAX = 65536.0 * 15.0 / 360.0;
+const double LOCAL_HALF_LIFE = 0.08;
+const double REMOTE_HALF_LIFE = 0.05;
+const double INTERPOLATION_SNAP = 64.0;
 
 // Whether the other buffer really holds the tick before this one.
 //
@@ -287,7 +278,7 @@ double blend_turn(uint16_t prev, uint16_t cur) {
 bool ship_continuous(const sim_ship* p, const sim_ship* c) {
     if (!p->active || !c->active || p->alive != c->alive) return false;
     double dx = (c->x - p->x) / 256.0, dy = (c->y - p->y) / 256.0;
-    return dx * dx + dy * dy < SMOOTH_SNAP * SMOOTH_SNAP;
+    return dx * dx + dy * dy < INTERPOLATION_SNAP * INTERPOLATION_SNAP;
 }
 
 // Read-only views. Rendering asks; it never writes.
@@ -969,7 +960,7 @@ int FlagAt(lua_State* L) {
     // dropped or taken flag jumps, and the distance guard covers that.
     double dx = (f->x - p->x) / 256.0, dy = (f->y - p->y) / 256.0;
     bool same = has_prev() && p->active && f->active
-                && dx * dx + dy * dy < SMOOTH_SNAP * SMOOTH_SNAP;
+                && dx * dx + dy * dy < INTERPOLATION_SNAP * INTERPOLATION_SNAP;
     lua_pushnumber(L, same ? blend(p->x, f->x) : f->x / 256.0);
     lua_pushnumber(L, same ? blend(p->y, f->y) : f->y / 256.0);
     lua_pushnumber(L, f->team);
@@ -1070,13 +1061,16 @@ int SmoothSettle(lua_State* L) {
         double ox = g_off_x[i] + (g_held_x[i] - c->x) / 256.0;
         double oy = g_off_y[i] + (g_held_y[i] - c->y) / 256.0;
         double d2 = ox * ox + oy * oy;
-        if (d2 > SMOOTH_SNAP * SMOOTH_SNAP) {
+        const bool local = i == g_mortal_ship;
+        const double pos_snap = local ? LOCAL_POS_SNAP : REMOTE_POS_SNAP;
+        const double pos_max = local ? LOCAL_POS_MAX : REMOTE_POS_MAX;
+        if (d2 > pos_snap * pos_snap) {
             // A teleport. Nothing to smooth: a respawn or a wormhole is
             // supposed to look instant, and easing one reads as a ship being
             // dragged rather than arriving.
             ox = oy = 0.0;
-        } else if (d2 > SMOOTH_MAX * SMOOTH_MAX) {
-            double k = SMOOTH_MAX / sqrt(d2);
+        } else if (d2 > pos_max * pos_max) {
+            double k = pos_max / sqrt(d2);
             ox *= k;
             oy *= k;
         }
@@ -1091,12 +1085,14 @@ int SmoothSettle(lua_State* L) {
         double oh = g_off_h[i] + (double)dh;
         if (oh > 32768.0) oh -= 65536.0;
         if (oh < -32768.0) oh += 65536.0;
-        if (oh > TURN_SNAP || oh < -TURN_SNAP) {
+        const double turn_snap = local ? LOCAL_TURN_SNAP : REMOTE_TURN_SNAP;
+        const double turn_max = local ? LOCAL_TURN_MAX : REMOTE_TURN_MAX;
+        if (oh > turn_snap || oh < -turn_snap) {
             oh = 0.0;
-        } else if (oh > TURN_MAX) {
-            oh = TURN_MAX;
-        } else if (oh < -TURN_MAX) {
-            oh = -TURN_MAX;
+        } else if (oh > turn_max) {
+            oh = turn_max;
+        } else if (oh < -turn_max) {
+            oh = -turn_max;
         }
         g_off_h[i] = (float)oh;
     }
@@ -1107,16 +1103,13 @@ int SmoothSettle(lua_State* L) {
 // where the lie is largest and there is no moment at which it stops.
 int SmoothDecay(lua_State* L) {
     double dt = luaL_checknumber(L, 1);
-    // Eighty milliseconds, restored after a day at fifty. The half-life sets
-    // what fraction of every correction is played out between snapshots, and
-    // corrections on a live link alternate sign: the lead gains a tick, gives
-    // it back, a hull is nudged left, then right. At eighty a third of each
-    // shows before the next one cancels it; at fifty, half did, and the sum
-    // read as the world twitching at snapshot rate rather than easing.
-    double half = luaL_optnumber(L, 2, 0.08);
-    if (dt <= 0.0 || half <= 0.0) return 0;
-    float k = (float)pow(0.5, dt / half);
+    double local_half = luaL_optnumber(L, 2, LOCAL_HALF_LIFE);
+    double remote_half = luaL_optnumber(L, 3, REMOTE_HALF_LIFE);
+    if (dt <= 0.0 || local_half <= 0.0 || remote_half <= 0.0) return 0;
+    float local_k = (float)pow(0.5, dt / local_half);
+    float remote_k = (float)pow(0.5, dt / remote_half);
     for (int i = 0; i < SIM_MAX_SHIPS; i++) {
+        float k = i == g_mortal_ship ? local_k : remote_k;
         g_off_x[i] *= k;
         g_off_y[i] *= k;
         g_off_h[i] *= k;

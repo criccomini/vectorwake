@@ -169,6 +169,69 @@ pub struct ArenaConfig {
     /// born already touching its victim.
     pub shrap_inactive: Option<i32>,
     pub shrap_inactive_ticks: Option<u16>,
+    /// Connection-quality policy. Values are deliberately operator-facing:
+    /// milliseconds and percentages rather than simulation units.
+    pub lag: LagConfig,
+}
+
+/// The lag thresholds used by the authoritative arena.
+///
+/// A metric may first make objectives unavailable, then suppress a growing
+/// share of weapon inputs, and finally move a persistently unplayable pilot to
+/// the stands. Upstream loss never drives weapon suppression because it has
+/// already removed the player's actions before they reach the server.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(default, deny_unknown_fields)]
+pub struct LagConfig {
+    pub sample_ticks: u32,
+    pub recover_ticks: u32,
+    pub spectate_ticks: u32,
+    pub no_flags_ping_ms: u32,
+    pub weapon_start_ping_ms: u32,
+    pub weapon_full_ping_ms: u32,
+    pub spectate_ping_ms: u32,
+    pub no_flags_jitter_ms: u32,
+    pub weapon_start_jitter_ms: u32,
+    pub weapon_full_jitter_ms: u32,
+    pub spectate_jitter_ms: u32,
+    pub no_flags_down_loss_pct: u32,
+    pub weapon_start_down_loss_pct: u32,
+    pub weapon_full_down_loss_pct: u32,
+    pub spectate_down_loss_pct: u32,
+    pub no_flags_combat_loss_pct: u32,
+    pub weapon_start_combat_loss_pct: u32,
+    pub weapon_full_combat_loss_pct: u32,
+    pub spectate_combat_loss_pct: u32,
+    pub no_flags_up_loss_pct: u32,
+    pub spectate_up_loss_pct: u32,
+}
+
+impl Default for LagConfig {
+    fn default() -> Self {
+        LagConfig {
+            sample_ticks: 500,
+            recover_ticks: 500,
+            spectate_ticks: 1_500,
+            no_flags_ping_ms: 600,
+            weapon_start_ping_ms: 750,
+            weapon_full_ping_ms: 1_000,
+            spectate_ping_ms: 1_200,
+            no_flags_jitter_ms: 150,
+            weapon_start_jitter_ms: 200,
+            weapon_full_jitter_ms: 400,
+            spectate_jitter_ms: 500,
+            no_flags_down_loss_pct: 20,
+            weapon_start_down_loss_pct: 25,
+            weapon_full_down_loss_pct: 50,
+            spectate_down_loss_pct: 60,
+            no_flags_combat_loss_pct: 15,
+            weapon_start_combat_loss_pct: 20,
+            weapon_full_combat_loss_pct: 40,
+            spectate_combat_loss_pct: 50,
+            no_flags_up_loss_pct: 25,
+            spectate_up_loss_pct: 60,
+        }
+    }
 }
 
 /// One hull. Each stat is a ceiling, a floor a fresh ship starts at, and the

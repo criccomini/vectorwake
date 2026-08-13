@@ -299,10 +299,10 @@ pilots present and not playing. See
 [design/duel-mode.md](../design/duel-mode.md) for what came out and what putting
 it back requires.
 
-Two things are deliberately absent. Chat is not deferred, it is gone, per
-[decision 28](decisions.md#28-no-chat). Spectating is deferred, which also holds
-back the gentlest of the four lag actions in [server.md](server.md), so until it
-lands a laggy player gets a harsher response than they should.
+Chat is not deferred, it is gone, per
+[decision 28](decisions.md#28-no-chat). Spectating and the server lag policy
+have since landed. A persistently severe connection now moves to the stands,
+which keeps the gentlest final action available before a disconnect.
 
 ### What to test rather than to play
 

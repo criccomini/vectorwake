@@ -559,7 +559,11 @@ mod tests {
         // input has to name. The welcome's tick is stale by now, and a tick
         // past `now + INPUT_LEAD_MAX` is clamped before it is echoed, so a
         // made-up lead would chase its own clamp here and never match.
-        let tick = u32::from_le_bytes([snap[6], snap[7], snap[8], snap[9]]);
+        let tick = u32::from_le_bytes(
+            snap[crate::SNAPSHOT_HEADER..crate::SNAPSHOT_HEADER + 4]
+                .try_into()
+                .expect("snapshot tick"),
+        );
 
         // An input as a datagram: buttons and the tick they belong to. The
         // arena records the newest input tick it has heard and repeats it in
@@ -567,7 +571,7 @@ mod tests {
         // steers its clock by. Seeing it come back is seeing the datagram
         // lane work end to end.
         let named = tick + 20;
-        let input = crate::input_message(named, &[1]);
+        let input = crate::input_message(0, 0, &[(named, 1)]);
         conn.send_datagram(&input).expect("the input sends");
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {

@@ -89,7 +89,8 @@ local function le32(v)
 end
 
 local function snapshot(v)
-    return string.char(2, 0, 0, 0, 0, 0) .. le32(v) .. "body"
+    return string.char(2, 0) .. le32(0) .. le32(0) .. le32(v)
+        .. string.rep("\0", 9) .. le32(v) .. "body"
 end
 
 local function deliver(message)
