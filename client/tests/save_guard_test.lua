@@ -49,7 +49,7 @@ package.loaded["arena.sfx"] = {ui = function() end, master_gain = function() end
 
 -- The saved file under test, swapped per case.
 local saved = {}
-local last_saved = nil
+local last_saved
 _G.sys = {get_config_string = function(_, d) return d end,
           get_config_int = function(_, d) return d end,
           get_engine_info = function() return {version = "test"} end,
