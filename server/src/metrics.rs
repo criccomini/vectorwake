@@ -262,10 +262,13 @@ pub static LAG_ACTIONS: Counter = Counter::new();
 pub static WT_LISTENING: Gauge = Gauge::new();
 pub static WT_ATTEMPTS: Counter = Counter::new();
 pub static WT_SESSIONS: Counter = Counter::new();
-/// The bot server: pilots it is flying, and how many times it has had to dial
-/// an arena again. Reconnects are what a restart looks like from here.
+/// The bot server: pilots it is flying, how many times it has had to dial an
+/// arena again, and how often a shared driver needed replacement. Reconnects
+/// are what an arena restart looks like from here. Driver restarts are the
+/// bot process repairing its own simulation clock.
 pub static BOT_PILOTS: Gauge = Gauge::new();
 pub static BOT_CONNECTS: Counter = Counter::new();
+pub static BOT_DRIVER_RESTARTS: Counter = Counter::new();
 /// The directory: what it has been told, and what it turned away.
 pub static REGISTRATIONS: Counter = Counter::new();
 pub static REFUSALS: Counter = Counter::new();
@@ -524,6 +527,12 @@ pub fn render() -> String {
         "vw_bot_connects_total",
         "Arena connections the bot server has opened.",
         BOT_CONNECTS.get(),
+    );
+    counter(
+        &mut out,
+        "vw_bot_driver_restarts_total",
+        "Shared bot drivers replaced after stopping or stalling.",
+        BOT_DRIVER_RESTARTS.get(),
     );
     counter(
         &mut out,

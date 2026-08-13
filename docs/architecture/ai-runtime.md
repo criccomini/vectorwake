@@ -111,6 +111,12 @@ rides out, and the other bots' inputs now show between snapshots, where a
 private world showed everyone else coasting. Brains still look at 10 to 20 Hz,
 offset per bot so the cost spreads.
 
+Each bot repeats its current input once a second even when the buttons have not
+changed. The arena treats inbound silence as a dead connection, so a steady
+control still has to prove the socket is alive. The shared driver's supervisor
+also checks its progress once a second. Five seconds without a completed tick
+replaces the driver in place, keeping the bot connections and their seats.
+
 Sight reaches sixty tiles, the radar's own reach. That bound arrived after the
 map did, and it exposed something the unbounded version had been hiding: a
 pilot who could see nobody produced no input at all and stopped where it

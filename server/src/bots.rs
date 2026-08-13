@@ -72,6 +72,14 @@ const DEPART_MAX_MS: u64 = 40_000;
 /// hundred missed snapshots, so this only ever fires on a connection that is
 /// actually gone.
 const QUIET_MS: u64 = 10_000;
+/// A bot normally sends only when its controls change. Repeat the current
+/// controls once a second so a healthy pilot never looks silent to the arena's
+/// connection timeout.
+const INPUT_HEARTBEAT_TICKS: u32 = 100;
+/// How often the shared driver's supervisor checks that its clock moved, and
+/// how long no movement is allowed before it starts a replacement driver.
+const DRIVER_WATCH_MS: u64 = 1_000;
+const DRIVER_STALL_MS: u64 = 5_000;
 /// Consecutive cycles an arena may fail to answer before its bots are called
 /// home. Five seconds of silence from a process on the same host is gone; one
 /// second of it is a busy moment, and treating that as gone would empty a room
@@ -165,6 +173,7 @@ struct Seat {
     yielding: Arc<AtomicBool>,
     asked: Option<std::time::Instant>,
     sent: Option<u16>,
+    sent_at: u32,
     tx: tokio::sync::mpsc::Sender<Ctl>,
 }
 
@@ -186,6 +195,12 @@ struct Rig {
     /// released on the way out, so losing the feeder costs the rig a
     /// snapshot of staleness at most.
     pen: AtomicU64,
+    /// Progress and ownership of the shared driver. The supervisor watches the
+    /// first and changes the second before replacing a stopped task. A late
+    /// task sees that its generation is stale and leaves without starting a
+    /// second clock beside the replacement.
+    driver_beat: AtomicU64,
+    driver_generation: AtomicU64,
 }
 
 impl Rig {
@@ -195,15 +210,32 @@ impl Rig {
             buttons: std::array::from_fn(|_| AtomicU16::new(0)),
             crew: Mutex::new(HashMap::new()),
             pen: AtomicU64::new(0),
+            driver_beat: AtomicU64::new(0),
+            driver_generation: AtomicU64::new(1),
         }
+    }
+
+    /// A driver panic must not turn its two locks into permanent damage. The
+    /// supervisor can replace the task, and these accessors let that replacement
+    /// take back the state the old task left behind.
+    fn lock_world(&self) -> std::sync::MutexGuard<'_, sim::World> {
+        self.world.lock().unwrap_or_else(|poisoned| {
+            self.world.clear_poison();
+            poisoned.into_inner()
+        })
+    }
+
+    fn lock_crew(&self) -> std::sync::MutexGuard<'_, HashMap<u8, Seat>> {
+        self.crew.lock().unwrap_or_else(|poisoned| {
+            self.crew.clear_poison();
+            poisoned.into_inner()
+        })
     }
 
     /// Take a seat, or refuse it because a live pilot already has it, which is
     /// the second-room signal described on `crew`.
     fn claim(&self, ship: u8, seat: Seat) -> bool {
-        let Ok(mut c) = self.crew.lock() else {
-            return false;
-        };
+        let mut c = self.lock_crew();
         if let Some(held) = c.get(&ship) {
             if held.id != seat.id {
                 return false;
@@ -217,11 +249,10 @@ impl Rig {
     /// Give back whatever this pilot held: its seat if it had one, the pen if
     /// it was writing. Safe to call however the flight ended.
     fn release(&self, ship: u8, id: u64) {
-        if let Ok(mut c) = self.crew.lock() {
-            if c.get(&ship).is_some_and(|s| s.id == id) {
-                c.remove(&ship);
-                self.buttons[ship as usize].store(0, Ordering::Relaxed);
-            }
+        let mut c = self.lock_crew();
+        if c.get(&ship).is_some_and(|s| s.id == id) {
+            c.remove(&ship);
+            self.buttons[ship as usize].store(0, Ordering::Relaxed);
         }
         let _ = self
             .pen
@@ -247,6 +278,33 @@ impl Rig {
     }
 }
 
+/// An unchanged control is still sent often enough to prove the bot is alive.
+/// The arena holds the latest buttons between messages, so this does not alter
+/// flight or require a separate protocol message.
+fn input_frame_due(sent: Option<u16>, sent_at: u32, buttons: u16, tick: u32) -> bool {
+    sent != Some(buttons) || tick.saturating_sub(sent_at) >= INPUT_HEARTBEAT_TICKS
+}
+
+struct DriverWatch {
+    beat: u64,
+    moved: std::time::Instant,
+}
+
+impl DriverWatch {
+    fn new(beat: u64, now: std::time::Instant) -> Self {
+        DriverWatch { beat, moved: now }
+    }
+
+    fn stalled(&mut self, beat: u64, now: std::time::Instant) -> bool {
+        if beat != self.beat {
+            self.beat = beat;
+            self.moved = now;
+            return false;
+        }
+        now.duration_since(self.moved).as_millis() as u64 >= DRIVER_STALL_MS
+    }
+}
+
 /// The rig's one clock. Fifty pilots used to carry a 100 Hz ticker each,
 /// which was four thousand eight hundred scheduler wake-ups a second spent
 /// mostly contending for the same world lock; the profile of the running
@@ -255,16 +313,25 @@ impl Rig {
 /// same picture, and hands each pilot's input frame to its own connection to
 /// send. The wire is untouched by any of this: every bot still joins,
 /// receives and answers as its own client, per decision 29.
-async fn drive(rig: std::sync::Weak<Rig>) {
+async fn drive(rig: std::sync::Weak<Rig>, generation: u64) {
     let mut ticker = tokio::time::interval(std::time::Duration::from_micros(10_000));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
         let Some(rig) = rig.upgrade() else { return };
-        let Ok(mut crew) = rig.crew.lock() else {
+        if rig.driver_generation.load(Ordering::SeqCst) != generation {
             return;
+        }
+        let mut crew = match rig.crew.try_lock() {
+            Ok(crew) => crew,
+            Err(std::sync::TryLockError::WouldBlock) => continue,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                rig.crew.clear_poison();
+                poisoned.into_inner()
+            }
         };
         if crew.is_empty() {
+            rig.driver_beat.fetch_add(1, Ordering::Relaxed);
             continue;
         }
         // The look happens under the world lock so a scan and the step it
@@ -273,7 +340,14 @@ async fn drive(rig: std::sync::Weak<Rig>) {
         // room's picture for.
         let mut views = Vec::with_capacity(crew.len());
         {
-            let Ok(mut w) = rig.world.lock() else { return };
+            let mut w = match rig.world.try_lock() {
+                Ok(world) => world,
+                Err(std::sync::TryLockError::WouldBlock) => continue,
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                    rig.world.clear_poison();
+                    poisoned.into_inner()
+                }
+            };
             rig.advance(&mut w, &crew);
             for (&ship, seat) in crew.iter_mut() {
                 let own = ai::own(&w, ship);
@@ -330,13 +404,14 @@ async fn drive(rig: std::sync::Weak<Rig>) {
             }
             let buttons = seat.brain.think(&own, &seat.route, fresh);
             rig.buttons[ship as usize].store(buttons, Ordering::Relaxed);
-            if seat.sent != Some(buttons) {
+            if input_frame_due(seat.sent, seat.sent_at, buttons, tick) {
                 // The tick this input produces, not the last one finished,
                 // which is what `net.lua` stamps and what the arena's queue
                 // reads: an input naming a tick waits for it.
                 let m = crate::input_message(0, 0, &[(tick + 1, buttons)]);
                 if seat.tx.try_send(Ctl::Frame(m)).is_ok() {
                     seat.sent = Some(buttons);
+                    seat.sent_at = tick;
                 }
             }
         }
@@ -344,6 +419,56 @@ async fn drive(rig: std::sync::Weak<Rig>) {
             crew.remove(&ship);
             rig.buttons[ship as usize].store(0, Ordering::Relaxed);
         }
+        rig.driver_beat.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Keep one driver behind a rig for as long as the rig exists. A completed or
+/// panicked task is replaced immediately. A task that stops making progress is
+/// replaced after five seconds, with its generation revoked first so it cannot
+/// resume as a second room clock later.
+async fn supervise_driver(rig: std::sync::Weak<Rig>) {
+    let mut generation = 1u64;
+    loop {
+        let Some(live) = rig.upgrade() else { return };
+        live.driver_generation.store(generation, Ordering::SeqCst);
+        let mut watch = DriverWatch::new(
+            live.driver_beat.load(Ordering::Relaxed),
+            std::time::Instant::now(),
+        );
+        drop(live);
+
+        let mut driver = tokio::spawn(drive(rig.clone(), generation));
+        let mut ticker = tokio::time::interval(std::time::Duration::from_millis(DRIVER_WATCH_MS));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                result = &mut driver => {
+                    if rig.upgrade().is_none() {
+                        return;
+                    }
+                    println!("bot shared driver stopped ({result:?}); restarting");
+                    break;
+                }
+                _ = ticker.tick() => {
+                    let Some(live) = rig.upgrade() else {
+                        driver.abort();
+                        return;
+                    };
+                    let beat = live.driver_beat.load(Ordering::Relaxed);
+                    if watch.stalled(beat, std::time::Instant::now()) {
+                        println!("bot shared driver made no progress for {DRIVER_STALL_MS} ms; restarting");
+                        break;
+                    }
+                }
+            }
+        }
+        crate::metrics::BOT_DRIVER_RESTARTS.inc();
+        generation = generation.wrapping_add(1).max(1);
+        if let Some(live) = rig.upgrade() {
+            live.driver_generation.store(generation, Ordering::SeqCst);
+        }
+        driver.abort();
     }
 }
 
@@ -363,7 +488,7 @@ impl Rigs {
             key as u32,
             Arc::clone(map),
         )));
-        tokio::spawn(drive(Arc::downgrade(&rig)));
+        tokio::spawn(supervise_driver(Arc::downgrade(&rig)));
         g.insert((addr.to_string(), key), Arc::downgrade(&rig));
         Some(rig)
     }
@@ -814,9 +939,7 @@ async fn fly(
                         // zone's one answer, so on the shared rig this is the
                         // same settings written again, which is idempotent.
                         if let Sight::Shared(rig) = &sight {
-                            if let Ok(mut w) = rig.world.lock() {
-                                w.apply_settings(&cfg_bytes);
-                            }
+                            rig.lock_world().apply_settings(&cfg_bytes);
                         }
                     }
                     Some(crate::S2C_WELCOME) if data.len() >= 2 => {
@@ -836,6 +959,7 @@ async fn fly(
                                 yielding: Arc::clone(&yielding),
                                 asked: None,
                                 sent: None,
+                                sent_at: 0,
                                 tx: ctl_tx.clone(),
                             };
                             if !rig.claim(ship, seat) {
@@ -865,9 +989,8 @@ async fn fly(
                             let _ = rig.pen.compare_exchange(
                                 0, me, Ordering::Relaxed, Ordering::Relaxed);
                             if rig.pen.load(Ordering::Relaxed) == me {
-                                if let Ok(mut w) = rig.world.lock() {
-                                    w.apply_snapshot(&data[crate::SNAPSHOT_HEADER..]);
-                                }
+                                rig.lock_world()
+                                    .apply_snapshot(&data[crate::SNAPSHOT_HEADER..]);
                             }
                         }
                     }
@@ -907,6 +1030,7 @@ async fn fly(
     if let Some((mut w, mut b)) = go_private {
         let mut buttons: u16;
         let mut sent: Option<u16> = None;
+        let mut sent_at = 0u32;
         let mut asked: Option<std::time::Instant> = None;
         let mut ticker = tokio::time::interval(std::time::Duration::from_micros(10_000));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -969,12 +1093,13 @@ async fn fly(
                         Some(r) => b.think(&own, r, fresh),
                         None => 0,
                     };
-                    if sent != Some(buttons) {
+                    if input_frame_due(sent, sent_at, buttons, tick) {
                         let m = crate::input_message(0, 0, &[(tick + 1, buttons)]);
                         if sink.send(Message::Binary(m)).await.is_err() {
                             break;
                         }
                         sent = Some(buttons);
+                        sent_at = tick;
                     }
                     w.step(&[sim::sim_input { ship, buttons }]);
                 }
@@ -1042,6 +1167,35 @@ mod tests {
             msg.len(),
             crate::C2S_JOIN_HEADER,
             "an empty name and no token is the header alone"
+        );
+    }
+
+    #[test]
+    fn unchanged_controls_are_sent_as_a_heartbeat() {
+        assert!(input_frame_due(None, 0, 0, 10), "the first input is sent");
+        assert!(input_frame_due(Some(1), 10, 2, 11), "a change is immediate");
+        assert!(
+            !input_frame_due(Some(2), 10, 2, 109),
+            "an unchanged input waits"
+        );
+        assert!(
+            input_frame_due(Some(2), 10, 2, 110),
+            "one second of unchanged input is enough"
+        );
+    }
+
+    #[test]
+    fn driver_watch_requires_five_seconds_without_progress() {
+        let now = std::time::Instant::now();
+        let mut watch = DriverWatch::new(7, now);
+        assert!(!watch.stalled(7, now + std::time::Duration::from_millis(4_999)));
+        assert!(watch.stalled(7, now + std::time::Duration::from_millis(5_000)));
+
+        let mut watch = DriverWatch::new(7, now);
+        assert!(!watch.stalled(8, now + std::time::Duration::from_secs(4)));
+        assert!(
+            !watch.stalled(8, now + std::time::Duration::from_secs(8)),
+            "progress restarts the watchdog clock"
         );
     }
 
