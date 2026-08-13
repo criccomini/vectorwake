@@ -620,6 +620,25 @@ cmd_scrub() {
 	scrub_user_data "$id"
 }
 
+# One A record by name, with the apex spelled `@`.
+#
+# The apex is the reason this is a function. Vultr stores it under an empty
+# name and its JSON leaves the key out rather than sending "", so
+# `select(.name == "@")` matches nothing and `select(.name == "")` matches
+# nothing either. A caller that looks the apex up therefore concludes it does
+# not exist and creates it, and now the domain has two A records: half its
+# traffic on the host being retired, and no way to reconcile them, because the
+# API answers an update that would make one equal the other with "Duplicate
+# records not allowed". That is how the ATL to DFW cutover went, and the only
+# way out was deleting a record by hand. So both ends are normalized here
+# instead, once, where every caller gets it.
+a_record() {
+	vultr dns record list "$DOMAIN" -o json | jq -r --arg n "$1" \
+		'[.records[] | select(.type == "A")
+		  | select((if (.name // "") == "" then "@" else .name end) == $n)][0]
+		 // empty'
+}
+
 # Create or move one A record, quietly when it already points there. For the
 # names that ride along with a cutover, after the cutover's own question has
 # been asked and answered. Prefixed variables, because POSIX sh has no locals
@@ -630,8 +649,7 @@ converge_record() {
 	@) cr_display=$DOMAIN ;;
 	*) cr_display=$cr_name.$DOMAIN ;;
 	esac
-	cr_rec=$(vultr dns record list "$DOMAIN" -o json | jq -r --arg n "$cr_name" \
-		'[.records[] | select(.name == $n and .type == "A")][0] // empty')
+	cr_rec=$(a_record "$cr_name")
 	cr_rid=$(printf '%s' "$cr_rec" | jq -r '.id // empty')
 	cr_old=$(printf '%s' "$cr_rec" | jq -r '.data // empty')
 	if [ -z "$cr_rid" ]; then
@@ -677,8 +695,7 @@ cmd_point() {
 	[ -n "$ip" ] || die "no instance labeled $target.$DOMAIN"
 	[ "$ip" != "0.0.0.0" ] || die "$target.$DOMAIN has no address yet"
 
-	rec=$(vultr dns record list "$DOMAIN" -o json | jq -r --arg n "$name" \
-		'[.records[] | select(.name == $n and .type == "A")][0] // empty')
+	rec=$(a_record "$name")
 	old=$(printf '%s' "$rec" | jq -r '.data // empty')
 	rid=$(printf '%s' "$rec" | jq -r '.id // empty')
 	oldttl=$(printf '%s' "$rec" | jq -r '.ttl // empty')
