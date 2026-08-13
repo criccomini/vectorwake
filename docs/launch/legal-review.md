@@ -4,7 +4,7 @@ This is the packet for a qualified attorney. It records facts and questions; it 
 
 ## Operator and launch
 
-- Public operator named on the site: Chris Riccomini.
+- Public operator named on the site: Chris.
 - Product: a free browser-based multiplayer space combat game.
 - Initial hosting: United States, through Vultr cloud compute and managed PostgreSQL.
 - Accounts: generated call signs, optional passwords, no email address, no payments, and no player chat.
