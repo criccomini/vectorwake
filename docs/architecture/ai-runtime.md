@@ -92,11 +92,12 @@ review. It is now kept by the protocol.
 
 A bot decodes snapshots through the simulation core, the way the client and
 `tools/pilot` do: map and settings arrive at join, snapshots at 20 Hz, and the
-brain reads the decoded world through the same `own` and `scan` the
-calibration harness uses. Whatever filter the server applied before sending is
-the filter the bot sees through. For a declared bot that filter is nothing:
-prizes, the one per-player difference in a snapshot, arrive whole, so any one
-bot's snapshot is the entire room's truth.
+brain reads the decoded world through the same `own` and `scan` the calibration
+harness uses. Whatever filter the server applied before sending is the filter
+the bot sees through. An authenticated house bot receives the entire room,
+including prizes, so any house bot's snapshot is the complete room's truth. A
+declared bot without a house account gets the same interest-filtered view as a
+person.
 
 That truth is held once per arena. The fifty bots an arena wants are all being
 sent the same room, so the bot server predicts it in one shared world rather
@@ -110,6 +111,13 @@ instead of instantly, inside the noise of the snapshot corrections it already
 rides out, and the other bots' inputs now show between snapshots, where a
 private world showed everyone else coasting. Brains still look at 10 to 20 Hz,
 offset per bot so the cost spreads.
+
+Only authenticated house bots enter that shared world. During a deploy the
+meta-layer may still be restarting when the bot process comes up. A failed
+login is retried instead of joining without a token, because one filtered
+snapshot used as the shared truth would erase every pilot outside its sender's
+radar. A deployment with no account system still flies declared bots, each on
+the private filtered world its own connection receives.
 
 Each bot repeats its current input once a second even when the buttons have not
 changed. The arena treats inbound silence as a dead connection, so a steady

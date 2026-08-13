@@ -765,21 +765,46 @@ async fn ask(addr: &str) -> Option<u32> {
 /// the difference between this process fitting on the host and not. Each
 /// connection still looks ordinary from the arena's side; the sharing is
 /// entirely inside this process.
-/// The session token for one roster individual, claiming its account the first
-/// time and logging in whenever a token is wanted.
+/// How one roster individual may see the room. A house token earns the complete
+/// snapshot that makes the shared rig sound. A deployment without accounts is
+/// still allowed to fly bots, but each one must use its own filtered world.
+#[derive(Debug, PartialEq, Eq)]
+enum BotIdentity {
+    House(String),
+    Unaccounted,
+}
+
+impl BotIdentity {
+    fn session(&self) -> &str {
+        match self {
+            BotIdentity::House(token) => token,
+            BotIdentity::Unaccounted => "",
+        }
+    }
+
+    fn shares_world(&self) -> bool {
+        matches!(self, BotIdentity::House(_))
+    }
+}
+
+/// The identity for one roster individual, claiming its account the first time
+/// and logging in whenever a token is wanted.
 ///
 /// An individual is one account and one career, per docs/design/ai-players.md,
 /// so the account is claimed by name and the meta-layer hands back the same one
 /// however many times this process restarts. The secret is kept in memory for
 /// the life of the process, which is what stops a restart loop minting a
 /// credential row per attempt.
-async fn bot_token(who: &str, secrets: &Mutex<HashMap<String, String>>) -> Option<String> {
+async fn bot_identity(
+    who: &str,
+    secrets: &Mutex<HashMap<String, String>>,
+) -> Result<BotIdentity, String> {
     let meta = std::env::var("VW_META").unwrap_or_default();
     let pool = std::env::var("VW_TOKEN").unwrap_or_default();
     if meta.is_empty() || pool.is_empty() {
         // A deployment without accounts. The bot still flies, declared and
         // labeled as somebody's bot, and rates nothing.
-        return None;
+        return Ok(BotIdentity::Unaccounted);
     }
     // Read and release before any await: this is a plain mutex, and a guard
     // held across a network call is a deadlock waiting for a slow reply.
@@ -790,9 +815,13 @@ async fn bot_token(who: &str, secrets: &Mutex<HashMap<String, String>>) -> Optio
             let body = serde_json::json!({ "pool_token": pool, "name": who }).to_string();
             let reply = crate::meta::call(&meta, "/v1/bot", &body)
                 .await
-                .map_err(|e| println!("bots: no account for {who}: {e}"))
-                .ok()?;
-            let s = reply.get("secret")?.as_str()?.to_string();
+                .map_err(|e| format!("no account for {who}: {e}"))?;
+            let s = reply
+                .get("secret")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| format!("no account for {who}: response had no secret"))?
+                .to_string();
             if let Ok(mut m) = secrets.lock() {
                 m.insert(who.to_string(), s.clone());
             }
@@ -808,9 +837,13 @@ async fn bot_token(who: &str, secrets: &Mutex<HashMap<String, String>>) -> Optio
     let body = serde_json::json!({ "secret": secret }).to_string();
     let reply = crate::meta::call(&meta, "/v1/session", &body)
         .await
-        .map_err(|e| println!("bots: {who} cannot begin a session: {e}"))
-        .ok()?;
-    Some(reply.get("token")?.as_str()?.to_string())
+        .map_err(|e| format!("{who} cannot begin a session: {e}"))?;
+    let token = reply
+        .get("token")
+        .and_then(|v| v.as_str())
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| format!("{who} cannot begin a session: response had no token"))?;
+    Ok(BotIdentity::House(token.to_string()))
 }
 
 /// The join a bot sends, built where something can check it.
@@ -848,6 +881,21 @@ async fn fly(
     busy: Arc<AtomicBool>,
     secrets: Arc<Mutex<HashMap<String, String>>>,
 ) {
+    // The meta-layer and the arena normally restart together during a deploy.
+    // A transient login failure must keep this pilot outside the room until
+    // the account service returns. Joining without the token would make the
+    // arena treat it as a third-party bot and send an interest-filtered
+    // snapshot. If that connection won the shared rig's pen, every bot outside
+    // its radar would disappear from the AI world and sit idle.
+    let identity = match bot_identity(&who.name, &secrets).await {
+        Ok(identity) => identity,
+        Err(e) => {
+            crate::metrics::BOT_AUTH_RETRIES.inc();
+            println!("bots: {e}; retrying");
+            return;
+        }
+    };
+    let share_world = identity.shares_world();
     let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
         max_message_size: Some(2 * 1024 * 1024),
         max_frame_size: Some(2 * 1024 * 1024),
@@ -872,9 +920,9 @@ async fn fly(
     // Ours, and able to prove it. A house bot flies on a bot account, which is
     // what lets one of them anchor the ladder and what tells a player which
     // bots are the fleet's own. Without a meta-layer it flies declared but
-    // unaccounted, which reads as somebody else's bot, honestly enough.
-    let session = bot_token(&who.name, &secrets).await.unwrap_or_default();
-    let join = join_msg(who.class, &who.name, &session);
+    // unaccounted, which reads as somebody else's bot, honestly enough. Its
+    // filtered view cannot feed the shared rig, so it flies a private world.
+    let join = join_msg(who.class, &who.name, identity.session());
     if sink.send(Message::Binary(join)).await.is_err() {
         return;
     }
@@ -931,8 +979,12 @@ async fn fly(
                         if let Sight::Shared(rig) = &sight {
                             rig.release(ship, me);
                         }
-                        let Some(rig) = rigs.get(&addr, key, &m) else { break };
-                        sight = Sight::Shared(rig);
+                        if share_world {
+                            let Some(rig) = rigs.get(&addr, key, &m) else { break };
+                            sight = Sight::Shared(rig);
+                        } else {
+                            sight = Sight::Dark;
+                        }
                         map = Some(m);
                     }
                     Some(crate::S2C_SETTINGS) => {
@@ -952,6 +1004,18 @@ async fn fly(
                         // Luck of its own, so two pilots of one skill in one
                         // room do not fly the same match.
                         b.reseed(fingerprint(who.name.as_bytes()) as u32);
+                        if !share_world {
+                            let Some(m) = map.clone() else { break };
+                            let mut w = sim::World::on_shared_map(
+                                fingerprint(who.name.as_bytes()) as u32,
+                                m,
+                            );
+                            if !cfg_bytes.is_empty() {
+                                w.apply_settings(&cfg_bytes);
+                            }
+                            go_private = Some((w, b));
+                            break;
+                        }
                         if let Sight::Shared(rig) = &sight {
                             let Some(r) = route.clone() else { break };
                             let seat = Seat {
@@ -1183,6 +1247,48 @@ mod tests {
             msg.len(),
             crate::C2S_JOIN_HEADER,
             "an empty name and no token is the header alone"
+        );
+    }
+
+    #[test]
+    fn only_an_authenticated_house_bot_shares_a_world() {
+        let house = BotIdentity::House("session-token".into());
+        assert!(house.shares_world());
+        assert_eq!(house.session(), "session-token");
+
+        let unaccounted = BotIdentity::Unaccounted;
+        assert!(!unaccounted.shares_world());
+        assert_eq!(unaccounted.session(), "");
+    }
+
+    #[test]
+    fn a_filtered_bot_view_is_not_a_complete_shared_world() {
+        let mut source = sim::World::with_map(7, sim::build_pit);
+        let near = source.spawn(0, 0, 100, 100, 0) as u8;
+        let far = source.spawn(0, 1, 300, 300, 0) as u8;
+        let me = &source.state.ships[near as usize];
+        let mut packed = vec![0u8; sim::PACK_MAX];
+        let n = source.pack_around(
+            &mut packed,
+            me.x,
+            me.y,
+            crate::delivery::FAIR_INTEREST,
+            near,
+            near,
+            0,
+        );
+        assert!(n > 0);
+
+        let mut view = sim::World::from_packed(11, &source.packed_map()).unwrap();
+        assert!(view.apply_snapshot(&packed[..n as usize]));
+        assert!(ai::own(&view, near).alive);
+        assert!(
+            !ai::own(&view, far).alive,
+            "a distant pilot must be absent from an interest-filtered snapshot"
+        );
+        assert!(
+            !BotIdentity::Unaccounted.shares_world(),
+            "that filtered snapshot cannot become every bot's truth"
         );
     }
 
