@@ -63,7 +63,25 @@ PLAN_ALL=${VW_PLAN_ALL:-vc2-1c-1gb}
 PLAN_CENTRAL=${VW_PLAN_CENTRAL:-vc2-1c-1gb}
 PLAN_ARENA=${VW_PLAN_ARENA:-vc2-1c-1gb}
 OS_ID=${VW_OS_ID:-2284}          # Ubuntu 24.04 LTS x64
+# The certificate volume, and the one thing about it that is regional.
+#
+# Vultr sells block storage in two tiers and not every region sells both.
+# High-performance starts at 10 GB, which is nine and a half more than a
+# certificate directory will ever want, and is what the fleet has always taken.
+# Storage-optimized starts at 40 GB. Dallas sells only the second, so asking
+# for the default there fails on the first call of `new` with "unable to find a
+# block storage cluster in that location", which reads like the region is
+# unsupported rather than like the tier is.
+#
+# Overridable per region rather than detected, because the API advertises the
+# tiers under names (`block_storage_high_perf`, `block_storage_storage_opt`)
+# that would have to be mapped here anyway, and a fleet adds a region about
+# once a year. Both values move together: 10 GB is refused on the optimized
+# tier as surely as the tier is refused in Dallas.
+#
+#   VW_BLOCK_TYPE=storage_opt VW_CERT_GB=40 fleet.sh new arena dfw-a1 dfw
 CERT_GB=${VW_CERT_GB:-10}
+BLOCK_TYPE=${VW_BLOCK_TYPE:-high_perf}
 FIREWALL=${VW_FIREWALL_GROUP:-}
 # Where everything goes when nobody says: hosts, the database, and the secrets
 # bucket. Atlanta is a base-rate egress region and a large eastern peering
@@ -428,6 +446,7 @@ cmd_new() {
 	else
 		echo "fleet: creating the certificate volume"
 		vol=$(vultr_do block-storage create --region "$region" --size "$CERT_GB" \
+			--block-type "$BLOCK_TYPE" \
 			--label "$host-certs" -o json | jq -r '.block.id' 2>/dev/null || true)
 		if [ "$DRY" = 1 ]; then vol="<new-volume>"; fi
 		if [ -z "$vol" ] || [ "$vol" = null ]; then die "no volume id came back"; fi
@@ -573,7 +592,11 @@ scrub_user_data() {
 	su_id=$1
 	su_stub=$(mktemp) || die "no temporary file for empty user-data"
 	printf '#cloud-config\n' >"$su_stub"
-	vultr_do instance user-data set "$su_id" --userdata "$su_stub" >/dev/null \
+	# `--file`, which is what the flag is actually called. It was `--userdata`
+	# here and the whole verb failed on the first live run, leaving the
+	# bootstrap secrets readable from inside the instance -- which is the one
+	# thing this function exists to prevent.
+	vultr_do instance user-data set "$su_id" --file "$su_stub" >/dev/null \
 		|| { rm -f "$su_stub"; die "could not replace instance user-data"; }
 	rm -f "$su_stub"
 	echo "fleet: bootstrap user-data removed from $su_id"
