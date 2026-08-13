@@ -4098,13 +4098,13 @@ end
 function M.logo(cx, cy, h, alpha, still)
     alpha = alpha or 1
     local k = h / MK_H
-    -- Match the selected hull's turn on the ship stage, then separate a dark
-    -- rear face from the colored front face as it turns. The separation is
-    -- the projected thickness of a solid mark: zero face-on, widest edge-on,
-    -- and reversed naturally on the other half of the rotation. `still` keeps
-    -- asset tests and non-menu callers front-on.
+    -- Match the selected hull's turn speed, then separate a dark rear face
+    -- from the colored front face as it turns. Unlike the small hull buttons,
+    -- the solid edge gives this mark enough to show at a true 90 degrees, so
+    -- its face can collapse all the way to a line. `still` keeps asset tests
+    -- and non-menu callers front-on.
     local turn = not still and F.now * 1.7 or nil
-    local squash = vertical_turn(turn)
+    local squash = turn and math.cos(turn) or 1
     local depth = turn and math.sin(turn) * MK_DEPTH * k / 2 or 0
     local bx, fx = cx - depth, cx + depth
     local oy = cy - MK_H * k / 2

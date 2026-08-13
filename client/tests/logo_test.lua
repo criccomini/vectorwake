@@ -190,10 +190,23 @@ ui.logo(256, 256, 104)
 ui.finish()
 local edge_span = triangle_span()
 check("the menu logo turns around its vertical axis",
-      edge_span / full_span > 0.30 and edge_span / full_span < 0.32,
+      edge_span / full_span > 0.11 and edge_span / full_span < 0.12,
       string.format("span ratio %.3f", edge_span / full_span))
 check("the turning logo draws a rear face and solid edge",
       #tris == 84, "triangles: " .. #tris)
+local face_x0, face_x1 = math.huge, -math.huge
+for _, tri in ipairs(tris) do
+    if same_color(tri.col, pal.LOGO_ORANGE)
+       or same_color(tri.col, pal.LOGO_CYAN) then
+        for i = 1, 6, 2 do
+            face_x0 = math.min(face_x0, tri[i])
+            face_x1 = math.max(face_x1, tri[i])
+        end
+    end
+end
+check("the colored face reaches fully sideways",
+      face_x1 - face_x0 < 0.000001,
+      string.format("face span %.6f", face_x1 - face_x0))
 
 local ui_source = read_file("client/arena/ui.lua")
 check("the game mesh stores the canonical colored outlines",
