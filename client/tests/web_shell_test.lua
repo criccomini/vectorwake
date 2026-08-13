@@ -52,6 +52,8 @@ check("the reported account crosses the Lua page boundary",
 check("the admin page reads browser error groups",
       has(admin, 'post("/v1/admin/errors"')
       and has(admin, "pilotLink(error.account"))
+check("the admin page prints zero bandwidth instead of a blank cell",
+      has(admin, "Number.isFinite(i.bw_per_player)"))
 
 local function png_size(path)
     local body = read(path, true)

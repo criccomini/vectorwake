@@ -649,7 +649,9 @@ function draw(f) {
       [i.tick_us ? `${(i.tick_us / 1000).toFixed(2)}ms` : "", "n"],
       // The other four of the five numbers server.md names. They arrive on
       // every status push and were being thrown away here.
-      [i.bw_per_player ? `${bytes(i.bw_per_player)}/s` : "", "n"],
+      // Zero is a real reading on a fleet with only house bots. Leave the cell
+      // blank only when an arena did not send a usable measurement.
+      [Number.isFinite(i.bw_per_player) ? `${bytes(i.bw_per_player)}/s` : "", "n"],
       [i.snapshot_bytes ? bytes(i.snapshot_bytes) : "", "n"],
       [i.queue_depth, i.queue_depth > 50 ? "n bad" : "n"],
       [i.lag_actions, i.lag_actions > 0 ? "n warn" : "n"],
