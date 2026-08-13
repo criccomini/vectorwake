@@ -17,6 +17,8 @@
 -- of release builds entirely: a shipped bundle drew an empty arena.
 
 local net = require("arena.net")
+local frame = require("arena.frame")
+local browser = require("arena.browser")
 local binds = require("arena.binds")
 local keys = require("arena.keys")
 local touch = require("arena.touch")
@@ -53,13 +55,6 @@ TUNE.TICK_HZ = 100
 TUNE.DT = 1 / TUNE.TICK_HZ
 TUNE.MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
 TUNE.DETAIL_R2 = world.DETAIL_RANGE * world.DETAIL_RANGE
-
--- The drawn cursor holds for this long after the mouse stops, then fades out
--- over the second span. Long enough that a read of the scoreboard does not
--- lose the pointer mid-thought, short enough that a keyboard flight is not
--- flown around an arrow parked in the middle of the screen.
-TUNE.CURSOR_HOLD = 2.0
-TUNE.CURSOR_FADE = 0.5
 
 TUNE.CLASS_NAMES = {"Apex", "Wedge", "Chord", "Anvil",
                      "Cipher", "Facet", "Lattice"}
@@ -1098,38 +1093,8 @@ local function ship_roll(i, heading, dt)
 end
 
 function update(self, dt)
-    local ww, wh = self.vw or 0, self.vh or 0
-    local density = self.density or 1
-    if ww == 0 or wh == 0 then return end
-
-    -- Wall clock for the interface, which has a few things on it that move on
-    -- their own. Not the simulation's, which stops with the simulation: the
-    -- menu is up before there is one and stays up over a game that has been
-    -- left, and a hull that turned only while a zone was stepping would look
-    -- like something had gone wrong with the zone.
-    self.clock = (self.clock or 0) + dt
-
-    -- The transport's own clock, connected or not: a WebTransport dial on a
-    -- network that eats UDP raises no event, so its timeout has to be
-    -- somebody counting, and this is the somebody.
-    net.tick(dt)
-
-    sfx.frame()
-    -- The soundtrack wants to be running from the first frame and cannot be,
-    -- so it is asked for repeatedly until it is. It keeps being asked after
-    -- that too: there are eight tracks and this is what rotates them, and what
-    -- builds the next one in whatever room a frame has to spare. See
-    -- sfx.music_tick.
-    sfx.music_tick(dt)
-
-    -- Is there a game to look at? A zone that has taken the connection but not
-    -- yet sent a snapshot has no world in it, so the menu holds the screen
-    -- until one lands, with the note under it saying what is being waited on.
-    local live = self.online and net.connected and sim.ship_count() > 0
-    menu.home = not live
-    -- Nothing behind the panel means the panel does not go away. This is the
-    -- one place that decides it; `menu.close` refuses while `home` is set.
-    if not live then menu.open = true end
+    local ww, wh, density, live = frame.begin(self, dt, net, sfx, menu, sim)
+    if not ww then return end
 
     -- A control waiting for a key takes the whole keyboard, and takes it here,
     -- before anything else in this function has looked at a press. Every key
@@ -1528,9 +1493,7 @@ function update(self, dt)
     -- leaves nothing to draw until the first snapshot. Carrying the old answer
     -- down to the drawing below would read the empty core as though a game were
     -- still in it, and rebuild terrain around tile zero on the way past.
-    live = self.online and net.connected and sim.ship_count() > 0
-    menu.home = not live
-    if not live then menu.open = true end
+    live = frame.live(self, net, sim, menu)
 
     -- Kills the zone announced since last frame, and who came and went with
     -- them, before the expiry pass so a line's clock starts the frame it
@@ -1546,67 +1509,7 @@ function update(self, dt)
         if feed[i].t > ui.FEED_LIFE then table.remove(feed, i) end
     end
 
-    -- What the debug readout reports about this client rather than about the
-    -- connection. Averaged over a second, because a per-frame figure is a
-    -- number nobody can read: it changes faster than the eye resolves and the
-    -- interesting question is what the last second looked like, not what this
-    -- frame did. Counted whether or not anybody is looking, so opening the
-    -- readout shows a settled figure rather than a second of zeroes.
-    -- Whether the keyboard lock still holds, once a second. The template
-    -- clears the flag on any exit from fullscreen, including the browser's
-    -- own hold-escape, so this is a read rather than a guess; a second of
-    -- Ctrl doing nothing after an exit is well inside what a hand notices.
-    self.lock_t = (self.lock_t or 1) + dt
-    if self.lock_t >= 1 then
-        self.lock_t = 0
-        if html5 then
-            local ok, r = pcall(html5.run, "window.vwLocked and '1' or ''")
-            kb_locked = ok and r == "1"
-            -- What the hardware covers: the island, the notch, the rounded
-            -- corners, published by the template's reconciler as CSS pixels.
-            -- Once a second like the lock, because the values move only on
-            -- rotation and a second of a chip under the island is well
-            -- inside what a rotation already costs the eyes.
-            local ok2, ins = pcall(html5.run, "window.vwInsets || ''")
-            if ok2 and ins and ins ~= "" then
-                -- And whether the page is a home-screen app, which rides
-                -- along because it is the same question about the same
-                -- edge: what is sitting on the bottom strip of glass.
-                local l, rr, t, b, app, lay, vis, inn, out, scr, sy =
-                    string.match(ins,
-                    "^([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+) ([%d%.]+)"
-                    .. " ([%d%.%-]+) ([%d%.%-]+) ([%d%.%-]+) ([%d%.%-]+)"
-                    .. " ([%d%.%-]+) ([%d%.%-]+)")
-                self.safe_l = tonumber(l) or 0
-                self.safe_r = tonumber(rr) or 0
-                self.safe_t = tonumber(t) or 0
-                self.safe_b = tonumber(b) or 0
-                self.installed = app == "1"
-                -- What the page thinks its own screen is, for the about
-                -- page. Four numbers rather than a conclusion, because the
-                -- conclusion is what is in doubt.
-                self.vp_layout = tonumber(lay) or 0
-                self.vp_visual = tonumber(vis) or 0
-                self.vp_inner = tonumber(inn) or 0
-                self.vp_outer = tonumber(out) or 0
-                self.vp_screen = tonumber(scr) or 0
-                self.vp_top = tonumber(sy) or 0
-            end
-        end
-    end
-
-    self.perf_t = (self.perf_t or 0) + dt
-    self.perf_frames = (self.perf_frames or 0) + 1
-    if self.perf_t >= 1.0 then
-        self.fps = self.perf_frames / self.perf_t
-        self.frame_ms = 1000 * self.perf_t / self.perf_frames
-        -- Clamped at zero, because a reconnect replaces the counters and the
-        -- reading held from before it is then larger than the one after.
-        self.rx_rate = math.max(0, net.stats.rx - (self.rx_was or 0)) / self.perf_t
-        self.tx_rate = math.max(0, net.stats.tx - (self.tx_was or 0)) / self.perf_t
-        self.rx_was, self.tx_was = net.stats.rx, net.stats.tx
-        self.perf_t, self.perf_frames = 0, 0
-    end
+    kb_locked = frame.sample(self, dt, net, html5, kb_locked)
 
     -- Where this frame falls between the two ticks either side of it, and how
     -- much of the last correction has been walked off. Everything that reads a
@@ -2089,102 +1992,8 @@ function update(self, dt)
     if live and not menu.open and not watching then
         touch.draw(layers.ui, ww, wh, density)
     end
-    -- The pointer, last, so it rides over everything it points at. The page
-    -- hides the browser's cursor over the canvas, and this is the one drawn
-    -- in its place: it holds while the mouse is in use, fades once the hand
-    -- has been still for a moment, and comes back on any movement or click.
-    -- Only where the real one is actually hidden, which is the html5 build;
-    -- anywhere else this would be a second arrow under the system's. A
-    -- touchscreen has no pointer and gets nothing.
-    self.cursor_idle = (self.cursor_idle or 0) + dt
-    if html5 and self.cursor_x and not touch.used then
-        -- A drawn pointer must not outlive its mouse. Once the pointer is
-        -- off the canvas the real cursor is already showing somewhere else
-        -- on the desktop, so this one goes at once instead of fading; the
-        -- template keeps the flag, the engine having no leave event of its
-        -- own. Forgetting the position rather than hiding is what makes
-        -- both exits cheap: a retired cursor is never polled for again
-        -- until the mouse says something new.
-        local ok, out = pcall(html5.run, "window.vwPointerOut?1:0")
-        local a = math.min(1, (TUNE.CURSOR_HOLD + TUNE.CURSOR_FADE - self.cursor_idle)
-                              / TUNE.CURSOR_FADE)
-        -- The word a hovered instrument shows lives and dies with the arrow.
-        -- Retiring the position is what takes it away, since the interface is
-        -- handed a pointer only while there is one: a hand that has gone still
-        -- has stopped asking, and the screen goes quiet with it. Moving the
-        -- mouse brings back the arrow and the word together.
-        if (ok and out == "1") or a <= 0 then
-            self.cursor_x, self.cursor_y = nil, nil
-        else
-            ui.cursor(self.cursor_x, wh - self.cursor_y, a)
-        end
-    end
-    ui.finish()
+    browser.finish(self, dt, wh, html5, touch, ui, menu, sfx, apply_menu)
 
-    -- The lines a card wants typed into, handed to the page as the input
-    -- elements a browser will raise a keyboard for. A canvas is not
-    -- editable and no call from here can make it so, which is the whole of
-    -- why this crossing exists.
-    --
-    -- Published after the draw, because the draw is what worked out where
-    -- the lines are, and only when the string changes: the page rebuilds
-    -- the elements when it changes, and rebuilding under a caret drops the
-    -- keyboard. So a card sitting still costs one comparison a frame and
-    -- nothing else. The keyboard opening resizes the canvas, which moves
-    -- the card, and the moved card arrives here as an ordinary change.
-    if html5 then
-        -- The link the page lays over a rail stop, on the same terms as the
-        -- card's fields: published every frame, sent only when it changes.
-        local link = ui.link_dom
-        if link ~= self.link_dom then
-            self.link_dom = link
-            if html5 then
-                pcall(html5.run,
-                      "window.vwLink && vwLink('" .. (link or "") .. "')")
-            end
-        end
-        local spec = ui.ask_dom
-        if spec ~= self.ask_dom then
-            self.ask_dom = spec
-            menu.dom = spec ~= nil
-            -- Whether to put the caret in the first line as the card comes
-            -- up. On a machine with keys, yes: a card that opened without it
-            -- is a card the player types at while nothing happens. On a
-            -- touchscreen, no, because focus there is the keyboard coming up
-            -- over half the screen, and that is a tap's decision to make.
-            local take = (not touch.used) and ", 1" or ""
-            pcall(html5.run,
-                  "window.vwAsk && vwAsk('" .. (spec or "") .. "'"
-                  .. take .. ")")
-        end
-        -- The two keys the card answers to, which reach it only through the
-        -- page: while a line holds focus the engine is sent nothing at all,
-        -- so return and escape would otherwise be keys the card cannot hear.
-        -- Asked every frame the card is up, which is a menu screen.
-        if spec then
-            local ok, pressed = pcall(html5.run,
-                                      "window.vwAskGo ? window.vwAskGo() : ''")
-            local a = menu.ask
-            if ok and type(pressed) == "string" and pressed ~= ""
-               and a and a.keys then
-                -- Escape is the last answer, which is the one that changes
-                -- nothing, exactly as it is for a card with no lines.
-                local i = string.find(pressed, "b", 1, true) and #a.keys or 1
-                local act, moved = menu.click_answer(i)
-                if moved then sfx.ui(act and "ui_go" or "ui_move") end
-                if act then apply_menu(self, act) end
-            end
-        end
-    end
-
-    -- The page draws its own starfield and wordmark while four megabytes of
-    -- engine compile. This is the moment it can stop: not when the runtime
-    -- initialized, which is seconds earlier, but when there is something on
-    -- screen to hand over to.
-    if not self.handed_over then
-        self.handed_over = true
-        if html5 then pcall(html5.run, "window.vwReady && vwReady()") end
-    end
 end
 
 -- What the menu asked for.
