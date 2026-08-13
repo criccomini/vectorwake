@@ -78,7 +78,7 @@ check("the menu lists exactly the core's classes", hulls == MAX_CLASSES,
 -- twenty-four-tile arrival margin the renderer keeps around that reach.
 
 local uisrc = read("client/arena/ui.lua")
-local mainrs = read("server/src/main.rs")
+local deliveryrs = read("server/src/delivery.rs")
 local aisrc = read("server/src/ai.rs")
 local arenasrc = read("client/arena/arena.script")
 
@@ -87,7 +87,7 @@ check("world.lua names a radar reach", reach ~= nil)
 check("the dial spans the same reach",
       tonumber(uisrc:match("local SPAN = (%d+) %* " .. TILE_PX)) == reach,
       "world.lua says " .. tostring(reach))
-local fair = tonumber(mainrs:match("const FAIR_INTEREST: i32 = (%d+) %*"))
+local fair = tonumber(deliveryrs:match("const FAIR_INTEREST: i32 = (%d+) %*"))
 local slack = tonumber(worldsrc:match("local RADAR_SLACK = (%d+)"))
 check("the zone filters at radar reach plus arrival margin",
       fair == reach + slack,
