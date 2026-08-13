@@ -2016,10 +2016,11 @@ rewriting coordinates outside the simulation.
 
 **Decided:** protocol 12 uses selective acknowledgements for input and snapshot
 delivery. The arena measures each pilot's round trip, ordinary snapshot loss,
-combat-lane loss, and input loss. Zone-defined thresholds may deny flag pickup,
-suppress a proportional share of weapon inputs, or move a persistently severe
-connection to the stands. Nearby combat receives full lawful snapshots at
-50 Hz. Local and remote render corrections use separate limits.
+combat-lane loss, and missed input deadlines. Zone-defined thresholds may deny
+flag pickup, suppress a proportional share of weapon inputs, or move a
+persistently severe connection to the stands. Nearby combat receives full
+lawful snapshots at 50 Hz. Local and remote render corrections use separate
+limits.
 
 **Why:** repeating the newest four consecutive inputs handled one lost packet,
 but it could not identify an older hole after later inputs arrived. A selective
@@ -2031,12 +2032,22 @@ a detected hole temporarily widens that margin to seven.
 The server previously had no per-player lag measurement or gameplay response.
 Snapshot acknowledgements now provide round-trip samples using only server
 ticks and the variation between them provides jitter, plus separate loss rates
-for the 20 Hz ordinary lane and the 50 Hz nearby-combat lane. Missing named
-inputs provide upstream loss. Upstream loss
-may deny objectives or force spectating, but it never suppresses weapons because
-the missing inputs already did that. Proportional suppression uses a
-server-secret random stream outside the deterministic simulation, so a modified
-client cannot schedule shots around a known pattern.
+for the 20 Hz ordinary lane and the 50 Hz nearby-combat lane. A named input that
+is absent when its tick runs is an input deadline miss. It may deny objectives
+or force spectating, but it never suppresses weapons because the missing input
+already did that. Proportional suppression uses a server-secret random stream
+outside the deterministic simulation, so a modified client cannot schedule
+shots around a known pattern.
+
+A fresh seat does not have an input stream to judge while its client is loading
+the map and establishing prediction lead. The arena waits until it holds the
+current input and two future inputs, clears the startup history, then collects a
+full policy window before a deadline miss can restrict the pilot. Flag pickup
+is denied silently before that synchronization. If a partial input stream never
+becomes coherent, the lock becomes visible one sample window after its first
+packet. The client seeds eight idle prediction ticks with the first snapshot so
+an ordinary connection starts near its target lead instead of spending its
+first second chasing it.
 
 The live debug capture that prompted the change had an estimated 80 ms round
 trip, a 12-tick prediction lead, no local correction, and remote correction
@@ -2050,10 +2061,11 @@ The combat lane sends the same complete server-filtered snapshot as the ordinary
 lane. It does not send a smaller radius, because applying a partial replacement
 would delete lawful distant state between ordinary snapshots.
 
-**Cost:** input packets grow to at most 34 bytes, and each player snapshot gains
-17 bytes of acknowledgement and lag telemetry. A nearby fight can consume two
-and a half times the normal snapshot bandwidth. Packing remains per player and
-the fleet metrics report the resulting egress.
+**Cost:** input packets grow to at most 34 bytes, and a client sends two of them
+once to seed its prediction clock. Each player snapshot gains 17 bytes of
+acknowledgement and lag telemetry. A nearby fight can consume two and a half
+times the normal snapshot bandwidth. Packing remains per player and the fleet
+metrics report the resulting egress.
 
 **Reconsider if:** measured combat egress is too high. Change the server's lane
 selection or add a state format that can apply partial updates without deleting

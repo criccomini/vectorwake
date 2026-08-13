@@ -186,8 +186,8 @@ check("the input path waits for this life to receive a snapshot",
       calls.replay == replays)
 deliver(snapshot(4, 1002, false, 3))
 net.step(0)
-check("and the input path returns after that snapshot",
-      calls.replay == replays + 1)
+check("and the input path returns with its startup lead",
+      calls.replay == replays + 9)
 
 if fails > 0 then os.exit(1) end
 print("all fine")

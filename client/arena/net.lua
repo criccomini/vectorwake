@@ -210,6 +210,11 @@ M.stats = fresh_stats("ws")
 -- ceiling is what a pathological link is allowed to cost everybody else: the
 -- further ahead we run, the longer remote ships coast between snapshots.
 local LAG_TARGET, LOSS_TARGET, LAG_SLACK, LEAD_MAX = -4, -7, 3, 40
+-- Seed a conservative lead near an ordinary round trip. The first snapshot is
+-- not drawn until these idle ticks have been replayed, so startup does not
+-- spend its first second speeding up the local clock one snapshot at a time.
+local START_LEAD = 8
+local INPUT_HISTORY = 4
 
 -- Set when a map arrives, so the arena knows to rebuild terrain it had
 -- already decided was static.
@@ -374,6 +379,25 @@ end
 -- the problem the datagram exists to solve.
 local function send_unreliable(msg)
     transport:send_unreliable(msg)
+end
+
+local function send_input_records(records)
+    for first = 1, #records, INPUT_HISTORY do
+        local count = math.min(INPUT_HISTORY, #records - first + 1)
+        local msg = {string.char(C2S_INPUT, count),
+                     put_u32(lifecycle), put_u32(receipts.snapshot_ack),
+                     put_u32(receipts.snapshot_mask)}
+        for at = first, first + count - 1 do
+            local record = records[at]
+            local buttons = record.buttons
+            msg[#msg + 1] = put_u32(record.tick)
+            msg[#msg + 1] = string.char(buttons % 256,
+                math.floor(buttons / 256) % 256)
+        end
+        msg = table.concat(msg)
+        send_unreliable(msg)
+        M.stats.tx = M.stats.tx + #msg
+    end
 end
 
 -- Reported once, with a reason fit to print, and the connection is over. This
@@ -870,6 +894,7 @@ local function on_snapshot(s)
     local epoch = u32(string.byte(s, 4), string.byte(s, 5),
                       string.byte(s, 6), string.byte(s, 7))
     if not adopt_lifecycle(epoch, watching, string.byte(s, 2)) then return end
+    local first_flying_snapshot = not have_snapshot and not watching
     local settings = u32(string.byte(s, 8), string.byte(s, 9),
                          string.byte(s, 10), string.byte(s, 11))
     if settings ~= settings_generation then return end
@@ -966,6 +991,18 @@ local function on_snapshot(s)
     -- second of prediction is already far more than a playable connection
     -- ever needs, and anything past it is a bug rather than latency.
     local from = sim.tick()
+
+    if first_flying_snapshot then
+        predicted_tick = from
+        local startup = {}
+        for _ = 1, START_LEAD do
+            predicted_tick = next_tick(predicted_tick)
+            input_log[predicted_tick] = 0
+            startup[#startup + 1] = {tick = predicted_tick, buttons = 0}
+        end
+        send_input_records(startup)
+        M.stats.lead = START_LEAD
+    end
 
     -- Steer the clock, one tick per snapshot.
     --
@@ -1467,7 +1504,7 @@ function M.step(buttons)
     -- lost; this reads the server's receipt window and spends bytes on the
     -- missing records themselves.
     for behind = 31, 1, -1 do
-        if #records >= 4 then break end
+        if #records >= INPUT_HISTORY then break end
         local tick = u32n(receipts.input_ack - behind)
         if serial_after(tick, snap_tick) and serial_after(t, tick) then
             if input_log[tick] ~= nil and not input_received(tick) then
@@ -1481,7 +1518,7 @@ function M.step(buttons)
     -- identified a hole this still gives each tick several independent rides.
     local tick = previous_tick(t)
     for _ = 1, 32 do
-        if #records >= 4 then break end
+        if #records >= INPUT_HISTORY then break end
         if not serial_after(tick, snap_tick) then break end
         if not selected[tick] and input_log[tick] ~= nil
             and not input_received(tick) then
@@ -1493,17 +1530,7 @@ function M.step(buttons)
     table.sort(records, function(a, b)
         return u32n(t - a.tick) > u32n(t - b.tick)
     end)
-    local msg = {string.char(C2S_INPUT, #records),
-                 put_u32(lifecycle), put_u32(receipts.snapshot_ack),
-                 put_u32(receipts.snapshot_mask)}
-    for _, record in ipairs(records) do
-        local b = record.buttons
-        msg[#msg + 1] = put_u32(record.tick)
-        msg[#msg + 1] = string.char(b % 256, math.floor(b / 256) % 256)
-    end
-    msg = table.concat(msg)
-    send_unreliable(msg)
-    M.stats.tx = M.stats.tx + #msg
+    send_input_records(records)
     sim.replay(M.me, buttons)
     note_predicted_deaths()
     return true

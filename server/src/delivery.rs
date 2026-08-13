@@ -179,6 +179,17 @@ pub(crate) struct LagUpdate {
 
 pub(crate) struct LagTracker {
     pub(crate) age: u32,
+    /// Whether the client's input clock has reached the arena's current tick
+    /// with enough future inputs to survive ordinary transit jitter.
+    ///
+    /// A new seat starts false. Inputs sent while the client is still loading
+    /// the map do not become misses, because the server has not yet observed a
+    /// usable input stream to measure.
+    pub(crate) input_synchronized: bool,
+    /// Server tick when the first input for this life arrived. A seat may
+    /// spend seconds loading before that happens, so seat age is not a fair
+    /// deadline for input-clock startup.
+    pub(crate) input_started_at: Option<u32>,
     pub(crate) snapshot_seq: u32,
     pub(crate) snapshots: std::collections::VecDeque<SentSnapshot>,
     pub(crate) last_snapshot_ack: u32,
@@ -204,6 +215,8 @@ impl Default for LagTracker {
     fn default() -> Self {
         LagTracker {
             age: 0,
+            input_synchronized: true,
+            input_started_at: None,
             snapshot_seq: 0,
             snapshots: Default::default(),
             last_snapshot_ack: 0,
@@ -228,6 +241,31 @@ impl Default for LagTracker {
 }
 
 impl LagTracker {
+    pub(crate) fn waiting_for_input() -> Self {
+        LagTracker {
+            input_synchronized: false,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn synchronize_input(&mut self) {
+        if self.input_synchronized {
+            return;
+        }
+        self.input_synchronized = true;
+        self.input_started_at = None;
+        self.up_loss = Default::default();
+        self.decision = Default::default();
+        self.healthy_ticks = 0;
+        self.severe_ticks = 0;
+    }
+
+    pub(crate) fn begin_input(&mut self, now: u32) {
+        if !self.input_synchronized && self.input_started_at.is_none() {
+            self.input_started_at = Some(now);
+        }
+    }
+
     pub(crate) fn sent_snapshot(&mut self, tick: u32, combat: bool, window: u32) -> u32 {
         if combat {
             self.combat_active = true;
@@ -370,7 +408,42 @@ impl LagTracker {
                 }
             }
         }
-        if bot || self.age < cfg.sample_ticks {
+        if bot {
+            return LagUpdate {
+                decision: self.decision,
+                notify: false,
+            };
+        }
+
+        // Before the client has established a coherent input clock there is
+        // no input-loss sample. Objective pickup is gated separately by the
+        // room during this brief startup. If a partial stream starts but never
+        // synchronizes, make that restriction visible after one sample window.
+        // A seat still loading has no such deadline because seat age says
+        // nothing about the quality of inputs that have not started.
+        if !self.input_synchronized {
+            let before = self.decision;
+            let timed_out = self
+                .input_started_at
+                .is_some_and(|started| serial_elapsed(now, started) >= cfg.sample_ticks.max(1));
+            if timed_out {
+                self.decision.no_flags = true;
+                self.decision.weapon_percent = 0;
+                self.decision.spectate = false;
+            }
+            let notify = self.decision != before
+                || (self.decision != LagDecision::default()
+                    && (self.last_notice == 0 || serial_elapsed(now, self.last_notice) >= 500));
+            if notify {
+                self.last_notice = now;
+            }
+            return LagUpdate {
+                decision: self.decision,
+                notify,
+            };
+        }
+
+        if self.age < cfg.sample_ticks {
             return LagUpdate {
                 decision: self.decision,
                 notify: false,
@@ -391,11 +464,12 @@ impl LagTracker {
             0.0
         };
         let up = self.up_loss.value * 100.0;
+        let up_ready = self.up_loss.sampled_ticks >= cfg.sample_ticks.max(1);
         let raw_no_flags = ping_ms >= cfg.no_flags_ping_ms as f64
             || jitter_ms >= cfg.no_flags_jitter_ms as f64
             || down >= cfg.no_flags_down_loss_pct as f64
             || combat >= cfg.no_flags_combat_loss_pct as f64
-            || up >= cfg.no_flags_up_loss_pct as f64;
+            || (up_ready && up >= cfg.no_flags_up_loss_pct as f64);
         let raw_weapon =
             Self::suppression(ping_ms, cfg.weapon_start_ping_ms, cfg.weapon_full_ping_ms)
                 .max(Self::suppression(
@@ -417,7 +491,7 @@ impl LagTracker {
             || jitter_ms >= cfg.spectate_jitter_ms as f64
             || down >= cfg.spectate_down_loss_pct as f64
             || combat >= cfg.spectate_combat_loss_pct as f64
-            || up >= cfg.spectate_up_loss_pct as f64;
+            || (up_ready && up >= cfg.spectate_up_loss_pct as f64);
 
         if raw_no_flags || raw_weapon > 0 {
             self.healthy_ticks = 0;

@@ -122,7 +122,8 @@ check("an authoritative death confirms the prediction",
 emit_victim = 2
 net.step(0)
 next_alive = {[0] = 1, [1] = 0, [2] = 1}
-for authoritative_tick = 1002, 1007 do
+local reject_at = tick
+for authoritative_tick = reject_at, reject_at + 5 do
     deliver(snapshot(authoritative_tick))
 end
 check("six living snapshots reject the prediction",
@@ -132,7 +133,7 @@ emit_victim = 2
 net.step(0)
 next_active = {[0] = 1, [1] = 1, [2] = 0}
 next_alive = {[0] = 1, [1] = 0, [2] = 0}
-deliver(snapshot(1008))
+deliver(snapshot(tick))
 check("a hull leaving sight is excluded rather than rejected",
       net.stats.death_censored == 1 and net.stats.death_rejected == 1
           and net.stats.death_pending == 0)

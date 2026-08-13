@@ -1111,7 +1111,7 @@ mod tests {
             applied_input: false,
             last_input_at: 100,
             combat_until: None,
-            lag: Default::default(),
+            lag: LagTracker::waiting_for_input(),
             lag_rng: 1,
             name: "probe".into(),
             rid: "probe".into(),
@@ -1211,6 +1211,19 @@ mod tests {
         assert_eq!(p.input_mask & 0b111, 0b101, "tick 41 remains a hole");
         p.schedule(41, 2, 30);
         assert_eq!(p.input_mask & 0b111, 0b111, "the selective repair lands");
+    }
+
+    #[test]
+    fn input_synchronization_requires_current_and_future_ticks() {
+        let mut p = a_player();
+        p.schedule(100, 1, 99);
+        p.schedule(101, 1, 99);
+        assert!(
+            !p.input_window_ready(100),
+            "touching the arena clock is not yet a stable input stream"
+        );
+        p.schedule(102, 1, 99);
+        assert!(p.input_window_ready(100));
     }
 
     #[test]
@@ -1340,6 +1353,43 @@ mod tests {
     }
 
     #[test]
+    fn input_misses_wait_for_synchronization_and_a_full_window() {
+        let cfg = config::LagConfig {
+            sample_ticks: 5,
+            no_flags_up_loss_pct: 10,
+            ..Default::default()
+        };
+        let mut lag = LagTracker::waiting_for_input();
+        assert!(
+            lag.tick(&cfg, false, 10_000).decision == LagDecision::default(),
+            "seat age alone cannot turn loading time into input loss"
+        );
+        lag.begin_input(0);
+
+        for now in 1..5 {
+            let update = lag.tick(&cfg, false, now);
+            assert!(update.decision == LagDecision::default());
+            assert_eq!(lag.up_loss.sampled_ticks, 0);
+        }
+        assert!(lag.tick(&cfg, false, 5).decision.no_flags);
+
+        lag.synchronize_input();
+        assert!(lag.input_synchronized);
+        assert_eq!(lag.up_loss.sampled_ticks, 0);
+        assert!(lag.decision == LagDecision::default());
+
+        for now in 6..10 {
+            lag.observe_input(true, cfg.sample_ticks);
+            assert!(
+                lag.tick(&cfg, false, now).decision == LagDecision::default(),
+                "a partial input window cannot restrict a fresh stream"
+            );
+        }
+        lag.observe_input(true, cfg.sample_ticks);
+        assert!(lag.tick(&cfg, false, 10).decision.no_flags);
+    }
+
+    #[test]
     fn lag_policy_uses_downlink_quality_for_weapons_but_not_uplink_loss() {
         let mut cfg = config::LagConfig {
             sample_ticks: 1,
@@ -1354,8 +1404,12 @@ mod tests {
         cfg.weapon_full_ping_ms = u32::MAX;
         let mut lag = LagTracker::default();
         lag.up_loss.value = 1.0;
+        lag.up_loss.sampled_ticks = 1;
         let upstream = lag.tick(&cfg, false, 1).decision;
-        assert!(upstream.no_flags, "upstream loss may deny objectives");
+        assert!(
+            upstream.no_flags,
+            "missed input deadlines may deny objectives"
+        );
         assert_eq!(upstream.weapon_percent, 0, "it must not suppress weapons");
 
         lag.down_loss.value = 0.20;
@@ -1425,6 +1479,43 @@ mod tests {
     }
 
     #[test]
+    fn startup_input_gate_is_silent_and_resets_at_synchronization() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (ship, id, _rx) = seat_rx(&mut a, "starting");
+        let sh = a.world.state.ships[ship as usize];
+        let flag = &mut a.world.state.flags[0];
+        flag.active = 1;
+        flag.carried = 0;
+        flag.team = sim::TEAM_NONE;
+        flag.x = sh.x;
+        flag.y = sh.y;
+        flag.cooldown = 0;
+
+        a.tick();
+
+        let p = &a.players[&id];
+        assert!(p.lag.decision == LagDecision::default());
+        assert_eq!(a.world.state.flags[0].carried, 0);
+
+        let now = a.world.state.tick.wrapping_add(1);
+        let sample_ticks = a.lag_policy.sample_ticks;
+        let p = a.players.get_mut(&id).unwrap();
+        p.lag.up_loss.value = 1.0;
+        p.lag.up_loss.sampled_ticks = sample_ticks;
+        for ahead in 0..=INPUT_SYNC_LEAD {
+            p.schedule(now.wrapping_add(ahead), 0, now);
+        }
+
+        a.tick();
+
+        let p = &a.players[&id];
+        assert!(p.lag.input_synchronized);
+        assert_eq!(p.lag.up_loss.sampled_ticks, 1);
+        assert_eq!(p.lag.up_loss.percent(), 0);
+        assert!(p.lag.decision == LagDecision::default());
+    }
+
+    #[test]
     fn full_lag_suppression_removes_weapon_inputs_before_the_step() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         a.lag_policy.sample_ticks = 1;
@@ -1433,6 +1524,7 @@ mod tests {
         a.lag_policy.spectate_ticks = u32::MAX;
         let (_ship, id, _rx) = seat_rx(&mut a, "lossy");
         let p = a.players.get_mut(&id).expect("pilot remains seated");
+        p.lag.synchronize_input();
         p.lag.down_loss.value = 1.0;
         p.buttons = sim::BTN_FIRE;
 
@@ -1455,7 +1547,10 @@ mod tests {
         a.lag_policy.sample_ticks = 1;
         a.lag_policy.spectate_ticks = u32::MAX;
         let (ship, id, _rx) = seat_rx(&mut a, "lossy");
-        a.players.get_mut(&id).unwrap().lag.up_loss.value = 1.0;
+        let p = a.players.get_mut(&id).unwrap();
+        p.lag.synchronize_input();
+        p.lag.up_loss.value = 1.0;
+        p.lag.up_loss.sampled_ticks = 1;
         let sh = a.world.state.ships[ship as usize];
         let flag = &mut a.world.state.flags[0];
         flag.active = 1;
@@ -1483,7 +1578,10 @@ mod tests {
         a.lag_policy.spectate_ticks = 1;
         a.lag_policy.spectate_up_loss_pct = 1;
         let (_ship, id, _rx) = seat_rx(&mut a, "lossy");
-        a.players.get_mut(&id).unwrap().lag.up_loss.value = 1.0;
+        let p = a.players.get_mut(&id).unwrap();
+        p.lag.synchronize_input();
+        p.lag.up_loss.value = 1.0;
+        p.lag.up_loss.sampled_ticks = 1;
 
         a.tick();
 

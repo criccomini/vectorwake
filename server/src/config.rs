@@ -178,8 +178,9 @@ pub struct ArenaConfig {
 ///
 /// A metric may first make objectives unavailable, then suppress a growing
 /// share of weapon inputs, and finally move a persistently unplayable pilot to
-/// the stands. Upstream loss never drives weapon suppression because it has
-/// already removed the player's actions before they reach the server.
+/// the stands. Missed input deadlines never drive weapon suppression because
+/// those misses have already removed the player's actions before they reach
+/// the server.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default, deny_unknown_fields)]
 pub struct LagConfig {

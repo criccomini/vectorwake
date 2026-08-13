@@ -178,6 +178,18 @@ check("server lag telemetry reaches the readout",
       net.stats.server_rtt_ms == 80 and net.stats.jitter_ms == 5
       and net.stats.down_loss == 2
       and net.stats.combat_loss == 3 and net.stats.up_loss == 4)
+local startup_records = {}
+for _, message in ipairs(wt.unsent) do
+    for named, buttons in pairs(records(message)) do
+        startup_records[named] = buttons
+    end
+end
+local startup_complete = #wt.unsent == 2 and net.stats.lead == 8
+for named = 5001, 5008 do
+    startup_complete = startup_complete and startup_records[named] == 0
+end
+check("the first snapshot seeds a coherent prediction lead", startup_complete,
+      "packets " .. #wt.unsent .. ", lead " .. net.stats.lead)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(16, 3, 50, 120, 0, 25, 0, 20, 30, 10)})
 check("server lag policy is visible to the pilot",
@@ -188,11 +200,12 @@ wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
 check("the lag notice clears when policy recovers", net.lag_notice == "")
 
 net.step(0)
-check("inputs ride the unreliable lane", #wt.unsent == 1
-      and string.byte(wt.unsent[1], 1) == 2,
+check("inputs ride the unreliable lane", #wt.unsent == 3
+      and string.byte(wt.unsent[#wt.unsent], 1) == 2,
       tostring(#wt.unsent))
 check("inputs acknowledge the snapshot receipt window",
-      string.byte(wt.unsent[1], 7) == 1 and string.byte(wt.unsent[1], 11) == 1)
+      string.byte(wt.unsent[#wt.unsent], 7) == 1
+      and string.byte(wt.unsent[#wt.unsent], 11) == 1)
 check("and nothing leaks onto the socket", ws.dialled == 0)
 
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
@@ -223,7 +236,7 @@ check("a fresh datagram repairs a lost input", count >= 2
 -- Once that selective zero comes back, the next packet spends a record on the
 -- hole even though it is no longer in the newest consecutive tail.
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = snapshot(3, 5001, pressed_tick + 1, 0x5)})
+            message = snapshot(3, 5001, pressed_tick + 1, 0x7fd)})
 net.step(0)
 check("an acknowledged input hole is repaired directly",
       records(wt.unsent[#wt.unsent])[pressed_tick] == 0x1234)

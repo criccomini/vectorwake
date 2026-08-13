@@ -91,6 +91,13 @@ pub(crate) struct Player {
 /// a client to correct, not one to disconnect.
 pub(crate) const INPUT_LEAD_MAX: u32 = 100;
 
+/// Future ticks required before a new input stream is considered coherent.
+///
+/// The current tick proves the stream has caught the arena. Two more prove it
+/// has crossed from late arrival into scheduled prediction rather than merely
+/// touching the clock for one packet.
+pub(crate) const INPUT_SYNC_LEAD: u32 = 2;
+
 /// Scheduled inputs held per player. At one input per tick and a lead well
 /// under the cap this is never near full; it exists so a client that floods
 /// cannot grow the arena's memory.
@@ -217,6 +224,10 @@ impl Player {
         }
         let behind = self.input_ack.wrapping_sub(tick);
         behind < 32 && self.input_mask & (1u32 << behind) != 0
+    }
+
+    pub(crate) fn input_window_ready(&self, now: u32) -> bool {
+        (0..=INPUT_SYNC_LEAD).all(|ahead| self.received_input(now.wrapping_add(ahead)))
     }
 
     pub(crate) fn suppress_weapon(&mut self, percent: u8) -> bool {
@@ -1594,7 +1605,15 @@ impl Room {
                 applied_input: false,
                 last_input_at: self.world.state.tick,
                 combat_until: None,
-                lag: Default::default(),
+                // Declared bots use sparse control heartbeats rather than a
+                // tick-by-tick prediction stream, and lag policy already
+                // exempts them. Human clients establish the coherent clock
+                // that the missed-deadline metric requires.
+                lag: if bot {
+                    LagTracker::default()
+                } else {
+                    LagTracker::waiting_for_input()
+                },
                 lag_rng: rand::random::<u64>().max(1),
                 name,
                 rid,
@@ -2616,7 +2635,13 @@ impl Room {
         let mut no_flags = [false; sim::MAX_SHIPS];
         let mut spectate = Vec::new();
         for (id, p) in self.players.iter_mut() {
-            if p.input_ack != 0 {
+            if p.input_seen {
+                p.lag.begin_input(now);
+            }
+            if !p.lag.input_synchronized && p.input_window_ready(now) {
+                p.lag.synchronize_input();
+            }
+            if p.lag.input_synchronized {
                 let missing = !p.received_input(now);
                 p.lag.observe_input(missing, self.lag_policy.sample_ticks);
             }
@@ -2624,7 +2649,10 @@ impl Room {
             if update.notify {
                 let _ = p.tx.try_send(Message::Binary(p.lag.notice()));
             }
-            no_flags[p.ship as usize] = update.decision.no_flags;
+            // A new stream cannot take an objective before its clock is
+            // coherent, even though the brief startup gate stays out of the
+            // connection-quality banner.
+            no_flags[p.ship as usize] = !p.lag.input_synchronized || update.decision.no_flags;
             if update.decision.spectate {
                 spectate.push(*id);
             }
