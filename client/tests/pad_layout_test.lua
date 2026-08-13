@@ -206,6 +206,20 @@ do
           and covered.home.y - ordinary.home.y == 156)
 end
 
+-- iOS standalone can report a viewport shorter than the physical screen.
+-- Extending the world by that missing strip must not move the pads on the
+-- glass: their distance from the old visible top stays identical.
+do
+    local w, h, s = reset(unpack(PORT))
+    local ordinary = touch.layout(w, h, s)
+    local extension = 124
+    touch.safe_b = extension
+    local extended = touch.layout(w, h + extension, s)
+    check("a taller iOS world leaves both touch corners in place",
+          h - ordinary.guns.y == h + extension - extended.guns.y
+          and h - ordinary.home.y == h + extension - extended.home.y)
+end
+
 -- --- every control is drawn ------------------------------------------------
 
 local W, H, S = reset(unpack(LAND))

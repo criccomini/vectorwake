@@ -123,23 +123,25 @@
 		height: 100vh;
 		height: 100lvh;
 	}
-	/* Defold fixes the body to prevent overscroll. Mobile Safari 26 clips a
-	   viewport-sized fixed container above its floating lower toolbar, even
-	   when the child canvas and its drawing buffer are taller. An iPhone tab
-	   uses an ordinary positioned document instead: the root, body and canvas
-	   all take the large viewport while the inset bridge below keeps the touch
-	   controls inside the visible viewport. */
-	html.vw-ios-browser,
-	html.vw-ios-browser body {
+	/* Defold fixes the body to prevent overscroll. On iOS that fixed ancestor
+	   clips a canvas to the smaller reported viewport in both Safari tabs and
+	   installed web apps. Use an ordinary document for the full-height battle
+	   surface. Only the body clips overflow; clipping the root clips the page
+	   back to the viewport this rule is meant to escape. */
+	html.vw-ios-surface,
+	html.vw-ios-surface body {
 		width: 100%;
 		height: 100vh;
 		height: 100lvh;
-		overflow: hidden;
 	}
-	html.vw-ios-browser body {
-		position: absolute;
-		top: 0;
-		left: 0;
+	html.vw-ios-surface {
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+	html.vw-ios-surface body {
+		position: static;
+		overflow: hidden;
 	}
 	#canvas-container {
 		position: relative;
@@ -588,19 +590,23 @@
 					? large_probe.getBoundingClientRect().height : 0);
 				var active_form = document.getElementById('vw-ask');
 				var editing = active_form && active_form.contains(document.activeElement);
-				var browser_page = is_iOS && !standalone && !editing;
-				document.documentElement.classList.toggle('vw-ios-browser', browser_page);
+				var extended_page = is_iOS && !editing;
+				document.documentElement.classList.toggle('vw-ios-surface', extended_page);
 				// In an iPhone tab, the visual viewport ends above Safari's
 				// lower toolbar while the page continues behind it. Draw the
 				// world through that covered strip so translucent browser chrome
 				// still has the starfield and the fight beneath it. The covered
 				// amount is published below so tappable furniture stays visible.
 				//
-				// A standalone app has no browser strip. It keeps the visual
-				// height because a larger canvas hides its bottom rail. A focused
-				// game input also keeps the visual height while the keyboard is up.
-				var pageH = browser_page
-					? Math.max(visible, layoutH, innerH, outerH, largeH) : visible;
+				// iOS can also shorten an installed app by exactly its top inset:
+				// on a 402 by 874 screen it reported an 812-point viewport and put
+				// the missing 62 points below the canvas. screen.height is the one
+				// value that still names the whole display in that case. A focused
+				// game input keeps the visual height while the keyboard is up.
+				var screenH = Math.round(scr.height || 0);
+				var pageH = extended_page
+					? Math.max(visible, layoutH, innerH, outerH, largeH, screenH)
+					: visible;
 				var height = pageH - buttonHeight;
 				if (width < 1 || height < 1) {
 					return;
@@ -660,7 +666,7 @@
 				// part of the page, not overflow that Safari is free to discard.
 				var root = document.documentElement;
 				var body = document.body;
-				if (browser_page) {
+				if (extended_page) {
 					if (root.style.height !== page) root.style.height = page;
 					if (body.style.height !== page) body.style.height = page;
 				} else {
