@@ -2981,16 +2981,21 @@ impl Room {
         let Some(presence) = self.players.get(&id).map(|p| p.presence.clone()) else {
             return false;
         };
-        if presence
-            .transition(PresenceEvent::Disconnect {
+        if presence.current()
+            != (Presence::Flying {
                 room: self.number,
                 member: id,
             })
-            .is_err()
         {
             return false;
         }
         self.remove_player(id, why);
+        presence
+            .transition(PresenceEvent::Disconnect {
+                room: self.number,
+                member: id,
+            })
+            .expect("validated player departure");
         self.debug_assert_member(id, &presence);
         true
     }
@@ -3170,13 +3175,11 @@ impl Room {
             return false;
         };
         let team = self.world.state.ships[ship as usize].team;
-        if presence
-            .transition(PresenceEvent::SitOut {
+        if presence.current()
+            != (Presence::Flying {
                 room: self.number,
                 member: id,
-                reason: why,
             })
-            .is_err()
         {
             return false;
         }
@@ -3193,6 +3196,16 @@ impl Room {
             }),
         );
         self.remove_player(id, pilot::why::SAT_OUT);
+        // This wakeup can release the account's rated lease. Send it only
+        // after a combat quit has reached the spool, so the release task's
+        // settlement snapshot contains the final exchange.
+        presence
+            .transition(PresenceEvent::SitOut {
+                room: self.number,
+                member: id,
+                reason: why,
+            })
+            .expect("validated move to the stands");
         let mode = self.watch_mode(Some(team), any, want);
         self.watchers.insert(
             id,
@@ -4310,6 +4323,7 @@ struct RatedLease {
     instance: String,
     account: u64,
     session: String,
+    spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
     touched: std::time::Instant,
 }
 
@@ -4337,6 +4351,7 @@ impl RatedLease {
         instance: String,
         account: u64,
         session: String,
+        spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
     ) -> Result<Option<(RatedLease, Vec<token::ClassRating>)>, String> {
         let (claimed, ratings) =
             meta::claim_rated_session(&base, &pool_token, account, &session, &instance).await?;
@@ -4348,6 +4363,7 @@ impl RatedLease {
                     instance,
                     account,
                     session,
+                    spool,
                     touched: std::time::Instant::now(),
                 },
                 ratings,
@@ -4369,14 +4385,57 @@ impl RatedLease {
     }
 
     async fn release(self) {
-        if let Err(e) =
-            meta::release_rated_session(&self.base, &self.pool_token, self.account, &self.session)
+        self.release_after_settlement().await;
+    }
+
+    async fn release_after_settlement(mut self) {
+        let mut attempts = 0u32;
+        loop {
+            match spool::settle_account(&self.spool, &self.base, &self.pool_token, self.account)
                 .await
-        {
-            println!(
-                "rated session release failed for account {}: {e}",
-                self.account
-            );
+            {
+                Ok(()) => break,
+                Err(e) => {
+                    attempts += 1;
+                    if attempts == 1 || attempts % 12 == 0 {
+                        println!(
+                            "rated settlement still owed for account {}: {e}",
+                            self.account
+                        );
+                    }
+                }
+            }
+            // A failed settlement must not age out the exclusion and let a
+            // second session load the old checkpoint. Renew while the spool
+            // or meta-layer recovers, then try the acknowledgment again.
+            if matches!(self.renew().await, Ok(false)) {
+                println!(
+                    "rated settlement lost its lease for account {}",
+                    self.account
+                );
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+
+        // Once settlement is acknowledged, retry only the idempotent delete.
+        // Renewing after a lost delete reply could recreate a lease the first
+        // request had already removed.
+        loop {
+            match meta::release_rated_session(
+                &self.base,
+                &self.pool_token,
+                self.account,
+                &self.session,
+            )
+            .await
+            {
+                Ok(()) => return,
+                Err(e) => println!(
+                    "rated session release failed for account {}: {e}",
+                    self.account
+                ),
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     }
 }
@@ -6682,6 +6741,7 @@ pub(crate) async fn serve_client(
                                 break;
                             }
                         };
+                        let rated_spool = z.spools.rated.clone();
                         drop(z);
                         let claimed = RatedLease::claim(
                             base,
@@ -6689,6 +6749,7 @@ pub(crate) async fn serve_client(
                             instance,
                             account,
                             session.id.clone(),
+                            rated_spool,
                         )
                         .await;
                         let lease = match claimed {
@@ -6940,7 +7001,11 @@ pub(crate) async fn serve_client(
                                 carried
                                     .as_ref()
                                     .filter(|s| s.account.is_some())
-                                    .map(|_| z.rated_lease_args())
+                                    .map(|_| {
+                                        z.rated_lease_args().map(|(base, token, instance)| {
+                                            (base, token, instance, z.spools.rated.clone())
+                                        })
+                                    })
                                     .transpose()
                             } else {
                                 Ok(None)
@@ -6949,7 +7014,7 @@ pub(crate) async fn serve_client(
                         };
                         let mut candidate = None;
                         let mut standing = None;
-                        if let Some((base, pool_token, instance)) = match lease_args {
+                        if let Some((base, pool_token, instance, rated_spool)) = match lease_args {
                             Ok(v) => v,
                             Err(e) => {
                                 let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
@@ -6967,6 +7032,7 @@ pub(crate) async fn serve_client(
                                 instance,
                                 account,
                                 session.id.clone(),
+                                rated_spool,
                             )
                             .await
                             {

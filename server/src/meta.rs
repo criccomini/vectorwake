@@ -1503,29 +1503,52 @@ async fn route(
                 .unwrap_or(&empty);
             let mut db = db;
             let mut stored = 0usize;
+            let mut rejected = Vec::new();
             let mut failed = Vec::new();
-            for ev in events {
+            for (index, ev) in events.iter().enumerate() {
+                if let Err(error) = validate_rated_event(ev) {
+                    rejected.push(serde_json::json!({
+                        "index": index,
+                        "error": error,
+                    }));
+                    continue;
+                }
                 match ingest(&mut db, &class, &zone, &instance, ev).await {
                     Ok(()) => stored += 1,
-                    // Said out loud rather than counted silently. An arena that
-                    // cannot hand off keeps its batch and retries, and a
-                    // projection that stopped moving while the log filled is
-                    // exactly the failure that hides for a week.
+                    // A database failure is retryable. Events already committed
+                    // in this batch are protected by their ids when the arena
+                    // posts the batch again.
                     Err(e) => failed.push(e),
                 }
             }
             if failed.is_empty() {
-                (200, serde_json::json!({ "stored": stored }))
+                if !rejected.is_empty() {
+                    println!(
+                        "meta: {} of {} rated events refused: {}",
+                        rejected.len(),
+                        events.len(),
+                        rejected[0]["error"].as_str().unwrap_or("invalid event")
+                    );
+                }
+                (
+                    200,
+                    serde_json::json!({ "stored": stored, "rejected": rejected }),
+                )
             } else {
                 println!(
-                    "meta: {} of {} events refused: {}",
+                    "meta: {} of {} rated events could not be stored: {}",
                     failed.len(),
                     events.len(),
                     failed[0]
                 );
                 (
                     500,
-                    serde_json::json!({ "stored": stored, "failed": failed.len(), "error": failed[0] }),
+                    serde_json::json!({
+                        "stored": stored,
+                        "rejected": rejected,
+                        "failed": failed.len(),
+                        "error": failed[0],
+                    }),
                 )
             }
         }

@@ -115,6 +115,21 @@ struct Batch<T> {
     events: Vec<T>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct BatchRejection {
+    index: usize,
+    error: String,
+}
+
+#[derive(Serialize)]
+struct DeadLetter<T> {
+    error: String,
+    zone: String,
+    class: String,
+    instance: String,
+    event: T,
+}
+
 /// Both of an arena's spools, which are made together, aimed together and
 /// handed to every room together. One struct rather than two arguments because
 /// nothing in the arena ever wants one without the other, and a third kind of
@@ -150,6 +165,44 @@ impl Spools {
 impl Spool<Event> {
     pub fn rated(dir: &str) -> Spool<Event> {
         Spool::open(dir, "spool.jsonl", "/v1/events", "rated event")
+    }
+
+    /// Copy the debt that can change one account's standing. The copies may
+    /// race the regular drain, which is safe because every event keeps the id
+    /// minted when it first entered the spool.
+    fn account_batches(&self, account: u64) -> Vec<Batch<Event>> {
+        let mut batches: Vec<Batch<Event>> = Vec::new();
+        for record in self
+            .pending
+            .iter()
+            .filter(|record| record.event.involves(account))
+        {
+            let append = batches.last_mut().filter(|batch| {
+                batch.zone == record.zone
+                    && batch.class == record.class
+                    && batch.instance == record.instance
+                    && batch.events.len() < BATCH
+            });
+            if let Some(batch) = append {
+                batch.events.push(record.event.clone());
+            } else {
+                batches.push(Batch {
+                    zone: record.zone.clone(),
+                    class: record.class.clone(),
+                    instance: record.instance.clone(),
+                    events: vec![record.event.clone()],
+                });
+            }
+        }
+        batches
+    }
+}
+
+impl Event {
+    fn involves(&self, account: u64) -> bool {
+        self.victim == account
+            || self.killer == Some(account)
+            || self.credits.iter().any(|credit| credit.account == account)
     }
 }
 
@@ -359,6 +412,114 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
         self.pending = keep;
         Ok(())
     }
+
+    /// Finish one acknowledged batch. Refused records first go to a durable
+    /// side file, then the entire batch leaves the retry queue. If either disk
+    /// write fails, the live queue stays intact and the batch is tried again.
+    fn settle(&mut self, n: usize, rejected: &[BatchRejection]) -> std::io::Result<()> {
+        if !rejected.is_empty() {
+            let path = PathBuf::from(format!("{}.rejected", self.path.display()));
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)?;
+            for refusal in rejected {
+                let Some(record) = self
+                    .pending
+                    .get(refusal.index)
+                    .filter(|_| refusal.index < n)
+                else {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "meta rejected an event outside the posted batch",
+                    ));
+                };
+                let dead = DeadLetter {
+                    error: refusal.error.clone(),
+                    zone: record.zone.clone(),
+                    class: record.class.clone(),
+                    instance: record.instance.clone(),
+                    event: record.event.clone(),
+                };
+                let line = serde_json::to_string(&dead)
+                    .map_err(|error| std::io::Error::other(error.to_string()))?;
+                writeln!(file, "{line}")?;
+            }
+            file.flush()?;
+            file.sync_data()?;
+        }
+        self.confirm(n)
+    }
+}
+
+fn batch_rejections(
+    reply: &serde_json::Value,
+    batch_len: usize,
+) -> Result<Vec<BatchRejection>, String> {
+    let Some(value) = reply.get("rejected") else {
+        return Ok(Vec::new());
+    };
+    let rows = value
+        .as_array()
+        .ok_or("meta returned a malformed rejection list")?;
+    let mut seen = std::collections::HashSet::new();
+    let mut rejected = Vec::with_capacity(rows.len());
+    for row in rows {
+        let index = row
+            .get("index")
+            .and_then(|value| value.as_u64())
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|index| *index < batch_len)
+            .ok_or("meta rejected an event outside the posted batch")?;
+        if !seen.insert(index) {
+            return Err("meta rejected the same event twice".into());
+        }
+        let error = row
+            .get("error")
+            .and_then(|value| value.as_str())
+            .filter(|error| !error.is_empty())
+            .ok_or("meta returned a rejection without a reason")?;
+        rejected.push(BatchRejection {
+            index,
+            error: error.to_string(),
+        });
+    }
+    Ok(rejected)
+}
+
+/// Put every pending exchange involving this account in front of the
+/// meta-layer before its exclusive lease is released. The regular drain still
+/// owns queue removal; this is an acknowledgment barrier, and duplicate posts
+/// are absorbed by the event id.
+pub async fn settle_account(
+    spool: &Arc<Mutex<Spool<Event>>>,
+    base: &str,
+    pool_token: &str,
+    account: u64,
+) -> Result<(), String> {
+    let batches = spool
+        .lock()
+        .map_err(|_| "rated event spool lock failed".to_string())?
+        .account_batches(account);
+    for batch in batches {
+        let n = batch.events.len();
+        let payload = serde_json::json!({
+            "pool_token": pool_token,
+            "zone": batch.zone,
+            "class": batch.class,
+            "instance": batch.instance,
+            "events": batch.events,
+        });
+        let reply = crate::meta::call(base, "/v1/events", &payload.to_string()).await?;
+        let rejected = batch_rejections(&reply, n)?;
+        if let Some(refusal) = rejected.first() {
+            return Err(format!(
+                "meta refused pending event {}: {}",
+                refusal.index, refusal.error
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Replace a spool without exposing a truncated or half-written live file.
@@ -419,10 +580,22 @@ where
             "events": batch.events,
         });
         match crate::meta::call(&url, route, &payload.to_string()).await {
-            Ok(_) => {
+            Ok(reply) => {
+                let rejected = match batch_rejections(&reply, n) {
+                    Ok(rejected) => rejected,
+                    Err(error) => {
+                        println!("spool: {n} {noun}s still owed ({error})");
+                        continue;
+                    }
+                };
                 if let Ok(mut s) = spool.lock() {
-                    if let Err(error) = s.confirm(n) {
+                    if let Err(error) = s.settle(n, &rejected) {
                         println!("spool: {n} {noun}s landed but remain owed ({error})");
+                    } else if !rejected.is_empty() {
+                        println!(
+                            "spool: {} of {n} {noun}s were refused and kept aside",
+                            rejected.len()
+                        );
                     }
                 }
             }
@@ -468,6 +641,43 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    fn reply_once(body: &'static str) -> (String, std::thread::JoinHandle<String>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0u8; 4096];
+            loop {
+                let read = std::io::Read::read(&mut stream, &mut chunk).unwrap();
+                assert!(read > 0, "client closed before finishing its request");
+                request.extend_from_slice(&chunk[..read]);
+                let Some(headers) = request.windows(4).position(|part| part == b"\r\n\r\n") else {
+                    continue;
+                };
+                let head = String::from_utf8_lossy(&request[..headers]);
+                let length = head
+                    .lines()
+                    .find_map(|line| {
+                        line.strip_prefix("Content-Length: ")
+                            .and_then(|value| value.parse::<usize>().ok())
+                    })
+                    .unwrap();
+                if request.len() >= headers + 4 + length {
+                    break;
+                }
+            }
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            std::io::Write::write_all(&mut stream, response.as_bytes()).unwrap();
+            String::from_utf8(request).unwrap()
+        });
+        (base, task)
     }
 
     #[test]
@@ -525,6 +735,61 @@ mod tests {
         assert_eq!(reread.len(), 1, "the appended event survives a restart");
         assert_eq!(reread.last().unwrap().tick, 3);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_refused_event_is_kept_aside_without_blocking_the_tail() {
+        let d = tmp("dead-letter");
+        let mut s = spool_in(&d);
+        s.push(ev(1, 1));
+        s.push(ev(2, 2));
+        s.push(ev(3, 3));
+
+        let rejected = batch_rejections(
+            &serde_json::json!({
+                "stored": 1,
+                "rejected": [{ "index": 1, "error": "invalid victim" }],
+            }),
+            2,
+        )
+        .unwrap();
+        s.settle(2, &rejected).unwrap();
+
+        assert_eq!(s.len(), 1);
+        assert_eq!(s.last().unwrap().tick, 3, "later debt can now drain");
+        let line = std::fs::read_to_string(d.join("spool.jsonl.rejected")).unwrap();
+        let dead: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(dead["error"], "invalid victim");
+        assert_eq!(dead["event"]["tick"], 2);
+        let reread = Spool::rated(d.to_str().unwrap());
+        assert_eq!(reread.len(), 1, "the queue rewrite survives a restart");
+        assert_eq!(reread.last().unwrap().tick, 3);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_malformed_batch_reply_removes_nothing() {
+        assert_eq!(
+            batch_rejections(
+                &serde_json::json!({
+                    "rejected": [{ "index": 2, "error": "outside" }],
+                }),
+                2,
+            ),
+            Err("meta rejected an event outside the posted batch".into())
+        );
+        assert_eq!(
+            batch_rejections(
+                &serde_json::json!({
+                    "rejected": [
+                        { "index": 0, "error": "first" },
+                        { "index": 0, "error": "again" }
+                    ],
+                }),
+                2,
+            ),
+            Err("meta rejected the same event twice".into())
+        );
     }
 
     #[test]
@@ -622,6 +887,83 @@ mod tests {
         assert_eq!(second.zone, "war");
         assert_eq!(second.class, "duel");
         assert_eq!(second.events.len(), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn an_account_barrier_carries_every_role_across_destinations() {
+        let d = tmp("account-barrier");
+        let mut s = spool_in(&d);
+        s.push(ev(1, 11));
+
+        s.aim("http://127.0.0.1:1", "tok", "war", "duel", "i2");
+        let mut killer = ev(2, 22);
+        killer.killer = Some(11);
+        killer.credits[0].account = 11;
+        s.push(killer);
+        let mut unrelated = ev(3, 33);
+        unrelated.killer = Some(44);
+        unrelated.credits[0].account = 44;
+        s.push(unrelated);
+
+        let batches = s.account_batches(11);
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].zone, "chaos");
+        assert_eq!(batches[0].events[0].tick, 1);
+        assert_eq!(batches[1].zone, "war");
+        assert_eq!(batches[1].events[0].tick, 2);
+        assert_eq!(
+            batches
+                .iter()
+                .map(|batch| batch.events.len())
+                .sum::<usize>(),
+            2,
+            "unrelated debt is not part of this account's release barrier"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn an_account_barrier_waits_for_meta_without_owning_queue_removal() {
+        let d = tmp("account-ack");
+        let (base, server) = reply_once(r#"{"stored":1,"rejected":[]}"#);
+        let mut s = Spool::rated(d.to_str().unwrap());
+        s.aim(&base, "tok", "chaos", "arena", "i1");
+        s.push(ev(7, 11));
+        let spool = Arc::new(Mutex::new(s));
+
+        settle_account(&spool, &base, "tok", 11)
+            .await
+            .expect("meta acknowledged the account's debt");
+
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /v1/events HTTP/1.1"));
+        assert!(request.contains("\"victim\":11"));
+        assert_eq!(
+            spool.lock().unwrap().len(),
+            1,
+            "the regular drain still owns queue removal"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn an_account_barrier_does_not_accept_a_refused_event() {
+        let d = tmp("account-refused");
+        let (base, server) =
+            reply_once(r#"{"stored":0,"rejected":[{"index":0,"error":"invalid victim"}]}"#);
+        let mut s = Spool::rated(d.to_str().unwrap());
+        s.aim(&base, "tok", "chaos", "arena", "i1");
+        s.push(ev(7, 11));
+        let spool = Arc::new(Mutex::new(s));
+
+        let error = settle_account(&spool, &base, "tok", 11)
+            .await
+            .expect_err("a refusal is not a settlement acknowledgment");
+
+        assert!(error.contains("invalid victim"));
+        assert_eq!(spool.lock().unwrap().len(), 1);
+        server.join().unwrap();
         let _ = std::fs::remove_dir_all(&d);
     }
 
