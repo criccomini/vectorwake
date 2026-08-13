@@ -7,8 +7,9 @@ namespace dmWebsocket
 EM_BOOL Emscripten_WebSocketOnOpen(int eventType, const EmscriptenWebSocketOpenEvent *websocketEvent, void *userData) {
     DebugLog(dmWebsocket::DEBUG_STATE_CHANGES, "WebSocket OnOpen");
     WebsocketConnection* conn = (WebsocketConnection*)userData;
+    // Lua callbacks run from OnUpdate. It observes this transition and reports
+    // it once, in the same place as the native and WebTransport paths.
     SetState(conn, STATE_CONNECTED);
-    HandleCallback(conn, EVENT_CONNECTED, 0, 0);
     return EM_TRUE;
 }
 EM_BOOL Emscripten_WebSocketOnError(int eventType, const EmscriptenWebSocketErrorEvent *websocketEvent, void *userData) {

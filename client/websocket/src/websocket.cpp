@@ -6,6 +6,7 @@
 
 #include "websocket.h"
 #include "script_util.h"
+#include "status_format.h"
 #include <dmsdk/dlib/connection_pool.h>
 #include <dmsdk/dlib/thread.h>
 #include <dmsdk/dlib/sslsocket.h>
@@ -198,12 +199,13 @@ Result SetStatus(WebsocketConnection* conn, Result status, const char* format, .
     {
         va_list lst;
         va_start(lst, format);
-
-        conn->m_BufferSize = vsnprintf(conn->m_Buffer, conn->m_BufferCapacity, format, lst);
+        conn->m_BufferSize = FormatStatus(conn->m_Buffer, conn->m_BufferCapacity,
+                                          format, lst);
         va_end(lst);
         conn->m_Status = status;
 
-        DebugLog(dmWebsocket::DEBUG_STATE_CHANGES, "STATUS: '%s'  len: %u", conn->m_Buffer, conn->m_BufferSize);
+        DebugLog(dmWebsocket::DEBUG_STATE_CHANGES, "STATUS: '%s'  len: %d",
+                 conn->m_Buffer ? conn->m_Buffer : "", conn->m_BufferSize);
     }
     return status;
 }
