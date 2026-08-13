@@ -110,7 +110,8 @@ for _, f in ipairs(frames) do
 end
 check("the board stays inside the screen",
       minx >= 0 and maxx <= W and miny >= 0 and maxy <= H,
-      string.format("extent %d..%d x %d..%d", minx, maxx, miny, maxy))
+      string.format("extent %.1f..%.1f x %.1f..%.1f",
+                    minx, maxx, miny, maxy))
 check("the board is as wide as a board",
       maxx - minx > 300, "width " .. (maxx - minx))
 

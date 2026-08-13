@@ -604,7 +604,7 @@ local NODES = {
     -- the ones every list here already has; what is different is that they are
     -- laid out three across, which is what `grid` and `cols` say.
     --
-    -- Sixteen rows down one column would scroll, and a list that scrolls under
+    -- The full list down one column would scroll, and a list that scrolls under
     -- a picture stops being the same page as the picture: you would be moving
     -- the answers past a diagram that stayed still.
     controls = {board = true, chips = true, grid = true, cols = 3,

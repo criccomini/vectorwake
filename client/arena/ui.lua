@@ -1281,6 +1281,20 @@ local function seat_team(i, p)
     return seat_here(i) and sim.ship_team(i) or (p and p.team)
 end
 
+-- Whether the selected pilot can take this ship as a gunner. This is shared by
+-- the card's ATTACH button and the D key so the two controls never disagree
+-- about which pilot is a target. The core still owns the changing gates, such
+-- as a full bar and an open gunner seat, and answers those on the wire.
+local function attachable(me, i, theirs, watch, riding)
+    if watch or me == nil or i == nil or i == me then return false end
+    if me < 0 or me >= sim.ship_count() then return false end
+    if i < 0 or i >= sim.ship_count() then return false end
+    if sim.ship_active(me) ~= 1 or sim.ship_alive(me) ~= 1 then return false end
+    return theirs == view_team and sim.ship_active(i) == 1
+        and sim.ship_alive(i) == 1 and sim.ship_carrier(i) == 255
+        and riding ~= i
+end
+
 -- Kills, deaths, points and bounty, whichever way round they have to be got.
 local function seat_score(i, p)
     if seat_here(i) then
@@ -1293,11 +1307,9 @@ local function seat_score(i, p)
            (p and p.p) or 0, (p and p.b) or 0
 end
 
-local function scores(me, pilots, watchers)
-    -- Asked for, not assumed. Mid-fight this is the least useful thing on the
-    -- screen and the feed still says who is killing whom, so it lives behind
-    -- the same toggle your own loadout does.
-    if not M.details then return 0 end
+local function refresh_players(pilots, watchers, side, viewer_name)
+    pilots = pilots or {}
+    if side ~= nil then view_team = side end
     local n = 0
     for i = 0, sim.ship_count() - 1 do
         n = n + 1
@@ -1323,6 +1335,7 @@ local function scores(me, pilots, watchers)
         -- crossed into view.
         r.team = seat_team(i, p)
         r.mine = r.team == view_team
+        r.self = viewer_name ~= nil and r.name == viewer_name
         r.watch = false
     end
     -- Then whoever is watching. They are in the room without being in the
@@ -1341,6 +1354,7 @@ local function scores(me, pilots, watchers)
         r.ai = w.label == "bot" or w.label == "bot?"
         r.label = w.label
         r.mine = false
+        r.self = viewer_name ~= nil and r.name == viewer_name
         r.watch = true
     end
     for i = n + 1, #rows do rows[i] = nil end
@@ -1358,6 +1372,67 @@ local function scores(me, pilots, watchers)
     -- more of the empty.
     sort_key = M.sort
     table.sort(rows, by_column)
+    return n
+end
+
+-- Move the scoreboard's existing selection by one pilot. Watchers stay in the
+-- list but are skipped because they have no hull and no pilot card to select.
+-- With no current selection, down starts at the top and up starts at the
+-- bottom. The list does not wrap, which keeps Page Up and Page Down behaving
+-- like movement rather than a cycle.
+function M.player_step(delta, pilots, watchers, side, viewer_name)
+    M.details = true
+    local n = refresh_players(pilots, watchers, side, viewer_name)
+    local choices = {}
+    local selected = nil
+    for i = 1, n do
+        if rows[i].i ~= nil then
+            choices[#choices + 1] = i
+            if rows[i].i == M.inspect then selected = #choices end
+        end
+    end
+    if #choices == 0 then
+        M.inspect = nil
+        M.scroll = 0
+        return nil
+    end
+
+    if selected == nil then
+        selected = delta < 0 and #choices or 1
+    else
+        selected = math.max(1, math.min(#choices, selected + (delta < 0 and -1 or 1)))
+    end
+    local at = choices[selected]
+    M.inspect = rows[at].i
+    if at <= M.scroll then M.scroll = at - 1 end
+    if at > M.scroll + SHOWN then M.scroll = at - SHOWN end
+    return M.inspect
+end
+
+-- The request D should make, or nil when D has no contextual action. Dropping
+-- off is always available to a live gunner. Attaching additionally needs the
+-- Players panel, a selected eligible teammate, and a pilot who is flying.
+function M.drone_target(me, watch)
+    if watch or me == nil or me < 0 or me >= sim.ship_count() then return nil end
+    if sim.ship_active(me) ~= 1 then return nil end
+    local riding = sim.ship_carrier(me)
+    if riding ~= 255 then return 255 end
+    if not M.details or M.inspect == nil then return nil end
+    for _, r in ipairs(rows) do
+        if r.i == M.inspect
+            and attachable(me, r.i, r.team, false, riding) then
+            return r.i
+        end
+    end
+    return nil
+end
+
+local function scores(me, pilots, watchers, viewer_name)
+    -- Asked for, not assumed. Mid-fight this is the least useful thing on the
+    -- screen and the feed still says who is killing whom, so it lives behind
+    -- the same toggle your own loadout does.
+    if not M.details then return 0 end
+    local n = refresh_players(pilots, watchers, nil, viewer_name)
 
     if n == 0 then
         M.scroll = 0
@@ -1449,12 +1524,17 @@ local function scores(me, pilots, watchers)
     local y = top_y() + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
-        local mine = r.i ~= nil and r.i == me
+        local mine = r.self
         local reading = r.i ~= nil and M.inspect == r.i
         -- A watcher is on nobody's side, so it is drawn in neither side's
         -- color: the neutral ink, dimmer than a pilot, which is the reading.
         local col = pal.DIM
-        if not r.watch then
+        if r.watch and mine then
+            -- A watcher has no side-colored hull to borrow from. Their own row
+            -- still wears the same cyan the pilot's own row does, so sitting
+            -- out does not make the roster lose track of who is reading it.
+            col = pal.FRIEND
+        elseif not r.watch then
             -- The same color their plate wears out in the arena. A key is
             -- only a key if it reads the same in both places: a name orange
             -- here and violet on the hull is two facts about one pilot. From
@@ -2018,8 +2098,7 @@ local function inspect(o, top)
     -- them here as well would be a second copy of the rules, drifting.
     local riding = (not o.watch) and sim.ship_carrier(o.me) or 255
     local drop = riding ~= 255 and i == riding
-    local attach = not o.watch and same_team and i ~= o.me
-        and sim.ship_alive(i) == 1 and sim.ship_carrier(i) == 255 and not drop
+    local attach = attachable(o.me, i, theirs, o.watch, riding)
     -- The team row always exists now, so the count is fixed.
     local rows_n = 8
     local h = 30 * S + rows_n * rowh
@@ -2199,8 +2278,8 @@ M.help = false
 -- the wrap on every frame. The arrow keys are the one place the interface
 -- says something outside ASCII, and each of them is three bytes: measured
 -- with `text_w` the key column comes out three times too wide. Counting
--- continuation bytes is exact for UTF-8 and this runs fourteen times while a
--- table is open, so it can afford to be.
+-- continuation bytes is exact for UTF-8 and this runs once per control while
+-- a table is open, so it can afford to be.
 local function glyph_w(s, px)
     local _, cont = string.gsub(s, "[\128-\191]", "")
     return (#s - cont) * px * ADVANCE
@@ -2642,7 +2721,9 @@ function M.hud(o)
     -- scoreboard's slot, so whichever is up is the one drawn.
     M.zone_name = (o.zone or ""):match("^[^\n]*")
     local top = rooms_panel(o.rooms, o.room)
-    if top == 0 then top = scores(me, o.pilots, o.watchers) end
+    if top == 0 then
+        top = scores(me, o.pilots, o.watchers, o.viewer_name)
+    end
     -- Names hanging off ships, but not under the menu. Glyphs come from the
     -- gui and the gui draws over every mesh, so nothing the menu lays down
     -- can cover them: a panel with six pilots' names scattered through it
@@ -2841,9 +2922,9 @@ local function bind_map(v)
     end
     return out
 end
--- Fifteen units of main block, then the arrow cluster beside it, where it is
--- on the keyboard this is a picture of. It used to hang off the right of the
--- two bottom rows, in the space a board that stopped at M left empty; the
+-- Fifteen units of main block, then the navigation cluster beside it, where it
+-- is on the keyboard this is a picture of. It used to hang off the right of
+-- the two bottom rows, in the space a board that stopped at M left empty; the
 -- board runs to the punctuation now and that space is a row of keys.
 local BOARD_MAIN = 15
 local BOARD_GAP = 0.4
@@ -3010,11 +3091,17 @@ local function board(x, top, w, v)
             bx = bx + (k[2] or 1) * unit
         end
     end
+    -- Page Up and Page Down, in the right column above the arrows. The other
+    -- navigation keys do nothing in this game, so drawing their empty caps
+    -- would spend room on a diagram nobody can use.
+    local aw = unit
+    local ax = x + (BOARD_MAIN + BOARD_GAP) * unit
+    local navw = aw - 3 * S
+    draw(ax + 2 * aw, top, navw, "pgup")
+    draw(ax + 2 * aw, top + pitch, navw, "pgdn")
     -- The arrows, as the inverted T they are on the board: up over down, in
     -- the corner the two bottom rows leave empty. Each entry is a column, a
     -- row off the shift row, and the direction its triangle points.
-    local aw = unit
-    local ax = x + (BOARD_MAIN + BOARD_GAP) * unit
     for _, d in ipairs({{1, 0, 0, -1, "up"}, {0, 1, -1, 0, "left"},
                         {1, 1, 0, 1, "down"}, {2, 1, 1, 0, "right"}}) do
         local kx = ax + d[1] * aw
@@ -3055,7 +3142,7 @@ end
 -- board says where the hand goes; the chips say what each key is for and are
 -- where one is changed.
 --
--- Three columns, because sixteen rows down one column is a list that scrolls,
+-- Three columns, because the full list down one column is a list that scrolls,
 -- and a list scrolling under a picture is no longer the same page as the
 -- picture: you would be moving the answers past a diagram that stayed still.
 local CHIP_COLS = 3

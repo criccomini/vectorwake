@@ -118,6 +118,7 @@ package.loaded["arena.world"] = {
 }
 
 local ui = require("arena.ui")
+local pal = require("arena.palette")
 
 -- --- the harness -----------------------------------------------------------
 
@@ -130,7 +131,10 @@ local function frame(o)
     package.loaded["arena.state"].n = 0
     ui.begin(layer, W, H, 1, false)
     ui.hud({
-        me = 0,
+        me = o.me or 0,
+        watch = o.watch,
+        side = o.side,
+        viewer_name = o.viewer_name or "you",
         class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher",
                        "Lattice"},
         menu_open = o.menu_open or false,
@@ -141,6 +145,7 @@ local function frame(o)
             [3] = {name = "a guest", label = "unknown"},
         },
         ratings = o.ratings,
+        watchers = o.watchers,
         teams = o.teams or {},
         feed = o.feed or {},
         hurt = 0,
@@ -406,6 +411,74 @@ end
 check("your side comes first, then the rest, each alphabetical",
       table.concat(order, ",") == "Alpha,zulu,bravo,Charlie",
       table.concat(order, ","))
+ui.details = false
+
+-- --- the keyboard selection -------------------------------------------------
+--
+-- Page Down starts at the top when nothing is selected, Page Up starts at the
+-- bottom, and both open Players if it was shut. A watcher remains in the list
+-- but is not a selectable pilot because there is no hull behind their row.
+
+local nav_pilots = {
+    [0] = {name = "zulu", label = "human"},
+    [1] = {name = "Alpha", label = "human"},
+    [2] = {name = "bravo", label = "human"},
+    [3] = {name = "Charlie", label = "human"},
+}
+local nav_watchers = {{name = "spectator", label = "human"}}
+room.teams = {[0] = 1, 1, 1, 1}
+ui.inspect = nil
+ui.scroll = 0
+local picked = ui.player_step(1, nav_pilots, nav_watchers, 1, "spectator")
+check("Page Down opens Players", ui.details)
+check("and selects its first pilot", picked == 1, tostring(picked))
+picked = ui.player_step(1, nav_pilots, nav_watchers, 1, "spectator")
+check("another Page Down moves one pilot down", picked == 2, tostring(picked))
+picked = ui.player_step(-1, nav_pilots, nav_watchers, 1, "spectator")
+check("Page Up moves one pilot up", picked == 1, tostring(picked))
+
+ui.details = false
+ui.inspect = nil
+picked = ui.player_step(-1, nav_pilots, nav_watchers, 1, "spectator")
+check("Page Up from a shut list starts at the last pilot", picked == 0,
+      tostring(picked))
+check("and does not select the watcher below them", picked ~= nil)
+
+-- Spectating changes the camera's `me` to its current subject. The roster's
+-- own-row mark follows the connection's call sign instead, so the spectator's
+-- row stays cyan while the room feed cuts between pilots.
+ui.inspect = nil
+ui.details = true
+frame({watch = {subject = 2}, viewer_name = "spectator",
+       pilots = nav_pilots, watchers = nav_watchers})
+local watcher_col = nil
+for i = 1, package.loaded["arena.state"].n do
+    local t = package.loaded["arena.state"].text[i]
+    if t.s == "spectator" then watcher_col = t.col break end
+end
+check("a spectator's own roster row stays marked",
+      watcher_col ~= nil and math.abs(watcher_col[1] - pal.FRIEND[1]) < 0.001
+      and math.abs(watcher_col[2] - pal.FRIEND[2]) < 0.001
+      and math.abs(watcher_col[3] - pal.FRIEND[3]) < 0.001)
+
+-- D has a target only in its two real contexts. A selected teammate in the
+-- visible Players panel is an attach; an existing ride is a drop even with the
+-- panel shut. A watcher, a hidden panel, or no selected pilot does nothing.
+ui.details = true
+ui.inspect = 1
+frame()
+check("D attaches to the selected teammate", ui.drone_target(0, false) == 1)
+check("D cannot attach while spectating", ui.drone_target(0, true) == nil)
+ui.inspect = nil
+check("D cannot attach without a selection", ui.drone_target(0, false) == nil)
+ui.inspect = 1
+ui.details = false
+check("D cannot attach with Players hidden", ui.drone_target(0, false) == nil)
+local carrier = sim.ship_carrier
+sim.ship_carrier = function(i) return i == 0 and 1 or 255 end
+check("D still drops off with Players hidden", ui.drone_target(0, false) == 255)
+sim.ship_carrier = carrier
+ui.inspect = nil
 ui.details = false
 
 -- --- and it carries four numbers in 248 points ------------------------------

@@ -247,10 +247,11 @@ end
 
 do
     -- Wearing no label a player can read, so a phone learns them here or not
-    -- at all. The dial is a picture, the pads are marks, and DROP is behind a
-    -- card you reach by tapping your own name.
+    -- at all. The dial is a picture, the pads are marks, and ATTACH and DROP
+    -- are behind the pilot cards they act on.
     local MUST_SAY = {"turn left", "thrust", "guns", "bombs", "repel",
-                      "burst", "mine", "multifire", "map", "drop off",
+                      "burst", "mine", "multifire", "map",
+                      "attach / drop off",
                       "players"}
     local pad = {}
     for _, r in ipairs(ROWS) do pad[r.name] = r.pad end
@@ -262,14 +263,13 @@ do
     check("every unlabeled control has a sentence for a thumb", #silent == 0,
           table.concat(silent, ", "))
 
-    -- The two that say nothing, and why. Reverse has no gesture at all, by
-    -- decision; help is the page being read. Anything else arriving with no
-    -- `pad` is a control a phone has quietly lost.
     -- The ones that say nothing, and why. Reverse has no gesture at all, by
     -- decision; the controls page is the page being read; turn right shares
-    -- the stick with turn left and is named by it. Anything else arriving with
-    -- no `pad` is a control a phone has quietly lost.
-    local QUIET = {reverse = true, controls = true, ["turn right"] = true}
+    -- the stick with turn left and is named by it. Page Up and Page Down are
+    -- replaced by tapping the pilot row. Anything else arriving with no `pad`
+    -- is a control a phone has quietly lost.
+    local QUIET = {reverse = true, controls = true, ["turn right"] = true,
+                   ["previous player"] = true, ["next player"] = true}
     local mute = {}
     for _, r in ipairs(ROWS) do
         if not r.pad and not QUIET[r.name] then mute[#mute + 1] = r.name end
@@ -288,12 +288,16 @@ do
     check("and no thumb sentence names a key", #keyed == 0,
           table.concat(keyed, ", "))
 
-    -- What a phone is handed is every row a thumb can work, which is the
-    -- whole list less the two that say nothing.
-    local thumbed = 0
-    for _, r in ipairs(ROWS) do if r.pad then thumbed = thumbed + 1 end end
+    -- What a phone is handed is every row a thumb can work, which is the whole
+    -- list less the deliberate keyboard-only set above. Derived from that set
+    -- so adding another honest desktop control cannot stale a second count.
+    local thumbed, keyboard_only = 0, 0
+    for _, r in ipairs(ROWS) do
+        if r.pad then thumbed = thumbed + 1
+        elseif QUIET[r.name] then keyboard_only = keyboard_only + 1 end
+    end
     check("a phone is offered every control it can work",
-          thumbed == #ROWS - 3,
+          thumbed == #ROWS - keyboard_only,
           thumbed .. " of " .. #ROWS)
 
     -- And the menu builds its page from this list rather than from a second

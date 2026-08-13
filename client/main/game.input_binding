@@ -227,6 +227,14 @@ key_trigger {
   action: "k_space"
 }
 key_trigger {
+  input: KEY_PAGEUP
+  action: "k_pageup"
+}
+key_trigger {
+  input: KEY_PAGEDOWN
+  action: "k_pagedown"
+}
+key_trigger {
   input: KEY_UP
   action: "k_up"
 }

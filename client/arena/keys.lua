@@ -82,6 +82,12 @@ M.list = {
 
     K("space", "space", "Space", "KEY_SPACE"),
 
+    -- The two keys this game uses from the navigation block. They sit above
+    -- the arrows on the drawn board, in the same place they sit on a full
+    -- keyboard.
+    K("pageup", "pgup", "PgUp", "KEY_PAGEUP"),
+    K("pagedown", "pgdn", "PgDn", "KEY_PAGEDOWN"),
+
     -- The arrow cluster. `label` is nil because the board draws a triangle
     -- rather than a word on each of them.
     K("up", nil, "\226\134\145", "KEY_UP"),
