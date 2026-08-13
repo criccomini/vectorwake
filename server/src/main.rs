@@ -1106,6 +1106,7 @@ mod tests {
             pending: Default::default(),
             input_ack: 0,
             input_mask: 0,
+            input_receipts: 0,
             input_seen: false,
             applied_tick: 0,
             applied_input: false,
@@ -1224,6 +1225,22 @@ mod tests {
         );
         p.schedule(102, 1, 99);
         assert!(p.input_window_ready(100));
+    }
+
+    #[test]
+    fn timely_inputs_outlive_the_wire_repair_window() {
+        let mut p = a_player();
+        let now = 100;
+        for tick in now..=now + 35 {
+            p.schedule(tick, sim::BTN_THRUST, now);
+        }
+
+        assert_eq!(p.input_ack, now + 35);
+        assert!(
+            p.input_window_ready(now),
+            "a valid 35-tick lead must not become 100% missed input"
+        );
+        assert!(p.received_input(now));
     }
 
     #[test]

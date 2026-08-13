@@ -36,6 +36,12 @@ pub(crate) struct Player {
     /// consecutive ticks are the ones a datagram lost.
     pub(crate) input_ack: u32,
     pub(crate) input_mask: u32,
+    /// Server-only receipt history used to judge whether each due input
+    /// arrived. The public repair mask is only 32 ticks wide, while a healthy
+    /// client may run as much as 40 ticks ahead after recovering from a long
+    /// frame. Using that mask for enforcement called every queued input late
+    /// once the lead crossed its edge.
+    pub(crate) input_receipts: u128,
     pub(crate) input_seen: bool,
     /// The newest tick whose buttons are the ones being held.
     ///
@@ -204,17 +210,25 @@ impl Player {
             } else {
                 (self.input_mask << shift) | 1
             };
+            self.input_receipts = if !self.input_seen || shift >= u128::BITS {
+                1
+            } else {
+                (self.input_receipts << shift) | 1
+            };
             self.input_ack = tick;
             self.input_seen = true;
             return true;
         }
         let behind = self.input_ack.wrapping_sub(tick);
-        if behind >= 32 {
+        if behind >= u128::BITS {
             return false;
         }
-        let bit = 1u32 << behind;
-        let fresh = self.input_mask & bit == 0;
-        self.input_mask |= bit;
+        let receipt_bit = 1u128 << behind;
+        let fresh = self.input_receipts & receipt_bit == 0;
+        self.input_receipts |= receipt_bit;
+        if behind < u32::BITS {
+            self.input_mask |= 1u32 << behind;
+        }
         fresh
     }
 
@@ -223,7 +237,7 @@ impl Player {
             return false;
         }
         let behind = self.input_ack.wrapping_sub(tick);
-        behind < 32 && self.input_mask & (1u32 << behind) != 0
+        behind < u128::BITS && self.input_receipts & (1u128 << behind) != 0
     }
 
     pub(crate) fn input_window_ready(&self, now: u32) -> bool {
@@ -1600,6 +1614,7 @@ impl Room {
                 pending: Default::default(),
                 input_ack: 0,
                 input_mask: 0,
+                input_receipts: 0,
                 input_seen: false,
                 applied_tick: 0,
                 applied_input: false,

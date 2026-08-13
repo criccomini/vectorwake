@@ -2046,11 +2046,14 @@ full policy window before a deadline miss can restrict the pilot. Input
 deadlines use an exact half-second current window rather than the five-second
 path average. When a browser resumes after a pause, old misses age out within
 half a second and the input-only objective lock clears with them. It does not
-wait for the path's five-second recovery timer. Flag pickup is denied silently
-before synchronization. If a partial input stream never becomes coherent, the
-lock becomes visible one path sample after its first packet. The client seeds
-eight idle prediction ticks with the first snapshot so an ordinary connection
-starts near its target lead instead of spending its first second chasing it.
+wait for the path's five-second recovery timer. Deadline accounting keeps a
+server-only 128-tick receipt window because the 32-bit mask returned to the
+client is a repair protocol, not enough history to judge a client running more
+than 31 ticks ahead. Flag pickup is denied silently before synchronization. If
+a partial input stream never becomes coherent, the lock becomes visible one
+path sample after its first packet. The client seeds eight idle prediction
+ticks with the first snapshot so an ordinary connection starts near its target
+lead instead of spending its first second chasing it.
 
 The live debug capture that prompted the change had an estimated 80 ms round
 trip, a 12-tick prediction lead, no local correction, and remote correction
