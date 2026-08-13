@@ -293,7 +293,10 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->prize_delay = 100;
     cfg->prize_max = 24;
     cfg->prize_life = 3000;   /* 30 s */
-    cfg->prize_radius = 16 * 256; /* generous: chasing a green should not be fiddly */
+    /* The green's drawn diamond reaches about seven pixels from its center.
+     * Treat that visible body as the pickup padding, so its outline has to
+     * meet the hull instead of disappearing across an invisible gap. */
+    cfg->prize_radius = 7 * 256;
     cfg->flag_radius = 18 * 256;
     cfg->flag_drop_cooldown = 200;
     /* Sixty-four is four times what the original aimed a public room at:

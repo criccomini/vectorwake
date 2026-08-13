@@ -2220,14 +2220,15 @@ int main(void) {
     }
 
     {
-        /* Pickup radius is a circle around the hull rather than a square.
-         * A square adds the full radius on both axes, so a green off one
-         * corner disappears while the visible gap is sqrt(2) times the
-         * configured reach. The same distance straight off a side remains a
-         * valid pickup. */
+        /* Pickup radius is the seven-pixel body of the drawn green, padded
+         * circularly around the hull. A square adds the full radius on both
+         * axes, so a green off one corner disappears before either visible
+         * body has reached the other. */
         sim_settings w = cfg;
         w.deathless = 1;
         w.prize_delay = 0;
+        CHECK(w.prize_radius == 7 * 256,
+              "the pickup padding matches the green's visible body");
         sim_state s;
         sim_init(&s, 91);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
@@ -2236,19 +2237,23 @@ int main(void) {
         sim_prize *green = &s.prizes[0];
         green->active = 1;
         green->life = 100;
-        green->x = sh->x + hull->halfw + 15 * 256;
-        green->y = sh->y - hull->fore - 15 * 256;
+        green->x = sh->x + hull->halfw + 6 * 256;
+        green->y = sh->y - hull->fore - 6 * 256;
 
         step_n(&s, &w, 0, 0, 1);
         CHECK(s.prizes[0].active,
               "a green beyond the radius at a hull corner stays put");
 
         green = &s.prizes[0];
-        green->x = s.ships[0].x + hull->halfw + w.prize_radius;
+        green->x = s.ships[0].x + hull->halfw + 8 * 256;
         green->y = s.ships[0].y;
         step_n(&s, &w, 0, 0, 1);
-        CHECK(!s.prizes[0].active,
-              "the same radius straight off a hull side is collected");
+        CHECK(s.prizes[0].active,
+              "a visible one-pixel gap straight off the side stays put");
+
+        green->x = s.ships[0].x + hull->halfw + w.prize_radius;
+        step_n(&s, &w, 0, 0, 1);
+        CHECK(!s.prizes[0].active, "visible contact collects the green");
     }
 
     {

@@ -84,7 +84,9 @@ respawn_delay = 400   # ticks, so four seconds
 prize_delay = 100
 prize_max = 20
 prize_life = 3000
-prize_radius = 16
+# The green's visible diamond is seven pixels from its center. Matching that
+# body makes collection read as contact rather than attraction from a gap.
+prize_radius = 7
 prize_lo = 8
 prize_hi = 1015
 
