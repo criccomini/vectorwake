@@ -21,17 +21,15 @@ local pal = require("arena.palette")
 local keyset = require("arena.keys")
 local marks = require("arena.marks")
 local state = require("arena.state")
+local ui_frame = require("arena.ui_frame")
+local ui_payouts = require("arena.ui_payouts")
 local world = require("arena.world")
 
 local M = {}
-
-local W, H, S = 0, 0, 1
-local u = nil          -- the ui mesh layer for this frame
-local text, nt = nil, 0
+local F = ui_frame.new(state)
 -- The HUD stays up under the menu, so its hit boxes do too, and the first box
 -- a press lands in wins. A dial the size of a quarter of the frame would sit
 -- over half the menu and swallow every row behind it.
-local menu_up = false
 
 -- Metrics, in CSS pixels before the density scale.
 local PAD = 14
@@ -85,11 +83,11 @@ M.room_ask = nil
 -- --- primitives ------------------------------------------------------------
 
 local function ry(y, h)
-    return H - y - (h or 0)
+    return F:ry(y, h)
 end
 
 local function rect(x, y, w, h, col)
-    u:rect(x, ry(y, h), w, h, col)
+    F.layer:rect(x, ry(y, h), w, h, col)
 end
 
 -- How heavy to draw a mark of this size.
@@ -112,8 +110,6 @@ local pen = marks.pen
 -- how the interface stands down under the menu: glyphs come from the gui,
 -- which draws over every mesh, so no wash the menu lays down can touch them
 -- and the only way to quiet a label is to quiet the label.
-local text_dim = 1
-
 -- Which voice the interface is speaking in. The HUD is read at a glance, over
 -- a fight, out of the corner of an eye, and capitals are the case an
 -- instrument is labeled in. The menu is read rather than glanced at, and a
@@ -123,9 +119,8 @@ local text_dim = 1
 -- Set by whichever of the two is drawing. Done here rather than in the
 -- strings themselves, because case is how a thing is set rather than what it
 -- says, and the model has no business shouting.
-local case = "upper"
 local function cased(s)
-    if case == "upper" then return string.upper(s) end
+    if F.case == "upper" then return string.upper(s) end
     return (string.gsub(s, "^%l", string.upper))
 end
 
@@ -135,12 +130,13 @@ end
 -- the wordmark, which is a drawing of a name rather than a label.
 local function txt(s, x, y, px, col, pivot, font, raw)
     if not raw then s = cased(s) end
-    nt = nt + 1
-    local t = text[nt]
-    if not t then t = {} text[nt] = t end
-    t.s, t.x, t.y, t.px, t.col, t.pivot = s, x, H - y, px, col, pivot or "left"
+    F.text_count = F.text_count + 1
+    local t = F.text[F.text_count]
+    if not t then t = {} F.text[F.text_count] = t end
+    t.s, t.x, t.y, t.px, t.col, t.pivot =
+        s, x, F.h - y, px, col, pivot or "left"
     t.font = font
-    t.dim = text_dim ~= 1 and text_dim or nil
+    t.dim = F.text_dim ~= 1 and F.text_dim or nil
 end
 
 -- A rectangle the pointer can land on, published in the same coordinates it
@@ -157,14 +153,14 @@ end
 -- walls cut off their own corners with. See docs/design/identity.md: a border
 -- is the one shape this game does not otherwise contain.
 local function bracket(x, y, w, h, col, arm, chamfer)
-    arm = arm or 14 * S
-    chamfer = chamfer or 5 * S
+    arm = arm or 14 * F.scale
+    chamfer = chamfer or 5 * F.scale
     for _, c in ipairs({{x, y, 1, 1}, {x + w, y, -1, 1},
                         {x + w, y + h, -1, -1}, {x, y + h, 1, -1}}) do
         local cx, cy, sx, sy = c[1], c[2], c[3], c[4]
-        u:seg(cx + sx * chamfer, ry(cy), cx + sx * arm, ry(cy), S, col, true)
-        u:seg(cx, ry(cy + sy * chamfer), cx, ry(cy + sy * arm), S, col, true)
-        u:seg(cx + sx * chamfer, ry(cy), cx, ry(cy + sy * chamfer), S, col,
+        F.layer:seg(cx + sx * chamfer, ry(cy), cx + sx * arm, ry(cy), F.scale, col, true)
+        F.layer:seg(cx, ry(cy + sy * chamfer), cx, ry(cy + sy * arm), F.scale, col, true)
+        F.layer:seg(cx + sx * chamfer, ry(cy), cx, ry(cy + sy * chamfer), F.scale, col,
               true)
     end
 end
@@ -172,38 +168,38 @@ end
 -- A lit rule with the light falling off one side of it, which is a wall face
 -- stood on end. Everything in a column hangs off one of these.
 local function vrule(x, y, h, col, spill)
-    u:skirt(x, ry(y), x, ry(y + h), (spill or 26 * S), 0, 0.07, col)
-    u:seg(x, ry(y), x, ry(y + h), 1.4 * S, col)
+    F.layer:skirt(x, ry(y), x, ry(y + h), (spill or 26 * F.scale), 0, 0.07, col)
+    F.layer:seg(x, ry(y), x, ry(y + h), 1.4 * F.scale, col)
 end
 
 -- The map border's tick, used as a rule between things.
 local function ticks(x, y, w, col, pitch)
-    pitch = pitch or 12 * S
-    u:seg(x, ry(y), x + w, ry(y), 0.8 * S, pal.a(col, (col[4] or 1) * 0.7))
+    pitch = pitch or 12 * F.scale
+    F.layer:seg(x, ry(y), x + w, ry(y), 0.8 * F.scale, pal.a(col, (col[4] or 1) * 0.7))
     local n = math.max(1, math.floor(w / pitch))
     for k = 0, n do
         local px = x + w * k / n
-        u:seg(px, ry(y - 2.5 * S), px, ry(y), 0.8 * S, col)
+        F.layer:seg(px, ry(y - 2.5 * F.scale), px, ry(y), 0.8 * F.scale, col)
     end
 end
 
 -- A selection: bright where it meets its rule and gone across the row. It was
 -- a filled rectangle.
 local function wash(x, y, w, h, col)
-    u:skirt(x, ry(y), x, ry(y + h), w, 0, col[4] or 0.14, col)
+    F.layer:skirt(x, ry(y), x, ry(y + h), w, 0, col[4] or 0.14, col)
 end
 
 -- A count, as marks rather than as a number: it reads at a glance and never
 -- asks the eye to parse a digit.
 local function pips(x, y, n, filled, col, r, pitch)
-    r = r or 2.2 * S
-    pitch = pitch or 7.5 * S
+    r = r or 2.2 * F.scale
+    pitch = pitch or 7.5 * F.scale
     for k = 0, n - 1 do
         local px = x + k * pitch
         if k < filled then
-            u:disc(px, ry(y), r, 8, col)
+            F.layer:disc(px, ry(y), r, 8, col)
         else
-            u:ring(px, ry(y), r, 0.9 * S, 8, pal.a(col, (col[4] or 1) * 0.3))
+            F.layer:ring(px, ry(y), r, 0.9 * F.scale, 8, pal.a(col, (col[4] or 1) * 0.3))
         end
     end
 end
@@ -242,7 +238,7 @@ local HELM_TALL = 0.5 * (1 + HELM_NECK)
 -- the cut lands; the line runs a little past it so the helmet sits in
 -- something rather than ending in mid air.
 local function collar(cx, neck, half, line, col)
-    u:seg(cx - half * HELM_COLLAR, ry(neck), cx + half * HELM_COLLAR, ry(neck),
+    F.layer:seg(cx - half * HELM_COLLAR, ry(neck), cx + half * HELM_COLLAR, ry(neck),
           line, col, true)
 end
 
@@ -299,7 +295,7 @@ local function helm(cx, cy, k, col, line)
         pts[#pts + 1] = cx + hw(y)
         pts[#pts + 1] = ry(y)
     end
-    u:outline(pts, line, col, true)
+    F.layer:outline(pts, line, col, true)
     return x0, y0, w, h, waist, hw
 end
 
@@ -326,9 +322,9 @@ local function hull_helm(cx, cy, k, col, line)
     local mid = y0 + r
     local neck = mid + r * HELM_NECK
     line = line or pen(k, 0.11)
-    u:seg(x0, ry(y0), x0 + w, ry(y0), line, col, true)
-    u:seg(x0, ry(y0 + line / 2), x0, ry(neck - line / 2), line, col)
-    u:seg(x0 + w, ry(y0 + line / 2), x0 + w, ry(neck - line / 2), line, col)
+    F.layer:seg(x0, ry(y0), x0 + w, ry(y0), line, col, true)
+    F.layer:seg(x0, ry(y0 + line / 2), x0, ry(neck - line / 2), line, col)
+    F.layer:seg(x0 + w, ry(y0 + line / 2), x0 + w, ry(neck - line / 2), line, col)
     collar(cx, neck, w / 2, line, col)
     return x0, y0, w, h, mid, r
 end
@@ -379,7 +375,7 @@ local VISOR_BEND = 0.080
 -- whole of it at 26 points, and every hundredth of width the head gives up
 -- comes off the part being read.
 local function pilot_mark(cx, cy, col, k, line)
-    k = k or MARK_K * S
+    k = k or MARK_K * F.scale
     line = line or pen(k, 0.11)
     local w, h, waist, hw = select(3, helm(cx, cy, k, col, line))
     local top = waist - math.min(line * VISOR_LIFT, h * VISOR_LIFT_MAX)
@@ -400,7 +396,7 @@ local function pilot_mark(cx, cy, col, k, line)
         local ty = top + bend * (1 - t * t)
         local by = math.min(waist + sag * (1 - t * t), floor - line)
         if px then
-            u:quad(px, ry(pty), x, ry(ty), x, ry(by), px, ry(pby), col)
+            F.layer:quad(px, ry(pty), x, ry(ty), x, ry(by), px, ry(pby), col)
         end
         px, pty, pby = x, ty, by
     end
@@ -416,17 +412,17 @@ end
 -- antenna says the same thing a second time, which is worth the two points it
 -- costs: three of this mark's four uses are solo.
 local function bot_mark(x, y, col, k, line)
-    k = k or MARK_K * S
+    k = k or MARK_K * F.scale
     local cx = x + k / 2
     local x0, y0, w, _, mid, r = hull_helm(cx, y, k, col, line)
     -- The middle of the box rather than the middle of the circle it used to
     -- be: a flat crown puts the room the dome was using back into the shell,
     -- and lamps left where they were sat in the bottom third of it.
     local eye = mid - r * 0.16
-    u:disc(x0 + w * 0.31, ry(eye), w * 0.115, 8, col)
-    u:disc(x0 + w * 0.69, ry(eye), w * 0.115, 8, col)
-    u:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), line or pen(k, 0.09), col, true)
-    u:disc(cx, ry(y0 - r * 0.48), w * 0.11, 8, col)
+    F.layer:disc(x0 + w * 0.31, ry(eye), w * 0.115, 8, col)
+    F.layer:disc(x0 + w * 0.69, ry(eye), w * 0.115, 8, col)
+    F.layer:seg(cx, ry(y0), cx, ry(y0 - r * 0.36), line or pen(k, 0.09), col, true)
+    F.layer:disc(cx, ry(y0 - r * 0.48), w * 0.11, 8, col)
     return w
 end
 
@@ -444,29 +440,29 @@ end
 local function population(x, y, players, bots, col)
     local right = x
     if bots and bots > 0 then
-        txt(tostring(bots), right, y, 12 * S, pal.a(pal.DIM, 0.9), "right")
-        bot_mark(right - text_w(tostring(bots), 12 * S) - 16 * S, y,
+        txt(tostring(bots), right, y, 12 * F.scale, pal.a(pal.DIM, 0.9), "right")
+        bot_mark(right - text_w(tostring(bots), 12 * F.scale) - 16 * F.scale, y,
                  pal.a(pal.DIM, 0.75))
-        right = right - text_w(tostring(bots), 12 * S) - 26 * S
+        right = right - text_w(tostring(bots), 12 * F.scale) - 26 * F.scale
     end
     local pc = players > 0 and col or pal.a(pal.DIM, 0.8)
-    txt(tostring(players), right, y, 13 * S, pc, "right")
+    txt(tostring(players), right, y, 13 * F.scale, pc, "right")
     -- A helmet rather than the plain dot this used to draw. The dot said
     -- "some number of somethings" and left the row's two counts looking like
     -- a bullet and a picture; the pair is one shell now, and which of them a
     -- player is looking at is the face in it.
-    pilot_mark(right - text_w(tostring(players), 13 * S) - 12 * S, y, pc)
+    pilot_mark(right - text_w(tostring(players), 13 * F.scale) - 12 * F.scale, y, pc)
 end
 
 
 local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
-local function key_size() return (FONT - 1) * S end
-local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * S end
+local function key_size() return (FONT - 1) * F.scale end
+local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * F.scale end
 local function key_cap(x, y, w, label, on)
     local col = on and pal.FRIEND or pal.DIM
-    local h = KEY_H * S
+    local h = KEY_H * F.scale
     rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
-    u:frame(x, ry(y, h), w, h, 1.1 * S, pal.a(col, on and 0.95 or 0.55))
+    F.layer:frame(x, ry(y, h), w, h, 1.1 * F.scale, pal.a(col, on and 0.95 or 0.55))
     -- A key is shouted wherever it turns up, menu or corner: it is a thing to
     -- press rather than something the interface is saying, and the two of them
     -- are the same object.
@@ -483,14 +479,14 @@ end
 -- and the hulls all make. It still says close at a glance and stops looking
 -- like a character that wandered out of a paragraph.
 local function close_mark(x, y, col, k)
-    k = k or 9 * S
+    k = k or 9 * F.scale
     local out = k / 2
     local inn = k * 0.17
     local d = 0.7071
     for _, s in ipairs({{1, 1}, {1, -1}, {-1, 1}, {-1, -1}}) do
         local dx, dy = s[1] * d, s[2] * d
-        u:seg(x + dx * inn, ry(y + dy * inn),
-              x + dx * out, ry(y + dy * out), 1.25 * S, col, true)
+        F.layer:seg(x + dx * inn, ry(y + dy * inn),
+              x + dx * out, ry(y + dy * out), 1.25 * F.scale, col, true)
     end
 end
 
@@ -525,9 +521,8 @@ M.details = false
 -- one a press lands in, and the field of play holds none at all because left
 -- click is the gun and a box over a hull would eat the shot. See
 -- hud_hits_test for the rule those are staying out of the way of.
-local zones = {}
 local function zone(key, x, y, w, h)
-    zones[#zones + 1] = {key = key, x = x, y = y, w = w, h = h}
+    F.zones[#F.zones + 1] = {key = key, x = x, y = y, w = w, h = h}
 end
 
 -- Which row covers this point, or nil. Last registered wins, so a row inside
@@ -535,7 +530,7 @@ end
 function M.row_at(x, y)
     if not x or not y then return nil end
     local found = nil
-    for _, z in ipairs(zones) do
+    for _, z in ipairs(F.zones) do
         if x >= z.x and x <= z.x + z.w and y >= z.y and y <= z.y + z.h then
             found = z.key
         end
@@ -572,18 +567,15 @@ end
 -- do. It costs the bottom third of a stop's surface to a bar the system may
 -- swallow a press under, and buys back the ten points that made the row look
 -- like it had come loose.
-local SL, SR, ST, SB, SAPP = 0, 0, 0, 0, false
 function M.safe(l, r, t, b, app)
-    SL, SR, ST, SB = l or 0, r or 0, t or 0, b or 0
-    SAPP = app and true or false
+    F:safe(l, r, t, b, app)
 end
 
 -- `now` is the frame's clock in seconds, for the few things on screen that
 -- move on their own. Nothing that is laid out depends on it, so a caller with
 -- no clock draws the same interface at rest.
 function M.begin(layer, w, h, density, touching, now)
-    u, W, H = layer, w, h
-    M.now = now or 0
+    F:begin(layer, w, h, density, now)
     -- Points of screen rather than pixels: a phone at two device pixels per
     -- point is a small screen, not a large one, and laying the interface out
     -- against the pixel count is how it ends up drawn at half size on the
@@ -604,16 +596,11 @@ function M.begin(layer, w, h, density, touching, now)
     -- Every wrapped sentence was broken against the old width, so the memo
     -- goes with the size that produced it. Only on a real change: clearing it
     -- every frame would be the same as not having one.
-    S = density
     -- The marks draw into the same layer, and the pads reach for them after
     -- this returns, so they are handed it here rather than by each caller.
     marks.begin(layer, density)
     M.touching = touching or false
-    text = state.text
-    nt = 0
-    u:reset()
     M.hits = {}
-    zones = {}
     -- The lines the page is asked to hold, if any card raised this frame
     -- asks for typing. Cleared here rather than by whoever raised it, for
     -- the reason the hit list is: a card that is no longer drawn has no
@@ -623,9 +610,7 @@ function M.begin(layer, w, h, density, touching, now)
 end
 
 function M.finish()
-    state.n = nt
-    state.version = state.version + 1
-    u:flush()
+    F:finish()
 end
 
 -- --- radar -----------------------------------------------------------------
@@ -650,20 +635,20 @@ local chip_right = 0
 -- and PLAYERS keys stand in, since a hit box over those is two controls a
 -- pointer can no longer reach.
 local function dial()
-    local pad = (M.compact and 8 or PAD) * S
-    local side = RADAR * S
+    local pad = (M.compact and 8 or PAD) * F.scale
+    local side = RADAR * F.scale
     if M.map then
         side = math.max(side,
-                        math.min(math.min(W, H) * 0.66, H * 0.66,
-                                 W - SR - pad - math.max(chip_right + 8 * S,
-                                                         124 * S)))
+                        math.min(math.min(F.w, F.h) * 0.66, F.h * 0.66,
+                                 F.w - F.safe_r - pad - math.max(chip_right + 8 * F.scale,
+                                                         124 * F.scale)))
     end
     -- Whole pixels. The dial snaps its contents to its own origin, so an
     -- origin landing on a half pixel would put the fraction back into every
     -- blip it was taken out of. Density is not always a whole number and
     -- neither, then, is the padding.
-    local ix, iy = math.floor(W - SR - pad - side),
-                   math.floor(ST + pad + 18 * S)
+    local ix, iy = math.floor(F.w - F.safe_r - pad - side),
+                   math.floor(F.safe_t + pad + 18 * F.scale)
     side = math.floor(side)
     -- Filed here rather than in the two functions that draw into it, because
     -- the dial and the map are the same corner and want the same word beside
@@ -679,7 +664,7 @@ end
 -- than guess.
 function M.radar_span()
     local _, _, side = dial()
-    return ST + PAD * S * 2 + side + 18 * S
+    return F.safe_t + PAD * F.scale * 2 + side + 18 * F.scale
 end
 
 -- You, as an arrow. On any view of the arena the one thing worth knowing
@@ -722,16 +707,16 @@ local function team_col(t)
 end
 
 local function own_arrow(ax, ay, ox, oy, side, me)
-    local edge = 5 * S
+    local edge = 5 * F.scale
     if ax < ox + edge then ax = ox + edge end
     if ay < oy + edge then ay = oy + edge end
     if ax > ox + side - edge then ax = ox + side - edge end
     if ay > oy + side - edge then ay = oy + side - edge end
     local a = (sim.ship_heading(me) / 65536) * math.pi * 2
     local dx, dy = math.sin(a), -math.cos(a)
-    local nose, back, wide = 6.5 * S, 3.4 * S, 3.2 * S
-    u:disc(ax, ry(ay, 0), 7 * S, 12, pal.a(pal.WHITE, 0.14))
-    u:tri(ax + dx * nose, ry(ay + dy * nose, 0),
+    local nose, back, wide = 6.5 * F.scale, 3.4 * F.scale, 3.2 * F.scale
+    F.layer:disc(ax, ry(ay, 0), 7 * F.scale, 12, pal.a(pal.WHITE, 0.14))
+    F.layer:tri(ax + dx * nose, ry(ay + dy * nose, 0),
           ax - dx * back - dy * wide, ry(ay - dy * back + dx * wide, 0),
           ax - dx * back + dy * wide, ry(ay - dy * back - dx * wide, 0),
           pal.WHITE)
@@ -751,7 +736,7 @@ local function radar(cx, cy, me)
     -- The dial is the way in to the map: a thing you point at to see more of
     -- is a thing you can click, and it saves teaching a key to somebody who
     -- never opens the help.
-    if not menu_up then hit(ix, iy, r, r, "map") end
+    if not F.menu_up then hit(ix, iy, r, r, "map") end
 
     -- Sixty tiles out, so the reference arena nearly fills the dial. At a
     -- hundred and fifty it sat in the middle quarter with the rest of the
@@ -790,7 +775,7 @@ local function radar(cx, cy, me)
     -- left gaps between samples and turned every wall into a dashed line.
     -- Whole pixels, per above. A door gets one more rather than a fraction
     -- more, which is the only way "bigger" survives being rounded.
-    local dot = math.max(1, math.floor(math.max(2 * 16 * k, 1.5 * S) + 0.5))
+    local dot = math.max(1, math.floor(math.max(2 * 16 * k, 1.5 * F.scale) + 0.5))
     local function blips(list, col, extra)
         local d = dot + (extra or 0)
         for n = 1, #list, 2 do
@@ -823,7 +808,7 @@ local function radar(cx, cy, me)
         if active then
             local px, py = put(wx, wy)
             if px then
-                u:disc(px, ry(py, 0), 1.9 * S, 6,
+                F.layer:disc(px, ry(py, 0), 1.9 * F.scale, 6,
                        pal.a(pal.PRIZE, life < 120 and 0.4 or 0.95))
             end
         end
@@ -838,10 +823,10 @@ local function radar(cx, cy, me)
                 or (team == my_team and pal.FRIEND or pal.ENEMY)
             -- A pennant rather than a bar: a flag should look like one even
             -- at four pixels.
-            u:seg(px, ry(py + 3 * S, 0), px, ry(py - 3.5 * S, 0), S,
+            F.layer:seg(px, ry(py + 3 * F.scale, 0), px, ry(py - 3.5 * F.scale, 0), F.scale,
                   pal.a(col, 0.95))
-            u:tri(px, ry(py - 3.5 * S, 0), px + 4 * S, ry(py - 2 * S, 0),
-                  px, ry(py - 0.5 * S, 0), pal.a(col, 0.9))
+            F.layer:tri(px, ry(py - 3.5 * F.scale, 0), px + 4 * F.scale, ry(py - 2 * F.scale, 0),
+                  px, ry(py - 0.5 * F.scale, 0), pal.a(col, 0.9))
         end
     end
 
@@ -853,9 +838,9 @@ local function radar(cx, cy, me)
                 local col = friend and pal.FRIEND or pal.ENEMY
                 -- A diamond over a soft halo: it reads at three pixels and
                 -- separates from the square terrain at a glance.
-                u:disc(px, ry(py, 0), 4.6 * S, 10, pal.a(col, 0.13))
-                local d = 2.6 * S
-                u:quad(px, ry(py - d, 0), px + d, ry(py, 0),
+                F.layer:disc(px, ry(py, 0), 4.6 * F.scale, 10, pal.a(col, 0.13))
+                local d = 2.6 * F.scale
+                F.layer:quad(px, ry(py - d, 0), px + d, ry(py, 0),
                        px, ry(py + d, 0), px - d, ry(py, 0), col)
             end
         end
@@ -928,7 +913,7 @@ local function overview(me)
                  r[i + 2] * k, r[i + 3] * k, col)
         end
     end
-    bracket(ix, iy, side, side, pal.a(pal.RADAR_TILE, 0.8), 22 * S)
+    bracket(ix, iy, side, side, pal.a(pal.RADAR_TILE, 0.8), 22 * F.scale)
     -- You, and only you. No ships is the rule above, and it stands: a map
     -- showing where everybody is would be a wall hack. Where *you* are is
     -- something you already know, and without it a view of a thousand tiles
@@ -945,7 +930,7 @@ local function overview(me)
     end
     -- Clicking it again puts the radar back, which is the same gesture that
     -- opened it.
-    if not menu_up then hit(ix, iy, side, side, "map") end
+    if not F.menu_up then hit(ix, iy, side, side, "map") end
 end
 
 -- Names, at each ship's lower right.
@@ -971,21 +956,18 @@ end
 -- Anchored in the world, so it drifts off the spot the hull died on rather
 -- than off a point on the screen, and a player who is still moving watches it
 -- fall behind them the way the wreck does.
-local payouts = {}
-local PAYOUT_LIFE = 1.4    -- seconds from the kill to gone
-local PAYOUT_RISE = 26     -- points travelled in that time
-local PAYOUT_HOLD = 0.25   -- the fraction of it spent at full strength
+local payouts = ui_payouts.new()
 
 -- Raised by whoever drains the kills. World coordinates, because that is
 -- where the wreck is.
 function M.payout(x, y, n)
-    payouts[#payouts + 1] = {x = x, y = y, n = n, t0 = M.now}
+    payouts:add(F.now, x, y, n)
 end
 
 -- A new arena is not the one the last number was earned in. Cheap to call and
 -- it costs nothing when there is nothing to drop.
 function M.clear_payouts()
-    for i = #payouts, 1, -1 do payouts[i] = nil end
+    payouts:clear()
 end
 
 local function nameplates(o)
@@ -994,7 +976,7 @@ local function nameplates(o)
     -- that nothing keeps a second copy of the projection. Deriving one from
     -- the view_tiles setting put every name adrift the moment the camera
     -- stopped being driven by that setting -- which it already had.
-    local scale = W / (2 * o.half_w)
+    local scale = F.w / (2 * o.half_w)
     -- The one hull that goes unlabeled is your own, and a watcher has none.
     -- The pilot being observed therefore wears their name and their bounty
     -- exactly like everybody else on screen: "who am I looking at" is the
@@ -1006,11 +988,11 @@ local function nameplates(o)
     if not o.watch then own = o.me end
     for i = 0, sim.ship_count() - 1 do
         if i ~= own and sim.ship_alive(i) == 1 then
-            local sx = W / 2 + (sim.ship_x(i) - o.cam_x) * scale
-            local sy = H / 2 + (sim.ship_y(i) - o.cam_y) * scale
+            local sx = F.w / 2 + (sim.ship_x(i) - o.cam_x) * scale
+            local sy = F.h / 2 + (sim.ship_y(i) - o.cam_y) * scale
             -- A name for a ship nobody can see is a name in the corner of
             -- the screen attached to nothing.
-            if sx > -40 and sx < W + 40 and sy > -30 and sy < H + 30 then
+            if sx > -40 and sx < F.w + 40 and sy > -30 and sy < F.h + 30 then
                 local p = o.pilots[i]
                 local nm = (p and p.name) or ("ship " .. i)
                 -- The plate is where the sides come apart. The hull under it
@@ -1027,7 +1009,7 @@ local function nameplates(o)
                     -- A call sign is a name somebody was given, not a
                     -- word this interface is saying, so it keeps its own
                     -- case wherever it is drawn.
-                    txt(nm, sx + 12 * S, sy + 13 * S, 11 * S, pal.a(col, 0.7),
+                    txt(nm, sx + 12 * F.scale, sy + 13 * F.scale, 11 * F.scale, pal.a(col, 0.7),
                         nil, nil, true)
                     -- The same mark the scoreboard and the info box wear, on
                     -- the hull itself: who is flying a ship is worth knowing
@@ -1041,8 +1023,8 @@ local function nameplates(o)
                         -- the end of the name rather than as a thing beside
                         -- it, and a call sign is exactly the kind of string
                         -- somebody will end in a bracket or a dot.
-                        bot_mark(sx + 12 * S + text_w(nm, 11 * S) + 9 * S,
-                                 sy + 13 * S, pal.a(col, 0.45), 10 * S)
+                        bot_mark(sx + 12 * F.scale + text_w(nm, 11 * F.scale) + 9 * F.scale,
+                                 sy + 13 * F.scale, pal.a(col, 0.45), 10 * F.scale)
                     end
                     if bty > 0 then
                         -- In the side's color rather than the bounty gold,
@@ -1052,7 +1034,7 @@ local function nameplates(o)
                         -- says, and it said it identically for every pilot on
                         -- screen: the one thing a color here can carry is
                         -- whose they are.
-                        txt(tostring(bty), sx + 12 * S, sy + 25 * S, 11 * S,
+                        txt(tostring(bty), sx + 12 * F.scale, sy + 25 * F.scale, 11 * F.scale,
                             pal.a(col, 0.85))
                     end
                 end
@@ -1063,31 +1045,16 @@ local function nameplates(o)
     -- The payouts, drifting off the wrecks that paid them. Walked backwards
     -- into itself so an expired one is dropped in the same pass that draws
     -- the rest, and the list stays as short as the killing is fast.
-    local live = 0
-    for k = 1, #payouts do
-        local p = payouts[k]
-        local age = M.now - p.t0
-        if age >= 0 and age < PAYOUT_LIFE then
-            live = live + 1
-            payouts[live] = p
-            local f = age / PAYOUT_LIFE
-            local px = W / 2 + (p.x - o.cam_x) * scale
-            local py = H / 2 + (p.y - o.cam_y) * scale
-            -- Full for the first quarter and then out. A number that starts
-            -- fading on the frame it appears is one nobody finishes reading,
-            -- and this one appears in the middle of the thing that earned it.
-            local a = 1
-            if f > PAYOUT_HOLD then
-                a = 1 - (f - PAYOUT_HOLD) / (1 - PAYOUT_HOLD)
-            end
+    payouts:each(F.now, function(p, f, a)
+            local px = F.w / 2 + (p.x - o.cam_x) * scale
+            local py = F.h / 2 + (p.y - o.cam_y) * scale
             -- The bounty's own size and offset, in the green the feed already
             -- uses for a line about a kill of yours. Up is negative here: the
             -- name sits at +13 and the bounty at +25, under it.
-            txt("+" .. p.n, px + 12 * S, py + 13 * S - PAYOUT_RISE * S * f,
-                11 * S, pal.a(pal.PRIZE, 0.95 * a), nil, nil, true)
-        end
-    end
-    for k = #payouts, live + 1, -1 do payouts[k] = nil end
+            txt("+" .. p.n, px + 12 * F.scale,
+                py + 13 * F.scale - ui_payouts.RISE * F.scale * f,
+                11 * F.scale, pal.a(pal.PRIZE, 0.95 * a), nil, nil, true)
+    end)
 
     -- Not your own, for the same reason your name is not drawn: a bounty under
     -- your hull is a number about you, in the one place on screen you are
@@ -1124,13 +1091,13 @@ local SHOWN = 9
 -- what a row measures. The wheel never needed it: a notch is one row by
 -- definition, which is why the list could only ever be scrolled by a mouse.
 function M.row_pitch()
-    return LINE * S
+    return LINE * F.scale
 end
 
 -- Where the scoreboard starts: under the menu chip when there is one, since
 -- the chip owns the corner.
 local function top_y()
-    return ST + PAD * S + 32 * S
+    return F.safe_t + PAD * F.scale + 32 * F.scale
 end
 
 -- Two names, in the order a person reads them. Lowercased for the comparison
@@ -1205,19 +1172,19 @@ local function rooms_panel(rooms, here)
     if M.room_scroll > max_scroll then M.room_scroll = max_scroll end
     if M.room_scroll < 0 then M.room_scroll = 0 end
     local shown = math.min(n, SHOWN)
-    local w = COL_W * S
-    local head = 24 * S
-    local rowh = LINE * S
-    local h = head + shown * rowh + 8 * S
-    local x = SL + PAD * S
+    local w = COL_W * F.scale
+    local head = 24 * F.scale
+    local rowh = LINE * F.scale
+    local h = head + shown * rowh + 8 * F.scale
+    local x = F.safe_l + PAD * F.scale
     local y = top_y()
     rect(x, y, w, h, pal.a(pal.BG, 0.62))
     vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.7))
-    txt("ROOMS", x + 12 * S, y + 15 * S, (FONT - 2) * S, pal.a(pal.INK, 0.75))
+    txt("ROOMS", x + 12 * F.scale, y + 15 * F.scale, (FONT - 2) * F.scale, pal.a(pal.INK, 0.75))
     -- The zone, once, at the head. The rows are numbers and a number needs
     -- saying what it is a number of; the corner chip has no space for it and
     -- this does.
-    txt(M.zone_name or "", x + w - 12 * S, y + 15 * S, (FONT - 3) * S,
+    txt(M.zone_name or "", x + w - 12 * F.scale, y + 15 * F.scale, (FONT - 3) * F.scale,
         pal.a(pal.DIM, 0.85), "right")
     for i = 1 + M.room_scroll, math.min(n, M.room_scroll + shown) do
         local rm = rooms[i]
@@ -1230,11 +1197,11 @@ local function rooms_panel(rooms, here)
             -- The one you are in, lit the way the scoreboard lights your own
             -- row: this list is mostly read to answer "where am I", and the
             -- answer should not need counting down the rows.
-            wash(x + 1 * S, ry0, w - 2 * S, rowh, pal.a(pal.FRIEND, 0.13))
+            wash(x + 1 * F.scale, ry0, w - 2 * F.scale, rowh, pal.a(pal.FRIEND, 0.13))
             col = pal.FRIEND
         end
-        txt("ROOM " .. rm.n, x + 12 * S, mid, (FONT - 1) * S, col)
-        population(x + w - 12 * S, mid, rm.players, rm.bots,
+        txt("ROOM " .. rm.n, x + 12 * F.scale, mid, (FONT - 1) * F.scale, col)
+        population(x + w - 12 * F.scale, mid, rm.players, rm.bots,
                    pal.a(mine and pal.FRIEND or pal.INK, 0.9))
         -- A full room is a row you can read and not a row you can press. The
         -- one you are in is the same: pressing it would be a disconnect and a
@@ -1248,10 +1215,10 @@ local function rooms_panel(rooms, here)
     if n > shown then
         local track = shown * rowh
         local ty = y + head
-        local bar = math.max(10 * S, track * (shown / n))
+        local bar = math.max(10 * F.scale, track * (shown / n))
         local at = (M.room_scroll / math.max(1, n - shown)) * (track - bar)
-        u:seg(x + w - 3 * S, ry(ty + at), x + w - 3 * S, ry(ty + at + bar),
-              2 * S, pal.a(pal.RADAR_TILE, 0.8))
+        F.layer:seg(x + w - 3 * F.scale, ry(ty + at), x + w - 3 * F.scale, ry(ty + at + bar),
+              2 * F.scale, pal.a(pal.RADAR_TILE, 0.8))
     end
     -- The whole panel takes the wheel, rather than a strip beside it, which is
     -- how the scoreboard behaves: a list is the thing you point at when you
@@ -1445,12 +1412,12 @@ local function scores(me, pilots, watchers, viewer_name)
     if M.scroll > max_scroll then M.scroll = max_scroll end
     if M.scroll < 0 then M.scroll = 0 end
     local shown = math.min(n, SHOWN)
-    local w = COL_W * S
-    local head = 24 * S
+    local w = COL_W * F.scale
+    local head = 24 * F.scale
     -- Header, rows, and a line of totals under them.
-    local foot = 16 * S
-    local h = head + shown * LINE * S + foot + 8 * S
-    local x = SL + PAD * S
+    local foot = 16 * F.scale
+    local h = head + shown * LINE * F.scale + foot + 8 * F.scale
+    local x = F.safe_l + PAD * F.scale
     -- Enough behind it to read over a starfield, and no border: a rule down
     -- the left is what holds the column, the way it holds a wall face.
     rect(x, top_y(), w, h, pal.a(pal.BG, 0.62))
@@ -1467,14 +1434,14 @@ local function scores(me, pilots, watchers, viewer_name)
     -- needs five digits and nobody else needs any of them, so a column sized
     -- for the worst case eats the names in every room where the worst case
     -- has not happened.
-    local small = (FONT - 3) * S
-    local num = (FONT - 2) * S
-    local GAP = 7 * S
+    local small = (FONT - 3) * F.scale
+    local num = (FONT - 2) * F.scale
+    local GAP = 7 * F.scale
     local function col_w(field, label)
         -- Floored, because a column of single digits collapses to six points
         -- and its heading is the control that sorts by it: a target that
         -- narrow cannot be hit with a mouse, let alone a thumb.
-        local wide = math.max(text_w(label, small), 16 * S)
+        local wide = math.max(text_w(label, small), 16 * F.scale)
         for i = 1, n do
             local r = rows[i]
             if not r.watch then
@@ -1485,15 +1452,15 @@ local function scores(me, pilots, watchers, viewer_name)
     end
     local bw, pw, dw, kw =
         col_w("b", "BTY"), col_w("p", "PTS"), col_w("d", "D"), col_w("k", "K")
-    local bx = x + w - 12 * S
+    local bx = x + w - 12 * F.scale
     local px = bx - bw - GAP
     local dx = px - pw - GAP
     local kx = dx - dw - GAP
     -- The marks sit in their own column left of the numbers rather than after
     -- each name, so a scan down the list finds them in a line instead of at a
     -- dozen different indents. The names end where that column begins.
-    local mark_x = kx - kw - GAP - MARK_K * S
-    local name_x = x + 12 * S
+    local mark_x = kx - kw - GAP - MARK_K * F.scale
+    local name_x = x + 12 * F.scale
     local name_n = math.max(3, math.floor((mark_x - GAP - name_x) /
                                           (num * ADVANCE)))
     -- A heading is a control now, so the one in use is lit and the rest are
@@ -1501,7 +1468,7 @@ local function scores(me, pilots, watchers, viewer_name)
     -- is set.
     local function head_col(name, label, hx, align)
         local on = M.sort == name
-        txt(label, hx, top_y() + 14 * S, small,
+        txt(label, hx, top_y() + 14 * F.scale, small,
             on and pal.a(pal.FRIEND, 0.95) or pal.a(pal.DIM, 0.7), align)
         return on
     end
@@ -1513,13 +1480,13 @@ local function scores(me, pilots, watchers, viewer_name)
     -- Hit boxes over the headings. Each takes its whole column and the gap to
     -- its left, so the four tile without overlapping and the labels, which
     -- are one or three characters wide, are not the target.
-    hit(x + 8 * S, top_y() + 4 * S, 60 * S, 18 * S, "sort_name")
-    hit(kx - kw - GAP, top_y() + 4 * S, kw + GAP, 18 * S, "sort_kills")
-    hit(dx - dw - GAP, top_y() + 4 * S, dw + GAP, 18 * S, "sort_deaths")
-    hit(px - pw - GAP, top_y() + 4 * S, pw + GAP, 18 * S, "sort_points")
-    hit(bx - bw - GAP, top_y() + 4 * S, bw + GAP, 18 * S, "sort_bounty")
-    ticks(x + 12 * S, top_y() + 20 * S, w - 24 * S,
-          pal.a(pal.RADAR_TILE, 0.35), 14 * S)
+    hit(x + 8 * F.scale, top_y() + 4 * F.scale, 60 * F.scale, 18 * F.scale, "sort_name")
+    hit(kx - kw - GAP, top_y() + 4 * F.scale, kw + GAP, 18 * F.scale, "sort_kills")
+    hit(dx - dw - GAP, top_y() + 4 * F.scale, dw + GAP, 18 * F.scale, "sort_deaths")
+    hit(px - pw - GAP, top_y() + 4 * F.scale, pw + GAP, 18 * F.scale, "sort_points")
+    hit(bx - bw - GAP, top_y() + 4 * F.scale, bw + GAP, 18 * F.scale, "sort_bounty")
+    ticks(x + 12 * F.scale, top_y() + 20 * F.scale, w - 24 * F.scale,
+          pal.a(pal.RADAR_TILE, 0.35), 14 * F.scale)
 
     local y = top_y() + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
@@ -1550,11 +1517,11 @@ local function scores(me, pilots, watchers, viewer_name)
             -- same mark, in its own color, since it is a selection and this
             -- is how this interface draws one.
             local mark = reading and pal.BOUNTY or pal.FRIEND
-            wash(x, y, w, LINE * S, pal.a(mark, 0.13))
-            u:seg(x, ry(y), x, ry(y + LINE * S), 1.6 * S, pal.a(mark, 0.95))
+            wash(x, y, w, LINE * F.scale, pal.a(mark, 0.13))
+            F.layer:seg(x, ry(y), x, ry(y + LINE * F.scale), 1.6 * F.scale, pal.a(mark, 0.95))
         end
         local name = string.sub(r.name, 1, name_n)
-        local cy = y + LINE * S / 2
+        local cy = y + LINE * F.scale / 2
         txt(name, name_x, cy, num, pal.a(col, mine and 1.0 or 0.8),
             nil, nil, true)
         if r.ai then bot_mark(mark_x, cy, pal.a(pal.DIM, 0.75)) end
@@ -1568,7 +1535,7 @@ local function scores(me, pilots, watchers, viewer_name)
             -- The one way to ask about a pilot. Published before the panel's
             -- own box below, which takes the wheel and would otherwise
             -- swallow the press: first box in wins.
-            hit(x, y, w - 6 * S, LINE * S, "pilot", r.i)
+            hit(x, y, w - 6 * F.scale, LINE * F.scale, "pilot", r.i)
             -- Kills, deaths and points all in ink. Deaths read dimmer than
             -- the two beside them for a while, which was a judgement about
             -- the number rather than a fact about it: a column is either a
@@ -1585,7 +1552,7 @@ local function scores(me, pilots, watchers, viewer_name)
             txt(tostring(r.p), px, cy, num, pal.a(pal.INK, 0.85), "right")
             txt(tostring(r.b), bx, cy, num, pal.a(pal.BOUNTY, 0.9), "right")
         end
-        y = y + LINE * S
+        y = y + LINE * F.scale
     end
 
     -- Who is in the room, by what the zone is willing to say about them.
@@ -1617,18 +1584,18 @@ local function scores(me, pilots, watchers, viewer_name)
     if watching > 0 then
         line = line .. string.format(", %d WATCHING", watching)
     end
-    txt(line, x + 12 * S, fy, (FONT - 4) * S, pal.a(pal.DIM, 0.8))
+    txt(line, x + 12 * F.scale, fy, (FONT - 4) * F.scale, pal.a(pal.DIM, 0.8))
 
     -- Only when there is something to scroll to. A bar on a list that fits is
     -- a control that does nothing.
     if n > shown then
-        local track = shown * LINE * S
+        local track = shown * LINE * F.scale
         local ty = top_y() + head
         local frac = shown / n
-        local bar = math.max(10 * S, track * frac)
+        local bar = math.max(10 * F.scale, track * frac)
         local at = (M.scroll / math.max(1, n - shown)) * (track - bar)
-        u:seg(x + w - 3 * S, ry(ty + at), x + w - 3 * S, ry(ty + at + bar),
-              2 * S, pal.a(pal.RADAR_TILE, 0.8))
+        F.layer:seg(x + w - 3 * F.scale, ry(ty + at), x + w - 3 * F.scale, ry(ty + at + bar),
+              2 * F.scale, pal.a(pal.RADAR_TILE, 0.8))
     end
 
     -- The whole panel takes the wheel, rather than a strip beside it: a list
@@ -1677,8 +1644,8 @@ end
 local function feed(lines, top)
     local shown = math.min(#lines, M.compact and 4 or M.FEED_MAX)
     if shown == 0 then return end
-    local right = W - SR - PAD * S - PANEL_X * S
-    local y = top + PANEL_Y * S
+    local right = F.w - F.safe_r - PAD * F.scale - PANEL_X * F.scale
+    local y = top + PANEL_Y * F.scale
     for i = 1, shown do
         local f = lines[i]
         -- Older lines sit further back, and the last second and a half of a
@@ -1686,20 +1653,20 @@ local function feed(lines, top)
         local a = 1 - (i - 1) * 0.07
         local left = M.FEED_LIFE - f.t
         if left < FEED_FADE then a = a * math.max(0, left / FEED_FADE) end
-        txt(line_text(f.text), right, y + LINE * S / 2, FONT * S,
+        txt(line_text(f.text), right, y + LINE * F.scale / 2, FONT * F.scale,
             pal.a(f.col or pal.DIM, a), "right", nil, true)
-        y = y + LINE * S
+        y = y + LINE * F.scale
     end
     -- As wide as the widest line it drew rather than a guess, since a feed of
     -- short names is a narrow block and a zone the width of the panel would
     -- claim empty screen beside it.
     local wide = 0
     for i = 1, shown do
-        local w = text_w(line_text(lines[i].text), FONT * S)
+        local w = text_w(line_text(lines[i].text), FONT * F.scale)
         if w > wide then wide = w end
     end
-    local block_top = top + PANEL_Y * S
-    local block_bot = block_top + shown * LINE * S
+    local block_top = top + PANEL_Y * F.scale
+    local block_bot = block_top + shown * LINE * F.scale
     -- Its left edge and its whole height. The word goes beside the block, not
     -- under it: under it the bar could only be a line tall and the sentence
     -- read as a sixth kill, and the feed is the one panel here that is already
@@ -1737,18 +1704,18 @@ local TOAST_FADE = 0.9
 -- where the instruments go, and the two stopped requiring each other on
 -- purpose.
 local function toast_y(reach)
-    if W >= H then
+    if F.w >= F.h then
         -- Landscape: under the flags, in the band across the top that the
         -- corner chips and the dial leave empty between them.
-        return ST + 62 * S
+        return F.safe_t + 62 * F.scale
     end
     -- Portrait: two thirds of the way down, the empty band between the ship
     -- and the controls. Clamped clear of what the pads actually reach rather
     -- than trusting the fraction, since a hull carrying four kinds of charge
     -- builds a taller rail than one carrying none, and the rail is the thing
     -- this must not land on.
-    local floor = reach and (H - reach - 22 * S) or H
-    return math.min(H * 0.66, floor)
+    local floor = reach and (F.h - reach - 22 * F.scale) or F.h
+    return math.min(F.h * 0.66, floor)
 end
 
 local function toast(lines, reach)
@@ -1764,15 +1731,15 @@ local function toast(lines, reach)
     local left = TOAST_LIFE - f.t
     if left < TOAST_FADE then a = math.max(0, left / TOAST_FADE) end
     local words = line_text(f.text)
-    local size = (FONT + 1) * S
+    local size = (FONT + 1) * F.scale
     local y = toast_y(reach)
     -- A wash under it rather than a box round it, the width of the words and
     -- no wider. Mid-screen over a starfield the type needs something to sit
     -- on; a border would be the one shape this interface does not draw.
-    local w = text_w(words, size) + 26 * S
-    local h = LINE * S + 6 * S
-    rect(W / 2 - w / 2, y - h / 2, w, h, pal.rgb(0x03050a, 0.62 * a))
-    txt(words, W / 2, y, size, pal.a(f.col or pal.INK, a), "center", nil, true)
+    local w = text_w(words, size) + 26 * F.scale
+    local h = LINE * F.scale + 6 * F.scale
+    rect(F.w / 2 - w / 2, y - h / 2, w, h, pal.rgb(0x03050a, 0.62 * a))
+    txt(words, F.w / 2, y, size, pal.a(f.col or pal.INK, a), "center", nil, true)
 end
 
 -- The corner stack: what the triggers do, what you carry and can spend, and
@@ -1805,8 +1772,8 @@ end
 -- The repel's rings, which are also the push add-on's: the same force in
 -- both places, so the same mark.
 local function gl_rings(cx, cy, k, col)
-    u:ring(cx, ry(cy), k * 0.36, pen(k, 0.143), 10, col)
-    u:ring(cx, ry(cy), k * 0.78, pen(k, 0.129), 12,
+    F.layer:ring(cx, ry(cy), k * 0.36, pen(k, 0.143), 10, col)
+    F.layer:ring(cx, ry(cy), k * 0.78, pen(k, 0.129), 12,
            pal.a(col, (col[4] or 1) * 0.5))
 end
 
@@ -1816,7 +1783,7 @@ local function gl_spokes(n)
         for i = 0, n - 1 do
             local a = (i + 0.5) * 2 * math.pi / n
             local dx, dy = math.cos(a), math.sin(a)
-            u:seg(cx + dx * k * 0.3, ry(cy + dy * k * 0.3),
+            F.layer:seg(cx + dx * k * 0.3, ry(cy + dy * k * 0.3),
                   cx + dx * k, ry(cy + dy * k), pen(k, 0.143), col)
         end
     end
@@ -1827,7 +1794,7 @@ local gl_burst = gl_spokes(8)
 local function gl_diamond(cx, cy, k, col)
     local pts = {cx, ry(cy - k), cx + k * 0.8, ry(cy),
                  cx, ry(cy + k), cx - k * 0.8, ry(cy)}
-    u:outline(pts, pen(k, 0.183), col, true)
+    F.layer:outline(pts, pen(k, 0.183), col, true)
 end
 
 -- A charge is whatever the zone put in the slot, so the mark follows the
@@ -1895,10 +1862,10 @@ local function status(me, charges, lift)
     -- One number the whole block is measured in, so it grows as a drawing
     -- rather than as a pile of separately tuned constants. Everything below
     -- is in `z`, not in S.
-    local z = S * math.max(1, math.min(STACK,
-                                       (H / S) * STACK_SHARE / (n * 22)))
+    local z = F.scale * math.max(1, math.min(STACK,
+                                       (F.h / F.scale) * STACK_SHARE / (n * 22)))
     local rows_h = 22 * z
-    local x = SL + PAD * S
+    local x = F.safe_l + PAD * F.scale
     -- The axis every mark stands its subject on: the head of each round, the
     -- center of the repel's rings and the burst's hub, the middle of the
     -- green. Far enough in that a bolt's trail, which runs a hull and a half
@@ -1911,7 +1878,7 @@ local function status(me, charges, lift)
     -- ordinary row reading as two stacks with a hole between them.
     local val = mid + 17 * z
 
-    local y = H - PAD * S - n * rows_h - (lift or 0)
+    local y = F.h - PAD * F.scale - n * rows_h - (lift or 0)
     -- How far right the stack actually reached, which is what decides where a
     -- label beside it starts. A hull holding three add-ons is a good deal
     -- wider than one holding none, and a constant here would either crowd the
@@ -1988,28 +1955,28 @@ end
 -- opening a panel at all.
 local function loadout(me, class_names, top)
     if not M.details then return top or 0 end
-    local w = COL_W * S
-    local x = SL + PAD * S
-    local h = 54 * S
-    local y = (top or 0) + 6 * S
+    local w = COL_W * F.scale
+    local x = F.safe_l + PAD * F.scale
+    local h = 54 * F.scale
+    local y = (top or 0) + 6 * F.scale
     rect(x, y, w, h, pal.a(pal.BG, 0.62))
     vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.7))
 
-    txt(class_names[sim.ship_class(me) + 1] or "?", x + 12 * S, y + 16 * S,
-        (FONT - 1) * S, pal.FRIEND)
+    txt(class_names[sim.ship_class(me) + 1] or "?", x + 12 * F.scale, y + 16 * F.scale,
+        (FONT - 1) * F.scale, pal.FRIEND)
     txt(sim.ship_kills(me) .. "k  " .. sim.ship_deaths(me) .. "d",
-        x + w - 12 * S, y + 16 * S, (FONT - 3) * S, pal.a(pal.DIM, 0.85),
+        x + w - 12 * F.scale, y + 16 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.85),
         "right")
 
     -- Every slot always present, so the row does not reflow as prizes are
     -- picked up, and the ones you do not hold sit there as empties: a list of
     -- what is still out there to find.
-    local gap = (w - 24 * S) / #pal.UPGRADES
+    local gap = (w - 24 * F.scale) / #pal.UPGRADES
     for i, up in ipairs(pal.UPGRADES) do
         local held = sim.ship_up(me, i - 1)
-        local sx = x + 14 * S + (i - 1) * gap
-        txt(up.short, sx, y + 32 * S, (FONT - 4) * S, pal.a(pal.DIM, 0.75))
-        pips(sx + 3 * S, y + 42 * S, 4, held, up.col, 1.9 * S, 6 * S)
+        local sx = x + 14 * F.scale + (i - 1) * gap
+        txt(up.short, sx, y + 32 * F.scale, (FONT - 4) * F.scale, pal.a(pal.DIM, 0.75))
+        pips(sx + 3 * F.scale, y + 42 * F.scale, 4, held, up.col, 1.9 * F.scale, 6 * F.scale)
     end
     return y + h
 end
@@ -2038,9 +2005,9 @@ local function inspect(o, top)
         return
     end
     local p = o.pilots[i]
-    local w = COL_W * S
-    local x = SL + PAD * S
-    local rowh = 15 * S
+    local w = COL_W * F.scale
+    local x = F.safe_l + PAD * F.scale
+    local rowh = 15 * F.scale
     -- Name, then the rows that always exist, then the team when it means
     -- something. Counted rather than guessed so the panel is exactly as tall
     -- as what it holds.
@@ -2101,36 +2068,38 @@ local function inspect(o, top)
     local attach = attachable(o.me, i, theirs, o.watch, riding)
     -- The team row always exists now, so the count is fixed.
     local rows_n = 8
-    local h = 30 * S + rows_n * rowh
-        + ((invite or follow or attach or drop) and (KEY_H + 12) * S or 0)
-        + 10 * S
+    local h = 30 * F.scale + rows_n * rowh
+        + ((invite or follow or attach or drop) and (KEY_H + 12) * F.scale or 0)
+        + 10 * F.scale
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
     -- at the top of the screen lands on the menu chip.
-    local y = math.max((top or 0) + 6 * S, top_y())
+    local y = math.max((top or 0) + 6 * F.scale, top_y())
     rect(x, y, w, h, pal.a(pal.BG, 0.72))
     vrule(x, y, h, pal.a(same_team and pal.FRIEND or pal.ENEMY, 0.9))
 
     local col = same_team and pal.FRIEND or pal.ENEMY
     local nm = (p and p.name) or ("ship " .. i)
-    txt(nm, x + 12 * S, y + 17 * S, (FONT - 1) * S, pal.a(col, 0.95),
+    txt(nm, x + 12 * F.scale, y + 17 * F.scale, (FONT - 1) * F.scale, pal.a(col, 0.95),
         nil, nil, true)
     -- The mark rides after the name here, not in a column: there is one line
     -- and nothing to line it up with.
     if p and p.ai then
-        bot_mark(x + 12 * S + text_w(nm, (FONT - 1) * S) + 5 * S, y + 17 * S,
-                 pal.a(pal.DIM, 0.85), 10 * S)
+        bot_mark(x + 12 * F.scale
+                     + text_w(nm, (FONT - 1) * F.scale) + 5 * F.scale,
+                 y + 17 * F.scale,
+                 pal.a(pal.DIM, 0.85), 10 * F.scale)
     end
     -- Close, in the corner it opened under. Escape does the same thing.
-    close_mark(x + w - 17 * S, y + 17 * S, pal.a(pal.DIM, 0.8), 10 * S)
-    hit(x + w - 26 * S, y + 4 * S, 26 * S, 22 * S, "uninspect")
+    close_mark(x + w - 17 * F.scale, y + 17 * F.scale, pal.a(pal.DIM, 0.8), 10 * F.scale)
+    hit(x + w - 26 * F.scale, y + 4 * F.scale, 26 * F.scale, 22 * F.scale, "uninspect")
 
-    local ry_ = y + 30 * S
-    local lab = (FONT - 4) * S
-    local val = (FONT - 2) * S
+    local ry_ = y + 30 * F.scale
+    local lab = (FONT - 4) * F.scale
+    local val = (FONT - 2) * F.scale
     local function row(k, v, vcol, raw)
-        txt(k, x + 12 * S, ry_ + rowh / 2, lab, pal.a(pal.DIM, 0.8))
-        txt(v, x + w - 12 * S, ry_ + rowh / 2, val, vcol or pal.a(pal.INK, 0.9),
+        txt(k, x + 12 * F.scale, ry_ + rowh / 2, lab, pal.a(pal.DIM, 0.8))
+        txt(v, x + w - 12 * F.scale, ry_ + rowh / 2, val, vcol or pal.a(pal.INK, 0.9),
             "right", nil, raw)
         ry_ = ry_ + rowh
     end
@@ -2222,11 +2191,11 @@ local function inspect(o, top)
         label, action = "WATCH", "watch"
     end
     if label then
-        local by = ry_ + 4 * S
+        local by = ry_ + 4 * F.scale
         local bw = key_w(label)
-        key_cap(x + 12 * S, by, bw, label, action ~= nil)
+        key_cap(x + 12 * F.scale, by, bw, label, action ~= nil)
         if action then
-            hit(x + 12 * S, by, bw, KEY_H * S, action, i)
+            hit(x + 12 * F.scale, by, bw, KEY_H * F.scale, action, i)
         end
     end
     return y + h
@@ -2293,9 +2262,9 @@ local function help_table()
     -- menu's page draws, so the table under H and the chips under the board
     -- cannot say different things about the same key.
     local bound = binds.rows()
-    local fs = (M.compact and 11 or 13) * S
+    local fs = (M.compact and 11 or 13) * F.scale
     local rowh = fs * 1.65
-    local pad = 18 * S
+    local pad = 18 * F.scale
     -- Three columns, measured off the widest thing each has to hold rather
     -- than guessed, since the sentences are what decides the width and they
     -- are the one column that cannot be allowed to wrap.
@@ -2305,13 +2274,13 @@ local function help_table()
         nw = math.max(nw, glyph_w(r.name, fs))
         dw = math.max(dw, glyph_w(r.what, fs))
     end
-    local gap = 14 * S
+    local gap = 14 * F.scale
     local w = pad * 2 + kw + gap + nw + gap + dw
     local head = fs * 1.9
     local h = pad * 2 + head + #bound * rowh
     -- Shrunk to fit rather than clipped, because a window narrower than the
     -- longest sentence is a window this has to work in anyway.
-    local room = W - 24 * S
+    local room = F.w - 24 * F.scale
     local scale = (w > room) and (room / w) or 1
     if scale < 1 then
         fs, rowh, pad, gap = fs * scale, rowh * scale, pad * scale, gap * scale
@@ -2320,34 +2289,34 @@ local function help_table()
         w = room
         h = pad * 2 + head + #bound * rowh
     end
-    local x, y = (W - w) / 2, (H - h) / 2
+    local x, y = (F.w - w) / 2, (F.h - h) / 2
 
     rect(x, y, w, h, pal.rgb(0x03050a, 0.88))
-    u:frame(x, ry(y, h), w, h, 1.0 * S, pal.a(pal.DIM, 0.5))
+    F.layer:frame(x, ry(y, h), w, h, 1.0 * F.scale, pal.a(pal.DIM, 0.5))
 
     txt("CONTROLS", x + pad, y + pad + head * 0.35, fs * 1.05,
         pal.a(pal.INK, 0.9))
     local rule = y + pad + head - fs * 0.35
-    u:seg(x + pad, ry(rule), x + w - pad, ry(rule), 0.8 * S,
+    F.layer:seg(x + pad, ry(rule), x + w - pad, ry(rule), 0.8 * F.scale,
           pal.a(pal.DIM, 0.45))
 
     local kx = x + pad
     local nx = kx + kw + gap
     local dx = nx + nw + gap
-    local was = case
+    local was = F.case
     for i, r in ipairs(bound) do
         local ty = y + pad + head + (i - 0.5) * rowh
         -- The key in the color a key is drawn in everywhere else, the name in
         -- ink, and the sentence dimmer than both: three weights so the eye can
         -- run down one column without reading the other two.
-        case = "upper"
+        F.case = "upper"
         txt(r.show, kx, ty, fs, pal.a(pal.FRIEND, 0.95))
         txt(r.name, nx, ty, fs, pal.a(pal.INK, 0.92))
         -- Prose, and set as prose. The rest of the interface shouts.
-        case = "sentence"
+        F.case = "sentence"
         txt(r.what, dx, ty, fs, pal.a(pal.PANEL_INK, 0.85))
     end
-    case = was
+    F.case = was
 end
 
 local function help_prompt()
@@ -2356,25 +2325,25 @@ local function help_prompt()
     if M.touching or M.help then return end
 
     local label = "PRESS H FOR HELP"
-    local fs = (M.compact and 11 or 13) * S
-    local h = 32 * S
-    local close_w = 34 * S
-    local w = text_w(label, fs) + 28 * S + close_w
-    local x = (W - w) / 2
-    local y = H - h - 18 * S
+    local fs = (M.compact and 11 or 13) * F.scale
+    local h = 32 * F.scale
+    local close_w = 34 * F.scale
+    local w = text_w(label, fs) + 28 * F.scale + close_w
+    local x = (F.w - w) / 2
+    local y = F.h - h - 18 * F.scale
     local cut = x + w - close_w
 
     rect(x, y, w, h, pal.a(pal.BTN_BG, 0.82))
-    u:frame(x, ry(y, h), w, h, 1.0 * S, pal.a(pal.DIM, 0.48))
-    u:seg(cut, ry(y + 6 * S), cut, ry(y + h - 6 * S), 0.8 * S,
+    F.layer:frame(x, ry(y, h), w, h, 1.0 * F.scale, pal.a(pal.DIM, 0.48))
+    F.layer:seg(cut, ry(y + 6 * F.scale), cut, ry(y + h - 6 * F.scale), 0.8 * F.scale,
           pal.a(pal.DIM, 0.38))
 
     -- One slow breath every three seconds. The hue stays neutral while the
     -- label moves from the interface gray to white and back.
-    local pulse = 0.5 - 0.5 * math.cos((M.now or 0) * math.pi * 2 / 3)
-    txt(label, x + 14 * S, y + h / 2, fs,
+    local pulse = 0.5 - 0.5 * math.cos((F.now or 0) * math.pi * 2 / 3)
+    txt(label, x + 14 * F.scale, y + h / 2, fs,
         pal.hot(pal.DIM, pulse, 0.98), "left", nil, true)
-    close_mark(cut + close_w / 2, y + h / 2, pal.a(pal.DIM, 0.88), 10 * S)
+    close_mark(cut + close_w / 2, y + h / 2, pal.a(pal.DIM, 0.88), 10 * F.scale)
 
     -- First published wins. The close mark sits inside the full button, so its
     -- smaller target has to come first or every click would open help.
@@ -2383,8 +2352,8 @@ local function help_prompt()
 end
 
 local function safe_note(spent, limit)
-    local y = H * 0.62
-    txt("SAFE ZONE", W / 2, y, (M.compact and 12 or 16) * S,
+    local y = F.h * 0.62
+    txt("SAFE ZONE", F.w / 2, y, (M.compact and 12 or 16) * F.scale,
         pal.a(pal.FRIEND, 0.9), "center")
     if limit <= 0 then return end
     -- Rounded up, so the last second is a 1 and the number never sits on 0
@@ -2394,8 +2363,8 @@ local function safe_note(spent, limit)
     -- Red for the last ten, which is where it stops being information and
     -- starts being a warning.
     local col = left <= 10 and pal.ENEMY or pal.DIM
-    txt("seat released in " .. left, W / 2, y + (M.compact and 15 or 20) * S,
-        (M.compact and 10 or 12) * S, pal.a(col, 0.9), "center")
+    txt("seat released in " .. left, F.w / 2, y + (M.compact and 15 or 20) * F.scale,
+        (M.compact and 10 or 12) * F.scale, pal.a(col, 0.9), "center")
 end
 
 -- The damage vignette: red creeping in from the edges rather than a flash
@@ -2408,15 +2377,15 @@ end
 local function vignette(amount)
     if amount <= 0.01 then return end
     local col = pal.a(pal.HURT, 0.55 * amount)
-    local d = math.min(W, H) * 0.34
+    local d = math.min(F.w, F.h) * 0.34
     local function band(x1, y1, x2, y2, x3, y3, x4, y4)
-        u:tri_fade(x1, y1, 1, x2, y2, 1, x3, y3, 0, col)
-        u:tri_fade(x1, y1, 1, x3, y3, 0, x4, y4, 0, col)
+        F.layer:tri_fade(x1, y1, 1, x2, y2, 1, x3, y3, 0, col)
+        F.layer:tri_fade(x1, y1, 1, x3, y3, 0, x4, y4, 0, col)
     end
-    band(0, 0, W, 0, W - d, d, d, d)
-    band(0, H, W, H, W - d, H - d, d, H - d)
-    band(0, 0, 0, H, d, H - d, d, d)
-    band(W, 0, W, H, W - d, H - d, W - d, d)
+    band(0, 0, F.w, 0, F.w - d, d, d, d)
+    band(0, F.h, F.w, F.h, F.w - d, F.h - d, d, F.h - d)
+    band(0, 0, 0, F.h, d, F.h - d, d, d)
+    band(F.w, 0, F.w, F.h, F.w - d, F.h - d, F.w - d, d)
 end
 
 -- The control hints used to live here, across the bottom of the screen, in
@@ -2442,11 +2411,11 @@ local function menu_button(on_air, watch, room)
     -- ink and PLAYERS in slate, which is two controls that do the same kind of
     -- thing wearing two different states before either had been pressed. What
     -- they wear now is off or on, and the panel each opens is what turns it on.
-    local x, y = SL + PAD * S, ST + PAD * S
+    local x, y = F.safe_l + PAD * F.scale, F.safe_t + PAD * F.scale
     -- Each key is as wide as its own word. A slot cut for four letters is a
     -- slot the longer of the two runs out of.
     local cx = x
-    local keys = {{"MENU", "open", menu_up},
+    local keys = {{"MENU", "open", F.menu_up},
                   {"PLAYERS", "details", M.details}}
     -- Which copy of this game you are in, and the way to a different one.
     --
@@ -2467,8 +2436,8 @@ local function menu_button(on_air, watch, room)
     for _, c in ipairs(keys) do
         local ww = key_w(c[1])
         key_cap(cx, y, ww, c[1], c[3])
-        hit(cx, y, ww, KEY_H * S, c[2])
-        cx = cx + ww + KEY_GAP * S
+        hit(cx, y, ww, KEY_H * F.scale, c[2])
+        cx = cx + ww + KEY_GAP * F.scale
     end
     -- The tally, when the room channel is pointed at you.
     --
@@ -2483,17 +2452,17 @@ local function menu_button(on_air, watch, room)
     -- across this corner keeps clear of it by the rule that already keeps it
     -- clear of them.
     if on_air then
-        local mid = y + KEY_H * S / 2
+        local mid = y + KEY_H * F.scale / 2
         -- A slow swell rather than a blink. It has to hold attention for as
         -- long as the camera holds you, which is minutes, and a blink that
         -- long is something a player learns to stop seeing.
-        local beat = 0.55 + 0.45 * math.sin(M.now * 3.2)
-        local r = 3.4 * S
-        u:disc(cx + r, ry(mid, 0), r, 10, pal.a(pal.HURT, beat))
+        local beat = 0.55 + 0.45 * math.sin(F.now * 3.2)
+        local r = 3.4 * F.scale
+        F.layer:disc(cx + r, ry(mid, 0), r, 10, pal.a(pal.HURT, beat))
         local label = "ON AIR"
         local size = key_size()
-        txt(label, cx + 2 * r + 5 * S, mid, size, pal.a(pal.HURT, 0.9))
-        cx = cx + 2 * r + 5 * S + text_w(label, size) + KEY_GAP * S
+        txt(label, cx + 2 * r + 5 * F.scale, mid, size, pal.a(pal.HURT, 0.9))
+        cx = cx + 2 * r + 5 * F.scale + text_w(label, size) + KEY_GAP * F.scale
     elseif watch then
         -- Watching, and what of. The same slot, because the two are the same
         -- kind of fact about the connection and a watcher is never on air.
@@ -2502,11 +2471,11 @@ local function menu_button(on_air, watch, room)
         -- is a warning about you and this is a statement about what you are
         -- looking at, which is the difference between being filmed and
         -- holding the camera.
-        local mid = y + KEY_H * S / 2
-        local h = 4.6 * S
+        local mid = y + KEY_H * F.scale / 2
+        local h = 4.6 * F.scale
         local wsym = h * 1.5
         local col = pal.a(pal.PRIZE, 0.92)
-        u:tri(cx, ry(mid - h, 0), cx, ry(mid + h, 0),
+        F.layer:tri(cx, ry(mid - h, 0), cx, ry(mid + h, 0),
               cx + wsym, ry(mid, 0), col)
         local size = key_size()
         -- The room's feed says so in the interface's own word; a pilot says
@@ -2514,11 +2483,11 @@ local function menu_button(on_air, watch, room)
         -- everywhere else here.
         local named = watch.name ~= nil
         txt(named and watch.name or "CHANNEL",
-            cx + wsym + 6 * S, mid, size, col, nil, nil, named)
-        cx = cx + wsym + 6 * S
-            + text_w(named and watch.name or "CHANNEL", size) + KEY_GAP * S
+            cx + wsym + 6 * F.scale, mid, size, col, nil, nil, named)
+        cx = cx + wsym + 6 * F.scale
+            + text_w(named and watch.name or "CHANNEL", size) + KEY_GAP * F.scale
     end
-    chip_right = cx - KEY_GAP * S
+    chip_right = cx - KEY_GAP * F.scale
 end
 
 -- How good the line is, above the dial. It belongs up here with the
@@ -2532,16 +2501,16 @@ end
 local function link(rtt)
     local q = 4
     if rtt > 24 then q = 1 elseif rtt > 12 then q = 2 elseif rtt > 6 then q = 3 end
-    local pad = (M.compact and 8 or PAD) * S
-    local right = W - SR - pad
-    local base = ST + pad + 13 * S
+    local pad = (M.compact and 8 or PAD) * F.scale
+    local right = F.w - F.safe_r - pad
+    local base = F.safe_t + pad + 13 * F.scale
     for k = 0, 3 do
-        local bh = (3 + k * 2.6) * S
-        local bx = right - (26 - k * 6) * S
-        rect(bx, base - bh, 4 * S, bh,
+        local bh = (3 + k * 2.6) * F.scale
+        local bx = right - (26 - k * 6) * F.scale
+        rect(bx, base - bh, 4 * F.scale, bh,
              k < q and pal.a(pal.PRIZE, 0.85) or pal.a(pal.DIM, 0.22))
     end
-    txt("LINK", right - 34 * S, base - 4 * S, (FONT - 3) * S,
+    txt("LINK", right - 34 * F.scale, base - 4 * F.scale, (FONT - 3) * F.scale,
         pal.a(pal.DIM, 0.8), "right")
     -- Pointing at this one names nothing. Four bars labeled LINK beside a
     -- millisecond count are already a sentence about the connection, and a
@@ -2566,10 +2535,10 @@ local function link(rtt)
     -- overshoot upward or to the right off the screen. Taller would mean
     -- taking a strip off the dial, which is the control that opens the map,
     -- and one control does not get to eat another.
-    if not menu_up then
+    if not F.menu_up then
         local _, dial_y = dial()
-        local x0 = right - 34 * S - text_w("LINK", (FONT - 3) * S) - 6 * S
-        hit(x0, ST, W - x0, math.max(dial_y - ST, 24 * S), "debug")
+        local x0 = right - 34 * F.scale - text_w("LINK", (FONT - 3) * F.scale) - 6 * F.scale
+        hit(x0, F.safe_t, F.w - x0, math.max(dial_y - F.safe_t, 24 * F.scale), "debug")
     end
 end
 
@@ -2590,9 +2559,9 @@ local function debug_hud(o, top)
     -- readout somebody squints at while flying and then quotes into a bug
     -- report, and four points below the interface's own text it was neither
     -- glanceable nor quotable.
-    local size = (FONT - 1) * S
-    local colw = 214 * S
-    local rowh = 16 * S
+    local size = (FONT - 1) * F.scale
+    local colw = 214 * F.scale
+    local rowh = 16 * F.scale
     local lines = {
         {"fps", string.format("%.0f", o.fps or 0)},
         {"frame", string.format("%.1f ms", (o.frame_ms or 0))},
@@ -2653,9 +2622,9 @@ local function debug_hud(o, top)
     -- off the bottom of the screen, and a number nobody can see is not a
     -- readout. Two columns of six is the usual answer; a desktop window has
     -- the height for one and gets it.
-    local y = (top or 0) + 6 * S
-    local avail = H - y - 6 * S
-    local most = math.max(1, math.floor((W - 2 * PAD * S) / colw))
+    local y = (top or 0) + 6 * F.scale
+    local avail = F.h - y - 6 * F.scale
+    local most = math.max(1, math.floor((F.w - 2 * PAD * F.scale) / colw))
     -- The narrowest panel that fits, and a little type-shrinking is cheaper
     -- than another column: three columns of four reach most of the way across
     -- a phone held sideways and lie over the game, where two columns four per
@@ -2665,8 +2634,8 @@ local function debug_hud(o, top)
     local cols, per, k = most, 1, 1
     for c = 1, most do
         local p = math.ceil(#lines / c)
-        local need = 24 * S + p * rowh + 6 * S
-        local fit = (need <= avail) and 1 or (avail - 30 * S) / (p * rowh)
+        local need = 24 * F.scale + p * rowh + 6 * F.scale
+        local fit = (need <= avail) and 1 or (avail - 30 * F.scale) / (p * rowh)
         if fit >= 0.85 or c == most then
             cols, per, k = c, p, math.max(0.62, math.min(1, fit))
             break
@@ -2674,24 +2643,24 @@ local function debug_hud(o, top)
     end
     rowh = rowh * k
     size = size * k
-    local h = 24 * S + per * rowh + 6 * S
+    local h = 24 * F.scale + per * rowh + 6 * F.scale
     local w = colw * cols
-    local x = W - SR - PAD * S - w
+    local x = F.w - F.safe_r - PAD * F.scale - w
     rect(x, y, w, h, pal.a(pal.BG, 0.78))
     vrule(x, y, h, pal.a(pal.PRIZE, 0.8))
-    txt("DEBUG", x + 10 * S, y + 15 * S, size, pal.a(pal.PRIZE, 0.9))
+    txt("DEBUG", x + 10 * F.scale, y + 15 * F.scale, size, pal.a(pal.PRIZE, 0.9))
     -- The zone's name and nothing else. The wire sends the description on a
     -- second line of the same message, and a sentence about the game is not a
     -- diagnostic: it wrapped the header in prose that never changes while the
     -- numbers under it do.
-    txt((o.zone or ""):match("^[^\n]*"), x + w - 10 * S, y + 15 * S, size,
+    txt((o.zone or ""):match("^[^\n]*"), x + w - 10 * F.scale, y + 15 * F.scale, size,
         pal.a(pal.DIM, 0.8), "right")
     for n, l in ipairs(lines) do
         local c = math.floor((n - 1) / per)
         local cx = x + c * colw
-        local ly = y + 24 * S + ((n - 1) % per) * rowh
-        txt(l[1], cx + 10 * S, ly + rowh / 2, size, pal.a(pal.DIM, 0.8))
-        txt(l[2], cx + colw - 10 * S, ly + rowh / 2, size,
+        local ly = y + 24 * F.scale + ((n - 1) % per) * rowh
+        txt(l[1], cx + 10 * F.scale, ly + rowh / 2, size, pal.a(pal.DIM, 0.8))
+        txt(l[2], cx + colw - 10 * F.scale, ly + rowh / 2, size,
             pal.a(pal.INK, 0.9), "right")
     end
     -- The way out is the thing itself. What opens this is the LINK bars in
@@ -2705,7 +2674,7 @@ local function debug_hud(o, top)
     -- Filed here rather than beside the bars, because it is this rectangle,
     -- and it is this rectangle only once the wrapping above has decided how
     -- many columns the window can hold.
-    if not menu_up then hit(x, y, w, h, "debug") end
+    if not F.menu_up then hit(x, y, w, h, "debug") end
 end
 
 -- Where you are, over the dial's other top corner from the link readout.
@@ -2715,13 +2684,13 @@ end
 -- long that nobody can hold in their head or call across a room.
 local function coords(me)
     if not me then return end
-    local pad = (M.compact and 8 or PAD) * S
+    local pad = (M.compact and 8 or PAD) * F.scale
     local x = dial()
-    local base = ST + pad + 13 * S
-    txt("POS", x, base - 4 * S, (FONT - 3) * S, pal.a(pal.DIM, 0.8))
+    local base = F.safe_t + pad + 13 * F.scale
+    txt("POS", x, base - 4 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
     txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
                       math.floor(sim.ship_y(me) / 16)),
-        x + 26 * S, base - 4 * S, (FONT - 3) * S, pal.a(pal.INK, 0.85))
+        x + 26 * F.scale, base - 4 * F.scale, (FONT - 3) * F.scale, pal.a(pal.INK, 0.85))
 end
 
 -- The flags, as flags.
@@ -2735,9 +2704,9 @@ local function flag_strip(me)
     local n = sim.flag_count()
     if n == 0 then return end
     local my_team = view_team
-    local pitch = 15 * S
-    local x0 = W / 2 - (n - 1) * pitch / 2
-    local y = ST + 30 * S
+    local pitch = 15 * F.scale
+    local x0 = F.w / 2 - (n - 1) * pitch / 2
+    local y = F.safe_t + 30 * F.scale
     for i = 0, n - 1 do
         local _, _, team = sim.flag_at(i)
         local col = (team == 255) and pal.a(pal.DIM, 0.55)
@@ -2745,20 +2714,20 @@ local function flag_strip(me)
         local px = x0 + i * pitch
         -- The same pennant the radar draws, so a flag looks like a flag
         -- wherever it is shown.
-        u:seg(px, ry(y + 9 * S, 0), px, ry(y - 8 * S, 0), 1.6 * S, col)
-        u:tri(px, ry(y - 8 * S, 0), px + 9 * S, ry(y - 4 * S, 0),
+        F.layer:seg(px, ry(y + 9 * F.scale, 0), px, ry(y - 8 * F.scale, 0), 1.6 * F.scale, col)
+        F.layer:tri(px, ry(y - 8 * F.scale, 0), px + 9 * F.scale, ry(y - 4 * F.scale, 0),
               px, ry(y, 0), col)
     end
 end
 
 function M.hud(o)
-    case = "upper"
+    F.case = "upper"
     if sim.ship_count() == 0 then return end
     local me = o.me
     -- Before anything draws: every instrument that separates a friend from an
     -- enemy reads this, and while watching it is not the subject's side.
     view_team = o.side or team_of(o.me)
-    menu_up = o.menu_open
+    F.menu_up = o.menu_open
     -- Under the menu the instruments stay -- you can still be shot while you
     -- are reading -- but they stop competing with it. A third of their light
     -- is enough to keep a glance at your energy or the dial worth taking and
@@ -2771,13 +2740,13 @@ function M.hud(o)
     --
     -- A third rather than out: nothing is paused, you can be shot while you
     -- are answering, and a glance at your energy is still worth taking.
-    text_dim = (o.menu_open or M.room_ask) and 0.34 or 1
+    F.text_dim = (o.menu_open or M.room_ask) and 0.34 or 1
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
     -- which is exactly where the status panel and the control hint were, so
     -- everything else moves up out of the way of them.
-    local lift = M.touching and 150 * S or 0
+    local lift = M.touching and 150 * F.scale or 0
 
     -- One panel in this column at a time. The rooms list stands in the
     -- scoreboard's slot, so whichever is up is the one drawn.
@@ -2851,15 +2820,15 @@ function M.hud(o)
     end
     flag_strip(me)
     if o.banner and o.banner ~= "" then
-        txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,
+        txt(o.banner, F.w / 2, 64 * F.scale, (M.compact and 15 or 24) * F.scale,
             pal.a(pal.INK, 0.92), "center")
     end
     if o.lag_notice and o.lag_notice ~= "" then
-        txt(o.lag_notice, W / 2, 92 * S, (M.compact and 10 or 13) * S,
+        txt(o.lag_notice, F.w / 2, 92 * F.scale, (M.compact and 10 or 13) * F.scale,
             pal.a(pal.HURT, 0.95), "center")
     end
     if not o.watch and sim.ship_alive(me) == 0 then
-        txt("D E S T R O Y E D", W / 2, H * 0.46, (M.compact and 15 or 22) * S,
+        txt("D E S T R O Y E D", F.w / 2, F.h * 0.46, (M.compact and 15 or 22) * F.scale,
             pal.ENEMY, "center")
     elseif not o.watch and (o.safe or 0) > 0 then
         safe_note(o.safe, o.safe_limit or 0)
@@ -2908,10 +2877,10 @@ local function thumb(cx, cy, cls, col, scale, turn)
             pts[i] = cx + src[i] * scale * k
             pts[i + 1] = ry(cy - (src[i + 1] - h.mid) * scale)
         end
-        u:outline(pts, width, c, true)
+        F.layer:outline(pts, width, c, true)
     end
-    trace(h.poly, HULL_PEN * S, col)
-    if h.canopy then trace(h.canopy, 1.0 * S, pal.a(col, 0.55)) end
+    trace(h.poly, HULL_PEN * F.scale, col)
+    if h.canopy then trace(h.canopy, 1.0 * F.scale, pal.a(col, 0.55)) end
 end
 
 -- The menu. One list, whatever level it is.
@@ -3049,19 +3018,19 @@ local function board_key(bx, cy, kw, kh, label, cat, dimmed)
     local col = board_col(cat)
     if col and not dimmed then
         rect(bx, cy, kw, kh, pal.a(col, 0.10))
-        u:frame(bx, ry(cy, kh), kw, kh, 1.1 * S, pal.a(col, 0.85))
+        F.layer:frame(bx, ry(cy, kh), kw, kh, 1.1 * F.scale, pal.a(col, 0.85))
     elseif col then
         -- Ctrl: a gun the browser only surrenders in fullscreen, drawn at
         -- half light so the board says "sometimes" without a footnote on it.
-        u:frame(bx, ry(cy, kh), kw, kh, 1.1 * S, pal.a(col, 0.35))
+        F.layer:frame(bx, ry(cy, kh), kw, kh, 1.1 * F.scale, pal.a(col, 0.35))
     else
-        u:frame(bx, ry(cy, kh), kw, kh, 0.8 * S, pal.a(pal.DIM, 0.22))
+        F.layer:frame(bx, ry(cy, kh), kw, kh, 0.8 * F.scale, pal.a(pal.DIM, 0.22))
     end
     if label then
         local size = kh * (#label > 1 and KEY_WORD or KEY_LETTER)
         -- A word on a one-unit key would run over both its edges, so it takes
         -- whichever is smaller: the key's height or the room across it.
-        local across = (kw - 6 * S) / (#label * ADVANCE)
+        local across = (kw - 6 * F.scale) / (#label * ADVANCE)
         if size > across then size = across end
         local ink = col and pal.a(col, dimmed and 0.5 or 0.95)
             or pal.a(pal.DIM, 0.4)
@@ -3072,8 +3041,8 @@ end
 -- A direction, as a triangle, because the gui font's charset is picked over
 -- and an arrow glyph it does not carry would draw as nothing.
 local function board_arrow(cx, cy, dx, dy, col)
-    local r = 3.6 * S
-    u:tri(cx + dx * r, ry(cy + dy * r),
+    local r = 3.6 * F.scale
+    F.layer:tri(cx + dx * r, ry(cy + dy * r),
           cx - dx * r + dy * r, ry(cy - dy * r - dx * r),
           cx - dx * r - dy * r, ry(cy - dy * r + dx * r), col)
 end
@@ -3090,7 +3059,7 @@ local function board(x, top, w, v)
     local arming = v.arming
     local unit = w / BOARD_UNITS
     local kh = unit * 0.82
-    local pitch = kh + 3 * S
+    local pitch = kh + 3 * F.scale
     -- Which key the picture puts a bracket round, and which one stays lit
     -- while everything else goes dark. Resting, both are the cursor. Asking,
     -- both are the control that is asking, which is the row's own flag rather
@@ -3132,8 +3101,8 @@ local function board(x, top, w, v)
     -- everywhere else, round the key whose chip the cursor is on. Not a
     -- second color, so the key goes on saying what it does.
     local function key_cursor(bx, cy, kw)
-        bracket(bx - 3 * S, cy - 3 * S, kw + 6 * S, kh + 6 * S,
-                pal.a(pal.INK, arming and 0.95 or 0.7), 9 * S, 3 * S)
+        bracket(bx - 3 * F.scale, cy - 3 * F.scale, kw + 6 * F.scale, kh + 6 * F.scale,
+                pal.a(pal.INK, arming and 0.95 or 0.7), 9 * F.scale, 3 * F.scale)
     end
 
     local function draw(bx, cy, kw, label)
@@ -3156,7 +3125,7 @@ local function board(x, top, w, v)
         local bx = x
         local cy = top + (r - 1) * pitch
         for _, k in ipairs(row) do
-            local kw = (k[2] or 1) * unit - 3 * S
+            local kw = (k[2] or 1) * unit - 3 * F.scale
             draw(bx, cy, kw, k[1])
             bx = bx + (k[2] or 1) * unit
         end
@@ -3166,7 +3135,7 @@ local function board(x, top, w, v)
     -- would spend room on a diagram nobody can use.
     local aw = unit
     local ax = x + (BOARD_MAIN + BOARD_GAP) * unit
-    local navw = aw - 3 * S
+    local navw = aw - 3 * F.scale
     draw(ax + 2 * aw, top, navw, "pgup")
     draw(ax + 2 * aw, top + pitch, navw, "pgdn")
     -- The arrows, as the inverted T they are on the board: up over down, in
@@ -3176,15 +3145,15 @@ local function board(x, top, w, v)
                         {1, 1, 0, 1, "down"}, {2, 1, 1, 0, "right"}}) do
         local kx = ax + d[1] * aw
         local cy = top + (3 + d[2]) * pitch
-        local kw = aw - 3 * S
+        local kw = aw - 3 * F.scale
         local sel, cat = key_look(d[5])
         local col = board_col(cat)
         if col then
             rect(kx, cy, kw, kh, pal.a(col, 0.08))
-            u:frame(kx, ry(cy, kh), kw, kh, 1.1 * S, pal.a(col, 0.75))
+            F.layer:frame(kx, ry(cy, kh), kw, kh, 1.1 * F.scale, pal.a(col, 0.75))
             board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4], pal.a(col, 0.95))
         else
-            u:frame(kx, ry(cy, kh), kw, kh, 0.8 * S, pal.a(pal.DIM, 0.22))
+            F.layer:frame(kx, ry(cy, kh), kw, kh, 0.8 * F.scale, pal.a(pal.DIM, 0.22))
             board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4],
                         pal.a(pal.DIM, 0.4))
         end
@@ -3192,7 +3161,7 @@ local function board(x, top, w, v)
         hit(kx, cy, kw, kh, "key", d[5])
     end
 
-    return 5 * pitch + 2 * S
+    return 5 * pitch + 2 * F.scale
 end
 
 -- What the board will ask for, so the panel can be sized before drawing it.
@@ -3200,7 +3169,7 @@ end
 -- uses, in the order it uses them.
 local function board_height(w)
     local kh = (w / BOARD_UNITS) * 0.82
-    return 5 * (kh + 3 * S) + 2 * S
+    return 5 * (kh + 3 * F.scale) + 2 * F.scale
 end
 
 -- Every control, with the key it is on, under the picture of the board.
@@ -3232,13 +3201,13 @@ local function chips(x, top, w, v, rh)
     -- Type off the row, the same way the board sizes a letter off its key, so
     -- a page squeezed into a short window comes out smaller rather than
     -- overlapping itself.
-    local fs = math.min(12.5 * S, rh * 0.48)
+    local fs = math.min(12.5 * F.scale, rh * 0.48)
     for i, r in ipairs(v.rows) do
         local cx = x + ((i - 1) % CHIP_COLS) * cw
         local cy = top + math.floor((i - 1) / CHIP_COLS) * rh
         local hot = i == v.sel
         if hot then
-            rect(cx - 6 * S, cy, cw - 4 * S, rh,
+            rect(cx - 6 * F.scale, cy, cw - 4 * F.scale, rh,
                  pal.a(pal.FRIEND, r.arming and 0.22 or 0.16))
         end
         -- The row that puts everything back is not a control and wears no
@@ -3246,10 +3215,10 @@ local function chips(x, top, w, v, rh)
         -- things that have a key.
         local hue = board_col(r.cat) or pal.DIM
         if not r.reset then
-            rect(cx, cy + rh / 2 - 3.5 * S, 7 * S, 7 * S,
+            rect(cx, cy + rh / 2 - 3.5 * F.scale, 7 * F.scale, 7 * F.scale,
                  pal.a(hue, hot and 1 or 0.8))
         end
-        txt(r.label or "", cx + 15 * S, cy + rh / 2, fs,
+        txt(r.label or "", cx + 15 * F.scale, cy + rh / 2, fs,
             pal.a(pal.INK, hot and 1 or 0.8), nil, MENU_FONT)
         -- The key, in the face the numbers in flight are set in, because it is
         -- a reading off the machine rather than a word anybody chose. Verbatim
@@ -3260,9 +3229,9 @@ local function chips(x, top, w, v, rh)
         -- is at the foot of the page rather than in a column too narrow to
         -- hold it.
         if r.arming then
-            local slot = 18 * S
-            rect(cx + cw - 26 * S - slot, cy + rh / 2 - 1 * S, slot, 2 * S,
-                 pal.a(hue, 0.55 + 0.45 * math.sin(M.now * 6)))
+            local slot = 18 * F.scale
+            rect(cx + cw - 26 * F.scale - slot, cy + rh / 2 - 1 * F.scale, slot, 2 * F.scale,
+                 pal.a(hue, 0.55 + 0.45 * math.sin(F.now * 6)))
         elseif r.detail then
             -- A control that cannot move is written in the shade every
             -- unpressable thing here is written in, which says so without a
@@ -3273,15 +3242,15 @@ local function chips(x, top, w, v, rh)
             -- until the pair fits rather than letting one run under the other,
             -- which is what the board does to a word on a one-unit key.
             local ks = fs
-            local room = cw - 26 * S - 15 * S - glyph_w(r.label or "", fs)
-                - 10 * S
+            local room = cw - 26 * F.scale - 15 * F.scale - glyph_w(r.label or "", fs)
+                - 10 * F.scale
             while ks > fs * 0.6 and glyph_w(r.detail, ks) > room do
                 ks = ks * 0.94
             end
-            txt(r.detail, cx + cw - 26 * S, cy + rh / 2, ks,
+            txt(r.detail, cx + cw - 26 * F.scale, cy + rh / 2, ks,
                 pal.a(ink, hot and 1 or 0.75), "right", nil, true)
         end
-        if r.pick then hit(cx - 6 * S, cy, cw - 4 * S, rh, "stage", i) end
+        if r.pick then hit(cx - 6 * F.scale, cy, cw - 4 * F.scale, rh, "stage", i) end
     end
 end
 
@@ -3362,11 +3331,11 @@ local function mark_zones(cx, cy, r, col)
         pts[#pts + 1] = cx + ex * ca - ey * sa
         pts[#pts + 1] = ry(cy + ex * sa + ey * ca)
     end
-    u:outline(pts, 1.1 * S, pal.a(col, 0.8), true)
+    F.layer:outline(pts, 1.1 * F.scale, pal.a(col, 0.8), true)
     -- Dark in the body and lit at the rim, which is how everything solid in
     -- this game is drawn, from a wall face to a hull.
-    u:disc(cx, ry(cy), body, 18, pal.a(pal.BG, 0.94))
-    u:ring(cx, ry(cy), body, 1.3 * S, 20, col)
+    F.layer:disc(cx, ry(cy), body, 18, pal.a(pal.BG, 0.94))
+    F.layer:ring(cx, ry(cy), body, 1.3 * F.scale, 20, col)
 end
 
 local function mark_pilot(cx, cy, r, col)
@@ -3380,19 +3349,19 @@ local function mark_pilot(cx, cy, r, col)
     -- small. Here it is drawn half again as big next to six shapes that all
     -- hold one line no matter what they are, and a weight that scales made it
     -- the one heavy stop in the column.
-    pilot_mark(cx, cy, col, r * 1.6, RAIL_PEN * S)
+    pilot_mark(cx, cy, col, r * 1.6, RAIL_PEN * F.scale)
 end
 
 local function mark_team(cx, cy, r, col)
     -- Two pennants, which is what a flag is drawn as in the world.
     for i, k in ipairs({{-0.5, 0.85}, {0.35, 1.0}}) do
         local px, s = cx + r * k[1], r * k[2]
-        u:seg(px, ry(cy - s * 0.9), px, ry(cy + s * 0.85), 1.2 * S,
+        F.layer:seg(px, ry(cy - s * 0.9), px, ry(cy + s * 0.85), 1.2 * F.scale,
               pal.a(col, i == 2 and 1 or 0.6), true)
         local pts = {px, ry(cy - s * 0.9), px + s * 0.85, ry(cy - s * 0.55),
                      px, ry(cy - s * 0.2)}
-        u:fan(pts, pal.a(col, i == 2 and 0.22 or 0.12))
-        u:outline(pts, 1.1 * S, pal.a(col, i == 2 and 1 or 0.6), true)
+        F.layer:fan(pts, pal.a(col, i == 2 and 0.22 or 0.12))
+        F.layer:outline(pts, 1.1 * F.scale, pal.a(col, i == 2 and 1 or 0.6), true)
     end
 end
 
@@ -3401,7 +3370,7 @@ local function mark_settings(cx, cy, r, col)
     -- row of identical sliders is a picture of nothing being adjustable.
     for i, k in ipairs({-0.62, 0, 0.62}) do
         local y = cy + r * k
-        u:seg(cx - r, ry(y), cx + r, ry(y), 1.0 * S, pal.a(col, 0.45), true)
+        F.layer:seg(cx - r, ry(y), cx + r, ry(y), 1.0 * F.scale, pal.a(col, 0.45), true)
         local kx = cx + r * ({-0.3, 0.42, -0.05})[i]
         rect(kx - r * 0.17, y - r * 0.26, r * 0.34, r * 0.52, col)
     end
@@ -3435,7 +3404,7 @@ local function mark_controls(cx, cy, r, col)
         local x0 = cx + gx * pitch - k / 2
         local y0 = cy + gy * pitch - k / 2
         rect(x0, y0, k, k, pal.a(col, 0.10))
-        u:frame(x0, ry(y0, k), k, k, 1.1 * S, col)
+        F.layer:frame(x0, ry(y0, k), k, k, 1.1 * F.scale, col)
     end
     key(0, -0.5)
     key(-1, 0.5)
@@ -3444,9 +3413,9 @@ local function mark_controls(cx, cy, r, col)
 end
 
 local function mark_about(cx, cy, r, col)
-    u:ring(cx, ry(cy), r * 0.86, 1.15 * S, 18, col)
-    u:disc(cx, ry(cy - r * 0.4), r * 0.15, 8, col)
-    u:seg(cx, ry(cy - r * 0.05), cx, ry(cy + r * 0.45), 1.4 * S, col, true)
+    F.layer:ring(cx, ry(cy), r * 0.86, 1.15 * F.scale, 18, col)
+    F.layer:disc(cx, ry(cy - r * 0.4), r * 0.15, 8, col)
+    F.layer:seg(cx, ry(cy - r * 0.05), cx, ry(cy + r * 0.45), 1.4 * F.scale, col, true)
 end
 
 -- Discord's mark, traced from Discord's own file and drawn the way this rail
@@ -3524,7 +3493,7 @@ local function mark_discord(cx, cy, r, col)
     for i = 1, #CLYDE_T, 3 do
         local t = {CLYDE_T[i] * 2 - 1, CLYDE_T[i + 1] * 2 - 1,
                    CLYDE_T[i + 2] * 2 - 1}
-        u:tri(cx + CLYDE_V[t[1]] * r, ry(cy + CLYDE_V[t[1] + 1] * r),
+        F.layer:tri(cx + CLYDE_V[t[1]] * r, ry(cy + CLYDE_V[t[1] + 1] * r),
               cx + CLYDE_V[t[2]] * r, ry(cy + CLYDE_V[t[2] + 1] * r),
               cx + CLYDE_V[t[3]] * r, ry(cy + CLYDE_V[t[3] + 1] * r),
               pal.a(col, 0.10))
@@ -3535,7 +3504,7 @@ local function mark_discord(cx, cy, r, col)
             pts[#pts + 1] = cx + CLYDE_V[k * 2 - 1] * r
             pts[#pts + 1] = ry(cy + CLYDE_V[k * 2] * r)
         end
-        u:outline(pts, 1.2 * S, col, true)
+        F.layer:outline(pts, 1.2 * F.scale, col, true)
     end
 end
 
@@ -3545,9 +3514,9 @@ local function mark_leave(cx, cy, r, col)
     local pts = {cx + r * 0.15, ry(cy - r * 0.9), cx - r * 0.85,
                  ry(cy - r * 0.9), cx - r * 0.85, ry(cy + r * 0.9),
                  cx + r * 0.15, ry(cy + r * 0.9)}
-    u:outline(pts, 1.2 * S, pal.a(col, 0.8), false)
-    u:seg(cx - r * 0.2, ry(cy), cx + r * 0.85, ry(cy), 1.3 * S, col, true)
-    u:tri(cx + r, ry(cy), cx + r * 0.45, ry(cy - r * 0.4),
+    F.layer:outline(pts, 1.2 * F.scale, pal.a(col, 0.8), false)
+    F.layer:seg(cx - r * 0.2, ry(cy), cx + r * 0.85, ry(cy), 1.3 * F.scale, col, true)
+    F.layer:tri(cx + r, ry(cy), cx + r * 0.45, ry(cy - r * 0.4),
           cx + r * 0.45, ry(cy + r * 0.4), col)
 end
 
@@ -3590,33 +3559,33 @@ end
 -- telling the truth while it does: the directory is asked again every few
 -- seconds, and a zone with nobody running it is one an arena can come back to.
 local function sweep_dial(cx, cy, r)
-    local ring = math.max(0.8 * S, r * 0.022)
+    local ring = math.max(0.8 * F.scale, r * 0.022)
     -- Three range rings where there is room for three. A dial the height of a
     -- row has twenty points across it, and three rings in that are five points
     -- apart, which is closer than the stroke drawing them: they close up into
     -- a disc with a fringe. Two rings at that size is the same instrument,
     -- read at the distance it is actually being read from.
-    local rings = (r > 24 * S) and {0.42, 0.72, 1.0} or {0.55, 1.0}
-    local sides = math.max(18, math.min(30, math.floor(r / S)))
+    local rings = (r > 24 * F.scale) and {0.42, 0.72, 1.0} or {0.55, 1.0}
+    local sides = math.max(18, math.min(30, math.floor(r / F.scale)))
     for k, f in ipairs(rings) do
-        u:ring(cx, ry(cy), r * f, ring, sides,
+        F.layer:ring(cx, ry(cy), r * f, ring, sides,
                pal.a(pal.RADAR_TILE, 0.55 - k * 0.12))
     end
-    local ang = -M.now * 0.8
+    local ang = -F.now * 0.8
     -- How much of the circle the tail covers. Fewer strokes on the small dial:
     -- the same half radian of them, on something twenty points across, is a
     -- quarter of the face filled in, and a sweep that wide is a pie chart.
-    local tail = (r > 24 * S) and 10 or 5
+    local tail = (r > 24 * F.scale) and 10 or 5
     for k = 0, tail - 1 do
         -- The trail is behind it, which for a sweep going round the way a
         -- dial's hand goes is the side it has just left.
         local a = ang + k * 0.05
         local f = 1 - k / tail
-        u:seg(cx, ry(cy), cx + math.cos(a) * r * 0.98,
-              ry(cy - math.sin(a) * r * 0.98), math.max(1.0 * S, r * 0.028),
+        F.layer:seg(cx, ry(cy), cx + math.cos(a) * r * 0.98,
+              ry(cy - math.sin(a) * r * 0.98), math.max(1.0 * F.scale, r * 0.028),
               pal.a(pal.FRIEND, 0.32 * f * f), true)
     end
-    u:disc(cx, ry(cy), math.max(1.2 * S, r * 0.05), 10, pal.a(pal.DIM, 0.9))
+    F.layer:disc(cx, ry(cy), math.max(1.2 * F.scale, r * 0.05), 10, pal.a(pal.DIM, 0.9))
 end
 
 -- One row of the stage: a mark for the one you are on, the name, and
@@ -3641,12 +3610,12 @@ local function stage_row(x, y, w, h, r, hot)
     -- already on" lives in the gutter to the left of that column, off the type
     -- entirely: drawn inline it pushed its own label right of every other
     -- label, so the one row worth finding was the one out of line.
-    local tx = x + GUTTER * S
+    local tx = x + GUTTER * F.scale
     if r.mark then
         -- A lit wedge, the same one the corner stack uses to say a slot is
         -- the ready one.
-        u:tri(x + 7 * S, ry(y + h / 2 - 4.5 * S), x + 14 * S, ry(y + h / 2),
-              x + 7 * S, ry(y + h / 2 + 4.5 * S), pal.FRIEND)
+        F.layer:tri(x + 7 * F.scale, ry(y + h / 2 - 4.5 * F.scale), x + 14 * F.scale, ry(y + h / 2),
+              x + 7 * F.scale, ry(y + h / 2 + 4.5 * F.scale), pal.FRIEND)
     end
     local sel = hot or r.mark
     -- A row nothing is serving is a place that exists and cannot be flown to
@@ -3654,7 +3623,7 @@ local function stage_row(x, y, w, h, r, hot)
     -- Two kinds of row you cannot press, written the same shade back from the
     -- ones you can: one nothing is serving yet, and one with no seat left.
     if r.waiting or r.full then col = pal.a(col, 0.6) end
-    local size = (M.compact and 17 or 18) * S
+    local size = (M.compact and 17 or 18) * F.scale
     -- A row carrying a sentence of its own gives it the lower half and takes
     -- the upper for everything else. The games are the list that wants it:
     -- choosing between three of them is reading three sentences, and one at a
@@ -3665,13 +3634,13 @@ local function stage_row(x, y, w, h, r, hot)
     -- case the pair is laid out as two lines below and this one is skipped.
     local two_line = r.detail and r.detail ~= "" and not r.players
         and not r.choice and not r.note
-        and text_w(r.detail, 12 * S) > w - 32 * S - (tx - x) - 12 * S
+        and text_w(r.detail, 12 * F.scale) > w - 32 * F.scale - (tx - x) - 12 * F.scale
     if not two_line then
         txt(r.label or "", tx, ly, size,
             pal.a(col, sel and 1 or 0.82), nil, MENU_FONT, r.named)
     end
     if r.note then
-        txt(r.note, tx, y + h * 0.68, 11.5 * S,
+        txt(r.note, tx, y + h * 0.68, 11.5 * F.scale,
             pal.a(pal.DIM, (hot and 1 or 0.75) * (r.waiting and 0.7 or 1)))
     end
     -- The right hand side is data, so it stays in the face the numbers in
@@ -3681,13 +3650,13 @@ local function stage_row(x, y, w, h, r, hot)
         -- looks for a game says what the words did, in the room the numbers
         -- would have taken, and it keeps saying it while the list refreshes
         -- underneath: an arena can come back and this row is where it lands.
-        sweep_dial(x + w - 16 * S - 11 * S, ly, 11 * S)
+        sweep_dial(x + w - 16 * F.scale - 11 * F.scale, ly, 11 * F.scale)
     elseif r.players and (r.live or r.full) then
         -- A full room keeps its count. The dial above says "looking for one of
         -- these", which is the opposite of what a full room is: the count is
         -- the whole reason it cannot be entered, so hiding it would leave the
         -- row saying it is unavailable without saying why.
-        population(x + w - 16 * S, ly, r.players, r.bots,
+        population(x + w - 16 * F.scale, ly, r.players, r.bots,
                    pal.a(pal.FRIEND, sel and 1 or 0.85))
     elseif r.choice then
         -- A setting drawn as its own range: one step per value, the one it
@@ -3695,22 +3664,22 @@ local function stage_row(x, y, w, h, r, hot)
         -- on the row above; three steps of four lit is a position, and a
         -- press moves it along.
         local n = r.choices or 1
-        local sw2 = 13 * S
-        local gap = 5 * S
-        local x1 = x + w - 16 * S
+        local sw2 = 13 * F.scale
+        local gap = 5 * F.scale
+        local x1 = x + w - 16 * F.scale
         local x0 = x1 - (n * sw2 + (n - 1) * gap)
         for i = 1, n do
             local px = x0 + (i - 1) * (sw2 + gap)
             if i <= r.choice then
-                rect(px, y + h / 2 - 5 * S, sw2, 10 * S,
+                rect(px, y + h / 2 - 5 * F.scale, sw2, 10 * F.scale,
                      pal.a(pal.FRIEND, sel and 1 or 0.8))
             else
-                u:frame(px, ry(y + h / 2 - 5 * S, 10 * S), sw2, 10 * S,
-                        1.0 * S, pal.a(pal.DIM, 0.45))
+                F.layer:frame(px, ry(y + h / 2 - 5 * F.scale, 10 * F.scale), sw2, 10 * F.scale,
+                        1.0 * F.scale, pal.a(pal.DIM, 0.45))
             end
         end
         if r.detail and r.detail ~= "" then
-            txt(r.detail, x0 - 12 * S, y + h / 2, 11 * S,
+            txt(r.detail, x0 - 12 * F.scale, y + h / 2, 11 * F.scale,
                 pal.a(pal.DIM, 0.8), "right")
         end
     elseif r.detail and r.detail ~= "" then
@@ -3725,10 +3694,10 @@ local function stage_row(x, y, w, h, r, hot)
         if two_line then
             txt(r.label or "", tx, y + h * 0.32, size,
                 pal.a(col, sel and 1 or 0.82), nil, MENU_FONT, r.named)
-            txt(r.detail, tx, y + h * 0.70, 11 * S, pal.a(pal.DIM, 0.9),
+            txt(r.detail, tx, y + h * 0.70, 11 * F.scale, pal.a(pal.DIM, 0.9),
                 nil, nil, r.verbatim)
         else
-            txt(r.detail, x + w - 16 * S, ly, 12 * S,
+            txt(r.detail, x + w - 16 * F.scale, ly, 12 * F.scale,
                 pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right",
                 nil, r.verbatim)
         end
@@ -3750,17 +3719,17 @@ end
 -- it reads logs.
 local function empty_state(x, y, w, h, e)
     local cx = x + w / 2
-    local r = math.max(22 * S, math.min(56 * S, h * 0.26))
+    local r = math.max(22 * F.scale, math.min(56 * F.scale, h * 0.26))
     -- Centered in whatever room is left rather than hung off the top of it: on
     -- an empty page there is nothing above to hang from.
-    local blockh = 2 * r + 96 * S
-    local cy = y + math.max(0, (h - blockh) / 2) + r + 8 * S
+    local blockh = 2 * r + 96 * F.scale
+    local cy = y + math.max(0, (h - blockh) / 2) + r + 8 * F.scale
     sweep_dial(cx, cy, r)
-    local ty = cy + r + 30 * S
-    txt(e.head or "", cx, ty, (M.compact and 17 or 19) * S,
+    local ty = cy + r + 30 * F.scale
+    txt(e.head or "", cx, ty, (M.compact and 17 or 19) * F.scale,
         pal.a(pal.INK, 0.85), "center", MENU_FONT)
     if e.line and e.line ~= "" then
-        txt(e.line, cx, ty + 24 * S, 12 * S, pal.a(pal.DIM, 0.95), "center")
+        txt(e.line, cx, ty + 24 * F.scale, 12 * F.scale, pal.a(pal.DIM, 0.95), "center")
     end
 end
 
@@ -3780,11 +3749,11 @@ local function field_line(x, y, w, f, lit, dom)
     -- holds them, so nothing here claims it: the labels weigh the same and
     -- the caret in the element is what says which line is live.
     if dom then lit = false end
-    txt(f.label or "", x, y, 11 * S, pal.a(pal.DIM, lit and 0.95 or 0.7))
-    local ty = y + 22 * S
+    txt(f.label or "", x, y, 11 * F.scale, pal.a(pal.DIM, lit and 0.95 or 0.7))
+    local ty = y + 22 * F.scale
     if not dom then
         local shown = f.value or ""
-        local size = 16 * S
+        local size = 16 * F.scale
         local adv = size * ADVANCE
         -- What fits on the rule, and the end of it rather than the start,
         -- the way a text box scrolled to its caret shows the end. A line
@@ -3796,7 +3765,7 @@ local function field_line(x, y, w, f, lit, dom)
         if #shown > fit then shown = string.sub(shown, #shown - fit + 1) end
         if f.mask then
             for i = 1, #shown do
-                u:disc(x + (i - 0.5) * adv, ry(ty), 3.4 * S, 10,
+                F.layer:disc(x + (i - 0.5) * adv, ry(ty), 3.4 * F.scale, 10,
                        pal.a(pal.FRIEND, lit and 1 or 0.65))
             end
         else
@@ -3804,7 +3773,7 @@ local function field_line(x, y, w, f, lit, dom)
                 nil, nil, true)
         end
         if lit then
-            rect(x + #shown * adv + 1 * S, ty - 9 * S, 1.6 * S, 18 * S,
+            rect(x + #shown * adv + 1 * F.scale, ty - 9 * F.scale, 1.6 * F.scale, 18 * F.scale,
                  pal.a(pal.FRIEND, 0.9))
         end
     end
@@ -3817,9 +3786,9 @@ local function field_line(x, y, w, f, lit, dom)
     elseif lit then
         col, alpha = pal.FRIEND, 0.9
     end
-    u:seg(x, ry(ty + 14 * S), x + w, ry(ty + 14 * S), 1.2 * S,
+    F.layer:seg(x, ry(ty + 14 * F.scale), x + w, ry(ty + 14 * F.scale), 1.2 * F.scale,
           pal.a(col, alpha), true)
-    return 48 * S
+    return 48 * F.scale
 end
 
 -- The lines of a card, for the page to lay input elements over. CSS pixels,
@@ -3842,11 +3811,11 @@ local function ask_spec(fx, fy, fw, a)
     local out = {}
     local y = fy
     for i, f in ipairs(a.fields) do
-        out[i] = string.format("%.1f,%.1f,%.1f,%d,%s,%d", fx / S,
-                               (y + 22 * S) / S - FIELD_H / 2, fw / S,
+        out[i] = string.format("%.1f,%.1f,%.1f,%d,%s,%d", fx / F.scale,
+                               (y + 22 * F.scale) / F.scale - FIELD_H / 2, fw / F.scale,
                                FIELD_H, f.kind or "current-password",
                                f.max or 64)
-        y = y + 48 * S
+        y = y + 48 * F.scale
     end
     local spec = table.concat(out, ";")
     if a.ghost then
@@ -3873,12 +3842,12 @@ local function ask_card(x, y, w, h, a)
     -- behind it is listening, which the dropped hit boxes below enforce and
     -- this only has to announce; at 0.62 it was doing a second job nobody
     -- asked for, hiding a live arena from somebody who is still flying in it.
-    rect(0, 0, W, H, pal.a(pal.BG, 0.35))
+    rect(0, 0, F.w, F.h, pal.a(pal.BG, 0.35))
     -- Nothing behind this is listening, and hit boxes are first come first
     -- served, so the ones already published go: a tap on the rail or on a row
     -- under the wash would otherwise answer a question it cannot see.
     M.hits = {}
-    text_dim = 1
+    F.text_dim = 1
     -- The lines go to the page wherever there is a page to take them, which
     -- is every build that runs in a browser and no other. What that buys is
     -- the same on both kinds of machine and is not available any other way:
@@ -3889,26 +3858,26 @@ local function ask_card(x, y, w, h, a)
     -- face. The face was the smaller thing. Set by whoever draws, because
     -- only the client knows whether there is a page under it.
     local dom = a.fields and M.page_fields and true or false
-    local cw = math.min((a.fields and 380 or 340) * S, w - 24 * S)
+    local cw = math.min((a.fields and 380 or 340) * F.scale, w - 24 * F.scale)
     -- A card with a code in it is taller by the line the code takes, and one
     -- with lines to fill in is taller by each of them.
-    local ch = (a.code and 152 or 110) * S
-    if a.fields then ch = (84 + 48 * #a.fields + 46) * S end
+    local ch = (a.code and 152 or 110) * F.scale
+    if a.fields then ch = (84 + 48 * #a.fields + 46) * F.scale end
     -- A line under the head needs its own room. The keys are laid out from
     -- the bottom edge up, so without this they come back to meet it.
-    if a.note then ch = ch + 30 * S end
+    if a.note then ch = ch + 30 * F.scale end
     local cx = x + (w - cw) / 2
     local cy = y + (h - ch) / 2
     rect(cx, cy, cw, ch, pal.a(pal.BTN_BG, 0.98))
-    u:frame(cx, ry(cy, ch), cw, ch, 1.1 * S, pal.a(pal.BORDER, 1))
+    F.layer:frame(cx, ry(cy, ch), cw, ch, 1.1 * F.scale, pal.a(pal.BORDER, 1))
     local mid = cx + cw / 2
-    txt(a.head or "", mid, cy + 36 * S, (M.compact and 15 or 16) * S,
+    txt(a.head or "", mid, cy + 36 * F.scale, (M.compact and 15 or 16) * F.scale,
         pal.a(pal.INK, 0.95), "center", MENU_FONT)
     -- What answering costs, when that is not obvious from the question. The
     -- menu's cards never needed one; the rooms card does, because what a move
     -- takes off a pilot is the part they cannot see.
     if a.note then
-        txt(a.note, mid, cy + 60 * S, (FONT - 2) * S,
+        txt(a.note, mid, cy + 60 * F.scale, (FONT - 2) * F.scale,
             pal.a(pal.DIM, 0.9), "center")
     end
     -- What the question is about, when it is about a string rather than a
@@ -3916,12 +3885,12 @@ local function ask_card(x, y, w, h, a)
     -- quoted rather than said, and lit, because it is the one thing on the
     -- card anybody has to get right.
     if a.code then
-        txt(a.code, mid, cy + 72 * S, 30 * S, pal.FRIEND, "center", nil, true)
+        txt(a.code, mid, cy + 72 * F.scale, 30 * F.scale, pal.FRIEND, "center", nil, true)
     end
     if a.fields then
-        local fx = cx + 26 * S
-        local fw = cw - 52 * S
-        local fy = cy + 58 * S
+        local fx = cx + 26 * F.scale
+        local fw = cw - 52 * F.scale
+        local fy = cy + 58 * F.scale
         if dom then M.ask_dom = ask_spec(fx, fy, fw, a) end
         for i, f in ipairs(a.fields) do
             local lit = not a.sending and i == (a.field or 1)
@@ -3932,7 +3901,7 @@ local function ask_card(x, y, w, h, a)
             -- and answers the same tap itself, and a target underneath it
             -- would only be reachable by missing the one that works.
             if not dom then
-                hit(fx, fy - 48 * S, fw, 46 * S, "field", i)
+                hit(fx, fy - 48 * F.scale, fw, 46 * F.scale, "field", i)
             end
         end
     end
@@ -3943,15 +3912,15 @@ local function ask_card(x, y, w, h, a)
         ws[i] = key_w(k.label)
         total = total + ws[i]
     end
-    total = total + KEY_GAP * S * (#a.keys - 1)
+    total = total + KEY_GAP * F.scale * (#a.keys - 1)
     local kx = mid - total / 2
-    local ky = cy + ch - 22 * S - KEY_H * S
+    local ky = cy + ch - 22 * F.scale - KEY_H * F.scale
     for i, k in ipairs(a.keys) do
         key_cap(kx, ky, ws[i], k.label, i == a.sel)
         -- Whose question this is. The menu owns "answer"; anything else
         -- raising a card says so, or its answers are delivered to the menu.
-        hit(kx, ky, ws[i], KEY_H * S, a.action or "answer", i)
-        kx = kx + ws[i] + KEY_GAP * S
+        hit(kx, ky, ws[i], KEY_H * F.scale, a.action or "answer", i)
+        kx = kx + ws[i] + KEY_GAP * F.scale
     end
 end
 
@@ -3972,7 +3941,7 @@ function M.room_card(rooms)
         if r.n == M.room_ask then rm = r end
     end
     if not rm then M.room_ask = nil return end
-    ask_card(0, 0, W, H, {
+    ask_card(0, 0, F.w, F.h, {
         head = "move to room " .. rm.n .. "?",
         note = "MOVING RESPAWNS YOU",
         action = "room_answer",
@@ -3987,14 +3956,14 @@ end
 local function ship_grid(x, y, w, h, v, focused)
     local n = #v.rows
     if n == 0 then return end
-    local cols = (w / S >= 420) and 4 or 2
+    local cols = (w / F.scale >= 420) and 4 or 2
     -- How wide the grid came out, for whoever has to move a cursor around it.
     -- The arrows mean a column and a row, and only the drawing knows how many
     -- columns a window of this width got.
     M.stage_cols = cols
     local rowsn = math.ceil(n / cols)
     local cw = w / cols
-    local ch = math.min(h / rowsn, (M.compact and 92 or 104) * S)
+    local ch = math.min(h / rowsn, (M.compact and 92 or 104) * F.scale)
     -- Centered in the room it was given rather than hung off the top, so a
     -- tall phone does not draw eight ships in the top third of the screen.
     y = y + math.max(0, (h - ch * rowsn) / 2)
@@ -4007,12 +3976,12 @@ local function ship_grid(x, y, w, h, v, focused)
         -- The hull you are flying keeps a wash of its own, so a cursor moved
         -- off it does not take the answer to "which one am I in" with it.
         if r.mark then
-            rect(x + c * cw + 4 * S, y + rr * ch + 2 * S, cw - 8 * S,
-                 ch - 4 * S, pal.a(pal.FRIEND, 0.07))
+            rect(x + c * cw + 4 * F.scale, y + rr * ch + 2 * F.scale, cw - 8 * F.scale,
+                 ch - 4 * F.scale, pal.a(pal.FRIEND, 0.07))
         end
         if hot then
-            rect(x + c * cw + 4 * S, y + rr * ch + 2 * S, cw - 8 * S,
-                 ch - 4 * S, pal.a(pal.FRIEND, 0.14))
+            rect(x + c * cw + 4 * F.scale, y + rr * ch + 2 * F.scale, cw - 8 * F.scale,
+                 ch - 4 * F.scale, pal.a(pal.FRIEND, 0.14))
         end
         -- The hull, its name and its trade, held clear of the bottom of the
         -- lit cell. The role used to sit on that edge, its descenders over the
@@ -4028,16 +3997,16 @@ local function ship_grid(x, y, w, h, v, focused)
         if r.figure == "pilot" then
             pilot_mark(cx, cy - ch * 0.17,
                        pal.a(col, (hot or r.mark) and 1 or 0.7), ch * 0.30,
-                       HULL_PEN * S)
+                       HULL_PEN * F.scale)
         else
             thumb(cx, cy - ch * 0.17, r.hull or 0,
                   pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116,
-                  hot and M.now * 1.7 or nil)
+                  hot and F.now * 1.7 or nil)
         end
-        txt(r.label or "", cx, cy + ch * 0.20, (M.compact and 14 or 15) * S,
+        txt(r.label or "", cx, cy + ch * 0.20, (M.compact and 14 or 15) * F.scale,
             pal.a(col, (hot or r.mark) and 1 or 0.8), "center", MENU_FONT)
         if r.role then
-            txt(r.role, cx, cy + ch * 0.34, 10 * S, pal.a(pal.DIM, 0.9),
+            txt(r.role, cx, cy + ch * 0.34, 10 * F.scale, pal.a(pal.DIM, 0.9),
                 "center")
         end
         hit(x + c * cw, y + rr * ch, cw, ch, "stage", i)
@@ -4078,7 +4047,7 @@ local MK_GAP_TRI = {10, 1, 2, 4, 5, 6, 4, 6, 7, 3, 4, 7,
 local function logo_poly(points, tris, ox, oy, k, col)
     for i = 1, #tris, 3 do
         local a, b, c = tris[i], tris[i + 1], tris[i + 2]
-        u:tri(ox + points[a * 2 - 1] * k,
+        F.layer:tri(ox + points[a * 2 - 1] * k,
               ry(oy + points[a * 2] * k),
               ox + points[b * 2 - 1] * k,
               ry(oy + points[b * 2] * k),
@@ -4146,14 +4115,14 @@ end
 -- --- the whole thing -------------------------------------------------------
 
 function M.menu(v)
-    case = "sentence"
+    F.case = "sentence"
 
     -- A question takes the keys off whatever asked it, and the panel says so
     -- by standing down. It has to be set before a word of it is written: a
     -- glyph carries the alpha it was queued with, and the gui draws it over
     -- every mesh whatever is laid on top afterwards.
-    text_dim = v.ask and 0.1 or 1
-    local pts_w, pts_h = W / S, H / S
+    F.text_dim = v.ask and 0.1 or 1
+    local pts_w, pts_h = F.w / F.scale, F.h / F.scale
     -- One rule about the window, three layouts. 620 points is where a rail
     -- with its labels and a stage worth reading stop fitting side by side;
     -- 430 is where the name set large over it stops having the room.
@@ -4173,13 +4142,13 @@ function M.menu(v)
     -- edge and a kill feed are a great deal more to read through than stars,
     -- and a menu you have to squint past the game to read is not a menu.
     local base = home and 0.6 or 0.78
-    rect(0, 0, W, H, pal.rgb(0x03050a, narrow and (base + 0.08) or base))
+    rect(0, 0, F.w, F.h, pal.rgb(0x03050a, narrow and (base + 0.08) or base))
 
-    local margin = (narrow and 18 or 40) * S
+    local margin = (narrow and 18 or 40) * F.scale
     -- Room over the block for the name, wherever the menu is. It was kept for
     -- the home screen alone, so the same menu opened mid-fight opened without
     -- the one thing on it that says what this is.
-    local head = (narrow and 54 or 76) * S
+    local head = (narrow and 54 or 76) * F.scale
 
     local rx, ry_, rw, rh          -- the rail
     local icon_dy                  -- the icon's drop inside it, narrow only
@@ -4192,26 +4161,26 @@ function M.menu(v)
     local vertical = not narrow
 
     if vertical then
-        local total = math.min(W - SL - SR - 2 * margin, 940 * S)
-        local x0 = SL + (W - SL - SR - total) / 2
+        local total = math.min(F.w - F.safe_l - F.safe_r - 2 * margin, 940 * F.scale)
+        local x0 = F.safe_l + (F.w - F.safe_l - F.safe_r - total) / 2
         -- Clear of what the ship is carrying. Over a game the corner stack
         -- holds the left edge, and on a phone held sideways a centered block
         -- lands right on it: the rail's marks and the words GUN and BOMB in
         -- the same column read as one broken thing. The stack stays, because
         -- what you are carrying is worth knowing while you pick a hull.
         if not home then
-            x0 = math.max(x0, SL + 124 * S)
+            x0 = math.max(x0, F.safe_l + 124 * F.scale)
             -- And give back what moving right took: the block is as wide as
             -- the room left of the far margin, or it hangs off the edge of
             -- the screen carrying the end of the keyboard with it.
-            total = math.min(total, W - SR - x0 - margin)
+            total = math.min(total, F.w - F.safe_r - x0 - margin)
         end
         -- Wide enough for the words, at any height. A rail of marks alone
         -- was the short window's layout, on the argument that eight labeled
         -- stops do not fit a phone held sideways; they fit, and with no title
         -- over the stage the lit word is the only thing on screen that says
         -- which page this is.
-        rw = 150 * S
+        rw = 150 * F.scale
         -- A stop is 38 points at least, so a thumb has something to land on,
         -- and 58 at most, so six of them in a tall window do not drift apart
         -- into a list of unrelated things.
@@ -4222,8 +4191,8 @@ function M.menu(v)
         -- of rail on a phone held sideways with 390 of screen: the last stops
         -- ran off the bottom, where a thumb cannot reach them at all. A small
         -- target is worse than a comfortable one and better than none.
-        local room = H - head - 3 * margin - STAGE_TOP * S
-        local pitch = math.min(math.max(room / n, 38 * S), 58 * S)
+        local room = F.h - head - 3 * margin - STAGE_TOP * F.scale
+        local pitch = math.min(math.max(room / n, 38 * F.scale), 58 * F.scale)
         if pitch * n > room then pitch = room / n end
         rh = pitch * n
         -- The rail hangs from the top of the block, starting where the stage's
@@ -4231,30 +4200,30 @@ function M.menu(v)
         -- window sat opposite the middle of a three-row list with the whole
         -- top of the panel empty above them, and the two halves read as two
         -- panels that had been put side by side by accident.
-        local block = math.max(rh + STAGE_TOP * S,
-                               math.min(H - head - 2 * margin, 470 * S))
-        local top = math.max(margin, (H - block - head) / 2) + head
-        rx, ry_ = x0, top + STAGE_TOP * S
-        sx = x0 + rw + 26 * S
+        local block = math.max(rh + STAGE_TOP * F.scale,
+                               math.min(F.h - head - 2 * margin, 470 * F.scale))
+        local top = math.max(margin, (F.h - block - head) / 2) + head
+        rx, ry_ = x0, top + STAGE_TOP * F.scale
+        sx = x0 + rw + 26 * F.scale
         sy, sh = top, block
-        sw = total - rw - 26 * S
-        logo_y = top - head + 30 * S
-        wordmark(x0, logo_y, (tall and 40 or 30) * S)
+        sw = total - rw - 26 * F.scale
+        logo_y = top - head + 30 * F.scale
+        wordmark(x0, logo_y, (tall and 40 or 30) * F.scale)
         -- What you are reading, laid over what you are not. A wash rather
         -- than a panel: no border, no corners, just enough that the type sits
         -- on something and the arena stays visible round the edges of it.
-        rect(x0 - 18 * S, top - 16 * S, total + 36 * S, block + 30 * S,
+        rect(x0 - 18 * F.scale, top - 16 * F.scale, total + 36 * F.scale, block + 30 * F.scale,
              pal.rgb(0x03050a, 0.5))
         -- Up to the name, which stands above the wash and is part of the
         -- panel to anybody looking at it.
-        px0, py0 = x0 - 18 * S, top - head
-        px1, py1 = px0 + total + 36 * S, top - 16 * S + block + 30 * S
+        px0, py0 = x0 - 18 * F.scale, top - head
+        px1, py1 = px0 + total + 36 * F.scale, top - 16 * F.scale + block + 30 * F.scale
         -- The rule the whole thing hangs off, between the rail and the stage.
-        vrule(x0 + rw + 1 * S, top, block, pal.a(pal.RADAR_TILE, 0.75), 30 * S)
+        vrule(x0 + rw + 1 * F.scale, top, block, pal.a(pal.RADAR_TILE, 0.75), 30 * F.scale)
     else
-        rh = (home and 78 or 84) * S
-        rw = W - SL - SR - 2 * margin
-        rx = SL + margin
+        rh = (home and 78 or 84) * F.scale
+        rw = F.w - F.safe_l - F.safe_r - 2 * margin
+        rx = F.safe_l + margin
         -- A tab bar, sitting where one sits: on the bottom edge, with the
         -- surface running under the home indicator and only the icons and
         -- words held clear of it.
@@ -4265,9 +4234,9 @@ function M.menu(v)
         -- the same interface-come-loose-from-the-edge the page margin used to
         -- give, and is what a hardware inset looks like when it is added to a
         -- gap that was already there.
-        icon_dy = (home and 30 or 32) * S
-        local under = rh - icon_dy - 24 * S
-        if SAPP then
+        icon_dy = (home and 30 or 32) * F.scale
+        local under = rh - icon_dy - 24 * F.scale
+        if F.installed then
             -- Installed, the padding under the words is measured against the
             -- indicator rather than against the rail, because the indicator
             -- is the only thing down there and the rail's own idea of a
@@ -4286,31 +4255,31 @@ function M.menu(v)
             -- middle of the words on the bottom edge of the screen and cut
             -- every label in half. An Android PWA with button navigation
             -- reports no inset, and so does a phone with a home button.
-            ry_ = H - rh + math.max(0, math.min(SB, under - SB * 0.56))
+            ry_ = F.h - rh + math.max(0, math.min(F.safe_b, under - F.safe_b * 0.56))
         else
-            ry_ = H - rh - math.max(0, SB - under)
+            ry_ = F.h - rh - math.max(0, F.safe_b - under)
         end
-        sx, sw = SL + margin, rw
+        sx, sw = F.safe_l + margin, rw
         -- Under the chip row over a game: MENU and PLAYERS hold the top left
         -- corner while the arena is live, and the name drawn into them is two
         -- things in one place.
-        local chip = home and 0 or 34 * S
-        sy = ST + margin + head + chip
-        sh = ry_ - 20 * S - sy
+        local chip = home and 0 or 34 * F.scale
+        sy = F.safe_t + margin + head + chip
+        sh = ry_ - 20 * F.scale - sy
         -- Down to the bottom edge, rather than to the rail plus a margin
         -- that is no longer there: the wash is what the panel sits on, and a
         -- strip of bare arena under the rail reads as the panel having come
         -- loose from the screen.
-        rect(0, sy - 16 * S, W, H - (sy - 16 * S), pal.rgb(0x03050a, 0.5))
-        logo_y = ST + margin + chip + 22 * S
-        wordmark(rx, logo_y, 30 * S)
+        rect(0, sy - 16 * F.scale, F.w, F.h - (sy - 16 * F.scale), pal.rgb(0x03050a, 0.5))
+        logo_y = F.safe_t + margin + chip + 22 * F.scale
+        wordmark(rx, logo_y, 30 * F.scale)
         -- The whole screen from the name down. A phone's menu is the screen,
         -- so there is next to nothing outside it, which is the right answer
         -- there: the way out is the x and the lit rail stop.
-        px0, py0 = 0, logo_y - 20 * S
-        px1, py1 = W, H
-        u:seg(rx, ry(ry_ - 12 * S), W - SR - margin, ry(ry_ - 12 * S),
-              1.0 * S, pal.a(pal.RADAR_TILE, 0.6), true)
+        px0, py0 = 0, logo_y - 20 * F.scale
+        px1, py1 = F.w, F.h
+        F.layer:seg(rx, ry(ry_ - 12 * F.scale), F.w - F.safe_r - margin, ry(ry_ - 12 * F.scale),
+              1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
     end
 
     -- Which half the arrows are in. The two halves share one cursor and mark
@@ -4325,15 +4294,15 @@ function M.menu(v)
     -- carry a word, because "settings" and "about" at the desktop's size run
     -- into each other with eight of them across a phone; a row of marks you
     -- have to learn by tapping is worse than a row of small words.
-    local label_px = 11 * S
+    local label_px = 11 * F.scale
     if not vertical then
         local longest = 0
         for _, e in ipairs(rail) do
             longest = math.max(longest, #(e.label or ""))
         end
         if longest > 0 then
-            label_px = math.max(8 * S, math.min(label_px,
-                                (pitch - 5 * S) / (longest * ADVANCE)))
+            label_px = math.max(8 * F.scale, math.min(label_px,
+                                (pitch - 5 * F.scale) / (longest * ADVANCE)))
         end
     end
     for i, e in ipairs(rail) do
@@ -4346,24 +4315,24 @@ function M.menu(v)
         local hot = (i == v.rail_hover) and not sel
         local cx, cy
         if vertical then
-            cx = rx + 26 * S
+            cx = rx + 26 * F.scale
             cy = ry_ + (i - 0.5) * pitch
         else
             cx = rx + (i - 0.5) * pitch
             cy = ry_ + icon_dy
         end
         local col = (sel or hot) and pal.FRIEND or pal.a(pal.DIM, 0.9)
-        local r = 13 * S
+        local r = 13 * F.scale
         if hot then
             -- The stage's own hover weight, and only the field: the lit rule
             -- beside a selected stop says which page the panel belongs to,
             -- and a pointer passing over says nothing of the kind.
             local warm = pal.a(pal.FRIEND, 0.16)
             if vertical then
-                rect(rx - 6 * S, cy - pitch / 2 + 3 * S,
-                     rw + 6 * S, pitch - 6 * S, warm)
+                rect(rx - 6 * F.scale, cy - pitch / 2 + 3 * F.scale,
+                     rw + 6 * F.scale, pitch - 6 * F.scale, warm)
             else
-                rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, H - ry_, warm)
+                rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale, F.h - ry_, warm)
             end
         end
         if sel then
@@ -4375,10 +4344,10 @@ function M.menu(v)
             local lit = pal.a(pal.FRIEND, focused and 0.06 or 0.22)
             local bar = pal.a(pal.FRIEND, focused and 0.5 or 1)
             if vertical then
-                rect(rx - 6 * S, cy - pitch / 2 + 3 * S,
-                     rw + 6 * S, pitch - 6 * S, lit)
-                u:seg(rx - 6 * S, ry(cy - pitch / 2 + 3 * S), rx - 6 * S,
-                      ry(cy + pitch / 2 - 3 * S), 1.6 * S, bar, true)
+                rect(rx - 6 * F.scale, cy - pitch / 2 + 3 * F.scale,
+                     rw + 6 * F.scale, pitch - 6 * F.scale, lit)
+                F.layer:seg(rx - 6 * F.scale, ry(cy - pitch / 2 + 3 * F.scale), rx - 6 * F.scale,
+                      ry(cy + pitch / 2 - 3 * F.scale), 1.6 * F.scale, bar, true)
             else
                 -- The field alone. It wore a lit bar along its top edge as
                 -- well, which is the vertical rail's own mark turned on its
@@ -4388,7 +4357,7 @@ function M.menu(v)
                 -- Down to the edge of the screen rather than to the end of
                 -- the block, so the lit stop is a tab reaching the bottom of
                 -- the phone and not a panel floating above the indicator.
-                rect(cx - pitch / 2 + 3 * S, ry_, pitch - 6 * S, H - ry_, lit)
+                rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale, F.h - ry_, lit)
             end
         end
         -- A stop that leaves the game gets a real link laid over it by the
@@ -4400,23 +4369,24 @@ function M.menu(v)
         if e.link then
             local lx, ly, lw, lh
             if vertical then
-                lx, ly = rx - 6 * S, cy - pitch / 2 + 3 * S
-                lw, lh = rw + 6 * S, pitch - 6 * S
+                lx, ly = rx - 6 * F.scale, cy - pitch / 2 + 3 * F.scale
+                lw, lh = rw + 6 * F.scale, pitch - 6 * F.scale
             else
-                lx, ly = cx - pitch / 2 + 3 * S, ry_
-                lw, lh = pitch - 6 * S, H - ry_
+                lx, ly = cx - pitch / 2 + 3 * F.scale, ry_
+                lw, lh = pitch - 6 * F.scale, F.h - ry_
             end
             M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                                       lx / S, ly / S, lw / S, lh / S, e.link)
+                                       lx / F.scale, ly / F.scale,
+                                       lw / F.scale, lh / F.scale, e.link)
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
         if vertical then
-            txt(e.label, rx + 48 * S, cy, 16 * S,
+            txt(e.label, rx + 48 * F.scale, cy, 16 * F.scale,
                 pal.a((sel or hot) and pal.INK or pal.DIM,
                       (sel or hot) and 1 or 0.85),
                 nil, MENU_FONT)
         elseif not vertical then
-            txt(e.label, cx, cy + 24 * S, label_px,
+            txt(e.label, cx, cy + 24 * F.scale, label_px,
                 pal.a((sel or hot) and pal.FRIEND or pal.DIM,
                       (sel or hot) and 1 or 0.8),
                 "center", MENU_FONT)
@@ -4424,9 +4394,9 @@ function M.menu(v)
         -- The rail's own action: it names a destination, not a row of
         -- whatever page is on the stage.
         if vertical then
-            hit(rx - 6 * S, cy - pitch / 2, rw + 10 * S, pitch, "rail", i)
+            hit(rx - 6 * F.scale, cy - pitch / 2, rw + 10 * F.scale, pitch, "rail", i)
         else
-            hit(cx - pitch / 2, ry_ - 8 * S, pitch, H - ry_ + 8 * S, "rail", i)
+            hit(cx - pitch / 2, ry_ - 8 * F.scale, pitch, F.h - ry_ + 8 * F.scale, "rail", i)
         end
     end
 
@@ -4435,8 +4405,8 @@ function M.menu(v)
     -- own left edge: the rule at the head of it, and every row's label. A
     -- row's field starts back at `sx`, so what is lit reaches under the mark
     -- and the words never sit against the edge of it.
-    local tx = sx + GUTTER * S
-    local avail = sw - GUTTER * S
+    local tx = sx + GUTTER * F.scale
+    local avail = sw - GUTTER * F.scale
     -- The stage is the stage, whatever is on it. A list used to be capped at
     -- 520 points against a row reading as two columns a screen apart, which
     -- was a rule written for a window rather than for this panel: the block
@@ -4448,7 +4418,7 @@ function M.menu(v)
     -- What is kept is a column at the right for the scroll tick, whether or
     -- not there is one to draw, so a list does not shift sideways the moment
     -- it outgrows the page. It puts a row's count directly under the x.
-    local lw = avail - 14 * S
+    local lw = avail - 14 * F.scale
     -- No title over the stage. The rail is lit at the stop you are inside and
     -- says its name there, so a heading repeating it is the same answer
     -- written twice, in the one place a list of games could have used the
@@ -4472,11 +4442,11 @@ function M.menu(v)
     -- of it, which was the right place under a heading and is a mark adrift
     -- in the middle of a title.
     if v.closable then
-        close_mark(sx + sw - 8 * S, logo_y, pal.a(pal.DIM, 0.9), 11 * S)
-        hit(sx + sw - 30 * S, logo_y - 12 * S, 40 * S, 24 * S, "close")
+        close_mark(sx + sw - 8 * F.scale, logo_y, pal.a(pal.DIM, 0.9), 11 * F.scale)
+        hit(sx + sw - 30 * F.scale, logo_y - 12 * F.scale, 40 * F.scale, 24 * F.scale, "close")
     end
-    local top = sy + STAGE_TOP * S
-    local room = sh - (top - sy) - 26 * S
+    local top = sy + STAGE_TOP * F.scale
+    local room = sh - (top - sy) - 26 * F.scale
     -- A list is capped: a row whose name sits at one edge and whose count
     -- sits at the other, a screen apart, is two columns nobody reads as one
     -- line. The board and the hull grid are drawings and take everything.
@@ -4495,23 +4465,23 @@ function M.menu(v)
         -- The chip's own row height, which is not the stage row height below:
         -- one is a line in a grid of names and keys, the other is a row of a
         -- list, and they are sized against different things.
-        local chip_h = CHIP_ROW * S
+        local chip_h = CHIP_ROW * F.scale
         if v.chips then
             local lines = chip_lines(#v.rows)
             -- The board gives way first, down to its floor, and then the
             -- chips do. That order is the argument for the page: a keyboard
             -- drawn smaller is still a picture of where your hand goes, and a
             -- chip drawn smaller is a key you cannot read.
-            while bw > 240 * S
-                  and board_height(bw) + lines * chip_h + CHIP_GAP * S > room do
+            while bw > 240 * F.scale
+                  and board_height(bw) + lines * chip_h + CHIP_GAP * F.scale > room do
                 bw = bw * 0.94
             end
-            local left = room - board_height(bw) - CHIP_GAP * S
+            local left = room - board_height(bw) - CHIP_GAP * F.scale
             if lines * chip_h > left then
                 chip_h = math.max(left / lines, 0)
             end
         else
-            while bw > 240 * S and board_height(bw) > room do bw = bw * 0.94 end
+            while bw > 240 * F.scale and board_height(bw) > room do bw = bw * 0.94 end
         end
         local used = board(tx, top, bw, v)
         -- The chips take the stage's width rather than the board's. In a
@@ -4519,7 +4489,7 @@ function M.menu(v)
         -- the name it belongs to, and there is nothing above them to line up
         -- with in any case.
         if v.chips then
-            chips(tx, top + used + CHIP_GAP * S, avail - 14 * S, v,
+            chips(tx, top + used + CHIP_GAP * F.scale, avail - 14 * F.scale, v,
                   chip_h)
         end
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
@@ -4531,8 +4501,8 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.note then noted = true break end
         end
-        local rowh = math.min((noted and 58 or (M.compact and 46 or 40)) * S,
-                              math.max(30 * S, room / math.max(#v.rows, 1)))
+        local rowh = math.min((noted and 58 or (M.compact and 46 or 40)) * F.scale,
+                              math.max(30 * F.scale, room / math.max(#v.rows, 1)))
         -- A short list sits in the middle of the room rather than at the top
         -- of it: three games hung under a title on a tall phone leave the
         -- screen looking half loaded. A list long enough to fill the space
@@ -4565,24 +4535,24 @@ function M.menu(v)
             -- second row, so `hover` only ever arrives on the home screen,
             -- where the cursor belongs to the rail and the stage is a preview
             -- of what the mark beside it holds.
-            stage_row(sx, y, GUTTER * S + lw, rowh, r,
+            stage_row(sx, y, GUTTER * F.scale + lw, rowh, r,
                       (focused and i == v.sel) or i == v.hover)
-            if r.pick then hit(sx, y, GUTTER * S + lw, rowh, "stage", i) end
+            if r.pick then hit(sx, y, GUTTER * F.scale + lw, rowh, "stage", i) end
         end
         -- What is off the ends, as the same tick the map border uses. It says
         -- there is more without spending a row on saying so.
         if #v.rows > fits then
-            local bar = 3 * S
+            local bar = 3 * F.scale
             local hgt = room * fits / #v.rows
             local at = room * (first - 1) / #v.rows
-            rect(tx + lw + 8 * S, ty, bar, room, pal.a(pal.DIM, 0.18))
-            rect(tx + lw + 8 * S, ty + at, bar, hgt, pal.a(pal.FRIEND, 0.6))
+            rect(tx + lw + 8 * F.scale, ty, bar, room, pal.a(pal.DIM, 0.18))
+            rect(tx + lw + 8 * F.scale, ty + at, bar, hgt, pal.a(pal.FRIEND, 0.6))
         end
         -- Under whatever rows there are, which over a game is the one row
         -- that leaves it.
         if v.empty then
-            local ey = ty + used + 12 * S
-            empty_state(sx, ey, GUTTER * S + lw, top + room - ey, v.empty)
+            local ey = ty + used + 12 * F.scale
+            empty_state(sx, ey, GUTTER * F.scale + lw, top + room - ey, v.empty)
         end
     end
 
@@ -4598,13 +4568,13 @@ function M.menu(v)
     -- the one thing that was never a label on anything: something that just
     -- happened.
     if v.note then
-        txt(v.note, tx, sy + sh - 4 * S, 12 * S, pal.a(pal.HURT, 0.95))
+        txt(v.note, tx, sy + sh - 4 * F.scale, 12 * F.scale, pal.a(pal.HURT, 0.95))
     elseif v.foot then
         -- The same line, for something that worked. It is the one thing on the
         -- controls page that is about the whole page rather than about a row,
         -- which is why it is down here and not in a column: what the page is
         -- waiting for, or what it just did.
-        txt(v.foot, tx, sy + sh - 4 * S, 12 * S, pal.a(pal.DIM, 0.9))
+        txt(v.foot, tx, sy + sh - 4 * F.scale, 12 * F.scale, pal.a(pal.DIM, 0.9))
     end
 
     -- A press that missed everything is a press on the arena behind, and over
@@ -4619,14 +4589,14 @@ function M.menu(v)
     -- row still answers to a click rather than being a hole in the way out.
     if v.closable then
         hit(px0, py0, px1 - px0, py1 - py0, "panel")
-        hit(0, 0, W, H, "close")
+        hit(0, 0, F.w, F.h, "close")
     end
 
     -- Last, over all of it, because it is the only thing being read.
     -- It takes the screen, boxes included: a question is answered, not
     -- clicked past.
-    if v.ask then ask_card(sx, sy, GUTTER * S + lw, sh, v.ask) end
-    case = "upper"
+    if v.ask then ask_card(sx, sy, GUTTER * F.scale + lw, sh, v.ask) end
+    F.case = "upper"
 end
 
 -- --- cursor ----------------------------------------------------------------
@@ -4638,7 +4608,7 @@ end
 -- a hull is, so it reads over a starfield and over a panel alike. The tip is
 -- the hotspot, exactly where the browser says the pointer is.
 function M.cursor(x, y, alpha)
-    local k = 16 * S
+    local k = 16 * F.scale
     local cut = 0.22 * k
     -- Down the left edge, across the chamfer, and back up the hypotenuse.
     local pts = {
@@ -4647,8 +4617,8 @@ function M.cursor(x, y, alpha)
         x + 0.93 * cut, ry(y + k - 0.38 * cut),
         x + 0.71 * k, ry(y + 0.71 * k),
     }
-    u:fan(pts, pal.a(pal.BG, 0.85 * alpha))
-    u:outline(pts, 1.25 * S, pal.a(pal.INK, alpha), true)
+    F.layer:fan(pts, pal.a(pal.BG, 0.85 * alpha))
+    F.layer:outline(pts, 1.25 * F.scale, pal.a(pal.INK, alpha), true)
 end
 
 return M

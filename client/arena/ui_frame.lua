@@ -1,0 +1,59 @@
+-- Per-frame UI state. Drawing domains share this object instead of closing
+-- over a loose set of screen, mesh, text, and safe-area globals.
+
+local M = {}
+M.__index = M
+
+function M.new(state)
+    return setmetatable({
+        state = state,
+        w = 0,
+        h = 0,
+        scale = 1,
+        layer = nil,
+        text = nil,
+        text_count = 0,
+        menu_up = false,
+        text_dim = 1,
+        case = "upper",
+        now = 0,
+        safe_l = 0,
+        safe_r = 0,
+        safe_t = 0,
+        safe_b = 0,
+        installed = false,
+        zones = {},
+    }, M)
+end
+
+function M:safe(left, right, top, bottom, installed)
+    self.safe_l = left or 0
+    self.safe_r = right or 0
+    self.safe_t = top or 0
+    self.safe_b = bottom or 0
+    self.installed = installed and true or false
+end
+
+function M:begin(layer, w, h, density, now)
+    self.layer = layer
+    self.w = w
+    self.h = h
+    self.scale = density
+    self.now = now or 0
+    self.text = self.state.text
+    self.text_count = 0
+    self.zones = {}
+    layer:reset()
+end
+
+function M:finish()
+    self.state.n = self.text_count
+    self.state.version = self.state.version + 1
+    self.layer:flush()
+end
+
+function M:ry(y, height)
+    return self.h - y - (height or 0)
+end
+
+return M
