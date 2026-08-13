@@ -327,8 +327,13 @@ async fn session(incoming: IncomingSession, zone: Arc<Mutex<ArenaServer>>) {
 /// anything spawned here is a client's to accumulate. Two in the air is
 /// enough that a snapshot never waits on its predecessor, and a third means
 /// the first two are stuck, in which case the newest is worth more than a
-/// queue: state is superseded 50 ms later, which is the same reason the out
-/// queue drops rather than blocks.
+/// queue. Combat state is superseded 20 ms later, which is the same reason the
+/// out queue drops rather than blocks.
+///
+/// The permit ends once the bytes and FIN are in QUIC. `SendStream::finish`
+/// waits until the peer acknowledges every byte, so awaiting it here makes
+/// this limit a function of RTT. Two acknowledgement waits cannot carry a
+/// 50 Hz lane on an ordinary Internet connection.
 const UNI_INFLIGHT: usize = 2;
 
 /// Everything the arena says, sorted onto the lane it belongs on.
@@ -337,12 +342,14 @@ async fn write_loop(conn: Connection, mut reliable: SendStream, mut rx: mpsc::Re
     while let Some(msg) = rx.recv().await {
         let Message::Binary(b) = msg else { continue };
         if b.first() == Some(&S2C_SNAPSHOT) {
-            // Fresh state: superseded in 50 ms, so never retransmitted. A
-            // datagram when it fits under the path's MTU; its own stream when
-            // it does not, which still leaves every other snapshot free to
-            // pass it.
+            // Fresh state: superseded in 20 ms on the combat lane, so the
+            // transport never waits to enqueue it. A datagram carries it when
+            // it fits under the path's MTU; its own stream carries it when it
+            // does not, which still leaves every other snapshot free to pass.
             if conn.max_datagram_size().is_some_and(|m| b.len() <= m) {
-                let _ = conn.send_datagram(&b);
+                if conn.send_datagram(&b).is_err() {
+                    crate::metrics::SEND_DROPPED.inc();
+                }
             } else {
                 // Opening the stream belongs to the spawned task, not to this
                 // loop. Awaited here it was the reliable lane's problem: a
@@ -352,17 +359,23 @@ async fn write_loop(conn: Connection, mut reliable: SendStream, mut rx: mpsc::Re
                 // dropped by a queue with nowhere to put it, on a stream that
                 // was writable the whole time.
                 let Ok(permit) = uni.clone().try_acquire_owned() else {
+                    crate::metrics::SEND_DROPPED.inc();
                     continue;
                 };
                 let conn = conn.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     let Ok(opening) = conn.open_uni().await else {
+                        crate::metrics::SEND_DROPPED.inc();
                         return;
                     };
-                    let Ok(mut s) = opening.await else { return };
-                    let _ = s.write_all(&b).await;
-                    let _ = s.finish().await;
+                    let Ok(mut s) = opening.await else {
+                        crate::metrics::SEND_DROPPED.inc();
+                        return;
+                    };
+                    if s.write_all(&b).await.is_err() || s.quic_stream_mut().finish().is_err() {
+                        crate::metrics::SEND_DROPPED.inc();
+                    }
                 });
             }
         } else if write_frame(&mut reliable, &b).await.is_err() {

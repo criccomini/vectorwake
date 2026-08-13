@@ -28,11 +28,12 @@ Two channels, distinguished per message rather than per connection.
 
 Unreliable messages carry state that a newer message supersedes: input
 commands, snapshots, position updates. Losing one costs nothing because another
-follows in 50 ms. On WebTransport they are datagrams when they fit under the
-path's MTU and a unidirectional stream of their own when they do not; either
-way a loss delays only the message it hit, and the client discards a stale one
-by tick number. On WebSocket they inherit TCP's ordering, which we cannot
-avoid, so we keep them small and lean on the same tick numbers.
+follows in 50 ms during ordinary flight and 20 ms during nearby combat. On
+WebTransport they are datagrams when they fit under the path's MTU and a
+unidirectional stream of their own when they do not; either way a loss delays
+only the message it hit, and the client discards a stale one by tick number. On
+WebSocket they inherit TCP's ordering, which we cannot avoid, so we keep them
+small and lean on the same tick numbers.
 
 Reliable messages carry things that must arrive exactly once: arena joins,
 settings, map metadata, score updates, kill notifications. On WebTransport they

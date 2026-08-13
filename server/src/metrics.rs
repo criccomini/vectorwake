@@ -498,7 +498,7 @@ pub fn render() -> String {
     counter(
         &mut out,
         "vw_send_dropped_total",
-        "Messages dropped on a full client queue.",
+        "Messages dropped before transport delivery.",
         SEND_DROPPED.get(),
     );
     counter(

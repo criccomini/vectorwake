@@ -154,7 +154,7 @@ local function frame(o)
         half_w = 640, half_h = 400,
         banner = "",
         rtt = 4,
-        stats = {wire = "wt", input_margin = -2, rtt = 4, lead = 6,
+        stats = o.stats or {wire = "wt", input_margin = -2, rtt = 4, lead = 6,
                  self_err = 1.5, self_err_max = 9.0,
                  remote_pos = 2.0, remote_pos_p95 = 4.0,
                  remote_pos_max = 12.0, remote_turn = 1.0,
@@ -741,6 +741,9 @@ frame()
 check("the debug readout keeps its own toggle clickable", box("debug") ~= nil)
 check("the debug readout shows settled and pending death predictions",
       says("12/13 ok / 1 wait"), drawn())
+frame({stats = {wire = "wt", down_loss = 0, combat_loss = 22, up_loss = 0}})
+check("the debug readout labels each snapshot path without overlap",
+      says("D 0%  F 22%  U 0%"), drawn())
 ui.debug = false
 ui.inspect = nil
 

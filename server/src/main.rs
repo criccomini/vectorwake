@@ -371,6 +371,7 @@ struct SentSnapshot {
     seq: u32,
     tick: u32,
     combat: bool,
+    combat_epoch: u32,
     received: bool,
 }
 
@@ -397,6 +398,9 @@ struct LagTracker {
     rtt_samples: u32,
     down_loss: LossRate,
     combat_loss: LossRate,
+    combat_active: bool,
+    combat_idle_ticks: u32,
+    combat_epoch: u32,
     up_loss: LossRate,
     decision: LagDecision,
     healthy_ticks: u32,
@@ -417,6 +421,9 @@ impl Default for LagTracker {
             rtt_samples: 0,
             down_loss: Default::default(),
             combat_loss: Default::default(),
+            combat_active: false,
+            combat_idle_ticks: 0,
+            combat_epoch: 1,
             up_loss: Default::default(),
             decision: Default::default(),
             healthy_ticks: 0,
@@ -428,18 +435,26 @@ impl Default for LagTracker {
 
 impl LagTracker {
     fn sent_snapshot(&mut self, tick: u32, combat: bool, window: u32) -> u32 {
+        if combat {
+            self.combat_active = true;
+            self.combat_idle_ticks = 0;
+        } else if self.combat_active {
+            self.combat_active = false;
+            self.combat_idle_ticks = 0;
+        }
         self.snapshot_seq = self.snapshot_seq.wrapping_add(1).max(1);
         self.snapshots.push_back(SentSnapshot {
             seq: self.snapshot_seq,
             tick,
             combat,
+            combat_epoch: if combat { self.combat_epoch } else { 0 },
             received: false,
         });
         while self.snapshots.len() > 96 {
             if let Some(old) = self.snapshots.pop_front() {
-                if old.combat {
+                if old.combat && old.combat_epoch == self.combat_epoch {
                     self.combat_loss.observe(!old.received, window);
-                } else {
+                } else if !old.combat {
                     self.down_loss.observe(!old.received, window);
                 }
             }
@@ -476,9 +491,9 @@ impl LagTracker {
             .is_some_and(|s| s.seq.saturating_add(31) < ack)
         {
             let old = self.snapshots.pop_front().expect("front exists");
-            if old.combat {
+            if old.combat && old.combat_epoch == self.combat_epoch {
                 self.combat_loss.observe(!old.received, window);
-            } else {
+            } else if !old.combat {
                 self.down_loss.observe(!old.received, window);
             }
         }
@@ -502,6 +517,16 @@ impl LagTracker {
 
     fn tick(&mut self, cfg: &config::LagConfig, bot: bool, now: u32) -> LagUpdate {
         self.age = self.age.saturating_add(1);
+        if !self.combat_active {
+            let expire = cfg.recover_ticks.max(1);
+            if self.combat_idle_ticks < expire {
+                self.combat_idle_ticks = self.combat_idle_ticks.saturating_add(1);
+                if self.combat_idle_ticks >= expire {
+                    self.combat_loss = Default::default();
+                    self.combat_epoch = self.combat_epoch.wrapping_add(1).max(1);
+                }
+            }
+        }
         if bot || self.age < cfg.sample_ticks {
             return LagUpdate {
                 decision: self.decision,
@@ -513,7 +538,11 @@ impl LagTracker {
         let ping_ms = self.rtt_ticks * 10.0;
         let jitter_ms = self.jitter_ticks * 10.0;
         let down = self.down_loss.value * 100.0;
-        let combat = self.combat_loss.value * 100.0;
+        let combat = if self.combat_active {
+            self.combat_loss.value * 100.0
+        } else {
+            0.0
+        };
         let up = self.up_loss.value * 100.0;
         let raw_no_flags = ping_ms >= cfg.no_flags_ping_ms as f64
             || jitter_ms >= cfg.no_flags_jitter_ms as f64
@@ -583,7 +612,7 @@ impl LagTracker {
         msg.extend_from_slice(&ping.to_le_bytes());
         msg.extend_from_slice(&jitter.to_le_bytes());
         msg.push(self.down_loss.percent());
-        msg.push(self.combat_loss.percent());
+        msg.push(self.combat_percent());
         msg.push(self.up_loss.percent());
         msg
     }
@@ -602,10 +631,18 @@ impl LagTracker {
         msg.extend_from_slice(&ping.to_le_bytes());
         msg.extend_from_slice(&jitter.to_le_bytes());
         msg.push(self.down_loss.percent());
-        msg.push(self.combat_loss.percent());
+        msg.push(self.combat_percent());
         msg.push(self.up_loss.percent());
         msg.push(self.policy_state());
         msg.push(self.decision.weapon_percent);
+    }
+
+    fn combat_percent(&self) -> u8 {
+        if self.combat_active {
+            self.combat_loss.percent()
+        } else {
+            0
+        }
     }
 }
 
@@ -6904,6 +6941,48 @@ mod tests {
         lag.down_loss.value = 0.20;
         let downstream = lag.tick(&cfg, false, 2).decision;
         assert_eq!(downstream.weapon_percent, 100);
+    }
+
+    #[test]
+    fn combat_loss_applies_only_while_the_combat_lane_is_active() {
+        let cfg = config::LagConfig {
+            sample_ticks: 1,
+            recover_ticks: 3,
+            ..Default::default()
+        };
+        let mut lag = LagTracker::default();
+        lag.combat_loss.value = 0.216;
+        lag.combat_loss.samples = 1;
+        lag.sent_snapshot(1, true, cfg.sample_ticks);
+
+        let restricted = lag.tick(&cfg, false, 1).decision;
+        assert!(restricted.no_flags);
+        assert_eq!(restricted.weapon_percent, 8);
+        assert_eq!(lag.combat_percent(), 22);
+
+        lag.sent_snapshot(2, false, cfg.sample_ticks);
+        assert_eq!(
+            lag.combat_percent(),
+            0,
+            "idle combat loss is not current loss"
+        );
+        assert!(lag.tick(&cfg, false, 2).decision == restricted);
+        assert!(lag.tick(&cfg, false, 3).decision == restricted);
+        assert!(lag.tick(&cfg, false, 4).decision == LagDecision::default());
+        assert_eq!(lag.combat_loss.percent(), 0, "the stale sample expires");
+
+        for tick in 3..=34 {
+            lag.sent_snapshot(tick, false, cfg.sample_ticks);
+        }
+        lag.acknowledge_snapshots(34, u32::MAX, 35, cfg.sample_ticks);
+        assert_eq!(
+            lag.combat_loss.percent(),
+            0,
+            "an old combat snapshot cannot repopulate an expired sample"
+        );
+
+        lag.sent_snapshot(36, true, cfg.sample_ticks);
+        assert_eq!(lag.combat_percent(), 0, "a later fight starts clean");
     }
 
     #[test]
