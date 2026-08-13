@@ -2854,6 +2854,87 @@ async fn route(
 /// The arena-minted id is the umbrella: the log refuses the second copy, and
 /// a refused copy must not touch the projection, or every retry would bend
 /// somebody's rating by a delta the log recorded once.
+fn validate_rated_event(ev: &serde_json::Value) -> Result<(), String> {
+    let victim = ev
+        .get("victim")
+        .and_then(|value| value.as_i64())
+        .filter(|account| *account > 0)
+        .ok_or("invalid victim")?;
+    ev.get("id")
+        .and_then(|value| value.as_i64())
+        .ok_or("no event id")?;
+    ev.get("tick")
+        .and_then(|value| value.as_u64())
+        .filter(|tick| *tick <= u32::MAX as u64)
+        .ok_or("invalid tick")?;
+    ev.get("victim_kind")
+        .and_then(|value| value.as_u64())
+        .filter(|kind| *kind <= 1)
+        .ok_or("invalid victim kind")?;
+
+    let before = ev
+        .get("victim_before")
+        .and_then(|value| value.as_f64())
+        .filter(|rating| rating.is_finite())
+        .ok_or("invalid victim rating before event")?;
+    let after = ev
+        .get("victim_after")
+        .and_then(|value| value.as_f64())
+        .filter(|rating| rating.is_finite())
+        .ok_or("invalid victim rating after event")?;
+    let movement = after - before;
+    if !movement.is_finite() || movement.abs() > rating::EVENT_CAP + 1e-6 {
+        return Err("victim rating movement exceeds the event bound".into());
+    }
+
+    if let Some(killer) = ev.get("killer").filter(|value| !value.is_null()) {
+        if !killer.as_i64().is_some_and(|account| account > 0) {
+            return Err("invalid killer".into());
+        }
+    }
+    let credits = ev
+        .get("credits")
+        .and_then(|value| value.as_array())
+        .filter(|credits| !credits.is_empty() && credits.len() < 256)
+        .ok_or("invalid credits")?;
+    let mut accounts = std::collections::HashSet::new();
+    let mut total_weight = 0.0;
+    for credit in credits {
+        let account = credit
+            .get("account")
+            .and_then(|value| value.as_i64())
+            .filter(|account| *account > 0 && *account != victim)
+            .ok_or("invalid credited account")?;
+        if !accounts.insert(account) {
+            return Err("duplicate credited account".into());
+        }
+        let weight = credit
+            .get("weight")
+            .and_then(|value| value.as_f64())
+            .filter(|weight| weight.is_finite() && *weight > 0.0 && *weight <= 1.0)
+            .ok_or("invalid credit weight")?;
+        total_weight += weight;
+        let before = credit
+            .get("before")
+            .and_then(|value| value.as_f64())
+            .filter(|rating| rating.is_finite())
+            .ok_or("invalid credit rating before event")?;
+        let after = credit
+            .get("after")
+            .and_then(|value| value.as_f64())
+            .filter(|rating| rating.is_finite())
+            .ok_or("invalid credit rating after event")?;
+        let movement = after - before;
+        if !movement.is_finite() || movement.abs() > rating::EVENT_CAP + 1e-6 {
+            return Err("credit rating movement exceeds the event bound".into());
+        }
+    }
+    if !total_weight.is_finite() || total_weight > 1.0 + 1e-6 {
+        return Err("credit weights exceed one event".into());
+    }
+    Ok(())
+}
+
 async fn ingest(
     db: &mut Client,
     class: &str,
@@ -2861,6 +2942,7 @@ async fn ingest(
     instance: &str,
     ev: &serde_json::Value,
 ) -> Result<(), String> {
+    validate_rated_event(ev)?;
     let victim = ev.get("victim").and_then(|v| v.as_i64()).unwrap_or(0);
     if victim == 0 {
         return Err("no victim".into());
@@ -3852,6 +3934,67 @@ pub fn run_keygen() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rated_event() -> serde_json::Value {
+        serde_json::json!({
+            "id": 9,
+            "tick": 100,
+            "victim": 11,
+            "killer": 12,
+            "victim_kind": 0,
+            "victim_before": 1200.0,
+            "victim_after": 1184.0,
+            "credits": [{
+                "account": 12,
+                "weight": 1.0,
+                "before": 1200.0,
+                "after": 1216.0
+            }]
+        })
+    }
+
+    #[test]
+    fn a_well_formed_rating_event_is_accepted() {
+        assert_eq!(validate_rated_event(&rated_event()), Ok(()));
+    }
+
+    #[test]
+    fn a_rating_event_cannot_credit_one_account_twice() {
+        let mut event = rated_event();
+        let duplicate = event["credits"][0].clone();
+        event["credits"].as_array_mut().unwrap().push(duplicate);
+        assert_eq!(
+            validate_rated_event(&event),
+            Err("duplicate credited account".into())
+        );
+    }
+
+    #[test]
+    fn a_rating_event_cannot_credit_its_victim() {
+        let mut event = rated_event();
+        event["credits"][0]["account"] = serde_json::json!(11);
+        assert_eq!(
+            validate_rated_event(&event),
+            Err("invalid credited account".into())
+        );
+    }
+
+    #[test]
+    fn a_rating_event_cannot_escape_the_model_bound() {
+        let mut victim = rated_event();
+        victim["victim_after"] = serde_json::json!(1300.0);
+        assert_eq!(
+            validate_rated_event(&victim),
+            Err("victim rating movement exceeds the event bound".into())
+        );
+
+        let mut attacker = rated_event();
+        attacker["credits"][0]["after"] = serde_json::json!(1300.0);
+        assert_eq!(
+            validate_rated_event(&attacker),
+            Err("credit rating movement exceeds the event bound".into())
+        );
+    }
 
     #[test]
     fn a_call_sign_is_a_word_and_three_digits() {

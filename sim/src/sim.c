@@ -635,6 +635,7 @@ static void kill_weapon(sim_state *s, uint16_t i) {
 
 static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
                        sim_events *ev);
+static void detach_all(sim_state *s, uint8_t i);
 
 int32_t sim_bounty(const sim_ship *sh) {
     int32_t n = sh->earned;
@@ -754,6 +755,7 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
          * survived with -- but the points already paid to you are yours. */
         v->repel = 0;
         v->repel_speed = 0;
+        detach_all(s, victim);
         memset(v->up, 0, sizeof v->up);
         memset(v->level, 0, sizeof v->level);
         memset(v->mods, 0, sizeof v->mods);
@@ -1068,6 +1070,7 @@ static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
         sim_flag *f = &s->flags[i];
         if (!f->active || !f->carried || f->carrier != ship) continue;
         f->carried = 0;
+        f->carrier = 0;
         f->x = s->ships[ship].x;
         f->y = s->ships[ship].y;
         f->cooldown = cfg->flag_drop_cooldown;
@@ -1254,6 +1257,7 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
             if (!sh->active || !sh->alive) {
                 /* The carrier stopped existing without dying properly. */
                 f->carried = 0;
+                f->carrier = 0;
                 f->cooldown = cfg->flag_drop_cooldown;
                 continue;
             }
@@ -1274,6 +1278,8 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
             f->carried = 1;
             f->carrier = (uint8_t)k;
             f->team = sh->team;
+            f->x = sh->x;
+            f->y = sh->y;
             emit(ev, SIM_EV_FLAG_TAKE, (uint8_t)k, (uint8_t)i, 0);
             break;
         }
@@ -2458,8 +2464,9 @@ uint64_t sim_hash(const sim_state *s) {
     h = hash_u32(h, s->weapon_count);
     for (int i = 0; i < s->ship_count; i++) {
         const sim_ship *sh = &s->ships[i];
-        h = hash_u32(h, (uint32_t)(sh->active | (sh->alive << 8) |
-                                   (sh->public_only << 16) | (sh->cls << 24)));
+        h = hash_u32(h, (uint32_t)sh->active | ((uint32_t)sh->alive << 8)
+                            | ((uint32_t)sh->public_only << 16)
+                            | ((uint32_t)sh->cls << 24));
         h = hash_u32(h, sh->team);
         h = hash_u32(h, (uint32_t)sh->x);
         h = hash_u32(h, (uint32_t)sh->y);
@@ -2467,14 +2474,14 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, (uint32_t)sh->vy);
         h = hash_u32(h, sh->heading);
         h = hash_u32(h, (uint32_t)sh->energy);
-        h = hash_u32(h, (uint32_t)(sh->fire_cooldown[SIM_TRIG_GUN]
-                                   | (sh->fire_cooldown[SIM_TRIG_BOMB] << 16)));
+        h = hash_u32(h, (uint32_t)sh->fire_cooldown[SIM_TRIG_GUN]
+                            | ((uint32_t)sh->fire_cooldown[SIM_TRIG_BOMB] << 16));
         h = hash_u32(h, sh->respawn_at);
         h = hash_u32(h, sh->stall);
-        h = hash_u32(h, (uint32_t)(sh->kills | (sh->deaths << 16)));
+        h = hash_u32(h, (uint32_t)sh->kills | ((uint32_t)sh->deaths << 16));
         for (int u = 0; u < SIM_UP_COUNT; u++) h = hash_u32(h, sh->up[u]);
         for (int t = 0; t < SIM_TRIG_COUNT; t++)
-            h = hash_u32(h, (uint32_t)(sh->level[t] | (sh->mods[t] << 8)));
+            h = hash_u32(h, (uint32_t)sh->level[t] | ((uint32_t)sh->mods[t] << 8));
         for (int k = 0; k < SIM_MAX_CHARGES; k++) h = hash_u32(h, sh->charge[k]);
         /* What the next shot will be, and what the last press was. Both are
          * state: the second decides whether the next tick sees an edge, and a
@@ -2493,8 +2500,9 @@ uint64_t sim_hash(const sim_state *s) {
     h = hash_u32(h, s->flag_count);
     for (int i = 0; i < s->flag_count; i++) {
         const sim_flag *f = &s->flags[i];
-        h = hash_u32(h, (uint32_t)(f->active | (f->carried << 8) |
-                                   (f->carrier << 16) | (f->team << 24)));
+        h = hash_u32(h, (uint32_t)f->active | ((uint32_t)f->carried << 8)
+                            | ((uint32_t)f->carrier << 16)
+                            | ((uint32_t)f->team << 24));
         h = hash_u32(h, (uint32_t)f->x);
         h = hash_u32(h, (uint32_t)f->y);
         h = hash_u32(h, f->cooldown);
@@ -2509,8 +2517,10 @@ uint64_t sim_hash(const sim_state *s) {
     }
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *w = &s->weapons[i];
-        h = hash_u32(h, (uint32_t)(w->spec | (w->owner << 8) | (w->team << 16)));
-        h = hash_u32(h, (uint32_t)(w->left | (w->depth << 8) | (w->mods << 16)));
+        h = hash_u32(h, (uint32_t)w->spec | ((uint32_t)w->owner << 8)
+                            | ((uint32_t)w->team << 16));
+        h = hash_u32(h, (uint32_t)w->left | ((uint32_t)w->depth << 8)
+                            | ((uint32_t)w->mods << 16));
         h = hash_u32(h, (uint32_t)w->x);
         h = hash_u32(h, (uint32_t)w->y);
         h = hash_u32(h, (uint32_t)w->vx);

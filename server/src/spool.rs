@@ -166,10 +166,12 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
         // Anything left from a previous process is still owed to the
         // meta-layer, so a restart picks it up rather than starting clean.
         let mut pending = Vec::new();
-        let mut corrupt = Vec::new();
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            for (line, raw) in text.lines().enumerate() {
-                match serde_json::from_str::<OnDisk<T>>(raw) {
+        let mut corrupt: Vec<Vec<u8>> = Vec::new();
+        if let Ok(bytes) = std::fs::read(&path) {
+            for (line, record) in bytes.split_inclusive(|byte| *byte == b'\n').enumerate() {
+                let raw = record.strip_suffix(b"\n").unwrap_or(record);
+                let raw = raw.strip_suffix(b"\r").unwrap_or(raw);
+                match serde_json::from_slice::<OnDisk<T>>(raw) {
                     Ok(OnDisk::Current(record)) => pending.push(record),
                     Ok(OnDisk::Legacy(event)) => pending.push(Pending {
                         zone: String::new(),
@@ -182,7 +184,7 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
                             "spool: corrupt {noun} line {} kept aside: {error}",
                             line + 1
                         );
-                        corrupt.push(raw.to_string());
+                        corrupt.push(raw.to_vec());
                     }
                 }
             }
@@ -196,7 +198,7 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
             {
                 let mut result = Ok(());
                 for line in &corrupt {
-                    if let Err(error) = writeln!(file, "{line}") {
+                    if let Err(error) = file.write_all(line).and_then(|_| file.write_all(b"\n")) {
                         result = Err(error);
                         break;
                     }
@@ -507,6 +509,25 @@ mod tests {
     }
 
     #[test]
+    fn confirming_a_batch_keeps_an_event_appended_while_it_was_in_flight() {
+        let d = tmp("confirm-race");
+        let mut s = spool_in(&d);
+        s.push(ev(1, 1));
+        s.push(ev(2, 2));
+        let sent = s.batch().unwrap().events.len();
+
+        s.push(ev(3, 3));
+        s.confirm(sent).unwrap();
+
+        assert_eq!(s.len(), 1);
+        assert_eq!(s.last().unwrap().tick, 3);
+        let reread = Spool::rated(d.to_str().unwrap());
+        assert_eq!(reread.len(), 1, "the appended event survives a restart");
+        assert_eq!(reread.last().unwrap().tick, 3);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn without_a_meta_layer_nothing_is_written() {
         let d = tmp("unarmed");
         let mut s = Spool::rated(d.to_str().unwrap());
@@ -625,6 +646,31 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(d.join("spool.jsonl.corrupt")).unwrap(),
             "not json\n"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn invalid_utf8_does_not_hide_valid_debt() {
+        let d = tmp("invalid-utf8");
+        let path = d.join("spool.jsonl");
+        let record = Pending {
+            zone: "chaos".into(),
+            class: "arena".into(),
+            instance: "i1".into(),
+            event: ev(4, 5),
+        };
+        let mut bytes = b"\xffbroken\n".to_vec();
+        bytes.extend_from_slice(serde_json::to_string(&record).unwrap().as_bytes());
+        bytes.push(b'\n');
+        std::fs::write(&path, bytes).unwrap();
+
+        let s = Spool::rated(d.to_str().unwrap());
+        assert_eq!(s.len(), 1, "one bad byte cannot erase later debt");
+        assert_eq!(s.last().unwrap().tick, 4);
+        assert_eq!(
+            std::fs::read(d.join("spool.jsonl.corrupt")).unwrap(),
+            b"\xffbroken\n"
         );
         let _ = std::fs::remove_dir_all(&d);
     }

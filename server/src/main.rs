@@ -241,7 +241,10 @@ const JOIN_WATCH: u8 = 2;
 ///
 /// 12 adds selective input and snapshot acknowledgments, server lag policy,
 /// and the nearby-combat snapshot lane.
-const CLIENT_PROTOCOL: u8 = 12;
+///
+/// 13 carries the gunner limits and carrier movement penalties in zone
+/// settings. Older clients predicted a carrier as if nobody were attached.
+const CLIENT_PROTOCOL: u8 = 13;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -4838,14 +4841,19 @@ impl ArenaServer {
             room.world.cfg.max_ships = m;
         }
         room.set_teams(&def);
-        room.mode = modes::build(&z.mode, def.arena.flags, room.public_teams);
+        if z.mode == "warzone" {
+            room.add_default_flags();
+            room.world.state.flag_count = def.arena.flags.min(room.world.state.flag_count as u8);
+        }
+        room.mode = modes::build(
+            &z.mode,
+            room.world.state.flag_count as u8,
+            room.public_teams,
+        );
         room.bot_fill = def.bot_fill();
         room.lag_policy = def.arena.lag.clone();
         room.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
         room.channel.delay = def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
-        if z.mode == "warzone" {
-            room.add_default_flags();
-        }
         Ok(room)
     }
 
@@ -11800,6 +11808,42 @@ mod tests {
             "and a file that says nothing is a warzone"
         );
         assert_eq!(a.world.state.flag_count, 4);
+    }
+
+    #[test]
+    fn a_catalog_room_uses_the_configured_number_of_flags() {
+        let mut zone = wire_zone(1, 6, 16);
+        zone.mode = "warzone".into();
+        zone.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n[arena]\nflags = 2\n".into();
+
+        let room = ArenaServer::build_room(&zone, None).expect("room");
+
+        assert_eq!(room.mode.name(), "warzone");
+        assert_eq!(room.world.state.flag_count, 2);
+    }
+
+    #[test]
+    fn an_invalid_hull_number_is_refused_instead_of_selecting_the_last_hull() {
+        let mut world = sim::World::new(1);
+        assert_eq!(world.spawn(0, 0, 512, 512, 0), 0);
+        assert!(!world.set_ship_class(0, u8::MAX));
+        assert_eq!(world.state.ships[0].cls, 0);
+    }
+
+    #[test]
+    fn a_tuning_reload_does_not_replace_an_active_objective() {
+        let cfg: config::ZoneConfig =
+            toml::from_str("[arena]\nmode = \"warzone\"\nflags = 2\n").unwrap();
+        let mut room = Room::new_from(&cfg);
+        room.world.state.flags[0].team = 1;
+
+        let changed = parse("[arena]\nmode = \"arena\"\nflags = 4\nfriction = 9\n");
+        Room::apply_config(&mut room.world, &changed);
+
+        assert_eq!(room.mode.name(), "warzone");
+        assert_eq!(room.world.state.flag_count, 2);
+        assert_eq!(room.world.state.flags[0].team, 1);
+        assert_eq!(room.world.cfg.friction, 9);
     }
 
     /// The zone we ship is the documentation for this format. Parsing it is

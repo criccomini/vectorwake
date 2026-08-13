@@ -22,6 +22,8 @@ jobs:
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q clang
           rm -rf sim/build && make -C sim CC=clang OPT=-O0 check
+      - name: fuzz snapshot, settings, and map decoding
+        run: make -C sim fuzz-smoke
 
       # The same property from the other side. Every job here proves one
       # platform matches a committed hash; undefined behavior is what lets two

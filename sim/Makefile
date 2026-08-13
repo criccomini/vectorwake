@@ -6,6 +6,7 @@ CC ?= cc
 OPT ?= -O2
 CFLAGS ?=
 LDFLAGS ?=
+FUZZ_CC ?= clang
 BASE := -std=c99 -Wall -Wextra -Werror -Iinclude
 ALL_CFLAGS = $(BASE) $(OPT) $(CFLAGS)
 B := build
@@ -119,6 +120,18 @@ ubsan: | $(B)
 	cmp tests/golden.txt $(B)/out-ubsan.txt
 	@echo no undefined behavior, and the same hashes under a sanitizer
 
+# Build a libFuzzer entry point for every decoder. Accepted snapshots are
+# stepped once, so the target covers the boundary between valid bytes and a
+# safe simulation state as well as the parser itself.
+fuzz: | $(B)
+	$(FUZZ_CC) $(BASE) -O1 -g -fsanitize=fuzzer,address,undefined \
+	  -fno-sanitize-recover=all \
+	  fuzz/fuzz_unpack.c src/sim.c src/baseline.c src/pack.c $(LDFLAGS) -lm \
+	  -o $(B)/fuzz_unpack
+
+fuzz-smoke: fuzz
+	$(B)/fuzz_unpack -runs=10000
+
 # WebAssembly build of the harness (requires emsdk). NODERAWFS lets node
 # read the trace file directly.
 wasm:
@@ -134,4 +147,4 @@ check-wasm: wasm
 clean:
 	rm -rf $(B)
 
-.PHONY: all test golden check cxx ubsan wasm check-wasm sintab clean
+.PHONY: all test golden check cxx ubsan fuzz fuzz-smoke wasm check-wasm sintab clean

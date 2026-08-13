@@ -25,7 +25,7 @@ const K_BOT: f64 = 8.0;
 
 /// No single death moves a rating more than this, which bounds the damage a
 /// bug in the attribution ledger can do.
-const EVENT_CAP: f64 = 64.0;
+pub(crate) const EVENT_CAP: f64 = 64.0;
 
 /// The farm brake. Beating the AI is meant to place a pilot on the ladder,
 /// not to be a way up it, and Elo's own geometry only handles part of that:
@@ -397,6 +397,83 @@ mod tests {
         let before = r.rating_of("victim");
         assert!(r.quit(102, "victim").is_none(), "no second settlement");
         assert_eq!(r.rating_of("victim"), before);
+    }
+
+    #[test]
+    fn a_quit_already_settled_leaves_a_death_nothing() {
+        let mut r = Rating::new();
+        r.damage(100, "victim", "killer", 1000, false);
+        r.quit(101, "victim").expect("rated");
+        let before = r.rating_of("victim");
+        assert!(r.death(102, "victim").is_none(), "no second settlement");
+        assert_eq!(r.rating_of("victim"), before);
+    }
+
+    #[test]
+    fn randomized_settlements_keep_the_exchange_bounded_and_exactly_once() {
+        let mut random = 0x8a5c_31d2u32;
+        for case in 0..256 {
+            let mut r = Rating::new();
+            let attackers = (next_random(&mut random) % 12 + 1) as usize;
+            let mut names = Vec::new();
+            for i in 0..attackers {
+                let name = format!("attacker-{case}-{i}");
+                let rating = 800.0 + (next_random(&mut random) % 1201) as f64;
+                r.score.insert(name.clone(), rating);
+                names.push(name);
+            }
+            let victim = format!("victim-{case}");
+            r.score.insert(
+                victim.clone(),
+                800.0 + (next_random(&mut random) % 1201) as f64,
+            );
+
+            let hits = attackers + (next_random(&mut random) % 24) as usize;
+            for tick in 0..hits {
+                let attacker = &names[next_random(&mut random) as usize % attackers];
+                let damage = (next_random(&mut random) % 20_000 + 1) as i32;
+                r.damage(tick as u32, &victim, attacker, damage, false);
+            }
+
+            let ev = r.death(hits as u32 + 1, &victim).expect("rated");
+            let weights: f64 = ev.credits.iter().map(|credit| credit.1).sum();
+            assert!(
+                (weights - 1.0).abs() < 1e-9,
+                "case {case}: weights sum to {weights}"
+            );
+            assert!(ev.victim_before.is_finite() && ev.victim_after.is_finite());
+            assert!(
+                (ev.victim_after - ev.victim_before).abs() <= EVENT_CAP + 1e-9,
+                "case {case}: victim movement escaped the event cap"
+            );
+
+            let mut credited = std::collections::HashSet::new();
+            for (attacker, weight, before, after) in &ev.credits {
+                assert!(credited.insert(attacker), "case {case}: duplicate credit");
+                assert!(weight.is_finite() && *weight > 0.0);
+                assert!(before.is_finite() && after.is_finite());
+                assert!(
+                    (after - before).abs() <= EVENT_CAP + 1e-9,
+                    "case {case}: attacker movement escaped the event cap"
+                );
+                assert_eq!(
+                    r.games_of(attacker),
+                    1,
+                    "case {case}: attacker counted once"
+                );
+            }
+            assert_eq!(r.games_of(&victim), 1, "case {case}: victim counted once");
+            assert!(r.death(hits as u32 + 2, &victim).is_none());
+            assert!(r.quit(hits as u32 + 2, &victim).is_none());
+            assert_eq!(r.log.len(), 1, "case {case}: one ledger made one event");
+        }
+    }
+
+    fn next_random(state: &mut u32) -> u32 {
+        *state ^= *state << 13;
+        *state ^= *state >> 17;
+        *state ^= *state << 5;
+        *state
     }
 
     #[test]

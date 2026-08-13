@@ -49,6 +49,15 @@ static int within(int32_t x, int32_t y, int32_t cx, int32_t cy,
     return dx * dx + dy * dy <= r2;
 }
 
+static int world_point(int32_t x, int32_t y) {
+    return x >= 0 && y >= 0 && x < SIM_MAP_MAX_Q8 && y < SIM_MAP_MAX_Q8;
+}
+
+static int world_velocity(int32_t v) {
+    const int32_t bound = SIM_MAP_MAX_Q8 * 256;
+    return v >= -bound && v <= bound;
+}
+
 int sim_pack(const sim_state *s, uint8_t *out, int cap) {
     return sim_pack_around(s, out, cap, 0, 0, -1, 255, 255,
                            SIM_PACK_PRIVATE_ALL | SIM_PACK_SECRET);
@@ -57,6 +66,9 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap) {
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
                     int32_t cx, int32_t cy, int32_t radius, uint8_t viewer,
                     uint8_t owner, uint8_t options) {
+    if (!s || !out || cap < 0) return -1;
+    if (s->weapon_count > SIM_MAX_WEAPONS || s->flag_count > SIM_MAX_FLAGS)
+        return -1;
     wr w = {out, out + cap, 0};
     int64_t r2 = (int64_t)radius * radius;
 
@@ -265,7 +277,13 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
     return w.overflow ? -1 : (int)(w.p - out);
 }
 
-int sim_unpack(sim_state *s, const uint8_t *in, int len) {
+int sim_unpack(sim_state *out, const uint8_t *in, int len) {
+    if (!out || !in || len < 0) return -1;
+    /* Decode away from the live state. A rejected snapshot must not replace a
+     * good one with a half-read message, especially for callers that report
+     * the error and wait for the next snapshot rather than disconnecting. */
+    sim_state decoded;
+    sim_state *s = &decoded;
     rd r = {in, in + len, 0};
     memset(s, 0, sizeof *s);
 
@@ -287,11 +305,14 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
      * memset above left, which is an inactive seat: nothing draws it, nothing
      * steps it, and its index still means what it means everywhere else. */
     uint8_t here[(SIM_MAX_SHIPS + 7) / 8];
-    for (uint32_t b = 0; b < (ships + 7) / 8; b++) here[b] = (uint8_t)r8(&r);
+    uint32_t here_bytes = (ships + 7) / 8;
+    for (uint32_t b = 0; b < here_bytes; b++) here[b] = (uint8_t)r8(&r);
+    if (ships % 8 && (here[here_bytes - 1] >> (ships % 8)) != 0) return -1;
     for (uint32_t i = 0; i < ships; i++) {
         if (!((here[i >> 3] >> (i & 7)) & 1)) continue;
         sim_ship *sh = &s->ships[i];
         uint32_t flags = r8(&r);
+        if ((flags & ~7u) != 0 || (flags & 1u) == 0) return -1;
         sh->active = (uint8_t)(flags & 1);
         sh->alive = (uint8_t)((flags >> 1) & 1);
         /* Not `private`, which is a keyword in the dialect the client's
@@ -311,17 +332,25 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         sh->team = (uint8_t)r8(&r);
         sh->x = (int32_t)r32(&r);
         sh->y = (int32_t)r32(&r);
+        if (!world_point(sh->x, sh->y)) return -1;
         sh->vx = (int32_t)r32(&r);
         sh->vy = (int32_t)r32(&r);
+        if (!world_velocity(sh->vx) || !world_velocity(sh->vy)) return -1;
         sh->heading = (uint16_t)r16(&r);
         sh->repel = (uint16_t)r16(&r);
         sh->repel_speed = (int32_t)r32(&r);
+        if (!world_velocity(sh->repel_speed)) return -1;
         sh->kills = (uint16_t)r16(&r);
         sh->deaths = (uint16_t)r16(&r);
         uint16_t bounty = (uint16_t)r16(&r);
         sh->points = r32(&r);
         sh->carrier = (uint8_t)r8(&r);
+        if (sh->carrier != SIM_NO_CARRIER
+            && (sh->carrier >= ships || sh->carrier == i))
+            return -1;
         sh->energy = (int32_t)r32(&r);
+        if ((sh->alive && sh->energy <= 0) || (!sh->alive && sh->energy != 0))
+            return -1;
         sh->up[SIM_UP_ENERGY] = (uint8_t)r8(&r);
         if (personal) {
             sh->fire_cooldown[SIM_TRIG_GUN] = (uint16_t)r16(&r);
@@ -330,15 +359,22 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
             sh->respawn_at = (uint16_t)r16(&r);
             sh->spawn_x = (int32_t)r32(&r);
             sh->spawn_y = (int32_t)r32(&r);
+            if (!world_point(sh->spawn_x, sh->spawn_y)) return -1;
             for (int u = 0; u < SIM_UP_COUNT; u++)
                 if (u != SIM_UP_ENERGY) sh->up[u] = (uint8_t)r8(&r);
             for (int t = 0; t < SIM_TRIG_COUNT; t++) {
                 sh->level[t] = (uint8_t)r8(&r);
                 sh->mods[t] = (uint16_t)r16(&r);
+                if (sh->level[t] >= SIM_MAX_RUNGS
+                    || (sh->mods[t] >> (SIM_MOD_COUNT * 2)) != 0)
+                    return -1;
             }
-            for (int k = 0; k < SIM_MAX_CHARGES; k++)
+            for (int k = 0; k < SIM_MAX_CHARGES; k++) {
                 sh->charge[k] = (uint8_t)r8(&r);
+                if (sh->charge[k] > SIM_CHARGE_MAX) return -1;
+            }
             sh->multi_off = (uint8_t)r8(&r);
+            if (sh->multi_off > 1) return -1;
             sh->btn_prev = (uint16_t)r16(&r);
             sh->earned = (uint16_t)r16(&r);
         } else {
@@ -355,35 +391,50 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
     for (uint32_t i = 0; i < weapons; i++) {
         sim_weapon *p = &s->weapons[i];
         p->spec = (uint8_t)r8(&r);
+        if (p->spec >= SIM_MAX_SPECS) return -1;
         p->left = (uint8_t)r8(&r);
         p->depth = (uint8_t)r8(&r);
+        if (p->depth > SIM_MAX_SPLINTER_DEPTH) return -1;
         p->mods = (uint16_t)r16(&r);
+        if ((p->mods >> (SIM_MOD_COUNT * 2)) != 0) return -1;
         p->owner = (uint8_t)r8(&r);
+        if (p->owner >= ships) return -1;
         p->team = (uint8_t)r8(&r);
         p->x = (int32_t)r32(&r);
         p->y = (int32_t)r32(&r);
+        if (!world_point(p->x, p->y)) return -1;
         p->vx = (int32_t)r32(&r);
         p->vy = (int32_t)r32(&r);
+        if (!world_velocity(p->vx) || !world_velocity(p->vy)) return -1;
         p->life = (uint16_t)r16(&r);
         p->fuse_target = (uint8_t)r8(&r);
+        if (p->fuse_target != 255 && p->fuse_target >= ships) return -1;
         p->fuse = (uint16_t)r16(&r);
         p->near = (int32_t)r32(&r);
+        if (p->near < 0) return -1;
         p->level = (uint8_t)r8(&r);
         p->shrap_level = (uint8_t)r8(&r);
         p->shrap_bounce = (uint8_t)r8(&r);
+        if (p->level >= SIM_MAX_RUNGS || p->shrap_level >= SIM_MAX_RUNGS
+            || p->shrap_bounce > 1)
+            return -1;
     }
 
     uint32_t prizes = r8(&r);
     if (prizes > SIM_MAX_PRIZES) return -1;
+    uint8_t seen_prize[SIM_MAX_PRIZES] = {0};
     for (uint32_t i = 0; i < prizes; i++) {
         uint32_t idx = r8(&r);
-        if (idx >= SIM_MAX_PRIZES) return -1;
+        if (idx >= SIM_MAX_PRIZES || seen_prize[idx]) return -1;
+        seen_prize[idx] = 1;
         sim_prize *p = &s->prizes[idx];
         p->active = 1;
         /* The same expression spawn_prize places a prize with, so the state
          * that comes off the wire is the state that went on it. */
-        p->x = (int32_t)((int32_t)r16(&r) * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
-        p->y = (int32_t)((int32_t)r16(&r) * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
+        uint32_t tx = r16(&r), ty = r16(&r);
+        if (tx >= SIM_MAP_TILES || ty >= SIM_MAP_TILES) return -1;
+        p->x = (int32_t)((int32_t)tx * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
+        p->y = (int32_t)((int32_t)ty * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
         p->life = (uint16_t)r16(&r);
     }
 
@@ -393,12 +444,15 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
     for (uint32_t i = 0; i < flags; i++) {
         sim_flag *f = &s->flags[i];
         uint32_t bits = r8(&r);
+        if ((bits & ~3u) != 0 || !(bits & 1u)) return -1;
         f->active = (uint8_t)(bits & 1);
         f->carried = (uint8_t)((bits >> 1) & 1);
         f->carrier = (uint8_t)r8(&r);
+        if (f->carried && f->carrier >= ships) return -1;
         f->team = (uint8_t)r8(&r);
         f->x = (int32_t)r32(&r);
         f->y = (int32_t)r32(&r);
+        if (!world_point(f->x, f->y)) return -1;
         f->cooldown = (uint16_t)r16(&r);
     }
 
@@ -425,6 +479,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
      * "the zone sent settings this client cannot read" and disconnects saying
      * so, which is the whole difference between a bug report and a diagnosis. */
     if (r.underflow || r.p != r.end) return -1;
+    *out = decoded;
     return 0;
 }
 
@@ -463,10 +518,50 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
  * no longer reachable through `charge[]` and the ceiling is no longer a
  * count in hand. Both travel because the client predicts laying one: without
  * them it either cannot find the weapon at all or lets a pilot put down more
- * than the room allows and watches the server delete them. */
-#define CFG_VERSION 14
+ * than the room allows and watches the server delete them.
+ *
+ * 14: public energy state and the capacity rung returned to ship records.
+ *
+ * 15: gunner limits plus the carrier thrust and speed penalties. */
+#define CFG_VERSION 15
+
+static int settings_valid(const sim_settings *cfg) {
+    if (cfg->class_count == 0 || cfg->class_count > SIM_MAX_CLASSES
+        || cfg->spec_count > SIM_MAX_SPECS
+        || cfg->pattern_count > SIM_MAX_PATTERNS)
+        return 0;
+
+    for (int i = 0; i < cfg->class_count; i++) {
+        const sim_ship_class *c = &cfg->classes[i];
+        for (int t = 0; t < SIM_TRIG_COUNT; t++)
+            for (int rung = 0; rung < SIM_MAX_RUNGS; rung++)
+                if (c->trigger[t][rung] != SIM_NO_PATTERN
+                    && c->trigger[t][rung] >= cfg->pattern_count)
+                    return 0;
+    }
+    for (int i = 0; i < cfg->spec_count; i++) {
+        const sim_weapon_spec *sp = &cfg->specs[i];
+        if (sp->on_wall > SIM_WALL_PASS) return 0;
+        if (sp->splinter != SIM_NO_PATTERN && sp->splinter >= cfg->pattern_count)
+            return 0;
+    }
+    for (int i = 0; i < cfg->pattern_count; i++)
+        if (cfg->patterns[i].spec >= cfg->spec_count) return 0;
+    for (int i = 0; i < SIM_MAX_CHARGES; i++)
+        if (cfg->charge[i] != SIM_NO_PATTERN
+            && cfg->charge[i] >= cfg->pattern_count)
+            return 0;
+    if (cfg->mine != SIM_NO_PATTERN && cfg->mine >= cfg->pattern_count) return 0;
+    for (int i = 0; i < SIM_MAX_RUNGS; i++)
+        if (cfg->mod_splinter[i] != SIM_NO_PATTERN
+            && cfg->mod_splinter[i] >= cfg->pattern_count)
+            return 0;
+    return 1;
+}
 
 int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
+    if (!cfg || !out || cap < 0) return -1;
+    if (!settings_valid(cfg)) return -1;
     wr w = {out, out + cap, 0};
     w32(&w, CFG_MAGIC);
     w8(&w, CFG_VERSION);
@@ -498,6 +593,9 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, c->charge_max[k]);
         w8(&w, c->mine_max);
+        w8(&w, c->gunner_limit);
+        w32(&w, (uint32_t)c->gunner_thrust);
+        w32(&w, (uint32_t)c->gunner_speed);
     }
 
     w32(&w, (uint32_t)cfg->prox_step);
@@ -574,13 +672,17 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     return w.overflow ? -1 : (int)(w.p - out);
 }
 
-int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
+int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
+    if (!out || !in || len < 0) return -1;
+    sim_settings decoded;
+    sim_settings *cfg = &decoded;
     rd r = {in, in + len, 0};
     if (r32(&r) != CFG_MAGIC) return -1;
     if (r8(&r) != CFG_VERSION) return -1;
 
-    /* Geometry is not in here and is not ours to clear. */
-    const sim_map *map = cfg->map;
+    /* Geometry is not in here and is not ours to clear. Decode away from the
+     * live settings so a malformed reload leaves the prior tuning intact. */
+    const sim_map *map = out->map;
     memset(cfg, 0, sizeof *cfg);
     cfg->map = map;
 
@@ -615,6 +717,9 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
             c->charge_max[k] = (uint8_t)r8(&r);
         c->mine_max = (uint8_t)r8(&r);
+        c->gunner_limit = (uint8_t)r8(&r);
+        c->gunner_thrust = (int32_t)r32(&r);
+        c->gunner_speed = (int32_t)r32(&r);
     }
 
     cfg->prox_step = (int32_t)r32(&r);
@@ -716,7 +821,8 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len) {
      * legitimate trailing bytes to tolerate. The client turns a refusal into
      * "the zone sent settings this client cannot read" and disconnects saying
      * so, which is the whole difference between a bug report and a diagnosis. */
-    if (r.underflow || r.p != r.end) return -1;
+    if (r.underflow || r.p != r.end || !settings_valid(cfg)) return -1;
+    *out = decoded;
     return 0;
 }
 
@@ -735,6 +841,7 @@ uint32_t sim_map_hash(const sim_map *m) {
 }
 
 int sim_map_pack(const sim_map *m, uint8_t *out, int cap) {
+    if (!m || !out || cap < 0) return -1;
     if (cap < 12) return -1;
     int n = 0;
     uint32_t magic = MAP_MAGIC;
@@ -762,13 +869,14 @@ int sim_map_pack(const sim_map *m, uint8_t *out, int cap) {
 }
 
 int sim_map_unpack(sim_map *m, const uint8_t *in, int len) {
+    if (!m || !in || len < 0) return -1;
     if (len < 12) return -1;
     int n = 0;
     uint32_t magic = 0;
     for (int b = 0; b < 4; b++) magic |= (uint32_t)in[n++] << (b * 8);
     if (magic != MAP_MAGIC) return -1;
     if (in[n++] != MAP_VERSION) return -1;
-    n++; /* reserved */
+    if (in[n++] != 0) return -1;
     uint32_t want = 0;
     for (int b = 0; b < 4; b++) want |= (uint32_t)in[n++] << (b * 8);
 
@@ -784,6 +892,7 @@ int sim_map_unpack(sim_map *m, const uint8_t *in, int len) {
     }
     /* A map that stops early is a truncated map, not an empty tail. */
     if (i != total) return -1;
+    if (n != len) return -1;
     if (sim_map_hash(m) != want) return -2;
     sim_map_index(m);
     return 0;

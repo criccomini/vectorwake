@@ -25,6 +25,97 @@ static int32_t tile_center(int32_t t) {
     return (t * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
 }
 
+static uint32_t next_random(uint32_t *state) {
+    *state ^= *state << 13;
+    *state ^= *state >> 17;
+    *state ^= *state << 5;
+    return *state;
+}
+
+static void check_state_invariants(const sim_state *s, const sim_settings *cfg) {
+    CHECK(s->ship_count <= sim_eff_max_ships(cfg), "ship count stays in bounds");
+    CHECK(s->weapon_count <= SIM_MAX_WEAPONS, "weapon count stays in bounds");
+    CHECK(s->flag_count <= SIM_MAX_FLAGS, "flag count stays in bounds");
+
+    for (int i = 0; i < s->ship_count; i++) {
+        const sim_ship *sh = &s->ships[i];
+        if (!sh->active) continue;
+        CHECK(sh->cls < cfg->class_count, "an active ship has a valid hull");
+        if (sh->cls >= cfg->class_count) continue;
+        const sim_ship_class *c = &cfg->classes[sh->cls];
+        CHECK(sh->energy >= 0, "ship energy never goes negative");
+        CHECK(sh->energy <= sim_eff_max_energy(c, sh),
+              "ship energy stays below its current capacity");
+        CHECK((sh->alive && sh->energy > 0) || (!sh->alive && sh->energy == 0),
+              "life and energy agree");
+        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+            CHECK(sh->level[t] < SIM_MAX_RUNGS, "weapon rung stays in bounds");
+            if (sh->level[t] < SIM_MAX_RUNGS
+                && c->trigger[t][0] != SIM_NO_PATTERN)
+                CHECK(c->trigger[t][sh->level[t]] != SIM_NO_PATTERN,
+                      "a held rung names a pattern");
+            for (int mod = 0; mod < SIM_MOD_COUNT; mod++)
+                CHECK(sim_mod_get(sh->mods[t], mod)
+                          <= sim_mod_get(c->mod_max[t], mod),
+                      "weapon add-ons stay below the hull ceiling");
+        }
+        for (int charge = 0; charge < SIM_MAX_CHARGES; charge++)
+            CHECK(sh->charge[charge] <= c->charge_max[charge],
+                  "charges stay below the hull ceiling");
+        if (sh->carrier != SIM_NO_CARRIER) {
+            CHECK(sh->carrier < s->ship_count, "a gunner names an existing carrier");
+            if (sh->carrier >= s->ship_count) continue;
+            const sim_ship *carrier = &s->ships[sh->carrier];
+            CHECK(carrier->active && carrier->alive, "a gunner rides a live carrier");
+            CHECK(carrier->carrier == SIM_NO_CARRIER, "attachments stay one level deep");
+            CHECK(carrier->team == sh->team, "a gunner rides their own side");
+            CHECK(carrier->x == sh->x && carrier->y == sh->y,
+                  "a gunner stays on the carrier");
+        }
+    }
+
+    for (int i = 0; i < s->weapon_count; i++) {
+        const sim_weapon *w = &s->weapons[i];
+        CHECK(w->spec < cfg->spec_count, "a weapon names an existing spec");
+        CHECK(w->owner < s->ship_count, "a weapon names an existing owner");
+        CHECK(w->depth <= SIM_MAX_SPLINTER_DEPTH, "splinter depth stays bounded");
+        CHECK(w->fuse_target == 255 || w->fuse_target < s->ship_count,
+              "a fuse names an existing target");
+        CHECK(w->level < SIM_MAX_RUNGS, "a weapon rung stays in bounds");
+        CHECK(w->shrap_level < SIM_MAX_RUNGS, "a fragment rung stays in bounds");
+    }
+
+    int live_prizes = 0;
+    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+        const sim_prize *p = &s->prizes[i];
+        if (!p->active) continue;
+        live_prizes++;
+        CHECK(p->x >= 0 && p->y >= 0, "a green stays on the map");
+        if (p->x < 0 || p->y < 0) continue;
+        CHECK((p->x & (SIM_TILE_PX * 256 - 1)) == SIM_TILE_PX * 128,
+              "a green stays centered on its tile horizontally");
+        CHECK((p->y & (SIM_TILE_PX * 256 - 1)) == SIM_TILE_PX * 128,
+              "a green stays centered on its tile vertically");
+        CHECK(SIM_TILE_CLASS(sim_tile_at(cfg->map, p->x >> 12, p->y >> 12))
+                  != SIM_TILE_SOLID,
+              "a green stays out of walls");
+    }
+    CHECK(live_prizes <= SIM_MAX_PRIZES, "green count stays in bounds");
+
+    for (int i = 0; i < s->flag_count; i++) {
+        const sim_flag *f = &s->flags[i];
+        CHECK(f->active, "every counted flag is active");
+        if (!f->carried) continue;
+        CHECK(f->carrier < s->ship_count, "a carried flag names an existing ship");
+        if (f->carrier >= s->ship_count) continue;
+        const sim_ship *carrier = &s->ships[f->carrier];
+        CHECK(carrier->active && carrier->alive, "a flag carrier is alive");
+        CHECK(f->team == carrier->team, "a carried flag belongs to its carrier's side");
+        CHECK(f->x == carrier->x && f->y == carrier->y,
+              "a carried flag stays on its carrier");
+    }
+}
+
 static sim_map *walled_map(void) {
     sim_map *m = malloc(sizeof *m);
     memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
@@ -881,6 +972,10 @@ int main(void) {
         CHECK(sim_map_unpack(dst, buf, n - 3) == -1, "a short map is rejected");
         CHECK(sim_map_unpack(dst, buf, 4) == -1, "a stub is rejected");
 
+        buf[n] = 0x5a;
+        CHECK(sim_map_unpack(dst, buf, n + 1) == -1,
+              "a map with trailing records is rejected");
+
         /* And something that is not a map at all. */
         buf[0] ^= 0xff;
         CHECK(sim_map_unpack(dst, buf, n) == -1, "a bad magic is rejected");
@@ -1000,6 +1095,9 @@ int main(void) {
         CHECK(memcmp(dst.patterns, src.patterns,
                      sizeof(sim_fire_pattern) * src.pattern_count) == 0,
               "and every pattern field");
+        CHECK(memcmp(dst.classes, src.classes,
+                     sizeof(sim_ship_class) * src.class_count) == 0,
+              "and every hull field");
     }
 
     /* Friendly fire passes through: same team, no damage. */
@@ -1159,6 +1257,10 @@ int main(void) {
         step_n(&s, &cfg, SIM_BTN_THRUST, SIM_BTN_THRUST, 30);
         s.ships[0].up[SIM_UP_SPEED] = 3;
         s.ships[0].earned = 40;
+        sim_add_flag(&s, 100, 100);
+        s.flags[0].team = 0;
+        s.flags[0].carried = 1;
+        s.flags[0].carrier = 0;
         int32_t foe_y = s.ships[1].y;
         CHECK(s.ships[0].y != s.ships[0].spawn_y, "the pilot had flown off");
 
@@ -1175,6 +1277,9 @@ int main(void) {
               sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]),
               "with a full bar");
         CHECK(s.ships[1].y == foe_y, "and nobody else moved");
+        CHECK(!s.flags[0].carried && s.flags[0].carrier == 0,
+              "and the flag is no longer attached to the pilot");
+        CHECK(s.flags[0].team == 0, "the dropped flag stays with the old side");
 
         /* A side the map has never marked a start for still gets one, or a
          * private team formed mid-round would spawn inside the walls. */
@@ -3467,6 +3572,14 @@ int main(void) {
                   "a snapshot with bytes this build cannot read is refused");
             CHECK(sim_unpack(&ignored, buf, n) == 0,
                   "and the exact same bytes at the right length still unpack");
+
+            uint64_t before = sim_hash(&ignored);
+            buf[8] ^= 0x80;
+            CHECK(sim_unpack(&ignored, buf, n) != 0,
+                  "a malformed snapshot is refused");
+            CHECK(sim_hash(&ignored) == before,
+                  "and does not partly replace the live state");
+            buf[8] ^= 0x80;
         }
 
         /* And the same for settings, which is the message that actually broke. */
@@ -3783,9 +3896,12 @@ int main(void) {
               "packing reports an undersized buffer");
         CHECK(sim_settings_unpack(&got, buf, 3) == -1,
               "unpacking rejects a truncated message");
+        sim_settings before = got;
         buf[0] ^= 0xff;
         CHECK(sim_settings_unpack(&got, buf, n) == -1,
               "and something that is not settings at all");
+        CHECK(memcmp(&got, &before, sizeof got) == 0,
+              "and a refused reload leaves the live tuning intact");
     }
 
     /* Determinism: identical runs give identical hashes and bytes. */
@@ -4224,10 +4340,23 @@ int main(void) {
         CHECK(cfg.classes[APEX].gunner_thrust > 0, "carrying costs thrust");
         CHECK(one > 0, "the carrier still has thrust");
 
-        s.ships[0].alive = 0;
-        step_n(&s, &cfg, 0, 0, 1);
+        s.ships[0].energy = 1;
+        s.ships[2].x = s.ships[0].x;
+        s.ships[2].y = s.ships[0].y + 200 * 256;
+        s.ships[2].heading = 0;
+        int died = 0;
+        for (int tick = 0; tick < 400 && !died; tick++) {
+            sim_state next;
+            sim_events ev;
+            sim_input fire = {2, SIM_BTN_FIRE};
+            sim_step(&next, &s, &fire, 1, &cfg, &ev);
+            s = next;
+            for (uint16_t e = 0; e < ev.count; e++)
+                if (ev.e[e].type == SIM_EV_DEATH && ev.e[e].a == 0) died = 1;
+        }
+        CHECK(died, "the carrier dies in the weapon phase");
         CHECK(s.ships[1].carrier == SIM_NO_CARRIER,
-              "a dead carrier drops its gunners");
+              "the death snapshot already drops its gunners");
     }
 
     /* --- where a ship comes back ------------------------------------------
@@ -4404,6 +4533,75 @@ int main(void) {
         }
 
         free(sm);
+    }
+
+    /* A long mixed run checks relationships rather than one scripted answer.
+     * The seed is fixed so a failure can be replayed, but inputs, hull changes,
+     * side changes, attachments, weapons, deaths, respawns, flags, and greens
+     * still meet in combinations the examples above do not enumerate. */
+    {
+        sim_settings mixed = cfg;
+        mixed.prize_delay = 7;
+        mixed.prize_max = 48;
+        mixed.respawn_delay = 25;
+        mixed.flag_drop_cooldown = 5;
+        sim_state s;
+        sim_init(&s, 0x71a9c3u);
+        uint32_t random = 0x4d3b2a19u;
+        for (int i = 0; i < 12; i++) {
+            int32_t x = 7900 + (i % 4) * 70;
+            int32_t y = 7900 + (i / 4) * 70;
+            CHECK(sim_spawn(&s, (uint8_t)(i % mixed.class_count),
+                            (uint8_t)(i % 3), x, y,
+                            (uint16_t)next_random(&random), &mixed) == i,
+                  "the invariant run seats every pilot");
+        }
+        sim_add_flag(&s, 7950, 7950);
+        sim_add_flag(&s, 8050, 8050);
+        sim_add_flag(&s, 8150, 7950);
+
+        const uint16_t buttons = SIM_BTN_LEFT | SIM_BTN_RIGHT | SIM_BTN_THRUST
+                                 | SIM_BTN_REVERSE | SIM_BTN_FIRE | SIM_BTN_BOMB
+                                 | SIM_BTN_USE | SIM_BTN_SLOT_MASK | SIM_BTN_MULTI
+                                 | SIM_BTN_MINE;
+        for (int tick = 0; tick < 12000; tick++) {
+            sim_input in[12];
+            for (int i = 0; i < 12; i++) {
+                in[i].ship = (uint8_t)i;
+                in[i].buttons = (uint16_t)next_random(&random) & buttons;
+            }
+
+            if (tick % 173 == 0) {
+                uint8_t i = (uint8_t)(next_random(&random) % 12);
+                uint8_t action = (uint8_t)(next_random(&random) % 3);
+                if (action == 0)
+                    sim_set_ship_class(&s, &mixed, i,
+                                       (uint8_t)(next_random(&random)
+                                                 % mixed.class_count));
+                else if (action == 1)
+                    sim_set_ship_team(&s, &mixed, i,
+                                      (uint8_t)(next_random(&random) % 3));
+                else
+                    sim_attach(&s, &mixed, i,
+                               (uint8_t)(next_random(&random) % 12));
+            }
+
+            sim_state next;
+            sim_step(&next, &s, in, 12, &mixed, NULL);
+            s = next;
+            check_state_invariants(&s, &mixed);
+
+            if (tick % 127 == 0) {
+                static uint8_t packed[SIM_PACK_MAX];
+                sim_state decoded;
+                int n = sim_pack(&s, packed, sizeof packed);
+                CHECK(n > 0, "an invariant state packs");
+                CHECK(sim_unpack(&decoded, packed, n) == 0,
+                      "an invariant state unpacks");
+                CHECK(sim_hash(&decoded) == sim_hash(&s),
+                      "an invariant state survives the wire exactly");
+            }
+        }
     }
 
     free(m);

@@ -794,7 +794,9 @@ impl World {
     /// The core refuses unless they are alive and at a full bar, so this is
     /// the whole of the rule and both sides get it from the same place.
     pub fn set_ship_class(&mut self, i: u8, cls: u8) -> bool {
-        let cls = cls.min(self.cfg.class_count.saturating_sub(1));
+        if cls >= self.cfg.class_count {
+            return false;
+        }
         unsafe { sim_set_ship_class(&mut *self.state, &*self.cfg, i, cls) == 0 }
     }
 

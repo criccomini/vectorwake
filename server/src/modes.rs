@@ -144,6 +144,7 @@ impl Mode for Warzone {
                     let f = &mut ctx.world.state.flags[i];
                     f.team = sim::TEAM_NONE;
                     f.carried = 0;
+                    f.carrier = 0;
                     f.cooldown = 0;
                     if let Some((x, y)) = home {
                         f.x = x;
@@ -282,6 +283,8 @@ mod warzone_tests {
         // Carried across the map and held to a win.
         for i in 0..2 {
             w.state.flags[i].team = 1;
+            w.state.flags[i].carried = 1;
+            w.state.flags[i].carrier = 7;
             w.state.flags[i].x += 300 * 16 * 256;
             w.state.flags[i].y += 120 * 16 * 256;
         }
@@ -296,7 +299,55 @@ mod warzone_tests {
                 "flag {i} did not go home"
             );
             assert_eq!(w.state.flags[i].team, sim::TEAM_NONE);
+            assert_eq!(w.state.flags[i].carried, 0);
+            assert_eq!(w.state.flags[i].carrier, 0);
         }
+    }
+
+    #[test]
+    fn a_simultaneous_change_of_flag_owner_restarts_the_hold() {
+        let mut w = arena_with_flags(2);
+        let mut m = Warzone::new(2, 2);
+        for i in 0..2 {
+            w.state.flags[i].team = 0;
+        }
+        m.tick(&mut ctx(&mut w));
+        for _ in 0..500 {
+            m.tick(&mut ctx(&mut w));
+        }
+
+        for i in 0..2 {
+            w.state.flags[i].team = 1;
+        }
+        m.tick(&mut ctx(&mut w));
+        for _ in 0..999 {
+            m.tick(&mut ctx(&mut w));
+        }
+        assert_eq!(m.wins, vec![0, 0], "the new side gets its own full hold");
+        m.tick(&mut ctx(&mut w));
+        assert_eq!(m.wins, vec![0, 1]);
+    }
+
+    #[test]
+    fn a_disconnected_carrier_drops_the_flag_before_scoring() {
+        let mut w = arena_with_flags(1);
+        w.spawn(0, 0, 512, 512, 0);
+        let ship = w.state.ships[0];
+        let flag = &mut w.state.flags[0];
+        flag.team = 0;
+        flag.carried = 1;
+        flag.carrier = 0;
+        flag.x = ship.x;
+        flag.y = ship.y;
+        w.state.ships[0].active = 0;
+
+        w.step(&[]);
+        let mut m = Warzone::new(1, 2);
+        m.tick(&mut ctx(&mut w));
+
+        assert_eq!(w.state.flags[0].carried, 0);
+        assert_eq!(w.state.flags[0].carrier, 0);
+        assert_eq!(m.wins, vec![0, 0]);
     }
 
     #[test]
