@@ -154,8 +154,7 @@ end
 -- --- the preferred wire -----------------------------------------------------
 
 local net = fresh_net()
-local lost_reason = nil
-net.connect("wss://zone/a1", 0, "pilot", function(why) lost_reason = why end,
+net.connect("wss://zone/a1", 0, "pilot", function() end,
             "chaos", false, "https://zone:9443")
 check("an advertised door is dialled first", wt.dialled == 1 and ws.dialled == 0)
 check("and it is the advertised address", wt.url == "https://zone:9443")
@@ -239,7 +238,7 @@ check("and the next fresh one lands", net.stats.snaps == 3)
 
 net = fresh_net()
 snapshot_seq = 4294967294
-lost_reason = nil
+local lost_reason = nil
 net.connect("wss://zone/a1", 0, "pilot", function(why) lost_reason = why end,
             "chaos", false,
             "https://zone:9443")

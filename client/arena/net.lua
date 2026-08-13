@@ -1150,9 +1150,9 @@ local function on_snapshot(s)
         local target = holes > 0 and LOSS_TARGET or LAG_TARGET
         local lead = serial_delta(predicted_tick, from)
         if margin > target and lead < LEAD_MAX then
-            local before = predicted_tick
+            local prior_tick = predicted_tick
             predicted_tick = next_tick(predicted_tick)
-            input_log[predicted_tick] = input_log[before] or 0
+            input_log[predicted_tick] = input_log[prior_tick] or 0
         elseif margin < target - LAG_SLACK and lead > 0 then
             predicted_tick = previous_tick(predicted_tick)
         end
@@ -1190,9 +1190,10 @@ local function on_snapshot(s)
         M.stats.self_err_max = err
     end
 
-    for t in pairs(input_log) do
-        if serial_after(from, t) and u32n(from - t) > 400 then
-            input_log[t] = nil
+    for logged_tick in pairs(input_log) do
+        if serial_after(from, logged_tick)
+                and u32n(from - logged_tick) > 400 then
+            input_log[logged_tick] = nil
         end
     end
     predicted_tick = sim.tick()
