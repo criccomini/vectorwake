@@ -75,6 +75,9 @@ jobs:
       - name: releases wait for both immutable images
         run: ./deploy/update_test.sh
 
+      - name: fleet dry runs preserve provider commands
+        run: ./deploy/fleet_test.sh
+
       # And the routes each role serves, by the thing that serves them. A
       # Caddyfile with a bad import fails at container start, which on a fresh
       # host is after the point where anything can report it.

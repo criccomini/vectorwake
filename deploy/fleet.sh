@@ -117,43 +117,14 @@ HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 die() { echo "fleet: $*" >&2; exit 1; }
 
+. "$HERE/lib/fleet_provider.sh"
+. "$HERE/lib/fleet_dns.sh"
+. "$HERE/lib/fleet_database.sh"
+
 # Never from CI. A machine appearing as a side effect of a push is the class of
 # surprise this deployment keeps paying to remove, and the token that would let
 # it happen has no business in a runner.
 [ -z "${CI:-}" ] || die "not from CI. Machines are created from a laptop, on purpose."
-
-need() {
-	command -v "$1" >/dev/null 2>&1 || die "$2"
-}
-
-# The engine. One static Go binary, official, and it already speaks every
-# resource a host is made of, which is why none of that is written here.
-vultr() {
-	need vultr-cli "vultr-cli is not installed. https://github.com/vultr/vultr-cli/releases"
-	[ -n "${VULTR_API_KEY:-}" ] || die "VULTR_API_KEY is not set"
-	vultr-cli "$@"
-}
-
-# A call that changes something, which is the only kind a dry run withholds.
-#
-# Reads still happen, because they are what every decision here is made from and
-# they cost nothing: a dry run that guessed at them could not tell you whether
-# it would reuse the certificate volume or create one, which is the answer most
-# worth having before spending an issuance.
-#
-# What it cannot tell you is worth saying where somebody will read it. Ids and
-# addresses do not exist yet, so anything downstream of a create prints a
-# placeholder and the order after that point is asserted rather than observed.
-# Every flag name, positional argument and JSON key here was checked against
-# vultr-cli v3.11.0's source; what has still never run is the live API, whose
-# answers are the one thing reading cannot verify.
-vultr_do() {
-	if [ "$DRY" = 1 ]; then
-		echo "would: vultr-cli $*" >&2
-		return 0
-	fi
-	vultr "$@"
-}
 
 # --- the user-data -----------------------------------------------------------
 
@@ -620,59 +591,6 @@ cmd_scrub() {
 	scrub_user_data "$id"
 }
 
-# One A record by name, with the apex spelled `@`.
-#
-# The apex is the reason this is a function. Vultr stores it under an empty
-# name and its JSON leaves the key out rather than sending "", so
-# `select(.name == "@")` matches nothing and `select(.name == "")` matches
-# nothing either. A caller that looks the apex up therefore concludes it does
-# not exist and creates it, and now the domain has two A records: half its
-# traffic on the host being retired, and no way to reconcile them, because the
-# API answers an update that would make one equal the other with "Duplicate
-# records not allowed". That is how the ATL to DFW cutover went, and the only
-# way out was deleting a record by hand. So both ends are normalized here
-# instead, once, where every caller gets it.
-a_record() {
-	vultr dns record list "$DOMAIN" -o json | jq -r --arg n "$1" \
-		'[.records[] | select(.type == "A")
-		  | select((if (.name // "") == "" then "@" else .name end) == $n)][0]
-		 // empty'
-}
-
-# Create or move one A record, quietly when it already points there. For the
-# names that ride along with a cutover, after the cutover's own question has
-# been asked and answered. Prefixed variables, because POSIX sh has no locals
-# and the caller's are in use.
-converge_record() {
-	cr_name=$1 cr_ip=$2
-	case $cr_name in
-	@) cr_display=$DOMAIN ;;
-	*) cr_display=$cr_name.$DOMAIN ;;
-	esac
-	cr_rec=$(a_record "$cr_name")
-	cr_rid=$(printf '%s' "$cr_rec" | jq -r '.id // empty')
-	cr_old=$(printf '%s' "$cr_rec" | jq -r '.data // empty')
-	if [ -z "$cr_rid" ]; then
-		vultr_do dns record create "$DOMAIN" --type A --name "$cr_name" \
-			--data "$cr_ip" --ttl "$TTL" >/dev/null
-		echo "fleet: $cr_display -> $cr_ip (created)"
-	elif [ "$cr_old" != "$cr_ip" ]; then
-		vultr_do dns record update "$DOMAIN" "$cr_rid" --data "$cr_ip" --ttl "$TTL" >/dev/null
-		echo "fleet: $cr_display -> $cr_ip (moved from $cr_old)"
-	fi
-}
-
-# The names that follow the front door wherever it points. The bare site and
-# admin.<domain> belong to whichever host is central, so a cutover that moved
-# only play.<domain> would strand both on the old box. Runs on every exit of
-# cmd_point, including "already points there", which creates a missing record
-# without adding another command.
-ride_along() {
-	if [ "$name.$DOMAIN" = "$FRONT" ]; then
-		converge_record "@" "$1"
-		converge_record "${ADMIN_HOST%%.*}" "$1"
-	fi
-}
 
 # Move a name onto a host. This is the cutover, and it is the whole of it.
 #
@@ -797,148 +715,6 @@ cmd_firewall() {
 	# wants to export it.
 }
 
-# --- the database ------------------------------------------------------------
-
-# The managed Postgres, which is the one resource in this deployment whose loss
-# cannot be repaired by rebuilding. It belongs here for the same reason the rest
-# does: a rebuild in a new region is a database as well as hosts, and the step
-# that was left to the console is the step that gets done wrong at midnight.
-#
-# What is different about it is the cost of a mistake, so the verbs are shaped
-# around that rather than around convenience. Bare `db` inspects and creates
-# nothing, since the common use is reading the connection string; `db create`
-# names the plan and the monthly bill before it asks; and `db destroy` wants the
-# label typed out, because it is the only thing in this file that a rebuild
-# cannot put back.
-DB_LABEL=${VW_DB_LABEL:-vectorwake}
-# The engine and the size. Overridable because these are the flags most likely
-# to have drifted in vultr-cli, and a wrong one should be fixable from a shell
-# rather than by editing this file.
-DB_ENGINE=${VW_DB_ENGINE:-pg}
-DB_VERSION=${VW_DB_VERSION:-16}
-DB_PLAN=${VW_DB_PLAN:-vultr-dbaas-startup-cc-1-55-2}
-
-# The database this deployment reads, by label.
-db_row() {
-	vultr database list -o json | jq -r --arg l "$DB_LABEL" \
-		'[.databases[] | select(.label == $l)][0] // empty'
-}
-
-# The string the meta-layer wants, assembled rather than stored anywhere.
-# `sslmode=require` is not decoration: Vultr signs each project's databases with
-# its own CA, and without it the connection goes out in the clear and the
-# meta-layer refuses to talk to it at all. The CA itself is committed at
-# deploy/db-ca.pem and is not a secret.
-db_url() {
-	printf '%s' "$1" | jq -r '
-		"postgres://\(.user):\(.password)@\(.host):\(.port)/\(.dbname)?sslmode=require"'
-}
-
-cmd_db() {
-	need jq "jq is not installed"
-	case ${1:-show} in
-	create)  shift; db_create "$@" ;;
-	destroy) shift; db_destroy "$@" ;;
-	--url)   db_show --url ;;
-	show)    db_show ;;
-	*)       die "usage: fleet.sh db [show|--url|create [region]|destroy]" ;;
-	esac
-}
-
-db_show() {
-	db=$(db_row)
-	if [ -z "$db" ]; then
-		echo "fleet: no managed database labeled $DB_LABEL" >&2
-		echo "       fleet.sh db create [region]" >&2
-		return 1
-	fi
-	head=$(printf '%s' "$db" | jq -r '"fleet: \(.label)  \(.status)  \(.region)  \(.plan)"')
-	url=$(db_url "$db")
-	case $url in
-	*null*) echo "$head" >&2
-	        echo "fleet: the API returned no credentials for $DB_LABEL yet." >&2
-	        echo "       A database still building has none; try again when it is" >&2
-	        echo "       Running." >&2
-	        return 1 ;;
-	esac
-	# Under --url the connection string is the output and the rest is commentary,
-	# so the commentary goes to stderr. `VW_META_DATABASE=$(fleet.sh db --url)`
-	# has to capture one line, and it captures whatever stdout holds.
-	if [ "${1:-}" = --url ]; then
-		echo "$head" >&2
-		printf '%s\n' "$url"
-	else
-		echo "$head"
-		echo "fleet: export VW_META_DATABASE='$url'"
-	fi
-}
-
-# Bring one up.
-#
-# In the same region as the central host by default, because every account
-# operation crosses that distance and the target shape in hosting.md puts them
-# together. It costs by the month from the moment it exists, so it says the
-# plan and asks.
-db_create() {
-	region=${1:-$REGION}
-	if [ -n "$(db_row)" ]; then
-		echo "fleet: a database labeled $DB_LABEL already exists:"
-		# Tolerated failing, because one still building has no credentials to
-		# print and that is not an error here: the answer to `create` is that
-		# there is nothing to create.
-		db_show || true
-		return 0
-	fi
-	printf 'fleet: create %s in %s, %s %s on %s? It bills monthly. [y/N] ' \
-		"$DB_LABEL" "$region" "$DB_ENGINE" "$DB_VERSION" "$DB_PLAN"
-	read -r yes
-	[ "$yes" = y ] || die "nothing done"
-
-	vultr_do database create --database-engine "$DB_ENGINE" \
-		--database-engine-version "$DB_VERSION" --region "$region" \
-		--plan "$DB_PLAN" --label "$DB_LABEL" >/dev/null
-	if [ "$DRY" = 1 ]; then return 0; fi
-
-	# Minutes, not seconds, and its credentials do not exist until it is up.
-	echo "fleet: waiting for it to come up"
-	n=0
-	while [ $n -lt 120 ]; do
-		st=$(db_row | jq -r '.status // empty')
-		[ "$st" = Running ] && break
-		sleep 10
-		n=$((n + 1))
-	done
-	db_show || die "it did not come up in twenty minutes; look in the console"
-	echo "fleet: the catalog's [meta] url is a separate thing and does not move"
-	echo "       with this. Only VW_META_DATABASE does."
-}
-
-# Take one down. This is the most irreversible thing in this file.
-#
-# Every other verb here destroys something a rebuild replaces: a host is
-# disposable, a volume holds certificates that reissue, a DNS record is one
-# call. This holds every account, every rating and the whole rated history, and
-# nothing in this repository is a copy of it. So it asks for the label to be
-# typed rather than for a keystroke, and says what is inside first.
-db_destroy() {
-	db=$(db_row)
-	[ -n "$db" ] || die "no managed database labeled $DB_LABEL"
-	id=$(printf '%s' "$db" | jq -r '.id')
-	printf '%s' "$db" | jq -r '"fleet: \(.label)  \(.status)  \(.region)  \(.plan)"'
-	cat >&2 <<WARN
-fleet: this holds every account, every rating and the rated event log.
-       Nothing in this repository is a copy of it and no other verb here
-       is this final. Confirm the managed database's automatic backup status
-       in Vultr before continuing.
-WARN
-	printf 'fleet: type the label %s to destroy it: ' "$DB_LABEL"
-	read -r typed
-	[ "$typed" = "$DB_LABEL" ] || die "nothing done"
-	vultr_do database delete "$id" >/dev/null
-	if [ "$DRY" = 1 ]; then return 0; fi
-	echo "fleet: $DB_LABEL is gone. Any host still holding its connection string"
-	echo "       will refuse to start, which is the meta-layer working correctly."
-}
 
 # --- the secrets -------------------------------------------------------------
 
