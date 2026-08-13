@@ -59,10 +59,11 @@
   </g>
   <rect x="1" y="1" width="1198" height="628" fill="none" stroke="#1d2838" stroke-width="2"/>
 
-  <g transform="translate(72 62) scale(.55)" stroke-width="0.6" stroke-linejoin="miter">
-    <path fill="#ffa552" stroke="#ffa552" d="M0 2h4l24 48h-4zM24.2 2h3.6v48h-3.6z"/>
-    <path fill="#3f4b60" stroke="#3f4b60" d="M28 2h4l24 48h-4zM52.2 2h3.6v48h-3.6zM56 2h4l24 48h-4zM80.2 2h3.6v48h-3.6zM0 54h4l24 48h-4zM24.2 54h3.6v48h-3.6z"/>
-    <path fill="#4fd6ff" stroke="#4fd6ff" d="M28 54h4l24 48h-4zM52.2 54h3.6v48h-3.6zM56 54h4l24 48h-4zM80.2 54h3.6v48h-3.6z"/>
+  <g transform="translate(72 62) scale(.55)">
+    <path fill="#ff9d22" d="M42 0L84 67L66 78L42 53L18 78L0 67Z"/>
+    <path fill="#27c5ed" d="M0 67L18 78L42 53L66 78L84 67L60 103L42 74L24 103Z"/>
+    <path fill="none" stroke="#000" stroke-width="3" stroke-linecap="square"
+          stroke-linejoin="miter" d="M0 67L18 78L42 53L66 78L84 67"/>
   </g>
   <text x="132" y="102" fill="#dfe9f5" font-family="DejaVu Sans Mono, monospace" font-size="27" letter-spacing="2">vectorwake</text>
 

@@ -4044,171 +4044,63 @@ local function ship_grid(x, y, w, h, v, focused)
     end
 end
 
--- The mark: two aligned rows of \|\|\|.
+-- The mark is a top-down ship built from an orange Lambda and a cyan W. The
+-- orange outside is one uninterrupted /\, while the shared five-point
+-- chevron gives both letters their inside edge. A black separator is derived
+-- from that one centerline at a constant width, so it cannot pinch or flare at
+-- a corner.
 --
--- Each wedge is a diagonal falling into a vertical and meeting it on the
--- baseline. The rows share their three x positions. Orange begins the upper
--- row, cyan finishes the lower one, and the other strokes use the dark slate
--- from the site mark.
---
--- The diagonals are wakes. The bullet reveals each one as a solid stroke, then
--- climbs the vertical beside it.
---
--- Drawn here rather than imported, because the interface has no way to put a
--- picture on screen and would not want one: everything else is strokes into a
--- mesh layer, and a mark that arrived as pixels would be the only thing in the
--- client that could not be drawn at any size. The page carries the same shape
--- as `client/web/icon.svg`, and logo_test holds the two to each other.
---
--- The row and gap ratios are the 48/4/48 construction used by the site SVG.
--- A row is half as tall as the old mark, so its pen is measured against the
--- row rather than the full two-row height.
-local MK_WD, MK_GAP = 0.50, 1 / 12
-local MK_ROW, MK_ROW_GAP, MK_WEIGHT = 0.48, 0.04, 0.075
-local MK_SPAN = 3 * MK_WD + 2 * MK_GAP
+-- Drawn here rather than imported because the interface is vector geometry at
+-- every other point too. `client/web/logo.svg` carries the same coordinates,
+-- and logo_test holds every inline and raster copy to that source.
+local MK_W, MK_H = 84, 104
 
--- How much wider a diagonal is drawn than a vertical, so that the two read at
--- the same weight.
---
--- The two are measured differently and have to be. A vertical is drawn with
--- `seg`, whose width is square to the stroke; a diagonal is drawn with
--- `seg_flat`, which cuts its ends flat and level and therefore measures its
--- width across, horizontally. A stroke falling half as far across as it does
--- down is 1.118 times as long as it is tall, so a horizontal width of w lays
--- down only 0.894w of actual ink, and the wakes came out a tenth lighter than
--- the verticals they land on: the same shape, drawn in two weights.
---
--- The site's mark carries this correction as a pair of round numbers, 4 across
--- the diagonal against 3.6 for the vertical, and those are the numbers copied
--- here rather than the exact secant, so the drawn mark and the SVG one are the
--- same drawing rather than two drawings that agree to within half a percent.
-local MK_WAKE_W = 4 / 3.6
+local MK_ORANGE = {42, 0, 84, 67, 66, 78, 42, 53, 18, 78, 0, 67}
+local MK_ORANGE_TRI = {1, 2, 3, 1, 3, 4, 6, 1, 4, 4, 5, 6}
 
--- How wide the mark stands, against its own height.
+local MK_CYAN = {0, 67, 18, 78, 42, 53, 66, 78, 84, 67,
+                 60, 103, 42, 74, 24, 103}
+local MK_CYAN_TRI = {8, 1, 2, 8, 2, 3, 4, 5, 6,
+                     3, 4, 6, 3, 6, 7, 3, 7, 8}
+
+-- The two exact 1.5-unit offsets of the shared chevron, joined with miters
+-- and square terminals. Triangulating the ring once is cheaper and more exact
+-- than asking five independent strokes to agree at runtime.
+local MK_GAP = {
+    -0.4977, 64.9379, 17.7531, 76.0912, 42, 50.834,
+    66.2469, 76.0912, 84.4977, 64.9379,
+    86.0621, 67.4977, 65.7531, 79.9088, 42, 55.166,
+    18.2469, 79.9088, -2.0621, 67.4977,
+}
+local MK_GAP_TRI = {10, 1, 2, 4, 5, 6, 4, 6, 7, 3, 4, 7,
+                    3, 7, 8, 2, 3, 8, 2, 8, 9, 2, 9, 10}
+
+local function logo_poly(points, tris, ox, oy, k, col)
+    for i = 1, #tris, 3 do
+        local a, b, c = tris[i], tris[i + 1], tris[i + 2]
+        u:tri(ox + points[a * 2 - 1] * k,
+              ry(oy + points[a * 2] * k),
+              ox + points[b * 2 - 1] * k,
+              ry(oy + points[b * 2] * k),
+              ox + points[c * 2 - 1] * k,
+              ry(oy + points[c * 2] * k), col)
+    end
+end
+
 function M.logo_width(h)
-    return h * MK_ROW * MK_SPAN
+    return h * MK_W / MK_H
 end
 
--- Where each stroke starts and ends, in units of one row's height, with the
--- row's left edge and baseline at the origin and y up. Six of them, in the
--- order a bullet would draw them: down the diagonal, bounce, up the vertical,
--- across to the next.
-local function mk_strokes()
-    local out = {}
-    for i = 0, 2 do
-        local x = i * (MK_WD + MK_GAP)
-        out[#out + 1] = {x, 1, x + MK_WD, 0, wedge = i, wake = true}
-        out[#out + 1] = {x + MK_WD, 0, x + MK_WD, 1, wedge = i}
-    end
-    return out
-end
-local MK_STROKES = mk_strokes()
-
--- How long each bullet spends on a piece, and how long a bounce shows for.
-local MK_FALL, MK_RISE, MK_HOP, MK_FLASH = 0.17, 0.12, 0.07, 0.22
-
--- When the run started. Reset whenever the mark has not been drawn for a
--- moment, which is the honest reading of "the menu just opened": nothing has
--- to tell the mark that it did, and every way in gets the same animation.
-local logo_seen, logo_t0 = -1, 0
-
--- One stroke, drawn to `p` of its length. At p = 1 this is exactly what the
--- still mark draws, which is what lets the animation finish into the shape
--- rather than into an approximation of it.
--- `oy` is the baseline, in this file's own downward y, and a stroke's second
--- and fourth numbers are heights above it. One flip, at the point of drawing.
-local function mk_stroke(st, ox, oy, h, w, col, p)
-    local x1, y1 = ox + st[1] * h, oy - st[2] * h
-    local x2, y2 = ox + st[3] * h, oy - st[4] * h
-    local ex, ey = x1 + (x2 - x1) * p, y1 + (y2 - y1) * p
-    if st.wake then
-        -- The flat cut keeps the top and bottom edges level as the wake grows.
-        -- Its color stays solid from the bullet back to the starting point.
-        -- Widened across, because that is the direction this cut measures in:
-        -- see MK_WAKE_W.
-        u:seg_flat(x1, ry(y1), ex, ry(ey), w * MK_WAKE_W, col)
-    else
-        u:seg(x1, ry(y1), ex, ry(ey), w, col)
-    end
-    return ex, ey
-end
-
--- One row gets its own bullet and clock cursor. Both rows are called with the
--- same elapsed time, so they fall, bounce, rise and hop together.
-local function logo_row(ox, oy, h, w, hue, t, alpha)
-    local bx, by, bcol
-    for i, st in ipairs(MK_STROKES) do
-        local span = st.wake and MK_FALL or MK_RISE
-        local col = hue[st.wedge + 1]
-        if t >= span then
-            mk_stroke(st, ox, oy, h, w, col, 1)
-            t = t - span
-            -- A bounce off the baseline, and the hop across to the next wedge
-            -- at the top. Neither draws any of the mark; the first is a flash
-            -- where the bullet turned and the second is the bullet in transit.
-            if st.wake then
-                if t < MK_FLASH then
-                    local f = 1 - t / MK_FLASH
-                    u:ring(ox + st[3] * h, ry(oy), h * 0.10 * (1.6 - f),
-                           math.max(1 * S, w * 0.5 * f), 12,
-                           pal.a(pal.hot(col, 0.5), alpha * f * 0.9))
-                end
-            elseif i < #MK_STROKES then
-                if t < MK_HOP then
-                    local nx = MK_STROKES[i + 1][1]
-                    local f = t / MK_HOP
-                    bx = ox + (st[3] + (nx - st[3]) * f) * h
-                    by = oy - h
-                    bcol = pal.a(pal.DIM, alpha * 0.7)
-                    break
-                end
-                t = t - MK_HOP
-            end
-        else
-            bx, by = mk_stroke(st, ox, oy, h, w, col, math.max(0, t) / span)
-            bcol = pal.a(pal.hot(col, 0.65), alpha)
-            break
-        end
-    end
-    return bx, by, bcol
-end
-
--- The bullet is the same dot the corner draws on the end of a gun's line,
--- with its glow stepped out of discs rather than taken from `halo`.
-local function logo_bullet(bx, by, w, bcol)
-    if bx then
-        local a = bcol[4] or 1
-        u:disc(bx, ry(by), w * 3.0, 12, pal.a(bcol, a * 0.16))
-        u:disc(bx, ry(by), w * 1.9, 10, pal.a(bcol, a * 0.30))
-        u:disc(bx, ry(by), w * 1.15, 10, bcol)
-    end
-end
-
--- `h` is the full two-row height and (cx, cy) its center. `still` draws the
--- finished shape and nothing else, which is what anything not on the menu
--- wants.
 function M.logo(cx, cy, h, alpha, still)
     alpha = alpha or 1
-    local rh = h * MK_ROW
-    local ox = cx - M.logo_width(h) / 2
-    local top = cy - h / 2
-    local oy = {top + rh, top + 2 * rh + h * MK_ROW_GAP}
-    local w = math.max(1 * S, rh * MK_WEIGHT)
-    local hue = {
-        {pal.a(pal.ENEMY, alpha), pal.a(pal.MARK_MUTED, alpha),
-         pal.a(pal.MARK_MUTED, alpha)},
-        {pal.a(pal.MARK_MUTED, alpha), pal.a(pal.FRIEND, alpha),
-         pal.a(pal.FRIEND, alpha)},
-    }
-
-    if not still and M.now - logo_seen > 0.25 then logo_t0 = M.now end
-    if not still then logo_seen = M.now end
-    local t = still and math.huge or (M.now - logo_t0)
-
-    for row = 1, 2 do
-        local bx, by, bcol = logo_row(ox, oy[row], rh, w, hue[row], t, alpha)
-        logo_bullet(bx, by, w, bcol)
-    end
+    local k = h / MK_H
+    local ox, oy = cx - MK_W * k / 2, cy - MK_H * k / 2
+    logo_poly(MK_ORANGE, MK_ORANGE_TRI, ox, oy, k,
+              pal.a(pal.LOGO_ORANGE, alpha))
+    logo_poly(MK_CYAN, MK_CYAN_TRI, ox, oy, k,
+              pal.a(pal.LOGO_CYAN, alpha))
+    logo_poly(MK_GAP, MK_GAP_TRI, ox, oy, k,
+              pal.a(pal.LOGO_GAP, alpha))
 end
 
 -- The mark and the name, and nothing under them.

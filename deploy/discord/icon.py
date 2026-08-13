@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# The server's icon, cut from the mark the client already ships.
+# The server's icon, rendered from the mark the client already ships.
 #
 #     python3 deploy/discord/icon.py            # rewrites deploy/discord/icon.png
 #
 # client/web/icon.svg is the mark, and logo_test holds it to the drawing every
-# other surface carries, so cutting the icon from that file rather than
+# other surface carries, so rendering the icon from that file rather than
 # redrawing it keeps another drawing of the mark from existing. Nothing about
 # it changes on the way here any more: the tile was chamfered at two corners
 # and this file squared it, because Discord masks a server icon to a circle and
@@ -15,7 +15,6 @@
 # available, with the screenshot browser as a fallback.
 
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
@@ -29,6 +28,9 @@ SIZE = 512
 # chamfer off, and what it does now is refuse to ship an icon whose tile has
 # gone back to a shape a circular mask would bite into.
 TILE = 'M0 0H512V512H0Z'
+ORANGE = 'M42 0L84 67L66 78L42 53L18 78L0 67Z'
+CYAN = 'M0 67L18 78L42 53L66 78L84 67L60 103L42 74L24 103Z'
+GAP = 'M0 67L18 78L42 53L66 78L84 67'
 
 CHROME = next((p for p in ["/opt/pw-browsers/chromium",
                            "/Applications/Google Chrome.app/Contents/MacOS/"
@@ -40,27 +42,24 @@ CHROME = next((p for p in ["/opt/pw-browsers/chromium",
 RSVG = shutil.which("rsvg-convert")
 
 
-def cut(svg):
-    """Make the source tile full bleed for Discord's circular mask."""
+def validate(svg):
+    """Confirm the source is the full-bleed canonical app tile."""
     svg = svg[svg.index("<svg"):]
-    # A vertical is a bar in the fill data: over by its width, down the row,
-    # and back. There are two rows of three, so the three x positions each
-    # occur twice. The mark used to be stroked lines here and is filled shapes
-    # now, which is the whole of why this reads the way it does.
-    verts = sorted(set(float(x) for x, _ in
-                       re.findall(r'M([\d.]+) [\d.]+h([\d.]+)v[\d.]+h-\2z',
-                                  svg)))
-    if len(verts) != 3:
-        sys.exit(f"{SVG}: found {len(verts)} vertical positions, expected 3")
     if TILE not in svg:
         sys.exit(f"{SVG}: the tile is not the full square this expects")
+    for name, path in (("orange Lambda", ORANGE), ("cyan W", CYAN),
+                       ("even gap", GAP)):
+        if path not in svg:
+            sys.exit(f"{SVG}: missing the canonical {name}")
+    if '#ff9d22' not in svg or '#27c5ed' not in svg or 'stroke="#000"' not in svg:
+        sys.exit(f"{SVG}: the canonical logo colors or separator are missing")
     return svg
 
 
 def main():
     if RSVG is None and CHROME is None:
         sys.exit("no SVG rasterizer found")
-    svg = cut(SVG.read_text())
+    svg = validate(SVG.read_text())
     with tempfile.TemporaryDirectory() as tmp:
         shot = pathlib.Path(tmp) / "icon.png"
         if RSVG:

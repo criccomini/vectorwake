@@ -698,32 +698,21 @@ flying, on a build that takes six minutes to publish.
 
 ## The mark
 
-Two aligned rows of `\|\|\|` make the mark. Each wedge is a diagonal falling
-into a vertical. The rows share the same three x positions, with a narrow gap
-between them. Orange starts the upper row, cyan finishes the lower row, and the
-remaining wedges use the dark slate from the site.
+The mark is a top-down ship made from an orange Lambda and a cyan W. Its orange
+outside is one clean `/\`. The two letters share a five-point chevron, with one
+constant-width black separator drawn from that centerline. The gap therefore
+stays even through every corner instead of pinching at the middle.
 
-The diagonals are wakes. The install icon fades them in where they leave and
-brings them to full color where they land. In the game they stay solid while
-the bullet draws them. The verticals stand at one weight with the wakes.
-Drawing either part at a second weight makes the diagonal look like a shadow
-instead of half of the same stroke.
-
-On the menu, a bullet draws each row. Both bullets use the same clock, so the
-two rows fall, bounce, rise, and hop together. The run restarts after the mark
-has not been drawn for a moment. Opening the menu therefore replays it without
-adding another piece of menu state.
-
-`client/web/icon.svg` is the ordinary cut used for installed app icons.
-`client/web/favicon.svg` is the heavier cut used in browser tabs. `ui.logo` in
-`arena/ui.lua` draws the ordinary cut into a mesh layer because the interface
+`client/web/logo.svg` is the canonical transparent vector. `icon.svg` puts it
+on the square app tile, and the browser, site, admin, Discord, share-card, and
+README assets all use the same coordinates and colors. `ui.logo` in
+`arena/ui.lua` draws a triangulated copy into a mesh layer because the game UI
 does not place bitmap art. The preboot canvas in `client/tools/single_file.py`
-draws the same finished mark while the engine loads.
+draws the same mark above the loading progress bar.
 
-`lua5.1 client/tests/logo_test.lua` reads the icon's coordinates and compares
-them with the Lua renderer. It checks the two aligned rows, their colors, their
-shared clock, and the embedded browser assets. That keeps the favicon, manifest
-icons, install icon, and in-game drawing tied to the two source SVG files.
+`lua5.1 client/tests/logo_test.lua` checks those consumers against the
+canonical paths, verifies the game mesh colors and triangle counts, and
+compares every embedded browser icon byte for byte with its source PNG.
 
 ## The repel nobody could see
 

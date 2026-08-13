@@ -23,7 +23,7 @@ import urllib.request
 
 API = "https://discord.com/api/v10"
 
-# The mark, cut for a round tile by icon.py beside this file.
+# The mark, rendered for a round tile by icon.py beside this file.
 ICON = pathlib.Path(__file__).resolve().parent / "icon.png"
 
 VIEW = 1 << 10

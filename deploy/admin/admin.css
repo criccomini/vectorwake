@@ -137,16 +137,19 @@ h1 {
   margin: 0;
 }
 
-/* The mark sits on the baseline of the words rather than above them. Its
-   outline adds a fraction of a pixel at this size. */
+/* The mark sits on the baseline of the words rather than above them. */
 .mark {
   flex: none;
-  stroke-width: 0.6;
+}
+.mark-orange { fill: #ff9d22; }
+.mark-cyan { fill: #27c5ed; }
+.mark-gap {
+  fill: none;
+  stroke: #000;
+  stroke-width: 3;
+  stroke-linecap: square;
   stroke-linejoin: miter;
 }
-.mark-amber { fill: var(--enemy); stroke: var(--enemy); }
-.mark-muted { fill: #3f4b60; stroke: #3f4b60; }
-.mark-cyan { fill: var(--friend); stroke: var(--friend); }
 
 /* ------------------------------------------------------------------- rail */
 

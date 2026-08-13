@@ -225,52 +225,47 @@ SHIM = """
                      function () {});
     } catch (e) {}
 
-    // The mark, in the units ui.lua keeps it in: two aligned rows of three
-    // wedges. Orange begins the upper row, cyan finishes the lower one, and
-    // the other strokes use the site's dark slate.
-    // Every number here has a twin in ui.lua, and logo_test holds that one to
-    // client/web/icon.svg, so all four drawings of the mark are one shape.
-    var MK_WD = 0.50, MK_GAP = 1 / 12, MK_WEIGHT = 0.075;
-    var MK_ROW = 0.48, MK_ROW_GAP = 0.04;
+    // The loading mark uses the canonical 84 by 104 geometry from
+    // client/web/logo.svg. The orange Lambda and cyan W share one chevron;
+    // drawing that centerline once keeps its black gap even at every corner.
+    var MK_W = 84, MK_H = 104;
     var LOGO_EM = 0.74, LOGO_GAP = 0.30, LOGO_DROP = 0.12;
-    var MK_SPAN = (3 * MK_WD + 2 * MK_GAP) * MK_ROW;
-    var INK = "#dfe9f5", FRIEND = "#4fd6ff", ENEMY = "#ffa552";
-    var MUTED = "#3f4b60";
+    var MK_SPAN = MK_W / MK_H;
+    var INK = "#dfe9f5", FRIEND = "#4fd6ff";
+    var LOGO_ORANGE = "#ff9d22", LOGO_CYAN = "#27c5ed";
 
-    // `ox` is the mark's left edge and `oy` its baseline, which is how
-    // mk_stroke reads them.
+    // `ox` is the mark's left edge and `oy` is its bottom edge.
     function mark(ox, oy, mh) {
-      var rh = mh * MK_ROW;
-      var top = oy - mh;
-      var baselines = [top + rh, top + 2 * rh + mh * MK_ROW_GAP];
-      var hues = [[ENEMY, MUTED, MUTED], [MUTED, FRIEND, FRIEND]];
-      var lw = Math.max(1, rh * MK_WEIGHT);
-      // Half-widths. A vertical is measured square to itself; a diagonal is
-      // measured across, because its ends are cut flat and level, and the
-      // site's mark carries the difference between the two as a pair of round
-      // numbers: 4 across a diagonal against 3.6 for a vertical. Drawn as
-      // filled shapes rather than stroked lines so that cut is what it says.
-      var hv = lw * 0.5, hd = lw * (4 / 3.6) * 0.5;
-      for (var row = 0; row < 2; row++) {
-        var base = baselines[row];
-        for (var i = 0; i < 3; i++) {
-          var x = ox + i * (MK_WD + MK_GAP) * rh;
-          var col = hues[row][i];
-          var vx = x + MK_WD * rh;
-          // Solid, the whole way down. This faded each diagonal out toward
-          // its start, which made the page a player waits on the one place
-          // the mark was drawn differently from everywhere else it appears.
-          g.fillStyle = col;
-          g.beginPath();
-          g.moveTo(x - hd, base - rh);
-          g.lineTo(vx - hd, base);
-          g.lineTo(vx + hd, base);
-          g.lineTo(x + hd, base - rh);
-          g.closePath();
-          g.fill();
-          g.fillRect(vx - hv, base - rh, lw, rh);
-        }
-      }
+      var k = mh / MK_H;
+      g.save();
+      g.translate(ox, oy - mh);
+      g.scale(k, k);
+
+      g.fillStyle = LOGO_ORANGE;
+      g.beginPath();
+      g.moveTo(42, 0); g.lineTo(84, 67); g.lineTo(66, 78);
+      g.lineTo(42, 53); g.lineTo(18, 78); g.lineTo(0, 67);
+      g.closePath();
+      g.fill();
+
+      g.fillStyle = LOGO_CYAN;
+      g.beginPath();
+      g.moveTo(0, 67); g.lineTo(18, 78); g.lineTo(42, 53);
+      g.lineTo(66, 78); g.lineTo(84, 67); g.lineTo(60, 103);
+      g.lineTo(42, 74); g.lineTo(24, 103);
+      g.closePath();
+      g.fill();
+
+      g.strokeStyle = "#000";
+      g.lineWidth = 3;
+      g.lineCap = "square";
+      g.lineJoin = "miter";
+      g.miterLimit = 20;
+      g.beginPath();
+      g.moveTo(0, 67); g.lineTo(18, 78); g.lineTo(42, 53);
+      g.lineTo(66, 78); g.lineTo(84, 67);
+      g.stroke();
+      g.restore();
     }
 
     // The same three depths world.lua uses, and the same colors, so the

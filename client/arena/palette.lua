@@ -25,6 +25,12 @@ M.DIM       = rgb(0x6c7a90)
 M.FRIEND    = rgb(0x4fd6ff)
 M.ENEMY     = rgb(0xffa552)
 M.MARK_MUTED = rgb(0x3f4b60)
+-- The logo is a brand mark rather than a team indicator. Its more saturated
+-- orange and cyan are held here so the mesh drawing matches the web assets
+-- without changing the colors pilots use to identify sides in the arena.
+M.LOGO_ORANGE = rgb(0xff9d22)
+M.LOGO_CYAN   = rgb(0x27c5ed)
+M.LOGO_GAP    = rgb(0x000000)
 M.BOMB      = rgb(0xff5ea8)
 M.WHITE     = rgb(0xffffff)
 

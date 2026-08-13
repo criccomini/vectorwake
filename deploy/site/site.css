@@ -17,7 +17,8 @@
   --dim: #7c8da6;
   --friend: #4fd6ff;
   --enemy: #ffa552;
-  --mark-muted: #3f4b60;
+  --logo-orange: #ff9d22;
+  --logo-cyan: #27c5ed;
   --bomb: #ff5ea8;
   --line: #1d2838;
   --deep-line: #101722;
@@ -120,23 +121,22 @@ button {
   width: 18px;
   height: 22px;
   overflow: visible;
-  stroke-width: 0.6;
-  stroke-linejoin: miter;
 }
 
-.mark-amber {
-  fill: var(--enemy);
-  stroke: var(--enemy);
-}
-
-.mark-muted {
-  fill: var(--mark-muted);
-  stroke: var(--mark-muted);
+.mark-orange {
+  fill: var(--logo-orange);
 }
 
 .mark-cyan {
-  fill: var(--friend);
-  stroke: var(--friend);
+  fill: var(--logo-cyan);
+}
+
+.mark-gap {
+  fill: none;
+  stroke: #000;
+  stroke-width: 3;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
 }
 
 .site-nav {
