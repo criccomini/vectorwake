@@ -332,7 +332,7 @@ fn house_secret(pool_token: &str, name: &str) -> String {
 /// The register is the client's old list grown four times over: short
 /// evocative nouns, eight letters at most so "Solstice 999" is the longest
 /// name the scoreboard ever has to hold. Disjoint from the AI roster's names
-/// in `ai.rs` and from the eight hull names, so a scoreboard never leaves
+/// in `ai.rs` and from the seven hull names, so a scoreboard never leaves
 /// you wondering which of the three a word came from; the test at the bottom
 /// of this file holds all four lists apart.
 const CALL_WORDS: [&str; 148] = [

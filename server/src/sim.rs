@@ -794,7 +794,8 @@ impl World {
     /// The core refuses unless they are alive and at a full bar, so this is
     /// the whole of the rule and both sides get it from the same place.
     pub fn set_ship_class(&mut self, i: u8, cls: u8) -> bool {
-        unsafe { sim_set_ship_class(&mut *self.state, &*self.cfg, i, cls.min(7)) == 0 }
+        let cls = cls.min(self.cfg.class_count.saturating_sub(1));
+        unsafe { sim_set_ship_class(&mut *self.state, &*self.cfg, i, cls) == 0 }
     }
 
     /// Cross a pilot to another side. Which sides exist and who may enter one

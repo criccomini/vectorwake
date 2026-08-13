@@ -185,7 +185,7 @@ impl Stage {
     /// How many grants the kit asks for, or `None` when it asks for a ceiling
     /// and the answer is whatever the hull turns out to hold.
     ///
-    /// The report needs this to say `1/2`. Seven of the eight hulls stop at one
+    /// The report needs this to say `1/2`. Most hulls stop at one
     /// bomb rung, so on those a two-rung stage is the one-rung stage under
     /// another name, and a matrix that did not say so would be inviting a
     /// reader to compare a row against itself.
@@ -1749,7 +1749,7 @@ is the one to read the board by."
 mod tests {
     use super::*;
 
-    /// Skill has to be worth something, and it is not.
+    /// Skill has to be worth something in the game it actually controls.
     ///
     /// This test passed for months on four rounds, where the whole roster
     /// lands inside a point of the anchor and the assertion is a coin flip:
@@ -1763,17 +1763,11 @@ mod tests {
     ///   60 rounds            1208.0    1189.5     1202.3
     /// ```
     ///
-    /// The parameters fight each other. Skill buys a faster reaction and a
-    /// steadier aim, and then spends both: `reserve` makes a better pilot
-    /// hold more energy back and so fire less, and `ideal` makes it fight
-    /// closer and so take more. In a duel between identical hulls those
-    /// cancel, and what is left is noise.
-    ///
-    /// Ignored rather than deleted or weakened, because the requirement is
-    /// right and the implementation is what is wrong. Weakening it to four
-    /// rounds is what hid this in the first place.
+    /// The old implementation made strong pilots fire less and fight closer,
+    /// which canceled their better reactions and aim. Range and fire reserve
+    /// are now neutral, while reaction time, aim, awareness and loadout use
+    /// carry the skill difference. This long sample keeps them honest.
     #[test]
-    #[ignore = "skill does not decide a duel yet; see the numbers above"]
     fn skill_decides_a_match_between_equal_hulls() {
         let roster = vec![
             ai::RosterEntry {

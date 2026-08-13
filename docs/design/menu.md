@@ -27,7 +27,7 @@ the root closes.
 ```
 vectorwake
 ├ play        the games a directory is running, and how busy each one is
-├ ship        eight hulls, silhouette and a line of what it is for
+├ ship        seven hulls, silhouette and a line of what it is for
 ├ pilot       your call sign, and a reroll
 ├ settings    sound · music · frames · fullscreen
 ├ help        the controls, on a keyboard and under a thumb

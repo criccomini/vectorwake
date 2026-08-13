@@ -91,13 +91,30 @@ run the same code and differ in how well they execute:
 |---|---|---|
 | Reaction | ~400 ms before responding to something new | ~40 ms |
 | Aim | Poor lead prediction, wide error | Near-exact lead within the projectile solution |
-| Discipline | Fires at any energy, chases to its death | Manages energy, disengages on a threshold |
+| Discipline | Notices a bad trade late and wastes its escape window | Breaks contact promptly and uses defensive fire well |
 | Awareness | Tracks one contact, ignores its back | Tracks the room, checks radar constantly |
 | Greed | Overcommits or flees at random | Correct risk for the situation |
 | Map | Bumps walls, takes bad routes | Uses chokepoints, carries speed through corners |
 
 A single skill dial from 0 to 1 drives all of them, with per-archetype jitter, so
 a 0.7 Duelist and a 0.7 Ambusher are about equally hard and feel nothing alike.
+
+## Survival and greening
+
+Energy is both ammunition and health, so survival is part of weapon discipline.
+A pilot breaks contact earlier when it is outnumbered, carrying a flag, or
+protecting upgrades and bounty. It uses short-range defensive fire to make room,
+then flies for cover or a safe zone and does not re-enter on the first tick above
+its danger threshold. A fresh pilot has little to lose and accepts more risk. A built pilot
+should look like it knows what death costs.
+
+Greens are not incidental pickups. A fresh life searches its radar for reachable
+greens and uses them to build a ship before taking a marginal fight. As the kit
+fills, the search radius and willingness to detour shrink. A low bar makes a
+nearby green attractive because energy and recharge prizes can rescue the life,
+but immediate enemy pressure wins the decision and sends the pilot away instead.
+The type is still unknown until pickup, so the bot never chooses a green with
+information a player does not have.
 
 ## The roster: bots as long-lived individuals
 

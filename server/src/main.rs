@@ -1940,8 +1940,9 @@ impl Room {
         }
         // A joining pilot takes the next start in the map's rotation, so
         // arrivals spread across them instead of landing on each other.
+        let class = class.min(self.world.cfg.class_count.saturating_sub(1));
         let nth = self.world.state.ship_count as u32;
-        let mut ship = self.world.spawn_on_map(class.min(7), 0, nth, 0);
+        let mut ship = self.world.spawn_on_map(class, 0, nth, 0);
         if ship < 0 && !bot {
             // Every seat taken and a human at the door. The bot server leaves a
             // fifth of the room empty precisely so this does not happen, but a
@@ -1980,14 +1981,14 @@ impl Room {
         // a death would put the same pilot. This used to walk the map's tiles
         // itself and multiply by the tile size, which was a second copy of the
         // arithmetic and knew nothing about a spawn radius.
-        let (sx, sy) = self.world.spawn_point(team, class.min(7), nth);
+        let (sx, sy) = self.world.spawn_point(team, class, nth);
         {
             let sh = &mut self.world.state.ships[ship as usize];
             // Clamped against the roster the core actually holds rather
             // than a literal: a class byte comes off the wire, and the last
             // hull's index is one less than the count. Written out as 7 it
             // was right for eight hulls and one past the end for seven.
-            sh.cls = class.min(self.world.cfg.class_count.saturating_sub(1));
+            sh.cls = class;
             sh.team = team;
             // Occupied, as well as alive. A seat taken back from a bot arrives
             // here inactive, because handing it over is `leave` followed by
@@ -4796,7 +4797,7 @@ fn sanitize_name(raw: &str) -> String {
 
 /// Seed a room's ladder with what the offline tournament measured.
 ///
-/// Only the calibrated nine, because they are the only pilots it measured. The
+/// Only the calibrated pilots, because they are the only pilots it measured. The
 /// bot server draws from a much longer roster than that, and the rest arrive
 /// unrated and earn their number in play, which is what a new individual is
 /// supposed to do. Who is a bot at all is no longer decided here either: it is
@@ -4814,7 +4815,7 @@ fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64>) {
 /// The calibrated ladder, compiled in.
 ///
 /// It is a property of the roster in `ai.rs` rather than of any one zone: the
-/// same nine pilots fly in every room this binary serves, so their ratings
+/// the same calibrated pilots fly in every room this binary serves, so their ratings
 /// travel with the binary the way `sim/tests/golden.txt` travels with the core.
 /// Regenerate with `calibrate`, which writes the file, and commit it.
 ///
@@ -7893,20 +7894,19 @@ mod tests {
         );
         let human = a.names.iter().find(|(_, k)| k.name == "Person").unwrap();
         assert_eq!(human.1.bot, false);
-        // A generated pilot is as much a bot as a calibrated one. `Aperture` is
-        // the tenth individual, so it is past the nine in the ladder.
-        let tenth = ai::individual(9);
-        assert!(!ai::CALIBRATED.iter().any(|(n, _, _)| *n == tenth.name));
+        // A generated pilot is as much a bot as a calibrated one.
+        let generated = ai::individual(ai::CALIBRATED.len());
+        assert!(!ai::CALIBRATED.iter().any(|(n, _, _)| *n == generated.name));
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
         z.rooms[0]
-            .join(Seat::guest(tenth.name.clone(), true), 0, 16, tx)
+            .join(Seat::guest(generated.name.clone(), true), 0, 16, tx)
             .expect("a seat");
         // Marked, which is what holds its K down so a human who kills it moves
         // further than it does.
         assert!(
-            z.rooms[0].rating.is_bot(&tenth.name),
+            z.rooms[0].rating.is_bot(&generated.name),
             "{} rates as a human",
-            tenth.name
+            generated.name
         );
         assert!(!z.rooms[0].rating.is_bot("Person"));
     }
@@ -7921,7 +7921,11 @@ mod tests {
         for n in 0..300 {
             let e = ai::individual(n);
             assert!(seen.insert(e.name.clone()), "individual {n} repeats a name");
-            assert!(e.class < 8, "{} flies a hull that does not exist", e.name);
+            assert!(
+                (e.class as usize) < sim::MAX_CLASSES,
+                "{} flies a hull that does not exist",
+                e.name
+            );
             assert!(e.skill > 0.0 && e.skill <= 1.0, "{} has no skill", e.name);
             assert_eq!(
                 e.name,
@@ -7930,7 +7934,7 @@ mod tests {
                 e.name
             );
         }
-        // The calibrated nine come first, because they are the pilots whose
+        // The calibrated pilots come first, because they are the pilots whose
         // ratings mean anything.
         for (i, (name, _, _)) in ai::CALIBRATED.iter().enumerate() {
             assert_eq!(&ai::individual(i).name, name);
@@ -8176,26 +8180,38 @@ mod tests {
         // `scan`, and the only way out is the pilot noticing it is not getting
         // any closer.
         //
-        // An enemy sits in range throughout. Greens are chosen before foes and a
-        // pilot running one takes its hands off the trigger, so a shot fired is
-        // proof the green was abandoned: it cannot fire until it has been.
+        // An enemy sits in range throughout. A fresh pilot values this green
+        // above a healthy foe and takes its hands off the trigger while running
+        // it, so a shot fired proves the green was abandoned.
         let mut w = sim::World::with_map(1, sim::build_pit);
         let ship = w.spawn(0, 0, 503, 506, 0) as u8;
         let mut bot = ai::Bot::new(ship, 0.5);
 
         let px = |t: i32| (t * 16 + 8) as f32;
+        let foe = ai::Foe {
+            x: px(503),
+            y: px(517),
+            vx: 0.0,
+            vy: 0.0,
+            energy: 1.0,
+            value: 0,
+            carrying_flag: false,
+            clear: true,
+        };
         let stuck_on = ai::Scan {
             prize: Some((px(511), px(506))),
-            foe: Some(ai::Foe {
-                x: px(503),
-                y: px(517),
-                vx: 0.0,
-                vy: 0.0,
+            prizes: vec![ai::Prize {
+                x: px(511),
+                y: px(506),
                 clear: true,
-            }),
+            }],
+            foe: Some(foe),
+            contacts: vec![foe],
             company: true,
             flag: None,
             threat: None,
+            allies_near: 0,
+            hostiles_near: 1,
             // Hand-built, so the whiskers say open on purpose: this test is
             // about giving up on a green behind a wall, and a bot that could
             // see the wall would never press into it to begin with.
@@ -8215,20 +8231,11 @@ mod tests {
             }
             w.step(&[sim::sim_input { ship, buttons }]);
         }
-        // Measured at 290 before there was a router: two seconds of no progress
-        // plus a reaction cycle to act on it and one more to line up the shot.
-        // The router moved it to about 1450, and the extra is the pilot being
-        // right about the geometry the whole way: this green *is* reachable
-        // around the block, so it routes there, finds nothing at the place a
-        // stale scan still swears a green stands, orbits the phantom, and only
-        // then concludes the errand is not working. Fourteen seconds to give up
-        // on a lie is the price of not giving up on every green that merely
-        // needs going round something.
-        //
-        // The bound stays loose because the exact tick is not the point. Giving
-        // up at all is.
+        // Utility scoring may abandon the errand before the no-progress clock
+        // when the fight becomes the better trade. The upper bound is what this
+        // regression protects: a stale green must not own the pilot forever.
         let t = fired_at.expect("never gave up on a green it could not reach");
-        assert!((200..2200).contains(&t), "gave up on the green at tick {t}");
+        assert!(t < 2200, "gave up on the green at tick {t}");
     }
 
     /// A seat is furniture, and its last occupant does not come with it.
@@ -9857,10 +9864,10 @@ mod tests {
                 "{name} was calibrated and has to arrive with its number"
             );
         }
-        // The roster is longer than the calibrated nine, and the rest earn
+        // The roster is longer than the calibrated group, and the rest earn
         // their number in play.
-        let tenth = ai::individual(9);
-        assert!(calibrated_rating(&tenth.name).is_none());
+        let generated = ai::individual(ai::CALIBRATED.len());
+        assert!(calibrated_rating(&generated.name).is_none());
     }
 
     #[test]

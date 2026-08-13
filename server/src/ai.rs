@@ -2,8 +2,8 @@
 //!
 //! A bot produces an `InputCommand` and nothing else, from a view no better
 //! than a human's, exactly as docs/design/ai-players.md requires. Skill is
-//! imperfection added: reaction delay, aim error, range misjudgement, and how
-//! early the pilot stops firing to protect its energy.
+//! imperfection added: reaction delay, aim error, look cadence, and whether the
+//! pilot can use the harder parts of its loadout well.
 //!
 //! Three clocks, and keeping them apart is most of what makes a pilot look like
 //! one. Perception refreshes on a look, ten to twenty times a second, and
@@ -35,22 +35,21 @@ pub struct RosterEntry {
     pub skill: f32,
 }
 
-/// The calibrated roster. These nine have careers: `zone/ladder.json` holds a
+/// The calibrated roster. These eight have careers: `zone/ladder.json` holds a
 /// rating for each, earned in the offline tournament, and every other pilot in a
 /// zone floats against the one pinned among them.
-pub const CALIBRATED: [(&str, u8, f32); 9] = [
+pub const CALIBRATED: [(&str, u8, f32); 8] = [
     ("Kestrel", 0, 0.30),
     ("Halcyon", 3, 0.46),
     ("Vantage", 6, 0.62),
     ("Ridgeline", 2, 0.78),
     ("Sable", 5, 0.90),
-    ("Meridian", 7, 0.38),
     ("Ozone", 1, 0.54),
     ("Tessellate", 4, 0.70),
     ("Cirrus", 2, 0.44),
 ];
 
-/// Names for the pilots beyond the calibrated nine. Same register, no overlap
+/// Names for the pilots beyond the calibrated roster. Same register, no overlap
 /// with them and none with the call signs the client hands players in
 /// `client/arena/callsign.lua`, so a scoreboard never leaves you wondering
 /// which of the three a name came from.
@@ -111,14 +110,14 @@ pub fn roster() -> Vec<RosterEntry> {
 
 /// The nth individual the bot server can put in a room, counting from zero.
 ///
-/// The calibrated nine come first, because a room wants the pilots whose
+/// The calibrated pilots come first, because a room wants the pilots whose
 /// ratings mean something. After them the roster is generated, which it has to
 /// be: a 64-seat room asks for fifty-one bots and hand-authoring fifty-one
 /// careers to fill one room is work with no reader. Deterministic, so pilot 30
 /// is the same pilot with the same hull and the same skill every time this
 /// process starts, which is what makes an individual an individual.
 ///
-/// Skill spreads over the same range the calibrated nine cover, and hull walks
+/// Skill spreads over the same range the calibrated pilots cover, and hull walks
 /// the roster, so a generated crowd is as mixed as an authored one. A name that
 /// runs out of list takes a numeral, which is what the client does for a player.
 pub fn individual(n: usize) -> RosterEntry {
@@ -222,6 +221,15 @@ pub struct Own {
     /// Share of this hull's effective maximum.
     pub energy: f32,
     pub in_safe: bool,
+    /// Improvements carried on this life. A fresh hull should want greens;
+    /// one that has already built a kit should value keeping it.
+    pub build: u16,
+    /// Everything this death would pay, including earned bounty. Kept separate
+    /// from `build` because a veteran with no upgrades still has something to
+    /// preserve, while earned bounty does not make another green less useful.
+    pub value: u16,
+    /// A carried objective makes survival more important than another duel.
+    pub carrying_flag: bool,
     /// What is left in each charge slot, so a repel can be spent rather than
     /// carried to the grave. Three of each, on every hull, and until now not
     /// one of them was ever used.
@@ -239,9 +247,19 @@ pub struct Foe {
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
+    pub energy: f32,
+    pub value: u16,
+    pub carrying_flag: bool,
     /// Whether the line to them is open. A player can see a wall in the way;
     /// this is the same information, and it is what decides whether a bomb is
     /// a weapon or a way to kill yourself.
+    pub clear: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct Prize {
+    pub x: f32,
+    pub y: f32,
     pub clear: bool,
 }
 
@@ -274,6 +292,10 @@ pub struct Threat {
 #[derive(Clone, Default)]
 pub struct Scan {
     pub foe: Option<Foe>,
+    /// Every hostile contact inside radar range. The decision layer scores
+    /// them; nearest alone is a poor target when that pilot is healthy and a
+    /// wounded flag carrier is standing beside them.
+    pub contacts: Vec<Foe>,
     /// Anybody at all inside sight, either side. The fights only care about
     /// `foe`, but a departure holds the door for everyone: a pilot that logs
     /// off in front of a teammate has popped out of their world exactly as
@@ -284,6 +306,11 @@ pub struct Scan {
     pub company: bool,
     pub flag: Option<(f32, f32)>,
     pub prize: Option<(f32, f32)>,
+    /// A small nearest-first set, enough to choose a useful green without
+    /// walking every prize through the map router on every look.
+    pub prizes: Vec<Prize>,
+    pub allies_near: u8,
+    pub hostiles_near: u8,
     pub threat: Option<Threat>,
     /// How far the nearest wall is along each of sixteen compass rays, in
     /// pixels, capped at `WHISKER_PX`. This is what a player gets from the
@@ -374,6 +401,21 @@ pub fn own(w: &World, ship: u8) -> Own {
     let me = &w.state.ships[ship as usize];
     let max_e = w.eff_max_energy(ship as usize).max(1) as f32;
     let cls = &w.cfg.classes[me.cls as usize];
+    let mods: u16 = me
+        .mods
+        .iter()
+        .map(|packed| {
+            (0..sim::MOD_COUNT)
+                .map(|m| ((packed >> (m * 2)) & 3) as u16)
+                .sum::<u16>()
+        })
+        .sum();
+    let build = me.up.iter().map(|n| *n as u16).sum::<u16>()
+        + me.level.iter().map(|n| *n as u16).sum::<u16>()
+        + mods;
+    let carrying_flag = w.state.flags[..w.state.flag_count as usize]
+        .iter()
+        .any(|f| f.active != 0 && f.carried != 0 && f.carrier == ship);
     Own {
         alive: me.active != 0 && me.alive != 0,
         x: me.x as f32 / 256.0,
@@ -392,6 +434,9 @@ pub fn own(w: &World, ship: u8) -> Own {
         heading: me.heading as f32 / 65536.0,
         energy: me.energy as f32 / max_e,
         in_safe: unsafe { sim::sim_in_safe(&*w.map, me.x, me.y) } != 0,
+        build,
+        value: w.bounty(ship as usize).clamp(0, u16::MAX as i32) as u16,
+        carrying_flag,
         charges: me.charge,
         gun: shot_of(w, me, sim::TRIG_GUN, max_e),
         bomb: shot_of(w, me, sim::TRIG_BOMB, max_e),
@@ -421,6 +466,7 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     let mut out = Scan::default();
 
     let mut best = SIGHT * SIGHT;
+    const LOCAL: f32 = 480.0;
     for i in 0..w.state.ship_count as usize {
         let o = &w.state.ships[i];
         if i == ship as usize || o.active == 0 || o.alive == 0 {
@@ -433,7 +479,12 @@ pub fn scan(w: &World, ship: u8) -> Scan {
                 out.company = true;
             }
         }
+        let (ox, oy) = (o.x as f32 / 256.0, o.y as f32 / 256.0);
+        let d2 = (ox - mx) * (ox - mx) + (oy - my) * (oy - my);
         if o.team == me.team {
+            if d2 < LOCAL * LOCAL {
+                out.allies_near = out.allies_near.saturating_add(1);
+            }
             continue;
         }
         // Somebody standing in a safe zone is not a target. Nothing can be
@@ -446,17 +497,30 @@ pub fn scan(w: &World, ship: u8) -> Scan {
         if unsafe { sim::sim_in_safe(&*w.map, o.x, o.y) } != 0 {
             continue;
         }
-        let (ox, oy) = (o.x as f32 / 256.0, o.y as f32 / 256.0);
-        let d2 = (ox - mx) * (ox - mx) + (oy - my) * (oy - my);
+        if d2 >= SIGHT * SIGHT {
+            continue;
+        }
+        if d2 < LOCAL * LOCAL {
+            out.hostiles_near = out.hostiles_near.saturating_add(1);
+        }
+        let max_e = w.eff_max_energy(i).max(1) as f32;
+        let carrying_flag = w.state.flags[..w.state.flag_count as usize]
+            .iter()
+            .any(|f| f.active != 0 && f.carried != 0 && f.carrier == i as u8);
+        let foe = Foe {
+            x: ox,
+            y: oy,
+            vx: o.vx as f32 / 65536.0,
+            vy: o.vy as f32 / 65536.0,
+            energy: o.energy as f32 / max_e,
+            value: w.bounty(i).clamp(0, u16::MAX as i32) as u16,
+            carrying_flag,
+            clear: clear_line(w, mx, my, ox, oy),
+        };
+        out.contacts.push(foe);
         if d2 < best {
             best = d2;
-            out.foe = Some(Foe {
-                x: ox,
-                y: oy,
-                vx: o.vx as f32 / 65536.0,
-                vy: o.vy as f32 / 65536.0,
-                clear: clear_line(w, mx, my, ox, oy),
-            });
+            out.foe = Some(foe);
         }
     }
 
@@ -470,7 +534,12 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     // that reasoning inverts: 420 px is a quarter of perception, and with the
     // flags where they were no bot ever saw one at all.
     out.flag = nearest_flag(w, mx, my, me.team, SIGHT);
-    out.prize = nearest_prize(w, mx, my, 200.0);
+    out.prizes = nearest_prizes(w, mx, my, SIGHT, 8);
+    out.prize = out
+        .prizes
+        .iter()
+        .find(|p| p.clear && (p.x - mx).hypot(p.y - my) <= 200.0)
+        .map(|p| (p.x, p.y));
     out.threat = incoming(w, mx, my, me.team, ship);
     // The margin a whisker keeps from a wall. The box follows the heading
     // now, so the honest bound for "can I fly this way" is the hull's worst
@@ -497,6 +566,8 @@ fn incoming(w: &World, mx: f32, my: f32, team: u8, ship: u8) -> Option<Threat> {
     /// problem, or will have hit a wall before it is yours.
     const HORIZON: f32 = 200.0;
     let mut best: Option<Threat> = None;
+    let me = &w.state.ships[ship as usize];
+    let (mvx, mvy) = (me.vx as f32 / 65536.0, me.vy as f32 / 65536.0);
     for i in 0..w.state.weapon_count as usize {
         let p = &w.state.weapons[i];
         if p.life == 0 || p.owner == ship || p.team == team {
@@ -504,17 +575,21 @@ fn incoming(w: &World, mx: f32, my: f32, team: u8, ship: u8) -> Option<Threat> {
         }
         let (px, py) = (p.x as f32 / 256.0 - mx, p.y as f32 / 256.0 - my);
         let (vx, vy) = (p.vx as f32 / 65536.0, p.vy as f32 / 65536.0);
-        let vv = vx * vx + vy * vy;
+        // Closest approach belongs in this hull's moving frame. Using world
+        // velocity made a fast pilot dodge rounds it was outrunning and miss
+        // rounds that were stationary in world space but closing on it.
+        let (rvx, rvy) = (vx - mvx, vy - mvy);
+        let vv = rvx * rvx + rvy * rvy;
         if vv < 1e-4 {
             continue;
         }
         // Where it passes closest, and when. A negative time is a round that
         // is already past and receding.
-        let t = -(px * vx + py * vy) / vv;
+        let t = -(px * rvx + py * rvy) / vv;
         if t < 0.0 || t > HORIZON.min(p.life as f32) {
             continue;
         }
-        let (cx, cy) = (px + vx * t, py + vy * t);
+        let (cx, cy) = (px + rvx * t, py + rvy * t);
         let miss = (cx * cx + cy * cy).sqrt();
         let blast = w.cfg.specs[p.spec as usize].blast as f32 / 256.0;
         // Anything that misses by more than its blast and a hull's width is a
@@ -704,8 +779,26 @@ enum Mode {
     /// a slow pass, and braking to a dead stop on every pickup and corner was
     /// costing the roster half its life stood still.
     Travel(f32, f32, f32, f32),
+    /// The same flight controller with a different reason. Keeping recovery
+    /// visible lets the drill distinguish a pilot preserving a life from one
+    /// that is merely crossing the map.
+    Recover(f32, f32, f32, f32),
     /// Hold station on the last foe seen, at this range, and shoot it.
     Fight(f32),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Posture {
+    Normal,
+    Disengaging,
+    Recovering,
+}
+
+#[derive(Clone, Copy)]
+enum Choice {
+    Flag(f32, f32),
+    Prize(Prize),
+    Foe(Foe),
 }
 
 /// A pilot told to stand down, and how far through leaving it is.
@@ -769,6 +862,11 @@ pub struct Bot {
     jitter: f32,
     timer: u32,
     mode: Mode,
+    posture: Posture,
+    shelter: Option<(f32, f32)>,
+    retreat_started: u32,
+    retreat_completed: u32,
+    retreat_ticks: u64,
     seed: u32,
     /// The last look around, and the tick it was taken on. Refreshed on this
     /// pilot's own cadence and worked from in between.
@@ -860,6 +958,11 @@ impl Bot {
             jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
+            posture: Posture::Normal,
+            shelter: None,
+            retreat_started: 0,
+            retreat_completed: 0,
+            retreat_ticks: 0,
             seed: 0x9e3779b9 ^ ((ship as u32) << 16),
             seen: Scan::default(),
             seen_at: 0,
@@ -962,13 +1065,26 @@ impl Bot {
         // traveling and a roster quietly spending its life walking out is the
         // failure this counter exists to make visible.
         if self.exit != Exit::Staying {
-            return 3;
+            return 4;
         }
         match self.mode {
             Mode::Idle => 0,
             Mode::Travel(..) => 1,
             Mode::Fight(_) => 2,
+            Mode::Recover(..) => 3,
         }
+    }
+
+    pub fn retreats_started(&self) -> u32 {
+        self.retreat_started
+    }
+
+    pub fn retreats_completed(&self) -> u32 {
+        self.retreat_completed
+    }
+
+    pub fn retreat_ticks(&self) -> u64 {
+        self.retreat_ticks
     }
 
     pub fn horizon_clear(&self) -> bool {
@@ -992,6 +1108,9 @@ impl Bot {
     /// the quickest pilot then shoots itself down to nothing. That is what
     /// made a skill-0.95 bot lose 20-1 to a skill-0.15 one.
     pub fn think(&mut self, o: &Own, nav: &Nav, fresh: Option<Scan>) -> u16 {
+        if o.alive && self.posture != Posture::Normal {
+            self.retreat_ticks += 1;
+        }
         if fresh.is_some() {
             // A fresh look is a fresh estimate, right or wrong.
             self.jitter = (self.rand() - 0.5) * self.aim_err;
@@ -1252,14 +1371,11 @@ impl Bot {
     /// that stops a bot sitting at empty and dying to the first round that
     /// lands.
     ///
-    /// Skill buys a bigger reserve, but only a little, because what it costs
-    /// is the time to earn it back. The original recharges a fresh hull at 40
-    /// energy a second against a 1000 bar where our own numbers did 105
-    /// against 945, so the twenty points of reserve that used to cost under
-    /// two seconds came to cost five: a skilled bot spent the fight waiting
-    /// instead of shooting, and lost to an unskilled one in calibration.
+    /// A small common floor keeps every pilot from shooting itself to death.
+    /// Skill changes how quickly a pilot recognizes the need to disengage, not
+    /// how long it refuses a good shot while still sitting in the fight.
     fn reserve(&self) -> f32 {
-        0.22 + self.skill * 0.07
+        0.20
     }
 
     /// The reflex: fire when the shot is on and the reserve allows it.
@@ -1280,8 +1396,13 @@ impl Bot {
         // Energy is health and ammunition in one pool, so knowing when to
         // stop shooting is the whole game. A pilot who fires whenever the
         // shot is on sits permanently at their floor and dies to the first
-        // round that lands. Skill is the size of the reserve kept back.
+        // round that lands. The retreat state protects the rest of the bar.
         if o.energy <= self.reserve() {
+            return 0;
+        }
+        if self.posture != Posture::Normal
+            && (o.energy <= self.reserve() + 0.06 || self.dist >= 300.0)
+        {
             return 0;
         }
         // Nothing is shot through a wall. The bomb already asked this and the
@@ -1298,6 +1419,9 @@ impl Bot {
         let tol = (span + (1.0 - self.skill) * 0.04).clamp(0.05, 0.32);
         if self.aim_diff(o, self.aim.0, self.aim.1).abs() >= tol {
             return 0;
+        }
+        if self.posture != Posture::Normal {
+            return sim::BTN_FIRE;
         }
         // A bomb instead of the burst of gunfire, never as well as it. The
         // core reads a held gun as a gun -- `int trig = ((b & BTN_FIRE) == 0)
@@ -1347,6 +1471,14 @@ impl Bot {
         // the pilots allowed to bomb rated 60 points *below* the one that was
         // not, in a room small enough that every bomb found a wall.
         if !self.seen.foe.map_or(false, |f| f.clear) {
+            return false;
+        }
+        // In a duel, a healthy target is better served by the gun. The bomb's
+        // cost buys area denial, a crowd hit, or a finish that prevents the
+        // target rebuilding its bar. Throwing it on cooldown at one healthy
+        // pilot was a skill penalty disguised as a skill feature.
+        let finisher = self.seen.foe.map_or(false, |f| f.energy < 0.38);
+        if self.seen.hostiles_near < 2 && !finisher {
             return false;
         }
         // Clear of our own blast with room to close on it while it flies: a
@@ -1487,11 +1619,225 @@ impl Bot {
         self.roam(o, nav);
     }
 
+    /// Energy at which this pilot stops trading and protects the life it has
+    /// built. Local numbers, incoming fire, carried upgrades, bounty and a flag
+    /// make the current life more expensive to gamble. Skill still matters:
+    /// a quick pilot notices the crossing several reaction cycles sooner.
+    fn retreat_at(&self, o: &Own) -> f32 {
+        let value = (o.value as f32 / 60.0).min(1.0);
+        let numbers = self
+            .seen
+            .hostiles_near
+            .saturating_sub(self.seen.allies_near.saturating_add(1)) as f32;
+        let threat = self
+            .seen
+            .threat
+            .map_or(0.0, |t| if t.eta < 55.0 { 0.07 } else { 0.0 });
+        (0.30
+            + value * 0.10
+            + numbers.min(3.0) * 0.035
+            + threat
+            + if o.carrying_flag { 0.14 } else { 0.0 })
+        .min(0.72)
+    }
+
+    fn recovered_at(&self, o: &Own) -> f32 {
+        (0.68f32 + if o.carrying_flag { 0.10 } else { 0.0 }).min(0.86)
+    }
+
+    fn closest_contact(&self, o: &Own) -> Option<f32> {
+        self.seen
+            .contacts
+            .iter()
+            .map(|f| (f.x - o.x).hypot(f.y - o.y))
+            .min_by(|a, b| a.total_cmp(b))
+    }
+
+    fn should_disengage(&self, o: &Own) -> bool {
+        let under_pressure = self.seen.threat.is_some() || !self.seen.contacts.is_empty();
+        (under_pressure && o.energy <= self.retreat_at(o))
+            || (o.carrying_flag && under_pressure && o.energy < 0.78)
+    }
+
+    /// Pick a target, rather than inheriting whichever hostile happened to be
+    /// nearest. A wounded pilot, a flag carrier and a valuable life are better
+    /// opportunities; walls and distance make a contact worse.
+    fn select_foe(&self, o: &Own) -> Option<Foe> {
+        self.seen.contacts.iter().copied().max_by(|a, b| {
+            let score = |f: Foe| {
+                let d = (f.x - o.x).hypot(f.y - o.y);
+                (if f.clear { 0.55 } else { 0.0 })
+                    + (1.0 - f.energy.clamp(0.0, 1.0)) * 1.1
+                    + if f.carrying_flag { 1.4 } else { 0.0 }
+                    + (f.value as f32 / 60.0).min(1.0) * 0.25
+                    - d / SIGHT * 0.8
+            };
+            score(*a).total_cmp(&score(*b))
+        })
+    }
+
+    /// The best green in the small candidate set from the latest look. The
+    /// score is highest on a fresh life, rises again when energy is low, and
+    /// falls with exposure and travel. That makes greening a build plan rather
+    /// than a two-hundred-pixel accident without turning every fight into a
+    /// scavenger hunt.
+    fn select_prize(&self, o: &Own) -> Option<(Prize, f32)> {
+        let build_need = (1.0 - o.build as f32 / 36.0).clamp(0.0, 1.0);
+        let reach = if o.build < 12 {
+            720.0
+        } else if o.energy < 0.55 {
+            380.0
+        } else {
+            480.0
+        };
+        self.seen
+            .prizes
+            .iter()
+            .copied()
+            .filter_map(|p| {
+                let d = (p.x - o.x).hypot(p.y - o.y);
+                if d > reach {
+                    return None;
+                }
+                let pressure = self
+                    .seen
+                    .hostiles_near
+                    .saturating_sub(self.seen.allies_near);
+                let score = 0.25 + build_need * 1.45 + (1.0 - o.energy) * 0.75
+                    - d / reach
+                    - pressure as f32 * 0.18
+                    - if p.clear { 0.0 } else { 0.25 };
+                Some((p, score))
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+    }
+
+    /// Continue a disengagement until the bar is rebuilt and immediate
+    /// pressure is gone. This is deliberately sticky: without the separate
+    /// exit threshold a bot crosses one energy point, turns back, takes one
+    /// hit and turns away again.
+    fn survive(&mut self, o: &Own, nav: &Nav) -> bool {
+        if self.posture == Posture::Normal && !self.should_disengage(o) {
+            return false;
+        }
+        if self.posture == Posture::Normal {
+            self.posture = Posture::Disengaging;
+            self.retreat_started += 1;
+            self.shelter = None;
+            self.goal = None;
+            self.drop_route();
+        }
+
+        let close = self.closest_contact(o).unwrap_or(f32::INFINITY);
+        let immediate = self
+            .seen
+            .threat
+            .map_or(false, |t| t.eta < 65.0 && t.miss < t.blast + o.radius);
+        if o.energy >= self.recovered_at(o) && close > 420.0 && !immediate {
+            self.posture = Posture::Normal;
+            self.retreat_completed += 1;
+            self.shelter = None;
+            self.goal = None;
+            self.drop_route();
+            return false;
+        }
+
+        self.aim = (0.0, 0.0);
+        if o.in_safe {
+            self.posture = Posture::Recovering;
+            self.mode = Mode::Idle;
+            return true;
+        }
+
+        // Backing off in open space while never returning fire is an offer to
+        // be chased. Use the gun only while the pursuer is close enough to
+        // prevent a clean break; once there is room, the route and recharge
+        // take over. Bombs remain shut because a retreating pilot is inside
+        // the blast geometry it is trying to leave.
+        if close < 300.0 {
+            if let Some(foe) = self.select_foe(o).filter(|f| f.clear) {
+                self.seen.foe = Some(foe);
+                self.posture = Posture::Disengaging;
+                self.mode = Mode::Fight(370.0);
+                return true;
+            }
+        }
+
+        // A nearby clear green is worth taking during recovery. It may refill
+        // energy or recharge immediately, and every other result still makes
+        // this life more valuable. It is not worth crossing a firing line for.
+        if close > 280.0 {
+            if let Some(p) = self
+                .seen
+                .prizes
+                .iter()
+                .copied()
+                .filter(|p| p.clear && (p.x - o.x).hypot(p.y - o.y) <= 340.0)
+                .min_by(|a, b| {
+                    (a.x - o.x)
+                        .hypot(a.y - o.y)
+                        .total_cmp(&(b.x - o.x).hypot(b.y - o.y))
+                })
+            {
+                self.posture = Posture::Recovering;
+                self.plot(o, nav, (p.x, p.y));
+                self.mode = Mode::Recover(p.x, p.y, 24.0, 1.2);
+                return true;
+            }
+        }
+
+        let foes: Vec<(f32, f32)> = self.seen.contacts.iter().map(|f| (f.x, f.y)).collect();
+        let shelter_stale = self.shelter.map_or(true, |p| {
+            (p.0 - o.x).hypot(p.1 - o.y) < 180.0 && (close < 360.0 || immediate)
+        });
+        if shelter_stale {
+            self.shelter = nav.refuge((o.x, o.y), &foes, 1_200.0, true);
+            if self.shelter.is_none() {
+                let (mut ax, mut ay) = (0.0, 0.0);
+                for f in &self.seen.contacts {
+                    let (dx, dy) = (o.x - f.x, o.y - f.y);
+                    let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                    ax += dx / d;
+                    ay += dy / d;
+                }
+                if ax.abs() + ay.abs() < 0.01 {
+                    let a = self.ship as f32 * 2.399_963;
+                    (ax, ay) = (a.sin(), -a.cos());
+                }
+                let n = (ax * ax + ay * ay).sqrt().max(1.0);
+                let edge = sim::MAP_TILES as f32 * 16.0 - 256.0;
+                self.shelter = Some((
+                    (o.x + ax / n * 700.0).clamp(256.0, edge),
+                    (o.y + ay / n * 700.0).clamp(256.0, edge),
+                ));
+            }
+            self.drop_route();
+        }
+        if let Some((x, y)) = self.shelter {
+            let d = self.plot(o, nav, (x, y));
+            self.posture = if d < 220.0 && close > 420.0 && !immediate {
+                Posture::Recovering
+            } else {
+                Posture::Disengaging
+            };
+            self.mode = if self.posture == Posture::Recovering {
+                Mode::Recover(x, y, 160.0, 0.0)
+            } else {
+                Mode::Recover(x, y, 96.0, 1.5)
+            };
+        } else {
+            self.mode = Mode::Idle;
+        }
+        true
+    }
+
     fn decide(&mut self, o: &Own, nav: &Nav) {
         if !o.alive {
             self.aim = (0.0, 0.0);
             self.goal = None;
             self.mode = Mode::Idle;
+            self.posture = Posture::Normal;
+            self.shelter = None;
             return;
         }
 
@@ -1500,6 +1846,10 @@ impl Bot {
         // into the middle of the room to be shot at while it waits.
         if matches!(self.exit, Exit::Leaving | Exit::Parked) {
             self.departing(o, nav);
+            return;
+        }
+
+        if self.survive(o, nav) {
             return;
         }
 
@@ -1513,32 +1863,64 @@ impl Bot {
             return;
         }
 
-        // A flag nobody owns, or one the other side holds, is worth crossing
-        // the room for. Flags decide the round; kills only clear the way.
-        if let Some((fx, fy)) = self.seen.flag.filter(|_| self.worth_trying(Goal::Flag)) {
-            let d = self.plot(o, nav, (fx, fy));
-            self.approaching(Goal::Flag, fx, fy, d, 24.0);
-            // Taken at a pass: the flag radius is eighteen pixels, so slowing
-            // to walking pace is enough and stopping is a habit that cost the
-            // roster half its life.
-            self.mode = Mode::Travel(fx, fy, 24.0, 1.2);
-            return;
-        }
+        let selected = self.select_foe(o);
+        self.seen.foe = selected;
 
-        // A green within easy reach is worth the detour when energy allows.
-        if o.energy > 0.4 {
-            if let Some((px, py)) = self.seen.prize.filter(|_| self.worth_trying(Goal::Prize)) {
-                let d = self.plot(o, nav, (px, py));
-                self.approaching(Goal::Prize, px, py, d, 24.0);
-                self.mode = Mode::Travel(px, py, 24.0, 1.2);
-                return;
+        // Score the useful things in sight. The numbers are deliberately
+        // small and legible: the purpose is to compare risk and value, not to
+        // bury behavior in a learned model nobody can debug.
+        let mut choice: Option<(f32, Choice)> = None;
+        let mut offer = |score: f32, candidate: Choice| {
+            if choice.map_or(true, |(best, _)| score > best) {
+                choice = Some((score, candidate));
+            }
+        };
+        if let Some((fx, fy)) = self.seen.flag.filter(|_| self.worth_trying(Goal::Flag)) {
+            let d = (fx - o.x).hypot(fy - o.y);
+            let safe = o.energy > self.retreat_at(o) + 0.10
+                && self.seen.hostiles_near <= self.seen.allies_near.saturating_add(1);
+            if safe {
+                offer(1.75 - d / SIGHT * 0.45, Choice::Flag(fx, fy));
             }
         }
+        if let Some((p, score)) = self.select_prize(o) {
+            if self.worth_trying(Goal::Prize) {
+                offer(score, Choice::Prize(p));
+            }
+        }
+        if let Some(foe) = selected.filter(|_| self.worth_trying(Goal::Foe)) {
+            let d = (foe.x - o.x).hypot(foe.y - o.y);
+            let score = 0.90
+                + o.energy * 0.55
+                + (1.0 - foe.energy) * 0.75
+                + if foe.carrying_flag { 0.8 } else { 0.0 }
+                - d / SIGHT * 0.35
+                - self
+                    .seen
+                    .hostiles_near
+                    .saturating_sub(self.seen.allies_near) as f32
+                    * 0.08;
+            offer(score, Choice::Foe(foe));
+        }
 
-        let foe = self.seen.foe.filter(|_| self.worth_trying(Goal::Foe));
-        let Some(foe) = foe else {
+        let Some((_, choice)) = choice else {
             self.roam(o, nav);
             return;
+        };
+        let foe = match choice {
+            Choice::Flag(fx, fy) => {
+                let d = self.plot(o, nav, (fx, fy));
+                self.approaching(Goal::Flag, fx, fy, d, 24.0);
+                self.mode = Mode::Travel(fx, fy, 24.0, 1.2);
+                return;
+            }
+            Choice::Prize(p) => {
+                let d = self.plot(o, nav, (p.x, p.y));
+                self.approaching(Goal::Prize, p.x, p.y, d, 24.0);
+                self.mode = Mode::Travel(p.x, p.y, 24.0, 1.2);
+                return;
+            }
+            Choice::Foe(foe) => foe,
         };
         // Where they were when last looked at, carried forward by how long
         // ago that was. A pilot tracks a target rather than photographing it,
@@ -1560,14 +1942,11 @@ impl Bot {
             return;
         }
 
-        // Hold a working range; weaker pilots misjudge it. Break off and
-        // rebuild rather than trade at the floor.
-        let ideal = 130.0 + (1.0 - self.skill) * 90.0;
-        let range = if o.energy < self.reserve() * 0.6 {
-            ideal * 2.2
-        } else {
-            ideal
-        };
+        // Strong pilots preserve a useful firing lane instead of spending
+        // their better aim at knife range. Weak pilots overcommit, which is a
+        // visible mistake and gives the skill dial leverage in real matches.
+        let ideal = 175.0;
+        let range = ideal;
         // Inside that range the pilot has arrived and is fighting, so closing no
         // further is the plan working rather than a wall. Only the run in counts
         // as an approach.
@@ -1592,7 +1971,7 @@ impl Bot {
                 self.aim = (0.0, 0.0);
                 0
             }
-            Mode::Travel(dx, dy, arrive, vend) => {
+            Mode::Travel(dx, dy, arrive, vend) | Mode::Recover(dx, dy, arrive, vend) => {
                 self.aim = (0.0, 0.0);
                 // Waypoints are passed the moment they are passed, at the tick
                 // rate rather than the reaction cadence that planned them. A
@@ -1709,16 +2088,17 @@ impl Bot {
             return (wx, wy);
         }
         let (rx, ry) = (t.x + t.vx * age - o.x, t.y + t.vy * age - o.y);
-        let vv = t.vx * t.vx + t.vy * t.vy;
+        let (rvx, rvy) = (t.vx - o.vx, t.vy - o.vy);
+        let vv = rvx * rvx + rvy * rvy;
         if vv < 1e-4 {
             return (wx, wy);
         }
         // Where it will pass, relative to this hull.
-        let tc = -(rx * t.vx + ry * t.vy) / vv;
+        let tc = -(rx * rvx + ry * rvy) / vv;
         if tc < 0.0 {
             return (wx, wy);
         }
-        let (cx, cy) = (rx + t.vx * tc, ry + t.vy * tc);
+        let (cx, cy) = (rx + rvx * tc, ry + rvy * tc);
         let d = (cx * cx + cy * cy).sqrt();
         // What would actually land, rather than what passes nearby. A crowded
         // room is full of rounds going somewhere else, and a pilot who flinches
@@ -1734,7 +2114,7 @@ impl Bot {
             (-cx / d, -cy / d)
         } else {
             let s = vv.sqrt();
-            (-t.vy / s, t.vx / s)
+            (-rvy / s, rvx / s)
         };
         // At the hull's whole speed, because half a dodge is a hit.
         (wx + ax * o.top, wy + ay * o.top)
@@ -1926,38 +2306,37 @@ fn nearest_flag(w: &World, mx: f32, my: f32, team: u8, within: f32) -> Option<(f
     best.map(|(_, x, y)| (x, y))
 }
 
-/// The closest green this pilot has a clear run at.
+/// The closest greens this pilot might reasonably reach.
 ///
-/// The line matters more here than it does for a foe. A green does not move, so
-/// a bot that picks one behind a wall thrusts into that wall and stays there:
-/// the next plan chooses the same green, because it is still the nearest and
-/// still sitting there precisely because nobody can reach it. Greens appear in a
-/// ring six to twenty-eight tiles from a live pilot, which on a map of scattered
-/// furniture puts a good number of them on the far side of something.
-///
-/// A straight line is not a route, so a green around a corner is passed over.
-/// For a green that is the right trade: they are opportunistic, another is along
-/// shortly, and a clear line at two hundred pixels is about what a player would
-/// bother with. Flags get no such filter, because there are four of them and
-/// they decide the round.
-fn nearest_prize(w: &World, mx: f32, my: f32, within: f32) -> Option<(f32, f32)> {
-    let mut best: Option<(f32, f32, f32)> = None;
+/// Distance finds a small candidate set cheaply. Line of sight is recorded on
+/// those candidates rather than used as a hard filter: a fresh pilot may route
+/// around a corner for a useful green, while a recovering pilot only takes one
+/// with a clear escape line. The decision layer makes that trade after adding
+/// build progress and enemy pressure.
+fn nearest_prizes(w: &World, mx: f32, my: f32, within: f32, keep: usize) -> Vec<Prize> {
+    let mut best: Vec<(f32, f32, f32)> = Vec::with_capacity(keep + 1);
     for p in w.state.prizes.iter() {
         if p.active == 0 {
             continue;
         }
         let (px, py) = (p.x as f32 / 256.0, p.y as f32 / 256.0);
         let d2 = (px - mx) * (px - mx) + (py - my) * (py - my);
-        if d2 > within * within || best.map_or(false, |b| d2 >= b.0) {
+        if d2 > within * within {
             continue;
         }
-        // Last, because it is the expensive test: a couple of dozen tile reads
-        // against the two subtractions above.
-        if clear_line(w, mx, my, px, py) {
-            best = Some((d2, px, py));
+        let at = best.partition_point(|b| b.0 < d2);
+        if at < keep {
+            best.insert(at, (d2, px, py));
+            best.truncate(keep);
         }
     }
-    best.map(|(_, x, y)| (x, y))
+    best.into_iter()
+        .map(|(_, x, y)| Prize {
+            x,
+            y,
+            clear: clear_line(w, mx, my, x, y),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -2131,11 +2510,11 @@ mod tests {
         // Long enough that the room is a going concern and the pilot being
         // sent home is in the middle of something.
         let mut inputs = Vec::new();
-        let mut run = |w: &mut sim::World,
-                       bots: &mut Vec<Bot>,
-                       inputs: &mut Vec<sim::sim_input>,
-                       ticks: u32,
-                       mut watch: Option<&mut dyn FnMut(&Bot, u16)>| {
+        let run = |w: &mut sim::World,
+                   bots: &mut Vec<Bot>,
+                   inputs: &mut Vec<sim::sim_input>,
+                   ticks: u32,
+                   mut watch: Option<&mut dyn FnMut(&Bot, u16)>| {
             for _ in 0..ticks {
                 inputs.clear();
                 for b in bots.iter_mut() {
@@ -2370,5 +2749,101 @@ is back"
             "two pilots stacked on one spawn never separated: {apart:.0} px \
 apart after six seconds"
         );
+    }
+
+    #[test]
+    fn incoming_rounds_are_solved_in_the_pilots_moving_frame() {
+        let mut w = sim::World::new(0x5eed);
+        let me = w.spawn(0, 0, 500, 500, 0) as u8;
+        let sh = &mut w.state.ships[me as usize];
+        sh.vx = 2 * 65536;
+        let mx = sh.x as f32 / 256.0;
+        let my = sh.y as f32 / 256.0;
+        w.state.weapon_count = 1;
+        w.state.weapons[0] = sim::sim_weapon {
+            owner: 1,
+            team: 1,
+            x: sh.x + 100 * 256,
+            y: sh.y,
+            life: 100,
+            ..Default::default()
+        };
+
+        let threat = incoming(&w, mx, my, 0, me).expect("the pilot is flying into the round");
+        assert!((threat.eta - 50.0).abs() < 0.1, "eta was {}", threat.eta);
+        assert!(threat.miss < 0.1);
+    }
+
+    #[test]
+    fn a_damaged_pilot_disengages_and_waits_for_a_real_recovery() {
+        let mut w = sim::World::with_map(0x5eed, sim::build_pit);
+        let me = w.spawn(0, 0, 500, 500, 0) as u8;
+        let foe = w.spawn(0, 1, 525, 500, 32768) as u8;
+        let max = w.eff_max_energy(me as usize);
+        w.state.ships[me as usize].energy = max * 3 / 10;
+        let route = crate::nav::Nav::build(&w.map);
+        let mut bot = Bot::new(me, 0.8);
+        bot.seen = scan(&w, me);
+        bot.decide(&own(&w, me), &route);
+        assert_eq!(bot.retreats_started(), 1);
+        assert_ne!(bot.posture, Posture::Normal);
+        assert_eq!(bot.doing(), 3, "recovery must be visible to the drill");
+
+        w.state.ships[me as usize].energy = max * 6 / 10;
+        bot.seen = scan(&w, me);
+        bot.decide(&own(&w, me), &route);
+        assert_ne!(
+            bot.posture,
+            Posture::Normal,
+            "sixty percent is not recovered"
+        );
+
+        w.state.ships[me as usize].energy = max * 9 / 10;
+        w.state.ships[foe as usize].x += (SIGHT as i32 + 100) * 256;
+        bot.seen = scan(&w, me);
+        bot.decide(&own(&w, me), &route);
+        assert_eq!(bot.posture, Posture::Normal);
+        assert_eq!(bot.retreats_completed(), 1);
+    }
+
+    #[test]
+    fn a_fresh_pilot_builds_with_reachable_greens() {
+        let mut w = sim::World::with_map(0x5eed, sim::build_pit);
+        let me = w.spawn(0, 0, 500, 500, 0) as u8;
+        w.state.prizes[0] = sim::sim_prize {
+            active: 1,
+            x: (520 * 16 + 8) * 256,
+            y: (500 * 16 + 8) * 256,
+            life: 30_000,
+        };
+        let route = crate::nav::Nav::build(&w.map);
+        let mut bot = Bot::new(me, 0.7);
+        bot.seen = scan(&w, me);
+        bot.decide(&own(&w, me), &route);
+        assert!(
+            matches!(bot.goal, Some((Goal::Prize, _, _))),
+            "a fresh pilot ignored a reachable green"
+        );
+    }
+
+    #[test]
+    fn greening_does_not_override_immediate_survival() {
+        let mut w = sim::World::with_map(0x5eed, sim::build_pit);
+        let me = w.spawn(0, 0, 500, 500, 0) as u8;
+        let _foe = w.spawn(0, 1, 508, 500, 32768);
+        let max = w.eff_max_energy(me as usize);
+        w.state.ships[me as usize].energy = max / 4;
+        w.state.prizes[0] = sim::sim_prize {
+            active: 1,
+            x: (503 * 16 + 8) * 256,
+            y: (500 * 16 + 8) * 256,
+            life: 30_000,
+        };
+        let route = crate::nav::Nav::build(&w.map);
+        let mut bot = Bot::new(me, 0.7);
+        bot.seen = scan(&w, me);
+        bot.decide(&own(&w, me), &route);
+        assert_eq!(bot.posture, Posture::Disengaging);
+        assert!(!matches!(bot.goal, Some((Goal::Prize, _, _))));
     }
 }

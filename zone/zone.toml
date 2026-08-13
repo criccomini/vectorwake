@@ -14,7 +14,7 @@
 # played is not a tuning change.
 
 name = "first light"
-description = "the reference zone: four flags, eight hulls, nine pilots"
+description = "the reference zone: four flags and seven hulls"
 listen = "127.0.0.1:9010"
 
 # TLS. Set both and the zone serves wss instead of ws. A page delivered

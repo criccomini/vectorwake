@@ -141,6 +141,22 @@ the current perception and the bot's personality weights, the highest score wins
 and a hysteresis margin stops the bot from flapping between two near-equal
 choices.
 
+The first useful slice is in the shipped brain. A pilot scores hostile contacts
+by exposure, distance, energy, carried value and flag possession instead of
+always selecting the nearest one. Flags, fights and greens compete on risk and
+value. A fresh life searches farther for greens to assemble a kit; a built life
+takes only cheap detours. Low energy raises a green's value, but a nearby hostile
+turns the same situation into a disengagement instead of a scavenger run.
+
+Disengagement is a state with separate entry and exit thresholds. Energy, local
+numbers, incoming fire, bounty, upgrades and a carried flag decide when it
+starts. The pilot uses gunfire only while a close pursuer prevents a clean
+break, then picks a reachable point away from visible hostiles, prefers a safe
+zone, and may collect a clear green on the way when the firing line is distant.
+It stays in recovery until its bar is substantially
+rebuilt and immediate pressure is gone. The gap between the two thresholds is
+what stops one point of recharge from making a pilot turn around twice a second.
+
 Utility rather than behavior trees, because personality then becomes a vector of
 weights instead of a hand-authored tree per archetype. Adding a style is data.
 That is the same argument as zones-are-content, applied one level down.

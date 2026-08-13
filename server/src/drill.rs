@@ -26,6 +26,14 @@ pub struct Drill {
     pub ticks: u32,
     pub bots: usize,
     pub kills: u32,
+    pub deaths: u32,
+    pub suicides: u32,
+    pub completed_lives: u32,
+    pub life_ticks: u64,
+    pub energy_at_death: f64,
+    pub retreats: u32,
+    pub recoveries: u32,
+    pub retreat_ticks: u64,
     /// Ships shoved off a wall. The core raises one of these per contact, so
     /// this counts collisions and not the walls themselves.
     pub bounces: u32,
@@ -43,19 +51,26 @@ pub struct Drill {
     /// How much of the map they covered, as the count of eight-tile cells any
     /// bot stood in. A roster that finds one room and stays in it reads here.
     pub cells: usize,
-    /// Bot-ticks spent idle, traveling, fighting and leaving. A roster that is
+    /// Bot-ticks spent idle, traveling, fighting, recovering and leaving. A roster that is
     /// nearly all travel is a roster that never finds anybody, and one that is
     /// any measurable share leaving is a roster spending its life walking out:
     /// from the outside a departure looks exactly like a journey, which is why
     /// it is counted rather than watched for.
-    pub doing: [u64; 4],
+    pub doing: [u64; 5],
     /// And which of those the crawling ticks land in, so a slow roster can be
     /// told apart from a stuck one.
-    pub crawl_by: [u64; 4],
+    pub crawl_by: [u64; 5],
 }
 
 /// Half a pixel a tick. A hull under thrust does six times this.
 const CRAWL: f32 = 0.5;
+
+fn hostile_kill(w: &sim::World, victim: u8, attacker: u8) -> bool {
+    attacker != 255
+        && attacker != victim
+        && (attacker as usize) < w.state.ship_count as usize
+        && w.state.ships[attacker as usize].team != w.state.ships[victim as usize].team
+}
 
 impl Drill {
     fn report(&self, zone: &str) {
@@ -66,6 +81,23 @@ impl Drill {
             "  kills   {:6.2} per bot-minute  ({} total)",
             per(self.kills),
             self.kills
+        );
+        println!(
+            "  deaths  {:6.2} per bot-minute  ({} total, {} suicides)",
+            per(self.deaths),
+            self.deaths,
+            self.suicides
+        );
+        println!(
+            "  life     {:5.1}s mean, {:.0}% energy at death",
+            self.life_ticks as f64 / self.completed_lives.max(1) as f64 / HZ as f64,
+            100.0 * self.energy_at_death / self.deaths.max(1) as f64
+        );
+        println!(
+            "  retreat  {} started, {} recovered, {:.1}s mean in recovery",
+            self.retreats,
+            self.recoveries,
+            self.retreat_ticks as f64 / self.retreats.max(1) as f64 / HZ as f64
         );
         println!(
             "  bounces {:6.2} per bot-minute  ({} total)",
@@ -92,18 +124,20 @@ impl Drill {
         let t = self.flying.max(1) as f64;
         println!(
             "  doing    {:.0}% idle, {:.0}% traveling, {:.0}% fighting, \
-{:.0}% leaving",
+{:.0}% recovering, {:.0}% leaving",
             100.0 * self.doing[0] as f64 / t,
             100.0 * self.doing[1] as f64 / t,
             100.0 * self.doing[2] as f64 / t,
-            100.0 * self.doing[3] as f64 / t
+            100.0 * self.doing[3] as f64 / t,
+            100.0 * self.doing[4] as f64 / t
         );
         let c = self.crawling.max(1) as f64;
         println!(
-            "  crawl in {:.0}% idle, {:.0}% traveling, {:.0}% fighting",
+            "  crawl in {:.0}% idle, {:.0}% traveling, {:.0}% fighting, {:.0}% recovering",
             100.0 * self.crawl_by[0] as f64 / c,
             100.0 * self.crawl_by[1] as f64 / c,
-            100.0 * self.crawl_by[2] as f64 / c
+            100.0 * self.crawl_by[2] as f64 / c,
+            100.0 * self.crawl_by[3] as f64 / c
         );
     }
 }
@@ -133,6 +167,14 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
         ticks,
         bots,
         kills: 0,
+        deaths: 0,
+        suicides: 0,
+        completed_lives: 0,
+        life_ticks: 0,
+        energy_at_death: 0.0,
+        retreats: 0,
+        recoveries: 0,
+        retreat_ticks: 0,
         bounces: 0,
         shots: 0,
         hits: 0,
@@ -140,8 +182,8 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
         flying: 0,
         speed: 0.0,
         cells: 0,
-        doing: [0; 4],
-        crawl_by: [0; 4],
+        doing: [0; 5],
+        crawl_by: [0; 5],
     };
     let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
     let brains_first = brains[0].ship;
@@ -154,13 +196,16 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
     let mut inputs = Vec::with_capacity(bots);
+    let mut before_energy = vec![0.0f32; bots];
+    let mut life_age = vec![0u32; bots];
 
     for _ in 0..ticks {
         inputs.clear();
-        for b in brains.iter_mut() {
+        for (bi, b) in brains.iter_mut().enumerate() {
             let ship = b.ship;
             let fresh = b.looks_due().then(|| ai::scan(&w, ship));
             let o = ai::own(&w, ship);
+            before_energy[bi] = o.energy;
             let buttons = b.think(&o, &route, fresh);
             if tracing
                 && ship == brains_first
@@ -188,17 +233,33 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
             match ev.e[i].etype {
                 sim::EV_FIRE => d.shots += 1,
                 sim::EV_HIT => d.hits += 1,
-                sim::EV_DEATH => d.kills += 1,
+                sim::EV_DEATH => {
+                    let victim = ev.e[i].a;
+                    let attacker = ev.e[i].b;
+                    d.deaths += 1;
+                    if attacker == 255 || attacker == victim {
+                        d.suicides += 1;
+                    } else if hostile_kill(&w, victim, attacker) {
+                        d.kills += 1;
+                    }
+                    if let Some(bi) = brains.iter().position(|b| b.ship == victim) {
+                        d.completed_lives += 1;
+                        d.life_ticks += life_age[bi] as u64;
+                        d.energy_at_death += before_energy[bi] as f64;
+                        life_age[bi] = 0;
+                    }
+                }
                 sim::EV_BOUNCE => d.bounces += 1,
                 _ => {}
             }
         }
 
-        for b in brains.iter() {
+        for (bi, b) in brains.iter().enumerate() {
             let s = &w.state.ships[b.ship as usize];
             if s.active == 0 || s.alive == 0 {
                 continue;
             }
+            life_age[bi] += 1;
             d.doing[b.doing()] += 1;
             let (vx, vy) = (s.vx as f32 / 65536.0, s.vy as f32 / 65536.0);
             let v = (vx * vx + vy * vy).sqrt();
@@ -213,6 +274,9 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
             seen.insert((cx as u32) << 16 | cy as u32);
         }
     }
+    d.retreats = brains.iter().map(ai::Bot::retreats_started).sum();
+    d.recoveries = brains.iter().map(ai::Bot::retreats_completed).sum();
+    d.retreat_ticks = brains.iter().map(ai::Bot::retreat_ticks).sum();
     d.cells = seen.len();
     d
 }
@@ -246,4 +310,21 @@ pub fn run_check() {
     };
     let d = run_on(map, bots, secs * HZ, 0xd2111);
     d.report(&zone);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_hostile_attacker_counts_as_a_kill() {
+        let mut w = sim::World::new(1);
+        let victim = w.spawn(0, 0, 500, 500, 0) as u8;
+        let hostile = w.spawn(0, 1, 510, 500, 0) as u8;
+        let teammate = w.spawn(0, 0, 520, 500, 0) as u8;
+        assert!(hostile_kill(&w, victim, hostile));
+        assert!(!hostile_kill(&w, victim, teammate));
+        assert!(!hostile_kill(&w, victim, victim));
+        assert!(!hostile_kill(&w, victim, 255));
+    }
 }

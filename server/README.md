@@ -88,7 +88,7 @@ the real bots and the real rating math. Every room seeds its bots from the
 result.
 
 `zone/ladder.json` is compiled into the binary, because the roster is code and
-the same nine pilots fly in every room this build serves. So there is no file to
+the same calibrated pilots fly in every room this build serves. So there is no file to
 deploy and no path to get wrong, which is how the fleet came to be running with
 level bots: the arena's directory is a data volume, the image never put a ladder
 in it, and nothing said so. Regenerate with the command above and commit the

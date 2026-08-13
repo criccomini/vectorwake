@@ -122,7 +122,7 @@ TLS paths and the player cap that used to sit alongside are gone, since those
 belong to a process and this belongs to a deployment.
 
 ```toml
-description = "four flags, eight hulls"
+description = "four flags, seven hulls"
 
 mode = "warzone"          # warzone | arena | duel; read now, unlike before
 map = "war.vwmap"         # relative to this zone's directory

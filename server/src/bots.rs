@@ -697,9 +697,9 @@ pub async fn run() {
     }
 }
 
-/// Take the next unused individual. The calibrated nine go first, and after them
+/// Take the next unused individual. The calibrated pilots go first, and after them
 /// the roster is generated, so a room asking for fifty-one gets fifty-one
-/// distinct pilots rather than the same nine six times over.
+/// distinct pilots rather than repeating the calibrated group.
 fn claim(
     taken: &Arc<Mutex<HashSet<String>>>,
     blocked: &Arc<Mutex<HashMap<String, u64>>>,
@@ -824,7 +824,7 @@ fn join_msg(class: u8, name: &str, session: &str) -> Vec<u8> {
     let n = name.as_bytes();
     let mut join = vec![
         crate::C2S_JOIN,
-        class.min(7),
+        class.min((sim::MAX_CLASSES - 1) as u8),
         crate::CLIENT_PROTOCOL,
         crate::JOIN_BOT,
         0,

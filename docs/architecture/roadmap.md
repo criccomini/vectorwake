@@ -290,8 +290,8 @@ bot server on loopback:
 
 Two things came out of building it. The arena frees a seat the moment a client
 closes, which the population loop depends on and which nothing had measured;
-and the roster had to grow past nine, because a 64-seat room asks for
-fifty-one, so the calibrated nine are followed by generated individuals.
+and the roster had to grow past its calibrated group, because a 64-seat room
+asks for fifty-one, so the calibrated pilots are followed by generated individuals.
 
 Duels return after M7.1 and M7.5, because they need a mode to be a catalog row
 and rooms on demand in a process. They also need spectating, since a queue is
