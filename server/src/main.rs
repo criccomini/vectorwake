@@ -455,10 +455,15 @@ impl LagTracker {
         });
         while self.snapshots.len() > 96 {
             if let Some(old) = self.snapshots.pop_front() {
-                if old.combat && old.combat_epoch == self.combat_epoch {
-                    self.combat_loss.observe(!old.received, window);
-                } else if !old.combat {
-                    self.down_loss.observe(!old.received, window);
+                // WebTransport can deliver snapshots before the reliable
+                // welcome and map stream. Until the first receipt arrives, the
+                // client has no usable snapshot baseline and neither do we.
+                if self.last_snapshot_ack != 0 {
+                    if old.combat && old.combat_epoch == self.combat_epoch {
+                        self.combat_loss.observe(!old.received, window);
+                    } else if !old.combat {
+                        self.down_loss.observe(!old.received, window);
+                    }
                 }
             }
         }
@@ -468,6 +473,18 @@ impl LagTracker {
     fn acknowledge_snapshots(&mut self, ack: u32, mask: u32, now: u32, window: u32) {
         if ack == 0 || ack > self.snapshot_seq {
             return;
+        }
+        if self.last_snapshot_ack == 0 {
+            // The oldest set bit is the first snapshot the client can prove it
+            // saw. Anything earlier may have arrived before the welcome, so it
+            // sits outside the loss sample rather than becoming a failed send.
+            let baseline = (0..32)
+                .rev()
+                .find(|behind| *behind < ack && mask & (1u32 << *behind) != 0)
+                .map_or(ack, |behind| ack - behind);
+            while self.snapshots.front().is_some_and(|s| s.seq < baseline) {
+                self.snapshots.pop_front();
+            }
         }
         for sent in &mut self.snapshots {
             let behind = ack.saturating_sub(sent.seq);
@@ -540,7 +557,11 @@ impl LagTracker {
         let before = self.decision;
         let ping_ms = self.rtt_ticks * 10.0;
         let jitter_ms = self.jitter_ticks * 10.0;
-        let down = self.down_loss.value * 100.0;
+        let down = if self.combat_active {
+            0.0
+        } else {
+            self.down_loss.value * 100.0
+        };
         let combat = if self.combat_active {
             self.combat_loss.value * 100.0
         } else {
@@ -7453,6 +7474,22 @@ mod tests {
     }
 
     #[test]
+    fn first_snapshot_receipt_establishes_the_loss_baseline() {
+        let mut lag = LagTracker::default();
+        let mut last = 0;
+        for tick in 1..=100 {
+            last = lag.sent_snapshot(tick, false, 500);
+        }
+
+        assert_eq!(lag.down_loss.samples, 0, "startup is not measured as loss");
+        lag.acknowledge_snapshots(last, 1, 110, 500);
+        assert_eq!(lag.snapshots.len(), 1, "unknown startup sends are dropped");
+        assert!(lag.snapshots.front().is_some_and(|sent| sent.received));
+        assert_eq!(lag.down_loss.samples, 0);
+        assert_eq!(lag.down_loss.percent(), 0);
+    }
+
+    #[test]
     fn lag_policy_uses_downlink_quality_for_weapons_but_not_uplink_loss() {
         let mut cfg = config::LagConfig {
             sample_ticks: 1,
@@ -7516,6 +7553,25 @@ mod tests {
 
         lag.sent_snapshot(36, true, cfg.sample_ticks);
         assert_eq!(lag.combat_percent(), 0, "a later fight starts clean");
+    }
+
+    #[test]
+    fn ordinary_loss_does_not_restrict_the_active_combat_lane() {
+        let cfg = config::LagConfig {
+            sample_ticks: 1,
+            ..Default::default()
+        };
+        let mut lag = LagTracker::default();
+        lag.down_loss.value = 0.33;
+        lag.down_loss.samples = 3;
+        lag.sent_snapshot(1, true, cfg.sample_ticks);
+
+        assert!(lag.tick(&cfg, false, 1).decision == LagDecision::default());
+
+        lag.sent_snapshot(2, false, cfg.sample_ticks);
+        let restricted = lag.tick(&cfg, false, 2).decision;
+        assert!(restricted.no_flags, "ordinary loss applies on its own lane");
+        assert_eq!(restricted.weapon_percent, 32);
     }
 
     #[test]
