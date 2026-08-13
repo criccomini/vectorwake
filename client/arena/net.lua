@@ -8,8 +8,22 @@
 -- and the server cannot disagree about what a snapshot means.
 
 local account = require("arena.account")
+local codec = require("arena.net_codec")
+local reconcile = require("arena.net_reconcile")
+local net_transport = require("arena.net_transport")
+
+local u16, u32 = codec.u16, codec.u32
+local i16, i32 = codec.i16, codec.i32
+local put_u32, byte_or_zero = codec.put_u32, codec.byte_or_zero
+local u32n = reconcile.u32n
+local serial_after = reconcile.serial_after
+local serial_at_or_before = reconcile.serial_at_or_before
+local serial_delta = reconcile.serial_delta
+local next_tick, previous_tick = reconcile.next_tick, reconcile.previous_tick
+local receipt_bit = reconcile.receipt_bit
 
 local M = {}
+local transport = net_transport.new()
 
 local C2S_JOIN, C2S_INPUT = 1, 2
 local C2S_SHIP = 5
@@ -214,49 +228,9 @@ local lifecycle = 0
 local have_snapshot = false
 M.join_progress = 0
 
-local conn = nil
 local on_lost_cb = nil
 local input_log = {}
-local input_ack, input_mask = 0, 0
-local snapshot_ack, snapshot_mask = 0, 0
-local U32, SERIAL_HALF = 4294967296, 2147483648
-
-local function u32n(v)
-    return v % U32
-end
-
-local function serial_after(a, b)
-    if a == b then return false end
-    return u32n(a - b) < SERIAL_HALF
-end
-
-local function serial_at_or_before(a, b)
-    return a == b or serial_after(b, a)
-end
-
-local function serial_delta(a, b)
-    local d = u32n(a - b)
-    if d >= SERIAL_HALF then d = d - U32 end
-    return d
-end
-
-local function next_tick(t)
-    return u32n(t + 1)
-end
-
-local function previous_tick(t)
-    return u32n(t - 1)
-end
-
-local function snapshot_distance(newer, older)
-    local d = u32n(newer - older)
-    if newer < older then d = d - 1 end
-    return d
-end
-
-local function snapshot_after(a, b)
-    return a ~= b and snapshot_distance(a, b) < SERIAL_HALF
-end
+local receipts = reconcile.new()
 -- Each entry is the first remote death the local simulation would have
 -- concluded while the authoritative world still had that hull alive. The
 -- deathless core leaves the hull on one energy and records a telemetry signal,
@@ -307,82 +281,8 @@ end
 -- its declaration down: assigned any later, these would be globals.
 local watch_want = 255
 local keepalive = 0
--- Which connection this module is listening to.
---
--- One set of state serves whatever is live, and a socket that has been left
--- can still deliver events, so every callback checks its generation against
--- this before touching anything. Leaving one out is what let a player who
--- hopped from one zone to another end up in both: the old socket kept
--- arriving with snapshots of the old arena, the new one arrived with the new,
--- and the client drew whichever had spoken most recently.
-local generation = 0
-
--- Which wire this connection is on, and how the next one should be dialled.
--- WebTransport is preferred whenever the directory offers an address for it:
--- QUIC retransmits a loss without holding every snapshot behind it, which is
--- the whole of the head-of-line stall networking.md measures. It is also UDP,
--- which enough networks refuse to carry that the WebSocket stays first-class:
--- one dial that goes nowhere and the rest of the session stops asking.
-local wt_live = false
--- Seconds a WebTransport dial has gone unanswered, nil when none is pending.
-local pending = nil
--- Doors that went unanswered, by address, so the next join to the same one
--- goes straight to the socket.
---
--- This was a single flag for the whole session, on the reasoning that a
--- network which ate one QUIC handshake will eat the next. That is true of a
--- network and it was being applied to something else: a zone advertises its
--- QUIC address as soon as it is configured, including through the half minute
--- a fresh host spends waiting for its certificate and forever after a door
--- that failed to bind. One dial into either of those is indistinguishable
--- from a blocked network here, and it was pinning every zone for the rest of
--- the session to the wire QUIC exists to replace, while the about page told
--- the player their network had eaten it. Keyed by address, a door that is
--- down costs its own joins and nobody else's; a network that really is
--- eating UDP fills this table one zone at a time and reaches the same place.
-local wt_avoid = {}
--- Whether *this* connection actually dialled the better door, as opposed to
--- skipping it because an earlier one in this session went unanswered. The two
--- look identical from outside and are not the same fact: one says the network
--- ate a handshake just now, the other says we did not send one. Told apart
--- because they were not, once, and an hour went into asking a firewall why it
--- was dropping packets nobody had sent.
-local wt_tried = false
--- What the browser said when a dial failed, when it said anything. Safari and
--- Chrome both put a sentence in the error event, and it is the only account of
--- the failure that exists: the fallback is silent by design, and a phone has no
--- console to read. Kept so the about page can print it, because the device most
--- likely to be on the slower door is the one hardest to attach a debugger to.
-local wt_reason = nil
--- What to say on arrival, kept out here so the fallback can redial the
--- WebSocket address and say exactly the same thing.
-local join_args = nil
--- How long a QUIC handshake gets before the fallback takes over. A working
--- path answers inside one round trip; three seconds is a blocked one, and a
--- browser left to notice that on its own takes tens of seconds.
-local WT_PATIENCE = 3
--- Seconds an opened session has gone without delivering a snapshot, nil once
--- one lands or when no session is settling. The dial clock above cannot cover
--- this: a browser mid-update has been seen completing the QUIC handshake and
--- then wedging half-open, datagrams flowing and the reliable lane stalled, so
--- the welcome never came and the join hung forever with no error to report.
--- The handshake is not the session; only a snapshot proves the wire works.
-local settling = nil
--- Longer than the dial's patience because this window carries the map, a
--- megabyte and a half on the reliable lane, and a slow link is not a stalled
--- one. It still fires inside the arena's own ten-second give-up, so the
--- socket gets its turn before the player is sent back to the menu.
-local WT_SETTLE = 5
--- Seconds since the last snapshot of a proven session, nil until one lands.
--- The settle clock's mid-game sibling, and it exists because of how a QUIC
--- peer dies: the kernel closes a dead process's TCP sockets, so the WebSocket
--- gets a hangup within a second, but QUIC lives in userspace and a killed
--- arena sends nothing. The browser's own idle timer is tens of seconds, and a
--- player spends them in a ghost room: every hull coasting on its last course,
--- nothing killable, nothing said. Snapshots arrive at least twenty times a
--- second, so a wire this quiet this long is dead on any playable network.
-local quiet = nil
-local QUIET_LIMIT = 8
+-- The transport rejects callbacks from a connection this facade has left, so
+-- the state below belongs only to the live arena.
 -- The last snapshot tick applied, for the reorder guard in `on_snapshot`.
 local snap_tick = 0
 -- Reliable news and snapshots use independent WebTransport lanes. Hold news
@@ -412,33 +312,13 @@ local function percentile(values, q)
     return ordered[math.max(1, math.ceil(#ordered * q))]
 end
 
-local function receipt_bit(mask, behind)
-    if behind < 0 or behind >= 32 then return false end
-    return math.floor(mask / (2 ^ behind)) % 2 == 1
-end
-
 local function record_snapshot(seq)
-    if seq == 0 then return end
-    if snapshot_ack == 0 or snapshot_after(seq, snapshot_ack) then
-        local shift = snapshot_ack == 0 and 1
-            or snapshot_distance(seq, snapshot_ack)
-        if snapshot_ack ~= 0 and shift > 1 then
-            M.stats.snap_missed = M.stats.snap_missed + shift - 1
-        end
-        snapshot_mask = (snapshot_ack == 0 or shift >= 32)
-            and 1 or ((snapshot_mask % (2 ^ (32 - shift))) * (2 ^ shift) + 1)
-        snapshot_ack = seq
-    else
-        local behind = snapshot_distance(snapshot_ack, seq)
-        if behind < 32 and not receipt_bit(snapshot_mask, behind) then
-            snapshot_mask = snapshot_mask + 2 ^ behind
-        end
-    end
+    M.stats.snap_missed = M.stats.snap_missed
+        + receipts:record_snapshot(seq)
 end
 
 local function input_received(tick)
-    return input_mask ~= 0 and serial_at_or_before(tick, input_ack)
-        and receipt_bit(input_mask, u32n(input_ack - tick))
+    return receipts:input_received(tick)
 end
 
 local function lag_telemetry(ping, jitter, down, combat, up, state, weapons)
@@ -484,16 +364,8 @@ local function note_snapshot(sent, seq)
     last_snap_at = net_clock
 end
 
--- The extension is a global on builds that carry it and absent everywhere
--- else, tests and native alike, so it is fetched rather than named.
-local function wtx() return rawget(_G, "webtransport") end
-
 local function send_reliable(msg)
-    if wt_live then
-        pcall(wtx().send, msg)
-    elseif conn then
-        pcall(websocket.send, conn, msg, {type = websocket.DATA_TYPE_BINARY})
-    end
+    transport:send_reliable(msg)
 end
 
 -- Inputs only. Each datagram carries a short tick-stamped repair window, so it
@@ -501,11 +373,7 @@ end
 -- flight. On the WebSocket it is the same socket as everything else, which is
 -- the problem the datagram exists to solve.
 local function send_unreliable(msg)
-    if wt_live then
-        pcall(wtx().send_unreliable, msg)
-    elseif conn then
-        pcall(websocket.send, conn, msg, {type = websocket.DATA_TYPE_BINARY})
-    end
+    transport:send_unreliable(msg)
 end
 
 -- Reported once, with a reason fit to print, and the connection is over. This
@@ -520,21 +388,7 @@ end
 -- added to one path and missed on the other is how a ghost session gets left
 -- open in the page.
 local function hangup()
-    -- A decode failure calls this with the wire still open, and dropping the
-    -- handle first meant nothing could ever close it: the socket stayed up,
-    -- kept receiving an arena the client had declared unreadable, and held the
-    -- seat until the zone's own quiet limit noticed a minute later.
-    if conn then pcall(websocket.disconnect, conn) end
-    conn = nil
-    -- The WebTransport session gets the same hangup the socket does: a
-    -- quiet-loss leaves one open in the page, and a ghost session's eventual
-    -- browser-timeout close arriving later is an event about nothing.
-    local w = wtx()
-    if w then pcall(w.disconnect) end
-    wt_live = false
-    pending = nil
-    settling = nil
-    quiet = nil
+    transport:hangup()
     M.connected = false
     -- News belonging to the connection that just ended. Undrained kills and
     -- arrivals outlived their socket, and the frame that notices the loss
@@ -557,24 +411,6 @@ local function lost(why)
     if on_lost_cb then on_lost_cb(why) end
 end
 local predicted_tick = 0
-
-local function u16(a, b) return a + b * 256 end
-local function u32(a, b, c, d) return a + b * 256 + c * 65536 + d * 16777216 end
-local function put_u32(n)
-    return string.char(n % 256, math.floor(n / 256) % 256,
-                       math.floor(n / 65536) % 256,
-                       math.floor(n / 16777216) % 256)
-end
-local function i32(a, b, c, d)
-    local v = u32(a, b, c, d)
-    if v >= 2147483648 then v = v - 4294967296 end
-    return v
-end
-local function i16(a, b)
-    local v = u16(a, b)
-    if v >= 32768 then v = v - 65536 end
-    return v
-end
 
 -- Visible tiers, matching server/src/rating.rs. Coarse bands mean a pilot is
 -- not watching a number twitch after every death.
@@ -980,8 +816,7 @@ local function adopt_lifecycle(epoch, watching, subject)
     if epoch ~= lifecycle then
         lifecycle = epoch
         input_log = {}
-        input_ack, input_mask = 0, 0
-        snapshot_ack, snapshot_mask = 0, 0
+        receipts:reset()
         death_candidates = {}
         M.stats.death_pending = 0
         predicted_tick = 0
@@ -1066,8 +901,7 @@ local function on_snapshot(s)
         have_snapshot = true
         M.subject = string.byte(s, 2)
         M.stats.snaps = M.stats.snaps + 1
-        settling = nil
-        quiet = 0
+        transport:prove()
         measure_remote_corrections(before)
         sim.smooth_settle()
         -- Kills and detonations the free-run never lived through still owe
@@ -1083,9 +917,11 @@ local function on_snapshot(s)
     -- tick it was stamped for.
     local acked = u32(string.byte(s, 12), string.byte(s, 13),
                       string.byte(s, 14), string.byte(s, 15))
-    input_ack = acked
-    input_mask = u32(string.byte(s, 16), string.byte(s, 17),
-                     string.byte(s, 18), string.byte(s, 19))
+    receipts:set_input(
+        acked,
+        u32(string.byte(s, 16), string.byte(s, 17),
+            string.byte(s, 18), string.byte(s, 19))
+    )
     lag_telemetry(
         (string.byte(s, 24) or 0) + (string.byte(s, 25) or 0) * 256,
         (string.byte(s, 26) or 0) + (string.byte(s, 27) or 0) * 256,
@@ -1094,9 +930,9 @@ local function on_snapshot(s)
         string.byte(s, 32) or 0)
     local holes = 0
     for behind = 1, 31 do
-        local tick = u32n(input_ack - behind)
+        local tick = u32n(receipts.input_ack - behind)
         if serial_after(tick, snap_tick) and input_log[tick]
-            and not receipt_bit(input_mask, behind) then
+            and not receipt_bit(receipts.input_mask, behind) then
             holes = holes + 1
         end
     end
@@ -1119,8 +955,7 @@ local function on_snapshot(s)
     snap_tick = sent
     have_snapshot = true
     M.stats.snaps = M.stats.snaps + 1
-    settling = nil
-    quiet = 0
+    transport:prove()
     resolve_predicted_deaths(sent)
 
     -- Replay the inputs the server had not applied when it sent this.
@@ -1144,7 +979,7 @@ local function on_snapshot(s)
     -- inherits the buttons we were already holding, because a key held through
     -- the gap is what actually happened; filling it with zero would insert a
     -- phantom frame of hands-off flying that the server never saw.
-    if input_mask ~= 0 then
+    if receipts.input_mask ~= 0 then
         local margin = serial_delta(from, acked)
         M.stats.input_margin = margin
         local target = holes > 0 and LOSS_TARGET or LAG_TARGET
@@ -1200,8 +1035,7 @@ local function on_snapshot(s)
 end
 
 local function on_message(s)
-    M.join_progress = M.join_progress + 1
-    if settling then settling = 0 end
+    transport:progress()
     M.stats.rx = M.stats.rx + #s
     M.stats.msgs = M.stats.msgs + 1
     local kind = string.byte(s, 1)
@@ -1325,130 +1159,31 @@ end
 -- where the surrounding pcall cannot help because Lua evaluates an argument
 -- before the call it is an argument to. The join was never sent and the player
 -- watched the ten-second give-up blame the zone for not answering.
-local function byte_or_zero(v)
-    if type(v) ~= "number" then return 0 end
-    v = math.floor(v)
-    if v < 0 or v > 255 then return 0 end
-    return v
-end
-
 local function join_msg()
+    local join = transport.join
     -- Cut to what their length bytes can describe, so the header and the
     -- payload cannot disagree. A name too long to say is a join the zone will
     -- refuse and say why, which beats one this client cannot express.
-    local want = string.sub(join_args.zone or "", 1, 255)
-    local name = string.sub(join_args.name, 1, 255)
+    local want = string.sub(join.zone or "", 1, 255)
+    local name = string.sub(join.name, 1, 255)
     local session = account.token or ""
-    local flags = join_args.watch and JOIN_WATCH or 0
+    local flags = join.watch and JOIN_WATCH or 0
     -- The room, when a list was read and one was named, and zero when it was
     -- not, which is every arrival that came through the games list. A request
     -- rather than a demand: the room can fill before this lands, and the
     -- welcome says where we actually ended up.
-    return string.char(C2S_JOIN, join_args.class, CLIENT_PROTOCOL, flags,
-                       #want, #name, byte_or_zero(join_args.room))
+    return string.char(C2S_JOIN, join.class, CLIENT_PROTOCOL, flags,
+                       #want, #name, byte_or_zero(join.room))
         .. want .. name .. session
 end
 
--- One WebSocket dial. Everything that decides *which* wire is in `M.connect`
--- and the fallback; this only knows how. Returns false when the address
--- cannot even be parsed, which throws here rather than failing async.
-local function dial_ws()
-    local gen = generation
-    M.stats.wire = "ws"
-    local ok = pcall(function()
-        conn = websocket.connect(join_args.url, {}, function(self, cid, data)
-            -- A socket we have already left. Closing one buys no promise of
-            -- silence, and its parting message would otherwise be read as the
-            -- live connection dropping, which clears `conn` and takes the
-            -- good connection down with the dead one.
-            if gen ~= generation then return end
-            if data.event == websocket.EVENT_CONNECTED then
-                -- The callback's own handle, not the module's: this can fire
-                -- before `websocket.connect` has returned, and `conn` is only
-                -- assigned afterwards.
-                --
-                -- Guarded, because a socket can be closing by the time its own
-                -- connect event is delivered, and the extension raises on a
-                -- send to one that is. The disconnect that follows carries the
-                -- reason a player should see; a Lua error here would take the
-                -- frame loop instead.
-                pcall(websocket.send, cid, join_msg(),
-                      {type = websocket.DATA_TYPE_BINARY})
-            elseif data.event == websocket.EVENT_MESSAGE then
-                on_message(data.message)
-            elseif data.event == websocket.EVENT_DISCONNECTED then
-                lost(M.denied or "the zone closed the connection")
-            elseif data.event == websocket.EVENT_ERROR then
-                lost(M.denied or (data.message and tostring(data.message))
-                     or "could not reach that zone")
-            end
-        end)
-    end)
-    return ok
-end
-
--- The WebTransport door failed, so take the socket instead, quietly: the
--- player asked for the game, not for a transport, and the join they get is
--- the same one either wire would have carried. Two ways here: a dial nobody
--- answered, and a session that opened and then delivered nothing. Remembered
--- for the session either way, because a door that failed one join has
--- forfeited its next, and the seconds it costs are a price to pay once.
-local function fall_back()
-    if join_args and join_args.wt ~= "" then wt_avoid[join_args.wt] = true end
-    pending = nil
-    settling = nil
-    wt_live = false
-    M.join_progress = M.join_progress + 1
-    -- The dead dial can still deliver its own error; it may not speak for
-    -- the socket that replaces it.
-    generation = generation + 1
-    local w = wtx()
-    if w then pcall(w.disconnect) end
-    if not dial_ws() then
-        lost("that address is not a zone URL")
-    end
-end
-
-local function dial_wt(wt_url)
-    local gen = generation
-    wt_live = false
-    wt_tried = true
-    pending = 0
-    M.stats.wire = "wt"
-    local w = wtx()
-    wt_reason = nil
-    local ok = pcall(w.connect, wt_url, function(_, data)
-        if gen ~= generation then return end
-        if data.event == w.EVENT_CONNECTED then
-            pending = nil
-            -- Opened is not delivering. The settle clock runs from here to
-            -- the first snapshot, because a browser has been seen wedging a
-            -- session exactly this far: handshake done, reliable lane dead.
-            settling = 0
-            wt_live = true
-            send_reliable(join_msg())
-        elseif w.EVENT_PROGRESS and data.event == w.EVENT_PROGRESS then
-            M.join_progress = M.join_progress + 1
-            if settling then settling = 0 end
-        elseif data.event == w.EVENT_MESSAGE then
-            on_message(data.message)
-        elseif pending then
-            -- Refused or dropped before it ever opened: the fallback's case,
-            -- not the player's problem. The browser's own words are kept
-            -- rather than swallowed: a constructor that refused the address
-            -- outright and a handshake nobody answered arrive here alike, and
-            -- only the message tells them apart.
-            if data.message and data.message ~= "" then
-                wt_reason = tostring(data.message)
-            end
-            fall_back()
-        else
-            wt_live = false
-            lost(M.denied or "the zone closed the connection")
-        end
-    end)
-    if not ok then fall_back() end
-end
+transport:configure({
+    join_message = join_msg,
+    message = on_message,
+    lost = function(reason) lost(M.denied or reason) end,
+    progress = function() M.join_progress = M.join_progress + 1 end,
+    wire = function(wire) M.stats.wire = wire end,
+})
 
 -- Whether the pilot this connection wears is still the pilot the client is.
 -- True after a mid-game login, a reroll, or a logout whose fresh guest has
@@ -1466,10 +1201,7 @@ end
 -- A copy rather than the table, because the caller feeds it back into
 -- `connect`, which resets the original mid-read.
 function M.last_join()
-    if not join_args then return nil end
-    return {url = join_args.url, zone = join_args.zone,
-            wt = join_args.wt or "", watch = join_args.watch,
-            room = join_args.room}
+    return transport:last_join()
 end
 
 -- What is carrying this connection, and what would carry the next one.
@@ -1504,19 +1236,7 @@ end
 --            went out and none came back.
 --   trying   a dial is in the air and its three seconds are running.
 function M.transport()
-    local w = wtx()
-    local url = join_args and join_args.url or ""
-    local door = join_args and join_args.wt or ""
-    return {
-        kind = (wt_live and "wt") or (conn and "ws") or nil,
-        secure = string.sub(url, 1, 6) == "wss://",
-        able = w ~= nil and w.supported() or false,
-        refused = door ~= "" and wt_avoid[door] == true,
-        offered = door ~= "",
-        tried = wt_tried,
-        reason = wt_reason,
-        trying = pending ~= nil or settling ~= nil,
-    }
+    return transport:info()
 end
 
 -- The WebTransport dial's clock. Called every frame whether or not anything
@@ -1525,30 +1245,7 @@ end
 -- staring at "joining" for that long has already given up.
 function M.tick(dt)
     net_clock = net_clock + dt
-    if pending then
-        pending = pending + dt
-        if pending >= WT_PATIENCE then fall_back() end
-    end
-    -- The settle clock. A snapshot is the proof the whole wire works, since
-    -- it rides behind the welcome's gate, and the arrival of one clears this
-    -- where it lands; a session still unproven when the clock runs out loses
-    -- the join to the socket.
-    if settling then
-        settling = settling + dt
-        if settling >= WT_SETTLE then fall_back() end
-    end
-    -- The quiet clock, on a session that has already proven itself. A loss
-    -- here is reported rather than redialled: mid-game the seat and the score
-    -- are gone whichever wire comes next, and the player should see why. Each
-    -- frame's contribution is capped because a backgrounded tab hands the
-    -- first frame back a monster dt: a real outage is many frames of silence,
-    -- and a tab waking up is one big one with the backlog right behind it.
-    if quiet and M.connected then
-        quiet = quiet + math.min(dt, 0.1)
-        if quiet >= QUIET_LIMIT then
-            lost("the zone went quiet")
-        end
-    end
+    transport:tick(dt, M.connected)
 end
 
 -- A connection that never lands, or one that drops, has to be reportable:
@@ -1599,7 +1296,6 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     M.join_progress = 0
     net_clock, last_snap_at = 0, nil
     pos_samples, turn_samples, sample_at = {}, {}, 1
-    quiet = nil
     -- The zone we came from should not have its name or its banner still on
     -- screen while the next one is being reached.
     M.me = 0
@@ -1624,39 +1320,28 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     -- happens to be younger that is thousands of extra steps every snapshot,
     -- which a player reads as their ship moving at several times its speed.
     input_log = {}
-    input_ack, input_mask = 0, 0
-    snapshot_ack, snapshot_mask = 0, 0
+    receipts:reset()
     predicted_tick = 0
     -- And whatever the drawing was still owed in the last room. An offset is
     -- about a hull in an arena; carried across, it draws the next one beside
     -- itself on arrival.
     sim.smooth_reset()
     on_lost_cb = on_lost
-    join_args = {url = url, class = class, name = name, zone = zone,
-                 watch = watch, wt = wt, room = room}
     -- The pilot this seat is about to wear. The zone binds a seat's identity
     -- exactly once, from this join's name and token, and never hears about
     -- either again: the roster, the ratings and every kill filed for the life
     -- of the connection belong to whoever this was at this moment.
     M.joined = {name = name, account = account.account or 0}
 
-    -- The preferred wire first, when there is one to prefer: an address from
-    -- the directory, an extension in this build, a browser that has the API,
-    -- and no dial already known to go nowhere. Everything else is the socket.
-    wt_tried = false
-    local w = wtx()
-    if wt and wt ~= "" and w and w.supported() and not wt_avoid[wt] then
-        dial_wt(wt)
-        return not M.lost
-    end
-    -- A malformed address throws in the dial rather than failing
-    -- asynchronously, and an unhandled error in init would take the whole
-    -- client down.
-    if not dial_ws() then
-        lost("that address is not a zone URL")
-        return false
-    end
-    return true
+    return transport:connect({
+        url = url,
+        class = class,
+        name = name,
+        zone = zone,
+        watch = watch,
+        wt = wt,
+        room = room,
+    }) and not M.lost
 end
 
 -- One predicted tick. Returns true when the caller should not step locally,
@@ -1669,7 +1354,7 @@ end
 -- answers with a roster or a team list, and a refusal is that list saying you
 -- are still where you were.
 local function ask(msg)
-    if not M.connected or not (conn or wt_live) then return false end
+    if not M.connected or not transport:has_wire() then return false end
     send_reliable(msg)
     return true
 end
@@ -1722,7 +1407,7 @@ local WATCH_KEEPALIVE = 3000
 
 function M.release_controls()
     if not M.connected or M.watching or not have_snapshot
-        or not (conn or wt_live) then
+        or not transport:has_wire() then
         return false
     end
     local tick = next_tick(predicted_tick)
@@ -1730,14 +1415,14 @@ function M.release_controls()
     input_log[tick] = 0
     local msg = table.concat({
         string.char(C2S_INPUT, 1), put_u32(lifecycle),
-        put_u32(snapshot_ack), put_u32(snapshot_mask),
+        put_u32(receipts.snapshot_ack), put_u32(receipts.snapshot_mask),
         put_u32(tick), string.char(0, 0),
     })
     -- Reliable is the release that must arrive. The datagram gives it the
     -- ordinary low-latency path when the browser still has time to flush one
     -- before suspension.
     send_reliable(msg)
-    if wt_live then
+    if transport:is_webtransport() then
         send_unreliable(msg)
         M.stats.tx = M.stats.tx + #msg * 2
     else
@@ -1747,7 +1432,7 @@ function M.release_controls()
 end
 
 function M.step(buttons)
-    if not M.connected or not (conn or wt_live) then return false end
+    if not M.connected or not transport:has_wire() then return false end
     -- The welcome arrives before the first snapshot. Until one lands there is
     -- no ship to predict, so hold the frame rather than step an empty world.
     if not have_snapshot then return true end
@@ -1783,7 +1468,7 @@ function M.step(buttons)
     -- missing records themselves.
     for behind = 31, 1, -1 do
         if #records >= 4 then break end
-        local tick = u32n(input_ack - behind)
+        local tick = u32n(receipts.input_ack - behind)
         if serial_after(tick, snap_tick) and serial_after(t, tick) then
             if input_log[tick] ~= nil and not input_received(tick) then
                 records[#records + 1] = {tick = tick, buttons = input_log[tick]}
@@ -1809,8 +1494,8 @@ function M.step(buttons)
         return u32n(t - a.tick) > u32n(t - b.tick)
     end)
     local msg = {string.char(C2S_INPUT, #records),
-                 put_u32(lifecycle), put_u32(snapshot_ack),
-                 put_u32(snapshot_mask)}
+                 put_u32(lifecycle), put_u32(receipts.snapshot_ack),
+                 put_u32(receipts.snapshot_mask)}
     for _, record in ipairs(records) do
         local b = record.buttons
         msg[#msg + 1] = put_u32(record.tick)
@@ -1827,7 +1512,7 @@ end
 function M.disconnect()
     -- Bumped whether or not there was a socket, so that anything still in
     -- flight from the last one is stale from here on.
-    generation = generation + 1
+    transport:invalidate()
     hangup()
 end
 
