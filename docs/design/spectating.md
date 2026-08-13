@@ -23,11 +23,11 @@ whichever side is short, so a team zone rarely leaves a pilot with nobody
 lawful to follow.
 
 **Hostile live follow is a wallhack with a menu entry.** Following your victim
-puts a camera on the one hull the fog is supposed to hide, with their exact
-energy and their remaining charges in every packed ship. The fleet already
-prices pooled sight as a scout team, answered with seats, radar visibility and
-bans; a hostile follower would pay none of that, on a free guest account, from
-a second browser tab. So the ask is never an error and never granted: it lands
+puts a camera on the one hull the fog is supposed to hide, with its movement
+and surroundings always centered on screen. The fleet already prices pooled
+sight as a scout team, answered with seats, radar visibility and bans; a
+hostile follower would pay none of that, on a free guest account, from a
+second browser tab. So the ask is never an error and never granted: it lands
 on the channel.
 
 **The channel is shared because shared is what defeats re-rolling.** One feed

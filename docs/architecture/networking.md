@@ -197,15 +197,13 @@ real wire and testing each against the radius, **20.9% of 191,115
 weapon-snapshots fell inside it**. Rounds were 77.6% of a snapshot, so four
 fifths of the traffic was bullets from fights the viewer could not see.
 
-The sight. A snapshot used to hand every client the position, velocity, energy
-and held buttons of every ship on the map, so a maphack was not an exploit but
-a rendering choice: draw what you were sent. This is the game the original
-lost, and its own answer was to gate seeing other pilots' energy behind a
-capability. A client is now told about what it could lawfully look at, and a
-modified one has nothing else to draw. The boundary is worth stating plainly:
-inside the radius everything still travels, because prediction needs it, so
-near-field ESP survives. The property bought is "no knowledge beyond lawful
-sight", not "no knowledge at all".
+The sight. A snapshot used to hand every client the position, velocity and held
+buttons of every ship on the map, so a maphack was not an exploit but a
+rendering choice: draw what you were sent. A client is now told about what it
+could lawfully look at, and a modified one has nothing else to draw. The
+boundary is worth stating plainly: energy and its capacity are public for every
+visible hull, while inventory and weapon state are not. The property bought is
+"no knowledge beyond lawful sight", not "no knowledge at all".
 
 Three details make it work. Ships travel behind a **presence bitmap** rather
 than a shortened array, because a ship index is identity for the roster, the
@@ -538,13 +536,14 @@ wire answers the second in two dimensions. It omits ships and rounds outside
 the fixed fairness radius, and it sends public and owner ship records in
 different shapes.
 
-A public record contains the facts needed to draw and extrapolate a hull:
-identity, side, position, velocity, heading, shove state, score, bounty, and
-carrier. Energy, cooldowns, spawn state, upgrades, weapon rungs, add-ons,
-charges, toggle edges, and earned-bounty composition travel only in the owner
-tail. A spectator camera does not confer ownership, so following another pilot
-does not include that tail. House bots may receive every private tail through
-their signed label, but an ordinary client cannot request the grant.
+A public record contains the facts needed to draw and read a fight: identity,
+side, position, velocity, heading, current energy, energy capacity, shove
+state, score, bounty, and carrier. Cooldowns, spawn state, other upgrades,
+weapon rungs, add-ons, charges, toggle edges, and earned-bounty composition
+travel only in the owner tail. A spectator camera does not confer ownership,
+so following another pilot does not include that tail. House bots may receive
+every private tail through their signed label, but an ordinary client cannot
+request the grant.
 
 A one-tick repel used to be drawn by watching the remote pilot's charge count
 fall, which made the private count necessary for presentation. `S2C_CHARGE`

@@ -48,9 +48,12 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap);
  * pilot is shown a minefield detonating behind them that is still sitting
  * there.
  *
- * `owner` is the only ship whose owner-only state travels. It is separate from
- * `viewer` because a spectator may borrow a pilot's camera without becoming
- * that pilot. `SIM_PACK_PRIVATE_ALL` is reserved for trusted in-process users.
+ * Energy and its capacity rung travel in every visible ship record because
+ * together they are the public health bar. `owner` is the only ship whose
+ * other upgrades, inventory, cooldowns and owner-only state travel. It is
+ * separate from `viewer` because a spectator may borrow a pilot's camera
+ * without becoming that pilot.
+ * `SIM_PACK_PRIVATE_ALL` is reserved for trusted in-process users.
  * `SIM_PACK_SECRET` includes prize randomness and its timer and must not be
  * used for a network client.
  *

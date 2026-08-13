@@ -31,6 +31,10 @@ _G.sim = {
     ship_count = function() return 0 end,
     ship_alive = function() return 1 end,
     ship_carrier = function() return 255 end,
+    ship_energy = function(i) return i == 1 and 25 or 100 end,
+    ship_max_energy = function() return 100 end,
+    -- Energy remains public even when the rest of this ship's state does not.
+    ship_private = function() return false end,
     weapon_count = function() return 0 end,
 }
 package.loaded["arena.fx"] = setmetatable({}, {
@@ -39,6 +43,9 @@ package.loaded["arena.fx"] = setmetatable({}, {
 
 local world = require("arena.world")
 local pal = require("arena.palette")
+
+check("a remote ship exposes its public energy fraction",
+      world.energy_fraction(1) == 0.25)
 
 -- A layer that records where it was asked to draw rather than drawing. Every
 -- primitive lands as a point, which is all this test reads.

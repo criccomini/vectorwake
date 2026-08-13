@@ -124,15 +124,21 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w16(&w, (uint32_t)bounty);
         w32(&w, sh->points);
         w8(&w, sh->carrier);
+        /* Energy is the fight's health bar. Anyone who can see the hull can
+         * see how close it is to dying, which requires its capacity rung as
+         * well as its current value. Other inventory and weapon state remain
+         * in the owner-only tail below. */
+        w32(&w, (uint32_t)sh->energy);
+        w8(&w, sh->up[SIM_UP_ENERGY]);
         if (personal) {
-            w32(&w, (uint32_t)sh->energy);
             w16(&w, sh->fire_cooldown[SIM_TRIG_GUN]);
             w16(&w, sh->fire_cooldown[SIM_TRIG_BOMB]);
             w16(&w, sh->stall);
             w16(&w, sh->respawn_at);
             w32(&w, (uint32_t)sh->spawn_x);
             w32(&w, (uint32_t)sh->spawn_y);
-            for (int u = 0; u < SIM_UP_COUNT; u++) w8(&w, sh->up[u]);
+            for (int u = 0; u < SIM_UP_COUNT; u++)
+                if (u != SIM_UP_ENERGY) w8(&w, sh->up[u]);
             for (int t = 0; t < SIM_TRIG_COUNT; t++) {
                 w8(&w, sh->level[t]);
                 w16(&w, sh->mods[t]);
@@ -315,15 +321,17 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         uint16_t bounty = (uint16_t)r16(&r);
         sh->points = r32(&r);
         sh->carrier = (uint8_t)r8(&r);
+        sh->energy = (int32_t)r32(&r);
+        sh->up[SIM_UP_ENERGY] = (uint8_t)r8(&r);
         if (personal) {
-            sh->energy = (int32_t)r32(&r);
             sh->fire_cooldown[SIM_TRIG_GUN] = (uint16_t)r16(&r);
             sh->fire_cooldown[SIM_TRIG_BOMB] = (uint16_t)r16(&r);
             sh->stall = (uint16_t)r16(&r);
             sh->respawn_at = (uint16_t)r16(&r);
             sh->spawn_x = (int32_t)r32(&r);
             sh->spawn_y = (int32_t)r32(&r);
-            for (int u = 0; u < SIM_UP_COUNT; u++) sh->up[u] = (uint8_t)r8(&r);
+            for (int u = 0; u < SIM_UP_COUNT; u++)
+                if (u != SIM_UP_ENERGY) sh->up[u] = (uint8_t)r8(&r);
             for (int t = 0; t < SIM_TRIG_COUNT; t++) {
                 sh->level[t] = (uint8_t)r8(&r);
                 sh->mods[t] = (uint16_t)r16(&r);

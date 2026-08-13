@@ -3481,6 +3481,26 @@ int main(void) {
             }
             CHECK(near > 0 && far > 0, "the field straddles the radius");
 
+            /* Give one visible opponent a capacity upgrade and an unrelated
+             * private upgrade. A zero rung would let the wire omit capacity
+             * and still pass, while copying the whole upgrade array would
+             * restore the information leak this split is meant to keep shut. */
+            int public_energy_ship = -1;
+            for (int i = 1; i < s.ship_count; i++) {
+                if (!s.ships[i].active) continue;
+                int64_t dx = (int64_t)s.ships[i].x - cx;
+                int64_t dy = (int64_t)s.ships[i].y - cy;
+                if (dx * dx + dy * dy > (int64_t)R * R) continue;
+                public_energy_ship = i;
+                s.ships[i].up[SIM_UP_ENERGY] = 3;
+                s.ships[i].up[SIM_UP_SPEED] = 2;
+                s.ships[i].energy = sim_eff_max_energy(
+                    &cfg.classes[s.ships[i].cls], &s.ships[i]) / 2;
+                break;
+            }
+            CHECK(public_energy_ship >= 0,
+                  "a visible opponent can exercise public energy capacity");
+
             int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R, 255, 0, 0);
             CHECK(m > 0 && m < n, "a filtered snapshot is smaller");
             sim_state cut;
@@ -3531,8 +3551,14 @@ int main(void) {
                         CHECK(cut.ships[i].energy == s.ships[i].energy,
                               "the owner's energy travels");
                     else
-                        CHECK(cut.ships[i].energy == 0,
-                              "remote energy is not public");
+                        CHECK(cut.ships[i].energy == s.ships[i].energy,
+                              "visible remote energy is public");
+                    CHECK(cut.ships[i].up[SIM_UP_ENERGY]
+                          == s.ships[i].up[SIM_UP_ENERGY],
+                          "visible energy capacity is public");
+                    if (i == public_energy_ship)
+                        CHECK(cut.ships[i].up[SIM_UP_SPEED] == 0,
+                              "other visible upgrades remain private");
                 } else {
                     ship_far++;
                     CHECK(!cut.ships[i].active,
@@ -3644,7 +3670,7 @@ int main(void) {
             CHECK(whole == n, "an unfiltered pack is the same size as sim_pack");
             sim_state all;
             CHECK(sim_unpack(&all, buf, whole) == 0, "and unpacks");
-            CHECK(sim_hash(&all) == sim_hash(&back),
+            CHECK(sim_hash(&all) == sim_hash(&s),
                   "and carries the whole arena");
         }
 

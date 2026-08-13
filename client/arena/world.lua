@@ -1926,6 +1926,10 @@ end
 --
 -- World space, not screen: zoom is fixed at one, so twenty-two world pixels
 -- are twenty-two screen pixels and the pip needs no projection of its own.
+function M.energy_fraction(ship)
+    return sim.ship_energy(ship) / math.max(1, sim.ship_max_energy(ship))
+end
+
 function M.ship_bar(fill, glow, sx, sy, frac, col)
     local W, H = 22, 2.5
     local x, y = sx - W / 2, sy - 26

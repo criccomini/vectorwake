@@ -1818,10 +1818,8 @@ function update(self, dt)
                 -- bar is gone: without this a pilot at eight percent and a
                 -- pilot at ninety would be told the same thing in the same
                 -- color, and the length of a 22-pixel bar is not a warning.
-                local private = not sim.ship_private or sim.ship_private(i)
-                local frac = private
-                    and sim.ship_energy(i) / math.max(1, sim.ship_max_energy(i)) or 1
-                if private and frac < 0.995 then
+                local frac = world.energy_fraction(i)
+                if frac < 0.995 then
                     local bar_col = col
                     if i == me then
                         if frac < 0.2 then bar_col = pal.HURT
@@ -1841,8 +1839,7 @@ function update(self, dt)
                     for k = 1, #aboard do
                         local g = aboard[k]
                         riders[#riders + 1] = sim.ship_heading(g)
-                        riders[#riders + 1] = (not sim.ship_private or sim.ship_private(g))
-                            and sim.ship_energy(g) / math.max(1, sim.ship_max_energy(g)) or 1
+                        riders[#riders + 1] = world.energy_fraction(g)
                         riders[#riders + 1] = col
                         riders[#riders + 1] = g == me
                     end

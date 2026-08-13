@@ -141,7 +141,13 @@ const JOIN_WATCH: u8 = 2;
 /// layout change, and a build that misread any of them would draw an arena
 /// that is not there, so the bump is what turns a deploy race into a refusal
 /// and a reload rather than a garbled room.
-const CLIENT_PROTOCOL: u8 = 9;
+///
+/// 9 split public ship records from owner-only inventory and weapon state.
+///
+/// 10 made energy and its capacity rung part of the public record again. They
+/// form the health bar that visible opponents use to read a fight, not private
+/// loadout information.
+const CLIENT_PROTOCOL: u8 = 10;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -5409,6 +5415,31 @@ pub(crate) async fn serve_client(
         if data.is_empty() {
             continue;
         }
+        // The safe-zone sweep moves a pilot from the room's player table to
+        // its watcher table without going through this socket task. The
+        // welcome updates the client, but `seat` here still names the life it
+        // had before the sweep. A hull request is commonly the first message
+        // back, and treating it as an in-place class change silently asks a
+        // player row that no longer exists. Reconcile before dispatch so the
+        // same request is understood as taking a hull from the stands.
+        //
+        // Inputs do not need this lookup: the spectator welcome stops them,
+        // and any already in flight are correctly harmless. Keeping the check
+        // on the transition command avoids another room lock on every tick.
+        if data[0] == C2S_SHIP {
+            if let Some((room, pid)) = seat {
+                let swept = {
+                    let z = zone.lock().await;
+                    z.rooms
+                        .get(room)
+                        .is_some_and(|a| a.watchers.contains_key(&pid))
+                };
+                if swept {
+                    seat = None;
+                    watch = Some((room, pid));
+                }
+            }
+        }
         if rated_lease
             .as_ref()
             .is_some_and(|lease| lease.touched.elapsed() >= std::time::Duration::from_secs(30))
@@ -5962,6 +5993,13 @@ pub(crate) async fn serve_client(
                                 rated_lease = candidate;
                             }
                         } else if let Some(lease) = candidate {
+                            lease.release().await;
+                        } else if let Some(lease) = rated_lease.take() {
+                            // The only watcher that can arrive here still
+                            // holding a lease was swept out of a safe zone and
+                            // immediately asked to fly again. If the room has
+                            // filled in the meantime, it stays in the stands
+                            // and must stop excluding this account elsewhere.
                             lease.release().await;
                         }
                     }
@@ -8521,6 +8559,108 @@ mod tests {
         }
         assert!(!a.players.contains_key(&id), "the seat went back");
         assert!(a.watchers.contains_key(&id), "and they are in the stands");
+    }
+
+    #[tokio::test]
+    async fn a_safe_zone_spectator_can_take_the_same_hull_back() {
+        let zone = Arc::new(Mutex::new(serving(1, 6, 16)));
+        let (in_tx, inbound) = mpsc::channel(INBOUND_QUEUE);
+        let (out_tx, mut outbound) = mpsc::channel(OUT_QUEUE);
+        let task = tokio::spawn(serve_client(zone.clone(), inbound, out_tx, "test"));
+
+        let name = b"parked";
+        let zone_name = b"testzone";
+        let mut join = vec![
+            C2S_JOIN,
+            0,
+            CLIENT_PROTOCOL,
+            0,
+            zone_name.len() as u8,
+            name.len() as u8,
+            0,
+        ];
+        join.extend_from_slice(zone_name);
+        join.extend_from_slice(name);
+        in_tx
+            .send(join)
+            .await
+            .expect("the join reaches the socket task");
+
+        let first = loop {
+            let message = tokio::time::timeout(std::time::Duration::from_secs(1), outbound.recv())
+                .await
+                .expect("the join is answered")
+                .expect("the connection stays open");
+            let Message::Binary(bytes) = message else {
+                continue;
+            };
+            if bytes.first() == Some(&S2C_WELCOME) {
+                break bytes;
+            }
+        };
+        assert_ne!(first[1], 255, "the pilot starts in a hull");
+
+        let id = {
+            let mut z = zone.lock().await;
+            let id = *z.rooms[0].players.keys().next().expect("the joined pilot");
+            assert!(
+                z.rooms[0].sit_out(id, 255, false, true),
+                "the safe-zone sweep moves it to the stands",
+            );
+            id
+        };
+
+        loop {
+            let message = tokio::time::timeout(std::time::Duration::from_secs(1), outbound.recv())
+                .await
+                .expect("the sweep is announced")
+                .expect("the connection stays open");
+            let Message::Binary(bytes) = message else {
+                continue;
+            };
+            if bytes.first() == Some(&S2C_WELCOME) && bytes[1] == 255 {
+                break;
+            }
+        }
+
+        // Class zero is exactly what the pilot had before the sweep. The old
+        // socket state swallowed this first request and only a later watcher
+        // message made another class work.
+        in_tx
+            .send(vec![C2S_SHIP, 0])
+            .await
+            .expect("the same hull request reaches the socket task");
+        let returned = loop {
+            let message = tokio::time::timeout(std::time::Duration::from_secs(1), outbound.recv())
+                .await
+                .expect("taking a hull is answered")
+                .expect("the connection stays open");
+            let Message::Binary(bytes) = message else {
+                continue;
+            };
+            if bytes.first() == Some(&S2C_WELCOME) && bytes[1] != 255 {
+                break bytes;
+            }
+        };
+
+        {
+            let z = zone.lock().await;
+            let room = &z.rooms[0];
+            assert!(room.watchers.get(&id).is_none(), "the watcher row is gone");
+            let player = room
+                .players
+                .values()
+                .next()
+                .expect("the pilot is flying again");
+            assert_eq!(
+                room.world.state.ships[player.ship as usize].cls, 0,
+                "the same hull was accepted",
+            );
+            assert_eq!(returned[1], player.ship, "the welcome names the new seat");
+        }
+
+        drop(in_tx);
+        task.await.expect("the socket task exits cleanly");
     }
 
     #[test]

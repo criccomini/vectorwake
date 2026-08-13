@@ -1806,11 +1806,9 @@ only 20.9% were inside the radius. Four fifths of the traffic was bullets from
 fights nobody here could see.
 
 The sight was worse and had no number on it. Every client was sent the
-position, velocity, energy and held buttons of every ship on the map, twenty
-times a second. A maphack against that is not an exploit, it is a rendering
-choice: draw what you were sent. Subspace lost this fight for a decade, and
-its own arena settings gate seeing another pilot's energy behind a capability
-we were granting to everybody implicitly.
+position, velocity and held buttons of every ship on the map, twenty times a
+second. A maphack against that is not an exploit, it is a rendering choice:
+draw what you were sent.
 
 Both are the same fix, because the reason to send a distant ship and the reason
 to send a distant bullet are the same reason, and it was never a good one.
@@ -1886,10 +1884,10 @@ arena processes. Local limits did not cover any of those boundaries.
 The sight radius now comes from the arena. A camera subject controls centering
 and which minefield remains in view, while a separate owner byte controls the
 private ship tail. Public records carry motion, side, score, bounty, shove and
-carrier state. Energy, cooldowns, upgrades, rungs, add-ons, charges, respawn
-state and input edges stay in the owner tail. Follow and channel snapshots name
-no owner. Remote one-tick charges use a filtered public action message, so the
-effect remains visible without putting the remaining inventory on the wire.
+carrier state. Cooldowns, upgrades, rungs, add-ons, charges, respawn state and
+input edges stay in the owner tail. Follow and channel snapshots name no owner.
+Remote one-tick charges use a filtered public action message, so the effect
+remains visible without putting the remaining inventory on the wire.
 
 The core keeps a public prediction generator and a private prize generator.
 Network snapshots omit the latter and its timer. A deathless prediction client
@@ -1912,3 +1910,21 @@ be checked, while active rooms and guests remain independent of that service.
 the replacement is another server policy rather than a client declaration; or
 the product wants multiple simultaneous rated seats under one accountable
 party, which needs an explicit party model instead of an account loophole.
+
+## 45. Energy is public combat state
+
+**Decided:** every visible ship record carries current energy and its capacity
+rung. Its bar is drawn for the owner, teammates, opponents and spectators
+whenever that hull is wounded.
+
+**Why:** energy is both health and ammunition. Reading who is close to death is
+part of choosing a target, committing to a fight and knowing whether a hit
+landed. Hiding it removed the bars that make combat legible and protected no
+inventory decision worth protecting. The fairness radius already withholds the
+whole hull when it is outside lawful sight.
+
+Other upgrades, weapon rungs, add-ons, charges, cooldowns and input edges
+remain in the owner-only tail.
+
+**Cost:** five bytes per visible ship per snapshot. The ship record layout
+changed, so `CLIENT_PROTOCOL` moved to 10.
