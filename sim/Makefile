@@ -59,13 +59,37 @@ test: $(B)/test_sim
 golden: $(B)/replay
 	$(B)/replay tests/trace_basic.txt > tests/golden.txt
 
-check: $(B)/test_sim $(B)/replay $(B)/lvl2vw $(B)/mapgen
+check: $(B)/test_sim $(B)/replay $(B)/lvl2vw $(B)/mapgen cxx
 	$(B)/test_sim
 	$(B)/replay tests/trace_basic.txt > $(B)/out.txt
 	cmp tests/golden.txt $(B)/out.txt
 	@echo determinism check passed
 	$(B)/lvl2vw --selftest
 	$(B)/mapgen --selftest
+
+# The same sources again, in the dialect the client compiles them in.
+#
+# client/build.sh copies sim.c, baseline.c and pack.c into the Defold
+# extension, and Defold's build server hands every .c in an extension to
+# clang++. So these three are C here and C++ there, and a name that is only a
+# name in C -- `private`, `class`, `new`, `template` -- builds clean, passes
+# every test in this directory, and then fails on somebody else's machine four
+# minutes into a bundle. That is exactly how it went: `int private` for the
+# owner-only fields reached main, and the first anyone knew was a red client
+# build with three parse errors in a file the sim's own checks were happy with.
+#
+# Syntax only, because the object is not wanted and the C build above is what
+# proves the code runs. CXX is whatever this platform calls a C++ compiler; the
+# check is skipped rather than failed where there is none, since a machine
+# without one can still do everything else here.
+cxx:
+	@if command -v $(CXX) >/dev/null 2>&1; then \
+	  $(CXX) -std=c++11 -Wall -Wextra -Werror -Iinclude -x c++ -fsyntax-only \
+	    src/sim.c src/baseline.c src/pack.c \
+	  && echo "the client's dialect accepts these too"; \
+	else \
+	  echo "no $(CXX); skipping the C++ dialect check"; \
+	fi
 
 # Undefined behavior is a determinism bug in this core specifically.
 #
@@ -110,4 +134,4 @@ check-wasm: wasm
 clean:
 	rm -rf $(B)
 
-.PHONY: all test golden check ubsan wasm check-wasm sintab clean
+.PHONY: all test golden check cxx ubsan wasm check-wasm sintab clean

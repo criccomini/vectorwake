@@ -102,8 +102,11 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
     for (int i = 0; i < s->ship_count; i++) {
         const sim_ship *sh = &s->ships[i];
         if (!here[i]) continue;
-        int private = (options & SIM_PACK_PRIVATE_ALL) || i == owner;
-        w8(&w, (uint32_t)(sh->active | (sh->alive << 1) | (private << 2)));
+        /* `personal` rather than the obvious word: this file is compiled as
+         * C++ inside the client's native extension, where `private` is a
+         * keyword and not a name. See the note above sim_unpack. */
+        int personal = (options & SIM_PACK_PRIVATE_ALL) || i == owner;
+        w8(&w, (uint32_t)(sh->active | (sh->alive << 1) | (personal << 2)));
         w8(&w, sh->cls);
         w8(&w, sh->team);
         w32(&w, (uint32_t)sh->x);
@@ -121,7 +124,7 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w16(&w, (uint32_t)bounty);
         w32(&w, sh->points);
         w8(&w, sh->carrier);
-        if (private) {
+        if (personal) {
             w32(&w, (uint32_t)sh->energy);
             w16(&w, sh->fire_cooldown[SIM_TRIG_GUN]);
             w16(&w, sh->fire_cooldown[SIM_TRIG_BOMB]);
@@ -285,8 +288,12 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         uint32_t flags = r8(&r);
         sh->active = (uint8_t)(flags & 1);
         sh->alive = (uint8_t)((flags >> 1) & 1);
-        int private = (int)((flags >> 2) & 1);
-        sh->public_only = (uint8_t)!private;
+        /* Not `private`, which is a keyword in the dialect the client's
+         * extension compiles this file in. Defold's build server hands every
+         * .c in an extension to clang++, so a name that is only a name in C
+         * builds here, passes every test, and fails on their machine. */
+        int personal = (int)((flags >> 2) & 1);
+        sh->public_only = (uint8_t)!personal;
         sh->cls = (uint8_t)r8(&r);
         /* A hull index off the wire is an array index everywhere it lands:
          * settings->classes is SIM_MAX_CLASSES wide, and both the stepping
@@ -308,7 +315,7 @@ int sim_unpack(sim_state *s, const uint8_t *in, int len) {
         uint16_t bounty = (uint16_t)r16(&r);
         sh->points = r32(&r);
         sh->carrier = (uint8_t)r8(&r);
-        if (private) {
+        if (personal) {
             sh->energy = (int32_t)r32(&r);
             sh->fire_cooldown[SIM_TRIG_GUN] = (uint16_t)r16(&r);
             sh->fire_cooldown[SIM_TRIG_BOMB] = (uint16_t)r16(&r);
