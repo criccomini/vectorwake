@@ -208,6 +208,7 @@ check("the topmost steps down by the top inset",
 -- than adding to it. The pads below are the opposite case again and keep their
 -- ground: the indicator is allowed to overlap a thumbstick.
 local B_INS = 34
+local RAIL_LIFT = 10
 local MENU_RAIL = {}
 for i, nm in ipairs({"zones", "ship", "pilot", "settings", "controls", "about"}) do
     MENU_RAIL[i] = {label = nm, icon = nm, index = i}
@@ -245,12 +246,14 @@ check("the rail's surface reaches the bottom edge with nothing covering it",
       flat_ink < 6, string.format("%.1f", flat_ink))
 check("and still reaches it with the indicator there",
       step_ink < 6, string.format("%.1f", step_ink))
--- 24 points, which is what the block keeps under its labels on its own.
-check("the words keep the block's own padding when nothing covers them",
-      math.abs(flat_word - 24) < 1, string.format("%.1f", flat_word))
-check("and sit on the indicator rather than on it plus that padding",
-      math.abs(step_word - B_INS) < 1,
-      string.format("%.1f, wanted %d", step_word, B_INS))
+-- The block keeps 24 points under its labels, plus the ten-point portrait
+-- lift that gives the full-height canvas some room above the glass.
+check("the portrait rail lifts its words above the bottom edge",
+      math.abs(flat_word - (24 + RAIL_LIFT)) < 1,
+      string.format("%.1f", flat_word))
+check("and keeps that breathing room above the indicator",
+      math.abs(step_word - (B_INS + RAIL_LIFT)) < 1,
+      string.format("%.1f, wanted %d", step_word, B_INS + RAIL_LIFT))
 ui.safe(0, 0, 0, 0)
 
 -- The pads and the stick's resting mark, against the real layout: sides

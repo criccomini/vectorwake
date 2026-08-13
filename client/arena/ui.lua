@@ -4306,8 +4306,15 @@ function M.menu(v)
         -- the same interface-come-loose-from-the-edge the page margin used to
         -- give, and is what a hardware inset looks like when it is added to a
         -- gap that was already there.
-        icon_dy = (home and 30 or 32) * F.scale
-        local under = rh - icon_dy - 24 * F.scale
+        --
+        -- The full-height iPhone canvas puts the rail on the physical bottom
+        -- edge now. Lift its furniture ten points in portrait so the labels do
+        -- not sit against the glass. The rail surface and hit targets still run
+        -- to the edge, and landscape keeps its existing vertical rail.
+        local portrait_lift = pts_h > pts_w and 10 * F.scale or 0
+        local base_icon_dy = (home and 30 or 32) * F.scale
+        icon_dy = base_icon_dy - portrait_lift
+        local under = rh - base_icon_dy - 24 * F.scale
         if F.installed then
             -- Installed, the padding under the words is measured against the
             -- indicator rather than against the rail, because the indicator
