@@ -440,13 +440,12 @@ late inputs are in the first second while it converges. That is on loopback,
 where the whole figure is send cadence and snapshot timing rather than distance,
 so a real link starts further behind and the loop simply settles further ahead.
 
-The predicted core still runs every ship to the pilot's input tick, because
-collisions need one coherent world. Presentation does not have to inherit that
-future. Remote hulls and rounds are backed up along their velocity to half the
-estimated round trip beyond the snapshot, a symmetric estimate of current
-server time. The local hull and its rounds stay on the immediate predicted
-timeline. Frictionless flight makes this short linear adjustment useful; every
-snapshot remains the authority around walls and sudden pushes.
+The cost of running ahead is paid by everyone else on the screen. Remote ships
+have no inputs to predict from and coast on their last known velocity between
+snapshots, so a larger lead means a longer coast. Frictionless flight makes
+coasting an unusually good predictor, but every hull and round stays inside the
+collision-aware core. Presentation never rewinds an object by subtracting its
+velocity, because that operation has no wall or collision history.
 
 Holding each remote ship's last-seen buttons through the predicted ticks was
 tried and reverted within a
@@ -458,9 +457,9 @@ hulls twitching at snapshot rate. The lesson is written down because the idea
 will look good again someday: an extrapolator here has to be right about the
 median ship in the room, and the median ship is a bot.
 
-Heading uses a different observation. The difference between two authoritative
-headings is an average turn rate over the snapshot interval, not one sampled
-button. The renderer extends that rate only to the remote presentation horizon.
+Remote headings also coast rather than guessing at buttons or extending an
+observed turn rate. Their snapshot corrections use the same presentation
+smoothing as position.
 
 That lead is the client's only latency compensation. We are not doing lag
 compensation by rewinding the server, and the reason is in the next section.
@@ -492,13 +491,10 @@ independent, which is the property actually wanted.
 second and replaces state outright, so a remote ship extrapolated wrong must
 move to the truth. `smooth_capture` and `smooth_settle` bracket the correction:
 whatever the screen was asserting about each hull is held, and the difference
-is carried as a per-ship offset. Position keeps its eighty-millisecond half-life
-and forty-pixel ceiling. Remote heading pays its debt on a twenty-five-millisecond
-half-life and may lie by at most twelve degrees, because the nose is aiming
-information. The local hull keeps the older thirty-degree budget so small clock
-steering changes do not shake the camera. Past four tiles, or ninety degrees,
-the change is a teleport and snaps. Detonations remain pinned to the corrected
-hull so the blast and target move together.
+is carried as a per-ship offset. Position and heading use an eighty-millisecond
+half-life. Forty pixels and thirty degrees cap what the drawing may owe; past
+four tiles or ninety degrees, the change is a teleport and snaps. Detonations
+remain pinned to the corrected hull so the blast and target move together.
 
 The clock steering rides in the same mechanism, deliberately: a snapshot that
 trims the lead by a tick moves every hull by a tick of flight, which is exactly
@@ -512,9 +508,9 @@ siblings are the exceptions: measuring how far a prediction missed by, and
 reading what the pilot's own hands asked for, are the two things that must not be
 told a comfortable story.
 
-What this does *not* do is put remote ships in a fixed interpolation buffer, the
-way a Source-lineage game renders everyone about 100 ms back. The horizon moves
-with measured latency and stays ahead of the latest snapshot.
+What this does *not* do is interpolate remote ships from the past, the way a
+Source-lineage game renders everyone about 100 ms back. Extrapolation stays;
+the two mechanisms above smooth how it is presented.
 
 One more pass-through had nothing to do with the network at all. The weapon
 hit test sampled once per tick, at the end of the tick's travel, and a round

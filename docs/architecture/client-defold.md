@@ -76,11 +76,11 @@ browser throttles the frame callback the loop is driven from.
 
 ## Prediction and reconciliation
 
-The client predicts its own ship and coasts everybody else. The core runs the
-whole world to the pilot's future input tick, but remote presentation stops near
-estimated server time. Positions and rounds are backed up along their velocity;
-heading extends the average turn observed across the last two snapshots. It does
-not hold a sampled remote button, which proved unstable against bots.
+The client predicts its own ship and coasts everybody else in the same core.
+All hulls and rounds stay on that collision-aware timeline. The renderer
+interpolates adjacent simulation ticks and eases snapshot corrections; it does
+not move objects backward by subtracting their velocity, because that would
+discard wall and collision history.
 
 Inputs are stamped with the tick they apply to and kept. Every datagram repeats
 up to four recent states. A snapshot carries the newest tick the server has

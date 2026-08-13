@@ -38,7 +38,6 @@ _G.sim = {
     smooth_capture = function() end,
     smooth_settle = function() end,
     smooth_reset = function() end,
-    remote_horizon = function() end,
     set_mortal = function() end,
     ship_count = function() return 2 end,
     ship_alive = function() return 1 end,

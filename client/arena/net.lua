@@ -875,7 +875,6 @@ local function on_snapshot(s)
         M.stats.snaps = M.stats.snaps + 1
         settling = nil
         quiet = 0
-        sim.remote_horizon(-1, 255)
         measure_remote_corrections(before)
         sim.smooth_settle()
         -- Kills and detonations the free-run never lived through still owe
@@ -946,9 +945,6 @@ local function on_snapshot(s)
         -- uplink age minus that offset. Their sum cancels the offset and is the
         -- round trip in simulation ticks.
         M.stats.rtt = math.max(0, M.stats.lead + margin)
-        sim.remote_horizon(math.floor(M.stats.rtt / 2 + 0.5), M.me)
-    else
-        sim.remote_horizon(-1, M.me)
     end
 
     local last = predicted_tick

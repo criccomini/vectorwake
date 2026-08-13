@@ -1932,8 +1932,8 @@ changed, so `CLIENT_PROTOCOL` moved to 10.
 ## 46. Inputs repair loss and combat news waits for its picture
 
 **Decided:** every input datagram repeats four tick-stamped states, reliable
-combat events name their authoritative tick, and remote presentation runs near
-estimated server time instead of inheriting the pilot's full input lead.
+combat events name their authoritative tick, and the debug readout separates
+input scheduling, latency, prediction and presentation metrics.
 
 **Why:** three clean-looking numbers hid three different failures.
 
@@ -1961,22 +1961,41 @@ later, and deduplicates the delayed room-channel copy by tick and subject. A
 reliable stream can pass a snapshot datagram without letting the feed spoil the
 result.
 
-The authoritative predicted core still runs to the local input tick. Rendering
-backs remote hulls and rounds down to half the estimated round trip beyond the
-latest snapshot, which is a practical estimate of current server time on a
-roughly symmetric path. Heading extends the average rotation observed across
-two snapshots, rather than guessing from one bot button. Remote heading debt
-decays on a twenty-five-millisecond half-life and is capped at twelve degrees.
 The debug view now reports input margin, estimated round trip, snapshot gaps,
 rolling p95 remote corrections and the correction debt still visible.
 
 **Cost:** steady input traffic grows from seven to fourteen bytes per tick,
-about 0.7 KB/s of uplink. The presentation horizon assumes roughly symmetric
-latency and linear motion for a few ticks. Walls, pushes and direction changes
-can still prove that estimate wrong; the next snapshot remains authoritative
-and the new metrics put a number on the miss.
+about 0.7 KB/s of uplink.
 
 **Reconsider if:** remote correction p95 remains large on WebTransport. The next
 step is a snapshot lane with a higher cadence for nearby combat, justified by
 measured correction and bandwidth together rather than by another smoothing
 constant.
+
+## 47. Remote presentation stays inside the collision-aware core
+
+**Decided:** remote hulls and rounds use the predicted core's positions. The
+renderer no longer backs them toward estimated server time or extends an
+observed heading rate. Heading corrections again use the same eighty-millisecond
+half-life as position.
+
+**Why:** the first live implementation held remote presentation at a fixed
+point relative to each snapshot. Ships froze between 20 Hz snapshots, then
+jumped. One recording showed 34.4 pixels of visible smoothing debt while the
+underlying remote correction was only 1.4 pixels at p95. The presentation layer
+was creating a much larger error than the predictor.
+
+The same implementation moved a remote round backward along its current
+velocity. That arithmetic has no record of walls, bounces or impacts, so it
+could draw a round on the wrong side of a wall even though the simulation had
+handled the collision correctly. A shorter heading half-life made each 20 Hz
+step easier to see.
+
+**Cost:** remote state still inherits the pilot's prediction lead and coasts on
+snapshot velocity. Corrections may grow on a slow link, but the drawing now
+respects the simulation's collision history and the metrics report the actual
+miss instead of one introduced by presentation.
+
+**Reconsider if:** measured remote correction remains large after this revert.
+Use a collision-aware state buffer or a faster snapshot lane rather than
+rewriting coordinates outside the simulation.
