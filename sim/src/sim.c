@@ -638,6 +638,47 @@ int32_t sim_bounty(const sim_ship *sh) {
     return n;
 }
 
+/* Leave one green in the tile where a hull came apart. Ambient greens stop at
+ * prize_max, but a kill must still leave its green when the field is full, so
+ * it replaces one already on the map. Choosing from the victim's seat spreads
+ * simultaneous deaths across the field without consuming the secret prize
+ * generator. A zone with prize_max zero has deliberately turned greens off.
+ *
+ * The position is the tile center because that is the green wire format: a
+ * snapshot sends tile indices and reconstructs the same center on the client. */
+static void drop_death_prize(sim_state *s, const sim_settings *cfg,
+                             uint8_t victim, int32_t x, int32_t y) {
+    if (cfg->prize_max == 0) return;
+
+    int slot = -1;
+    int live = 0;
+    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+        if (s->prizes[i].active) {
+            live++;
+        } else if (slot < 0) {
+            slot = i;
+        }
+    }
+
+    if (live >= cfg->prize_max || slot < 0) {
+        int pick = victim % live;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+            if (!s->prizes[i].active) continue;
+            if (pick-- == 0) {
+                slot = i;
+                break;
+            }
+        }
+    }
+    if (slot < 0) return;
+
+    sim_prize *p = &s->prizes[slot];
+    p->active = 1;
+    p->x = tile_mid(x / (SIM_TILE_PX * 256));
+    p->y = tile_mid(y / (SIM_TILE_PX * 256));
+    p->life = cfg->prize_life;
+}
+
 static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
                          uint8_t attacker, int32_t amount, uint16_t stall,
                          sim_events *ev) {
@@ -707,6 +748,7 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         memset(v->charge, 0, sizeof v->charge);
         v->earned = 0;
         drop_flags(s, cfg, victim, ev);
+        drop_death_prize(s, cfg, victim, v->x, v->y);
         emit(ev, SIM_EV_DEATH, victim, attacker, paid);
     }
 }

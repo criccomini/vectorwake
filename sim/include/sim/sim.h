@@ -597,10 +597,12 @@ typedef struct {
      * remote hull is an explosion the next snapshot may take back, so a
      * remote death only ever arrives as a snapshot state change, which the
      * client already turns into light and sound (decision 40). A deathless
-     * instance sows no prizes either, and for the same reason: it simulates
-     * a snapshot filtered to its interest window, so its live-prize count
-     * says nothing about the map, and a green it seeds is a green the next
-     * snapshot takes back. Neither field is packed or hashed: this is a
+     * instance sows no ambient prizes either, and for the same reason: it
+     * simulates a snapshot filtered to its interest window, so its live-prize
+     * count says nothing about the map. Its one exception is the named mortal
+     * hull's death green. That death is already predicted, the green is
+     * guaranteed, and drawing both on the same tick keeps the local death from
+     * splitting into two beats. Neither field is packed or hashed: this is a
      * fact about who is simulating, not about the world. */
     uint8_t deathless;
     uint8_t mortal_ship;

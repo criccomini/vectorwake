@@ -1832,8 +1832,8 @@ Two pieces of fallout surfaced in the first hour of play, both the same shape:
 client code that treated the snapshot as the whole room. The prediction core
 kept sowing prizes, and against a filtered state its live count says nothing
 about the map, so it seeded a phantom green near the player every prize_delay
-ticks for the next snapshot to sweep; a deathless instance now sows nothing,
-by the same reasoning as decision 40. And the scoreboard's drawing read
+ticks for the next snapshot to sweep; a deathless instance now sows no ambient
+greens, by the same reasoning as decision 40. And the scoreboard's drawing read
 `sim.ship_team` per row, which answers zero for every absent seat, so every
 out-of-sight name wore one shared color; the row takes its side from the
 roster now, as its sort already did.

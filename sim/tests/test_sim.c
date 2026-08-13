@@ -21,6 +21,10 @@ static int failures = 0;
         }                                                         \
     } while (0)
 
+static int32_t tile_center(int32_t t) {
+    return (t * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
+}
+
 static sim_map *walled_map(void) {
     sim_map *m = malloc(sizeof *m);
     memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
@@ -1012,18 +1016,36 @@ int main(void) {
     /* Death respawns at the spawn point after the configured delay. */
     {
         sim_state s;
+        sim_settings w = cfg;
+        w.prize_delay = 0;
+        w.prize_max = 1;
         sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &cfg);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &w);
+        s.prizes[0].active = 1;
+        s.prizes[0].x = tile_center(20);
+        s.prizes[0].y = tile_center(20);
+        s.prizes[0].life = w.prize_life;
         s.ships[1].energy = 1;
-        ev_counts c = step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 150);
+        ev_counts c = step_counting(&s, &w, SIM_BTN_FIRE, 0, 150);
         CHECK(!s.ships[1].alive, "low energy target dies");
         CHECK(c.deaths == 1, "death is reported once");
         CHECK(s.ships[0].kills == 1, "the killer is credited");
         CHECK(s.ships[1].deaths == 1, "the victim's deaths increment");
-        step_n(&s, &cfg, 0, 0, cfg.respawn_delay + 2);
+        int greens = 0;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+            if (!s.prizes[i].active) continue;
+            greens++;
+            CHECK(s.prizes[i].x
+                      == tile_center(s.ships[1].x / (SIM_TILE_PX * 256))
+                  && s.prizes[i].y
+                      == tile_center(s.ships[1].y / (SIM_TILE_PX * 256)),
+                  "death leaves a green where the hull exploded");
+        }
+        CHECK(greens == 1, "a death green replaces a full field prize");
+        step_n(&s, &w, 0, 0, w.respawn_delay + 2);
         CHECK(s.ships[1].alive, "the dead respawn");
-        CHECK(s.ships[1].energy == sim_eff_max_energy(&cfg.classes[APEX], &s.ships[1]),
+        CHECK(s.ships[1].energy == sim_eff_max_energy(&w.classes[APEX], &s.ships[1]),
               "respawn restores full energy");
         CHECK(s.ships[1].x == s.ships[1].spawn_x, "respawn returns to spawn");
     }
@@ -1091,6 +1113,9 @@ int main(void) {
         ev_counts c = step_counting(&s, &dc, SIM_BTN_FIRE, 0, 150);
         CHECK(!s.ships[1].alive, "the named hull still dies");
         CHECK(c.deaths == 1, "and its death is reported");
+        int live = 0;
+        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
+        CHECK(live == 1, "and its death green appears in the predicted tick");
     }
 
     /* Changing hull is a respawn, not a costume change, and it leaves the

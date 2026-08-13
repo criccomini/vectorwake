@@ -481,6 +481,11 @@ Greens carry no type. Every one of them is takeable by everybody, and what it
 turns out to be is rolled where it is picked up, from what that hull could ever
 hold. There is no such thing as a green with somebody else's name on it.
 
+A destroyed hull leaves one green in the tile where it exploded. The drop
+replaces a field green when the arena is already at its configured limit, so a
+full field cannot swallow the reward. A zone that sets `prize_max = 0` still has
+no greens at all.
+
 The first version typed them at spawn, and the arena filled with greens that
 refused to be picked up -- two thirds of them, for an Apex. The treatment was
 drawing the ones that were not yours at a quarter alpha, which is a lot of
