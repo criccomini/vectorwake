@@ -116,12 +116,30 @@
 	   reconciler can use. `100vh` is the fallback for Safari versions from
 	   before the explicit large viewport units. */
 	#vw-large-viewport {
-		position: fixed;
+		position: absolute;
 		visibility: hidden;
 		pointer-events: none;
 		width: 0;
 		height: 100vh;
 		height: 100lvh;
+	}
+	/* Defold fixes the body to prevent overscroll. Mobile Safari 26 clips a
+	   viewport-sized fixed container above its floating lower toolbar, even
+	   when the child canvas and its drawing buffer are taller. An iPhone tab
+	   uses an ordinary positioned document instead: the root, body and canvas
+	   all take the large viewport while the inset bridge below keeps the touch
+	   controls inside the visible viewport. */
+	html.vw-ios-browser,
+	html.vw-ios-browser body {
+		width: 100%;
+		height: 100vh;
+		height: 100lvh;
+		overflow: hidden;
+	}
+	html.vw-ios-browser body {
+		position: absolute;
+		top: 0;
+		left: 0;
 	}
 	#canvas-container {
 		position: relative;
@@ -570,6 +588,8 @@
 					? large_probe.getBoundingClientRect().height : 0);
 				var active_form = document.getElementById('vw-ask');
 				var editing = active_form && active_form.contains(document.activeElement);
+				var browser_page = is_iOS && !standalone && !editing;
+				document.documentElement.classList.toggle('vw-ios-browser', browser_page);
 				// In an iPhone tab, the visual viewport ends above Safari's
 				// lower toolbar while the page continues behind it. Draw the
 				// world through that covered strip so translucent browser chrome
@@ -579,7 +599,7 @@
 				// A standalone app has no browser strip. It keeps the visual
 				// height because a larger canvas hides its bottom rail. A focused
 				// game input also keeps the visual height while the keyboard is up.
-				var pageH = is_iOS && !standalone && !editing
+				var pageH = browser_page
 					? Math.max(visible, layoutH, innerH, outerH, largeH) : visible;
 				var height = pageH - buttonHeight;
 				if (width < 1 || height < 1) {
@@ -634,6 +654,19 @@
 				var game_canvas = document.getElementById('canvas');
 				var w = width + 'px';
 				var h = height + 'px';
+				var page = pageH + 'px';
+				// The drawing buffer cannot escape a fixed ancestor's paint area.
+				// Size the two ancestors as well as the canvas so the extra strip is
+				// part of the page, not overflow that Safari is free to discard.
+				var root = document.documentElement;
+				var body = document.body;
+				if (browser_page) {
+					if (root.style.height !== page) root.style.height = page;
+					if (body.style.height !== page) body.style.height = page;
+				} else {
+					if (root.style.height) root.style.removeProperty('height');
+					if (body.style.height) body.style.removeProperty('height');
+				}
 				var aw = Math.floor(width * dpi);
 				var ah = Math.floor(height * dpi);
 				if (app_container.style.marginLeft !== '0px') app_container.style.marginLeft = '0px';
