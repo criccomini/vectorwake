@@ -1057,6 +1057,7 @@ button {
 
 .footer-brand {
   color: var(--ink);
+  text-transform: lowercase;
 }
 
 .site-footer nav {
