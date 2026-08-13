@@ -110,6 +110,19 @@
 		padding-bottom: env(safe-area-inset-bottom);
 		padding-left: env(safe-area-inset-left);
 	}
+	/* `visualViewport`, `clientHeight`, and `innerHeight` can all stop above
+	   Safari's floating toolbar. The large viewport is the full page behind
+	   that toolbar. This probe turns the CSS unit into a number the canvas
+	   reconciler can use. `100vh` is the fallback for Safari versions from
+	   before the explicit large viewport units. */
+	#vw-large-viewport {
+		position: fixed;
+		visibility: hidden;
+		pointer-events: none;
+		width: 0;
+		height: 100vh;
+		height: 100lvh;
+	}
 	#canvas-container {
 		position: relative;
 	}
@@ -335,6 +348,7 @@
 <body>
 
 	<div id="vw-safe"></div>
+	<div id="vw-large-viewport"></div>
 	<div id="app-container" class="canvas-app-container">
 		<div id="running-from-file-warning" style="display: none; margin: 3em;">
 			<h1>Running from local file ⚠️</h1>
@@ -526,7 +540,7 @@
 		// clears the frame.
 		//
 		// visualViewport says what is available for controls and the keyboard.
-		// The layout viewport says where the world may paint behind Safari's
+		// The large viewport says where the world may paint behind Safari's
 		// translucent chrome. The reconciler below keeps those two jobs apart.
 		(function() {
 			var is_iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
@@ -551,6 +565,9 @@
 				var scr = window.screen || {};
 				var innerH = Math.round(window.innerHeight || 0);
 				var outerH = Math.round(window.outerHeight || 0);
+				var large_probe = document.getElementById('vw-large-viewport');
+				var largeH = Math.round(large_probe
+					? large_probe.getBoundingClientRect().height : 0);
 				var active_form = document.getElementById('vw-ask');
 				var editing = active_form && active_form.contains(document.activeElement);
 				// In an iPhone tab, the visual viewport ends above Safari's
@@ -563,7 +580,7 @@
 				// height because a larger canvas hides its bottom rail. A focused
 				// game input also keeps the visual height while the keyboard is up.
 				var pageH = is_iOS && !standalone && !editing
-					? Math.max(visible, layoutH, innerH) : visible;
+					? Math.max(visible, layoutH, innerH, outerH, largeH) : visible;
 				var height = pageH - buttonHeight;
 				if (width < 1 || height < 1) {
 					return;

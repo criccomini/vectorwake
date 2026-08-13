@@ -49,7 +49,8 @@ check("the game page reports bounded browser failures",
       and has(game, "keepalive: true"))
 check("the iPhone canvas continues behind Safari's lower toolbar",
       has(game, "var pageH = is_iOS && !standalone && !editing")
-      and has(game, "Math.max(visible, layoutH, innerH)")
+      and has(game, "height: 100lvh")
+      and has(game, "Math.max(visible, layoutH, innerH, outerH, largeH)")
       and has(game, "var bottom = Math.max(padB, covered)")
       and has(arena, "touch.safe_b = self.installed and 0"))
 check("the reported account crosses the Lua page boundary",
