@@ -701,6 +701,7 @@ struct Player {
     /// rest of the log, are both in ticks.
     joined: u32,
     tx: mpsc::Sender<Message>,
+    presence: PresenceHandle,
 }
 
 /// How far ahead of the arena's own tick a scheduled input may be stamped.
@@ -729,11 +730,210 @@ enum WatchMode {
     Channel,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SitOutWhy {
     Asked,
     Safe,
     Lag,
+}
+
+/// The one lifecycle state a connected pilot can occupy.
+///
+/// Combat state stays in the simulation. A dead pilot is still `Flying` here
+/// because they still own a seat and will respawn in it. This state covers the
+/// connection's membership in a room, which is the part that joins, spectating,
+/// forced spectating, re-entry, and disconnects change.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Presence {
+    Unjoined,
+    Flying { room: u32, member: u64 },
+    Watching { room: u32, member: u64 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PresenceEvent {
+    JoinFlying {
+        room: u32,
+        member: u64,
+    },
+    JoinWatching {
+        room: u32,
+        member: u64,
+    },
+    SitOut {
+        room: u32,
+        member: u64,
+        reason: SitOutWhy,
+    },
+    Resume {
+        room: u32,
+        member: u64,
+    },
+    Renumber {
+        from: u32,
+        to: u32,
+        member: u64,
+    },
+    Disconnect {
+        room: u32,
+        member: u64,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct PresenceEffects {
+    player_count_changed: bool,
+    release_rated_lease: bool,
+    connection_closed: bool,
+}
+
+impl Presence {
+    fn flying(self) -> Option<(u32, u64)> {
+        match self {
+            Presence::Flying { room, member } => Some((room, member)),
+            _ => None,
+        }
+    }
+
+    fn watching(self) -> Option<(u32, u64)> {
+        match self {
+            Presence::Watching { room, member } => Some((room, member)),
+            _ => None,
+        }
+    }
+
+    fn transition(
+        self,
+        event: PresenceEvent,
+    ) -> Result<(Presence, PresenceEffects), (Presence, PresenceEvent)> {
+        use Presence::{Flying, Unjoined, Watching};
+        use PresenceEvent::{Disconnect, JoinFlying, JoinWatching, Renumber, Resume, SitOut};
+
+        let changed = PresenceEffects {
+            player_count_changed: true,
+            ..PresenceEffects::default()
+        };
+        let left_flight = PresenceEffects {
+            player_count_changed: true,
+            release_rated_lease: true,
+            ..PresenceEffects::default()
+        };
+        let disconnected_flying = PresenceEffects {
+            player_count_changed: true,
+            release_rated_lease: true,
+            connection_closed: true,
+        };
+        let disconnected_watching = PresenceEffects {
+            player_count_changed: false,
+            release_rated_lease: true,
+            connection_closed: true,
+        };
+        let none = PresenceEffects::default();
+        match (self, event) {
+            (Unjoined, JoinFlying { room, member }) => Ok((Flying { room, member }, changed)),
+            (Unjoined, JoinWatching { room, member }) => Ok((Watching { room, member }, none)),
+            (
+                Flying {
+                    room: current,
+                    member: current_member,
+                },
+                SitOut {
+                    room,
+                    member,
+                    reason: _,
+                },
+            ) if current == room && current_member == member => {
+                Ok((Watching { room, member }, left_flight))
+            }
+            (
+                Watching {
+                    room: current,
+                    member: current_member,
+                },
+                Resume { room, member },
+            ) if current == room && current_member == member => {
+                Ok((Flying { room, member }, changed))
+            }
+            (
+                Flying {
+                    room: current,
+                    member: current_member,
+                },
+                Renumber { from, to, member },
+            ) if current == from && current_member == member => {
+                Ok((Flying { room: to, member }, none))
+            }
+            (
+                Watching {
+                    room: current,
+                    member: current_member,
+                },
+                Renumber { from, to, member },
+            ) if current == from && current_member == member => {
+                Ok((Watching { room: to, member }, none))
+            }
+            (
+                Flying {
+                    room: current,
+                    member: current_member,
+                },
+                Disconnect { room, member },
+            ) if current == room && current_member == member => Ok((Unjoined, disconnected_flying)),
+            (
+                Watching {
+                    room: current,
+                    member: current_member,
+                },
+                Disconnect { room, member },
+            ) if current == room && current_member == member => {
+                Ok((Unjoined, disconnected_watching))
+            }
+            _ => Err((self, event)),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PresenceHandle {
+    state: Arc<std::sync::Mutex<Presence>>,
+    events: Option<mpsc::UnboundedSender<PresenceEffects>>,
+}
+
+impl PresenceHandle {
+    fn new() -> Self {
+        Self {
+            state: Arc::new(std::sync::Mutex::new(Presence::Unjoined)),
+            events: None,
+        }
+    }
+
+    fn connected() -> (Self, mpsc::UnboundedReceiver<PresenceEffects>) {
+        let (events, receiver) = mpsc::unbounded_channel();
+        (
+            Self {
+                state: Arc::new(std::sync::Mutex::new(Presence::Unjoined)),
+                events: Some(events),
+            },
+            receiver,
+        )
+    }
+
+    fn current(&self) -> Presence {
+        *self.state.lock().expect("presence lock")
+    }
+
+    fn transition(
+        &self,
+        event: PresenceEvent,
+    ) -> Result<PresenceEffects, (Presence, PresenceEvent)> {
+        let mut current = self.state.lock().expect("presence lock");
+        let (next, effects) = current.transition(event)?;
+        *current = next;
+        if let Some(events) = self.events.as_ref() {
+            let _ = events.send(effects);
+        }
+        Ok(effects)
+    }
 }
 
 /// A connection with a seat in the roster and no ship in the simulation.
@@ -753,6 +953,7 @@ struct Watcher {
     any: bool,
     mode: WatchMode,
     tx: mpsc::Sender<Message>,
+    presence: PresenceHandle,
 }
 
 /// One frame of the room channel: the snapshot message as every channel
@@ -1846,6 +2047,80 @@ impl Room {
         self.players.values().filter(|p| p.bot).count()
     }
 
+    fn debug_assert_member(&self, id: u64, presence: &PresenceHandle) {
+        #[cfg(debug_assertions)]
+        {
+            let player = self.players.get(&id);
+            let watcher = self.watchers.get(&id);
+            debug_assert!(player.is_none() || watcher.is_none());
+            match presence.current() {
+                Presence::Unjoined => {
+                    debug_assert!(player.is_none());
+                    debug_assert!(watcher.is_none());
+                }
+                Presence::Flying { room, member } => {
+                    debug_assert_eq!(room, self.number);
+                    debug_assert_eq!(member, id);
+                    let player = player.expect("flying member has a player row");
+                    debug_assert!(Arc::ptr_eq(&player.presence.state, &presence.state));
+                    debug_assert!(watcher.is_none());
+                    debug_assert_ne!(self.world.state.ships[player.ship as usize].active, 0);
+                    debug_assert!(self.names.contains_key(&player.ship));
+                    debug_assert_eq!(
+                        self.players
+                            .values()
+                            .filter(|other| other.ship == player.ship)
+                            .count(),
+                        1
+                    );
+                }
+                Presence::Watching { room, member } => {
+                    debug_assert_eq!(room, self.number);
+                    debug_assert_eq!(member, id);
+                    let watcher = watcher.expect("watching member has a watcher row");
+                    debug_assert!(Arc::ptr_eq(&watcher.presence.state, &presence.state));
+                    debug_assert!(player.is_none());
+                }
+            }
+        }
+    }
+
+    /// Change the public room number and every live member's stable address
+    /// together. The fleet can settle a number collision while a room is live.
+    fn renumber(&mut self, to: u32) {
+        let from = self.number;
+        if from == to {
+            return;
+        }
+        for (id, player) in self.players.iter() {
+            player
+                .presence
+                .transition(PresenceEvent::Renumber {
+                    from,
+                    to,
+                    member: *id,
+                })
+                .expect("flying member belongs to renumbered room");
+        }
+        for (id, watcher) in self.watchers.iter() {
+            watcher
+                .presence
+                .transition(PresenceEvent::Renumber {
+                    from,
+                    to,
+                    member: *id,
+                })
+                .expect("watching member belongs to renumbered room");
+        }
+        self.number = to;
+        for (id, player) in self.players.iter() {
+            self.debug_assert_member(*id, &player.presence);
+        }
+        for (id, watcher) in self.watchers.iter() {
+            self.debug_assert_member(*id, &watcher.presence);
+        }
+    }
+
     /// How many bots this room would like, and how many more it is short.
     ///
     /// The target is a share of the room rather than of what is free, so bots
@@ -1892,8 +2167,19 @@ impl Room {
         max_players: usize,
         tx: mpsc::Sender<Message>,
     ) -> Option<u64> {
+        self.join_with_presence(seat, class, max_players, tx, PresenceHandle::new())
+    }
+
+    fn join_with_presence(
+        &mut self,
+        seat: Seat,
+        class: u8,
+        max_players: usize,
+        tx: mpsc::Sender<Message>,
+        presence: PresenceHandle,
+    ) -> Option<u64> {
         let logged = seat.clone();
-        let id = self.join_on(seat, class, max_players, None, tx)?;
+        let id = self.join_on(seat, class, max_players, None, tx, None, presence)?;
         // After the seat is real, so the log never claims an arrival the caps
         // refused. The hull is read back rather than echoed: the core clamps a
         // class it does not have, and what the pilot is flying is the useful
@@ -1929,9 +2215,25 @@ impl Room {
         max_players: usize,
         prefer: Option<u8>,
         tx: mpsc::Sender<Message>,
+        member: Option<u64>,
+        presence: PresenceHandle,
     ) -> Option<u64> {
         let name = seat.name.clone();
         let bot = seat.bot;
+        let valid_entry = match (member, presence.current()) {
+            (None, Presence::Unjoined) => true,
+            (
+                Some(member),
+                Presence::Watching {
+                    room,
+                    member: current,
+                },
+            ) => room == self.number && current == member,
+            _ => false,
+        };
+        if !valid_entry {
+            return None;
+        }
         // The cap is on people. A declared bot passes it by, which is the whole
         // of what the declaration buys the arena: a zone can hold a wide room
         // mostly full of AI and still admit every human its operator allowed.
@@ -2042,8 +2344,28 @@ impl Room {
         let full = self.world.eff_max_energy(ship as usize);
         self.world.state.ships[ship as usize].energy = full;
 
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = match member {
+            Some(id) => id,
+            None => {
+                let id = self.next_id;
+                self.next_id += 1;
+                id
+            }
+        };
+        let event = if member.is_some() {
+            PresenceEvent::Resume {
+                room: self.number,
+                member: id,
+            }
+        } else {
+            PresenceEvent::JoinFlying {
+                room: self.number,
+                member: id,
+            }
+        };
+        presence
+            .transition(event)
+            .expect("validated presence entry");
         // A bot's rating moves slowly, so a human who kills one moves further
         // than it does. The room learns which pilots those are from what they
         // declared, rather than from a roster it holds a copy of: a bot the bot
@@ -2079,8 +2401,13 @@ impl Room {
                 safe: 0,
                 joined: self.world.state.tick,
                 tx,
+                presence,
             },
         );
+        if member.is_some() {
+            self.watchers.remove(&id);
+        }
+        self.debug_assert_member(id, &self.players[&id].presence);
         Some(id)
     }
 
@@ -2626,7 +2953,28 @@ impl Room {
     /// be indistinguishable afterwards, which made the commonest question about
     /// any departure, whether the pilot quit or the room took the seat,
     /// unanswerable from anything the fleet kept.
-    fn leave(&mut self, id: u64, why: &str) {
+    fn leave(&mut self, id: u64, why: &str) -> bool {
+        let Some(presence) = self.players.get(&id).map(|p| p.presence.clone()) else {
+            return false;
+        };
+        if presence
+            .transition(PresenceEvent::Disconnect {
+                room: self.number,
+                member: id,
+            })
+            .is_err()
+        {
+            return false;
+        }
+        self.remove_player(id, why);
+        self.debug_assert_member(id, &presence);
+        true
+    }
+
+    /// Retire the simulation seat without changing connection presence.
+    /// `sit_out_for` uses this while moving the same member into the watcher
+    /// table. Every departure from the room goes through `leave` instead.
+    fn remove_player(&mut self, id: u64, why: &str) {
         if let Some(p) = self.players.remove(&id) {
             // A quit under fire is a death. The rating settles on death, and
             // a leave used to drop the damage ledger unsettled, which made
@@ -2793,10 +3141,21 @@ impl Room {
             return false;
         }
         let tx = p.tx.clone();
+        let presence = p.presence.clone();
         let Some(seat) = self.names.get(&ship).cloned() else {
             return false;
         };
         let team = self.world.state.ships[ship as usize].team;
+        if presence
+            .transition(PresenceEvent::SitOut {
+                room: self.number,
+                member: id,
+                reason: why,
+            })
+            .is_err()
+        {
+            return false;
+        }
         self.note(
             pilot::SIT_OUT,
             &seat,
@@ -2809,7 +3168,7 @@ impl Room {
                 "ship": ship,
             }),
         );
-        self.leave(id, pilot::why::SAT_OUT);
+        self.remove_player(id, pilot::why::SAT_OUT);
         let mode = self.watch_mode(Some(team), any, want);
         self.watchers.insert(
             id,
@@ -2819,8 +3178,10 @@ impl Room {
                 any,
                 mode,
                 tx: tx.clone(),
+                presence,
             },
         );
+        self.debug_assert_member(id, &self.watchers[&id].presence);
         // The client learns which of its two lives this is from the welcome:
         // 255 is a watcher's ship.
         let mut w = vec![S2C_WELCOME, 255];
@@ -2863,12 +3224,31 @@ impl Room {
     /// same person joining in a hull and then sitting out kept their side and
     /// everything that came with it.
     fn watch_join(&mut self, seat: Seat, any: bool, tx: mpsc::Sender<Message>) -> Option<u64> {
+        self.watch_join_with_presence(seat, any, tx, PresenceHandle::new())
+    }
+
+    fn watch_join_with_presence(
+        &mut self,
+        seat: Seat,
+        any: bool,
+        tx: mpsc::Sender<Message>,
+        presence: PresenceHandle,
+    ) -> Option<u64> {
         if self.watchers.len() >= self.max_watchers {
+            return None;
+        }
+        if presence.current() != Presence::Unjoined {
             return None;
         }
         let id = self.next_id;
         self.next_id += 1;
         let team = self.watch_team();
+        presence
+            .transition(PresenceEvent::JoinWatching {
+                room: self.number,
+                member: id,
+            })
+            .expect("validated watcher entry");
         self.note(
             pilot::WATCH,
             &seat,
@@ -2886,8 +3266,10 @@ impl Room {
                 any,
                 mode: WatchMode::Channel,
                 tx,
+                presence,
             },
         );
+        self.debug_assert_member(id, &self.watchers[&id].presence);
         // The room feed is still what they open on, since they have asked to
         // watch nobody in particular yet. Their side is what makes the asking
         // possible.
@@ -2909,9 +3291,18 @@ impl Room {
         let seat = self.watchers.get(&id)?.seat.clone();
         let tx = self.watchers.get(&id)?.tx.clone();
         let back = self.watchers.get(&id)?.team;
+        let presence = self.watchers.get(&id)?.presence.clone();
         let logged = seat.clone();
-        let new_id = self.join_on(seat, class, max_players, back, tx.clone())?;
-        self.watchers.remove(&id);
+        let new_id = self.join_on(
+            seat,
+            class,
+            max_players,
+            back,
+            tx.clone(),
+            Some(id),
+            presence,
+        )?;
+        self.debug_assert_member(id, &self.players[&new_id].presence);
         let ship = self.players[&new_id].ship;
         // Not a `join`: the same connection, the same session, and a stay the
         // log should read as continuous. A room that filled while they sat
@@ -2939,22 +3330,53 @@ impl Room {
         Some(new_id)
     }
 
+    fn leave_watcher(&mut self, id: u64) -> bool {
+        let Some(watcher) = self.watchers.get(&id) else {
+            return false;
+        };
+        let presence = watcher.presence.clone();
+        if presence
+            .transition(PresenceEvent::Disconnect {
+                room: self.number,
+                member: id,
+            })
+            .is_err()
+        {
+            return false;
+        }
+        self.watchers.remove(&id);
+        self.debug_assert_member(id, &presence);
+        true
+    }
+
     /// Every watcher out, told the way a yielded bot is told. A drain empties
     /// the room of players, and a watcher with nobody to watch is a socket
     /// holding a picture of an empty map open.
     fn drop_watchers(&mut self) -> usize {
         let n = self.watchers.len();
-        for w in self.watchers.values() {
+        let mut departed = Vec::with_capacity(n);
+        for (id, w) in self.watchers.iter() {
             let _ = w.tx.try_send(Message::Binary(vec![S2C_YIELD]));
+            w.presence
+                .transition(PresenceEvent::Disconnect {
+                    room: self.number,
+                    member: *id,
+                })
+                .expect("watcher belongs to this room");
+            departed.push((*id, w.presence.clone()));
         }
         self.watchers.clear();
+        for (id, presence) in departed {
+            self.debug_assert_member(id, &presence);
+        }
         if n > 0 {
             self.broadcast_roster();
         }
         n
     }
 
-    fn tick(&mut self) {
+    fn tick(&mut self) -> bool {
+        let mut player_count_changed = false;
         let mut inputs: Vec<sim::sim_input> = Vec::with_capacity(32);
         // The tick this room is about to run, which is the tick a scheduled
         // input has to name to be applied here. `world.tick()` is the last one
@@ -3013,7 +3435,7 @@ impl Room {
             self.world.events.count = write as u16;
         }
         self.score_events();
-        self.sweep_safe();
+        player_count_changed |= self.sweep_safe();
 
         let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, seat)| (*s, seat.bot)).collect();
         let names = self.public_team_names();
@@ -3031,16 +3453,18 @@ impl Room {
         }
         for id in spectate {
             if self.sit_out_for(id, 255, false, SitOutWhy::Lag) {
+                player_count_changed = true;
                 metrics::LAG_ACTIONS.inc();
             } else if let Some(tx) = self.players.get(&id).map(|p| p.tx.clone()) {
                 let mut denied = vec![S2C_DENIED, 0];
                 denied.extend_from_slice(b"connection quality exceeded this room's limits");
                 let _ = tx.try_send(Message::Binary(denied));
                 let _ = tx.try_send(Message::Binary(vec![S2C_YIELD]));
-                self.leave(id, pilot::why::KICKED);
+                player_count_changed |= self.leave(id, pilot::why::KICKED);
                 metrics::LAG_ACTIONS.inc();
             }
         }
+        player_count_changed
     }
 
     /// Turn this tick's events into rating movement. The simulation does not
@@ -3062,10 +3486,10 @@ impl Room {
     /// room asks for theirs back the moment a human is at the door, and a bot
     /// that pathed through a safe zone and stopped would empty the room of the
     /// population it exists to provide.
-    fn sweep_safe(&mut self) {
+    fn sweep_safe(&mut self) -> bool {
         let limit = self.world.cfg.safe_limit;
         if limit == 0 {
-            return;
+            return false;
         }
         let mut evicted: Vec<u64> = Vec::new();
         for (id, p) in self.players.iter_mut() {
@@ -3081,6 +3505,7 @@ impl Room {
                 p.safe += 1;
             }
         }
+        let mut changed = false;
         for id in evicted {
             // The channel rather than a hull to follow, and no live sight of
             // strangers: a pilot who has just been taken out of the game has
@@ -3088,8 +3513,9 @@ impl Room {
             // to a question they did not ask. The staff grant that widens this
             // is a property of a watch request, and nobody made this one; the
             // first request they do make carries it.
-            self.sit_out(id, 255, false, true);
+            changed |= self.sit_out(id, 255, false, true);
         }
+        changed
     }
 
     fn score_events(&mut self) {
@@ -4129,7 +4555,7 @@ impl ArenaServer {
                 .unwrap_or(was);
             mine.remove(&was);
             mine.insert(next);
-            self.rooms[i].number = next;
+            self.rooms[i].renumber(next);
             println!(
                 "room {was} of {:?} is also {:?}'s; renumbered to {next}",
                 self.zone_name, "an older instance"
@@ -4370,8 +4796,8 @@ impl ArenaServer {
         Ok((base, pool_token, self.fleet.instance.clone()))
     }
 
-    /// Give back rooms nobody is in, keeping the first. A process shrinks as
-    /// matches end rather than holding its high-water mark forever.
+    /// Give back rooms nobody is in, keeping the first. Watchers count as being
+    /// in a room even though they do not count as players in the directory.
     fn reclaim_rooms(&mut self) {
         if self.rooms.len() <= 1 {
             return;
@@ -4383,7 +4809,7 @@ impl ArenaServer {
                 keep_first = false;
                 return true;
             }
-            !r.players.is_empty()
+            !r.players.is_empty() || !r.watchers.is_empty()
         });
         if self.rooms.len() != before {
             println!("reclaimed {} empty room(s)", before - self.rooms.len());
@@ -4623,7 +5049,7 @@ impl ArenaServer {
                             message.extend_from_slice(b"this account is banned");
                             let _ = w.tx.try_send(Message::Binary(message));
                         }
-                        r.watchers.remove(id);
+                        r.leave_watcher(*id);
                     }
                     if !ids.is_empty() || !watchers.is_empty() {
                         hit += ids.len() + watchers.len();
@@ -5742,8 +6168,9 @@ async fn main() {
                 // that repairs itself.
                 let roster = n % 200 == 0;
                 let t0 = std::time::Instant::now();
+                let mut player_count_changed = false;
                 for a in z.rooms.iter_mut() {
-                    a.tick();
+                    player_count_changed |= a.tick();
                     if combat_snap {
                         a.broadcast_player_snapshots(&mut buf, true);
                     }
@@ -5764,6 +6191,9 @@ async fn main() {
                         // Repeat the current pack until it lands.
                         a.broadcast_settings();
                     }
+                }
+                if player_count_changed {
+                    z.push_status();
                 }
                 let us = t0.elapsed().as_micros() as u64;
                 z.tick_us = us as u32;
@@ -5925,13 +6355,10 @@ pub(crate) async fn serve_client(
     // socket that opens and says nothing leaves no trace, which is what keeps
     // a port scan from being a write amplifier.
     let session = pilot::Session::new(transport);
-    // This connection's id in the arena, once it has joined.
-    // Which room, and which id within it.
-    let mut seat: Option<(usize, u64)> = None;
-    // The same, for a connection that is watching rather than flying.
-    // At most one of the two is set; sitting out and taking a hull
-    // again move between them on the same socket.
-    let mut watch: Option<(usize, u64)> = None;
+    // Shared with the room entries this connection creates. Forced spectating
+    // happens in the room tick, so the socket must observe the same state
+    // instead of keeping its own seat and watcher flags.
+    let (presence, mut presence_events) = PresenceHandle::connected();
     let mut rated_lease: Option<RatedLease> = None;
     let mut standing_check: Option<StandingCheck> = None;
     let mut credential_expires: Option<u64> = None;
@@ -5946,7 +6373,7 @@ pub(crate) async fn serve_client(
     // the kernel gives up on the socket, which on a full arena is a seat
     // nobody can have.
     let quiet = std::time::Duration::from_secs(75);
-    loop {
+    'connection: loop {
         // A watcher does not renew a rated lease, so its original token is the
         // last standing check this socket has made. Rated pilots are checked by
         // the lease below and may keep playing through a token refresh without
@@ -5967,7 +6394,25 @@ pub(crate) async fn serve_client(
         } else {
             quiet
         };
-        let data = match tokio::time::timeout(wait, inbound.recv()).await {
+        let received = tokio::select! {
+            biased;
+            event = presence_events.recv() => {
+                let Some(event) = event else {
+                    break;
+                };
+                if event.release_rated_lease {
+                    if let Some(lease) = rated_lease.take() {
+                        lease.release().await;
+                    }
+                }
+                if event.connection_closed {
+                    break 'connection;
+                }
+                continue;
+            }
+            received = tokio::time::timeout(wait, inbound.recv()) => received,
+        };
+        let data = match received {
             Ok(Some(d)) => d,
             Ok(None) => break,
             Err(_) => break,
@@ -5975,29 +6420,12 @@ pub(crate) async fn serve_client(
         if data.is_empty() {
             continue;
         }
-        // The safe-zone sweep moves a pilot from the room's player table to
-        // its watcher table without going through this socket task. The
-        // welcome updates the client, but `seat` here still names the life it
-        // had before the sweep. A hull request is commonly the first message
-        // back, and treating it as an in-place class change silently asks a
-        // player row that no longer exists. Reconcile before dispatch so the
-        // same request is understood as taking a hull from the stands.
-        //
-        // Inputs do not need this lookup: the spectator welcome stops them,
-        // and any already in flight are correctly harmless. Keeping the check
-        // on the transition command avoids another room lock on every tick.
-        if data[0] == C2S_SHIP {
-            if let Some((room, pid)) = seat {
-                let swept = {
-                    let z = zone.lock().await;
-                    z.rooms
-                        .get(room)
-                        .is_some_and(|a| a.watchers.contains_key(&pid))
-                };
-                if swept {
-                    seat = None;
-                    watch = Some((room, pid));
-                }
+        // A forced move to the stands changes the shared presence during the
+        // room tick. Give its rated seat back before considering a renewal or
+        // dispatching the watcher's next message.
+        if matches!(presence.current(), Presence::Watching { .. }) {
+            if let Some(lease) = rated_lease.take() {
+                lease.release().await;
             }
         }
         if rated_lease
@@ -6053,7 +6481,7 @@ pub(crate) async fn serve_client(
                 m.extend_from_slice(z.status_json().as_bytes());
                 let _ = tx.try_send(Message::Binary(m));
             }
-            C2S_JOIN if seat.is_none() && watch.is_none() => {
+            C2S_JOIN if presence.current() == Presence::Unjoined => {
                 let class = data.get(1).copied().unwrap_or(0);
                 let proto = data.get(2).copied().unwrap_or(0);
                 let flags = data.get(3).copied().unwrap_or(0);
@@ -6318,10 +6746,14 @@ pub(crate) async fn serve_client(
                     // whoever it turned away and cannot, once the seat has
                     // gone into the room.
                     let refused = seat_of.clone();
-                    let joined = z.rooms[idx].watch_join(seat_of, watch_any, tx.clone());
+                    let joined = z.rooms[idx].watch_join_with_presence(
+                        seat_of,
+                        watch_any,
+                        tx.clone(),
+                        presence.clone(),
+                    );
                     match joined {
-                        Some(id) => {
-                            watch = Some((idx, id));
+                        Some(_id) => {
                             credential_expires = presented_expires;
                             let a = &z.rooms[idx];
                             let mut m = vec![S2C_MAP];
@@ -6384,8 +6816,9 @@ pub(crate) async fn serve_client(
                 // still has to say who it was for.
                 let refused = seat_of.clone();
                 let a = &mut z.rooms[idx];
-                if let Some(new_id) = a.join(seat_of, class, cap, tx.clone()) {
-                    seat = Some((idx, new_id));
+                if let Some(new_id) =
+                    a.join_with_presence(seat_of, class, cap, tx.clone(), presence.clone())
+                {
                     credential_expires = presented_expires;
                     let ship = a.players[&new_id].ship;
                     let mut m = vec![S2C_MAP];
@@ -6433,10 +6866,14 @@ pub(crate) async fn serve_client(
                 // and a refusal leaves them watching.
                 if data.len() >= 2 {
                     let cls = data[1];
-                    if let Some((room, pid)) = seat {
+                    if matches!(presence.current(), Presence::Flying { .. }) {
                         let mut z = zone.lock().await;
-                        if let Some(a) = z.rooms.get_mut(room) {
-                            let ship = a.players.get(&pid).map(|p| p.ship);
+                        let Presence::Flying { room, member } = presence.current() else {
+                            continue;
+                        };
+                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                            let a = &mut z.rooms[index];
+                            let ship = a.players.get(&member).map(|p| p.ship);
                             if let Some(ship) = ship {
                                 let was = a.world.state.ships[ship as usize].cls;
                                 a.world.set_ship_class(ship, cls);
@@ -6457,14 +6894,19 @@ pub(crate) async fn serve_client(
                                 }
                             }
                         }
-                    } else if let Some((room, wid)) = watch {
+                    } else if matches!(presence.current(), Presence::Watching { .. }) {
                         let (carried, lease_args) = {
                             let z = zone.lock().await;
-                            let carried = z
-                                .rooms
-                                .get(room)
-                                .and_then(|a| a.watchers.get(&wid))
-                                .map(|w| w.seat.clone());
+                            let current = presence.current();
+                            let carried = match current {
+                                Presence::Watching { room, member } => z
+                                    .rooms
+                                    .iter()
+                                    .find(|a| a.number == room)
+                                    .and_then(|a| a.watchers.get(&member))
+                                    .map(|w| w.seat.clone()),
+                                _ => None,
+                            };
                             let args = if rated_lease.is_none() {
                                 carried
                                     .as_ref()
@@ -6523,6 +6965,20 @@ pub(crate) async fn serve_client(
                         }
                         let mut z = zone.lock().await;
                         let cap = z.max_players();
+                        let Presence::Watching { room, member } = presence.current() else {
+                            drop(z);
+                            if let Some(lease) = candidate {
+                                lease.release().await;
+                            }
+                            continue;
+                        };
+                        let Some(index) = z.rooms.iter().position(|a| a.number == room) else {
+                            drop(z);
+                            if let Some(lease) = candidate {
+                                lease.release().await;
+                            }
+                            continue;
+                        };
                         // The rating they carried in comes back with
                         // them, exactly as it would at the door.
                         if let Some(s) = carried.as_ref() {
@@ -6530,23 +6986,16 @@ pub(crate) async fn serve_client(
                             if let Some(ratings) = standing {
                                 current.carried = Some(ratings);
                             }
-                            z.restore_pilot(room, &current);
-                            if let Some(a) = z.rooms.get_mut(room) {
-                                if let Some(watcher) = a.watchers.get_mut(&wid) {
-                                    watcher.seat.carried = current.carried;
-                                }
+                            z.restore_pilot(index, &current);
+                            if let Some(watcher) = z.rooms[index].watchers.get_mut(&member) {
+                                watcher.seat.carried = current.carried;
                             }
                         }
-                        let mut flew = false;
-                        if let Some(a) = z.rooms.get_mut(room) {
-                            if let Some(new_id) = a.fly(wid, cls, cap) {
-                                watch = None;
-                                seat = Some((room, new_id));
-                                flew = true;
-                            }
+                        let flew = z.rooms[index].fly(member, cls, cap).is_some();
+                        if flew {
+                            // A human entered the game count.
+                            z.push_status();
                         }
-                        // A human entered the game count.
-                        z.push_status();
                         drop(z);
                         if flew {
                             if candidate.is_some() {
@@ -6577,31 +7026,17 @@ pub(crate) async fn serve_client(
                     let want = data[1];
                     let mut z = zone.lock().await;
                     let mut release = false;
-                    if let Some((room, pid)) = seat {
-                        if let Some(a) = z.rooms.get_mut(room) {
-                            if a.sit_out(pid, want, watch_any, false) {
-                                watch = Some((room, pid));
-                                seat = None;
+                    if let Some((room, member)) = presence.current().flying() {
+                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                            if z.rooms[index].sit_out(member, want, watch_any, false) {
                                 release = true;
-                            } else if a.watchers.contains_key(&pid) {
-                                // The room put us in the stands on its own,
-                                // which is what the safe-zone sweep does, and
-                                // this task still thought it held a seat.
-                                // Catch up rather than dropping the ask: a
-                                // watcher's first message after the move is
-                                // usually this one, since it doubles as their
-                                // keepalive.
-                                a.set_watch(pid, want);
-                                watch = Some((room, pid));
-                                seat = None;
-                                release = true;
+                                // A human left the game count.
+                                z.push_status();
                             }
                         }
-                        // A human left the game count.
-                        z.push_status();
-                    } else if let Some((room, wid)) = watch {
-                        if let Some(a) = z.rooms.get_mut(room) {
-                            a.set_watch(wid, want);
+                    } else if let Some((room, member)) = presence.current().watching() {
+                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                            z.rooms[index].set_watch(member, want);
                         }
                     }
                     drop(z);
@@ -6621,12 +7056,15 @@ pub(crate) async fn serve_client(
                 // the same reason. Nothing is sent back but the team
                 // list, whose "you are on" byte is the whole answer.
                 if data.len() >= 2 {
-                    if let Some((room, pid)) = seat {
+                    if presence.current().flying().is_some() {
                         let want = data[1];
                         let mut z = zone.lock().await;
-                        if let Some(a) = z.rooms.get_mut(room) {
-                            if let Some(ship) = a.players.get(&pid).map(|p| p.ship) {
-                                a.join_team(ship, want);
+                        if let Some((room, member)) = presence.current().flying() {
+                            if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                                let a = &mut z.rooms[index];
+                                if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
+                                    a.join_team(ship, want);
+                                }
                             }
                         }
                     }
@@ -6634,11 +7072,14 @@ pub(crate) async fn serve_client(
             }
             C2S_FOUND => {
                 // A side of your own, if the room may hold another.
-                if let Some((room, pid)) = seat {
+                if presence.current().flying().is_some() {
                     let mut z = zone.lock().await;
-                    if let Some(a) = z.rooms.get_mut(room) {
-                        if let Some(ship) = a.players.get(&pid).map(|p| p.ship) {
-                            a.found_and_move(ship);
+                    if let Some((room, member)) = presence.current().flying() {
+                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                            let a = &mut z.rooms[index];
+                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
+                                a.found_and_move(ship);
+                            }
                         }
                     }
                 }
@@ -6649,12 +7090,15 @@ pub(crate) async fn serve_client(
                 // team that wants somebody gone walks away and founds
                 // another, which costs a respawn and no machinery.
                 if data.len() >= 2 {
-                    if let Some((room, pid)) = seat {
+                    if presence.current().flying().is_some() {
                         let guest = data[1];
                         let mut z = zone.lock().await;
-                        if let Some(a) = z.rooms.get_mut(room) {
-                            if let Some(ship) = a.players.get(&pid).map(|p| p.ship) {
-                                a.invite(ship, guest);
+                        if let Some((room, member)) = presence.current().flying() {
+                            if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                                let a = &mut z.rooms[index];
+                                if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
+                                    a.invite(ship, guest);
+                                }
                             }
                         }
                     }
@@ -6666,12 +7110,15 @@ pub(crate) async fn serve_client(
                 // ship whose carrier byte points at somebody, which is what
                 // the client draws the drone from.
                 if data.len() >= 2 {
-                    if let Some((room, pid)) = seat {
+                    if presence.current().flying().is_some() {
                         let want = data[1];
                         let mut z = zone.lock().await;
-                        if let Some(a) = z.rooms.get_mut(room) {
-                            if let Some(ship) = a.players.get(&pid).map(|p| p.ship) {
-                                a.world.attach(ship, want);
+                        if let Some((room, member)) = presence.current().flying() {
+                            if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                                let a = &mut z.rooms[index];
+                                if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
+                                    a.world.attach(ship, want);
+                                }
                             }
                         }
                     }
@@ -6682,15 +7129,19 @@ pub(crate) async fn serve_client(
                 // window. The snapshot receipt window beside them measures
                 // the other direction on the arena's own clock.
                 if let Some(packet) = input_packet(&data) {
-                    if let Some((room, pid)) = seat {
+                    if presence.current().flying().is_some() {
                         let mut z = zone.lock().await;
-                        let Some(a) = z.rooms.get_mut(room) else {
-                            return;
+                        let Some((room, member)) = presence.current().flying() else {
+                            continue;
                         };
+                        let Some(index) = z.rooms.iter().position(|a| a.number == room) else {
+                            continue;
+                        };
+                        let a = &mut z.rooms[index];
                         let now = a.world.state.tick + 1;
                         let sample_ticks = a.lag_policy.sample_ticks;
-                        let Some(p) = a.players.get_mut(&pid) else {
-                            return;
+                        let Some(p) = a.players.get_mut(&member) else {
+                            continue;
                         };
                         p.lag.acknowledge_snapshots(
                             packet.snapshot_ack,
@@ -6708,30 +7159,30 @@ pub(crate) async fn serve_client(
         }
     }
 
-    if let Some((room, pid)) = seat {
-        let mut z = zone.lock().await;
-        if let Some(a) = z.rooms.get_mut(room) {
-            a.leave(pid, pilot::why::LEFT);
-            // And the stands, in case the room moved this id there without
-            // the task hearing about it. `leave` finds nothing then, and the
-            // watcher row would outlive the socket.
-            a.watchers.remove(&pid);
-            a.broadcast_roster();
-        }
-        // An empty room goes back, except the first: a process shrinks as
-        // matches end rather than holding its high-water mark.
-        z.reclaim_rooms();
-        z.push_status();
-    }
-    if let Some((room, wid)) = watch {
-        let mut z = zone.lock().await;
-        if let Some(a) = z.rooms.get_mut(room) {
-            if a.watchers.remove(&wid).is_some() {
+    let mut z = zone.lock().await;
+    match presence.current() {
+        Presence::Flying { room, member } => {
+            if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                let a = &mut z.rooms[index];
+                a.leave(member, pilot::why::LEFT);
                 a.broadcast_roster();
             }
+            // An empty room goes back, except the first: a process shrinks as
+            // matches end rather than holding its high-water mark.
+            z.reclaim_rooms();
+            z.push_status();
         }
-        // No push_status: a watcher was never in the counts.
+        Presence::Watching { room, member } => {
+            if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                let a = &mut z.rooms[index];
+                if a.leave_watcher(member) {
+                    a.broadcast_roster();
+                }
+            }
+        }
+        Presence::Unjoined => {}
     }
+    drop(z);
 
     if let Some(lease) = rated_lease {
         lease.release().await;
@@ -6789,6 +7240,78 @@ mod tests {
         (p, w.cfg.specs[p.spec as usize])
     }
 
+    #[test]
+    fn presence_accepts_only_the_lifecycle_transition_table() {
+        let (flying, joined) = Presence::Unjoined
+            .transition(PresenceEvent::JoinFlying { room: 2, member: 7 })
+            .expect("an unjoined connection may fly");
+        assert_eq!(flying, Presence::Flying { room: 2, member: 7 });
+        assert!(joined.player_count_changed);
+        assert!(!joined.release_rated_lease);
+
+        let (watching, sat_out) = flying
+            .transition(PresenceEvent::SitOut {
+                room: 2,
+                member: 7,
+                reason: SitOutWhy::Safe,
+            })
+            .expect("a flying connection may sit out");
+        assert_eq!(watching, Presence::Watching { room: 2, member: 7 });
+        assert!(sat_out.player_count_changed);
+        assert!(sat_out.release_rated_lease);
+
+        let (renumbered, renamed) = watching
+            .transition(PresenceEvent::Renumber {
+                from: 2,
+                to: 4,
+                member: 7,
+            })
+            .expect("a live room may be renumbered");
+        assert_eq!(renumbered, Presence::Watching { room: 4, member: 7 });
+        assert_eq!(renamed, PresenceEffects::default());
+
+        let (flying_again, resumed) = renumbered
+            .transition(PresenceEvent::Resume { room: 4, member: 7 })
+            .expect("a watcher may resume");
+        assert_eq!(flying_again, Presence::Flying { room: 4, member: 7 });
+        assert!(resumed.player_count_changed);
+
+        let (gone, disconnected) = flying_again
+            .transition(PresenceEvent::Disconnect { room: 4, member: 7 })
+            .expect("a flying connection may leave");
+        assert_eq!(gone, Presence::Unjoined);
+        assert!(disconnected.player_count_changed);
+        assert!(disconnected.release_rated_lease);
+        assert!(disconnected.connection_closed);
+
+        assert!(Presence::Unjoined
+            .transition(PresenceEvent::Resume { room: 4, member: 7 })
+            .is_err());
+        assert!(watching
+            .transition(PresenceEvent::SitOut {
+                room: 2,
+                member: 7,
+                reason: SitOutWhy::Asked,
+            })
+            .is_err());
+        assert!(flying
+            .transition(PresenceEvent::Disconnect { room: 2, member: 8 })
+            .is_err());
+
+        let (arrived_watching, effects) = Presence::Unjoined
+            .transition(PresenceEvent::JoinWatching { room: 9, member: 3 })
+            .expect("an unjoined connection may arrive watching");
+        assert_eq!(arrived_watching, Presence::Watching { room: 9, member: 3 });
+        assert_eq!(effects, PresenceEffects::default());
+        let (gone, disconnected) = arrived_watching
+            .transition(PresenceEvent::Disconnect { room: 9, member: 3 })
+            .expect("a watcher may leave");
+        assert_eq!(gone, Presence::Unjoined);
+        assert!(!disconnected.player_count_changed);
+        assert!(disconnected.release_rated_lease);
+        assert!(disconnected.connection_closed);
+    }
+
     // ---- input scheduling --------------------------------------------------
 
     fn a_player() -> Player {
@@ -6811,6 +7334,7 @@ mod tests {
             safe: 0,
             joined: 0,
             tx,
+            presence: PresenceHandle::new(),
         }
     }
 
@@ -9315,7 +9839,22 @@ mod tests {
     fn sitting_out_and_flying_again_is_a_despawn_and_a_spawn() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let (ship, id, mut rx) = seat_rx(&mut a, "pilot");
+        let presence = a.players[&id].presence.clone();
+        assert_eq!(
+            presence.current(),
+            Presence::Flying {
+                room: a.number,
+                member: id,
+            }
+        );
         assert!(a.sit_out(id, 255, false, false));
+        assert_eq!(
+            presence.current(),
+            Presence::Watching {
+                room: a.number,
+                member: id,
+            }
+        );
         assert_eq!(
             a.world.state.ships[ship as usize].active, 0,
             "the hull despawned"
@@ -9323,7 +9862,24 @@ mod tests {
         assert_eq!(a.humans(), 0);
         assert!(a.names.is_empty(), "the seat is genuinely empty");
 
+        a.renumber(4);
+        assert_eq!(
+            presence.current(),
+            Presence::Watching {
+                room: 4,
+                member: id,
+            },
+            "a live connection follows its stable room number",
+        );
         let new_id = a.fly(id, 0, 16).expect("a seat was free");
+        assert_eq!(new_id, id, "the connection keeps one member id");
+        assert_eq!(
+            presence.current(),
+            Presence::Flying {
+                room: 4,
+                member: id,
+            }
+        );
         assert_eq!(a.humans(), 1);
         assert!(a.watchers.is_empty(), "the watcher row went with the spawn");
 
@@ -9400,12 +9956,14 @@ mod tests {
         // Long enough to be sure, rather than exactly the limit: the point is
         // that it happens, and pinning the off-by-one would be pinning the
         // loop this test is written around rather than the rule.
+        let mut changed = false;
         for _ in 0..30 {
             let sh = &mut a.world.state.ships[ship as usize];
             sh.x = mid(tx);
             sh.y = mid(ty);
-            a.sweep_safe();
+            changed |= a.sweep_safe();
         }
+        assert!(changed, "the room reports the population change");
         assert!(!a.players.contains_key(&id), "the seat went back");
         assert!(a.watchers.contains_key(&id), "and they are in the stands");
     }
@@ -9638,7 +10196,7 @@ mod tests {
         assert_eq!(said, vec![1], "told once, on the edge");
 
         // And leaves.
-        a.watchers.remove(&w);
+        assert!(a.leave_watcher(w));
         run(&mut a, &mut rx, &mut said, 5);
         assert!(a.on_air.is_empty());
         assert_eq!(said, vec![1, 0], "and told once when it stopped");
@@ -10113,10 +10671,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// One connection is one session however many times the pilot's handles
-    /// are reissued underneath them. Sitting out retires the seat and flying
-    /// again allocates a fresh player id, and a log that keyed on either would
-    /// cut a single stay into three unrelated ones.
+    /// One connection is one session through every lifecycle state. Sitting
+    /// out retires the simulation seat, but the room member id and log session
+    /// both remain stable when the pilot flies again.
     #[test]
     fn a_stay_keeps_one_session_across_sitting_out() {
         let (mut z, pilots, d) = logging_arena("session");
@@ -10128,7 +10685,7 @@ mod tests {
 
         assert!(a.sit_out(id, 255, false, false), "gives up the hull");
         let back = a.fly(id, 1, cap).expect("and takes one again");
-        assert_ne!(back, id, "with a new player id, which is the trap");
+        assert_eq!(back, id, "the connection keeps one room member id");
         a.leave(back, pilot::why::LEFT);
 
         let filed = rows(&pilots);
@@ -10359,6 +10916,13 @@ mod tests {
             vec![1, 2, 3],
             "dense, in the order they opened"
         );
+        let third = z
+            .rooms
+            .iter()
+            .position(|r| r.number == 3)
+            .expect("room three");
+        let third_id = *z.rooms[third].players.keys().next().expect("its pilot");
+        let third_presence = z.rooms[third].players[&third_id].presence.clone();
         // Empty the middle one and let it go.
         let mid = z
             .rooms
@@ -10377,6 +10941,35 @@ mod tests {
             z.rooms.iter().position(|r| r.number == 3),
             Some(1),
             "room three sits where room two used to"
+        );
+        assert_eq!(
+            third_presence.current(),
+            Presence::Flying {
+                room: 3,
+                member: third_id,
+            }
+        );
+        assert!(
+            z.rooms[1].players.contains_key(&third_id),
+            "the stable member address still reaches the shifted room",
+        );
+    }
+
+    #[test]
+    fn a_room_with_a_watcher_is_not_reclaimed() {
+        let mut z = serving(2, 1, 16);
+        seat(&mut z, 0, 1);
+        let second = z.room_for_join().expect("a second room");
+        seat(&mut z, second, 1);
+        let number = z.rooms[second].number;
+        let id = *z.rooms[second].players.keys().next().expect("the pilot");
+        assert!(z.rooms[second].sit_out(id, 255, false, false));
+
+        z.reclaim_rooms();
+
+        assert!(
+            z.rooms.iter().any(|room| room.number == number),
+            "watching is still membership in the room",
         );
     }
 
