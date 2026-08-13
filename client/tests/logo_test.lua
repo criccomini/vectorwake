@@ -60,10 +60,40 @@ local favicon = read_file("client/web/favicon.svg")
 check("the app tile carries the canonical mark",
       has(icon, ORANGE) and has(icon, CYAN) and has(icon, GAP)
       and has(icon, "M0 0H512V512H0Z"))
-check("all SVG favicons are the app tile",
-      favicon == icon
-      and read_file("deploy/site/favicon.svg") == icon
-      and read_file("deploy/admin/favicon.svg") == icon)
+
+-- The favicon and the app tile were the same file until the favicon lost its
+-- background. They are two drawings now, and the pair of checks below is what
+-- keeps that from meaning two marks.
+--
+-- The tile stays opaque because it is a tile: Discord masks it to a circle and
+-- the installed-app icons composite on it, and either one against transparency
+-- shows whatever is behind it through the middle of the ship. A favicon has the
+-- opposite job. It sits in a tab strip whose color is the browser's business
+-- and changes with the reader's theme, so #05070c there is a dark square around
+-- the mark rather than an absence of one.
+--
+-- Same framing, same paths, same colors: the favicon is the tile's own
+-- translate and scale with the tile path taken out.
+check("every SVG favicon is the same drawing",
+      favicon == read_file("deploy/site/favicon.svg")
+      and favicon == read_file("deploy/admin/favicon.svg"))
+check("the favicon carries the canonical mark, framed like the tile",
+      has(favicon, ORANGE) and has(favicon, CYAN) and has(favicon, GAP)
+      and has(favicon, '#ff9d22') and has(favicon, '#27c5ed')
+      and has(favicon, 'stroke="#000"')
+      and has(favicon, 'transform="translate(84.5 44) scale(4.0833333333)"')
+      and has(icon, 'transform="translate(84.5 44) scale(4.0833333333)"'))
+check("the favicon has no background tile",
+      not has(favicon, "M0 0H512V512H0Z"))
+
+-- The separator is a stroke centered on the seam between the two fills, and the
+-- seam's ends are the mark's own outer corners, so half its width lands outside
+-- the silhouette there. The tile hid that; transparency does not, and without
+-- the clip the favicon grows a black spur off each shoulder. Clipping to the
+-- two fills is what keeps the drawn shape equal to the mark.
+check("the favicon clips its separator to the mark",
+      has(favicon, 'clipPathUnits="userSpaceOnUse"')
+      and has(favicon, 'clip-path="url(#mark)"'))
 
 local site_pages = {
     "deploy/site/index.html",
