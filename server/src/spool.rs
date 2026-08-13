@@ -18,7 +18,7 @@
 //! for a room in progress.
 
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -71,7 +71,7 @@ const IDLE_SECS: u64 = 5;
 
 pub struct Spool<T> {
     path: PathBuf,
-    pending: Vec<T>,
+    pending: Vec<Pending<T>>,
     /// The route these records are posted to. Two kinds travel this way and
     /// they land in different tables, so the kind is carried by the address
     /// rather than by a field inside the batch.
@@ -86,6 +86,33 @@ pub struct Spool<T> {
     zone: String,
     class: String,
     instance: String,
+}
+
+/// The destination is captured with each record. An arena can switch zones
+/// while old events are still owed, and relabeling that debt with its new zone
+/// would write a real fight into the wrong ladder.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct Pending<T> {
+    zone: String,
+    class: String,
+    instance: String,
+    event: T,
+}
+
+/// Files written before destinations traveled with each line. The first aim
+/// after an upgrade assigns them once and rewrites them in the current format.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OnDisk<T> {
+    Current(Pending<T>),
+    Legacy(T),
+}
+
+struct Batch<T> {
+    zone: String,
+    class: String,
+    instance: String,
+    events: Vec<T>,
 }
 
 /// Both of an arena's spools, which are made together, aimed together and
@@ -138,13 +165,67 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
         let path = PathBuf::from(format!("{dir}/{file}"));
         // Anything left from a previous process is still owed to the
         // meta-layer, so a restart picks it up rather than starting clean.
-        let pending = std::fs::read_to_string(&path)
-            .map(|t| {
-                t.lines()
-                    .filter_map(|l| serde_json::from_str::<T>(l).ok())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let mut pending = Vec::new();
+        let mut corrupt = Vec::new();
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            for (line, raw) in text.lines().enumerate() {
+                match serde_json::from_str::<OnDisk<T>>(raw) {
+                    Ok(OnDisk::Current(record)) => pending.push(record),
+                    Ok(OnDisk::Legacy(event)) => pending.push(Pending {
+                        zone: String::new(),
+                        class: String::new(),
+                        instance: String::new(),
+                        event,
+                    }),
+                    Err(error) => {
+                        println!(
+                            "spool: corrupt {noun} line {} kept aside: {error}",
+                            line + 1
+                        );
+                        corrupt.push(raw.to_string());
+                    }
+                }
+            }
+        }
+        if !corrupt.is_empty() {
+            let corrupt_path = PathBuf::from(format!("{}.corrupt", path.display()));
+            let preserved = if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&corrupt_path)
+            {
+                let mut result = Ok(());
+                for line in &corrupt {
+                    if let Err(error) = writeln!(file, "{line}") {
+                        result = Err(error);
+                        break;
+                    }
+                }
+                result
+                    .and_then(|_| file.flush())
+                    .and_then(|_| file.sync_data())
+                    .is_ok()
+            } else {
+                println!(
+                    "spool: could not preserve corrupt {noun} lines at {}",
+                    corrupt_path.display()
+                );
+                false
+            };
+            if preserved {
+                if let Err(error) = rewrite(&path, &pending) {
+                    println!(
+                        "spool: could not remove corrupt {noun} lines from {}: {error}",
+                        path.display()
+                    );
+                }
+            } else {
+                println!(
+                    "spool: leaving corrupt {noun} lines in {} until they can be preserved",
+                    path.display()
+                );
+            }
+        }
         if !pending.is_empty() {
             println!(
                 "spool: {} {noun}s carried over from a previous run",
@@ -172,6 +253,20 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
         self.zone = zone.to_string();
         self.class = class.to_string();
         self.instance = instance.to_string();
+        if self.pending.iter().any(|record| record.zone.is_empty()) {
+            let mut migrated = self.pending.clone();
+            for record in &mut migrated {
+                if record.zone.is_empty() {
+                    record.zone = self.zone.clone();
+                    record.class = self.class.clone();
+                    record.instance = self.instance.clone();
+                }
+            }
+            match rewrite(&self.path, &migrated) {
+                Ok(()) => self.pending = migrated,
+                Err(error) => println!("spool: could not migrate old {}s: {error}", self.noun),
+            }
+        }
     }
 
     pub fn armed(&self) -> bool {
@@ -185,14 +280,14 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
     /// The most recent event still owed. For a caller that wants to see what
     /// it just filed rather than what the far end eventually made of it.
     pub fn last(&self) -> Option<&T> {
-        self.pending.last()
+        self.pending.last().map(|record| &record.event)
     }
 
     /// One of the events still owed, oldest first. For reading back an order
     /// that matters: the pilot log is a sequence, and a test that could only
     /// see the last row could not tell a stay from a shuffle of one.
     pub fn nth(&self, i: usize) -> Option<&T> {
-        self.pending.get(i)
+        self.pending.get(i).map(|record| &record.event)
     }
 
     /// Called from a tick. Appends and returns; it never blocks on anything
@@ -202,36 +297,96 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
         if !self.armed() {
             return;
         }
-        self.pending.push(ev.clone());
-        if let Ok(mut f) = std::fs::OpenOptions::new()
+        let record = Pending {
+            zone: self.zone.clone(),
+            class: self.class.clone(),
+            instance: self.instance.clone(),
+            event: ev,
+        };
+        let result = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.path)
-        {
-            if let Ok(line) = serde_json::to_string(&ev) {
-                let _ = writeln!(f, "{line}");
+            .and_then(|mut file| {
+                let line = serde_json::to_string(&record)
+                    .map_err(|error| std::io::Error::other(error.to_string()))?;
+                writeln!(file, "{line}")?;
+                file.flush()?;
+                file.sync_data()
+            });
+        match result {
+            Ok(()) => self.pending.push(record),
+            Err(error) => {
+                println!("spool: could not file {}: {error}", self.noun);
             }
         }
     }
 
-    /// Everything currently owed, oldest first, up to one batch.
-    fn batch(&self) -> Vec<T> {
-        self.pending.iter().take(BATCH).cloned().collect()
+    /// The oldest destination's debt, up to one batch. A later zone waits
+    /// behind it so one post never mixes records from different ladders.
+    fn batch(&self) -> Option<Batch<T>> {
+        let first = self.pending.first()?;
+        if first.zone.is_empty() {
+            return None;
+        }
+        let events = self
+            .pending
+            .iter()
+            .take(BATCH)
+            .take_while(|record| {
+                record.zone == first.zone
+                    && record.class == first.class
+                    && record.instance == first.instance
+            })
+            .map(|record| record.event.clone())
+            .collect();
+        Some(Batch {
+            zone: first.zone.clone(),
+            class: first.class.clone(),
+            instance: first.instance.clone(),
+            events,
+        })
     }
 
     /// Drop the events a post confirmed, and rewrite the file to match. The
     /// rewrite is the whole file rather than a truncation, because the events
     /// that did not fit in the batch are still owed.
-    fn confirm(&mut self, n: usize) {
-        self.pending.drain(..n.min(self.pending.len()));
-        let body: String = self
-            .pending
-            .iter()
-            .filter_map(|e| serde_json::to_string(e).ok())
-            .map(|l| l + "\n")
-            .collect();
-        let _ = std::fs::write(&self.path, body);
+    fn confirm(&mut self, n: usize) -> std::io::Result<()> {
+        let keep = self.pending[n.min(self.pending.len())..].to_vec();
+        rewrite(&self.path, &keep)?;
+        self.pending = keep;
+        Ok(())
     }
+}
+
+/// Replace a spool without exposing a truncated or half-written live file.
+/// The directory sync makes the rename survive the same power loss as the
+/// file contents.
+fn rewrite<T: Serialize>(path: &std::path::Path, records: &[Pending<T>]) -> std::io::Result<()> {
+    let temp = PathBuf::from(format!("{}.tmp-{}", path.display(), std::process::id()));
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&temp)?;
+        for record in records {
+            let line = serde_json::to_string(record)
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            writeln!(file, "{line}")?;
+        }
+        file.flush()?;
+        file.sync_all()?;
+        std::fs::rename(&temp, path)?;
+        if let Some(parent) = path.parent() {
+            std::fs::File::open(parent)?.sync_all()?;
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(temp);
+    }
+    result
 }
 
 /// The drain. One task per spool per process, started at boot, doing nothing at
@@ -245,34 +400,28 @@ where
         // A plain mutex, locked twice around the post and never held across
         // it. The work inside is a memory copy and a file rewrite; the rooms
         // that append to this hold it for a line of JSON.
-        let (url, token, zone, class, instance, route, noun, batch) = {
+        let (url, token, route, noun, batch) = {
             let Ok(s) = spool.lock() else { return };
             if !s.armed() || s.pending.is_empty() {
                 continue;
             }
-            (
-                s.url.clone(),
-                s.token.clone(),
-                s.zone.clone(),
-                s.class.clone(),
-                s.instance.clone(),
-                s.route,
-                s.noun,
-                s.batch(),
-            )
+            let Some(batch) = s.batch() else { continue };
+            (s.url.clone(), s.token.clone(), s.route, s.noun, batch)
         };
-        let n = batch.len();
+        let n = batch.events.len();
         let payload = serde_json::json!({
             "pool_token": token,
-            "zone": zone,
-            "class": class,
-            "instance": instance,
-            "events": batch,
+            "zone": batch.zone,
+            "class": batch.class,
+            "instance": batch.instance,
+            "events": batch.events,
         });
         match crate::meta::call(&url, route, &payload.to_string()).await {
             Ok(_) => {
                 if let Ok(mut s) = spool.lock() {
-                    s.confirm(n);
+                    if let Err(error) = s.confirm(n) {
+                        println!("spool: {n} {noun}s landed but remain owed ({error})");
+                    }
                 }
             }
             // Kept, and tried again on the next pass. A meta-layer that is down
@@ -331,9 +480,9 @@ mod tests {
         // A new process over the same directory still owes both.
         let s = Spool::rated(d.to_str().unwrap());
         assert_eq!(s.len(), 2, "a restart does not forgive a debt");
-        assert_eq!(s.pending[0].tick, 10, "oldest first");
+        assert_eq!(s.pending[0].event.tick, 10, "oldest first");
         assert_eq!(
-            s.pending[0].id,
+            s.pending[0].event.id,
             ev(10, 1).id,
             "the same event, not a reminted one"
         );
@@ -347,13 +496,13 @@ mod tests {
         for i in 0..5 {
             s.push(ev(i, 1));
         }
-        s.confirm(2);
+        s.confirm(2).unwrap();
         assert_eq!(s.len(), 3);
         // And the file agrees, so a restart here does not resend the two that
         // already landed.
         let reread = Spool::rated(d.to_str().unwrap());
         assert_eq!(reread.len(), 3);
-        assert_eq!(reread.pending[0].tick, 2);
+        assert_eq!(reread.pending[0].event.tick, 2);
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -415,7 +564,7 @@ mod tests {
             s.push(ev(i, 1));
         }
         assert_eq!(
-            s.batch().len(),
+            s.batch().unwrap().events.len(),
             BATCH,
             "one post does not carry an unbounded backlog"
         );
@@ -433,5 +582,50 @@ mod tests {
         assert!(text.contains("\"killer\":7"));
         assert!(text.contains("\"victim_before\":1200.0"));
         assert!(text.contains("\"account\":7"));
+    }
+
+    #[test]
+    fn a_zone_change_does_not_relabel_old_debt() {
+        let d = tmp("zones");
+        let mut s = spool_in(&d);
+        s.push(ev(1, 1));
+        s.aim("http://127.0.0.1:1", "tok", "war", "duel", "i1");
+        s.push(ev(2, 2));
+
+        let first = s.batch().unwrap();
+        assert_eq!(first.zone, "chaos");
+        assert_eq!(first.class, "arena");
+        assert_eq!(first.events.len(), 1);
+        s.confirm(1).unwrap();
+        let second = s.batch().unwrap();
+        assert_eq!(second.zone, "war");
+        assert_eq!(second.class, "duel");
+        assert_eq!(second.events.len(), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn corrupt_lines_are_preserved_and_do_not_hide_valid_debt() {
+        let d = tmp("corrupt");
+        let path = d.join("spool.jsonl");
+        let record = Pending {
+            zone: "chaos".into(),
+            class: "arena".into(),
+            instance: "i1".into(),
+            event: ev(3, 4),
+        };
+        std::fs::write(
+            &path,
+            format!("not json\n{}\n", serde_json::to_string(&record).unwrap()),
+        )
+        .unwrap();
+        let s = Spool::rated(d.to_str().unwrap());
+        assert_eq!(s.len(), 1);
+        assert_eq!(s.last().unwrap().tick, 3);
+        assert_eq!(
+            std::fs::read_to_string(d.join("spool.jsonl.corrupt")).unwrap(),
+            "not json\n"
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

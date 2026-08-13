@@ -149,7 +149,7 @@ Inspect the generated cloud-init before sending it. The output contains secrets,
 ./deploy/fleet.sh new all ord1 atl
 ```
 
-`new` creates or reuses the certificate volume, creates the instance, attaches the firewall group, waits for the host, attaches the volume, and writes DNS. It prints both the raw-IP deployment log and the random outbound status topic.
+`new` creates or reuses the certificate volume, creates the instance, attaches the firewall group, waits for the host, attaches the volume, and writes DNS. It prints both the raw-IP deployment log and the random outbound status topic. Once provisioning reports success, it replaces the provider user-data with an empty cloud config. If provisioning needed a repair, run `fleet.sh scrub <name>` after the status says it finished.
 
 A central or `all` replacement does not take the public front-door name until you move it:
 
@@ -162,7 +162,7 @@ That DNS change moves `play.<domain>`, the bare domain, and `admin.<domain>` tog
 The remaining lifecycle commands are printed by running `./deploy/fleet.sh` with no verb. Two deserve extra care:
 
 - `fleet.sh rm <name>` destroys the instance and its DNS record, but deliberately leaves the certificate volume for the replacement.
-- `fleet.sh db destroy` permanently deletes every account, rating, and rated event in the managed database. The script asks for the database label before doing it. Take a `pg_dump` first.
+- `fleet.sh db destroy` permanently deletes every account, rating, and rated event in the managed database. The script asks for the database label before doing it. Confirm the Vultr automatic backup status first.
 
 ### Delete one account
 
@@ -178,9 +178,9 @@ The script prints the account and any registered bot accounts, then requires the
 
 ## Releases and updates
 
-Pushes to `main` build the server and client images in [GitHub Actions](../.github/workflows/). The server image uses an immutable `sha-<commit>` tag and a moving `prod` tag. Production hosts normally follow `prod`.
+Pushes to `main` build both server and client images in [GitHub Actions](../.github/workflows/). Each uses the same immutable `sha-<commit>` tag. The moving `prod` tags remain useful for local and manual work, but production does not follow them.
 
-Provisioning installs `vw-update.timer`. Once a minute it fetches `main`, pulls the configured images, and runs `docker compose up -d`. Compose recreates only services whose configuration or image changed. In particular, a client release copies a page into Caddy's volume without restarting Caddy or dropping live WebSockets.
+Provisioning installs `vw-update.timer`. Once a minute it fetches `main` and pulls both immutable images for that commit. It changes neither the checkout nor the containers until both pulls succeed. It then runs `docker compose up -d`, which recreates only services whose configuration or image changed. In particular, a client release copies a page into Caddy's volume without restarting Caddy or dropping live WebSockets.
 
 The checkout on a host is deployment state, not a place to edit. The updater resets it to `origin/main`.
 

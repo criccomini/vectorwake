@@ -24,6 +24,7 @@
 name: vectorwake
 
 x-arena: &arena
+  # Production exports the immutable tag for one commit before compose runs.
   # See docker-compose.central.yml for why this is pulled rather than built.
   image: ${VW_IMAGE:-ghcr.io/criccomini/vectorwake:prod}
   network_mode: host

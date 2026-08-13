@@ -565,6 +565,11 @@ struct Seat {
     /// it was minted. This is how a career crosses zones without an arena
     /// asking anybody anything.
     carried: Option<Vec<token::ClassRating>>,
+    /// When the credential used at the door expires. Guests have no credential.
+    /// A rated pilot proves their standing again through the renewable lease;
+    /// a watcher has no lease, so this clock closes a session that has outlived
+    /// the token which admitted it.
+    expires: Option<u64>,
     /// Which connection this is, for the pilot log. On the seat rather than
     /// beside the socket because the two places a pilot's handles are reissued
     /// underneath them, sitting out and flying again, both carry the seat
@@ -589,6 +594,7 @@ impl Seat {
             },
             account: None,
             carried: None,
+            expires: None,
             session: pilot::Session::new("none"),
         }
     }
@@ -3296,6 +3302,23 @@ struct RatedLease {
     touched: std::time::Instant,
 }
 
+/// A token-backed connection that is not occupying a rated seat still checks
+/// whether its account remains welcome. It carries no exclusion and therefore
+/// does not stop the same pilot flying elsewhere while watching here.
+struct StandingCheck {
+    base: String,
+    pool_token: String,
+    account: u64,
+    touched: std::time::Instant,
+}
+
+impl StandingCheck {
+    async fn renew(&mut self) -> Result<(), String> {
+        self.touched = std::time::Instant::now();
+        meta::account_standing(&self.base, &self.pool_token, self.account).await
+    }
+}
+
 impl RatedLease {
     async fn claim(
         base: String,
@@ -3303,16 +3326,21 @@ impl RatedLease {
         instance: String,
         account: u64,
         session: String,
-    ) -> Result<Option<RatedLease>, String> {
-        let claimed =
+    ) -> Result<Option<(RatedLease, Vec<token::ClassRating>)>, String> {
+        let (claimed, ratings) =
             meta::claim_rated_session(&base, &pool_token, account, &session, &instance).await?;
-        Ok(claimed.then(|| RatedLease {
-            base,
-            pool_token,
-            instance,
-            account,
-            session,
-            touched: std::time::Instant::now(),
+        Ok(claimed.then(|| {
+            (
+                RatedLease {
+                    base,
+                    pool_token,
+                    instance,
+                    account,
+                    session,
+                    touched: std::time::Instant::now(),
+                },
+                ratings,
+            )
         }))
     }
 
@@ -3326,6 +3354,7 @@ impl RatedLease {
             &self.instance,
         )
         .await
+        .map(|(claimed, _)| claimed)
     }
 
     async fn release(self) {
@@ -3604,6 +3633,7 @@ impl ArenaServer {
             rid: name.to_string(),
             account: None,
             carried: None,
+            expires: None,
             session: session.clone(),
         };
         let key = self
@@ -3647,6 +3677,7 @@ impl ArenaServer {
             rid: account_rid(claims.account),
             account: Some(claims.account),
             carried: Some(claims.ratings),
+            expires: Some(claims.expires),
             session: session.clone(),
         })
     }
@@ -3658,17 +3689,19 @@ impl ArenaServer {
     /// reads as still placing, and the next death moves them by a newcomer's K,
     /// which is four times as far as their record says it should.
     ///
-    /// The record comes from the token, which is the meta-layer's answer and
-    /// therefore the same in every room of the fleet. A pilot without one
-    /// arrives unrated, which is what having no account means.
+    /// The token seeds a pilot this room has never seen. It is not a checkpoint:
+    /// a reconnect or a return from watching must keep the movement already
+    /// recorded in the room instead of restoring an older token over it.
     fn restore_pilot(&mut self, room: usize, seat: &Seat) {
         let class = self.rating_class();
         let Some((saved, played)) = self.token_rating(seat, &class) else {
             return;
         };
         if let Some(a) = self.rooms.get_mut(room) {
-            a.rating.score.insert(seat.rid.clone(), saved);
-            a.rating.games.insert(seat.rid.clone(), played);
+            if !a.rating.score.contains_key(&seat.rid) {
+                a.rating.score.insert(seat.rid.clone(), saved);
+                a.rating.games.insert(seat.rid.clone(), played);
+            }
         }
     }
 
@@ -4008,10 +4041,29 @@ impl ArenaServer {
                         .map(|(id, _)| *id)
                         .collect();
                     for id in &ids {
+                        if let Some(p) = r.players.get(id) {
+                            let mut message = vec![S2C_DENIED, DENY_BANNED];
+                            message.extend_from_slice(b"this account is banned");
+                            let _ = p.tx.try_send(Message::Binary(message));
+                        }
                         r.leave(*id, pilot::why::KICKED);
                     }
-                    if !ids.is_empty() {
-                        hit += ids.len();
+                    let watchers: Vec<u64> = r
+                        .watchers
+                        .iter()
+                        .filter(|(_, w)| w.seat.name.eq_ignore_ascii_case(&c.args))
+                        .map(|(id, _)| *id)
+                        .collect();
+                    for id in &watchers {
+                        if let Some(w) = r.watchers.get(id) {
+                            let mut message = vec![S2C_DENIED, DENY_BANNED];
+                            message.extend_from_slice(b"this account is banned");
+                            let _ = w.tx.try_send(Message::Binary(message));
+                        }
+                        r.watchers.remove(id);
+                    }
+                    if !ids.is_empty() || !watchers.is_empty() {
+                        hit += ids.len() + watchers.len();
                         r.broadcast_roster();
                     }
                 }
@@ -5142,6 +5194,9 @@ async fn main() {
                         // and a client that missed one would hold a team list
                         // from before somebody moved.
                         a.broadcast_teams();
+                        // A live retune can be dropped by the same full queue.
+                        // Repeat the current pack until it lands.
+                        a.broadcast_settings();
                     }
                 }
                 let us = t0.elapsed().as_micros() as u64;
@@ -5312,6 +5367,8 @@ pub(crate) async fn serve_client(
     // again move between them on the same socket.
     let mut watch: Option<(usize, u64)> = None;
     let mut rated_lease: Option<RatedLease> = None;
+    let mut standing_check: Option<StandingCheck> = None;
+    let mut credential_expires: Option<u64> = None;
     // Whether this pilot holds the `watch` capability, decided once at
     // the door where the token was checked, because the ask arrives
     // later on a message that carries no identity.
@@ -5324,7 +5381,27 @@ pub(crate) async fn serve_client(
     // nobody can have.
     let quiet = std::time::Duration::from_secs(75);
     loop {
-        let data = match tokio::time::timeout(quiet, inbound.recv()).await {
+        // A watcher does not renew a rated lease, so its original token is the
+        // last standing check this socket has made. Rated pilots are checked by
+        // the lease below and may keep playing through a token refresh without
+        // being thrown out of their ship every fifteen minutes.
+        let wait = if rated_lease.is_none() {
+            match credential_expires {
+                Some(at) if at <= token::now_secs() => {
+                    let mut m = vec![S2C_DENIED, DENY_BANNED];
+                    m.extend_from_slice(b"your session expired; log in again");
+                    let _ = tx.try_send(Message::Binary(m));
+                    break;
+                }
+                Some(at) => quiet.min(std::time::Duration::from_secs(
+                    at.saturating_sub(token::now_secs()),
+                )),
+                None => quiet,
+            }
+        } else {
+            quiet
+        };
+        let data = match tokio::time::timeout(wait, inbound.recv()).await {
             Ok(Some(d)) => d,
             Ok(None) => break,
             Err(_) => break,
@@ -5345,12 +5422,35 @@ pub(crate) async fn serve_client(
                     let _ = tx.try_send(Message::Binary(m));
                     break;
                 }
+                Err(e) if e == "banned" => {
+                    let mut m = vec![S2C_DENIED, DENY_BANNED];
+                    m.extend_from_slice(b"this account is banned");
+                    let _ = tx.try_send(Message::Binary(m));
+                    break;
+                }
                 Err(e) => {
                     // Keep the live socket during a short meta outage. The
                     // three-minute lease and thirty-second retry leave five
                     // more chances before another arena can take the row.
                     println!("rated session renewal failed: {e}");
                 }
+            }
+        }
+        if rated_lease.is_none()
+            && standing_check
+                .as_ref()
+                .is_some_and(|check| check.touched.elapsed() >= std::time::Duration::from_secs(30))
+        {
+            let checked = standing_check.as_mut().unwrap().renew().await;
+            match checked {
+                Ok(()) => {}
+                Err(error) if error == "banned" || error == "no such account" => {
+                    let mut message = vec![S2C_DENIED, DENY_BANNED];
+                    message.extend_from_slice(b"this account is banned");
+                    let _ = tx.try_send(Message::Binary(message));
+                    break;
+                }
+                Err(error) => println!("account standing check failed: {error}"),
             }
         }
         match data[0] {
@@ -5470,13 +5570,24 @@ pub(crate) async fn serve_client(
                 // against a key that arrived with the catalog: no
                 // call to the meta-layer, which is what lets it be
                 // down without shutting the door.
-                let seat_of = match z.identify(&presented, &claimed_name, is_bot, &session) {
+                let mut seat_of = match z.identify(&presented, &claimed_name, is_bot, &session) {
                     Ok(s) => s,
                     Err(why) => {
                         let _ = tx.try_send(Message::Binary(deny(DENY_BANNED, &why, None)));
                         break;
                     }
                 };
+                let presented_expires = seat_of.expires;
+                if let Some(account) = seat_of.account {
+                    if let Ok((base, pool_token, _)) = z.rated_lease_args() {
+                        standing_check = Some(StandingCheck {
+                            base,
+                            pool_token,
+                            account,
+                            touched: std::time::Instant::now(),
+                        });
+                    }
+                }
                 // A zone that wants a field it can vouch for. The
                 // default is `any`, because turning a newcomer away in
                 // the second they arrived is the cost of caring and
@@ -5533,7 +5644,14 @@ pub(crate) async fn serve_client(
                         )
                         .await;
                         let lease = match claimed {
-                            Ok(Some(lease)) => lease,
+                            Ok(Some((lease, ratings))) => {
+                                // The signed token is an admission credential,
+                                // not a rating checkpoint. The lease response
+                                // carries current standing so replaying an old
+                                // token cannot seed another room from old data.
+                                seat_of.carried = Some(ratings);
+                                lease
+                            }
                             Ok(None) => {
                                 let _ = tx.try_send(Message::Binary(deny(
                                     DENY_RATED_SESSION,
@@ -5613,6 +5731,7 @@ pub(crate) async fn serve_client(
                     match joined {
                         Some(id) => {
                             watch = Some((idx, id));
+                            credential_expires = presented_expires;
                             let a = &z.rooms[idx];
                             let mut m = vec![S2C_MAP];
                             m.extend_from_slice(&a.world.packed_map());
@@ -5676,6 +5795,7 @@ pub(crate) async fn serve_client(
                 let a = &mut z.rooms[idx];
                 if let Some(new_id) = a.join(seat_of, class, cap, tx.clone()) {
                     seat = Some((idx, new_id));
+                    credential_expires = presented_expires;
                     let ship = a.players[&new_id].ship;
                     let mut m = vec![S2C_MAP];
                     m.extend_from_slice(&a.world.packed_map());
@@ -5766,6 +5886,7 @@ pub(crate) async fn serve_client(
                             (carried, args)
                         };
                         let mut candidate = None;
+                        let mut standing = None;
                         if let Some((base, pool_token, instance)) = match lease_args {
                             Ok(v) => v,
                             Err(e) => {
@@ -5787,7 +5908,10 @@ pub(crate) async fn serve_client(
                             )
                             .await
                             {
-                                Ok(Some(lease)) => candidate = Some(lease),
+                                Ok(Some((lease, ratings))) => {
+                                    candidate = Some(lease);
+                                    standing = Some(ratings);
+                                }
                                 Ok(None) => {
                                     let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
                                     m.extend_from_slice(
@@ -5811,7 +5935,16 @@ pub(crate) async fn serve_client(
                         // The rating they carried in comes back with
                         // them, exactly as it would at the door.
                         if let Some(s) = carried.as_ref() {
-                            z.restore_pilot(room, s);
+                            let mut current = s.clone();
+                            if let Some(ratings) = standing {
+                                current.carried = Some(ratings);
+                            }
+                            z.restore_pilot(room, &current);
+                            if let Some(a) = z.rooms.get_mut(room) {
+                                if let Some(watcher) = a.watchers.get_mut(&wid) {
+                                    watcher.seat.carried = current.carried;
+                                }
+                            }
                         }
                         let mut flew = false;
                         if let Some(a) = z.rooms.get_mut(room) {
@@ -5845,11 +5978,13 @@ pub(crate) async fn serve_client(
                 if data.len() >= 2 {
                     let want = data[1];
                     let mut z = zone.lock().await;
+                    let mut release = false;
                     if let Some((room, pid)) = seat {
                         if let Some(a) = z.rooms.get_mut(room) {
                             if a.sit_out(pid, want, watch_any, false) {
                                 watch = Some((room, pid));
                                 seat = None;
+                                release = true;
                             } else if a.watchers.contains_key(&pid) {
                                 // The room put us in the stands on its own,
                                 // which is what the safe-zone sweep does, and
@@ -5861,6 +5996,7 @@ pub(crate) async fn serve_client(
                                 a.set_watch(pid, want);
                                 watch = Some((room, pid));
                                 seat = None;
+                                release = true;
                             }
                         }
                         // A human left the game count.
@@ -5868,6 +6004,12 @@ pub(crate) async fn serve_client(
                     } else if let Some((room, wid)) = watch {
                         if let Some(a) = z.rooms.get_mut(room) {
                             a.set_watch(wid, want);
+                        }
+                    }
+                    drop(z);
+                    if release {
+                        if let Some(lease) = rated_lease.take() {
+                            lease.release().await;
                         }
                     }
                 }
@@ -5998,11 +6140,6 @@ pub(crate) async fn serve_client(
 mod tests {
     use super::*;
 
-    /// Reporting is on unless somebody wrote down that it is off, and the ways
-    /// of writing that down are the ways an operator would reach for. Anything
-    /// else is on, including nonsense: a typo in a variable meant to silence a
-    /// fleet should leave the ladder recording, not quietly stop it.
-    #[test]
     /// The dial the directory makes to prove an arena's address, reduced to the
     /// one call that broke: building a client TLS config. With two rustls
     /// providers compiled in and none chosen, this panics, and a panic inside
@@ -6017,6 +6154,10 @@ mod tests {
             .with_no_client_auth();
     }
 
+    /// Reporting is on unless somebody wrote down that it is off, and the ways
+    /// of writing that down are the ways an operator would reach for. Anything
+    /// else is on, including nonsense: a typo in a variable meant to silence a
+    /// fleet should leave the ladder recording, not quietly stop it.
     #[test]
     fn only_a_deliberate_word_turns_reporting_off() {
         for off in ["0", "off", "false", "no", "OFF", " no ", "False"] {
@@ -6507,6 +6648,15 @@ mod tests {
             40,
             "a rating without its count places again"
         );
+        z.rooms[0].rating.score.insert(rid.clone(), 1668.0);
+        z.rooms[0].rating.games.insert(rid.clone(), 41);
+        z.restore_pilot(0, &seat);
+        assert_eq!(
+            z.rooms[0].rating.rating_of(&rid),
+            1668.0,
+            "an older token is not a checkpoint over live room movement"
+        );
+        assert_eq!(z.rooms[0].rating.games_of(&rid), 41);
 
         // A pilot who has never played this zone's class arrives unrated,
         // which is what a first game in a new class is supposed to be.

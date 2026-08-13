@@ -9,18 +9,12 @@ name: client bundle
 # CI refused to merge the next one, but both are guards around a manual step that
 # should not exist.
 #
-# sim/** is in the trigger and that is the whole point: the bundle links the same
-# simulation core the server does, so a change to the core is a change to the
-# client whether or not any Lua moved.
+# Every push to main builds an immutable client tag. That pairs it with the
+# server tag for the same commit, including a commit where no Lua moved.
 
 on:
   push:
     branches: [main]
-    paths:
-      - "client/**"
-      - "sim/**"
-      - "deploy/Dockerfile.client"
-      - ".github/workflows/client.yml"
   pull_request:
     paths:
       - "client/**"
@@ -152,7 +146,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: short sha
         id: rev
-        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           # The built page alone is the context. Pointing this at the repository

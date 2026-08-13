@@ -30,6 +30,11 @@ pub const STATUS_REPLY: u8 = 8;
 /// only a callback says the address it claimed works.
 const VERIFY_EVERY_MS: u64 = 30_000;
 
+/// Frames waiting for one registration socket. Status and view messages are
+/// replaceable, so a peer that cannot drain this many has no reason to make the
+/// directory retain an unlimited history for it.
+const OUT_QUEUE: usize = 16;
+
 /// One registration this directory holds. Everything here is its own
 /// observation, which is the rule that bounds a lying arena to lying about
 /// itself.
@@ -47,7 +52,7 @@ struct Reg {
     seen_ms: u64,
     intent: String,
     intent_until_ms: u64,
-    tx: mpsc::UnboundedSender<Message>,
+    tx: mpsc::Sender<Message>,
 }
 
 pub struct Directory {
@@ -330,7 +335,7 @@ impl Directory {
             },
         );
         let sent = match self.regs.get(instance) {
-            Some(r) => r.tx.send(Message::Binary(msg)).is_ok(),
+            Some(r) => r.tx.try_send(Message::Binary(msg)).is_ok(),
             None => false,
         };
         self.note(AuditRow {
@@ -437,7 +442,7 @@ async fn serve_registration(
     local: bool,
 ) {
     let (mut sink, mut source) = ws.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let (tx, mut rx) = mpsc::channel::<Message>(OUT_QUEUE);
     let writer = tokio::spawn(async move {
         while let Some(m) = rx.recv().await {
             if sink.send(m).await.is_err() {
@@ -458,7 +463,9 @@ async fn serve_registration(
         // does not hold. An operator running an arena on a client library that
         // pings would be dropped mid-registration and never learn why.
         if let Message::Ping(p) = msg {
-            let _ = tx.send(Message::Pong(p));
+            if tx.try_send(Message::Pong(p)).is_err() {
+                break;
+            }
             continue;
         }
         let Message::Binary(data) = msg else { continue };
@@ -488,14 +495,14 @@ async fn serve_registration(
                     )
                 };
                 if r.version != fleet::PROTOCOL {
-                    let _ = tx.send(Message::Binary(reject(
+                    let _ = tx.try_send(Message::Binary(reject(
                         "version_unsupported",
                         &format!("this directory speaks {}", fleet::PROTOCOL),
                     )));
                     break;
                 }
                 if r.instance.is_empty() || r.address.is_empty() {
-                    let _ = tx.send(Message::Binary(reject(
+                    let _ = tx.try_send(Message::Binary(reject(
                         "bad_address",
                         "instance and address are required",
                     )));
@@ -509,7 +516,7 @@ async fn serve_registration(
                     }
                 };
                 if pool.is_empty() {
-                    let _ = tx.send(Message::Binary(reject("unknown_token", "")));
+                    let _ = tx.try_send(Message::Binary(reject("unknown_token", "")));
                     break;
                 }
                 {
@@ -523,7 +530,7 @@ async fn serve_registration(
                         .filter(|x| x.pool == pool && x.instance != r.instance)
                         .count();
                     if cap > 0 && held >= cap {
-                        let _ = tx.send(Message::Binary(reject(
+                        let _ = tx.try_send(Message::Binary(reject(
                             "pool_full",
                             &format!("pool {pool:?} is at its {cap} instance cap"),
                         )));
@@ -562,7 +569,7 @@ async fn serve_registration(
                         verified: false,
                     };
                     crate::metrics::REGISTRATIONS.inc();
-                    let _ = tx.send(Message::Binary(fleet::frame(
+                    let _ = tx.try_send(Message::Binary(fleet::frame(
                         fleet::D2A_ACCEPTED,
                         &accepted,
                     )));
@@ -662,7 +669,9 @@ async fn serve_registration(
                         .unwrap_or_default()
                         .as_bytes(),
                 );
-                let _ = tx.send(Message::Binary(m));
+                if tx.try_send(Message::Binary(m)).is_err() {
+                    break;
+                }
             }
             // An operator asking for everything this directory has observed,
             // which is the browse reply plus the rows a player is deliberately
@@ -695,7 +704,9 @@ async fn serve_registration(
                 body["audit"] = serde_json::to_value(rows).unwrap_or_default();
                 let mut m = vec![fleet::D2O_FLEET];
                 m.extend_from_slice(body.to_string().as_bytes());
-                let _ = tx.send(Message::Binary(m));
+                if tx.try_send(Message::Binary(m)).is_err() {
+                    break;
+                }
             }
             // An operator asking this directory to command an instance it
             // holds. Same gate as the view above, and the same reason: the
@@ -747,7 +758,12 @@ async fn serve_registration(
                         },
                     }
                 };
-                let _ = tx.send(Message::Binary(fleet::frame(fleet::D2O_COMMAND, &reply)));
+                if tx
+                    .try_send(Message::Binary(fleet::frame(fleet::D2O_COMMAND, &reply)))
+                    .is_err()
+                {
+                    break;
+                }
             }
             _ => {}
         }
@@ -820,7 +836,7 @@ async fn push_views(dir: Arc<Mutex<Directory>>) {
                 m
             };
             for r in d.regs.values() {
-                let _ = r.tx.send(Message::Binary(msg.clone()));
+                let _ = r.tx.try_send(Message::Binary(msg.clone()));
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(fleet::HEARTBEAT_MS / 2)).await;
@@ -989,7 +1005,7 @@ mod tests {
     }
 
     fn reg(d: &mut Directory, id: &str, zone: &str, players: u32, verified: bool) {
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::channel(1);
         d.regs.insert(
             id.into(),
             Reg {

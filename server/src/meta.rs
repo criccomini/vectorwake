@@ -280,6 +280,12 @@ const BOT_EVENT_DAYS: i32 = 7;
 /// clock restarts when a grouped error happens again so a live fault remains
 /// visible while an old one falls away.
 const CLIENT_ERROR_DAYS: i32 = 30;
+/// Password hashing is deliberately expensive. Keep that work below the point
+/// where it can occupy Tokio's whole blocking pool or exhaust a small host.
+const PASSWORD_WORKERS: usize = 4;
+/// One person can own enough bots for a useful squad without turning account
+/// registration into an unbounded namespace and database write.
+const OWNED_BOT_LIMIT: i64 = 16;
 
 pub struct Meta {
     pool: Pool,
@@ -292,6 +298,7 @@ pub struct Meta {
     /// to hammer. Guest creation burns call signs, login guesses passwords,
     /// and browser diagnostics otherwise offer a cheap public write path.
     throttle: Throttle,
+    password_work: Arc<tokio::sync::Semaphore>,
 }
 
 impl Meta {
@@ -308,6 +315,13 @@ impl Meta {
 fn new_secret() -> String {
     let bytes: [u8; 32] = rand::thread_rng().gen();
     token::to_hex(&bytes)
+}
+
+/// A house bot's device secret is stable for one pool identity and roster
+/// individual. Restarts can ask for it again without adding another permanent
+/// credential row. Rotating the pool token rotates these secrets as well.
+fn house_secret(pool_token: &str, name: &str) -> String {
+    sha256_hex(format!("vectorwake house bot\0{pool_token}\0{name}\0{pool_token}").as_bytes())
 }
 
 /// The words a call sign is drawn from, and this is the only place one is
@@ -429,6 +443,15 @@ impl Throttle {
         // without bound.
         if hits.len() > 4096 {
             hits.retain(|_, (_, at)| now.duration_since(*at) < window);
+        }
+        if hits.len() >= 4096 && !hits.contains_key(key) {
+            if let Some(oldest) = hits
+                .iter()
+                .min_by_key(|(_, (_, at))| *at)
+                .map(|(key, _)| key.clone())
+            {
+                hits.remove(&oldest);
+            }
         }
         let entry = hits.entry(key.to_string()).or_insert((0, now));
         if now.duration_since(entry.1) >= window {
@@ -708,7 +731,7 @@ async fn route(
             serde_json::json!({ "error": "too many error reports; wait a while" }),
         );
     }
-    let db = match meta.db().await {
+    let mut db = match meta.db().await {
         Ok(d) => d,
         Err(e) => return (503, serde_json::json!({ "error": e })),
     };
@@ -871,10 +894,26 @@ async fn route(
             else {
                 return (403, serde_json::json!({ "error": "no such account" }));
             };
+            if !meta.throttle.allow(&format!("claim:{ip}"), 20, hour)
+                || !meta
+                    .throttle
+                    .allow(&format!("claim-account:{account}"), 4, hour)
+            {
+                return (
+                    429,
+                    serde_json::json!({ "error": "too many password changes; wait a while" }),
+                );
+            }
             let password = s("password");
             if let Some(why) = password_trouble(&password) {
                 return (400, serde_json::json!({ "error": why }));
             }
+            let Ok(_permit) = meta.password_work.clone().try_acquire_owned() else {
+                return (
+                    503,
+                    serde_json::json!({ "error": "password service is busy; try again" }),
+                );
+            };
             let hashed = match tokio::task::spawn_blocking(move || hash_password(&password)).await {
                 Ok(Ok(h)) => h,
                 Ok(Err(e)) => return (500, serde_json::json!({ "error": e })),
@@ -937,6 +976,12 @@ async fn route(
             let account: i64 = row.get(0);
             let stored: String = row.get(1);
             let password = s("password");
+            let Ok(_permit) = meta.password_work.clone().try_acquire_owned() else {
+                return (
+                    503,
+                    serde_json::json!({ "error": "password service is busy; try again" }),
+                );
+            };
             let ok = tokio::task::spawn_blocking(move || verify_password(&password, &stored))
                 .await
                 .unwrap_or(false);
@@ -1001,50 +1046,137 @@ async fn route(
         // one roster individual. Idempotent: an individual is one account and
         // one career however many times the bot server restarts.
         "/v1/bot" => {
-            if meta.catalog.pool_for_token(&s("pool_token")).is_none() {
+            let pool_token = s("pool_token");
+            if meta.catalog.pool_for_token(&pool_token).is_none() {
                 return (403, serde_json::json!({ "error": "unknown pool token" }));
             }
             let name = clean_name(&s("name"));
             if name.is_empty() {
                 return (400, serde_json::json!({ "error": "a bot needs a name" }));
             }
-            let account = match account_for(&db, "house", &name).await {
-                Some(a) => a,
-                None => match create_account(&db, KIND_HOUSE_BOT, None).await {
-                    Ok(a) => {
-                        if let Err(e) = add_credential(&db, a, "house", &name).await {
-                            return (500, serde_json::json!({ "error": e }));
-                        }
-                        if let Err(e) = set_name(&db, a, &name).await {
-                            return (500, serde_json::json!({ "error": e }));
-                        }
-                        // A new individual starts where the offline tournament
-                        // put it rather than at the default, which is what
-                        // gives a fresh deployment a sane ladder before a
-                        // single human has played. The pinned anchor is the
-                        // case that matters most: everything else in the fleet
-                        // is measured against it, so it has to be at its rating
-                        // from the first tick and not climb to it.
-                        if let Some(seed) = crate::calibrated_rating(&name) {
-                            let _ = db
-                                .execute(
-                                    "insert into ratings (account, class, rating, games)
-                                     values ($1, $2, $3, 0)
-                                     on conflict (account, class) do nothing",
-                                    &[&a, &DEFAULT_CLASS, &seed],
-                                )
-                                .await;
-                        }
-                        a
-                    }
-                    Err(e) => return (500, serde_json::json!({ "error": e })),
-                },
+            if !(0..4096).any(|n| crate::ai::individual(n).name == name) {
+                return (400, serde_json::json!({ "error": "no such house bot" }));
+            }
+            let secret = house_secret(&pool_token, &name);
+            let hash = sha256_hex(secret.as_bytes());
+            let transaction = match db.transaction().await {
+                Ok(t) => t,
+                Err(e) => {
+                    return (
+                        500,
+                        serde_json::json!({ "error": format!("cannot begin bot claim: {e}") }),
+                    )
+                }
             };
-            let secret = new_secret();
-            if let Err(e) =
-                add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await
+            if let Err(e) = transaction
+                .query_one(
+                    "select pg_advisory_xact_lock(hashtext($1)::bigint)",
+                    &[&name],
+                )
+                .await
             {
-                return (500, serde_json::json!({ "error": e }));
+                return (
+                    500,
+                    serde_json::json!({ "error": format!("cannot lock bot claim: {e}") }),
+                );
+            }
+            let account = match transaction
+                .query_opt(
+                    "select account from credentials where method = 'house' and hash = $1",
+                    &[&name],
+                )
+                .await
+            {
+                Ok(Some(row)) => row.get::<_, i64>(0),
+                Ok(None) => {
+                    let account: i64 = match transaction
+                        .query_one(
+                            "insert into accounts (kind) values ($1) returning id",
+                            &[&KIND_HOUSE_BOT],
+                        )
+                        .await
+                    {
+                        Ok(row) => row.get(0),
+                        Err(e) => {
+                            return (
+                                500,
+                                serde_json::json!({ "error": format!("cannot create bot: {e}") }),
+                            )
+                        }
+                    };
+                    if let Err(e) = transaction
+                        .execute(
+                            "insert into credentials (method, hash, account) values ('house', $1, $2)",
+                            &[&name, &account],
+                        )
+                        .await
+                    {
+                        return (500, serde_json::json!({ "error": format!("cannot identify bot: {e}") }));
+                    }
+                    if let Err(e) = transaction
+                        .execute(
+                            "insert into names (account, call_sign) values ($1, $2)",
+                            &[&account, &name],
+                        )
+                        .await
+                    {
+                        return (
+                            500,
+                            serde_json::json!({ "error": format!("cannot name bot: {e}") }),
+                        );
+                    }
+                    if let Some(seed) = crate::calibrated_rating(&name) {
+                        if let Err(e) = transaction
+                            .execute(
+                                "insert into ratings (account, class, rating, games)
+                                 values ($1, $2, $3, 0)
+                                 on conflict (account, class) do nothing",
+                                &[&account, &DEFAULT_CLASS, &seed],
+                            )
+                            .await
+                        {
+                            return (
+                                500,
+                                serde_json::json!({ "error": format!("cannot seed bot: {e}") }),
+                            );
+                        }
+                    }
+                    account
+                }
+                Err(e) => {
+                    return (
+                        500,
+                        serde_json::json!({ "error": format!("cannot find bot: {e}") }),
+                    )
+                }
+            };
+            if let Err(e) = transaction
+                .execute(
+                    "delete from credentials where account = $1 and method = 'secret' and hash <> $2",
+                    &[&account, &hash],
+                )
+                .await
+            {
+                return (500, serde_json::json!({ "error": format!("cannot retire old bot credential: {e}") }));
+            }
+            if let Err(e) = transaction
+                .execute(
+                    "insert into credentials (method, hash, account) values ('secret', $1, $2)
+                     on conflict (method, hash) do nothing",
+                    &[&hash, &account],
+                )
+                .await
+            {
+                return (
+                    500,
+                    serde_json::json!({ "error": format!("cannot store credential: {e}") }),
+                );
+            }
+            if let Err(e) = transaction.commit().await {
+                return (
+                    500,
+                    serde_json::json!({ "error": format!("cannot commit credential: {e}") }),
+                );
             }
             (
                 200,
@@ -1085,18 +1217,109 @@ async fn route(
             if name.is_empty() {
                 return (400, serde_json::json!({ "error": "a bot needs a name" }));
             }
-            let account = match create_account(&db, KIND_THIRD_PARTY_BOT, Some(owner)).await {
-                Ok(a) => a,
-                Err(e) => return (500, serde_json::json!({ "error": e })),
-            };
-            if let Err(e) = set_name(&db, account, &name).await {
-                return (500, serde_json::json!({ "error": e }));
+            if !meta.throttle.allow(&format!("bot-register:{ip}"), 20, hour)
+                || !meta
+                    .throttle
+                    .allow(&format!("bot-register-owner:{owner}"), 20, hour)
+            {
+                return (
+                    429,
+                    serde_json::json!({ "error": "too many bot registrations; wait a while" }),
+                );
             }
             let secret = new_secret();
-            if let Err(e) =
-                add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await
+            let hash = sha256_hex(secret.as_bytes());
+            let transaction = match db.transaction().await {
+                Ok(t) => t,
+                Err(e) => {
+                    return (
+                        500,
+                        serde_json::json!({ "error": format!("cannot begin bot registration: {e}") }),
+                    )
+                }
+            };
+            // One owner at a time. The count and insert below are one decision,
+            // even when two browser tabs submit together.
+            if let Err(e) = transaction
+                .query_one("select pg_advisory_xact_lock($1)", &[&owner])
+                .await
             {
-                return (500, serde_json::json!({ "error": e }));
+                return (
+                    500,
+                    serde_json::json!({ "error": format!("cannot lock bot registration: {e}") }),
+                );
+            }
+            let owned: i64 = match transaction
+                .query_one(
+                    "select count(*) from accounts where kind = $1 and owner = $2",
+                    &[&KIND_THIRD_PARTY_BOT, &owner],
+                )
+                .await
+            {
+                Ok(r) => r.get(0),
+                Err(e) => {
+                    return (
+                        500,
+                        serde_json::json!({ "error": format!("cannot count bots: {e}") }),
+                    )
+                }
+            };
+            if owned >= OWNED_BOT_LIMIT {
+                return (
+                    409,
+                    serde_json::json!({ "error": format!("one pilot may register at most {OWNED_BOT_LIMIT} bots") }),
+                );
+            }
+            let account: i64 = match transaction
+                .query_one(
+                    "insert into accounts (kind, owner) values ($1, $2) returning id",
+                    &[&KIND_THIRD_PARTY_BOT, &owner],
+                )
+                .await
+            {
+                Ok(r) => r.get(0),
+                Err(e) => {
+                    return (
+                        500,
+                        serde_json::json!({ "error": format!("cannot create account: {e}") }),
+                    )
+                }
+            };
+            if let Err(e) = transaction
+                .execute(
+                    "insert into names (account, call_sign) values ($1, $2)",
+                    &[&account, &name],
+                )
+                .await
+            {
+                use deadpool_postgres::tokio_postgres::error::SqlState;
+                let why = if e.code() == Some(&SqlState::UNIQUE_VIOLATION) {
+                    TAKEN.to_string()
+                } else {
+                    format!("cannot store name: {e}")
+                };
+                return (
+                    if why == TAKEN { 409 } else { 500 },
+                    serde_json::json!({ "error": why }),
+                );
+            }
+            if let Err(e) = transaction
+                .execute(
+                    "insert into credentials (method, hash, account) values ('secret', $1, $2)",
+                    &[&hash, &account],
+                )
+                .await
+            {
+                return (
+                    500,
+                    serde_json::json!({ "error": format!("cannot store credential: {e}") }),
+                );
+            }
+            if let Err(e) = transaction.commit().await {
+                return (
+                    500,
+                    serde_json::json!({ "error": format!("cannot commit bot: {e}") }),
+                );
             }
             (
                 200,
@@ -1129,6 +1352,22 @@ async fn route(
                 );
             }
             let instance = s("instance");
+            let standing = db
+                .query_opt("select banned from accounts where id = $1", &[&account])
+                .await;
+            match standing {
+                Ok(Some(row)) if row.get::<_, bool>(0) => {
+                    return (403, serde_json::json!({ "error": "banned" }));
+                }
+                Ok(Some(_)) => {}
+                Ok(None) => return (403, serde_json::json!({ "error": "no such account" })),
+                Err(e) => {
+                    return (
+                        500,
+                        serde_json::json!({ "error": format!("cannot read account: {e}") }),
+                    )
+                }
+            }
             let row = db
                 .query_opt(
                     "insert into active_rated_sessions (account, session, instance, touched)
@@ -1144,7 +1383,71 @@ async fn route(
                 )
                 .await;
             match row {
-                Ok(row) => (200, serde_json::json!({ "claimed": row.is_some() })),
+                Ok(row) => {
+                    let claimed = row.is_some();
+                    let ratings = if claimed {
+                        match db
+                            .query(
+                                "select class, rating, games from ratings where account = $1",
+                                &[&account],
+                            )
+                            .await
+                        {
+                            Ok(rows) => rows
+                                .iter()
+                                .map(|row| {
+                                    serde_json::json!({
+                                        "class": row.get::<_, String>(0),
+                                        "rating": row.get::<_, f64>(1),
+                                        "games": row.get::<_, i32>(2).max(0),
+                                    })
+                                })
+                                .collect::<Vec<_>>(),
+                            Err(e) => {
+                                return (
+                                    500,
+                                    serde_json::json!({ "error": format!("cannot read rating: {e}") }),
+                                );
+                            }
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                    (
+                        200,
+                        serde_json::json!({ "claimed": claimed, "ratings": ratings }),
+                    )
+                }
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // A live watcher holds no exclusive rated seat, but a fleet ban still
+        // has to close its connection. Arenas poll this narrow route while a
+        // token-backed account is connected without a rated lease.
+        "/v1/account-standing" => {
+            if meta.catalog.pool_for_token(&s("pool_token")).is_none() {
+                return (403, serde_json::json!({ "error": "unknown pool token" }));
+            }
+            let Some(account) = body
+                .get("account")
+                .and_then(|value| value.as_i64())
+                .filter(|value| *value > 0)
+            else {
+                return (
+                    400,
+                    serde_json::json!({ "error": "standing needs an account" }),
+                );
+            };
+            match db
+                .query_opt("select banned from accounts where id = $1", &[&account])
+                .await
+            {
+                Ok(Some(row)) if row.get::<_, bool>(0) => {
+                    (403, serde_json::json!({ "error": "banned" }))
+                }
+                Ok(Some(_)) => (200, serde_json::json!({ "active": true })),
+                Ok(None) => (403, serde_json::json!({ "error": "no such account" })),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
@@ -1558,6 +1861,16 @@ async fn route(
                     }),
                 ),
                 Ok(_) => {
+                    let name: String = db
+                        .query_opt(
+                            "select call_sign from names where account = $1",
+                            &[&account],
+                        )
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|row| row.get(0))
+                        .unwrap_or_default();
                     // Actions get no audit trail from the catalog, so say it
                     // here, the way the directory notes its commands.
                     println!("meta: admin {actor} set banned={banned} on {account}: {reason:?}");
@@ -1572,6 +1885,32 @@ async fn route(
                         serde_json::json!({ "by": actor, "reason": reason }),
                     )
                     .await;
+                    // A database mark closes the door for future tokens. Tell
+                    // every registered arena as well so a connection already
+                    // through that door does not stay until it reconnects.
+                    if banned && !name.is_empty() {
+                        let actor_name: String = db
+                            .query_opt("select call_sign from names where account = $1", &[&actor])
+                            .await
+                            .ok()
+                            .flatten()
+                            .map(|row| row.get(0))
+                            .unwrap_or_else(|| format!("account {actor}"));
+                        let cmd = crate::fleet::OperatorCommand {
+                            instance: "*".into(),
+                            verb: "kick".into(),
+                            args: name,
+                            actor: actor_name,
+                        };
+                        let frame = crate::fleet::frame(crate::fleet::O2D_COMMAND, &cmd);
+                        let url = directory_url();
+                        if crate::directory::ask_with(&url, frame, crate::fleet::D2O_COMMAND)
+                            .await
+                            .is_none()
+                        {
+                            println!("meta: ban saved, but the directory at {url} did not answer");
+                        }
+                    }
                     (
                         200,
                         serde_json::json!({ "account": account, "banned": banned }),
@@ -1914,25 +2253,54 @@ async fn route(
         // a trip to the database, and the one keystroke between those two
         // states should not be this one.
         "/v1/admin/grant" => {
-            let Some(actor) = admin_for(&db, &s("secret")).await else {
-                return (403, serde_json::json!({ "error": "not an admin" }));
-            };
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
             let admin = body.get("admin").and_then(|v| v.as_bool()).unwrap_or(true);
-            let row = db
+            let secret_hash = sha256_hex(s("secret").as_bytes());
+            let transaction = match db.transaction().await {
+                Ok(tx) => tx,
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            // Every grant and revoke takes the same transaction lock. Without
+            // it, two last-admin revocations can both count the other and then
+            // commit a deployment with nobody able to open the panel.
+            if let Err(e) = transaction
+                .query_one("select pg_advisory_xact_lock(865382731)", &[])
+                .await
+            {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
+            let actor: i64 = match transaction
                 .query_opt(
-                    "select a.kind, a.admin,
+                    "select a.id from accounts a join credentials c on c.account = a.id
+                     where c.hash = $1 and a.admin and not a.banned",
+                    &[&secret_hash],
+                )
+                .await
+            {
+                Ok(Some(row)) => row.get(0),
+                Ok(None) => return (403, serde_json::json!({ "error": "not an admin" })),
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            let row = transaction
+                .query_opt(
+                    "select a.kind, a.admin, a.banned,
                             exists (select 1 from credentials c
                                     where c.account = a.id and c.method = 'password')
                      from accounts a where a.id = $1",
                     &[&account],
                 )
                 .await;
-            let (kind, held, has_password): (i16, bool, bool) = match row {
-                Ok(Some(r)) => (r.get(0), r.get(1), r.get(2)),
+            let (kind, held, banned, has_password): (i16, bool, bool, bool) = match row {
+                Ok(Some(r)) => (r.get(0), r.get(1), r.get(2), r.get(3)),
                 Ok(None) => return (404, serde_json::json!({ "error": "no such account" })),
                 Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
             };
+            if admin && banned {
+                return (
+                    400,
+                    serde_json::json!({ "error": "a banned account cannot be an admin" }),
+                );
+            }
             if admin && kind_of(kind).is_bot() {
                 return (
                     400,
@@ -1951,9 +2319,10 @@ async fn route(
                 );
             }
             if !admin && held {
-                let others: i64 = db
+                let others: i64 = transaction
                     .query_one(
-                        "select count(*) from accounts where admin and id <> $1",
+                        "select count(*) from accounts
+                         where admin and not banned and id <> $1",
                         &[&account],
                     )
                     .await
@@ -1969,7 +2338,7 @@ async fn route(
                     );
                 }
             }
-            let r = db
+            let r = transaction
                 .execute(
                     "update accounts set admin = $2 where id = $1",
                     &[&account, &admin],
@@ -1978,6 +2347,9 @@ async fn route(
             match r {
                 Ok(0) => (404, serde_json::json!({ "error": "no such account" })),
                 Ok(_) => {
+                    if let Err(e) = transaction.commit().await {
+                        return (500, serde_json::json!({ "error": format!("{e}") }));
+                    }
                     println!("meta: admin {actor} set admin={admin} on account {account}");
                     note_account(
                         &db,
@@ -2901,7 +3273,7 @@ pub async fn claim_rated_session(
     account: u64,
     session: &str,
     instance: &str,
-) -> Result<bool, String> {
+) -> Result<(bool, Vec<ClassRating>), String> {
     let body = serde_json::json!({
         "pool_token": pool_token,
         "account": account,
@@ -2910,10 +3282,26 @@ pub async fn claim_rated_session(
     })
     .to_string();
     let reply = call(base, "/v1/rated-session/claim", &body).await?;
-    Ok(reply
+    let claimed = reply
         .get("claimed")
         .and_then(|v| v.as_bool())
-        .unwrap_or(false))
+        .unwrap_or(false);
+    let ratings = reply
+        .get("ratings")
+        .and_then(|value| value.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    Some(ClassRating {
+                        class: row.get("class")?.as_str()?.to_string(),
+                        rating: row.get("rating")?.as_f64()?,
+                        games: row.get("games")?.as_u64()?.min(u32::MAX as u64) as u32,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok((claimed, ratings))
 }
 
 /// Release a rated seat. The route is idempotent, so cleanup can call it
@@ -2935,26 +3323,84 @@ pub async fn release_rated_session(
         .map(|_| ())
 }
 
+/// Recheck a connected account without claiming an exclusive rated seat.
+pub async fn account_standing(base: &str, pool_token: &str, account: u64) -> Result<(), String> {
+    let body = serde_json::json!({
+        "pool_token": pool_token,
+        "account": account,
+    })
+    .to_string();
+    call(base, "/v1/account-standing", &body).await.map(|_| ())
+}
+
 // ------------------------------------------------------------------ server
 
-async fn serve(mut s: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result<()> {
-    let mut buf = vec![0u8; 64 * 1024];
-    let n = s.read(&mut buf).await?;
-    if n == 0 {
-        return Ok(());
+const HTTP_HEADER_MAX: usize = 16 * 1024;
+const HTTP_BODY_MAX: usize = 512 * 1024;
+const HTTP_DEADLINE_SECS: u64 = 10;
+
+async fn serve(mut stream: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result<()> {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(HTTP_DEADLINE_SECS),
+        serve_request(&mut stream, meta),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            reply(
+                &mut stream,
+                408,
+                &serde_json::json!({ "error": "request timed out" }),
+            )
+            .await
+        }
     }
-    let text = String::from_utf8_lossy(&buf[..n]).to_string();
-    let request = text.split("\r\n").next().unwrap_or("");
+}
+
+async fn serve_request(stream: &mut tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result<()> {
+    let mut request_bytes = Vec::with_capacity(4096);
+    let mut chunk = [0u8; 4096];
+    let head_end = loop {
+        let n = stream.read(&mut chunk).await?;
+        if n == 0 {
+            return Ok(());
+        }
+        request_bytes.extend_from_slice(&chunk[..n]);
+        if let Some(end) = request_bytes
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+        {
+            break end + 4;
+        }
+        if request_bytes.len() > HTTP_HEADER_MAX {
+            return reply(
+                stream,
+                431,
+                &serde_json::json!({ "error": "request headers are too large" }),
+            )
+            .await;
+        }
+    };
+    if head_end > HTTP_HEADER_MAX {
+        return reply(
+            stream,
+            431,
+            &serde_json::json!({ "error": "request headers are too large" }),
+        )
+        .await;
+    }
+
+    let head = String::from_utf8_lossy(&request_bytes[..head_end]);
+    let request = head.split("\r\n").next().unwrap_or("");
     let mut parts = request.split(' ');
     let method = parts.next().unwrap_or("");
     let path = parts.next().unwrap_or("/");
-    let body = text.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
 
     // Who is asking, for the throttles. Behind Caddy every peer is loopback
     // and the truth rides in X-Forwarded-For; anything reaching this port
     // directly could write that header itself, but reaching it directly
     // means being on the host, which is a bigger problem than a throttle.
-    let head = text.split_once("\r\n\r\n").map(|(h, _)| h).unwrap_or(&text);
     let ip = head
         .split("\r\n")
         .find_map(|l| {
@@ -2964,29 +3410,37 @@ async fn serve(mut s: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result
         })
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| {
-            s.peer_addr()
+            stream
+                .peer_addr()
                 .map(|a| a.ip().to_string())
                 .unwrap_or_default()
         });
 
-    // A body can outrun one read. Everything here is small, so the fix is to
-    // keep reading until the declared length arrives rather than to stream.
-    let want: usize = text
-        .split("\r\n")
-        .find_map(|l| {
-            let l = l.to_ascii_lowercase();
-            l.strip_prefix("content-length:")
-                .map(|v| v.trim().parse().unwrap_or(0))
-        })
-        .unwrap_or(0);
-    let mut body = body.to_string();
+    let want = match content_length(&head) {
+        Ok(length) => length,
+        Err(error) => {
+            return reply(stream, 400, &serde_json::json!({ "error": error })).await;
+        }
+    };
+    if want > HTTP_BODY_MAX {
+        return reply(
+            stream,
+            413,
+            &serde_json::json!({ "error": "request body is too large" }),
+        )
+        .await;
+    }
+    let mut body = request_bytes[head_end..].to_vec();
     while body.len() < want {
-        let n = s.read(&mut buf).await?;
+        let left = want - body.len();
+        let take = left.min(chunk.len());
+        let n = stream.read(&mut chunk[..take]).await?;
         if n == 0 {
             break;
         }
-        body.push_str(&String::from_utf8_lossy(&buf[..n]));
+        body.extend_from_slice(&chunk[..n]);
     }
+    body.truncate(want);
 
     let (code, out) = if method == "GET" && path == "/v1/health" {
         // Deliberately answerable without the database, so a health check
@@ -2996,10 +3450,61 @@ async fn serve(mut s: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result
         (405, serde_json::json!({ "error": "post json" }))
     } else {
         let parsed: serde_json::Value =
-            serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+            serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
         route(&meta, path, &parsed, &ip).await
     };
 
+    reply(stream, code, &out).await
+}
+
+fn content_length(head: &str) -> Result<usize, &'static str> {
+    let mut found = None;
+    for line in head.split("\r\n") {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if !name.eq_ignore_ascii_case("content-length") {
+            continue;
+        }
+        if found.is_some() {
+            return Err("duplicate content-length");
+        }
+        found = Some(
+            value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| "invalid content-length")?,
+        );
+    }
+    Ok(found.unwrap_or(0))
+}
+
+#[cfg(test)]
+mod http_tests {
+    use super::content_length;
+
+    #[test]
+    fn content_length_is_strict_and_case_insensitive() {
+        assert_eq!(
+            content_length("POST / HTTP/1.1\r\nContent-Length: 42\r\n"),
+            Ok(42)
+        );
+        assert_eq!(
+            content_length("POST / HTTP/1.1\r\ncontent-length: nope\r\n"),
+            Err("invalid content-length")
+        );
+        assert_eq!(
+            content_length("POST / HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 1\r\n"),
+            Err("duplicate content-length")
+        );
+    }
+}
+
+async fn reply(
+    stream: &mut tokio::net::TcpStream,
+    code: u16,
+    out: &serde_json::Value,
+) -> std::io::Result<()> {
     let out = out.to_string();
     // Every code any route here returns. A route answering with one that is
     // missing from this list does not fail loudly: it sends the right body
@@ -3012,8 +3517,11 @@ async fn serve(mut s: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result
         403 => "403 Forbidden",
         404 => "404 Not Found",
         405 => "405 Method Not Allowed",
+        408 => "408 Request Timeout",
         409 => "409 Conflict",
+        413 => "413 Payload Too Large",
         429 => "429 Too Many Requests",
+        431 => "431 Request Header Fields Too Large",
         502 => "502 Bad Gateway",
         503 => "503 Service Unavailable",
         _ => "500 Internal Server Error",
@@ -3023,9 +3531,9 @@ async fn serve(mut s: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result
          Cache-Control: no-store\r\nConnection: close\r\n\r\n",
         out.len()
     );
-    s.write_all(head.as_bytes()).await?;
-    s.write_all(out.as_bytes()).await?;
-    s.flush().await
+    stream.write_all(head.as_bytes()).await?;
+    stream.write_all(out.as_bytes()).await?;
+    stream.flush().await
 }
 
 /// `vectorwake-server meta [catalog-dir]`
@@ -3297,6 +3805,7 @@ pub async fn run() {
         signing,
         catalog,
         throttle: Throttle::default(),
+        password_work: Arc::new(tokio::sync::Semaphore::new(PASSWORD_WORKERS)),
     });
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
@@ -3487,6 +3996,27 @@ mod tests {
         assert!(t.allow("other", 5, w), "keys do not share a window");
         std::thread::sleep(w);
         assert!(t.allow("k", 5, w), "a new window opens");
+    }
+
+    #[test]
+    fn throttle_keys_are_bounded() {
+        let throttle = Throttle::default();
+        for n in 0..5000 {
+            assert!(throttle.allow(
+                &format!("address-{n}"),
+                1,
+                std::time::Duration::from_secs(3600)
+            ));
+        }
+        assert!(throttle.hits.lock().unwrap().len() <= 4096);
+    }
+
+    #[test]
+    fn a_house_bot_secret_is_stable_until_the_pool_rotates() {
+        let one = house_secret("pool one", "Cantry");
+        assert_eq!(one, house_secret("pool one", "Cantry"));
+        assert_ne!(one, house_secret("pool two", "Cantry"));
+        assert_ne!(one, house_secret("pool one", "Carrack"));
     }
 
     #[test]

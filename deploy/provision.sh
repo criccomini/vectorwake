@@ -196,6 +196,14 @@ git clone --depth 1 --branch '__BRANCH__' \
 	git@github.com:criccomini/vectorwake.git /opt/vectorwake \
 	|| die "clone; is the deploy key on the repository?"
 
+# Every production component names the same commit. Both workflows publish an
+# immutable tag for every push, and provisioning refuses to start the release
+# until both are available.
+RELEASE_SHA=$(git -C /opt/vectorwake rev-parse --short=12 HEAD)
+VW_IMAGE=ghcr.io/criccomini/vectorwake:sha-$RELEASE_SHA
+VW_CLIENT_IMAGE=ghcr.io/criccomini/vectorwake-client:sha-$RELEASE_SHA
+export VW_IMAGE VW_CLIENT_IMAGE
+
 # What this host runs. `all` is both shapes on one box, which is what the fleet
 # is today; `central` is the front door (the directory, the meta-layer, the
 # page) and `arena` is the games and their bots.
@@ -318,9 +326,20 @@ if [ -n "$REGISTRY_TOKEN" ]; then
 fi
 
 # Pulled rather than built, which is the difference between ten minutes and one.
-say "pulling the server image"
+# A host can be created while CI is still publishing this commit, so wait for
+# the pair instead of treating the faster workflow as a complete release.
+say "waiting for the paired sha-$RELEASE_SHA images"
+i=0
+until docker pull "$VW_IMAGE" >/dev/null 2>&1 \
+	&& docker pull "$VW_CLIENT_IMAGE" >/dev/null 2>&1; do
+	i=$((i + 1))
+	[ $i -lt 60 ] || die "paired images did not appear within ten minutes"
+	sleep 10
+done
+say "pulling the release images"
 docker compose --env-file .env pull --quiet || die "pull; see provision.log"
 docker compose --env-file .env up -d || die "start; see provision.log"
+printf '%s\n' "$(git -C /opt/vectorwake rev-parse HEAD)" >"$LOG/release"
 
 say "up:"
 docker compose --env-file .env ps --format '{{.Service}} {{.State}}' >>"$LOG/status"
@@ -373,3 +392,8 @@ else
 	say "record does not point here yet, that is expected: Caddy retries, and"
 	say "it succeeds the moment the name resolves to this host."
 fi
+
+# The rendered copy holds every bootstrap secret. The checkout keeps the
+# template, and the provider metadata is scrubbed by fleet.sh once this success
+# line becomes visible.
+rm -f /usr/local/bin/vw-provision

@@ -16,10 +16,8 @@ x-central: &central
   # none of the 2 GB of swap that existed because cargo linking tokio and
   # rustls was the peak memory of its life.
   #
-  # `prod` is a moving pointer CI retags on every push to main. Rollback is
-  # retagging it at an older `sha-` and letting the updater converge, which
-  # beats reverting a commit and rebuilding. Pin VW_IMAGE to a `sha-` tag to
-  # hold a host at a known build.
+  # Production exports the immutable tag for one commit before compose runs.
+  # The moving default is kept for a laptop or a manual recovery command.
   #
   # docker-compose.local.yml puts the build back for working on a laptop.
   image: ${VW_IMAGE:-ghcr.io/criccomini/vectorwake:prod}

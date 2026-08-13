@@ -20,6 +20,7 @@
 #
 #   fleet.sh render <role> <name>     the user-data, to read before you send it
 #   fleet.sh new    <role> <name> [region]
+#   fleet.sh scrub  <name>            remove completed bootstrap user-data
 #   fleet.sh firewall                 create or complete the firewall group
 #   fleet.sh db [--url]               the managed database and its connection string
 #   fleet.sh db create [region]       bring one up
@@ -142,9 +143,9 @@ vultr_do() {
 # what lets them be committed. This is the only thing that fills them, and it
 # writes to stdout so `render` can show an operator exactly what will be sent
 # before anything is created. Everything substituted here ends up in the
-# instance's user-data, readable through the metadata service by anything on
-# the box. Acceptable because the box is what holds these anyway, and the reason
-# they are per host rather than shared.
+# instance's user-data only for first boot. `new` waits for success and replaces
+# it with an empty cloud config; `scrub` finishes that cleanup after a repaired
+# provision.
 # Everything an operator has to supply, checked before anything is created.
 #
 # Its own step because `new` allocates a volume before it renders, and a
@@ -550,6 +551,50 @@ cmd_new() {
 	*)     echo "fleet: then   https://$FRONT/deploy/status  after: fleet.sh point ${FRONT%%.*} $name"
 	       echo "fleet:        ($host itself stays http; a central host serves $FRONT, not its own name)" ;;
 	esac
+
+	if [ "$DRY" = 1 ]; then
+		scrub_user_data "$id"
+		return
+	fi
+	echo "fleet: waiting for provisioning to finish before removing bootstrap user-data"
+	n=0
+	until curl -fsS --max-time 5 "http://$ip/deploy/status" 2>/dev/null \
+		| grep -q 'provisioning finished'; do
+		n=$((n + 1))
+		[ $n -lt 120 ] || die "provisioning did not finish within twenty minutes.
+       The user-data is still present so the host can recover. After the status
+       says provisioning finished, run: fleet.sh scrub $name"
+		sleep 10
+	done
+	scrub_user_data "$id"
+}
+
+scrub_user_data() {
+	su_id=$1
+	su_stub=$(mktemp) || die "no temporary file for empty user-data"
+	printf '#cloud-config\n' >"$su_stub"
+	vultr_do instance user-data set "$su_id" --userdata "$su_stub" >/dev/null \
+		|| { rm -f "$su_stub"; die "could not replace instance user-data"; }
+	rm -f "$su_stub"
+	echo "fleet: bootstrap user-data removed from $su_id"
+}
+
+cmd_scrub() {
+	[ $# -eq 1 ] || die "usage: fleet.sh scrub <name>"
+	name=$1
+	host=$name.$DOMAIN
+	need jq "jq is not installed"
+	row=$(vultr instance list -o json | jq -c --arg l "$host" \
+		'.instances[] | select(.label == $l)')
+	[ -n "$row" ] || die "no instance labeled $host"
+	id=$(printf '%s' "$row" | jq -r '.id')
+	ip=$(printf '%s' "$row" | jq -r '.main_ip')
+	if [ "$DRY" != 1 ] && ! curl -fsS --max-time 5 "http://$ip/deploy/status" 2>/dev/null \
+		| grep -q 'provisioning finished'; then
+		die "$host has not reported provisioning finished. Its bootstrap data is
+       still needed if cloud-init has to resume."
+	fi
+	scrub_user_data "$id"
 }
 
 # Create or move one A record, quietly when it already points there. For the
@@ -843,8 +888,8 @@ db_destroy() {
 	cat >&2 <<WARN
 fleet: this holds every account, every rating and the rated event log.
        Nothing in this repository is a copy of it and no other verb here
-       is this final. Take a dump first if the contents matter:
-         pg_dump "\$(fleet.sh db --url)" > vectorwake-\$(date -u +%Y%m%d).sql
+       is this final. Confirm the managed database's automatic backup status
+       in Vultr before continuing.
 WARN
 	printf 'fleet: type the label %s to destroy it: ' "$DB_LABEL"
 	read -r typed
@@ -1292,6 +1337,7 @@ db)       shift; cmd_db "$@" ;;
 secrets)  shift; cmd_secrets "$@" ;;
 point)  shift; cmd_point "$@" ;;
 new)    shift; cmd_new "$@" ;;
+scrub)  shift; cmd_scrub "$@" ;;
 rm)     shift; cmd_rm "$@" ;;
 *)      sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//' ; exit 2 ;;
 esac

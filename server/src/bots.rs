@@ -379,8 +379,14 @@ struct Live {
     /// good moment rather than at once, per the graceful rules in
     /// docs/design/ai-players.md.
     yielding: Arc<AtomicBool>,
+    /// This identity already holds a rated lease on another host. Back it out
+    /// of this supervisor's front of the roster long enough for that lease and
+    /// its renewal window to clear.
+    busy: Arc<AtomicBool>,
     task: tokio::task::JoinHandle<()>,
 }
+
+const RATED_BUSY_BACKOFF_MS: u64 = 180_000;
 
 /// What the supervisor knows about one arena.
 #[derive(Default)]
@@ -399,10 +405,10 @@ pub async fn run() {
     crate::metrics::spawn("bots", "");
     let maps: Arc<Maps> = Arc::default();
     let rigs: Arc<Rigs> = Arc::default();
-    // Names in use across the whole fleet. An individual appears in one place at
-    // a time, which is what makes its rating the record of one career rather
-    // than an average over clones.
+    // Names in use by this supervisor. The meta-layer's rated lease arbitrates
+    // the same identity between supervisors on different hosts.
     let taken: Arc<Mutex<HashSet<String>>> = Arc::default();
+    let blocked: Arc<Mutex<HashMap<String, u64>>> = Arc::default();
     // One account secret per individual, held for the life of the process.
     let secrets: Arc<Mutex<HashMap<String, String>>> = Arc::default();
     let mut fleet: HashMap<String, Instance> = HashMap::new();
@@ -437,6 +443,12 @@ pub async fn run() {
             inst.bots.retain(|b| {
                 let done = b.task.is_finished();
                 if done {
+                    if b.busy.load(Ordering::Relaxed) {
+                        if let Ok(mut blocked) = blocked.lock() {
+                            blocked
+                                .insert(b.name.clone(), now.saturating_add(RATED_BUSY_BACKOFF_MS));
+                        }
+                    }
                     if let Ok(mut t) = taken.lock() {
                         t.remove(&b.name);
                     }
@@ -502,20 +514,25 @@ pub async fn run() {
                 }
                 let add = (n - have).min(ADD_PER_CYCLE);
                 for _ in 0..add {
-                    let Some(who) = claim(&taken) else { break };
+                    let Some(who) = claim(&taken, &blocked, now) else {
+                        break;
+                    };
                     let yielding = Arc::new(AtomicBool::new(false));
+                    let busy = Arc::new(AtomicBool::new(false));
                     let task = tokio::spawn(fly(
                         addr.clone(),
                         who.clone(),
                         Arc::clone(&maps),
                         Arc::clone(&rigs),
                         Arc::clone(&yielding),
+                        Arc::clone(&busy),
                         Arc::clone(&secrets),
                     ));
                     inst.bots.push(Live {
                         name: who.name,
                         born_ms: now,
                         yielding,
+                        busy,
                         task,
                     });
                 }
@@ -533,7 +550,7 @@ pub async fn run() {
                 // surplus still drains at a person's pace. The already-going
                 // ones are counted first so this does not stack a second
                 // departure on a bot that is mid-way through one.
-                let mut asked = inst
+                let asked = inst
                     .bots
                     .iter()
                     .filter(|b| b.yielding.load(Ordering::Relaxed))
@@ -548,7 +565,6 @@ pub async fn run() {
                         }
                         b.yielding.store(true, Ordering::Relaxed);
                         inst.released_ms = now;
-                        asked += 1;
                         println!("{addr}: {have} bots, wants {n}; {} stands down", b.name);
                         break;
                     }
@@ -561,10 +577,19 @@ pub async fn run() {
 /// Take the next unused individual. The calibrated nine go first, and after them
 /// the roster is generated, so a room asking for fifty-one gets fifty-one
 /// distinct pilots rather than the same nine six times over.
-fn claim(taken: &Arc<Mutex<HashSet<String>>>) -> Option<ai::RosterEntry> {
+fn claim(
+    taken: &Arc<Mutex<HashSet<String>>>,
+    blocked: &Arc<Mutex<HashMap<String, u64>>>,
+    now: u64,
+) -> Option<ai::RosterEntry> {
     let mut t = taken.lock().ok()?;
+    let mut blocked = blocked.lock().ok()?;
+    blocked.retain(|_, until| *until > now);
     for n in 0..4096 {
         let e = ai::individual(n);
+        if blocked.contains_key(&e.name) {
+            continue;
+        }
         if t.insert(e.name.clone()) {
             return Some(e);
         }
@@ -695,6 +720,7 @@ async fn fly(
     maps: Arc<Maps>,
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
+    busy: Arc<AtomicBool>,
     secrets: Arc<Mutex<HashMap<String, String>>>,
 ) {
     let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
@@ -849,6 +875,9 @@ async fn fly(
                     }
                     Some(crate::S2C_YIELD) => break,
                     Some(crate::S2C_DENIED) => {
+                        if data.get(1) == Some(&crate::DENY_RATED_SESSION) {
+                            busy.store(true, Ordering::Relaxed);
+                        }
                         println!("{addr} refused {}: {}", who.name,
                                  String::from_utf8_lossy(&data[2.min(data.len())..]));
                         break;
@@ -1018,5 +1047,16 @@ mod tests {
             crate::C2S_JOIN_HEADER,
             "an empty name and no token is the header alone"
         );
+    }
+
+    #[test]
+    fn a_fleet_busy_identity_does_not_block_the_roster() {
+        let taken = Arc::new(Mutex::new(HashSet::new()));
+        let blocked = Arc::new(Mutex::new(HashMap::new()));
+        let first = ai::individual(0);
+        blocked.lock().unwrap().insert(first.name.clone(), 20_000);
+        let got = claim(&taken, &blocked, 10_000).unwrap();
+        assert_ne!(got.name, first.name);
+        assert_eq!(got.name, ai::individual(1).name);
     }
 }

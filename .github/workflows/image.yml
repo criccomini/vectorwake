@@ -10,7 +10,7 @@ name: server image
 # of swap to survive cargo linking tokio and rustls.
 #
 # Nothing publishes that has not passed the gates. `test` runs the whole server
-# suite and the determinism check, and `publish` needs it -- and the release
+# suite and the determinism check, and `publish` needs it. The release
 # build inside the image is its own third gate, since a warning-free debug test
 # run says nothing about whether `cargo build --release` links.
 
@@ -20,7 +20,8 @@ on:
   pull_request:
 
 # The last push to main wins. Two runs racing each other could otherwise move
-# `prod` backwards, since whichever finishes second is the tag that sticks.
+# the convenience `prod` tag backwards, even though production uses immutable
+# tags.
 concurrency:
   group: image-${{ github.ref }}
   cancel-in-progress: true
@@ -71,6 +72,9 @@ jobs:
             -f deploy/docker-compose.local.yml config -q
           echo "all, central, arena and the local overlay parse"
 
+      - name: releases wait for both immutable images
+        run: ./deploy/update_test.sh
+
       # And the routes each role serves, by the thing that serves them. A
       # Caddyfile with a bad import fails at container start, which on a fresh
       # host is after the point where anything can report it.
@@ -97,7 +101,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     # A pull request builds, to prove the Dockerfile still works, and pushes
-    # nothing: `prod` is what the host follows, and a proposal must not move it.
+    # nothing: a proposal must not publish either immutable or moving tags.
     permissions:
       contents: read
       packages: write
@@ -113,7 +117,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: short sha
         id: rev
-        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -125,10 +129,8 @@ jobs:
           # question asked while something is going wrong.
           build-args: |
             VW_COMMIT=${{ steps.rev.outputs.short }}
-          # Two tags, doing two jobs. `sha-` is immutable and is what a running
-          # container can be traced back to; `prod` is the moving pointer the
-          # host follows, so a rollback is retagging it at an older sha and
-          # letting the host converge, rather than reverting and rebuilding.
+          # `sha-` is immutable and is what production follows. `prod` remains
+          # a convenience for local and manual work.
           tags: |
             ${{ env.IMAGE }}:sha-${{ steps.rev.outputs.short }}
             ${{ env.IMAGE }}:prod
@@ -146,7 +148,7 @@ jobs:
           # One architecture, no attestations. The host is x86-64 and provenance
           # would publish an image index whose extra manifest shows up as an
           # unknown platform for no benefit we can currently use. Building arm64
-          # too is a one-line change the day a cheaper arm plan is worth it --
+          # too is a one-line change the day a cheaper arm plan is worth it.
           # decision 2 already guarantees the two agree on state hashes.
           platforms: linux/amd64
           provenance: false

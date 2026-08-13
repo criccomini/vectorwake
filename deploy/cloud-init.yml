@@ -5,9 +5,9 @@
 # Placeholders substituted before submission and never committed:
 # __PROVISION_B64__ carries provision.sh, which itself carries __POOL_TOKEN__,
 # __BRANCH__ and __DEPLOY_KEY_B64__. Those end up in the
-# instance's user-data, readable by anything on the box through the metadata
-# service. Acceptable because the box is what holds them anyway, and the reason
-# they are generated per host rather than shared.
+# instance's user-data for first boot. fleet.sh replaces that metadata after
+# provisioning succeeds, and the local script is readable only by root until
+# it deletes itself.
 
 package_update: true
 packages:
@@ -20,7 +20,7 @@ write_files:
     content: "booted; provisioning has not started yet\n"
     permissions: "0644"
   - path: /usr/local/bin/vw-provision
-    permissions: "0755"
+    permissions: "0700"
     encoding: b64
     content: __PROVISION_B64__
 

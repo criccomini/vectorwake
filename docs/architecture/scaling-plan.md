@@ -98,8 +98,9 @@ since two would be an expensive way to notice.
 `db destroy` is the only verb in the file that a rebuild cannot undo. A host is
 disposable, a volume holds certificates that reissue, a DNS record is one call,
 and this holds every account, every rating and the rated event log, of which
-nothing in this repository is a copy. So it prints what is inside, suggests the
-`pg_dump` first, and asks for the label to be typed rather than for a keystroke.
+nothing in this repository is a copy. So it prints what is inside, asks the
+operator to confirm Vultr's automatic backup status, and requires the label to
+be typed rather than a keystroke.
 
 `secrets` is where the fleet's identity lives: the raw pool token, the meta
 signing key and its verifying half, the database connection string and the

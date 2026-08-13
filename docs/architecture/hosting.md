@@ -303,9 +303,9 @@ internet. Managed Postgres being available in all 33 Vultr regions is what makes
 that free to arrange.
 
 One caution on operations: a schema migration runs against a database holding
-every account. That is the highest-risk moment in this stack, and it deserves
-a restore-tested backup and a rehearsal on a copy before it reaches
-production.
+every account. That is the highest-risk moment in this stack. The managed Vultr
+database's automatic backups are the recovery path, so their status should be
+confirmed before a migration reaches production.
 
 Note the cost shape, because it is counterintuitive. The arena fleet for 200
 players is a few dollars a month. The meta-layer itself is the same binary in

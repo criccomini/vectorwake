@@ -241,11 +241,13 @@ holds 153 connections in 28 MB, so a full 64-player room adds ten or fifteen
 megabytes. What actually decides an arena host's size is its uplink, per
 [hosting.md](hosting.md).
 
-Two tags come out of CI. `sha-<short>` is immutable, and an OCI `revision` label
-means `docker inspect` maps a running container back to a commit. `prod` is the
-moving pointer the host follows, so a rollback is retagging `prod` at an older
-`sha-` and letting the updater converge -- no revert, no rebuild. `VW_IMAGE` pins
-a host to one build when that is wanted.
+Both workflows publish `sha-<short>` for every commit on main. The tag is
+immutable, and an OCI `revision` label means `docker inspect` maps a running
+container back to a commit. The updater pulls the server and client tags for the
+same commit before it changes the checkout or containers. A workflow that
+finishes first waits for its pair instead of creating a mixed release. The
+moving `prod` tags remain for local and manual work; production exports the two
+immutable image names.
 
 **Caddy starts before the build, and serves the deploy log.** That inverts the
 obvious order on purpose. The proxy needs none of our code, so it is up in
