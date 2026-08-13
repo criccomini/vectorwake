@@ -38,7 +38,7 @@ local S2C_LAG = 16
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 13
+local CLIENT_PROTOCOL = 14
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -203,12 +203,60 @@ M.map_epoch = 0
 -- Bumped when the zone's tuning changes, so anything the client cached about
 -- what a weapon *is* can be thrown away.
 M.settings_epoch = 0
+-- The settings generation spoken on the wire. `settings_epoch` above is for
+-- local caches; this one orders settings against snapshots from independent
+-- WebTransport lanes.
+local settings_generation = 0
+-- Every move between flying and watching starts another life on this socket.
+-- Inputs and snapshots carry the same number, which makes packets from the
+-- life that ended harmless after the transition.
+local lifecycle = 0
+local have_snapshot = false
+M.join_progress = 0
 
 local conn = nil
 local on_lost_cb = nil
 local input_log = {}
 local input_ack, input_mask = 0, 0
 local snapshot_ack, snapshot_mask = 0, 0
+local U32, SERIAL_HALF = 4294967296, 2147483648
+
+local function u32n(v)
+    return v % U32
+end
+
+local function serial_after(a, b)
+    if a == b then return false end
+    return u32n(a - b) < SERIAL_HALF
+end
+
+local function serial_at_or_before(a, b)
+    return a == b or serial_after(b, a)
+end
+
+local function serial_delta(a, b)
+    local d = u32n(a - b)
+    if d >= SERIAL_HALF then d = d - U32 end
+    return d
+end
+
+local function next_tick(t)
+    return u32n(t + 1)
+end
+
+local function previous_tick(t)
+    return u32n(t - 1)
+end
+
+local function snapshot_distance(newer, older)
+    local d = u32n(newer - older)
+    if newer < older then d = d - 1 end
+    return d
+end
+
+local function snapshot_after(a, b)
+    return a ~= b and snapshot_distance(a, b) < SERIAL_HALF
+end
 -- Each entry is the first remote death the local simulation would have
 -- concluded while the authoritative world still had that hull alive. The
 -- deathless core leaves the hull on one energy and records a telemetry signal,
@@ -243,7 +291,7 @@ local function resolve_predicted_deaths(sent)
             death_candidates[victim] = nil
             M.stats.death_pending = M.stats.death_pending - 1
             M.stats.death_confirmed = M.stats.death_confirmed + 1
-        elseif sent >= candidate.tick then
+        elseif serial_at_or_before(candidate.tick, sent) then
             candidate.observations = candidate.observations + 1
             if candidate.observations >= DEATH_CONFIRM_SNAPSHOTS then
                 death_candidates[victim] = nil
@@ -371,8 +419,9 @@ end
 
 local function record_snapshot(seq)
     if seq == 0 then return end
-    if snapshot_ack == 0 or seq > snapshot_ack then
-        local shift = seq - snapshot_ack
+    if snapshot_ack == 0 or snapshot_after(seq, snapshot_ack) then
+        local shift = snapshot_ack == 0 and 1
+            or snapshot_distance(seq, snapshot_ack)
         if snapshot_ack ~= 0 and shift > 1 then
             M.stats.snap_missed = M.stats.snap_missed + shift - 1
         end
@@ -380,7 +429,7 @@ local function record_snapshot(seq)
             and 1 or ((snapshot_mask % (2 ^ (32 - shift))) * (2 ^ shift) + 1)
         snapshot_ack = seq
     else
-        local behind = snapshot_ack - seq
+        local behind = snapshot_distance(snapshot_ack, seq)
         if behind < 32 and not receipt_bit(snapshot_mask, behind) then
             snapshot_mask = snapshot_mask + 2 ^ behind
         end
@@ -388,7 +437,8 @@ local function record_snapshot(seq)
 end
 
 local function input_received(tick)
-    return tick <= input_ack and receipt_bit(input_mask, input_ack - tick)
+    return input_mask ~= 0 and serial_at_or_before(tick, input_ack)
+        and receipt_bit(input_mask, u32n(input_ack - tick))
 end
 
 local function lag_telemetry(ping, jitter, down, combat, up, state, weapons)
@@ -414,8 +464,8 @@ local function lag_telemetry(ping, jitter, down, combat, up, state, weapons)
 end
 
 local function note_snapshot(sent, seq)
-    if seq == 0 and snap_tick ~= 0 and sent > snap_tick then
-        local gap = sent - snap_tick
+    if seq == 0 and have_snapshot and serial_after(sent, snap_tick) then
+        local gap = u32n(sent - snap_tick)
         if gap > SNAP_TICKS then
             M.stats.snap_missed = M.stats.snap_missed
                 + math.max(0, math.floor(gap / SNAP_TICKS) - 1)
@@ -726,24 +776,33 @@ end
 local function publish_timed_events()
     local waiting = {}
     for _, e in ipairs(pending_kills) do
-        if e.tick <= snap_tick then publish_kill(e) else waiting[#waiting + 1] = e end
+        if serial_at_or_before(e.tick, snap_tick) then
+            publish_kill(e)
+        else
+            waiting[#waiting + 1] = e
+        end
     end
     pending_kills = waiting
     waiting = {}
     for _, e in ipairs(pending_charges) do
-        if e.tick <= snap_tick then
+        if serial_at_or_before(e.tick, snap_tick) then
             M.charge_events[#M.charge_events + 1] = e
         else
             waiting[#waiting + 1] = e
         end
     end
     pending_charges = waiting
-    local oldest = math.max(0, snap_tick - EVENT_MEMORY)
     for key, tick in pairs(seen_kills) do
-        if tick < oldest then seen_kills[key] = nil end
+        if serial_after(snap_tick, tick)
+            and u32n(snap_tick - tick) > EVENT_MEMORY then
+            seen_kills[key] = nil
+        end
     end
     for key, tick in pairs(seen_charges) do
-        if tick < oldest then seen_charges[key] = nil end
+        if serial_after(snap_tick, tick)
+            and u32n(snap_tick - tick) > EVENT_MEMORY then
+            seen_charges[key] = nil
+        end
     end
 end
 
@@ -759,7 +818,7 @@ local function on_kill(s)
     local key = e.tick .. ":" .. e.victim .. ":" .. e.killer
     if seen_kills[key] then return end
     seen_kills[key] = e.tick
-    if e.tick <= snap_tick then publish_kill(e)
+    if serial_at_or_before(e.tick, snap_tick) then publish_kill(e)
     else pending_kills[#pending_kills + 1] = e end
 end
 
@@ -774,7 +833,8 @@ local function on_charge(s)
     local key = e.tick .. ":" .. e.ship .. ":" .. e.slot
     if seen_charges[key] then return end
     seen_charges[key] = e.tick
-    if e.tick <= snap_tick then M.charge_events[#M.charge_events + 1] = e
+    if serial_at_or_before(e.tick, snap_tick) then
+        M.charge_events[#M.charge_events + 1] = e
     else pending_charges[#pending_charges + 1] = e end
 end
 
@@ -904,22 +964,6 @@ local function harvest_world(before)
     end
 end
 
--- How far back a snapshot may reach and still be a deliberate change of view
--- rather than a packet that overtook another.
---
--- The guard below cannot simply be off while watching, which is what it used
--- to be. The reason it was off is real: the shared channel runs seconds
--- behind live, so leaving a hull for it moves this clock backwards on
--- purpose and a plain monotonic rule would refuse the whole delay. But the
--- two are different sizes. Reordering on a link is a snapshot or two, tens of
--- milliseconds; the channel's delay is five seconds by default. Anything
--- further back than a second is the view changing, and anything nearer is the
--- network, so one number separates them. A zone that sets its channel delay
--- under a second gets a view switch held for that delay and no longer, which
--- is a hitch rather than the double explosions the open guard was giving
--- every watcher on a lossy link.
-local WATCH_REWIND = 100
-
 -- Said when the core refuses a snapshot, which is the same kind of news as a
 -- map or a set of settings this client cannot read: the zone is describing a
 -- game this build does not understand. It used to be said to nobody. The
@@ -928,6 +972,37 @@ local WATCH_REWIND = 100
 -- that had stopped updating -- the failure the wire's protocol number is
 -- supposed to prevent, wearing the one disguise it cannot catch.
 local SNAP_UNREADABLE = "the zone sent a snapshot this client cannot read"
+
+local function adopt_lifecycle(epoch, watching, subject)
+    if lifecycle ~= 0 and epoch ~= lifecycle and not serial_after(epoch, lifecycle) then
+        return false
+    end
+    if epoch ~= lifecycle then
+        lifecycle = epoch
+        input_log = {}
+        input_ack, input_mask = 0, 0
+        snapshot_ack, snapshot_mask = 0, 0
+        death_candidates = {}
+        M.stats.death_pending = 0
+        predicted_tick = 0
+        sim.smooth_reset()
+        M.stats.input_margin, M.stats.rtt, M.stats.lead = 0, 0, 0
+        snap_tick = 0
+        have_snapshot = false
+    elseif watching ~= M.watching then
+        -- One lifecycle cannot describe two presence states. The newer
+        -- authoritative snapshot or welcome will carry another generation.
+        return false
+    end
+    M.watching = watching
+    M.me = watching and 255 or subject
+    sim.set_mortal(M.me)
+    if not watching then
+        M.subject = nil
+        M.on_air = false
+    end
+    return true
+end
 
 local function on_snapshot(s)
     -- Nothing before the welcome. The zone sends the map, the settings and
@@ -944,7 +1019,7 @@ local function on_snapshot(s)
     -- a short message used to raise inside the transport's callback and go on
     -- raising once per arriving snapshot -- the roster and the teams decoders
     -- guard the same way and say why.
-    if #s < 27 then return end
+    if #s < 36 then return end
 
     -- header: type, subject, input receipt window, snapshot sequence, server
     -- lag telemetry, then the simulation pack.
@@ -956,17 +1031,23 @@ local function on_snapshot(s)
     -- watcher needs that as much as a pilot does: a stale snapshot there
     -- revives a hull the room has already killed, and the next fresh one
     -- kills it again, so one death draws two explosions.
-    local seq = u32(string.byte(s, 11), string.byte(s, 12),
-                    string.byte(s, 13), string.byte(s, 14))
+    local watching = string.byte(s, 3) == 1
+    local epoch = u32(string.byte(s, 4), string.byte(s, 5),
+                      string.byte(s, 6), string.byte(s, 7))
+    if not adopt_lifecycle(epoch, watching, string.byte(s, 2)) then return end
+    local settings = u32(string.byte(s, 8), string.byte(s, 9),
+                         string.byte(s, 10), string.byte(s, 11))
+    if settings ~= settings_generation then return end
+    local seq = u32(string.byte(s, 20), string.byte(s, 21),
+                    string.byte(s, 22), string.byte(s, 23))
     record_snapshot(seq)
-    local sent = u32(string.byte(s, 24), string.byte(s, 25),
-                     string.byte(s, 26), string.byte(s, 27))
-    if snap_tick ~= 0 and sent <= snap_tick
-        and not (M.watching and snap_tick - sent >= WATCH_REWIND) then
+    local sent = u32(string.byte(s, 33), string.byte(s, 34),
+                     string.byte(s, 35), string.byte(s, 36))
+    if have_snapshot and not serial_after(sent, snap_tick) then
         M.stats.snap_reordered = M.stats.snap_reordered + 1
         return
     end
-    local body = string.sub(s, 24)
+    local body = string.sub(s, 33)
 
     -- Watching. No prediction to reconcile, no clock to steer, no inputs to
     -- replay: capture what the screen asserts, take the truth whole, and let
@@ -982,6 +1063,7 @@ local function on_snapshot(s)
         end
         note_snapshot(sent, seq)
         snap_tick = sent
+        have_snapshot = true
         M.subject = string.byte(s, 2)
         M.stats.snaps = M.stats.snaps + 1
         settling = nil
@@ -999,21 +1081,21 @@ local function on_snapshot(s)
     -- header from the beginning and was skipped over for as long; it is what
     -- says whether our clock is running early enough for an input to reach the
     -- tick it was stamped for.
-    local acked = u32(string.byte(s, 3), string.byte(s, 4),
-                      string.byte(s, 5), string.byte(s, 6))
+    local acked = u32(string.byte(s, 12), string.byte(s, 13),
+                      string.byte(s, 14), string.byte(s, 15))
     input_ack = acked
-    input_mask = u32(string.byte(s, 7), string.byte(s, 8),
-                     string.byte(s, 9), string.byte(s, 10))
+    input_mask = u32(string.byte(s, 16), string.byte(s, 17),
+                     string.byte(s, 18), string.byte(s, 19))
     lag_telemetry(
-        (string.byte(s, 15) or 0) + (string.byte(s, 16) or 0) * 256,
-        (string.byte(s, 17) or 0) + (string.byte(s, 18) or 0) * 256,
-        string.byte(s, 19) or 0, string.byte(s, 20) or 0,
-        string.byte(s, 21) or 0, string.byte(s, 22) or 0,
-        string.byte(s, 23) or 0)
+        (string.byte(s, 24) or 0) + (string.byte(s, 25) or 0) * 256,
+        (string.byte(s, 26) or 0) + (string.byte(s, 27) or 0) * 256,
+        string.byte(s, 28) or 0, string.byte(s, 29) or 0,
+        string.byte(s, 30) or 0, string.byte(s, 31) or 0,
+        string.byte(s, 32) or 0)
     local holes = 0
     for behind = 1, 31 do
-        local tick = input_ack - behind
-        if tick > snap_tick and input_log[tick]
+        local tick = u32n(input_ack - behind)
+        if serial_after(tick, snap_tick) and input_log[tick]
             and not receipt_bit(input_mask, behind) then
             holes = holes + 1
         end
@@ -1035,6 +1117,7 @@ local function on_snapshot(s)
     end
     note_snapshot(sent, seq)
     snap_tick = sent
+    have_snapshot = true
     M.stats.snaps = M.stats.snaps + 1
     settling = nil
     quiet = 0
@@ -1061,30 +1144,31 @@ local function on_snapshot(s)
     -- inherits the buttons we were already holding, because a key held through
     -- the gap is what actually happened; filling it with zero would insert a
     -- phantom frame of hands-off flying that the server never saw.
-    if acked > 1 then
-        local margin = from - acked
+    if input_mask ~= 0 then
+        local margin = serial_delta(from, acked)
         M.stats.input_margin = margin
         local target = holes > 0 and LOSS_TARGET or LAG_TARGET
-        if margin > target and predicted_tick - from < LEAD_MAX then
-            predicted_tick = predicted_tick + 1
-            input_log[predicted_tick] = input_log[predicted_tick - 1] or 0
-        elseif margin < target - LAG_SLACK and predicted_tick > from then
-            predicted_tick = predicted_tick - 1
+        local lead = serial_delta(predicted_tick, from)
+        if margin > target and lead < LEAD_MAX then
+            local before = predicted_tick
+            predicted_tick = next_tick(predicted_tick)
+            input_log[predicted_tick] = input_log[before] or 0
+        elseif margin < target - LAG_SLACK and lead > 0 then
+            predicted_tick = previous_tick(predicted_tick)
         end
-        M.stats.lead = predicted_tick - from
+        M.stats.lead = serial_delta(predicted_tick, from)
         -- Lead contains downlink age and the clock offset; margin contains
         -- uplink age minus that offset. Their sum cancels the offset and is the
         -- round trip in simulation ticks.
         M.stats.rtt = math.max(0, M.stats.lead + margin)
     end
 
-    local last = predicted_tick
-    if last > from + 100 then last = from + 100 end
-    local steps = 0
-    for t = from + 1, last do
+    local steps = math.max(0, math.min(100, serial_delta(predicted_tick, from)))
+    local t = from
+    for _ = 1, steps do
+        t = next_tick(t)
         sim.replay(M.me, input_log[t] or 0)
         note_predicted_deaths()
-        steps = steps + 1
     end
     M.stats.replay = steps
     if steps > M.stats.replay_max then M.stats.replay_max = steps end
@@ -1107,12 +1191,16 @@ local function on_snapshot(s)
     end
 
     for t in pairs(input_log) do
-        if t < from - 400 then input_log[t] = nil end
+        if serial_after(from, t) and u32n(from - t) > 400 then
+            input_log[t] = nil
+        end
     end
     predicted_tick = sim.tick()
 end
 
 local function on_message(s)
+    M.join_progress = M.join_progress + 1
+    if settling then settling = 0 end
     M.stats.rx = M.stats.rx + #s
     M.stats.msgs = M.stats.msgs + 1
     local kind = string.byte(s, 1)
@@ -1132,9 +1220,17 @@ local function on_message(s)
         -- them would mean predicting a different game, so a message we
         -- cannot read is worth losing the connection over -- the same call
         -- the map makes, for the same reason.
-        if sim.apply_settings(string.sub(s, 2)) ~= 0 then
+        if #s < 5 then return end
+        local epoch = u32(string.byte(s, 2), string.byte(s, 3),
+                          string.byte(s, 4), string.byte(s, 5))
+        if settings_generation ~= 0 and epoch ~= settings_generation
+            and not serial_after(epoch, settings_generation) then
+            return
+        end
+        if sim.apply_settings(string.sub(s, 6)) ~= 0 then
             lost("the zone sent settings this client cannot read")
         else
+            settings_generation = epoch
             M.settings_epoch = M.settings_epoch + 1
         end
     elseif kind == S2C_WELCOME then
@@ -1144,40 +1240,18 @@ local function on_message(s)
         -- reconnect treatment: the input log and the clock lead belong to the
         -- life that ended, and a channel view can move the tick backwards
         -- across the delay, which the rollback machinery must never see.
-        M.me = string.byte(s, 2)
+        if #s < 16 then return end
+        local seat = string.byte(s, 2)
+        local epoch = u32(string.byte(s, 3), string.byte(s, 4),
+                          string.byte(s, 5), string.byte(s, 6))
+        if not adopt_lifecycle(epoch, seat == 255, seat) then return end
         -- Which room this is, as the server numbered it. Never what was asked
         -- for: a room can fill between a list being read and a key landing,
         -- and the corner of the screen is the one place that must not be
         -- guessing about where you are.
-        local lo, hi = string.byte(s, 7, 8)
+        local lo, hi = string.byte(s, 11, 12)
         M.room = (lo and hi) and (lo + hi * 256) or nil
         if M.room == 0 then M.room = nil end
-        local watching = M.me == 255
-        if watching ~= M.watching then
-            input_log = {}
-            input_ack, input_mask = 0, 0
-            snapshot_ack, snapshot_mask = 0, 0
-            death_candidates = {}
-            M.stats.death_pending = 0
-            predicted_tick = 0
-            sim.smooth_reset()
-            M.stats.input_margin, M.stats.rtt, M.stats.lead = 0, 0, 0
-            -- The reorder guard's clock belongs to the life that ended: the
-            -- channel runs behind live, so coming back to a hull must not
-            -- read every live snapshot as older than the delayed one.
-            snap_tick = 0
-        end
-        M.watching = watching
-        -- Prediction may kill this hull and no other (decision 40): a death
-        -- the client concludes about a coasting remote hull is an explosion
-        -- the next snapshot may take back, so everyone else's death waits
-        -- for the zone. While watching the byte is already 255, which is
-        -- the rule's own word for nobody.
-        sim.set_mortal(M.me)
-        if not watching then
-            M.subject = nil
-            M.on_air = false
-        end
         M.connected = true
     elseif kind == S2C_SNAPSHOT then
         on_snapshot(s)
@@ -1226,7 +1300,8 @@ end
 -- The join, said the moment a transport opens. One builder for both wires,
 -- because the message is the protocol and the transports only carry it.
 --
--- class, protocol, flags, then the game we think we picked, then the name.
+-- Class, protocol, flags, and the room fields, then the game we think we
+-- picked, the name, and the account session.
 -- An empty zone means "whatever you are running", which is what typing an
 -- address directly means.
 --
@@ -1322,6 +1397,7 @@ local function fall_back()
     pending = nil
     settling = nil
     wt_live = false
+    M.join_progress = M.join_progress + 1
     -- The dead dial can still deliver its own error; it may not speak for
     -- the socket that replaces it.
     generation = generation + 1
@@ -1350,6 +1426,9 @@ local function dial_wt(wt_url)
             settling = 0
             wt_live = true
             send_reliable(join_msg())
+        elseif w.EVENT_PROGRESS and data.event == w.EVENT_PROGRESS then
+            M.join_progress = M.join_progress + 1
+            if settling then settling = 0 end
         elseif data.event == w.EVENT_MESSAGE then
             on_message(data.message)
         elseif pending then
@@ -1513,6 +1592,10 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     death_candidates = {}
     M.lost = nil
     snap_tick = 0
+    lifecycle = 0
+    settings_generation = 0
+    have_snapshot = false
+    M.join_progress = 0
     net_clock, last_snap_at = 0, nil
     pos_samples, turn_samples, sample_at = {}, {}, 1
     quiet = nil
@@ -1636,11 +1719,37 @@ end
 -- backwards across the delay.
 local WATCH_KEEPALIVE = 3000
 
+function M.release_controls()
+    if not M.connected or M.watching or not have_snapshot
+        or not (conn or wt_live) then
+        return false
+    end
+    local tick = next_tick(predicted_tick)
+    predicted_tick = tick
+    input_log[tick] = 0
+    local msg = table.concat({
+        string.char(C2S_INPUT, 1), put_u32(lifecycle),
+        put_u32(snapshot_ack), put_u32(snapshot_mask),
+        put_u32(tick), string.char(0, 0),
+    })
+    -- Reliable is the release that must arrive. The datagram gives it the
+    -- ordinary low-latency path when the browser still has time to flush one
+    -- before suspension.
+    send_reliable(msg)
+    if wt_live then
+        send_unreliable(msg)
+        M.stats.tx = M.stats.tx + #msg * 2
+    else
+        M.stats.tx = M.stats.tx + #msg
+    end
+    return true
+end
+
 function M.step(buttons)
     if not M.connected or not (conn or wt_live) then return false end
     -- The welcome arrives before the first snapshot. Until one lands there is
     -- no ship to predict, so hold the frame rather than step an empty world.
-    if M.stats.snaps == 0 then return true end
+    if not have_snapshot then return true end
     -- Watching: no input log, no send, no replay of a ship this connection
     -- does not have. The world still steps, with nobody's hands on anything,
     -- because `sim.replay` is the step in this client and skipping it froze
@@ -1661,7 +1770,7 @@ function M.step(buttons)
         end
         return true
     end
-    predicted_tick = sim.tick() + 1
+    predicted_tick = next_tick(sim.tick())
     input_log[predicted_tick] = buttons
     local t = predicted_tick
     local records = {{tick = t, buttons = buttons}}
@@ -1671,29 +1780,36 @@ function M.step(buttons)
     -- authoritative tick. A consecutive history guesses at which datagram was
     -- lost; this reads the server's receipt window and spends bytes on the
     -- missing records themselves.
-    local first = math.max(snap_tick + 1, input_ack - 31)
-    local last = math.min(input_ack - 1, t - 1)
-    for tick = first, last do
+    for behind = 31, 1, -1 do
         if #records >= 4 then break end
-        if input_log[tick] ~= nil and not input_received(tick) then
-            records[#records + 1] = {tick = tick, buttons = input_log[tick]}
-            selected[tick] = true
+        local tick = u32n(input_ack - behind)
+        if serial_after(tick, snap_tick) and serial_after(t, tick) then
+            if input_log[tick] ~= nil and not input_received(tick) then
+                records[#records + 1] = {tick = tick, buttons = input_log[tick]}
+                selected[tick] = true
+            end
         end
     end
 
     -- The rest is newest unacknowledged history. Before the next snapshot has
     -- identified a hole this still gives each tick several independent rides.
-    for tick = t - 1, math.max(snap_tick + 1, t - 32), -1 do
+    local tick = previous_tick(t)
+    for _ = 1, 32 do
         if #records >= 4 then break end
+        if not serial_after(tick, snap_tick) then break end
         if not selected[tick] and input_log[tick] ~= nil
             and not input_received(tick) then
             records[#records + 1] = {tick = tick, buttons = input_log[tick]}
             selected[tick] = true
         end
+        tick = previous_tick(tick)
     end
-    table.sort(records, function(a, b) return a.tick < b.tick end)
+    table.sort(records, function(a, b)
+        return u32n(t - a.tick) > u32n(t - b.tick)
+    end)
     local msg = {string.char(C2S_INPUT, #records),
-                 put_u32(snapshot_ack), put_u32(snapshot_mask)}
+                 put_u32(lifecycle), put_u32(snapshot_ack),
+                 put_u32(snapshot_mask)}
     for _, record in ipairs(records) do
         local b = record.buttons
         msg[#msg + 1] = put_u32(record.tick)

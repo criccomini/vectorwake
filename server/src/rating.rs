@@ -208,7 +208,7 @@ impl Rating {
                 last_tick: tick,
             });
         // Decay everything to now, then add.
-        let dt = (tick.saturating_sub(l.last_tick)) as f64;
+        let dt = tick.wrapping_sub(l.last_tick) as f64;
         if dt > 0.0 {
             let factor = 0.5f64.powf(dt / hl);
             for v in l.credit.values_mut() {
@@ -248,7 +248,7 @@ impl Rating {
                 .repeats
                 .entry((attacker.clone(), victim.to_string()))
                 .or_insert((0, tick));
-            if tick.saturating_sub(entry.1) > 30_000 {
+            if tick.wrapping_sub(entry.1) > 30_000 {
                 *entry = (0, tick);
             }
             let damp = 1.0 / (1.0 + entry.0 as f64);
@@ -317,7 +317,7 @@ impl Rating {
         // A fresh day. Measured from the first AI gain of the previous one
         // rather than from any wall clock, because a room has no calendar and
         // a rolling window is what the rule is actually about.
-        if tick.saturating_sub(e.1) > DAY_TICKS {
+        if tick.wrapping_sub(e.1) > DAY_TICKS {
             *e = (0.0, tick);
         }
         let room = (AI_GAIN_PER_DAY - e.0).max(0.0);
@@ -348,7 +348,7 @@ impl Rating {
         let recent = self
             .ledgers
             .get(who)
-            .is_some_and(|l| tick.saturating_sub(l.last_tick) <= QUIT_WINDOW);
+            .is_some_and(|l| tick.wrapping_sub(l.last_tick) <= QUIT_WINDOW);
         if !recent {
             self.ledgers.remove(who);
             return None;

@@ -39,6 +39,56 @@ const TICK_HZ: u64 = 100;
 const SNAPSHOT_EVERY: u32 = 5; // 20 Hz
 const COMBAT_SNAPSHOT_EVERY: u32 = 2; // 50 Hz
 const COMBAT_INTEREST: i32 = 32 * 16 * 256;
+const COMBAT_TAIL_TICKS: u32 = 100;
+const SERIAL_HALF: u32 = 1 << 31;
+
+fn serial_after(a: u32, b: u32) -> bool {
+    a != b && a.wrapping_sub(b) < SERIAL_HALF
+}
+
+fn serial_before(a: u32, b: u32) -> bool {
+    serial_after(b, a)
+}
+
+fn serial_at_or_before(a: u32, b: u32) -> bool {
+    a == b || serial_before(a, b)
+}
+
+fn serial_elapsed(now: u32, before: u32) -> u32 {
+    now.wrapping_sub(before)
+}
+
+fn next_nonzero(value: u32) -> u32 {
+    value.wrapping_add(1).max(1)
+}
+
+// Snapshot sequence zero means "no receipt yet" on the wire. The generator
+// skips it, so crossing the numeric boundary advances by one sequence rather
+// than by the two values returned by wrapping subtraction.
+fn snapshot_distance(newer: u32, older: u32) -> u32 {
+    let distance = newer.wrapping_sub(older);
+    if newer < older {
+        distance.saturating_sub(1)
+    } else {
+        distance
+    }
+}
+
+fn snapshot_after(a: u32, b: u32) -> bool {
+    a != b && snapshot_distance(a, b) < SERIAL_HALF
+}
+
+fn snapshot_rewind(seq: u32, distance: u32) -> u32 {
+    if distance == 0 {
+        return seq;
+    }
+    let raw = seq.wrapping_sub(distance);
+    if raw == 0 || seq <= distance {
+        raw.wrapping_sub(1)
+    } else {
+        raw
+    }
+}
 
 fn snapshot_lanes(frame: u32) -> (bool, bool) {
     (
@@ -133,7 +183,8 @@ const C2S_JOIN: u8 = 1;
 /// session token, came back empty, and an empty name is the one thing
 /// `sanitize_name` answers with that word.
 const C2S_JOIN_HEADER: usize = 7;
-/// `[C2S_INPUT, count, snapshot ack, snapshot mask, (tick, buttons)...]`.
+/// `[C2S_INPUT, count, lifecycle, snapshot ack, snapshot mask,
+/// (tick, buttons)...]`.
 /// Records name their own ticks, so a packet can repair a hole without spending
 /// its whole budget on the consecutive states around it. The snapshot receipt
 /// window gives the arena downlink loss and round-trip samples on its own clock.
@@ -142,11 +193,17 @@ const INPUT_HISTORY: usize = 4;
 const LAG_WEAPON_BUTTONS: u16 =
     sim::BTN_FIRE | sim::BTN_BOMB | sim::BTN_USE | sim::BTN_MINE | sim::BTN_MULTI;
 
-fn input_message(snapshot_ack: u32, snapshot_mask: u32, records: &[(u32, u16)]) -> Vec<u8> {
+fn input_message(
+    lifecycle: u32,
+    snapshot_ack: u32,
+    snapshot_mask: u32,
+    records: &[(u32, u16)],
+) -> Vec<u8> {
     assert!(!records.is_empty() && records.len() <= INPUT_HISTORY);
-    let mut msg = Vec::with_capacity(10 + records.len() * 6);
+    let mut msg = Vec::with_capacity(14 + records.len() * 6);
     msg.push(C2S_INPUT);
     msg.push(records.len() as u8);
+    msg.extend_from_slice(&lifecycle.to_le_bytes());
     msg.extend_from_slice(&snapshot_ack.to_le_bytes());
     msg.extend_from_slice(&snapshot_mask.to_le_bytes());
     for &(tick, buttons) in records {
@@ -157,6 +214,7 @@ fn input_message(snapshot_ack: u32, snapshot_mask: u32, records: &[(u32, u16)]) 
 }
 
 struct InputPacket {
+    lifecycle: u32,
     snapshot_ack: u32,
     snapshot_mask: u32,
     records: Vec<(u32, u16)>,
@@ -164,19 +222,21 @@ struct InputPacket {
 
 fn input_packet(data: &[u8]) -> Option<InputPacket> {
     let count = *data.get(1)? as usize;
-    if count == 0 || count > INPUT_HISTORY || data.len() != 10 + count * 6 {
+    if count == 0 || count > INPUT_HISTORY || data.len() != 14 + count * 6 {
         return None;
     }
-    let snapshot_ack = u32::from_le_bytes(data.get(2..6)?.try_into().ok()?);
-    let snapshot_mask = u32::from_le_bytes(data.get(6..10)?.try_into().ok()?);
+    let lifecycle = u32::from_le_bytes(data.get(2..6)?.try_into().ok()?);
+    let snapshot_ack = u32::from_le_bytes(data.get(6..10)?.try_into().ok()?);
+    let snapshot_mask = u32::from_le_bytes(data.get(10..14)?.try_into().ok()?);
     let mut records = Vec::with_capacity(count);
     for at in 0..count {
-        let start = 10 + at * 6;
+        let start = 14 + at * 6;
         let tick = u32::from_le_bytes(data.get(start..start + 4)?.try_into().ok()?);
         let buttons = u16::from_le_bytes(data.get(start + 4..start + 6)?.try_into().ok()?);
         records.push((tick, buttons));
     }
     Some(InputPacket {
+        lifecycle,
         snapshot_ack,
         snapshot_mask,
         records,
@@ -244,7 +304,10 @@ const JOIN_WATCH: u8 = 2;
 ///
 /// 13 carries the gunner limits and carrier movement penalties in zone
 /// settings. Older clients predicted a carrier as if nobody were attached.
-const CLIENT_PROTOCOL: u8 = 13;
+///
+/// 14 gives every flying or watching life and every settings revision a
+/// generation. Delayed packets can no longer cross either boundary.
+const CLIENT_PROTOCOL: u8 = 14;
 
 /// Whether this arena files its rated exchanges with the meta-layer.
 ///
@@ -282,7 +345,9 @@ const C2S_STATUS: u8 = directory::STATUS_REQUEST;
 // Server to client
 const S2C_WELCOME: u8 = 1;
 const S2C_SNAPSHOT: u8 = 2;
-const SNAPSHOT_HEADER: usize = 23;
+const SNAPSHOT_HEADER: usize = 32;
+const SNAPSHOT_FLYING: u8 = 0;
+const SNAPSHOT_WATCHING: u8 = 1;
 const S2C_ROSTER: u8 = 3;
 const S2C_KILL: u8 = 4;
 const S2C_BANNER: u8 = 5;
@@ -355,14 +420,40 @@ const CHANNEL_HOLD: u32 = 9000;
 #[derive(Clone, Copy, Default)]
 struct LossRate {
     value: f64,
-    samples: u32,
+    sampled_ticks: u32,
+}
+
+fn observe_weighted(
+    value: &mut f64,
+    sampled_ticks: &mut u32,
+    observation: f64,
+    window_ticks: u32,
+    elapsed_ticks: u32,
+) {
+    let window = window_ticks.max(1);
+    let weight = elapsed_ticks.max(1).min(window);
+    let before = (*sampled_ticks).min(window);
+    let warm_weight = weight.min(window.saturating_sub(before));
+    let after = before.saturating_add(warm_weight);
+    if before < window {
+        *value = (*value * before as f64 + observation * warm_weight as f64) / after as f64;
+    }
+    let rolling_weight = weight - warm_weight;
+    if rolling_weight > 0 {
+        *value += (observation - *value) * rolling_weight as f64 / window as f64;
+    }
+    *sampled_ticks = after;
 }
 
 impl LossRate {
-    fn observe(&mut self, lost: bool, window: u32) {
-        self.samples = self.samples.saturating_add(1);
-        let width = self.samples.min(window.max(1)) as f64;
-        self.value += ((lost as u8 as f64) - self.value) / width;
+    fn observe(&mut self, lost: bool, window_ticks: u32, elapsed_ticks: u32) {
+        observe_weighted(
+            &mut self.value,
+            &mut self.sampled_ticks,
+            lost as u8 as f64,
+            window_ticks,
+            elapsed_ticks,
+        );
     }
 
     fn percent(self) -> u8 {
@@ -398,7 +489,9 @@ struct LagTracker {
     rtt_ticks: f64,
     jitter_ticks: f64,
     last_rtt_ticks: Option<f64>,
-    rtt_samples: u32,
+    last_rtt_snapshot_tick: Option<u32>,
+    rtt_sampled_ticks: u32,
+    jitter_sampled_ticks: u32,
     down_loss: LossRate,
     combat_loss: LossRate,
     combat_active: bool,
@@ -421,7 +514,9 @@ impl Default for LagTracker {
             rtt_ticks: 0.0,
             jitter_ticks: 0.0,
             last_rtt_ticks: None,
-            rtt_samples: 0,
+            last_rtt_snapshot_tick: None,
+            rtt_sampled_ticks: 0,
+            jitter_sampled_ticks: 0,
             down_loss: Default::default(),
             combat_loss: Default::default(),
             combat_active: false,
@@ -445,7 +540,7 @@ impl LagTracker {
             self.combat_active = false;
             self.combat_idle_ticks = 0;
         }
-        self.snapshot_seq = self.snapshot_seq.wrapping_add(1).max(1);
+        self.snapshot_seq = next_nonzero(self.snapshot_seq);
         self.snapshots.push_back(SentSnapshot {
             seq: self.snapshot_seq,
             tick,
@@ -460,9 +555,11 @@ impl LagTracker {
                 // client has no usable snapshot baseline and neither do we.
                 if self.last_snapshot_ack != 0 {
                     if old.combat && old.combat_epoch == self.combat_epoch {
-                        self.combat_loss.observe(!old.received, window);
+                        self.combat_loss
+                            .observe(!old.received, window, COMBAT_SNAPSHOT_EVERY);
                     } else if !old.combat {
-                        self.down_loss.observe(!old.received, window);
+                        self.down_loss
+                            .observe(!old.received, window, SNAPSHOT_EVERY);
                     }
                 }
             }
@@ -471,7 +568,7 @@ impl LagTracker {
     }
 
     fn acknowledge_snapshots(&mut self, ack: u32, mask: u32, now: u32, window: u32) {
-        if ack == 0 || ack > self.snapshot_seq {
+        if ack == 0 || snapshot_after(ack, self.snapshot_seq) {
             return;
         }
         if self.last_snapshot_ack == 0 {
@@ -480,47 +577,77 @@ impl LagTracker {
             // sits outside the loss sample rather than becoming a failed send.
             let baseline = (0..32)
                 .rev()
-                .find(|behind| *behind < ack && mask & (1u32 << *behind) != 0)
-                .map_or(ack, |behind| ack - behind);
-            while self.snapshots.front().is_some_and(|s| s.seq < baseline) {
+                .find(|behind| mask & (1u32 << *behind) != 0)
+                .map_or(ack, |behind| snapshot_rewind(ack, behind));
+            while self
+                .snapshots
+                .front()
+                .is_some_and(|s| snapshot_after(baseline, s.seq))
+            {
                 self.snapshots.pop_front();
             }
         }
         for sent in &mut self.snapshots {
-            let behind = ack.saturating_sub(sent.seq);
-            if sent.seq <= ack && behind < 32 && mask & (1u32 << behind) != 0 {
+            let behind = snapshot_distance(ack, sent.seq);
+            if (sent.seq == ack || snapshot_after(ack, sent.seq))
+                && behind < 32
+                && mask & (1u32 << behind) != 0
+            {
                 sent.received = true;
             }
         }
-        if ack > self.last_snapshot_ack {
+        if self.last_snapshot_ack == 0 || snapshot_after(ack, self.last_snapshot_ack) {
             if let Some(sent) = self.snapshots.iter().find(|s| s.seq == ack) {
-                let sample = now.saturating_sub(sent.tick) as f64;
-                let n = self.rtt_samples.saturating_add(1).min(window.max(1)) as f64;
-                self.rtt_ticks += (sample - self.rtt_ticks) / n;
+                let sample = serial_elapsed(now, sent.tick) as f64;
+                let elapsed = self.last_rtt_snapshot_tick.map_or_else(
+                    || {
+                        if sent.combat {
+                            COMBAT_SNAPSHOT_EVERY
+                        } else {
+                            SNAPSHOT_EVERY
+                        }
+                    },
+                    |before| serial_elapsed(sent.tick, before),
+                );
+                observe_weighted(
+                    &mut self.rtt_ticks,
+                    &mut self.rtt_sampled_ticks,
+                    sample,
+                    window,
+                    elapsed,
+                );
                 if let Some(last) = self.last_rtt_ticks {
-                    self.jitter_ticks += ((sample - last).abs() - self.jitter_ticks) / n;
+                    observe_weighted(
+                        &mut self.jitter_ticks,
+                        &mut self.jitter_sampled_ticks,
+                        (sample - last).abs(),
+                        window,
+                        elapsed,
+                    );
                 }
                 self.last_rtt_ticks = Some(sample);
-                self.rtt_samples = self.rtt_samples.saturating_add(1);
+                self.last_rtt_snapshot_tick = Some(sent.tick);
             }
             self.last_snapshot_ack = ack;
         }
         while self
             .snapshots
             .front()
-            .is_some_and(|s| s.seq.saturating_add(31) < ack)
+            .is_some_and(|s| snapshot_distance(ack, s.seq) > 31)
         {
             let old = self.snapshots.pop_front().expect("front exists");
             if old.combat && old.combat_epoch == self.combat_epoch {
-                self.combat_loss.observe(!old.received, window);
+                self.combat_loss
+                    .observe(!old.received, window, COMBAT_SNAPSHOT_EVERY);
             } else if !old.combat {
-                self.down_loss.observe(!old.received, window);
+                self.down_loss
+                    .observe(!old.received, window, SNAPSHOT_EVERY);
             }
         }
     }
 
     fn observe_input(&mut self, missing: bool, window: u32) {
-        self.up_loss.observe(missing, window);
+        self.up_loss.observe(missing, window, 1);
     }
 
     fn suppression(value: f64, start: u32, full: u32) -> u8 {
@@ -543,7 +670,7 @@ impl LagTracker {
                 self.combat_idle_ticks = self.combat_idle_ticks.saturating_add(1);
                 if self.combat_idle_ticks >= expire {
                     self.combat_loss = Default::default();
-                    self.combat_epoch = self.combat_epoch.wrapping_add(1).max(1);
+                    self.combat_epoch = next_nonzero(self.combat_epoch);
                 }
             }
         }
@@ -616,7 +743,7 @@ impl LagTracker {
 
         let notify = self.decision != before
             || (self.decision != LagDecision::default()
-                && (self.last_notice == 0 || now.saturating_sub(self.last_notice) >= 500));
+                && (self.last_notice == 0 || serial_elapsed(now, self.last_notice) >= 500));
         if notify {
             self.last_notice = now;
         }
@@ -672,6 +799,10 @@ impl LagTracker {
 
 struct Player {
     ship: u8,
+    /// Changes whenever this connection moves between flying and watching.
+    /// Inputs and snapshots carry it so packets from the life that ended are
+    /// harmless in the life that replaced it.
+    lifecycle: u32,
     /// What this pilot is currently holding down, which is what a tick with no
     /// scheduled input uses. A held key is the common case, so a lost packet
     /// reads as a continued hold rather than a stutter.
@@ -684,12 +815,13 @@ struct Player {
     /// alternative, taking each packet as the current state on arrival, means
     /// the pilot brakes several ticks before the server does and sees itself
     /// corrected back into motion.
-    pending: std::collections::BTreeMap<u32, u16>,
+    pending: HashMap<u32, u16>,
     /// Newest accepted input tick and the selective receipt window behind it.
     /// A client repairs the zeroes instead of guessing that the last few
     /// consecutive ticks are the ones a datagram lost.
     input_ack: u32,
     input_mask: u32,
+    input_seen: bool,
     /// The newest tick whose buttons are the ones being held.
     ///
     /// `pending` is keyed by tick and so never applies two out of order, but a
@@ -701,6 +833,14 @@ struct Player {
     /// that one counts ticks that are still waiting in `pending`, and
     /// would refuse the late input the moment a client stamped anything ahead.
     applied_tick: u32,
+    applied_input: bool,
+    /// Last server tick on which an input packet arrived. Browsers can suspend
+    /// between a focus event and the next frame, so held controls need a
+    /// server-side backstop as well as the client's release message.
+    last_input_at: u32,
+    /// Keep the fast snapshot lane briefly after combat leaves the radius.
+    /// This stops the cadence flipping at the exact distance boundary.
+    combat_until: Option<u32>,
     lag: LagTracker,
     /// Server-secret stream for proportional weapon suppression. It stays out
     /// of the deterministic simulation and cannot be scheduled around by a
@@ -963,6 +1103,9 @@ impl PresenceHandle {
 /// A connection with a seat in the roster and no ship in the simulation.
 /// The sim never hears about these; `sim_state` gains no field.
 struct Watcher {
+    /// The same connection generation carried by a flying player. It advances
+    /// at each move between the cockpit and the stands.
+    lifecycle: u32,
     /// Everything needed to put this pilot back in the game: `fly` hands this
     /// straight back to `join`, so watching and returning is a despawn and a
     /// spawn rather than a reconnect.
@@ -1050,17 +1193,18 @@ impl Channel {
 
 impl Player {
     fn record_input_tick(&mut self, tick: u32) -> bool {
-        if self.input_ack == 0 || tick > self.input_ack {
-            let shift = tick.saturating_sub(self.input_ack);
-            self.input_mask = if self.input_ack == 0 || shift >= 32 {
+        if !self.input_seen || serial_after(tick, self.input_ack) {
+            let shift = tick.wrapping_sub(self.input_ack);
+            self.input_mask = if !self.input_seen || shift >= 32 {
                 1
             } else {
                 (self.input_mask << shift) | 1
             };
             self.input_ack = tick;
+            self.input_seen = true;
             return true;
         }
-        let behind = self.input_ack - tick;
+        let behind = self.input_ack.wrapping_sub(tick);
         if behind >= 32 {
             return false;
         }
@@ -1071,10 +1215,10 @@ impl Player {
     }
 
     fn received_input(&self, tick: u32) -> bool {
-        if self.input_ack < tick {
+        if !self.input_seen || serial_after(tick, self.input_ack) {
             return false;
         }
-        let behind = self.input_ack - tick;
+        let behind = self.input_ack.wrapping_sub(tick);
         behind < 32 && self.input_mask & (1u32 << behind) != 0
     }
 
@@ -1095,6 +1239,7 @@ impl Player {
     /// docs/architecture/networking.md rules out, and a client with no lead at
     /// all keeps working exactly as it did.
     fn schedule(&mut self, tick: u32, buttons: u16, now: u32) {
+        self.last_input_at = now;
         // Clamp before recording. `input_ack` is echoed back so a client can
         // measure how late its inputs are arriving, so it has to be a tick
         // this arena agreed to: a client stamping u32::MAX would otherwise pin
@@ -1102,22 +1247,24 @@ impl Player {
         // That only ever hurts the client that did it, which is exactly why it
         // would have been found late and by somebody confused.
         //
-        // Saturating, because `now` is a tick counter and a room that has been
-        // up for 497 days reaches u32::MAX. A plain add there panics in debug
-        // and wraps in release, and a wrapped ceiling clamps every input to a
-        // tick in the distant past. This project has already shipped one
-        // overflow that release builds swallowed and debug builds refused to
-        // start on.
-        let tick = tick.min(now.saturating_add(INPUT_LEAD_MAX));
+        // Serial arithmetic is deliberate here. A room reaches u32::MAX after
+        // 497 days and continues at zero, so a wrapped ceiling is still one
+        // second ahead rather than a tick in the distant past.
+        let tick = if serial_after(tick, now) && tick.wrapping_sub(now) > INPUT_LEAD_MAX {
+            now.wrapping_add(INPUT_LEAD_MAX)
+        } else {
+            tick
+        };
         self.record_input_tick(tick);
-        if tick <= now {
+        if serial_at_or_before(tick, now) {
             // Only if it is not older than what is already held. Two late
             // datagrams that swapped in flight would otherwise land newest
             // first and oldest second, and the pilot's newest press would be
             // undone by a packet describing a tick that has already been and
             // gone.
-            if tick > self.applied_tick {
+            if !self.applied_input || serial_after(tick, self.applied_tick) {
                 self.applied_tick = tick;
+                self.applied_input = true;
                 self.buttons = buttons;
             }
             return;
@@ -1128,7 +1275,11 @@ impl Player {
         // arrival order would then hand out inputs out of sequence.
         self.pending.insert(tick, buttons);
         while self.pending.len() > INPUT_QUEUE_MAX {
-            let oldest = *self.pending.keys().next().expect("non-empty");
+            let oldest = *self
+                .pending
+                .keys()
+                .max_by_key(|tick| now.wrapping_sub(**tick))
+                .expect("non-empty");
             self.pending.remove(&oldest);
         }
     }
@@ -1136,15 +1287,30 @@ impl Player {
     /// What this pilot is holding on `now`: the newest input scheduled for this
     /// tick or any before it, and otherwise whatever they were already holding.
     fn buttons_at(&mut self, now: u32) -> u16 {
-        while let Some((&t, &b)) = self.pending.iter().next() {
-            if t > now {
-                break;
-            }
+        let mut due: Vec<(u32, u16)> = self
+            .pending
+            .iter()
+            .filter(|(tick, _)| serial_at_or_before(**tick, now))
+            .map(|(tick, buttons)| (*tick, *buttons))
+            .collect();
+        due.sort_by_key(|(tick, _)| std::cmp::Reverse(now.wrapping_sub(*tick)));
+        for (t, b) in due {
             self.buttons = b;
-            // Drained in tick order, so this only ever climbs, and it is what
-            // a late arrival is measured against.
-            self.applied_tick = self.applied_tick.max(t);
+            self.applied_tick = t;
+            self.applied_input = true;
             self.pending.remove(&t);
+        }
+        let silent = if serial_at_or_before(self.last_input_at, now) {
+            serial_elapsed(now, self.last_input_at)
+        } else {
+            0
+        };
+        if silent >= 25 {
+            self.buttons &= !LAG_WEAPON_BUTTONS;
+        }
+        if silent >= 100 {
+            self.buttons = 0;
+            self.pending.clear();
         }
         self.buttons
     }
@@ -1395,6 +1561,10 @@ struct Room {
     max_bots_per_team: u16,
     /// Tunable connection-quality thresholds for this zone.
     lag_policy: config::LagConfig,
+    /// Generation of the tuning currently applied to `world`. Snapshots carry
+    /// it so one sent under new physics cannot be predicted with an older
+    /// settings pack that is still crossing the reliable stream.
+    settings_generation: u32,
     /// Standing invitations, by the ship they were extended to. A private team
     /// admits nobody else. Cleared with the seat, because a seat is furniture
     /// and the next occupant was invited to nothing.
@@ -2053,6 +2223,7 @@ impl Room {
             max_humans_per_team: 255,
             max_bots_per_team: 255,
             lag_policy: Default::default(),
+            settings_generation: 1,
             invites: HashMap::new(),
             name_cursor: 0,
             bot_fill: catalog::DEFAULT_BOT_FILL,
@@ -2258,6 +2429,10 @@ impl Room {
         if !valid_entry {
             return None;
         }
+        let lifecycle = member
+            .and_then(|id| self.watchers.get(&id).map(|watcher| watcher.lifecycle))
+            .map(next_nonzero)
+            .unwrap_or(1);
         // The cap is on people. A declared bot passes it by, which is the whole
         // of what the declaration buys the arena: a zone can hold a wide room
         // mostly full of AI and still admit every human its operator allowed.
@@ -2412,11 +2587,16 @@ impl Room {
             id,
             Player {
                 ship,
+                lifecycle,
                 buttons: 0,
                 pending: Default::default(),
                 input_ack: 0,
                 input_mask: 0,
+                input_seen: false,
                 applied_tick: 0,
+                applied_input: false,
+                last_input_at: self.world.state.tick,
+                combat_until: None,
                 lag: Default::default(),
                 lag_rng: rand::random::<u64>().max(1),
                 name,
@@ -3098,7 +3278,7 @@ impl Room {
                     serde_json::json!({
                         "why": why,
                         "ship": p.ship,
-                        "held": self.world.state.tick.saturating_sub(p.joined),
+                        "held": serial_elapsed(self.world.state.tick, p.joined),
                         "quit_loss": rated.is_some(),
                     }),
                 );
@@ -3171,6 +3351,7 @@ impl Room {
         }
         let tx = p.tx.clone();
         let presence = p.presence.clone();
+        let lifecycle = next_nonzero(p.lifecycle);
         let Some(seat) = self.names.get(&ship).cloned() else {
             return false;
         };
@@ -3210,6 +3391,7 @@ impl Room {
         self.watchers.insert(
             id,
             Watcher {
+                lifecycle,
                 seat,
                 team: Some(team),
                 any,
@@ -3222,12 +3404,14 @@ impl Room {
         // The client learns which of its two lives this is from the welcome:
         // 255 is a watcher's ship.
         let mut w = vec![S2C_WELCOME, 255];
+        w.extend_from_slice(&lifecycle.to_le_bytes());
         w.extend_from_slice(&self.world.state.tick.to_le_bytes());
         // A watcher is in a room like anybody else, and the welcome is one
         // shape whoever it greets: a client that had to know which kind it was
         // holding before it could read the length would be parsing the message
         // twice.
         w.extend_from_slice(&(self.number as u16).to_le_bytes());
+        w.extend_from_slice(&self.settings_generation.to_le_bytes());
         let _ = tx.try_send(Message::Binary(w));
         self.broadcast_roster();
         // After the watcher row exists, not before: `leave` above broadcast a
@@ -3298,6 +3482,7 @@ impl Room {
         self.watchers.insert(
             id,
             Watcher {
+                lifecycle: 1,
                 seat,
                 team,
                 any,
@@ -3341,6 +3526,7 @@ impl Room {
         )?;
         self.debug_assert_member(id, &self.players[&new_id].presence);
         let ship = self.players[&new_id].ship;
+        let lifecycle = self.players[&new_id].lifecycle;
         // Not a `join`: the same connection, the same session, and a stay the
         // log should read as continuous. A room that filled while they sat
         // there refuses above and writes nothing, which is the case worth
@@ -3355,12 +3541,14 @@ impl Room {
             }),
         );
         let mut m = vec![S2C_WELCOME, ship];
+        m.extend_from_slice(&lifecycle.to_le_bytes());
         m.extend_from_slice(&self.world.state.tick.to_le_bytes());
         // The room, like every other welcome carries it. This one did not, and
         // it is the only welcome a pilot receives without having just picked a
         // room, so the corner chip lost the number for the rest of the session:
         // the client reads it off the end of the message and got nothing.
         m.extend_from_slice(&(self.number as u16).to_le_bytes());
+        m.extend_from_slice(&self.settings_generation.to_le_bytes());
         let _ = tx.try_send(Message::Binary(m));
         self.broadcast_roster();
         self.broadcast_teams();
@@ -3418,7 +3606,7 @@ impl Room {
         // The tick this room is about to run, which is the tick a scheduled
         // input has to name to be applied here. `world.tick()` is the last one
         // completed, so the step below produces the one after it.
-        let now = self.world.state.tick + 1;
+        let now = self.world.state.tick.wrapping_add(1);
         // One loop, because there is one kind of pilot. Bots used to be thought
         // for here, between the queue and the step, reading the world directly;
         // their inputs now arrive on sockets like everybody else's and this
@@ -3783,7 +3971,14 @@ impl Room {
             let house = names
                 .get(&p.ship)
                 .is_some_and(|s| s.label == token::Label::HouseBot.to_byte());
-            let fast = !house && near_combat(world, p.ship);
+            let now = world.state.tick;
+            let close = !house && near_combat(world, p.ship);
+            if close {
+                p.combat_until = Some(now.wrapping_add(COMBAT_TAIL_TICKS));
+            } else if p.combat_until.is_some_and(|until| serial_after(now, until)) {
+                p.combat_until = None;
+            }
+            let fast = !house && (close || p.combat_until.is_some());
             if fast != combat_lane {
                 continue;
             }
@@ -3799,9 +3994,12 @@ impl Room {
             let seq =
                 p.lag
                     .sent_snapshot(world.state.tick, combat_lane, self.lag_policy.sample_ticks);
-            let mut msg = Vec::with_capacity(n as usize + 27);
+            let mut msg = Vec::with_capacity(n as usize + SNAPSHOT_HEADER);
             msg.push(S2C_SNAPSHOT);
             msg.push(p.ship);
+            msg.push(SNAPSHOT_FLYING);
+            msg.extend_from_slice(&p.lifecycle.to_le_bytes());
+            msg.extend_from_slice(&self.settings_generation.to_le_bytes());
             msg.extend_from_slice(&p.input_ack.to_le_bytes());
             msg.extend_from_slice(&p.input_mask.to_le_bytes());
             msg.extend_from_slice(&seq.to_le_bytes());
@@ -3866,10 +4064,13 @@ impl Room {
             if n <= 0 {
                 continue;
             }
-            let mut msg = Vec::with_capacity(n as usize + 23);
+            let mut msg = Vec::with_capacity(n as usize + SNAPSHOT_HEADER);
             msg.push(S2C_SNAPSHOT);
             // Whose eyes these are, which is what the watcher's camera reads.
             msg.push(t);
+            msg.push(SNAPSHOT_WATCHING);
+            msg.extend_from_slice(&w.lifecycle.to_le_bytes());
+            msg.extend_from_slice(&self.settings_generation.to_le_bytes());
             // No input to acknowledge: a watcher sends none.
             msg.extend_from_slice(&0u32.to_le_bytes());
             msg.extend_from_slice(&0u32.to_le_bytes());
@@ -3953,9 +4154,13 @@ impl Room {
             .world
             .pack_around(buf, cx, cy, FAIR_INTEREST, subject, 255, 0);
         if n > 0 {
-            let mut msg = Vec::with_capacity(n as usize + 23);
+            let mut msg = Vec::with_capacity(n as usize + SNAPSHOT_HEADER);
             msg.push(S2C_SNAPSHOT);
             msg.push(subject);
+            msg.push(SNAPSHOT_WATCHING);
+            // Patched for each watcher when the delayed frame is served.
+            msg.extend_from_slice(&0u32.to_le_bytes());
+            msg.extend_from_slice(&self.settings_generation.to_le_bytes());
             msg.extend_from_slice(&0u32.to_le_bytes());
             msg.extend_from_slice(&0u32.to_le_bytes());
             msg.extend_from_slice(&0u32.to_le_bytes());
@@ -3983,7 +4188,7 @@ impl Room {
             .channel
             .ring
             .front()
-            .is_some_and(|f| f.tick + delay <= now)
+            .is_some_and(|f| serial_at_or_before(f.tick.wrapping_add(delay), now))
         {
             let f = self.channel.ring.pop_front().unwrap();
             // What the channel is showing, whether or not anybody is on it:
@@ -4004,8 +4209,10 @@ impl Room {
                 for charge in &f.charges {
                     let _ = w.tx.try_send(Message::Binary(charge.clone()));
                 }
-                metrics::SNAPSHOT_BYTES.add(f.msg.len() as u64);
-                if w.tx.try_send(Message::Binary(f.msg.clone())).is_err() {
+                let mut msg = f.msg.clone();
+                msg[3..7].copy_from_slice(&w.lifecycle.to_le_bytes());
+                metrics::SNAPSHOT_BYTES.add(msg.len() as u64);
+                if w.tx.try_send(Message::Binary(msg)).is_err() {
                     metrics::SEND_DROPPED.inc();
                 }
             }
@@ -4237,6 +4444,7 @@ impl Room {
     /// it was when they joined.
     fn broadcast_settings(&self) {
         let mut m = vec![S2C_SETTINGS];
+        m.extend_from_slice(&self.settings_generation.to_le_bytes());
         m.extend_from_slice(&self.world.packed_settings());
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
@@ -4353,8 +4561,21 @@ impl RatedLease {
         session: String,
         spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
     ) -> Result<Option<(RatedLease, Vec<token::ClassRating>)>, String> {
-        let (claimed, ratings) =
-            meta::claim_rated_session(&base, &pool_token, account, &session, &instance).await?;
+        // A reconnect can reach the door just before the old connection's
+        // cleanup releases its row. Give that settlement a brief chance to
+        // finish instead of turning a millisecond race into a denial. The row
+        // is never stolen: another live session waits through the same grace
+        // and is still refused.
+        let mut waits = 0;
+        let (claimed, ratings) = loop {
+            let result =
+                meta::claim_rated_session(&base, &pool_token, account, &session, &instance).await?;
+            if result.0 || waits == 12 {
+                break result;
+            }
+            waits += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        };
         Ok(claimed.then(|| {
             (
                 RatedLease {
@@ -5434,6 +5655,7 @@ impl ArenaServer {
                     println!("zone: {w}");
                 }
                 r.lag_policy = block.lag.clone();
+                r.settings_generation = next_nonzero(r.settings_generation);
                 r.broadcast_settings();
             }
         }
@@ -6358,10 +6580,17 @@ async fn main() {
             };
             let (mut sink, mut source) = ws.split();
             let (tx, mut rx) = mpsc::channel::<Message>(OUT_QUEUE);
+            let (in_tx, inbound) = mpsc::channel::<Vec<u8>>(INBOUND_QUEUE);
+            // A weak sender lets the writer wake the handler on failure
+            // without keeping the inbound side alive after the reader ends.
+            let writer_failed = in_tx.downgrade();
 
             let writer = tokio::spawn(async move {
                 while let Some(msg) = rx.recv().await {
                     if sink.send(msg).await.is_err() {
+                        if let Some(failed) = writer_failed.upgrade() {
+                            let _ = failed.send(Vec::new()).await;
+                        }
                         return;
                     }
                 }
@@ -6379,7 +6608,6 @@ async fn main() {
             // forever. Browsers never ping, which is why it took a harness to
             // find, and why every non-browser client was dropped at its own
             // ping timeout, forty seconds in.
-            let (in_tx, inbound) = mpsc::channel::<Vec<u8>>(INBOUND_QUEUE);
             let pong = tx.clone();
             let reader = tokio::spawn(async move {
                 while let Some(Ok(msg)) = source.next().await {
@@ -6506,7 +6734,10 @@ pub(crate) async fn serve_client(
             Err(_) => break,
         };
         if data.is_empty() {
-            continue;
+            // Empty client messages carry no protocol word. Transports also
+            // use this sentinel when their write half fails, so either case
+            // ends the session and runs the ordinary room cleanup.
+            break;
         }
         // A forced move to the stands changes the shared presence during the
         // room tick. Give its rated seat back before considering a renewal or
@@ -6850,14 +7081,17 @@ pub(crate) async fn serve_client(
                             m.extend_from_slice(&a.world.packed_map());
                             let _ = tx.try_send(Message::Binary(m));
                             let mut c = vec![S2C_SETTINGS];
+                            c.extend_from_slice(&a.settings_generation.to_le_bytes());
                             c.extend_from_slice(&a.world.packed_settings());
                             let _ = tx.try_send(Message::Binary(c));
                             // 255 is a watcher's ship: the client
                             // learns which of its two lives this is
                             // from the welcome.
                             let mut w = vec![S2C_WELCOME, 255];
+                            w.extend_from_slice(&1u32.to_le_bytes());
                             w.extend_from_slice(&a.world.state.tick.to_le_bytes());
                             w.extend_from_slice(&(a.number as u16).to_le_bytes());
+                            w.extend_from_slice(&a.settings_generation.to_le_bytes());
                             let _ = tx.try_send(Message::Binary(w));
                             a.broadcast_roster();
                         }
@@ -6915,15 +7149,18 @@ pub(crate) async fn serve_client(
                     m.extend_from_slice(&a.world.packed_map());
                     let _ = tx.try_send(Message::Binary(m));
                     let mut c = vec![S2C_SETTINGS];
+                    c.extend_from_slice(&a.settings_generation.to_le_bytes());
                     c.extend_from_slice(&a.world.packed_settings());
                     let _ = tx.try_send(Message::Binary(c));
                     let mut w = vec![S2C_WELCOME, ship];
+                    w.extend_from_slice(&a.players[&new_id].lifecycle.to_le_bytes());
                     w.extend_from_slice(&a.world.state.tick.to_le_bytes());
                     // Which room this is. The client draws it in the corner and
                     // never draws what it asked for: a room can fill between a
                     // list being read and a key landing, and the one thing on
                     // screen that must not be a guess is where you are.
                     w.extend_from_slice(&(a.number as u16).to_le_bytes());
+                    w.extend_from_slice(&a.settings_generation.to_le_bytes());
                     let _ = tx.try_send(Message::Binary(w));
                     a.broadcast_roster();
                     // Which sides this room holds, who is on them, and
@@ -7233,11 +7470,15 @@ pub(crate) async fn serve_client(
                             continue;
                         };
                         let a = &mut z.rooms[index];
-                        let now = a.world.state.tick + 1;
+                        let now = a.world.state.tick.wrapping_add(1);
                         let sample_ticks = a.lag_policy.sample_ticks;
                         let Some(p) = a.players.get_mut(&member) else {
                             continue;
                         };
+                        if packet.lifecycle != p.lifecycle {
+                            continue;
+                        }
+                        p.last_input_at = now;
                         p.lag.acknowledge_snapshots(
                             packet.snapshot_ack,
                             packet.snapshot_mask,
@@ -7416,11 +7657,16 @@ mod tests {
         std::mem::forget(rx);
         Player {
             ship: 0,
+            lifecycle: 1,
             buttons: 0,
             pending: Default::default(),
             input_ack: 0,
             input_mask: 0,
+            input_seen: false,
             applied_tick: 0,
+            applied_input: false,
+            last_input_at: 100,
+            combat_until: None,
             lag: Default::default(),
             lag_rng: 1,
             name: "probe".into(),
@@ -7447,7 +7693,7 @@ mod tests {
         // And stays held afterwards, because a key held down is the common case
         // and a tick with nothing scheduled must not read as hands off.
         assert_eq!(p.buttons_at(106), sim::BTN_FIRE);
-        assert_eq!(p.buttons_at(140), sim::BTN_FIRE);
+        assert_eq!(p.buttons_at(120), sim::BTN_FIRE);
     }
 
     /// A client with no lead, which is every client until one ships with it.
@@ -7499,8 +7745,9 @@ mod tests {
     #[test]
     fn an_input_message_carries_selective_repair_records() {
         let records = [(40, 1), (42, 4), (47, 8)];
-        let msg = input_message(12, 0b1011, &records);
+        let msg = input_message(7, 12, 0b1011, &records);
         let packet = input_packet(&msg).expect("valid input packet");
+        assert_eq!(packet.lifecycle, 7);
         assert_eq!(packet.snapshot_ack, 12);
         assert_eq!(packet.snapshot_mask, 0b1011);
         assert_eq!(packet.records, records);
@@ -7523,6 +7770,37 @@ mod tests {
     }
 
     #[test]
+    fn inputs_and_receipts_cross_the_tick_rollover() {
+        let mut p = a_player();
+        p.last_input_at = u32::MAX - 2;
+        p.schedule(u32::MAX, sim::BTN_THRUST, u32::MAX - 2);
+        p.schedule(0, sim::BTN_BOMB, u32::MAX - 2);
+        p.schedule(1, sim::BTN_FIRE, u32::MAX - 2);
+
+        assert_eq!(p.buttons_at(u32::MAX), sim::BTN_THRUST);
+        assert_eq!(p.buttons_at(0), sim::BTN_BOMB);
+        assert_eq!(p.buttons_at(1), sim::BTN_FIRE);
+        assert_eq!(p.input_ack, 1);
+        assert!(p.received_input(u32::MAX));
+        assert!(p.received_input(0));
+        assert!(p.received_input(1));
+    }
+
+    #[test]
+    fn silence_releases_dangerous_controls_then_everything() {
+        let mut p = a_player();
+        p.buttons = sim::BTN_THRUST | sim::BTN_FIRE | sim::BTN_BOMB;
+        p.last_input_at = 100;
+
+        assert_eq!(
+            p.buttons_at(125),
+            sim::BTN_THRUST,
+            "weapons stop before a suspended browser can keep firing"
+        );
+        assert_eq!(p.buttons_at(200), 0, "all held controls eventually release");
+    }
+
+    #[test]
     fn snapshot_receipts_measure_round_trip_on_the_server_clock() {
         let mut lag = LagTracker::default();
         let first = lag.sent_snapshot(100, false, 500);
@@ -7535,8 +7813,67 @@ mod tests {
 
         let third = lag.sent_snapshot(120, false, 500);
         lag.acknowledge_snapshots(third, 1, 140, 500);
-        assert_eq!(lag.rtt_ticks, 14.0, "round trip is averaged on the server");
-        assert_eq!(lag.jitter_ticks, 6.0, "jitter follows the RTT delta");
+        assert!(
+            (lag.rtt_ticks - 18.588_235).abs() < 0.000_001,
+            "the newer sample represents the fifteen server ticks since the prior one"
+        );
+        assert_eq!(lag.jitter_ticks, 12.0, "jitter follows the RTT delta");
+    }
+
+    #[test]
+    fn snapshot_receipts_cross_sequence_and_tick_rollovers() {
+        let mut lag = LagTracker::default();
+        lag.snapshot_seq = u32::MAX - 1;
+        let before = lag.sent_snapshot(u32::MAX - 2, false, 500);
+        let after = lag.sent_snapshot(1, false, 500);
+
+        assert_eq!(before, u32::MAX);
+        assert_eq!(after, 1, "zero remains the no-receipt sentinel");
+        lag.acknowledge_snapshots(after, 0b11, 3, 500);
+        assert_eq!(lag.snapshots.len(), 2);
+        assert!(lag.snapshots.iter().all(|snapshot| snapshot.received));
+        assert_eq!(lag.rtt_ticks, 2.0);
+    }
+
+    #[test]
+    fn loss_windows_measure_ticks_instead_of_packet_cadence() {
+        fn sample(step: u32) -> LossRate {
+            let mut rate = LossRate::default();
+            for _ in 0..100 / step {
+                rate.observe(true, 500, step);
+            }
+            for _ in 0..100 / step {
+                rate.observe(false, 500, step);
+            }
+            rate
+        }
+
+        let input = sample(1);
+        let combat = sample(COMBAT_SNAPSHOT_EVERY);
+        let ordinary = sample(SNAPSHOT_EVERY);
+        assert_eq!(input.sampled_ticks, 200);
+        assert_eq!(combat.sampled_ticks, 200);
+        assert_eq!(ordinary.sampled_ticks, 200);
+        assert!((input.value - combat.value).abs() < f64::EPSILON);
+        assert!((input.value - ordinary.value).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn rtt_windows_measure_ticks_instead_of_snapshot_count() {
+        fn sample(step: u32, combat: bool) -> LagTracker {
+            let mut lag = LagTracker::default();
+            for tick in (step..=100).step_by(step as usize) {
+                let sequence = lag.sent_snapshot(tick, combat, 500);
+                lag.acknowledge_snapshots(sequence, 1, tick + 10, 500);
+            }
+            lag
+        }
+
+        let combat = sample(COMBAT_SNAPSHOT_EVERY, true);
+        let ordinary = sample(SNAPSHOT_EVERY, false);
+        assert_eq!(combat.rtt_sampled_ticks, 100);
+        assert_eq!(ordinary.rtt_sampled_ticks, 100);
+        assert_eq!(combat.rtt_ticks, ordinary.rtt_ticks);
     }
 
     #[test]
@@ -7547,11 +7884,14 @@ mod tests {
             last = lag.sent_snapshot(tick, false, 500);
         }
 
-        assert_eq!(lag.down_loss.samples, 0, "startup is not measured as loss");
+        assert_eq!(
+            lag.down_loss.sampled_ticks, 0,
+            "startup is not measured as loss"
+        );
         lag.acknowledge_snapshots(last, 1, 110, 500);
         assert_eq!(lag.snapshots.len(), 1, "unknown startup sends are dropped");
         assert!(lag.snapshots.front().is_some_and(|sent| sent.received));
-        assert_eq!(lag.down_loss.samples, 0);
+        assert_eq!(lag.down_loss.sampled_ticks, 0);
         assert_eq!(lag.down_loss.percent(), 0);
     }
 
@@ -7588,7 +7928,7 @@ mod tests {
         };
         let mut lag = LagTracker::default();
         lag.combat_loss.value = 0.216;
-        lag.combat_loss.samples = 1;
+        lag.combat_loss.sampled_ticks = 1;
         lag.sent_snapshot(1, true, cfg.sample_ticks);
 
         let restricted = lag.tick(&cfg, false, 1).decision;
@@ -7629,7 +7969,7 @@ mod tests {
         };
         let mut lag = LagTracker::default();
         lag.down_loss.value = 0.33;
-        lag.down_loss.samples = 3;
+        lag.down_loss.sampled_ticks = 3;
         lag.sent_snapshot(1, true, cfg.sample_ticks);
 
         assert!(lag.tick(&cfg, false, 1).decision == LagDecision::default());
@@ -7705,6 +8045,12 @@ mod tests {
 
         assert!(!a.players.contains_key(&id));
         assert!(a.watchers.contains_key(&id));
+        assert_eq!(a.watchers[&id].lifecycle, 2);
+        a.fly(id, 0, 32).expect("the pilot may recover into a hull");
+        assert_eq!(
+            a.players[&id].lifecycle, 3,
+            "the recovered hull cannot accept packets from the life before lag spectating"
+        );
     }
 
     #[test]
@@ -7734,6 +8080,7 @@ mod tests {
 
         let mut buf = vec![0u8; sim::PACK_MAX];
         for frame in 1..=10 {
+            a.world.state.tick = frame;
             let (ordinary, combat) = snapshot_lanes(frame);
             if combat {
                 a.broadcast_player_snapshots(&mut buf, true);
@@ -7750,6 +8097,34 @@ mod tests {
 
         a.world.state.ships[hostile as usize].x = mine.x + 33 * sim::TILE_PX * 256;
         for frame in 11..=20 {
+            a.world.state.tick = frame;
+            let (ordinary, combat) = snapshot_lanes(frame);
+            if combat {
+                a.broadcast_player_snapshots(&mut buf, true);
+            }
+            if ordinary {
+                a.broadcast_player_snapshots(&mut buf, false);
+            }
+        }
+        assert_eq!(
+            snapshots(&drain(&mut rx)).len(),
+            5,
+            "the combat lane does not flap at the radius boundary"
+        );
+
+        for frame in 21..=110 {
+            a.world.state.tick = frame;
+            let (ordinary, combat) = snapshot_lanes(frame);
+            if combat {
+                a.broadcast_player_snapshots(&mut buf, true);
+            }
+            if ordinary {
+                a.broadcast_player_snapshots(&mut buf, false);
+            }
+        }
+        drain(&mut rx);
+        for frame in 111..=120 {
+            a.world.state.tick = frame;
             let (ordinary, combat) = snapshot_lanes(frame);
             if combat {
                 a.broadcast_player_snapshots(&mut buf, true);
@@ -7761,7 +8136,7 @@ mod tests {
         assert_eq!(
             snapshots(&drain(&mut rx)).len(),
             2,
-            "ordinary play gets two snapshots in ten ticks"
+            "ordinary cadence returns after the one-second combat tail"
         );
     }
 
@@ -7809,21 +8184,23 @@ mod tests {
     #[test]
     fn the_echoed_tick_is_the_one_that_was_accepted() {
         let mut p = a_player();
-        p.schedule(u32::MAX, sim::BTN_FIRE, 100);
+        p.schedule(100_000, sim::BTN_FIRE, 100);
         assert_eq!(p.input_ack, 100 + INPUT_LEAD_MAX);
     }
 
-    /// A room that has been up for 497 days is at u32::MAX. The ceiling has to
-    /// saturate there rather than wrap: a wrapped ceiling clamps every input to
-    /// a tick in the distant past, which `buttons_at` then drains immediately,
-    /// so every client in the room would go rigid at once.
+    /// A room that has been up for 497 days crosses u32::MAX. The lead ceiling
+    /// remains ahead on the serial clock instead of becoming ancient.
     #[test]
-    fn the_lead_ceiling_saturates_at_the_end_of_the_clock() {
+    fn the_lead_ceiling_crosses_the_end_of_the_clock() {
         let mut p = a_player();
         let now = u32::MAX - 10;
-        p.schedule(u32::MAX, sim::BTN_FIRE, now);
-        assert_eq!(p.buttons_at(now), 0, "not before its tick");
-        assert_eq!(p.buttons_at(u32::MAX), sim::BTN_FIRE, "and not lost either");
+        p.last_input_at = now;
+        p.schedule(200, sim::BTN_FIRE, now);
+        let accepted = now.wrapping_add(INPUT_LEAD_MAX);
+        assert!(p.pending.contains_key(&accepted));
+        p.last_input_at = accepted;
+        assert_eq!(p.buttons_at(accepted.wrapping_sub(1)), 0);
+        assert_eq!(p.buttons_at(accepted), sim::BTN_FIRE);
     }
 
     /// And a client that floods cannot grow the arena's memory with it.
@@ -10147,7 +10524,7 @@ mod tests {
             id
         };
 
-        loop {
+        let watching = loop {
             let message = tokio::time::timeout(std::time::Duration::from_secs(1), outbound.recv())
                 .await
                 .expect("the sweep is announced")
@@ -10156,9 +10533,9 @@ mod tests {
                 continue;
             };
             if bytes.first() == Some(&S2C_WELCOME) && bytes[1] == 255 {
-                break;
+                break bytes;
             }
-        }
+        };
 
         // Class zero is exactly what the pilot had before the sweep. The old
         // socket state swallowed this first request and only a later watcher
@@ -10196,8 +10573,48 @@ mod tests {
             assert_eq!(returned[1], player.ship, "the welcome names the new seat");
         }
 
+        let life = |message: &[u8]| u32::from_le_bytes(message[2..6].try_into().unwrap());
+        assert_eq!(life(&first), 1);
+        assert_eq!(life(&watching), 2);
+        assert_eq!(life(&returned), 3);
+
         drop(in_tx);
         task.await.expect("the socket task exits cleanly");
+    }
+
+    #[tokio::test]
+    async fn a_transport_failure_runs_the_same_cleanup_as_a_disconnect() {
+        let zone = Arc::new(Mutex::new(serving(1, 6, 16)));
+        let (in_tx, inbound) = mpsc::channel(INBOUND_QUEUE);
+        let (out_tx, mut outbound) = mpsc::channel(OUT_QUEUE);
+        let task = tokio::spawn(serve_client(zone.clone(), inbound, out_tx, "test"));
+        let name = b"vanishing";
+        let zone_name = b"testzone";
+        let mut join = vec![
+            C2S_JOIN,
+            0,
+            CLIENT_PROTOCOL,
+            0,
+            zone_name.len() as u8,
+            name.len() as u8,
+            0,
+        ];
+        join.extend_from_slice(zone_name);
+        join.extend_from_slice(name);
+        in_tx.send(join).await.unwrap();
+        loop {
+            let Message::Binary(message) = outbound.recv().await.unwrap() else {
+                continue;
+            };
+            if message.first() == Some(&S2C_WELCOME) {
+                break;
+            }
+        }
+        assert_eq!(zone.lock().await.total_players(), 1);
+
+        in_tx.send(Vec::new()).await.unwrap();
+        task.await.expect("the connection handler exits");
+        assert_eq!(zone.lock().await.total_players(), 0);
     }
 
     #[test]

@@ -32,6 +32,7 @@ enum Event {
     EVENT_MESSAGE = 2,
     EVENT_DISCONNECTED = 3,
     EVENT_ERROR = 4,
+    EVENT_PROGRESS = 5,
 };
 
 // What the JS side reports: nothing yet, connecting, open, failed, closed.
@@ -75,7 +76,8 @@ EM_JS(void, VWWT_Open, (const char* url, int len, int cap), {
     // version decoded the address as Latin-1, so any non-ASCII character in
     // a hostname or a query arrived as mojibake and dialled nothing.
     var u = UTF8ToString(url, len);
-    var S = { st: 1, q: [], err: '', wt: null, rel: null, dg: null, cap: cap };
+    var S = { st: 1, q: [], err: '', wt: null, rel: null, dg: null,
+              cap: cap, progress: 0 };
     Module.vwwt = S;
     var wt;
     try {
@@ -87,7 +89,31 @@ EM_JS(void, VWWT_Open, (const char* url, int len, int cap), {
     }
     S.wt = wt;
     var fail = function(e) {
-        if (S.st !== 4) { S.st = 3; S.err = '' + e; }
+        if (S.st !== 4) {
+            S.st = 3;
+            S.err = '' + e;
+            if (S.wt) { try { S.wt.close(); } catch (_) {} }
+        }
+    };
+    // State packs supersede older state packs. The other repeatable messages
+    // are whole current values too. Coalescing them keeps a backgrounded tab
+    // from storing minutes of obsolete room state, while the hard bound turns
+    // an event flood into a closed session instead of an unbounded heap.
+    var replaceable = { 2: true, 3: true, 5: true, 10: true,
+                        12: true, 13: true, 16: true };
+    var enqueue = function(m) {
+        if (S.st === 3 || S.st === 4 || !m || !m.length) return;
+        var tag = m[0];
+        if (replaceable[tag]) {
+            for (var i = S.q.length - 1; i >= 0; i--) {
+                if (S.q[i].length && S.q[i][0] === tag) S.q.splice(i, 1);
+            }
+        }
+        if (S.q.length >= 128) {
+            fail('zone message backlog exceeded 128 messages');
+            return;
+        }
+        S.q.push(m);
     };
     // Held on the session so a send can report what a read would have.
     S.fail = fail;
@@ -170,10 +196,11 @@ EM_JS(void, VWWT_Open, (const char* url, int len, int cap), {
                                     m.set(chunks[i], o);
                                     o += chunks[i].length;
                                 }
-                                S.q.push(m);
+                                enqueue(m);
                                 return;
                             }
                             total += c.value.length;
+                            S.progress += c.value.length;
                             if (total > S.cap) {
                                 // Same refusal as the framed lane, for a stream
                                 // that simply never ends.
@@ -197,7 +224,8 @@ EM_JS(void, VWWT_Open, (const char* url, int len, int cap), {
             var next = function() {
                 rd.read().then(function(r) {
                     if (r.done) return;
-                    S.q.push(r.value);
+                    S.progress += r.value.length;
+                    enqueue(r.value);
                     next();
                 }, function() {});
             };
@@ -254,8 +282,9 @@ EM_JS(void, VWWT_Open, (const char* url, int len, int cap), {
                             return;
                         }
                         if (total < 4 + n) break;
-                        S.q.push(take(4 + n).subarray(4));
+                        enqueue(take(4 + n).subarray(4));
                     }
+                    S.progress += r.value.length;
                     pump();
                 }, fail);
             };
@@ -276,6 +305,14 @@ EM_JS(int, VWWT_State, (), {
 EM_JS(int, VWWT_NextLen, (), {
     var S = Module.vwwt;
     return (S && S.q.length) ? S.q[0].length : -1;
+});
+
+EM_JS(int, VWWT_Progress, (), {
+    var S = Module.vwwt;
+    if (!S) return 0;
+    var n = S.progress;
+    S.progress = 0;
+    return n;
 });
 
 EM_JS(void, VWWT_Take, (void* dst), {
@@ -342,6 +379,7 @@ static int VWWT_Supported() { return 0; }
 static void VWWT_Open(const char*, int, int) {}
 static int VWWT_State() { return JS_NONE; }
 static int VWWT_NextLen() { return -1; }
+static int VWWT_Progress() { return 0; }
 static void VWWT_Take(void*) {}
 static void VWWT_Drop() {}
 static void VWWT_Send(const void*, int, int) {}
@@ -495,6 +533,7 @@ static void LuaInit(lua_State* L) {
     SETCONSTANT(EVENT_MESSAGE)
     SETCONSTANT(EVENT_DISCONNECTED)
     SETCONSTANT(EVENT_ERROR)
+    SETCONSTANT(EVENT_PROGRESS)
 #undef SETCONSTANT
     lua_pop(L, 1);
 }
@@ -522,11 +561,17 @@ static int g_msg_cap = 0;
 static dmExtension::Result OnUpdate(dmExtension::Params*) {
     if (!g_State.m_Callback)
         return dmExtension::RESULT_OK;
+    if (VWWT_Progress() > 0) {
+        Deliver(EVENT_PROGRESS, 0, 0);
+        if (!g_State.m_Callback)
+            return dmExtension::RESULT_OK;
+    }
     // Messages first: anything that arrived before the session ended is
     // still the arena talking, and a refusal is exactly the message that
     // precedes a close.
     int len;
-    while ((len = VWWT_NextLen()) >= 0) {
+    int delivered = 0;
+    while (delivered < 32 && (len = VWWT_NextLen()) >= 0) {
         if (len > g_msg_cap) {
             char* grown = (char*)realloc(g_msg, (size_t)len);
             if (!grown) {
@@ -542,6 +587,7 @@ static dmExtension::Result OnUpdate(dmExtension::Params*) {
         }
         VWWT_Take(g_msg);
         Deliver(EVENT_MESSAGE, g_msg, (size_t)len);
+        delivered++;
         if (!g_State.m_Callback)
             return dmExtension::RESULT_OK;
     }

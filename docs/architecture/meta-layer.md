@@ -406,7 +406,9 @@ tick never touches the database; only the connection boundary does.
 `active_rated_sessions` holds one row per account. A claim succeeds for an
 unclaimed account, for the session already holding the row, or after the row
 has gone untouched for three minutes. Clean disconnects release immediately;
-the timeout recovers from a dead arena process.
+the timeout recovers from a dead arena process. A new claim briefly retries a
+busy row, which lets ordinary disconnect cleanup finish without weakening the
+settlement barrier or taking a lease from a live session.
 
 ## Operations
 

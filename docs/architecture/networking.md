@@ -67,11 +67,20 @@ independently named states and the snapshots this client has received:
 ```
 input_datagram {
   u8  count           // one through four
+  u32 lifecycle       // current flying life on this connection
   u32 snapshot_ack    // newest snapshot sequence received
   u32 snapshot_mask   // that sequence and the 31 before it
   { u32 tick, u16 buttons } inputs[count]
 }
 ```
+
+The lifecycle changes every time the connection crosses between flying and
+watching. The server ignores an input from any other lifecycle, so a delayed
+datagram from the ship a pilot left cannot take control of the ship they later
+entered. If input stops entirely, the arena releases weapon controls after 250
+ms and every control after one second. The client also sends an immediate zero
+input over the reliable lane when its window loses focus. This covers browsers
+that suspend before the next frame can send the ordinary release.
 
 The tick is honoured rather than advisory, and that distinction is the whole of
 the input path. An input naming a tick the arena has not reached waits in a
@@ -106,7 +115,7 @@ is arena changes, ship changes, and requests, all reliable and all rare.
 ### Joining: the room, then the rules, then the game
 
 A client that joins gets three things before it gets any state, in this order:
-the map, the settings, and a welcome naming its ship.
+the map, the settings, and a welcome naming its ship and lifecycle.
 
 That order is the dependency order. The map is geometry, and prediction runs
 collision locally, so a client cannot step anything without it. The settings
@@ -128,7 +137,10 @@ hold at all for weapons, because a projectile carries a spec *index* and two
 different tables do not agree on what an index means.
 
 A client that cannot decode either message loses the connection with a reason
-rather than playing on against rules it has guessed.
+rather than playing on against rules it has guessed. Settings and snapshots
+carry the same generation. A snapshot that passes a newer settings pack on the
+QUIC lanes waits outside the simulation until that pack arrives, and a delayed
+old pack cannot roll a client back to rules the arena no longer uses.
 
 Snapshots run at 20 Hz outside combat. A pilot with a hostile hull or an active
 combat projectile within 32 tiles moves to a 50 Hz lane. Both lanes carry the
@@ -138,6 +150,9 @@ fairness boundary or make distant entities blink out:
 ```
 snapshot_header {
   u8  subject
+  u8  mode                       // flying or watching
+  u32 lifecycle
+  u32 settings_generation
   u32 input_ack
   u32 input_mask
   u32 sequence
@@ -157,6 +172,13 @@ simulation_pack {
   prizes[]
 }
 ```
+
+The lifecycle makes a snapshot the authoritative transition message too. A
+welcome normally arrives first, but a dropped or delayed welcome cannot strand
+the client in its previous ship. A snapshot from the new life performs the
+transition, while a late welcome or snapshot from the old life is ignored. The
+client does not simulate or send input in a new flying life until its first
+matching snapshot has arrived.
 
 Fields use the sim's fixed-point scales, so no conversion happens on the wire.
 Every pack is a complete state replacement inside the server's fixed fairness
@@ -413,9 +435,11 @@ front of a loader that already needs a shim to stop it streaming. Measured, not
 assumed: 4,034,007 bytes of HTML, 1,549,745 after brotli.
 
 The ordinary lane budgets about 1 KB for a complete filtered snapshot, or
-20 KB/s at 20 Hz. A full selective input packet is 34 bytes at 100 Hz, or
-3.4 KB/s upstream. The combat lane can raise downstream snapshot traffic to
-two and a half times the ordinary rate while a fight is nearby.
+20 KB/s at 20 Hz. A full selective input packet is 38 bytes at 100 Hz, or
+3.8 KB/s upstream. The combat lane can raise downstream snapshot traffic to
+two and a half times the ordinary rate while a fight is nearby. It remains on
+for one second after the last nearby threat, which prevents a ship on the
+distance boundary from alternating between 20 and 50 Hz.
 
 When a link cannot carry that, the server throttles by priority the way ASSS
 does: weapons and positions outrank everything else, some share of bandwidth is
@@ -431,7 +455,9 @@ the input arrival tick are both server ticks, the arena gets a round-trip sample
 without trusting a client clock. Variation between consecutive samples measures
 jitter. The same receipt window measures ordinary and
 combat-lane downlink loss separately. Missing named input ticks measure upstream
-loss.
+loss. Each observation is weighted by the server ticks it represents, so a
+five-tick ordinary snapshot, a two-tick combat snapshot, and a one-tick input
+all fill the configured sample window in the same wall-clock time.
 
 The response is the four-metric, four-threshold model described in
 [server.md](server.md). It stays in the server rather than in the simulation,

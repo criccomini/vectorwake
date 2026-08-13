@@ -44,6 +44,7 @@ _G.sim = {
         predicted_deaths = {}
         return 0
     end,
+    apply_settings = function() return 0 end,
     smooth_capture = function() end,
     smooth_settle = function() end,
     smooth_reset = function() end,
@@ -88,9 +89,12 @@ local function le32(v)
                        math.floor(v / 16777216) % 256)
 end
 
+local snapshot_seq = 0
 local function snapshot(v)
-    return string.char(2, 0) .. le32(0) .. le32(0) .. le32(v)
-        .. string.rep("\0", 9) .. le32(v) .. "body"
+    snapshot_seq = snapshot_seq + 1
+    return string.char(2, 0, 0) .. le32(1) .. le32(0) .. le32(0)
+        .. le32(0) .. le32(snapshot_seq) .. string.rep("\0", 9)
+        .. le32(v) .. "body"
 end
 
 local function deliver(message)
@@ -99,7 +103,8 @@ end
 
 net.connect("ws://zone", 0, "pilot", function() end)
 handle.cb(nil, handle, {event = websocket.EVENT_CONNECTED})
-deliver(string.char(1, 0, 0, 0, 0, 0))
+deliver(string.char(1, 0) .. le32(1) .. le32(0)
+    .. string.char(1, 0) .. le32(0))
 deliver(snapshot(1000))
 
 emit_victim = 1

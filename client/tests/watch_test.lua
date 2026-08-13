@@ -34,6 +34,7 @@ _G.sim = {
     replay = function() calls.replay = calls.replay + 1; tick = tick + 1 end,
     step = function() calls.step = calls.step + 1; tick = tick + 1 end,
     apply_snapshot = function() calls.apply = calls.apply + 1; return 0 end,
+    apply_settings = function() return 0 end,
     smooth_capture = function() end,
     smooth_settle = function() end,
     smooth_reset = function() end,
@@ -88,10 +89,16 @@ local function le32(v)
 end
 
 local snapshot_seq = 0
-local function snapshot(subject, at)
+local function welcome(subject, lifecycle)
+    return string.char(1, subject) .. le32(lifecycle) .. le32(0)
+        .. string.char(1, 0) .. le32(0)
+end
+
+local function snapshot(subject, at, watching, lifecycle)
     snapshot_seq = snapshot_seq + 1
-    return string.char(2, subject) .. le32(0) .. le32(0)
-        .. le32(snapshot_seq) .. string.rep("\0", 9) .. le32(at) .. "body"
+    return string.char(2, subject, watching and 1 or 0) .. le32(lifecycle)
+        .. le32(0) .. le32(0) .. le32(0) .. le32(snapshot_seq)
+        .. string.rep("\0", 9) .. le32(at) .. "body"
 end
 
 -- --- flying first -----------------------------------------------------------
@@ -102,12 +109,12 @@ check("the join speaks the wire's own protocol",
       string.byte(sent[1], 3) == net.PROTOCOL,
       "spoke " .. tostring(string.byte(sent[1], 3)))
 
-deliver(string.char(1, 3, 0, 0, 0, 0))
+deliver(welcome(3, 1))
 check("a ship in the welcome is flying", net.me == 3 and not net.watching)
 
 -- A snapshot, so `step` stops holding the frame. Header, then a body the
 -- stubbed unpacker accepts.
-deliver(snapshot(3, 1000))
+deliver(snapshot(3, 1000, false, 1))
 check("the snapshot landed", net.stats.snaps == 1)
 
 local replays = calls.replay
@@ -117,22 +124,27 @@ check("and sends an input", string.byte(sent[#sent], 1) == 2, sent_kinds())
 
 -- --- sitting out ------------------------------------------------------------
 
-deliver(string.char(1, 255, 0, 0, 0, 0))
+deliver(welcome(255, 2))
 check("255 in the welcome is watching", net.watching and net.me == 255)
 
 local before = #sent
 replays = calls.replay
 local steps = calls.step
 net.step(0)
+check("watching waits for this life's first snapshot",
+      #sent == before and calls.replay == replays and calls.step == steps)
+
+deliver(snapshot(1, 1001, true, 2))
+check("the subject byte says whose eyes these are", net.subject == 1)
+check("and the snapshot was taken whole", calls.apply >= 2)
+check("without a rollback replay behind it", calls.replay == replays)
+before = #sent
+steps = calls.step
+net.step(0)
 check("watching sends nothing per tick", #sent == before)
 check("and never replays a ship it does not have", calls.replay == replays)
 check("but the world still steps", calls.step == steps + 1,
       "a watcher that stops stepping is a slideshow")
-
-deliver(snapshot(1, 1001))
-check("the subject byte says whose eyes these are", net.subject == 1)
-check("and the snapshot was taken whole", calls.apply >= 2)
-check("without a rollback replay behind it", calls.replay == replays)
 
 -- The ask, and the keepalive that repeats it.
 net.watch(7)
@@ -165,12 +177,17 @@ check("the watcher section names its people", #net.watchers == 1
 
 -- --- and back in ------------------------------------------------------------
 
-deliver(string.char(1, 4, 0, 0, 0, 0))
+deliver(welcome(4, 3))
 check("a ship in the welcome is flying again",
       not net.watching and net.me == 4)
 replays = calls.replay
 net.step(0)
-check("and the input path is back", calls.replay == replays + 1)
+check("the input path waits for this life to receive a snapshot",
+      calls.replay == replays)
+deliver(snapshot(4, 1002, false, 3))
+net.step(0)
+check("and the input path returns after that snapshot",
+      calls.replay == replays + 1)
 
 if fails > 0 then os.exit(1) end
 print("all fine")

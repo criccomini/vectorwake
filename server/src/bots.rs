@@ -75,7 +75,7 @@ const QUIET_MS: u64 = 10_000;
 /// A bot normally sends only when its controls change. Repeat the current
 /// controls once a second so a healthy pilot never looks silent to the arena's
 /// connection timeout.
-const INPUT_HEARTBEAT_TICKS: u32 = 100;
+const INPUT_HEARTBEAT_TICKS: u32 = 50;
 /// How often the shared driver's supervisor checks that its clock moved, and
 /// how long no movement is allowed before it starts a replacement driver.
 const DRIVER_WATCH_MS: u64 = 1_000;
@@ -166,6 +166,7 @@ enum Ctl {
 /// the mind. Constructed at welcome, removed at release or departure.
 struct Seat {
     id: u64,
+    lifecycle: u32,
     name: String,
     addr: String,
     brain: ai::Bot,
@@ -282,7 +283,7 @@ impl Rig {
 /// The arena holds the latest buttons between messages, so this does not alter
 /// flight or require a separate protocol message.
 fn input_frame_due(sent: Option<u16>, sent_at: u32, buttons: u16, tick: u32) -> bool {
-    sent != Some(buttons) || tick.saturating_sub(sent_at) >= INPUT_HEARTBEAT_TICKS
+    sent != Some(buttons) || tick.wrapping_sub(sent_at) >= INPUT_HEARTBEAT_TICKS
 }
 
 struct DriverWatch {
@@ -408,7 +409,8 @@ async fn drive(rig: std::sync::Weak<Rig>, generation: u64) {
                 // The tick this input produces, not the last one finished,
                 // which is what `net.lua` stamps and what the arena's queue
                 // reads: an input naming a tick waits for it.
-                let m = crate::input_message(0, 0, &[(tick + 1, buttons)]);
+                let m =
+                    crate::input_message(seat.lifecycle, 0, 0, &[(tick.wrapping_add(1), buttons)]);
                 if seat.tx.try_send(Ctl::Frame(m)).is_ok() {
                     seat.sent = Some(buttons);
                     seat.sent_at = tick;
@@ -934,7 +936,8 @@ async fn fly(
                         map = Some(m);
                     }
                     Some(crate::S2C_SETTINGS) => {
-                        cfg_bytes = data[1..].to_vec();
+                        if data.len() < 5 { break; }
+                        cfg_bytes = data[5..].to_vec();
                         // Every pilot applies on arrival. The bytes are the
                         // zone's one answer, so on the shared rig this is the
                         // same settings written again, which is idempotent.
@@ -942,8 +945,9 @@ async fn fly(
                             rig.lock_world().apply_settings(&cfg_bytes);
                         }
                     }
-                    Some(crate::S2C_WELCOME) if data.len() >= 2 => {
+                    Some(crate::S2C_WELCOME) if data.len() >= 16 => {
                         ship = data[1];
+                        let lifecycle = u32::from_le_bytes(data[2..6].try_into().unwrap());
                         let mut b = ai::Bot::new(ship, who.skill);
                         // Luck of its own, so two pilots of one skill in one
                         // room do not fly the same match.
@@ -952,6 +956,7 @@ async fn fly(
                             let Some(r) = route.clone() else { break };
                             let seat = Seat {
                                 id: me,
+                                lifecycle,
                                 name: who.name.clone(),
                                 addr: addr.clone(),
                                 brain: b,
@@ -1031,6 +1036,7 @@ async fn fly(
         let mut buttons: u16;
         let mut sent: Option<u16> = None;
         let mut sent_at = 0u32;
+        let mut lifecycle = 1u32;
         let mut asked: Option<std::time::Instant> = None;
         let mut ticker = tokio::time::interval(std::time::Duration::from_micros(10_000));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -1045,7 +1051,12 @@ async fn fly(
                     }
                     match data.first().copied() {
                         Some(crate::S2C_SETTINGS) => {
-                            w.apply_settings(&data[1..]);
+                            if data.len() >= 5 {
+                                w.apply_settings(&data[5..]);
+                            }
+                        }
+                        Some(crate::S2C_WELCOME) if data.len() >= 16 => {
+                            lifecycle = u32::from_le_bytes(data[2..6].try_into().unwrap());
                         }
                         Some(crate::S2C_SNAPSHOT) if data.len() > crate::SNAPSHOT_HEADER => {
                             w.apply_snapshot(&data[crate::SNAPSHOT_HEADER..]);
@@ -1094,7 +1105,12 @@ async fn fly(
                         None => 0,
                     };
                     if input_frame_due(sent, sent_at, buttons, tick) {
-                        let m = crate::input_message(0, 0, &[(tick + 1, buttons)]);
+                        let m = crate::input_message(
+                            lifecycle,
+                            0,
+                            0,
+                            &[(tick.wrapping_add(1), buttons)],
+                        );
                         if sink.send(Message::Binary(m)).await.is_err() {
                             break;
                         }
@@ -1175,12 +1191,12 @@ mod tests {
         assert!(input_frame_due(None, 0, 0, 10), "the first input is sent");
         assert!(input_frame_due(Some(1), 10, 2, 11), "a change is immediate");
         assert!(
-            !input_frame_due(Some(2), 10, 2, 109),
+            !input_frame_due(Some(2), 10, 2, 59),
             "an unchanged input waits"
         );
         assert!(
-            input_frame_due(Some(2), 10, 2, 110),
-            "one second of unchanged input is enough"
+            input_frame_due(Some(2), 10, 2, 60),
+            "half a second of unchanged input is enough"
         );
     }
 

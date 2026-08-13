@@ -915,6 +915,7 @@ function init(self)
     window.set_listener(function(_, event)
         if event == window.WINDOW_EVENT_FOCUS_LOST
             or event == window.WINDOW_EVENT_ICONFIED then
+            net.release_controls()
             held = {}
             tapped = {}
             owner = {}
@@ -1011,6 +1012,7 @@ function init(self)
         if not started then return end
         self.online = true
         self.joining = 0
+        self.join_progress = net.join_progress
         return
     end
 
@@ -1501,6 +1503,10 @@ function update(self, dt)
     -- hang without ever raising an error. Either way the player gets the menu
     -- back with a reason on it rather than a black arena.
     if self.online and self.joining then
+        if self.join_progress ~= net.join_progress then
+            self.join_progress = net.join_progress
+            self.joining = 0
+        end
         if net.connected and net.stats.snaps > 0 then
             menu.home = false
             menu.close()
@@ -2210,6 +2216,7 @@ function enter_game(self, address, zone_name, wt, room, watch)
     if not started then return false end
     self.online = true
     self.joining = 0
+    self.join_progress = net.join_progress
     return true
 end
 

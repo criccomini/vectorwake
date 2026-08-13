@@ -460,11 +460,11 @@ three of them mean "try another instance" and three mean "stop trying":
 `S2C_DENIED` carries the code in its first byte and then the sentence, so a client
 acts on the first three without parsing English.
 
-Two of the five need the client to say something, which is why `C2S_JOIN` carries
+Several need the client to say something, which is why `C2S_JOIN` carries
 more than a hull and a name:
 
 ```
-C2S_JOIN class protocol zone_len zone name
+C2S_JOIN class protocol flags zone_len name_len room zone name session_token
 ```
 
 The protocol is checked first, before anything else in the message is trusted: a

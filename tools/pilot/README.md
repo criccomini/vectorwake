@@ -12,7 +12,6 @@ with the server's next snapshot.
     python3 pilot.py wss://play.vectorwake.net/dir war 4 30   # directory zone pilots seconds
     python3 pilot.py --direct ws://127.0.0.1:9001 "" 2 20     # one arena, no browse
     python3 pilot.py --direct --adapt ws://127.0.0.1:9001 "" 3 15   # steer the clock
-    python3 pilot.py --direct --view 56 ws://127.0.0.1:9001 "" 1 30 # claim a window
 
 It browses first, like a client does. Which instance serves which zone is
 decided by the instances themselves and differs between deploys, so an address
@@ -43,14 +42,10 @@ quoting a `predict_err` figure from before this was fixed is reading tiles of a
 four-tick drift.
 
 `reach(ship/round tiles)` is how far the furthest ship and the furthest round
-any snapshot carried were from the pilot's own hull. The server culls what it
-sends to an interest radius, and this is that claim checked from the far end
-rather than believed: a number larger than the window is the server handing a
-client something it could not lawfully see, which is a maphack waiting to be
-written. Declare a window with `--view <tiles>`, floored at the radar and capped
-at the zone ceiling. Against the live arena, a pilot that declares nothing
-reaches exactly 160.0 tiles for both, and one that declares 56 reaches exactly
-84.0, which is that window plus the slack the server adds.
+any snapshot carried were from the pilot's own hull. The server chooses one
+fixed fairness radius, and this checks that claim from the far end rather than
+believing it. A number past the radius means the server handed a client
+something it could not lawfully see. The client cannot ask for a wider view.
 
 `corrections` counts samples thrown out because the ship died or respawned
 between the prediction and the snapshot. Those measure a teleport rather than a

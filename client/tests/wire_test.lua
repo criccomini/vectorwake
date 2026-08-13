@@ -27,6 +27,7 @@ end
 
 local tick = 1000
 local reject_snapshot = false
+local settings_applied = 0
 _G.sim = {
     tick = function() return tick end,
     replay = function() tick = tick + 1 end,
@@ -36,6 +37,10 @@ _G.sim = {
         tick = string.byte(body, 1) + string.byte(body, 2) * 256
             + string.byte(body, 3) * 65536
             + string.byte(body, 4) * 16777216
+        return 0
+    end,
+    apply_settings = function()
+        settings_applied = settings_applied + 1
         return 0
     end,
     smooth_capture = function() end,
@@ -63,6 +68,7 @@ _G.websocket = {
     EVENT_MESSAGE = 2,
     EVENT_DISCONNECTED = 3,
     EVENT_ERROR = 4,
+    EVENT_PROGRESS = 5,
     DATA_TYPE_BINARY = 1,
     connect = function(url, _, cb)
         ws.dialled = ws.dialled + 1
@@ -80,6 +86,7 @@ _G.webtransport = {
     EVENT_MESSAGE = 2,
     EVENT_DISCONNECTED = 3,
     EVENT_ERROR = 4,
+    EVENT_PROGRESS = 5,
     supported = function() return true end,
     connect = function(url, cb)
         wt.dialled = wt.dialled + 1
@@ -113,9 +120,17 @@ end
 local snapshot_seq = 0
 -- A snapshot as the wire carries it: subject, input receipt window, sequence,
 -- lag telemetry, then the pack, whose first field is the simulation tick.
-local function snapshot(ship, sim_tick, input_ack, input_mask)
-    snapshot_seq = snapshot_seq + 1
-    return string.char(2, ship) .. u32le(input_ack or 0)
+local function welcome(ship, lifecycle, settings)
+    return string.char(1, ship) .. u32le(lifecycle or 1) .. u32le(0)
+        .. string.char(1, 0) .. u32le(settings or 0)
+end
+
+local function snapshot(ship, sim_tick, input_ack, input_mask, watching, lifecycle,
+                        settings)
+    snapshot_seq = snapshot_seq % 4294967295 + 1
+    return string.char(2, ship, watching and 1 or 0)
+        .. u32le(lifecycle or 1) .. u32le(settings or 0)
+        .. u32le(input_ack or 0)
         .. u32le(input_mask or 0) .. u32le(snapshot_seq)
         .. string.char(80, 0, 5, 0, 2, 3, 4, 0, 0)
         .. u32le(sim_tick) .. "rest"
@@ -124,7 +139,7 @@ end
 local function records(message)
     local out = {}
     for i = 0, string.byte(message, 2) - 1 do
-        local at = 11 + i * 6
+        local at = 15 + i * 6
         local named = string.byte(message, at)
             + string.byte(message, at + 1) * 256
             + string.byte(message, at + 2) * 65536
@@ -156,7 +171,7 @@ check("and speaks the wire's own protocol",
       "spoke " .. tostring(string.byte(wt.sent[1], 3)))
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 check("the welcome and the snapshot land", net.connected
       and net.stats.snaps == 1)
@@ -178,8 +193,18 @@ check("inputs ride the unreliable lane", #wt.unsent == 1
       and string.byte(wt.unsent[1], 1) == 2,
       tostring(#wt.unsent))
 check("inputs acknowledge the snapshot receipt window",
-      string.byte(wt.unsent[1], 3) == 1 and string.byte(wt.unsent[1], 7) == 1)
+      string.byte(wt.unsent[1], 7) == 1 and string.byte(wt.unsent[1], 11) == 1)
 check("and nothing leaks onto the socket", ws.dialled == 0)
+
+local reliable_before, unreliable_before = #wt.sent, #wt.unsent
+check("focus loss can release held controls", net.release_controls())
+check("the release uses both input lanes",
+      #wt.sent == reliable_before + 1
+      and #wt.unsent == unreliable_before + 1)
+check("the release belongs to this lifecycle and holds no buttons",
+      string.byte(wt.sent[#wt.sent], 3) == 1
+      and next(records(wt.sent[#wt.sent])) ~= nil
+      and select(2, next(records(wt.sent[#wt.sent]))) == 0)
 
 -- The next datagram carries the tick before it as well. Treat the first as
 -- lost and the second still contains the exact state that disappeared with it.
@@ -212,6 +237,20 @@ check("a snapshot from behind is dropped", net.stats.snaps == 2,
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5002)})
 check("and the next fresh one lands", net.stats.snaps == 3)
 
+net = fresh_net()
+snapshot_seq = 4294967294
+lost_reason = nil
+net.connect("wss://zone/a1", 0, "pilot", function(why) lost_reason = why end,
+            "chaos", false,
+            "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = welcome(3)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 4294967295)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 1)})
+check("snapshot sequences and world ticks cross rollover together",
+      net.stats.snaps == 2 and net.stats.snap_reordered == 0)
+
 -- Reliable events can pass the datagram carrying the state that depicts them.
 -- They wait for that authoritative tick, then become visible together.
 local kill = string.char(4, 1, 0, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
@@ -236,7 +275,7 @@ check("combat news is idempotent",
 -- connection healthy.
 reject_snapshot = true
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 9000)})
-check("a rejected snapshot is not counted", net.stats.snaps == 4,
+check("a rejected snapshot is not counted", net.stats.snaps == 3,
       "applied " .. net.stats.snaps)
 check("and ends the unreadable connection", not net.connected
       and lost_reason == "the zone sent a snapshot this client cannot read",
@@ -257,18 +296,15 @@ wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 check("a snapshot before the welcome is not applied", net.stats.snaps == 0,
       "applied " .. net.stats.snaps)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5001)})
 check("and the first one after it is", net.stats.snaps == 1)
 
 -- --- the guard covers a watcher too -----------------------------------------
 --
--- It used to be off entirely while watching, because the shared channel runs
--- seconds behind live and a view change moves this clock backwards on
--- purpose. Reordering is a snapshot or two and a view change is seconds, so
--- the two are told apart by size: a stale packet is refused, and a rewind big
--- enough to be a change of view is taken. Left open, one death drew two
--- explosions, because the stale snapshot revived a hull the room had killed.
+-- The shared channel runs seconds behind live, so a view change may move the
+-- clock backwards on purpose. Its lifecycle says that happened. Within one
+-- life, every backward packet is stale and cannot revive a dead hull.
 
 net = fresh_net()
 net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", true,
@@ -276,17 +312,96 @@ net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", true,
 wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
 -- A welcome seating nobody: 255 is the watcher's seat.
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 255, 0, 0, 0, 0)})
+            message = welcome(255)})
 check("the watcher is watching", net.watching)
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 5000, nil, nil, true)})
 check("a channel snapshot lands", net.stats.snaps == 1,
       "applied " .. net.stats.snaps)
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 4995)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 4995, nil, nil, true)})
 check("a stale one is dropped rather than reviving the dead",
       net.stats.snaps == 1, "applied " .. net.stats.snaps)
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 4000)})
-check("but a rewind the size of the channel delay is a change of view",
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 4000, nil, nil, true)})
+check("a large stale rewind is dropped too",
+      net.stats.snaps == 1, "applied " .. net.stats.snaps)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 4000, nil, nil, true, 2)})
+check("a newer lifecycle may deliberately rewind the view",
       net.stats.snaps == 2, "applied " .. net.stats.snaps)
+
+-- A transition is stated on every snapshot as well as the reliable welcome.
+-- That makes a dropped one-shot transition self-healing without letting a
+-- delayed packet from the old life change whether the client flies or watches.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = welcome(3, 1)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 5000, nil, nil, false, 1)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 5001, nil, nil, true, 1)})
+check("one lifecycle cannot change modes",
+      net.stats.snaps == 1 and not net.watching)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(4, 4500, nil, nil, true, 2)})
+check("a snapshot repairs a dropped watching welcome",
+      net.stats.snaps == 2 and net.watching)
+local watching_inputs = #wt.unsent
+net.step(0)
+check("a repaired watcher does not send ship inputs",
+      #wt.unsent == watching_inputs)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 4600, nil, nil, false, 3)})
+local flying_inputs = #wt.unsent
+net.step(0)
+check("a snapshot repairs a dropped flying welcome",
+      net.stats.snaps == 3 and not net.watching
+      and #wt.unsent == flying_inputs + 1
+      and string.byte(wt.unsent[#wt.unsent], 3) == 3)
+
+-- --- settings and snapshots agree across independent lanes -----------------
+
+net = fresh_net()
+settings_applied = 0
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = welcome(3, 1, 2)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 5000, nil, nil, false, 1, 2)})
+check("a snapshot cannot outrun the settings it was simulated with",
+      net.stats.snaps == 0)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(10) .. u32le(2) .. "settings"})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(10) .. u32le(1) .. "stale"})
+check("a late old settings pack cannot roll tuning backward",
+      settings_applied == 1 and net.settings_epoch == 1)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 5001, nil, nil, false, 1, 2)})
+check("the matching snapshot lands after its settings", net.stats.snaps == 1)
+
+-- --- callbacks from the connection that ended are inert --------------------
+
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443")
+local stale_cb = wt.cb
+net.connect("wss://zone/a2", 0, "pilot", function() end, "war", false,
+            "https://zone:9444")
+local live_cb = wt.cb
+stale_cb(nil, {event = webtransport.EVENT_CONNECTED})
+stale_cb(nil, {event = webtransport.EVENT_MESSAGE, message = welcome(3)})
+stale_cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
+check("a previous session cannot write into the new arena",
+      not net.connected and net.stats.snaps == 0)
+live_cb(nil, {event = webtransport.EVENT_CONNECTED})
+live_cb(nil, {event = webtransport.EVENT_MESSAGE, message = welcome(4)})
+live_cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(4, 5001)})
+check("the current session still lands", net.connected and net.stats.snaps == 1)
 
 -- --- the fallback, on silence -----------------------------------------------
 
@@ -354,7 +469,7 @@ net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos",
             false, "https://zone:9443")
 wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 wt.cb(nil, {event = webtransport.EVENT_DISCONNECTED})
 check("a drop mid-game reports rather than redialling", why ~= nil
       and ws.dialled == 0, tostring(why))
@@ -384,6 +499,22 @@ ws.cb(nil, ws.handle, {event = websocket.EVENT_CONNECTED})
 check("and the socket carries the same join", #ws.sent == 1
       and string.byte(ws.sent[1], 1) == 1)
 
+-- Bytes moving on either lane prove the session is working through a slow
+-- map or a large first snapshot. Progress resets the settle clock without
+-- pretending the join is complete.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443")
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+for _ = 1, 4 do net.tick(1) end
+wt.cb(nil, {event = webtransport.EVENT_PROGRESS})
+for _ = 1, 4 do net.tick(1) end
+check("join progress buys time for a slow first world", ws.dialled == 0,
+      "dialled " .. ws.dialled)
+for _ = 1, 2 do net.tick(1) end
+check("progress cannot hide a permanently incomplete join", ws.dialled == 1,
+      "dialled " .. ws.dialled)
+
 -- A welcome alone is not deliverance: the wedge that prompted this carried
 -- the other half dead, and a session whose datagrams never arrive is a game
 -- at snapshot-rate zero. The snapshot is the proof, whichever lane it rode.
@@ -392,7 +523,7 @@ net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
             "https://zone:9443")
 wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 for _ = 1, 6 do net.tick(1) end
 check("a welcome without snapshots still loses the join", ws.dialled == 1,
       "dialled " .. ws.dialled)
@@ -404,7 +535,7 @@ net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
             "https://zone:9443")
 wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 for _ = 1, 6 do net.tick(1) end
 check("one snapshot settles the session", ws.dialled == 0
@@ -466,7 +597,7 @@ net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos",
             false, "https://zone:9443")
 wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 for _ = 1, 60 do net.tick(0.1) end
 check("six quiet seconds are not a verdict", why == nil and net.connected)
@@ -488,7 +619,7 @@ net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos",
             false, "https://zone:9443")
 wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 net.tick(30)
 check("one monster frame is not eight seconds of silence",
@@ -502,7 +633,7 @@ net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos",
             false, "")
 ws.cb(nil, ws.handle, {event = websocket.EVENT_CONNECTED})
 ws.cb(nil, ws.handle, {event = websocket.EVENT_MESSAGE,
-                       message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 ws.cb(nil, ws.handle, {event = websocket.EVENT_MESSAGE,
                        message = snapshot(3, 5000)})
 for _ = 1, 85 do net.tick(0.1) end
@@ -517,7 +648,7 @@ net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos",
             false, "https://zone:9443")
 wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 wt.cb(nil, {event = webtransport.EVENT_DISCONNECTED})
 for _ = 1, 6 do net.tick(1) end
 check("a loss while settling stays a loss", why ~= nil and ws.dialled == 0,
@@ -544,7 +675,7 @@ wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
 -- nothing is exactly the state the reader is trying to diagnose.
 check("an open session still counts as trying", net.transport().trying)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(1, 3, 0, 0, 0, 0)})
+            message = welcome(3)})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5000)})
 t = net.transport()
 check("a proven session names webtransport", t.kind == "wt" and not t.trying)

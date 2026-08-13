@@ -284,7 +284,7 @@ async fn session(incoming: IncomingSession, zone: Arc<Mutex<ArenaServer>>) {
 
     let (tx, rx) = mpsc::channel::<Message>(OUT_QUEUE);
     let (in_tx, inbound) = mpsc::channel::<Vec<u8>>(INBOUND_QUEUE);
-    let writer = tokio::spawn(write_loop(conn.clone(), reliable_tx, rx));
+    let writer = tokio::spawn(write_loop(conn.clone(), reliable_tx, rx, in_tx.downgrade()));
     let framed = tokio::spawn(read_framed(conn.clone(), reliable_rx, in_tx.clone()));
     let dgrams = {
         let conn = conn.clone();
@@ -337,7 +337,12 @@ async fn session(incoming: IncomingSession, zone: Arc<Mutex<ArenaServer>>) {
 const UNI_INFLIGHT: usize = 2;
 
 /// Everything the arena says, sorted onto the lane it belongs on.
-async fn write_loop(conn: Connection, mut reliable: SendStream, mut rx: mpsc::Receiver<Message>) {
+async fn write_loop(
+    conn: Connection,
+    mut reliable: SendStream,
+    mut rx: mpsc::Receiver<Message>,
+    failed: mpsc::WeakSender<Vec<u8>>,
+) {
     let uni = Arc::new(Semaphore::new(UNI_INFLIGHT));
     while let Some(msg) = rx.recv().await {
         let Message::Binary(b) = msg else { continue };
@@ -379,6 +384,10 @@ async fn write_loop(conn: Connection, mut reliable: SendStream, mut rx: mpsc::Re
                 });
             }
         } else if write_frame(&mut reliable, &b).await.is_err() {
+            conn.close(VarInt::from_u32(0), b"reliable stream failed");
+            if let Some(failed) = failed.upgrade() {
+                let _ = failed.send(Vec::new()).await;
+            }
             return;
         }
     }
@@ -530,6 +539,7 @@ mod tests {
             0,
             0,
             name.len() as u8,
+            0,
         ];
         join.extend_from_slice(name);
         write_frame(&mut reliable_tx, &join)
@@ -559,6 +569,7 @@ mod tests {
             "no settings before the welcome: {seen:?}"
         );
         let ship = welcome[1];
+        let lifecycle = u32::from_le_bytes(welcome[2..6].try_into().unwrap());
         assert_ne!(ship, 255, "a plain join seats a pilot, not a watcher");
 
         // Snapshots arrive beside the stream, not on it: a datagram when one
@@ -584,7 +595,7 @@ mod tests {
         // steers its clock by. Seeing it come back is seeing the datagram
         // lane work end to end.
         let named = tick + 20;
-        let input = crate::input_message(0, 0, &[(named, 1)]);
+        let input = crate::input_message(lifecycle, 0, 0, &[(named, 1)]);
         conn.send_datagram(&input).expect("the input sends");
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {
@@ -595,7 +606,7 @@ mod tests {
             let snap = tokio::time::timeout(Duration::from_secs(5), next_snapshot(&conn))
                 .await
                 .expect("snapshots keep arriving");
-            let acked = u32::from_le_bytes([snap[2], snap[3], snap[4], snap[5]]);
+            let acked = u32::from_le_bytes(snap[11..15].try_into().unwrap());
             if acked == named {
                 break;
             }

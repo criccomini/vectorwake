@@ -180,9 +180,10 @@ is the `admission` bar rather than making guests slower to create.
 
 Concurrent rated sessions. One account may hold one active rated session across
 the fleet. Arenas claim a renewable meta-layer lease before seating an
-authenticated account and release it when the connection ends. Watching without
-a hull does not claim a lease, but sitting out from a rated seat keeps the one
-the connection already holds.
+authenticated account and release it when the connection leaves its hull.
+Watching does not claim a lease; taking a hull again claims one before the
+spawn. A reconnect waits briefly for the old connection to settle and release
+before it is refused.
 
 Recovery. A guest has none by design, and now a claimed pilot's recovery is
 only as good as wherever they kept the password. Whether "there is no reset"

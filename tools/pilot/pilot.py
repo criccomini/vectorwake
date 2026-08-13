@@ -23,10 +23,10 @@ import websockets
 
 SO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libvwprobe.so")
 
-C2S_JOIN, C2S_INPUT, C2S_SHIP, C2S_VIEW = 1, 2, 5, 11
+C2S_JOIN, C2S_INPUT, C2S_SHIP = 1, 2, 5
 # The client wire's version, checked by the zone before it reads anything else
 # in a join. Bumped when the join or the roster changes shape.
-PROTOCOL = 8
+PROTOCOL = 14
 (S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER, S2C_KILL, S2C_BANNER,
  S2C_ZONE, S2C_DENIED, S2C_MAP, S2C_SETTINGS) = 1, 2, 3, 4, 5, 6, 7, 9, 10
 
@@ -43,12 +43,16 @@ LAG_TARGET, LAG_SLACK, LEAD_MAX = -2, 3, 40
 # pixels, and a tile is sixteen of them. Distances here are reported in tiles
 # because that is the unit the interest radius is written in.
 PX, TILE = 256.0, 4096.0
+SERIAL_HALF = 1 << 31
 
-# Ticks the simulation runs between two snapshots, which is what a client
-# predicts across: 100 Hz stepped, 20 Hz sent. Must match the server's
-# `SNAPSHOT_EVERY`.
-SNAPSHOT_EVERY = 5
 
+def snapshot_distance(newer, older):
+    distance = (newer - older) & 0xFFFFFFFF
+    return distance - 1 if newer < older else distance
+
+
+def snapshot_after(newer, older):
+    return newer != older and snapshot_distance(newer, older) < SERIAL_HALF
 
 def lib():
     l = ctypes.CDLL(SO)
@@ -70,8 +74,7 @@ def lib():
 
 
 class Pilot:
-    def __init__(self, url, zone, name, seconds, seed, lead=0, adapt=False,
-                 view=0):
+    def __init__(self, url, zone, name, seconds, seed, lead=0, adapt=False):
         self.url, self.zone, self.name, self.seconds = url, zone, name, seconds
         self.rng = random.Random(seed)
         self.L = lib()
@@ -84,9 +87,6 @@ class Pilot:
         # actually put a player in.
         self.room = 0
         self.landed = None
-        # Tiles of map this pilot claims to draw, sent as C2S_VIEW. Zero is a
-        # client that never says, which is served the ceiling.
-        self.view = view
         # Tiles to the furthest ship and the furthest round any snapshot
         # carried. This is the cull measured from the far end: the server says
         # it sends nothing outside an interest radius, and these two numbers
@@ -120,8 +120,11 @@ class Pilot:
         self.map_fp = None
         self.max_ships = None
         self.specs = None
+        self.lifecycle = 0
+        self.snapshot_ack = 0
+        self.snapshot_mask = 0
 
-    def predict_error(self, buttons):
+    def predict_error(self, buttons, next_tick):
         """Fly the gap between two snapshots and remember where it lands.
 
         The next snapshot says where the server actually put us. A client that
@@ -135,7 +138,10 @@ class Pilot:
         """
         if self.me is None:
             return
-        for _ in range(SNAPSHOT_EVERY):
+        steps = (next_tick - self.L.vw_tick(self.c)) & 0xFFFFFFFF
+        if steps >= 0x80000000:
+            return
+        for _ in range(min(steps, 100)):
             self.L.vw_step(self.c, self.me, buttons)
         # Remember the ship's liveness with the prediction. A death and respawn
         # teleports the ship, and comparing a still-flying prediction against a
@@ -159,7 +165,7 @@ class Pilot:
         if self.srv_tick is None:
             return 1
         elapsed = int((time.monotonic() - self.srv_at) * 100)
-        return max(1, self.srv_tick + elapsed + 1 + self.lead)
+        return (self.srv_tick + elapsed + 1 + self.lead) & 0xFFFFFFFF
 
     def note_input_lag(self, acked):
         """Ticks between stamping an input and the server running it.
@@ -174,7 +180,7 @@ class Pilot:
         # and counting those measures the join rather than the scheduling.
         if acked <= 1 or self.me is None or self.n["snaps"] < 10:
             return
-        gap = self.srv_tick - acked
+        gap = ((self.srv_tick - acked + 0x80000000) & 0xFFFFFFFF) - 0x80000000
         # A client whose clock leads the server's reports a negative gap, which
         # is the input arriving before the tick it belongs to. That is the goal
         # state rather than an error, so it is recorded rather than clamped.
@@ -201,7 +207,7 @@ class Pilot:
         """How far out this snapshot reached, in tiles, ships and rounds apart.
 
         Distance from this pilot's own hull, which is what the server culls
-        around. A number here larger than the window asked for is the server
+        around. A number here larger than the fixed fairness radius is the server
         handing a client something it could not lawfully see, which is the
         maphack question stated as an inequality.
         """
@@ -292,8 +298,6 @@ class Pilot:
             # pilot that never read a room list asks for.
             await ws.send(bytes([C2S_JOIN, self.rng.randrange(8), PROTOCOL, 0,
                                  len(z), len(n), self.room or 0]) + z + n)
-            if self.view:
-                await ws.send(bytes([C2S_VIEW, min(self.view, 255)]))
 
             async def drive():
                 # Real flight: hold a turn for a while, thrust, and fire in
@@ -315,11 +319,14 @@ class Pilot:
                         fire = not fire
                     b = turn | BTN_THRUST | (BTN_FIRE if fire else 0)
                     try:
-                        await ws.send(struct.pack("<BHI", C2S_INPUT, b, self.est_tick()))
+                        await ws.send(struct.pack(
+                            "<BBIIIIH", C2S_INPUT, 1, self.lifecycle,
+                            self.snapshot_ack, self.snapshot_mask,
+                            self.est_tick() & 0xFFFFFFFF, b))
                         self.last_buttons = b
                     except Exception:
                         return
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(0.01)
 
             pump = asyncio.create_task(drive())
             end = time.monotonic() + self.seconds
@@ -345,26 +352,45 @@ class Pilot:
                             self.map_fp = self.L.vw_map_fingerprint(self.c)
                     elif tag == S2C_SETTINGS:
                         self.n["settings"] += 1
-                        if self.L.vw_load_settings(self.c, body, len(body)) != 0:
+                        settings = body[4:]
+                        if self.L.vw_load_settings(self.c, settings, len(settings)) != 0:
                             self.n["bad"] += 1
                         else:
                             self.max_ships = self.L.vw_max_ships(self.c)
                             self.specs = self.L.vw_spec_count(self.c)
                     elif tag == S2C_WELCOME:
                         self.me = body[0]
+                        self.lifecycle = struct.unpack("<I", body[1:5])[0]
                         # Which room the server actually seated us in, which is
                         # not always the one asked for: it can fill in between.
-                        if len(body) >= 7:
-                            self.landed = body[5] | (body[6] << 8)
+                        if len(body) >= 11:
+                            self.landed = body[9] | (body[10] << 8)
                     elif tag == S2C_SNAPSHOT:
                         self.n["snaps"] += 1
+                        sequence = struct.unpack("<I", body[18:22])[0]
+                        if sequence:
+                            if self.snapshot_ack == 0 or snapshot_after(
+                                    sequence, self.snapshot_ack):
+                                shift = (1 if self.snapshot_ack == 0 else
+                                         snapshot_distance(sequence,
+                                                           self.snapshot_ack))
+                                self.snapshot_mask = (1 if shift >= 32 else
+                                    ((self.snapshot_mask << shift) | 1) & 0xFFFFFFFF)
+                                self.snapshot_ack = sequence
+                            else:
+                                behind = snapshot_distance(self.snapshot_ack,
+                                                           sequence)
+                                if behind < 32:
+                                    self.snapshot_mask |= 1 << behind
+                        packed = body[31:]
+                        sent_tick = struct.unpack("<I", packed[:4])[0]
                         # One predicted tick from the state we already hold,
                         # measured against the truth this snapshot carries.
                         if self.n["snaps"] > 2:
-                            self.predict_error(getattr(self, "last_buttons", 0))
+                            self.predict_error(getattr(self, "last_buttons", 0), sent_tick)
                         self.n["bytes"] += len(m)
-                        acked = struct.unpack("<I", body[1:5])[0]
-                        self.note_snapshot(body[5:])   # ship, then last_input u32
+                        acked = struct.unpack("<I", body[10:14])[0]
+                        self.note_snapshot(packed)
                         self.note_input_lag(acked)
                     elif tag == S2C_ROSTER:
                         self.n["roster"] += 1
@@ -385,7 +411,6 @@ class Pilot:
         kbps = n["bytes"] / dur / 1024 if dur > 0.5 else 0
         return (f"  {self.name}: zone={self.zone_name!r} ship={self.me} "
                 f"snaps={n['snaps']} ({rate:.1f}/s, {kbps:.1f} KB/s) "
-                f"view={self.view or 'none'} "
                 f"reach(ship/round tiles)={self.reach['ship']:.1f}/"
                 f"{self.reach['round']:.1f} "
                 f"ships={s['ships']} flags={s['flags']} "
@@ -444,24 +469,16 @@ async def main():
     adapt = False
     if args and args[0] == "--adapt":
         adapt, args = True, args[1:]
-    # Tiles of map to claim, which decides how much the server sends back. The
-    # reach in the report is the answer: a window asked for and never exceeded
-    # is the cull working, and one exceeded is a maphack waiting to be written.
-    view = 0
-    if args and args[0] == "--view":
-        view, args = int(args[1]), args[2:]
     url, zone, count, seconds = args[0], args[1], int(args[2]), float(args[3])
     if not direct:
         arena = await resolve(url, zone)
         print(f"=== directory {url} says {zone!r} is at {arena}")
         url = arena
-    pilots = [Pilot(url, zone, f"probe{i:02d}", seconds, 1000 + i, lead, adapt,
-                    view)
+    pilots = [Pilot(url, zone, f"probe{i:02d}", seconds, 1000 + i, lead, adapt)
               for i in range(count)]
     done = await asyncio.gather(*(p.fly() for p in pilots), return_exceptions=True)
     print(f"=== {count} pilots, {seconds:.0f}s, {url} zone={zone} "
-          f"lead={lead}{' adaptive' if adapt else ''}"
-          f"{f' view={view}' if view else ''}")
+          f"lead={lead}{' adaptive' if adapt else ''}")
     for d in done:
         print(d.report() if isinstance(d, Pilot) else f"  harness error: {d!r}")
 
