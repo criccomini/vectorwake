@@ -172,6 +172,26 @@ check("the game mesh has every colored face and separator triangle",
 check("the game logo keeps the canonical aspect ratio",
       math.abs(ui.logo_width(104) - 84) < 0.000001)
 
+local function triangle_span()
+    local x0, x1 = math.huge, -math.huge
+    for _, tri in ipairs(tris) do
+        for i = 1, 6, 2 do
+            x0 = math.min(x0, tri[i])
+            x1 = math.max(x1, tri[i])
+        end
+    end
+    return x1 - x0
+end
+
+local full_span = triangle_span()
+tris = {}
+ui.begin(layer, 512, 512, 1, false, math.pi / (2 * 1.7))
+ui.logo(256, 256, 104)
+ui.finish()
+check("the menu logo turns around its vertical axis",
+      math.abs(triangle_span() / full_span - 0.2) < 0.000001,
+      string.format("span ratio %.3f", triangle_span() / full_span))
+
 local ui_source = read_file("client/arena/ui.lua")
 check("the game mesh stores the canonical colored outlines",
       has(ui_source, "42, 0, 84, 67, 66, 78, 42, 53, 18, 78, 0, 67")

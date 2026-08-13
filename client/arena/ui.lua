@@ -2857,6 +2857,12 @@ end
 -- weight out it came out at twice the ships beside it.
 local HULL_PEN = 1.4
 
+local function vertical_turn(turn)
+    if not turn then return 1 end
+    local ct = math.cos(turn)
+    return (ct >= 0 and 1 or -1) * (0.2 + 0.8 * math.abs(ct))
+end
+
 -- Local now that it is. It was declared up with the glossary's figures and
 -- assigned here, because the bounty card drew one; the card is gone and every
 -- caller left is below this, so the forward declaration went with it rather
@@ -2864,11 +2870,7 @@ local HULL_PEN = 1.4
 local function thumb(cx, cy, cls, col, scale, turn)
     local h = world.HULLS[cls + 1]
     if not h then return end
-    local k = 1
-    if turn then
-        local ct = math.cos(turn)
-        k = (ct >= 0 and 1 or -1) * (0.2 + 0.8 * math.abs(ct))
-    end
+    local k = vertical_turn(turn)
     local function trace(src, width, c)
         local pts = {}
         for i = 1, #src, 2 do
@@ -4042,14 +4044,14 @@ local MK_GAP = {
 local MK_GAP_TRI = {10, 1, 2, 4, 5, 6, 4, 6, 7, 3, 4, 7,
                     3, 7, 8, 2, 3, 8, 2, 8, 9, 2, 9, 10}
 
-local function logo_poly(points, tris, ox, oy, k, col)
+local function logo_poly(points, tris, ox, oy, k, squash, col)
     for i = 1, #tris, 3 do
         local a, b, c = tris[i], tris[i + 1], tris[i + 2]
-        F.layer:tri(ox + points[a * 2 - 1] * k,
+        F.layer:tri(ox + (points[a * 2 - 1] - MK_W / 2) * k * squash,
               ry(oy + points[a * 2] * k),
-              ox + points[b * 2 - 1] * k,
+              ox + (points[b * 2 - 1] - MK_W / 2) * k * squash,
               ry(oy + points[b * 2] * k),
-              ox + points[c * 2 - 1] * k,
+              ox + (points[c * 2 - 1] - MK_W / 2) * k * squash,
               ry(oy + points[c * 2] * k), col)
     end
 end
@@ -4061,12 +4063,17 @@ end
 function M.logo(cx, cy, h, alpha, still)
     alpha = alpha or 1
     local k = h / MK_H
-    local ox, oy = cx - MK_W * k / 2, cy - MK_H * k / 2
-    logo_poly(MK_ORANGE, MK_ORANGE_TRI, ox, oy, k,
+    -- Match the selected hull's turn on the ship stage. The mark is another
+    -- flat top-down silhouette, so the same orthographic squeeze gives it the
+    -- same vertical-axis rotation without inventing perspective for one of
+    -- them. `still` keeps asset tests and non-menu callers front-on.
+    local squash = vertical_turn(not still and F.now * 1.7 or nil)
+    local ox, oy = cx, cy - MK_H * k / 2
+    logo_poly(MK_ORANGE, MK_ORANGE_TRI, ox, oy, k, squash,
               pal.a(pal.LOGO_ORANGE, alpha))
-    logo_poly(MK_CYAN, MK_CYAN_TRI, ox, oy, k,
+    logo_poly(MK_CYAN, MK_CYAN_TRI, ox, oy, k, squash,
               pal.a(pal.LOGO_CYAN, alpha))
-    logo_poly(MK_GAP, MK_GAP_TRI, ox, oy, k,
+    logo_poly(MK_GAP, MK_GAP_TRI, ox, oy, k, squash,
               pal.a(pal.LOGO_GAP, alpha))
 end
 
