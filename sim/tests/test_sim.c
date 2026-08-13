@@ -51,18 +51,19 @@ static void step_n(sim_state *s, const sim_settings *cfg, uint16_t b0,
 /* Counts of each event type over n ticks. Energy is a poor probe for damage
  * because recharge erases the evidence within a second; events do not lie. */
 typedef struct {
-    int fires, hits, deaths, bounces, spawns, prizes, warps;
+    int fires, hits, deaths, bounces, spawns, prizes, warps, predicted_deaths;
 } ev_counts;
 
 static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
                                uint16_t b0, uint16_t b1, int n) {
-    ev_counts c = {0, 0, 0, 0, 0, 0, 0};
+    ev_counts c = {0, 0, 0, 0, 0, 0, 0, 0};
     sim_state tmp;
     sim_events ev;
     for (int i = 0; i < n; i++) {
         sim_input in[2] = {{0, b0}, {1, b1}};
         sim_step(&tmp, s, in, s->ship_count > 1 ? 2 : 1, cfg, &ev);
         *s = tmp;
+        c.predicted_deaths += ev.predicted_death_count;
         for (uint16_t e = 0; e < ev.count; e++) switch (ev.e[e].type) {
                 case SIM_EV_FIRE: c.fires++; break;
                 case SIM_EV_HIT: c.hits++; break;
@@ -1067,6 +1068,8 @@ int main(void) {
         CHECK(s.ships[1].alive, "a deathless instance kills nobody");
         CHECK(s.ships[1].energy >= 1, "the hull keeps a sliver");
         CHECK(c.hits > 0, "the hit still reports");
+        CHECK(c.predicted_deaths > 0,
+              "the suppressed death reports for measurement");
         CHECK(c.deaths == 0, "the death does not happen");
         CHECK(s.ships[0].kills == 0, "and no kill is credited");
     }
@@ -1113,6 +1116,8 @@ int main(void) {
         ev_counts c = step_counting(&s, &dc, SIM_BTN_FIRE, 0, 150);
         CHECK(!s.ships[1].alive, "the named hull still dies");
         CHECK(c.deaths == 1, "and its death is reported");
+        CHECK(c.predicted_deaths == 0,
+              "a real local death is not a prediction candidate");
         int live = 0;
         for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
         CHECK(live == 1, "and its death green appears in the predicted tick");
@@ -2401,7 +2406,7 @@ int main(void) {
          * and wrong twice over: it read a splinter as a trigger pull, and it
          * stopped being true the day splinters stopped emitting one. */
         int seen = 0, carried = 0;
-        ev_counts ec = {0, 0, 0, 0, 0, 0, 0};
+        ev_counts ec = {0, 0, 0, 0, 0, 0, 0, 0};
         for (int t = 0; t < 200; t++) {
             ev_counts one = step_counting(&s, &w, 0, 0, 1);
             ec.fires += one.fires;

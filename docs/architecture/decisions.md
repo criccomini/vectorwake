@@ -1638,6 +1638,18 @@ client as a snapshot alive-to-dead transition, and the `snap_deaths` queue,
 built for the 15% of kills the prediction used to mistime, now draws all of
 them, at the confirmed moment, on the hull the screen was already showing.
 
+The client measures the bargain without changing it. When the deathless core
+suppresses a remote death, it records a telemetry signal with no visual or
+simulation effect. The signal sits outside the bounded visual event array, so
+measurement cannot displace an explosion or sound. The client holds one
+candidate per hull and compares it with the next six authoritative snapshots.
+A dead hull confirms the candidate;
+a hull still alive after all six rejects it. A hull that leaves the interest
+window is excluded because its outcome is no longer visible. The debug
+readout's `DEATH?` row reports confirmed over settled candidates, followed by
+the number still waiting. This supplies the evidence needed before using the
+reconsideration below.
+
 **Cost:** the kill burst arrives roughly a round trip plus up to one
 snapshot late, which is the standard bargain in server-authoritative
 shooters, and the spark keeps the shot feeling connected meanwhile. A hull

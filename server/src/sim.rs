@@ -398,6 +398,8 @@ pub struct sim_events {
     pub count: u16,
     pub dropped: u16,
     pub e: [sim_event; MAX_EVENTS],
+    pub predicted_death_count: u16,
+    pub predicted_death: [u8; MAX_SHIPS],
 }
 
 extern "C" {
@@ -441,6 +443,7 @@ extern "C" {
     pub fn sim_eff_max_ships(cfg: *const sim_settings) -> u8;
     pub fn sim_sizeof_settings() -> u32;
     pub fn sim_sizeof_ship() -> u32;
+    pub fn sim_sizeof_events() -> u32;
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
     /// The arenas live in the core so this and the client cannot disagree
     /// about the shape of the same room.
@@ -1011,6 +1014,11 @@ mod layout {
                 std::mem::size_of::<sim_ship>(),
                 sim_sizeof_ship() as usize,
                 "sim_ship mirror is the wrong size"
+            );
+            assert_eq!(
+                std::mem::size_of::<sim_events>(),
+                sim_sizeof_events() as usize,
+                "sim_events mirror is the wrong size"
             );
         }
     }

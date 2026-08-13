@@ -940,6 +940,20 @@ int EventAt(lua_State* L) {
     return 4;
 }
 
+int PredictedDeathCount(lua_State* L) {
+    lua_pushnumber(L, g_ev.predicted_death_count);
+    return 1;
+}
+
+int PredictedDeathAt(lua_State* L) {
+    int i = (int)luaL_checkinteger(L, 1);
+    if (i < 0 || i >= g_ev.predicted_death_count) {
+        return luaL_error(L, "predicted death index %d out of range", i);
+    }
+    lua_pushnumber(L, g_ev.predicted_death[i]);
+    return 1;
+}
+
 int FlagCount(lua_State* L) {
     lua_pushnumber(L, g_cur->flag_count);
     return 1;
@@ -1209,6 +1223,8 @@ const luaL_reg kFunctions[] = {
     {"in_safe", InSafe},
     {"event_count", EventCount},
     {"event_at", EventAt},
+    {"predicted_death_count", PredictedDeathCount},
+    {"predicted_death_at", PredictedDeathAt},
     {"flag_count", FlagCount},
     {"flag_at", FlagAt},
     {"add_flag", AddFlag},

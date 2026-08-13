@@ -185,6 +185,7 @@ uint32_t sim_sizeof_state(void);
 uint32_t sim_offsetof_settings_max_ships(void);
 uint32_t sim_sizeof_settings(void);
 uint32_t sim_sizeof_ship(void);
+uint32_t sim_sizeof_events(void);
 
 void sim_map_arena(sim_map *m);
 void sim_map_pit(sim_map *m);
@@ -593,9 +594,10 @@ typedef struct {
      * sets `deathless` and names its own hull in `mortal_ship`, or 255 for
      * none, which is what a watcher is: damage still lands and still
      * reports SIM_EV_HIT, but any other hull stops at its last sliver of
-     * energy instead of dying. A kill a client concludes about a coasting
-     * remote hull is an explosion the next snapshot may take back, so a
-     * remote death only ever arrives as a snapshot state change, which the
+     * energy instead of dying. The event output records that suppressed
+     * conclusion for measurement only. A kill a client concludes about a
+     * coasting remote hull is an explosion the next snapshot may take back,
+     * so a remote death only ever arrives as a snapshot state change, which the
      * client already turns into light and sound (decision 40). A deathless
      * instance sows no ambient prizes either, and for the same reason: it
      * simulates a snapshot filtered to its interest window, so its live-prize
@@ -857,6 +859,11 @@ typedef struct {
     uint16_t count;
     uint16_t dropped;
     sim_event e[SIM_MAX_EVENTS];
+    /* Remote hulls a deathless prediction would have killed this tick. Kept
+     * outside the event array so measurement cannot displace a visual event
+     * when that bounded array is full. The hull remains alive. */
+    uint16_t predicted_death_count;
+    uint8_t predicted_death[SIM_MAX_SHIPS];
 } sim_events;
 
 void sim_init(sim_state *s, uint32_t seed);

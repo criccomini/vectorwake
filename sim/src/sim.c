@@ -80,6 +80,14 @@ static void emit(sim_events *ev, uint8_t type, uint8_t a, uint8_t b,
     e->v = v;
 }
 
+static void note_predicted_death(sim_events *ev, uint8_t victim) {
+    if (!ev) return;
+    for (uint16_t i = 0; i < ev->predicted_death_count; i++)
+        if (ev->predicted_death[i] == victim) return;
+    if (ev->predicted_death_count < SIM_MAX_SHIPS)
+        ev->predicted_death[ev->predicted_death_count++] = victim;
+}
+
 /* ---- settings conversion ---- */
 
 int32_t sim_units_speed(int32_t v) {
@@ -229,6 +237,7 @@ uint32_t sim_offsetof_settings_max_ships(void) {
 uint32_t sim_sizeof_state(void) { return (uint32_t)sizeof(sim_state); }
 uint32_t sim_sizeof_settings(void) { return (uint32_t)sizeof(sim_settings); }
 uint32_t sim_sizeof_ship(void) { return (uint32_t)sizeof(sim_ship); }
+uint32_t sim_sizeof_events(void) { return (uint32_t)sizeof(sim_events); }
 
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg) {
@@ -697,9 +706,12 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
     if (v->energy <= 0) {
         /* A prediction client concludes no death but its own pilot's. The
          * hull keeps a sliver and flies on; the death, if the zone agrees
-         * there is one, arrives as a snapshot state change instead. The hit
-         * above has already reported, so the spark still draws. */
+         * there is one, arrives as a snapshot state change instead. Report
+         * the suppressed conclusion separately so the client can measure how
+         * often the zone agrees without drawing the death. The hit above has
+         * already reported, so the spark still draws. */
         if (cfg->deathless && victim != cfg->mortal_ship) {
+            note_predicted_death(ev, victim);
             v->energy = 1;
             return;
         }
@@ -1608,6 +1620,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
     if (ev) {
         ev->count = 0;
         ev->dropped = 0;
+        ev->predicted_death_count = 0;
     }
 
     uint16_t buttons[SIM_MAX_SHIPS] = {0};

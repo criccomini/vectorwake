@@ -161,6 +161,7 @@ local function frame(o)
                  remote_turn_p95 = 3.0, remote_turn_max = 8.0,
                  smooth_pos = 1.0, smooth_turn = 0.5,
                  replay = 6, replay_max = 9, snap_hz = 20,
+                 death_confirmed = 12, death_rejected = 1, death_pending = 1,
                  snap_gap_ms = 50, snap_gap_max_ms = 80,
                  snap_missed = 1, snap_reordered = 2,
                  snaps = 120, rx = 0, tx = 0},
@@ -738,6 +739,8 @@ ui.details = false
 ui.debug = true
 frame()
 check("the debug readout keeps its own toggle clickable", box("debug") ~= nil)
+check("the debug readout shows settled and pending death predictions",
+      says("12/13 ok / 1 wait"), drawn())
 ui.debug = false
 ui.inspect = nil
 

@@ -168,6 +168,8 @@ local function fresh_stats(wire)
         remote_turn = 0, remote_turn_p95 = 0, remote_turn_max = 0,
         smooth_pos = 0, smooth_turn = 0,
         replay = 0, replay_max = 0,
+        death_confirmed = 0, death_rejected = 0, death_pending = 0,
+        death_censored = 0,
         input_margin = 0, rtt = 0, lead = 0,
         rx = 0, tx = 0, msgs = 0, wire = wire or "ws",
     }
@@ -200,6 +202,50 @@ M.settings_epoch = 0
 local conn = nil
 local on_lost_cb = nil
 local input_log = {}
+-- Each entry is the first remote death the local simulation would have
+-- concluded while the authoritative world still had that hull alive. The
+-- deathless core leaves the hull on one energy and records a telemetry signal,
+-- so this ledger can measure the old decision without changing what anybody
+-- sees. Six authoritative observations are about 300 ms at the zone's 20 Hz
+-- snapshot rate. A hull that leaves the interest window is censored rather
+-- than called wrong because the client no longer knows its fate.
+local death_candidates = {}
+local DEATH_CONFIRM_SNAPSHOTS = 6
+
+local function note_predicted_deaths()
+    -- Lightweight net.lua tests use a counter-only simulation stub. The real
+    -- extension always provides this pair, while those tests have no combat
+    -- state to measure and can skip the ledger.
+    if not sim.predicted_death_count then return end
+    for i = 0, sim.predicted_death_count() - 1 do
+        local victim = sim.predicted_death_at(i)
+        if not death_candidates[victim] then
+            death_candidates[victim] = {tick = sim.tick(), observations = 0}
+            M.stats.death_pending = M.stats.death_pending + 1
+        end
+    end
+end
+
+local function resolve_predicted_deaths(sent)
+    for victim, candidate in pairs(death_candidates) do
+        if victim >= sim.ship_count() or sim.ship_active(victim) ~= 1 then
+            death_candidates[victim] = nil
+            M.stats.death_pending = M.stats.death_pending - 1
+            M.stats.death_censored = M.stats.death_censored + 1
+        elseif sim.ship_alive(victim) ~= 1 then
+            death_candidates[victim] = nil
+            M.stats.death_pending = M.stats.death_pending - 1
+            M.stats.death_confirmed = M.stats.death_confirmed + 1
+        elseif sent >= candidate.tick then
+            candidate.observations = candidate.observations + 1
+            if candidate.observations >= DEATH_CONFIRM_SNAPSHOTS then
+                death_candidates[victim] = nil
+                M.stats.death_pending = M.stats.death_pending - 1
+                M.stats.death_rejected = M.stats.death_rejected + 1
+            end
+        end
+    end
+end
 -- The last thing this watcher asked to look at, so the keepalive in `step`
 -- repeats the ask rather than quietly resetting a follow to the channel.
 -- Declared up here because `connect` resets them and Lua scopes a local from
@@ -909,6 +955,7 @@ local function on_snapshot(s)
     M.stats.snaps = M.stats.snaps + 1
     settling = nil
     quiet = 0
+    resolve_predicted_deaths(sent)
 
     -- Replay the inputs the server had not applied when it sent this.
     --
@@ -952,6 +999,7 @@ local function on_snapshot(s)
     local steps = 0
     for t = from + 1, last do
         sim.replay(M.me, input_log[t] or 0)
+        note_predicted_deaths()
         steps = steps + 1
     end
     M.stats.replay = steps
@@ -1023,6 +1071,8 @@ local function on_message(s)
         local watching = M.me == 255
         if watching ~= M.watching then
             input_log = {}
+            death_candidates = {}
+            M.stats.death_pending = 0
             predicted_tick = 0
             sim.smooth_reset()
             M.stats.input_margin, M.stats.rtt, M.stats.lead = 0, 0, 0
@@ -1367,6 +1417,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     -- is its own, so the lead starts at nothing and climbs into place over
     -- the first second.
     M.stats = fresh_stats("ws")
+    death_candidates = {}
     M.lost = nil
     snap_tick = 0
     net_clock, last_snap_at = 0, nil
@@ -1535,6 +1586,7 @@ function M.step(buttons)
     send_unreliable(msg)
     M.stats.tx = M.stats.tx + #msg
     sim.replay(M.me, buttons)
+    note_predicted_deaths()
     return true
 end
 

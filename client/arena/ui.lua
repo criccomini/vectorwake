@@ -2577,6 +2577,11 @@ local function debug_hud(o, top)
                                 st.smooth_turn or 0)},
         {"replay", string.format("%d / %d ticks", st.replay or 0,
                                   st.replay_max or 0)},
+        {"death?", string.format("%d/%d ok / %d wait",
+                                   st.death_confirmed or 0,
+                                   (st.death_confirmed or 0)
+                                       + (st.death_rejected or 0),
+                                   st.death_pending or 0)},
         {"snaps", string.format("%.1f Hz / %.0f / %.0f ms", st.snap_hz or 0,
                                  st.snap_gap_ms or 0,
                                  st.snap_gap_max_ms or 0)},
