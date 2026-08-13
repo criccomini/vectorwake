@@ -431,12 +431,14 @@ void sim_spawn_point(sim_state *s, const sim_settings *cfg, uint8_t team,
     pick_spawn(cfg, &s->rng, s->tick, team, cls, nth, x, y);
 }
 
-/* Whether a point falls within `pad` of the hull's oriented rectangle, which
- * is the shape the client draws. Weapons and pickups use this rather than the
- * world-axis box above: a wall stops you where your box is, but a bullet into
- * a Cipher's flank should have to reach the knife, not a square drawn around
- * it. The delta is rotated into the hull's own frame; along runs tail to
- * nose, across runs wing to wing. */
+/* Whether a point falls within `pad` of the hull's oriented rectangle. The
+ * padding is round: sixteen pixels past a side and sixteen pixels past a
+ * corner are the same pickup radius. Expanding both axes independently made
+ * the corner reach sqrt(2) times larger, which let a hull take a green before
+ * its diagonal had visibly reached it.
+ *
+ * The delta is rotated into the hull's own frame; along runs tail to nose,
+ * across runs wing to wing. */
 static int hull_reaches(const sim_ship_class *c, uint16_t heading,
                         int32_t sx, int32_t sy, int32_t px, int32_t py,
                         int32_t pad) {
@@ -446,8 +448,13 @@ static int hull_reaches(const sim_ship_class *c, uint16_t heading,
     int64_t along = (dx * fx + dy * fy) >> 15;
     int64_t across = (dy * fx - dx * fy) >> 15;
     if (across < 0) across = -across;
-    return along >= -((int64_t)c->aft + pad) && along <= (int64_t)c->fore + pad
-        && across <= (int64_t)c->halfw + pad;
+
+    int64_t along_gap = 0;
+    if (along < -(int64_t)c->aft) along_gap = -(int64_t)c->aft - along;
+    else if (along > c->fore) along_gap = along - c->fore;
+    int64_t across_gap = across > c->halfw ? across - c->halfw : 0;
+    int64_t reach = pad > 0 ? pad : 0;
+    return along_gap * along_gap + across_gap * across_gap <= reach * reach;
 }
 
 /* The tile a point stands in, by class. */

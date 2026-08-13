@@ -5,7 +5,7 @@ use deadpool_postgres::Client;
 use crate::rating;
 use crate::token::Kind;
 
-use super::{kind_of, Throttle, DEFAULT_CLASS};
+use super::{kind_of, Throttle, DEFAULT_CLASS, KIND_HUMAN};
 
 type Reply = (u16, serde_json::Value);
 
@@ -32,7 +32,9 @@ pub(super) async fn route(
     let reply = match path {
         // The public ladder carries only game facts. Account standing,
         // credentials, moderation state, and last activity stay on the admin
-        // routes. Banned accounts are omitted rather than marked.
+        // routes. Banned accounts and bots are omitted rather than marked.
+        // The kind filter lives inside `visible` so ranks and field sizes are
+        // human-only too, without gaps left by hidden bots.
         "/v1/pilots" => {
             let query: String = body
                 .get("q")
@@ -58,7 +60,7 @@ pub(super) async fn route(
                     "with visible as (
                          select a.id, n.call_sign, a.kind
                          from accounts a join names n on n.account = a.id
-                         where not a.banned
+                         where not a.banned and a.kind = $5
                      ), ladder as (
                          select r.account, r.class,
                                 rank() over (partition by r.class order by r.rating desc) as pos,
@@ -83,15 +85,15 @@ pub(super) async fn route(
                      order by l.pos nulls last, b.rating desc nulls last,
                               lower(v.call_sign), v.id
                      limit $3 offset $4",
-                    &[&query, &provisional, &limit, &offset],
+                    &[&query, &provisional, &limit, &offset, &KIND_HUMAN],
                 )
                 .await;
             let total: i64 = db
                 .query_one(
                     "select count(*) from accounts a join names n on n.account = a.id
-                     where not a.banned
+                     where not a.banned and a.kind = $2
                        and ($1 = '' or strpos(lower(n.call_sign), lower($1)) > 0)",
-                    &[&query],
+                    &[&query, &KIND_HUMAN],
                 )
                 .await
                 .map(|row| row.get(0))
@@ -173,6 +175,7 @@ pub(super) async fn route(
                          select r.account, r.class, r.rating, r.games
                          from ratings r
                          join accounts a on a.id = r.account and not a.banned
+                                                and a.kind = $3
                          join names n on n.account = a.id
                      ), ladder as (
                          select account, class,
@@ -185,7 +188,7 @@ pub(super) async fn route(
                      left join ladder l on l.account = r.account and l.class = r.class
                      where r.account = $1
                      order by r.games desc, r.rating desc, r.class",
-                    &[&account, &provisional],
+                    &[&account, &provisional, &KIND_HUMAN],
                 )
                 .await;
             match ratings {

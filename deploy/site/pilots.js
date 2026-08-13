@@ -91,10 +91,7 @@
         const link = document.createElement("a");
         link.href = `/pilots/${encodeURIComponent(pilot.account)}`;
         link.textContent = pilot.name;
-        const kind = document.createElement("span");
-        kind.className = pilot.kind === "human" ? "pilot-kind" : "pilot-kind is-bot";
-        kind.textContent = kindLabel(pilot.kind);
-        identity.append(link, kind);
+        identity.append(link);
         row.append(identity);
 
         const tier = textCell(tierLabel(pilot.rating, pilot.tier), "tier-cell");

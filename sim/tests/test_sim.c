@@ -2220,6 +2220,38 @@ int main(void) {
     }
 
     {
+        /* Pickup radius is a circle around the hull rather than a square.
+         * A square adds the full radius on both axes, so a green off one
+         * corner disappears while the visible gap is sqrt(2) times the
+         * configured reach. The same distance straight off a side remains a
+         * valid pickup. */
+        sim_settings w = cfg;
+        w.deathless = 1;
+        w.prize_delay = 0;
+        sim_state s;
+        sim_init(&s, 91);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_ship *sh = &s.ships[0];
+        const sim_ship_class *hull = &w.classes[APEX];
+        sim_prize *green = &s.prizes[0];
+        green->active = 1;
+        green->life = 100;
+        green->x = sh->x + hull->halfw + 15 * 256;
+        green->y = sh->y - hull->fore - 15 * 256;
+
+        step_n(&s, &w, 0, 0, 1);
+        CHECK(s.prizes[0].active,
+              "a green beyond the radius at a hull corner stays put");
+
+        green = &s.prizes[0];
+        green->x = s.ships[0].x + hull->halfw + w.prize_radius;
+        green->y = s.ships[0].y;
+        step_n(&s, &w, 0, 0, 1);
+        CHECK(!s.prizes[0].active,
+              "the same radius straight off a hull side is collected");
+    }
+
+    {
         /* Losing an energy step clamps the bar down to the new ceiling rather
          * than leaving a pilot over it. */
         sim_settings w = cfg;

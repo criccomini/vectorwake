@@ -2494,13 +2494,11 @@ end
 -- instrument rather than down in the corner with what the ship is carrying:
 -- it is a fact about the connection, not about the ship.
 --
--- Four bars off the round trip the predictor already measures, in ticks of a
--- centisecond. It replaces "online  err 0.0 / 1 px", which was the client's
--- own debugging left on a player's screen: nobody flying has ever made a
--- decision on a prediction error in pixels.
-local function link(rtt)
-    local q = 4
-    if rtt > 24 then q = 1 elseif rtt > 12 then q = 2 elseif rtt > 6 then q = 3 end
+-- Four bars from the connection's smoothed quality. It replaces
+-- "online  err 0.0 / 1 px", which was the client's own debugging left on a
+-- player's screen: nobody flying has ever made a decision on a prediction
+-- error in pixels.
+local function link(q)
     local pad = (M.compact and 8 or PAD) * F.scale
     local right = F.w - F.safe_r - pad
     local base = F.safe_t + pad + 13 * F.scale
@@ -2766,7 +2764,7 @@ function M.hud(o)
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
     if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
-    link(o.rtt or 0)
+    link(o.link_bars or 4)
     coords(me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on

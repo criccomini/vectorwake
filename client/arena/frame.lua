@@ -1,5 +1,7 @@
 -- Frame-level state that does not belong to flight, drawing, or menus.
 
+local link_quality = require("arena.link_quality")
+
 local M = {}
 
 -- Recompute whether the connection has a world ready to draw. Call this again
@@ -69,10 +71,21 @@ local function sample_performance(self, dt, stats)
     self.perf_t, self.perf_frames = 0, 0
 end
 
+local function sample_link(self, dt, net)
+    if not net.connected then
+        self.link_meter = nil
+        self.link_bars = 4
+        return
+    end
+    if not self.link_meter then self.link_meter = link_quality.new() end
+    self.link_bars = self.link_meter:update(net.stats.rtt, dt)
+end
+
 -- Sample the page and the local frame counters on their one-second cadence.
 function M.sample(self, dt, net, html5, locked)
     locked = poll_browser(self, dt, html5, locked)
     sample_performance(self, dt, net.stats)
+    sample_link(self, dt, net)
     return locked
 end
 

@@ -1959,10 +1959,11 @@ function update(self, dt)
             -- things that are genuinely a sentence.
             banner = net.banner,
             lag_notice = net.lag_notice,
-            -- The estimated round trip, in ticks of a centisecond, which the
-            -- readout above the dial turns into four bars. Input scheduling
-            -- margin is separate and lives in the debug readout.
-            rtt = net.stats.rtt,
+            -- The round trip belongs to the connection module. The frame
+            -- layer slows its noisy estimate into the stable number of bars
+            -- that the readout above the dial needs. Input scheduling margin
+            -- is separate and lives in the debug readout.
+            link_bars = self.link_bars,
             stats = net.stats, zone = net.zone,
             -- Every room of this game and which one we are in, for the chip
             -- in the corner and the panel it opens. Both are absent until the
