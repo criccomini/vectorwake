@@ -185,6 +185,9 @@ pub struct ArenaConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct LagConfig {
     pub sample_ticks: u32,
+    /// Exact current window for missed input deadlines. Kept short so a
+    /// recovered browser is judged by the stream it is sending now.
+    pub input_sample_ticks: u32,
     pub recover_ticks: u32,
     pub spectate_ticks: u32,
     pub no_flags_ping_ms: u32,
@@ -211,6 +214,7 @@ impl Default for LagConfig {
     fn default() -> Self {
         LagConfig {
             sample_ticks: 500,
+            input_sample_ticks: 50,
             recover_ticks: 500,
             spectate_ticks: 1_500,
             no_flags_ping_ms: 600,

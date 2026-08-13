@@ -132,11 +132,14 @@ points_per_flag = 100
 # Connection quality is measured by the arena from selective receipt windows.
 # Ordinary and nearby-combat snapshot loss have separate thresholds because a
 # connection may carry the base stream while dropping the extra fight updates.
-# Upstream loss may deny flags or force spectating, but it never suppresses
-# weapons: the missing input already did that. Times are milliseconds or ticks,
-# loss values are percentages.
+# Missed input deadlines may deny flags or force spectating, but they never
+# suppress weapons because the missing input already did that. Path quality
+# uses the five-second sample below. Input deadlines use a current half-second
+# window so a recovered browser is not punished for an old pause. Times are
+# milliseconds or ticks; loss values are percentages.
 [arena.lag]
 sample_ticks = 500
+input_sample_ticks = 50
 recover_ticks = 500
 spectate_ticks = 1500
 no_flags_ping_ms = 600

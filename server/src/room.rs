@@ -2643,7 +2643,8 @@ impl Room {
             }
             if p.lag.input_synchronized {
                 let missing = !p.received_input(now);
-                p.lag.observe_input(missing, self.lag_policy.sample_ticks);
+                p.lag
+                    .observe_input(missing, self.lag_policy.input_sample_ticks);
             }
             let update = p.lag.tick(&self.lag_policy, p.bot, now);
             if update.notify {

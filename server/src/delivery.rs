@@ -157,6 +157,48 @@ impl LossRate {
     }
 }
 
+/// Exact recent input deadlines, kept apart from the longer path averages.
+///
+/// A browser pause can leave several seconds of missed ticks behind it. An
+/// exponential five-second average remembers that pause after the client is
+/// healthy again, which turns a past stall into a current objective lock.
+/// This window forgets each miss when it is no longer current.
+#[derive(Default)]
+pub(crate) struct InputMissRate {
+    samples: std::collections::VecDeque<bool>,
+    misses: u32,
+}
+
+impl InputMissRate {
+    pub(crate) fn observe(&mut self, missing: bool, window_ticks: u32) {
+        self.samples.push_back(missing);
+        self.misses = self.misses.saturating_add(missing as u32);
+        let window = window_ticks.max(1) as usize;
+        while self.samples.len() > window {
+            if self.samples.pop_front() == Some(true) {
+                self.misses = self.misses.saturating_sub(1);
+            }
+        }
+    }
+
+    pub(crate) fn ready(&self, window_ticks: u32) -> bool {
+        self.samples.len() >= window_ticks.max(1) as usize
+    }
+
+    pub(crate) fn sampled_ticks(&self) -> u32 {
+        self.samples.len().min(u32::MAX as usize) as u32
+    }
+
+    pub(crate) fn percent(&self) -> u8 {
+        if self.samples.is_empty() {
+            return 0;
+        }
+        ((self.misses as f64 * 100.0) / self.samples.len() as f64)
+            .round()
+            .clamp(0.0, 100.0) as u8
+    }
+}
+
 pub(crate) struct SentSnapshot {
     pub(crate) seq: u32,
     pub(crate) tick: u32,
@@ -204,7 +246,10 @@ pub(crate) struct LagTracker {
     pub(crate) combat_active: bool,
     pub(crate) combat_idle_ticks: u32,
     pub(crate) combat_epoch: u32,
-    pub(crate) up_loss: LossRate,
+    pub(crate) input_miss: InputMissRate,
+    /// Objective restriction from RTT, jitter or snapshot loss. Input misses
+    /// are current-window state and do not inherit this path's recovery delay.
+    pub(crate) path_no_flags: bool,
     pub(crate) decision: LagDecision,
     pub(crate) healthy_ticks: u32,
     pub(crate) severe_ticks: u32,
@@ -231,7 +276,8 @@ impl Default for LagTracker {
             combat_active: false,
             combat_idle_ticks: 0,
             combat_epoch: 1,
-            up_loss: Default::default(),
+            input_miss: Default::default(),
+            path_no_flags: false,
             decision: Default::default(),
             healthy_ticks: 0,
             severe_ticks: 0,
@@ -254,7 +300,8 @@ impl LagTracker {
         }
         self.input_synchronized = true;
         self.input_started_at = None;
-        self.up_loss = Default::default();
+        self.input_miss = Default::default();
+        self.path_no_flags = false;
         self.decision = Default::default();
         self.healthy_ticks = 0;
         self.severe_ticks = 0;
@@ -381,7 +428,7 @@ impl LagTracker {
     }
 
     pub(crate) fn observe_input(&mut self, missing: bool, window: u32) {
-        self.up_loss.observe(missing, window, 1);
+        self.input_miss.observe(missing, window);
     }
 
     pub(crate) fn suppression(value: f64, start: u32, full: u32) -> u8 {
@@ -463,13 +510,13 @@ impl LagTracker {
         } else {
             0.0
         };
-        let up = self.up_loss.value * 100.0;
-        let up_ready = self.up_loss.sampled_ticks >= cfg.sample_ticks.max(1);
-        let raw_no_flags = ping_ms >= cfg.no_flags_ping_ms as f64
+        let input_miss = self.input_miss.percent() as f64;
+        let input_ready = self.input_miss.ready(cfg.input_sample_ticks);
+        let raw_path_no_flags = ping_ms >= cfg.no_flags_ping_ms as f64
             || jitter_ms >= cfg.no_flags_jitter_ms as f64
             || down >= cfg.no_flags_down_loss_pct as f64
-            || combat >= cfg.no_flags_combat_loss_pct as f64
-            || (up_ready && up >= cfg.no_flags_up_loss_pct as f64);
+            || combat >= cfg.no_flags_combat_loss_pct as f64;
+        let input_no_flags = input_ready && input_miss >= cfg.no_flags_up_loss_pct as f64;
         let raw_weapon =
             Self::suppression(ping_ms, cfg.weapon_start_ping_ms, cfg.weapon_full_ping_ms)
                 .max(Self::suppression(
@@ -491,19 +538,20 @@ impl LagTracker {
             || jitter_ms >= cfg.spectate_jitter_ms as f64
             || down >= cfg.spectate_down_loss_pct as f64
             || combat >= cfg.spectate_combat_loss_pct as f64
-            || (up_ready && up >= cfg.spectate_up_loss_pct as f64);
+            || (input_ready && input_miss >= cfg.spectate_up_loss_pct as f64);
 
-        if raw_no_flags || raw_weapon > 0 {
+        if raw_path_no_flags || raw_weapon > 0 {
             self.healthy_ticks = 0;
-            self.decision.no_flags = raw_no_flags;
+            self.path_no_flags = raw_path_no_flags;
             self.decision.weapon_percent = raw_weapon;
         } else {
             self.healthy_ticks = self.healthy_ticks.saturating_add(1);
             if self.healthy_ticks >= cfg.recover_ticks {
-                self.decision.no_flags = false;
+                self.path_no_flags = false;
                 self.decision.weapon_percent = 0;
             }
         }
+        self.decision.no_flags = self.path_no_flags || input_no_flags;
         self.severe_ticks = if severe {
             self.severe_ticks.saturating_add(1)
         } else {
@@ -534,7 +582,7 @@ impl LagTracker {
         msg.extend_from_slice(&jitter.to_le_bytes());
         msg.push(self.down_loss.percent());
         msg.push(self.combat_percent());
-        msg.push(self.up_loss.percent());
+        msg.push(self.input_miss.percent());
         msg
     }
 
@@ -553,7 +601,7 @@ impl LagTracker {
         msg.extend_from_slice(&jitter.to_le_bytes());
         msg.push(self.down_loss.percent());
         msg.push(self.combat_percent());
-        msg.push(self.up_loss.percent());
+        msg.push(self.input_miss.percent());
         msg.push(self.policy_state());
         msg.push(self.decision.weapon_percent);
     }
